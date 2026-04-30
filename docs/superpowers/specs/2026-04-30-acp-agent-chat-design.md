@@ -18,6 +18,21 @@ The first slice supports:
 
 The first slice does not replace the current runtime terminal tabs. Terminal-backed agent sessions remain available for raw TTY workflows, while ACP chat becomes the structured conversation path.
 
+## Success Criteria
+
+The first workspace-focused implementation is successful when:
+
+- A configured ACP agent can be discovered, initialized, and shown as available or disabled with a concrete reason.
+- A user can open agent chat from a ready workspace and create a session rooted at that workspace worktree.
+- Workspace chat derives `cwd` server-side from `workspace_id`; browser input cannot move a workspace session outside the worktree.
+- A user prompt streams assistant text, plan updates, tool calls, and errors into the thread without needing a raw terminal tab.
+- Transcript events persist and reload after browser refresh or workspace navigation.
+- Pending permission prompts persist and can be resolved after browser refresh.
+- Cancelling an active turn sends `session/cancel` and leaves the session in a clear idle, cancelled, or errored state.
+- Filesystem access outside the allowed root is rejected and covered by tests.
+- Existing tmux, shell, and terminal-backed runtime sessions continue to work unchanged.
+- Full-stack e2e coverage exercises the HTTP API, SQLite persistence, fake ACP agent, and event stream.
+
 ## ACP Protocol Model
 
 Middleman acts as an ACP client. The server launches an ACP-compatible agent process on demand and speaks newline-delimited UTF-8 JSON-RPC over the process stdin/stdout transport. Agent stderr is captured for diagnostics and never parsed as ACP protocol data.
@@ -29,6 +44,10 @@ Workspace chat creates an ACP session with `session/new` using:
 - `cwd`: the workspace `worktree_path`.
 - `additionalDirectories`: an empty list in the first slice.
 - `mcpServers`: an empty list in the first slice.
+
+The browser never owns workspace `cwd`. For workspace sessions, `workspace_id` is the authority and the server resolves `cwd` from the persisted ready workspace. If a request body includes `cwd` with `workspace_id`, the server rejects the request unless it exactly matches the canonical workspace worktree path after cleaning symlinks and path separators.
+
+Ambient sessions may include `cwd`, but only when it is absent or contained within an explicitly configured ambient allowed root. If an ambient `cwd` is outside the allowed root set, session creation fails before launching an agent or advertising filesystem capability.
 
 Loaded or resumed conversations can later use `session/load`, `session/resume`, or `session/fork` if the selected agent supports them. User turns use `session/prompt` with text blocks and optional resource blocks. During a turn, the agent streams `session/update` notifications for user message replay, assistant message chunks, plans, thoughts, tool calls, and mode changes. Cancellation uses `session/cancel`.
 
@@ -49,6 +68,8 @@ Add an `internal/acp` package with three focused responsibilities.
 
 `clientcaps` implements the client-side ACP methods middleman chooses to advertise. Filesystem reads and writes are scoped to allowed roots. For workspace sessions, the only allowed root is the workspace worktree path. For ambient sessions, allowed roots must come from explicit server configuration or a future user-selected root; an ambient session with no allowed root advertises no write capability.
 
+Allowed-root checks happen on canonical absolute paths after resolving symlinks for existing path components. Reads require the target to be inside an allowed root. Writes require the parent directory to be inside an allowed root and reject path traversal that escapes that root.
+
 Terminal callbacks use short-lived, non-interactive command execution in the session cwd for the first slice. They do not attach to the existing browser terminal pane. Long-running interactive terminals remain the job of the existing local runtime. This keeps ACP terminal callbacks predictable and avoids mixing structured chat events with raw PTY streams.
 
 Permission requests from the agent are normalized into pending permission events and sent to the UI. The manager pauses the JSON-RPC response until the user selects one of the ACP-provided options or cancels the turn.
@@ -60,7 +81,7 @@ Expose ACP through middleman-native REST and streaming APIs rather than exposing
 New routes:
 
 - `GET /api/v1/acp/agents`: list configured ACP agents, availability, labels, and disabled reasons.
-- `POST /api/v1/acp/sessions`: create a session. Body includes `agent_key`, optional `workspace_id`, optional `cwd`, and optional initial prompt.
+- `POST /api/v1/acp/sessions`: create a session. Body includes `agent_key`, optional `workspace_id`, ambient-only optional `cwd`, and optional initial prompt.
 - `GET /api/v1/acp/sessions`: list recent sessions, filterable by workspace ID.
 - `GET /api/v1/acp/sessions/{id}`: return session metadata and transcript.
 - `POST /api/v1/acp/sessions/{id}/prompt`: send a user prompt.
@@ -69,6 +90,8 @@ New routes:
 - `GET /api/v1/acp/sessions/{id}/events`: stream normalized session events.
 
 Use SSE for the first browser streaming path because the app already has SSE infrastructure and prompt, cancel, and permission actions can remain ordinary POST requests. The event payloads are middleman types, not raw ACP messages. If interactive bidirectional needs grow, the same normalized event model can move behind a WebSocket later.
+
+API routes should be registered through Huma with shared request/response types, and generated API artifacts must be refreshed with `make api-generate` in the implementation slice that introduces these routes. Integration-style API tests should use the generated Go client where practical.
 
 ## Data Model
 
@@ -85,6 +108,42 @@ The transcript event table stores normalized UI events rather than protocol mess
 
 All timestamps follow the project UTC policy.
 
+Database migrations should add indexes for workspace/session lookup and event replay by session sequence. Existing databases without ACP tables continue to start normally through the existing migration path.
+
+Transcript retention is bounded. The first slice keeps a configurable maximum number of events per session and a maximum byte size per JSON payload. Captured stderr, command output, and raw diagnostic ACP payloads are truncated before persistence.
+
+Sensitive values are redacted before persistence or UI display. Redaction covers configured token environment variable names, common credential key patterns, agent stderr, command errors, tool output summaries, and any raw diagnostic payload stored for unknown ACP updates.
+
+## Event Contract
+
+The backend normalizes ACP messages into append-only session events. Each event has:
+
+- `id`: database ID.
+- `session_id`: middleman ACP session ID.
+- `seq`: monotonically increasing integer within the session.
+- `kind`: stable UI event kind.
+- `role`: `user`, `assistant`, `tool`, `system`, or `permission`.
+- `payload`: event-specific JSON.
+- `created_at`: UTC timestamp.
+
+Initial `GET /api/v1/acp/sessions/{id}` returns session metadata and the full retained transcript ordered by `seq`. The SSE endpoint starts by replaying retained events after an optional `after_seq` query parameter, then streams live events. Duplicate delivery is allowed across reconnects; the frontend de-duplicates by `seq`.
+
+First-slice event kinds:
+
+- `session_status`: payload has `status`, optional `reason`, and optional `error`.
+- `user_message`: payload has `content` blocks.
+- `assistant_message_chunk`: payload has `message_id`, `content`, and `append`.
+- `plan`: payload has plan entries with `content`, `status`, and optional `priority`.
+- `tool_call`: payload has `tool_call_id`, `title`, `status`, optional `kind`, and redacted `summary`.
+- `permission_request`: payload has `request_id`, `tool_call`, `options`, and `status`.
+- `permission_resolution`: payload has `request_id`, `outcome`, and optional `option_id`.
+- `error`: payload has `message`, optional `code`, and optional redacted diagnostics.
+- `unknown`: payload has `acp_type` and a redacted diagnostic summary.
+
+Status transitions are explicit: `starting`, `idle`, `running`, `waiting_for_permission`, `cancelling`, `cancelled`, `errored`, and `closed`. The manager allows one active prompt per session. A second prompt request while a turn is active returns a conflict response rather than queueing. Duplicate cancel requests are idempotent while the session is `running`, `waiting_for_permission`, or `cancelling`.
+
+Only one permission request may be active for a session in the first slice. If an agent sends another permission request before the first resolves, the manager returns an error to the agent and appends an `error` event.
+
 ## Frontend Architecture
 
 Create a detachable chat surface under `frontend/src/lib/components/agent/` and API/store modules under `frontend/src/lib/api/acp.ts` and `frontend/src/lib/stores/agent-chat.svelte.ts`.
@@ -96,7 +155,7 @@ type AgentChatContext =
   | {
       scope: "workspace";
       workspaceId: string;
-      cwd: string;
+      worktreePath: string;
       repoLabel: string;
       itemLabel: string;
     }
@@ -107,7 +166,7 @@ type AgentChatContext =
     };
 ```
 
-Workspace mode passes this context from `WorkspaceTerminalView.svelte`. A future ambient sidebar can pass `scope: "ambient"` without creating a fake workspace.
+Workspace mode passes this context from `WorkspaceTerminalView.svelte`. The workspace `worktreePath` prop is display context only; session creation still sends `workspace_id` as the authority and lets the server derive ACP `cwd`. A future ambient sidebar can pass `scope: "ambient"` without creating a fake workspace.
 
 The component tree should be:
 
@@ -158,6 +217,16 @@ Each agent profile includes:
 
 Credentials should follow the existing runtime behavior: strip server credentials by default and only pass explicitly configured environment values to launched agents.
 
+## Resource Management
+
+The manager enforces lifecycle bounds:
+
+- idle agent processes are stopped after a configurable timeout when no active prompt or subscriber remains.
+- SSE subscribers are removed promptly on disconnect and do not keep sessions alive forever.
+- stderr capture is bounded per process.
+- command execution for ACP terminal callbacks has a timeout and output limit.
+- workspace teardown cancels active workspace-bound ACP sessions and closes their agent processes.
+
 ## Error Handling
 
 Initialization failures produce a disabled agent entry with the command error and captured stderr summary. Session creation failures return a structured API error and show an inline chat error. Prompt failures append an error event to the transcript and move the session back to idle unless the transport died. Transport death marks active sessions as errored and closes their streams.
@@ -165,6 +234,21 @@ Initialization failures produce a disabled agent entry with the command error an
 Cancellation is best-effort. The UI immediately shows a cancelling state, sends `session/cancel`, and then waits for the original prompt result. If the agent exits or returns an error during cancellation, the session records a cancelled or errored stop reason based on the observable outcome.
 
 Permission requests time out only if the browser disconnects and the session is explicitly cancelled. A refresh should reload the pending permission prompt from persisted state.
+
+## Implementation Slices
+
+Implementation should land in reviewable slices:
+
+1. Add ACP agent configuration types and fake-agent test fixtures without user-visible UI.
+2. Add `internal/acp` transport with initialize handshake, stderr capture bounds, and fake-agent tests.
+3. Add database migrations, query helpers, and session manager state transitions.
+4. Add Huma API routes for agents, sessions, prompt, cancel, permissions, and SSE; regenerate API artifacts with `make api-generate`.
+5. Add prompt streaming through the fake ACP agent and full-stack API plus SQLite e2e coverage.
+6. Add filesystem and terminal client capability handlers with allowed-root, timeout, truncation, and redaction tests.
+7. Add permission request persistence and browser refresh recovery.
+8. Add the detachable Svelte chat components and store with mocked API tests.
+9. Mount the chat surface in workspaces mode without changing existing terminal session behavior.
+10. Add final full-stack e2e coverage for workspace chat creation, prompt streaming, cancellation, permission resolution, transcript reload, and root rejection.
 
 ## Testing
 

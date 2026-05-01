@@ -26,6 +26,7 @@ The first workspace-focused implementation is successful when:
 - A user can open agent chat from a ready workspace and create a session rooted at that workspace worktree.
 - Workspace chat derives `cwd` server-side from `workspace_id`; browser input cannot move a workspace session outside the worktree.
 - A user prompt streams assistant text, plan updates, tool calls, and errors into the thread without needing a raw terminal tab.
+- Successive tool calls are grouped by default so busy agent activity stays scannable.
 - ACP plan/task-list updates are captured as durable process indicators that can be rendered outside the chat transcript.
 - The composer supports `@` file autocomplete scoped to the session root and `/` skill autocomplete from the configured skill catalog.
 - Transcript events persist and reload after browser refresh or workspace navigation.
@@ -145,7 +146,7 @@ First-slice event kinds:
 - `assistant_message_chunk`: payload has `message_id`, `content`, and `append`.
 - `process_plan_snapshot`: payload has `plan_id`, `entries`, and `source: "acp_plan"`. Each entry has stable `entry_id`, `content`, normalized `status`, optional `priority`, and original ACP fields.
 - `process_plan_delta`: payload has `plan_id`, changed `entries`, and previous/current aggregate counts. The first slice may synthesize deltas by comparing consecutive ACP plan snapshots.
-- `tool_call`: payload has `tool_call_id`, `title`, `status`, optional `kind`, and redacted `summary`.
+- `tool_call`: payload has `tool_call_id`, `title`, `status`, optional `kind`, redacted `summary`, optional `locations`, and optional redacted content summary.
 - `permission_request`: payload has `request_id`, `tool_call`, `options`, and `status`.
 - `permission_resolution`: payload has `request_id`, `outcome`, and optional `option_id`.
 - `error`: payload has `message`, optional `code`, and optional redacted diagnostics.
@@ -175,6 +176,23 @@ The aggregate process state includes:
 Plan entries are keyed by stable IDs where the agent supplies them. When ACP entries have no ID, middleman derives a stable entry ID from the normalized entry content and first-seen position within the current plan. Reordered entries keep their derived ID when content still matches.
 
 Tool calls are secondary process evidence. They can update activity text and running state, but they do not replace the current plan unless no plan has been emitted for the session.
+
+## Tool Call Grouping
+
+ACP emits `tool_call` and `tool_call_update` notifications per `toolCallId`. Middleman persists normalized tool-call events individually so status updates, locations, and redacted content summaries remain inspectable.
+
+The frontend groups successive tool calls as a presentation rule. A group is a contiguous run of tool-call display items within one prompt turn, uninterrupted by user messages, assistant message chunks, process plan snapshots, permission prompts, or errors. Updates for an existing `toolCallId` update that tool's row inside its original group instead of creating a new display row.
+
+Collapsed groups show:
+
+- group count and aggregate status.
+- the first two tool calls in sequence.
+- the last two tool calls in sequence.
+- a hidden-count affordance when more than four tool calls exist.
+
+Groups with four or fewer tool calls show every row by default. Groups with five or more show the first two and last two by default. Users can expand the group to show all tool calls and collapse it again. Expanded/collapsed state is browser-local UI state and is not persisted in the database.
+
+Aggregate group status is `running` if any visible or hidden tool call is `pending` or `in_progress`, `failed` if any tool call failed and none are running, `completed` if all tool calls completed, and `mixed` for any other combination. The group header should expose enough summary text for compact surfaces without hiding failures.
 
 ## Frontend Architecture
 
@@ -206,7 +224,8 @@ The component tree should be:
 - `AgentThread.svelte`: renders the ordered transcript.
 - `AgentMessage.svelte`: renders user and assistant message content.
 - `AgentPlanView.svelte`: renders the current process plan/task list with per-entry status and compact aggregate progress.
-- `AgentToolCall.svelte`: renders tool call summaries and results.
+- `AgentToolCallGroup.svelte`: groups successive tool calls, showing the first two and last two by default with an expand control.
+- `AgentToolCall.svelte`: renders one tool call summary and result inside a group.
 - `AgentPermissionPrompt.svelte`: renders ACP permission options and posts the selected outcome.
 - `AgentComposer.svelte`: sends prompts and exposes cancel while a turn is running.
 - `AgentMentionMenu.svelte`: renders `@` file suggestions and `/` skill suggestions for the composer.
@@ -289,7 +308,7 @@ Implementation should land in reviewable slices:
 7. Add filesystem and terminal client capability handlers with allowed-root, timeout, truncation, and redaction tests.
 8. Add file and skill suggestion APIs for `@` and `/` composer autocomplete with allowed-root and configured-catalog tests.
 9. Add permission request persistence and browser refresh recovery.
-10. Add the detachable Svelte chat components, process indicator rendering, composer autocomplete, and store with mocked API tests.
+10. Add the detachable Svelte chat components, process indicator rendering, grouped tool-call rendering, composer autocomplete, and store with mocked API tests.
 11. Mount the chat surface in workspaces mode without changing existing terminal session behavior.
 12. Add final full-stack e2e coverage for workspace chat creation, prompt streaming, process plan indicators, file mention submission, skill mention submission, cancellation, permission resolution, transcript reload, and root rejection.
 
@@ -300,6 +319,7 @@ Backend tests should include a fake ACP agent process that speaks newline-delimi
 - initialize handshake and capability capture.
 - session creation with workspace cwd.
 - prompt streaming into normalized transcript events.
+- tool call create/update notifications remain persisted as individual events with status updates tied to `toolCallId`.
 - ACP plan updates persisted as process indicator snapshots with aggregate progress counts.
 - cancellation forwarding.
 - permission request pause and resolution.
@@ -313,6 +333,7 @@ Frontend tests should cover:
 
 - `AgentChatSurface` renders workspace and ambient contexts from props.
 - transcript rendering for user text, assistant chunks, process plans, tool calls, permission prompts, and errors.
+- successive tool calls collapse into groups that show the first two and last two by default, expand to all rows, and update rows in place as `toolCallId` updates arrive.
 - compact process indicators update when plan task statuses change.
 - composer disables send and exposes cancel during an active turn.
 - `@` autocomplete searches files, inserts mention chips, and includes selected resources on submit.

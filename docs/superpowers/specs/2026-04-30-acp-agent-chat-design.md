@@ -26,6 +26,7 @@ The first workspace-focused implementation is successful when:
 - A user can open agent chat from a ready workspace and create a session rooted at that workspace worktree.
 - Workspace chat derives `cwd` server-side from `workspace_id`; browser input cannot move a workspace session outside the worktree.
 - A user prompt streams assistant text, plan updates, tool calls, and errors into the thread without needing a raw terminal tab.
+- ACP plan/task-list updates are captured as durable process indicators that can be rendered outside the chat transcript.
 - The composer supports `@` file autocomplete scoped to the session root and `/` skill autocomplete from the configured skill catalog.
 - Transcript events persist and reload after browser refresh or workspace navigation.
 - Pending permission prompts persist and can be resolved after browser refresh.
@@ -51,6 +52,8 @@ The browser never owns workspace `cwd`. For workspace sessions, `workspace_id` i
 Ambient sessions may include `cwd`, but only when it is absent or contained within an explicitly configured ambient allowed root. If an ambient `cwd` is outside the allowed root set, session creation fails before launching an agent or advertising filesystem capability.
 
 Loaded or resumed conversations can later use `session/load`, `session/resume`, or `session/fork` if the selected agent supports them. User turns use `session/prompt` with text blocks and optional resource blocks. During a turn, the agent streams `session/update` notifications for user message replay, assistant message chunks, plans, thoughts, tool calls, and mode changes. Cancellation uses `session/cancel`.
+
+Plan updates are especially important. ACP sends task-list style updates with `sessionUpdate: "plan"` and `entries` containing `content`, `priority`, and `status`. Middleman treats these as structured process state, not prose. The latest plan for a session is usable as an activity/progress indicator in workspace mode, ambient sidebar mode, tab chrome, and future session lists.
 
 Relevant ACP documentation:
 
@@ -140,7 +143,8 @@ First-slice event kinds:
 - `session_status`: payload has `status`, optional `reason`, and optional `error`.
 - `user_message`: payload has `content` blocks.
 - `assistant_message_chunk`: payload has `message_id`, `content`, and `append`.
-- `plan`: payload has plan entries with `content`, `status`, and optional `priority`.
+- `process_plan_snapshot`: payload has `plan_id`, `entries`, and `source: "acp_plan"`. Each entry has stable `entry_id`, `content`, normalized `status`, optional `priority`, and original ACP fields.
+- `process_plan_delta`: payload has `plan_id`, changed `entries`, and previous/current aggregate counts. The first slice may synthesize deltas by comparing consecutive ACP plan snapshots.
 - `tool_call`: payload has `tool_call_id`, `title`, `status`, optional `kind`, and redacted `summary`.
 - `permission_request`: payload has `request_id`, `tool_call`, `options`, and `status`.
 - `permission_resolution`: payload has `request_id`, `outcome`, and optional `option_id`.
@@ -150,6 +154,27 @@ First-slice event kinds:
 Status transitions are explicit: `starting`, `idle`, `running`, `waiting_for_permission`, `cancelling`, `cancelled`, `errored`, and `closed`. The manager allows one active prompt per session. A second prompt request while a turn is active returns a conflict response rather than queueing. Duplicate cancel requests are idempotent while the session is `running`, `waiting_for_permission`, or `cancelling`.
 
 Only one permission request may be active for a session in the first slice. If an agent sends another permission request before the first resolves, the manager returns an error to the agent and appends an `error` event.
+
+## Process Indicators
+
+Process indicators are derived from ACP plan/task-list updates and tool-call status, but the plan is the primary source. The manager stores the latest plan state per session in addition to the append-only event log so list and tab surfaces can show progress without replaying the entire transcript.
+
+Plan entry statuses are normalized to `pending`, `in_progress`, `completed`, `failed`, `cancelled`, or `unknown`. Unknown ACP statuses are preserved in the entry payload and displayed as `unknown` until the UI learns a better mapping.
+
+The aggregate process state includes:
+
+- total task count.
+- counts by normalized status.
+- the first `in_progress` task content, if present.
+- the latest changed task content.
+- whether the plan has blocked, failed, or cancelled entries.
+- the update timestamp.
+
+`AgentPlanView.svelte` renders the full task list inside the chat surface. Smaller surfaces, such as workspace tabs or a future floating sidebar header, consume the aggregate state to show compact process indicators like progress count, active task text, and failure/blocking state.
+
+Plan entries are keyed by stable IDs where the agent supplies them. When ACP entries have no ID, middleman derives a stable entry ID from the normalized entry content and first-seen position within the current plan. Reordered entries keep their derived ID when content still matches.
+
+Tool calls are secondary process evidence. They can update activity text and running state, but they do not replace the current plan unless no plan has been emitted for the session.
 
 ## Frontend Architecture
 
@@ -180,7 +205,7 @@ The component tree should be:
 - `AgentChatSurface.svelte`: owns layout, session selection, connection lifecycle, and high-level actions.
 - `AgentThread.svelte`: renders the ordered transcript.
 - `AgentMessage.svelte`: renders user and assistant message content.
-- `AgentPlanView.svelte`: renders streamed plan entries with status.
+- `AgentPlanView.svelte`: renders the current process plan/task list with per-entry status and compact aggregate progress.
 - `AgentToolCall.svelte`: renders tool call summaries and results.
 - `AgentPermissionPrompt.svelte`: renders ACP permission options and posts the selected outcome.
 - `AgentComposer.svelte`: sends prompts and exposes cancel while a turn is running.
@@ -260,12 +285,13 @@ Implementation should land in reviewable slices:
 3. Add database migrations, query helpers, and session manager state transitions.
 4. Add Huma API routes for agents, sessions, prompt, cancel, permissions, and SSE; regenerate API artifacts with `make api-generate`.
 5. Add prompt streaming through the fake ACP agent and full-stack API plus SQLite e2e coverage.
-6. Add filesystem and terminal client capability handlers with allowed-root, timeout, truncation, and redaction tests.
-7. Add file and skill suggestion APIs for `@` and `/` composer autocomplete with allowed-root and configured-catalog tests.
-8. Add permission request persistence and browser refresh recovery.
-9. Add the detachable Svelte chat components, composer autocomplete, and store with mocked API tests.
-10. Mount the chat surface in workspaces mode without changing existing terminal session behavior.
-11. Add final full-stack e2e coverage for workspace chat creation, prompt streaming, file mention submission, skill mention submission, cancellation, permission resolution, transcript reload, and root rejection.
+6. Add ACP plan capture as durable process indicators with snapshot events, aggregate state, and tests for status normalization.
+7. Add filesystem and terminal client capability handlers with allowed-root, timeout, truncation, and redaction tests.
+8. Add file and skill suggestion APIs for `@` and `/` composer autocomplete with allowed-root and configured-catalog tests.
+9. Add permission request persistence and browser refresh recovery.
+10. Add the detachable Svelte chat components, process indicator rendering, composer autocomplete, and store with mocked API tests.
+11. Mount the chat surface in workspaces mode without changing existing terminal session behavior.
+12. Add final full-stack e2e coverage for workspace chat creation, prompt streaming, process plan indicators, file mention submission, skill mention submission, cancellation, permission resolution, transcript reload, and root rejection.
 
 ## Testing
 
@@ -274,6 +300,7 @@ Backend tests should include a fake ACP agent process that speaks newline-delimi
 - initialize handshake and capability capture.
 - session creation with workspace cwd.
 - prompt streaming into normalized transcript events.
+- ACP plan updates persisted as process indicator snapshots with aggregate progress counts.
 - cancellation forwarding.
 - permission request pause and resolution.
 - filesystem requests rejected outside the allowed root.
@@ -285,7 +312,8 @@ Backend tests should include a fake ACP agent process that speaks newline-delimi
 Frontend tests should cover:
 
 - `AgentChatSurface` renders workspace and ambient contexts from props.
-- transcript rendering for user text, assistant chunks, plans, tool calls, permission prompts, and errors.
+- transcript rendering for user text, assistant chunks, process plans, tool calls, permission prompts, and errors.
+- compact process indicators update when plan task statuses change.
 - composer disables send and exposes cancel during an active turn.
 - `@` autocomplete searches files, inserts mention chips, and includes selected resources on submit.
 - `/` autocomplete searches skills, inserts skill chips, and includes selected skill metadata on submit.

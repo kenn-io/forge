@@ -26,6 +26,7 @@ The first workspace-focused implementation is successful when:
 - A user can open agent chat from a ready workspace and create a session rooted at that workspace worktree.
 - Workspace chat derives `cwd` server-side from `workspace_id`; browser input cannot move a workspace session outside the worktree.
 - A user prompt streams assistant text, plan updates, tool calls, and errors into the thread without needing a raw terminal tab.
+- User and assistant chat text renders as sanitized GitHub Flavored Markdown, including table support.
 - Successive tool calls are grouped by default so busy agent activity stays scannable.
 - ACP plan/task-list updates are captured as durable process indicators that can be rendered outside the chat transcript.
 - The composer supports `@` file autocomplete scoped to the session root and `/` skill autocomplete from the configured skill catalog.
@@ -156,6 +157,24 @@ Status transitions are explicit: `starting`, `idle`, `running`, `waiting_for_per
 
 Only one permission request may be active for a session in the first slice. If an agent sends another permission request before the first resolves, the manager returns an error to the agent and appends an `error` event.
 
+## Message Rendering
+
+User and assistant text content blocks are rendered as GitHub Flavored Markdown (GFM). The renderer must support:
+
+- tables.
+- fenced code blocks.
+- inline code.
+- task list checkboxes.
+- blockquotes.
+- links.
+- ordered and unordered lists.
+
+Markdown rendering is presentation-only. The persisted event payload keeps the original text content blocks, and the frontend turns them into sanitized HTML or native Svelte output at render time. Raw HTML in model output is disabled or sanitized so agent messages cannot inject scripts, event handlers, unsafe URLs, or arbitrary application markup.
+
+GFM tables should be horizontally scrollable inside the message bubble or message body rather than forcing the whole chat surface wider. Long code blocks and table cells use existing app overflow patterns so the transcript remains usable on narrow workspace panes.
+
+Structured ACP events do not become Markdown. Process plans, tool calls, permission prompts, errors, and autocomplete chips render through dedicated components so their status, controls, and accessibility semantics remain reliable.
+
 ## Process Indicators
 
 Process indicators are derived from ACP plan/task-list updates and tool-call status, but the plan is the primary source. The manager stores the latest plan state per session in addition to the append-only event log so list and tab surfaces can show progress without replaying the entire transcript.
@@ -222,7 +241,7 @@ The component tree should be:
 
 - `AgentChatSurface.svelte`: owns layout, session selection, connection lifecycle, and high-level actions.
 - `AgentThread.svelte`: renders the ordered transcript.
-- `AgentMessage.svelte`: renders user and assistant message content.
+- `AgentMessage.svelte`: renders user and assistant text content as sanitized GFM Markdown with table support.
 - `AgentPlanView.svelte`: renders the current process plan/task list with per-entry status and compact aggregate progress.
 - `AgentToolCallGroup.svelte`: groups successive tool calls, showing the first two and last two by default with an expand control.
 - `AgentToolCall.svelte`: renders one tool call summary and result inside a group.
@@ -308,7 +327,7 @@ Implementation should land in reviewable slices:
 7. Add filesystem and terminal client capability handlers with allowed-root, timeout, truncation, and redaction tests.
 8. Add file and skill suggestion APIs for `@` and `/` composer autocomplete with allowed-root and configured-catalog tests.
 9. Add permission request persistence and browser refresh recovery.
-10. Add the detachable Svelte chat components, process indicator rendering, grouped tool-call rendering, composer autocomplete, and store with mocked API tests.
+10. Add the detachable Svelte chat components, sanitized GFM message rendering, process indicator rendering, grouped tool-call rendering, composer autocomplete, and store with mocked API tests.
 11. Mount the chat surface in workspaces mode without changing existing terminal session behavior.
 12. Add final full-stack e2e coverage for workspace chat creation, prompt streaming, process plan indicators, file mention submission, skill mention submission, cancellation, permission resolution, transcript reload, and root rejection.
 
@@ -332,7 +351,8 @@ Backend tests should include a fake ACP agent process that speaks newline-delimi
 Frontend tests should cover:
 
 - `AgentChatSurface` renders workspace and ambient contexts from props.
-- transcript rendering for user text, assistant chunks, process plans, tool calls, permission prompts, and errors.
+- transcript rendering for user text, assistant chunks, GFM tables, fenced code, task lists, process plans, tool calls, permission prompts, and errors.
+- Markdown sanitization blocks raw script execution, unsafe links, event attributes, and arbitrary app markup.
 - successive tool calls collapse into groups that show the first two and last two by default, expand to all rows, and update rows in place as `toolCallId` updates arrive.
 - compact process indicators update when plan task statuses change.
 - composer disables send and exposes cancel during an active turn.

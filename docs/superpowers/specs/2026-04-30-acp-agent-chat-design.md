@@ -26,6 +26,7 @@ The first workspace-focused implementation is successful when:
 - A user can open agent chat from a ready workspace and create a session rooted at that workspace worktree.
 - Workspace chat derives `cwd` server-side from `workspace_id`; browser input cannot move a workspace session outside the worktree.
 - A user prompt streams assistant text, plan updates, tool calls, and errors into the thread without needing a raw terminal tab.
+- The composer supports `@` file autocomplete scoped to the session root and `/` skill autocomplete from the configured skill catalog.
 - Transcript events persist and reload after browser refresh or workspace navigation.
 - Pending permission prompts persist and can be resolved after browser refresh.
 - Cancelling an active turn sends `session/cancel` and leaves the session in a clear idle, cancelled, or errored state.
@@ -88,10 +89,16 @@ New routes:
 - `POST /api/v1/acp/sessions/{id}/cancel`: cancel the active prompt turn.
 - `POST /api/v1/acp/sessions/{id}/permissions/{request_id}`: resolve a pending ACP permission request.
 - `GET /api/v1/acp/sessions/{id}/events`: stream normalized session events.
+- `GET /api/v1/acp/context/files`: search mentionable files for a workspace or ambient root. Query parameters include `workspace_id`, ambient-only `cwd`, and `q`.
+- `GET /api/v1/acp/skills`: list configured skills available to the selected agent profile. Query parameters include optional `agent_key` and `q`.
 
 Use SSE for the first browser streaming path because the app already has SSE infrastructure and prompt, cancel, and permission actions can remain ordinary POST requests. The event payloads are middleman types, not raw ACP messages. If interactive bidirectional needs grow, the same normalized event model can move behind a WebSocket later.
 
 API routes should be registered through Huma with shared request/response types, and generated API artifacts must be refreshed with `make api-generate` in the implementation slice that introduces these routes. Integration-style API tests should use the generated Go client where practical.
+
+File suggestion APIs use the same allowed-root policy as ACP filesystem capabilities. Workspace file search derives its root from `workspace_id`; ambient file search requires `cwd` under a configured ambient allowed root. Results contain relative path, display label, URI, and MIME type hint. The API should ignore common heavy directories such as `.git`, dependency caches, build outputs, and hidden runtime folders unless a later configuration explicitly includes them.
+
+Skill suggestion APIs do not execute skills. They return metadata only: name, description, source, and optional tags. The first slice uses configured local skill manifests or agent-profile skill lists; it does not crawl arbitrary directories from browser input.
 
 ## Data Model
 
@@ -177,8 +184,16 @@ The component tree should be:
 - `AgentToolCall.svelte`: renders tool call summaries and results.
 - `AgentPermissionPrompt.svelte`: renders ACP permission options and posts the selected outcome.
 - `AgentComposer.svelte`: sends prompts and exposes cancel while a turn is running.
+- `AgentMentionMenu.svelte`: renders `@` file suggestions and `/` skill suggestions for the composer.
 
 The component must avoid workspace-specific UI assumptions. It can render compact context labels supplied by props, but it should not import workspace list state, PR detail state, terminal tab state, or router helpers.
+
+`AgentComposer.svelte` supports two mention modes:
+
+- `@`: opens file autocomplete after the user types `@` and filters by the current token. Selecting a file inserts a compact mention chip and stores the file URI plus path metadata separately from the visible text. On submit, selected files are sent as ACP resource content blocks or resource references according to the selected agent's prompt capabilities. The visible text still contains the mention label so the transcript remains readable.
+- `/`: opens skill autocomplete when typed at the start of the composer or after whitespace. Selecting a skill inserts a skill chip and adds a structured skill mention to the outgoing prompt metadata. The backend resolves the selected skill against the configured catalog and includes the skill name and description in the prompt context; loading full skill instructions is a later extension unless the configured skill provider explicitly marks the skill as safe to embed.
+
+Autocomplete menus are keyboard-first: arrow keys move selection, Enter accepts, Escape closes, and Tab accepts when a menu is open. Suggestions are debounced, cancel stale requests, and preserve typed text if the menu closes without selection.
 
 ## Workspace UX
 
@@ -213,6 +228,7 @@ Each agent profile includes:
 - optional env allowlist or explicit env additions
 - whether filesystem write capability is advertised
 - whether terminal capability is advertised
+- optional skill catalog entries or a reference to a local skill manifest source
 - optional ambient allowed roots
 
 Credentials should follow the existing runtime behavior: strip server credentials by default and only pass explicitly configured environment values to launched agents.
@@ -245,10 +261,11 @@ Implementation should land in reviewable slices:
 4. Add Huma API routes for agents, sessions, prompt, cancel, permissions, and SSE; regenerate API artifacts with `make api-generate`.
 5. Add prompt streaming through the fake ACP agent and full-stack API plus SQLite e2e coverage.
 6. Add filesystem and terminal client capability handlers with allowed-root, timeout, truncation, and redaction tests.
-7. Add permission request persistence and browser refresh recovery.
-8. Add the detachable Svelte chat components and store with mocked API tests.
-9. Mount the chat surface in workspaces mode without changing existing terminal session behavior.
-10. Add final full-stack e2e coverage for workspace chat creation, prompt streaming, cancellation, permission resolution, transcript reload, and root rejection.
+7. Add file and skill suggestion APIs for `@` and `/` composer autocomplete with allowed-root and configured-catalog tests.
+8. Add permission request persistence and browser refresh recovery.
+9. Add the detachable Svelte chat components, composer autocomplete, and store with mocked API tests.
+10. Mount the chat surface in workspaces mode without changing existing terminal session behavior.
+11. Add final full-stack e2e coverage for workspace chat creation, prompt streaming, file mention submission, skill mention submission, cancellation, permission resolution, transcript reload, and root rejection.
 
 ## Testing
 
@@ -260,6 +277,8 @@ Backend tests should include a fake ACP agent process that speaks newline-delimi
 - cancellation forwarding.
 - permission request pause and resolution.
 - filesystem requests rejected outside the allowed root.
+- file autocomplete never returns paths outside the workspace or ambient allowed root.
+- skill autocomplete returns only configured skill metadata and does not execute or crawl untrusted paths.
 - ambient sessions created without a workspace ID.
 - SSE event replay and live streaming with real SQLite.
 
@@ -268,6 +287,8 @@ Frontend tests should cover:
 - `AgentChatSurface` renders workspace and ambient contexts from props.
 - transcript rendering for user text, assistant chunks, plans, tool calls, permission prompts, and errors.
 - composer disables send and exposes cancel during an active turn.
+- `@` autocomplete searches files, inserts mention chips, and includes selected resources on submit.
+- `/` autocomplete searches skills, inserts skill chips, and includes selected skill metadata on submit.
 - permission option clicks call the API and update local pending state.
 - workspace mode mounts the chat surface without coupling it to terminal tabs.
 

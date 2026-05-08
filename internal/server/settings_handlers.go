@@ -18,12 +18,17 @@ import (
 )
 
 type settingsResponse struct {
-	Repos    []ghclient.ConfiguredRepoStatus `json:"repos" nullable:"false"`
-	Activity config.Activity                 `json:"activity"`
-	Terminal config.Terminal                 `json:"terminal"`
-	Modes    config.ModeVisibility           `json:"modes,omitzero"`
-	Agents   []config.Agent                  `json:"agents" nullable:"false"`
-	Fleet    fleetSettingsResponse           `json:"fleet"`
+	Repos         []ghclient.ConfiguredRepoStatus `json:"repos" nullable:"false"`
+	Activity      config.Activity                 `json:"activity"`
+	Notifications notificationsSettingsResponse   `json:"notifications"`
+	Terminal      config.Terminal                 `json:"terminal"`
+	Modes         config.ModeVisibility           `json:"modes,omitzero"`
+	Agents        []config.Agent                  `json:"agents" nullable:"false"`
+	Fleet         fleetSettingsResponse           `json:"fleet"`
+}
+
+type notificationsSettingsResponse struct {
+	Enabled bool `json:"enabled"`
 }
 
 type updateSettingsRequest struct {
@@ -57,6 +62,7 @@ func (s *Server) buildLocalSettingsResponse() settingsResponse {
 	s.cfgMu.Lock()
 	repos := slices.Clone(s.cfg.Repos)
 	activity := s.cfg.Activity
+	notifications := s.cfg.Notifications
 	terminal := s.cfg.Terminal
 	modes := cloneModeVisibility(s.cfg.Modes).WithDefaults()
 	agents := cloneConfigAgents(s.cfg.Agents)
@@ -80,12 +86,13 @@ func (s *Server) buildLocalSettingsResponse() settingsResponse {
 		}
 	}
 	return settingsResponse{
-		Repos:    configured,
-		Activity: activity,
-		Terminal: terminal,
-		Modes:    modes,
-		Agents:   agents,
-		Fleet:    fleetSettings,
+		Repos:         configured,
+		Activity:      activity,
+		Notifications: notificationsSettingsResponse{Enabled: notifications.Enabled != nil && *notifications.Enabled},
+		Terminal:      terminal,
+		Modes:         modes,
+		Agents:        agents,
+		Fleet:         fleetSettings,
 	}
 }
 

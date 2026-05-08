@@ -31,11 +31,16 @@ VITE_PLUS_VERSION := 0.1.24
 VITE_PLUS_BIN := node ./node_modules/vite-plus/bin/vp
 VITE_PLUS_FRONTEND_BIN := node ../node_modules/vite-plus/bin/vp
 VITE_PLUS_PACKAGE_BIN := node ../../node_modules/vite-plus/bin/vp
+DEV_CLONE_BACKEND_LOG ?= $(DEV_LOG_DIR)/backend-dev-clone.log
+DEV_CLONE_DB_DIR ?= tmp/dev-db-clone
+DEV_CLONE_PORT ?= 8092
+DEV_CLONE_FRONTEND_PORT ?= 5175
 
 .PHONY: ensure-embed-dir ensure-tmp-dir check-air air-install build build-release install \
         rust-pty-manager rust-test vite-plus-install frontend-deps check-vite-plus-bin frontend githubapp-frontend frontend-dev frontend-dev-bun frontend-check api-generate roborev-api-generate \
         dev dev-ephemeral dev-ephemeral-stop test test-short test-integration test-e2e test-e2e-roborev test-fleet-container test-fleet-drive-container test-gitlab-container gitlab-fixture-bake vet lint nilaway testify-helper-check \
-        frontend-api-client-check font-size-token-check huma-route-check playwright-version-check script-tests guardrail-check race-times tidy svelte-skills svelte-skills-sync clean install-hooks help
+        frontend-api-client-check font-size-token-check huma-route-check playwright-version-check script-tests guardrail-check race-times tidy svelte-skills svelte-skills-sync clean install-hooks help \
+        dev-clone-db frontend-dev-clone-db
 
 # gotestsum prints package names on success and full output on failure,
 # while persisting raw `go test -json` events for downstream reporters.
@@ -123,6 +128,24 @@ githubapp-frontend: frontend-deps
 # Run Vite dev server with dependencies installed (use alongside `make dev`)
 frontend-dev:
 	./scripts/frontend-dev.sh $(ARGS)
+
+# Clone the configured database into this worktree and run the backend against it.
+# Override with DEV_CLONE_DB_DIR=... DEV_CLONE_PORT=... MIDDLEMAN_CONFIG=...
+dev-clone-db: ensure-embed-dir check-air
+	@clone_config="$$(MIDDLEMAN_DEV_CLONE_DIR="$(abspath $(DEV_CLONE_DB_DIR))" MIDDLEMAN_DEV_CLONE_PORT="$(DEV_CLONE_PORT)" ./scripts/dev-clone-db.sh)"; \
+		echo "cloned dev config: $$clone_config"; \
+		echo "cloned dev database: $(abspath $(DEV_CLONE_DB_DIR))/middleman.db"; \
+		echo "backend URL: http://127.0.0.1:$(DEV_CLONE_PORT)"; \
+		MIDDLEMAN_CONFIG="$$clone_config" MIDDLEMAN_LOG_FILE="$${MIDDLEMAN_LOG_FILE:-$(DEV_CLONE_BACKEND_LOG)}" GOFLAGS="$${GOFLAGS:+$$GOFLAGS }-buildvcs=false" $(MAKE) dev
+
+# Run Vite against the cloned database backend from `make dev-clone-db`.
+frontend-dev-clone-db:
+	@clone_config="$(abspath $(DEV_CLONE_DB_DIR))/config.toml"; \
+		if [ ! -f "$$clone_config" ]; then \
+			clone_config="$$(MIDDLEMAN_DEV_CLONE_DIR="$(abspath $(DEV_CLONE_DB_DIR))" MIDDLEMAN_DEV_CLONE_PORT="$(DEV_CLONE_PORT)" ./scripts/dev-clone-db.sh)"; \
+		fi; \
+		echo "frontend proxy config: $$clone_config"; \
+		MIDDLEMAN_CONFIG="$$clone_config" $(MAKE) frontend-dev ARGS="$${ARGS:---port $(DEV_CLONE_FRONTEND_PORT)}"
 
 # Run Vite+ dev server after installing dependencies with Bun; Node launches Vite+ (use alongside `make dev`)
 frontend-dev-bun: frontend-deps
@@ -354,6 +377,8 @@ help:
 	@echo "  dev            - Run Go server with air live reload, debug file logs, and info-level console logs"
 	@echo "  dev-ephemeral  - Run backend and frontend dev servers on free ports with copied DB state and status JSON"
 	@echo "  dev-ephemeral-stop - Stop the default ephemeral dev stack, or use STATUS=/path/to/dev-ephemeral.json"
+	@echo "  dev-clone-db   - Clone current DB into tmp/dev-db-clone and run backend on DEV_CLONE_PORT (default 8092)"
+	@echo "  frontend-dev-clone-db - Run Vite against cloned DB backend (default port $(DEV_CLONE_FRONTEND_PORT))"
 	@echo "  frontend-deps  - Install Bun workspace dependencies for frontend and packages/ui"
 	@echo "  vite-plus-install - Install global Vite+ launcher with Bun when vp is missing"
 	@echo "  frontend       - Build frontend SPA with Vite+"

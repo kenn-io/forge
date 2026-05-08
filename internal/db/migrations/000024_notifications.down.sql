@@ -1,0 +1,7 @@
+DROP TABLE IF EXISTS middleman_notification_sync_watermarks;
+DROP INDEX IF EXISTS idx_middleman_notification_items_ack_queue;
+DROP INDEX IF EXISTS idx_middleman_notification_items_item;
+DROP INDEX IF EXISTS idx_middleman_notification_items_reason;
+DROP INDEX IF EXISTS idx_middleman_notification_items_repo;
+DROP INDEX IF EXISTS idx_middleman_notification_items_inbox;
+DROP TABLE IF EXISTS middleman_notification_items;

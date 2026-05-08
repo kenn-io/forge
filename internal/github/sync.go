@@ -429,6 +429,8 @@ type Syncer struct {
 	running                  atomic.Bool
 	status                   atomic.Value // stores *SyncStatus
 	stopCh                   chan struct{}
+	notificationSyncMu       sync.RWMutex
+	notificationSync         NotificationSyncStatus
 	stopOnce                 sync.Once
 	wg                       sync.WaitGroup
 	// lifecycleMu serializes TriggerRun registration with Stop so
@@ -3145,6 +3147,13 @@ func (s *Syncer) syncRepoIdentity(ctx context.Context, repo RepoRef) (db.RepoIde
 }
 
 // syncRepo syncs one repository: open PRs, timeline events, and stale closures.
+func (s *Syncer) markClosedLinkedNotificationsDone(ctx context.Context) error {
+	if err := s.db.MarkClosedLinkedNotificationsDone(ctx, time.Now().UTC()); err != nil {
+		return fmt.Errorf("mark closed linked notifications done: %w", err)
+	}
+	return nil
+}
+
 func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
 	repoIdentity, resolvedRepo, err := s.syncRepoIdentity(ctx, repo)
 	if err != nil {
@@ -3198,6 +3207,14 @@ func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
 	s.syncRepoLabelCatalog(ctx, repo, repoID)
 
 	syncErr := s.indexSyncRepo(ctx, repo, repoID, cloneFetchOK)
+	if err := s.markClosedLinkedNotificationsDone(ctx); err != nil {
+		markErr := err
+		if syncErr == nil {
+			syncErr = markErr
+		} else {
+			syncErr = errors.Join(syncErr, markErr)
+		}
+	}
 
 	syncErrStr := ""
 	if syncErr != nil {
@@ -6844,6 +6861,9 @@ func (s *Syncer) fetchAndUpdateClosedIssue(
 	); err != nil {
 		return err
 	}
+	if err := s.markClosedLinkedNotificationsDone(ctx); err != nil {
+		return err
+	}
 
 	issue, err := s.db.GetIssueByRepoIDAndNumber(ctx, repoID, number)
 	if err != nil {
@@ -6859,7 +6879,7 @@ func (s *Syncer) fetchAndUpdateClosedIssue(
 		}
 	}
 
-	return nil
+	return s.markClosedLinkedNotificationsDone(ctx)
 }
 
 func (s *Syncer) fetchAndUpdateClosedPlatformIssue(
@@ -7554,6 +7574,9 @@ func (s *Syncer) syncMRForRepo(
 	if err != nil {
 		return fmt.Errorf("upsert MR #%d: %w", number, err)
 	}
+	if err := s.markClosedLinkedNotificationsDone(ctx); err != nil {
+		return err
+	}
 	// UpsertMergeRequest preserves ci_had_pending across upserts. Clear
 	// it here when the head SHA changed so a stale pending flag from
 	// the previous head doesn't survive across the refresh.
@@ -7638,6 +7661,12 @@ func (s *Syncer) syncMRForRepo(
 		}
 	}
 
+	if err := s.markClosedLinkedNotificationsDone(ctx); err != nil {
+		if diffErr != nil {
+			return errors.Join(diffErr, err)
+		}
+		return err
+	}
 	if diffErr != nil {
 		return diffErr
 	}
@@ -7914,7 +7943,7 @@ func (s *Syncer) syncIssueWithHost(
 	if _, err := s.fetchIssueDetail(ctx, repo, repoID, number); err != nil {
 		return err
 	}
-	return nil
+	return s.markClosedLinkedNotificationsDone(ctx)
 }
 
 // SyncItemByNumber fetches an item by number from GitHub, determines
@@ -8028,6 +8057,9 @@ func (s *Syncer) fetchAndUpdateClosed(ctx context.Context, repo RepoRef, repoID 
 	); err != nil {
 		return fmt.Errorf("update closed MR #%d: %w", number, err)
 	}
+	if err := s.markClosedLinkedNotificationsDone(ctx); err != nil {
+		return err
+	}
 
 	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoID, number)
 	if err != nil {
@@ -8082,7 +8114,7 @@ func (s *Syncer) fetchAndUpdateClosed(ctx context.Context, repo RepoRef, repoID 
 			}
 		}
 	}
-	return nil
+	return s.markClosedLinkedNotificationsDone(ctx)
 }
 
 func (s *Syncer) fetchAndUpdateClosedMergeRequest(

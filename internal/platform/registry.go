@@ -47,6 +47,17 @@ func (r *Registry) Provider(kind Kind, host string) (Provider, error) {
 	return provider, nil
 }
 
+func (r *Registry) Providers() []Provider {
+	if r == nil || len(r.providers) == 0 {
+		return nil
+	}
+	providers := make([]Provider, 0, len(r.providers))
+	for _, provider := range r.providers {
+		providers = append(providers, provider)
+	}
+	return providers
+}
+
 func (r *Registry) Capabilities(kind Kind, host string) (Capabilities, error) {
 	provider, err := r.Provider(kind, host)
 	if err != nil {

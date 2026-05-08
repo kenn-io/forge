@@ -338,6 +338,7 @@ command = ["codex", "--full-auto"]
 	assert.Equal("acme", resp.Repos[0].Owner)
 	assert.Equal(1, resp.Repos[0].MatchedRepoCount)
 	assert.Equal("threaded", resp.Activity.ViewMode)
+	assert.False(resp.Notifications.Enabled)
 	assert.Empty(resp.Terminal.FontFamily)
 	assert.Equal(config.DefaultTerminalFontSize, resp.Terminal.FontSize)
 	assert.Equal(config.DefaultTerminalScrollback, resp.Terminal.Scrollback)

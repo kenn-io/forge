@@ -68,6 +68,10 @@ func main() {
 		false,
 		"seed same host/repo_path under multiple providers",
 	)
+	notificationsEnabled := flag.Bool(
+		"notifications-enabled", true,
+		"enable notification inbox APIs and UI for e2e tests",
+	)
 	serverInfoFile := flag.String(
 		"server-info-file", "",
 		"path to write discovered server port info as JSON",
@@ -89,6 +93,7 @@ func main() {
 		*defaultPlatformHost,
 		*visibleImportedModes,
 		*providerCollision,
+		*notificationsEnabled,
 	); err != nil {
 		slog.Error("fatal", "err", err)
 		os.Exit(1)
@@ -673,6 +678,7 @@ type appOptions struct {
 	defaultPlatformHost  string
 	visibleImportedModes bool
 	providerCollision    bool
+	notificationsEnabled bool
 }
 
 // appState bundles everything one logical e2e server instance owns:
@@ -931,6 +937,7 @@ func buildAppState(
 		cfg.Modes = modes
 	}
 
+	cfg.Notifications.Enabled = &opts.notificationsEnabled
 	cfg.Roborev.Endpoint = roborevEndpoint
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("validate e2e config: %w", err)
@@ -1597,6 +1604,27 @@ func buildAppState(
 			return
 		}
 		if r.Method == http.MethodPost &&
+			r.URL.Path == "/__e2e/notifications/add-synced" {
+			number := 6
+			fc.Notifications = append(fc.Notifications, ghclient.NotificationThread{
+				ID:            "notif-tools-synced-6",
+				RepoOwner:     "acme",
+				RepoName:      "tools",
+				SubjectType:   "Issue",
+				SubjectTitle:  "Synced tools notification",
+				WebURL:        "https://github.com/acme/tools/issues/6",
+				ItemNumber:    &number,
+				ItemType:      "issue",
+				ItemAuthor:    "dave",
+				Reason:        "mention",
+				Unread:        true,
+				Participating: true,
+				UpdatedAt:     time.Now().UTC(),
+			})
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if r.Method == http.MethodPost &&
 			r.URL.Path == "/__e2e/pr-diff-summary/advance-head" {
 			repo, err := database.GetRepoByOwnerName(
 				r.Context(), "acme", "widgets",
@@ -1733,6 +1761,7 @@ func run(
 	roborevEndpoint, serverInfoFile, defaultPlatformHost string,
 	visibleImportedModes bool,
 	providerCollision bool,
+	notificationsEnabled bool,
 ) error {
 	assets, err := web.Assets()
 	if err != nil {
@@ -1744,6 +1773,7 @@ func run(
 		defaultPlatformHost:  defaultPlatformHost,
 		visibleImportedModes: visibleImportedModes,
 		providerCollision:    providerCollision,
+		notificationsEnabled: notificationsEnabled,
 	}
 
 	state, err := buildAppState(ctx, assets, baseOpts)
@@ -1803,6 +1833,7 @@ func run(
 				DefaultPlatformHost  string `json:"default_platform_host"`
 				VisibleImportedModes *bool  `json:"visible_imported_modes"`
 				ProviderCollision    *bool  `json:"provider_collision"`
+				NotificationsEnabled *bool  `json:"notifications_enabled"`
 			}
 			// An empty body resets to the startup options; a
 			// non-empty body must be valid JSON so option typos
@@ -1830,6 +1861,9 @@ func run(
 			}
 			if req.ProviderCollision != nil {
 				opts.providerCollision = *req.ProviderCollision
+			}
+			if req.NotificationsEnabled != nil {
+				opts.notificationsEnabled = *req.NotificationsEnabled
 			}
 
 			// Build against the process ctx, not r.Context(): a

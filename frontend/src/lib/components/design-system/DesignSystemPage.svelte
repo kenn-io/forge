@@ -146,6 +146,55 @@
         </article>
       </div>
     </section>
+
+    <section class="card grid" aria-labelledby="inbox-pattern-title">
+      <div class="section-header section-header--stacked">
+        <div>
+          <p class="section-kicker">Inbox</p>
+          <h2 id="inbox-pattern-title">Notification row states</h2>
+        </div>
+        <p class="section-copy">
+          Reference for Inbox rows: reason chips, linked PR metadata, external-only
+          subjects, and queued GitHub read propagation status.
+        </p>
+      </div>
+
+      <div class="inbox-examples" aria-label="Inbox notification examples">
+        <article class="inbox-row inbox-row--unread">
+          <div class="inbox-row-main">
+            <div class="inbox-title">Review requested on acme/widget#42</div>
+            <div class="inbox-meta">
+              <Chip size="sm" class="chip--purple">Review requested</Chip>
+              <Chip size="sm" class="chip--muted">PR #42</Chip>
+              <span>acme/widget</span>
+            </div>
+          </div>
+          <button class="demo-button" type="button">Done</button>
+        </article>
+
+        <article class="inbox-row">
+          <div class="inbox-row-main">
+            <div class="inbox-title">Discussion announcement</div>
+            <div class="inbox-meta">
+              <Chip size="sm" class="chip--teal">Mention</Chip>
+              <Chip size="sm" class="chip--muted">External</Chip>
+              <span>opens on GitHub</span>
+            </div>
+          </div>
+          <button class="demo-button" type="button">Open</button>
+        </article>
+
+        <article class="inbox-row">
+          <div class="inbox-row-main">
+            <div class="inbox-title">Queued read propagation</div>
+            <div class="inbox-meta">
+              <Chip size="sm" class="chip--amber">Queued</Chip>
+              <span>GitHub read update will sync in background</span>
+            </div>
+          </div>
+        </article>
+      </div>
+    </section>
   </div>
 </div>
 
@@ -282,6 +331,58 @@
     padding: 16px;
     display: grid;
     gap: 12px;
+  }
+
+  .inbox-examples {
+    display: grid;
+    gap: 10px;
+  }
+
+  .inbox-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    border: 1px solid var(--border-muted);
+    border-radius: 14px;
+    background: var(--bg-inset);
+    padding: 14px 16px;
+  }
+
+  .inbox-row--unread {
+    border-color: color-mix(in srgb, var(--accent-blue) 42%, var(--border-muted));
+    box-shadow: inset 3px 0 0 var(--accent-blue);
+  }
+
+  .inbox-row-main {
+    display: grid;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .inbox-title {
+    color: var(--text-primary);
+    font-size: 14px;
+    font-weight: 650;
+  }
+
+  .inbox-meta {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    color: var(--text-secondary);
+    font-size: 12px;
+  }
+
+  .demo-button {
+    border: 1px solid var(--border-default);
+    border-radius: 8px;
+    background: var(--bg-surface);
+    color: var(--text-primary);
+    font-size: 12px;
+    font-weight: 650;
+    padding: 6px 10px;
   }
 
   h3 {

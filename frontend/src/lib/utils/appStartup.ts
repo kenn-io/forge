@@ -64,6 +64,7 @@ export function runAppStartup(deps: AppStartupDeps): () => void {
         stores.settings.setModeVisibility(settings.modes);
         stores.settings.setTerminalSettings(settings.terminal);
         stores.activity.hydrateDefaults(settings.activity);
+        stores.settings.setNotificationsEnabled(settings.notifications.enabled);
       }
     } catch (err) {
       if (cancelled) return;

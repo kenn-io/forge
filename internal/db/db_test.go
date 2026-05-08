@@ -47,6 +47,8 @@ func TestOpenAndSchema(t *testing.T) {
 		"middleman_mr_review_threads",
 		"middleman_project_worktree_runtime_sessions",
 		"middleman_host_runtime_sessions",
+		"middleman_notification_items",
+		"middleman_notification_sync_watermarks",
 	}
 	for _, tbl := range tables {
 		var name string
@@ -91,6 +93,44 @@ func TestOpenAndSchema(t *testing.T) {
 			require.Equal(column, found)
 		}
 	}
+}
+
+func TestOpenMigratesNotificationSchemaFromVersion18(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "notifications-v18.db")
+
+	d, err := Open(path)
+	require.NoError(err)
+	require.NoError(d.Close())
+
+	raw, err := sql.Open("sqlite", path)
+	require.NoError(err)
+	_, err = raw.Exec(`
+		DROP TABLE IF EXISTS middleman_notification_sync_watermarks;
+		DROP TABLE IF EXISTS middleman_notification_items;
+		UPDATE schema_migrations SET version = 18, dirty = FALSE`)
+	require.NoError(err)
+	require.NoError(raw.Close())
+
+	reopened, err := Open(path)
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(reopened.Close()) })
+
+	require.True(tableExistsForTest(t, reopened.ReadDB(), "middleman_notification_items"))
+	require.True(tableExistsForTest(t, reopened.ReadDB(), "middleman_notification_sync_watermarks"))
+	require.True(hasIndex(reopened.ReadDB(), "idx_middleman_notification_items_inbox"))
+	require.True(hasIndex(reopened.ReadDB(), "idx_middleman_notification_items_ack_queue"))
+
+	version := latestMigrationVersionForTest(t)
+	var actualVersion int
+	var dirty bool
+	err = reopened.ReadDB().QueryRow(
+		`SELECT version, dirty FROM schema_migrations LIMIT 1`,
+	).Scan(&actualVersion, &dirty)
+	require.NoError(err)
+	require.Equal(version, actualVersion)
+	require.False(dirty)
 }
 
 func TestOpenCreatesFile(t *testing.T) {

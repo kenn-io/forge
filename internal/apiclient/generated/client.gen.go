@@ -1773,6 +1773,92 @@ type Node struct {
 	Size     *int64  `json:"size,omitempty"`
 }
 
+// NotificationBulkFailure defines model for NotificationBulkFailure.
+type NotificationBulkFailure struct {
+	Error string `json:"error"`
+	Id    int64  `json:"id"`
+}
+
+// NotificationBulkInputBody defines model for NotificationBulkInputBody.
+type NotificationBulkInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema   *string  `json:"$schema,omitempty"`
+	Ids      *[]int64 `json:"ids"`
+	MarkRead *bool    `json:"mark_read,omitempty"`
+}
+
+// NotificationBulkResponse defines model for NotificationBulkResponse.
+type NotificationBulkResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema    *string                    `json:"$schema,omitempty"`
+	Failed    *[]NotificationBulkFailure `json:"failed"`
+	Queued    *[]int64                   `json:"queued"`
+	Succeeded *[]int64                   `json:"succeeded"`
+}
+
+// NotificationResponse defines model for NotificationResponse.
+type NotificationResponse struct {
+	DoneAt                  *string `json:"done_at,omitempty"`
+	DoneReason              string  `json:"done_reason"`
+	GithubLastReadAt        *string `json:"github_last_read_at,omitempty"`
+	GithubReadAttempts      int64   `json:"github_read_attempts"`
+	GithubReadError         string  `json:"github_read_error"`
+	GithubReadLastAttemptAt *string `json:"github_read_last_attempt_at,omitempty"`
+	GithubReadNextAttemptAt *string `json:"github_read_next_attempt_at,omitempty"`
+	GithubReadQueuedAt      *string `json:"github_read_queued_at,omitempty"`
+	GithubReadSyncedAt      *string `json:"github_read_synced_at,omitempty"`
+	GithubUpdatedAt         string  `json:"github_updated_at"`
+	Id                      int64   `json:"id"`
+	ItemAuthor              string  `json:"item_author"`
+	ItemNumber              *int64  `json:"item_number,omitempty"`
+	ItemType                string  `json:"item_type"`
+	Participating           bool    `json:"participating"`
+	PlatformHost            string  `json:"platform_host"`
+	PlatformThreadId        string  `json:"platform_thread_id"`
+	Provider                string  `json:"provider"`
+	Reason                  string  `json:"reason"`
+	RepoName                string  `json:"repo_name"`
+	RepoOwner               string  `json:"repo_owner"`
+	RepoPath                string  `json:"repo_path"`
+	SubjectLatestCommentUrl string  `json:"subject_latest_comment_url"`
+	SubjectTitle            string  `json:"subject_title"`
+	SubjectType             string  `json:"subject_type"`
+	SubjectUrl              string  `json:"subject_url"`
+	Unread                  bool    `json:"unread"`
+	WebUrl                  string  `json:"web_url"`
+}
+
+// NotificationSummaryResponse defines model for NotificationSummaryResponse.
+type NotificationSummaryResponse struct {
+	ByReason    map[string]int64 `json:"by_reason"`
+	ByRepo      map[string]int64 `json:"by_repo"`
+	Done        int64            `json:"done"`
+	TotalActive int64            `json:"total_active"`
+	Unread      int64            `json:"unread"`
+}
+
+// NotificationSyncStatusResponse defines model for NotificationSyncStatusResponse.
+type NotificationSyncStatusResponse struct {
+	LastError      string  `json:"last_error"`
+	LastFinishedAt *string `json:"last_finished_at,omitempty"`
+	LastStartedAt  *string `json:"last_started_at,omitempty"`
+	Running        bool    `json:"running"`
+}
+
+// NotificationsResponse defines model for NotificationsResponse.
+type NotificationsResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema  *string                        `json:"$schema,omitempty"`
+	Items   *[]NotificationResponse        `json:"items"`
+	Summary NotificationSummaryResponse    `json:"summary"`
+	Sync    NotificationSyncStatusResponse `json:"sync"`
+}
+
+// NotificationsSettingsResponse defines model for NotificationsSettingsResponse.
+type NotificationsSettingsResponse struct {
+	Enabled bool `json:"enabled"`
+}
+
 // OperationAvailability defines model for OperationAvailability.
 type OperationAvailability struct {
 	Available          bool    `json:"available"`
@@ -2527,13 +2613,14 @@ type SetWorktreeSessionBackendInputBody struct {
 // SettingsResponse defines model for SettingsResponse.
 type SettingsResponse struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema   *string                `json:"$schema,omitempty"`
-	Activity Activity               `json:"activity"`
-	Agents   []Agent                `json:"agents"`
-	Fleet    FleetSettingsResponse  `json:"fleet"`
-	Modes    *ModeVisibility        `json:"modes,omitempty"`
-	Repos    []ConfiguredRepoStatus `json:"repos"`
-	Terminal Terminal               `json:"terminal"`
+	Schema        *string                       `json:"$schema,omitempty"`
+	Activity      Activity                      `json:"activity"`
+	Agents        []Agent                       `json:"agents"`
+	Fleet         FleetSettingsResponse         `json:"fleet"`
+	Modes         *ModeVisibility               `json:"modes,omitempty"`
+	Notifications NotificationsSettingsResponse `json:"notifications"`
+	Repos         []ConfiguredRepoStatus        `json:"repos"`
+	Terminal      Terminal                      `json:"terminal"`
 }
 
 // Snapshot defines model for Snapshot.
@@ -3153,6 +3240,18 @@ type SearchMsgvaultParams struct {
 	PageSize *int64  `form:"page_size,omitempty" json:"page_size,omitempty"`
 }
 
+// ListNotificationsParams defines parameters for ListNotifications.
+type ListNotificationsParams struct {
+	State  *string   `form:"state,omitempty" json:"state,omitempty"`
+	Reason *[]string `form:"reason,omitempty" json:"reason,omitempty"`
+	Type   *[]string `form:"type,omitempty" json:"type,omitempty"`
+	Repo   *string   `form:"repo,omitempty" json:"repo,omitempty"`
+	Q      *string   `form:"q,omitempty" json:"q,omitempty"`
+	Sort   *string   `form:"sort,omitempty" json:"sort,omitempty"`
+	Limit  *int64    `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset *int64    `form:"offset,omitempty" json:"offset,omitempty"`
+}
+
 // ListUserRepositoriesParams defines parameters for ListUserRepositories.
 type ListUserRepositoriesParams struct {
 	Provider     *string `form:"provider,omitempty" json:"provider,omitempty"`
@@ -3486,6 +3585,15 @@ type ReplaceMessagesSavedSearchesJSONRequestBody = ReplaceMessagesSavedSearchesI
 
 // ConfigureMsgvaultJSONRequestBody defines body for ConfigureMsgvault for application/json ContentType.
 type ConfigureMsgvaultJSONRequestBody ConfigureMsgvaultJSONBody
+
+// MarkNotificationsDoneJSONRequestBody defines body for MarkNotificationsDone for application/json ContentType.
+type MarkNotificationsDoneJSONRequestBody = NotificationBulkInputBody
+
+// MarkNotificationsReadJSONRequestBody defines body for MarkNotificationsRead for application/json ContentType.
+type MarkNotificationsReadJSONRequestBody = NotificationBulkInputBody
+
+// MarkNotificationsUndoneJSONRequestBody defines body for MarkNotificationsUndone for application/json ContentType.
+type MarkNotificationsUndoneJSONRequestBody = NotificationBulkInputBody
 
 // RegisterProjectJSONRequestBody defines body for RegisterProject for application/json ContentType.
 type RegisterProjectJSONRequestBody = RegisterProjectInputBody
@@ -4194,6 +4302,27 @@ type ClientInterface interface {
 
 	// GetMsgvaultThread request
 	GetMsgvaultThread(ctx context.Context, conversationId int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListNotifications request
+	ListNotifications(ctx context.Context, params *ListNotificationsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// MarkNotificationsDoneWithBody request with any body
+	MarkNotificationsDoneWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	MarkNotificationsDone(ctx context.Context, body MarkNotificationsDoneJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// MarkNotificationsReadWithBody request with any body
+	MarkNotificationsReadWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	MarkNotificationsRead(ctx context.Context, body MarkNotificationsReadJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SyncNotifications request
+	SyncNotifications(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// MarkNotificationsUndoneWithBody request with any body
+	MarkNotificationsUndoneWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	MarkNotificationsUndone(ctx context.Context, body MarkNotificationsUndoneJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListUserRepositories request
 	ListUserRepositories(ctx context.Context, params *ListUserRepositoriesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -6866,6 +6995,102 @@ func (c *Client) SearchMsgvault(ctx context.Context, params *SearchMsgvaultParam
 
 func (c *Client) GetMsgvaultThread(ctx context.Context, conversationId int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetMsgvaultThreadRequest(c.Server, conversationId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ListNotifications(ctx context.Context, params *ListNotificationsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListNotificationsRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) MarkNotificationsDoneWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewMarkNotificationsDoneRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) MarkNotificationsDone(ctx context.Context, body MarkNotificationsDoneJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewMarkNotificationsDoneRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) MarkNotificationsReadWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewMarkNotificationsReadRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) MarkNotificationsRead(ctx context.Context, body MarkNotificationsReadJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewMarkNotificationsReadRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SyncNotifications(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSyncNotificationsRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) MarkNotificationsUndoneWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewMarkNotificationsUndoneRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) MarkNotificationsUndone(ctx context.Context, body MarkNotificationsUndoneJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewMarkNotificationsUndoneRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -17168,6 +17393,291 @@ func NewGetMsgvaultThreadRequest(server string, conversationId int64) (*http.Req
 	return req, nil
 }
 
+// NewListNotificationsRequest generates requests for ListNotifications
+func NewListNotificationsRequest(server string, params *ListNotificationsParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/notifications")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.State != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "state", *params.State, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Reason != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "reason", *params.Reason, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "array", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Type != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "type", *params.Type, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "array", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Repo != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "repo", *params.Repo, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Q != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "q", *params.Q, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Sort != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "sort", *params.Sort, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Offset != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "offset", *params.Offset, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewMarkNotificationsDoneRequest calls the generic MarkNotificationsDone builder with application/json body
+func NewMarkNotificationsDoneRequest(server string, body MarkNotificationsDoneJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewMarkNotificationsDoneRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewMarkNotificationsDoneRequestWithBody generates requests for MarkNotificationsDone with any type of body
+func NewMarkNotificationsDoneRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/notifications/done")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewMarkNotificationsReadRequest calls the generic MarkNotificationsRead builder with application/json body
+func NewMarkNotificationsReadRequest(server string, body MarkNotificationsReadJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewMarkNotificationsReadRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewMarkNotificationsReadRequestWithBody generates requests for MarkNotificationsRead with any type of body
+func NewMarkNotificationsReadRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/notifications/read")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewSyncNotificationsRequest generates requests for SyncNotifications
+func NewSyncNotificationsRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/notifications/sync")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewMarkNotificationsUndoneRequest calls the generic MarkNotificationsUndone builder with application/json body
+func NewMarkNotificationsUndoneRequest(server string, body MarkNotificationsUndoneJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewMarkNotificationsUndoneRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewMarkNotificationsUndoneRequestWithBody generates requests for MarkNotificationsUndone with any type of body
+func NewMarkNotificationsUndoneRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/notifications/undone")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewListUserRepositoriesRequest generates requests for ListUserRepositories
 func NewListUserRepositoriesRequest(server string, params *ListUserRepositoriesParams) (*http.Request, error) {
 	var err error
@@ -23497,6 +24007,27 @@ type ClientWithResponsesInterface interface {
 	// GetMsgvaultThreadWithResponse request
 	GetMsgvaultThreadWithResponse(ctx context.Context, conversationId int64, reqEditors ...RequestEditorFn) (*GetMsgvaultThreadResponse, error)
 
+	// ListNotificationsWithResponse request
+	ListNotificationsWithResponse(ctx context.Context, params *ListNotificationsParams, reqEditors ...RequestEditorFn) (*ListNotificationsResponse, error)
+
+	// MarkNotificationsDoneWithBodyWithResponse request with any body
+	MarkNotificationsDoneWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*MarkNotificationsDoneResponse, error)
+
+	MarkNotificationsDoneWithResponse(ctx context.Context, body MarkNotificationsDoneJSONRequestBody, reqEditors ...RequestEditorFn) (*MarkNotificationsDoneResponse, error)
+
+	// MarkNotificationsReadWithBodyWithResponse request with any body
+	MarkNotificationsReadWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*MarkNotificationsReadResponse, error)
+
+	MarkNotificationsReadWithResponse(ctx context.Context, body MarkNotificationsReadJSONRequestBody, reqEditors ...RequestEditorFn) (*MarkNotificationsReadResponse, error)
+
+	// SyncNotificationsWithResponse request
+	SyncNotificationsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*SyncNotificationsResponse, error)
+
+	// MarkNotificationsUndoneWithBodyWithResponse request with any body
+	MarkNotificationsUndoneWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*MarkNotificationsUndoneResponse, error)
+
+	MarkNotificationsUndoneWithResponse(ctx context.Context, body MarkNotificationsUndoneJSONRequestBody, reqEditors ...RequestEditorFn) (*MarkNotificationsUndoneResponse, error)
+
 	// ListUserRepositoriesWithResponse request
 	ListUserRepositoriesWithResponse(ctx context.Context, params *ListUserRepositoriesParams, reqEditors ...RequestEditorFn) (*ListUserRepositoriesResponse, error)
 
@@ -26948,6 +27479,120 @@ func (r GetMsgvaultThreadResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r GetMsgvaultThreadResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ListNotificationsResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *NotificationsResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r ListNotificationsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListNotificationsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type MarkNotificationsDoneResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *NotificationBulkResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r MarkNotificationsDoneResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r MarkNotificationsDoneResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type MarkNotificationsReadResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *NotificationBulkResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r MarkNotificationsReadResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r MarkNotificationsReadResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type SyncNotificationsResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r SyncNotificationsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SyncNotificationsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type MarkNotificationsUndoneResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *NotificationBulkResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r MarkNotificationsUndoneResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r MarkNotificationsUndoneResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -31100,6 +31745,75 @@ func (c *ClientWithResponses) GetMsgvaultThreadWithResponse(ctx context.Context,
 		return nil, err
 	}
 	return ParseGetMsgvaultThreadResponse(rsp)
+}
+
+// ListNotificationsWithResponse request returning *ListNotificationsResponse
+func (c *ClientWithResponses) ListNotificationsWithResponse(ctx context.Context, params *ListNotificationsParams, reqEditors ...RequestEditorFn) (*ListNotificationsResponse, error) {
+	rsp, err := c.ListNotifications(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListNotificationsResponse(rsp)
+}
+
+// MarkNotificationsDoneWithBodyWithResponse request with arbitrary body returning *MarkNotificationsDoneResponse
+func (c *ClientWithResponses) MarkNotificationsDoneWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*MarkNotificationsDoneResponse, error) {
+	rsp, err := c.MarkNotificationsDoneWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseMarkNotificationsDoneResponse(rsp)
+}
+
+func (c *ClientWithResponses) MarkNotificationsDoneWithResponse(ctx context.Context, body MarkNotificationsDoneJSONRequestBody, reqEditors ...RequestEditorFn) (*MarkNotificationsDoneResponse, error) {
+	rsp, err := c.MarkNotificationsDone(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseMarkNotificationsDoneResponse(rsp)
+}
+
+// MarkNotificationsReadWithBodyWithResponse request with arbitrary body returning *MarkNotificationsReadResponse
+func (c *ClientWithResponses) MarkNotificationsReadWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*MarkNotificationsReadResponse, error) {
+	rsp, err := c.MarkNotificationsReadWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseMarkNotificationsReadResponse(rsp)
+}
+
+func (c *ClientWithResponses) MarkNotificationsReadWithResponse(ctx context.Context, body MarkNotificationsReadJSONRequestBody, reqEditors ...RequestEditorFn) (*MarkNotificationsReadResponse, error) {
+	rsp, err := c.MarkNotificationsRead(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseMarkNotificationsReadResponse(rsp)
+}
+
+// SyncNotificationsWithResponse request returning *SyncNotificationsResponse
+func (c *ClientWithResponses) SyncNotificationsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*SyncNotificationsResponse, error) {
+	rsp, err := c.SyncNotifications(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSyncNotificationsResponse(rsp)
+}
+
+// MarkNotificationsUndoneWithBodyWithResponse request with arbitrary body returning *MarkNotificationsUndoneResponse
+func (c *ClientWithResponses) MarkNotificationsUndoneWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*MarkNotificationsUndoneResponse, error) {
+	rsp, err := c.MarkNotificationsUndoneWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseMarkNotificationsUndoneResponse(rsp)
+}
+
+func (c *ClientWithResponses) MarkNotificationsUndoneWithResponse(ctx context.Context, body MarkNotificationsUndoneJSONRequestBody, reqEditors ...RequestEditorFn) (*MarkNotificationsUndoneResponse, error) {
+	rsp, err := c.MarkNotificationsUndone(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseMarkNotificationsUndoneResponse(rsp)
 }
 
 // ListUserRepositoriesWithResponse request returning *ListUserRepositoriesResponse
@@ -36687,6 +37401,164 @@ func ParseGetMsgvaultThreadResponse(rsp *http.Response) (*GetMsgvaultThreadRespo
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest MsgvaultThreadBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListNotificationsResponse parses an HTTP response from a ListNotificationsWithResponse call
+func ParseListNotificationsResponse(rsp *http.Response) (*ListNotificationsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListNotificationsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest NotificationsResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseMarkNotificationsDoneResponse parses an HTTP response from a MarkNotificationsDoneWithResponse call
+func ParseMarkNotificationsDoneResponse(rsp *http.Response) (*MarkNotificationsDoneResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &MarkNotificationsDoneResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest NotificationBulkResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseMarkNotificationsReadResponse parses an HTTP response from a MarkNotificationsReadWithResponse call
+func ParseMarkNotificationsReadResponse(rsp *http.Response) (*MarkNotificationsReadResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &MarkNotificationsReadResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest NotificationBulkResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseSyncNotificationsResponse parses an HTTP response from a SyncNotificationsWithResponse call
+func ParseSyncNotificationsResponse(rsp *http.Response) (*SyncNotificationsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SyncNotificationsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseMarkNotificationsUndoneResponse parses an HTTP response from a MarkNotificationsUndoneWithResponse call
+func ParseMarkNotificationsUndoneResponse(rsp *http.Response) (*MarkNotificationsUndoneResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &MarkNotificationsUndoneResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest NotificationBulkResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

@@ -52,6 +52,7 @@
   type ModeKey = keyof ModeVisibility;
   type NavDestination =
     | "activity"
+    | "inbox"
     | "repos"
     | "kata"
     | "docs"
@@ -115,6 +116,10 @@
     const options: { value: CompactNavValue; label: string }[] = modeNavOptions
       .filter((option) => settings.isModeVisible(option.mode))
       .map(({ value, label }) => ({ value, label }));
+    if (settings.notificationsEnabled()) {
+      const inboxAt = options.findIndex((option) => option.value === "activity") + 1;
+      options.splice(inboxAt, 0, { value: "inbox", label: "Inbox" });
+    }
 
     if (getPage() === "design-system") {
       options.push({ value: "design-system", label: "Design system" });
@@ -163,6 +168,7 @@
   function navigateTab(
     destination:
       | "activity"
+      | "inbox"
       | "repos"
       | "kata"
       | "docs"
@@ -178,6 +184,7 @@
     const currentMode = stickyModeForPage(getPage());
     rememberCurrentStickyModeRoute();
     if (destination === "activity") navigate(getLastActivityRoute());
+    else if (destination === "inbox") navigate("/inbox");
     else if (destination === "repos") navigate("/repos");
     else if (destination === "kata" || destination === "docs" || destination === "messages") {
       if (currentMode === destination) {
@@ -198,6 +205,7 @@
 
   function navigateCompactNav(value: string): void {
     if (value === "activity") navigateTab("activity");
+    else if (value === "inbox" && settings.notificationsEnabled()) navigateTab("inbox");
     else if (value === "repos") navigateTab("repos");
     else if (value === "kata") navigateTab("kata");
     else if (value === "docs") navigateTab("docs");
@@ -269,6 +277,11 @@
             Activity
           </button>
         {/if}
+        {#if settings.notificationsEnabled()}
+          <button class="view-tab" class:active={getPage() === "inbox"} onclick={() => navigateTab("inbox")}>
+            Inbox
+          </button>
+        {/if}
         {#if showMode("repos")}
           <button class="view-tab" class:active={getPage() === "repos"} onclick={() => navigateTab("repos")}>
             Repos
@@ -321,6 +334,41 @@
             onclick={() => navigateTab("workspaces")}
           >Workspaces</button>
         {/if}
+=======
+        <button class="view-tab" class:active={getPage() === "activity"} onclick={() => { if (getPage() !== "activity") navigateTab("activity"); }}>
+          Activity
+        </button>
+        {#if settings.notificationsEnabled()}
+          <button class="view-tab" class:active={getPage() === "inbox"} onclick={() => navigateTab("inbox")}>
+            Inbox
+          </button>
+        {/if}
+        <button class="view-tab" class:active={getPage() === "repos"} onclick={() => navigateTab("repos")}>
+          Repos
+        </button>
+        <button class="view-tab" class:active={getPage() === "pulls"} onclick={() => navigateTab("pulls")}>
+          PRs
+        </button>
+        <button class="view-tab" class:active={getPage() === "issues"} onclick={() => navigateTab("issues")}>
+          Issues
+        </button>
+        <button class="view-tab" class:active={getView() === "board"} onclick={() => navigateTab("board")}>
+          Board
+        </button>
+        <button class="view-tab"
+          class:active={getPage() === "reviews"}
+          onclick={() => navigateTab("reviews")}>
+          Reviews
+          {#if stores.roborevDaemon && !stores.roborevDaemon.isAvailable()}
+            <span class="daemon-indicator" title="Daemon unavailable"></span>
+          {/if}
+        </button>
+        <button
+          class="view-tab"
+          class:active={getPage() === "workspaces" || getPage() === "terminal"}
+          onclick={() => navigateTab("workspaces")}
+        >Workspaces</button>
+>>>>>>> cf1666382 (feat: add provider-neutral notification inbox triage)
       </div>
     {/if}
   </nav>

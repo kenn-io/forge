@@ -17,11 +17,21 @@ export type EmbedEmptyReason = "noSelection" | "noRepo" | "noWorkspace";
 
 export type EmbedDetailTab = "pr" | "issue" | "reviews";
 
+export type InboxRouteFilters = {
+  state?: "unread" | "active" | "read" | "done" | "all" | undefined;
+  reason?: string[] | undefined;
+  type?: string[] | undefined;
+  repo?: string | undefined;
+  q?: string | undefined;
+  sort?: string | undefined;
+};
+
 export type Route =
   | { page: "activity" }
   | { page: "mobile-activity" }
   | { page: "mobile-pulls" }
   | { page: "mobile-issues" }
+  | { page: "inbox"; filters?: InboxRouteFilters }
   | { page: "design-system" }
   | { page: "repos" }
   | { page: "kata"; issue?: string; view?: KataTaskViewName; scope?: string }
@@ -135,8 +145,14 @@ function parseProviderNumberedPath(
 ): NumberedItemRef | undefined {
   if (parts.length < start + 4) return undefined;
   const provider = decodeRouteSegment(parts[start] ?? "")?.trim();
-  const owner = decodeRouteSegment(parts[start + 1] ?? "")?.replace(/^\/+|\/+$/g, "");
-  const name = decodeRouteSegment(parts[start + 2] ?? "")?.replace(/^\/+|\/+$/g, "");
+  const owner = decodeRouteSegment(parts[start + 1] ?? "")?.replace(
+    /^\/+|\/+$/g,
+    "",
+  );
+  const name = decodeRouteSegment(parts[start + 2] ?? "")?.replace(
+    /^\/+|\/+$/g,
+    "",
+  );
   const numberText = decodeRouteSegment(parts[start + 3] ?? "");
   if (!provider || !owner || !name || !numberText) return undefined;
 
@@ -187,6 +203,52 @@ function splitRepoPath(repoPath: string): { owner: string; name: string } | unde
   };
 }
 
+const validInboxStates = new Set(["unread", "active", "read", "done", "all"]);
+
+function nonEmptyValues(sp: URLSearchParams, key: string): string[] {
+  return sp
+    .getAll(key)
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
+function parseInboxFilters(search: string): InboxRouteFilters | undefined {
+  const sp = new URLSearchParams(search);
+  const filters: InboxRouteFilters = {};
+  const state = sp.get("state")?.trim();
+  if (state && validInboxStates.has(state)) {
+    filters.state = state as InboxRouteFilters["state"];
+  }
+  const reason = nonEmptyValues(sp, "reason");
+  if (reason.length > 0) filters.reason = reason;
+  const type = nonEmptyValues(sp, "type");
+  if (type.length > 0) filters.type = type;
+  const repo = sp.get("repo")?.trim();
+  if (repo) filters.repo = repo;
+  const q = sp.get("q")?.trim();
+  if (q) filters.q = q;
+  const sort = sp.get("sort")?.trim();
+  if (sort) filters.sort = sort;
+  return Object.keys(filters).length > 0 ? filters : undefined;
+}
+
+export function buildInboxRoute(filters: InboxRouteFilters = {}): string {
+  const sp = new URLSearchParams();
+  if (filters.state && filters.state !== "unread")
+    sp.set("state", filters.state);
+  for (const reason of filters.reason ?? []) {
+    if (reason) sp.append("reason", reason);
+  }
+  for (const type of filters.type ?? []) {
+    if (type) sp.append("type", type);
+  }
+  if (filters.repo) sp.set("repo", filters.repo);
+  if (filters.q) sp.set("q", filters.q);
+  if (filters.sort && filters.sort !== "priority") sp.set("sort", filters.sort);
+  const query = sp.toString();
+  return query ? `/inbox?${query}` : "/inbox";
+}
+
 function parseRoute(fullPath: string): Route {
   const qIdx = fullPath.indexOf("?");
   const pathname = qIdx >= 0 ? fullPath.slice(0, qIdx) : fullPath;
@@ -220,7 +282,11 @@ function parseRoute(fullPath: string): Route {
     const pull = parseHostProviderNumberedPath(parts, "pulls", 1);
     const isPullFiles = parts[parts.length - 1] === "files";
     const focusPullLength = parts[1] === "host" ? 8 : 6;
-    if (pull && (parts.length === focusPullLength || (isPullFiles && parts.length === focusPullLength + 1))) {
+    if (
+      pull &&
+      (parts.length === focusPullLength ||
+        (isPullFiles && parts.length === focusPullLength + 1))
+    ) {
       return {
         page: "focus",
         itemType: "pr",
@@ -236,6 +302,10 @@ function parseRoute(fullPath: string): Route {
         ...issue,
       };
     }
+  }
+  if (path === "/inbox") {
+    const filters = parseInboxFilters(search);
+    return filters ? { page: "inbox", filters } : { page: "inbox" };
   }
   if (path === "/design-system") {
     return { page: "design-system" };
@@ -560,6 +630,8 @@ function buildRouteEvent(r: Route): MiddlemanNavigateEvent {
     navType = "docs";
   } else if (r.page === "messages") {
     navType = "messages";
+  } else if (r.page === "inbox") {
+    navType = "activity";
   } else if (r.page === "reviews") {
     navType = "reviews";
   } else if (isWorkspacePage(r.page)) {
@@ -712,7 +784,8 @@ export function setView(v: View): void {
 
 export function getTab(): Tab {
   if (route.page === "pulls" || route.page === "mobile-pulls") return "pulls";
-  if (route.page === "issues" || route.page === "mobile-issues") return "issues";
+  if (route.page === "issues" || route.page === "mobile-issues")
+    return "issues";
   return "pulls";
 }
 

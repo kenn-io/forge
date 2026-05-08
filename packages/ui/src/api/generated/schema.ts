@@ -2042,6 +2042,91 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/notifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List notifications */
+        get: operations["list-notifications"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/notifications/done": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark notifications done */
+        post: operations["mark-notifications-done"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/notifications/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark notifications read */
+        post: operations["mark-notifications-read"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/notifications/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Sync notifications */
+        post: operations["sync-notifications"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/notifications/undone": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark notifications undone */
+        post: operations["mark-notifications-undone"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/platform/user-repositories": {
         parameters: {
             query?: never;
@@ -5245,6 +5330,99 @@ export interface components {
             /** Format: int64 */
             size?: number;
         };
+        NotificationBulkFailure: {
+            error: string;
+            /** Format: int64 */
+            id: number;
+        };
+        NotificationBulkInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/NotificationBulkInputBody.json
+             */
+            readonly $schema?: string;
+            ids: number[] | null;
+            mark_read?: boolean;
+        };
+        NotificationBulkResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/NotificationBulkResponse.json
+             */
+            readonly $schema?: string;
+            failed: components["schemas"]["NotificationBulkFailure"][] | null;
+            queued: number[] | null;
+            succeeded: number[] | null;
+        };
+        NotificationResponse: {
+            done_at?: string;
+            done_reason: string;
+            github_last_read_at?: string;
+            /** Format: int64 */
+            github_read_attempts: number;
+            github_read_error: string;
+            github_read_last_attempt_at?: string;
+            github_read_next_attempt_at?: string;
+            github_read_queued_at?: string;
+            github_read_synced_at?: string;
+            github_updated_at: string;
+            /** Format: int64 */
+            id: number;
+            item_author: string;
+            /** Format: int64 */
+            item_number?: number;
+            item_type: string;
+            participating: boolean;
+            platform_host: string;
+            platform_thread_id: string;
+            provider: string;
+            reason: string;
+            repo_name: string;
+            repo_owner: string;
+            repo_path: string;
+            subject_latest_comment_url: string;
+            subject_title: string;
+            subject_type: string;
+            subject_url: string;
+            unread: boolean;
+            web_url: string;
+        };
+        NotificationSummaryResponse: {
+            by_reason: {
+                [key: string]: number;
+            };
+            by_repo: {
+                [key: string]: number;
+            };
+            /** Format: int64 */
+            done: number;
+            /** Format: int64 */
+            total_active: number;
+            /** Format: int64 */
+            unread: number;
+        };
+        NotificationSyncStatusResponse: {
+            last_error: string;
+            last_finished_at?: string;
+            last_started_at?: string;
+            running: boolean;
+        };
+        NotificationsResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/NotificationsResponse.json
+             */
+            readonly $schema?: string;
+            items: components["schemas"]["NotificationResponse"][] | null;
+            summary: components["schemas"]["NotificationSummaryResponse"];
+            sync: components["schemas"]["NotificationSyncStatusResponse"];
+        };
+        NotificationsSettingsResponse: {
+            enabled: boolean;
+        };
         OperationAvailability: {
             available: boolean;
             code?: string;
@@ -6115,6 +6293,7 @@ export interface components {
             agents: components["schemas"]["Agent"][];
             fleet: components["schemas"]["FleetSettingsResponse"];
             modes?: components["schemas"]["ModeVisibility"];
+            notifications: components["schemas"]["NotificationsSettingsResponse"];
             repos: components["schemas"]["ConfiguredRepoStatus"][];
             terminal: components["schemas"]["Terminal"];
         };
@@ -11066,6 +11245,170 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MsgvaultThreadBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "list-notifications": {
+        parameters: {
+            query?: {
+                state?: string;
+                reason?: string[] | null;
+                type?: string[] | null;
+                repo?: string;
+                q?: string;
+                sort?: string;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationsResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "mark-notifications-done": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NotificationBulkInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationBulkResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "mark-notifications-read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NotificationBulkInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationBulkResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "sync-notifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "mark-notifications-undone": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NotificationBulkInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationBulkResponse"];
                 };
             };
             /** @description Error */

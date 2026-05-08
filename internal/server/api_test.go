@@ -220,6 +220,8 @@ type mockGH struct {
 	rateLimitSnapshotFn        func(context.Context) (*ghclient.RateLimitSnapshot, error)
 	rateLimitSnapshotCalls     int
 	listIssueCommentsErr       error
+	listNotificationsFn        func(context.Context, ghclient.NotificationListOptions) ([]ghclient.NotificationThread, bool, error)
+	markNotificationReadFn     func(context.Context, string) error
 }
 
 func (m *mockGH) ListOpenPullRequests(ctx context.Context, owner, repo string) ([]*gh.PullRequest, error) {
@@ -626,6 +628,20 @@ func (m *mockGH) ListIssuesPage(
 	return nil, false, nil
 }
 
+func (m *mockGH) ListNotifications(ctx context.Context, opts ghclient.NotificationListOptions) ([]ghclient.NotificationThread, bool, error) {
+	if m.listNotificationsFn != nil {
+		return m.listNotificationsFn(ctx, opts)
+	}
+	return nil, false, nil
+}
+
+func (m *mockGH) MarkNotificationThreadRead(ctx context.Context, threadID string) error {
+	if m.markNotificationReadFn != nil {
+		return m.markNotificationReadFn(ctx, threadID)
+	}
+	return nil
+}
+
 // InvalidateListETagsForRepo is a no-op for the server test mock,
 // which has no underlying HTTP cache.
 func (m *mockGH) InvalidateListETagsForRepo(_, _ string, _ ...string) {}
@@ -847,6 +863,7 @@ func setupTestServerWithMock(t *testing.T, mock *mockGH) (*Server, *db.DB) {
 
 var defaultTestRepos = []ghclient.RepoRef{
 	{
+		Platform:     "github",
 		Owner:        "acme",
 		Name:         "widget",
 		PlatformHost: "github.com",
@@ -4945,9 +4962,9 @@ func TestAPIListRepoSummaries(t *testing.T) {
 	assert := Assert.New(t)
 
 	repos := []ghclient.RepoRef{
-		{Owner: "acme", Name: "widgets", PlatformHost: "github.com"},
-		{Owner: "acme", Name: "tools", PlatformHost: "github.com"},
-		{Owner: "acme", Name: "archived", PlatformHost: "github.com"},
+		{Platform: "github", Owner: "acme", Name: "widgets", PlatformHost: "github.com"},
+		{Platform: "github", Owner: "acme", Name: "tools", PlatformHost: "github.com"},
+		{Platform: "github", Owner: "acme", Name: "archived", PlatformHost: "github.com"},
 	}
 	srv, database := setupTestServerWithRepos(t, &mockGH{}, repos)
 	client := setupTestClient(t, srv)
@@ -5383,7 +5400,7 @@ func TestAPICreateIssue(t *testing.T) {
 		t,
 		mock,
 		[]ghclient.RepoRef{
-			{Owner: "acme", Name: "widgets", PlatformHost: "github.com"},
+			{Platform: "github", Owner: "acme", Name: "widgets", PlatformHost: "github.com"},
 		},
 	)
 	client := setupTestClient(t, srv)
@@ -5439,7 +5456,7 @@ func TestAPICreateIssueRejectsNilProviderPayload(t *testing.T) {
 		t,
 		mock,
 		[]ghclient.RepoRef{
-			{Owner: "acme", Name: "widgets", PlatformHost: "github.com"},
+			{Platform: "github", Owner: "acme", Name: "widgets", PlatformHost: "github.com"},
 		},
 	)
 	client := setupTestClient(t, srv)
@@ -5759,7 +5776,7 @@ func TestAPICreateIssueUsesPlatformHost(t *testing.T) {
 		},
 	}
 	repos := []ghclient.RepoRef{
-		{Owner: "acme", Name: "widgets", PlatformHost: "github.com"},
+		{Platform: "github", Owner: "acme", Name: "widgets", PlatformHost: "github.com"},
 		{Owner: "acme", Name: "widgets", PlatformHost: "ghe.example.com"},
 	}
 	syncer := ghclient.NewSyncer(
@@ -6632,11 +6649,33 @@ func seedIssueForRepo(
 
 func TestAPIClosePR(t *testing.T) {
 	require := require.New(t)
+	assert := Assert.New(t)
 
 	srv, database := setupTestServer(t)
 	handlerNow := testEDTTime(9, 15)
 	setTestServerNow(t, srv, handlerNow)
 	seedPR(t, database, "acme", "widget", 1)
+	repo, err := database.GetRepoByOwnerName(t.Context(), "acme", "widget")
+	require.NoError(err)
+	updatedAt := handlerNow.Add(-time.Hour)
+	number := 1
+	require.NoError(database.UpsertNotifications(t.Context(), []db.Notification{{
+		Platform:               "github",
+		PlatformHost:           "github.com",
+		PlatformNotificationID: "thread-pr-close",
+		RepoID:                 &repo.ID,
+		RepoOwner:              "acme",
+		RepoName:               "widget",
+		SubjectType:            "PullRequest",
+		SubjectTitle:           "Test PR #1",
+		WebURL:                 "https://github.com/acme/widget/pull/1",
+		ItemNumber:             &number,
+		ItemType:               "pr",
+		Reason:                 "mention",
+		Unread:                 true,
+		SourceUpdatedAt:        updatedAt,
+		SyncedAt:               updatedAt,
+	}}))
 	client := setupTestClient(t, srv)
 
 	resp, err := client.HTTP.SetPrGithubStateWithResponse(
@@ -6648,8 +6687,13 @@ func TestAPIClosePR(t *testing.T) {
 
 	pr, err := database.GetMergeRequest(t.Context(), "acme", "widget", 1)
 	require.NoError(err)
-	require.Equal(db.MergeRequestStateClosed, pr.State)
+	assert.Equal(db.MergeRequestStateClosed, pr.State)
 	assertTimePtrEqualsUTC(t, pr.ClosedAt, handlerNow)
+	doneNotifications, err := database.ListNotifications(t.Context(), db.ListNotificationsOpts{State: "done"})
+	require.NoError(err)
+	require.Len(doneNotifications, 1)
+	assert.Equal("thread-pr-close", doneNotifications[0].PlatformNotificationID)
+	assert.Equal("closed", doneNotifications[0].DoneReason)
 }
 
 func TestAPIReopenPR(t *testing.T) {
@@ -7942,8 +7986,8 @@ func TestAPIGetIssueUsesPlatformHostQuery(t *testing.T) {
 		database,
 		nil,
 		[]ghclient.RepoRef{
-			{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
-			{Owner: "acme", Name: "widget", PlatformHost: "ghe.example.com"},
+			{Platform: "github", Owner: "acme", Name: "widget", PlatformHost: "github.com"},
+			{Platform: "github", Owner: "acme", Name: "widget", PlatformHost: "ghe.example.com"},
 		},
 		time.Minute,
 		nil,
@@ -8304,8 +8348,8 @@ func TestAPISyncIssueUsesPlatformHostQuery(t *testing.T) {
 		database,
 		nil,
 		[]ghclient.RepoRef{
-			{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
-			{Owner: "acme", Name: "widget", PlatformHost: "ghe.example.com"},
+			{Platform: "github", Owner: "acme", Name: "widget", PlatformHost: "github.com"},
+			{Platform: "github", Owner: "acme", Name: "widget", PlatformHost: "ghe.example.com"},
 		},
 		time.Minute,
 		nil,
@@ -8438,8 +8482,8 @@ func TestAPISetIssueStateUsesPlatformHostBody(t *testing.T) {
 		database,
 		nil,
 		[]ghclient.RepoRef{
-			{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
-			{Owner: "acme", Name: "widget", PlatformHost: "ghe.example.com"},
+			{Platform: "github", Owner: "acme", Name: "widget", PlatformHost: "github.com"},
+			{Platform: "github", Owner: "acme", Name: "widget", PlatformHost: "ghe.example.com"},
 		},
 		time.Minute,
 		nil,
@@ -17286,7 +17330,7 @@ func TestAPIRateLimitsMultiHostMixed(t *testing.T) {
 		},
 		database, nil,
 		[]ghclient.RepoRef{
-			{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
+			{Platform: "github", Owner: "acme", Name: "widget", PlatformHost: "github.com"},
 			{Owner: "corp", Name: "internal", PlatformHost: "ghe.example.com"},
 		},
 		time.Minute,
@@ -17874,7 +17918,7 @@ func setupTestServerWithClonesAndServer(t *testing.T) (
 
 	clones := gitclone.New(bareDir, nil)
 	mock := &mockGH{}
-	repos := []ghclient.RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}}
+	repos := []ghclient.RepoRef{{Platform: "github", Owner: "acme", Name: "widget", PlatformHost: "github.com"}}
 	syncer := ghclient.NewSyncer(map[string]ghclient.Client{"github.com": mock}, database, nil, repos, time.Minute, nil, nil)
 	t.Cleanup(syncer.Stop)
 	srv = New(database, syncer, nil, "/", nil, ServerOptions{Clones: clones})
@@ -18870,8 +18914,8 @@ func TestAPIListStacks_RepoFilter(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	repos := []ghclient.RepoRef{
-		{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
-		{Owner: "acme", Name: "tools", PlatformHost: "github.com"},
+		{Platform: "github", Owner: "acme", Name: "widget", PlatformHost: "github.com"},
+		{Platform: "github", Owner: "acme", Name: "tools", PlatformHost: "github.com"},
 	}
 	srv, database := setupTestServerWithRepos(t, &mockGH{}, repos)
 	client := setupTestClient(t, srv)

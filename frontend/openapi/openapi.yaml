@@ -3526,6 +3526,237 @@ components:
         - rel_path
         - is_dir
       type: object
+    NotificationBulkFailure:
+      additionalProperties: false
+      properties:
+        error:
+          type: string
+        id:
+          format: int64
+          type: integer
+      required:
+        - id
+        - error
+      type: object
+    NotificationBulkInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/NotificationBulkInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        ids:
+          items:
+            format: int64
+            type: integer
+          type:
+            - array
+            - "null"
+        mark_read:
+          type: boolean
+      required:
+        - ids
+      type: object
+    NotificationBulkResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/NotificationBulkResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        failed:
+          items:
+            $ref: "#/components/schemas/NotificationBulkFailure"
+          type:
+            - array
+            - "null"
+        queued:
+          items:
+            format: int64
+            type: integer
+          type:
+            - array
+            - "null"
+        succeeded:
+          items:
+            format: int64
+            type: integer
+          type:
+            - array
+            - "null"
+      required:
+        - succeeded
+        - queued
+        - failed
+      type: object
+    NotificationResponse:
+      additionalProperties: false
+      properties:
+        done_at:
+          type: string
+        done_reason:
+          type: string
+        github_last_read_at:
+          type: string
+        github_read_attempts:
+          format: int64
+          type: integer
+        github_read_error:
+          type: string
+        github_read_last_attempt_at:
+          type: string
+        github_read_next_attempt_at:
+          type: string
+        github_read_queued_at:
+          type: string
+        github_read_synced_at:
+          type: string
+        github_updated_at:
+          type: string
+        id:
+          format: int64
+          type: integer
+        item_author:
+          type: string
+        item_number:
+          format: int64
+          type: integer
+        item_type:
+          type: string
+        participating:
+          type: boolean
+        platform_host:
+          type: string
+        platform_thread_id:
+          type: string
+        provider:
+          type: string
+        reason:
+          type: string
+        repo_name:
+          type: string
+        repo_owner:
+          type: string
+        repo_path:
+          type: string
+        subject_latest_comment_url:
+          type: string
+        subject_title:
+          type: string
+        subject_type:
+          type: string
+        subject_url:
+          type: string
+        unread:
+          type: boolean
+        web_url:
+          type: string
+      required:
+        - id
+        - platform_host
+        - provider
+        - repo_path
+        - platform_thread_id
+        - repo_owner
+        - repo_name
+        - subject_type
+        - subject_title
+        - subject_url
+        - subject_latest_comment_url
+        - web_url
+        - item_type
+        - item_author
+        - reason
+        - unread
+        - participating
+        - github_updated_at
+        - done_reason
+        - github_read_error
+        - github_read_attempts
+      type: object
+    NotificationSummaryResponse:
+      additionalProperties: false
+      properties:
+        by_reason:
+          additionalProperties:
+            format: int64
+            type: integer
+          type: object
+        by_repo:
+          additionalProperties:
+            format: int64
+            type: integer
+          type: object
+        done:
+          format: int64
+          type: integer
+        total_active:
+          format: int64
+          type: integer
+        unread:
+          format: int64
+          type: integer
+      required:
+        - total_active
+        - unread
+        - done
+        - by_reason
+        - by_repo
+      type: object
+    NotificationSyncStatusResponse:
+      additionalProperties: false
+      properties:
+        last_error:
+          type: string
+        last_finished_at:
+          type: string
+        last_started_at:
+          type: string
+        running:
+          type: boolean
+      required:
+        - running
+        - last_error
+      type: object
+    NotificationsResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/NotificationsResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        items:
+          items:
+            $ref: "#/components/schemas/NotificationResponse"
+          type:
+            - array
+            - "null"
+        summary:
+          $ref: "#/components/schemas/NotificationSummaryResponse"
+        sync:
+          $ref: "#/components/schemas/NotificationSyncStatusResponse"
+      required:
+        - items
+        - summary
+        - sync
+      type: object
+    NotificationsSettingsResponse:
+      additionalProperties: false
+      properties:
+        enabled:
+          type: boolean
+      required:
+        - enabled
+      type: object
     OperationAvailability:
       additionalProperties: false
       properties:
@@ -5404,6 +5635,8 @@ components:
           $ref: "#/components/schemas/FleetSettingsResponse"
         modes:
           $ref: "#/components/schemas/ModeVisibility"
+        notifications:
+          $ref: "#/components/schemas/NotificationsSettingsResponse"
         repos:
           items:
             $ref: "#/components/schemas/ConfiguredRepoStatus"
@@ -5413,6 +5646,7 @@ components:
       required:
         - repos
         - activity
+        - notifications
         - terminal
         - agents
         - fleet
@@ -11784,6 +12018,166 @@ paths:
       summary: Get msgvault thread
       tags:
         - Msgvault
+  /notifications:
+    get:
+      operationId: list-notifications
+      parameters:
+        - explode: false
+          in: query
+          name: state
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: reason
+          schema:
+            items:
+              type: string
+            type:
+              - array
+              - "null"
+        - explode: false
+          in: query
+          name: type
+          schema:
+            items:
+              type: string
+            type:
+              - array
+              - "null"
+        - explode: false
+          in: query
+          name: repo
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: q
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: sort
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: limit
+          schema:
+            format: int64
+            type: integer
+        - explode: false
+          in: query
+          name: offset
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationsResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: List notifications
+      tags:
+        - Notifications
+  /notifications/done:
+    post:
+      operationId: mark-notifications-done
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NotificationBulkInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationBulkResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Mark notifications done
+      tags:
+        - Notifications
+  /notifications/read:
+    post:
+      operationId: mark-notifications-read
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NotificationBulkInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationBulkResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Mark notifications read
+      tags:
+        - Notifications
+  /notifications/sync:
+    post:
+      operationId: sync-notifications
+      responses:
+        "202":
+          description: Accepted
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Sync notifications
+      tags:
+        - Notifications
+  /notifications/undone:
+    post:
+      operationId: mark-notifications-undone
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NotificationBulkInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationBulkResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Mark notifications undone
+      tags:
+        - Notifications
   /platform/user-repositories:
     get:
       operationId: list-user-repositories

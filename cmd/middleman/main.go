@@ -615,6 +615,10 @@ func run(opts serve.Options) error {
 		),
 	)
 	syncer.Start(ctx)
+	if cfg.NotificationsEnabled() {
+		notificationLoops := startNotificationLoops(ctx, syncer, cfg)
+		defer notificationLoops.Stop()
+	}
 
 	profilerSrv, err = profiler.Start(opts.ProfilerAddr)
 	if err != nil {

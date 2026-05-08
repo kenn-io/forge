@@ -38,6 +38,9 @@
     ActivityStoreOptions,
   } from "./stores/activity.svelte.js";
   import type {
+    NotificationsStoreOptions,
+  } from "./stores/notifications.svelte.js";
+  import type {
     DiffStoreOptions,
   } from "./stores/diff.svelte.js";
   import {
@@ -52,6 +55,9 @@
   import {
     createActivityStore,
   } from "./stores/activity.svelte.js";
+  import {
+    createNotificationsStore,
+  } from "./stores/notifications.svelte.js";
   import {
     createSyncStore,
   } from "./stores/sync.svelte.js";
@@ -206,6 +212,16 @@
     const activityStore =
       createActivityStore(activityOpts);
 
+    const notificationsOpts: NotificationsStoreOptions = {
+      client: cl,
+    };
+    if (hs.getGlobalRepo) {
+      notificationsOpts.getGlobalRepo = hs.getGlobalRepo;
+    }
+    const notificationsStore = createNotificationsStore(
+      notificationsOpts,
+    );
+
     const diffOpts: DiffStoreOptions = { client: cl };
     if (cfg.basePath != null) {
       const bp = cfg.basePath;
@@ -271,6 +287,9 @@
         void pullsStore.loadPulls();
         void issuesStore.loadIssues();
         void activityStore.loadActivity();
+        if (settingsStore.notificationsEnabled()) {
+          void notificationsStore.loadNotifications();
+        }
       },
       onSyncStatus: (status) => {
         syncStore.setSyncStatus(status);
@@ -371,6 +390,7 @@
       issues: issuesStore,
       detail: detailStore,
       activity: activityStore,
+      notifications: notificationsStore,
       sync: syncStore,
       diff: diffStore,
       diffReviewDraft: diffReviewDraftStore,

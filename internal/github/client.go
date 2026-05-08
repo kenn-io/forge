@@ -79,6 +79,32 @@ type PullRequestReviewThreadComment struct {
 	UpdatedAt        time.Time
 }
 
+type NotificationListOptions struct {
+	Since         *time.Time
+	All           bool
+	Participating bool
+	Page          int
+}
+
+type NotificationThread struct {
+	ID                      string
+	RepoOwner               string
+	RepoName                string
+	SubjectType             string
+	SubjectTitle            string
+	SubjectURL              string
+	SubjectLatestCommentURL string
+	WebURL                  string
+	ItemNumber              *int
+	ItemType                string
+	ItemAuthor              string
+	Reason                  string
+	Unread                  bool
+	Participating           bool
+	UpdatedAt               time.Time
+	LastReadAt              *time.Time
+}
+
 // EditPullRequestOpts holds optional fields for editing a pull request.
 // Nil pointer fields are omitted from the GitHub API call.
 type EditPullRequestOpts struct {
@@ -134,6 +160,8 @@ type Client interface {
 	EditIssueContent(ctx context.Context, owner, repo string, number int, title *string, body *string) (*gh.Issue, error)
 	ListPullRequestsPage(ctx context.Context, owner, repo, state string, page int) ([]*gh.PullRequest, bool, error)
 	ListIssuesPage(ctx context.Context, owner, repo, state string, page int) ([]*gh.Issue, bool, error)
+	ListNotifications(ctx context.Context, opts NotificationListOptions) ([]NotificationThread, bool, error)
+	MarkNotificationThreadRead(ctx context.Context, threadID string) error
 	// InvalidateListETagsForRepo drops cached conditional-GET
 	// validators for the given repo's list endpoints so the next
 	// list call issues an unconditional fetch. The endpoints
@@ -168,6 +196,13 @@ type issueTimelineLister interface {
 		owner, repo string,
 		number int,
 	) ([]PullRequestTimelineEvent, error)
+}
+
+func normalizedPlatformHost(platformHost string) string {
+	if platformHost == "" {
+		return "github.com"
+	}
+	return strings.ToLower(platformHost)
 }
 
 func graphQLEndpointForHost(platformHost string) string {
@@ -276,7 +311,7 @@ func NewClient(
 		httpClient:      httpClient,
 		httpWriteClient: writeHTTPClient,
 		rateTracker:     rateTracker,
-		platformHost:    platformHost,
+		platformHost:    normalizedPlatformHost(platformHost),
 		graphQLEndpoint: graphQLEndpoint,
 		etag:            et,
 	}, nil
@@ -388,6 +423,133 @@ func (c *liveClient) InvalidateListETagsForRepo(owner, repo string, endpoints ..
 		return
 	}
 	c.etag.invalidateRepo(owner, repo, endpoints...)
+}
+
+func (c *liveClient) ListNotifications(ctx context.Context, opts NotificationListOptions) ([]NotificationThread, bool, error) {
+	page := max(opts.Page, 1)
+	ghOpts := &gh.NotificationListOptions{
+		All:           opts.All,
+		Participating: opts.Participating,
+		ListOptions:   gh.ListOptions{Page: page, PerPage: 100},
+	}
+	if opts.Since != nil {
+		ghOpts.Since = opts.Since.UTC()
+	}
+	notifications, resp, err := c.gh.Activity.ListNotifications(ctx, ghOpts)
+	c.trackRate(resp)
+	if err != nil {
+		return nil, false, err
+	}
+	threads := make([]NotificationThread, 0, len(notifications))
+	for _, notification := range notifications {
+		threads = append(threads, c.normalizeNotification(notification))
+	}
+	return threads, resp != nil && resp.NextPage != 0, nil
+}
+
+func (c *liveClient) GetNotificationThread(ctx context.Context, threadID string) (NotificationThread, error) {
+	notification, resp, err := c.gh.Activity.GetThread(ctx, threadID)
+	c.trackRate(resp)
+	if err != nil {
+		return NotificationThread{}, err
+	}
+	return c.normalizeNotification(notification), nil
+}
+
+func (c *liveClient) MarkNotificationThreadRead(ctx context.Context, threadID string) error {
+	resp, err := c.gh.Activity.MarkThreadRead(ctx, threadID)
+	c.trackRate(resp)
+	return err
+}
+
+func (c *liveClient) normalizeNotification(n *gh.Notification) NotificationThread {
+	if n == nil {
+		return NotificationThread{}
+	}
+	thread := NotificationThread{
+		ID:     n.GetID(),
+		Reason: n.GetReason(),
+		Unread: n.GetUnread(),
+	}
+	if updated := n.GetUpdatedAt(); !updated.IsZero() {
+		thread.UpdatedAt = updated.UTC()
+	}
+	if lastRead := n.GetLastReadAt(); !lastRead.IsZero() {
+		lastReadAt := lastRead.UTC()
+		thread.LastReadAt = &lastReadAt
+	}
+	if repo := n.GetRepository(); repo != nil {
+		thread.RepoName = strings.ToLower(repo.GetName())
+		if owner := repo.GetOwner(); owner != nil {
+			thread.RepoOwner = strings.ToLower(owner.GetLogin())
+		}
+	}
+	if subject := n.GetSubject(); subject != nil {
+		thread.SubjectType = subject.GetType()
+		thread.SubjectTitle = subject.GetTitle()
+		thread.SubjectURL = subject.GetURL()
+		thread.SubjectLatestCommentURL = subject.GetLatestCommentURL()
+		thread.ItemType, thread.ItemNumber, thread.WebURL = c.notificationItem(subject.GetType(), subject.GetURL(), thread.RepoOwner, thread.RepoName)
+	}
+	return thread
+}
+
+func (c *liveClient) notificationItem(subjectType, apiURL, owner, repo string) (string, *int, string) {
+	itemType := "other"
+	subjectLower := strings.ToLower(subjectType)
+	switch subjectLower {
+	case "pullrequest":
+		itemType = "pr"
+	case "issue":
+		itemType = "issue"
+	case "release":
+		itemType = "release"
+	case "commit":
+		itemType = "commit"
+	}
+
+	if owner == "" || repo == "" || apiURL == "" {
+		return itemType, nil, ""
+	}
+	segments := strings.Split(strings.TrimRight(apiURL, "/"), "/")
+	lastSegment := func(prefix string) (string, bool) {
+		for i := 0; i < len(segments)-1; i++ {
+			if segments[i] == prefix {
+				return segments[i+1], true
+			}
+		}
+		return "", false
+	}
+	host := c.platformHost
+	if host == "" {
+		host = "github.com"
+	}
+	switch itemType {
+	case "pr":
+		if value, ok := lastSegment("pulls"); ok {
+			if number, err := strconv.Atoi(value); err == nil {
+				return itemType, &number, fmt.Sprintf("https://%s/%s/%s/pull/%d", host, owner, repo, number)
+			}
+		}
+		if value, ok := lastSegment("issues"); ok {
+			if number, err := strconv.Atoi(value); err == nil {
+				return itemType, &number, fmt.Sprintf("https://%s/%s/%s/pull/%d", host, owner, repo, number)
+			}
+		}
+	case "issue":
+		if value, ok := lastSegment("issues"); ok {
+			if number, err := strconv.Atoi(value); err == nil {
+				return itemType, &number, fmt.Sprintf("https://%s/%s/%s/issues/%d", host, owner, repo, number)
+			}
+		}
+	case "commit":
+		if sha, ok := lastSegment("commits"); ok && sha != "" {
+			return itemType, nil, fmt.Sprintf("https://%s/%s/%s/commit/%s", host, owner, repo, sha)
+		}
+	case "release":
+		return itemType, nil, ""
+	}
+	return itemType, nil, ""
 }
 
 func (c *liveClient) ListReleases(

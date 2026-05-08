@@ -442,6 +442,77 @@ type StarredItem struct {
 	StarredAt time.Time
 }
 
+type Notification struct {
+	ID                       int64
+	Platform                 string
+	PlatformHost             string
+	PlatformNotificationID   string
+	RepoID                   *int64
+	RepoOwner                string
+	RepoName                 string
+	SubjectType              string
+	SubjectTitle             string
+	SubjectURL               string
+	SubjectLatestCommentURL  string
+	WebURL                   string
+	ItemNumber               *int
+	ItemType                 string
+	ItemAuthor               string
+	Reason                   string
+	Unread                   bool
+	Participating            bool
+	SourceUpdatedAt          time.Time
+	SourceLastAcknowledgedAt *time.Time
+	SyncedAt                 time.Time
+	DoneAt                   *time.Time
+	DoneReason               string
+	SourceAckQueuedAt        *time.Time
+	SourceAckSyncedAt        *time.Time
+	SourceAckGenerationAt    *time.Time
+	SourceAckError           string
+	SourceAckAttempts        int
+	SourceAckLastAttemptAt   *time.Time
+	SourceAckNextAttemptAt   *time.Time
+}
+
+type ListNotificationsOpts struct {
+	Platform     string
+	PlatformHost string
+	RepoOwner    string
+	RepoName     string
+	Repos        []NotificationRepoFilter
+	State        string
+	Reasons      []string
+	ItemTypes    []string
+	Search       string
+	Sort         string
+	Limit        int
+	Offset       int
+}
+
+type NotificationRepoFilter struct {
+	Platform     string
+	PlatformHost string
+	RepoOwner    string
+	RepoName     string
+}
+
+type NotificationSummary struct {
+	TotalActive int
+	Unread      int
+	Done        int
+	ByReason    map[string]int
+	ByRepo      map[string]int
+}
+
+type NotificationSyncWatermark struct {
+	Platform             string
+	LastSuccessfulSyncAt time.Time
+	LastFullSyncAt       *time.Time
+	SyncCursor           string
+	TrackedReposKey      string
+}
+
 // WorktreeLink associates a merge request with an external worktree.
 type WorktreeLink struct {
 	ID             int64

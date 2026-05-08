@@ -22,10 +22,12 @@ func setupWithBasePath(t *testing.T, basePath string, frontend fs.FS) *Server {
 	mock := &mockGH{}
 	syncer := ghclient.NewSyncer(map[string]ghclient.Client{"github.com": mock}, database, nil, nil, time.Minute, nil, nil)
 	t.Cleanup(syncer.Stop)
-	return New(
+	srv := New(
 		database, syncer, frontend, basePath,
 		nil, ServerOptions{},
 	)
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	return srv
 }
 
 func TestBasePathAPIRouting(t *testing.T) {
@@ -36,17 +38,18 @@ func TestBasePathAPIRouting(t *testing.T) {
 	}
 
 	tests := []struct {
-		name       string
-		basePath   string
-		reqPath    string
-		wantStatus int
-		wantJSON   bool
+		name            string
+		basePath        string
+		reqPath         string
+		wantStatus      int
+		wantContentType string
+		wantBody        string
 	}{
-		{"root: API returns JSON", "/", "/api/v1/sync/status", 200, true},
-		{"root: SPA returns HTML", "/", "/pulls", 200, false},
-		{"prefix: API returns JSON", "/middleman/", "/middleman/api/v1/sync/status", 200, true},
-		{"prefix: SPA returns HTML", "/middleman/", "/middleman/pulls", 200, false},
-		{"prefix: bare API 404s", "/middleman/", "/api/v1/sync/status", 404, false},
+		{"root: API returns JSON", "/", "/api/v1/sync/status", 200, "application/json", `"running"`},
+		{"root: SPA returns HTML", "/", "/pulls", 200, "text/html", "<body>app</body>"},
+		{"prefix: API returns JSON", "/middleman/", "/middleman/api/v1/sync/status", 200, "application/json", `"running"`},
+		{"prefix: SPA returns HTML", "/middleman/", "/middleman/pulls", 200, "text/html", "<body>app</body>"},
+		{"prefix: bare API 404s", "/middleman/", "/api/v1/sync/status", 404, "text/plain", "404 page not found"},
 	}
 
 	for _, tt := range tests {
@@ -59,10 +62,8 @@ func TestBasePathAPIRouting(t *testing.T) {
 
 			require.Equal(t, tt.wantStatus, rr.Code, rr.Body.String())
 			ct := rr.Header().Get("Content-Type")
-			isJSON := strings.HasPrefix(ct, "application/json")
-			assert.Condition(func() bool {
-				return !tt.wantJSON || isJSON
-			}, "expected JSON response for %q, got Content-Type %q: %s", tt.reqPath, ct, rr.Body.String())
+			assert.True(strings.HasPrefix(ct, tt.wantContentType), "expected %s response for %q, got Content-Type %q: %s", tt.wantContentType, tt.reqPath, ct, rr.Body.String())
+			assert.Contains(rr.Body.String(), tt.wantBody)
 		})
 	}
 }

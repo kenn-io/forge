@@ -800,7 +800,7 @@ func TestMarkPullRequestReadyForReviewUsesGraphQLMutation(t *testing.T) {
 			_, _ = w.Write([]byte(`{"data":{"repository":{"pullRequest":{"id":"PR_kwDOAAABc84"}}}}`))
 			return
 		}
-		_, _ = w.Write([]byte(`{"data":{"markPullRequestReadyForReview":{"pullRequest":{"databaseId":1001,"number":141,"title":"Ready PR","state":"OPEN","isDraft":false,"body":"body","url":"https://github.com/wesm/middleman/pull/141","author":{"login":"wesm"},"createdAt":"2026-04-14T00:00:00Z","updatedAt":"2026-04-14T00:05:00Z","mergedAt":null,"closedAt":null,"additions":12,"deletions":3,"mergeable":"MERGEABLE","reviewDecision":"APPROVED","headRefName":"feature","baseRefName":"main","headRefOid":"abc123","baseRefOid":"def456","headRepository":{"url":"https://github.com/wesm/middleman"},"labels":{"nodes":[]}}}}}`))
+		_, _ = w.Write([]byte(`{"data":{"markPullRequestReadyForReview":{"pullRequest":{"databaseId":1001,"number":141,"title":"Ready PR","state":"OPEN","isDraft":false,"body":"body","url":"https://go.kenn.io/middleman/pull/141","author":{"login":"wesm"},"createdAt":"2026-04-14T00:00:00Z","updatedAt":"2026-04-14T00:05:00Z","mergedAt":null,"closedAt":null,"additions":12,"deletions":3,"mergeable":"MERGEABLE","reviewDecision":"APPROVED","headRefName":"feature","baseRefName":"main","headRefOid":"abc123","baseRefOid":"def456","headRepository":{"url":"https://go.kenn.io/middleman"},"labels":{"nodes":[]}}}}}`))
 	})
 	srv := httptest.NewServer(mux)
 	defer srv.Close()

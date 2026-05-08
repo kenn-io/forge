@@ -70,6 +70,7 @@ export { createPullsStore } from "./stores/pulls.svelte.js";
 export { createIssuesStore } from "./stores/issues.svelte.js";
 export { createDetailStore } from "./stores/detail.svelte.js";
 export { createActivityStore } from "./stores/activity.svelte.js";
+export { createNotificationsStore } from "./stores/notifications.svelte.js";
 export { createSyncStore } from "./stores/sync.svelte.js";
 export { createDiffStore } from "./stores/diff.svelte.js";
 export { createDiffReviewDraftStore } from "./stores/diff-review-draft.svelte.js";
@@ -102,6 +103,7 @@ export {
   providerQualifiedRepoFilterValue,
   repoFilterValueNeedsProvider,
 } from "./utils/repo-filter-values.js";
+export { default as InboxView } from "./views/InboxView.svelte";
 export { default as KanbanBoardView } from "./views/KanbanBoardView.svelte";
 export { default as ReviewsView } from "./views/ReviewsView.svelte";
 export { default as FocusListView } from "./views/FocusListView.svelte";

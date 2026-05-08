@@ -261,6 +261,7 @@ func TestResolveStartupReposExpandsConfiguredGlobs(t *testing.T) {
 	)
 
 	assert.Equal([]ghclient.RepoRef{{
+		Platform:     "github",
 		Owner:        "roborev-dev",
 		Name:         "middleman",
 		PlatformHost: "github.com",
@@ -298,6 +299,7 @@ func TestResolveStartupReposKeepsExactReposWhenResolutionFails(t *testing.T) {
 	)
 
 	assert.Equal([]ghclient.RepoRef{{
+		Platform:     "github",
 		Owner:        "roborev-dev",
 		Name:         "middleman",
 		PlatformHost: "github.com",

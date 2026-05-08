@@ -45,6 +45,7 @@ func TestResolveConfiguredRepos_ExpandsGlobAndSkipsArchived(t *testing.T) {
 	require.Len(t, result.Configured, 1)
 	assert.Equal(1, result.Configured[0].MatchedRepoCount)
 	assert.Equal([]RepoRef{{
+		Platform:     platform.KindGitHub,
 		Owner:        "acme",
 		Name:         "widgets-api",
 		PlatformHost: "github.com",
@@ -91,8 +92,8 @@ func TestResolveConfiguredRepos_DeduplicatesExactAndGlobMatches(t *testing.T) {
 
 	assert.Len(result.Expanded, 2)
 	assert.ElementsMatch([]RepoRef{
-		{Owner: "acme", Name: "widgets", PlatformHost: "github.com", RepoPath: "acme/widgets"},
-		{Owner: "acme", Name: "widgets-api", PlatformHost: "github.com", RepoPath: "acme/widgets-api"},
+		{Platform: platform.KindGitHub, Owner: "acme", Name: "widgets", PlatformHost: "github.com", RepoPath: "acme/widgets"},
+		{Platform: platform.KindGitHub, Owner: "acme", Name: "widgets-api", PlatformHost: "github.com", RepoPath: "acme/widgets-api"},
 	}, result.Expanded)
 }
 
@@ -129,6 +130,7 @@ func TestResolveConfiguredRepos_DeduplicatesOwnerCase(t *testing.T) {
 	)
 
 	assert.Equal([]RepoRef{{
+		Platform:     platform.KindGitHub,
 		Owner:        "acme",
 		Name:         "widgets",
 		PlatformHost: "github.com",
@@ -157,6 +159,7 @@ func TestResolveConfiguredReposCasefoldsResolvedRepoRefs(t *testing.T) {
 	)
 
 	assert.Equal([]RepoRef{{
+		Platform:     platform.KindGitHub,
 		Owner:        "org",
 		Name:         "foo",
 		PlatformHost: "github.com",
@@ -210,6 +213,7 @@ func TestResolveConfiguredRepos_MatchesRepoNamesCaseInsensitively(t *testing.T) 
 	require.Len(t, result.Configured, 1)
 	assert.Equal(1, result.Configured[0].MatchedRepoCount)
 	assert.Equal([]RepoRef{{
+		Platform:     platform.KindGitHub,
 		Owner:        "acme",
 		Name:         "widget-api",
 		PlatformHost: "github.com",
@@ -299,6 +303,7 @@ func TestResolveConfiguredReposKeepsDuplicateOwnerNameOnDifferentPlatforms(t *te
 	require.Empty(t, result.Warnings)
 	Assert.ElementsMatch(t, []RepoRef{
 		{
+			Platform:     platform.KindGitHub,
 			PlatformHost: "code.example.com",
 			Owner:        "acme",
 			Name:         "widget",
@@ -312,6 +317,25 @@ func TestResolveConfiguredReposKeepsDuplicateOwnerNameOnDifferentPlatforms(t *te
 			RepoPath:     "acme/widget",
 		},
 	}, result.Expanded)
+}
+
+func TestFallbackConfiguredRepoRefsSynthesizesGitHubProvider(t *testing.T) {
+	assert := Assert.New(t)
+
+	got := FallbackConfiguredRepoRefs(nil, config.Repo{
+		Platform:     "github",
+		PlatformHost: "code.example.com",
+		Owner:        "Acme",
+		Name:         "Widget",
+	})
+
+	assert.Equal([]RepoRef{{
+		Platform:     platform.KindGitHub,
+		PlatformHost: "code.example.com",
+		Owner:        "acme",
+		Name:         "widget",
+		RepoPath:     "Acme/Widget",
+	}}, got)
 }
 
 func TestFallbackConfiguredRepoRefsPreservesProviderIdentity(t *testing.T) {

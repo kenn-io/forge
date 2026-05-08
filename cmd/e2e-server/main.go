@@ -883,19 +883,21 @@ func buildAppState(
 	e2eWorktreeDir := filepath.Join(tmpDir, "worktrees")
 
 	repos := []config.Repo{
-		{Owner: "acme", Name: "widgets"},
-		{Owner: "acme", Name: "tools"},
-		{Owner: "acme", Name: "archived"},
-		{Owner: "roborev-dev", Name: "*"},
+		{Platform: "github", Owner: "acme", Name: "widgets"},
+		{Platform: "github", Owner: "acme", Name: "tools"},
+		{Platform: "github", Owner: "acme", Name: "archived"},
+		{Platform: "github", Owner: "roborev-dev", Name: "*"},
 	}
 	if !strings.EqualFold(defaultPlatformHost, "github.com") {
 		repos = []config.Repo{
 			{
+				Platform:     "github",
 				Owner:        "enterprise",
 				Name:         "service",
 				PlatformHost: defaultPlatformHost,
 			},
 			{
+				Platform:     "github",
 				Owner:        "acme",
 				Name:         "widgets",
 				PlatformHost: "github.com",

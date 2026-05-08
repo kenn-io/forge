@@ -219,6 +219,24 @@ repo-scoped requests. Do not hand-build `/api/v1` URLs or assume GitHub defaults
 inside components/stores. Host defaults may be omitted from URLs only by the
 shared route helper.
 
+## Notification Identity
+
+Notification inbox persistence is provider-neutral even though GitHub is only
+implemented notification source today.
+
+Rules:
+
+- Notification item identity is `(platform, platform_host, platform_notification_id)`.
+- Notification repo scope is `(platform, platform_host, repo_owner, repo_name)`.
+- Sync watermarks are keyed by `(platform, platform_host)`.
+- Tracked repo keys used by notification sync must include provider identity, not
+  host alone.
+- Blank provider values are invalid in notification paths. Do not add fallback
+  behavior that silently treats missing provider as GitHub.
+- If server/API keeps GitHub-shaped response fields for compatibility, contain
+  that translation at server boundary rather than reintroducing GitHub-shaped DB
+  or provider abstractions.
+
 ## Test Boundaries
 
 Choose the smallest boundary that catches the regression:

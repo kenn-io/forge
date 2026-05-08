@@ -35,16 +35,45 @@ Rules:
 
 ## Repository Scope And Identity
 
-Notifications are user-scoped in GitHub but repo-scoped in middleman.
+Notifications are user-scoped at provider level but repo-scoped in middleman.
 
 Rules:
 
-- Persist notification thread identity as `(platform_host, platform_thread_id)`.
-- Treat repository identity as `(platform_host, repo_owner, repo_name)` everywhere.
-- Show notifications only for the current monitored repo set from config/syncer repo refs.
-- Historical notifications for removed repos may stay in SQLite but must not appear in `unread`, `active`, `read`, `done`, or `all` unless a future explicit `include_unmonitored` contract exists.
+- Persist notification item identity as `(platform, platform_host, platform_notification_id)`.
+- Treat repository identity as `(platform, platform_host, repo_owner, repo_name)` everywhere notifications are filtered, joined, or summarized.
+- `platform` is required. Blank provider/platform values are errors, not implicit GitHub defaults.
+- Show notifications only for current monitored repo set from config/syncer repo refs.
+- Historical notifications for removed repos may stay in SQLite but must not appear in `unread`, `active`, `read`, `done`, or `all` unless future explicit `include_unmonitored` contract exists.
 - `repo_id` is enrichment/optimization, not visibility authority.
+- Tracked repo keys and sync watermarks must include provider identity, not host alone.
 - Repo facets and filters must be host-qualified when host ambiguity is possible, e.g. `github.com/acme/widget`.
+
+## Persistence Shape
+
+Notification persistence is provider-neutral even though only GitHub sync exists today.
+
+Current tables:
+
+- `middleman_notification_items`
+- `middleman_notification_sync_watermarks`
+
+Current provider-owned fields:
+
+- `platform`
+- `platform_host`
+- `platform_notification_id`
+- `source_updated_at`
+- `source_last_acknowledged_at`
+- `source_ack_*`
+- `sync_cursor`
+- `tracked_repos_key`
+
+Rules:
+
+- `done_at` and `done_reason` remain middleman-local triage state.
+- `source_*` fields track provider-side activity and acknowledgement propagation state.
+- `sync_cursor` is opaque provider-owned watermark state. GitHub currently leaves it empty.
+- Current notification schema ships as single DB upgrade in `000019_notifications.*`; do not split future assumptions across deleted branch-only migrations.
 
 ## Inbox State Model
 
@@ -71,23 +100,24 @@ Rules:
 
 Bulk actions are local-first. GitHub read-state propagation is asynchronous.
 
-Fields:
+Provider-neutral storage fields:
 
-- `github_read_queued_at`: local read/done queued for GitHub propagation.
-- `github_read_synced_at`: GitHub mark-read succeeded or GitHub later reported read.
-- `github_read_generation_at`: GitHub notification activity timestamp covered by successful propagation.
-- `github_last_read_at`: only set after successful GitHub propagation or GitHub sync reporting read, never when merely queued.
-- `github_read_error`, `github_read_attempts`, `github_read_last_attempt_at`, `github_read_next_attempt_at`: retry/dead-letter state.
+- `source_ack_queued_at`: local read/done queued for provider propagation.
+- `source_ack_synced_at`: provider mark-read succeeded or provider later reported acknowledged/read.
+- `source_ack_generation_at`: source activity timestamp covered by successful propagation.
+- `source_last_acknowledged_at`: only set after successful provider propagation or source sync reporting acknowledged/read, never when merely queued.
+- `source_ack_error`, `source_ack_attempts`, `source_ack_last_attempt_at`, `source_ack_next_attempt_at`: retry/dead-letter state.
 
 Rules:
 
-- Propagation workers must revalidate queued generation before calling GitHub.
-- Stale queued work must not mark newer GitHub activity read.
-- After successful propagation, stale GitHub sync payloads with `unread=true` and `github_updated_at <= github_read_generation_at` must preserve local read state.
-- Newer unread GitHub activity clears queued/synced/error propagation fields and reactivates the row.
-- Failure updates must be guarded by the queued generation just like success updates.
-- Rate-limit/secondary-limit errors should pause retry without burning normal per-row attempts across a batch.
-- Retry cap failures should stop automatic retries, clear `github_read_next_attempt_at`, and preserve local done/read state.
+- GitHub remains only implemented notification provider today.
+- Propagation workers must revalidate queued generation before calling provider.
+- Stale queued work must not mark newer provider activity read.
+- After successful propagation, stale GitHub sync payloads with `unread=true` and `source_updated_at <= source_ack_generation_at` must preserve local read state.
+- Newer unread GitHub activity clears queued/synced/error propagation fields and reactivates row.
+- Failure updates must be guarded by queued generation just like success updates.
+- Rate-limit/secondary-limit errors should pause retry without burning normal per-row attempts across batch.
+- Retry cap failures should stop automatic retries, clear `source_ack_next_attempt_at`, and preserve local done/read state.
 
 ## Sync Behavior
 
@@ -95,12 +125,14 @@ Notification sync has its own status and cadence.
 
 Rules:
 
-- Notification sync should process each configured host independently; one host failure must not block other hosts.
-- Notification sync failures should update notification sync status so the UI can surface them.
+- Notification sync should process each configured provider host independently; one provider-host failure must not block others.
+- Notification sync failures should update notification sync status so UI can surface them.
 - Top-level manual sync may trigger notification sync only when notifications are enabled.
 - `/notifications/sync` triggers only notification sync and returns `202` once accepted.
-- First host sync may need GitHub `All: true`; later syncs should use a persisted watermark/overlap to avoid full backlog scans.
-- Notification sync and read propagation should stop with the server lifecycle before shared services are torn down.
+- Sync watermark identity is `(platform, platform_host)`.
+- First host sync may need GitHub `All: true`; later syncs should use persisted watermark/overlap to avoid full backlog scans.
+- `tracked_repos_key` must include provider-qualified tracked repo identity so watermark reuse does not cross providers sharing same host.
+- Notification sync and read propagation should stop with server lifecycle before shared services are torn down.
 - Closed/merged linked notification completion must run after repo/detail/list paths that persist closed PR or issue state, not only after notification sync.
 
 ## Subject Links
@@ -145,6 +177,8 @@ Rules:
 - Default list limit is bounded; max list and bulk mutation size are 200.
 - Bulk responses return `{ succeeded, queued, failed }` based on rows actually mutated.
 - Unknown or unmutated IDs belong in `failed`.
+- API payload remains GitHub-shaped for now where existing clients depend on fields like `platform_thread_id` and `github_*` timestamps.
+- Provider-neutral storage and DB naming must not leak through API accidentally; translate at server boundary.
 - Generated OpenAPI clients must be regenerated after API shape changes.
 
 ## Testing Expectations

@@ -273,11 +273,14 @@ func (s *Server) setDiffReviewThreadResolved(
 		return nil, huma.Error404NotFound("pull request not found")
 	}
 	thread, err := s.db.GetMRReviewThread(ctx, mr.ID, threadID)
-	if errors.Is(err, sql.ErrNoRows) || thread == nil {
-		return nil, huma.Error404NotFound("review thread not found")
-	}
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, huma.Error404NotFound("review thread not found")
+		}
 		return nil, huma.Error500InternalServerError("get review thread failed")
+	}
+	if thread == nil {
+		return nil, huma.Error404NotFound("review thread not found")
 	}
 	resolver, err := s.syncer.DiffReviewThreadResolver(
 		repoProviderKind(*repo), repoProviderHost(*repo),
@@ -562,8 +565,19 @@ func dbReviewLineRange(input diffReviewLineRange) (db.ReviewLineRange, error) {
 		return db.ReviewLineRange{}, huma.Error400BadRequest("review range diff_head_sha is required")
 	}
 	startSide := strings.ToLower(strings.TrimSpace(input.StartSide))
+	if input.StartLine != nil && *input.StartLine <= 0 {
+		return db.ReviewLineRange{}, huma.Error400BadRequest("review range start_line must be positive")
+	}
+	if (startSide == "") != (input.StartLine == nil) {
+		return db.ReviewLineRange{}, huma.Error400BadRequest(
+			"review range start_side and start_line must be supplied together",
+		)
+	}
 	if startSide != "" && startSide != side {
 		return db.ReviewLineRange{}, huma.Error400BadRequest("review range must stay on one side")
+	}
+	if input.StartLine != nil && *input.StartLine > input.Line {
+		return db.ReviewLineRange{}, huma.Error400BadRequest("review range start_line must be before line")
 	}
 	return db.ReviewLineRange{
 		Path:        path,

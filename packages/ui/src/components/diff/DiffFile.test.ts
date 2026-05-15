@@ -202,4 +202,44 @@ describe("DiffFile", () => {
 
     expect(document.querySelectorAll(".gutter-new.gutter--selected")).toHaveLength(1);
   });
+
+  it("does not create multiline review ranges across separate hunks", async () => {
+    renderDiffFile(makeFile({
+      additions: 2,
+      deletions: 0,
+      hunks: [
+        {
+          old_start: 1,
+          old_count: 1,
+          new_start: 1,
+          new_count: 1,
+          lines: [
+            { type: "add", content: "first hunk", new_num: 1 },
+          ],
+        },
+        {
+          old_start: 20,
+          old_count: 1,
+          new_start: 20,
+          new_count: 1,
+          lines: [
+            { type: "add", content: "second hunk", new_num: 20 },
+          ],
+        },
+      ],
+    }), {
+      reviewEnabled: true,
+      diffHeadSHA: "diff-head",
+      nativeMultilineRanges: true,
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Comment on new line 1" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Comment on new line 20" }), {
+      shiftKey: true,
+    });
+
+    const selected = Array.from(document.querySelectorAll(".gutter-new.gutter--selected"));
+    expect(selected).toHaveLength(1);
+    expect(selected[0]?.textContent?.trim()).toBe("20");
+  });
 });

@@ -196,11 +196,50 @@ const diffResponse = {
   ],
 };
 
+const multiHunkDiffResponse = {
+  stale: false,
+  whitespace_only_count: 0,
+  files: [
+    {
+      path: "src/main.ts",
+      old_path: "src/main.ts",
+      status: "modified",
+      additions: 2,
+      deletions: 0,
+      is_binary: false,
+      hunks: [
+        {
+          old_start: 1,
+          old_count: 1,
+          new_start: 1,
+          new_count: 1,
+          section: "",
+          lines: [
+            { type: "add", old_num: null, new_num: 1, content: "const first = 1;" },
+          ],
+        },
+        {
+          old_start: 20,
+          old_count: 1,
+          new_start: 20,
+          new_count: 1,
+          section: "",
+          lines: [
+            { type: "add", old_num: null, new_num: 20, content: "const second = 2;" },
+          ],
+        },
+      ],
+    },
+  ],
+};
+
 async function mockInlineReviewAPI(
   page: Page,
   capabilities = baseCapabilities,
   provider = "github",
   platformHost = "github.com",
+  filesResponse: typeof diffResponse = diffResponse,
+  onCreateDraft?: (body: { body: string; range: Record<string, unknown> }) => void,
 ): Promise<void> {
   let draftComments: Array<Record<string, unknown>> = [];
   let reviewThreadResolved = false;
@@ -220,10 +259,10 @@ async function mockInlineReviewAPI(
     );
   });
   await page.route(`**${path}/files`, async (route) => {
-    await fulfillJson(route, diffResponse);
+    await fulfillJson(route, filesResponse);
   });
   await page.route(`**${path}/diff`, async (route) => {
-    await fulfillJson(route, diffResponse);
+    await fulfillJson(route, filesResponse);
   });
   await page.route(`**${path}/review-draft`, async (route) => {
     if (route.request().method() === "DELETE") {
@@ -243,6 +282,7 @@ async function mockInlineReviewAPI(
       body: string;
       range: Record<string, unknown>;
     };
+    onCreateDraft?.(body);
     draftComments = [{
       id: "1",
       body: body.body,
@@ -315,4 +355,38 @@ test("enables inline review on public Forgejo and Gitea files routes", async ({ 
   await mockInlineReviewAPI(page, baseCapabilities, "gitea", "gitea.com");
   await page.goto("/pulls/gitea/acme/widgets/42/files");
   await expect(page.getByRole("button", { name: "Comment on new line 2" })).toBeVisible();
+});
+
+test("does not create multiline draft ranges across separate PR diff hunks", async ({ page }) => {
+  let createdRange: Record<string, unknown> | undefined;
+  await mockInlineReviewAPI(
+    page,
+    baseCapabilities,
+    "github",
+    "github.com",
+    multiHunkDiffResponse,
+    (body) => { createdRange = body.range; },
+  );
+
+  await page.goto("/pulls/github/acme/widgets/42/files");
+  await page.getByRole("button", { name: "Comment on new line 1" }).click();
+  await page.getByRole("button", { name: "Comment on new line 20" }).click({
+    modifiers: ["Shift"],
+  });
+
+  const selected = page.locator(".gutter-new.gutter--selected");
+  await expect(selected).toHaveCount(1);
+  await expect(selected).toHaveText("20");
+
+  await page.getByPlaceholder("Leave a comment").fill("Only the second hunk.");
+  await page.getByRole("button", { name: "Add comment" }).click();
+
+  expect(createdRange).toMatchObject({
+    path: "src/main.ts",
+    side: "right",
+    line: 20,
+    new_line: 20,
+  });
+  expect(createdRange).not.toHaveProperty("start_line");
+  expect(createdRange).not.toHaveProperty("start_side");
 });

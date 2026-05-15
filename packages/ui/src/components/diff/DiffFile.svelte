@@ -247,6 +247,7 @@
   type ReviewLineRef = {
     side: ReviewSide;
     order: number;
+    hunkIndex: number;
     line: number;
     oldLine?: number | undefined;
     newLine?: number | undefined;
@@ -261,12 +262,14 @@
     line: DiffFileType["hunks"][number]["lines"][number],
     side: ReviewSide,
     order: number,
+    hunkIndex: number,
   ): ReviewLineRef | null {
     const lineNumber = side === "right" ? line.new_num : line.old_num;
     if (lineNumber == null) return null;
     return {
       side,
       order,
+      hunkIndex,
       line: lineNumber,
       oldLine: line.old_num,
       newLine: line.new_num,
@@ -277,9 +280,10 @@
   function selectableLines(side: ReviewSide): ReviewLineRef[] {
     const refs: ReviewLineRef[] = [];
     let order = 0;
-    for (const hunk of renderedFile.hunks) {
+    for (let hunkIndex = 0; hunkIndex < renderedFile.hunks.length; hunkIndex++) {
+      const hunk = renderedFile.hunks[hunkIndex]!;
       for (const line of hunk.lines) {
-        const ref = lineRef(line, side, order);
+        const ref = lineRef(line, side, order, hunkIndex);
         if (ref) refs.push(ref);
         order += 1;
       }
@@ -309,14 +313,21 @@
     line: DiffFileType["hunks"][number]["lines"][number],
     side: ReviewSide,
     order: number,
+    hunkIndex: number,
     event: MouseEvent,
   ): void {
     if (!reviewEnabled || !diffHeadSHA) return;
-    const current = lineRef(line, side, order);
+    const current = lineRef(line, side, order, hunkIndex);
     if (!current) return;
-    if (nativeMultilineRanges && event.shiftKey && selectionAnchor?.side === side) {
+    const anchor = selectionAnchor;
+    if (
+      nativeMultilineRanges &&
+      event.shiftKey &&
+      anchor?.side === side &&
+      anchor.hunkIndex === current.hunkIndex
+    ) {
       const refs = selectableLines(side);
-      const anchorIndex = refs.findIndex((ref) => ref.order === selectionAnchor?.order);
+      const anchorIndex = refs.findIndex((ref) => ref.order === anchor.order);
       const currentIndex = refs.findIndex((ref) => ref.order === current.order);
       if (anchorIndex !== -1 && currentIndex !== -1) {
         const [startIndex, endIndex] = anchorIndex <= currentIndex
@@ -338,10 +349,12 @@
     line: DiffFileType["hunks"][number]["lines"][number],
     side: ReviewSide,
     order: number,
+    hunkIndex: number,
   ): boolean {
     if (!selectedRange) return false;
-    const current = lineRef(line, side, order);
+    const current = lineRef(line, side, order, hunkIndex);
     if (!current || current.side !== selectedRange.start.side) return false;
+    if (current.hunkIndex !== selectedRange.start.hunkIndex) return false;
     const min = Math.min(selectedRange.start.order, selectedRange.end.order);
     const max = Math.max(selectedRange.start.order, selectedRange.end.order);
     return current.order >= min && current.order <= max;
@@ -350,10 +363,11 @@
   function composerAfter(
     line: DiffFileType["hunks"][number]["lines"][number],
     order: number,
+    hunkIndex: number,
   ): boolean {
     if (!composerRange || !selectedRange) return false;
     const max = Math.max(selectedRange.start.order, selectedRange.end.order);
-    return order === max && lineRef(line, selectedRange.end.side, order) !== null;
+    return order === max && lineRef(line, selectedRange.end.side, order, hunkIndex) !== null;
   }
 
   function closeComposer(): void {
@@ -422,11 +436,11 @@
                 {...(line.no_newline ? { noNewline: line.no_newline } : {})}
                 tokens={getTokens(hunkIdx, lineIdx)}
                 {reviewEnabled}
-                oldSelected={isSelected(line, "left", order)}
-                newSelected={isSelected(line, "right", order)}
-                onselectside={(side, event) => handleLineSelect(line, side, order, event)}
+                oldSelected={isSelected(line, "left", order, hunkIdx)}
+                newSelected={isSelected(line, "right", order, hunkIdx)}
+                onselectside={(side, event) => handleLineSelect(line, side, order, hunkIdx, event)}
               />
-              {#if composerRange && composerAfter(line, order)}
+              {#if composerRange && composerAfter(line, order, hunkIdx)}
                 <DiffInlineCommentComposer
                   range={composerRange}
                   onclose={closeComposer}

@@ -128,7 +128,16 @@ func (c *Client) Host() string {
 }
 
 func (c *Client) Capabilities() platform.Capabilities {
-	return c.provider.Capabilities()
+	caps := c.provider.Capabilities()
+	caps.ReviewDraftMutation = true
+	caps.ReadReviewThreads = true
+	caps.NativeMultilineRanges = false
+	caps.SupportedReviewActions = []platform.ReviewAction{
+		platform.ReviewActionComment,
+		platform.ReviewActionApprove,
+		platform.ReviewActionRequestChanges,
+	}
+	return caps
 }
 
 type transport struct {

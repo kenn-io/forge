@@ -498,7 +498,7 @@ type apiTestGitLabProvider struct {
 }
 
 func (p *apiTestGitLabProvider) Platform() platform.Kind {
-	return platform.KindGitLab
+	return p.ref.Platform
 }
 
 func (p *apiTestGitLabProvider) Host() string {
@@ -10488,12 +10488,29 @@ func TestAPIDiffReviewDraftCRUDUsesLocalStorage(t *testing.T) {
 
 func TestAPIDiffReviewDraftRejectsInvalidLineCoordinates(t *testing.T) {
 	require := require.New(t)
-	srv, _ := setupGitLabCapabilityServer(t)
+	assert := Assert.New(t)
+	caps := platform.Capabilities{
+		ReadRepositories:       true,
+		ReadMergeRequests:      true,
+		ReadIssues:             true,
+		ReadComments:           true,
+		ReviewDraftMutation:    true,
+		SupportedReviewActions: []platform.ReviewAction{platform.ReviewActionComment},
+	}
+	srv, database := setupGitLabCapabilityServerWithCaps(t, &caps)
+	ctx := t.Context()
 
 	basePath := "/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/review-draft"
-	rr := doJSON(t, srv, http.MethodPost, basePath+"/comments", map[string]any{
-		"body": "Invalid legacy line type.",
-		"range": map[string]any{
+	validRange := map[string]any{
+		"path":          "internal/server/api_test.go",
+		"side":          "right",
+		"line":          42,
+		"new_line":      42,
+		"line_type":     "add",
+		"diff_head_sha": "abc123",
+	}
+	invalidRanges := []map[string]any{
+		{
 			"path":          "internal/server/api_test.go",
 			"side":          "right",
 			"line":          42,
@@ -10501,20 +10518,94 @@ func TestAPIDiffReviewDraftRejectsInvalidLineCoordinates(t *testing.T) {
 			"line_type":     "added",
 			"diff_head_sha": "abc123",
 		},
-	})
-	require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
-
-	rr = doJSON(t, srv, http.MethodPost, basePath+"/comments", map[string]any{
-		"body": "Missing diff head.",
-		"range": map[string]any{
+		{
 			"path":      "internal/server/api_test.go",
 			"side":      "right",
 			"line":      42,
 			"new_line":  42,
 			"line_type": "add",
 		},
+		{
+			"path":          "internal/server/api_test.go",
+			"side":          "right",
+			"start_line":    41,
+			"line":          42,
+			"new_line":      42,
+			"line_type":     "add",
+			"diff_head_sha": "abc123",
+		},
+		{
+			"path":          "internal/server/api_test.go",
+			"side":          "right",
+			"start_side":    "right",
+			"line":          42,
+			"new_line":      42,
+			"line_type":     "add",
+			"diff_head_sha": "abc123",
+		},
+		{
+			"path":          "internal/server/api_test.go",
+			"side":          "right",
+			"start_side":    "right",
+			"start_line":    43,
+			"line":          42,
+			"new_line":      42,
+			"line_type":     "add",
+			"diff_head_sha": "abc123",
+		},
+	}
+	for _, lineRange := range invalidRanges {
+		rr := doJSON(t, srv, http.MethodPost, basePath+"/comments", map[string]any{
+			"body":  "Invalid range.",
+			"range": lineRange,
+		})
+		require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
+	}
+
+	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.example.com",
+		RepoPath:     "group/project",
 	})
-	require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
+	require.NoError(err)
+	require.NotNil(repo)
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
+	require.NoError(err)
+	require.NotNil(mr)
+	storedDraft, err := database.GetMRReviewDraft(ctx, mr.ID)
+	require.NoError(err)
+	assert.Nil(storedDraft)
+
+	createRR := doJSON(t, srv, http.MethodPost, basePath+"/comments", map[string]any{
+		"body":  "Valid draft.",
+		"range": validRange,
+	})
+	require.Equal(http.StatusCreated, createRR.Code, createRR.Body.String())
+	var created map[string]any
+	require.NoError(json.NewDecoder(createRR.Body).Decode(&created))
+	commentID, ok := created["id"].(string)
+	require.True(ok)
+
+	patchRR := doJSON(t, srv, http.MethodPatch, basePath+"/comments/"+commentID, map[string]any{
+		"body": "Invalid patch.",
+		"range": map[string]any{
+			"path":          "internal/server/api_test.go",
+			"side":          "right",
+			"start_side":    "right",
+			"line":          42,
+			"new_line":      42,
+			"line_type":     "add",
+			"diff_head_sha": "abc123",
+		},
+	})
+	require.Equal(http.StatusBadRequest, patchRR.Code, patchRR.Body.String())
+	storedDraft, err = database.GetMRReviewDraft(ctx, mr.ID)
+	require.NoError(err)
+	require.NotNil(storedDraft)
+	comments, err := database.ListMRReviewDraftComments(ctx, storedDraft.ID)
+	require.NoError(err)
+	require.Len(comments, 1)
+	assert.Equal("Valid draft.", comments[0].Body)
 }
 
 func TestAPIPublishReviewDraftRejectsStoredCommentWithoutDiffHeadSHA(t *testing.T) {
@@ -10703,6 +10794,149 @@ func TestAPIPublishReviewDraftPersistsProviderReviewThreads(t *testing.T) {
 	assert.Equal("thread-7", events[0].PlatformExternalID)
 }
 
+func TestAPIForgejoPublishReviewDraftIngestsTimelineThread(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	caps := platform.Capabilities{
+		ReadRepositories:       true,
+		ReadMergeRequests:      true,
+		ReadIssues:             true,
+		ReadComments:           true,
+		ReadReviewThreads:      true,
+		ReviewDraftMutation:    true,
+		SupportedReviewActions: []platform.ReviewAction{platform.ReviewActionComment},
+	}
+	srv, database, provider := setupForgejoCapabilityServerWithProvider(t, &caps)
+	ctx := t.Context()
+
+	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
+		Platform:     "forgejo",
+		PlatformHost: "codeberg.org",
+		RepoPath:     "acme/widgets",
+	})
+	require.NoError(err)
+	require.NotNil(repo)
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 42)
+	require.NoError(err)
+	require.NotNil(mr)
+	require.NoError(database.UpdateDiffSHAs(ctx, repo.ID, 42, "forgejo-head", "base", "merge"))
+	now := time.Now().UTC().Truncate(time.Second)
+	line := 7
+	provider.reviewThreads = []platform.MergeRequestReviewThread{{
+		ProviderThreadID:  "comment-42",
+		ProviderReviewID:  "review-42",
+		ProviderCommentID: "comment-42",
+		Body:              "Forgejo inline note",
+		AuthorLogin:       "ada",
+		Range: platform.DiffReviewLineRange{
+			Path:        "src/main.go",
+			Side:        "right",
+			Line:        7,
+			NewLine:     &line,
+			LineType:    "add",
+			DiffHeadSHA: "forgejo-head",
+			CommitSHA:   "forgejo-head",
+		},
+		CreatedAt: now,
+		UpdatedAt: now,
+	}}
+
+	basePath := "/api/v1/pulls/forgejo/acme/widgets/42/review-draft"
+	createRR := doJSON(t, srv, http.MethodPost, basePath+"/comments", map[string]any{
+		"body": "Forgejo inline note",
+		"range": map[string]any{
+			"path":          "src/main.go",
+			"side":          "right",
+			"line":          7,
+			"new_line":      7,
+			"line_type":     "add",
+			"diff_head_sha": "forgejo-head",
+			"commit_sha":    "forgejo-head",
+		},
+	})
+	require.Equal(http.StatusCreated, createRR.Code, createRR.Body.String())
+
+	publishRR := doJSON(t, srv, http.MethodPost, basePath+"/publish", map[string]string{
+		"action": "comment",
+	})
+	require.Equal(http.StatusOK, publishRR.Code, publishRR.Body.String())
+	require.Len(provider.publishedReviews, 1)
+
+	detailRR := doJSON(t, srv, http.MethodGet, "/api/v1/pulls/forgejo/acme/widgets/42", nil)
+	require.Equal(http.StatusOK, detailRR.Code, detailRR.Body.String())
+	var detail mergeRequestDetailResponse
+	require.NoError(json.NewDecoder(detailRR.Body).Decode(&detail))
+	require.Len(detail.Events, 1)
+	require.NotNil(detail.Events[0].ReviewThread)
+	assert.Equal("Forgejo inline note", detail.Events[0].ReviewThread.Body)
+	assert.Equal("src/main.go", detail.Events[0].ReviewThread.Path)
+	assert.Equal(7, detail.Events[0].ReviewThread.Line)
+}
+
+func TestAPIForgejoSyncRecoversReviewThreadTimelineMetadata(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	caps := platform.Capabilities{
+		ReadRepositories:       true,
+		ReadMergeRequests:      true,
+		ReadIssues:             true,
+		ReadComments:           true,
+		ReadReviewThreads:      true,
+		ReviewDraftMutation:    true,
+		SupportedReviewActions: []platform.ReviewAction{platform.ReviewActionComment},
+	}
+	srv, database, provider := setupForgejoCapabilityServerWithProvider(t, &caps)
+	ctx := t.Context()
+
+	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
+		Platform:     "forgejo",
+		PlatformHost: "codeberg.org",
+		RepoPath:     "acme/widgets",
+	})
+	require.NoError(err)
+	require.NotNil(repo)
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 42)
+	require.NoError(err)
+	require.NotNil(mr)
+	events, err := database.ListMREvents(ctx, mr.ID)
+	require.NoError(err)
+	require.Empty(events)
+
+	now := time.Now().UTC().Truncate(time.Second)
+	line := 8
+	provider.reviewThreads = []platform.MergeRequestReviewThread{{
+		ProviderThreadID:  "comment-99",
+		ProviderReviewID:  "review-99",
+		ProviderCommentID: "comment-99",
+		Body:              "Recovered inline note",
+		AuthorLogin:       "ada",
+		Range: platform.DiffReviewLineRange{
+			Path:        "src/recovered.go",
+			Side:        "right",
+			Line:        line,
+			NewLine:     &line,
+			LineType:    "add",
+			DiffHeadSHA: "abc123",
+			CommitSHA:   "abc123",
+		},
+		CreatedAt: now,
+		UpdatedAt: now,
+	}}
+
+	syncRR := doJSON(t, srv, http.MethodPost, "/api/v1/pulls/forgejo/acme/widgets/42/sync", nil)
+	require.Equal(http.StatusOK, syncRR.Code, syncRR.Body.String())
+
+	detailRR := doJSON(t, srv, http.MethodGet, "/api/v1/pulls/forgejo/acme/widgets/42", nil)
+	require.Equal(http.StatusOK, detailRR.Code, detailRR.Body.String())
+	var detail mergeRequestDetailResponse
+	require.NoError(json.NewDecoder(detailRR.Body).Decode(&detail))
+	require.Len(detail.Events, 1)
+	require.NotNil(detail.Events[0].ReviewThread)
+	assert.Equal("review_comment", detail.Events[0].EventType)
+	assert.Equal("Recovered inline note", detail.Events[0].ReviewThread.Body)
+	assert.Equal("src/recovered.go", detail.Events[0].ReviewThread.Path)
+}
+
 func TestAPIPublishReviewDraftDeletesDraftBeforeReviewThreadIngest(t *testing.T) {
 	require := require.New(t)
 	caps := platform.Capabilities{
@@ -10829,6 +11063,70 @@ func TestAPIResolveReviewThreadPersistsProviderState(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(thread)
 	assert.False(thread.Resolved)
+}
+
+func TestAPIResolveReviewThreadReturnsServerErrorForCorruptStoredThread(t *testing.T) {
+	require := require.New(t)
+	caps := platform.Capabilities{
+		ReadRepositories:       true,
+		ReadMergeRequests:      true,
+		ReadIssues:             true,
+		ReadComments:           true,
+		ReviewThreadResolution: true,
+		ReviewDraftMutation:    true,
+		SupportedReviewActions: []platform.ReviewAction{platform.ReviewActionComment},
+		NativeMultilineRanges:  true,
+		ReadReviewThreads:      true,
+	}
+	srv, database, _ := setupGitLabCapabilityServerWithProvider(t, &caps)
+	ctx := t.Context()
+
+	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.example.com",
+		RepoPath:     "group/project",
+	})
+	require.NoError(err)
+	require.NotNil(repo)
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
+	require.NoError(err)
+	require.NotNil(mr)
+	now := time.Now().UTC().Truncate(time.Second)
+	line := 42
+	require.NoError(database.UpsertMRReviewThreads(ctx, mr.ID, []db.MRReviewThread{{
+		ProviderThreadID:  "thread-corrupt",
+		ProviderCommentID: "comment-corrupt",
+		Body:              "corrupt thread",
+		Range: db.ReviewLineRange{
+			Path:        "internal/server/api_test.go",
+			Side:        "right",
+			Line:        42,
+			NewLine:     &line,
+			LineType:    "add",
+			DiffHeadSHA: "head",
+		},
+		CreatedAt: now,
+		UpdatedAt: now,
+	}}))
+	threads, err := database.ListMRReviewThreads(ctx, mr.ID)
+	require.NoError(err)
+	require.Len(threads, 1)
+	_, err = database.WriteDB().ExecContext(
+		ctx,
+		`UPDATE middleman_mr_review_threads SET line = 'not-an-int' WHERE id = ?`,
+		threads[0].ID,
+	)
+	require.NoError(err)
+
+	rr := doJSON(
+		t,
+		srv,
+		http.MethodPost,
+		"/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/review-threads/"+
+			strconv.FormatInt(threads[0].ID, 10)+"/resolve",
+		nil,
+	)
+	require.Equal(http.StatusInternalServerError, rr.Code, rr.Body.String())
 }
 
 func TestAPIPullDetailAttachesReviewThreadMetadata(t *testing.T) {
@@ -12126,6 +12424,76 @@ func setupGitLabCapabilityServerWithProvider(
 		PlatformExternalID: "gid://gitlab/Project/4242",
 		WebURL:             "https://gitlab.example.com/group/project",
 		CloneURL:           "https://gitlab.example.com/group/project.git",
+		DefaultBranch:      "main",
+	}
+	syncer := ghclient.NewSyncerWithRegistry(
+		registry, database, nil, []ghclient.RepoRef{repo}, time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+
+	syncer.RunOnce(ctx)
+	return srv, database, provider
+}
+
+func setupForgejoCapabilityServerWithProvider(
+	t *testing.T,
+	caps *platform.Capabilities,
+) (*Server, *db.DB, *apiTestGitLabProvider) {
+	t.Helper()
+	require := require.New(t)
+	ctx := t.Context()
+	now := time.Now().UTC().Truncate(time.Second)
+
+	database := dbtest.Open(t)
+
+	ref := platform.RepoRef{
+		Platform:           platform.KindForgejo,
+		Host:               "codeberg.org",
+		Owner:              "acme",
+		Name:               "widgets",
+		RepoPath:           "acme/widgets",
+		PlatformID:         5252,
+		PlatformExternalID: "5252",
+		WebURL:             "https://codeberg.org/acme/widgets",
+		CloneURL:           "https://codeberg.org/acme/widgets.git",
+		DefaultBranch:      "main",
+	}
+	provider := &apiTestGitLabProvider{
+		ref:          ref,
+		capabilities: caps,
+		mergeRequests: []platform.MergeRequest{{
+			Repo:               ref,
+			PlatformID:         9001,
+			PlatformExternalID: "9001",
+			Number:             42,
+			URL:                "https://codeberg.org/acme/widgets/pulls/42",
+			Title:              "Forgejo provider PR",
+			Author:             "ada",
+			State:              "open",
+			HeadBranch:         "feature/forgejo",
+			BaseBranch:         "main",
+			HeadSHA:            "abc123",
+			BaseSHA:            "def456",
+			CreatedAt:          now,
+			UpdatedAt:          now,
+			LastActivityAt:     now,
+		}},
+	}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+
+	repo := ghclient.RepoRef{
+		Platform:           platform.KindForgejo,
+		Owner:              "acme",
+		Name:               "widgets",
+		PlatformHost:       "codeberg.org",
+		RepoPath:           "acme/widgets",
+		PlatformRepoID:     5252,
+		PlatformExternalID: "5252",
+		WebURL:             "https://codeberg.org/acme/widgets",
+		CloneURL:           "https://codeberg.org/acme/widgets.git",
 		DefaultBranch:      "main",
 	}
 	syncer := ghclient.NewSyncerWithRegistry(

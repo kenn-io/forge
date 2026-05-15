@@ -480,8 +480,11 @@ type syncTestReadProvider struct {
 	listIssueCalls      atomic.Int32
 	getMRCalls          atomic.Int32
 	getIssueCalls       atomic.Int32
+	listReviewThreads   atomic.Int32
 	listMRMergeEvents   []platform.MergeRequestEvent
+	reviewThreads       []platform.MergeRequestReviewThread
 	listIssueReadEvents []platform.IssueEvent
+	readReviewThreads   bool
 }
 
 type syncTestRepositoryReadProvider struct {
@@ -567,6 +570,7 @@ func (p *syncTestReadProvider) Capabilities() platform.Capabilities {
 	return platform.Capabilities{
 		ReadMergeRequests: true,
 		ReadIssues:        true,
+		ReadReviewThreads: p.readReviewThreads,
 	}
 }
 
@@ -614,6 +618,15 @@ func (p *syncTestReadProvider) ListMergeRequestEvents(
 	int,
 ) ([]platform.MergeRequestEvent, error) {
 	return p.listMRMergeEvents, nil
+}
+
+func (p *syncTestReadProvider) ListMergeRequestReviewThreads(
+	context.Context,
+	platform.RepoRef,
+	int,
+) ([]platform.MergeRequestReviewThread, error) {
+	p.listReviewThreads.Add(1)
+	return p.reviewThreads, nil
 }
 
 func (p *syncTestReadProvider) ListOpenIssues(
@@ -3514,6 +3527,96 @@ func TestFetchMRDetailPersistsWorkflowApproval(t *testing.T) {
 	assert.Equal(headSHA, got.WorkflowApprovalHeadSHA)
 	assert.True(got.WorkflowApprovalRequired)
 	assert.Equal(1, got.WorkflowApprovalCount)
+}
+
+func TestFetchProviderMRDetailSyncsReviewThreads(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := time.Date(2026, 4, 21, 12, 0, 0, 0, time.UTC)
+
+	ref := platform.RepoRef{
+		Platform:      platform.KindForgejo,
+		Host:          "codeberg.org",
+		Owner:         "acme",
+		Name:          "widgets",
+		RepoPath:      "acme/widgets",
+		DefaultBranch: "main",
+	}
+	repo := RepoRef{
+		Platform:      platform.KindForgejo,
+		PlatformHost:  "codeberg.org",
+		Owner:         "acme",
+		Name:          "widgets",
+		RepoPath:      "acme/widgets",
+		DefaultBranch: "main",
+	}
+	repoID, err := d.UpsertRepo(ctx, platform.DBRepoIdentity(ref))
+	require.NoError(err)
+
+	line := 12
+	provider := &syncTestReadProvider{
+		syncTestProvider:  syncTestProvider{kind: platform.KindForgejo, host: "codeberg.org"},
+		readReviewThreads: true,
+		mergeRequests: []platform.MergeRequest{{
+			Repo:               ref,
+			PlatformID:         9001,
+			PlatformExternalID: "9001",
+			Number:             42,
+			URL:                "https://codeberg.org/acme/widgets/pulls/42",
+			Title:              "inline review",
+			Author:             "ada",
+			State:              "open",
+			HeadBranch:         "feature",
+			BaseBranch:         "main",
+			HeadSHA:            "head-sha",
+			BaseSHA:            "base-sha",
+			CreatedAt:          now,
+			UpdatedAt:          now,
+			LastActivityAt:     now,
+		}},
+		reviewThreads: []platform.MergeRequestReviewThread{{
+			ProviderThreadID:  "thread-42",
+			ProviderReviewID:  "review-42",
+			ProviderCommentID: "comment-42",
+			Body:              "synced inline note",
+			AuthorLogin:       "reviewer",
+			Range: platform.DiffReviewLineRange{
+				Path:        "src/main.go",
+				Side:        "right",
+				Line:        line,
+				NewLine:     &line,
+				LineType:    "add",
+				DiffHeadSHA: "head-sha",
+			},
+			CreatedAt: now,
+			UpdatedAt: now,
+		}},
+	}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	syncer := NewSyncerWithRegistry(registry, d, nil, []RepoRef{repo}, time.Minute, nil, nil)
+
+	calls, err := syncer.fetchProviderMRDetail(ctx, provider, repo, repoID, 42)
+	require.NoError(err)
+	assert.Equal(3, calls)
+	assert.Equal(int32(1), provider.listReviewThreads.Load())
+
+	mr, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 42)
+	require.NoError(err)
+	require.NotNil(mr)
+	threads, err := d.ListMRReviewThreads(ctx, mr.ID)
+	require.NoError(err)
+	require.Len(threads, 1)
+	assert.Equal("thread-42", threads[0].ProviderThreadID)
+	assert.Equal("synced inline note", threads[0].Body)
+
+	events, err := d.ListMREvents(ctx, mr.ID)
+	require.NoError(err)
+	require.Len(events, 1)
+	assert.Equal("review_comment", events[0].EventType)
+	assert.Equal("thread-42", events[0].PlatformExternalID)
 }
 
 func TestSyncOpenIssueReadsExistingByRepoID(t *testing.T) {

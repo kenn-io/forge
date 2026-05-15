@@ -4622,6 +4622,12 @@ func (s *Syncer) syncProviderMRDetailExtras(
 		}
 	}
 
+	reviewThreadCalls, err := s.syncProviderMRReviewThreads(ctx, repo, mrID, number)
+	calls += reviewThreadCalls
+	if err != nil {
+		return calls, false, fmt.Errorf("sync review threads for MR #%d: %w", number, err)
+	}
+
 	pending := false
 	if headSHA == "" {
 		return calls, pending, nil
@@ -4652,6 +4658,96 @@ func (s *Syncer) syncProviderMRDetailExtras(
 	}
 	pending = ciHasPending(string(ciJSON))
 	return calls, pending, nil
+}
+
+func (s *Syncer) syncProviderMRReviewThreads(
+	ctx context.Context,
+	repo RepoRef,
+	mrID int64,
+	number int,
+) (int, error) {
+	caps, err := s.clients.Capabilities(repoPlatform(repo), repoHost(repo))
+	if err != nil {
+		if errors.Is(err, platform.ErrUnsupportedCapability) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	if !caps.ReadReviewThreads {
+		return 0, nil
+	}
+	reader, err := s.clients.MergeRequestReviewThreadReader(repoPlatform(repo), repoHost(repo))
+	if err != nil {
+		return 0, err
+	}
+	threads, err := reader.ListMergeRequestReviewThreads(ctx, platformRepoRef(repo), number)
+	calls := 1
+	if err != nil {
+		return calls, err
+	}
+
+	dbThreads := make([]db.MRReviewThread, 0, len(threads))
+	events := make([]db.MREvent, 0, len(threads))
+	for _, thread := range threads {
+		providerThreadID := thread.ProviderThreadID
+		if providerThreadID == "" {
+			providerThreadID = thread.ProviderCommentID
+		}
+		if providerThreadID == "" {
+			continue
+		}
+		dbThreads = append(dbThreads, db.MRReviewThread{
+			ProviderThreadID:  providerThreadID,
+			ProviderReviewID:  thread.ProviderReviewID,
+			ProviderCommentID: thread.ProviderCommentID,
+			Body:              thread.Body,
+			AuthorLogin:       thread.AuthorLogin,
+			Range:             dbReviewLineRangeFromPlatform(thread.Range),
+			Resolved:          thread.Resolved,
+			CreatedAt:         thread.CreatedAt,
+			UpdatedAt:         thread.UpdatedAt,
+			ResolvedAt:        thread.ResolvedAt,
+			MetadataJSON:      thread.MetadataJSON,
+		})
+		createdAt := thread.CreatedAt
+		if createdAt.IsZero() {
+			createdAt = time.Now().UTC()
+		}
+		events = append(events, db.MREvent{
+			MergeRequestID:     mrID,
+			PlatformExternalID: providerThreadID,
+			EventType:          "review_comment",
+			Author:             thread.AuthorLogin,
+			Body:               thread.Body,
+			CreatedAt:          createdAt,
+			DedupeKey:          "review_comment:" + providerThreadID,
+		})
+	}
+	if err := s.db.UpsertMRReviewThreads(ctx, mrID, dbThreads); err != nil {
+		return calls, err
+	}
+	if len(events) > 0 {
+		if err := s.db.UpsertMREvents(ctx, events); err != nil {
+			return calls, err
+		}
+	}
+	return calls, nil
+}
+
+func dbReviewLineRangeFromPlatform(input platform.DiffReviewLineRange) db.ReviewLineRange {
+	return db.ReviewLineRange{
+		Path:        input.Path,
+		OldPath:     input.OldPath,
+		Side:        input.Side,
+		StartSide:   input.StartSide,
+		StartLine:   input.StartLine,
+		Line:        input.Line,
+		OldLine:     input.OldLine,
+		NewLine:     input.NewLine,
+		LineType:    input.LineType,
+		DiffHeadSHA: input.DiffHeadSHA,
+		CommitSHA:   input.CommitSHA,
+	}
 }
 
 // fetchIssueDetail performs a full detail fetch for a single
@@ -6478,6 +6574,9 @@ func (s *Syncer) syncMRForRepo(
 
 		if err := s.refreshTimeline(ctx, repo, repoID, mrID, ghPR); err != nil {
 			return fmt.Errorf("refresh timeline for MR #%d: %w", number, err)
+		}
+		if _, err := s.syncProviderMRReviewThreads(ctx, repo, mrID, number); err != nil {
+			return fmt.Errorf("sync review threads for MR #%d: %w", number, err)
 		}
 
 		syncMRHeadSHA := ""

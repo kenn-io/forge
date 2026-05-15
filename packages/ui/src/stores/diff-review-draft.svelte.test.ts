@@ -14,8 +14,8 @@ interface MockDraftLoad {
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((res) => {
-    resolve = res;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
   });
   return { promise, resolve };
 }
@@ -160,5 +160,51 @@ describe("createDiffReviewDraftStore", () => {
     expect(client.GET).toHaveBeenCalledTimes(2);
     expect(store.getComments()).toEqual([{ id: "new", body: "new draft" }]);
     expect(store.isLoading()).toBe(false);
+  });
+
+  it("ignores an older same-PR load after publish refreshes the draft", async () => {
+    const staleLoad = deferred<MockDraftLoad>();
+    const client = {
+      GET: vi
+        .fn()
+        .mockReturnValueOnce(staleLoad.promise)
+        .mockResolvedValueOnce({
+          data: {
+            comments: [],
+            supported_actions: ["comment"],
+            native_multiline_ranges: true,
+          },
+          response: { status: 200, ok: true },
+        }),
+      POST: vi.fn(() => Promise.resolve({
+        response: { status: 200, ok: true },
+      })),
+    } as unknown as MiddlemanClient;
+    const store = createDiffReviewDraftStore({ client });
+
+    store.setContext({
+      provider: "forgejo",
+      platformHost: "codeberg.org",
+      owner: "acme",
+      name: "widgets",
+      repoPath: "acme/widgets",
+    }, 42, true);
+    await Promise.resolve();
+
+    await expect(store.publish("comment", "summary")).resolves.toBe(true);
+    expect(store.getComments()).toEqual([]);
+
+    staleLoad.resolve({
+      data: {
+        comments: [{ id: "stale", body: "old draft" }],
+        supported_actions: ["comment"],
+        native_multiline_ranges: true,
+      },
+      response: { status: 200, ok: true },
+    });
+    await staleLoad.promise;
+    await Promise.resolve();
+
+    expect(store.getComments()).toEqual([]);
   });
 });

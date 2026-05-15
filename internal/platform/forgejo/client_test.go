@@ -16,19 +16,21 @@ import (
 )
 
 var (
-	_ gitealike.Transport         = (*transport)(nil)
-	_ gitealike.ActionsTransport  = (*transport)(nil)
-	_ platform.RepositoryReader   = (*Client)(nil)
-	_ platform.MergeRequestReader = (*Client)(nil)
-	_ platform.IssueReader        = (*Client)(nil)
-	_ platform.ReleaseReader      = (*Client)(nil)
-	_ platform.TagReader          = (*Client)(nil)
-	_ platform.CIReader           = (*Client)(nil)
-	_ platform.CommentMutator     = (*Client)(nil)
-	_ platform.StateMutator       = (*Client)(nil)
-	_ platform.MergeMutator       = (*Client)(nil)
-	_ platform.ReviewMutator      = (*Client)(nil)
-	_ platform.IssueMutator       = (*Client)(nil)
+	_ gitealike.Transport                     = (*transport)(nil)
+	_ gitealike.ActionsTransport              = (*transport)(nil)
+	_ platform.RepositoryReader               = (*Client)(nil)
+	_ platform.MergeRequestReader             = (*Client)(nil)
+	_ platform.IssueReader                    = (*Client)(nil)
+	_ platform.ReleaseReader                  = (*Client)(nil)
+	_ platform.TagReader                      = (*Client)(nil)
+	_ platform.CIReader                       = (*Client)(nil)
+	_ platform.CommentMutator                 = (*Client)(nil)
+	_ platform.StateMutator                   = (*Client)(nil)
+	_ platform.MergeMutator                   = (*Client)(nil)
+	_ platform.ReviewMutator                  = (*Client)(nil)
+	_ platform.IssueMutator                   = (*Client)(nil)
+	_ platform.DiffReviewDraftMutator         = (*Client)(nil)
+	_ platform.MergeRequestReviewThreadReader = (*Client)(nil)
 )
 
 func TestClientLooksUpRepositoryAndSendsToken(t *testing.T) {
@@ -243,17 +245,25 @@ func TestClientProviderIdentityExposesReadCapabilities(t *testing.T) {
 	assert.Equal(platform.KindForgejo, client.Platform())
 	assert.Equal("codeberg.test", client.Host())
 	assert.Equal(platform.Capabilities{
-		ReadRepositories:  true,
-		ReadMergeRequests: true,
-		ReadIssues:        true,
-		ReadComments:      true,
-		ReadReleases:      true,
-		ReadCI:            true,
-		CommentMutation:   true,
-		StateMutation:     true,
-		MergeMutation:     true,
-		ReviewMutation:    true,
-		IssueMutation:     true,
+		ReadRepositories:      true,
+		ReadMergeRequests:     true,
+		ReadIssues:            true,
+		ReadComments:          true,
+		ReadReleases:          true,
+		ReadCI:                true,
+		CommentMutation:       true,
+		StateMutation:         true,
+		MergeMutation:         true,
+		ReviewMutation:        true,
+		IssueMutation:         true,
+		ReviewDraftMutation:   true,
+		ReadReviewThreads:     true,
+		NativeMultilineRanges: false,
+		SupportedReviewActions: []platform.ReviewAction{
+			platform.ReviewActionComment,
+			platform.ReviewActionApprove,
+			platform.ReviewActionRequestChanges,
+		},
 	}, client.Capabilities())
 }
 

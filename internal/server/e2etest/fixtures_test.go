@@ -234,6 +234,10 @@ func (m *mockGH) CreatePullRequestReviewCommentReply(
 ) (*gh.PullRequestComment, error) {
 	return nil, nil
 }
+func (m *mockGH) ListNotifications(context.Context, ghclient.NotificationListOptions) ([]ghclient.NotificationThread, bool, error) {
+	return nil, false, nil
+}
+func (m *mockGH) MarkNotificationThreadRead(context.Context, string) error { return nil }
 func (m *mockGH) GetRepository(
 	ctx context.Context, owner, repo string,
 ) (*gh.Repository, error) {

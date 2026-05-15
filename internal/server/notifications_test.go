@@ -21,7 +21,7 @@ import (
 func seedServerNotification(t *testing.T, database *db.DB) int64 {
 	t.Helper()
 	require := require.New(t)
-	repoID, err := database.UpsertRepo(t.Context(), "github.com", "acme", "widget")
+	repoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	number := 42
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
@@ -128,7 +128,7 @@ func TestNotificationsAPIMapsNeutralFieldsToExistingGitHubJSON(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	database := openTestDB(t)
-	repoID, err := database.UpsertRepo(t.Context(), "github.com", "acme", "widget")
+	repoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
 	number := 42
@@ -190,7 +190,7 @@ func TestNotificationsAPIShowsClosedLinkedItemsAsDone(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	database := openTestDB(t)
-	repoID, err := database.UpsertRepo(t.Context(), "github.com", "acme", "widget")
+	repoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
 	closedAt := now.Add(time.Hour)
@@ -242,7 +242,7 @@ func TestNotificationsAPIReclosesLinkedItemsAfterUndone(t *testing.T) {
 	require := require.New(t)
 	check := assert.New(t)
 	database := openTestDB(t)
-	repoID, err := database.UpsertRepo(t.Context(), "github.com", "acme", "widget")
+	repoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
 	closedAt := now.Add(time.Hour)
@@ -297,9 +297,9 @@ func TestNotificationsAPIUsesActiveTrackedRepos(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	database := openTestDB(t)
-	trackedRepoID, err := database.UpsertRepo(t.Context(), "github.com", "acme", "widget")
+	trackedRepoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
-	removedRepoID, err := database.UpsertRepo(t.Context(), "github.com", "acme", "removed")
+	removedRepoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "removed"))
 	require.NoError(err)
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
 	require.NoError(database.UpsertNotifications(t.Context(), []db.Notification{
@@ -336,9 +336,9 @@ func TestNotificationsAPIAcceptsHostQualifiedRepoFilter(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	database := openTestDB(t)
-	githubRepoID, err := database.UpsertRepo(t.Context(), "github.com", "acme", "widget")
+	githubRepoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
-	gheRepoID, err := database.UpsertRepo(t.Context(), "ghe.example.com", "acme", "widget")
+	gheRepoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("ghe.example.com", "acme", "widget"))
 	require.NoError(err)
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
 	require.NoError(database.UpsertNotifications(t.Context(), []db.Notification{
@@ -658,9 +658,9 @@ func TestNotificationsAPIRejectsNilConfigAccess(t *testing.T) {
 func TestNotificationsAPIBulkMutationsScopeToTrackedRepos(t *testing.T) {
 	require := require.New(t)
 	database := openTestDB(t)
-	trackedRepoID, err := database.UpsertRepo(t.Context(), "github.com", "acme", "widget")
+	trackedRepoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
-	removedRepoID, err := database.UpsertRepo(t.Context(), "github.com", "acme", "removed")
+	removedRepoID, err := database.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "removed"))
 	require.NoError(err)
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
 	require.NoError(database.UpsertNotifications(t.Context(), []db.Notification{

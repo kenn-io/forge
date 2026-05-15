@@ -73,7 +73,7 @@ Rules:
 - `done_at` and `done_reason` remain middleman-local triage state.
 - `source_*` fields track provider-side activity and acknowledgement propagation state.
 - `sync_cursor` is opaque provider-owned watermark state. GitHub currently leaves it empty.
-- Current notification schema ships as single DB upgrade in `000019_notifications.*`; do not split future assumptions across deleted branch-only migrations.
+- Current notification schema ships as single DB upgrade in `000021_notifications.*`; do not split future assumptions across deleted branch-only migrations.
 
 ## Inbox State Model
 

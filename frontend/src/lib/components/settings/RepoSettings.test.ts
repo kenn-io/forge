@@ -199,6 +199,9 @@ describe("RepoSettings", () => {
         hide_tmux_status: false,
         renderer: "xterm",
       },
+      notifications: {
+        enabled: false,
+      },
       agents: [],
       fleet: defaultFleetSettings(),
     });
@@ -223,6 +226,9 @@ describe("RepoSettings", () => {
         font_ligatures: false,
         hide_tmux_status: false,
         renderer: "xterm",
+      },
+      notifications: {
+        enabled: false,
       },
       agents: [],
       fleet: defaultFleetSettings(),

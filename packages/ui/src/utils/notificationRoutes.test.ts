@@ -40,7 +40,7 @@ describe("notificationDestination", () => {
   it("routes GitHub PR notifications through provider-shaped detail URLs", () => {
     expect(notificationDestination(notification({}))).toEqual({
       kind: "internal",
-      path: "/pulls/detail?provider=github&platform_host=github.com&repo_path=acme%2Fwidget&number=1",
+      path: "/pulls/github/acme/widget/1",
     });
   });
 
@@ -50,7 +50,7 @@ describe("notificationDestination", () => {
       web_url: "https://ghe.example.com/acme/widget/pull/1",
     }))).toEqual({
       kind: "internal",
-      path: "/pulls/detail?provider=github&platform_host=ghe.example.com&repo_path=acme%2Fwidget&number=1",
+      path: "/host/ghe.example.com/pulls/github/acme/widget/1",
     });
   });
 
@@ -62,7 +62,7 @@ describe("notificationDestination", () => {
       item_type: "issue",
     }))).toEqual({
       kind: "internal",
-      path: "/issues/detail?provider=github&platform_host=ghe.example.com&repo_path=acme%2Fwidget&number=2",
+      path: "/host/ghe.example.com/issues/github/acme/widget/2",
     });
   });
 

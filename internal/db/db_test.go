@@ -95,10 +95,10 @@ func TestOpenAndSchema(t *testing.T) {
 	}
 }
 
-func TestOpenMigratesNotificationSchemaFromVersion18(t *testing.T) {
+func TestOpenMigratesNotificationSchemaFromVersion20(t *testing.T) {
 	require := require.New(t)
 	dir := t.TempDir()
-	path := filepath.Join(dir, "notifications-v18.db")
+	path := filepath.Join(dir, "notifications-v20.db")
 
 	d, err := Open(path)
 	require.NoError(err)
@@ -109,7 +109,7 @@ func TestOpenMigratesNotificationSchemaFromVersion18(t *testing.T) {
 	_, err = raw.Exec(`
 		DROP TABLE IF EXISTS middleman_notification_sync_watermarks;
 		DROP TABLE IF EXISTS middleman_notification_items;
-		UPDATE schema_migrations SET version = 18, dirty = FALSE`)
+		UPDATE schema_migrations SET version = 20, dirty = FALSE`)
 	require.NoError(err)
 	require.NoError(raw.Close())
 

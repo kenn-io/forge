@@ -362,7 +362,7 @@
 
   .inbox-title {
     color: var(--text-primary);
-    font-size: 14px;
+    font-size: var(--font-size-lg);
     font-weight: 650;
   }
 
@@ -372,7 +372,7 @@
     flex-wrap: wrap;
     gap: 8px;
     color: var(--text-secondary);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
   }
 
   .demo-button {
@@ -380,7 +380,7 @@
     border-radius: 8px;
     background: var(--bg-surface);
     color: var(--text-primary);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     font-weight: 650;
     padding: 6px 10px;
   }

@@ -1465,7 +1465,7 @@ func TestSyncNotificationsContinuesAfterHostError(t *testing.T) {
 	require := require.New(t)
 	check := Assert.New(t)
 	d := openTestDB(t)
-	_, err := d.UpsertRepo(t.Context(), "ghe.example.com", "acme", "widget")
+	_, err := d.UpsertRepo(t.Context(), db.GitHubRepoIdentity("ghe.example.com", "acme", "widget"))
 	require.NoError(err)
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
 	boom := errors.New("boom")
@@ -1518,7 +1518,7 @@ func TestSyncMRMarksLinkedNotificationDone(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
 	d := openTestDB(t)
-	repoID, err := d.UpsertRepo(t.Context(), "github.com", "acme", "widget")
+	repoID, err := d.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
 	number := 7
@@ -1624,7 +1624,7 @@ func TestSyncIssueMarksLinkedNotificationDone(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
 	d := openTestDB(t)
-	repoID, err := d.UpsertRepo(t.Context(), "github.com", "acme", "widget")
+	repoID, err := d.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
 	number := 8
@@ -1731,7 +1731,7 @@ func TestSyncNotificationsEnrichesItemAuthorFromLinkedItems(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
 	d := openTestDB(t)
-	repoID, err := d.UpsertRepo(t.Context(), "github.com", "acme", "widget")
+	repoID, err := d.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
 	prNumber := 7
@@ -1829,7 +1829,7 @@ func TestSyncNotificationsMarksParticipatingThreads(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
 	d := openTestDB(t)
-	_, err := d.UpsertRepo(t.Context(), "github.com", "acme", "widget")
+	_, err := d.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
 	syncer := NewSyncer(
@@ -1892,7 +1892,7 @@ func TestProcessQueuedNotificationReadsStopsRetryMetadataAtMaxAttempts(t *testin
 	require := require.New(t)
 	assert := Assert.New(t)
 	d := openTestDB(t)
-	repoID, err := d.UpsertRepo(t.Context(), "github.com", "acme", "widget")
+	repoID, err := d.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	number := 7
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
@@ -1944,7 +1944,7 @@ func TestProcessQueuedNotificationReadsPausesOnRateLimitWithoutConsumingAttempts
 	require := require.New(t)
 	check := Assert.New(t)
 	d := openTestDB(t)
-	repoID, err := d.UpsertRepo(t.Context(), "github.com", "acme", "widget")
+	repoID, err := d.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
 	numberOne := 7
@@ -2017,7 +2017,7 @@ func TestProcessQueuedNotificationReadsReopensRemoteActivityAfterPatchRace(t *te
 	require := require.New(t)
 	check := Assert.New(t)
 	d := openTestDB(t)
-	repoID, err := d.UpsertRepo(t.Context(), "github.com", "acme", "widget")
+	repoID, err := d.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	number := 7
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
@@ -2105,7 +2105,7 @@ func TestSyncNotificationsUsesPersistedSinceWatermark(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
 	d := openTestDB(t)
-	_, err := d.UpsertRepo(t.Context(), "github.com", "acme", "widget")
+	_, err := d.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	watermark := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
 	lastFullSyncAt := time.Now().UTC()
@@ -2149,7 +2149,7 @@ func TestSyncNotificationsDoesPeriodicFullSyncForReadState(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
 	d := openTestDB(t)
-	_, err := d.UpsertRepo(t.Context(), "github.com", "acme", "widget")
+	_, err := d.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	watermark := time.Now().UTC().Add(-2 * notificationFullSyncInterval)
 	lastFullSyncAt := watermark
@@ -2189,9 +2189,9 @@ func TestSyncNotificationsClearsSinceWhenTrackedReposChange(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
 	d := openTestDB(t)
-	_, err := d.UpsertRepo(t.Context(), "github.com", "acme", "widget")
+	_, err := d.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
-	_, err = d.UpsertRepo(t.Context(), "github.com", "acme", "new-repo")
+	_, err = d.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "new-repo"))
 	require.NoError(err)
 	watermark := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
 	lastFullSyncAt := time.Now().UTC()
@@ -2235,7 +2235,7 @@ func TestRepoSyncMarksClosedLinkedNotificationsDone(t *testing.T) {
 	assert := Assert.New(t)
 	d := openTestDB(t)
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
-	repoID, err := d.UpsertRepo(t.Context(), "github.com", "acme", "widget")
+	repoID, err := d.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	number := 7
 	_, err = d.UpsertMergeRequest(t.Context(), &db.MergeRequest{

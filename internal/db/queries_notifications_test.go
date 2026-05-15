@@ -11,7 +11,7 @@ import (
 func seedNotificationRepo(t *testing.T, d *DB) int64 {
 	t.Helper()
 	require := require.New(t)
-	repoID, err := d.UpsertRepo(t.Context(), "github.com", "acme", "widget")
+	repoID, err := d.UpsertRepo(t.Context(), GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	return repoID
 }
@@ -137,7 +137,7 @@ func TestMarkNotificationsAcknowledgedScopesThreadIDsToPlatformHost(t *testing.T
 	assert := assert.New(t)
 	d := openTestDB(t)
 	seedNotificationRepo(t, d)
-	repoID, err := d.UpsertRepo(t.Context(), "ghe.example.com", "acme", "widget")
+	repoID, err := d.UpsertRepo(t.Context(), GitHubRepoIdentity("ghe.example.com", "acme", "widget"))
 	require.NoError(err)
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
 	githubNotification := notificationFixture("shared-thread", "mention", now)
@@ -424,7 +424,7 @@ func TestNotificationsHideUnmonitoredRepos(t *testing.T) {
 	assert := assert.New(t)
 	d := openTestDB(t)
 	seedNotificationRepo(t, d)
-	otherRepoID, err := d.UpsertRepo(t.Context(), "github.com", "acme", "tools")
+	otherRepoID, err := d.UpsertRepo(t.Context(), GitHubRepoIdentity("github.com", "acme", "tools"))
 	require.NoError(err)
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
 	tracked := notificationFixture("tracked", "mention", now)
@@ -461,7 +461,7 @@ func TestNotificationSummaryRepoFacetsIncludePlatformHost(t *testing.T) {
 	assert := assert.New(t)
 	d := openTestDB(t)
 	seedNotificationRepo(t, d)
-	repoID, err := d.UpsertRepo(t.Context(), "ghe.example.com", "acme", "widget")
+	repoID, err := d.UpsertRepo(t.Context(), GitHubRepoIdentity("ghe.example.com", "acme", "widget"))
 	require.NoError(err)
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
 	githubNotification := notificationFixture("github", "mention", now)

@@ -164,6 +164,41 @@ describe("createDiffReviewDraftStore", () => {
     expect(store.isLoading()).toBe(false);
   });
 
+  it("surfaces partial publish status while clearing the draft", async () => {
+    const client = {
+      GET: vi.fn(() => Promise.resolve({
+        data: {
+          comments: [],
+          supported_actions: ["comment"],
+          native_multiline_ranges: false,
+        },
+        response: { status: 200, ok: true },
+      })),
+      POST: vi.fn(() => Promise.resolve({
+        data: { status: "partially_published" },
+        response: { status: 200, ok: true },
+      })),
+    } as unknown as MiddlemanClient;
+    const onPublished = vi.fn();
+    const store = createDiffReviewDraftStore({ client, onPublished });
+    const ref = {
+      provider: "gitlab",
+      platformHost: "gitlab.example.com",
+      owner: "group",
+      name: "project",
+      repoPath: "group/project",
+    };
+
+    store.setContext(ref, 7, true);
+    await Promise.resolve();
+    const ok = await store.publish("approve", "summary");
+
+    expect(ok).toBe(true);
+    expect(store.getDraft()?.comments).toEqual([]);
+    expect(store.getWarning()).toContain("partially published");
+    expect(onPublished).toHaveBeenCalledWith(ref, 7);
+  });
+
   it("ignores an older same-PR load after publish refreshes the draft", async () => {
     const staleLoad = deferred<MockDraftLoad>();
     const client = {
@@ -211,7 +246,7 @@ describe("createDiffReviewDraftStore", () => {
   });
 
   it("does not stay loading when a mutation fails during an in-flight load", async () => {
-    const staleLoad = deferred<unknown>();
+    const staleLoad = deferred<MockDraftLoad>();
     const client = {
       GET: vi.fn().mockReturnValueOnce(staleLoad.promise),
       POST: vi.fn(() => Promise.resolve({
@@ -250,7 +285,7 @@ describe("createDiffReviewDraftStore", () => {
   });
 
   it("does not stay loading when discard succeeds during an in-flight load", async () => {
-    const staleLoad = deferred<unknown>();
+    const staleLoad = deferred<MockDraftLoad>();
     const client = {
       GET: vi.fn().mockReturnValueOnce(staleLoad.promise),
       DELETE: vi.fn(() => Promise.resolve({

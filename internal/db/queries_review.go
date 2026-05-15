@@ -330,6 +330,32 @@ func (d *DB) UpsertMRReviewThreads(ctx context.Context, mrID int64, threads []MR
 	})
 }
 
+// DeleteMissingMRReviewThreads removes review-thread metadata and generated
+// review_comment timeline rows that are absent from the latest provider read.
+func (d *DB) DeleteMissingMRReviewThreads(ctx context.Context, mrID int64, providerThreadIDs []string) error {
+	return d.Tx(ctx, func(tx *sql.Tx) error {
+		threadQuery := `DELETE FROM middleman_mr_review_threads WHERE merge_request_id = ?`
+		threadArgs := []any{mrID}
+		eventQuery := `DELETE FROM middleman_mr_events WHERE merge_request_id = ? AND event_type = 'review_comment'`
+		eventArgs := []any{mrID}
+		if len(providerThreadIDs) > 0 {
+			threadQuery += ` AND provider_thread_id NOT IN (` + sqlPlaceholders(len(providerThreadIDs)) + `)`
+			eventQuery += ` AND dedupe_key NOT IN (` + sqlPlaceholders(len(providerThreadIDs)) + `)`
+			for _, providerThreadID := range providerThreadIDs {
+				threadArgs = append(threadArgs, providerThreadID)
+				eventArgs = append(eventArgs, "review_comment:"+providerThreadID)
+			}
+		}
+		if _, err := tx.ExecContext(ctx, threadQuery, threadArgs...); err != nil {
+			return fmt.Errorf("delete missing mr review threads: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, eventQuery, eventArgs...); err != nil {
+			return fmt.Errorf("delete missing mr review thread events: %w", err)
+		}
+		return nil
+	})
+}
+
 func (d *DB) ListMRReviewThreads(ctx context.Context, mrID int64) ([]MRReviewThread, error) {
 	rows, err := d.ro.QueryContext(ctx, `
 		SELECT id, merge_request_id, provider_thread_id, provider_review_id,

@@ -98,6 +98,7 @@ function renderDiffFile(
     reviewEnabled?: boolean;
     diffHeadSHA?: string;
     nativeMultilineRanges?: boolean;
+    owner?: string;
   } = {},
 ) {
   const diff = createDiffStore();
@@ -110,7 +111,7 @@ function renderDiffFile(
   return render(DiffFile, {
     props: {
       file,
-      owner: uniqueOwner(),
+      owner: options.owner ?? uniqueOwner(),
       name: "n",
       number: 1,
       ...(options.richPreviewEnabled !== undefined && {
@@ -241,5 +242,54 @@ describe("DiffFile", () => {
     const selected = Array.from(document.querySelectorAll(".gutter-new.gutter--selected"));
     expect(selected).toHaveLength(1);
     expect(selected[0]?.textContent?.trim()).toBe("20");
+  });
+
+  it("clears an open inline composer when review context changes", async () => {
+    const file = makeFile();
+    const owner = uniqueOwner();
+    const { rerender } = renderDiffFile(file, {
+      owner,
+      reviewEnabled: true,
+      diffHeadSHA: "diff-head",
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Comment on new line 1" }));
+    expect(screen.getByPlaceholderText("Leave a comment")).toBeTruthy();
+    expect(document.querySelectorAll(".gutter-new.gutter--selected")).toHaveLength(1);
+
+    await rerender({
+      file,
+      owner,
+      name: "n",
+      number: 1,
+      reviewEnabled: false,
+      diffHeadSHA: "diff-head",
+    });
+
+    expect(screen.queryByPlaceholderText("Leave a comment")).toBeNull();
+    expect(document.querySelectorAll(".gutter-new.gutter--selected")).toHaveLength(0);
+
+    await rerender({
+      file,
+      owner,
+      name: "n",
+      number: 1,
+      reviewEnabled: true,
+      diffHeadSHA: "new-diff-head",
+    });
+    await fireEvent.click(screen.getByRole("button", { name: "Comment on new line 1" }));
+    expect(screen.getByPlaceholderText("Leave a comment")).toBeTruthy();
+
+    await rerender({
+      file,
+      owner,
+      name: "n",
+      number: 1,
+      reviewEnabled: true,
+      diffHeadSHA: "another-diff-head",
+    });
+
+    expect(screen.queryByPlaceholderText("Leave a comment")).toBeNull();
+    expect(document.querySelectorAll(".gutter-new.gutter--selected")).toHaveLength(0);
   });
 });

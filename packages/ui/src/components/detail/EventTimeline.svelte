@@ -5,6 +5,7 @@
   import CopyIcon from "@lucide/svelte/icons/copy";
   import PencilIcon from "@lucide/svelte/icons/pencil";
   import XIcon from "@lucide/svelte/icons/x";
+  import { untrack } from "svelte";
   import { slide } from "svelte/transition";
   import type { IssueEvent, PREvent } from "../../api/types.js";
   import type { components } from "../../api/generated/schema.js";
@@ -54,10 +55,11 @@
 
   $effect(() => {
     if (!provider || !repoOwner || !repoName || !repoPath || number == null) return;
-    diffReviewDraft?.setRouteContext(
-      { provider, platformHost, owner: repoOwner, name: repoName, repoPath },
-      number,
-    );
+    const nextRef = { provider, platformHost, owner: repoOwner, name: repoName, repoPath };
+    const nextNumber = number;
+    untrack(() => {
+      diffReviewDraft?.setRouteContext(nextRef, nextNumber);
+    });
   });
 
   const typeLabels: Record<string, string> = {

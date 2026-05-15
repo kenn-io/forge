@@ -70,6 +70,7 @@
   );
   const loading = $derived(diffStore.isDiffLoading());
   const error = $derived(diffStore.getDiffError());
+  const reviewWarning = $derived(diffReviewDraft?.getWarning() ?? null);
   const tabWidth = $derived(diffStore.getTabWidth());
   const wordWrap = $derived(diffStore.getWordWrap());
   const scopeKind = $derived(
@@ -238,6 +239,9 @@
             />
           {/each}
           {#if reviewEnabled && diffReviewDraft}
+            {#if reviewWarning}
+              <div class="review-warning">{reviewWarning}</div>
+            {/if}
             <DiffReviewDraftTray />
           {/if}
         </div>
@@ -262,6 +266,15 @@
     border-bottom: 1px solid var(--diff-stale-border);
     font-size: var(--font-size-sm);
     flex-shrink: 0;
+  }
+
+  .review-warning {
+    flex-shrink: 0;
+    padding: 8px 12px;
+    border-top: 1px solid var(--diff-stale-border);
+    background: var(--diff-stale-bg);
+    color: var(--diff-stale-text);
+    font-size: var(--font-size-sm);
   }
 
   .diff-body {

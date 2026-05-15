@@ -179,14 +179,22 @@ func (c *Client) Host() string {
 
 func (c *Client) Capabilities() platform.Capabilities {
 	return platform.Capabilities{
-		ReadRepositories:  true,
-		ReadMergeRequests: true,
-		ReadIssues:        true,
-		ReadComments:      true,
-		ReadReleases:      true,
-		ReadCI:            true,
-		ThreadReply:       true,
-		ThreadResolve:     true,
+		ReadRepositories:       true,
+		ReadMergeRequests:      true,
+		ReadIssues:             true,
+		ReadComments:           true,
+		ReadReleases:           true,
+		ReadCI:                 true,
+		ThreadReply:            true,
+		ThreadResolve:          true,
+		ReviewDraftMutation:    true,
+		ReviewThreadResolution: true,
+		ReadReviewThreads:      true,
+		NativeMultilineRanges:  false,
+		SupportedReviewActions: []platform.ReviewAction{
+			platform.ReviewActionComment,
+			platform.ReviewActionApprove,
+		},
 	}
 }
 

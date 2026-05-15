@@ -3617,6 +3617,18 @@ func TestFetchProviderMRDetailSyncsReviewThreads(t *testing.T) {
 	require.Len(events, 1)
 	assert.Equal("review_comment", events[0].EventType)
 	assert.Equal("thread-42", events[0].PlatformExternalID)
+
+	provider.reviewThreads = nil
+	calls, err = syncer.fetchProviderMRDetail(ctx, provider, repo, repoID, 42)
+	require.NoError(err)
+	assert.Equal(3, calls)
+
+	threads, err = d.ListMRReviewThreads(ctx, mr.ID)
+	require.NoError(err)
+	assert.Empty(threads)
+	events, err = d.ListMREvents(ctx, mr.ID)
+	require.NoError(err)
+	assert.Empty(events)
 }
 
 func TestSyncOpenIssueReadsExistingByRepoID(t *testing.T) {

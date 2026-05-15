@@ -375,6 +375,19 @@
     selectedRange = null;
     selectionAnchor = null;
   }
+
+  let reviewContextKey = "";
+  $effect(() => {
+    const nextKey = reviewEnabled && diffHeadSHA
+      ? `${file.path}:${file.old_path ?? ""}:${diffHeadSHA}`
+      : "";
+    if (nextKey !== reviewContextKey) {
+      reviewContextKey = nextKey;
+      composerRange = null;
+      selectedRange = null;
+      selectionAnchor = null;
+    }
+  });
 </script>
 
 <div class="diff-file" data-file-path={file.path} bind:this={fileEl}>
@@ -440,7 +453,7 @@
                 newSelected={isSelected(line, "right", order, hunkIdx)}
                 onselectside={(side, event) => handleLineSelect(line, side, order, hunkIdx, event)}
               />
-              {#if composerRange && composerAfter(line, order, hunkIdx)}
+              {#if reviewEnabled && composerRange && composerAfter(line, order, hunkIdx)}
                 <DiffInlineCommentComposer
                   range={composerRange}
                   onclose={closeComposer}

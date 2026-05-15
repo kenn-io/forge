@@ -210,10 +210,13 @@ func (s *Server) publishDiffReviewDraft(
 	}
 	comments := make([]platform.LocalDiffReviewDraftComment, 0, len(draft.Comments))
 	for _, comment := range draft.Comments {
+		lineRange := platformReviewLineRange(comment.Range)
+		lineRange.DiffBaseSHA = mr.DiffBaseSHA
+		lineRange.MergeBaseSHA = mr.MergeBaseSHA
 		comments = append(comments, platform.LocalDiffReviewDraftComment{
 			ID:        comment.ID,
 			Body:      comment.Body,
-			Range:     platformReviewLineRange(comment.Range),
+			Range:     lineRange,
 			CreatedAt: comment.CreatedAt,
 			UpdatedAt: comment.UpdatedAt,
 		})
@@ -221,8 +224,19 @@ func (s *Server) publishDiffReviewDraft(
 	if _, err := mutator.PublishDiffReviewDraft(ctx, platformRepoRefFromDB(*repo), input.Number, platform.PublishDiffReviewDraftInput{
 		Body:     strings.TrimSpace(input.Body.Body),
 		Action:   action,
+		HeadSHA:  mr.DiffHeadSHA,
 		Comments: comments,
 	}); err != nil {
+		var partialErr *platform.DiffReviewPublishPartialError
+		if errors.As(err, &partialErr) {
+			if discardErr := s.db.DeleteMRReviewDraft(ctx, mr.ID); discardErr != nil {
+				return nil, huma.Error500InternalServerError("discard partially published review draft failed")
+			}
+			if capabilityEnabled(s.capabilitiesForRepo(*repo), capabilityReadReviewThreads) {
+				_ = s.ingestDiffReviewThreads(ctx, *repo, *mr)
+			}
+			return &actionStatusOutput{Body: actionStatusBody{Status: "partially_published"}}, nil
+		}
 		return nil, huma.Error502BadGateway("publish review draft on provider failed")
 	}
 	if err := s.db.DeleteMRReviewDraft(ctx, mr.ID); err != nil {
@@ -372,6 +386,8 @@ func (s *Server) ingestDiffReviewThreads(
 	}
 	dbThreads := make([]db.MRReviewThread, 0, len(threads))
 	events := make([]db.MREvent, 0, len(threads))
+	providerThreadIDs := make([]string, 0, len(threads))
+	seenProviderThreadIDs := make(map[string]struct{}, len(threads))
 	for _, thread := range threads {
 		providerThreadID := thread.ProviderThreadID
 		if providerThreadID == "" {
@@ -380,6 +396,11 @@ func (s *Server) ingestDiffReviewThreads(
 		if providerThreadID == "" {
 			continue
 		}
+		if _, ok := seenProviderThreadIDs[providerThreadID]; ok {
+			continue
+		}
+		seenProviderThreadIDs[providerThreadID] = struct{}{}
+		providerThreadIDs = append(providerThreadIDs, providerThreadID)
 		dbThread := db.MRReviewThread{
 			ProviderThreadID:  providerThreadID,
 			ProviderReviewID:  thread.ProviderReviewID,
@@ -410,6 +431,9 @@ func (s *Server) ingestDiffReviewThreads(
 				DedupeKey:          "review_comment:" + eventExternalID,
 			})
 		}
+	}
+	if err := s.db.DeleteMissingMRReviewThreads(ctx, mr.ID, providerThreadIDs); err != nil {
+		return huma.Error500InternalServerError("delete missing review threads failed")
 	}
 	if err := s.db.UpsertMRReviewThreads(ctx, mr.ID, dbThreads); err != nil {
 		return huma.Error500InternalServerError("persist review threads failed")

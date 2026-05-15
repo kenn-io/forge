@@ -213,17 +213,19 @@ const (
 )
 
 type DiffReviewLineRange struct {
-	Path        string
-	OldPath     string
-	Side        string
-	StartSide   string
-	StartLine   *int
-	Line        int
-	OldLine     *int
-	NewLine     *int
-	LineType    string
-	DiffHeadSHA string
-	CommitSHA   string
+	Path         string
+	OldPath      string
+	Side         string
+	StartSide    string
+	StartLine    *int
+	Line         int
+	OldLine      *int
+	NewLine      *int
+	LineType     string
+	DiffHeadSHA  string
+	DiffBaseSHA  string
+	MergeBaseSHA string
+	CommitSHA    string
 }
 
 type LocalDiffReviewDraftComment struct {
@@ -237,12 +239,31 @@ type LocalDiffReviewDraftComment struct {
 type PublishDiffReviewDraftInput struct {
 	Body     string
 	Action   ReviewAction
+	HeadSHA  string
 	Comments []LocalDiffReviewDraftComment
 }
 
 type PublishedDiffReview struct {
 	ProviderReviewID string
 	SubmittedAt      time.Time
+}
+
+type DiffReviewPublishPartialError struct {
+	Err error
+}
+
+func (e *DiffReviewPublishPartialError) Error() string {
+	if e == nil || e.Err == nil {
+		return "diff review partially published"
+	}
+	return e.Err.Error()
+}
+
+func (e *DiffReviewPublishPartialError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Err
 }
 
 type MergeRequestReviewThread struct {

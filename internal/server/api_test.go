@@ -48,6 +48,7 @@ import (
 	forgejoplatform "go.kenn.io/middleman/internal/platform/forgejo"
 	giteaplatform "go.kenn.io/middleman/internal/platform/gitea"
 	"go.kenn.io/middleman/internal/platform/gitealike"
+	platformgitlab "go.kenn.io/middleman/internal/platform/gitlab"
 	"go.kenn.io/middleman/internal/procutil"
 	"go.kenn.io/middleman/internal/ptyowner"
 	"go.kenn.io/middleman/internal/stacks"
@@ -493,6 +494,7 @@ type apiTestGitLabProvider struct {
 	reviewThreads      []platform.MergeRequestReviewThread
 	reviewThreadsErr   error
 	publishedReviews   []platform.PublishDiffReviewDraftInput
+	publishReviewErr   error
 	resolvedThreads    []string
 	unresolvedThreads  []string
 }
@@ -526,7 +528,7 @@ func (p *apiTestGitLabProvider) PublishDiffReviewDraft(
 	input platform.PublishDiffReviewDraftInput,
 ) (*platform.PublishedDiffReview, error) {
 	p.publishedReviews = append(p.publishedReviews, input)
-	return &platform.PublishedDiffReview{SubmittedAt: time.Now().UTC()}, nil
+	return &platform.PublishedDiffReview{SubmittedAt: time.Now().UTC()}, p.publishReviewErr
 }
 
 func (p *apiTestGitLabProvider) ListMergeRequestReviewThreads(
@@ -10709,6 +10711,507 @@ func TestAPIPublishReviewDraftRejectsMultilineRangeWithoutCapability(t *testing.
 	require.Empty(provider.publishedReviews)
 }
 
+func TestAPIGitLabPublishReviewDraftApprovesWithDiffPositionSHAs(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	caps := platform.Capabilities{
+		ReadRepositories:      true,
+		ReadMergeRequests:     true,
+		ReadIssues:            true,
+		ReadComments:          true,
+		ReviewDraftMutation:   true,
+		NativeMultilineRanges: false,
+		SupportedReviewActions: []platform.ReviewAction{
+			platform.ReviewActionComment,
+			platform.ReviewActionApprove,
+		},
+	}
+	srv, database, provider := setupGitLabCapabilityServerWithProvider(t, &caps)
+	ctx := t.Context()
+
+	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.example.com",
+		RepoPath:     "group/project",
+	})
+	require.NoError(err)
+	require.NotNil(repo)
+	require.NoError(database.UpdateDiffSHAs(ctx, repo.ID, 7, "gitlab-head", "gitlab-base", "gitlab-merge-base"))
+
+	basePath := "/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/review-draft"
+	getRR := doJSON(t, srv, http.MethodGet, basePath, nil)
+	require.Equal(http.StatusOK, getRR.Code, getRR.Body.String())
+	var draft map[string]any
+	require.NoError(json.NewDecoder(getRR.Body).Decode(&draft))
+	assert.Equal([]any{"comment", "approve"}, draft["supported_actions"])
+	assert.Equal(false, draft["native_multiline_ranges"])
+
+	createRR := doJSON(t, srv, http.MethodPost, basePath+"/comments", map[string]any{
+		"body": "Please tighten this line.",
+		"range": map[string]any{
+			"path":          "internal/server/api_test.go",
+			"side":          "right",
+			"line":          42,
+			"new_line":      42,
+			"line_type":     "add",
+			"diff_head_sha": "gitlab-head",
+			"commit_sha":    "gitlab-head",
+		},
+	})
+	require.Equal(http.StatusCreated, createRR.Code, createRR.Body.String())
+
+	rejectRR := doJSON(
+		t,
+		srv,
+		http.MethodPost,
+		basePath+"/publish",
+		map[string]string{"action": "request_changes"},
+	)
+	require.Equal(http.StatusBadRequest, rejectRR.Code, rejectRR.Body.String())
+	require.Empty(provider.publishedReviews)
+
+	publishRR := doJSON(
+		t,
+		srv,
+		http.MethodPost,
+		basePath+"/publish",
+		map[string]string{"action": "approve", "body": "approved"},
+	)
+	require.Equal(http.StatusOK, publishRR.Code, publishRR.Body.String())
+	require.Len(provider.publishedReviews, 1)
+	published := provider.publishedReviews[0]
+	assert.Equal(platform.ReviewActionApprove, published.Action)
+	assert.Equal("approved", published.Body)
+	require.Len(published.Comments, 1)
+	lineRange := published.Comments[0].Range
+	assert.Equal("gitlab-head", lineRange.DiffHeadSHA)
+	assert.Equal("gitlab-base", lineRange.DiffBaseSHA)
+	assert.Equal("gitlab-merge-base", lineRange.MergeBaseSHA)
+	assert.Empty(lineRange.StartSide)
+	assert.Nil(lineRange.StartLine)
+}
+
+func TestAPIPublishReviewDraftClearsPartialPublishedDraft(t *testing.T) {
+	require := require.New(t)
+	caps := platform.Capabilities{
+		ReadRepositories:       true,
+		ReadMergeRequests:      true,
+		ReadIssues:             true,
+		ReadComments:           true,
+		ReviewDraftMutation:    true,
+		SupportedReviewActions: []platform.ReviewAction{platform.ReviewActionComment},
+	}
+	srv, database, provider := setupGitLabCapabilityServerWithProvider(t, &caps)
+	ctx := t.Context()
+	provider.publishReviewErr = &platform.DiffReviewPublishPartialError{Err: errors.New("approval failed")}
+
+	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.example.com",
+		RepoPath:     "group/project",
+	})
+	require.NoError(err)
+	require.NotNil(repo)
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
+	require.NoError(err)
+	require.NotNil(mr)
+	require.NoError(database.UpdateDiffSHAs(ctx, repo.ID, 7, "gitlab-head", "gitlab-base", "gitlab-merge-base"))
+
+	basePath := "/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/review-draft"
+	createRR := doJSON(t, srv, http.MethodPost, basePath+"/comments", map[string]any{
+		"body": "Please tighten this line.",
+		"range": map[string]any{
+			"path":          "internal/server/api_test.go",
+			"side":          "right",
+			"line":          42,
+			"new_line":      42,
+			"line_type":     "add",
+			"diff_head_sha": "gitlab-head",
+			"commit_sha":    "gitlab-head",
+		},
+	})
+	require.Equal(http.StatusCreated, createRR.Code, createRR.Body.String())
+
+	publishRR := doJSON(
+		t,
+		srv,
+		http.MethodPost,
+		basePath+"/publish",
+		map[string]string{"action": "comment"},
+	)
+	require.Equal(http.StatusOK, publishRR.Code, publishRR.Body.String())
+	var publishStatus actionStatusBody
+	require.NoError(json.NewDecoder(publishRR.Body).Decode(&publishStatus))
+	require.Equal("partially_published", publishStatus.Status)
+	require.Len(provider.publishedReviews, 1)
+	draft, err := database.GetMRReviewDraft(ctx, mr.ID)
+	require.NoError(err)
+	require.Nil(draft)
+}
+
+func TestAPIGitLabPublishReviewDraftSurfacesCleanupFailureAsPartial(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := t.Context()
+	now := time.Now().UTC().Truncate(time.Second)
+	var createAttempts atomic.Int32
+	var publishAttempts atomic.Int32
+	var deleteAttempts atomic.Int32
+	writeRawJSON := func(w http.ResponseWriter, body string) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, body)
+	}
+	gitlabServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.EscapedPath() {
+		case "/api/v4/projects/group%2Fproject/merge_requests/7/draft_notes":
+			assert.Equal(http.MethodPost, r.Method)
+			next := createAttempts.Add(1)
+			var body struct {
+				Note     string `json:"note"`
+				CommitID string `json:"commit_id"`
+				Position struct {
+					NewPath string `json:"new_path"`
+					NewLine int64  `json:"new_line"`
+				} `json:"position"`
+			}
+			if !assert.NoError(json.NewDecoder(r.Body).Decode(&body)) {
+				http.Error(w, "invalid request body", http.StatusBadRequest)
+				return
+			}
+			assert.Equal("gitlab-head", body.CommitID)
+			assert.Equal("src/main.go", body.Position.NewPath)
+			assert.Equal(int64(40+next), body.Position.NewLine)
+			writeRawJSON(w, fmt.Sprintf(`{"id": %d, "note": %q}`, 54+next, body.Note))
+		case "/api/v4/projects/group%2Fproject/merge_requests/7/draft_notes/55/publish":
+			assert.Equal(http.MethodPut, r.Method)
+			publishAttempts.Add(1)
+			writeRawJSON(w, `{}`)
+		case "/api/v4/projects/group%2Fproject/merge_requests/7/draft_notes/56/publish":
+			assert.Equal(http.MethodPut, r.Method)
+			publishAttempts.Add(1)
+			http.Error(w, "publish failed", http.StatusBadRequest)
+		case "/api/v4/projects/group%2Fproject/merge_requests/7/draft_notes/56":
+			assert.Equal(http.MethodDelete, r.Method)
+			deleteAttempts.Add(1)
+			http.Error(w, "delete failed", http.StatusBadRequest)
+		case "/api/v4/projects/group%2Fproject/merge_requests/7/discussions":
+			assert.Equal(http.MethodGet, r.Method)
+			writeRawJSON(w, `[
+				{
+					"id": "discussion-55",
+					"individual_note": false,
+					"notes": [{
+						"id": 55,
+						"type": "DiscussionNote",
+						"body": "first line",
+						"author": {"username": "reviewer"},
+						"system": false,
+						"resolvable": true,
+						"resolved": false,
+						"created_at": "`+now.Format(time.RFC3339)+`",
+						"updated_at": "`+now.Format(time.RFC3339)+`",
+						"position": {
+							"base_sha": "base",
+							"start_sha": "merge-base",
+							"head_sha": "gitlab-head",
+							"position_type": "text",
+							"new_path": "src/main.go",
+							"new_line": 41
+						}
+					}]
+				}
+			]`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer gitlabServer.Close()
+
+	database := dbtest.Open(t)
+	client, err := platformgitlab.NewClient(
+		"gitlab.example.com",
+		"token",
+		platformgitlab.WithBaseURLForTesting(gitlabServer.URL+"/api/v4"),
+	)
+	require.NoError(err)
+	registry, err := platform.NewRegistry(client)
+	require.NoError(err)
+	repoRef := ghclient.RepoRef{
+		Platform:           platform.KindGitLab,
+		PlatformHost:       "gitlab.example.com",
+		Owner:              "group",
+		Name:               "project",
+		RepoPath:           "group/project",
+		PlatformRepoID:     4242,
+		PlatformExternalID: "gid://gitlab/Project/4242",
+		WebURL:             "https://gitlab.example.com/group/project",
+		CloneURL:           "https://gitlab.example.com/group/project.git",
+		DefaultBranch:      "main",
+	}
+	syncer := ghclient.NewSyncerWithRegistry(
+		registry, database, nil, []ghclient.RepoRef{repoRef}, time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+
+	repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
+		Platform:       "gitlab",
+		PlatformHost:   "gitlab.example.com",
+		PlatformRepoID: "4242",
+		Owner:          "group",
+		Name:           "project",
+		RepoPath:       "group/project",
+	})
+	require.NoError(err)
+	require.NoError(database.UpdateRepoProviderMetadata(ctx, repoID, db.RepoProviderMetadata{
+		PlatformRepoID: "4242",
+		WebURL:         "https://gitlab.example.com/group/project",
+		CloneURL:       "https://gitlab.example.com/group/project.git",
+		DefaultBranch:  "main",
+	}))
+	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:             repoID,
+		PlatformID:         7001,
+		PlatformExternalID: "gid://gitlab/MergeRequest/7001",
+		Number:             7,
+		URL:                "https://gitlab.example.com/group/project/-/merge_requests/7",
+		Title:              "GitLab provider MR",
+		Author:             "ada",
+		State:              "open",
+		HeadBranch:         "feature/gitlab",
+		BaseBranch:         "main",
+		PlatformHeadSHA:    "gitlab-head",
+		PlatformBaseSHA:    "base",
+		CreatedAt:          now,
+		UpdatedAt:          now,
+		LastActivityAt:     now,
+	})
+	require.NoError(err)
+	require.NoError(database.UpdateDiffSHAs(ctx, repoID, 7, "gitlab-head", "base", "merge-base"))
+
+	basePath := "/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/review-draft"
+	for _, line := range []int{41, 42} {
+		createRR := doJSON(t, srv, http.MethodPost, basePath+"/comments", map[string]any{
+			"body": fmt.Sprintf("line %d", line),
+			"range": map[string]any{
+				"path":          "src/main.go",
+				"side":          "right",
+				"line":          line,
+				"new_line":      line,
+				"line_type":     "add",
+				"diff_head_sha": "gitlab-head",
+			},
+		})
+		require.Equal(http.StatusCreated, createRR.Code, createRR.Body.String())
+	}
+
+	publishRR := doJSON(t, srv, http.MethodPost, basePath+"/publish", map[string]string{
+		"action": "comment",
+	})
+	require.Equal(http.StatusOK, publishRR.Code, publishRR.Body.String())
+	var publishStatus actionStatusBody
+	require.NoError(json.NewDecoder(publishRR.Body).Decode(&publishStatus))
+	assert.Equal("partially_published", publishStatus.Status)
+	assert.Equal(int32(2), createAttempts.Load())
+	assert.Equal(int32(2), publishAttempts.Load())
+	assert.Equal(int32(1), deleteAttempts.Load())
+
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	require.NotNil(mr)
+	draft, err := database.GetMRReviewDraft(ctx, mr.ID)
+	require.NoError(err)
+	assert.Nil(draft)
+	threads, err := database.ListMRReviewThreads(ctx, mr.ID)
+	require.NoError(err)
+	require.Len(threads, 1)
+	assert.Equal("discussion-55", threads[0].ProviderThreadID)
+}
+
+func TestAPIGitLabPublishReviewDraftSendsSummaryThroughServer(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := t.Context()
+	now := time.Now().UTC().Truncate(time.Second)
+	var order []string
+	gitlabServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.EscapedPath() {
+		case "/api/v4/projects/group%2Fproject/merge_requests/7/draft_notes":
+			assert.Equal(http.MethodPost, r.Method)
+			order = append(order, "create-draft")
+			writeJSON(w, http.StatusOK, map[string]any{"id": 55, "note": "inline note"})
+		case "/api/v4/projects/group%2Fproject/merge_requests/7/draft_notes/55/publish":
+			assert.Equal(http.MethodPut, r.Method)
+			order = append(order, "publish-draft")
+			writeJSON(w, http.StatusOK, map[string]any{})
+		case "/api/v4/projects/group%2Fproject/merge_requests/7/notes":
+			assert.Equal(http.MethodPost, r.Method)
+			order = append(order, "summary-note")
+			var body struct {
+				Body string `json:"body"`
+			}
+			if !assert.NoError(json.NewDecoder(r.Body).Decode(&body)) {
+				http.Error(w, "invalid request body", http.StatusBadRequest)
+				return
+			}
+			assert.Equal("review summary from ui", body.Body)
+			writeJSON(w, http.StatusOK, map[string]any{"id": 77, "body": body.Body})
+		case "/api/v4/projects/group%2Fproject/merge_requests/7/approve":
+			assert.Equal(http.MethodPost, r.Method)
+			order = append(order, "approve")
+			http.Error(w, "approval failed", http.StatusBadRequest)
+		case "/api/v4/projects/group%2Fproject/merge_requests/7/discussions":
+			assert.Equal(http.MethodGet, r.Method)
+			writeRawJSONForTest(w, `[
+				{
+					"id": "discussion-55",
+					"individual_note": false,
+					"notes": [{
+						"id": 55,
+						"type": "DiscussionNote",
+						"body": "inline note",
+						"author": {"username": "reviewer"},
+						"system": false,
+						"resolvable": true,
+						"resolved": false,
+						"created_at": "`+now.Format(time.RFC3339)+`",
+						"updated_at": "`+now.Format(time.RFC3339)+`",
+						"position": {
+							"base_sha": "base",
+							"start_sha": "merge-base",
+							"head_sha": "gitlab-head",
+							"position_type": "text",
+							"new_path": "src/main.go",
+							"new_line": 41
+						}
+					}]
+				}
+			]`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer gitlabServer.Close()
+
+	srv, database, repoID := setupActualGitLabReviewServer(t, gitlabServer.URL, now)
+	require.NoError(database.UpdateDiffSHAs(ctx, repoID, 7, "gitlab-head", "base", "merge-base"))
+
+	basePath := "/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/review-draft"
+	createRR := doJSON(t, srv, http.MethodPost, basePath+"/comments", map[string]any{
+		"body": "inline note",
+		"range": map[string]any{
+			"path":          "src/main.go",
+			"side":          "right",
+			"line":          41,
+			"new_line":      41,
+			"line_type":     "add",
+			"diff_head_sha": "gitlab-head",
+		},
+	})
+	require.Equal(http.StatusCreated, createRR.Code, createRR.Body.String())
+
+	publishRR := doJSON(t, srv, http.MethodPost, basePath+"/publish", map[string]string{
+		"action": "approve",
+		"body":   " review summary from ui ",
+	})
+	require.Equal(http.StatusOK, publishRR.Code, publishRR.Body.String())
+	var publishStatus actionStatusBody
+	require.NoError(json.NewDecoder(publishRR.Body).Decode(&publishStatus))
+	assert.Equal("partially_published", publishStatus.Status)
+	assert.Equal([]string{"create-draft", "publish-draft", "summary-note", "approve"}, order)
+
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	require.NotNil(mr)
+	draft, err := database.GetMRReviewDraft(ctx, mr.ID)
+	require.NoError(err)
+	assert.Nil(draft)
+	threads, err := database.ListMRReviewThreads(ctx, mr.ID)
+	require.NoError(err)
+	require.Len(threads, 1)
+	assert.Equal("discussion-55", threads[0].ProviderThreadID)
+}
+
+func setupActualGitLabReviewServer(
+	t *testing.T,
+	gitlabServerURL string,
+	now time.Time,
+) (*Server, *db.DB, int64) {
+	t.Helper()
+	require := require.New(t)
+	ctx := t.Context()
+	database := dbtest.Open(t)
+	client, err := platformgitlab.NewClient(
+		"gitlab.example.com",
+		"token",
+		platformgitlab.WithBaseURLForTesting(gitlabServerURL+"/api/v4"),
+	)
+	require.NoError(err)
+	registry, err := platform.NewRegistry(client)
+	require.NoError(err)
+	repoRef := ghclient.RepoRef{
+		Platform:           platform.KindGitLab,
+		PlatformHost:       "gitlab.example.com",
+		Owner:              "group",
+		Name:               "project",
+		RepoPath:           "group/project",
+		PlatformRepoID:     4242,
+		PlatformExternalID: "gid://gitlab/Project/4242",
+		WebURL:             "https://gitlab.example.com/group/project",
+		CloneURL:           "https://gitlab.example.com/group/project.git",
+		DefaultBranch:      "main",
+	}
+	syncer := ghclient.NewSyncerWithRegistry(
+		registry, database, nil, []ghclient.RepoRef{repoRef}, time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+
+	repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
+		Platform:       "gitlab",
+		PlatformHost:   "gitlab.example.com",
+		PlatformRepoID: "4242",
+		Owner:          "group",
+		Name:           "project",
+		RepoPath:       "group/project",
+	})
+	require.NoError(err)
+	require.NoError(database.UpdateRepoProviderMetadata(ctx, repoID, db.RepoProviderMetadata{
+		PlatformRepoID: "4242",
+		WebURL:         "https://gitlab.example.com/group/project",
+		CloneURL:       "https://gitlab.example.com/group/project.git",
+		DefaultBranch:  "main",
+	}))
+	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:             repoID,
+		PlatformID:         7001,
+		PlatformExternalID: "gid://gitlab/MergeRequest/7001",
+		Number:             7,
+		URL:                "https://gitlab.example.com/group/project/-/merge_requests/7",
+		Title:              "GitLab provider MR",
+		Author:             "ada",
+		State:              "open",
+		HeadBranch:         "feature/gitlab",
+		BaseBranch:         "main",
+		PlatformHeadSHA:    "gitlab-head",
+		PlatformBaseSHA:    "base",
+		CreatedAt:          now,
+		UpdatedAt:          now,
+		LastActivityAt:     now,
+	})
+	require.NoError(err)
+	return srv, database, repoID
+}
+
+func writeRawJSONForTest(w http.ResponseWriter, body string) {
+	w.WriteHeader(http.StatusOK)
+	_, _ = io.WriteString(w, body)
+}
+
 func TestAPIPublishReviewDraftPersistsProviderReviewThreads(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
@@ -10735,24 +11238,69 @@ func TestAPIPublishReviewDraftPersistsProviderReviewThreads(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(mr)
 	require.NoError(database.UpdateDiffSHAs(ctx, repo.ID, 7, "current-head", "base", "merge"))
-	now := time.Now().UTC().Truncate(time.Second)
-	line := 42
-	provider.reviewThreads = []platform.MergeRequestReviewThread{{
-		ProviderThreadID:  "thread-7",
-		ProviderCommentID: "comment-7",
-		Body:              "Published inline comment",
-		AuthorLogin:       "ada",
-		Range: platform.DiffReviewLineRange{
+	staleLine := 41
+	require.NoError(database.UpsertMRReviewThreads(ctx, mr.ID, []db.MRReviewThread{{
+		ProviderThreadID:  "stale-thread",
+		ProviderCommentID: "stale-comment",
+		Body:              "stale inline comment",
+		AuthorLogin:       "grace",
+		Range: db.ReviewLineRange{
 			Path:        "internal/server/api_test.go",
 			Side:        "right",
-			Line:        42,
-			NewLine:     &line,
+			Line:        staleLine,
+			NewLine:     &staleLine,
 			LineType:    "add",
 			DiffHeadSHA: "current-head",
 		},
-		CreatedAt: now,
-		UpdatedAt: now,
-	}}
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+	}}))
+	require.NoError(database.UpsertMREvents(ctx, []db.MREvent{{
+		MergeRequestID:     mr.ID,
+		PlatformExternalID: "stale-thread",
+		EventType:          "review_comment",
+		Author:             "grace",
+		Body:               "stale inline comment",
+		CreatedAt:          time.Now().UTC(),
+		DedupeKey:          "review_comment:stale-thread",
+	}}))
+	now := time.Now().UTC().Truncate(time.Second)
+	line := 42
+	replyLine := 43
+	provider.reviewThreads = []platform.MergeRequestReviewThread{
+		{
+			ProviderThreadID:  "thread-7",
+			ProviderCommentID: "comment-7",
+			Body:              "Published inline comment",
+			AuthorLogin:       "ada",
+			Range: platform.DiffReviewLineRange{
+				Path:        "internal/server/api_test.go",
+				Side:        "right",
+				Line:        42,
+				NewLine:     &line,
+				LineType:    "add",
+				DiffHeadSHA: "current-head",
+			},
+			CreatedAt: now,
+			UpdatedAt: now,
+		},
+		{
+			ProviderThreadID:  "thread-7",
+			ProviderCommentID: "comment-reply",
+			Body:              "Reply should not replace original",
+			AuthorLogin:       "grace",
+			Range: platform.DiffReviewLineRange{
+				Path:        "internal/server/api_test.go",
+				Side:        "right",
+				Line:        43,
+				NewLine:     &replyLine,
+				LineType:    "add",
+				DiffHeadSHA: "current-head",
+			},
+			CreatedAt: now.Add(time.Minute),
+			UpdatedAt: now.Add(time.Minute),
+		},
+	}
 	basePath := "/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/review-draft"
 	createRR := doJSON(t, srv, http.MethodPost, basePath+"/comments", map[string]any{
 		"body": "Please fix this.",
@@ -10787,9 +11335,14 @@ func TestAPIPublishReviewDraftPersistsProviderReviewThreads(t *testing.T) {
 	require.NoError(err)
 	require.Len(threads, 1)
 	assert.Equal("thread-7", threads[0].ProviderThreadID)
+	assert.Equal("comment-7", threads[0].ProviderCommentID)
+	assert.Equal("Published inline comment", threads[0].Body)
+	assert.Equal("ada", threads[0].AuthorLogin)
+	assert.Equal(42, threads[0].Range.Line)
 	events, err := database.ListMREvents(ctx, mr.ID)
 	require.NoError(err)
 	require.NotEmpty(events)
+	require.Len(events, 1)
 	assert.Equal("review_comment", events[0].EventType)
 	assert.Equal("thread-7", events[0].PlatformExternalID)
 }
@@ -10935,6 +11488,229 @@ func TestAPIForgejoSyncRecoversReviewThreadTimelineMetadata(t *testing.T) {
 	assert.Equal("review_comment", detail.Events[0].EventType)
 	assert.Equal("Recovered inline note", detail.Events[0].DiffThread.Body)
 	assert.Equal("src/recovered.go", detail.Events[0].DiffThread.Path)
+}
+
+func TestAPIGitLabSyncKeepsCanonicalReviewThreadWhenProviderReturnsReplies(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	caps := platform.Capabilities{
+		ReadRepositories:  true,
+		ReadMergeRequests: true,
+		ReadIssues:        true,
+		ReadComments:      true,
+		ReadReviewThreads: true,
+	}
+	srv, database, provider := setupGitLabCapabilityServerWithProvider(t, &caps)
+	ctx := t.Context()
+
+	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.example.com",
+		RepoPath:     "group/project",
+	})
+	require.NoError(err)
+	require.NotNil(repo)
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
+	require.NoError(err)
+	require.NotNil(mr)
+
+	now := time.Now().UTC().Truncate(time.Second)
+	originalLine := 9
+	replyLine := 10
+	provider.reviewThreads = []platform.MergeRequestReviewThread{
+		{
+			ProviderThreadID:  "discussion-1",
+			ProviderCommentID: "101",
+			Body:              "original inline note",
+			AuthorLogin:       "reviewer",
+			Range: platform.DiffReviewLineRange{
+				Path:        "src/main.go",
+				Side:        "right",
+				Line:        originalLine,
+				NewLine:     &originalLine,
+				LineType:    "add",
+				DiffHeadSHA: "abc123",
+			},
+			CreatedAt: now,
+			UpdatedAt: now,
+		},
+		{
+			ProviderThreadID:  "discussion-1",
+			ProviderCommentID: "102",
+			Body:              "reply should not replace original",
+			AuthorLogin:       "other-reviewer",
+			Range: platform.DiffReviewLineRange{
+				Path:        "src/main.go",
+				Side:        "right",
+				Line:        replyLine,
+				NewLine:     &replyLine,
+				LineType:    "add",
+				DiffHeadSHA: "abc123",
+			},
+			CreatedAt: now.Add(time.Minute),
+			UpdatedAt: now.Add(time.Minute),
+		},
+	}
+
+	syncRR := doJSON(t, srv, http.MethodPost, "/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/sync", nil)
+	require.Equal(http.StatusOK, syncRR.Code, syncRR.Body.String())
+
+	threads, err := database.ListMRReviewThreads(ctx, mr.ID)
+	require.NoError(err)
+	require.Len(threads, 1)
+	assert.Equal("discussion-1", threads[0].ProviderThreadID)
+	assert.Equal("101", threads[0].ProviderCommentID)
+	assert.Equal("original inline note", threads[0].Body)
+	assert.Equal("reviewer", threads[0].AuthorLogin)
+	assert.Equal(originalLine, threads[0].Range.Line)
+
+	detailRR := doJSON(t, srv, http.MethodGet, "/api/v1/host/gitlab.example.com/pulls/gl/group/project/7", nil)
+	require.Equal(http.StatusOK, detailRR.Code, detailRR.Body.String())
+	var detail mergeRequestDetailResponse
+	require.NoError(json.NewDecoder(detailRR.Body).Decode(&detail))
+	require.Len(detail.Events, 1)
+	require.NotNil(detail.Events[0].ReviewThread)
+	assert.Equal("review_comment", detail.Events[0].EventType)
+	assert.Equal("original inline note", detail.Events[0].ReviewThread.Body)
+	assert.Equal("reviewer", detail.Events[0].ReviewThread.AuthorLogin)
+	assert.Equal("101", detail.Events[0].ReviewThread.ProviderCommentID)
+	assert.Equal(originalLine, detail.Events[0].ReviewThread.Line)
+}
+
+func TestAPIGitLabSyncPrunesMissingReviewThreadTimelineEvents(t *testing.T) {
+	require := require.New(t)
+	caps := platform.Capabilities{
+		ReadRepositories:  true,
+		ReadMergeRequests: true,
+		ReadIssues:        true,
+		ReadComments:      true,
+		ReadReviewThreads: true,
+	}
+	srv, database, provider := setupGitLabCapabilityServerWithProvider(t, &caps)
+	ctx := t.Context()
+
+	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.example.com",
+		RepoPath:     "group/project",
+	})
+	require.NoError(err)
+	require.NotNil(repo)
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
+	require.NoError(err)
+	require.NotNil(mr)
+
+	line := 12
+	now := time.Now().UTC().Truncate(time.Second)
+	require.NoError(database.UpsertMRReviewThreads(ctx, mr.ID, []db.MRReviewThread{{
+		ProviderThreadID:  "stale-thread",
+		ProviderCommentID: "stale-comment",
+		Body:              "stale inline note",
+		AuthorLogin:       "reviewer",
+		Range: db.ReviewLineRange{
+			Path:        "src/stale.go",
+			Side:        "right",
+			Line:        line,
+			NewLine:     &line,
+			LineType:    "add",
+			DiffHeadSHA: "abc123",
+		},
+		CreatedAt: now,
+		UpdatedAt: now,
+	}}))
+	require.NoError(database.UpsertMREvents(ctx, []db.MREvent{{
+		MergeRequestID:     mr.ID,
+		PlatformExternalID: "stale-thread",
+		EventType:          "review_comment",
+		Author:             "reviewer",
+		Body:               "stale inline note",
+		CreatedAt:          now,
+		DedupeKey:          "review_comment:stale-thread",
+	}}))
+	provider.reviewThreads = nil
+
+	syncRR := doJSON(t, srv, http.MethodPost, "/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/sync", nil)
+	require.Equal(http.StatusOK, syncRR.Code, syncRR.Body.String())
+
+	threads, err := database.ListMRReviewThreads(ctx, mr.ID)
+	require.NoError(err)
+	require.Empty(threads)
+	detailRR := doJSON(t, srv, http.MethodGet, "/api/v1/host/gitlab.example.com/pulls/gl/group/project/7", nil)
+	require.Equal(http.StatusOK, detailRR.Code, detailRR.Body.String())
+	var detail mergeRequestDetailResponse
+	require.NoError(json.NewDecoder(detailRR.Body).Decode(&detail))
+	require.Empty(detail.Events)
+}
+
+func TestAPIGitLabSyncPrunesLegacyPositionedNoteCommentEvents(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	caps := platform.Capabilities{
+		ReadRepositories:  true,
+		ReadMergeRequests: true,
+		ReadIssues:        true,
+		ReadComments:      true,
+		ReadReviewThreads: true,
+	}
+	srv, database, provider := setupGitLabCapabilityServerWithProvider(t, &caps)
+	ctx := t.Context()
+
+	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.example.com",
+		RepoPath:     "group/project",
+	})
+	require.NoError(err)
+	require.NotNil(repo)
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
+	require.NoError(err)
+	require.NotNil(mr)
+
+	now := time.Now().UTC().Truncate(time.Second)
+	require.NoError(database.UpsertMREvents(ctx, []db.MREvent{{
+		MergeRequestID:     mr.ID,
+		PlatformExternalID: "2",
+		EventType:          "issue_comment",
+		Author:             "reviewer",
+		Body:               "legacy inline diff note",
+		CreatedAt:          now,
+		DedupeKey:          "gitlab:gitlab.example.com:group/project:mr:7:note:2",
+	}}))
+	line := 9
+	provider.reviewThreads = []platform.MergeRequestReviewThread{{
+		ProviderThreadID:  "discussion-2",
+		ProviderCommentID: "2",
+		Body:              "canonical inline diff note",
+		AuthorLogin:       "reviewer",
+		Range: platform.DiffReviewLineRange{
+			Path:        "src/main.go",
+			Side:        "right",
+			Line:        line,
+			NewLine:     &line,
+			LineType:    "add",
+			DiffHeadSHA: "abc123",
+		},
+		CreatedAt: now,
+		UpdatedAt: now,
+	}}
+
+	syncRR := doJSON(t, srv, http.MethodPost, "/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/sync", nil)
+	require.Equal(http.StatusOK, syncRR.Code, syncRR.Body.String())
+
+	detailRR := doJSON(t, srv, http.MethodGet, "/api/v1/host/gitlab.example.com/pulls/gl/group/project/7", nil)
+	require.Equal(http.StatusOK, detailRR.Code, detailRR.Body.String())
+	var detail mergeRequestDetailResponse
+	require.NoError(json.NewDecoder(detailRR.Body).Decode(&detail))
+	require.Len(detail.Events, 1)
+	assert.Equal("review_comment", detail.Events[0].EventType)
+	require.NotNil(detail.Events[0].ReviewThread)
+	assert.Equal("canonical inline diff note", detail.Events[0].ReviewThread.Body)
+
+	events, err := database.ListMREvents(ctx, mr.ID)
+	require.NoError(err)
+	for _, event := range events {
+		assert.NotEqual("issue_comment", event.EventType)
+	}
 }
 
 func TestAPIPublishReviewDraftDeletesDraftBeforeReviewThreadIngest(t *testing.T) {

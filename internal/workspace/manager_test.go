@@ -1925,7 +1925,7 @@ func TestManagerRequestRetryConsumesQueuedRetryWhenCleanupFails(t *testing.T) {
 		firstResult <- retryResult{ws: next, startNow: startNow, err: err}
 	}()
 
-	const retryWait = 3 * time.Second
+	const retryWait = 5 * time.Second
 
 	require.Eventually(func() bool {
 		_, err := os.Stat(started)

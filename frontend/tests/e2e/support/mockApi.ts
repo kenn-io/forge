@@ -1,29 +1,34 @@
 import type { Page, Route } from "@playwright/test";
 
-const githubCapabilities = {
-  comment_mutation: true,
-  issue_mutation: true,
-  merge_mutation: true,
-  read_ci: true,
-  read_comments: true,
-  read_issues: true,
-  read_merge_requests: true,
-  read_releases: true,
+const defaultProviderCapabilities = {
   read_repositories: true,
-  ready_for_review: true,
-  review_mutation: true,
+  read_merge_requests: true,
+  read_issues: true,
+  read_comments: true,
+  read_releases: true,
+  read_ci: true,
+  comment_mutation: true,
   state_mutation: true,
+  merge_mutation: true,
+  review_mutation: true,
   workflow_approval: true,
+  ready_for_review: true,
+  issue_mutation: true,
+  review_draft_mutation: false,
+  review_thread_resolution: false,
+  read_review_threads: false,
+  native_multiline_ranges: false,
+  supported_review_actions: [],
 };
 
-function repoRef(owner: string, name: string, host: string) {
+function repoRef(owner: string, name: string, platformHost: string) {
   return {
     provider: "github",
-    platform_host: host,
+    platform_host: platformHost,
+    repo_path: `${owner}/${name}`,
     owner,
     name,
-    repo_path: `${owner}/${name}`,
-    capabilities: githubCapabilities,
+    capabilities: defaultProviderCapabilities,
   };
 }
 

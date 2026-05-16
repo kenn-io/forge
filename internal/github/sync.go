@@ -1483,6 +1483,27 @@ func (s *Syncer) ReviewMutator(
 	return s.clients.ReviewMutator(kind, canonicalRepoHost(host))
 }
 
+func (s *Syncer) DiffReviewDraftMutator(
+	kind platform.Kind,
+	host string,
+) (platform.DiffReviewDraftMutator, error) {
+	return s.clients.DiffReviewDraftMutator(kind, canonicalRepoHost(host))
+}
+
+func (s *Syncer) DiffReviewThreadResolver(
+	kind platform.Kind,
+	host string,
+) (platform.DiffReviewThreadResolver, error) {
+	return s.clients.DiffReviewThreadResolver(kind, canonicalRepoHost(host))
+}
+
+func (s *Syncer) MergeRequestReviewThreadReader(
+	kind platform.Kind,
+	host string,
+) (platform.MergeRequestReviewThreadReader, error) {
+	return s.clients.MergeRequestReviewThreadReader(kind, canonicalRepoHost(host))
+}
+
 func (s *Syncer) MergeRequestContentMutator(
 	kind platform.Kind,
 	host string,

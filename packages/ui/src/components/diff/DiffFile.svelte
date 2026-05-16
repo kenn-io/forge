@@ -5,7 +5,9 @@
 
   const { diff: diffStore } = getStores();
   import { tokenizeLineDual, langFromPath, type DualToken } from "../../utils/highlight.js";
+  import type { DiffReviewLineRange } from "../../stores/diff-review-draft.svelte.js";
   import DiffLineComponent from "./DiffLine.svelte";
+  import DiffInlineCommentComposer from "./DiffInlineCommentComposer.svelte";
   import CollapsedRegion from "./CollapsedRegion.svelte";
   import DiffRichPreview from "./DiffRichPreview.svelte";
   import DiffStats from "../shared/DiffStats.svelte";
@@ -19,6 +21,9 @@
     repoPath: string;
     number: number;
     richPreviewEnabled?: boolean;
+    reviewEnabled?: boolean;
+    diffHeadSHA?: string | undefined;
+    nativeMultilineRanges?: boolean;
   }
 
   const {
@@ -30,6 +35,9 @@
     repoPath,
     number,
     richPreviewEnabled = true,
+    reviewEnabled = false,
+    diffHeadSHA = undefined,
+    nativeMultilineRanges = false,
   }: Props = $props();
 
   const collapsed = $derived(diffStore.isFileCollapsed(owner, name, number, file.path));
@@ -234,6 +242,125 @@
       ".webp",
     ].includes(ext);
   }
+
+  type ReviewSide = "left" | "right";
+  type ReviewLineRef = {
+    side: ReviewSide;
+    order: number;
+    line: number;
+    oldLine?: number | undefined;
+    newLine?: number | undefined;
+    lineType: "context" | "add" | "delete";
+  };
+
+  let selectionAnchor = $state<ReviewLineRef | null>(null);
+  let selectedRange = $state<{ start: ReviewLineRef; end: ReviewLineRef } | null>(null);
+  let composerRange = $state<DiffReviewLineRange | null>(null);
+
+  function lineRef(
+    line: DiffFileType["hunks"][number]["lines"][number],
+    side: ReviewSide,
+    order: number,
+  ): ReviewLineRef | null {
+    const lineNumber = side === "right" ? line.new_num : line.old_num;
+    if (lineNumber == null) return null;
+    return {
+      side,
+      order,
+      line: lineNumber,
+      oldLine: line.old_num,
+      newLine: line.new_num,
+      lineType: line.type,
+    };
+  }
+
+  function selectableLines(side: ReviewSide): ReviewLineRef[] {
+    const refs: ReviewLineRef[] = [];
+    let order = 0;
+    for (const hunk of renderedFile.hunks) {
+      for (const line of hunk.lines) {
+        const ref = lineRef(line, side, order);
+        if (ref) refs.push(ref);
+        order += 1;
+      }
+    }
+    return refs;
+  }
+
+  function rangeFor(start: ReviewLineRef, end: ReviewLineRef): DiffReviewLineRange {
+    const [first, last] = start.order <= end.order ? [start, end] : [end, start];
+    return {
+      path: file.path,
+      side: last.side,
+      line: last.line,
+      line_type: last.lineType,
+      ...(file.old_path !== file.path && { old_path: file.old_path }),
+      ...(first.order !== last.order && {
+        start_side: first.side,
+        start_line: first.line,
+      }),
+      ...(last.oldLine != null && { old_line: last.oldLine }),
+      ...(last.newLine != null && { new_line: last.newLine }),
+      ...(diffHeadSHA && { diff_head_sha: diffHeadSHA }),
+    };
+  }
+
+  function handleLineSelect(
+    line: DiffFileType["hunks"][number]["lines"][number],
+    side: ReviewSide,
+    order: number,
+    event: MouseEvent,
+  ): void {
+    if (!reviewEnabled || !diffHeadSHA) return;
+    const current = lineRef(line, side, order);
+    if (!current) return;
+    if (nativeMultilineRanges && event.shiftKey && selectionAnchor?.side === side) {
+      const refs = selectableLines(side);
+      const anchorIndex = refs.findIndex((ref) => ref.order === selectionAnchor?.order);
+      const currentIndex = refs.findIndex((ref) => ref.order === current.order);
+      if (anchorIndex !== -1 && currentIndex !== -1) {
+        const [startIndex, endIndex] = anchorIndex <= currentIndex
+          ? [anchorIndex, currentIndex]
+          : [currentIndex, anchorIndex];
+        const start = refs[startIndex]!;
+        const end = refs[endIndex]!;
+        selectedRange = { start, end };
+        composerRange = rangeFor(start, end);
+        return;
+      }
+    }
+    selectionAnchor = current;
+    selectedRange = { start: current, end: current };
+    composerRange = rangeFor(current, current);
+  }
+
+  function isSelected(
+    line: DiffFileType["hunks"][number]["lines"][number],
+    side: ReviewSide,
+    order: number,
+  ): boolean {
+    if (!selectedRange) return false;
+    const current = lineRef(line, side, order);
+    if (!current || current.side !== selectedRange.start.side) return false;
+    const min = Math.min(selectedRange.start.order, selectedRange.end.order);
+    const max = Math.max(selectedRange.start.order, selectedRange.end.order);
+    return current.order >= min && current.order <= max;
+  }
+
+  function composerAfter(
+    line: DiffFileType["hunks"][number]["lines"][number],
+    order: number,
+  ): boolean {
+    if (!composerRange || !selectedRange) return false;
+    const max = Math.max(selectedRange.start.order, selectedRange.end.order);
+    return order === max && lineRef(line, selectedRange.end.side, order) !== null;
+  }
+
+  function closeComposer(): void {
+    composerRange = null;
+    selectedRange = null;
+    selectionAnchor = null;
+  }
 </script>
 
 <div class="diff-file" data-file-path={file.path} bind:this={fileEl}>
@@ -286,6 +413,7 @@
               <span class="hunk-text">@@ -{hunk.old_start},{hunk.old_count} +{hunk.new_start},{hunk.new_count} @@{hunk.section ? ` ${hunk.section}` : ""}</span>
             </div>
             {#each hunk.lines as line, lineIdx (`${hunkIdx}:${line.old_num ?? ""}:${line.new_num ?? ""}:${lineIdx}`)}
+              {@const order = renderedFile.hunks.slice(0, hunkIdx).reduce((sum, item) => sum + item.lines.length, 0) + lineIdx}
               <DiffLineComponent
                 type={line.type}
                 content={line.content}
@@ -293,7 +421,17 @@
                 {...(line.new_num != null ? { newNum: line.new_num } : {})}
                 {...(line.no_newline ? { noNewline: line.no_newline } : {})}
                 tokens={getTokens(hunkIdx, lineIdx)}
+                {reviewEnabled}
+                oldSelected={isSelected(line, "left", order)}
+                newSelected={isSelected(line, "right", order)}
+                onselectside={(side, event) => handleLineSelect(line, side, order, event)}
               />
+              {#if composerRange && composerAfter(line, order)}
+                <DiffInlineCommentComposer
+                  range={composerRange}
+                  onclose={closeComposer}
+                />
+              {/if}
             {/each}
           {/each}
         </div>

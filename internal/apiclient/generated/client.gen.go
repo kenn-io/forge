@@ -373,6 +373,22 @@ type ConfiguredRepoStatus struct {
 	RepoPath         string `json:"repo_path"`
 }
 
+// CreateDiffReviewDraftCommentHostInputBody defines model for CreateDiffReviewDraftCommentHostInputBody.
+type CreateDiffReviewDraftCommentHostInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string             `json:"$schema,omitempty"`
+	Body   string              `json:"body"`
+	Range  DiffReviewLineRange `json:"range"`
+}
+
+// CreateDiffReviewDraftCommentInputBody defines model for CreateDiffReviewDraftCommentInputBody.
+type CreateDiffReviewDraftCommentInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string             `json:"$schema,omitempty"`
+	Body   string              `json:"body"`
+	Range  DiffReviewLineRange `json:"range"`
+}
+
 // CreateIssueHostInputBody defines model for CreateIssueHostInputBody.
 type CreateIssueHostInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -437,6 +453,73 @@ type DiffResponse struct {
 	WhitespaceOnlyCount int64       `json:"whitespace_only_count"`
 }
 
+// DiffReviewDraftComment defines model for DiffReviewDraftComment.
+type DiffReviewDraftComment struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema      *string `json:"$schema,omitempty"`
+	Body        string  `json:"body"`
+	CommitSha   *string `json:"commit_sha,omitempty"`
+	CreatedAt   string  `json:"created_at"`
+	DiffHeadSha *string `json:"diff_head_sha,omitempty"`
+	Id          string  `json:"id"`
+	Line        int64   `json:"line"`
+	LineType    string  `json:"line_type"`
+	NewLine     *int64  `json:"new_line,omitempty"`
+	OldLine     *int64  `json:"old_line,omitempty"`
+	OldPath     *string `json:"old_path,omitempty"`
+	Path        string  `json:"path"`
+	Side        string  `json:"side"`
+	StartLine   *int64  `json:"start_line,omitempty"`
+	StartSide   *string `json:"start_side,omitempty"`
+	UpdatedAt   string  `json:"updated_at"`
+}
+
+// DiffReviewDraftResponse defines model for DiffReviewDraftResponse.
+type DiffReviewDraftResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema                *string                   `json:"$schema,omitempty"`
+	Comments              *[]DiffReviewDraftComment `json:"comments"`
+	DraftId               *string                   `json:"draft_id,omitempty"`
+	NativeMultilineRanges bool                      `json:"native_multiline_ranges"`
+	SupportedActions      *[]string                 `json:"supported_actions"`
+}
+
+// DiffReviewLineRange defines model for DiffReviewLineRange.
+type DiffReviewLineRange struct {
+	CommitSha   *string `json:"commit_sha,omitempty"`
+	DiffHeadSha *string `json:"diff_head_sha,omitempty"`
+	Line        int64   `json:"line"`
+	LineType    string  `json:"line_type"`
+	NewLine     *int64  `json:"new_line,omitempty"`
+	OldLine     *int64  `json:"old_line,omitempty"`
+	OldPath     *string `json:"old_path,omitempty"`
+	Path        string  `json:"path"`
+	Side        string  `json:"side"`
+	StartLine   *int64  `json:"start_line,omitempty"`
+	StartSide   *string `json:"start_side,omitempty"`
+}
+
+// DiffReviewThreadResponse defines model for DiffReviewThreadResponse.
+type DiffReviewThreadResponse struct {
+	AuthorLogin *string `json:"author_login,omitempty"`
+	Body        string  `json:"body"`
+	CommitSha   *string `json:"commit_sha,omitempty"`
+	CreatedAt   string  `json:"created_at"`
+	DiffHeadSha *string `json:"diff_head_sha,omitempty"`
+	Id          string  `json:"id"`
+	Line        int64   `json:"line"`
+	LineType    string  `json:"line_type"`
+	NewLine     *int64  `json:"new_line,omitempty"`
+	OldLine     *int64  `json:"old_line,omitempty"`
+	OldPath     *string `json:"old_path,omitempty"`
+	Path        string  `json:"path"`
+	Resolved    bool    `json:"resolved"`
+	Side        string  `json:"side"`
+	StartLine   *int64  `json:"start_line,omitempty"`
+	StartSide   *string `json:"start_side,omitempty"`
+	UpdatedAt   string  `json:"updated_at"`
+}
+
 // EditCommentHostInputBody defines model for EditCommentHostInputBody.
 type EditCommentHostInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -449,6 +532,22 @@ type EditCommentInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema *string `json:"$schema,omitempty"`
 	Body   string  `json:"body"`
+}
+
+// EditDiffReviewDraftCommentHostInputBody defines model for EditDiffReviewDraftCommentHostInputBody.
+type EditDiffReviewDraftCommentHostInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string             `json:"$schema,omitempty"`
+	Body   string              `json:"body"`
+	Range  DiffReviewLineRange `json:"range"`
+}
+
+// EditDiffReviewDraftCommentInputBody defines model for EditDiffReviewDraftCommentInputBody.
+type EditDiffReviewDraftCommentInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string             `json:"$schema,omitempty"`
+	Body   string              `json:"body"`
+	Range  DiffReviewLineRange `json:"range"`
 }
 
 // EditIssueCommentHostInputBody defines model for EditIssueCommentHostInputBody.
@@ -808,23 +907,39 @@ type MergeRequestState string
 // MergeRequestDetailResponse defines model for MergeRequestDetailResponse.
 type MergeRequestDetailResponse struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema           *string                  `json:"$schema,omitempty"`
-	DetailFetchedAt  *string                  `json:"detail_fetched_at,omitempty"`
-	DetailLoaded     bool                     `json:"detail_loaded"`
-	DiffHeadSha      string                   `json:"diff_head_sha"`
-	Events           *[]MREvent               `json:"events"`
-	MergeBaseSha     string                   `json:"merge_base_sha"`
-	MergeRequest     MergeRequest             `json:"merge_request"`
-	PlatformBaseSha  string                   `json:"platform_base_sha"`
-	PlatformHeadSha  string                   `json:"platform_head_sha"`
-	PlatformHost     string                   `json:"platform_host"`
-	Repo             RepoRefResponse          `json:"repo"`
-	RepoName         string                   `json:"repo_name"`
-	RepoOwner        string                   `json:"repo_owner"`
-	Warnings         *[]string                `json:"warnings,omitempty"`
-	WorkflowApproval WorkflowApprovalResponse `json:"workflow_approval"`
-	Workspace        *WorkspaceRef            `json:"workspace,omitempty"`
-	WorktreeLinks    *[]WorktreeLinkResponse  `json:"worktree_links"`
+	Schema           *string                      `json:"$schema,omitempty"`
+	DetailFetchedAt  *string                      `json:"detail_fetched_at,omitempty"`
+	DetailLoaded     bool                         `json:"detail_loaded"`
+	DiffHeadSha      string                       `json:"diff_head_sha"`
+	Events           *[]MergeRequestEventResponse `json:"events"`
+	MergeBaseSha     string                       `json:"merge_base_sha"`
+	MergeRequest     MergeRequest                 `json:"merge_request"`
+	PlatformBaseSha  string                       `json:"platform_base_sha"`
+	PlatformHeadSha  string                       `json:"platform_head_sha"`
+	PlatformHost     string                       `json:"platform_host"`
+	Repo             RepoRefResponse              `json:"repo"`
+	RepoName         string                       `json:"repo_name"`
+	RepoOwner        string                       `json:"repo_owner"`
+	Warnings         *[]string                    `json:"warnings,omitempty"`
+	WorkflowApproval WorkflowApprovalResponse     `json:"workflow_approval"`
+	Workspace        *WorkspaceRef                `json:"workspace,omitempty"`
+	WorktreeLinks    *[]WorktreeLinkResponse      `json:"worktree_links"`
+}
+
+// MergeRequestEventResponse defines model for MergeRequestEventResponse.
+type MergeRequestEventResponse struct {
+	Author             string                    `json:"Author"`
+	Body               string                    `json:"Body"`
+	CreatedAt          time.Time                 `json:"CreatedAt"`
+	DedupeKey          string                    `json:"DedupeKey"`
+	EventType          string                    `json:"EventType"`
+	ID                 int64                     `json:"ID"`
+	MergeRequestID     int64                     `json:"MergeRequestID"`
+	MetadataJSON       string                    `json:"MetadataJSON"`
+	PlatformExternalID string                    `json:"PlatformExternalID"`
+	PlatformID         *int64                    `json:"PlatformID"`
+	Summary            string                    `json:"Summary"`
+	ReviewThread       *DiffReviewThreadResponse `json:"review_thread,omitempty"`
 }
 
 // MergeRequestResponse defines model for MergeRequestResponse.
@@ -982,23 +1097,44 @@ type ProjectResponse struct {
 
 // ProviderCapabilitiesResponse defines model for ProviderCapabilitiesResponse.
 type ProviderCapabilitiesResponse struct {
-	CommentMutation   bool `json:"comment_mutation"`
-	IssueMutation     bool `json:"issue_mutation"`
-	LabelMutation     bool `json:"label_mutation"`
-	MergeMutation     bool `json:"merge_mutation"`
-	ReadCi            bool `json:"read_ci"`
-	ReadComments      bool `json:"read_comments"`
-	ReadIssues        bool `json:"read_issues"`
-	ReadLabels        bool `json:"read_labels"`
-	ReadMergeRequests bool `json:"read_merge_requests"`
-	ReadReleases      bool `json:"read_releases"`
-	ReadRepositories  bool `json:"read_repositories"`
-	ReadyForReview    bool `json:"ready_for_review"`
-	ReviewMutation    bool `json:"review_mutation"`
-	StateMutation     bool `json:"state_mutation"`
-	ThreadReply       bool `json:"thread_reply"`
-	ThreadResolve     bool `json:"thread_resolve"`
-	WorkflowApproval  bool `json:"workflow_approval"`
+	CommentMutation        bool      `json:"comment_mutation"`
+	IssueMutation          bool      `json:"issue_mutation"`
+	LabelMutation          bool      `json:"label_mutation"`
+	MergeMutation          bool      `json:"merge_mutation"`
+	NativeMultilineRanges  bool      `json:"native_multiline_ranges"`
+	ReadCi                 bool      `json:"read_ci"`
+	ReadComments           bool      `json:"read_comments"`
+	ReadIssues             bool      `json:"read_issues"`
+	ReadLabels             bool      `json:"read_labels"`
+	ReadMergeRequests      bool      `json:"read_merge_requests"`
+	ReadReleases           bool      `json:"read_releases"`
+	ReadRepositories       bool      `json:"read_repositories"`
+	ReadReviewThreads      bool      `json:"read_review_threads"`
+	ReadyForReview         bool      `json:"ready_for_review"`
+	ReviewDraftMutation    bool      `json:"review_draft_mutation"`
+	ReviewMutation         bool      `json:"review_mutation"`
+	ReviewThreadResolution bool      `json:"review_thread_resolution"`
+	StateMutation          bool      `json:"state_mutation"`
+	SupportedReviewActions *[]string `json:"supported_review_actions"`
+	ThreadReply            bool      `json:"thread_reply"`
+	ThreadResolve          bool      `json:"thread_resolve"`
+	WorkflowApproval       bool      `json:"workflow_approval"`
+}
+
+// PublishDiffReviewDraftHostInputBody defines model for PublishDiffReviewDraftHostInputBody.
+type PublishDiffReviewDraftHostInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string `json:"$schema,omitempty"`
+	Action string  `json:"action"`
+	Body   *string `json:"body,omitempty"`
+}
+
+// PublishDiffReviewDraftInputBody defines model for PublishDiffReviewDraftInputBody.
+type PublishDiffReviewDraftInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string `json:"$schema,omitempty"`
+	Action string  `json:"action"`
+	Body   *string `json:"body,omitempty"`
 }
 
 // RateLimitHostStatus defines model for RateLimitHostStatus.
@@ -1687,6 +1823,15 @@ type SetPrLabelsOnHostJSONRequestBody = SetLabelsRequest
 // MergePullOnHostJSONRequestBody defines body for MergePullOnHost for application/json ContentType.
 type MergePullOnHostJSONRequestBody = MergePRHostInputBody
 
+// CreatePrReviewDraftCommentOnHostJSONRequestBody defines body for CreatePrReviewDraftCommentOnHost for application/json ContentType.
+type CreatePrReviewDraftCommentOnHostJSONRequestBody = CreateDiffReviewDraftCommentHostInputBody
+
+// EditPrReviewDraftCommentOnHostJSONRequestBody defines body for EditPrReviewDraftCommentOnHost for application/json ContentType.
+type EditPrReviewDraftCommentOnHostJSONRequestBody = EditDiffReviewDraftCommentHostInputBody
+
+// PublishPrReviewDraftOnHostJSONRequestBody defines body for PublishPrReviewDraftOnHost for application/json ContentType.
+type PublishPrReviewDraftOnHostJSONRequestBody = PublishDiffReviewDraftHostInputBody
+
 // SetKanbanStateOnHostJSONRequestBody defines body for SetKanbanStateOnHost for application/json ContentType.
 type SetKanbanStateOnHostJSONRequestBody = SetKanbanStateHostInputBody
 
@@ -1743,6 +1888,15 @@ type SetPrLabelsJSONRequestBody = SetLabelsRequest
 
 // MergePullJSONRequestBody defines body for MergePull for application/json ContentType.
 type MergePullJSONRequestBody = MergePRInputBody
+
+// CreatePrReviewDraftCommentJSONRequestBody defines body for CreatePrReviewDraftComment for application/json ContentType.
+type CreatePrReviewDraftCommentJSONRequestBody = CreateDiffReviewDraftCommentInputBody
+
+// EditPrReviewDraftCommentJSONRequestBody defines body for EditPrReviewDraftComment for application/json ContentType.
+type EditPrReviewDraftCommentJSONRequestBody = EditDiffReviewDraftCommentInputBody
+
+// PublishPrReviewDraftJSONRequestBody defines body for PublishPrReviewDraft for application/json ContentType.
+type PublishPrReviewDraftJSONRequestBody = PublishDiffReviewDraftInputBody
 
 // SetKanbanStateJSONRequestBody defines body for SetKanbanState for application/json ContentType.
 type SetKanbanStateJSONRequestBody = SetKanbanStateInputBody
@@ -1966,6 +2120,36 @@ type ClientInterface interface {
 	// MarkPullReadyForReviewOnHost request
 	MarkPullReadyForReviewOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// DiscardPrReviewDraftOnHost request
+	DiscardPrReviewDraftOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetPrReviewDraftOnHost request
+	GetPrReviewDraftOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreatePrReviewDraftCommentOnHostWithBody request with any body
+	CreatePrReviewDraftCommentOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	CreatePrReviewDraftCommentOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body CreatePrReviewDraftCommentOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeletePrReviewDraftCommentOnHost request
+	DeletePrReviewDraftCommentOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, draftCommentId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// EditPrReviewDraftCommentOnHostWithBody request with any body
+	EditPrReviewDraftCommentOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, draftCommentId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	EditPrReviewDraftCommentOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, draftCommentId string, body EditPrReviewDraftCommentOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PublishPrReviewDraftOnHostWithBody request with any body
+	PublishPrReviewDraftOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	PublishPrReviewDraftOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body PublishPrReviewDraftOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ResolvePrReviewThreadOnHost request
+	ResolvePrReviewThreadOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, threadId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UnresolvePrReviewThreadOnHost request
+	UnresolvePrReviewThreadOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, threadId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetPullStackOnHost request
 	GetPullStackOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -2144,6 +2328,36 @@ type ClientInterface interface {
 
 	// MarkPullReadyForReview request
 	MarkPullReadyForReview(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DiscardPrReviewDraft request
+	DiscardPrReviewDraft(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetPrReviewDraft request
+	GetPrReviewDraft(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreatePrReviewDraftCommentWithBody request with any body
+	CreatePrReviewDraftCommentWithBody(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	CreatePrReviewDraftComment(ctx context.Context, provider string, owner string, name string, number int64, body CreatePrReviewDraftCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeletePrReviewDraftComment request
+	DeletePrReviewDraftComment(ctx context.Context, provider string, owner string, name string, number int64, draftCommentId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// EditPrReviewDraftCommentWithBody request with any body
+	EditPrReviewDraftCommentWithBody(ctx context.Context, provider string, owner string, name string, number int64, draftCommentId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	EditPrReviewDraftComment(ctx context.Context, provider string, owner string, name string, number int64, draftCommentId string, body EditPrReviewDraftCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PublishPrReviewDraftWithBody request with any body
+	PublishPrReviewDraftWithBody(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	PublishPrReviewDraft(ctx context.Context, provider string, owner string, name string, number int64, body PublishPrReviewDraftJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ResolvePrReviewThread request
+	ResolvePrReviewThread(ctx context.Context, provider string, owner string, name string, number int64, threadId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UnresolvePrReviewThread request
+	UnresolvePrReviewThread(ctx context.Context, provider string, owner string, name string, number int64, threadId string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetPullStack request
 	GetPullStack(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -2820,6 +3034,138 @@ func (c *Client) MergePullOnHost(ctx context.Context, platformHost string, provi
 
 func (c *Client) MarkPullReadyForReviewOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewMarkPullReadyForReviewOnHostRequest(c.Server, platformHost, provider, owner, name, number)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) DiscardPrReviewDraftOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDiscardPrReviewDraftOnHostRequest(c.Server, platformHost, provider, owner, name, number)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetPrReviewDraftOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetPrReviewDraftOnHostRequest(c.Server, platformHost, provider, owner, name, number)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreatePrReviewDraftCommentOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreatePrReviewDraftCommentOnHostRequestWithBody(c.Server, platformHost, provider, owner, name, number, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreatePrReviewDraftCommentOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body CreatePrReviewDraftCommentOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreatePrReviewDraftCommentOnHostRequest(c.Server, platformHost, provider, owner, name, number, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) DeletePrReviewDraftCommentOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, draftCommentId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeletePrReviewDraftCommentOnHostRequest(c.Server, platformHost, provider, owner, name, number, draftCommentId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) EditPrReviewDraftCommentOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, draftCommentId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewEditPrReviewDraftCommentOnHostRequestWithBody(c.Server, platformHost, provider, owner, name, number, draftCommentId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) EditPrReviewDraftCommentOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, draftCommentId string, body EditPrReviewDraftCommentOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewEditPrReviewDraftCommentOnHostRequest(c.Server, platformHost, provider, owner, name, number, draftCommentId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PublishPrReviewDraftOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPublishPrReviewDraftOnHostRequestWithBody(c.Server, platformHost, provider, owner, name, number, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PublishPrReviewDraftOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body PublishPrReviewDraftOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPublishPrReviewDraftOnHostRequest(c.Server, platformHost, provider, owner, name, number, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ResolvePrReviewThreadOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, threadId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewResolvePrReviewThreadOnHostRequest(c.Server, platformHost, provider, owner, name, number, threadId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UnresolvePrReviewThreadOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, threadId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUnresolvePrReviewThreadOnHostRequest(c.Server, platformHost, provider, owner, name, number, threadId)
 	if err != nil {
 		return nil, err
 	}
@@ -3612,6 +3958,138 @@ func (c *Client) MergePull(ctx context.Context, provider string, owner string, n
 
 func (c *Client) MarkPullReadyForReview(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewMarkPullReadyForReviewRequest(c.Server, provider, owner, name, number)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) DiscardPrReviewDraft(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDiscardPrReviewDraftRequest(c.Server, provider, owner, name, number)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetPrReviewDraft(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetPrReviewDraftRequest(c.Server, provider, owner, name, number)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreatePrReviewDraftCommentWithBody(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreatePrReviewDraftCommentRequestWithBody(c.Server, provider, owner, name, number, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreatePrReviewDraftComment(ctx context.Context, provider string, owner string, name string, number int64, body CreatePrReviewDraftCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreatePrReviewDraftCommentRequest(c.Server, provider, owner, name, number, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) DeletePrReviewDraftComment(ctx context.Context, provider string, owner string, name string, number int64, draftCommentId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeletePrReviewDraftCommentRequest(c.Server, provider, owner, name, number, draftCommentId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) EditPrReviewDraftCommentWithBody(ctx context.Context, provider string, owner string, name string, number int64, draftCommentId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewEditPrReviewDraftCommentRequestWithBody(c.Server, provider, owner, name, number, draftCommentId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) EditPrReviewDraftComment(ctx context.Context, provider string, owner string, name string, number int64, draftCommentId string, body EditPrReviewDraftCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewEditPrReviewDraftCommentRequest(c.Server, provider, owner, name, number, draftCommentId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PublishPrReviewDraftWithBody(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPublishPrReviewDraftRequestWithBody(c.Server, provider, owner, name, number, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PublishPrReviewDraft(ctx context.Context, provider string, owner string, name string, number int64, body PublishPrReviewDraftJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPublishPrReviewDraftRequest(c.Server, provider, owner, name, number, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ResolvePrReviewThread(ctx context.Context, provider string, owner string, name string, number int64, threadId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewResolvePrReviewThreadRequest(c.Server, provider, owner, name, number, threadId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UnresolvePrReviewThread(ctx context.Context, provider string, owner string, name string, number int64, threadId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUnresolvePrReviewThreadRequest(c.Server, provider, owner, name, number, threadId)
 	if err != nil {
 		return nil, err
 	}
@@ -6414,6 +6892,569 @@ func NewMarkPullReadyForReviewOnHostRequest(server string, platformHost string, 
 	}
 
 	operationPath := fmt.Sprintf("/host/%s/pulls/%s/%s/%s/%s/ready-for-review", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewDiscardPrReviewDraftOnHostRequest generates requests for DiscardPrReviewDraftOnHost
+func NewDiscardPrReviewDraftOnHostRequest(server string, platformHost string, provider string, owner string, name string, number int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/pulls/%s/%s/%s/%s/review-draft", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("DELETE", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetPrReviewDraftOnHostRequest generates requests for GetPrReviewDraftOnHost
+func NewGetPrReviewDraftOnHostRequest(server string, platformHost string, provider string, owner string, name string, number int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/pulls/%s/%s/%s/%s/review-draft", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreatePrReviewDraftCommentOnHostRequest calls the generic CreatePrReviewDraftCommentOnHost builder with application/json body
+func NewCreatePrReviewDraftCommentOnHostRequest(server string, platformHost string, provider string, owner string, name string, number int64, body CreatePrReviewDraftCommentOnHostJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreatePrReviewDraftCommentOnHostRequestWithBody(server, platformHost, provider, owner, name, number, "application/json", bodyReader)
+}
+
+// NewCreatePrReviewDraftCommentOnHostRequestWithBody generates requests for CreatePrReviewDraftCommentOnHost with any type of body
+func NewCreatePrReviewDraftCommentOnHostRequestWithBody(server string, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/pulls/%s/%s/%s/%s/review-draft/comments", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDeletePrReviewDraftCommentOnHostRequest generates requests for DeletePrReviewDraftCommentOnHost
+func NewDeletePrReviewDraftCommentOnHostRequest(server string, platformHost string, provider string, owner string, name string, number int64, draftCommentId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam5 string
+
+	pathParam5, err = runtime.StyleParamWithOptions("simple", false, "draft_comment_id", draftCommentId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/pulls/%s/%s/%s/%s/review-draft/comments/%s", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4, pathParam5)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("DELETE", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewEditPrReviewDraftCommentOnHostRequest calls the generic EditPrReviewDraftCommentOnHost builder with application/json body
+func NewEditPrReviewDraftCommentOnHostRequest(server string, platformHost string, provider string, owner string, name string, number int64, draftCommentId string, body EditPrReviewDraftCommentOnHostJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewEditPrReviewDraftCommentOnHostRequestWithBody(server, platformHost, provider, owner, name, number, draftCommentId, "application/json", bodyReader)
+}
+
+// NewEditPrReviewDraftCommentOnHostRequestWithBody generates requests for EditPrReviewDraftCommentOnHost with any type of body
+func NewEditPrReviewDraftCommentOnHostRequestWithBody(server string, platformHost string, provider string, owner string, name string, number int64, draftCommentId string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam5 string
+
+	pathParam5, err = runtime.StyleParamWithOptions("simple", false, "draft_comment_id", draftCommentId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/pulls/%s/%s/%s/%s/review-draft/comments/%s", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4, pathParam5)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("PATCH", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewPublishPrReviewDraftOnHostRequest calls the generic PublishPrReviewDraftOnHost builder with application/json body
+func NewPublishPrReviewDraftOnHostRequest(server string, platformHost string, provider string, owner string, name string, number int64, body PublishPrReviewDraftOnHostJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPublishPrReviewDraftOnHostRequestWithBody(server, platformHost, provider, owner, name, number, "application/json", bodyReader)
+}
+
+// NewPublishPrReviewDraftOnHostRequestWithBody generates requests for PublishPrReviewDraftOnHost with any type of body
+func NewPublishPrReviewDraftOnHostRequestWithBody(server string, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/pulls/%s/%s/%s/%s/review-draft/publish", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewResolvePrReviewThreadOnHostRequest generates requests for ResolvePrReviewThreadOnHost
+func NewResolvePrReviewThreadOnHostRequest(server string, platformHost string, provider string, owner string, name string, number int64, threadId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam5 string
+
+	pathParam5, err = runtime.StyleParamWithOptions("simple", false, "thread_id", threadId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/pulls/%s/%s/%s/%s/review-threads/%s/resolve", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4, pathParam5)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewUnresolvePrReviewThreadOnHostRequest generates requests for UnresolvePrReviewThreadOnHost
+func NewUnresolvePrReviewThreadOnHostRequest(server string, platformHost string, provider string, owner string, name string, number int64, threadId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam5 string
+
+	pathParam5, err = runtime.StyleParamWithOptions("simple", false, "thread_id", threadId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/pulls/%s/%s/%s/%s/review-threads/%s/unresolve", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4, pathParam5)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -9588,6 +10629,513 @@ func NewMarkPullReadyForReviewRequest(server string, provider string, owner stri
 	return req, nil
 }
 
+// NewDiscardPrReviewDraftRequest generates requests for DiscardPrReviewDraft
+func NewDiscardPrReviewDraftRequest(server string, provider string, owner string, name string, number int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/pulls/%s/%s/%s/%s/review-draft", pathParam0, pathParam1, pathParam2, pathParam3)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("DELETE", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetPrReviewDraftRequest generates requests for GetPrReviewDraft
+func NewGetPrReviewDraftRequest(server string, provider string, owner string, name string, number int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/pulls/%s/%s/%s/%s/review-draft", pathParam0, pathParam1, pathParam2, pathParam3)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreatePrReviewDraftCommentRequest calls the generic CreatePrReviewDraftComment builder with application/json body
+func NewCreatePrReviewDraftCommentRequest(server string, provider string, owner string, name string, number int64, body CreatePrReviewDraftCommentJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreatePrReviewDraftCommentRequestWithBody(server, provider, owner, name, number, "application/json", bodyReader)
+}
+
+// NewCreatePrReviewDraftCommentRequestWithBody generates requests for CreatePrReviewDraftComment with any type of body
+func NewCreatePrReviewDraftCommentRequestWithBody(server string, provider string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/pulls/%s/%s/%s/%s/review-draft/comments", pathParam0, pathParam1, pathParam2, pathParam3)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDeletePrReviewDraftCommentRequest generates requests for DeletePrReviewDraftComment
+func NewDeletePrReviewDraftCommentRequest(server string, provider string, owner string, name string, number int64, draftCommentId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "draft_comment_id", draftCommentId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/pulls/%s/%s/%s/%s/review-draft/comments/%s", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("DELETE", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewEditPrReviewDraftCommentRequest calls the generic EditPrReviewDraftComment builder with application/json body
+func NewEditPrReviewDraftCommentRequest(server string, provider string, owner string, name string, number int64, draftCommentId string, body EditPrReviewDraftCommentJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewEditPrReviewDraftCommentRequestWithBody(server, provider, owner, name, number, draftCommentId, "application/json", bodyReader)
+}
+
+// NewEditPrReviewDraftCommentRequestWithBody generates requests for EditPrReviewDraftComment with any type of body
+func NewEditPrReviewDraftCommentRequestWithBody(server string, provider string, owner string, name string, number int64, draftCommentId string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "draft_comment_id", draftCommentId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/pulls/%s/%s/%s/%s/review-draft/comments/%s", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("PATCH", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewPublishPrReviewDraftRequest calls the generic PublishPrReviewDraft builder with application/json body
+func NewPublishPrReviewDraftRequest(server string, provider string, owner string, name string, number int64, body PublishPrReviewDraftJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPublishPrReviewDraftRequestWithBody(server, provider, owner, name, number, "application/json", bodyReader)
+}
+
+// NewPublishPrReviewDraftRequestWithBody generates requests for PublishPrReviewDraft with any type of body
+func NewPublishPrReviewDraftRequestWithBody(server string, provider string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/pulls/%s/%s/%s/%s/review-draft/publish", pathParam0, pathParam1, pathParam2, pathParam3)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewResolvePrReviewThreadRequest generates requests for ResolvePrReviewThread
+func NewResolvePrReviewThreadRequest(server string, provider string, owner string, name string, number int64, threadId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "thread_id", threadId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/pulls/%s/%s/%s/%s/review-threads/%s/resolve", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewUnresolvePrReviewThreadRequest generates requests for UnresolvePrReviewThread
+func NewUnresolvePrReviewThreadRequest(server string, provider string, owner string, name string, number int64, threadId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "thread_id", threadId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/pulls/%s/%s/%s/%s/review-threads/%s/unresolve", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewGetPullStackRequest generates requests for GetPullStack
 func NewGetPullStackRequest(server string, provider string, owner string, name string, number int64) (*http.Request, error) {
 	var err error
@@ -11573,6 +13121,36 @@ type ClientWithResponsesInterface interface {
 	// MarkPullReadyForReviewOnHostWithResponse request
 	MarkPullReadyForReviewOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*MarkPullReadyForReviewOnHostResponse, error)
 
+	// DiscardPrReviewDraftOnHostWithResponse request
+	DiscardPrReviewDraftOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*DiscardPrReviewDraftOnHostResponse, error)
+
+	// GetPrReviewDraftOnHostWithResponse request
+	GetPrReviewDraftOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetPrReviewDraftOnHostResponse, error)
+
+	// CreatePrReviewDraftCommentOnHostWithBodyWithResponse request with any body
+	CreatePrReviewDraftCommentOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreatePrReviewDraftCommentOnHostResponse, error)
+
+	CreatePrReviewDraftCommentOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body CreatePrReviewDraftCommentOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*CreatePrReviewDraftCommentOnHostResponse, error)
+
+	// DeletePrReviewDraftCommentOnHostWithResponse request
+	DeletePrReviewDraftCommentOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, draftCommentId string, reqEditors ...RequestEditorFn) (*DeletePrReviewDraftCommentOnHostResponse, error)
+
+	// EditPrReviewDraftCommentOnHostWithBodyWithResponse request with any body
+	EditPrReviewDraftCommentOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, draftCommentId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*EditPrReviewDraftCommentOnHostResponse, error)
+
+	EditPrReviewDraftCommentOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, draftCommentId string, body EditPrReviewDraftCommentOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*EditPrReviewDraftCommentOnHostResponse, error)
+
+	// PublishPrReviewDraftOnHostWithBodyWithResponse request with any body
+	PublishPrReviewDraftOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PublishPrReviewDraftOnHostResponse, error)
+
+	PublishPrReviewDraftOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body PublishPrReviewDraftOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*PublishPrReviewDraftOnHostResponse, error)
+
+	// ResolvePrReviewThreadOnHostWithResponse request
+	ResolvePrReviewThreadOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, threadId string, reqEditors ...RequestEditorFn) (*ResolvePrReviewThreadOnHostResponse, error)
+
+	// UnresolvePrReviewThreadOnHostWithResponse request
+	UnresolvePrReviewThreadOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, threadId string, reqEditors ...RequestEditorFn) (*UnresolvePrReviewThreadOnHostResponse, error)
+
 	// GetPullStackOnHostWithResponse request
 	GetPullStackOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetPullStackOnHostResponse, error)
 
@@ -11751,6 +13329,36 @@ type ClientWithResponsesInterface interface {
 
 	// MarkPullReadyForReviewWithResponse request
 	MarkPullReadyForReviewWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*MarkPullReadyForReviewResponse, error)
+
+	// DiscardPrReviewDraftWithResponse request
+	DiscardPrReviewDraftWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*DiscardPrReviewDraftResponse, error)
+
+	// GetPrReviewDraftWithResponse request
+	GetPrReviewDraftWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetPrReviewDraftResponse, error)
+
+	// CreatePrReviewDraftCommentWithBodyWithResponse request with any body
+	CreatePrReviewDraftCommentWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreatePrReviewDraftCommentResponse, error)
+
+	CreatePrReviewDraftCommentWithResponse(ctx context.Context, provider string, owner string, name string, number int64, body CreatePrReviewDraftCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*CreatePrReviewDraftCommentResponse, error)
+
+	// DeletePrReviewDraftCommentWithResponse request
+	DeletePrReviewDraftCommentWithResponse(ctx context.Context, provider string, owner string, name string, number int64, draftCommentId string, reqEditors ...RequestEditorFn) (*DeletePrReviewDraftCommentResponse, error)
+
+	// EditPrReviewDraftCommentWithBodyWithResponse request with any body
+	EditPrReviewDraftCommentWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, draftCommentId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*EditPrReviewDraftCommentResponse, error)
+
+	EditPrReviewDraftCommentWithResponse(ctx context.Context, provider string, owner string, name string, number int64, draftCommentId string, body EditPrReviewDraftCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*EditPrReviewDraftCommentResponse, error)
+
+	// PublishPrReviewDraftWithBodyWithResponse request with any body
+	PublishPrReviewDraftWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PublishPrReviewDraftResponse, error)
+
+	PublishPrReviewDraftWithResponse(ctx context.Context, provider string, owner string, name string, number int64, body PublishPrReviewDraftJSONRequestBody, reqEditors ...RequestEditorFn) (*PublishPrReviewDraftResponse, error)
+
+	// ResolvePrReviewThreadWithResponse request
+	ResolvePrReviewThreadWithResponse(ctx context.Context, provider string, owner string, name string, number int64, threadId string, reqEditors ...RequestEditorFn) (*ResolvePrReviewThreadResponse, error)
+
+	// UnresolvePrReviewThreadWithResponse request
+	UnresolvePrReviewThreadWithResponse(ctx context.Context, provider string, owner string, name string, number int64, threadId string, reqEditors ...RequestEditorFn) (*UnresolvePrReviewThreadResponse, error)
 
 	// GetPullStackWithResponse request
 	GetPullStackWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetPullStackResponse, error)
@@ -12544,6 +14152,186 @@ func (r MarkPullReadyForReviewOnHostResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r MarkPullReadyForReviewOnHostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type DiscardPrReviewDraftOnHostResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r DiscardPrReviewDraftOnHostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DiscardPrReviewDraftOnHostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetPrReviewDraftOnHostResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *DiffReviewDraftResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetPrReviewDraftOnHostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetPrReviewDraftOnHostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type CreatePrReviewDraftCommentOnHostResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON201                       *DiffReviewDraftComment
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r CreatePrReviewDraftCommentOnHostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreatePrReviewDraftCommentOnHostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type DeletePrReviewDraftCommentOnHostResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r DeletePrReviewDraftCommentOnHostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeletePrReviewDraftCommentOnHostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type EditPrReviewDraftCommentOnHostResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *DiffReviewDraftComment
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r EditPrReviewDraftCommentOnHostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r EditPrReviewDraftCommentOnHostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type PublishPrReviewDraftOnHostResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *ActionStatusBody
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r PublishPrReviewDraftOnHostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PublishPrReviewDraftOnHostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ResolvePrReviewThreadOnHostResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r ResolvePrReviewThreadOnHostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ResolvePrReviewThreadOnHostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type UnresolvePrReviewThreadOnHostResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r UnresolvePrReviewThreadOnHostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UnresolvePrReviewThreadOnHostResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -13620,6 +15408,186 @@ func (r MarkPullReadyForReviewResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r MarkPullReadyForReviewResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type DiscardPrReviewDraftResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r DiscardPrReviewDraftResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DiscardPrReviewDraftResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetPrReviewDraftResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *DiffReviewDraftResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetPrReviewDraftResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetPrReviewDraftResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type CreatePrReviewDraftCommentResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON201                       *DiffReviewDraftComment
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r CreatePrReviewDraftCommentResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreatePrReviewDraftCommentResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type DeletePrReviewDraftCommentResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r DeletePrReviewDraftCommentResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeletePrReviewDraftCommentResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type EditPrReviewDraftCommentResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *DiffReviewDraftComment
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r EditPrReviewDraftCommentResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r EditPrReviewDraftCommentResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type PublishPrReviewDraftResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *ActionStatusBody
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r PublishPrReviewDraftResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PublishPrReviewDraftResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ResolvePrReviewThreadResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r ResolvePrReviewThreadResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ResolvePrReviewThreadResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type UnresolvePrReviewThreadResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r UnresolvePrReviewThreadResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UnresolvePrReviewThreadResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -14881,6 +16849,102 @@ func (c *ClientWithResponses) MarkPullReadyForReviewOnHostWithResponse(ctx conte
 	return ParseMarkPullReadyForReviewOnHostResponse(rsp)
 }
 
+// DiscardPrReviewDraftOnHostWithResponse request returning *DiscardPrReviewDraftOnHostResponse
+func (c *ClientWithResponses) DiscardPrReviewDraftOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*DiscardPrReviewDraftOnHostResponse, error) {
+	rsp, err := c.DiscardPrReviewDraftOnHost(ctx, platformHost, provider, owner, name, number, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDiscardPrReviewDraftOnHostResponse(rsp)
+}
+
+// GetPrReviewDraftOnHostWithResponse request returning *GetPrReviewDraftOnHostResponse
+func (c *ClientWithResponses) GetPrReviewDraftOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetPrReviewDraftOnHostResponse, error) {
+	rsp, err := c.GetPrReviewDraftOnHost(ctx, platformHost, provider, owner, name, number, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetPrReviewDraftOnHostResponse(rsp)
+}
+
+// CreatePrReviewDraftCommentOnHostWithBodyWithResponse request with arbitrary body returning *CreatePrReviewDraftCommentOnHostResponse
+func (c *ClientWithResponses) CreatePrReviewDraftCommentOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreatePrReviewDraftCommentOnHostResponse, error) {
+	rsp, err := c.CreatePrReviewDraftCommentOnHostWithBody(ctx, platformHost, provider, owner, name, number, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreatePrReviewDraftCommentOnHostResponse(rsp)
+}
+
+func (c *ClientWithResponses) CreatePrReviewDraftCommentOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body CreatePrReviewDraftCommentOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*CreatePrReviewDraftCommentOnHostResponse, error) {
+	rsp, err := c.CreatePrReviewDraftCommentOnHost(ctx, platformHost, provider, owner, name, number, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreatePrReviewDraftCommentOnHostResponse(rsp)
+}
+
+// DeletePrReviewDraftCommentOnHostWithResponse request returning *DeletePrReviewDraftCommentOnHostResponse
+func (c *ClientWithResponses) DeletePrReviewDraftCommentOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, draftCommentId string, reqEditors ...RequestEditorFn) (*DeletePrReviewDraftCommentOnHostResponse, error) {
+	rsp, err := c.DeletePrReviewDraftCommentOnHost(ctx, platformHost, provider, owner, name, number, draftCommentId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeletePrReviewDraftCommentOnHostResponse(rsp)
+}
+
+// EditPrReviewDraftCommentOnHostWithBodyWithResponse request with arbitrary body returning *EditPrReviewDraftCommentOnHostResponse
+func (c *ClientWithResponses) EditPrReviewDraftCommentOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, draftCommentId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*EditPrReviewDraftCommentOnHostResponse, error) {
+	rsp, err := c.EditPrReviewDraftCommentOnHostWithBody(ctx, platformHost, provider, owner, name, number, draftCommentId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseEditPrReviewDraftCommentOnHostResponse(rsp)
+}
+
+func (c *ClientWithResponses) EditPrReviewDraftCommentOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, draftCommentId string, body EditPrReviewDraftCommentOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*EditPrReviewDraftCommentOnHostResponse, error) {
+	rsp, err := c.EditPrReviewDraftCommentOnHost(ctx, platformHost, provider, owner, name, number, draftCommentId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseEditPrReviewDraftCommentOnHostResponse(rsp)
+}
+
+// PublishPrReviewDraftOnHostWithBodyWithResponse request with arbitrary body returning *PublishPrReviewDraftOnHostResponse
+func (c *ClientWithResponses) PublishPrReviewDraftOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PublishPrReviewDraftOnHostResponse, error) {
+	rsp, err := c.PublishPrReviewDraftOnHostWithBody(ctx, platformHost, provider, owner, name, number, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePublishPrReviewDraftOnHostResponse(rsp)
+}
+
+func (c *ClientWithResponses) PublishPrReviewDraftOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body PublishPrReviewDraftOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*PublishPrReviewDraftOnHostResponse, error) {
+	rsp, err := c.PublishPrReviewDraftOnHost(ctx, platformHost, provider, owner, name, number, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePublishPrReviewDraftOnHostResponse(rsp)
+}
+
+// ResolvePrReviewThreadOnHostWithResponse request returning *ResolvePrReviewThreadOnHostResponse
+func (c *ClientWithResponses) ResolvePrReviewThreadOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, threadId string, reqEditors ...RequestEditorFn) (*ResolvePrReviewThreadOnHostResponse, error) {
+	rsp, err := c.ResolvePrReviewThreadOnHost(ctx, platformHost, provider, owner, name, number, threadId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseResolvePrReviewThreadOnHostResponse(rsp)
+}
+
+// UnresolvePrReviewThreadOnHostWithResponse request returning *UnresolvePrReviewThreadOnHostResponse
+func (c *ClientWithResponses) UnresolvePrReviewThreadOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, threadId string, reqEditors ...RequestEditorFn) (*UnresolvePrReviewThreadOnHostResponse, error) {
+	rsp, err := c.UnresolvePrReviewThreadOnHost(ctx, platformHost, provider, owner, name, number, threadId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUnresolvePrReviewThreadOnHostResponse(rsp)
+}
+
 // GetPullStackOnHostWithResponse request returning *GetPullStackOnHostResponse
 func (c *ClientWithResponses) GetPullStackOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetPullStackOnHostResponse, error) {
 	rsp, err := c.GetPullStackOnHost(ctx, platformHost, provider, owner, name, number, reqEditors...)
@@ -15454,6 +17518,102 @@ func (c *ClientWithResponses) MarkPullReadyForReviewWithResponse(ctx context.Con
 		return nil, err
 	}
 	return ParseMarkPullReadyForReviewResponse(rsp)
+}
+
+// DiscardPrReviewDraftWithResponse request returning *DiscardPrReviewDraftResponse
+func (c *ClientWithResponses) DiscardPrReviewDraftWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*DiscardPrReviewDraftResponse, error) {
+	rsp, err := c.DiscardPrReviewDraft(ctx, provider, owner, name, number, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDiscardPrReviewDraftResponse(rsp)
+}
+
+// GetPrReviewDraftWithResponse request returning *GetPrReviewDraftResponse
+func (c *ClientWithResponses) GetPrReviewDraftWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetPrReviewDraftResponse, error) {
+	rsp, err := c.GetPrReviewDraft(ctx, provider, owner, name, number, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetPrReviewDraftResponse(rsp)
+}
+
+// CreatePrReviewDraftCommentWithBodyWithResponse request with arbitrary body returning *CreatePrReviewDraftCommentResponse
+func (c *ClientWithResponses) CreatePrReviewDraftCommentWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreatePrReviewDraftCommentResponse, error) {
+	rsp, err := c.CreatePrReviewDraftCommentWithBody(ctx, provider, owner, name, number, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreatePrReviewDraftCommentResponse(rsp)
+}
+
+func (c *ClientWithResponses) CreatePrReviewDraftCommentWithResponse(ctx context.Context, provider string, owner string, name string, number int64, body CreatePrReviewDraftCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*CreatePrReviewDraftCommentResponse, error) {
+	rsp, err := c.CreatePrReviewDraftComment(ctx, provider, owner, name, number, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreatePrReviewDraftCommentResponse(rsp)
+}
+
+// DeletePrReviewDraftCommentWithResponse request returning *DeletePrReviewDraftCommentResponse
+func (c *ClientWithResponses) DeletePrReviewDraftCommentWithResponse(ctx context.Context, provider string, owner string, name string, number int64, draftCommentId string, reqEditors ...RequestEditorFn) (*DeletePrReviewDraftCommentResponse, error) {
+	rsp, err := c.DeletePrReviewDraftComment(ctx, provider, owner, name, number, draftCommentId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeletePrReviewDraftCommentResponse(rsp)
+}
+
+// EditPrReviewDraftCommentWithBodyWithResponse request with arbitrary body returning *EditPrReviewDraftCommentResponse
+func (c *ClientWithResponses) EditPrReviewDraftCommentWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, draftCommentId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*EditPrReviewDraftCommentResponse, error) {
+	rsp, err := c.EditPrReviewDraftCommentWithBody(ctx, provider, owner, name, number, draftCommentId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseEditPrReviewDraftCommentResponse(rsp)
+}
+
+func (c *ClientWithResponses) EditPrReviewDraftCommentWithResponse(ctx context.Context, provider string, owner string, name string, number int64, draftCommentId string, body EditPrReviewDraftCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*EditPrReviewDraftCommentResponse, error) {
+	rsp, err := c.EditPrReviewDraftComment(ctx, provider, owner, name, number, draftCommentId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseEditPrReviewDraftCommentResponse(rsp)
+}
+
+// PublishPrReviewDraftWithBodyWithResponse request with arbitrary body returning *PublishPrReviewDraftResponse
+func (c *ClientWithResponses) PublishPrReviewDraftWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PublishPrReviewDraftResponse, error) {
+	rsp, err := c.PublishPrReviewDraftWithBody(ctx, provider, owner, name, number, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePublishPrReviewDraftResponse(rsp)
+}
+
+func (c *ClientWithResponses) PublishPrReviewDraftWithResponse(ctx context.Context, provider string, owner string, name string, number int64, body PublishPrReviewDraftJSONRequestBody, reqEditors ...RequestEditorFn) (*PublishPrReviewDraftResponse, error) {
+	rsp, err := c.PublishPrReviewDraft(ctx, provider, owner, name, number, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePublishPrReviewDraftResponse(rsp)
+}
+
+// ResolvePrReviewThreadWithResponse request returning *ResolvePrReviewThreadResponse
+func (c *ClientWithResponses) ResolvePrReviewThreadWithResponse(ctx context.Context, provider string, owner string, name string, number int64, threadId string, reqEditors ...RequestEditorFn) (*ResolvePrReviewThreadResponse, error) {
+	rsp, err := c.ResolvePrReviewThread(ctx, provider, owner, name, number, threadId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseResolvePrReviewThreadResponse(rsp)
+}
+
+// UnresolvePrReviewThreadWithResponse request returning *UnresolvePrReviewThreadResponse
+func (c *ClientWithResponses) UnresolvePrReviewThreadWithResponse(ctx context.Context, provider string, owner string, name string, number int64, threadId string, reqEditors ...RequestEditorFn) (*UnresolvePrReviewThreadResponse, error) {
+	rsp, err := c.UnresolvePrReviewThread(ctx, provider, owner, name, number, threadId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUnresolvePrReviewThreadResponse(rsp)
 }
 
 // GetPullStackWithResponse request returning *GetPullStackResponse
@@ -16801,6 +18961,242 @@ func ParseMarkPullReadyForReviewOnHostResponse(rsp *http.Response) (*MarkPullRea
 		}
 		response.JSON200 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDiscardPrReviewDraftOnHostResponse parses an HTTP response from a DiscardPrReviewDraftOnHostWithResponse call
+func ParseDiscardPrReviewDraftOnHostResponse(rsp *http.Response) (*DiscardPrReviewDraftOnHostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DiscardPrReviewDraftOnHostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetPrReviewDraftOnHostResponse parses an HTTP response from a GetPrReviewDraftOnHostWithResponse call
+func ParseGetPrReviewDraftOnHostResponse(rsp *http.Response) (*GetPrReviewDraftOnHostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetPrReviewDraftOnHostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest DiffReviewDraftResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreatePrReviewDraftCommentOnHostResponse parses an HTTP response from a CreatePrReviewDraftCommentOnHostWithResponse call
+func ParseCreatePrReviewDraftCommentOnHostResponse(rsp *http.Response) (*CreatePrReviewDraftCommentOnHostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreatePrReviewDraftCommentOnHostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest DiffReviewDraftComment
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeletePrReviewDraftCommentOnHostResponse parses an HTTP response from a DeletePrReviewDraftCommentOnHostWithResponse call
+func ParseDeletePrReviewDraftCommentOnHostResponse(rsp *http.Response) (*DeletePrReviewDraftCommentOnHostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeletePrReviewDraftCommentOnHostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseEditPrReviewDraftCommentOnHostResponse parses an HTTP response from a EditPrReviewDraftCommentOnHostWithResponse call
+func ParseEditPrReviewDraftCommentOnHostResponse(rsp *http.Response) (*EditPrReviewDraftCommentOnHostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &EditPrReviewDraftCommentOnHostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest DiffReviewDraftComment
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePublishPrReviewDraftOnHostResponse parses an HTTP response from a PublishPrReviewDraftOnHostWithResponse call
+func ParsePublishPrReviewDraftOnHostResponse(rsp *http.Response) (*PublishPrReviewDraftOnHostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PublishPrReviewDraftOnHostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ActionStatusBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseResolvePrReviewThreadOnHostResponse parses an HTTP response from a ResolvePrReviewThreadOnHostWithResponse call
+func ParseResolvePrReviewThreadOnHostResponse(rsp *http.Response) (*ResolvePrReviewThreadOnHostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ResolvePrReviewThreadOnHostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseUnresolvePrReviewThreadOnHostResponse parses an HTTP response from a UnresolvePrReviewThreadOnHostWithResponse call
+func ParseUnresolvePrReviewThreadOnHostResponse(rsp *http.Response) (*UnresolvePrReviewThreadOnHostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UnresolvePrReviewThreadOnHostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
@@ -18317,6 +20713,242 @@ func ParseMarkPullReadyForReviewResponse(rsp *http.Response) (*MarkPullReadyForR
 		}
 		response.JSON200 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDiscardPrReviewDraftResponse parses an HTTP response from a DiscardPrReviewDraftWithResponse call
+func ParseDiscardPrReviewDraftResponse(rsp *http.Response) (*DiscardPrReviewDraftResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DiscardPrReviewDraftResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetPrReviewDraftResponse parses an HTTP response from a GetPrReviewDraftWithResponse call
+func ParseGetPrReviewDraftResponse(rsp *http.Response) (*GetPrReviewDraftResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetPrReviewDraftResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest DiffReviewDraftResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreatePrReviewDraftCommentResponse parses an HTTP response from a CreatePrReviewDraftCommentWithResponse call
+func ParseCreatePrReviewDraftCommentResponse(rsp *http.Response) (*CreatePrReviewDraftCommentResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreatePrReviewDraftCommentResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest DiffReviewDraftComment
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeletePrReviewDraftCommentResponse parses an HTTP response from a DeletePrReviewDraftCommentWithResponse call
+func ParseDeletePrReviewDraftCommentResponse(rsp *http.Response) (*DeletePrReviewDraftCommentResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeletePrReviewDraftCommentResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseEditPrReviewDraftCommentResponse parses an HTTP response from a EditPrReviewDraftCommentWithResponse call
+func ParseEditPrReviewDraftCommentResponse(rsp *http.Response) (*EditPrReviewDraftCommentResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &EditPrReviewDraftCommentResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest DiffReviewDraftComment
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePublishPrReviewDraftResponse parses an HTTP response from a PublishPrReviewDraftWithResponse call
+func ParsePublishPrReviewDraftResponse(rsp *http.Response) (*PublishPrReviewDraftResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PublishPrReviewDraftResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ActionStatusBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseResolvePrReviewThreadResponse parses an HTTP response from a ResolvePrReviewThreadWithResponse call
+func ParseResolvePrReviewThreadResponse(rsp *http.Response) (*ResolvePrReviewThreadResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ResolvePrReviewThreadResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseUnresolvePrReviewThreadResponse parses an HTTP response from a UnresolvePrReviewThreadWithResponse call
+func ParseUnresolvePrReviewThreadResponse(rsp *http.Response) (*UnresolvePrReviewThreadResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UnresolvePrReviewThreadResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {

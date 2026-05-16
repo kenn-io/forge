@@ -12,11 +12,12 @@
     type?: "button" | "submit" | "reset";
     disabled?: boolean;
     title?: string;
+    ariaLabel?: string | undefined;
     label?: string;
     shortLabel?: string;
     ariaExpanded?: boolean;
     class?: string;
-    onclick?: (event: MouseEvent) => void;
+    onclick?: ((event: MouseEvent) => void) | undefined;
     children?: Snippet;
     trailing?: Snippet;
   }
@@ -28,6 +29,7 @@
     type = "button",
     disabled = false,
     title = undefined,
+    ariaLabel = undefined,
     label = undefined,
     shortLabel = undefined,
     ariaExpanded = undefined,
@@ -54,7 +56,7 @@
   {disabled}
   {title}
   aria-expanded={ariaExpanded}
-  aria-label={label && shortLabel ? label : undefined}
+  aria-label={ariaLabel ?? (label && shortLabel ? label : undefined)}
   onclick={onclick}
 >
   {#if children}

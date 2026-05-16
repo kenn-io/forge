@@ -8,17 +8,20 @@ import (
 )
 
 const (
-	capabilityCommentMutation  = "comment_mutation"
-	capabilityStateMutation    = "state_mutation"
-	capabilityMergeMutation    = "merge_mutation"
-	capabilityReviewMutation   = "review_mutation"
-	capabilityWorkflowApproval = "workflow_approval"
-	capabilityReadyForReview   = "ready_for_review"
-	capabilityIssueMutation    = "issue_mutation"
-	capabilityReadLabels       = "read_labels"
-	capabilityLabelMutation    = "label_mutation"
-	capabilityThreadReply      = "thread_reply"
-	capabilityThreadResolve    = "thread_resolve"
+	capabilityCommentMutation        = "comment_mutation"
+	capabilityStateMutation          = "state_mutation"
+	capabilityMergeMutation          = "merge_mutation"
+	capabilityReviewMutation         = "review_mutation"
+	capabilityWorkflowApproval       = "workflow_approval"
+	capabilityReadyForReview         = "ready_for_review"
+	capabilityIssueMutation          = "issue_mutation"
+	capabilityReadLabels             = "read_labels"
+	capabilityLabelMutation          = "label_mutation"
+	capabilityThreadReply            = "thread_reply"
+	capabilityThreadResolve          = "thread_resolve"
+	capabilityReviewDraftMutation    = "review_draft_mutation"
+	capabilityReviewThreadResolution = "review_thread_resolution"
+	capabilityReadReviewThreads      = "read_review_threads"
 )
 
 func capabilityEnabled(
@@ -48,6 +51,12 @@ func capabilityEnabled(
 		return caps.ThreadReply
 	case capabilityThreadResolve:
 		return caps.ThreadResolve
+	case capabilityReviewDraftMutation:
+		return caps.ReviewDraftMutation
+	case capabilityReviewThreadResolution:
+		return caps.ReviewThreadResolution
+	case capabilityReadReviewThreads:
+		return caps.ReadReviewThreads
 	default:
 		return false
 	}

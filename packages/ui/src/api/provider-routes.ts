@@ -13,12 +13,16 @@ const defaultHosts: Record<string, string> = {
   gh: "github.com",
   gitlab: "gitlab.com",
   gl: "gitlab.com",
+  forgejo: "codeberg.org",
+  fj: "codeberg.org",
+  gitea: "gitea.com",
 };
 
 export function canonicalProvider(provider: string): string {
   const normalized = provider.toLowerCase();
   if (normalized === "gh") return "github";
   if (normalized === "gl") return "gitlab";
+  if (normalized === "fj") return "forgejo";
   return normalized;
 }
 
@@ -59,6 +63,12 @@ type PullSuffix =
   | "/labels"
   | "/merge"
   | "/ready-for-review"
+  | "/review-draft"
+  | "/review-draft/comments"
+  | "/review-draft/comments/{draft_comment_id}"
+  | "/review-draft/publish"
+  | "/review-threads/{thread_id}/resolve"
+  | "/review-threads/{thread_id}/unresolve"
   | "/stack"
   | "/state"
   | "/sync"

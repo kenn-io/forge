@@ -8,12 +8,27 @@
     newNum?: number;
     noNewline?: boolean;
     tokens: DualToken[];
+    reviewEnabled?: boolean;
+    oldSelected?: boolean;
+    newSelected?: boolean;
+    onselectside?: ((side: "left" | "right", event: MouseEvent) => void) | undefined;
   }
 
-  const { type, oldNum, newNum, noNewline, tokens }: Props = $props();
+  const {
+    type,
+    oldNum,
+    newNum,
+    noNewline,
+    tokens,
+    reviewEnabled = false,
+    oldSelected = false,
+    newSelected = false,
+    onselectside,
+  }: Props = $props();
 
   const marker = $derived(type === "add" ? "+" : type === "delete" ? "-" : " ");
-  const lineNum = $derived(newNum ?? oldNum ?? "");
+  const canSelectOld = $derived(reviewEnabled && oldNum != null);
+  const canSelectNew = $derived(reviewEnabled && newNum != null);
 </script>
 
 <div
@@ -25,7 +40,42 @@
     class="gutter"
     class:gutter--add={type === "add"}
     class:gutter--del={type === "delete"}
-  >{lineNum}</span>
+    class:gutter--selectable={canSelectOld}
+    class:gutter--selected={oldSelected}
+  >
+    {#if canSelectOld}
+      <button
+        class="line-comment-btn"
+        title="Comment on old line"
+        aria-label="Comment on old line {oldNum}"
+        onclick={(event) => onselectside?.("left", event)}
+      >
+        {oldNum}
+      </button>
+    {:else}
+      {oldNum ?? ""}
+    {/if}
+  </span>
+  <span
+    class="gutter gutter-new"
+    class:gutter--add={type === "add"}
+    class:gutter--del={type === "delete"}
+    class:gutter--selectable={canSelectNew}
+    class:gutter--selected={newSelected}
+  >
+    {#if canSelectNew}
+      <button
+        class="line-comment-btn"
+        title="Comment on new line"
+        aria-label="Comment on new line {newNum}"
+        onclick={(event) => onselectside?.("right", event)}
+      >
+        {newNum}
+      </button>
+    {:else}
+      {newNum ?? ""}
+    {/if}
+  </span>
   <span
     class="marker"
     class:marker--add={type === "add"}
@@ -70,6 +120,32 @@
 
   .gutter--del {
     background: var(--diff-del-gutter);
+  }
+
+  .gutter--selectable {
+    padding: 0;
+  }
+
+  .gutter--selected {
+    box-shadow: inset 0 0 0 2px var(--accent-blue);
+  }
+
+  .line-comment-btn {
+    width: 100%;
+    height: 20px;
+    padding: 0 8px 0 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: var(--font-size-xs);
+    text-align: right;
+    cursor: pointer;
+  }
+
+  .line-comment-btn:hover {
+    background: color-mix(in srgb, var(--accent-blue) 16%, transparent);
+    color: var(--text-primary);
   }
 
   .marker {

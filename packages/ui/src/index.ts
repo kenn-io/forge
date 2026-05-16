@@ -18,6 +18,7 @@ export type {
   ActivityStore,
   SyncStore,
   DiffStore,
+  DiffReviewDraftStore,
   GroupingStore,
   CollapsedReposStore,
   SettingsStore,
@@ -77,6 +78,9 @@ export {
 } from "./stores/activity.svelte.js";
 export { createSyncStore } from "./stores/sync.svelte.js";
 export { createDiffStore } from "./stores/diff.svelte.js";
+export {
+  createDiffReviewDraftStore,
+} from "./stores/diff-review-draft.svelte.js";
 export {
   createGroupingStore,
 } from "./stores/grouping.svelte.js";

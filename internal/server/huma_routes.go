@@ -105,6 +105,69 @@ type editCommentInput struct {
 
 type editCommentOutput = bodyOutput[db.MREvent]
 
+type getDiffReviewDraftOutput = bodyOutput[diffReviewDraftResponse]
+
+type createDiffReviewDraftCommentInput struct {
+	Provider     string `path:"provider"`
+	PlatformHost string
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
+	Body         struct {
+		Body  string              `json:"body"`
+		Range diffReviewLineRange `json:"range"`
+	}
+}
+
+type createDiffReviewDraftCommentOutput = createdOutput[diffReviewDraftComment]
+
+type editDiffReviewDraftCommentInput struct {
+	Provider       string `path:"provider"`
+	PlatformHost   string
+	Owner          string `path:"owner"`
+	Name           string `path:"name"`
+	Number         int    `path:"number"`
+	DraftCommentID string `path:"draft_comment_id"`
+	Body           struct {
+		Body  string              `json:"body"`
+		Range diffReviewLineRange `json:"range"`
+	}
+}
+
+type editDiffReviewDraftCommentOutput = bodyOutput[diffReviewDraftComment]
+
+type deleteDiffReviewDraftCommentInput struct {
+	Provider       string `path:"provider"`
+	PlatformHost   string
+	Owner          string `path:"owner"`
+	Name           string `path:"name"`
+	Number         int    `path:"number"`
+	DraftCommentID string `path:"draft_comment_id"`
+}
+
+type publishDiffReviewDraftInput struct {
+	Provider     string `path:"provider"`
+	PlatformHost string
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
+	Body         struct {
+		Body   string `json:"body,omitempty"`
+		Action string `json:"action"`
+	}
+}
+
+type discardDiffReviewDraftInput = repoNumberInput
+
+type resolveDiffReviewThreadInput struct {
+	Provider     string `path:"provider"`
+	PlatformHost string
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
+	ThreadID     string `path:"thread_id"`
+}
+
 type listIssuesInput struct {
 	Repo    string `query:"repo"`
 	State   string `query:"state"`
@@ -748,6 +811,22 @@ func (s *Server) registerProviderRepoAPI(api huma.API) {
 	huma.Register(api, huma.Operation{OperationID: "resolve-discussion-on-host", Method: http.MethodPost, Path: hostPullPath + "/discussions/{discussion_id}/resolve", DefaultStatus: http.StatusOK, Summary: "Resolve pull request discussion", Tags: []string{"Pull Requests"}}, s.resolveDiscussionOnHost)
 	huma.Register(api, huma.Operation{OperationID: "set-pr-labels", Method: http.MethodPut, Path: pullPath + "/labels", DefaultStatus: http.StatusOK, Summary: "Set pull request labels", Tags: []string{"Pull Requests"}}, s.setPullLabels)
 	huma.Register(api, huma.Operation{OperationID: "set-pr-labels-on-host", Method: http.MethodPut, Path: hostPullPath + "/labels", DefaultStatus: http.StatusOK, Summary: "Set pull request labels", Tags: []string{"Pull Requests"}}, s.setPullLabelsOnHost)
+	huma.Register(api, huma.Operation{OperationID: "get-pr-review-draft", Method: http.MethodGet, Path: pullPath + "/review-draft", DefaultStatus: http.StatusOK, Summary: "Review pull request diff", Tags: []string{"Pull Requests"}}, s.getDiffReviewDraft)
+	huma.Register(api, huma.Operation{OperationID: "get-pr-review-draft-on-host", Method: http.MethodGet, Path: hostPullPath + "/review-draft", DefaultStatus: http.StatusOK, Summary: "Review pull request diff", Tags: []string{"Pull Requests"}}, s.getDiffReviewDraftOnHost)
+	huma.Register(api, huma.Operation{OperationID: "create-pr-review-draft-comment", Method: http.MethodPost, Path: pullPath + "/review-draft/comments", DefaultStatus: http.StatusCreated, Summary: "Create pull request review draft comment", Tags: []string{"Pull Requests"}}, s.createDiffReviewDraftComment)
+	huma.Register(api, huma.Operation{OperationID: "create-pr-review-draft-comment-on-host", Method: http.MethodPost, Path: hostPullPath + "/review-draft/comments", DefaultStatus: http.StatusCreated, Summary: "Create pull request review draft comment", Tags: []string{"Pull Requests"}}, s.createDiffReviewDraftCommentOnHost)
+	huma.Register(api, huma.Operation{OperationID: "edit-pr-review-draft-comment", Method: http.MethodPatch, Path: pullPath + "/review-draft/comments/{draft_comment_id}", DefaultStatus: http.StatusOK, Summary: "Review pull request diff", Tags: []string{"Pull Requests"}}, s.editDiffReviewDraftComment)
+	huma.Register(api, huma.Operation{OperationID: "edit-pr-review-draft-comment-on-host", Method: http.MethodPatch, Path: hostPullPath + "/review-draft/comments/{draft_comment_id}", DefaultStatus: http.StatusOK, Summary: "Review pull request diff", Tags: []string{"Pull Requests"}}, s.editDiffReviewDraftCommentOnHost)
+	huma.Register(api, huma.Operation{OperationID: "delete-pr-review-draft-comment", Method: http.MethodDelete, Path: pullPath + "/review-draft/comments/{draft_comment_id}", DefaultStatus: http.StatusOK, Summary: "Review pull request diff", Tags: []string{"Pull Requests"}}, s.deleteDiffReviewDraftComment)
+	huma.Register(api, huma.Operation{OperationID: "delete-pr-review-draft-comment-on-host", Method: http.MethodDelete, Path: hostPullPath + "/review-draft/comments/{draft_comment_id}", DefaultStatus: http.StatusOK, Summary: "Review pull request diff", Tags: []string{"Pull Requests"}}, s.deleteDiffReviewDraftCommentOnHost)
+	huma.Register(api, huma.Operation{OperationID: "publish-pr-review-draft", Method: http.MethodPost, Path: pullPath + "/review-draft/publish", DefaultStatus: http.StatusOK, Summary: "Review pull request diff", Tags: []string{"Pull Requests"}}, s.publishDiffReviewDraft)
+	huma.Register(api, huma.Operation{OperationID: "publish-pr-review-draft-on-host", Method: http.MethodPost, Path: hostPullPath + "/review-draft/publish", DefaultStatus: http.StatusOK, Summary: "Review pull request diff", Tags: []string{"Pull Requests"}}, s.publishDiffReviewDraftOnHost)
+	huma.Register(api, huma.Operation{OperationID: "discard-pr-review-draft", Method: http.MethodDelete, Path: pullPath + "/review-draft", DefaultStatus: http.StatusOK, Summary: "Review pull request diff", Tags: []string{"Pull Requests"}}, s.discardDiffReviewDraft)
+	huma.Register(api, huma.Operation{OperationID: "discard-pr-review-draft-on-host", Method: http.MethodDelete, Path: hostPullPath + "/review-draft", DefaultStatus: http.StatusOK, Summary: "Review pull request diff", Tags: []string{"Pull Requests"}}, s.discardDiffReviewDraftOnHost)
+	huma.Register(api, huma.Operation{OperationID: "resolve-pr-review-thread", Method: http.MethodPost, Path: pullPath + "/review-threads/{thread_id}/resolve", DefaultStatus: http.StatusOK, Summary: "Review pull request diff", Tags: []string{"Pull Requests"}}, s.resolveDiffReviewThread)
+	huma.Register(api, huma.Operation{OperationID: "resolve-pr-review-thread-on-host", Method: http.MethodPost, Path: hostPullPath + "/review-threads/{thread_id}/resolve", DefaultStatus: http.StatusOK, Summary: "Review pull request diff", Tags: []string{"Pull Requests"}}, s.resolveDiffReviewThreadOnHost)
+	huma.Register(api, huma.Operation{OperationID: "unresolve-pr-review-thread", Method: http.MethodPost, Path: pullPath + "/review-threads/{thread_id}/unresolve", DefaultStatus: http.StatusOK, Summary: "Review pull request diff", Tags: []string{"Pull Requests"}}, s.unresolveDiffReviewThread)
+	huma.Register(api, huma.Operation{OperationID: "unresolve-pr-review-thread-on-host", Method: http.MethodPost, Path: hostPullPath + "/review-threads/{thread_id}/unresolve", DefaultStatus: http.StatusOK, Summary: "Review pull request diff", Tags: []string{"Pull Requests"}}, s.unresolveDiffReviewThreadOnHost)
 
 	huma.Register(api, huma.Operation{OperationID: "create-issue", Method: http.MethodPost, Path: issueRepoPath, DefaultStatus: http.StatusCreated, Summary: "Create issue", Tags: []string{"Issues"}}, s.createIssue)
 	huma.Register(api, huma.Operation{OperationID: "create-issue-on-host", Method: http.MethodPost, Path: hostIssueRepoPath, DefaultStatus: http.StatusCreated, Summary: "Create issue", Tags: []string{"Issues"}}, s.createIssueOnHost)
@@ -1059,6 +1138,12 @@ func (s *Server) buildPullDetailResponse(
 	if events == nil {
 		events = []db.MREvent{}
 	}
+	eventResponses, err := s.mergeRequestEventResponses(ctx, mr.ID, events)
+	if err != nil {
+		return mergeRequestDetailResponse{}, huma.Error500InternalServerError(
+			"attach review thread metadata failed",
+		)
+	}
 
 	dbLinks, err := s.db.GetWorktreeLinksForMR(ctx, mr.ID)
 	if err != nil {
@@ -1071,7 +1156,7 @@ func (s *Server) buildPullDetailResponse(
 	}
 	resp := mergeRequestDetailResponse{
 		MergeRequest:     mr,
-		Events:           events,
+		Events:           eventResponses,
 		Repo:             s.repoRefFromRepo(*repo),
 		RepoOwner:        repo.Owner,
 		RepoName:         repo.Name,

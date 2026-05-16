@@ -363,6 +363,42 @@ components:
         - is_glob
         - matched_repo_count
       type: object
+    CreateDiffReviewDraftCommentHostInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/CreateDiffReviewDraftCommentHostInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        body:
+          type: string
+        range:
+          $ref: "#/components/schemas/DiffReviewLineRange"
+      required:
+        - body
+        - range
+      type: object
+    CreateDiffReviewDraftCommentInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/CreateDiffReviewDraftCommentInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        body:
+          type: string
+        range:
+          $ref: "#/components/schemas/DiffReviewLineRange"
+      required:
+        - body
+        - range
+      type: object
     CreateIssueHostInputBody:
       additionalProperties: false
       properties:
@@ -518,6 +554,178 @@ components:
         - whitespace_only_count
         - files
       type: object
+    DiffReviewDraftComment:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/DiffReviewDraftComment.json
+          format: uri
+          readOnly: true
+          type: string
+        body:
+          type: string
+        commit_sha:
+          type: string
+        created_at:
+          type: string
+        diff_head_sha:
+          type: string
+        id:
+          type: string
+        line:
+          format: int64
+          type: integer
+        line_type:
+          type: string
+        new_line:
+          format: int64
+          type: integer
+        old_line:
+          format: int64
+          type: integer
+        old_path:
+          type: string
+        path:
+          type: string
+        side:
+          type: string
+        start_line:
+          format: int64
+          type: integer
+        start_side:
+          type: string
+        updated_at:
+          type: string
+      required:
+        - id
+        - body
+        - path
+        - side
+        - line
+        - line_type
+        - created_at
+        - updated_at
+      type: object
+    DiffReviewDraftResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/DiffReviewDraftResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        comments:
+          items:
+            $ref: "#/components/schemas/DiffReviewDraftComment"
+          type:
+            - array
+            - "null"
+        draft_id:
+          type: string
+        native_multiline_ranges:
+          type: boolean
+        supported_actions:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+      required:
+        - comments
+        - supported_actions
+        - native_multiline_ranges
+      type: object
+    DiffReviewLineRange:
+      additionalProperties: false
+      properties:
+        commit_sha:
+          type: string
+        diff_head_sha:
+          type: string
+        line:
+          format: int64
+          type: integer
+        line_type:
+          type: string
+        new_line:
+          format: int64
+          type: integer
+        old_line:
+          format: int64
+          type: integer
+        old_path:
+          type: string
+        path:
+          type: string
+        side:
+          type: string
+        start_line:
+          format: int64
+          type: integer
+        start_side:
+          type: string
+      required:
+        - path
+        - side
+        - line
+        - line_type
+      type: object
+    DiffReviewThreadResponse:
+      additionalProperties: false
+      properties:
+        author_login:
+          type: string
+        body:
+          type: string
+        commit_sha:
+          type: string
+        created_at:
+          type: string
+        diff_head_sha:
+          type: string
+        id:
+          type: string
+        line:
+          format: int64
+          type: integer
+        line_type:
+          type: string
+        new_line:
+          format: int64
+          type: integer
+        old_line:
+          format: int64
+          type: integer
+        old_path:
+          type: string
+        path:
+          type: string
+        resolved:
+          type: boolean
+        side:
+          type: string
+        start_line:
+          format: int64
+          type: integer
+        start_side:
+          type: string
+        updated_at:
+          type: string
+      required:
+        - id
+        - path
+        - side
+        - line
+        - line_type
+        - body
+        - resolved
+        - created_at
+        - updated_at
+      type: object
     EditCommentHostInputBody:
       additionalProperties: false
       properties:
@@ -547,6 +755,42 @@ components:
           type: string
       required:
         - body
+      type: object
+    EditDiffReviewDraftCommentHostInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/EditDiffReviewDraftCommentHostInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        body:
+          type: string
+        range:
+          $ref: "#/components/schemas/DiffReviewLineRange"
+      required:
+        - body
+        - range
+      type: object
+    EditDiffReviewDraftCommentInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/EditDiffReviewDraftCommentInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        body:
+          type: string
+        range:
+          $ref: "#/components/schemas/DiffReviewLineRange"
+      required:
+        - body
+        - range
       type: object
     EditIssueCommentHostInputBody:
       additionalProperties: false
@@ -1500,7 +1744,7 @@ components:
           type: string
         events:
           items:
-            $ref: "#/components/schemas/MREvent"
+            $ref: "#/components/schemas/MergeRequestEventResponse"
           type:
             - array
             - "null"
@@ -1550,6 +1794,52 @@ components:
         - worktree_links
         - workflow_approval
         - detail_loaded
+      type: object
+    MergeRequestEventResponse:
+      additionalProperties: false
+      properties:
+        Author:
+          type: string
+        Body:
+          type: string
+        CreatedAt:
+          format: date-time
+          type: string
+        DedupeKey:
+          type: string
+        EventType:
+          type: string
+        ID:
+          format: int64
+          type: integer
+        MergeRequestID:
+          format: int64
+          type: integer
+        MetadataJSON:
+          type: string
+        PlatformExternalID:
+          type: string
+        PlatformID:
+          format: int64
+          type:
+            - integer
+            - "null"
+        Summary:
+          type: string
+        review_thread:
+          $ref: "#/components/schemas/DiffReviewThreadResponse"
+      required:
+        - ID
+        - MergeRequestID
+        - PlatformID
+        - PlatformExternalID
+        - EventType
+        - Author
+        - Summary
+        - Body
+        - MetadataJSON
+        - CreatedAt
+        - DedupeKey
       type: object
     MergeRequestResponse:
       additionalProperties: false
@@ -1954,6 +2244,8 @@ components:
           type: boolean
         merge_mutation:
           type: boolean
+        native_multiline_ranges:
+          type: boolean
         read_ci:
           type: boolean
         read_comments:
@@ -1968,9 +2260,15 @@ components:
           type: boolean
         read_repositories:
           type: boolean
+        read_review_threads:
+          type: boolean
         ready_for_review:
           type: boolean
+        review_draft_mutation:
+          type: boolean
         review_mutation:
+          type: boolean
+        review_thread_resolution:
           type: boolean
         state_mutation:
           type: boolean
@@ -1978,6 +2276,12 @@ components:
           type: boolean
         thread_resolve:
           type: boolean
+        supported_review_actions:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
         workflow_approval:
           type: boolean
       required:
@@ -1998,6 +2302,45 @@ components:
         - label_mutation
         - thread_reply
         - thread_resolve
+        - review_draft_mutation
+        - review_thread_resolution
+        - read_review_threads
+        - native_multiline_ranges
+        - supported_review_actions
+      type: object
+    PublishDiffReviewDraftHostInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/PublishDiffReviewDraftHostInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        action:
+          type: string
+        body:
+          type: string
+      required:
+        - action
+      type: object
+    PublishDiffReviewDraftInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/PublishDiffReviewDraftInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        action:
+          type: string
+        body:
+          type: string
+      required:
+        - action
       type: object
     RateLimitHostStatus:
       additionalProperties: false
@@ -4710,6 +5053,394 @@ paths:
       summary: Mark pull request ready for review
       tags:
         - Pull Requests
+  /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/review-draft:
+    delete:
+      operationId: discard-pr-review-draft-on-host
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Review pull request diff
+      tags:
+        - Pull Requests
+    get:
+      operationId: get-pr-review-draft-on-host
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DiffReviewDraftResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Review pull request diff
+      tags:
+        - Pull Requests
+  /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/review-draft/comments:
+    post:
+      operationId: create-pr-review-draft-comment-on-host
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateDiffReviewDraftCommentHostInputBody"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DiffReviewDraftComment"
+          description: Created
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Create pull request review draft comment
+      tags:
+        - Pull Requests
+  /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/review-draft/comments/{draft_comment_id}:
+    delete:
+      operationId: delete-pr-review-draft-comment-on-host
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+        - in: path
+          name: draft_comment_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Review pull request diff
+      tags:
+        - Pull Requests
+    patch:
+      operationId: edit-pr-review-draft-comment-on-host
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+        - in: path
+          name: draft_comment_id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EditDiffReviewDraftCommentHostInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DiffReviewDraftComment"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Review pull request diff
+      tags:
+        - Pull Requests
+  /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/review-draft/publish:
+    post:
+      operationId: publish-pr-review-draft-on-host
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PublishDiffReviewDraftHostInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActionStatusBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Review pull request diff
+      tags:
+        - Pull Requests
+  /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/review-threads/{thread_id}/resolve:
+    post:
+      operationId: resolve-pr-review-thread-on-host
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+        - in: path
+          name: thread_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Review pull request diff
+      tags:
+        - Pull Requests
+  /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/review-threads/{thread_id}/unresolve:
+    post:
+      operationId: unresolve-pr-review-thread-on-host
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+        - in: path
+          name: thread_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Review pull request diff
+      tags:
+        - Pull Requests
   /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/stack:
     get:
       operationId: get-pull-stack-on-host
@@ -6776,6 +7507,354 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Mark pull request ready for review
+      tags:
+        - Pull Requests
+  /pulls/{provider}/{owner}/{name}/{number}/review-draft:
+    delete:
+      operationId: discard-pr-review-draft
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Review pull request diff
+      tags:
+        - Pull Requests
+    get:
+      operationId: get-pr-review-draft
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DiffReviewDraftResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Review pull request diff
+      tags:
+        - Pull Requests
+  /pulls/{provider}/{owner}/{name}/{number}/review-draft/comments:
+    post:
+      operationId: create-pr-review-draft-comment
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateDiffReviewDraftCommentInputBody"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DiffReviewDraftComment"
+          description: Created
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Create pull request review draft comment
+      tags:
+        - Pull Requests
+  /pulls/{provider}/{owner}/{name}/{number}/review-draft/comments/{draft_comment_id}:
+    delete:
+      operationId: delete-pr-review-draft-comment
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+        - in: path
+          name: draft_comment_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Review pull request diff
+      tags:
+        - Pull Requests
+    patch:
+      operationId: edit-pr-review-draft-comment
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+        - in: path
+          name: draft_comment_id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EditDiffReviewDraftCommentInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DiffReviewDraftComment"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Review pull request diff
+      tags:
+        - Pull Requests
+  /pulls/{provider}/{owner}/{name}/{number}/review-draft/publish:
+    post:
+      operationId: publish-pr-review-draft
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PublishDiffReviewDraftInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActionStatusBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Review pull request diff
+      tags:
+        - Pull Requests
+  /pulls/{provider}/{owner}/{name}/{number}/review-threads/{thread_id}/resolve:
+    post:
+      operationId: resolve-pr-review-thread
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+        - in: path
+          name: thread_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Review pull request diff
+      tags:
+        - Pull Requests
+  /pulls/{provider}/{owner}/{name}/{number}/review-threads/{thread_id}/unresolve:
+    post:
+      operationId: unresolve-pr-review-thread
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+        - in: path
+          name: thread_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Review pull request diff
       tags:
         - Pull Requests
   /pulls/{provider}/{owner}/{name}/{number}/stack:

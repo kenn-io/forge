@@ -482,6 +482,110 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/review-draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Review pull request diff */
+        get: operations["get-pr-review-draft-on-host"];
+        put?: never;
+        post?: never;
+        /** Review pull request diff */
+        delete: operations["discard-pr-review-draft-on-host"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/review-draft/comments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create pull request review draft comment */
+        post: operations["create-pr-review-draft-comment-on-host"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/review-draft/comments/{draft_comment_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Review pull request diff */
+        delete: operations["delete-pr-review-draft-comment-on-host"];
+        options?: never;
+        head?: never;
+        /** Review pull request diff */
+        patch: operations["edit-pr-review-draft-comment-on-host"];
+        trace?: never;
+    };
+    "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/review-draft/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Review pull request diff */
+        post: operations["publish-pr-review-draft-on-host"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/review-threads/{thread_id}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Review pull request diff */
+        post: operations["resolve-pr-review-thread-on-host"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/review-threads/{thread_id}/unresolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Review pull request diff */
+        post: operations["unresolve-pr-review-thread-on-host"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/stack": {
         parameters: {
             query?: never;
@@ -1195,6 +1299,110 @@ export interface paths {
         put?: never;
         /** Mark pull request ready for review */
         post: operations["mark-pull-ready-for-review"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pulls/{provider}/{owner}/{name}/{number}/review-draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Review pull request diff */
+        get: operations["get-pr-review-draft"];
+        put?: never;
+        post?: never;
+        /** Review pull request diff */
+        delete: operations["discard-pr-review-draft"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pulls/{provider}/{owner}/{name}/{number}/review-draft/comments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create pull request review draft comment */
+        post: operations["create-pr-review-draft-comment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pulls/{provider}/{owner}/{name}/{number}/review-draft/comments/{draft_comment_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Review pull request diff */
+        delete: operations["delete-pr-review-draft-comment"];
+        options?: never;
+        head?: never;
+        /** Review pull request diff */
+        patch: operations["edit-pr-review-draft-comment"];
+        trace?: never;
+    };
+    "/pulls/{provider}/{owner}/{name}/{number}/review-draft/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Review pull request diff */
+        post: operations["publish-pr-review-draft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pulls/{provider}/{owner}/{name}/{number}/review-threads/{thread_id}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Review pull request diff */
+        post: operations["resolve-pr-review-thread"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pulls/{provider}/{owner}/{name}/{number}/review-threads/{thread_id}/unresolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Review pull request diff */
+        post: operations["unresolve-pr-review-thread"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1920,6 +2128,26 @@ export interface components {
             provider: string;
             repo_path: string;
         };
+        CreateDiffReviewDraftCommentHostInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/CreateDiffReviewDraftCommentHostInputBody.json
+             */
+            readonly $schema?: string;
+            body: string;
+            range: components["schemas"]["DiffReviewLineRange"];
+        };
+        CreateDiffReviewDraftCommentInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/CreateDiffReviewDraftCommentInputBody.json
+             */
+            readonly $schema?: string;
+            body: string;
+            range: components["schemas"]["DiffReviewLineRange"];
+        };
         CreateIssueHostInputBody: {
             /**
              * Format: uri
@@ -1998,6 +2226,85 @@ export interface components {
             /** Format: int64 */
             whitespace_only_count: number;
         };
+        DiffReviewDraftComment: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/DiffReviewDraftComment.json
+             */
+            readonly $schema?: string;
+            body: string;
+            commit_sha?: string;
+            created_at: string;
+            diff_head_sha?: string;
+            id: string;
+            /** Format: int64 */
+            line: number;
+            line_type: string;
+            /** Format: int64 */
+            new_line?: number;
+            /** Format: int64 */
+            old_line?: number;
+            old_path?: string;
+            path: string;
+            side: string;
+            /** Format: int64 */
+            start_line?: number;
+            start_side?: string;
+            updated_at: string;
+        };
+        DiffReviewDraftResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/DiffReviewDraftResponse.json
+             */
+            readonly $schema?: string;
+            comments: components["schemas"]["DiffReviewDraftComment"][] | null;
+            draft_id?: string;
+            native_multiline_ranges: boolean;
+            supported_actions: string[] | null;
+        };
+        DiffReviewLineRange: {
+            commit_sha?: string;
+            diff_head_sha?: string;
+            /** Format: int64 */
+            line: number;
+            line_type: string;
+            /** Format: int64 */
+            new_line?: number;
+            /** Format: int64 */
+            old_line?: number;
+            old_path?: string;
+            path: string;
+            side: string;
+            /** Format: int64 */
+            start_line?: number;
+            start_side?: string;
+        };
+        DiffReviewThreadResponse: {
+            author_login?: string;
+            body: string;
+            commit_sha?: string;
+            created_at: string;
+            diff_head_sha?: string;
+            id: string;
+            /** Format: int64 */
+            line: number;
+            line_type: string;
+            /** Format: int64 */
+            new_line?: number;
+            /** Format: int64 */
+            old_line?: number;
+            old_path?: string;
+            path: string;
+            resolved: boolean;
+            side: string;
+            /** Format: int64 */
+            start_line?: number;
+            start_side?: string;
+            updated_at: string;
+        };
         EditCommentHostInputBody: {
             /**
              * Format: uri
@@ -2015,6 +2322,26 @@ export interface components {
              */
             readonly $schema?: string;
             body: string;
+        };
+        EditDiffReviewDraftCommentHostInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/EditDiffReviewDraftCommentHostInputBody.json
+             */
+            readonly $schema?: string;
+            body: string;
+            range: components["schemas"]["DiffReviewLineRange"];
+        };
+        EditDiffReviewDraftCommentInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/EditDiffReviewDraftCommentInputBody.json
+             */
+            readonly $schema?: string;
+            body: string;
+            range: components["schemas"]["DiffReviewLineRange"];
         };
         EditIssueCommentHostInputBody: {
             /**
@@ -2456,7 +2783,7 @@ export interface components {
             detail_fetched_at?: string;
             detail_loaded: boolean;
             diff_head_sha: string;
-            events: components["schemas"]["MREvent"][] | null;
+            events: components["schemas"]["MergeRequestEventResponse"][] | null;
             merge_base_sha: string;
             merge_request: components["schemas"]["MergeRequest"];
             platform_base_sha: string;
@@ -2469,6 +2796,24 @@ export interface components {
             workflow_approval: components["schemas"]["WorkflowApprovalResponse"];
             workspace?: components["schemas"]["WorkspaceRef"];
             worktree_links: components["schemas"]["WorktreeLinkResponse"][] | null;
+        };
+        MergeRequestEventResponse: {
+            Author: string;
+            Body: string;
+            /** Format: date-time */
+            CreatedAt: string;
+            DedupeKey: string;
+            EventType: string;
+            /** Format: int64 */
+            ID: number;
+            /** Format: int64 */
+            MergeRequestID: number;
+            MetadataJSON: string;
+            PlatformExternalID: string;
+            /** Format: int64 */
+            PlatformID: number | null;
+            Summary: string;
+            review_thread?: components["schemas"]["DiffReviewThreadResponse"];
         };
         MergeRequestResponse: {
             /** Format: int64 */
@@ -2663,6 +3008,7 @@ export interface components {
             issue_mutation: boolean;
             label_mutation: boolean;
             merge_mutation: boolean;
+            native_multiline_ranges: boolean;
             read_ci: boolean;
             read_comments: boolean;
             read_issues: boolean;
@@ -2670,10 +3016,34 @@ export interface components {
             read_merge_requests: boolean;
             read_releases: boolean;
             read_repositories: boolean;
+            read_review_threads: boolean;
             ready_for_review: boolean;
+            review_draft_mutation: boolean;
             review_mutation: boolean;
+            review_thread_resolution: boolean;
             state_mutation: boolean;
+            supported_review_actions: string[] | null;
             workflow_approval: boolean;
+        };
+        PublishDiffReviewDraftHostInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/PublishDiffReviewDraftHostInputBody.json
+             */
+            readonly $schema?: string;
+            action: string;
+            body?: string;
+        };
+        PublishDiffReviewDraftInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/PublishDiffReviewDraftInputBody.json
+             */
+            readonly $schema?: string;
+            action: string;
+            body?: string;
         };
         RateLimitHostStatus: {
             /** Format: int64 */
@@ -4330,6 +4700,294 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ActionStatusBody"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-pr-review-draft-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiffReviewDraftResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "discard-pr-review-draft-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "create-pr-review-draft-comment-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateDiffReviewDraftCommentHostInputBody"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiffReviewDraftComment"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "delete-pr-review-draft-comment-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+                draft_comment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "edit-pr-review-draft-comment-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+                draft_comment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EditDiffReviewDraftCommentHostInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiffReviewDraftComment"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "publish-pr-review-draft-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PublishDiffReviewDraftHostInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionStatusBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "resolve-pr-review-thread-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "unresolve-pr-review-thread-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {
@@ -6012,6 +6670,286 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ActionStatusBody"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-pr-review-draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiffReviewDraftResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "discard-pr-review-draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "create-pr-review-draft-comment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateDiffReviewDraftCommentInputBody"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiffReviewDraftComment"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "delete-pr-review-draft-comment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+                draft_comment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "edit-pr-review-draft-comment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+                draft_comment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EditDiffReviewDraftCommentInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiffReviewDraftComment"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "publish-pr-review-draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PublishDiffReviewDraftInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionStatusBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "resolve-pr-review-thread": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "unresolve-pr-review-thread": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {

@@ -142,6 +142,60 @@ func TestRegistryReturnsUnsupportedCapabilityForMissingOptionalReader(t *testing
 	assert.Equal("read_repositories", platformErr.Capability)
 }
 
+func TestRegistryReturnsUnsupportedCapabilityForMissingReviewDraftMutator(t *testing.T) {
+	registry, err := NewRegistry(testProvider{
+		kind: KindForgejo,
+		host: DefaultForgejoHost,
+		caps: Capabilities{ReviewDraftMutation: false},
+	})
+	require.NoError(t, err)
+
+	_, err = registry.DiffReviewDraftMutator(KindForgejo, DefaultForgejoHost)
+
+	var platformErr *Error
+	require.ErrorAs(t, err, &platformErr)
+	require.ErrorIs(t, err, ErrUnsupportedCapability)
+	assert := assert.New(t)
+	assert.Equal(ErrCodeUnsupportedCapability, platformErr.Code)
+	assert.Equal("review_draft_mutation", platformErr.Capability)
+}
+
+func TestRegistryReturnsUnsupportedCapabilityForMissingReviewThreadResolver(t *testing.T) {
+	registry, err := NewRegistry(testProvider{
+		kind: KindForgejo,
+		host: DefaultForgejoHost,
+		caps: Capabilities{ReviewThreadResolution: false},
+	})
+	require.NoError(t, err)
+
+	_, err = registry.DiffReviewThreadResolver(KindForgejo, DefaultForgejoHost)
+
+	var platformErr *Error
+	require.ErrorAs(t, err, &platformErr)
+	require.ErrorIs(t, err, ErrUnsupportedCapability)
+	assert := assert.New(t)
+	assert.Equal(ErrCodeUnsupportedCapability, platformErr.Code)
+	assert.Equal("review_thread_resolution", platformErr.Capability)
+}
+
+func TestRegistryReturnsUnsupportedCapabilityForMissingReviewThreadReader(t *testing.T) {
+	registry, err := NewRegistry(testProvider{
+		kind: KindForgejo,
+		host: DefaultForgejoHost,
+		caps: Capabilities{ReadReviewThreads: false},
+	})
+	require.NoError(t, err)
+
+	_, err = registry.MergeRequestReviewThreadReader(KindForgejo, DefaultForgejoHost)
+
+	var platformErr *Error
+	require.ErrorAs(t, err, &platformErr)
+	require.ErrorIs(t, err, ErrUnsupportedCapability)
+	assert := assert.New(t)
+	assert.Equal(ErrCodeUnsupportedCapability, platformErr.Code)
+	assert.Equal("read_review_threads", platformErr.Capability)
+}
+
 func TestRegistryRejectsDuplicateProviderKeys(t *testing.T) {
 	registry, err := NewRegistry(testProvider{
 		kind: KindGitLab,

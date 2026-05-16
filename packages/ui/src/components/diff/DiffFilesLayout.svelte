@@ -1,5 +1,6 @@
 <script lang="ts">
   import SplitResizeHandle from "../shared/SplitResizeHandle.svelte";
+  import type { ProviderCapabilities } from "../../api/types.js";
   import type { SplitResizeEvent } from "../shared/split-resize.js";
   import DiffSidebar from "./DiffSidebar.svelte";
   import DiffToolbar from "./DiffToolbar.svelte";
@@ -12,6 +13,8 @@
     name: string;
     repoPath: string;
     number: number;
+    diffHeadSHA?: string | undefined;
+    capabilities?: ProviderCapabilities | undefined;
   }
 
   const {
@@ -21,6 +24,8 @@
     name,
     repoPath,
     number,
+    diffHeadSHA = undefined,
+    capabilities = undefined,
   }: Props = $props();
 
   const storageKey = "diff-file-tree-width";
@@ -151,7 +156,18 @@
       onResizeEnd={handleFileTreeResizeEnd}
     />
     <div class="files-main">
-      <DiffView {provider} {platformHost} {owner} {name} {repoPath} {number} />
+      <DiffView
+        {provider}
+        {platformHost}
+        {owner}
+        {name}
+        {repoPath}
+        {number}
+        {diffHeadSHA}
+        reviewDraftMutation={capabilities?.review_draft_mutation ?? false}
+        supportedReviewActions={capabilities?.supported_review_actions ?? []}
+        nativeMultilineRanges={capabilities?.native_multiline_ranges ?? false}
+      />
     </div>
   </div>
 </div>

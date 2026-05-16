@@ -165,6 +165,37 @@ describe("router basic routes", () => {
     });
   });
 
+  it("uses public Forgejo and Gitea hosts for provider pull routes", () => {
+    navigate("/pulls/forgejo/forgejo/forgejo/12/files");
+    expect(getRoute()).toEqual({
+      page: "pulls",
+      view: "list",
+      selected: {
+        owner: "forgejo",
+        name: "forgejo",
+        provider: "forgejo",
+        platformHost: "codeberg.org",
+        repoPath: "forgejo/forgejo",
+        number: 12,
+      },
+      tab: "files",
+    });
+
+    navigate("/pulls/gitea/gitea/tea/3");
+    expect(getRoute()).toEqual({
+      page: "pulls",
+      view: "list",
+      selected: {
+        owner: "gitea",
+        name: "tea",
+        provider: "gitea",
+        platformHost: "gitea.com",
+        repoPath: "gitea/tea",
+        number: 3,
+      },
+    });
+  });
+
   it("parses provider pull files routes with escaped nested repo paths", () => {
     navigate(
       "/host/gitlab.example.com%3A8443/pulls/gitlab/Group%2FSubGroup%2FSubGroup%202/My_Project.v2/12/files",

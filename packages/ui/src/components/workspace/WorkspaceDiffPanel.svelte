@@ -99,6 +99,7 @@
         loadOnMount={false}
         keyboardActive={false}
         richPreviewEnabled={false}
+        reviewMode="disabled"
       />
     </div>
   </div>

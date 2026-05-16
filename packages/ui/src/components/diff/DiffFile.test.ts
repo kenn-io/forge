@@ -92,10 +92,21 @@ function uniqueOwner(): string {
 
 function renderDiffFile(
   file: DiffFileType,
-  options: { richPreview?: boolean; richPreviewEnabled?: boolean } = {},
+  options: {
+    richPreview?: boolean;
+    richPreviewEnabled?: boolean;
+    reviewEnabled?: boolean;
+    diffHeadSHA?: string;
+    nativeMultilineRanges?: boolean;
+  } = {},
 ) {
   const diff = createDiffStore();
   if (options.richPreview) diff.setRichPreview(true);
+  const diffReviewDraft = {
+    isSubmitting: () => false,
+    getError: () => null,
+    createComment: () => Promise.resolve(true),
+  };
   return render(DiffFile, {
     props: {
       file,
@@ -105,8 +116,17 @@ function renderDiffFile(
       ...(options.richPreviewEnabled !== undefined && {
         richPreviewEnabled: options.richPreviewEnabled,
       }),
+      ...(options.reviewEnabled !== undefined && {
+        reviewEnabled: options.reviewEnabled,
+      }),
+      ...(options.diffHeadSHA !== undefined && {
+        diffHeadSHA: options.diffHeadSHA,
+      }),
+      ...(options.nativeMultilineRanges !== undefined && {
+        nativeMultilineRanges: options.nativeMultilineRanges,
+      }),
     },
-    context: new Map([[STORES_KEY, { diff }]]),
+    context: new Map([[STORES_KEY, { diff, diffReviewDraft }]]),
   });
 }
 
@@ -152,5 +172,34 @@ describe("DiffFile", () => {
 
     const content = document.querySelector(".file-content");
     expect(content?.classList.contains("file-content--collapsed")).toBe(false);
+  });
+
+  it("allows shift-selecting ranges only when native multiline ranges are supported", async () => {
+    const { unmount } = renderDiffFile(makeFile(), {
+      reviewEnabled: true,
+      diffHeadSHA: "diff-head",
+      nativeMultilineRanges: true,
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Comment on new line 1" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Comment on new line 2" }), {
+      shiftKey: true,
+    });
+
+    expect(document.querySelectorAll(".gutter-new.gutter--selected")).toHaveLength(2);
+
+    unmount();
+    renderDiffFile(makeFile(), {
+      reviewEnabled: true,
+      diffHeadSHA: "diff-head",
+      nativeMultilineRanges: false,
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Comment on new line 1" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Comment on new line 2" }), {
+      shiftKey: true,
+    });
+
+    expect(document.querySelectorAll(".gutter-new.gutter--selected")).toHaveLength(1);
   });
 });

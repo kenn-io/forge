@@ -204,24 +204,84 @@ type MergeResult struct {
 	Message string
 }
 
+type ReviewAction string
+
+const (
+	ReviewActionComment        ReviewAction = "comment"
+	ReviewActionApprove        ReviewAction = "approve"
+	ReviewActionRequestChanges ReviewAction = "request_changes"
+)
+
+type DiffReviewLineRange struct {
+	Path        string
+	OldPath     string
+	Side        string
+	StartSide   string
+	StartLine   *int
+	Line        int
+	OldLine     *int
+	NewLine     *int
+	LineType    string
+	DiffHeadSHA string
+	CommitSHA   string
+}
+
+type LocalDiffReviewDraftComment struct {
+	ID        int64
+	Body      string
+	Range     DiffReviewLineRange
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+type PublishDiffReviewDraftInput struct {
+	Body     string
+	Action   ReviewAction
+	Comments []LocalDiffReviewDraftComment
+}
+
+type PublishedDiffReview struct {
+	ProviderReviewID string
+	SubmittedAt      time.Time
+}
+
+type MergeRequestReviewThread struct {
+	ProviderThreadID  string
+	ProviderReviewID  string
+	ProviderCommentID string
+	Body              string
+	AuthorLogin       string
+	Range             DiffReviewLineRange
+	Resolved          bool
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+	ResolvedAt        *time.Time
+	MetadataJSON      string
+}
+
 type Capabilities struct {
-	ReadRepositories  bool
-	ReadMergeRequests bool
-	ReadIssues        bool
-	ReadComments      bool
-	ReadReleases      bool
-	ReadCI            bool
-	ReadLabels        bool
-	CommentMutation   bool
-	StateMutation     bool
-	MergeMutation     bool
-	ReviewMutation    bool
-	WorkflowApproval  bool
-	ReadyForReview    bool
-	IssueMutation     bool
-	LabelMutation     bool
-	ThreadReply       bool
-	ThreadResolve     bool
+	ReadRepositories       bool
+	ReadMergeRequests      bool
+	ReadIssues             bool
+	ReadComments           bool
+	ReadReleases           bool
+	ReadCI                 bool
+	ReadLabels             bool
+	CommentMutation        bool
+	StateMutation          bool
+	MergeMutation          bool
+	ReviewMutation         bool
+	WorkflowApproval       bool
+	ReadyForReview         bool
+	IssueMutation          bool
+	LabelMutation          bool
+	ThreadReply            bool
+	ThreadResolve          bool
+	ReviewDraftMutation    bool
+	ReviewThreadResolution bool
+	ReadReviewThreads      bool
+	NativeMultilineRanges  bool
+	SupportedReviewActions []ReviewAction
 }
 
 type RepositoryListOptions struct {

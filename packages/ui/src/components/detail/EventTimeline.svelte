@@ -7,14 +7,18 @@
   import XIcon from "@lucide/svelte/icons/x";
   import { slide } from "svelte/transition";
   import type { IssueEvent, PREvent } from "../../api/types.js";
+  import type { components } from "../../api/generated/schema.js";
+  import type { StoreInstances } from "../../types.js";
   import { renderMarkdown } from "../../utils/markdown.js";
   import { timeAgo } from "../../utils/time.js";
   import { copyToClipboard } from "../../utils/clipboard.js";
+  import { getStores } from "../../context.js";
   import {
     buildItemReferenceLink,
     type ItemReferenceDataAttributes,
   } from "../../utils/item-reference.js";
   import CommentEditor from "./CommentEditor.svelte";
+  import DiffReviewThreadSnippet from "../diff/DiffReviewThreadSnippet.svelte";
 
   interface Props {
     events: Array<PREvent | IssueEvent>;
@@ -23,6 +27,8 @@
     repoOwner?: string;
     repoName?: string;
     repoPath?: string | undefined;
+    number?: number | undefined;
+    canResolveReviewThreads?: boolean;
     filtered?: boolean;
     showCommitDetails?: boolean;
     onEditComment?: ((event: PREvent | IssueEvent, body: string) => Promise<boolean>) | undefined;
@@ -35,10 +41,24 @@
     repoOwner,
     repoName,
     repoPath,
+    number = undefined,
+    canResolveReviewThreads = false,
     filtered = false,
     showCommitDetails = true,
     onEditComment,
   }: Props = $props();
+  const stores = getStores() as StoreInstances | undefined;
+  const detailStore = stores?.detail;
+  const diffReviewDraft = stores?.diffReviewDraft;
+  type ReviewThread = components["schemas"]["DiffReviewThreadResponse"];
+
+  $effect(() => {
+    if (!provider || !repoOwner || !repoName || !repoPath || number == null) return;
+    diffReviewDraft?.setRouteContext(
+      { provider, platformHost, owner: repoOwner, name: repoName, repoPath },
+      number,
+    );
+  });
 
   const typeLabels: Record<string, string> = {
     issue_comment: "Comment",
@@ -243,6 +263,20 @@
     return sourceUrl ? { href: sourceUrl, internal: false } : null;
   }
 
+  function reviewThreadFor(event: PREvent | IssueEvent): ReviewThread | null {
+    if (!("review_thread" in event)) return null;
+    return (event.review_thread as ReviewThread | undefined) ?? null;
+  }
+
+  async function refreshAfterThreadChange(): Promise<void> {
+    if (!provider || !repoOwner || !repoName || !repoPath || number == null) return;
+    await detailStore?.refreshDetailOnly(repoOwner, repoName, number, {
+      provider,
+      platformHost,
+      repoPath,
+    });
+  }
+
   let copiedId = $state<string | null>(null);
   let copyTimeout: ReturnType<typeof setTimeout> | null = null;
   let editingId = $state<number | null>(null);
@@ -330,6 +364,13 @@
 {#snippet eventBody(event: PREvent | IssueEvent, nested = false)}
   {#if event.Body}
     <div class={nested ? "event-body-wrap event-body-wrap--nested" : "event-body-wrap"}>
+      {#if !nested && reviewThreadFor(event)}
+        <DiffReviewThreadSnippet
+          thread={reviewThreadFor(event)!}
+          canResolve={canResolveReviewThreads && diffReviewDraft != null}
+          onchanged={refreshAfterThreadChange}
+        />
+      {/if}
       <div class="event-actions">
         {#if canEditComment(event)}
           <button

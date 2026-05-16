@@ -79,6 +79,60 @@ type resolveDiscussionHostInput struct {
 	}
 }
 
+type createDiffReviewDraftCommentHostInput struct {
+	Provider     string `path:"provider"`
+	PlatformHost string `path:"platform_host"`
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
+	Body         struct {
+		Body  string              `json:"body"`
+		Range diffReviewLineRange `json:"range"`
+	}
+}
+
+type editDiffReviewDraftCommentHostInput struct {
+	Provider       string `path:"provider"`
+	PlatformHost   string `path:"platform_host"`
+	Owner          string `path:"owner"`
+	Name           string `path:"name"`
+	Number         int    `path:"number"`
+	DraftCommentID string `path:"draft_comment_id"`
+	Body           struct {
+		Body  string              `json:"body"`
+		Range diffReviewLineRange `json:"range"`
+	}
+}
+
+type deleteDiffReviewDraftCommentHostInput struct {
+	Provider       string `path:"provider"`
+	PlatformHost   string `path:"platform_host"`
+	Owner          string `path:"owner"`
+	Name           string `path:"name"`
+	Number         int    `path:"number"`
+	DraftCommentID string `path:"draft_comment_id"`
+}
+
+type publishDiffReviewDraftHostInput struct {
+	Provider     string `path:"provider"`
+	PlatformHost string `path:"platform_host"`
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
+	Body         struct {
+		Body   string `json:"body,omitempty"`
+		Action string `json:"action"`
+	}
+}
+
+type resolveDiffReviewThreadHostInput struct {
+	Provider     string `path:"provider"`
+	PlatformHost string `path:"platform_host"`
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
+	ThreadID     string `path:"thread_id"`
+}
 type createIssueHostInput struct {
 	Provider     string `path:"provider"`
 	PlatformHost string `path:"platform_host"`
@@ -360,6 +414,113 @@ func (s *Server) setPullLabelsOnHost(ctx context.Context, input *setPullLabelsHo
 		Body:         input.Body,
 	}
 	return s.setPullLabels(ctx, &next)
+}
+
+func (s *Server) getDiffReviewDraftOnHost(
+	ctx context.Context,
+	input *repoNumberHostInput,
+) (*getDiffReviewDraftOutput, error) {
+	next := repoNumberFromHost(input)
+	return s.getDiffReviewDraft(ctx, &next)
+}
+
+func (s *Server) createDiffReviewDraftCommentOnHost(
+	ctx context.Context,
+	input *createDiffReviewDraftCommentHostInput,
+) (*createDiffReviewDraftCommentOutput, error) {
+	next := createDiffReviewDraftCommentInput{
+		Provider:     input.Provider,
+		PlatformHost: input.PlatformHost,
+		Owner:        input.Owner,
+		Name:         input.Name,
+		Number:       input.Number,
+		Body:         input.Body,
+	}
+	return s.createDiffReviewDraftComment(ctx, &next)
+}
+
+func (s *Server) editDiffReviewDraftCommentOnHost(
+	ctx context.Context,
+	input *editDiffReviewDraftCommentHostInput,
+) (*editDiffReviewDraftCommentOutput, error) {
+	next := editDiffReviewDraftCommentInput{
+		Provider:       input.Provider,
+		PlatformHost:   input.PlatformHost,
+		Owner:          input.Owner,
+		Name:           input.Name,
+		Number:         input.Number,
+		DraftCommentID: input.DraftCommentID,
+		Body:           input.Body,
+	}
+	return s.editDiffReviewDraftComment(ctx, &next)
+}
+
+func (s *Server) deleteDiffReviewDraftCommentOnHost(
+	ctx context.Context,
+	input *deleteDiffReviewDraftCommentHostInput,
+) (*statusOnlyOutput, error) {
+	next := deleteDiffReviewDraftCommentInput{
+		Provider:       input.Provider,
+		PlatformHost:   input.PlatformHost,
+		Owner:          input.Owner,
+		Name:           input.Name,
+		Number:         input.Number,
+		DraftCommentID: input.DraftCommentID,
+	}
+	return s.deleteDiffReviewDraftComment(ctx, &next)
+}
+
+func (s *Server) publishDiffReviewDraftOnHost(
+	ctx context.Context,
+	input *publishDiffReviewDraftHostInput,
+) (*actionStatusOutput, error) {
+	next := publishDiffReviewDraftInput{
+		Provider:     input.Provider,
+		PlatformHost: input.PlatformHost,
+		Owner:        input.Owner,
+		Name:         input.Name,
+		Number:       input.Number,
+		Body:         input.Body,
+	}
+	return s.publishDiffReviewDraft(ctx, &next)
+}
+
+func (s *Server) discardDiffReviewDraftOnHost(
+	ctx context.Context,
+	input *repoNumberHostInput,
+) (*statusOnlyOutput, error) {
+	next := repoNumberFromHost(input)
+	return s.discardDiffReviewDraft(ctx, &next)
+}
+
+func (s *Server) resolveDiffReviewThreadOnHost(
+	ctx context.Context,
+	input *resolveDiffReviewThreadHostInput,
+) (*statusOnlyOutput, error) {
+	next := resolveDiffReviewThreadInput{
+		Provider:     input.Provider,
+		PlatformHost: input.PlatformHost,
+		Owner:        input.Owner,
+		Name:         input.Name,
+		Number:       input.Number,
+		ThreadID:     input.ThreadID,
+	}
+	return s.resolveDiffReviewThread(ctx, &next)
+}
+
+func (s *Server) unresolveDiffReviewThreadOnHost(
+	ctx context.Context,
+	input *resolveDiffReviewThreadHostInput,
+) (*statusOnlyOutput, error) {
+	next := resolveDiffReviewThreadInput{
+		Provider:     input.Provider,
+		PlatformHost: input.PlatformHost,
+		Owner:        input.Owner,
+		Name:         input.Name,
+		Number:       input.Number,
+		ThreadID:     input.ThreadID,
+	}
+	return s.unresolveDiffReviewThread(ctx, &next)
 }
 
 func (s *Server) createIssueOnHost(ctx context.Context, input *createIssueHostInput) (*createIssueOutput, error) {

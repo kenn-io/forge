@@ -1,9 +1,12 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
   import { getStores } from "../../context.js";
 
-  const { diff: diffStore } = getStores();
+  const stores = getStores();
+  const diffStore = stores.diff;
+  const diffReviewDraft = stores.diffReviewDraft;
   import DiffFileComponent from "./DiffFile.svelte";
+  import DiffReviewDraftTray from "./DiffReviewDraftTray.svelte";
 
   interface Props {
     owner: string;
@@ -15,6 +18,11 @@
     provider: string;
     platformHost?: string | undefined;
     repoPath: string;
+    reviewMode?: "enabled" | "disabled";
+    diffHeadSHA?: string | undefined;
+    reviewDraftMutation?: boolean;
+    supportedReviewActions?: string[];
+    nativeMultilineRanges?: boolean;
   }
 
   const {
@@ -27,6 +35,11 @@
     provider,
     platformHost,
     repoPath,
+    reviewMode = "enabled",
+    diffHeadSHA = undefined,
+    reviewDraftMutation = false,
+    supportedReviewActions = [],
+    nativeMultilineRanges = false,
   }: Props = $props();
 
   let diffArea: HTMLDivElement | undefined = $state();
@@ -46,6 +59,7 @@
     return () => {
       cancelAnimationFrame(scrollRaf);
       diffStore.clearDiff();
+      diffReviewDraft?.clear();
     };
   });
 
@@ -58,6 +72,30 @@
   const error = $derived(diffStore.getDiffError());
   const tabWidth = $derived(diffStore.getTabWidth());
   const wordWrap = $derived(diffStore.getWordWrap());
+  const scopeKind = $derived(
+    "getScope" in diffStore ? diffStore.getScope().kind : "head",
+  );
+  const reviewEnabled = $derived(
+    reviewMode === "enabled" &&
+      reviewDraftMutation &&
+      supportedReviewActions.length > 0 &&
+      scopeKind === "head" &&
+      !!diffHeadSHA &&
+      !diff?.stale,
+  );
+
+  $effect(() => {
+    const nextRef = { provider, platformHost, owner, name, repoPath };
+    const nextNumber = number;
+    const nextReviewEnabled = reviewEnabled;
+    untrack(() => {
+      diffReviewDraft?.setContext(
+        nextRef,
+        nextNumber,
+        nextReviewEnabled,
+      );
+    });
+  });
 
   function scrollToFile(path: string): boolean {
     if (!diffArea) return false;
@@ -192,8 +230,14 @@
               {repoPath}
               {number}
               {richPreviewEnabled}
+              {reviewEnabled}
+              {diffHeadSHA}
+              {nativeMultilineRanges}
             />
           {/each}
+          {#if reviewEnabled && diffReviewDraft}
+            <DiffReviewDraftTray />
+          {/if}
         </div>
       </div>
     {/if}

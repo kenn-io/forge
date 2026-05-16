@@ -15,23 +15,28 @@ type worktreeLinkResponse struct {
 }
 
 type providerCapabilitiesResponse struct {
-	ReadRepositories  bool `json:"read_repositories"`
-	ReadMergeRequests bool `json:"read_merge_requests"`
-	ReadIssues        bool `json:"read_issues"`
-	ReadComments      bool `json:"read_comments"`
-	ReadReleases      bool `json:"read_releases"`
-	ReadCI            bool `json:"read_ci"`
-	ReadLabels        bool `json:"read_labels"`
-	CommentMutation   bool `json:"comment_mutation"`
-	StateMutation     bool `json:"state_mutation"`
-	MergeMutation     bool `json:"merge_mutation"`
-	ReviewMutation    bool `json:"review_mutation"`
-	WorkflowApproval  bool `json:"workflow_approval"`
-	ReadyForReview    bool `json:"ready_for_review"`
-	IssueMutation     bool `json:"issue_mutation"`
-	LabelMutation     bool `json:"label_mutation"`
-	ThreadReply       bool `json:"thread_reply"`
-	ThreadResolve     bool `json:"thread_resolve"`
+	ReadRepositories       bool     `json:"read_repositories"`
+	ReadMergeRequests      bool     `json:"read_merge_requests"`
+	ReadIssues             bool     `json:"read_issues"`
+	ReadComments           bool     `json:"read_comments"`
+	ReadReleases           bool     `json:"read_releases"`
+	ReadCI                 bool     `json:"read_ci"`
+	ReadLabels             bool     `json:"read_labels"`
+	CommentMutation        bool     `json:"comment_mutation"`
+	StateMutation          bool     `json:"state_mutation"`
+	MergeMutation          bool     `json:"merge_mutation"`
+	ReviewMutation         bool     `json:"review_mutation"`
+	WorkflowApproval       bool     `json:"workflow_approval"`
+	ReadyForReview         bool     `json:"ready_for_review"`
+	IssueMutation          bool     `json:"issue_mutation"`
+	LabelMutation          bool     `json:"label_mutation"`
+	ThreadReply            bool     `json:"thread_reply"`
+	ThreadResolve          bool     `json:"thread_resolve"`
+	ReviewDraftMutation    bool     `json:"review_draft_mutation"`
+	ReviewThreadResolution bool     `json:"review_thread_resolution"`
+	ReadReviewThreads      bool     `json:"read_review_threads"`
+	NativeMultilineRanges  bool     `json:"native_multiline_ranges"`
+	SupportedReviewActions []string `json:"supported_review_actions"`
 }
 
 type repoResponse struct {
@@ -70,6 +75,11 @@ type mergeRequestResponse struct {
 	DetailFetchedAt string                 `json:"detail_fetched_at,omitempty"`
 }
 
+type mergeRequestEventResponse struct {
+	db.MREvent
+	ReviewThread *diffReviewThreadResponse `json:"review_thread,omitempty"`
+}
+
 type workflowApprovalResponse struct {
 	Checked  bool `json:"checked"`
 	Required bool `json:"required"`
@@ -77,22 +87,22 @@ type workflowApprovalResponse struct {
 }
 
 type mergeRequestDetailResponse struct {
-	MergeRequest     *db.MergeRequest         `json:"merge_request"`
-	Events           []db.MREvent             `json:"events"`
-	Repo             repoRefResponse          `json:"repo"`
-	RepoOwner        string                   `json:"repo_owner"`
-	RepoName         string                   `json:"repo_name"`
-	PlatformHost     string                   `json:"platform_host"`
-	PlatformHeadSHA  string                   `json:"platform_head_sha"`
-	PlatformBaseSHA  string                   `json:"platform_base_sha"`
-	DiffHeadSHA      string                   `json:"diff_head_sha"`
-	MergeBaseSHA     string                   `json:"merge_base_sha"`
-	WorktreeLinks    []worktreeLinkResponse   `json:"worktree_links"`
-	WorkflowApproval workflowApprovalResponse `json:"workflow_approval"`
-	Warnings         []string                 `json:"warnings,omitempty"`
-	DetailLoaded     bool                     `json:"detail_loaded"`
-	DetailFetchedAt  string                   `json:"detail_fetched_at,omitempty"`
-	Workspace        *workspaceRef            `json:"workspace,omitempty"`
+	MergeRequest     *db.MergeRequest            `json:"merge_request"`
+	Events           []mergeRequestEventResponse `json:"events"`
+	Repo             repoRefResponse             `json:"repo"`
+	RepoOwner        string                      `json:"repo_owner"`
+	RepoName         string                      `json:"repo_name"`
+	PlatformHost     string                      `json:"platform_host"`
+	PlatformHeadSHA  string                      `json:"platform_head_sha"`
+	PlatformBaseSHA  string                      `json:"platform_base_sha"`
+	DiffHeadSHA      string                      `json:"diff_head_sha"`
+	MergeBaseSHA     string                      `json:"merge_base_sha"`
+	WorktreeLinks    []worktreeLinkResponse      `json:"worktree_links"`
+	WorkflowApproval workflowApprovalResponse    `json:"workflow_approval"`
+	Warnings         []string                    `json:"warnings,omitempty"`
+	DetailLoaded     bool                        `json:"detail_loaded"`
+	DetailFetchedAt  string                      `json:"detail_fetched_at,omitempty"`
+	Workspace        *workspaceRef               `json:"workspace,omitempty"`
 }
 
 var validKanbanStates = map[string]bool{
@@ -199,6 +209,65 @@ type filesResponse struct {
 	Stale               bool                `json:"stale"`
 	WhitespaceOnlyCount int                 `json:"whitespace_only_count"`
 	Files               []gitclone.DiffFile `json:"files"`
+}
+
+type diffReviewLineRange struct {
+	Path        string `json:"path"`
+	OldPath     string `json:"old_path,omitempty"`
+	Side        string `json:"side"`
+	StartSide   string `json:"start_side,omitempty"`
+	StartLine   *int   `json:"start_line,omitempty"`
+	Line        int    `json:"line"`
+	OldLine     *int   `json:"old_line,omitempty"`
+	NewLine     *int   `json:"new_line,omitempty"`
+	LineType    string `json:"line_type"`
+	DiffHeadSHA string `json:"diff_head_sha,omitempty"`
+	CommitSHA   string `json:"commit_sha,omitempty"`
+}
+
+type diffReviewDraftComment struct {
+	ID          string `json:"id"`
+	Body        string `json:"body"`
+	Path        string `json:"path"`
+	OldPath     string `json:"old_path,omitempty"`
+	Side        string `json:"side"`
+	StartSide   string `json:"start_side,omitempty"`
+	StartLine   *int   `json:"start_line,omitempty"`
+	Line        int    `json:"line"`
+	OldLine     *int   `json:"old_line,omitempty"`
+	NewLine     *int   `json:"new_line,omitempty"`
+	LineType    string `json:"line_type"`
+	DiffHeadSHA string `json:"diff_head_sha,omitempty"`
+	CommitSHA   string `json:"commit_sha,omitempty"`
+	CreatedAt   string `json:"created_at"`
+	UpdatedAt   string `json:"updated_at"`
+}
+
+type diffReviewDraftResponse struct {
+	DraftID               string                   `json:"draft_id,omitempty"`
+	Comments              []diffReviewDraftComment `json:"comments"`
+	SupportedActions      []string                 `json:"supported_actions"`
+	NativeMultilineRanges bool                     `json:"native_multiline_ranges"`
+}
+
+type diffReviewThreadResponse struct {
+	ID          string `json:"id"`
+	Path        string `json:"path"`
+	OldPath     string `json:"old_path,omitempty"`
+	Side        string `json:"side"`
+	StartSide   string `json:"start_side,omitempty"`
+	StartLine   *int   `json:"start_line,omitempty"`
+	Line        int    `json:"line"`
+	OldLine     *int   `json:"old_line,omitempty"`
+	NewLine     *int   `json:"new_line,omitempty"`
+	LineType    string `json:"line_type"`
+	DiffHeadSHA string `json:"diff_head_sha,omitempty"`
+	CommitSHA   string `json:"commit_sha,omitempty"`
+	Body        string `json:"body"`
+	AuthorLogin string `json:"author_login,omitempty"`
+	Resolved    bool   `json:"resolved"`
+	CreatedAt   string `json:"created_at"`
+	UpdatedAt   string `json:"updated_at"`
 }
 
 type filePreviewResponse struct {

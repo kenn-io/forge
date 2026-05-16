@@ -98,6 +98,8 @@ function currentLocationPath(): string {
 const defaultPlatformHosts: Record<string, string> = {
   github: "github.com",
   gitlab: "gitlab.com",
+  forgejo: "codeberg.org",
+  gitea: "gitea.com",
 };
 
 function defaultPlatformHost(provider: string): string | undefined {

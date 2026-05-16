@@ -41,6 +41,9 @@ func TestOpenAndSchema(t *testing.T) {
 		"middleman_merge_request_labels",
 		"middleman_issue_labels",
 		"middleman_repo_overviews",
+		"middleman_mr_review_drafts",
+		"middleman_mr_review_draft_comments",
+		"middleman_mr_review_threads",
 	}
 	for _, tbl := range tables {
 		var name string

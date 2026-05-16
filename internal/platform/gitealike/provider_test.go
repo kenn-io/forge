@@ -47,6 +47,25 @@ func TestProviderCapabilitiesEnableProvenMutations(t *testing.T) {
 	}, provider.Capabilities())
 }
 
+func TestProviderCapabilitiesDoNotAdvertiseInlineReviewSupportByDefault(t *testing.T) {
+	assert := Assert.New(t)
+	provider := NewProvider(
+		platform.KindForgejo,
+		"codeberg.org",
+		&fakeTransport{},
+		WithReadActions(),
+		WithMutations(),
+	)
+
+	caps := provider.Capabilities()
+
+	assert.False(caps.ReviewDraftMutation)
+	assert.False(caps.ReviewThreadResolution)
+	assert.False(caps.ReadReviewThreads)
+	assert.False(caps.NativeMultilineRanges)
+	assert.Empty(caps.SupportedReviewActions)
+}
+
 func TestProviderMutationsNormalizeTransportResponses(t *testing.T) {
 	assert := Assert.New(t)
 	require := Require.New(t)

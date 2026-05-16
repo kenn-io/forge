@@ -242,6 +242,51 @@ func (r *Registry) ReviewMutator(kind Kind, host string) (ReviewMutator, error) 
 	return mutator, nil
 }
 
+func (r *Registry) DiffReviewDraftMutator(
+	kind Kind,
+	host string,
+) (DiffReviewDraftMutator, error) {
+	provider, err := r.Provider(kind, host)
+	if err != nil {
+		return nil, err
+	}
+	mutator, ok := provider.(DiffReviewDraftMutator)
+	if !ok {
+		return nil, UnsupportedCapability(kind, host, "review_draft_mutation")
+	}
+	return mutator, nil
+}
+
+func (r *Registry) DiffReviewThreadResolver(
+	kind Kind,
+	host string,
+) (DiffReviewThreadResolver, error) {
+	provider, err := r.Provider(kind, host)
+	if err != nil {
+		return nil, err
+	}
+	resolver, ok := provider.(DiffReviewThreadResolver)
+	if !ok {
+		return nil, UnsupportedCapability(kind, host, "review_thread_resolution")
+	}
+	return resolver, nil
+}
+
+func (r *Registry) MergeRequestReviewThreadReader(
+	kind Kind,
+	host string,
+) (MergeRequestReviewThreadReader, error) {
+	provider, err := r.Provider(kind, host)
+	if err != nil {
+		return nil, err
+	}
+	reader, ok := provider.(MergeRequestReviewThreadReader)
+	if !ok {
+		return nil, UnsupportedCapability(kind, host, "read_review_threads")
+	}
+	return reader, nil
+}
+
 func (r *Registry) MergeRequestContentMutator(
 	kind Kind,
 	host string,

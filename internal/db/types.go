@@ -279,6 +279,60 @@ type MREvent struct {
 	Resolved     bool
 }
 
+type ReviewLineRange struct {
+	Path        string
+	OldPath     string
+	Side        string
+	StartSide   string
+	StartLine   *int
+	Line        int
+	OldLine     *int
+	NewLine     *int
+	LineType    string
+	DiffHeadSHA string
+	CommitSHA   string
+}
+
+type MRReviewDraft struct {
+	ID             int64
+	MergeRequestID int64
+	Body           string
+	Action         string
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+	Comments       []MRReviewDraftComment
+}
+
+type MRReviewDraftComment struct {
+	ID        int64
+	DraftID   int64
+	Body      string
+	Range     ReviewLineRange
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+type MRReviewDraftCommentInput struct {
+	Body  string
+	Range ReviewLineRange
+}
+
+type MRReviewThread struct {
+	ID                int64
+	MergeRequestID    int64
+	ProviderThreadID  string
+	ProviderReviewID  string
+	ProviderCommentID string
+	Body              string
+	AuthorLogin       string
+	Range             ReviewLineRange
+	Resolved          bool
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+	ResolvedAt        *time.Time
+	MetadataJSON      string
+}
+
 type KanbanState struct {
 	MergeRequestID int64
 	Status         string

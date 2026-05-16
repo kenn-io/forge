@@ -59,6 +59,9 @@
     createDiffStore,
   } from "./stores/diff.svelte.js";
   import {
+    createDiffReviewDraftStore,
+  } from "./stores/diff-review-draft.svelte.js";
+  import {
     createGroupingStore,
   } from "./stores/grouping.svelte.js";
   import {
@@ -198,6 +201,15 @@
       diffOpts.getBasePath = () => bp;
     }
     const diffStore = createDiffStore(diffOpts);
+    const diffReviewDraftStore = createDiffReviewDraftStore({
+      client: cl,
+      onPublished: (ref, number) =>
+        detailStore.refreshDetailOnly(ref.owner, ref.name, number, {
+          provider: ref.provider,
+          platformHost: ref.platformHost,
+          repoPath: ref.repoPath,
+        }),
+    });
 
     function hydrateSettings(
       repos: ConfigRepo[],
@@ -328,6 +340,7 @@
       activity: activityStore,
       sync: syncStore,
       diff: diffStore,
+      diffReviewDraft: diffReviewDraftStore,
       grouping,
       collapsedRepos,
       settings: settingsStore,

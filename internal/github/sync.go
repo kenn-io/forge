@@ -609,21 +609,28 @@ func (p gitHubClientProvider) Host() string {
 func (p gitHubClientProvider) Capabilities() platform.Capabilities {
 	_, labels := p.client.(githubLabelClient)
 	return platform.Capabilities{
-		ReadRepositories:  true,
-		ReadMergeRequests: true,
-		ReadIssues:        true,
-		ReadComments:      true,
-		ReadReleases:      true,
-		ReadCI:            true,
-		ReadLabels:        labels,
-		CommentMutation:   true,
-		StateMutation:     true,
-		MergeMutation:     true,
-		ReviewMutation:    true,
-		WorkflowApproval:  true,
-		ReadyForReview:    true,
-		IssueMutation:     true,
-		LabelMutation:     labels,
+		ReadRepositories:      true,
+		ReadMergeRequests:     true,
+		ReadIssues:            true,
+		ReadComments:          true,
+		ReadReleases:          true,
+		ReadCI:                true,
+		ReadLabels:            labels,
+		CommentMutation:       true,
+		StateMutation:         true,
+		MergeMutation:         true,
+		ReviewMutation:        true,
+		WorkflowApproval:      true,
+		ReadyForReview:        true,
+		IssueMutation:         true,
+		LabelMutation:         labels,
+		ReviewDraftMutation:   true,
+		NativeMultilineRanges: true,
+		SupportedReviewActions: []platform.ReviewAction{
+			platform.ReviewActionComment,
+			platform.ReviewActionApprove,
+			platform.ReviewActionRequestChanges,
+		},
 	}
 }
 
@@ -1156,6 +1163,84 @@ func (p gitHubClientProvider) ApproveMergeRequest(
 		return platform.MergeRequestEvent{}, fmt.Errorf("provider returned no review")
 	}
 	return platformgithub.NormalizeReviewEvent(ref, number, review), nil
+}
+
+func (p gitHubClientProvider) PublishDiffReviewDraft(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	input platform.PublishDiffReviewDraftInput,
+) (*platform.PublishedDiffReview, error) {
+	event, err := githubReviewEvent(input.Action)
+	if err != nil {
+		return nil, err
+	}
+	comments := make([]*gh.DraftReviewComment, 0, len(input.Comments))
+	for _, comment := range input.Comments {
+		comments = append(comments, githubDraftReviewComment(comment))
+	}
+	review, err := p.client.CreateReviewWithComments(
+		ctx,
+		ref.Owner,
+		ref.Name,
+		number,
+		event,
+		input.Body,
+		githubReviewHeadSHA(input),
+		comments,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if review == nil {
+		return nil, fmt.Errorf("provider returned no review")
+	}
+	return &platform.PublishedDiffReview{
+		ProviderReviewID: strconv.FormatInt(review.GetID(), 10),
+		SubmittedAt:      review.GetSubmittedAt().Time,
+	}, nil
+}
+
+func githubReviewEvent(action platform.ReviewAction) (string, error) {
+	switch action {
+	case platform.ReviewActionComment:
+		return "COMMENT", nil
+	case platform.ReviewActionApprove:
+		return "APPROVE", nil
+	case platform.ReviewActionRequestChanges:
+		return "REQUEST_CHANGES", nil
+	default:
+		return "", fmt.Errorf("unsupported github review action %q", action)
+	}
+}
+
+func githubReviewHeadSHA(input platform.PublishDiffReviewDraftInput) string {
+	for _, comment := range input.Comments {
+		if comment.Range.CommitSHA != "" {
+			return comment.Range.CommitSHA
+		}
+		if comment.Range.DiffHeadSHA != "" {
+			return comment.Range.DiffHeadSHA
+		}
+	}
+	return ""
+}
+
+func githubDraftReviewComment(comment platform.LocalDiffReviewDraftComment) *gh.DraftReviewComment {
+	lineRange := comment.Range
+	side := strings.ToUpper(lineRange.Side)
+	next := &gh.DraftReviewComment{
+		Path: &lineRange.Path,
+		Body: &comment.Body,
+		Side: &side,
+		Line: &lineRange.Line,
+	}
+	if lineRange.StartLine != nil && lineRange.StartSide != "" {
+		startSide := strings.ToUpper(lineRange.StartSide)
+		next.StartSide = &startSide
+		next.StartLine = lineRange.StartLine
+	}
+	return next
 }
 
 func (p gitHubClientProvider) EditMergeRequestContent(

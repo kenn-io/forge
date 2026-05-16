@@ -219,6 +219,18 @@ func (m *mockGH) GetRepository(
 func (m *mockGH) CreateReview(context.Context, string, string, int, string, string) (*gh.PullRequestReview, error) {
 	return nil, nil
 }
+func (m *mockGH) CreateReviewWithComments(
+	context.Context,
+	string,
+	string,
+	int,
+	string,
+	string,
+	string,
+	[]*gh.DraftReviewComment,
+) (*gh.PullRequestReview, error) {
+	return nil, nil
+}
 func (m *mockGH) MarkPullRequestReadyForReview(context.Context, string, string, int) (*gh.PullRequest, error) {
 	return nil, nil
 }

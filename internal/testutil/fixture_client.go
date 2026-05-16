@@ -721,6 +721,18 @@ func (c *FixtureClient) CreateReview(
 	return review, nil
 }
 
+func (c *FixtureClient) CreateReviewWithComments(
+	_ context.Context,
+	_, _ string,
+	_ int,
+	_ string,
+	_ string,
+	_ string,
+	_ []*gh.DraftReviewComment,
+) (*gh.PullRequestReview, error) {
+	return nil, errFixtureReadOnly
+}
+
 func (c *FixtureClient) MarkPullRequestReadyForReview(
 	_ context.Context, owner, repo string, number int,
 ) (*gh.PullRequest, error) {

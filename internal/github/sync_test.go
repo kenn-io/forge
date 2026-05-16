@@ -426,6 +426,10 @@ type mockClient struct {
 	listIssueCommentsErr            error
 	listIssueCommentsFn             func(context.Context, string, string, int) ([]*gh.IssueComment, error)
 	listIssueCommentsIfChangedFn    func(context.Context, string, string, int) ([]*gh.IssueComment, error)
+	createdReviewEvent              string
+	createdReviewBody               string
+	createdReviewCommitID           string
+	createdReviewComments           []*gh.DraftReviewComment
 }
 
 type labelCatalogTestClient struct {
@@ -883,12 +887,74 @@ func (m *mockClient) GetRepository(
 }
 
 func (m *mockClient) CreateReview(
-	_ context.Context, _, _ string, _ int, _ string, _ string,
+	ctx context.Context, owner, repo string, number int, event string, body string,
+) (*gh.PullRequestReview, error) {
+	return m.CreateReviewWithComments(ctx, owner, repo, number, event, body, "", nil)
+}
+
+func (m *mockClient) CreateReviewWithComments(
+	_ context.Context,
+	_, _ string,
+	_ int,
+	event string,
+	body string,
+	commitID string,
+	comments []*gh.DraftReviewComment,
 ) (*gh.PullRequestReview, error) {
 	m.trackCall()
 	id := int64(1)
-	state := "APPROVED"
-	return &gh.PullRequestReview{ID: &id, State: &state}, nil
+	submittedAt := gh.Timestamp{Time: time.Now().UTC()}
+	m.createdReviewEvent = event
+	m.createdReviewBody = body
+	m.createdReviewCommitID = commitID
+	m.createdReviewComments = comments
+	return &gh.PullRequestReview{ID: &id, State: &event, SubmittedAt: &submittedAt}, nil
+}
+
+func TestGitHubProviderPublishDiffReviewDraftMapsReviewComments(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	startLine := 10
+	mock := &mockClient{}
+	provider := gitHubClientProvider{client: mock, host: "github.com"}
+
+	result, err := provider.PublishDiffReviewDraft(t.Context(), platform.RepoRef{
+		Owner: "acme",
+		Name:  "widget",
+	}, 7, platform.PublishDiffReviewDraftInput{
+		Body:   "review summary",
+		Action: platform.ReviewActionRequestChanges,
+		Comments: []platform.LocalDiffReviewDraftComment{{
+			Body: "inline note",
+			Range: platform.DiffReviewLineRange{
+				Path:        "src/main.go",
+				Side:        "right",
+				StartSide:   "right",
+				StartLine:   &startLine,
+				Line:        12,
+				DiffHeadSHA: "head-sha",
+			},
+		}},
+	})
+
+	require.NoError(err)
+	require.NotNil(result)
+	assert.Equal("1", result.ProviderReviewID)
+	assert.False(result.SubmittedAt.IsZero())
+	assert.Equal("REQUEST_CHANGES", mock.createdReviewEvent)
+	assert.Equal("review summary", mock.createdReviewBody)
+	assert.Equal("head-sha", mock.createdReviewCommitID)
+	require.Len(mock.createdReviewComments, 1)
+	comment := mock.createdReviewComments[0]
+	require.NotNil(comment)
+	assert.Equal("src/main.go", comment.GetPath())
+	assert.Equal("inline note", comment.GetBody())
+	assert.Equal("RIGHT", comment.GetSide())
+	require.NotNil(comment.StartSide)
+	assert.Equal("RIGHT", *comment.StartSide)
+	require.NotNil(comment.StartLine)
+	assert.Equal(10, *comment.StartLine)
+	assert.Equal(12, comment.GetLine())
 }
 
 func (m *mockClient) MarkPullRequestReadyForReview(

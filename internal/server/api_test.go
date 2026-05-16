@@ -102,35 +102,36 @@ func gracefulShutdown(t *testing.T, srv interface{ Shutdown(context.Context) err
 
 // mockGH implements ghclient.Client for testing.
 type mockGH struct {
-	getRepositoryFn           func(context.Context, string, string) (*gh.Repository, error)
-	getPullRequestFn          func(context.Context, string, string, int) (*gh.PullRequest, error)
-	getPullRequestIfChangedFn func(context.Context, string, string, int, string) (*gh.PullRequest, string, bool, error)
-	getIssueFn                func(context.Context, string, string, int) (*gh.Issue, error)
-	getIssueIfChangedFn       func(context.Context, string, string, int, string) (*gh.Issue, string, bool, error)
-	createIssueFn             func(context.Context, string, string, string, string) (*gh.Issue, error)
-	getUserFn                 func(context.Context, string) (*gh.User, error)
-	markReadyForReviewFn      func(context.Context, string, string, int) (*gh.PullRequest, error)
-	editPullRequestFn         func(context.Context, string, string, int, ghclient.EditPullRequestOpts) (*gh.PullRequest, error)
-	editIssueFn               func(context.Context, string, string, int, string) (*gh.Issue, error)
-	editIssueContentFn        func(context.Context, string, string, int, *string, *string) (*gh.Issue, error)
-	createIssueCommentFn      func(context.Context, string, string, int, string) (*gh.IssueComment, error)
-	editIssueCommentFn        func(context.Context, string, string, int64, string) (*gh.IssueComment, error)
-	createReviewFn            func(context.Context, string, string, int, string, string) (*gh.PullRequestReview, error)
-	mergePullRequestFn        func(context.Context, string, string, int, string, string, string) (*gh.PullRequestMergeResult, error)
-	listWorkflowRunsForHeadFn func(context.Context, string, string, string) ([]*gh.WorkflowRun, error)
-	approveWorkflowRunFn      func(context.Context, string, string, int64) error
-	listReposByOwnerFn        func(context.Context, string) ([]*gh.Repository, error)
-	listReleasesFn            func(context.Context, string, string, int) ([]*gh.RepositoryRelease, error)
-	listTagsFn                func(context.Context, string, string, int) ([]*gh.RepositoryTag, error)
-	listOpenPullRequestsFn    func(context.Context, string, string) ([]*gh.PullRequest, error)
-	listPullRequestsPageFn    func(context.Context, string, string, string, int) ([]*gh.PullRequest, bool, error)
-	listIssuesPageFn          func(context.Context, string, string, string, int) ([]*gh.Issue, bool, error)
-	listCheckRunsForRefFn     func(context.Context, string, string, string) ([]*gh.CheckRun, error)
-	getCombinedStatusFn       func(context.Context, string, string, string) (*gh.CombinedStatus, error)
-	listOpenPRsErr            error
-	listOpenIssuesFn          func(context.Context, string, string) ([]*gh.Issue, error)
-	listIssueCommentsFn       func(context.Context, string, string, int) ([]*gh.IssueComment, error)
-	listIssueCommentsErr      error
+	getRepositoryFn            func(context.Context, string, string) (*gh.Repository, error)
+	getPullRequestFn           func(context.Context, string, string, int) (*gh.PullRequest, error)
+	getPullRequestIfChangedFn  func(context.Context, string, string, int, string) (*gh.PullRequest, string, bool, error)
+	getIssueFn                 func(context.Context, string, string, int) (*gh.Issue, error)
+	getIssueIfChangedFn        func(context.Context, string, string, int, string) (*gh.Issue, string, bool, error)
+	createIssueFn              func(context.Context, string, string, string, string) (*gh.Issue, error)
+	getUserFn                  func(context.Context, string) (*gh.User, error)
+	markReadyForReviewFn       func(context.Context, string, string, int) (*gh.PullRequest, error)
+	editPullRequestFn          func(context.Context, string, string, int, ghclient.EditPullRequestOpts) (*gh.PullRequest, error)
+	editIssueFn                func(context.Context, string, string, int, string) (*gh.Issue, error)
+	editIssueContentFn         func(context.Context, string, string, int, *string, *string) (*gh.Issue, error)
+	createIssueCommentFn       func(context.Context, string, string, int, string) (*gh.IssueComment, error)
+	editIssueCommentFn         func(context.Context, string, string, int64, string) (*gh.IssueComment, error)
+	createReviewFn             func(context.Context, string, string, int, string, string) (*gh.PullRequestReview, error)
+	createReviewWithCommentsFn func(context.Context, string, string, int, string, string, string, []*gh.DraftReviewComment) (*gh.PullRequestReview, error)
+	mergePullRequestFn         func(context.Context, string, string, int, string, string, string) (*gh.PullRequestMergeResult, error)
+	listWorkflowRunsForHeadFn  func(context.Context, string, string, string) ([]*gh.WorkflowRun, error)
+	approveWorkflowRunFn       func(context.Context, string, string, int64) error
+	listReposByOwnerFn         func(context.Context, string) ([]*gh.Repository, error)
+	listReleasesFn             func(context.Context, string, string, int) ([]*gh.RepositoryRelease, error)
+	listTagsFn                 func(context.Context, string, string, int) ([]*gh.RepositoryTag, error)
+	listOpenPullRequestsFn     func(context.Context, string, string) ([]*gh.PullRequest, error)
+	listPullRequestsPageFn     func(context.Context, string, string, string, int) ([]*gh.PullRequest, bool, error)
+	listIssuesPageFn           func(context.Context, string, string, string, int) ([]*gh.Issue, bool, error)
+	listCheckRunsForRefFn      func(context.Context, string, string, string) ([]*gh.CheckRun, error)
+	getCombinedStatusFn        func(context.Context, string, string, string) (*gh.CombinedStatus, error)
+	listOpenPRsErr             error
+	listOpenIssuesFn           func(context.Context, string, string) ([]*gh.Issue, error)
+	listIssueCommentsFn        func(context.Context, string, string, int) ([]*gh.IssueComment, error)
+	listIssueCommentsErr       error
 }
 
 func (m *mockGH) ListOpenPullRequests(ctx context.Context, owner, repo string) ([]*gh.PullRequest, error) {
@@ -384,6 +385,21 @@ func (m *mockGH) CreateReview(
 	id := int64(99)
 	state := "APPROVED"
 	return &gh.PullRequestReview{ID: &id, State: &state}, nil
+}
+
+func (m *mockGH) CreateReviewWithComments(
+	ctx context.Context,
+	owner, repo string,
+	number int,
+	event string,
+	body string,
+	commitID string,
+	comments []*gh.DraftReviewComment,
+) (*gh.PullRequestReview, error) {
+	if m.createReviewWithCommentsFn != nil {
+		return m.createReviewWithCommentsFn(ctx, owner, repo, number, event, body, commitID, comments)
+	}
+	return m.CreateReview(ctx, owner, repo, number, event, body)
 }
 
 func (m *mockGH) MarkPullRequestReadyForReview(
@@ -10608,6 +10624,98 @@ func TestAPIDiffReviewDraftRejectsInvalidLineCoordinates(t *testing.T) {
 	require.NoError(err)
 	require.Len(comments, 1)
 	assert.Equal("Valid draft.", comments[0].Body)
+}
+
+func TestAPIGitHubPublishReviewDraftSendsCommentsThroughServer(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := t.Context()
+	type capturedReview struct {
+		owner    string
+		repo     string
+		number   int
+		event    string
+		body     string
+		commitID string
+		comments []*gh.DraftReviewComment
+	}
+	var captured capturedReview
+	submittedAt := gh.Timestamp{Time: time.Now().UTC().Truncate(time.Second)}
+	mock := &mockGH{
+		createReviewWithCommentsFn: func(
+			_ context.Context,
+			owner, repo string,
+			number int,
+			event string,
+			body string,
+			commitID string,
+			comments []*gh.DraftReviewComment,
+		) (*gh.PullRequestReview, error) {
+			captured = capturedReview{
+				owner:    owner,
+				repo:     repo,
+				number:   number,
+				event:    event,
+				body:     body,
+				commitID: commitID,
+				comments: comments,
+			}
+			id := int64(501)
+			state := "COMMENTED"
+			return &gh.PullRequestReview{ID: &id, State: &state, SubmittedAt: &submittedAt}, nil
+		},
+	}
+	srv, database := setupTestServerWithMock(t, mock)
+	seedPR(t, database, "acme", "widget", 42)
+	mr, err := database.GetMergeRequest(ctx, "acme", "widget", 42)
+	require.NoError(err)
+	require.NotNil(mr)
+	require.NoError(database.UpdateDiffSHAs(ctx, mr.RepoID, 42, "github-head", "base", "merge-base"))
+
+	basePath := "/api/v1/pulls/gh/acme/widget/42/review-draft"
+	createRR := doJSON(t, srv, http.MethodPost, basePath+"/comments", map[string]any{
+		"body": "Please tighten this line.",
+		"range": map[string]any{
+			"path":          "src/main.go",
+			"side":          "right",
+			"start_side":    "right",
+			"start_line":    40,
+			"line":          42,
+			"new_line":      42,
+			"line_type":     "add",
+			"diff_head_sha": "github-head",
+			"commit_sha":    "github-commit",
+		},
+	})
+	require.Equal(http.StatusCreated, createRR.Code, createRR.Body.String())
+
+	publishRR := doJSON(t, srv, http.MethodPost, basePath+"/publish", map[string]string{
+		"action": "request_changes",
+		"body":   " Needs changes. ",
+	})
+	require.Equal(http.StatusOK, publishRR.Code, publishRR.Body.String())
+	var publishStatus actionStatusBody
+	require.NoError(json.NewDecoder(publishRR.Body).Decode(&publishStatus))
+	assert.Equal("published", publishStatus.Status)
+
+	assert.Equal("acme", captured.owner)
+	assert.Equal("widget", captured.repo)
+	assert.Equal(42, captured.number)
+	assert.Equal("REQUEST_CHANGES", captured.event)
+	assert.Equal("Needs changes.", captured.body)
+	assert.Equal("github-commit", captured.commitID)
+	require.Len(captured.comments, 1)
+	comment := captured.comments[0]
+	assert.Equal("src/main.go", comment.GetPath())
+	assert.Equal("Please tighten this line.", comment.GetBody())
+	assert.Equal("RIGHT", comment.GetSide())
+	assert.Equal(40, comment.GetStartLine())
+	assert.Equal("RIGHT", comment.GetStartSide())
+	assert.Equal(42, comment.GetLine())
+
+	storedDraft, err := database.GetMRReviewDraft(ctx, mr.ID)
+	require.NoError(err)
+	assert.Nil(storedDraft)
 }
 
 func TestAPIPublishReviewDraftRejectsStoredCommentWithoutDiffHeadSHA(t *testing.T) {

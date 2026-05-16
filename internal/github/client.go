@@ -80,6 +80,15 @@ type Client interface {
 	EditIssueComment(ctx context.Context, owner, repo string, commentID int64, body string) (*gh.IssueComment, error)
 	GetRepository(ctx context.Context, owner, repo string) (*gh.Repository, error)
 	CreateReview(ctx context.Context, owner, repo string, number int, event string, body string) (*gh.PullRequestReview, error)
+	CreateReviewWithComments(
+		ctx context.Context,
+		owner, repo string,
+		number int,
+		event string,
+		body string,
+		commitID string,
+		comments []*gh.DraftReviewComment,
+	) (*gh.PullRequestReview, error)
 	MarkPullRequestReadyForReview(ctx context.Context, owner, repo string, number int) (*gh.PullRequest, error)
 	MergePullRequest(ctx context.Context, owner, repo string, number int, commitTitle, commitMessage, method string) (*gh.PullRequestMergeResult, error)
 	EditPullRequest(ctx context.Context, owner, repo string, number int, opts EditPullRequestOpts) (*gh.PullRequest, error)
@@ -1364,11 +1373,28 @@ func (c *liveClient) CreateReview(
 	ctx context.Context, owner, repo string, number int,
 	event string, body string,
 ) (*gh.PullRequestReview, error) {
+	return c.CreateReviewWithComments(ctx, owner, repo, number, event, body, "", nil)
+}
+
+func (c *liveClient) CreateReviewWithComments(
+	ctx context.Context,
+	owner, repo string,
+	number int,
+	event string,
+	body string,
+	commitID string,
+	comments []*gh.DraftReviewComment,
+) (*gh.PullRequestReview, error) {
+	request := &gh.PullRequestReviewRequest{
+		Event:    new(event),
+		Body:     new(body),
+		Comments: comments,
+	}
+	if commitID != "" {
+		request.CommitID = &commitID
+	}
 	review, resp, err := c.gh.PullRequests.CreateReview(
-		ctx, owner, repo, number, &gh.PullRequestReviewRequest{
-			Event: new(event),
-			Body:  new(body),
-		},
+		ctx, owner, repo, number, request,
 	)
 	c.trackRate(resp)
 	if err != nil {

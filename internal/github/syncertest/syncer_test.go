@@ -120,6 +120,18 @@ func (m *mockClient) EditIssueComment(context.Context, string, string, int64, st
 func (m *mockClient) CreateReview(context.Context, string, string, int, string, string) (*gh.PullRequestReview, error) {
 	return nil, nil
 }
+func (m *mockClient) CreateReviewWithComments(
+	context.Context,
+	string,
+	string,
+	int,
+	string,
+	string,
+	string,
+	[]*gh.DraftReviewComment,
+) (*gh.PullRequestReview, error) {
+	return nil, nil
+}
 func (m *mockClient) MarkPullRequestReadyForReview(context.Context, string, string, int) (*gh.PullRequest, error) {
 	return nil, nil
 }

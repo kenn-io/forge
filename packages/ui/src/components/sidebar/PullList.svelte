@@ -211,6 +211,12 @@
     ) ?? null;
   });
 
+  const keepSelectedGroupExpanded = $derived(
+    showSelectedDiffSidebar
+      && _getDetailTab() === "files"
+      && selectedPRGroup !== null,
+  );
+
   const selectedVisiblePR = $derived.by(() => {
     const sel = pulls.getSelectedPR();
     if (sel === null) return null;
@@ -225,6 +231,7 @@
     // renders the fallback file list instead of losing the diff sidebar.
     if (
       selectedPRGroup !== null
+      && !keepSelectedGroupExpanded
       && collapsedRepos.isCollapsed("pulls", selectedPRGroup.collapseKey)
     ) {
       return null;
@@ -357,7 +364,9 @@
     {:else}
       {#if groupedPulls !== null}
         {#each groupedPulls as group (group.key)}
-          {@const collapsed = collapsedRepos.isCollapsed("pulls", group.collapseKey)}
+          {@const userCollapsed = collapsedRepos.isCollapsed("pulls", group.collapseKey)}
+          {@const hasSelectedPR = keepSelectedGroupExpanded && selectedPRGroup?.key === group.key}
+          {@const collapsed = userCollapsed && !hasSelectedPR}
           <div class="repo-group">
             <button
               type="button"

@@ -25,7 +25,7 @@ DEV_BACKEND_LOG ?= $(DEV_LOG_DIR)/backend-dev.log
 
 .PHONY: ensure-embed-dir ensure-tmp-dir check-air air-install build build-release install \
         rust-pty-manager rust-test frontend-deps frontend frontend-dev frontend-dev-bun frontend-check api-generate roborev-api-generate \
-        dev test test-short test-integration test-e2e test-e2e-roborev test-gitlab-container gitlab-fixture-bake vet lint nilaway testify-helper-check \
+        dev dev-ephemeral test test-short test-integration test-e2e test-e2e-roborev test-gitlab-container gitlab-fixture-bake vet lint nilaway testify-helper-check \
         frontend-api-client-check font-size-token-check huma-route-check script-tests guardrail-check race-times tidy svelte-skills svelte-skills-sync clean install-hooks help
 
 # gotestsum prints package names on success and full output on failure,
@@ -169,6 +169,10 @@ dev: ensure-embed-dir check-air
 		"$(AIR_BIN)" -c .air.toml -- $(ARGS); \
 	fi
 
+# Run backend and frontend dev servers on free ports with isolated config/data.
+dev-ephemeral: ensure-embed-dir
+	go run ./tools/devephemeral $(ARGS)
+
 # Run tests
 test: ensure-embed-dir ensure-tmp-dir
 	$(GOTESTSUM)=tmp/test-output.json -- ./... -shuffle=on
@@ -271,6 +275,7 @@ help:
 	@echo "  air-install    - Install air live reload tool"
 	@echo ""
 	@echo "  dev            - Run Go server with air live reload, debug file logs, and info-level console logs"
+	@echo "  dev-ephemeral  - Run backend and frontend dev servers on free ports with isolated config/data and status JSON"
 	@echo "  frontend-deps  - Install Bun workspace dependencies for frontend and packages/ui"
 	@echo "  frontend       - Build frontend SPA"
 	@echo "  frontend-dev   - Install deps and run Vite dev server, logging to tmp/logs/frontend-dev.log (honors MIDDLEMAN_CONFIG)"

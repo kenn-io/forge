@@ -317,6 +317,27 @@ MIDDLEMAN_CONFIG=/path/to/config.toml make dev
 MIDDLEMAN_CONFIG=/path/to/config.toml make frontend-dev
 ```
 
+### Ephemeral dev stack
+
+Run backend and frontend together on two free loopback ports with isolated
+SQLite state:
+
+```sh
+make dev-ephemeral
+```
+
+The command writes a generated config, database directory, logs, and typed
+status JSON into `tmp/dev-ephemeral-*`. The status file sits next to the
+generated config as `dev-ephemeral.json` and records the launcher PID, backend
+PID, frontend PID, selected ports, URLs, config path, and data directory.
+
+Pass `ARGS` to control the generated run:
+
+```sh
+make dev-ephemeral ARGS="-work-dir tmp/my-run"
+make dev-ephemeral ARGS="-backend-port 19091 -frontend-port 15174"
+```
+
 Other targets:
 
 ```sh

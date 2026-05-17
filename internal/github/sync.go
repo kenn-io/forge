@@ -3695,7 +3695,9 @@ func (s *Syncer) syncOpenMRFromBulk(
 		// can render the Approve workflows button without a foreground
 		// sync. GraphQL doesn't return action_required runs, so this
 		// stays a one-extra REST call per fully-synced PR, gated by
-		// the same per-host budget as the REST detail drain.
+		// the same per-host budget as the REST detail drain. The
+		// sync-budget transport spends the actual REST call; this is
+		// only the admission check.
 		if s.canSpendWorkflowApprovalRefresh(repo) {
 			s.refreshWorkflowApproval(
 				ctx, repo, repoID, number,

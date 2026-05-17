@@ -6535,7 +6535,9 @@ func TestSyncOpenMRFromBulkPersistsWorkflowApproval(t *testing.T) {
 	headSHA := pr.GetHead().GetSHA()
 	require.NotEmpty(headSHA)
 
+	budgets := testBudget(1)
 	mc := &mockClient{
+		budget: budgets["github.com"],
 		workflowRuns: []*gh.WorkflowRun{{
 			ID:           new(int64(9001)),
 			HeadSHA:      &headSHA,
@@ -6547,7 +6549,7 @@ func TestSyncOpenMRFromBulkPersistsWorkflowApproval(t *testing.T) {
 		map[string]Client{"github.com": mc},
 		d, nil,
 		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
-		time.Minute, nil, nil,
+		time.Minute, nil, budgets,
 	)
 	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
 
@@ -6570,6 +6572,7 @@ func TestSyncOpenMRFromBulkPersistsWorkflowApproval(t *testing.T) {
 	assert.Equal(headSHA, got.WorkflowApprovalHeadSHA)
 	assert.True(got.WorkflowApprovalRequired)
 	assert.Equal(1, got.WorkflowApprovalCount)
+	assert.Equal(1, budgets["github.com"].Spent())
 }
 
 func TestSyncOpenMRFromBulkSkipsWorkflowApprovalWhenBudgetExhausted(t *testing.T) {

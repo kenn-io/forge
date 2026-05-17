@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -18,6 +19,7 @@ import (
 	"syscall"
 
 	"github.com/wesm/middleman/internal/config"
+	_ "modernc.org/sqlite"
 )
 
 type ephemeralOptions struct {
@@ -25,6 +27,7 @@ type ephemeralOptions struct {
 	workDir          string
 	backendPort      int
 	frontendPort     int
+	freshDB          bool
 }
 
 type ephemeralRun struct {
@@ -79,6 +82,7 @@ func run(ctx context.Context, args []string) error {
 	workDir := fs.String("work-dir", "", "directory for generated config, database, logs, and status JSON")
 	backendPort := fs.Int("backend-port", 0, "backend port (0 selects a free port)")
 	frontendPort := fs.Int("frontend-port", 0, "frontend port (0 selects a free port)")
+	freshDB := fs.Bool("fresh-db", false, "start with an empty ephemeral database instead of copying the source database")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -109,6 +113,7 @@ func run(ctx context.Context, args []string) error {
 		workDir:          resolvedWorkDir,
 		backendPort:      resolvedBackendPort,
 		frontendPort:     resolvedFrontendPort,
+		freshDB:          *freshDB,
 	})
 	if err != nil {
 		return err
@@ -168,6 +173,7 @@ func prepareEphemeralConfig(opts ephemeralOptions) (ephemeralRun, error) {
 	if err != nil {
 		return ephemeralRun{}, fmt.Errorf("load source config: %w", err)
 	}
+	sourceDBPath := cfg.DBPath()
 
 	dataDir := filepath.Join(opts.workDir, "data")
 	logDir := filepath.Join(opts.workDir, "logs")
@@ -176,6 +182,9 @@ func prepareEphemeralConfig(opts ephemeralOptions) (ephemeralRun, error) {
 	}
 	if err := os.MkdirAll(logDir, 0o700); err != nil {
 		return ephemeralRun{}, fmt.Errorf("create log directory: %w", err)
+	}
+	if err := prepareEphemeralDatabase(sourceDBPath, filepath.Join(dataDir, "middleman.db"), !opts.freshDB); err != nil {
+		return ephemeralRun{}, err
 	}
 
 	cfg.Port = opts.backendPort
@@ -244,6 +253,42 @@ func writeStatusFile(path string, status ephemeralStatus) error {
 	content = append(content, '\n')
 	if err := os.WriteFile(path, content, 0o644); err != nil {
 		return fmt.Errorf("write status file: %w", err)
+	}
+	return nil
+}
+
+func prepareEphemeralDatabase(sourcePath, destPath string, copyDB bool) error {
+	if err := removeSQLiteFiles(destPath); err != nil {
+		return err
+	}
+	if !copyDB {
+		return nil
+	}
+	if _, err := os.Stat(sourcePath); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("stat source database: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(destPath), 0o700); err != nil {
+		return fmt.Errorf("create database directory: %w", err)
+	}
+	source, err := sql.Open("sqlite", sourcePath+"?_pragma=busy_timeout(5000)")
+	if err != nil {
+		return fmt.Errorf("open source database: %w", err)
+	}
+	defer source.Close()
+	if _, err := source.Exec("VACUUM INTO ?", destPath); err != nil {
+		return fmt.Errorf("copy source database snapshot: %w", err)
+	}
+	return nil
+}
+
+func removeSQLiteFiles(path string) error {
+	for _, candidate := range []string{path, path + "-wal", path + "-shm"} {
+		if err := os.Remove(candidate); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("remove stale database file %s: %w", candidate, err)
+		}
 	}
 	return nil
 }

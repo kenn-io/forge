@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/wesm/middleman/internal/config"
+	_ "modernc.org/sqlite"
 )
 
 func TestPrepareEphemeralConfigOverridesPortAndDataDir(t *testing.T) {
@@ -47,6 +49,70 @@ func TestPrepareEphemeralConfigOverridesPortAndDataDir(t *testing.T) {
 	assert.Equal("http://127.0.0.1:39101", prepared.backendURL)
 	assert.Equal("http://127.0.0.1:39102", prepared.frontendURL)
 	assert.Equal(sourceDataDir, source.DataDir)
+}
+
+func TestPrepareEphemeralConfigCopiesSourceDatabaseByDefault(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	sourcePath := filepath.Join(dir, "source.toml")
+	sourceDataDir := filepath.Join(dir, "source-data")
+	workDir := filepath.Join(dir, "run")
+
+	source := config.Config{
+		SyncInterval:        "5m",
+		GitHubTokenEnv:      "MIDDLEMAN_GITHUB_TOKEN",
+		DefaultPlatformHost: "github.com",
+		Host:                "127.0.0.1",
+		Port:                8091,
+		DataDir:             sourceDataDir,
+		Activity:            config.Activity{ViewMode: "threaded", TimeRange: "7d"},
+	}
+	require.NoError(os.MkdirAll(sourceDataDir, 0o700))
+	require.NoError(source.Save(sourcePath))
+	writeSQLiteMarker(t, source.DBPath(), "copied state")
+
+	prepared, err := prepareEphemeralConfig(ephemeralOptions{
+		sourceConfigPath: sourcePath,
+		workDir:          workDir,
+		backendPort:      39111,
+		frontendPort:     39112,
+	})
+	require.NoError(err)
+
+	Assert.Equal(t, "copied state", readSQLiteMarker(t, filepath.Join(prepared.dataDir, "middleman.db")))
+}
+
+func TestPrepareEphemeralConfigCanStartWithFreshDatabase(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	sourcePath := filepath.Join(dir, "source.toml")
+	sourceDataDir := filepath.Join(dir, "source-data")
+	workDir := filepath.Join(dir, "run")
+
+	source := config.Config{
+		SyncInterval:        "5m",
+		GitHubTokenEnv:      "MIDDLEMAN_GITHUB_TOKEN",
+		DefaultPlatformHost: "github.com",
+		Host:                "127.0.0.1",
+		Port:                8091,
+		DataDir:             sourceDataDir,
+		Activity:            config.Activity{ViewMode: "threaded", TimeRange: "7d"},
+	}
+	require.NoError(os.MkdirAll(sourceDataDir, 0o700))
+	require.NoError(source.Save(sourcePath))
+	writeSQLiteMarker(t, source.DBPath(), "do not copy")
+
+	prepared, err := prepareEphemeralConfig(ephemeralOptions{
+		sourceConfigPath: sourcePath,
+		workDir:          workDir,
+		backendPort:      39121,
+		frontendPort:     39122,
+		freshDB:          true,
+	})
+	require.NoError(err)
+
+	_, err = os.Stat(filepath.Join(prepared.dataDir, "middleman.db"))
+	require.ErrorIs(err, os.ErrNotExist)
 }
 
 func TestPrepareEphemeralConfigKeepsBasePathInBackendURL(t *testing.T) {
@@ -126,4 +192,27 @@ func TestWriteStatusFileRecordsPIDsAndPortsNextToConfig(t *testing.T) {
 	assert.Equal(39401, got.BackendPort)
 	assert.Equal(39402, got.FrontendPort)
 	assert.Equal(filepath.Join(dir, "config.toml"), got.ConfigPath)
+}
+
+func writeSQLiteMarker(t *testing.T, path, value string) {
+	t.Helper()
+	require := require.New(t)
+	db, err := sql.Open("sqlite", path)
+	require.NoError(err)
+	defer db.Close()
+	_, err = db.Exec("CREATE TABLE marker (value TEXT NOT NULL)")
+	require.NoError(err)
+	_, err = db.Exec("INSERT INTO marker (value) VALUES (?)", value)
+	require.NoError(err)
+}
+
+func readSQLiteMarker(t *testing.T, path string) string {
+	t.Helper()
+	require := require.New(t)
+	db, err := sql.Open("sqlite", path)
+	require.NoError(err)
+	defer db.Close()
+	var value string
+	require.NoError(db.QueryRow("SELECT value FROM marker").Scan(&value))
+	return value
 }

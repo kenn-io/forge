@@ -275,7 +275,7 @@ help:
 	@echo "  air-install    - Install air live reload tool"
 	@echo ""
 	@echo "  dev            - Run Go server with air live reload, debug file logs, and info-level console logs"
-	@echo "  dev-ephemeral  - Run backend and frontend dev servers on free ports with isolated config/data and status JSON"
+	@echo "  dev-ephemeral  - Run backend and frontend dev servers on free ports with copied DB state and status JSON"
 	@echo "  frontend-deps  - Install Bun workspace dependencies for frontend and packages/ui"
 	@echo "  frontend       - Build frontend SPA"
 	@echo "  frontend-dev   - Install deps and run Vite dev server, logging to tmp/logs/frontend-dev.log (honors MIDDLEMAN_CONFIG)"

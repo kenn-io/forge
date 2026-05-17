@@ -131,6 +131,36 @@
     sidebarWidth <= COMPACT_FILTER_MAX_WIDTH,
   );
 
+  interface PullGroup {
+    key: string;
+    collapseKey: string;
+    label: string;
+    showRepo: boolean;
+    items: PullRequest[];
+  }
+
+  const groupedPulls = $derived.by((): PullGroup[] | null => {
+    if (groupingMode === "byRepo") {
+      return [...pulls.pullsByRepo().entries()].map(([repo, prs]) => ({
+        key: `repo:${repo}`,
+        collapseKey: repo,
+        label: repo,
+        showRepo: false,
+        items: prs,
+      }));
+    }
+    if (groupingMode === "byWorkflow") {
+      return workflowGroups.map((wg) => ({
+        key: `status:${wg.group}`,
+        collapseKey: `status:${wg.group}`,
+        label: wg.label,
+        showRepo: true,
+        items: wg.items,
+      }));
+    }
+    return null;
+  });
+
   function routeRefForPull(pr: PullRequest): PullRequestRouteRef {
     return {
       provider: pr.repo.provider,
@@ -167,6 +197,20 @@
       && sel.platformHost === ref.platformHost;
   }
 
+  const selectedPRGroup = $derived.by(() => {
+    const sel = pulls.getSelectedPR();
+    const groups = groupedPulls;
+    if (sel === null || groups === null) return null;
+    return groups.find((group) =>
+      group.items.some((p) =>
+        (p.repo_owner ?? "") === sel.owner
+        && (p.repo_name ?? "") === sel.name
+        && p.Number === sel.number
+        && (!sel.platformHost || p.platform_host === sel.platformHost),
+      ),
+    ) ?? null;
+  });
+
   const selectedVisiblePR = $derived.by(() => {
     const sel = pulls.getSelectedPR();
     if (sel === null) return null;
@@ -177,11 +221,11 @@
         && (!sel.platformHost || p.platform_host === sel.platformHost),
     );
     if (!pr) return null;
-    // In byRepo mode, a user-collapsed repo group hides the PR row — treat
-    // as not visible so the fallback file list renders instead.
+    // Collapsed grouped modes hide the selected PR row, so the files tab
+    // renders the fallback file list instead of losing the diff sidebar.
     if (
-      groupingMode === "byRepo"
-      && collapsedRepos.isCollapsed("pulls", `${sel.owner}/${sel.name}`)
+      selectedPRGroup !== null
+      && collapsedRepos.isCollapsed("pulls", selectedPRGroup.collapseKey)
     ) {
       return null;
     }
@@ -311,17 +355,15 @@
     {:else if pulls.getPulls().length === 0}
       <p class="state-message">No pull requests found.</p>
     {:else}
-      {#if groupingMode === "byRepo"}
-        {#each [...pulls.pullsByRepo().entries()] as [repo, prs] (repo)}
-          {@const userCollapsed = collapsedRepos.isCollapsed("pulls", repo)}
-          {@const hasSelectedPR = isDiffFocus && prs.some((p) => isSelected(routeRefForPull(p)))}
-          {@const collapsed = userCollapsed && !hasSelectedPR}
+      {#if groupedPulls !== null}
+        {#each groupedPulls as group (group.key)}
+          {@const collapsed = collapsedRepos.isCollapsed("pulls", group.collapseKey)}
           <div class="repo-group">
             <button
               type="button"
               class="repo-header"
               aria-expanded={!collapsed}
-              onclick={() => collapsedRepos.toggle("pulls", repo)}
+              onclick={() => collapsedRepos.toggle("pulls", group.collapseKey)}
             >
               <svg
                 class="repo-header__chevron"
@@ -331,16 +373,16 @@
               >
                 <polyline points="2,3 5,7 8,3" stroke-linecap="round" stroke-linejoin="round" />
               </svg>
-              <span class="repo-header__name">{repo}</span>
-              <span class="repo-header__count">{prs.length}</span>
+              <span class="repo-header__name">{group.label}</span>
+              <span class="repo-header__count">{group.items.length}</span>
             </button>
             {#if !collapsed}
-              {#each prs as pr (pr.ID)}
+              {#each group.items as pr (pr.ID)}
                 {@const prRef = routeRefForPull(pr)}
                 {@const prSelected = isSelected(prRef)}
                 <PullItem
                   {pr}
-                  showRepo={false}
+                  showRepo={group.showRepo}
                   selected={prSelected}
                   {importAction}
                   onclick={() => handleSelect(prRef)}
@@ -352,28 +394,6 @@
                 {/if}
               {/each}
             {/if}
-          </div>
-        {/each}
-      {:else if groupingMode === "byWorkflow"}
-        {#each workflowGroups as wg (wg.group)}
-          <div class="repo-group">
-            <h3 class="repo-header">{wg.label}</h3>
-            {#each wg.items as pr (pr.ID)}
-              {@const prRef = routeRefForPull(pr)}
-              {@const prSelected = isSelected(prRef)}
-              <PullItem
-                {pr}
-                showRepo={true}
-                selected={prSelected}
-                {importAction}
-                onclick={() => handleSelect(prRef)}
-              />
-              {#if showSelectedDiffSidebar && prSelected && _getDetailTab() === "files"}
-                <div class="diff-files-wrap">
-                  <DiffSidebar showCommits={false} />
-                </div>
-              {/if}
-            {/each}
           </div>
         {/each}
       {:else}

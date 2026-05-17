@@ -22,6 +22,26 @@ function toolsHeader(page: Page) {
   return page.locator(".repo-header", { hasText: "acme/tools" });
 }
 
+function newStatusHeader(page: Page) {
+  return page.locator(".repo-header", { hasText: "New" });
+}
+
+async function selectPullGrouping(
+  page: Page,
+  label: string | RegExp,
+): Promise<void> {
+  const groupButton = page.locator(".group-btn", { hasText: label });
+  if (await groupButton.isVisible()) {
+    await groupButton.click();
+    return;
+  }
+
+  await page.getByRole("button", { name: "Filters" }).click();
+  await page.locator(".filter-dropdown .filter-item", { hasText: label })
+    .last()
+    .click();
+}
+
 test.describe("collapsible repo groups", () => {
   test.beforeEach(async ({ page }) => {
     // Clear collapse state before app bootstrap so each test starts expanded
@@ -76,6 +96,22 @@ test.describe("collapsible repo groups", () => {
     await widgetsHeader(page).focus();
     await page.keyboard.press("Space");
     await expect(widgetsHeader(page)).toHaveAttribute("aria-expanded", "true");
+    await expect(page.locator(".pull-item")).toHaveCount(8);
+  });
+
+  test("PR list — status groups collapse like repo groups", async ({ page }) => {
+    await selectPullGrouping(page, "Status");
+    await expect(newStatusHeader(page)).toBeVisible();
+    await expect(newStatusHeader(page)).toHaveAttribute("aria-expanded", "true");
+
+    await newStatusHeader(page).click();
+
+    await expect(newStatusHeader(page)).toHaveAttribute("aria-expanded", "false");
+    await expect(newStatusHeader(page).locator(".repo-header__count")).toHaveText("8");
+    await expect(page.locator(".pull-item")).toHaveCount(0);
+
+    await newStatusHeader(page).click();
+    await expect(newStatusHeader(page)).toHaveAttribute("aria-expanded", "true");
     await expect(page.locator(".pull-item")).toHaveCount(8);
   });
 

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Middleman Ephemeral Dev"
+  short_description: "Run Middleman dev on free ports."
+  default_prompt: "Use $middleman-ephemeral-dev to run a local middleman dev stack on free ports and find its status JSON."

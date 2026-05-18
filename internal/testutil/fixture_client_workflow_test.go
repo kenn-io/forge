@@ -51,6 +51,39 @@ func TestFixtureClientPullRequestsAreReturnedAsCopies(t *testing.T) {
 	assert.Equal("new-base", fresh.GetBase().GetSHA())
 }
 
+func TestFixtureClientCreateReviewWithCommentsRecordsReview(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	client := NewFixtureClient()
+	fc, ok := client.(*FixtureClient)
+	require.True(ok)
+	headSHA := "head-sha"
+	number := 7
+	body := "inline note"
+	fc.OpenPRs["acme/widgets"] = []*gh.PullRequest{{
+		Number: &number,
+		Head:   &gh.PullRequestBranch{SHA: &headSHA},
+	}}
+
+	review, err := fc.CreateReviewWithComments(
+		t.Context(),
+		"acme",
+		"widgets",
+		7,
+		"REQUEST_CHANGES",
+		"needs work",
+		"head-sha",
+		[]*gh.DraftReviewComment{{Body: &body}},
+	)
+
+	require.NoError(err)
+	require.NotNil(review)
+	assert.Equal("REQUEST_CHANGES", review.GetState())
+	assert.Equal("needs work", review.GetBody())
+	require.Len(fc.Reviews["acme/widgets#7"], 1)
+	assert.Equal(review.GetID(), fc.Reviews["acme/widgets#7"][0].GetID())
+}
+
 func TestFixtureClientCheckRunsConcurrentStatusUpdates(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

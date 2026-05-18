@@ -14,6 +14,10 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	ghclient "github.com/wesm/middleman/internal/github"
+	"github.com/wesm/middleman/internal/server"
+	"github.com/wesm/middleman/internal/testutil"
+	"github.com/wesm/middleman/internal/testutil/dbtest"
 )
 
 func TestRootHelpPointsAgentsToQuickstartAndAPI(t *testing.T) {
@@ -159,6 +163,30 @@ func TestRawAPICommandBuildsMiddlemanAPIURLAndBodyArgs(t *testing.T) {
 	assert.Equal([]string{"body: LGTM"}, got.bodyArgs)
 }
 
+func TestRawAPICommandRejectsAbsoluteURLs(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	called := false
+	cmd := newRootCommand(commandDeps{
+		Stdout: &bytes.Buffer{},
+		Stderr: &bytes.Buffer{},
+		Restish: func(context.Context, cliConfig, string, string, []string) ([]byte, error) {
+			called = true
+			return nil, nil
+		},
+	})
+	cmd.SetArgs([]string{
+		"--server", "http://middleman.test/",
+		"api", "GET", "http://169.254.169.254/latest/meta-data",
+	})
+
+	err := cmd.Execute()
+
+	require.Error(err)
+	assert.Contains(err.Error(), "absolute API URLs are not allowed")
+	assert.False(called)
+}
+
 func TestAPIListCommandDiscoversOpenAPIOperations(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -219,6 +247,82 @@ func TestAPIListCommandDiscoversOpenAPIOperations(t *testing.T) {
 	assert.JSONEq(`{"method":"GET","path":"/pulls","operation_id":"list-pulls","summary":"List pulls","query_params":["limit","repo"]}`, lines[0])
 	assert.JSONEq(`{"method":"GET","path":"/pulls/{provider}/{owner}/{name}/{number}","operation_id":"get-pull","summary":"Get pull"}`, lines[1])
 	assert.NotContains(lines[1], "path_params")
+}
+
+func TestMiddlemanctlCommandsUseRealAPIAndSQLite(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ts := setupMiddlemanctlE2E(t)
+
+	pullsOut := runMiddlemanctl(t, ts.URL, "--output", "jsonl", "pulls", "--limit", "2")
+	pullLines := strings.Split(strings.TrimSpace(pullsOut), "\n")
+	require.Len(pullLines, 2)
+	assert.NotZero(jsonNumberField(t, pullLines[0]))
+	assert.NotZero(jsonNumberField(t, pullLines[1]))
+
+	issuesOut := runMiddlemanctl(t, ts.URL, "--output", "jsonl", "issues", "--limit", "2")
+	issueLines := strings.Split(strings.TrimSpace(issuesOut), "\n")
+	require.Len(issueLines, 2)
+	assert.NotZero(jsonNumberField(t, issueLines[0]))
+	assert.NotZero(jsonNumberField(t, issueLines[1]))
+
+	versionOut := runMiddlemanctl(t, ts.URL, "api", "GET", "/version")
+	assert.Contains(versionOut, `"version"`)
+
+	apiListOut := runMiddlemanctl(t, ts.URL, "--output", "jsonl", "api", "list")
+	assert.Contains(apiListOut, `"method":"GET"`)
+	assert.Contains(apiListOut, `"path":"/pulls"`)
+}
+
+func setupMiddlemanctlE2E(t *testing.T) *httptest.Server {
+	t.Helper()
+	t.Setenv("MIDDLEMANCTL_RESTISH_CONFIG_DIR", t.TempDir())
+	t.Setenv("MIDDLEMANCTL_RESTISH_CACHE_DIR", t.TempDir())
+
+	database := dbtest.Open(t)
+	_, err := testutil.SeedFixtures(t.Context(), database)
+	require.NoError(t, err)
+
+	syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
+	t.Cleanup(syncer.Stop)
+
+	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		require.NoError(t, srv.Shutdown(ctx))
+	})
+
+	ts := httptest.NewServer(srv)
+	t.Cleanup(ts.Close)
+	return ts
+}
+
+func runMiddlemanctl(t *testing.T, serverURL string, args ...string) string {
+	t.Helper()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd := newRootCommand(commandDeps{
+		Stdout: &stdout,
+		Stderr: &stderr,
+	})
+	cmd.SetArgs(append([]string{"--server", serverURL}, args...))
+	require.NoError(t, cmd.Execute(), stderr.String())
+	return stdout.String()
+}
+
+func jsonNumberField(t *testing.T, raw string) float64 {
+	t.Helper()
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal([]byte(raw), &payload))
+	for _, field := range []string{"number", "Number"} {
+		value, ok := payload[field].(float64)
+		if ok {
+			return value
+		}
+	}
+	require.Failf(t, "missing number field", "payload: %s", raw)
+	return 0
 }
 
 func TestRestishRequesterFetchesCompleteJSON(t *testing.T) {

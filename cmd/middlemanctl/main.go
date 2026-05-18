@@ -97,7 +97,11 @@ newline-delimited JSON with --output jsonl.`),
 		if err != nil {
 			return cliConfig{}, nil, err
 		}
-		body, err := deps.Restish(ctx, current, method, apiURL(current.server, path, query), bodyArgs)
+		requestURL, err := apiURL(current.server, path, query)
+		if err != nil {
+			return cliConfig{}, nil, err
+		}
+		body, err := deps.Restish(ctx, current, method, requestURL, bodyArgs)
 		if err != nil {
 			return cliConfig{}, nil, err
 		}
@@ -169,18 +173,9 @@ func readConfig(cfg *viper.Viper) (cliConfig, error) {
 	}, nil
 }
 
-func apiURL(server, path string, query url.Values) string {
+func apiURL(server, path string, query url.Values) (string, error) {
 	if parsed, err := url.Parse(path); err == nil && parsed.IsAbs() {
-		if len(query) > 0 {
-			existing := parsed.Query()
-			for key, values := range query {
-				for _, value := range values {
-					existing.Add(key, value)
-				}
-			}
-			parsed.RawQuery = existing.Encode()
-		}
-		return parsed.String()
+		return "", fmt.Errorf("absolute API URLs are not allowed: %s", parsed.Redacted())
 	}
 
 	cleanPath := "/" + strings.TrimLeft(path, "/")
@@ -189,9 +184,17 @@ func apiURL(server, path string, query url.Values) string {
 	}
 	u := strings.TrimRight(server, "/") + cleanPath
 	if len(query) == 0 {
-		return u
+		return u, nil
 	}
-	return u + "?" + query.Encode()
+	return u + "?" + query.Encode(), nil
+}
+
+func mustAPIURL(server, path string, query url.Values) string {
+	u, err := apiURL(server, path, query)
+	if err != nil {
+		panic(err)
+	}
+	return u
 }
 
 func newQuickstartCommand(cfg *viper.Viper, stdout io.Writer) *cobra.Command {
@@ -204,7 +207,7 @@ func newQuickstartCommand(cfg *viper.Viper, stdout io.Writer) *cobra.Command {
 				return err
 			}
 			payload := map[string]any{
-				"api_base_url": apiURL(current.server, apiPrefix, nil),
+				"api_base_url": mustAPIURL(current.server, apiPrefix, nil),
 				"formats":      []string{"json", "yaml", "jsonl"},
 				"commands": []map[string]string{
 					{"command": "middlemanctl version", "does": "GET /api/v1/version"},

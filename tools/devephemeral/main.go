@@ -22,6 +22,8 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+const defaultEphemeralWorkDir = "tmp/dev-ephemeral"
+
 type ephemeralOptions struct {
 	sourceConfigPath string
 	workDir          string
@@ -100,13 +102,9 @@ func run(ctx context.Context, args []string) error {
 		return nil
 	}
 
-	resolvedWorkDir := *workDir
-	if resolvedWorkDir == "" {
-		dir, err := os.MkdirTemp(filepath.Join("tmp"), "dev-ephemeral-")
-		if err != nil {
-			return fmt.Errorf("create work directory: %w", err)
-		}
-		resolvedWorkDir = dir
+	resolvedWorkDir, err := resolveRunWorkDir(*workDir)
+	if err != nil {
+		return err
 	}
 
 	resolvedBackendPort, err := resolvePort(*backendPort)
@@ -119,6 +117,17 @@ func run(ctx context.Context, args []string) error {
 	}
 	if resolvedBackendPort == resolvedFrontendPort {
 		return fmt.Errorf("backend and frontend ports both resolved to %d", resolvedBackendPort)
+	}
+
+	existingStatusPath := statusPathForWorkDir(resolvedWorkDir)
+	existingStatus, running, err := readRunningEphemeralStatus(existingStatusPath)
+	if err != nil {
+		return err
+	}
+	if running {
+		fmt.Printf("ephemeral dev stack already running\n")
+		printStatus(existingStatus, existingStatusPath)
+		return nil
 	}
 
 	prepared, err := prepareEphemeralConfig(ephemeralOptions{
@@ -160,12 +169,16 @@ func run(ctx context.Context, args []string) error {
 		return err
 	}
 
-	fmt.Printf("backend:  %s pid=%d\n", status.BackendURL, status.BackendPID)
-	fmt.Printf("frontend: %s pid=%d\n", status.FrontendURL, status.FrontendPID)
-	fmt.Printf("config:   %s\n", status.ConfigPath)
-	fmt.Printf("status:   %s\n", prepared.statusPath)
+	printStatus(status, prepared.statusPath)
 
 	return waitForCommands(ctx, backend, frontend)
+}
+
+func resolveRunWorkDir(workDir string) (string, error) {
+	if strings.TrimSpace(workDir) != "" {
+		return workDir, nil
+	}
+	return defaultEphemeralWorkDir, nil
 }
 
 func prepareEphemeralConfig(opts ephemeralOptions) (ephemeralRun, error) {
@@ -270,19 +283,33 @@ func writeStatusFile(path string, status ephemeralStatus) error {
 	return nil
 }
 
+func printStatus(status ephemeralStatus, statusPath string) {
+	fmt.Printf("backend:  %s pid=%d\n", status.BackendURL, status.BackendPID)
+	fmt.Printf("frontend: %s pid=%d\n", status.FrontendURL, status.FrontendPID)
+	fmt.Printf("config:   %s\n", status.ConfigPath)
+	fmt.Printf("status:   %s\n", statusPath)
+}
+
+func statusPathForWorkDir(workDir string) string {
+	return filepath.Join(workDir, "dev-ephemeral.json")
+}
+
 func resolveStopStatusPath(statusPath, workDir string) (string, error) {
 	if strings.TrimSpace(statusPath) != "" {
 		return statusPath, nil
 	}
 	if strings.TrimSpace(workDir) != "" {
-		return filepath.Join(workDir, "dev-ephemeral.json"), nil
+		return statusPathForWorkDir(workDir), nil
 	}
-	return "", fmt.Errorf("provide -status or -work-dir when stopping an ephemeral dev stack")
+	return statusPathForWorkDir(defaultEphemeralWorkDir), nil
 }
 
 func stopEphemeralStack(statusPath string) error {
 	content, err := os.ReadFile(statusPath)
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
 		return fmt.Errorf("read status file: %w", err)
 	}
 	var status ephemeralStatus
@@ -302,6 +329,50 @@ func stopEphemeralStack(statusPath string) error {
 		}
 	}
 	return errors.Join(stopErrs...)
+}
+
+func readRunningEphemeralStatus(statusPath string) (ephemeralStatus, bool, error) {
+	content, err := os.ReadFile(statusPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return ephemeralStatus{}, false, nil
+		}
+		return ephemeralStatus{}, false, fmt.Errorf("read status file: %w", err)
+	}
+	var status ephemeralStatus
+	if err := json.Unmarshal(content, &status); err != nil {
+		return ephemeralStatus{}, false, fmt.Errorf("decode status file: %w", err)
+	}
+	for _, pid := range uniquePositivePIDs(status.BackendPID, status.FrontendPID, status.PID) {
+		running, err := processRunning(pid)
+		if err != nil {
+			return ephemeralStatus{}, false, fmt.Errorf("check pid %d: %w", pid, err)
+		}
+		if running {
+			return status, true, nil
+		}
+	}
+	if err := os.Remove(statusPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return ephemeralStatus{}, false, fmt.Errorf("remove stale status file: %w", err)
+	}
+	return ephemeralStatus{}, false, nil
+}
+
+func processRunning(pid int) (bool, error) {
+	if pid <= 0 {
+		return false, nil
+	}
+	err := syscall.Kill(pid, 0)
+	if err == nil {
+		return true, nil
+	}
+	if errors.Is(err, syscall.ESRCH) {
+		return false, nil
+	}
+	if errors.Is(err, syscall.EPERM) {
+		return true, nil
+	}
+	return false, err
 }
 
 func uniquePositivePIDs(pids ...int) []int {

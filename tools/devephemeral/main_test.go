@@ -194,6 +194,66 @@ func TestWriteStatusFileRecordsPIDsAndPortsNextToConfig(t *testing.T) {
 	assert.Equal(filepath.Join(dir, "config.toml"), got.ConfigPath)
 }
 
+func TestResolveRunWorkDirDefaultsToStableDirectory(t *testing.T) {
+	workDir, err := resolveRunWorkDir("")
+	require.NoError(t, err)
+
+	Assert.Equal(t, filepath.Join("tmp", "dev-ephemeral"), workDir)
+}
+
+func TestResolveStopStatusPathDefaultsToStableStatusPath(t *testing.T) {
+	statusPath, err := resolveStopStatusPath("", "")
+	require.NoError(t, err)
+
+	Assert.Equal(t, filepath.Join("tmp", "dev-ephemeral", "dev-ephemeral.json"), statusPath)
+}
+
+func TestReadRunningEphemeralStatusReturnsLiveStatus(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	statusPath := filepath.Join(dir, "dev-ephemeral.json")
+	err := writeStatusFile(statusPath, ephemeralStatus{
+		PID:         os.Getpid(),
+		BackendURL:  "http://127.0.0.1:39411",
+		FrontendURL: "http://127.0.0.1:39412",
+	})
+	require.NoError(err)
+
+	status, running, err := readRunningEphemeralStatus(statusPath)
+	require.NoError(err)
+
+	assert := Assert.New(t)
+	assert.True(running)
+	assert.Equal(os.Getpid(), status.PID)
+	assert.Equal("http://127.0.0.1:39411", status.BackendURL)
+}
+
+func TestReadRunningEphemeralStatusRemovesStaleStatus(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	statusPath := filepath.Join(dir, "dev-ephemeral.json")
+	err := writeStatusFile(statusPath, ephemeralStatus{
+		PID:         0,
+		BackendPID:  0,
+		FrontendPID: 0,
+	})
+	require.NoError(err)
+
+	_, running, err := readRunningEphemeralStatus(statusPath)
+	require.NoError(err)
+
+	assert := Assert.New(t)
+	assert.False(running)
+	_, err = os.Stat(statusPath)
+	assert.ErrorIs(err, os.ErrNotExist)
+}
+
+func TestStopEphemeralStackTreatsMissingStatusAsStopped(t *testing.T) {
+	err := stopEphemeralStack(filepath.Join(t.TempDir(), "dev-ephemeral.json"))
+
+	require.NoError(t, err)
+}
+
 func writeSQLiteMarker(t *testing.T, path, value string) {
 	t.Helper()
 	require := require.New(t)

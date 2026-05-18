@@ -17,14 +17,16 @@ Use `make dev-ephemeral` when the user wants a local middleman dev stack without
    make dev-ephemeral
    ```
 
-2. For a stable run directory or explicit ports, pass `ARGS`:
+2. The default work directory is `tmp/dev-ephemeral`. Re-running the command while that stack is live prints the existing status instead of starting a duplicate stack.
+
+3. For a separate concurrent run directory or explicit ports, pass `ARGS`:
 
    ```sh
    make dev-ephemeral ARGS="-work-dir tmp/my-run"
    make dev-ephemeral ARGS="-backend-port 19091 -frontend-port 15174"
    ```
 
-3. Use a fresh empty DB only when requested:
+4. Use a fresh empty DB only when requested:
 
    ```sh
    make dev-ephemeral ARGS="-fresh-db"
@@ -38,6 +40,7 @@ Use `make dev-ephemeral` when the user wants a local middleman dev stack without
 - It passes `MIDDLEMAN_CONFIG=<work-dir>/config.toml` to both processes.
 - It passes `MIDDLEMAN_API_URL=<backend-url>` to the frontend.
 - It writes typed status JSON at `<work-dir>/dev-ephemeral.json`.
+- `make dev-ephemeral-stop` without arguments stops the default `tmp/dev-ephemeral` stack.
 
 ## Status JSON
 

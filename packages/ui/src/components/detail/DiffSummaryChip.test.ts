@@ -28,6 +28,13 @@ function file(
   };
 }
 
+function rowText(popover: HTMLElement, label: string): string {
+  const row = Array.from(popover.querySelectorAll(".diff-summary-row"))
+    .find((candidate) => candidate.textContent?.includes(label));
+  expect(row).toBeTruthy();
+  return row?.textContent?.replace(/\s+/g, " ").trim() ?? "";
+}
+
 describe("DiffSummaryChip", () => {
   afterEach(() => {
     cleanup();
@@ -53,24 +60,24 @@ describe("DiffSummaryChip", () => {
     });
 
     await fireEvent.mouseEnter(
-      screen.getByRole("button", { name: /\+74\/-20/i }),
+      screen.getByRole("button", { name: /\+74\s+−20/i }),
     );
 
     const popover = await screen.findByRole("status");
-    const labels = Array.from(popover.querySelectorAll(".diff-summary-row span:first-child"))
+    const labels = Array.from(popover.querySelectorAll(".diff-summary-row > span:first-child"))
       .map((label) => label.textContent);
     expect(labels).toEqual(["Plans/docs", "Code", "Tests", "Other", "Generated"]);
     expect(screen.getByText("Plans/docs")).toBeTruthy();
     expect(screen.queryByText("Total")).toBeNull();
-    expect(screen.getByText("+10/-2")).toBeTruthy();
+    expect(rowText(popover, "Plans/docs")).toBe("Plans/docs +10 −2");
     expect(screen.getByText("Code")).toBeTruthy();
-    expect(screen.getByText("+40/-6")).toBeTruthy();
+    expect(rowText(popover, "Code")).toBe("Code +40 −6");
     expect(screen.getByText("Tests")).toBeTruthy();
-    expect(screen.getByText("+20/-8")).toBeTruthy();
+    expect(rowText(popover, "Tests")).toBe("Tests +20 −8");
     expect(screen.getByText("Other")).toBeTruthy();
-    expect(screen.getByText("+1/-1")).toBeTruthy();
+    expect(rowText(popover, "Other")).toBe("Other +1 −1");
     expect(screen.getByText("Generated")).toBeTruthy();
-    expect(screen.getByText("+3/-3")).toBeTruthy();
+    expect(rowText(popover, "Generated")).toBe("Generated +3 −3");
     expect(loadFiles).toHaveBeenCalledTimes(1);
   });
 
@@ -91,13 +98,14 @@ describe("DiffSummaryChip", () => {
     });
 
     await fireEvent.mouseEnter(
-      screen.getByRole("button", { name: /\+60\/-14/i }),
+      screen.getByRole("button", { name: /\+60\s+−14/i }),
     );
 
-    expect(await screen.findByText("Code")).toBeTruthy();
-    expect(screen.getByText("+40/-6")).toBeTruthy();
+    const popover = await screen.findByRole("status");
+    expect(within(popover).getByText("Code")).toBeTruthy();
+    expect(rowText(popover, "Code")).toBe("Code +40 −6");
     expect(screen.getByText("Tests")).toBeTruthy();
-    expect(screen.getByText("+20/-8")).toBeTruthy();
+    expect(rowText(popover, "Tests")).toBe("Tests +20 −8");
     expect(screen.queryByText("Plans/docs")).toBeNull();
     expect(screen.queryByText("Generated")).toBeNull();
     expect(screen.queryByText("Other")).toBeNull();
@@ -119,7 +127,7 @@ describe("DiffSummaryChip", () => {
       },
     });
 
-    const trigger = screen.getByRole("button", { name: /\+4\/-1/i });
+    const trigger = screen.getByRole("button", { name: /\+4\s+−1/i });
     await fireEvent.mouseEnter(trigger);
 
     expect(await screen.findByText("Changed files are still refreshing."))
@@ -129,7 +137,7 @@ describe("DiffSummaryChip", () => {
 
     const popover = await screen.findByRole("status");
     expect(within(popover).getByText("Code")).toBeTruthy();
-    expect(within(popover).getByText("+4/-1")).toBeTruthy();
+    expect(rowText(popover, "Code")).toBe("Code +4 −1");
     expect(loadFiles).toHaveBeenCalledTimes(2);
   });
 
@@ -159,7 +167,7 @@ describe("DiffSummaryChip", () => {
     });
 
     await fireEvent.mouseEnter(
-      screen.getByRole("button", { name: /\+10\/-0/i }),
+      screen.getByRole("button", { name: /\+10\s+−0/i }),
     );
     await rerender({
       additions: 5,
@@ -178,7 +186,7 @@ describe("DiffSummaryChip", () => {
 
     const popover = await screen.findByRole("status");
     expect(within(popover).getByText("Code")).toBeTruthy();
-    expect(within(popover).getByText("+5/-1")).toBeTruthy();
+    expect(rowText(popover, "Code")).toBe("Code +5 −1");
     expect(screen.queryByText("Plans/docs")).toBeNull();
   });
 
@@ -202,7 +210,7 @@ describe("DiffSummaryChip", () => {
     });
 
     await fireEvent.mouseEnter(
-      screen.getByRole("button", { name: /\+10\/-0/i }),
+      screen.getByRole("button", { name: /\+10\s+−0/i }),
     );
     expect(await screen.findByText("Plans/docs")).toBeTruthy();
 
@@ -215,8 +223,33 @@ describe("DiffSummaryChip", () => {
 
     const popover = await screen.findByRole("status");
     expect(within(popover).getByText("Code")).toBeTruthy();
-    expect(within(popover).getByText("+5/-1")).toBeTruthy();
+    expect(rowText(popover, "Code")).toBe("Code +5 −1");
     await waitFor(() => expect(loadFiles).toHaveBeenCalledTimes(2));
     expect(screen.queryByText("Plans/docs")).toBeNull();
+  });
+
+  it("formats large totals compactly with colored parts", async () => {
+    render(DiffSummaryChip, {
+      props: {
+        additions: 2781,
+        deletions: 216,
+        loadFiles: vi.fn(async () =>
+          new DiffSummaryFilesResult(false, [
+            file("src/App.svelte", 1428, 213),
+            file("src/App.test.ts", 1353, 3),
+          ])),
+      },
+    });
+
+    const trigger = screen.getByRole("button", { name: /\+2\.78k\s+−216/i });
+    expect(trigger.querySelector(".diff-summary-stat--add")?.textContent?.trim())
+      .toBe("+2.78k");
+    expect(trigger.querySelector(".diff-summary-stat--del")?.textContent?.trim())
+      .toBe("−216");
+
+    await fireEvent.mouseEnter(trigger);
+    const popover = await screen.findByRole("status");
+    expect(rowText(popover, "Code")).toBe("Code +1.43k −213");
+    expect(rowText(popover, "Tests")).toBe("Tests +1.35k −3");
   });
 });

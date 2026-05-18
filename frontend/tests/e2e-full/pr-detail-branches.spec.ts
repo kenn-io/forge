@@ -103,14 +103,14 @@ test.describe("PR detail branch info", () => {
       .waitFor({ state: "visible", timeout: 10_000 });
 
     const trigger = page.locator(".diff-summary-trigger");
-    await expect(trigger).toHaveText("+240/-30");
+    await expect(trigger).toHaveText(/\+240\s+−30/);
 
     await trigger.focus();
 
     const popover = page.locator(".diff-summary-popover");
     await expect(popover).toBeVisible();
     await expect(popover).toContainText(
-      /Plans\/docs\s+\+10\/-2[\s\S]*Code\s+\+180\/-20[\s\S]*Tests\s+\+49\/-7/,
+      /Plans\/docs\s+\+10\s+−2[\s\S]*Code\s+\+180\s+−20[\s\S]*Tests\s+\+49\s+−7/,
     );
     await expect(popover).not.toContainText("Other");
   });
@@ -130,12 +130,12 @@ test("diff summary uses real files after the PR head advances", async ({ page })
     await expect(page.locator(".sync-indicator")).toHaveCount(0);
 
     const trigger = page.locator(".diff-summary-trigger");
-    await expect(trigger).toHaveText("+240/-30");
+    await expect(trigger).toHaveText(/\+240\s+−30/);
     await trigger.focus();
 
     const popover = page.locator(".diff-summary-popover");
     await expect(popover).toBeVisible();
-    await expect(popover).toContainText(/Code\s+\+\d+\/-\d+/);
+    await expect(popover).toContainText(/Code\s+\+\d+\s+−\d+/);
     await expect(popover).not.toContainText("Tests");
     const initialSummary = await popover.textContent();
 
@@ -149,8 +149,8 @@ test("diff summary uses real files after the PR head advances", async ({ page })
       "aria-describedby",
       new RegExp(advanced.head_sha.slice(0, 10)),
     );
-    await expect(popover).toContainText(/Plans\/docs\s+\+\d+\/-\d+/);
-    await expect(popover).toContainText(/Tests\s+\+\d+\/-\d+/);
+    await expect(popover).toContainText(/Plans\/docs\s+\+\d+\s+−\d+/);
+    await expect(popover).toContainText(/Tests\s+\+\d+\s+−\d+/);
     await expect(popover).not.toHaveText(initialSummary ?? "");
   } finally {
     await server.stop();

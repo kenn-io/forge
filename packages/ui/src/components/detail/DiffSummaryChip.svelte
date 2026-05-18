@@ -4,6 +4,7 @@
     summarizeDiffFiles,
     type DiffLineSummary,
   } from "./diff-summary.js";
+  import { formatDiffStat } from "../../utils/diff-stats.js";
 
   interface Props {
     additions: number;
@@ -46,10 +47,6 @@
           return (totals?.additions ?? 0) > 0 || (totals?.deletions ?? 0) > 0;
         }),
   );
-
-  function formatTotals(value: { additions: number; deletions: number }): string {
-    return `+${value.additions}/-${value.deletions}`;
-  }
 
   async function ensureSummary(): Promise<void> {
     const requestedKey = summaryKey;
@@ -125,7 +122,12 @@
     onfocus={showPopover}
     onblur={hidePopover}
   >
-    +{additions}/-{deletions}
+    <span class="diff-summary-stat diff-summary-stat--add">
+      +{formatDiffStat(additions)}
+    </span>
+    <span class="diff-summary-stat diff-summary-stat--del">
+      −{formatDiffStat(deletions)}
+    </span>
   </button>
 
   {#if open}
@@ -145,7 +147,14 @@
           {#each visibleRows as row (row.key)}
             <div class="diff-summary-row">
               <span>{row.label}</span>
-              <span>{formatTotals(summary[row.key])}</span>
+              <span class="diff-summary-row-stats">
+                <span class="diff-summary-stat diff-summary-stat--add">
+                  +{formatDiffStat(summary[row.key].additions)}
+                </span>
+                <span class="diff-summary-stat diff-summary-stat--del">
+                  −{formatDiffStat(summary[row.key].deletions)}
+                </span>
+              </span>
             </div>
           {/each}
         </div>
@@ -175,10 +184,9 @@
     font-size: var(--font-size-xs);
     font-weight: 600;
     line-height: 1;
-    letter-spacing: 0.03em;
-    text-transform: uppercase;
     white-space: nowrap;
     cursor: default;
+    gap: 4px;
   }
 
   .diff-summary-trigger:focus-visible {
@@ -233,10 +241,25 @@
     color: var(--text-secondary);
   }
 
-  .diff-summary-row span:last-child {
+  .diff-summary-row-stats {
+    display: inline-flex;
+    gap: 6px;
     font-family: var(--font-mono);
-    color: var(--text-primary);
     white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .diff-summary-stat {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .diff-summary-stat--add {
+    color: var(--accent-green);
+  }
+
+  .diff-summary-stat--del {
+    color: var(--accent-red);
   }
 
   .diff-summary-state {

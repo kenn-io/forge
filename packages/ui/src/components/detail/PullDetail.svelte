@@ -14,6 +14,7 @@
   import { renderMarkdown } from "../../utils/markdown.js";
   import { moveTaskListItem, toggleTaskListItem } from "../../utils/task-list.js";
   import { timeAgo } from "../../utils/time.js";
+  import { formatDiffStat } from "../../utils/diff-stats.js";
   import { copyToClipboard } from "../../utils/clipboard.js";
   import EventTimeline from "./EventTimeline.svelte";
   import PRTimelineFilter from "./PRTimelineFilter.svelte";
@@ -1155,10 +1156,10 @@
           >
             Files changed
             {#if pr.Additions > 0}
-              <span class="files-stat files-stat--add">+{pr.Additions}</span>
+              <span class="files-stat files-stat--add">+{formatDiffStat(pr.Additions)}</span>
             {/if}
             {#if pr.Deletions > 0}
-              <span class="files-stat files-stat--del">-{pr.Deletions}</span>
+              <span class="files-stat files-stat--del">−{formatDiffStat(pr.Deletions)}</span>
             {/if}
           </button>
         </div>

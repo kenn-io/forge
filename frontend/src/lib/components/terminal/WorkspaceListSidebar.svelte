@@ -7,6 +7,7 @@
   import ArrowDownIcon from "@lucide/svelte/icons/arrow-down";
   import { client } from "../../api/runtime.js";
   import { LeftSidebarToggle } from "@middleman/ui";
+  import { formatDiffStat } from "@middleman/ui/utils/diff-stats";
   import ProviderIcon from "../provider/ProviderIcon.svelte";
 
   interface Workspace {
@@ -151,14 +152,6 @@
 
   function shortBranch(ref: string): string {
     return ref.replace(/^refs\/heads\//, "");
-  }
-
-  function formatDiff(value: number): string {
-    if (value < 1000) return String(value);
-    if (value < 10_000) {
-      return `${(value / 1000).toFixed(1)}k`;
-    }
-    return `${Math.round(value / 1000)}k`;
   }
 
   function shortRepo(repoKey: string): string {
@@ -342,10 +335,10 @@
                 {#if showDiff}
                   <span class="diff-stats">
                     {#if adds != null}
-                      <span class="add">+{formatDiff(adds)}</span>
+                      <span class="add">+{formatDiffStat(adds)}</span>
                     {/if}
                     {#if dels != null}
-                      <span class="del">−{formatDiff(dels)}</span>
+                      <span class="del">−{formatDiffStat(dels)}</span>
                     {/if}
                   </span>
                 {/if}

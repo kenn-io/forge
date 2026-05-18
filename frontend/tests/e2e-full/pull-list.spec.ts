@@ -68,31 +68,6 @@ async function mockLongPullRepoSlug(page: Page): Promise<void> {
   );
 }
 
-async function mockFirstPullStats(
-  page: Page,
-  additions: number,
-  deletions: number,
-): Promise<void> {
-  await page.route(
-    (url) =>
-      url.pathname.endsWith("/api/v1/pulls")
-      && url.searchParams.get("state") === "open",
-    async (route) => {
-      const response = await route.fetch();
-      const pulls = await response.json() as Array<{
-        Additions?: number;
-        Deletions?: number;
-      }>;
-      const firstPull = pulls[0];
-      if (firstPull) {
-        firstPull.Additions = additions;
-        firstPull.Deletions = deletions;
-      }
-      await route.fulfill({ response, json: pulls });
-    },
-  );
-}
-
 async function expectRepoChipToClipSafely(
   item: ReturnType<Page["locator"]>,
   repoChip: ReturnType<Page["locator"]>,
@@ -160,19 +135,6 @@ test.describe("PR list view", () => {
     await expect(repoChip).toBeVisible();
     await expectRepoChipToClipSafely(firstItem, repoChip, longRepoPath);
     await expect(firstItem.locator(".status-chip")).toBeVisible();
-  });
-
-  test("shows compact colored changed-line stats in PR rows", async ({
-    page,
-  }) => {
-    await mockFirstPullStats(page, 9400, 296);
-    await page.goto("/pulls");
-    await waitForPullList(page);
-
-    const stats = page.locator(".pull-item").first().locator(".pull-diff-stats");
-    await expect(stats).toHaveText(/\+9\.4k\s+−296/);
-    await expect(stats.locator(".pull-diff-stat--add")).toHaveText("+9.4k");
-    await expect(stats.locator(".pull-diff-stat--del")).toHaveText("−296");
   });
 
   test("closed state shows closed and merged PRs with correct count", async ({

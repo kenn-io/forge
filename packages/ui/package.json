@@ -15,7 +15,6 @@
     "./utils/time": { "default": "./src/utils/time.ts" },
     "./utils/markdown": { "default": "./src/utils/markdown.ts" },
     "./utils/clipboard": { "default": "./src/utils/clipboard.ts" },
-    "./utils/diff-stats": { "default": "./src/utils/diff-stats.ts" },
     "./utils/highlight": { "default": "./src/utils/highlight.ts" },
     "./utils/repo-color": { "default": "./src/utils/repo-color.ts" },
     "./routes": { "default": "./src/routes.ts" },

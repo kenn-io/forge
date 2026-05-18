@@ -4,7 +4,6 @@
   import { getStores, getHostState } from "../../context.js";
   import { timeAgo } from "../../utils/time.js";
   import { repoColor } from "../../utils/repo-color.js";
-  import { formatDiffStat } from "../../utils/diff-stats.js";
   import Chip from "../shared/Chip.svelte";
   import GitHubLabels from "../shared/GitHubLabels.svelte";
 
@@ -95,7 +94,6 @@
     !hasWorktree &&
     pr.State === "open",
   );
-  const showDiff = $derived(pr.Additions > 0 || pr.Deletions > 0);
   const labels = $derived(pr.labels ?? []);
 
   function handleImportClick(e: MouseEvent): void {
@@ -139,19 +137,6 @@
       #{pr.Number} · {pr.Author}
     </span>
     <span class="meta-right">
-      {#if showDiff}
-        <span
-          class="pull-diff-stats"
-          title={`${pr.Additions} additions, ${pr.Deletions} deletions`}
-        >
-          {#if pr.Additions > 0}
-            <span class="pull-diff-stat--add">+{formatDiffStat(pr.Additions)}</span>
-          {/if}
-          {#if pr.Deletions > 0}
-            <span class="pull-diff-stat--del">−{formatDiffStat(pr.Deletions)}</span>
-          {/if}
-        </span>
-      {/if}
       {#if showImport}
         <span
           class="import-btn"
@@ -319,24 +304,6 @@
     flex-shrink: 0;
   }
 
-  .pull-diff-stats {
-    display: inline-flex;
-    gap: 4px;
-    align-items: baseline;
-    flex-shrink: 0;
-    font-family: var(--font-mono);
-    font-size: var(--font-size-xs);
-    font-variant-numeric: tabular-nums;
-  }
-
-  .pull-diff-stat--add {
-    color: var(--accent-green);
-  }
-
-  .pull-diff-stat--del {
-    color: var(--accent-red);
-  }
-
   .time {
     font-size: var(--font-size-xs);
     color: var(--text-muted);
@@ -500,7 +467,6 @@
 
   :global(.mobile-main) .meta-left,
   :global(.mobile-main) .time,
-  :global(.mobile-main) .pull-diff-stats,
   :global(.mobile-main) .worktree-name {
     font-size: var(--font-size-mobile-sm);
     line-height: 1.35;

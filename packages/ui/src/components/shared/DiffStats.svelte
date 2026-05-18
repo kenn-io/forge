@@ -42,6 +42,7 @@
     gap: 6px;
     align-items: baseline;
     font-family: var(--font-mono);
+    font-weight: 400;
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
   }

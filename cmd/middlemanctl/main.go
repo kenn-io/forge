@@ -77,13 +77,14 @@ like "middlemanctl pulls" or the Restish-backed escape hatch:
 
   middlemanctl api METHOD PATH [body...]
 
-Responses are formatted as JSON by default and YAML with --output yaml.`),
+Responses are formatted as JSON by default, YAML with --output yaml, and
+newline-delimited JSON with --output jsonl.`),
 		SilenceUsage: true,
 	}
 	root.SetOut(deps.Stdout)
 	root.SetErr(deps.Stderr)
 	root.PersistentFlags().String("server", defaultServer, "middleman server URL")
-	root.PersistentFlags().StringP("output", "o", "json", "response format: json or yaml")
+	root.PersistentFlags().StringP("output", "o", "json", "response format: json, yaml, or jsonl")
 	root.PersistentFlags().Duration("timeout", 30*time.Second, "HTTP request timeout")
 	mustBind(cfg, root.PersistentFlags().Lookup("server"), "server")
 	mustBind(cfg, root.PersistentFlags().Lookup("output"), "output")
@@ -133,7 +134,7 @@ func mustBind(cfg *viper.Viper, flag *pflag.Flag, key string) {
 
 func readConfig(cfg *viper.Viper) (cliConfig, error) {
 	out := strings.ToLower(strings.TrimSpace(cfg.GetString("output")))
-	if out != "json" && out != "yaml" {
+	if out != "json" && out != "yaml" && out != "jsonl" {
 		return cliConfig{}, fmt.Errorf("unsupported output format %q", out)
 	}
 	server := strings.TrimRight(strings.TrimSpace(cfg.GetString("server")), "/")
@@ -183,10 +184,11 @@ func newQuickstartCommand(cfg *viper.Viper, stdout io.Writer) *cobra.Command {
 			}
 			payload := map[string]any{
 				"api_base_url": apiURL(current.server, apiPrefix, nil),
-				"formats":      []string{"json", "yaml"},
+				"formats":      []string{"json", "yaml", "jsonl"},
 				"commands": []map[string]string{
 					{"command": "middlemanctl version", "does": "GET /api/v1/version"},
 					{"command": "middlemanctl pulls --state open --limit 20", "does": "GET /api/v1/pulls with query parameters"},
+					{"command": "middlemanctl issues --output jsonl", "does": "Emit one issue JSON object per line"},
 					{"command": "middlemanctl api GET /pulls", "does": "Raw Restish-backed request to /api/v1/pulls"},
 					{"command": "middlemanctl api GET /sync/status", "does": "Inspect sync state"},
 					{"command": "middlemanctl api POST /sync", "does": "Trigger a sync"},
@@ -195,6 +197,7 @@ func newQuickstartCommand(cfg *viper.Viper, stdout io.Writer) *cobra.Command {
 					"PATH values without /api/v1 are automatically scoped to /api/v1.",
 					"Use --server to target a non-default daemon.",
 					"Use --output yaml when an agent or shell pipeline prefers YAML.",
+					"Use --output jsonl for streaming-friendly array responses.",
 				},
 			}
 			return encodeStructured(stdout, current.output, payload)
@@ -346,6 +349,8 @@ func encodeStructured(w io.Writer, format string, payload any) error {
 		enc := yaml.NewEncoder(w)
 		defer enc.Close()
 		return enc.Encode(payload)
+	case "jsonl":
+		return encodeJSONLines(w, payload)
 	default:
 		return fmt.Errorf("unsupported output format %q", format)
 	}
@@ -362,7 +367,23 @@ func writeResponse(w io.Writer, format string, body []byte) error {
 		_, writeErr := w.Write(body)
 		return writeErr
 	}
+	if format == "jsonl" {
+		return encodeJSONLines(w, payload)
+	}
 	return encodeStructured(w, format, payload)
+}
+
+func encodeJSONLines(w io.Writer, payload any) error {
+	enc := json.NewEncoder(w)
+	if rows, ok := payload.([]any); ok {
+		for _, row := range rows {
+			if err := enc.Encode(row); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	return enc.Encode(payload)
 }
 
 var restishMu sync.Mutex

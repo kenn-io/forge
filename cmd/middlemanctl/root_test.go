@@ -37,10 +37,11 @@ func TestRootHelpPointsAgentsToQuickstartAndAPI(t *testing.T) {
 	assert.Contains(help, "quickstart")
 	assert.Contains(help, "api METHOD PATH")
 	assert.Contains(help, "--output")
+	assert.Contains(help, "jsonl")
 	assert.Empty(stderr.String())
 }
 
-func TestQuickstartFormatsJSONAndYAML(t *testing.T) {
+func TestQuickstartFormatsStructuredOutput(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	var jsonOut bytes.Buffer
@@ -67,6 +68,19 @@ func TestQuickstartFormatsJSONAndYAML(t *testing.T) {
 	require.NoError(cmd.Execute())
 	assert.Contains(yamlOut.String(), "api_base_url: http://middleman.test/api/v1")
 	assert.Contains(yamlOut.String(), "middlemanctl api GET /sync/status")
+
+	var jsonlOut bytes.Buffer
+	cmd = newRootCommand(commandDeps{
+		Stdout: &jsonlOut,
+		Stderr: &bytes.Buffer{},
+	})
+	cmd.SetArgs([]string{"--server", "http://middleman.test", "--output", "jsonl", "quickstart"})
+
+	require.NoError(cmd.Execute())
+	lines := strings.Split(strings.TrimSpace(jsonlOut.String()), "\n")
+	require.Len(lines, 1)
+	assert.Contains(lines[0], `"api_base_url":"http://middleman.test/api/v1"`)
+	assert.Contains(lines[0], `"jsonl"`)
 }
 
 func TestPullsCommandDelegatesToRestishWithAgentFriendlyDefaults(t *testing.T) {
@@ -175,4 +189,21 @@ func TestWriteResponseFetchesYAMLBodyOnly(t *testing.T) {
 	assert.Contains(yamlOut.String(), "number: 46")
 	assert.NotContains(yamlOut.String(), "Content-Type")
 	assert.NotContains(yamlOut.String(), `{"issues"`)
+}
+
+func TestWriteResponseFormatsJSONLines(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	var arrayOut bytes.Buffer
+	require.NoError(writeResponse(&arrayOut, "jsonl", []byte(`[{"number":46,"title":"agent output"},{"number":47,"title":"next"}]`)))
+	lines := strings.Split(strings.TrimSpace(arrayOut.String()), "\n")
+	require.Len(lines, 2)
+	assert.JSONEq(`{"number":46,"title":"agent output"}`, lines[0])
+	assert.JSONEq(`{"number":47,"title":"next"}`, lines[1])
+
+	var objectOut bytes.Buffer
+	require.NoError(writeResponse(&objectOut, "jsonl", []byte(`{"version":"dev"}`)))
+	assert.JSONEq(`{"version":"dev"}`, strings.TrimSpace(objectOut.String()))
+	assert.NotContains(objectOut.String(), "\n\n")
 }

@@ -6022,6 +6022,32 @@ func TestAPIListIssuesSearchByNumber(t *testing.T) {
 	assert.ElementsMatch([]int{12, 278, 290}, issueNumbers(&generated.ListIssuesParams{Q: &q}))
 }
 
+func TestAPIListItemsHonorsLimit(t *testing.T) {
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	ctx := t.Context()
+
+	seedPR(t, database, "acme", "widget", 12)
+	seedPR(t, database, "acme", "widget", 278)
+	seedIssue(t, database, "acme", "widget", 12, "open")
+	seedIssue(t, database, "acme", "widget", 278, "open")
+
+	client := setupTestClient(t, srv)
+	limit := int64(1)
+
+	pullsResp, err := client.HTTP.ListPullsWithResponse(ctx, &generated.ListPullsParams{Limit: &limit})
+	require.NoError(err)
+	require.Equal(http.StatusOK, pullsResp.StatusCode())
+	require.NotNil(pullsResp.JSON200)
+	require.Len(*pullsResp.JSON200, 1)
+
+	issuesResp, err := client.HTTP.ListIssuesWithResponse(ctx, &generated.ListIssuesParams{Limit: &limit})
+	require.NoError(err)
+	require.Equal(http.StatusOK, issuesResp.StatusCode())
+	require.NotNil(issuesResp.JSON200)
+	require.Len(*issuesResp.JSON200, 1)
+}
+
 func TestAPIListPullsReportsBackfilledMergedPRFromMergedAt(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

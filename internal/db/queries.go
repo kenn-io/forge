@@ -51,6 +51,23 @@ func listSearchCondition(alias, search string) (string, []any) {
 	return cond, args
 }
 
+func appendLimitOffset(query string, args *[]any, limit, offset int) string {
+	if limit > 0 {
+		query += " LIMIT ?"
+		*args = append(*args, limit)
+		if offset > 0 {
+			query += " OFFSET ?"
+			*args = append(*args, offset)
+		}
+		return query
+	}
+	if offset > 0 {
+		query += " LIMIT -1 OFFSET ?"
+		*args = append(*args, offset)
+	}
+	return query
+}
+
 func sqlPlaceholders(count int) string {
 	parts := make([]string, count)
 	for i := range parts {
@@ -2373,6 +2390,7 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 		    ON s.item_type = 'pr' AND s.repo_id = p.repo_id AND s.number = p.number
 		%s
 		ORDER BY p.last_activity_at DESC`, where)
+	query = appendLimitOffset(query, &args, opts.Limit, opts.Offset)
 
 	rows, err := d.ro.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -3173,6 +3191,7 @@ func (d *DB) ListIssues(
 		    ON s.item_type = 'issue' AND s.repo_id = i.repo_id AND s.number = i.number
 		%s
 		ORDER BY i.last_activity_at DESC`, where)
+	query = appendLimitOffset(query, &args, opts.Limit, opts.Offset)
 
 	rows, err := d.ro.QueryContext(ctx, query, args...)
 	if err != nil {

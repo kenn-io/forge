@@ -14,6 +14,8 @@ describe("formatDiffStat", () => {
     expect(formatDiffStat(2781)).toBe("2.78k");
     expect(formatDiffStat(9400)).toBe("9.4k");
     expect(formatDiffStat(11_000)).toBe("11k");
+    expect(formatDiffStat(100_000)).toBe("100k");
+    expect(formatDiffStat(250_000)).toBe("250k");
     expect(formatDiffStat(999_499)).toBe("999k");
   });
 

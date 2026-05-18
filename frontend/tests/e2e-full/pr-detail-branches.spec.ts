@@ -114,6 +114,7 @@ test.describe("PR detail branch info", () => {
     );
     await expect(popover).not.toContainText("Other");
   });
+
 });
 
 test("diff summary uses real files after the PR head advances", async ({ page }) => {

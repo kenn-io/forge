@@ -7,9 +7,7 @@ export function formatDiffStat(value: number): string {
   const scaled = value / divisor;
   const integerDigits = Math.max(1, Math.floor(Math.abs(scaled)).toString().length);
   const fractionDigits = Math.max(0, 3 - integerDigits);
-  const compact = scaled
-    .toFixed(fractionDigits)
-    .replace(/\.?0+$/, "");
+  const compact = Number(scaled.toFixed(fractionDigits)).toString();
 
   return `${compact}${suffix}`;
 }

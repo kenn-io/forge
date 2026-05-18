@@ -42,8 +42,7 @@ describe("defaultActions", () => {
     const ids = defaultActions.map((a) => a.id);
     expect(ids).toEqual(
       expect.arrayContaining([
-        "labels.edit.pr",
-        "labels.edit.issue",
+        "labels.edit",
         "go.next",
         "go.prev",
         "tab.toggle",
@@ -85,7 +84,7 @@ describe("defaultActions", () => {
   });
 
   it("dispatches Edit labels from PR detail context", () => {
-    const action = defaultActions.find((a) => a.id === "labels.edit.pr");
+    const action = defaultActions.find((a) => a.id === "labels.edit");
     expect(action).toBeDefined();
     setStoreInstances(() => ({
       detail: {
@@ -107,7 +106,7 @@ describe("defaultActions", () => {
   });
 
   it("dispatches Edit labels from issue detail context", () => {
-    const action = defaultActions.find((a) => a.id === "labels.edit.issue");
+    const action = defaultActions.find((a) => a.id === "labels.edit");
     expect(action).toBeDefined();
     setStoreInstances(() => ({
       issues: {

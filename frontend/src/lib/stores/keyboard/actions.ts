@@ -117,6 +117,12 @@ function issueLabelPickerDetail(ctx: Context): OpenLabelPickerDetail | null {
   );
 }
 
+function labelPickerDetail(ctx: Context): OpenLabelPickerDetail | null {
+  if (ctx.page === "pulls") return prLabelPickerDetail(ctx);
+  if (ctx.page === "issues") return issueLabelPickerDetail(ctx);
+  return null;
+}
+
 // Mirrors App.svelte's pre-migration page exclusions for `1`/`2`/`f`/etc.:
 // settings, design-system, repos, reviews, workspaces, activity all returned
 // early before the global shortcut switch ran.
@@ -290,26 +296,14 @@ export const defaultActions: Action[] = [
     handler: () => toggleCheatsheet(),
   },
   {
-    id: "labels.edit.pr",
+    id: "labels.edit",
     label: "Edit labels",
-    scope: "detail-pr",
+    scope: "detail",
     binding: null,
     priority: 0,
-    when: (ctx) => prLabelPickerDetail(ctx) !== null,
+    when: (ctx) => labelPickerDetail(ctx) !== null,
     handler: (ctx) => {
-      const detail = prLabelPickerDetail(ctx);
-      if (detail !== null) openLabelPickerFor(detail);
-    },
-  },
-  {
-    id: "labels.edit.issue",
-    label: "Edit labels",
-    scope: "detail-issue",
-    binding: null,
-    priority: 0,
-    when: (ctx) => issueLabelPickerDetail(ctx) !== null,
-    handler: (ctx) => {
-      const detail = issueLabelPickerDetail(ctx);
+      const detail = labelPickerDetail(ctx);
       if (detail !== null) openLabelPickerFor(detail);
     },
   },

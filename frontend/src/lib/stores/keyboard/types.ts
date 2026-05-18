@@ -11,6 +11,7 @@ export type ScopeTag =
   | "global"
   | "view-pulls"
   | "view-issues"
+  | "detail"
   | "detail-pr"
   | "detail-issue";
 

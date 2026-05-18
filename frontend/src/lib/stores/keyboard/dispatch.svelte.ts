@@ -12,6 +12,7 @@ const RESERVED_WHILE_MODAL_OPEN: KeySpec[] = [
 const SCOPE_SPECIFICITY: Record<Action["scope"], number> = {
   "detail-pr": 30,
   "detail-issue": 30,
+  detail: 30,
   "view-pulls": 20,
   "view-issues": 20,
   global: 10,

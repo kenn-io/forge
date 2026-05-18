@@ -233,8 +233,10 @@ func (s *Server) publishDiffReviewDraft(
 	}); err != nil {
 		var partialErr *platform.DiffReviewPublishPartialError
 		if errors.As(err, &partialErr) {
-			if discardErr := s.db.DeleteMRReviewDraft(ctx, mr.ID); discardErr != nil {
-				return nil, huma.Error500InternalServerError("discard partially published review draft failed")
+			if len(partialErr.PublishedCommentIDs) > 0 {
+				if discardErr := s.deletePublishedReviewDraftComments(ctx, draft.ID, mr.ID, partialErr.PublishedCommentIDs); discardErr != nil {
+					return nil, huma.Error500InternalServerError("discard partially published review draft comments failed")
+				}
 			}
 			if capabilityEnabled(s.capabilitiesForRepo(*repo), capabilityReadReviewThreads) {
 				_ = s.ingestDiffReviewThreads(ctx, *repo, *mr)
@@ -250,6 +252,27 @@ func (s *Server) publishDiffReviewDraft(
 		_ = s.ingestDiffReviewThreads(ctx, *repo, *mr)
 	}
 	return &actionStatusOutput{Body: actionStatusBody{Status: "published"}}, nil
+}
+
+func (s *Server) deletePublishedReviewDraftComments(
+	ctx context.Context,
+	draftID int64,
+	mrID int64,
+	commentIDs []int64,
+) error {
+	for _, commentID := range commentIDs {
+		if err := s.db.DeleteMRReviewDraftComment(ctx, draftID, commentID); err != nil {
+			return err
+		}
+	}
+	remaining, err := s.db.ListMRReviewDraftComments(ctx, draftID)
+	if err != nil {
+		return err
+	}
+	if len(remaining) == 0 {
+		return s.db.DeleteMRReviewDraft(ctx, mrID)
+	}
+	return nil
 }
 
 func (s *Server) resolveDiffReviewThread(

@@ -144,6 +144,7 @@ func TestGitLabPublishDiffReviewDraftReturnsPartialErrorWhenApproveFails(t *test
 	}, 7, platform.PublishDiffReviewDraftInput{
 		Action: platform.ReviewActionApprove,
 		Comments: []platform.LocalDiffReviewDraftComment{{
+			ID:   123,
 			Body: "range note",
 			Range: platform.DiffReviewLineRange{
 				Path:        "src/main.go",
@@ -157,6 +158,7 @@ func TestGitLabPublishDiffReviewDraftReturnsPartialErrorWhenApproveFails(t *test
 	require.Error(err)
 	var partialErr *platform.DiffReviewPublishPartialError
 	require.ErrorAs(err, &partialErr)
+	assert.Equal([]int64{123}, partialErr.PublishedCommentIDs)
 	assert.True(published)
 }
 

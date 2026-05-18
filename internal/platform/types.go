@@ -249,7 +249,8 @@ type PublishedDiffReview struct {
 }
 
 type DiffReviewPublishPartialError struct {
-	Err error
+	Err                 error
+	PublishedCommentIDs []int64
 }
 
 func (e *DiffReviewPublishPartialError) Error() string {

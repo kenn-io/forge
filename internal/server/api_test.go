@@ -10844,7 +10844,7 @@ func TestAPIGitLabPublishReviewDraftApprovesWithDiffPositionSHAs(t *testing.T) {
 	assert.Nil(lineRange.StartLine)
 }
 
-func TestAPIPublishReviewDraftClearsPartialPublishedDraft(t *testing.T) {
+func TestAPIPublishReviewDraftPreservesDraftWhenPartialStatusIsUnknown(t *testing.T) {
 	require := require.New(t)
 	caps := platform.Capabilities{
 		ReadRepositories:       true,
@@ -10899,7 +10899,11 @@ func TestAPIPublishReviewDraftClearsPartialPublishedDraft(t *testing.T) {
 	require.Len(provider.publishedReviews, 1)
 	draft, err := database.GetMRReviewDraft(ctx, mr.ID)
 	require.NoError(err)
-	require.Nil(draft)
+	require.NotNil(draft)
+	comments, err := database.ListMRReviewDraftComments(ctx, draft.ID)
+	require.NoError(err)
+	require.Len(comments, 1)
+	require.Equal("Please tighten this line.", comments[0].Body)
 }
 
 func TestAPIGitLabPublishReviewDraftSurfacesCleanupFailureAsPartial(t *testing.T) {
@@ -11076,7 +11080,11 @@ func TestAPIGitLabPublishReviewDraftSurfacesCleanupFailureAsPartial(t *testing.T
 	require.NotNil(mr)
 	draft, err := database.GetMRReviewDraft(ctx, mr.ID)
 	require.NoError(err)
-	assert.Nil(draft)
+	require.NotNil(draft)
+	comments, err := database.ListMRReviewDraftComments(ctx, draft.ID)
+	require.NoError(err)
+	require.Len(comments, 1)
+	assert.Equal("line 42", comments[0].Body)
 	threads, err := database.ListMRReviewThreads(ctx, mr.ID)
 	require.NoError(err)
 	require.Len(threads, 1)

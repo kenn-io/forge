@@ -23,6 +23,7 @@ func (c *Client) PublishDiffReviewDraft(
 		return nil, err
 	}
 	createdDraftIDs := make([]int64, 0, len(input.Comments))
+	publishedCommentIDs := make([]int64, 0, len(input.Comments))
 	submittedAt := time.Now().UTC()
 	for _, comment := range input.Comments {
 		draftNote, _, err := c.api.DraftNotes.CreateDraftNote(
@@ -54,7 +55,8 @@ func (c *Client) PublishDiffReviewDraft(
 					mappedErr = fmt.Errorf("%w; cleanup failed: %v", mappedErr, cleanupErr)
 				}
 				return &platform.PublishedDiffReview{SubmittedAt: submittedAt}, &platform.DiffReviewPublishPartialError{
-					Err: mappedErr,
+					Err:                 mappedErr,
+					PublishedCommentIDs: publishedCommentIDs,
 				}
 			}
 			if cleanupErr := c.deleteDraftNotes(ctx, pid, int64(number), createdDraftIDs); cleanupErr != nil {
@@ -63,6 +65,9 @@ func (c *Client) PublishDiffReviewDraft(
 			return nil, mapGitLabError("publish_draft_note", err)
 		}
 		publishedAnyDraft = true
+		if i < len(input.Comments) && input.Comments[i].ID > 0 {
+			publishedCommentIDs = append(publishedCommentIDs, input.Comments[i].ID)
+		}
 	}
 	publishedAny := publishedAnyDraft
 	if body := strings.TrimSpace(input.Body); body != "" {
@@ -72,14 +77,14 @@ func (c *Client) PublishDiffReviewDraft(
 			&gitlab.CreateMergeRequestNoteOptions{Body: &body},
 			gitlab.WithContext(ctx),
 		); err != nil {
-			return gitlabPublishFailure(submittedAt, publishedAny, mapGitLabError("create_merge_request_note", err))
+			return gitlabPublishFailure(submittedAt, publishedAny, publishedCommentIDs, mapGitLabError("create_merge_request_note", err))
 		}
 		publishedAny = true
 	}
 	if input.Action == platform.ReviewActionApprove {
 		sha := reviewHeadSHA(input)
 		if sha == "" {
-			return gitlabPublishFailure(submittedAt, publishedAny, fmt.Errorf("approve_merge_request: missing review head sha"))
+			return gitlabPublishFailure(submittedAt, publishedAny, publishedCommentIDs, fmt.Errorf("approve_merge_request: missing review head sha"))
 		}
 		_, _, err := c.api.MergeRequestApprovals.ApproveMergeRequest(
 			pid,
@@ -88,15 +93,23 @@ func (c *Client) PublishDiffReviewDraft(
 			gitlab.WithContext(ctx),
 		)
 		if err != nil {
-			return gitlabPublishFailure(submittedAt, publishedAny, mapGitLabError("approve_merge_request", err))
+			return gitlabPublishFailure(submittedAt, publishedAny, publishedCommentIDs, mapGitLabError("approve_merge_request", err))
 		}
 	}
 	return &platform.PublishedDiffReview{SubmittedAt: submittedAt}, nil
 }
 
-func gitlabPublishFailure(submittedAt time.Time, publishedAny bool, err error) (*platform.PublishedDiffReview, error) {
+func gitlabPublishFailure(
+	submittedAt time.Time,
+	publishedAny bool,
+	publishedCommentIDs []int64,
+	err error,
+) (*platform.PublishedDiffReview, error) {
 	if publishedAny {
-		return &platform.PublishedDiffReview{SubmittedAt: submittedAt}, &platform.DiffReviewPublishPartialError{Err: err}
+		return &platform.PublishedDiffReview{SubmittedAt: submittedAt}, &platform.DiffReviewPublishPartialError{
+			Err:                 err,
+			PublishedCommentIDs: publishedCommentIDs,
+		}
 	}
 	return nil, err
 }

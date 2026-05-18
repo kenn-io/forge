@@ -1215,12 +1215,15 @@ func githubReviewEvent(action platform.ReviewAction) (string, error) {
 }
 
 func githubReviewHeadSHA(input platform.PublishDiffReviewDraftInput) string {
+	if input.HeadSHA != "" {
+		return input.HeadSHA
+	}
 	for _, comment := range input.Comments {
-		if comment.Range.CommitSHA != "" {
-			return comment.Range.CommitSHA
-		}
 		if comment.Range.DiffHeadSHA != "" {
 			return comment.Range.DiffHeadSHA
+		}
+		if comment.Range.CommitSHA != "" {
+			return comment.Range.CommitSHA
 		}
 	}
 	return ""

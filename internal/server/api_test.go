@@ -10703,7 +10703,7 @@ func TestAPIGitHubPublishReviewDraftSendsCommentsThroughServer(t *testing.T) {
 	assert.Equal(42, captured.number)
 	assert.Equal("REQUEST_CHANGES", captured.event)
 	assert.Equal("Needs changes.", captured.body)
-	assert.Equal("github-commit", captured.commitID)
+	assert.Equal("github-head", captured.commitID)
 	require.Len(captured.comments, 1)
 	comment := captured.comments[0]
 	assert.Equal("src/main.go", comment.GetPath())

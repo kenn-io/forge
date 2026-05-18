@@ -922,8 +922,9 @@ func TestGitHubProviderPublishDiffReviewDraftMapsReviewComments(t *testing.T) {
 		Owner: "acme",
 		Name:  "widget",
 	}, 7, platform.PublishDiffReviewDraftInput{
-		Body:   "review summary",
-		Action: platform.ReviewActionRequestChanges,
+		Body:    "review summary",
+		Action:  platform.ReviewActionRequestChanges,
+		HeadSHA: "validated-head-sha",
 		Comments: []platform.LocalDiffReviewDraftComment{{
 			Body: "inline note",
 			Range: platform.DiffReviewLineRange{
@@ -933,6 +934,7 @@ func TestGitHubProviderPublishDiffReviewDraftMapsReviewComments(t *testing.T) {
 				StartLine:   &startLine,
 				Line:        12,
 				DiffHeadSHA: "head-sha",
+				CommitSHA:   "stale-line-commit",
 			},
 		}},
 	})
@@ -943,7 +945,7 @@ func TestGitHubProviderPublishDiffReviewDraftMapsReviewComments(t *testing.T) {
 	assert.False(result.SubmittedAt.IsZero())
 	assert.Equal("REQUEST_CHANGES", mock.createdReviewEvent)
 	assert.Equal("review summary", mock.createdReviewBody)
-	assert.Equal("head-sha", mock.createdReviewCommitID)
+	assert.Equal("validated-head-sha", mock.createdReviewCommitID)
 	require.Len(mock.createdReviewComments, 1)
 	comment := mock.createdReviewComments[0]
 	require.NotNil(comment)

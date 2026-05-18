@@ -41,6 +41,16 @@ func TestNewReturnsWorkingHandler(t *testing.T) {
 	Assert.Contains(t, rr.Body.String(), `window.__BASE_PATH__="/middleman/"`)
 }
 
+func TestMergeRequestSummaryUsesTypedState(t *testing.T) {
+	summary := MergeRequestSummary{State: MergeRequestStateOpen}
+
+	Assert.Equal(t, MergeRequestStateOpen, requireMergeRequestState(summary.State))
+}
+
+func requireMergeRequestState(state MergeRequestState) MergeRequestState {
+	return state
+}
+
 func TestNewEmbeddedBootstrapGlobals(t *testing.T) {
 	frontend := fstest.MapFS{
 		"index.html": &fstest.MapFile{

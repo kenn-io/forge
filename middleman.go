@@ -29,6 +29,14 @@ type (
 	RepoRef      = server.RepoRef
 	WorktreeLink = db.WorktreeLink
 	WatchedMR    = ghclient.WatchedMR
+
+	MergeRequestState = db.MergeRequestState
+)
+
+const (
+	MergeRequestStateOpen   = db.MergeRequestStateOpen
+	MergeRequestStateClosed = db.MergeRequestStateClosed
+	MergeRequestStateMerged = db.MergeRequestStateMerged
 )
 
 // Repo identifies a GitHub repository to monitor.
@@ -121,7 +129,7 @@ type MergeRequestSummary struct {
 	RepoOwner      string
 	RepoName       string
 	Number         int
-	State          string
+	State          MergeRequestState
 	Title          string
 	IsDraft        bool
 	CIStatus       string
@@ -368,7 +376,7 @@ func NewWithContext(
 						RepoOwner:      owner,
 						RepoName:       name,
 						Number:         mr.Number,
-						State:          string(mr.State),
+						State:          mr.State,
 						Title:          mr.Title,
 						IsDraft:        mr.IsDraft,
 						CIStatus:       mr.CIStatus,

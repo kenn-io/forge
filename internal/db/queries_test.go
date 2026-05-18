@@ -2220,6 +2220,28 @@ func TestListPullRequestsFilterBySearchLabel(t *testing.T) {
 	assert.Equal(2, prs[0].Number)
 }
 
+func TestListPullRequestsPaginationUsesStableTieBreaker(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	d := openTestDB(t)
+
+	repoID := insertTestRepo(t, d, "owner", "repo")
+	activity := baseTime()
+	insertTestMR(t, d, repoID, 1, "oldest id", activity)
+	insertTestMR(t, d, repoID, 2, "middle id", activity)
+	insertTestMR(t, d, repoID, 3, "newest id", activity)
+
+	firstPage, err := d.ListMergeRequests(t.Context(), ListMergeRequestsOpts{Limit: 1})
+	require.NoError(err)
+	require.Len(firstPage, 1)
+	assert.Equal(3, firstPage[0].Number)
+
+	secondPage, err := d.ListMergeRequests(t.Context(), ListMergeRequestsOpts{Limit: 1, Offset: 1})
+	require.NoError(err)
+	require.Len(secondPage, 1)
+	assert.Equal(2, secondPage[0].Number)
+}
+
 func TestListPullRequestsFilterByKanban(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
@@ -3283,6 +3305,28 @@ func TestListIssuesFilterBySearchLabel(t *testing.T) {
 	require.NoError(err)
 	require.Len(issues, 1)
 	assert.Equal(278, issues[0].Number)
+}
+
+func TestListIssuesPaginationUsesStableTieBreaker(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	d := openTestDB(t)
+
+	repoID := insertTestRepo(t, d, "owner", "repo")
+	activity := baseTime()
+	insertTestIssue(t, d, repoID, 1, "oldest id", activity)
+	insertTestIssue(t, d, repoID, 2, "middle id", activity)
+	insertTestIssue(t, d, repoID, 3, "newest id", activity)
+
+	firstPage, err := d.ListIssues(t.Context(), ListIssuesOpts{Limit: 1})
+	require.NoError(err)
+	require.Len(firstPage, 1)
+	assert.Equal(3, firstPage[0].Number)
+
+	secondPage, err := d.ListIssues(t.Context(), ListIssuesOpts{Limit: 1, Offset: 1})
+	require.NoError(err)
+	require.Len(secondPage, 1)
+	assert.Equal(2, secondPage[0].Number)
 }
 
 func TestReplaceIssueLabels_RejectsWrongRepoID(t *testing.T) {

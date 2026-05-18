@@ -2389,7 +2389,7 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 		LEFT JOIN middleman_starred_items s
 		    ON s.item_type = 'pr' AND s.repo_id = p.repo_id AND s.number = p.number
 		%s
-		ORDER BY p.last_activity_at DESC`, where)
+		ORDER BY p.last_activity_at DESC, p.id DESC`, where)
 	query = appendLimitOffset(query, &args, opts.Limit, opts.Offset)
 
 	rows, err := d.ro.QueryContext(ctx, query, args...)
@@ -3190,7 +3190,7 @@ func (d *DB) ListIssues(
 		LEFT JOIN middleman_starred_items s
 		    ON s.item_type = 'issue' AND s.repo_id = i.repo_id AND s.number = i.number
 		%s
-		ORDER BY i.last_activity_at DESC`, where)
+		ORDER BY i.last_activity_at DESC, i.id DESC`, where)
 	query = appendLimitOffset(query, &args, opts.Limit, opts.Offset)
 
 	rows, err := d.ro.QueryContext(ctx, query, args...)

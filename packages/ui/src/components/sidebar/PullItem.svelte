@@ -57,6 +57,7 @@
 
   const statusLabel = $derived(kanbanLabels[pr.KanbanStatus] ?? pr.KanbanStatus);
   const statusClass = $derived(`status-chip--${pr.KanbanStatus.replace("_", "-")}`);
+  const showStatus = $derived(pr.State !== "closed" && pr.State !== "merged");
   const ago = $derived(timeAgo(pr.LastActivityAt));
   const hasWorktree = $derived(
     (pr.worktree_links?.length ?? 0) > 0,
@@ -209,7 +210,7 @@
           </svg>
         {/if}
       </span>
-      {#if statusLabel}
+      {#if showStatus && statusLabel}
         <Chip size="sm" class={`status-chip ${statusClass}`}>{statusLabel}</Chip>
       {/if}
       <span class="time">{ago}</span>

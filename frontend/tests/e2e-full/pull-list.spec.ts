@@ -144,6 +144,17 @@ test.describe("PR list view", () => {
 
     const countBadge = page.locator(".filter-bar .list-count-chip");
     await expect(countBadge).toHaveText(/^4 PRs$/, { timeout: 5_000 });
+
+    await selectPullGrouping(page, "Status");
+
+    const headers = page.locator(".repo-header");
+    await expect(headers).toHaveCount(1);
+    await expect(headers.first().locator(".repo-header__name")).toHaveText(
+      "Closed",
+    );
+    await expect(headers.first().locator(".repo-header__count")).toHaveText(
+      "4",
+    );
   });
 
   test("search filters PRs by title", async ({ page }) => {

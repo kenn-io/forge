@@ -1,12 +1,13 @@
 import type { KanbanStatus, PullRequest } from "../api/types.js";
 
-export type WorkflowGroup = KanbanStatus;
+export type WorkflowGroup = KanbanStatus | "closed";
 
 export const workflowGroupOrder: WorkflowGroup[] = [
   "new",
   "reviewing",
   "waiting",
   "awaiting_merge",
+  "closed",
 ];
 
 export const workflowGroupLabels: Record<
@@ -17,6 +18,7 @@ export const workflowGroupLabels: Record<
   reviewing: "Reviewing",
   waiting: "Waiting",
   awaiting_merge: "Awaiting Merge",
+  closed: "Closed",
 };
 
 export interface WorkflowGroupEntry {
@@ -46,6 +48,9 @@ function normalizeKanbanStatus(
  * metadata/actions and does not override the user's review status.
  */
 export function classifyPR(pr: PullRequest): WorkflowGroup {
+  if (pr.State === "closed" || pr.State === "merged") {
+    return "closed";
+  }
   return normalizeKanbanStatus(pr.KanbanStatus);
 }
 

@@ -11,11 +11,12 @@ function pr(
   kanbanStatus: string,
   lastActivityAt: string,
   worktreeLinks: PullRequest["worktree_links"] = [],
+  state: PullRequest["State"] = "open",
 ): PullRequest {
   return {
     ID: id,
     Number: id,
-    State: "open",
+    State: state,
     KanbanStatus: kanbanStatus,
     LastActivityAt: lastActivityAt,
     worktree_links: worktreeLinks,
@@ -54,5 +55,21 @@ describe("PR status grouping", () => {
       ["awaiting_merge", "Awaiting Merge"],
     ]);
     expect(groups[0]?.items.map((item) => item.ID)).toEqual([3]);
+  });
+
+  it("groups closed and merged PRs under Closed after open workflow groups", () => {
+    const groups = groupByWorkflow([
+      pr(1, "reviewing", "2026-01-01T00:00:00Z"),
+      pr(2, "awaiting_merge", "2026-01-03T00:00:00Z", [], "closed"),
+      pr(3, "waiting", "2026-01-04T00:00:00Z", [], "merged"),
+      pr(4, "waiting", "2026-01-02T00:00:00Z"),
+    ]);
+
+    expect(groups.map((group) => [group.group, group.label])).toEqual([
+      ["reviewing", "Reviewing"],
+      ["waiting", "Waiting"],
+      ["closed", "Closed"],
+    ]);
+    expect(groups.at(-1)?.items.map((item) => item.ID)).toEqual([3, 2]);
   });
 });

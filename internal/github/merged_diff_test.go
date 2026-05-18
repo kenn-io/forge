@@ -347,7 +347,7 @@ func TestSyncOpenToMergedTransition(t *testing.T) {
 	pr, err := d.GetMergeRequest(ctx, "owner", "repo", number)
 	require.NoError(err)
 	require.NotNil(pr)
-	assert.Equal("open", pr.State)
+	assert.Equal(db.MergeRequestStateOpen, pr.State)
 
 	// Verify diff SHAs were computed during open-state sync.
 	shasBeforeMerge, err := d.GetDiffSHAs(ctx, "owner", "repo", number)
@@ -608,7 +608,7 @@ func TestSyncMRWrapsDiffFailureAsDiffSyncError(t *testing.T) {
 	mr, err := d.GetMergeRequest(ctx, "owner", "repo", number)
 	require.NoError(err)
 	require.NotNil(mr)
-	assert.Equal("merged", mr.State, "PR state should be persisted")
+	assert.Equal(db.MergeRequestStateMerged, mr.State, "PR state should be persisted")
 
 	// Diff SHAs are absent because rev-parse never found the merge commit.
 	shas, err := d.GetDiffSHAs(ctx, "owner", "repo", number)
@@ -706,5 +706,5 @@ func TestSyncItemByNumberReturnsTypeOnDiffSyncError(t *testing.T) {
 	mr, err := d.GetMergeRequest(ctx, "owner", "repo", number)
 	require.NoError(err)
 	require.NotNil(mr)
-	assert.Equal("merged", mr.State)
+	assert.Equal(db.MergeRequestStateMerged, mr.State)
 }

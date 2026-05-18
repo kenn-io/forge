@@ -344,6 +344,8 @@ make dev-ephemeral ARGS="-fresh-db"
 ```
 
 Use `-work-dir` when you intentionally want a separate concurrent stack.
+The ephemeral launcher is currently supported on Unix-like development
+environments only.
 
 Other targets:
 

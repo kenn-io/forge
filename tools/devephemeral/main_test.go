@@ -1,11 +1,16 @@
+//go:build !windows
+
 package main
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -80,6 +85,19 @@ func TestPrepareEphemeralConfigCopiesSourceDatabaseByDefault(t *testing.T) {
 	require.NoError(err)
 
 	Assert.Equal(t, "copied state", readSQLiteMarker(t, filepath.Join(prepared.dataDir, "middleman.db")))
+}
+
+func TestPrepareEphemeralDatabaseRejectsSourceDestinationMatch(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "middleman.db")
+	writeSQLiteMarker(t, dbPath, "preserve me")
+
+	err := prepareEphemeralDatabase(dbPath, dbPath, true)
+	require.Error(err)
+
+	Assert.Contains(t, err.Error(), "source and destination database are the same")
+	Assert.Equal(t, "preserve me", readSQLiteMarker(t, dbPath))
 }
 
 func TestPrepareEphemeralConfigCanStartWithFreshDatabase(t *testing.T) {
@@ -160,6 +178,12 @@ func TestBuildCommandSpecsWiresEphemeralEnvironment(t *testing.T) {
 	assert.Equal([]string{"--port", "39302", "--host", "127.0.0.1"}, specs.frontend.args)
 	assert.Contains(specs.frontend.env, "MIDDLEMAN_CONFIG=/tmp/middleman-dev/config.toml")
 	assert.Contains(specs.frontend.env, "MIDDLEMAN_API_URL=http://127.0.0.1:39301")
+}
+
+func TestBuildCommandSpecsReferenceExecutableScripts(t *testing.T) {
+	repoRoot := repoRoot(t)
+	assertExecutable(t, filepath.Join(repoRoot, "scripts", "dev-stack-backend.sh"))
+	assertExecutable(t, filepath.Join(repoRoot, "scripts", "frontend-dev.sh"))
 }
 
 func TestWriteStatusFileRecordsPIDsAndPortsNextToConfig(t *testing.T) {
@@ -252,6 +276,136 @@ func TestStopEphemeralStackTreatsMissingStatusAsStopped(t *testing.T) {
 	err := stopEphemeralStack(filepath.Join(t.TempDir(), "dev-ephemeral.json"))
 
 	require.NoError(t, err)
+}
+
+func TestRunWritesStatusAndReusesLiveDefaultStack(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	dir := t.TempDir()
+	sourcePath := filepath.Join(dir, "source.toml")
+	sourceDataDir := filepath.Join(dir, "source-data")
+	workDir := filepath.Join(dir, "run")
+
+	source := config.Config{
+		SyncInterval:        "5m",
+		GitHubTokenEnv:      "MIDDLEMAN_GITHUB_TOKEN",
+		DefaultPlatformHost: "github.com",
+		Host:                "127.0.0.1",
+		Port:                8091,
+		DataDir:             sourceDataDir,
+		Activity:            config.Activity{ViewMode: "threaded", TimeRange: "7d"},
+	}
+	require.NoError(os.MkdirAll(sourceDataDir, 0o700))
+	require.NoError(source.Save(sourcePath))
+	writeSQLiteMarker(t, source.DBPath(), "workflow state")
+
+	commandDir := filepath.Join(dir, "commands")
+	writeBlockingScript(t, filepath.Join(commandDir, "scripts", "dev-stack-backend.sh"))
+	writeBlockingScript(t, filepath.Join(commandDir, "scripts", "frontend-dev.sh"))
+
+	oldDir, err := os.Getwd()
+	require.NoError(err)
+	require.NoError(os.Chdir(commandDir))
+	t.Cleanup(func() {
+		require.NoError(os.Chdir(oldDir))
+	})
+
+	ctx := t.Context()
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- run(ctx, []string{
+			"-config", sourcePath,
+			"-work-dir", workDir,
+			"-backend-port", "39501",
+			"-frontend-port", "39502",
+			"--",
+			"--host", "127.0.0.1",
+		})
+	}()
+
+	statusPath := filepath.Join(workDir, "dev-ephemeral.json")
+	status := waitForStatusFile(t, statusPath)
+	assert.NotZero(status.PID)
+	assert.NotZero(status.BackendPID)
+	assert.NotZero(status.FrontendPID)
+	assert.Equal("http://127.0.0.1:39501", status.BackendURL)
+	assert.Equal("http://127.0.0.1:39502", status.FrontendURL)
+	assert.Equal("workflow state", readSQLiteMarker(t, filepath.Join(workDir, "data", "middleman.db")))
+
+	require.NoError(run(context.Background(), []string{
+		"-config", sourcePath,
+		"-work-dir", workDir,
+		"-backend-port", "39503",
+		"-frontend-port", "39504",
+	}))
+	reused := readStatusFile(t, statusPath)
+	assert.Equal(status.BackendPID, reused.BackendPID)
+	assert.Equal(status.FrontendPID, reused.FrontendPID)
+
+	status.PID = 0
+	require.NoError(writeStatusFile(statusPath, status))
+	require.NoError(stopEphemeralStack(statusPath))
+	select {
+	case err := <-errCh:
+		require.NoError(err)
+	case <-time.After(5 * time.Second):
+		require.Fail("timed out waiting for dev-ephemeral run to stop")
+	}
+}
+
+func assertExecutable(t *testing.T, path string) {
+	t.Helper()
+	info, err := os.Stat(path)
+	require.NoError(t, err)
+	Assert.NotZero(t, info.Mode().Perm()&0o111, "%s must be executable", path)
+}
+
+func repoRoot(t *testing.T) string {
+	t.Helper()
+	wd, err := os.Getwd()
+	require.NoError(t, err)
+	return filepath.Clean(filepath.Join(wd, "..", ".."))
+}
+
+func writeBlockingScript(t *testing.T, path string) {
+	t.Helper()
+	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
+	content := []byte("#!/usr/bin/env sh\ntrap 'exit 0' INT TERM\nwhile :; do sleep 1; done\n")
+	require.NoError(t, os.WriteFile(path, content, 0o700))
+}
+
+func waitForStatusFile(t *testing.T, path string) ephemeralStatus {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if status, ok := tryReadStatusFile(t, path); ok {
+			return status
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	require.Failf(t, "timed out waiting for status file", "path: %s", path)
+	return ephemeralStatus{}
+}
+
+func readStatusFile(t *testing.T, path string) ephemeralStatus {
+	t.Helper()
+	status, ok := tryReadStatusFile(t, path)
+	require.True(t, ok, "status file should be readable: %s", path)
+	return status
+}
+
+func tryReadStatusFile(t *testing.T, path string) (ephemeralStatus, bool) {
+	t.Helper()
+	content, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return ephemeralStatus{}, false
+	}
+	require.NoError(t, err)
+	var status ephemeralStatus
+	if err := json.Unmarshal(content, &status); err != nil {
+		return ephemeralStatus{}, false
+	}
+	return status, true
 }
 
 func writeSQLiteMarker(t *testing.T, path, value string) {

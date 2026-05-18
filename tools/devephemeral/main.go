@@ -1,3 +1,5 @@
+//go:build !windows
+
 package main
 
 import (
@@ -411,6 +413,13 @@ func isNoSuchProcess(err error) bool {
 }
 
 func prepareEphemeralDatabase(sourcePath, destPath string, copyDB bool) error {
+	samePath, err := sameFilesystemPath(sourcePath, destPath)
+	if err != nil {
+		return err
+	}
+	if samePath {
+		return fmt.Errorf("source and destination database are the same: %s", destPath)
+	}
 	if err := removeSQLiteFiles(destPath); err != nil {
 		return err
 	}
@@ -435,6 +444,18 @@ func prepareEphemeralDatabase(sourcePath, destPath string, copyDB bool) error {
 		return fmt.Errorf("copy source database snapshot: %w", err)
 	}
 	return nil
+}
+
+func sameFilesystemPath(left, right string) (bool, error) {
+	leftAbs, err := filepath.Abs(left)
+	if err != nil {
+		return false, fmt.Errorf("resolve source database path: %w", err)
+	}
+	rightAbs, err := filepath.Abs(right)
+	if err != nil {
+		return false, fmt.Errorf("resolve destination database path: %w", err)
+	}
+	return filepath.Clean(leftAbs) == filepath.Clean(rightAbs), nil
 }
 
 func removeSQLiteFiles(path string) error {
@@ -500,7 +521,18 @@ func commandWaitError(name string, err error) error {
 	if errors.As(err, &exitErr) && exitErr.ProcessState != nil && exitErr.Exited() {
 		return fmt.Errorf("%s exited: %w", name, err)
 	}
+	if errors.As(err, &exitErr) && exitErr.ProcessState != nil && processSignaledForShutdown(exitErr.ProcessState) {
+		return nil
+	}
 	return err
+}
+
+func processSignaledForShutdown(state *os.ProcessState) bool {
+	status, ok := state.Sys().(syscall.WaitStatus)
+	if !ok || !status.Signaled() {
+		return false
+	}
+	return status.Signal() == syscall.SIGINT || status.Signal() == syscall.SIGTERM
 }
 
 func stopProcess(process *os.Process) {

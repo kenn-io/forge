@@ -41,6 +41,7 @@ Use `make dev-ephemeral` when the user wants a local middleman dev stack without
 - It passes `MIDDLEMAN_API_URL=<backend-url>` to the frontend.
 - It writes typed status JSON at `<work-dir>/dev-ephemeral.json`.
 - `make dev-ephemeral-stop` without arguments stops the default `tmp/dev-ephemeral` stack.
+- The launcher is intentionally unsupported on Windows for now.
 
 ## Status JSON
 

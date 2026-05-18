@@ -217,7 +217,8 @@ func TestAPIListCommandDiscoversOpenAPIOperations(t *testing.T) {
 	lines := strings.Split(strings.TrimSpace(stdout.String()), "\n")
 	require.Len(lines, 2)
 	assert.JSONEq(`{"method":"GET","path":"/pulls","operation_id":"list-pulls","summary":"List pulls","query_params":["limit","repo"]}`, lines[0])
-	assert.JSONEq(`{"method":"GET","path":"/pulls/{provider}/{owner}/{name}/{number}","operation_id":"get-pull","summary":"Get pull","path_params":["provider","owner","name","number"]}`, lines[1])
+	assert.JSONEq(`{"method":"GET","path":"/pulls/{provider}/{owner}/{name}/{number}","operation_id":"get-pull","summary":"Get pull"}`, lines[1])
+	assert.NotContains(lines[1], "path_params")
 }
 
 func TestRestishRequesterFetchesCompleteJSON(t *testing.T) {

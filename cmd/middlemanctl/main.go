@@ -256,7 +256,6 @@ type apiOperationRecord struct {
 	OperationID string   `json:"operation_id,omitempty" yaml:"operation_id,omitempty"`
 	Summary     string   `json:"summary,omitempty" yaml:"summary,omitempty"`
 	QueryParams []string `json:"query_params,omitempty" yaml:"query_params,omitempty"`
-	PathParams  []string `json:"path_params,omitempty" yaml:"path_params,omitempty"`
 }
 
 type openAPIDocument struct {
@@ -301,11 +300,8 @@ func decodeOpenAPIOperations(body []byte) ([]apiOperationRecord, error) {
 				Summary:     operation.Summary,
 			}
 			for _, param := range operation.Parameters {
-				switch param.In {
-				case "query":
+				if param.In == "query" {
 					record.QueryParams = append(record.QueryParams, param.Name)
-				case "path":
-					record.PathParams = append(record.PathParams, param.Name)
 				}
 			}
 			operations = append(operations, record)

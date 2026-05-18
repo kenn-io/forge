@@ -8,17 +8,45 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	configpkg "github.com/wesm/middleman/internal/config"
 	ghclient "github.com/wesm/middleman/internal/github"
 	"github.com/wesm/middleman/internal/server"
 	"github.com/wesm/middleman/internal/testutil"
 	"github.com/wesm/middleman/internal/testutil/dbtest"
 )
+
+func TestDefaultServerComesFromMiddlemanConfig(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	t.Setenv("MIDDLEMAN_HOME", t.TempDir())
+	require.NoError(os.WriteFile(configpkg.DefaultConfigPath(), []byte(`
+host = "127.0.0.1"
+port = 8123
+`), 0o600))
+	var got struct {
+		url string
+	}
+	cmd := newRootCommand(commandDeps{
+		Stdout: &bytes.Buffer{},
+		Stderr: &bytes.Buffer{},
+		Restish: func(_ context.Context, _ cliConfig, _ string, requestURL string, _ []string) ([]byte, error) {
+			got.url = requestURL
+			return nil, nil
+		},
+	})
+	cmd.SetArgs([]string{"version"})
+
+	require.NoError(cmd.Execute())
+
+	assert.Equal("http://127.0.0.1:8123/api/v1/version", got.url)
+}
 
 func TestRootHelpPointsAgentsToQuickstartAndAPI(t *testing.T) {
 	assert := assert.New(t)

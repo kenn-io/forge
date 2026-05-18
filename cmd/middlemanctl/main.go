@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -20,12 +19,12 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
+	configpkg "github.com/wesm/middleman/internal/config"
 	"go.yaml.in/yaml/v3"
 )
 
 const (
-	defaultServer = "http://127.0.0.1:8091"
-	apiPrefix     = "/api/v1"
+	apiPrefix = "/api/v1"
 )
 
 type restishRequester func(context.Context, cliConfig, string, string, []string) ([]byte, error)
@@ -65,7 +64,6 @@ func newRootCommand(deps commandDeps) *cobra.Command {
 	cfg.SetEnvPrefix("MIDDLEMANCTL")
 	cfg.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
 	cfg.AutomaticEnv()
-	cfg.SetDefault("server", defaultServer)
 	cfg.SetDefault("output", "json")
 	cfg.SetDefault("timeout", 30*time.Second)
 
@@ -85,7 +83,7 @@ newline-delimited JSON with --output jsonl.`),
 	}
 	root.SetOut(deps.Stdout)
 	root.SetErr(deps.Stderr)
-	root.PersistentFlags().String("server", defaultServer, "middleman server URL")
+	root.PersistentFlags().String("server", "", "middleman server URL (defaults to middleman config host/port)")
 	root.PersistentFlags().StringP("output", "o", "json", "response format: json, yaml, or jsonl")
 	root.PersistentFlags().Duration("timeout", 30*time.Second, "HTTP request timeout")
 	mustBind(cfg, root.PersistentFlags().Lookup("server"), "server")
@@ -162,15 +160,29 @@ func readConfig(cfg *viper.Viper) (cliConfig, error) {
 	if out != "json" && out != "yaml" && out != "jsonl" {
 		return cliConfig{}, fmt.Errorf("unsupported output format %q", out)
 	}
-	server := strings.TrimRight(strings.TrimSpace(cfg.GetString("server")), "/")
-	if server == "" {
-		return cliConfig{}, errors.New("server is required")
+	server, err := resolveServer(cfg)
+	if err != nil {
+		return cliConfig{}, err
 	}
 	return cliConfig{
 		server:  server,
 		output:  out,
 		timeout: cfg.GetDuration("timeout"),
 	}, nil
+}
+
+func resolveServer(cfg *viper.Viper) (string, error) {
+	if raw := strings.TrimSpace(cfg.GetString("server")); raw != "" {
+		return strings.TrimRight(raw, "/"), nil
+	}
+	if err := configpkg.EnsureDefault(configpkg.DefaultConfigPath()); err != nil {
+		return "", fmt.Errorf("ensure middleman config: %w", err)
+	}
+	middlemanCfg, err := configpkg.Load(configpkg.DefaultConfigPath())
+	if err != nil {
+		return "", fmt.Errorf("load middleman config: %w", err)
+	}
+	return "http://" + middlemanCfg.ListenAddr(), nil
 }
 
 func apiURL(server, path string, query url.Values) (string, error) {

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -236,8 +237,14 @@ func TestReadRunningEphemeralStatusReturnsLiveStatus(t *testing.T) {
 	require := require.New(t)
 	dir := t.TempDir()
 	statusPath := filepath.Join(dir, "dev-ephemeral.json")
+	scriptPath := filepath.Join(dir, "blocking.sh")
+	writeBlockingScript(t, scriptPath)
+	backend, _ := startTestCommand(t, commandSpec{name: scriptPath})
+	frontend, _ := startTestCommand(t, commandSpec{name: scriptPath})
 	err := writeStatusFile(statusPath, ephemeralStatus{
 		PID:         os.Getpid(),
+		BackendPID:  backend.Process.Pid,
+		FrontendPID: frontend.Process.Pid,
 		BackendURL:  "http://127.0.0.1:39411",
 		FrontendURL: "http://127.0.0.1:39412",
 	})
@@ -272,10 +279,57 @@ func TestReadRunningEphemeralStatusRemovesStaleStatus(t *testing.T) {
 	assert.ErrorIs(err, os.ErrNotExist)
 }
 
+func TestReadRunningEphemeralStatusStopsPartialStackAndRemovesStatus(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	dir := t.TempDir()
+	statusPath := filepath.Join(dir, "dev-ephemeral.json")
+	scriptPath := filepath.Join(dir, "blocking.sh")
+	writeBlockingScript(t, scriptPath)
+	cmd, waitCh := startTestCommand(t, commandSpec{name: scriptPath})
+
+	err := writeStatusFile(statusPath, ephemeralStatus{
+		BackendPID:  cmd.Process.Pid,
+		BackendURL:  "http://127.0.0.1:39411",
+		FrontendURL: "http://127.0.0.1:39412",
+	})
+	require.NoError(err)
+
+	_, running, err := readRunningEphemeralStatus(statusPath)
+	require.NoError(err)
+
+	assert.False(running)
+	waitForCommandExit(t, cmd, waitCh)
+	_, err = os.Stat(statusPath)
+	assert.ErrorIs(err, os.ErrNotExist)
+}
+
 func TestStopEphemeralStackTreatsMissingStatusAsStopped(t *testing.T) {
 	err := stopEphemeralStack(filepath.Join(t.TempDir(), "dev-ephemeral.json"))
 
 	require.NoError(t, err)
+}
+
+func TestStopEphemeralStackWaitsForProcessesBeforeRemovingStatus(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	dir := t.TempDir()
+	statusPath := filepath.Join(dir, "dev-ephemeral.json")
+	scriptPath := filepath.Join(dir, "ignore-int.sh")
+	writeInterruptIgnoringScript(t, scriptPath)
+	cmd, waitCh := startTestCommand(t, commandSpec{name: scriptPath})
+
+	err := writeStatusFile(statusPath, ephemeralStatus{
+		BackendPID: cmd.Process.Pid,
+	})
+	require.NoError(err)
+
+	err = stopEphemeralStack(statusPath)
+	require.NoError(err)
+
+	waitForCommandExit(t, cmd, waitCh)
+	_, err = os.Stat(statusPath)
+	assert.ErrorIs(err, os.ErrNotExist)
 }
 
 func TestRunWritesStatusAndReusesLiveDefaultStack(t *testing.T) {
@@ -372,6 +426,47 @@ func writeBlockingScript(t *testing.T, path string) {
 	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
 	content := []byte("#!/usr/bin/env sh\ntrap 'exit 0' INT TERM\nwhile :; do sleep 1; done\n")
 	require.NoError(t, os.WriteFile(path, content, 0o700))
+}
+
+func writeInterruptIgnoringScript(t *testing.T, path string) {
+	t.Helper()
+	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
+	content := []byte("#!/usr/bin/env sh\ntrap '' INT\ntrap 'exit 0' TERM\nwhile :; do sleep 1; done\n")
+	require.NoError(t, os.WriteFile(path, content, 0o700))
+}
+
+func startTestCommand(t *testing.T, spec commandSpec) (*exec.Cmd, <-chan error) {
+	t.Helper()
+	cmd, err := startCommand(context.Background(), spec)
+	require.NoError(t, err)
+	waitCh := make(chan error, 1)
+	go func() {
+		waitCh <- cmd.Wait()
+	}()
+	t.Cleanup(func() {
+		running, err := processRunning(cmd.Process.Pid)
+		if err == nil && !running {
+			return
+		}
+		stopProcess(cmd.Process)
+		select {
+		case <-waitCh:
+		case <-time.After(5 * time.Second):
+			require.Fail(t, "timed out waiting for test command cleanup")
+		}
+	})
+	return cmd, waitCh
+}
+
+func waitForCommandExit(t *testing.T, cmd *exec.Cmd, waitCh <-chan error) {
+	t.Helper()
+	select {
+	case err := <-waitCh:
+		require.NoError(t, commandWaitError("test command", err))
+	case <-time.After(5 * time.Second):
+		stopProcess(cmd.Process)
+		require.Fail(t, "timed out waiting for command to exit")
+	}
 }
 
 func waitForStatusFile(t *testing.T, path string) ephemeralStatus {

@@ -19,12 +19,19 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/wesm/middleman/internal/config"
 	_ "modernc.org/sqlite"
 )
 
 const defaultEphemeralWorkDir = "tmp/dev-ephemeral"
+
+const (
+	stopPollInterval   = 50 * time.Millisecond
+	stopInterruptGrace = 500 * time.Millisecond
+	stopTerminateGrace = 2 * time.Second
+)
 
 type ephemeralOptions struct {
 	sourceConfigPath string
@@ -320,11 +327,8 @@ func stopEphemeralStack(statusPath string) error {
 	}
 
 	var stopErrs []error
-	for _, pid := range uniquePositivePIDs(status.BackendPID, status.FrontendPID, status.PID) {
-		if err := interruptProcessGroup(pid); err != nil && !isNoSuchProcess(err) {
-			stopErrs = append(stopErrs, fmt.Errorf("stop pid %d: %w", pid, err))
-		}
-	}
+	pids := uniquePositivePIDs(status.BackendPID, status.FrontendPID, status.PID)
+	stopErrs = append(stopErrs, stopEphemeralProcesses(pids)...)
 	if len(stopErrs) == 0 {
 		if err := os.Remove(statusPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 			stopErrs = append(stopErrs, fmt.Errorf("remove status file: %w", err))
@@ -345,19 +349,98 @@ func readRunningEphemeralStatus(statusPath string) (ephemeralStatus, bool, error
 	if err := json.Unmarshal(content, &status); err != nil {
 		return ephemeralStatus{}, false, fmt.Errorf("decode status file: %w", err)
 	}
-	for _, pid := range uniquePositivePIDs(status.BackendPID, status.FrontendPID, status.PID) {
-		running, err := processRunning(pid)
-		if err != nil {
-			return ephemeralStatus{}, false, fmt.Errorf("check pid %d: %w", pid, err)
-		}
-		if running {
-			return status, true, nil
-		}
+	running, err := allEphemeralProcessesRunning(status)
+	if err != nil {
+		return ephemeralStatus{}, false, err
+	}
+	if running {
+		return status, true, nil
+	}
+	if stopErrs := stopEphemeralProcesses(uniquePositivePIDs(status.BackendPID, status.FrontendPID, status.PID)); len(stopErrs) > 0 {
+		return ephemeralStatus{}, false, errors.Join(stopErrs...)
 	}
 	if err := os.Remove(statusPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return ephemeralStatus{}, false, fmt.Errorf("remove stale status file: %w", err)
 	}
 	return ephemeralStatus{}, false, nil
+}
+
+func allEphemeralProcessesRunning(status ephemeralStatus) (bool, error) {
+	for _, pid := range []int{status.PID, status.BackendPID, status.FrontendPID} {
+		if pid <= 0 {
+			return false, nil
+		}
+		running, err := processRunning(pid)
+		if err != nil {
+			return false, fmt.Errorf("check pid %d: %w", pid, err)
+		}
+		if !running {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+func stopEphemeralProcesses(pids []int) []error {
+	var stopErrs []error
+	for _, pid := range pids {
+		if err := interruptProcessGroup(pid); err != nil && !isNoSuchProcess(err) {
+			stopErrs = append(stopErrs, fmt.Errorf("interrupt pid %d: %w", pid, err))
+		}
+	}
+	if len(stopErrs) > 0 {
+		return stopErrs
+	}
+	running, waitErrs := waitForProcessesExit(pids, stopInterruptGrace)
+	if len(waitErrs) > 0 {
+		return waitErrs
+	}
+	if len(running) == 0 {
+		return nil
+	}
+	for _, pid := range running {
+		if err := terminateProcessGroup(pid); err != nil && !isNoSuchProcess(err) {
+			stopErrs = append(stopErrs, fmt.Errorf("terminate pid %d: %w", pid, err))
+		}
+	}
+	if len(stopErrs) > 0 {
+		return stopErrs
+	}
+	running, waitErrs = waitForProcessesExit(running, stopTerminateGrace)
+	if len(waitErrs) > 0 {
+		return waitErrs
+	}
+	for _, pid := range running {
+		stopErrs = append(stopErrs, fmt.Errorf("pid %d still running after shutdown timeout", pid))
+	}
+	return stopErrs
+}
+
+func waitForProcessesExit(pids []int, timeout time.Duration) ([]int, []error) {
+	deadline := time.Now().Add(timeout)
+	for {
+		running, errs := runningPIDs(pids)
+		if len(errs) > 0 || len(running) == 0 || !time.Now().Before(deadline) {
+			return running, errs
+		}
+		time.Sleep(stopPollInterval)
+	}
+}
+
+func runningPIDs(pids []int) ([]int, []error) {
+	var errs []error
+	runningPIDs := make([]int, 0, len(pids))
+	for _, pid := range pids {
+		running, err := processRunning(pid)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("check pid %d: %w", pid, err))
+			continue
+		}
+		if running {
+			runningPIDs = append(runningPIDs, pid)
+		}
+	}
+	return runningPIDs, errs
 }
 
 func processRunning(pid int) (bool, error) {
@@ -406,6 +489,17 @@ func interruptProcessGroup(pid int) error {
 		return err
 	}
 	return interruptPID(pid)
+}
+
+func terminateProcessGroup(pid int) error {
+	if err := syscall.Kill(-pid, syscall.SIGTERM); err == nil || !isNoSuchProcess(err) {
+		return err
+	}
+	process, err := os.FindProcess(pid)
+	if err != nil {
+		return err
+	}
+	return process.Signal(syscall.SIGTERM)
 }
 
 func isNoSuchProcess(err error) bool {

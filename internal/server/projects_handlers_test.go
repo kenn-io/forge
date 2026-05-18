@@ -16,6 +16,7 @@ import (
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/wesm/middleman/internal/db"
+	"github.com/wesm/middleman/internal/gitenv"
 )
 
 // TestW1SliceAGate is the falsifiable capability gate from the convergence
@@ -751,11 +752,41 @@ func TestListProjects_ReturnsEmptyArrayNotNull(t *testing.T) {
 		"empty list must serialize as [] for embedder iteration safety")
 }
 
+func TestInitLocalOnlyGitRepoIgnoresInheritedGitEnv(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	host := t.TempDir()
+	initCmd := exec.Command("git", "init", "-q", "-b", "main", host)
+	initCmd.Env = gitenv.StripAll(os.Environ())
+	require.NoError(initCmd.Run(), "seed host repo")
+
+	hostConfig := filepath.Join(host, ".git", "config")
+	before, err := os.ReadFile(hostConfig)
+	require.NoError(err)
+
+	target := t.TempDir()
+	t.Setenv("GIT_DIR", filepath.Join(host, ".git"))
+	t.Setenv("GIT_WORK_TREE", target)
+
+	require.NoError(initLocalOnlyGitRepo(target))
+
+	after, err := os.ReadFile(hostConfig)
+	require.NoError(err)
+	assert.Equal(string(before), string(after),
+		"git init helper must not write core.worktree to inherited host config")
+	assert.FileExists(filepath.Join(target, ".git", "config"))
+}
+
 // initLocalOnlyGitRepo runs `git init` in dir without configuring any remote,
 // matching the no-`gh` Add Existing path.
 func initLocalOnlyGitRepo(dir string) error {
 	cmd := exec.Command("git", "init", "-q")
 	cmd.Dir = dir
+	cmd.Env = gitenv.StripAll(os.Environ())
 	if err := cmd.Run(); err != nil {
 		return err
 	}

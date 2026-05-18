@@ -17,26 +17,17 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/wesm/middleman/internal/db"
 	"github.com/wesm/middleman/internal/gitclone"
+	"github.com/wesm/middleman/internal/gitenv"
 )
 
 // gitRun runs a git command in the given dir and returns trimmed stdout.
-// It filters GIT_DIR, GIT_WORK_TREE, and GIT_INDEX_FILE from the
-// inherited environment so that pre-commit hooks (which set GIT_DIR to
-// the real repo) don't cause test git operations to mutate the host
-// repo's config.
+// It filters inherited GIT_* variables so that pre-commit hooks don't
+// cause test git operations to mutate the host repo's config.
 func gitRun(t *testing.T, dir string, args ...string) string {
 	t.Helper()
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
-	for _, e := range os.Environ() {
-		if strings.HasPrefix(e, "GIT_DIR=") ||
-			strings.HasPrefix(e, "GIT_WORK_TREE=") ||
-			strings.HasPrefix(e, "GIT_INDEX_FILE=") {
-			continue
-		}
-		cmd.Env = append(cmd.Env, e)
-	}
-	cmd.Env = append(cmd.Env,
+	cmd.Env = append(gitenv.StripAll(os.Environ()),
 		"GIT_AUTHOR_NAME=test",
 		"GIT_AUTHOR_EMAIL=test@test.com",
 		"GIT_COMMITTER_NAME=test",

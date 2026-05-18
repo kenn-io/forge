@@ -80,11 +80,24 @@ func run(ctx context.Context, args []string) error {
 		"source config file",
 	)
 	workDir := fs.String("work-dir", "", "directory for generated config, database, logs, and status JSON")
+	statusPath := fs.String("status", "", "status JSON path for stopping an ephemeral dev stack")
+	stop := fs.Bool("stop", false, "stop an ephemeral dev stack using its status JSON")
 	backendPort := fs.Int("backend-port", 0, "backend port (0 selects a free port)")
 	frontendPort := fs.Int("frontend-port", 0, "frontend port (0 selects a free port)")
 	freshDB := fs.Bool("fresh-db", false, "start with an empty ephemeral database instead of copying the source database")
 	if err := fs.Parse(args); err != nil {
 		return err
+	}
+	if *stop {
+		resolvedStatusPath, err := resolveStopStatusPath(*statusPath, *workDir)
+		if err != nil {
+			return err
+		}
+		if err := stopEphemeralStack(resolvedStatusPath); err != nil {
+			return err
+		}
+		fmt.Printf("stopped ephemeral dev stack: %s\n", resolvedStatusPath)
+		return nil
 	}
 
 	resolvedWorkDir := *workDir
@@ -257,6 +270,75 @@ func writeStatusFile(path string, status ephemeralStatus) error {
 	return nil
 }
 
+func resolveStopStatusPath(statusPath, workDir string) (string, error) {
+	if strings.TrimSpace(statusPath) != "" {
+		return statusPath, nil
+	}
+	if strings.TrimSpace(workDir) != "" {
+		return filepath.Join(workDir, "dev-ephemeral.json"), nil
+	}
+	return "", fmt.Errorf("provide -status or -work-dir when stopping an ephemeral dev stack")
+}
+
+func stopEphemeralStack(statusPath string) error {
+	content, err := os.ReadFile(statusPath)
+	if err != nil {
+		return fmt.Errorf("read status file: %w", err)
+	}
+	var status ephemeralStatus
+	if err := json.Unmarshal(content, &status); err != nil {
+		return fmt.Errorf("decode status file: %w", err)
+	}
+
+	var stopErrs []error
+	for _, pid := range uniquePositivePIDs(status.BackendPID, status.FrontendPID, status.PID) {
+		if err := interruptProcessGroup(pid); err != nil && !isNoSuchProcess(err) {
+			stopErrs = append(stopErrs, fmt.Errorf("stop pid %d: %w", pid, err))
+		}
+	}
+	if len(stopErrs) == 0 {
+		if err := os.Remove(statusPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			stopErrs = append(stopErrs, fmt.Errorf("remove status file: %w", err))
+		}
+	}
+	return errors.Join(stopErrs...)
+}
+
+func uniquePositivePIDs(pids ...int) []int {
+	seen := make(map[int]struct{}, len(pids))
+	out := make([]int, 0, len(pids))
+	for _, pid := range pids {
+		if pid <= 0 {
+			continue
+		}
+		if _, ok := seen[pid]; ok {
+			continue
+		}
+		seen[pid] = struct{}{}
+		out = append(out, pid)
+	}
+	return out
+}
+
+func interruptPID(pid int) error {
+	process, err := os.FindProcess(pid)
+	if err != nil {
+		return err
+	}
+	return process.Signal(os.Interrupt)
+}
+
+func interruptProcessGroup(pid int) error {
+	if err := syscall.Kill(-pid, syscall.SIGINT); err == nil || !isNoSuchProcess(err) {
+		return err
+	}
+	return interruptPID(pid)
+}
+
+func isNoSuchProcess(err error) bool {
+	return errors.Is(err, syscall.ESRCH) || errors.Is(err, os.ErrProcessDone)
+}
+
 func prepareEphemeralDatabase(sourcePath, destPath string, copyDB bool) error {
 	if err := removeSQLiteFiles(destPath); err != nil {
 		return err
@@ -297,6 +379,7 @@ func startCommand(ctx context.Context, spec commandSpec) (*exec.Cmd, error) {
 	cmd := exec.CommandContext(ctx, spec.name, spec.args...)
 	cmd.Env = spec.env
 	cmd.Dir = spec.dir
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
@@ -353,7 +436,9 @@ func stopProcess(process *os.Process) {
 	if process == nil {
 		return
 	}
-	_ = process.Signal(os.Interrupt)
+	if err := interruptProcessGroup(process.Pid); err != nil && !isNoSuchProcess(err) {
+		_ = process.Signal(os.Interrupt)
+	}
 }
 
 func resolvePort(port int) (int, error) {

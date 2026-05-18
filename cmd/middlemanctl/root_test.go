@@ -219,8 +219,10 @@ func TestRawAPICommandRejectsDotSegmentPaths(t *testing.T) {
 	for _, rawPath := range []string{
 		"/../version",
 		"/%2e%2e/version",
+		"/%2f..%2f..%2fversion",
 		"/api/v1/../version",
 		"/api/v1/%2e%2e/version",
+		"/api/v1/%2f..%2fversion",
 	} {
 		t.Run(rawPath, func(t *testing.T) {
 			assert := assert.New(t)
@@ -239,7 +241,7 @@ func TestRawAPICommandRejectsDotSegmentPaths(t *testing.T) {
 			err := cmd.Execute()
 
 			require.Error(err)
-			assert.Contains(err.Error(), "dot segments are not allowed")
+			assert.Contains(err.Error(), "API path")
 			assert.False(called)
 		})
 	}

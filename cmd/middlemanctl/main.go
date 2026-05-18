@@ -225,6 +225,9 @@ func scopedAPIPath(rawPath string) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("invalid API path segment %q: %w", segment, err)
 		}
+		if strings.Contains(decoded, "/") {
+			return "", fmt.Errorf("API path encoded slash segments are not allowed: %s", rawPath)
+		}
 		if decoded == "." || decoded == ".." {
 			return "", fmt.Errorf("API path dot segments are not allowed: %s", rawPath)
 		}

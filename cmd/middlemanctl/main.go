@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"reflect"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -90,12 +92,20 @@ newline-delimited JSON with --output jsonl.`),
 	mustBind(cfg, root.PersistentFlags().Lookup("output"), "output")
 	mustBind(cfg, root.PersistentFlags().Lookup("timeout"), "timeout")
 
-	request := func(ctx context.Context, method, path string, query url.Values, bodyArgs []string) error {
+	fetch := func(ctx context.Context, method, path string, query url.Values, bodyArgs []string) (cliConfig, []byte, error) {
 		current, err := readConfig(cfg)
 		if err != nil {
-			return err
+			return cliConfig{}, nil, err
 		}
 		body, err := deps.Restish(ctx, current, method, apiURL(current.server, path, query), bodyArgs)
+		if err != nil {
+			return cliConfig{}, nil, err
+		}
+		return current, body, nil
+	}
+
+	request := func(ctx context.Context, method, path string, query url.Values, bodyArgs []string) error {
+		current, body, err := fetch(ctx, method, path, query, bodyArgs)
 		if err != nil {
 			return err
 		}
@@ -106,9 +116,20 @@ newline-delimited JSON with --output jsonl.`),
 		}
 		return nil
 	}
+	listOperations := func(ctx context.Context) error {
+		current, body, err := fetch(ctx, http.MethodGet, "/openapi.json", nil, nil)
+		if err != nil {
+			return err
+		}
+		operations, err := decodeOpenAPIOperations(body)
+		if err != nil {
+			return err
+		}
+		return encodeStructured(deps.Stdout, current.output, operations)
+	}
 
 	root.AddCommand(newQuickstartCommand(cfg, deps.Stdout))
-	root.AddCommand(newAPICommand(request))
+	root.AddCommand(newAPICommand(request, listOperations))
 	root.AddCommand(newSimpleGetCommand("version", "Show server version", "/version", nil, request))
 	root.AddCommand(newSimpleGetCommand("repos", "List configured repositories", "/repos", nil, request))
 	root.AddCommand(newSimpleGetCommand("repo-summaries", "List repository summaries", "/repos/summary", nil, request))
@@ -189,6 +210,7 @@ func newQuickstartCommand(cfg *viper.Viper, stdout io.Writer) *cobra.Command {
 					{"command": "middlemanctl version", "does": "GET /api/v1/version"},
 					{"command": "middlemanctl pulls --state open --limit 20", "does": "GET /api/v1/pulls with query parameters"},
 					{"command": "middlemanctl issues --output jsonl", "does": "Emit one issue JSON object per line"},
+					{"command": "middlemanctl api list", "does": "List API methods, paths, summaries, and parameters"},
 					{"command": "middlemanctl api GET /pulls", "does": "Raw Restish-backed request to /api/v1/pulls"},
 					{"command": "middlemanctl api GET /sync/status", "does": "Inspect sync state"},
 					{"command": "middlemanctl api POST /sync", "does": "Trigger a sync"},
@@ -205,15 +227,116 @@ func newQuickstartCommand(cfg *viper.Viper, stdout io.Writer) *cobra.Command {
 	}
 }
 
-func newAPICommand(request func(context.Context, string, string, url.Values, []string) error) *cobra.Command {
-	return &cobra.Command{
+func newAPICommand(request func(context.Context, string, string, url.Values, []string) error, listOperations func(context.Context) error) *cobra.Command {
+	cmd := &cobra.Command{
 		Use:   "api METHOD PATH [body...]",
 		Short: "Call any middleman API path through Restish",
-		Args:  cobra.MinimumNArgs(2),
+		Long: strings.TrimSpace(`Call any middleman API path through Restish.
+
+Use "middlemanctl api list" to discover available methods and paths.`),
+		Args: cobra.MinimumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return request(cmd.Context(), args[0], args[1], nil, args[2:])
 		},
 	}
+	cmd.AddCommand(&cobra.Command{
+		Use:   "list",
+		Short: "List available middleman API operations",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return listOperations(cmd.Context())
+		},
+	})
+	return cmd
+}
+
+type apiOperationRecord struct {
+	Method      string   `json:"method" yaml:"method"`
+	Path        string   `json:"path" yaml:"path"`
+	OperationID string   `json:"operation_id,omitempty" yaml:"operation_id,omitempty"`
+	Summary     string   `json:"summary,omitempty" yaml:"summary,omitempty"`
+	QueryParams []string `json:"query_params,omitempty" yaml:"query_params,omitempty"`
+	PathParams  []string `json:"path_params,omitempty" yaml:"path_params,omitempty"`
+}
+
+type openAPIDocument struct {
+	Paths map[string]map[string]json.RawMessage `json:"paths"`
+}
+
+type openAPIOperation struct {
+	OperationID string             `json:"operationId"`
+	Summary     string             `json:"summary"`
+	Parameters  []openAPIParameter `json:"parameters"`
+}
+
+type openAPIParameter struct {
+	Name string `json:"name"`
+	In   string `json:"in"`
+}
+
+func decodeOpenAPIOperations(body []byte) ([]apiOperationRecord, error) {
+	var doc openAPIDocument
+	if err := json.Unmarshal(body, &doc); err != nil {
+		return nil, err
+	}
+	paths := make([]string, 0, len(doc.Paths))
+	for path := range doc.Paths {
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+
+	var operations []apiOperationRecord
+	for _, path := range paths {
+		pathItem := doc.Paths[path]
+		methods := sortedOpenAPIMethods(pathItem)
+		for _, method := range methods {
+			var operation openAPIOperation
+			if err := json.Unmarshal(pathItem[method], &operation); err != nil {
+				return nil, fmt.Errorf("decode %s %s operation: %w", strings.ToUpper(method), path, err)
+			}
+			record := apiOperationRecord{
+				Method:      strings.ToUpper(method),
+				Path:        path,
+				OperationID: operation.OperationID,
+				Summary:     operation.Summary,
+			}
+			for _, param := range operation.Parameters {
+				switch param.In {
+				case "query":
+					record.QueryParams = append(record.QueryParams, param.Name)
+				case "path":
+					record.PathParams = append(record.PathParams, param.Name)
+				}
+			}
+			operations = append(operations, record)
+		}
+	}
+	return operations, nil
+}
+
+var openAPIMethodOrder = []string{
+	http.MethodGet,
+	http.MethodPost,
+	http.MethodPut,
+	http.MethodPatch,
+	http.MethodDelete,
+	http.MethodHead,
+	http.MethodOptions,
+	http.MethodTrace,
+}
+
+func sortedOpenAPIMethods(pathItem map[string]json.RawMessage) []string {
+	present := make(map[string]bool, len(pathItem))
+	for method := range pathItem {
+		present[strings.ToUpper(method)] = true
+	}
+	methods := make([]string, 0, len(present))
+	for _, method := range openAPIMethodOrder {
+		if present[method] {
+			methods = append(methods, strings.ToLower(method))
+		}
+	}
+	return methods
 }
 
 func newSimpleGetCommand(name, short, path string, addFlags func(*cobra.Command), request func(context.Context, string, string, url.Values, []string) error) *cobra.Command {
@@ -378,6 +501,15 @@ func encodeJSONLines(w io.Writer, payload any) error {
 	if rows, ok := payload.([]any); ok {
 		for _, row := range rows {
 			if err := enc.Encode(row); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	value := reflect.ValueOf(payload)
+	if value.IsValid() && (value.Kind() == reflect.Slice || value.Kind() == reflect.Array) && value.Type().Elem().Kind() != reflect.Uint8 {
+		for i := 0; i < value.Len(); i++ {
+			if err := enc.Encode(value.Index(i).Interface()); err != nil {
 				return err
 			}
 		}

@@ -159,6 +159,67 @@ func TestRawAPICommandBuildsMiddlemanAPIURLAndBodyArgs(t *testing.T) {
 	assert.Equal([]string{"body: LGTM"}, got.bodyArgs)
 }
 
+func TestAPIListCommandDiscoversOpenAPIOperations(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	var got struct {
+		method   string
+		url      string
+		bodyArgs []string
+	}
+	var stdout bytes.Buffer
+	cmd := newRootCommand(commandDeps{
+		Stdout: &stdout,
+		Stderr: &bytes.Buffer{},
+		Restish: func(_ context.Context, _ cliConfig, method, requestURL string, bodyArgs []string) ([]byte, error) {
+			got.method = method
+			got.url = requestURL
+			got.bodyArgs = append([]string(nil), bodyArgs...)
+			return []byte(`{
+				"openapi": "3.1.0",
+				"paths": {
+					"/pulls": {
+						"parameters": [
+							{"name": "shared", "in": "query"}
+						],
+						"get": {
+							"operationId": "list-pulls",
+							"summary": "List pulls",
+							"parameters": [
+								{"name": "limit", "in": "query"},
+								{"name": "repo", "in": "query"}
+							]
+						}
+					},
+					"/pulls/{provider}/{owner}/{name}/{number}": {
+						"get": {
+							"operationId": "get-pull",
+							"summary": "Get pull",
+							"parameters": [
+								{"name": "provider", "in": "path"},
+								{"name": "owner", "in": "path"},
+								{"name": "name", "in": "path"},
+								{"name": "number", "in": "path"}
+							]
+						}
+					}
+				}
+			}`), nil
+		},
+	})
+	cmd.SetArgs([]string{"--server", "http://middleman.test", "--output", "jsonl", "api", "list"})
+
+	require.NoError(cmd.Execute())
+
+	assert.Equal(http.MethodGet, got.method)
+	assert.Equal("http://middleman.test/api/v1/openapi.json", got.url)
+	assert.Empty(got.bodyArgs)
+	lines := strings.Split(strings.TrimSpace(stdout.String()), "\n")
+	require.Len(lines, 2)
+	assert.JSONEq(`{"method":"GET","path":"/pulls","operation_id":"list-pulls","summary":"List pulls","query_params":["limit","repo"]}`, lines[0])
+	assert.JSONEq(`{"method":"GET","path":"/pulls/{provider}/{owner}/{name}/{number}","operation_id":"get-pull","summary":"Get pull","path_params":["provider","owner","name","number"]}`, lines[1])
+}
+
 func TestRestishRequesterFetchesCompleteJSON(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

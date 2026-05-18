@@ -6024,6 +6024,7 @@ func TestAPIListIssuesSearchByNumber(t *testing.T) {
 
 func TestAPIListItemsHonorsLimit(t *testing.T) {
 	require := require.New(t)
+	assert := Assert.New(t)
 	srv, database := setupTestServer(t)
 	ctx := t.Context()
 
@@ -6040,12 +6041,29 @@ func TestAPIListItemsHonorsLimit(t *testing.T) {
 	require.Equal(http.StatusOK, pullsResp.StatusCode())
 	require.NotNil(pullsResp.JSON200)
 	require.Len(*pullsResp.JSON200, 1)
+	assert.EqualValues(12, (*pullsResp.JSON200)[0].Number)
+
+	offset := int64(1)
+	secondPullResp, err := client.HTTP.ListPullsWithResponse(ctx, &generated.ListPullsParams{Limit: &limit, Offset: &offset})
+	require.NoError(err)
+	require.Equal(http.StatusOK, secondPullResp.StatusCode())
+	require.NotNil(secondPullResp.JSON200)
+	require.Len(*secondPullResp.JSON200, 1)
+	assert.EqualValues(278, (*secondPullResp.JSON200)[0].Number)
 
 	issuesResp, err := client.HTTP.ListIssuesWithResponse(ctx, &generated.ListIssuesParams{Limit: &limit})
 	require.NoError(err)
 	require.Equal(http.StatusOK, issuesResp.StatusCode())
 	require.NotNil(issuesResp.JSON200)
 	require.Len(*issuesResp.JSON200, 1)
+	assert.EqualValues(12, (*issuesResp.JSON200)[0].Number)
+
+	secondIssueResp, err := client.HTTP.ListIssuesWithResponse(ctx, &generated.ListIssuesParams{Limit: &limit, Offset: &offset})
+	require.NoError(err)
+	require.Equal(http.StatusOK, secondIssueResp.StatusCode())
+	require.NotNil(secondIssueResp.JSON200)
+	require.Len(*secondIssueResp.JSON200, 1)
+	assert.EqualValues(278, (*secondIssueResp.JSON200)[0].Number)
 }
 
 func TestAPIListPullsReportsBackfilledMergedPRFromMergedAt(t *testing.T) {

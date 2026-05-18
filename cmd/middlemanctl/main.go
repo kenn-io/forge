@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	pathpkg "path"
 	"reflect"
 	"sort"
 	"strings"
@@ -185,20 +186,54 @@ func resolveServer(cfg *viper.Viper) (string, error) {
 	return "http://" + middlemanCfg.ListenAddr(), nil
 }
 
-func apiURL(server, path string, query url.Values) (string, error) {
-	if parsed, err := url.Parse(path); err == nil && parsed.IsAbs() {
+func apiURL(server, rawPath string, query url.Values) (string, error) {
+	parsed, err := url.Parse(rawPath)
+	if err != nil {
+		return "", fmt.Errorf("invalid API path %q: %w", rawPath, err)
+	}
+	if parsed.IsAbs() || parsed.Host != "" {
 		return "", fmt.Errorf("absolute API URLs are not allowed: %s", parsed.Redacted())
 	}
 
-	cleanPath := "/" + strings.TrimLeft(path, "/")
-	if !strings.HasPrefix(cleanPath, apiPrefix+"/") && cleanPath != apiPrefix {
-		cleanPath = apiPrefix + cleanPath
+	cleanPath, err := scopedAPIPath(parsed.EscapedPath())
+	if err != nil {
+		return "", err
 	}
 	u := strings.TrimRight(server, "/") + cleanPath
-	if len(query) == 0 {
+	values := parsed.Query()
+	for key, queryValues := range query {
+		for _, value := range queryValues {
+			values.Add(key, value)
+		}
+	}
+	if len(values) == 0 {
 		return u, nil
 	}
-	return u + "?" + query.Encode(), nil
+	return u + "?" + values.Encode(), nil
+}
+
+func scopedAPIPath(rawPath string) (string, error) {
+	if rawPath == "" {
+		rawPath = "/"
+	}
+	candidate := "/" + strings.TrimLeft(rawPath, "/")
+	if !strings.HasPrefix(candidate, apiPrefix+"/") && candidate != apiPrefix {
+		candidate = apiPrefix + candidate
+	}
+	for segment := range strings.SplitSeq(candidate, "/") {
+		decoded, err := url.PathUnescape(segment)
+		if err != nil {
+			return "", fmt.Errorf("invalid API path segment %q: %w", segment, err)
+		}
+		if decoded == "." || decoded == ".." {
+			return "", fmt.Errorf("API path dot segments are not allowed: %s", rawPath)
+		}
+	}
+	cleanPath := pathpkg.Clean(candidate)
+	if cleanPath != apiPrefix && !strings.HasPrefix(cleanPath, apiPrefix+"/") {
+		return "", fmt.Errorf("API path must stay under %s: %s", apiPrefix, rawPath)
+	}
+	return cleanPath, nil
 }
 
 func mustAPIURL(server, path string, query url.Values) string {

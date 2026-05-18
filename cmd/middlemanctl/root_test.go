@@ -215,6 +215,36 @@ func TestRawAPICommandRejectsAbsoluteURLs(t *testing.T) {
 	assert.False(called)
 }
 
+func TestRawAPICommandRejectsDotSegmentPaths(t *testing.T) {
+	for _, rawPath := range []string{
+		"/../version",
+		"/%2e%2e/version",
+		"/api/v1/../version",
+		"/api/v1/%2e%2e/version",
+	} {
+		t.Run(rawPath, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			called := false
+			cmd := newRootCommand(commandDeps{
+				Stdout: &bytes.Buffer{},
+				Stderr: &bytes.Buffer{},
+				Restish: func(context.Context, cliConfig, string, string, []string) ([]byte, error) {
+					called = true
+					return nil, nil
+				},
+			})
+			cmd.SetArgs([]string{"--server", "http://middleman.test/", "api", "GET", rawPath})
+
+			err := cmd.Execute()
+
+			require.Error(err)
+			assert.Contains(err.Error(), "dot segments are not allowed")
+			assert.False(called)
+		})
+	}
+}
+
 func TestAPIListCommandDiscoversOpenAPIOperations(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

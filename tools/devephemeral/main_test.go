@@ -216,9 +216,17 @@ func TestPrepareEphemeralConfigKeepsBasePathInBackendURL(t *testing.T) {
 
 func TestBuildCommandSpecsWiresEphemeralEnvironment(t *testing.T) {
 	assert := Assert.New(t)
+	t.Setenv("PATH", "/bin")
+	t.Setenv("HOME", "/tmp/home")
+	t.Setenv("TMPDIR", "/tmp")
+	t.Setenv("MIDDLEMAN_VITE_HMR_HOST", "dev.example.test")
 	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "secret-token")
 	t.Setenv("GH_TOKEN", "secret-gh")
 	t.Setenv("AWS_SECRET_ACCESS_KEY", "secret-aws")
+	t.Setenv("OPENAI_API_KEY", "secret-openai")
+	t.Setenv("AWS_ACCESS_KEY_ID", "secret-access-key")
+	t.Setenv("GITHUB_PAT", "secret-pat")
+	t.Setenv("SESSION_COOKIE", "secret-cookie")
 	t.Setenv("PLAIN_FRONTEND_SETTING", "kept")
 
 	specs := buildCommandSpecs(ephemeralRun{
@@ -235,11 +243,20 @@ func TestBuildCommandSpecsWiresEphemeralEnvironment(t *testing.T) {
 	assert.Equal([]string{"--port", "39302", "--host", "127.0.0.1"}, specs.frontend.args)
 	assert.Contains(specs.frontend.env, "MIDDLEMAN_CONFIG=/tmp/middleman-dev/config.toml")
 	assert.Contains(specs.frontend.env, "MIDDLEMAN_API_URL=http://127.0.0.1:39301")
-	assert.Contains(specs.frontend.env, "PLAIN_FRONTEND_SETTING=kept")
+	assert.Contains(specs.frontend.env, "PATH=/bin")
+	assert.Contains(specs.frontend.env, "HOME=/tmp/home")
+	assert.Contains(specs.frontend.env, "TMPDIR=/tmp")
+	assert.Contains(specs.frontend.env, "MIDDLEMAN_VITE_HMR_HOST=dev.example.test")
+	assert.NotContains(specs.frontend.env, "PLAIN_FRONTEND_SETTING=kept")
 	assert.NotContains(specs.frontend.env, "MIDDLEMAN_GITHUB_TOKEN=secret-token")
 	assert.NotContains(specs.frontend.env, "GH_TOKEN=secret-gh")
 	assert.NotContains(specs.frontend.env, "AWS_SECRET_ACCESS_KEY=secret-aws")
+	assert.NotContains(specs.frontend.env, "OPENAI_API_KEY=secret-openai")
+	assert.NotContains(specs.frontend.env, "AWS_ACCESS_KEY_ID=secret-access-key")
+	assert.NotContains(specs.frontend.env, "GITHUB_PAT=secret-pat")
+	assert.NotContains(specs.frontend.env, "SESSION_COOKIE=secret-cookie")
 	assert.Contains(specs.backend.env, "MIDDLEMAN_GITHUB_TOKEN=secret-token")
+	assert.Contains(specs.backend.env, "OPENAI_API_KEY=secret-openai")
 }
 
 func TestBuildCommandSpecsReferenceExecutableScripts(t *testing.T) {

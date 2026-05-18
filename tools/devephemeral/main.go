@@ -341,33 +341,28 @@ func sanitizedFrontendEnv(env []string) []string {
 		if !ok {
 			continue
 		}
-		if isFrontendSecretEnvKey(key) {
-			continue
+		if allowedFrontendEnvKey(key) {
+			out = append(out, entry)
 		}
-		out = append(out, entry)
 	}
 	return out
 }
 
-func isFrontendSecretEnvKey(key string) bool {
-	upper := strings.ToUpper(key)
-	if upper == "MIDDLEMAN_API_URL" || upper == "MIDDLEMAN_CONFIG" {
-		return false
+func allowedFrontendEnvKey(key string) bool {
+	// Vite and Bun plugins can inspect process.env, so the frontend gets only
+	// runtime basics and explicit non-secret dev-server controls.
+	switch key {
+	case "BUN_INSTALL", "BUN_INSTALL_CACHE_DIR",
+		"CLICOLOR", "CLICOLOR_FORCE", "COLORTERM",
+		"FORCE_COLOR", "HOME", "LANG", "LOGNAME",
+		"MISE_CACHE_DIR", "MISE_CONFIG_DIR", "MISE_DATA_DIR",
+		"MIDDLEMAN_VITE_ALLOWED_HOSTS", "MIDDLEMAN_VITE_HMR_CLIENT_PORT",
+		"MIDDLEMAN_VITE_HMR_HOST", "MIDDLEMAN_VITE_HMR_PROTOCOL",
+		"NO_COLOR", "PATH", "SHELL", "TEMP", "TERM", "TMP", "TMPDIR",
+		"USER", "XDG_CACHE_HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME":
+		return true
 	}
-	secretMarkers := []string{
-		"TOKEN",
-		"SECRET",
-		"PASSWORD",
-		"PASSWD",
-		"PRIVATE_KEY",
-		"CREDENTIAL",
-	}
-	for _, marker := range secretMarkers {
-		if strings.Contains(upper, marker) {
-			return true
-		}
-	}
-	return false
+	return strings.HasPrefix(key, "LC_")
 }
 
 func writeStatusFile(path string, status ephemeralStatus) error {

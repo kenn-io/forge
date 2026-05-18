@@ -5,7 +5,23 @@ name = "ephemeral"
 [setup]
 script = '''
 make frontend-deps
-make dev-ephemeral
+status=tmp/dev-ephemeral/dev-ephemeral.json
+log=tmp/dev-ephemeral/setup.log
+mkdir -p tmp/dev-ephemeral
+nohup make dev-ephemeral >"$log" 2>&1 &
+pid=$!
+for _ in $(seq 1 60); do
+  if [ -s "$status" ]; then
+    exit 0
+  fi
+  if ! kill -0 "$pid" 2>/dev/null; then
+    wait "$pid"
+    exit $?
+  fi
+  sleep 1
+done
+printf 'timed out waiting for %s; see %s\n' "$status" "$log" >&2
+exit 1
 '''
 
 [cleanup]

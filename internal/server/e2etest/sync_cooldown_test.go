@@ -56,6 +56,7 @@ name = "widget"
 
 	first := waitForRepoSynced(t, database, "acme", "widget", nil)
 	require.NotNil(first.LastSyncCompletedAt)
+	waitForSyncIdle(t, client, baseURL)
 
 	status, body = postJSON(
 		t, client, baseURL+"/api/v1/sync", nil,
@@ -285,4 +286,33 @@ func waitForRepoSynced(
 	}, 2*time.Second, 10*time.Millisecond)
 
 	return repo
+}
+
+func waitForSyncIdle(t *testing.T, client *http.Client, baseURL string) {
+	t.Helper()
+	require := require.New(t)
+
+	var status struct {
+		Running   bool       `json:"running"`
+		LastRunAt *time.Time `json:"last_run_at"`
+	}
+	require.Eventually(func() bool {
+		resp, err := client.Get(baseURL + "/api/v1/sync/status")
+		if err != nil {
+			return false
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			_, _ = io.Copy(io.Discard, resp.Body)
+			return false
+		}
+		status = struct {
+			Running   bool       `json:"running"`
+			LastRunAt *time.Time `json:"last_run_at"`
+		}{}
+		if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
+			return false
+		}
+		return !status.Running && status.LastRunAt != nil
+	}, 5*time.Second, 10*time.Millisecond)
 }

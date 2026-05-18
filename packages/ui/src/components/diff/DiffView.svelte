@@ -88,11 +88,13 @@
     const nextRef = { provider, platformHost, owner, name, repoPath };
     const nextNumber = number;
     const nextReviewEnabled = reviewEnabled;
+    const nextDiffHeadSHA = diffHeadSHA;
     untrack(() => {
       diffReviewDraft?.setContext(
         nextRef,
         nextNumber,
         nextReviewEnabled,
+        nextDiffHeadSHA,
       );
     });
   });

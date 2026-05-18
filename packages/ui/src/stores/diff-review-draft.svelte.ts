@@ -31,6 +31,7 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
   let enabled = $state(false);
   let ref = $state<ProviderRouteRef | null>(null);
   let number = $state(0);
+  let diffHeadSHA = $state<string | undefined>(undefined);
   let draft = $state<DiffReviewDraft | null>(null);
   let loading = $state(false);
   let submitting = $state(false);
@@ -76,6 +77,7 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
       ref.platformHost ?? "",
       ref.repoPath,
       number,
+      diffHeadSHA ?? "",
     ].join(":");
   }
 
@@ -83,16 +85,19 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
     nextRef: ProviderRouteRef,
     nextNumber: number,
     nextEnabled: boolean,
+    nextDiffHeadSHA?: string,
   ): void {
     const changed =
       !ref ||
       ref.provider !== nextRef.provider ||
       ref.platformHost !== nextRef.platformHost ||
       ref.repoPath !== nextRef.repoPath ||
-      number !== nextNumber;
+      number !== nextNumber ||
+      diffHeadSHA !== nextDiffHeadSHA;
     const enabling = !wasEnabled && nextEnabled;
     ref = nextRef;
     number = nextNumber;
+    diffHeadSHA = nextDiffHeadSHA;
     enabled = nextEnabled;
     wasEnabled = nextEnabled;
     if (!enabled) {
@@ -119,6 +124,7 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
     wasEnabled = false;
     ref = null;
     number = 0;
+    diffHeadSHA = undefined;
     draft = null;
     loading = false;
     submitting = false;

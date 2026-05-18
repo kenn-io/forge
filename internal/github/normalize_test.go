@@ -74,7 +74,7 @@ func TestNormalizePR_OpenPR(t *testing.T) {
 	assert.Equal("https://github.com/owner/repo/pull/42", pr.URL)
 	assert.Equal("My PR", pr.Title)
 	assert.Equal("alice", pr.Author)
-	assert.Equal("open", pr.State)
+	assert.Equal(db.MergeRequestStateOpen, pr.State)
 	assert.False(pr.IsDraft)
 	assert.True(pr.IsLocked)
 	assert.Equal("description", pr.Body)
@@ -104,7 +104,7 @@ func TestNormalizePR_MergedPR(t *testing.T) {
 	pr, err := NormalizePR(3, ghPR)
 	require.NoError(t, err)
 
-	assert.Equal("merged", pr.State)
+	assert.Equal(db.MergeRequestStateMerged, pr.State)
 	require.NotNil(t, pr.MergedAt)
 	assert.True(pr.MergedAt.Equal(mergedAt))
 }

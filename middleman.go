@@ -368,7 +368,7 @@ func NewWithContext(
 						RepoOwner:      owner,
 						RepoName:       name,
 						Number:         mr.Number,
-						State:          mr.State,
+						State:          string(mr.State),
 						Title:          mr.Title,
 						IsDraft:        mr.IsDraft,
 						CIStatus:       mr.CIStatus,

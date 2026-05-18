@@ -17,6 +17,96 @@ import (
 	"github.com/oapi-codegen/runtime"
 )
 
+// Defines values for MergeRequestKanbanStatus.
+const (
+	MergeRequestKanbanStatusAwaitingMerge MergeRequestKanbanStatus = "awaiting_merge"
+	MergeRequestKanbanStatusNew           MergeRequestKanbanStatus = "new"
+	MergeRequestKanbanStatusReviewing     MergeRequestKanbanStatus = "reviewing"
+	MergeRequestKanbanStatusWaiting       MergeRequestKanbanStatus = "waiting"
+)
+
+// Valid indicates whether the value is a known member of the MergeRequestKanbanStatus enum.
+func (e MergeRequestKanbanStatus) Valid() bool {
+	switch e {
+	case MergeRequestKanbanStatusAwaitingMerge:
+		return true
+	case MergeRequestKanbanStatusNew:
+		return true
+	case MergeRequestKanbanStatusReviewing:
+		return true
+	case MergeRequestKanbanStatusWaiting:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for MergeRequestState.
+const (
+	MergeRequestStateClosed MergeRequestState = "closed"
+	MergeRequestStateMerged MergeRequestState = "merged"
+	MergeRequestStateOpen   MergeRequestState = "open"
+)
+
+// Valid indicates whether the value is a known member of the MergeRequestState enum.
+func (e MergeRequestState) Valid() bool {
+	switch e {
+	case MergeRequestStateClosed:
+		return true
+	case MergeRequestStateMerged:
+		return true
+	case MergeRequestStateOpen:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for MergeRequestResponseKanbanStatus.
+const (
+	MergeRequestResponseKanbanStatusAwaitingMerge MergeRequestResponseKanbanStatus = "awaiting_merge"
+	MergeRequestResponseKanbanStatusNew           MergeRequestResponseKanbanStatus = "new"
+	MergeRequestResponseKanbanStatusReviewing     MergeRequestResponseKanbanStatus = "reviewing"
+	MergeRequestResponseKanbanStatusWaiting       MergeRequestResponseKanbanStatus = "waiting"
+)
+
+// Valid indicates whether the value is a known member of the MergeRequestResponseKanbanStatus enum.
+func (e MergeRequestResponseKanbanStatus) Valid() bool {
+	switch e {
+	case MergeRequestResponseKanbanStatusAwaitingMerge:
+		return true
+	case MergeRequestResponseKanbanStatusNew:
+		return true
+	case MergeRequestResponseKanbanStatusReviewing:
+		return true
+	case MergeRequestResponseKanbanStatusWaiting:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for MergeRequestResponseState.
+const (
+	MergeRequestResponseStateClosed MergeRequestResponseState = "closed"
+	MergeRequestResponseStateMerged MergeRequestResponseState = "merged"
+	MergeRequestResponseStateOpen   MergeRequestResponseState = "open"
+)
+
+// Valid indicates whether the value is a known member of the MergeRequestResponseState enum.
+func (e MergeRequestResponseState) Valid() bool {
+	switch e {
+	case MergeRequestResponseStateClosed:
+		return true
+	case MergeRequestResponseStateMerged:
+		return true
+	case MergeRequestResponseStateOpen:
+		return true
+	default:
+		return false
+	}
+}
+
 // ActionStatusBody defines model for ActionStatusBody.
 type ActionStatusBody struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -571,40 +661,46 @@ type MergePRInputBody struct {
 
 // MergeRequest defines model for MergeRequest.
 type MergeRequest struct {
-	Additions          int64      `json:"Additions"`
-	Author             string     `json:"Author"`
-	AuthorDisplayName  string     `json:"AuthorDisplayName"`
-	BaseBranch         string     `json:"BaseBranch"`
-	Body               string     `json:"Body"`
-	CIChecksJSON       string     `json:"CIChecksJSON"`
-	CIHadPending       bool       `json:"CIHadPending"`
-	CIStatus           string     `json:"CIStatus"`
-	ClosedAt           *time.Time `json:"ClosedAt"`
-	CommentCount       int64      `json:"CommentCount"`
-	CreatedAt          time.Time  `json:"CreatedAt"`
-	Deletions          int64      `json:"Deletions"`
-	DetailFetchedAt    *time.Time `json:"DetailFetchedAt"`
-	HeadBranch         string     `json:"HeadBranch"`
-	HeadRepoCloneURL   string     `json:"HeadRepoCloneURL"`
-	ID                 int64      `json:"ID"`
-	IsDraft            bool       `json:"IsDraft"`
-	IsLocked           bool       `json:"IsLocked"`
-	KanbanStatus       string     `json:"KanbanStatus"`
-	LastActivityAt     time.Time  `json:"LastActivityAt"`
-	MergeableState     string     `json:"MergeableState"`
-	MergedAt           *time.Time `json:"MergedAt"`
-	Number             int64      `json:"Number"`
-	PlatformExternalID string     `json:"PlatformExternalID"`
-	PlatformID         int64      `json:"PlatformID"`
-	RepoID             int64      `json:"RepoID"`
-	ReviewDecision     string     `json:"ReviewDecision"`
-	Starred            bool       `json:"Starred"`
-	State              string     `json:"State"`
-	Title              string     `json:"Title"`
-	URL                string     `json:"URL"`
-	UpdatedAt          time.Time  `json:"UpdatedAt"`
-	Labels             *[]Label   `json:"labels,omitempty"`
+	Additions          int64                    `json:"Additions"`
+	Author             string                   `json:"Author"`
+	AuthorDisplayName  string                   `json:"AuthorDisplayName"`
+	BaseBranch         string                   `json:"BaseBranch"`
+	Body               string                   `json:"Body"`
+	CIChecksJSON       string                   `json:"CIChecksJSON"`
+	CIHadPending       bool                     `json:"CIHadPending"`
+	CIStatus           string                   `json:"CIStatus"`
+	ClosedAt           *time.Time               `json:"ClosedAt"`
+	CommentCount       int64                    `json:"CommentCount"`
+	CreatedAt          time.Time                `json:"CreatedAt"`
+	Deletions          int64                    `json:"Deletions"`
+	DetailFetchedAt    *time.Time               `json:"DetailFetchedAt"`
+	HeadBranch         string                   `json:"HeadBranch"`
+	HeadRepoCloneURL   string                   `json:"HeadRepoCloneURL"`
+	ID                 int64                    `json:"ID"`
+	IsDraft            bool                     `json:"IsDraft"`
+	IsLocked           bool                     `json:"IsLocked"`
+	KanbanStatus       MergeRequestKanbanStatus `json:"KanbanStatus"`
+	LastActivityAt     time.Time                `json:"LastActivityAt"`
+	MergeableState     string                   `json:"MergeableState"`
+	MergedAt           *time.Time               `json:"MergedAt"`
+	Number             int64                    `json:"Number"`
+	PlatformExternalID string                   `json:"PlatformExternalID"`
+	PlatformID         int64                    `json:"PlatformID"`
+	RepoID             int64                    `json:"RepoID"`
+	ReviewDecision     string                   `json:"ReviewDecision"`
+	Starred            bool                     `json:"Starred"`
+	State              MergeRequestState        `json:"State"`
+	Title              string                   `json:"Title"`
+	URL                string                   `json:"URL"`
+	UpdatedAt          time.Time                `json:"UpdatedAt"`
+	Labels             *[]Label                 `json:"labels,omitempty"`
 }
+
+// MergeRequestKanbanStatus defines model for MergeRequest.KanbanStatus.
+type MergeRequestKanbanStatus string
+
+// MergeRequestState defines model for MergeRequest.State.
+type MergeRequestState string
 
 // MergeRequestDetailResponse defines model for MergeRequestDetailResponse.
 type MergeRequestDetailResponse struct {
@@ -630,46 +726,52 @@ type MergeRequestDetailResponse struct {
 
 // MergeRequestResponse defines model for MergeRequestResponse.
 type MergeRequestResponse struct {
-	Additions          int64                   `json:"Additions"`
-	Author             string                  `json:"Author"`
-	AuthorDisplayName  string                  `json:"AuthorDisplayName"`
-	BaseBranch         string                  `json:"BaseBranch"`
-	Body               string                  `json:"Body"`
-	CIChecksJSON       string                  `json:"CIChecksJSON"`
-	CIHadPending       bool                    `json:"CIHadPending"`
-	CIStatus           string                  `json:"CIStatus"`
-	ClosedAt           *time.Time              `json:"ClosedAt"`
-	CommentCount       int64                   `json:"CommentCount"`
-	CreatedAt          time.Time               `json:"CreatedAt"`
-	Deletions          int64                   `json:"Deletions"`
-	HeadBranch         string                  `json:"HeadBranch"`
-	HeadRepoCloneURL   string                  `json:"HeadRepoCloneURL"`
-	ID                 int64                   `json:"ID"`
-	IsDraft            bool                    `json:"IsDraft"`
-	IsLocked           bool                    `json:"IsLocked"`
-	KanbanStatus       string                  `json:"KanbanStatus"`
-	LastActivityAt     time.Time               `json:"LastActivityAt"`
-	MergeableState     string                  `json:"MergeableState"`
-	MergedAt           *time.Time              `json:"MergedAt"`
-	Number             int64                   `json:"Number"`
-	PlatformExternalID string                  `json:"PlatformExternalID"`
-	PlatformID         int64                   `json:"PlatformID"`
-	RepoID             int64                   `json:"RepoID"`
-	ReviewDecision     string                  `json:"ReviewDecision"`
-	Starred            bool                    `json:"Starred"`
-	State              string                  `json:"State"`
-	Title              string                  `json:"Title"`
-	URL                string                  `json:"URL"`
-	UpdatedAt          time.Time               `json:"UpdatedAt"`
-	DetailFetchedAt    *string                 `json:"detail_fetched_at,omitempty"`
-	DetailLoaded       bool                    `json:"detail_loaded"`
-	Labels             *[]Label                `json:"labels,omitempty"`
-	PlatformHost       string                  `json:"platform_host"`
-	Repo               RepoRefResponse         `json:"repo"`
-	RepoName           string                  `json:"repo_name"`
-	RepoOwner          string                  `json:"repo_owner"`
-	WorktreeLinks      *[]WorktreeLinkResponse `json:"worktree_links"`
+	Additions          int64                            `json:"Additions"`
+	Author             string                           `json:"Author"`
+	AuthorDisplayName  string                           `json:"AuthorDisplayName"`
+	BaseBranch         string                           `json:"BaseBranch"`
+	Body               string                           `json:"Body"`
+	CIChecksJSON       string                           `json:"CIChecksJSON"`
+	CIHadPending       bool                             `json:"CIHadPending"`
+	CIStatus           string                           `json:"CIStatus"`
+	ClosedAt           *time.Time                       `json:"ClosedAt"`
+	CommentCount       int64                            `json:"CommentCount"`
+	CreatedAt          time.Time                        `json:"CreatedAt"`
+	Deletions          int64                            `json:"Deletions"`
+	HeadBranch         string                           `json:"HeadBranch"`
+	HeadRepoCloneURL   string                           `json:"HeadRepoCloneURL"`
+	ID                 int64                            `json:"ID"`
+	IsDraft            bool                             `json:"IsDraft"`
+	IsLocked           bool                             `json:"IsLocked"`
+	KanbanStatus       MergeRequestResponseKanbanStatus `json:"KanbanStatus"`
+	LastActivityAt     time.Time                        `json:"LastActivityAt"`
+	MergeableState     string                           `json:"MergeableState"`
+	MergedAt           *time.Time                       `json:"MergedAt"`
+	Number             int64                            `json:"Number"`
+	PlatformExternalID string                           `json:"PlatformExternalID"`
+	PlatformID         int64                            `json:"PlatformID"`
+	RepoID             int64                            `json:"RepoID"`
+	ReviewDecision     string                           `json:"ReviewDecision"`
+	Starred            bool                             `json:"Starred"`
+	State              MergeRequestResponseState        `json:"State"`
+	Title              string                           `json:"Title"`
+	URL                string                           `json:"URL"`
+	UpdatedAt          time.Time                        `json:"UpdatedAt"`
+	DetailFetchedAt    *string                          `json:"detail_fetched_at,omitempty"`
+	DetailLoaded       bool                             `json:"detail_loaded"`
+	Labels             *[]Label                         `json:"labels,omitempty"`
+	PlatformHost       string                           `json:"platform_host"`
+	Repo               RepoRefResponse                  `json:"repo"`
+	RepoName           string                           `json:"repo_name"`
+	RepoOwner          string                           `json:"repo_owner"`
+	WorktreeLinks      *[]WorktreeLinkResponse          `json:"worktree_links"`
 }
+
+// MergeRequestResponseKanbanStatus defines model for MergeRequestResponse.KanbanStatus.
+type MergeRequestResponseKanbanStatus string
+
+// MergeRequestResponseState defines model for MergeRequestResponse.State.
+type MergeRequestResponseState string
 
 // MrImportMetadataResponse defines model for MrImportMetadataResponse.
 type MrImportMetadataResponse struct {

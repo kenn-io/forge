@@ -2277,7 +2277,8 @@ export interface components {
             ID: number;
             IsDraft: boolean;
             IsLocked: boolean;
-            KanbanStatus: string;
+            /** @enum {string} */
+            KanbanStatus: "new" | "reviewing" | "waiting" | "awaiting_merge";
             /** Format: date-time */
             LastActivityAt: string;
             MergeableState: string;
@@ -2292,7 +2293,8 @@ export interface components {
             RepoID: number;
             ReviewDecision: string;
             Starred: boolean;
-            State: string;
+            /** @enum {string} */
+            State: "open" | "closed" | "merged";
             Title: string;
             URL: string;
             /** Format: date-time */
@@ -2347,7 +2349,8 @@ export interface components {
             ID: number;
             IsDraft: boolean;
             IsLocked: boolean;
-            KanbanStatus: string;
+            /** @enum {string} */
+            KanbanStatus: "new" | "reviewing" | "waiting" | "awaiting_merge";
             /** Format: date-time */
             LastActivityAt: string;
             MergeableState: string;
@@ -2362,7 +2365,8 @@ export interface components {
             RepoID: number;
             ReviewDecision: string;
             Starred: boolean;
-            State: string;
+            /** @enum {string} */
+            State: "open" | "closed" | "merged";
             Title: string;
             URL: string;
             /** Format: date-time */

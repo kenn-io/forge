@@ -851,7 +851,7 @@ func (s *Server) diffWarnings(mr *db.MergeRequest) []string {
 		PlatformBaseSHA: mr.PlatformBaseSHA,
 		DiffHeadSHA:     mr.DiffHeadSHA,
 		DiffBaseSHA:     mr.DiffBaseSHA,
-		State:           mr.State,
+		State:           string(mr.State),
 	}
 	if shas.Stale() {
 		return []string{"Diff data is out of date for this pull request."}
@@ -917,7 +917,7 @@ func (s *Server) getMRImportMetadata(
 			HeadBranch:       mr.HeadBranch,
 			PlatformHeadSHA:  mr.PlatformHeadSHA,
 			HeadRepoCloneURL: mr.HeadRepoCloneURL,
-			State:            mr.State,
+			State:            string(mr.State),
 			IsDraft:          mr.IsDraft,
 			Title:            mr.Title,
 		},

@@ -1022,7 +1022,7 @@ func TestAPIMergePRStoresUTCTimestamps(t *testing.T) {
 
 	pr, err := database.GetMergeRequest(t.Context(), "acme", "widget", 1)
 	require.NoError(err)
-	require.Equal("merged", pr.State)
+	require.Equal(db.MergeRequestStateMerged, pr.State)
 	assertTimePtrEqualsUTC(t, pr.MergedAt, handlerNow)
 	assertTimePtrEqualsUTC(t, pr.ClosedAt, handlerNow)
 }
@@ -2465,7 +2465,7 @@ func TestAPISetKanbanState(t *testing.T) {
 	pr, err := database.GetMergeRequest(t.Context(), "acme", "widget", 1)
 	require.NoError(err)
 	require.NotNil(pr)
-	require.Equal("reviewing", pr.KanbanStatus)
+	require.Equal(db.KanbanStatusReviewing, pr.KanbanStatus)
 }
 
 func TestAPISetKanbanStateRejectsInvalidStatus(t *testing.T) {
@@ -3980,7 +3980,7 @@ func TestAPIMergePRRejectsNilProviderPayload(t *testing.T) {
 	mr, err := database.GetMergeRequest(t.Context(), "acme", "widget", 1)
 	require.NoError(err)
 	require.NotNil(mr)
-	assert.Equal("open", mr.State)
+	assert.Equal(db.MergeRequestStateOpen, mr.State)
 	assert.Nil(mr.MergedAt)
 }
 
@@ -4760,7 +4760,7 @@ func TestAPIClosePR(t *testing.T) {
 
 	pr, err := database.GetMergeRequest(t.Context(), "acme", "widget", 1)
 	require.NoError(err)
-	require.Equal("closed", pr.State)
+	require.Equal(db.MergeRequestStateClosed, pr.State)
 	assertTimePtrEqualsUTC(t, pr.ClosedAt, handlerNow)
 }
 
@@ -4786,7 +4786,7 @@ func TestAPIReopenPR(t *testing.T) {
 
 	pr, err := database.GetMergeRequest(ctx, "acme", "widget", 1)
 	require.NoError(err)
-	require.Equal("open", pr.State)
+	require.Equal(db.MergeRequestStateOpen, pr.State)
 	require.Nil(pr.ClosedAt, "closed_at should be cleared on reopen")
 }
 
@@ -4930,7 +4930,7 @@ func TestAPISyncPRDoesNotOverwriteNewerStateChange(t *testing.T) {
 
 	closedPR, err := database.GetMergeRequest(t.Context(), "acme", "widget", 1)
 	require.NoError(err)
-	require.Equal("closed", closedPR.State)
+	require.Equal(db.MergeRequestStateClosed, closedPR.State)
 	require.NotNil(closedPR.ClosedAt)
 
 	close(releaseSync)
@@ -4949,7 +4949,7 @@ func TestAPISyncPRDoesNotOverwriteNewerStateChange(t *testing.T) {
 
 	finalPR, err := database.GetMergeRequest(t.Context(), "acme", "widget", 1)
 	require.NoError(err)
-	assert.Equal("closed", finalPR.State)
+	assert.Equal(db.MergeRequestStateClosed, finalPR.State)
 	assert.NotNil(finalPR.ClosedAt)
 	assert.Equal("Test PR #1", finalPR.Title)
 	assert.True(finalPR.UpdatedAt.After(staleUpdatedAt))
@@ -5698,7 +5698,7 @@ func TestAPIListPullsReportsBackfilledMergedPRFromMergedAt(t *testing.T) {
 	apiPR := (*resp.JSON200)[0]
 	assert.Equal(int64(number), apiPR.Number)
 	assert.Equal(title, apiPR.Title)
-	assert.Equal("merged", apiPR.State)
+	assert.Equal(generated.MergeRequestResponseStateMerged, apiPR.State)
 	require.NotNil(apiPR.MergedAt)
 	assert.True(apiPR.MergedAt.Equal(mergedAt))
 }
@@ -8123,7 +8123,7 @@ func TestAPIClosePR422AlreadyClosed(t *testing.T) {
 	require.Equal(http.StatusOK, resp.StatusCode())
 
 	pr, _ := database.GetMergeRequest(t.Context(), "acme", "widget", 1)
-	require.Equal("closed", pr.State)
+	require.Equal(db.MergeRequestStateClosed, pr.State)
 }
 
 // When MarkPullRequestReadyForReview returns (nil, nil) the handler
@@ -9310,7 +9310,7 @@ func TestAPIGitealikeMutationsPersistThroughServer(t *testing.T) {
 	require.NoError(err)
 	require.Equal(http.StatusOK, mergeResp.StatusCode())
 	mrSeven = requireMR(t, database, repo.ID, 7)
-	assert.Equal("merged", mrSeven.State)
+	assert.Equal(db.MergeRequestStateMerged, mrSeven.State)
 	require.NotNil(mrSeven.MergedAt)
 
 	stateResp, err := client.HTTP.SetPrGithubStateOnHostWithResponse(
@@ -9320,7 +9320,7 @@ func TestAPIGitealikeMutationsPersistThroughServer(t *testing.T) {
 	require.NoError(err)
 	require.Equal(http.StatusOK, stateResp.StatusCode())
 	mrNine := requireMR(t, database, repo.ID, 9)
-	assert.Equal("closed", mrNine.State)
+	assert.Equal(db.MergeRequestStateClosed, mrNine.State)
 	require.NotNil(mrNine.ClosedAt)
 
 	createIssueResp, err := client.HTTP.CreateIssueOnHostWithResponse(
@@ -11857,7 +11857,7 @@ func TestAPIListActivityFiltersConfiguredReposByHost(t *testing.T) {
 func seedStackedPR(
 	t *testing.T, database *db.DB,
 	owner, name string, number int,
-	head, base, state, ci, review string,
+	head, base string, state db.MergeRequestState, ci, review string,
 ) int64 {
 	return seedStackedPRDraft(t, database, owner, name, number, head, base, state, ci, review, false)
 }
@@ -11865,7 +11865,7 @@ func seedStackedPR(
 func seedStackedPRDraft(
 	t *testing.T, database *db.DB,
 	owner, name string, number int,
-	head, base, state, ci, review string,
+	head, base string, state db.MergeRequestState, ci, review string,
 	isDraft bool,
 ) int64 {
 	t.Helper()
@@ -11910,9 +11910,9 @@ func TestAPIListStacks(t *testing.T) {
 	srv, database := setupTestServer(t)
 	client := setupTestClient(t, srv)
 
-	seedStackedPR(t, database, "acme", "widget", 10, "feat/auth", "main", "open", "success", "APPROVED")
-	seedStackedPR(t, database, "acme", "widget", 11, "feat/auth-retry", "feat/auth", "open", "success", "APPROVED")
-	seedStackedPR(t, database, "acme", "widget", 12, "feat/auth-ui", "feat/auth-retry", "open", "pending", "")
+	seedStackedPR(t, database, "acme", "widget", 10, "feat/auth", "main", db.MergeRequestStateOpen, "success", "APPROVED")
+	seedStackedPR(t, database, "acme", "widget", 11, "feat/auth-retry", "feat/auth", db.MergeRequestStateOpen, "success", "APPROVED")
+	seedStackedPR(t, database, "acme", "widget", 12, "feat/auth-ui", "feat/auth-retry", db.MergeRequestStateOpen, "pending", "")
 	runStackDetection(t, database, "acme", "widget")
 
 	resp, err := client.HTTP.ListStacksWithResponse(t.Context(), &generated.ListStacksParams{})
@@ -11939,12 +11939,12 @@ func TestAPIListStacks_RepoFilter(t *testing.T) {
 	client := setupTestClient(t, srv)
 	ctx := t.Context()
 
-	seedStackedPR(t, database, "acme", "widget", 10, "feat/a", "main", "open", "", "")
-	seedStackedPR(t, database, "acme", "widget", 11, "feat/b", "feat/a", "open", "", "")
+	seedStackedPR(t, database, "acme", "widget", 10, "feat/a", "main", db.MergeRequestStateOpen, "", "")
+	seedStackedPR(t, database, "acme", "widget", 11, "feat/b", "feat/a", db.MergeRequestStateOpen, "", "")
 	runStackDetection(t, database, "acme", "widget")
 
-	seedStackedPR(t, database, "acme", "tools", 20, "feat/c", "main", "open", "", "")
-	seedStackedPR(t, database, "acme", "tools", 21, "feat/d", "feat/c", "open", "", "")
+	seedStackedPR(t, database, "acme", "tools", 20, "feat/c", "main", db.MergeRequestStateOpen, "", "")
+	seedStackedPR(t, database, "acme", "tools", 21, "feat/d", "feat/c", db.MergeRequestStateOpen, "", "")
 	runStackDetection(t, database, "acme", "tools")
 
 	respAll, err := client.HTTP.ListStacksWithResponse(ctx, &generated.ListStacksParams{})
@@ -11977,8 +11977,8 @@ func TestAPIGetStackForPR(t *testing.T) {
 	ctx := t.Context()
 
 	// Failing base with an open descendant is blocked.
-	seedStackedPR(t, database, "acme", "widget", 10, "feat/api-base", "main", "open", "failure", "")
-	seedStackedPR(t, database, "acme", "widget", 11, "feat/api-retry", "feat/api-base", "open", "success", "APPROVED")
+	seedStackedPR(t, database, "acme", "widget", 10, "feat/api-base", "main", db.MergeRequestStateOpen, "failure", "")
+	seedStackedPR(t, database, "acme", "widget", 11, "feat/api-retry", "feat/api-base", db.MergeRequestStateOpen, "success", "APPROVED")
 	runStackDetection(t, database, "acme", "widget")
 
 	resp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberStackWithResponse(ctx, "gh", "acme", "widget", 10)
@@ -12001,8 +12001,8 @@ func TestAPIGetStackForPR_DraftNotBaseReady(t *testing.T) {
 	client := setupTestClient(t, srv)
 
 	// Draft base with green CI + approval; non-draft tip pending.
-	seedStackedPRDraft(t, database, "acme", "widget", 10, "feat/x", "main", "open", "success", "APPROVED", true)
-	seedStackedPR(t, database, "acme", "widget", 11, "feat/y", "feat/x", "open", "pending", "")
+	seedStackedPRDraft(t, database, "acme", "widget", 10, "feat/x", "main", db.MergeRequestStateOpen, "success", "APPROVED", true)
+	seedStackedPR(t, database, "acme", "widget", 11, "feat/y", "feat/x", db.MergeRequestStateOpen, "pending", "")
 	runStackDetection(t, database, "acme", "widget")
 
 	resp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberStackWithResponse(t.Context(), "gh", "acme", "widget", 10)
@@ -12020,8 +12020,8 @@ func TestAPIListStacks_DraftNotAllGreen(t *testing.T) {
 	client := setupTestClient(t, srv)
 
 	// Both draft, green CI + approved — must not be all_green.
-	seedStackedPRDraft(t, database, "acme", "widget", 10, "feat/a", "main", "open", "success", "APPROVED", true)
-	seedStackedPRDraft(t, database, "acme", "widget", 11, "feat/b", "feat/a", "open", "success", "APPROVED", true)
+	seedStackedPRDraft(t, database, "acme", "widget", 10, "feat/a", "main", db.MergeRequestStateOpen, "success", "APPROVED", true)
+	seedStackedPRDraft(t, database, "acme", "widget", 11, "feat/b", "feat/a", db.MergeRequestStateOpen, "success", "APPROVED", true)
 	runStackDetection(t, database, "acme", "widget")
 
 	resp, err := client.HTTP.ListStacksWithResponse(t.Context(), &generated.ListStacksParams{})
@@ -12106,8 +12106,8 @@ func TestAPIGetStackForPR_SingleFailingIsInProgress(t *testing.T) {
 
 	// 2-PR chain where tip is failing but has no descendants.
 	// Per blocked semantics, this is partial_merge when base is merged.
-	seedStackedPR(t, database, "acme", "widget", 10, "feat/base", "main", "merged", "success", "APPROVED")
-	seedStackedPR(t, database, "acme", "widget", 11, "feat/tip", "feat/base", "open", "failure", "")
+	seedStackedPR(t, database, "acme", "widget", 10, "feat/base", "main", db.MergeRequestStateMerged, "success", "APPROVED")
+	seedStackedPR(t, database, "acme", "widget", 11, "feat/tip", "feat/base", db.MergeRequestStateOpen, "failure", "")
 	runStackDetection(t, database, "acme", "widget")
 
 	resp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberStackWithResponse(t.Context(), "gh", "acme", "widget", 11)
@@ -12125,8 +12125,8 @@ func TestAPIGetStackForPR_BaseBranchNotMain(t *testing.T) {
 	client := setupTestClient(t, srv)
 
 	// Base PR targets "master" not "main" — API must return real base_branch.
-	seedStackedPR(t, database, "acme", "widget", 10, "feat/base", "master", "open", "success", "APPROVED")
-	seedStackedPR(t, database, "acme", "widget", 11, "feat/tip", "feat/base", "open", "pending", "")
+	seedStackedPR(t, database, "acme", "widget", 10, "feat/base", "master", db.MergeRequestStateOpen, "success", "APPROVED")
+	seedStackedPR(t, database, "acme", "widget", 11, "feat/tip", "feat/base", db.MergeRequestStateOpen, "pending", "")
 	runStackDetection(t, database, "acme", "widget")
 
 	resp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberStackWithResponse(t.Context(), "gh", "acme", "widget", 10)
@@ -17608,7 +17608,7 @@ func TestAPIEditPRPreservesDerivedFields(t *testing.T) {
 	require.Equal(7, after.CommentCount)
 	require.Equal("success", after.CIStatus)
 	require.Equal("APPROVED", after.ReviewDecision)
-	require.Equal("open", after.State)
+	require.Equal(db.MergeRequestStateOpen, after.State)
 }
 
 // --- edit-issue-content (PATCH) tests ---

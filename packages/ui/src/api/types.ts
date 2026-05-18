@@ -49,7 +49,8 @@ export type IssueLabel = Label;
 export type RepoLabelsResponse = components["schemas"]["RepoLabelsResponse"];
 export type ItemLabelsResponse = components["schemas"]["ItemLabelsResponse"];
 
-export type KanbanStatus = "new" | "reviewing" | "waiting" | "awaiting_merge";
+export type KanbanStatus = PullRequest["KanbanStatus"];
+export type MergeRequestState = PullRequest["State"];
 
 export interface CICheck {
   name: string;

@@ -143,7 +143,7 @@ type MergeRequest struct {
 	Title              string
 	Author             string
 	AuthorDisplayName  string
-	State              string
+	State              MergeRequestState `enum:"open,closed,merged"`
 	IsDraft            bool
 	IsLocked           bool
 	Body               string
@@ -175,14 +175,31 @@ type MergeRequest struct {
 	// only when WorkflowApprovalHeadSHA matches PlatformHeadSHA. Only
 	// providers that surface a workflow-approval concept populate
 	// these columns; others leave them zero.
-	WorkflowApprovalCheckedAt *time.Time `json:"-"`
-	WorkflowApprovalHeadSHA   string     `json:"-"`
-	WorkflowApprovalRequired  bool       `json:"-"`
-	WorkflowApprovalCount     int        `json:"-"`
-	KanbanStatus              string
+	WorkflowApprovalCheckedAt *time.Time   `json:"-"`
+	WorkflowApprovalHeadSHA   string       `json:"-"`
+	WorkflowApprovalRequired  bool         `json:"-"`
+	WorkflowApprovalCount     int          `json:"-"`
+	KanbanStatus              KanbanStatus `enum:"new,reviewing,waiting,awaiting_merge"`
 	Starred                   bool
 	Labels                    []Label `json:"labels,omitempty"`
 }
+
+type MergeRequestState string
+
+const (
+	MergeRequestStateOpen   MergeRequestState = "open"
+	MergeRequestStateClosed MergeRequestState = "closed"
+	MergeRequestStateMerged MergeRequestState = "merged"
+)
+
+type KanbanStatus string
+
+const (
+	KanbanStatusNew           KanbanStatus = "new"
+	KanbanStatusReviewing     KanbanStatus = "reviewing"
+	KanbanStatusWaiting       KanbanStatus = "waiting"
+	KanbanStatusAwaitingMerge KanbanStatus = "awaiting_merge"
+)
 
 func (mr MergeRequest) Compare(other MergeRequest) int {
 	return cmp.Compare(mr.Number, other.Number)

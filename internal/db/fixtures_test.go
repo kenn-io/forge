@@ -55,7 +55,7 @@ func withMRBranches(head, base string) testMROpt {
 	}
 }
 
-func withMRState(state string) testMROpt {
+func withMRState(state MergeRequestState) testMROpt {
 	return func(mr *MergeRequest) { mr.State = state }
 }
 

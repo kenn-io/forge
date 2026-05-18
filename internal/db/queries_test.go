@@ -2166,7 +2166,7 @@ func TestListPullRequestsFilterByKanban(t *testing.T) {
 	require.NoError(err)
 	require.Len(prs, 1)
 	assert.Equal(2, prs[0].Number)
-	assert.Equal("reviewing", prs[0].KanbanStatus)
+	assert.Equal(KanbanStatusReviewing, prs[0].KanbanStatus)
 }
 
 func TestListMergeRequests_AttachesLabels(t *testing.T) {
@@ -2984,7 +2984,7 @@ func TestUpdatePRState(t *testing.T) {
 	pr, err := d.GetMergeRequest(ctx, "o", "r", 1)
 	require.NoError(err)
 	require.NotNil(pr)
-	assert.Equal("merged", pr.State)
+	assert.Equal(MergeRequestStateMerged, pr.State)
 	require.NotNil(pr.MergedAt)
 	assert.True(pr.MergedAt.Equal(mergedAt))
 }

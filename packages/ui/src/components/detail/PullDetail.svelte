@@ -5,6 +5,7 @@
     KanbanStatus,
     Label,
     ProviderCapabilities,
+    PullRequest,
   } from "../../api/types.js";
   import type { DetailSyncMode } from "../../stores/detail.svelte.js";
   import {
@@ -593,13 +594,13 @@
   }
 
   function hasMergeConflicts(
-    pr: { State: string; MergeableState: string },
+    pr: Pick<PullRequest, "State" | "MergeableState">,
   ): boolean {
     return pr.State === "open" && pr.MergeableState === "dirty";
   }
 
   function buildOpenMergeInput(
-    pr: { State: string; IsDraft: boolean; MergeableState: string },
+    pr: Pick<PullRequest, "State" | "IsDraft" | "MergeableState">,
     capabilities: ProviderCapabilities,
   ): PRDetailActionInput {
     return {

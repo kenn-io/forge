@@ -35,7 +35,7 @@ func DBMergeRequest(repoID int64, mr MergeRequest) *db.MergeRequest {
 		Title:              mr.Title,
 		Author:             mr.Author,
 		AuthorDisplayName:  mr.AuthorDisplayName,
-		State:              mr.State,
+		State:              db.MergeRequestState(mr.State),
 		IsDraft:            mr.IsDraft,
 		IsLocked:           mr.IsLocked,
 		Body:               mr.Body,

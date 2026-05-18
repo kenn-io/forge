@@ -1393,6 +1393,11 @@ components:
         IsLocked:
           type: boolean
         KanbanStatus:
+          enum:
+            - new
+            - reviewing
+            - waiting
+            - awaiting_merge
           type: string
         LastActivityAt:
           format: date-time
@@ -1420,6 +1425,10 @@ components:
         Starred:
           type: boolean
         State:
+          enum:
+            - open
+            - closed
+            - merged
           type: string
         Title:
           type: string
@@ -1583,6 +1592,11 @@ components:
         IsLocked:
           type: boolean
         KanbanStatus:
+          enum:
+            - new
+            - reviewing
+            - waiting
+            - awaiting_merge
           type: string
         LastActivityAt:
           format: date-time
@@ -1610,6 +1624,10 @@ components:
         Starred:
           type: boolean
         State:
+          enum:
+            - open
+            - closed
+            - merged
           type: string
         Title:
           type: string

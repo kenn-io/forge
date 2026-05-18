@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func insertTestMRWithBranches(t *testing.T, d *DB, repoID int64, number int, head, base, state string) int64 {
+func insertTestMRWithBranches(t *testing.T, d *DB, repoID int64, number int, head, base string, state MergeRequestState) int64 {
 	t.Helper()
 	return insertTestMRWithOptions(t, d, testMR(repoID, number, withMRTitle("PR "+head), withMRBranches(head, base), withMRState(state)))
 }
@@ -18,11 +18,11 @@ func TestListPRsForStackDetection(t *testing.T) {
 	repoID := insertTestRepo(t, d, "org", "repo")
 
 	// open PR — included
-	insertTestMRWithBranches(t, d, repoID, 1, "feature/a", "main", "open")
+	insertTestMRWithBranches(t, d, repoID, 1, "feature/a", "main", MergeRequestStateOpen)
 	// merged PR — included
-	insertTestMRWithBranches(t, d, repoID, 2, "feature/b", "feature/a", "merged")
+	insertTestMRWithBranches(t, d, repoID, 2, "feature/b", "feature/a", MergeRequestStateMerged)
 	// closed PR — excluded
-	insertTestMRWithBranches(t, d, repoID, 3, "feature/c", "main", "closed")
+	insertTestMRWithBranches(t, d, repoID, 3, "feature/c", "main", MergeRequestStateClosed)
 
 	prs, err := d.ListPRsForStackDetection(t.Context(), repoID)
 	require.NoError(t, err)

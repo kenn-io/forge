@@ -4456,7 +4456,7 @@ func (s *Syncer) refreshWorkflowApproval(
 	case ghPR != nil:
 		state = ghPR.GetState()
 	case normalized != nil:
-		state = normalized.State
+		state = string(normalized.State)
 	}
 	if state != "open" {
 		return

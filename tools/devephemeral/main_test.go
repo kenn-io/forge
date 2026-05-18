@@ -134,6 +134,25 @@ func TestPrepareEphemeralDatabaseRejectsSourceDestinationMatch(t *testing.T) {
 	Assert.Equal(t, "preserve me", readSQLiteMarker(t, dbPath))
 }
 
+func TestPrepareEphemeralDatabaseRejectsSymlinkedSourceDestinationMatch(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	realDir := filepath.Join(dir, "real")
+	linkDir := filepath.Join(dir, "link")
+	require.NoError(os.MkdirAll(realDir, 0o700))
+	require.NoError(os.Symlink(realDir, linkDir))
+
+	sourcePath := filepath.Join(realDir, "middleman.db")
+	destPath := filepath.Join(linkDir, "middleman.db")
+	writeSQLiteMarker(t, sourcePath, "preserve me")
+
+	err := prepareEphemeralDatabase(sourcePath, destPath, true)
+	require.Error(err)
+
+	Assert.Contains(t, err.Error(), "source and destination database are the same")
+	Assert.Equal(t, "preserve me", readSQLiteMarker(t, sourcePath))
+}
+
 func TestPrepareEphemeralConfigCanStartWithFreshDatabase(t *testing.T) {
 	require := require.New(t)
 	dir := t.TempDir()

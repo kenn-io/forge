@@ -624,7 +624,24 @@ func sameFilesystemPath(left, right string) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("resolve destination database path: %w", err)
 	}
-	return filepath.Clean(leftAbs) == filepath.Clean(rightAbs), nil
+	if filepath.Clean(leftAbs) == filepath.Clean(rightAbs) {
+		return true, nil
+	}
+	leftInfo, err := os.Stat(leftAbs)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return false, nil
+		}
+		return false, fmt.Errorf("stat source database: %w", err)
+	}
+	rightInfo, err := os.Stat(rightAbs)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return false, nil
+		}
+		return false, fmt.Errorf("stat destination database: %w", err)
+	}
+	return os.SameFile(leftInfo, rightInfo), nil
 }
 
 func removeSQLiteFiles(path string) error {

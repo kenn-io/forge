@@ -426,6 +426,7 @@ type mockClient struct {
 	listIssueCommentsErr            error
 	listIssueCommentsFn             func(context.Context, string, string, int) ([]*gh.IssueComment, error)
 	listIssueCommentsIfChangedFn    func(context.Context, string, string, int) ([]*gh.IssueComment, error)
+	createReviewWithCommentsFn      func(context.Context, string, string, int, string, string, string, []*gh.DraftReviewComment) (*gh.PullRequestReview, error)
 	createdReviewEvent              string
 	createdReviewBody               string
 	createdReviewCommitID           string
@@ -893,15 +894,18 @@ func (m *mockClient) CreateReview(
 }
 
 func (m *mockClient) CreateReviewWithComments(
-	_ context.Context,
-	_, _ string,
-	_ int,
+	ctx context.Context,
+	owner, repo string,
+	number int,
 	event string,
 	body string,
 	commitID string,
 	comments []*gh.DraftReviewComment,
 ) (*gh.PullRequestReview, error) {
 	m.trackCall()
+	if m.createReviewWithCommentsFn != nil {
+		return m.createReviewWithCommentsFn(ctx, owner, repo, number, event, body, commitID, comments)
+	}
 	id := int64(1)
 	submittedAt := gh.Timestamp{Time: time.Now().UTC()}
 	m.createdReviewEvent = event
@@ -957,6 +961,37 @@ func TestGitHubProviderPublishDiffReviewDraftMapsReviewComments(t *testing.T) {
 	require.NotNil(comment.StartLine)
 	assert.Equal(10, *comment.StartLine)
 	assert.Equal(12, comment.GetLine())
+}
+
+func TestGitHubProviderPublishDiffReviewDraftHandlesMissingSubmittedAt(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	mock := &mockClient{
+		createReviewWithCommentsFn: func(
+			_ context.Context,
+			_ string, _ string,
+			_ int,
+			_ string, _ string, _ string,
+			_ []*gh.DraftReviewComment,
+		) (*gh.PullRequestReview, error) {
+			id := int64(99)
+			return &gh.PullRequestReview{ID: &id}, nil
+		},
+	}
+	provider := gitHubClientProvider{client: mock, host: "github.com"}
+
+	result, err := provider.PublishDiffReviewDraft(t.Context(), platform.RepoRef{
+		Owner: "acme",
+		Name:  "widget",
+	}, 7, platform.PublishDiffReviewDraftInput{
+		Action:  platform.ReviewActionComment,
+		HeadSHA: "validated-head-sha",
+	})
+
+	require.NoError(err)
+	require.NotNil(result)
+	assert.Equal("99", result.ProviderReviewID)
+	assert.True(result.SubmittedAt.IsZero())
 }
 
 func (m *mockClient) MarkPullRequestReadyForReview(

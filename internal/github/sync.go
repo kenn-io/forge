@@ -1195,9 +1195,10 @@ func (p gitHubClientProvider) PublishDiffReviewDraft(
 	if review == nil {
 		return nil, fmt.Errorf("provider returned no review")
 	}
+	submittedAt := review.GetSubmittedAt() // zero Timestamp when GitHub omits submitted_at
 	return &platform.PublishedDiffReview{
 		ProviderReviewID: strconv.FormatInt(review.GetID(), 10),
-		SubmittedAt:      review.GetSubmittedAt().Time,
+		SubmittedAt:      submittedAt.Time,
 	}, nil
 }
 

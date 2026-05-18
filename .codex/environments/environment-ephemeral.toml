@@ -8,10 +8,34 @@ make frontend-deps
 status=tmp/dev-ephemeral/dev-ephemeral.json
 log=tmp/dev-ephemeral/setup.log
 mkdir -p tmp/dev-ephemeral
+
+pid=
+cleanup_setup() {
+  rc=$?
+  trap - EXIT INT TERM
+  if [ "$rc" -ne 0 ]; then
+    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+      kill "$pid" 2>/dev/null || true
+      wait "$pid" 2>/dev/null || true
+    fi
+    if [ -s "$status" ]; then
+      STATUS="$status" make dev-ephemeral-stop || true
+    fi
+  fi
+  exit "$rc"
+}
+trap cleanup_setup EXIT INT TERM
+
+if [ -e "$status" ]; then
+  STATUS="$status" make dev-ephemeral-stop || true
+  rm -f "$status"
+fi
+
 nohup make dev-ephemeral >"$log" 2>&1 &
 pid=$!
 for _ in $(seq 1 60); do
   if [ -s "$status" ]; then
+    trap - EXIT INT TERM
     exit 0
   fi
   if ! kill -0 "$pid" 2>/dev/null; then

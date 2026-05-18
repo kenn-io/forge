@@ -141,9 +141,7 @@ test.describe("CI dropdown", () => {
 
     const detail = page.locator(".pull-detail");
     const chip = detail.getByRole("button", { name: /CI:\s*(success|pending)/i });
-    const diffStatsChip = detail.locator(".chip--muted", {
-      hasText: /^\+\d+\/-\d+$/,
-    });
+    const diffStatsChip = detail.locator(".diff-summary-trigger");
     const labelsButton = detail.getByRole("button", { name: /^Labels$/ });
     const actionRow = detail.locator(".primary-actions-wrap");
     await chip.waitFor({ state: "visible", timeout: 10_000 });

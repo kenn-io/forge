@@ -2297,6 +2297,11 @@ test.describe("workspace list bubble opens right sidebar", () => {
       await expect(
         page.locator(".workspace-list-sidebar .ws-row"),
       ).toHaveCount(list.length);
+      await expect(
+        page.locator(".workspace-list-sidebar .ws-row", {
+          hasText: "feature/busy",
+        }).locator(".diff-stats"),
+      ).toHaveCount(1);
 
       const bubbles = page.locator(
         ".workspace-list-sidebar .ws-row .item-bubble",

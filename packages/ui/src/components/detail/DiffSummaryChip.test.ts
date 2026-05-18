@@ -35,6 +35,12 @@ function rowText(popover: HTMLElement, label: string): string {
   return row?.textContent?.replace(/\s+/g, " ").trim() ?? "";
 }
 
+function statLabel(additions: number, deletions: number): string {
+  const additionLabel = additions === 1 ? "addition" : "additions";
+  const deletionLabel = deletions === 1 ? "deletion" : "deletions";
+  return `${additions} ${additionLabel}, ${deletions} ${deletionLabel}`;
+}
+
 describe("DiffSummaryChip", () => {
   afterEach(() => {
     cleanup();
@@ -60,7 +66,7 @@ describe("DiffSummaryChip", () => {
     });
 
     await fireEvent.mouseEnter(
-      screen.getByRole("button", { name: /\+74\s+−20/i }),
+      screen.getByRole("button", { name: statLabel(74, 20) }),
     );
 
     const popover = await screen.findByRole("status");
@@ -98,7 +104,7 @@ describe("DiffSummaryChip", () => {
     });
 
     await fireEvent.mouseEnter(
-      screen.getByRole("button", { name: /\+60\s+−14/i }),
+      screen.getByRole("button", { name: statLabel(60, 14) }),
     );
 
     const popover = await screen.findByRole("status");
@@ -127,7 +133,7 @@ describe("DiffSummaryChip", () => {
       },
     });
 
-    const trigger = screen.getByRole("button", { name: /\+4\s+−1/i });
+    const trigger = screen.getByRole("button", { name: statLabel(4, 1) });
     await fireEvent.mouseEnter(trigger);
 
     expect(await screen.findByText("Changed files are still refreshing."))
@@ -167,7 +173,7 @@ describe("DiffSummaryChip", () => {
     });
 
     await fireEvent.mouseEnter(
-      screen.getByRole("button", { name: /\+10\s+−0/i }),
+      screen.getByRole("button", { name: statLabel(10, 0) }),
     );
     await rerender({
       additions: 5,
@@ -210,7 +216,7 @@ describe("DiffSummaryChip", () => {
     });
 
     await fireEvent.mouseEnter(
-      screen.getByRole("button", { name: /\+10\s+−0/i }),
+      screen.getByRole("button", { name: statLabel(10, 0) }),
     );
     expect(await screen.findByText("Plans/docs")).toBeTruthy();
 
@@ -228,28 +234,4 @@ describe("DiffSummaryChip", () => {
     expect(screen.queryByText("Plans/docs")).toBeNull();
   });
 
-  it("formats large totals compactly with colored parts", async () => {
-    render(DiffSummaryChip, {
-      props: {
-        additions: 2781,
-        deletions: 216,
-        loadFiles: vi.fn(async () =>
-          new DiffSummaryFilesResult(false, [
-            file("src/App.svelte", 1428, 213),
-            file("src/App.test.ts", 1353, 3),
-          ])),
-      },
-    });
-
-    const trigger = screen.getByRole("button", { name: /\+2\.78k\s+−216/i });
-    expect(trigger.querySelector(".diff-summary-stat--add")?.textContent?.trim())
-      .toBe("+2.78k");
-    expect(trigger.querySelector(".diff-summary-stat--del")?.textContent?.trim())
-      .toBe("−216");
-
-    await fireEvent.mouseEnter(trigger);
-    const popover = await screen.findByRole("status");
-    expect(rowText(popover, "Code")).toBe("Code +1.43k −213");
-    expect(rowText(popover, "Tests")).toBe("Tests +1.35k −3");
-  });
 });

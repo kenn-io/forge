@@ -6,7 +6,10 @@
   import ArrowUpIcon from "@lucide/svelte/icons/arrow-up";
   import ArrowDownIcon from "@lucide/svelte/icons/arrow-down";
   import { client } from "../../api/runtime.js";
-  import { LeftSidebarToggle } from "@middleman/ui";
+  import {
+    DiffStats,
+    LeftSidebarToggle,
+  } from "@middleman/ui";
   import ProviderIcon from "../provider/ProviderIcon.svelte";
 
   interface Workspace {
@@ -151,14 +154,6 @@
 
   function shortBranch(ref: string): string {
     return ref.replace(/^refs\/heads\//, "");
-  }
-
-  function formatDiff(value: number): string {
-    if (value < 1000) return String(value);
-    if (value < 10_000) {
-      return `${(value / 1000).toFixed(1)}k`;
-    }
-    return `${Math.round(value / 1000)}k`;
   }
 
   function shortRepo(repoKey: string): string {
@@ -340,13 +335,11 @@
                   </span>
                 {/if}
                 {#if showDiff}
-                  <span class="diff-stats">
-                    {#if adds != null}
-                      <span class="add">+{formatDiff(adds)}</span>
-                    {/if}
-                    {#if dels != null}
-                      <span class="del">−{formatDiff(dels)}</span>
-                    {/if}
+                  <span class="workspace-diff-stats">
+                    <DiffStats
+                      additions={adds ?? 0}
+                      deletions={dels ?? 0}
+                    />
                   </span>
                 {/if}
               </div>
@@ -743,22 +736,10 @@
     color: var(--accent-amber);
   }
 
-  .diff-stats {
+  .workspace-diff-stats {
     flex-shrink: 0;
     display: inline-flex;
-    gap: 4px;
-    font-family: var(--font-mono);
     font-size: var(--font-size-2xs);
-    font-variant-numeric: tabular-nums;
-    color: var(--text-muted);
-  }
-
-  .diff-stats .add {
-    color: var(--accent-green);
-  }
-
-  .diff-stats .del {
-    color: var(--accent-red);
   }
 
   /* Width-aware hiding: shed least-critical chrome first as the
@@ -766,7 +747,7 @@
    * hygiene matters more for "should I open this workspace?" than
    * line counts. */
   @container workspace-rail (max-width: 260px) {
-    .diff-stats {
+    .workspace-diff-stats {
       display: none;
     }
   }

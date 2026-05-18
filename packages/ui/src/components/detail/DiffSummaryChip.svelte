@@ -4,7 +4,7 @@
     summarizeDiffFiles,
     type DiffLineSummary,
   } from "./diff-summary.js";
-  import { formatDiffStat } from "../../utils/diff-stats.js";
+  import DiffStats from "../shared/DiffStats.svelte";
 
   interface Props {
     additions: number;
@@ -122,12 +122,7 @@
     onfocus={showPopover}
     onblur={hidePopover}
   >
-    <span class="diff-summary-stat diff-summary-stat--add">
-      +{formatDiffStat(additions)}
-    </span>
-    <span class="diff-summary-stat diff-summary-stat--del">
-      −{formatDiffStat(deletions)}
-    </span>
+    <DiffStats {additions} {deletions} />
   </button>
 
   {#if open}
@@ -147,14 +142,10 @@
           {#each visibleRows as row (row.key)}
             <div class="diff-summary-row">
               <span>{row.label}</span>
-              <span class="diff-summary-row-stats">
-                <span class="diff-summary-stat diff-summary-stat--add">
-                  +{formatDiffStat(summary[row.key].additions)}
-                </span>
-                <span class="diff-summary-stat diff-summary-stat--del">
-                  −{formatDiffStat(summary[row.key].deletions)}
-                </span>
-              </span>
+              <DiffStats
+                additions={summary[row.key].additions}
+                deletions={summary[row.key].deletions}
+              />
             </div>
           {/each}
         </div>
@@ -239,27 +230,6 @@
 
   .diff-summary-row {
     color: var(--text-secondary);
-  }
-
-  .diff-summary-row-stats {
-    display: inline-flex;
-    gap: 6px;
-    font-family: var(--font-mono);
-    white-space: nowrap;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .diff-summary-stat {
-    font-family: var(--font-mono);
-    font-variant-numeric: tabular-nums;
-  }
-
-  .diff-summary-stat--add {
-    color: var(--accent-green);
-  }
-
-  .diff-summary-stat--del {
-    color: var(--accent-red);
   }
 
   .diff-summary-state {

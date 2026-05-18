@@ -6,6 +6,7 @@
   import Chip, {
     type ChipTone,
   } from "../shared/Chip.svelte";
+  import DiffStats from "../shared/DiffStats.svelte";
 
   interface Props {
     worktree: WorkspaceWorktree;
@@ -224,10 +225,10 @@
 
         {#if worktree.diff}
           <span class="diff-summary">
-            <span class="diff-added">+{worktree.diff.added}</span>
-            <span class="diff-removed">
-              -{worktree.diff.removed}
-            </span>
+            <DiffStats
+              additions={worktree.diff.added}
+              deletions={worktree.diff.removed}
+            />
           </span>
         {/if}
 
@@ -404,17 +405,7 @@
   .diff-summary {
     display: flex;
     align-items: center;
-    gap: 4px;
     font-size: var(--font-size-xs);
-    font-family: var(--font-mono);
-  }
-
-  .diff-added {
-    color: var(--accent-green);
-  }
-
-  .diff-removed {
-    color: var(--accent-red);
   }
 
   .branch-text {

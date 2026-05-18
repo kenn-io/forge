@@ -495,6 +495,8 @@ test.describe("diff view", () => {
     const header = firstFile.locator(".file-header");
     const content = firstFile.locator(".file-content");
 
+    await expect(header.locator(".diff-stats")).toHaveCount(1);
+
     // Content is initially visible.
     await expect(content).toBeVisible();
 

@@ -8,6 +8,7 @@
   import DiffLineComponent from "./DiffLine.svelte";
   import CollapsedRegion from "./CollapsedRegion.svelte";
   import DiffRichPreview from "./DiffRichPreview.svelte";
+  import DiffStats from "../shared/DiffStats.svelte";
 
   interface Props {
     file: DiffFileType;
@@ -244,8 +245,11 @@
       {displayPath(file)}
     </span>
     <span class="file-stats">
-      <span class="stat" class:stat--add={file.additions > 0} class:stat--dim={file.additions === 0}>+{file.additions}</span>
-      <span class="stat" class:stat--del={file.deletions > 0} class:stat--dim={file.deletions === 0}>-{file.deletions}</span>
+      <DiffStats
+        additions={file.additions}
+        deletions={file.deletions}
+        dimZeros
+      />
     </span>
   </button>
   {#if !collapsed}
@@ -350,28 +354,9 @@
 
   .file-stats {
     display: flex;
-    gap: 6px;
     flex-shrink: 0;
-  }
-
-  .stat {
-    font-family: var(--font-mono);
     font-size: var(--font-size-xs);
     font-weight: 600;
-    min-width: 3.5ch;
-    text-align: right;
-  }
-
-  .stat--add {
-    color: var(--diff-add-text);
-  }
-
-  .stat--del {
-    color: var(--diff-del-text);
-  }
-
-  .stat--dim {
-    opacity: 0.3;
   }
 
   .file-content {

@@ -14,10 +14,12 @@ interface MockDraftLoad {
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => {
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((done, fail) => {
     resolve = done;
+    reject = fail;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
 
 describe("createDiffReviewDraftStore", () => {
@@ -205,6 +207,83 @@ describe("createDiffReviewDraftStore", () => {
     await staleLoad.promise;
     await Promise.resolve();
 
+    expect(store.getComments()).toEqual([]);
+  });
+
+  it("does not stay loading when a mutation fails during an in-flight load", async () => {
+    const staleLoad = deferred<unknown>();
+    const client = {
+      GET: vi.fn().mockReturnValueOnce(staleLoad.promise),
+      POST: vi.fn(() => Promise.resolve({
+        error: { title: "failed" },
+        response: { status: 502, ok: false },
+      })),
+    } as unknown as MiddlemanClient;
+    const store = createDiffReviewDraftStore({ client });
+
+    store.setContext({
+      provider: "forgejo",
+      platformHost: "codeberg.org",
+      owner: "acme",
+      name: "widgets",
+      repoPath: "acme/widgets",
+    }, 42, true);
+    await Promise.resolve();
+    expect(store.isLoading()).toBe(true);
+
+    await expect(store.publish("comment", "summary")).resolves.toBe(false);
+    expect(store.isLoading()).toBe(false);
+
+    staleLoad.resolve({
+      data: {
+        comments: [{ id: "stale", body: "old draft" }],
+        supported_actions: ["comment"],
+        native_multiline_ranges: true,
+      },
+      response: { status: 200, ok: true },
+    });
+    await staleLoad.promise;
+    await Promise.resolve();
+
+    expect(store.isLoading()).toBe(false);
+    expect(store.getComments()).toEqual([]);
+  });
+
+  it("does not stay loading when discard succeeds during an in-flight load", async () => {
+    const staleLoad = deferred<unknown>();
+    const client = {
+      GET: vi.fn().mockReturnValueOnce(staleLoad.promise),
+      DELETE: vi.fn(() => Promise.resolve({
+        response: { status: 200, ok: true },
+      })),
+    } as unknown as MiddlemanClient;
+    const store = createDiffReviewDraftStore({ client });
+
+    store.setContext({
+      provider: "forgejo",
+      platformHost: "codeberg.org",
+      owner: "acme",
+      name: "widgets",
+      repoPath: "acme/widgets",
+    }, 42, true);
+    await Promise.resolve();
+    expect(store.isLoading()).toBe(true);
+
+    await expect(store.discard()).resolves.toBe(true);
+    expect(store.isLoading()).toBe(false);
+
+    staleLoad.resolve({
+      data: {
+        comments: [{ id: "stale", body: "old draft" }],
+        supported_actions: ["comment"],
+        native_multiline_ranges: true,
+      },
+      response: { status: 200, ok: true },
+    });
+    await staleLoad.promise;
+    await Promise.resolve();
+
+    expect(store.isLoading()).toBe(false);
     expect(store.getComments()).toEqual([]);
   });
 });

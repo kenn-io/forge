@@ -120,8 +120,13 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
     number = nextNumber;
   }
 
-  function clear(): void {
+  function invalidateDraftLoad(): void {
     draftVersion += 1;
+    loading = false;
+  }
+
+  function clear(): void {
+    invalidateDraftLoad();
     enabled = false;
     wasEnabled = false;
     ref = null;
@@ -173,7 +178,7 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
     if (!enabled || !ref) return false;
     const params = currentParams();
     if (!params) return false;
-    draftVersion += 1;
+    invalidateDraftLoad();
     submitting = true;
     storeError = null;
     try {
@@ -201,7 +206,7 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
     if (!enabled || !ref) return false;
     const params = currentParams();
     if (!params) return false;
-    draftVersion += 1;
+    invalidateDraftLoad();
     submitting = true;
     storeError = null;
     try {
@@ -236,7 +241,7 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
     const publishedRef = ref;
     const publishedNumber = number;
     const key = requestKey();
-    draftVersion += 1;
+    invalidateDraftLoad();
     submitting = true;
     storeError = null;
     try {
@@ -269,7 +274,7 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
     if (!enabled || !ref) return false;
     const params = currentParams();
     if (!params) return false;
-    draftVersion += 1;
+    invalidateDraftLoad();
     submitting = true;
     storeError = null;
     try {

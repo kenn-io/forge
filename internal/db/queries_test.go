@@ -2143,6 +2143,30 @@ func TestListPullRequestsFilterBySearchNumber(t *testing.T) {
 	require.Len(prs, 3)
 }
 
+func TestListPullRequestsFilterBySearchLabel(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+
+	repoID := insertTestRepo(t, d, "owner", "repo")
+	base := baseTime()
+
+	insertTestMR(t, d, repoID, 1, "add feature", base)
+	prID := insertTestMR(t, d, repoID, 2, "fix bug", base.Add(time.Hour))
+	require.NoError(d.ReplaceMergeRequestLabels(ctx, repoID, prID, []Label{{
+		PlatformID: 200,
+		Name:       "needs-review",
+		Color:      "fbca04",
+		UpdatedAt:  base,
+	}}))
+
+	prs, err := d.ListMergeRequests(ctx, ListMergeRequestsOpts{Search: "needs-review"})
+	require.NoError(err)
+	require.Len(prs, 1)
+	assert.Equal(2, prs[0].Number)
+}
+
 func TestListPullRequestsFilterByKanban(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
@@ -3129,6 +3153,30 @@ func TestListIssuesFilterBySearch(t *testing.T) {
 	issues, err = d.ListIssues(t.Context(), ListIssuesOpts{Search: "2"})
 	require.NoError(err)
 	require.Len(issues, 3)
+}
+
+func TestListIssuesFilterBySearchLabel(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+
+	repoID := insertTestRepo(t, d, "owner", "repo")
+	base := baseTime()
+
+	insertTestIssue(t, d, repoID, 12, "report a bug", base)
+	issueID := insertTestIssue(t, d, repoID, 278, "filter broken", base.Add(time.Hour))
+	require.NoError(d.ReplaceIssueLabels(ctx, repoID, issueID, []Label{{
+		PlatformID: 300,
+		Name:       "needs-triage",
+		Color:      "d73a4a",
+		UpdatedAt:  base,
+	}}))
+
+	issues, err := d.ListIssues(ctx, ListIssuesOpts{Search: "needs-triage"})
+	require.NoError(err)
+	require.Len(issues, 1)
+	assert.Equal(278, issues[0].Number)
 }
 
 func TestReplaceIssueLabels_RejectsWrongRepoID(t *testing.T) {

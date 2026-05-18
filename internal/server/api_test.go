@@ -5551,8 +5551,16 @@ func TestAPIListPullsSearchByNumber(t *testing.T) {
 	ctx := t.Context()
 
 	seedPR(t, database, "acme", "widget", 12, withSeedPRTitle("add feature"))
-	seedPR(t, database, "acme", "widget", 278, withSeedPRTitle("fix bug"))
+	prID := seedPR(t, database, "acme", "widget", 278, withSeedPRTitle("fix bug"))
 	seedPR(t, database, "acme", "widget", 290, withSeedPRTitle("another change"))
+	repo, err := database.GetRepoByOwnerName(ctx, "acme", "widget")
+	require.NoError(err)
+	require.NoError(database.ReplaceMergeRequestLabels(ctx, repo.ID, prID, []db.Label{{
+		PlatformID: 200,
+		Name:       "needs-review",
+		Color:      "fbca04",
+		UpdatedAt:  time.Now().UTC(),
+	}}))
 
 	client := setupTestClient(t, srv)
 
@@ -5579,6 +5587,9 @@ func TestAPIListPullsSearchByNumber(t *testing.T) {
 	q = "fix"
 	assert.ElementsMatch([]int{278}, pullNumbers(&generated.ListPullsParams{Q: &q}))
 
+	q = "needs-review"
+	assert.ElementsMatch([]int{278}, pullNumbers(&generated.ListPullsParams{Q: &q}))
+
 	// Substring of number matches multiple.
 	q = "2"
 	assert.ElementsMatch([]int{12, 278, 290}, pullNumbers(&generated.ListPullsParams{Q: &q}))
@@ -5591,8 +5602,16 @@ func TestAPIListIssuesSearchByNumber(t *testing.T) {
 	ctx := t.Context()
 
 	seedIssueOnHost(t, database, "github.com", "acme", "widget", 12, "open", "report a bug")
-	seedIssueOnHost(t, database, "github.com", "acme", "widget", 278, "open", "filter broken")
+	issueID := seedIssueOnHost(t, database, "github.com", "acme", "widget", 278, "open", "filter broken")
 	seedIssueOnHost(t, database, "github.com", "acme", "widget", 290, "open", "another change")
+	repo, err := database.GetRepoByOwnerName(ctx, "acme", "widget")
+	require.NoError(err)
+	require.NoError(database.ReplaceIssueLabels(ctx, repo.ID, issueID, []db.Label{{
+		PlatformID: 300,
+		Name:       "needs-triage",
+		Color:      "d73a4a",
+		UpdatedAt:  time.Now().UTC(),
+	}}))
 
 	client := setupTestClient(t, srv)
 
@@ -5617,6 +5636,9 @@ func TestAPIListIssuesSearchByNumber(t *testing.T) {
 
 	// Title still matches.
 	q = "broken"
+	assert.ElementsMatch([]int{278}, issueNumbers(&generated.ListIssuesParams{Q: &q}))
+
+	q = "needs-triage"
 	assert.ElementsMatch([]int{278}, issueNumbers(&generated.ListIssuesParams{Q: &q}))
 
 	// Substring of number matches multiple.

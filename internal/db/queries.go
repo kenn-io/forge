@@ -12,15 +12,43 @@ import (
 // listSearchCondition returns a SQL condition and args for a free-text search.
 // The title is searched as "#{number} {title}" so substring queries can match
 // the number, the title, or both at once (e.g. "278" hits "#278 fix bug").
-// Author is matched separately. The alias is the table alias used in the
+// Author is matched separately. Labels are matched by name for list aliases
+// with item-label join tables. The alias is the table alias used in the
 // surrounding query (e.g. "p" for merge requests, "i" for issues).
 func listSearchCondition(alias, search string) (string, []any) {
 	like := "%" + search + "%"
+	labelCondition := ""
+	switch alias {
+	case "p":
+		labelCondition = fmt.Sprintf(
+			` OR EXISTS (
+				SELECT 1
+				FROM middleman_merge_request_labels mrl
+				JOIN middleman_labels l ON l.id = mrl.label_id
+				WHERE mrl.merge_request_id = %s.id AND l.name LIKE ?
+			)`,
+			alias,
+		)
+	case "i":
+		labelCondition = fmt.Sprintf(
+			` OR EXISTS (
+				SELECT 1
+				FROM middleman_issue_labels il
+				JOIN middleman_labels l ON l.id = il.label_id
+				WHERE il.issue_id = %s.id AND l.name LIKE ?
+			)`,
+			alias,
+		)
+	}
 	cond := fmt.Sprintf(
-		"(('#' || %s.number || ' ' || %s.title) LIKE ? OR %s.author LIKE ?)",
-		alias, alias, alias,
+		"(('#' || %s.number || ' ' || %s.title) LIKE ? OR %s.author LIKE ?%s)",
+		alias, alias, alias, labelCondition,
 	)
-	return cond, []any{like, like}
+	args := []any{like, like}
+	if labelCondition != "" {
+		args = append(args, like)
+	}
+	return cond, args
 }
 
 func sqlPlaceholders(count int) string {

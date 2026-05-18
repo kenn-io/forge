@@ -323,12 +323,13 @@ test.describe("workspace tab persistence", () => {
         .first()
         .locator(".gutter")
         .count();
-      expect(firstDiffLineGutterCount).toBe(1);
-      const lineGutterWidth = await page
+      expect(firstDiffLineGutterCount).toBe(2);
+      const lineGutterWidths = await page
         .locator(".right-sidebar .diff-line .gutter")
-        .first()
-        .evaluate((gutter) => gutter.getBoundingClientRect().width);
-      expect(lineGutterWidth).toBeLessThanOrEqual(40);
+        .evaluateAll((gutters) =>
+          gutters.map((gutter) => gutter.getBoundingClientRect().width),
+        );
+      expect(Math.max(...lineGutterWidths)).toBeLessThanOrEqual(40);
       const diffToolbar = page.locator(".right-sidebar .diff-toolbar");
       await expect(diffToolbar.locator(".compact-more-btn")).toBeVisible();
       await expect(

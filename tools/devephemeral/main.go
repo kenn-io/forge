@@ -31,6 +31,7 @@ const (
 	stopPollInterval   = 50 * time.Millisecond
 	stopInterruptGrace = 500 * time.Millisecond
 	stopTerminateGrace = 2 * time.Second
+	stopWaitGrace      = 500 * time.Millisecond
 )
 
 type ephemeralOptions struct {
@@ -112,6 +113,11 @@ func run(ctx context.Context, args []string) error {
 		if err != nil {
 			return err
 		}
+		releaseLock, err := lockEphemeralWorkDir(filepath.Dir(resolvedStatusPath))
+		if err != nil {
+			return err
+		}
+		defer func() { _ = releaseLock() }()
 		if err := stopEphemeralStack(resolvedStatusPath); err != nil {
 			return err
 		}
@@ -135,6 +141,17 @@ func run(ctx context.Context, args []string) error {
 	if resolvedBackendPort == resolvedFrontendPort {
 		return fmt.Errorf("backend and frontend ports both resolved to %d", resolvedBackendPort)
 	}
+
+	releaseLock, err := lockEphemeralWorkDir(resolvedWorkDir)
+	if err != nil {
+		return err
+	}
+	locked := true
+	defer func() {
+		if locked {
+			_ = releaseLock()
+		}
+	}()
 
 	existingStatusPath := statusPathForWorkDir(resolvedWorkDir)
 	existingStatus, running, err := readRunningEphemeralStatus(existingStatusPath)
@@ -208,6 +225,11 @@ func run(ctx context.Context, args []string) error {
 	}
 
 	printStatus(status, prepared.statusPath)
+
+	if err := releaseLock(); err != nil {
+		return err
+	}
+	locked = false
 
 	return waitForCommands(ctx, backend, frontend)
 }
@@ -341,6 +363,29 @@ func resolveStopStatusPath(statusPath, workDir string) (string, error) {
 		return statusPathForWorkDir(workDir), nil
 	}
 	return statusPathForWorkDir(defaultEphemeralWorkDir), nil
+}
+
+func lockEphemeralWorkDir(workDir string) (func() error, error) {
+	if err := os.MkdirAll(workDir, 0o700); err != nil {
+		return nil, fmt.Errorf("create work directory for lock: %w", err)
+	}
+	lockPath := filepath.Join(workDir, "dev-ephemeral.lock")
+	file, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, fmt.Errorf("open ephemeral work directory lock: %w", err)
+	}
+	if err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		_ = file.Close()
+		if errors.Is(err, syscall.EWOULDBLOCK) || errors.Is(err, syscall.EAGAIN) {
+			return nil, fmt.Errorf("ephemeral work directory is locked: %s", workDir)
+		}
+		return nil, fmt.Errorf("lock ephemeral work directory: %w", err)
+	}
+	return func() error {
+		unlockErr := syscall.Flock(int(file.Fd()), syscall.LOCK_UN)
+		closeErr := file.Close()
+		return errors.Join(unlockErr, closeErr)
+	}, nil
 }
 
 func stopEphemeralStack(statusPath string) error {
@@ -684,19 +729,45 @@ func waitForCommands(ctx context.Context, backend, frontend *exec.Cmd) error {
 		consumed = 1
 	}
 
-	stopProcess(backend.Process)
-	stopProcess(frontend.Process)
+	stopErr := errors.Join(stopForegroundProcesses(backend.Process, frontend.Process)...)
 
 	for i := consumed; i < 2; i++ {
-		if err := <-errCh; err != nil && firstErr == nil {
-			firstErr = err
+		select {
+		case err := <-errCh:
+			if err != nil && firstErr == nil {
+				firstErr = err
+			}
+		case <-time.After(stopWaitGrace):
+			if stopErr != nil {
+				firstErr = stopErr
+			} else if firstErr == nil || errors.Is(firstErr, context.Canceled) {
+				firstErr = fmt.Errorf("timed out waiting for child shutdown")
+			}
 		}
 	}
 
+	if stopErr != nil && firstErr == nil {
+		firstErr = stopErr
+	}
 	if errors.Is(firstErr, context.Canceled) {
 		return nil
 	}
 	return firstErr
+}
+
+func stopForegroundProcesses(processes ...*os.Process) []error {
+	refs := make([]processRef, 0, len(processes))
+	for _, process := range processes {
+		if process == nil {
+			continue
+		}
+		startedAt, err := processStartTime(process.Pid)
+		if err != nil {
+			continue
+		}
+		refs = append(refs, processRef{pid: process.Pid, startedAt: startedAt})
+	}
+	return stopEphemeralProcesses(refs)
 }
 
 func commandWaitError(name string, err error) error {

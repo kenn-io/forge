@@ -22,7 +22,6 @@ AIR_BIN := $(shell if command -v air >/dev/null 2>&1; then command -v air; \
 	fi)
 DEV_LOG_DIR ?= tmp/logs
 DEV_BACKEND_LOG ?= $(DEV_LOG_DIR)/backend-dev.log
-DEV_EPHEMERAL_STOP_STATUS_ARG := $(if $(STATUS),-status "$(STATUS)",)
 
 .PHONY: ensure-embed-dir ensure-tmp-dir check-air air-install build build-release install \
         rust-pty-manager rust-test frontend-deps frontend frontend-dev frontend-dev-bun frontend-check api-generate roborev-api-generate \
@@ -176,7 +175,11 @@ dev-ephemeral: ensure-embed-dir ensure-tmp-dir
 
 # Stop an ephemeral dev stack from its status JSON.
 dev-ephemeral-stop:
-	go run ./tools/devephemeral -stop $(DEV_EPHEMERAL_STOP_STATUS_ARG) $(ARGS)
+	if [ -n "$$STATUS" ]; then \
+		go run ./tools/devephemeral -stop -status "$$STATUS" $(ARGS); \
+	else \
+		go run ./tools/devephemeral -stop $(ARGS); \
+	fi
 
 # Run tests
 test: ensure-embed-dir ensure-tmp-dir

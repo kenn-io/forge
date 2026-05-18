@@ -285,6 +285,23 @@ func TestResolveStopStatusPathDefaultsToStableStatusPath(t *testing.T) {
 	Assert.Equal(t, filepath.Join("tmp", "dev-ephemeral", "dev-ephemeral.json"), statusPath)
 }
 
+func TestLockEphemeralWorkDirRejectsConcurrentLock(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+
+	release, err := lockEphemeralWorkDir(dir)
+	require.NoError(err)
+
+	_, err = lockEphemeralWorkDir(dir)
+	require.Error(err)
+	Assert.Contains(t, err.Error(), "ephemeral work directory is locked")
+
+	require.NoError(release())
+	release, err = lockEphemeralWorkDir(dir)
+	require.NoError(err)
+	require.NoError(release())
+}
+
 func TestReadRunningEphemeralStatusReturnsLiveStatus(t *testing.T) {
 	require := require.New(t)
 	dir := t.TempDir()
@@ -426,6 +443,35 @@ func TestStopEphemeralStackDoesNotSignalMismatchedProcessIdentity(t *testing.T) 
 
 	stopProcess(cmd.Process)
 	waitForCommandExit(t, cmd, waitCh)
+}
+
+func TestWaitForCommandsEscalatesIgnoredInterrupt(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	backendScript := filepath.Join(dir, "backend.sh")
+	frontendScript := filepath.Join(dir, "frontend.sh")
+	writeInterruptIgnoringScript(t, backendScript)
+	writeBlockingScript(t, frontendScript)
+	backend, err := startCommand(context.Background(), commandSpec{name: backendScript})
+	require.NoError(err)
+	frontend, err := startCommand(context.Background(), commandSpec{name: frontendScript})
+	require.NoError(err)
+	t.Cleanup(func() {
+		stopProcess(backend.Process)
+		stopProcess(frontend.Process)
+	})
+
+	cancelCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	err = waitForCommands(cancelCtx, backend, frontend)
+	require.NoError(err)
+
+	backendRunning, err := processRunning(backend.Process.Pid)
+	require.NoError(err)
+	frontendRunning, err := processRunning(frontend.Process.Pid)
+	require.NoError(err)
+	Assert.False(t, backendRunning)
+	Assert.False(t, frontendRunning)
 }
 
 func TestRunWritesStatusAndReusesLiveDefaultStack(t *testing.T) {

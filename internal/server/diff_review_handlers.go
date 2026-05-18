@@ -191,11 +191,15 @@ func (s *Server) publishDiffReviewDraft(
 	if draft == nil || len(draft.Comments) == 0 {
 		return nil, huma.Error400BadRequest("review draft has no comments")
 	}
-	if mr.DiffHeadSHA == "" {
+	reviewHeadSHA := mr.DiffHeadSHA
+	if reviewHeadSHA == "" {
+		reviewHeadSHA = mr.PlatformHeadSHA
+	}
+	if reviewHeadSHA == "" {
 		return nil, huma.Error409Conflict("review diff is unavailable")
 	}
 	for _, comment := range draft.Comments {
-		if comment.Range.DiffHeadSHA == "" || comment.Range.DiffHeadSHA != mr.DiffHeadSHA {
+		if comment.Range.DiffHeadSHA == "" || comment.Range.DiffHeadSHA != reviewHeadSHA {
 			return nil, huma.Error409Conflict("review draft is stale")
 		}
 		if !caps.NativeMultilineRanges && (comment.Range.StartLine != nil || comment.Range.StartSide != "") {
@@ -224,7 +228,7 @@ func (s *Server) publishDiffReviewDraft(
 	if _, err := mutator.PublishDiffReviewDraft(ctx, platformRepoRefFromDB(*repo), input.Number, platform.PublishDiffReviewDraftInput{
 		Body:     strings.TrimSpace(input.Body.Body),
 		Action:   action,
-		HeadSHA:  mr.DiffHeadSHA,
+		HeadSHA:  reviewHeadSHA,
 		Comments: comments,
 	}); err != nil {
 		var partialErr *platform.DiffReviewPublishPartialError

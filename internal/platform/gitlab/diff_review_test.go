@@ -564,6 +564,60 @@ func TestGitLabListMergeRequestReviewThreadsReadsDiscussions(t *testing.T) {
 	assert.Equal(updated, *threads[0].ResolvedAt)
 }
 
+func TestGitLabListMergeRequestReviewThreadsReadsContextLinePositions(t *testing.T) {
+	assert := Assert.New(t)
+	require := Require.New(t)
+	created := time.Date(2026, 5, 10, 12, 0, 0, 0, time.UTC)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(http.MethodGet, r.Method)
+		assert.Equal("/api/v4/projects/group%2Fproject/merge_requests/7/discussions", r.URL.EscapedPath())
+		writeJSON(w, `[
+			{
+				"id": "discussion-1",
+				"individual_note": false,
+				"notes": [{
+					"id": 101,
+					"type": "DiscussionNote",
+					"body": "context note",
+					"author": {"username": "reviewer"},
+					"system": false,
+					"resolvable": true,
+					"resolved": false,
+					"created_at": "`+created.Format(time.RFC3339)+`",
+					"updated_at": "`+created.Format(time.RFC3339)+`",
+					"position": {
+						"base_sha": "base",
+						"start_sha": "merge-base",
+						"head_sha": "head",
+						"position_type": "text",
+						"old_path": "src/main.go",
+						"new_path": "src/main.go",
+						"old_line": 8,
+						"new_line": 9
+					}
+				}]
+			}
+		]`)
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server.URL)
+	threads, err := client.ListMergeRequestReviewThreads(context.Background(), platform.RepoRef{
+		RepoPath: "group/project",
+	}, 7)
+
+	require.NoError(err)
+	require.Len(threads, 1)
+	lineRange := threads[0].Range
+	assert.Equal("right", lineRange.Side)
+	assert.Equal(9, lineRange.Line)
+	assert.Equal("context", lineRange.LineType)
+	require.NotNil(lineRange.OldLine)
+	require.NotNil(lineRange.NewLine)
+	assert.Equal(8, *lineRange.OldLine)
+	assert.Equal(9, *lineRange.NewLine)
+}
+
 func TestGitLabListMergeRequestReviewThreadsCollapsesDiscussionReplies(t *testing.T) {
 	assert := Assert.New(t)
 	require := Require.New(t)

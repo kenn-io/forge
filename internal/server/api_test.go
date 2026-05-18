@@ -10661,6 +10661,59 @@ func TestAPIPublishReviewDraftRejectsStoredCommentWithoutDiffHeadSHA(t *testing.
 	require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
 }
 
+func TestAPIPublishReviewDraftUsesPlatformHeadSHAWhenDiffHeadIsUnavailable(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	caps := platform.Capabilities{
+		ReadRepositories:       true,
+		ReadMergeRequests:      true,
+		ReadIssues:             true,
+		ReadComments:           true,
+		ReviewDraftMutation:    true,
+		SupportedReviewActions: []platform.ReviewAction{platform.ReviewActionComment, platform.ReviewActionApprove},
+	}
+	srv, database, provider := setupGitLabCapabilityServerWithProvider(t, &caps)
+	ctx := t.Context()
+
+	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.example.com",
+		RepoPath:     "group/project",
+	})
+	require.NoError(err)
+	require.NotNil(repo)
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
+	require.NoError(err)
+	require.NotNil(mr)
+	draft, err := database.GetOrCreateMRReviewDraft(ctx, mr.ID)
+	require.NoError(err)
+	line := 42
+	_, err = database.CreateMRReviewDraftComment(ctx, draft.ID, db.MRReviewDraftCommentInput{
+		Body: "ready to approve",
+		Range: db.ReviewLineRange{
+			Path:        "internal/server/api_test.go",
+			Side:        "right",
+			Line:        42,
+			NewLine:     &line,
+			LineType:    "add",
+			DiffHeadSHA: mr.PlatformHeadSHA,
+		},
+	})
+	require.NoError(err)
+
+	publishRR := doJSON(
+		t,
+		srv,
+		http.MethodPost,
+		"/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/review-draft/publish",
+		map[string]string{"action": "approve", "body": "looks good"},
+	)
+
+	require.Equal(http.StatusOK, publishRR.Code, publishRR.Body.String())
+	require.Len(provider.publishedReviews, 1)
+	assert.Equal(mr.PlatformHeadSHA, provider.publishedReviews[0].HeadSHA)
+}
+
 func TestAPIPublishReviewDraftRejectsMultilineRangeWithoutCapability(t *testing.T) {
 	require := require.New(t)
 	caps := platform.Capabilities{

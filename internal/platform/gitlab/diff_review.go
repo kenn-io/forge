@@ -254,7 +254,13 @@ func gitlabReviewLineRange(position *gitlab.NotePosition) platform.DiffReviewLin
 		MergeBaseSHA: position.StartSHA,
 		CommitSHA:    position.HeadSHA,
 	}
-	if position.OldLine > 0 && position.NewLine == 0 {
+	if position.OldLine > 0 && position.NewLine > 0 {
+		lineRange.LineType = "context"
+		oldLine := int(position.OldLine)
+		newLine := int(position.NewLine)
+		lineRange.OldLine = &oldLine
+		lineRange.NewLine = &newLine
+	} else if position.OldLine > 0 && position.NewLine == 0 {
 		lineRange.Side = "left"
 		lineRange.Line = int(position.OldLine)
 		lineRange.LineType = "delete"

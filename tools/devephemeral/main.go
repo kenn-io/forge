@@ -53,15 +53,23 @@ type ephemeralRun struct {
 }
 
 type ephemeralStatus struct {
-	PID          int    `json:"pid"`
-	BackendPID   int    `json:"backend_pid"`
-	FrontendPID  int    `json:"frontend_pid"`
-	BackendPort  int    `json:"backend_port"`
-	FrontendPort int    `json:"frontend_port"`
-	ConfigPath   string `json:"config_path"`
-	DataDir      string `json:"data_dir"`
-	BackendURL   string `json:"backend_url"`
-	FrontendURL  string `json:"frontend_url"`
+	PID               int    `json:"pid"`
+	PIDStartedAt      string `json:"pid_started_at,omitempty"`
+	BackendPID        int    `json:"backend_pid"`
+	BackendStartedAt  string `json:"backend_started_at,omitempty"`
+	FrontendPID       int    `json:"frontend_pid"`
+	FrontendStartedAt string `json:"frontend_started_at,omitempty"`
+	BackendPort       int    `json:"backend_port"`
+	FrontendPort      int    `json:"frontend_port"`
+	ConfigPath        string `json:"config_path"`
+	DataDir           string `json:"data_dir"`
+	BackendURL        string `json:"backend_url"`
+	FrontendURL       string `json:"frontend_url"`
+}
+
+type processRef struct {
+	pid       int
+	startedAt string
 }
 
 type commandSpec struct {
@@ -160,17 +168,38 @@ func run(ctx context.Context, args []string) error {
 		stopProcess(backend.Process)
 		return fmt.Errorf("start frontend: %w", err)
 	}
+	launcherStartedAt, err := processStartTime(os.Getpid())
+	if err != nil {
+		stopProcess(frontend.Process)
+		stopProcess(backend.Process)
+		return fmt.Errorf("read launcher process identity: %w", err)
+	}
+	backendStartedAt, err := processStartTime(backend.Process.Pid)
+	if err != nil {
+		stopProcess(frontend.Process)
+		stopProcess(backend.Process)
+		return fmt.Errorf("read backend process identity: %w", err)
+	}
+	frontendStartedAt, err := processStartTime(frontend.Process.Pid)
+	if err != nil {
+		stopProcess(frontend.Process)
+		stopProcess(backend.Process)
+		return fmt.Errorf("read frontend process identity: %w", err)
+	}
 
 	status := ephemeralStatus{
-		PID:          os.Getpid(),
-		BackendPID:   backend.Process.Pid,
-		FrontendPID:  frontend.Process.Pid,
-		BackendPort:  prepared.backendPort,
-		FrontendPort: prepared.frontendPort,
-		ConfigPath:   prepared.configPath,
-		DataDir:      prepared.dataDir,
-		BackendURL:   prepared.backendURL,
-		FrontendURL:  prepared.frontendURL,
+		PID:               os.Getpid(),
+		PIDStartedAt:      launcherStartedAt,
+		BackendPID:        backend.Process.Pid,
+		BackendStartedAt:  backendStartedAt,
+		FrontendPID:       frontend.Process.Pid,
+		FrontendStartedAt: frontendStartedAt,
+		BackendPort:       prepared.backendPort,
+		FrontendPort:      prepared.frontendPort,
+		ConfigPath:        prepared.configPath,
+		DataDir:           prepared.dataDir,
+		BackendURL:        prepared.backendURL,
+		FrontendURL:       prepared.frontendURL,
 	}
 	if err := writeStatusFile(prepared.statusPath, status); err != nil {
 		stopProcess(frontend.Process)
@@ -222,6 +251,7 @@ func prepareEphemeralConfig(opts ephemeralOptions) (ephemeralRun, error) {
 		return ephemeralRun{}, err
 	}
 
+	cfg.Host = "127.0.0.1"
 	cfg.Port = opts.backendPort
 	cfg.DataDir = dataDir
 
@@ -327,8 +357,9 @@ func stopEphemeralStack(statusPath string) error {
 	}
 
 	var stopErrs []error
-	pids := uniquePositivePIDs(status.BackendPID, status.FrontendPID, status.PID)
-	stopErrs = append(stopErrs, stopEphemeralProcesses(pids)...)
+	refs, identityErrs := verifiedProcessRefs(statusProcessRefs(status))
+	stopErrs = append(stopErrs, identityErrs...)
+	stopErrs = append(stopErrs, stopEphemeralProcesses(refs)...)
 	if len(stopErrs) == 0 {
 		if err := os.Remove(statusPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 			stopErrs = append(stopErrs, fmt.Errorf("remove status file: %w", err))
@@ -356,7 +387,9 @@ func readRunningEphemeralStatus(statusPath string) (ephemeralStatus, bool, error
 	if running {
 		return status, true, nil
 	}
-	if stopErrs := stopEphemeralProcesses(uniquePositivePIDs(status.BackendPID, status.FrontendPID, status.PID)); len(stopErrs) > 0 {
+	refs, identityErrs := verifiedProcessRefs(statusProcessRefs(status))
+	stopErrs := append(identityErrs, stopEphemeralProcesses(refs)...)
+	if len(stopErrs) > 0 {
 		return ephemeralStatus{}, false, errors.Join(stopErrs...)
 	}
 	if err := os.Remove(statusPath); err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -366,13 +399,13 @@ func readRunningEphemeralStatus(statusPath string) (ephemeralStatus, bool, error
 }
 
 func allEphemeralProcessesRunning(status ephemeralStatus) (bool, error) {
-	for _, pid := range []int{status.PID, status.BackendPID, status.FrontendPID} {
-		if pid <= 0 {
+	for _, ref := range statusProcessRefs(status) {
+		if ref.pid <= 0 || ref.startedAt == "" {
 			return false, nil
 		}
-		running, err := processRunning(pid)
+		running, err := processMatchesStartTime(ref)
 		if err != nil {
-			return false, fmt.Errorf("check pid %d: %w", pid, err)
+			return false, err
 		}
 		if !running {
 			return false, nil
@@ -381,26 +414,58 @@ func allEphemeralProcessesRunning(status ephemeralStatus) (bool, error) {
 	return true, nil
 }
 
-func stopEphemeralProcesses(pids []int) []error {
+func statusProcessRefs(status ephemeralStatus) []processRef {
+	return []processRef{
+		{pid: status.BackendPID, startedAt: status.BackendStartedAt},
+		{pid: status.FrontendPID, startedAt: status.FrontendStartedAt},
+		{pid: status.PID, startedAt: status.PIDStartedAt},
+	}
+}
+
+func verifiedProcessRefs(refs []processRef) ([]processRef, []error) {
+	var errs []error
+	out := make([]processRef, 0, len(refs))
+	seen := make(map[int]struct{}, len(refs))
+	for _, ref := range refs {
+		if ref.pid <= 0 || ref.startedAt == "" {
+			continue
+		}
+		if _, ok := seen[ref.pid]; ok {
+			continue
+		}
+		seen[ref.pid] = struct{}{}
+		matches, err := processMatchesStartTime(ref)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		if matches {
+			out = append(out, ref)
+		}
+	}
+	return out, errs
+}
+
+func stopEphemeralProcesses(refs []processRef) []error {
 	var stopErrs []error
-	for _, pid := range pids {
-		if err := interruptProcessGroup(pid); err != nil && !isNoSuchProcess(err) {
-			stopErrs = append(stopErrs, fmt.Errorf("interrupt pid %d: %w", pid, err))
+	for _, ref := range refs {
+		if err := interruptProcessGroup(ref.pid); err != nil && !isNoSuchProcess(err) {
+			stopErrs = append(stopErrs, fmt.Errorf("interrupt pid %d: %w", ref.pid, err))
 		}
 	}
 	if len(stopErrs) > 0 {
 		return stopErrs
 	}
-	running, waitErrs := waitForProcessesExit(pids, stopInterruptGrace)
+	running, waitErrs := waitForProcessesExit(refs, stopInterruptGrace)
 	if len(waitErrs) > 0 {
 		return waitErrs
 	}
 	if len(running) == 0 {
 		return nil
 	}
-	for _, pid := range running {
-		if err := terminateProcessGroup(pid); err != nil && !isNoSuchProcess(err) {
-			stopErrs = append(stopErrs, fmt.Errorf("terminate pid %d: %w", pid, err))
+	for _, ref := range running {
+		if err := terminateProcessGroup(ref.pid); err != nil && !isNoSuchProcess(err) {
+			stopErrs = append(stopErrs, fmt.Errorf("terminate pid %d: %w", ref.pid, err))
 		}
 	}
 	if len(stopErrs) > 0 {
@@ -410,16 +475,16 @@ func stopEphemeralProcesses(pids []int) []error {
 	if len(waitErrs) > 0 {
 		return waitErrs
 	}
-	for _, pid := range running {
-		stopErrs = append(stopErrs, fmt.Errorf("pid %d still running after shutdown timeout", pid))
+	for _, ref := range running {
+		stopErrs = append(stopErrs, fmt.Errorf("pid %d still running after shutdown timeout", ref.pid))
 	}
 	return stopErrs
 }
 
-func waitForProcessesExit(pids []int, timeout time.Duration) ([]int, []error) {
+func waitForProcessesExit(refs []processRef, timeout time.Duration) ([]processRef, []error) {
 	deadline := time.Now().Add(timeout)
 	for {
-		running, errs := runningPIDs(pids)
+		running, errs := runningProcessRefs(refs)
 		if len(errs) > 0 || len(running) == 0 || !time.Now().Before(deadline) {
 			return running, errs
 		}
@@ -427,20 +492,20 @@ func waitForProcessesExit(pids []int, timeout time.Duration) ([]int, []error) {
 	}
 }
 
-func runningPIDs(pids []int) ([]int, []error) {
+func runningProcessRefs(refs []processRef) ([]processRef, []error) {
 	var errs []error
-	runningPIDs := make([]int, 0, len(pids))
-	for _, pid := range pids {
-		running, err := processRunning(pid)
+	runningRefs := make([]processRef, 0, len(refs))
+	for _, ref := range refs {
+		running, err := processMatchesStartTime(ref)
 		if err != nil {
-			errs = append(errs, fmt.Errorf("check pid %d: %w", pid, err))
+			errs = append(errs, err)
 			continue
 		}
 		if running {
-			runningPIDs = append(runningPIDs, pid)
+			runningRefs = append(runningRefs, ref)
 		}
 	}
-	return runningPIDs, errs
+	return runningRefs, errs
 }
 
 func processRunning(pid int) (bool, error) {
@@ -460,20 +525,30 @@ func processRunning(pid int) (bool, error) {
 	return false, err
 }
 
-func uniquePositivePIDs(pids ...int) []int {
-	seen := make(map[int]struct{}, len(pids))
-	out := make([]int, 0, len(pids))
-	for _, pid := range pids {
-		if pid <= 0 {
-			continue
+func processMatchesStartTime(ref processRef) (bool, error) {
+	actual, err := processStartTime(ref.pid)
+	if err != nil {
+		if isNoSuchProcess(err) {
+			return false, nil
 		}
-		if _, ok := seen[pid]; ok {
-			continue
-		}
-		seen[pid] = struct{}{}
-		out = append(out, pid)
+		return false, fmt.Errorf("check pid %d identity: %w", ref.pid, err)
 	}
-	return out
+	return actual == ref.startedAt, nil
+}
+
+func processStartTime(pid int) (string, error) {
+	if pid <= 0 {
+		return "", os.ErrProcessDone
+	}
+	out, err := exec.Command("ps", "-p", strconv.Itoa(pid), "-o", "lstart=").Output()
+	startedAt := strings.TrimSpace(string(out))
+	if startedAt == "" {
+		return "", os.ErrProcessDone
+	}
+	if err != nil {
+		return "", err
+	}
+	return startedAt, nil
 }
 
 func interruptPID(pid int) error {

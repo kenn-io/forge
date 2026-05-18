@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -55,6 +56,38 @@ func TestPrepareEphemeralConfigOverridesPortAndDataDir(t *testing.T) {
 	assert.Equal("http://127.0.0.1:39101", prepared.backendURL)
 	assert.Equal("http://127.0.0.1:39102", prepared.frontendURL)
 	assert.Equal(sourceDataDir, source.DataDir)
+}
+
+func TestPrepareEphemeralConfigForcesBackendToLoopback(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	dir := t.TempDir()
+	sourcePath := filepath.Join(dir, "source.toml")
+
+	source := config.Config{
+		SyncInterval:        "5m",
+		GitHubTokenEnv:      "MIDDLEMAN_GITHUB_TOKEN",
+		DefaultPlatformHost: "github.com",
+		Host:                "::1",
+		Port:                8091,
+		DataDir:             filepath.Join(dir, "source-data"),
+		Activity:            config.Activity{ViewMode: "threaded", TimeRange: "7d"},
+	}
+	require.NoError(source.Save(sourcePath))
+
+	prepared, err := prepareEphemeralConfig(ephemeralOptions{
+		sourceConfigPath: sourcePath,
+		workDir:          filepath.Join(dir, "run"),
+		backendPort:      39131,
+		frontendPort:     39132,
+	})
+	require.NoError(err)
+
+	reloaded, err := config.Load(prepared.configPath)
+	require.NoError(err)
+	assert.Equal("127.0.0.1", reloaded.Host)
+	assert.Equal("http://127.0.0.1:39131", prepared.backendURL)
+	assert.Equal("::1", source.Host)
 }
 
 func TestPrepareEphemeralConfigCopiesSourceDatabaseByDefault(t *testing.T) {
@@ -241,12 +274,21 @@ func TestReadRunningEphemeralStatusReturnsLiveStatus(t *testing.T) {
 	writeBlockingScript(t, scriptPath)
 	backend, _ := startTestCommand(t, commandSpec{name: scriptPath})
 	frontend, _ := startTestCommand(t, commandSpec{name: scriptPath})
-	err := writeStatusFile(statusPath, ephemeralStatus{
-		PID:         os.Getpid(),
-		BackendPID:  backend.Process.Pid,
-		FrontendPID: frontend.Process.Pid,
-		BackendURL:  "http://127.0.0.1:39411",
-		FrontendURL: "http://127.0.0.1:39412",
+	launcherStartedAt, err := processStartTime(os.Getpid())
+	require.NoError(err)
+	backendStartedAt, err := processStartTime(backend.Process.Pid)
+	require.NoError(err)
+	frontendStartedAt, err := processStartTime(frontend.Process.Pid)
+	require.NoError(err)
+	err = writeStatusFile(statusPath, ephemeralStatus{
+		PID:               os.Getpid(),
+		PIDStartedAt:      launcherStartedAt,
+		BackendPID:        backend.Process.Pid,
+		BackendStartedAt:  backendStartedAt,
+		FrontendPID:       frontend.Process.Pid,
+		FrontendStartedAt: frontendStartedAt,
+		BackendURL:        "http://127.0.0.1:39411",
+		FrontendURL:       "http://127.0.0.1:39412",
 	})
 	require.NoError(err)
 
@@ -287,11 +329,14 @@ func TestReadRunningEphemeralStatusStopsPartialStackAndRemovesStatus(t *testing.
 	scriptPath := filepath.Join(dir, "blocking.sh")
 	writeBlockingScript(t, scriptPath)
 	cmd, waitCh := startTestCommand(t, commandSpec{name: scriptPath})
+	startedAt, err := processStartTime(cmd.Process.Pid)
+	require.NoError(err)
 
-	err := writeStatusFile(statusPath, ephemeralStatus{
-		BackendPID:  cmd.Process.Pid,
-		BackendURL:  "http://127.0.0.1:39411",
-		FrontendURL: "http://127.0.0.1:39412",
+	err = writeStatusFile(statusPath, ephemeralStatus{
+		BackendPID:       cmd.Process.Pid,
+		BackendStartedAt: startedAt,
+		BackendURL:       "http://127.0.0.1:39411",
+		FrontendURL:      "http://127.0.0.1:39412",
 	})
 	require.NoError(err)
 
@@ -318,9 +363,12 @@ func TestStopEphemeralStackWaitsForProcessesBeforeRemovingStatus(t *testing.T) {
 	scriptPath := filepath.Join(dir, "ignore-int.sh")
 	writeInterruptIgnoringScript(t, scriptPath)
 	cmd, waitCh := startTestCommand(t, commandSpec{name: scriptPath})
+	startedAt, err := processStartTime(cmd.Process.Pid)
+	require.NoError(err)
 
-	err := writeStatusFile(statusPath, ephemeralStatus{
-		BackendPID: cmd.Process.Pid,
+	err = writeStatusFile(statusPath, ephemeralStatus{
+		BackendPID:       cmd.Process.Pid,
+		BackendStartedAt: startedAt,
 	})
 	require.NoError(err)
 
@@ -330,6 +378,35 @@ func TestStopEphemeralStackWaitsForProcessesBeforeRemovingStatus(t *testing.T) {
 	waitForCommandExit(t, cmd, waitCh)
 	_, err = os.Stat(statusPath)
 	assert.ErrorIs(err, os.ErrNotExist)
+}
+
+func TestStopEphemeralStackDoesNotSignalMismatchedProcessIdentity(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	dir := t.TempDir()
+	statusPath := filepath.Join(dir, "dev-ephemeral.json")
+	scriptPath := filepath.Join(dir, "blocking.sh")
+	writeBlockingScript(t, scriptPath)
+	cmd, waitCh := startTestCommand(t, commandSpec{name: scriptPath})
+
+	content := fmt.Appendf(nil,
+		`{"backend_pid":%d,"backend_started_at":"definitely-not-%s"}`+"\n",
+		cmd.Process.Pid,
+		filepath.Base(scriptPath),
+	)
+	require.NoError(os.WriteFile(statusPath, content, 0o644))
+
+	err := stopEphemeralStack(statusPath)
+	require.NoError(err)
+
+	running, err := processRunning(cmd.Process.Pid)
+	require.NoError(err)
+	assert.True(running)
+	_, err = os.Stat(statusPath)
+	require.ErrorIs(err, os.ErrNotExist)
+
+	stopProcess(cmd.Process)
+	waitForCommandExit(t, cmd, waitCh)
 }
 
 func TestRunWritesStatusAndReusesLiveDefaultStack(t *testing.T) {

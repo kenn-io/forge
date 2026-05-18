@@ -182,26 +182,31 @@ func run(ctx context.Context, args []string) error {
 	}
 	frontend, err := startCommand(ctx, specs.frontend)
 	if err != nil {
-		stopProcess(backend.Process)
-		return fmt.Errorf("start frontend: %w", err)
+		return errors.Join(
+			fmt.Errorf("start frontend: %w", err),
+			errors.Join(stopStartedCommands(backend)...),
+		)
 	}
 	launcherStartedAt, err := processStartTime(os.Getpid())
 	if err != nil {
-		stopProcess(frontend.Process)
-		stopProcess(backend.Process)
-		return fmt.Errorf("read launcher process identity: %w", err)
+		return errors.Join(
+			fmt.Errorf("read launcher process identity: %w", err),
+			errors.Join(stopStartedCommands(frontend, backend)...),
+		)
 	}
 	backendStartedAt, err := processStartTime(backend.Process.Pid)
 	if err != nil {
-		stopProcess(frontend.Process)
-		stopProcess(backend.Process)
-		return fmt.Errorf("read backend process identity: %w", err)
+		return errors.Join(
+			fmt.Errorf("read backend process identity: %w", err),
+			errors.Join(stopStartedCommands(frontend, backend)...),
+		)
 	}
 	frontendStartedAt, err := processStartTime(frontend.Process.Pid)
 	if err != nil {
-		stopProcess(frontend.Process)
-		stopProcess(backend.Process)
-		return fmt.Errorf("read frontend process identity: %w", err)
+		return errors.Join(
+			fmt.Errorf("read frontend process identity: %w", err),
+			errors.Join(stopStartedCommands(frontend, backend)...),
+		)
 	}
 
 	status := ephemeralStatus{
@@ -219,9 +224,7 @@ func run(ctx context.Context, args []string) error {
 		FrontendURL:       prepared.frontendURL,
 	}
 	if err := writeStatusFile(prepared.statusPath, status); err != nil {
-		stopProcess(frontend.Process)
-		stopProcess(backend.Process)
-		return err
+		return errors.Join(err, errors.Join(stopStartedCommands(frontend, backend)...))
 	}
 
 	printStatus(status, prepared.statusPath)
@@ -311,8 +314,10 @@ func buildCommandSpecs(run ephemeralRun, frontendArgs []string) commandSpecs {
 		"MIDDLEMAN_LOG_FILE":         filepath.Join(run.logDir, "backend-dev.log"),
 		"MIDDLEMAN_LOG_STDERR_LEVEL": envDefault("MIDDLEMAN_LOG_STDERR_LEVEL", "info"),
 	})
-	frontendEnv := overlayEnv(baseEnv, map[string]string{
-		"MIDDLEMAN_CONFIG":  run.configPath,
+	frontendEnv := overlayEnv(sanitizedFrontendEnv(baseEnv), map[string]string{
+		"MIDDLEMAN_CONFIG": run.configPath,
+		// frontend/vite.config.ts resolves its dev proxy from this value,
+		// so random ephemeral backend ports do not fall back to defaults.
 		"MIDDLEMAN_API_URL": run.backendURL,
 	})
 	args := append([]string{"--port", strconv.Itoa(run.frontendPort)}, frontendArgs...)
@@ -327,6 +332,42 @@ func buildCommandSpecs(run ephemeralRun, frontendArgs []string) commandSpecs {
 			env:  frontendEnv,
 		},
 	}
+}
+
+func sanitizedFrontendEnv(env []string) []string {
+	out := make([]string, 0, len(env))
+	for _, entry := range env {
+		key, _, ok := strings.Cut(entry, "=")
+		if !ok {
+			continue
+		}
+		if isFrontendSecretEnvKey(key) {
+			continue
+		}
+		out = append(out, entry)
+	}
+	return out
+}
+
+func isFrontendSecretEnvKey(key string) bool {
+	upper := strings.ToUpper(key)
+	if upper == "MIDDLEMAN_API_URL" || upper == "MIDDLEMAN_CONFIG" {
+		return false
+	}
+	secretMarkers := []string{
+		"TOKEN",
+		"SECRET",
+		"PASSWORD",
+		"PASSWD",
+		"PRIVATE_KEY",
+		"CREDENTIAL",
+	}
+	for _, marker := range secretMarkers {
+		if strings.Contains(upper, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func writeStatusFile(path string, status ephemeralStatus) error {
@@ -753,6 +794,36 @@ func waitForCommands(ctx context.Context, backend, frontend *exec.Cmd) error {
 		return nil
 	}
 	return firstErr
+}
+
+func stopStartedCommands(commands ...*exec.Cmd) []error {
+	waitCh := make(chan error, len(commands))
+	waiting := 0
+	processes := make([]*os.Process, 0, len(commands))
+	for _, cmd := range commands {
+		if cmd == nil || cmd.Process == nil {
+			continue
+		}
+		processes = append(processes, cmd.Process)
+		waiting++
+		go func(cmd *exec.Cmd) {
+			waitCh <- commandWaitError(filepath.Base(cmd.Path), cmd.Wait())
+		}(cmd)
+	}
+
+	stopErrs := stopForegroundProcesses(processes...)
+	waitErrs := make([]error, 0, waiting)
+	for i := 0; i < waiting; i++ {
+		select {
+		case err := <-waitCh:
+			if err != nil {
+				waitErrs = append(waitErrs, err)
+			}
+		case <-time.After(stopWaitGrace):
+			waitErrs = append(waitErrs, fmt.Errorf("timed out waiting for child shutdown"))
+		}
+	}
+	return append(stopErrs, waitErrs...)
 }
 
 func stopForegroundProcesses(processes ...*os.Process) []error {

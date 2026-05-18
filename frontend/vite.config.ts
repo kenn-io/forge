@@ -15,6 +15,8 @@ import { healthcheckPlugin } from "./src/lib/dev/healthcheckPlugin";
 const require = createRequire(import.meta.url);
 const testingLibrarySvelteEntry = require.resolve("@testing-library/svelte");
 
+// resolveDevApiUrl() prefers MIDDLEMAN_API_URL, which dev-ephemeral sets
+// to the generated backend URL before starting Vite.
 const apiUrl = resolveDevApiUrl();
 const devServerPort = resolveViteServerPort();
 const devServerAllowedHosts = resolveViteAllowedHosts();

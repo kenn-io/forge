@@ -216,6 +216,10 @@ func TestPrepareEphemeralConfigKeepsBasePathInBackendURL(t *testing.T) {
 
 func TestBuildCommandSpecsWiresEphemeralEnvironment(t *testing.T) {
 	assert := Assert.New(t)
+	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "secret-token")
+	t.Setenv("GH_TOKEN", "secret-gh")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "secret-aws")
+	t.Setenv("PLAIN_FRONTEND_SETTING", "kept")
 
 	specs := buildCommandSpecs(ephemeralRun{
 		configPath:   "/tmp/middleman-dev/config.toml",
@@ -231,6 +235,11 @@ func TestBuildCommandSpecsWiresEphemeralEnvironment(t *testing.T) {
 	assert.Equal([]string{"--port", "39302", "--host", "127.0.0.1"}, specs.frontend.args)
 	assert.Contains(specs.frontend.env, "MIDDLEMAN_CONFIG=/tmp/middleman-dev/config.toml")
 	assert.Contains(specs.frontend.env, "MIDDLEMAN_API_URL=http://127.0.0.1:39301")
+	assert.Contains(specs.frontend.env, "PLAIN_FRONTEND_SETTING=kept")
+	assert.NotContains(specs.frontend.env, "MIDDLEMAN_GITHUB_TOKEN=secret-token")
+	assert.NotContains(specs.frontend.env, "GH_TOKEN=secret-gh")
+	assert.NotContains(specs.frontend.env, "AWS_SECRET_ACCESS_KEY=secret-aws")
+	assert.Contains(specs.backend.env, "MIDDLEMAN_GITHUB_TOKEN=secret-token")
 }
 
 func TestBuildCommandSpecsReferenceExecutableScripts(t *testing.T) {
@@ -472,6 +481,23 @@ func TestWaitForCommandsEscalatesIgnoredInterrupt(t *testing.T) {
 	require.NoError(err)
 	Assert.False(t, backendRunning)
 	Assert.False(t, frontendRunning)
+}
+
+func TestStopStartedCommandsEscalatesAndWaits(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	scriptPath := filepath.Join(dir, "ignore-int.sh")
+	writeInterruptIgnoringScript(t, scriptPath)
+	cmd, err := startCommand(context.Background(), commandSpec{name: scriptPath})
+	require.NoError(err)
+	t.Cleanup(func() { stopProcess(cmd.Process) })
+
+	errs := stopStartedCommands(cmd)
+	require.Empty(errs)
+
+	running, err := processRunning(cmd.Process.Pid)
+	require.NoError(err)
+	Assert.False(t, running)
 }
 
 func TestRunWritesStatusAndReusesLiveDefaultStack(t *testing.T) {

@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -22,8 +24,8 @@ func TestRootHelpPointsAgentsToQuickstartAndAPI(t *testing.T) {
 	cmd := newRootCommand(commandDeps{
 		Stdout: &stdout,
 		Stderr: &stderr,
-		Restish: func(context.Context, []string, *bytes.Buffer, *bytes.Buffer) error {
-			return nil
+		Restish: func(context.Context, cliConfig, string, string, []string) ([]byte, error) {
+			return nil, nil
 		},
 	})
 	cmd.SetArgs([]string{"--help"})
@@ -70,14 +72,22 @@ func TestQuickstartFormatsJSONAndYAML(t *testing.T) {
 func TestPullsCommandDelegatesToRestishWithAgentFriendlyDefaults(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	var got []string
+	var got struct {
+		cfg      cliConfig
+		method   string
+		url      string
+		bodyArgs []string
+	}
 	var stdout bytes.Buffer
 	cmd := newRootCommand(commandDeps{
 		Stdout: &stdout,
 		Stderr: &bytes.Buffer{},
-		Restish: func(_ context.Context, args []string, _ *bytes.Buffer, _ *bytes.Buffer) error {
-			got = append([]string(nil), args...)
-			return nil
+		Restish: func(_ context.Context, cfg cliConfig, method, requestURL string, bodyArgs []string) ([]byte, error) {
+			got.cfg = cfg
+			got.method = method
+			got.url = requestURL
+			got.bodyArgs = append([]string(nil), bodyArgs...)
+			return []byte(`[{"number":7,"title":"ready"}]`), nil
 		},
 	})
 	cmd.SetArgs([]string{
@@ -91,33 +101,37 @@ func TestPullsCommandDelegatesToRestishWithAgentFriendlyDefaults(t *testing.T) {
 
 	require.NoError(cmd.Execute())
 
-	require.Len(got, 7)
-	assert.Equal("--rsh-output-format", got[0])
-	assert.Equal("yaml", got[1])
-	assert.Equal("--rsh-no-cache", got[2])
-	assert.Equal("--rsh-timeout", got[3])
-	assert.Equal("30s", got[4])
-	assert.Equal(http.MethodGet, got[5])
-	requestURL, err := url.Parse(got[6])
+	assert.Equal("yaml", got.cfg.output)
+	assert.Equal(30*time.Second, got.cfg.timeout)
+	assert.Equal(http.MethodGet, got.method)
+	requestURL, err := url.Parse(got.url)
 	require.NoError(err)
 	assert.Equal("http://middleman.test/api/v1/pulls", requestURL.Scheme+"://"+requestURL.Host+requestURL.Path)
 	values := requestURL.Query()
 	assert.Equal("open", values.Get("state"))
 	assert.Equal("5", values.Get("limit"))
 	assert.Equal("true", values.Get("starred"))
-	assert.Empty(stdout.String())
+	assert.Empty(got.bodyArgs)
+	assert.Contains(stdout.String(), "number: 7")
+	assert.NotContains(stdout.String(), "Content-Type")
 }
 
 func TestRawAPICommandBuildsMiddlemanAPIURLAndBodyArgs(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	var got []string
+	var got struct {
+		method   string
+		url      string
+		bodyArgs []string
+	}
 	cmd := newRootCommand(commandDeps{
 		Stdout: &bytes.Buffer{},
 		Stderr: &bytes.Buffer{},
-		Restish: func(_ context.Context, args []string, _ *bytes.Buffer, _ *bytes.Buffer) error {
-			got = append([]string(nil), args...)
-			return nil
+		Restish: func(_ context.Context, _ cliConfig, method, requestURL string, bodyArgs []string) ([]byte, error) {
+			got.method = method
+			got.url = requestURL
+			got.bodyArgs = append([]string(nil), bodyArgs...)
+			return nil, nil
 		},
 	})
 	cmd.SetArgs([]string{
@@ -126,34 +140,39 @@ func TestRawAPICommandBuildsMiddlemanAPIURLAndBodyArgs(t *testing.T) {
 	})
 
 	require.NoError(cmd.Execute())
-	require.Len(got, 8)
-	assert.Equal(http.MethodPost, got[5])
-	assert.Equal("http://middleman.test/api/v1/pulls/gh/acme/widget/7/comments", got[6])
-	assert.Equal("body: LGTM", got[7])
+	assert.Equal(http.MethodPost, got.method)
+	assert.Equal("http://middleman.test/api/v1/pulls/gh/acme/widget/7/comments", got.url)
+	assert.Equal([]string{"body: LGTM"}, got.bodyArgs)
 }
 
-func TestRestishRunnerFetchesJSON(t *testing.T) {
+func TestRestishRequesterFetchesCompleteJSON(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	t.Setenv("MIDDLEMANCTL_RESTISH_CONFIG_DIR", t.TempDir())
 	t.Setenv("MIDDLEMANCTL_RESTISH_CACHE_DIR", t.TempDir())
+	longTitle := strings.Repeat("repo-", 1200)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal("/api/v1/version", r.URL.Path)
+		assert.Equal("/api/v1/repos", r.URL.Path)
 		w.Header().Set("Content-Type", "application/json")
-		_, err := w.Write([]byte(`{"version":"test"}`))
+		_, err := fmt.Fprintf(w, `[{"name":%q}]`, longTitle)
 		assert.NoError(err)
 	}))
 	t.Cleanup(server.Close)
 
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	err := runRestish(context.Background(), []string{
-		"--rsh-output-format", "json",
-		"--rsh-no-cache",
-		http.MethodGet,
-		server.URL + "/api/v1/version",
-	}, &stdout, &stderr)
+	body, err := makeRestishRequest(context.Background(), cliConfig{timeout: 30 * time.Second}, http.MethodGet, server.URL+"/api/v1/repos", nil)
 
-	require.NoError(err, strings.TrimSpace(stderr.String()))
-	assert.JSONEq(`{"version":"test"}`, stdout.String())
+	require.NoError(err)
+	assert.JSONEq(fmt.Sprintf(`[{"name":%q}]`, longTitle), string(body))
+}
+
+func TestWriteResponseFetchesYAMLBodyOnly(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	var yamlOut bytes.Buffer
+	require.NoError(writeResponse(&yamlOut, "yaml", []byte(`{"issues":[{"number":46,"title":"agent output"}]}`)))
+	assert.Contains(yamlOut.String(), "issues:")
+	assert.Contains(yamlOut.String(), "number: 46")
+	assert.NotContains(yamlOut.String(), "Content-Type")
+	assert.NotContains(yamlOut.String(), `{"issues"`)
 }

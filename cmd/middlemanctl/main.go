@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -27,12 +26,12 @@ const (
 	apiPrefix     = "/api/v1"
 )
 
-type restishRunner func(context.Context, []string, *bytes.Buffer, *bytes.Buffer) error
+type restishRequester func(context.Context, cliConfig, string, string, []string) ([]byte, error)
 
 type commandDeps struct {
 	Stdout  io.Writer
 	Stderr  io.Writer
-	Restish restishRunner
+	Restish restishRequester
 }
 
 type cliConfig struct {
@@ -57,7 +56,7 @@ func newRootCommand(deps commandDeps) *cobra.Command {
 		deps.Stderr = os.Stderr
 	}
 	if deps.Restish == nil {
-		deps.Restish = runRestish
+		deps.Restish = makeRestishRequest
 	}
 
 	cfg := viper.New()
@@ -95,17 +94,14 @@ Responses are formatted as JSON by default and YAML with --output yaml.`),
 		if err != nil {
 			return err
 		}
-		args := restishArgs(current, method, apiURL(current.server, path, query), bodyArgs)
-		var stdout bytes.Buffer
-		var stderr bytes.Buffer
-		if err := deps.Restish(ctx, args, &stdout, &stderr); err != nil {
-			if stderr.Len() > 0 {
-				_, _ = deps.Stderr.Write(stderr.Bytes())
-			}
+		body, err := deps.Restish(ctx, current, method, apiURL(current.server, path, query), bodyArgs)
+		if err != nil {
 			return err
 		}
-		if stdout.Len() > 0 {
-			_, _ = deps.Stdout.Write(stdout.Bytes())
+		if len(body) > 0 {
+			if err := writeResponse(deps.Stdout, current.output, body); err != nil {
+				return err
+			}
 		}
 		return nil
 	}
@@ -149,19 +145,6 @@ func readConfig(cfg *viper.Viper) (cliConfig, error) {
 		output:  out,
 		timeout: cfg.GetDuration("timeout"),
 	}, nil
-}
-
-func restishArgs(cfg cliConfig, method, requestURL string, bodyArgs []string) []string {
-	args := []string{
-		"--rsh-output-format", cfg.output,
-		"--rsh-no-cache",
-	}
-	if cfg.timeout > 0 {
-		args = append(args, "--rsh-timeout", cfg.timeout.String())
-	}
-	args = append(args, strings.ToUpper(method), requestURL)
-	args = append(args, bodyArgs...)
-	return args
 }
 
 func apiURL(server, path string, query url.Values) string {
@@ -368,39 +351,62 @@ func encodeStructured(w io.Writer, format string, payload any) error {
 	}
 }
 
+func writeResponse(w io.Writer, format string, body []byte) error {
+	if format == "json" {
+		_, err := w.Write(body)
+		return err
+	}
+
+	var payload any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		_, writeErr := w.Write(body)
+		return writeErr
+	}
+	return encodeStructured(w, format, payload)
+}
+
 var restishMu sync.Mutex
 
-func runRestish(ctx context.Context, args []string, stdout *bytes.Buffer, stderr *bytes.Buffer) error {
+func makeRestishRequest(ctx context.Context, cfg cliConfig, method, requestURL string, bodyArgs []string) ([]byte, error) {
 	restishMu.Lock()
 	defer restishMu.Unlock()
 
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	default:
-	}
-
-	oldArgs := os.Args
-	oldStdout := cli.Stdout
-	oldStderr := cli.Stderr
-	defer func() {
-		os.Args = oldArgs
-		cli.Stdout = oldStdout
-		cli.Stderr = oldStderr
-	}()
-
+	viper.Reset()
 	cli.Init("middlemanctl_restish", "dev")
 	cli.Defaults()
 	cli.AddLoader(openapi.New())
-	cli.Stdout = stdout
-	cli.Stderr = stderr
-	os.Args = append([]string{"middlemanctl_restish"}, args...)
+	viper.Set("rsh-no-cache", true)
+	viper.Set("rsh-profile", "default")
 
-	if err := cli.Run(); err != nil {
-		return err
+	var body io.Reader
+	if len(bodyArgs) > 0 {
+		bodyString, err := cli.GetBody("application/json", bodyArgs)
+		if err != nil {
+			return nil, err
+		}
+		body = strings.NewReader(bodyString)
 	}
-	if code := cli.GetExitCode(); code != 0 {
-		return fmt.Errorf("restish request failed with exit code %d", code)
+
+	req, err := http.NewRequestWithContext(ctx, strings.ToUpper(method), requestURL, body)
+	if err != nil {
+		return nil, err
 	}
-	return nil
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := cli.MakeRequest(req, cli.WithClient(&http.Client{Timeout: cfg.timeout}))
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if err := cli.DecodeResponse(resp); err != nil {
+		return nil, err
+	}
+	responseBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("middleman API returned %s", resp.Status)
+	}
+	return responseBody, nil
 }

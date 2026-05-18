@@ -233,6 +233,11 @@ const multiHunkDiffResponse = {
   ],
 };
 
+type MockInlineReviewOptions = {
+  publishStatus?: "published" | "partially_published";
+  remainingDraftComments?: Array<Record<string, unknown>>;
+};
+
 async function mockInlineReviewAPI(
   page: Page,
   capabilities = baseCapabilities,
@@ -240,6 +245,7 @@ async function mockInlineReviewAPI(
   platformHost = "github.com",
   filesResponse: typeof diffResponse = diffResponse,
   onCreateDraft?: (body: { body: string; range: Record<string, unknown> }) => void,
+  options: MockInlineReviewOptions = {},
 ): Promise<void> {
   let draftComments: Array<Record<string, unknown>> = [];
   let reviewThreadResolved = false;
@@ -298,8 +304,8 @@ async function mockInlineReviewAPI(
     await fulfillJson(route, draftComments[0], 201);
   });
   await page.route(`**${path}/review-draft/publish`, async (route) => {
-    draftComments = [];
-    await fulfillJson(route, { status: "published" });
+    draftComments = options.remainingDraftComments ?? [];
+    await fulfillJson(route, { status: options.publishStatus ?? "published" });
   });
   await page.route(`**${path}/review-threads/1/resolve`, async (route) => {
     reviewThreadResolved = true;
@@ -324,6 +330,46 @@ test("adds and publishes an inline draft review comment", async ({ page }) => {
   await expect(page.getByText("Please cover this line.")).toBeVisible();
   await page.getByRole("button", { name: "Publish review" }).click();
   await expect(page.getByText("1 draft comment")).toBeHidden();
+});
+
+test("keeps remaining GitLab draft state visible after a partial publish", async ({ page }) => {
+  await mockInlineReviewAPI(
+    page,
+    baseCapabilities,
+    "gitlab",
+    "gitlab.com",
+    diffResponse,
+    undefined,
+    {
+      publishStatus: "partially_published",
+      remainingDraftComments: [{
+        id: "remaining-1",
+        body: "Still needs follow-up.",
+        path: "src/main.ts",
+        side: "right",
+        line: 2,
+        new_line: 2,
+        line_type: "add",
+        diff_head_sha: "diff-head",
+        created_at: "2026-03-30T14:02:00Z",
+        updated_at: "2026-03-30T14:02:00Z",
+      }],
+    },
+  );
+
+  await page.goto("/pulls/gitlab/acme/widgets/42/files");
+  await page.getByRole("button", { name: "Comment on new line 2" }).click();
+  await page.getByPlaceholder("Leave a comment").fill("Please cover this line.");
+  await page.getByRole("button", { name: "Add comment" }).click();
+
+  const summary = page.getByPlaceholder("Review summary");
+  await summary.fill("Summary should not stay in the composer.");
+  await page.getByRole("button", { name: "Publish review" }).click();
+
+  await expect(summary).toHaveValue("");
+  await expect(page.locator(".review-warning")).toContainText("Review was partially published");
+  await expect(page.getByText("1 draft comment")).toBeVisible();
+  await expect(page.getByText("Still needs follow-up.")).toBeVisible();
 });
 
 test("hides inline review controls when provider draft review is unsupported", async ({ page }) => {

@@ -327,7 +327,8 @@ func (d *DB) UpsertNotifications(ctx context.Context, notifications []Notificati
 						WHEN middleman_notification_items.source_ack_generation_at IS NOT NULL
 						 AND excluded.source_updated_at > middleman_notification_items.source_ack_generation_at THEN NULL
 						ELSE middleman_notification_items.source_ack_generation_at
-					END`,
+					END
+				WHERE excluded.source_updated_at >= middleman_notification_items.source_updated_at`,
 				n.Platform, n.PlatformHost, n.PlatformNotificationID, nullableInt64(repoID), n.RepoOwner, n.RepoName,
 				n.SubjectType, n.SubjectTitle, n.SubjectURL, n.SubjectLatestCommentURL, n.WebURL,
 				nullableInt(n.ItemNumber), n.ItemType, n.ItemAuthor, n.Reason, boolInt(n.Unread), boolInt(n.Participating),
@@ -382,13 +383,13 @@ func notificationWhere(opts ListNotificationsOpts) (string, []any, error) {
 		repoClauses := make([]string, 0, len(opts.Repos))
 		seen := make(map[string]struct{}, len(opts.Repos))
 		for _, repo := range opts.Repos {
-			platform, err := canonicalizeRequiredNotificationPlatform(repo.Platform)
-			if err != nil {
-				return "", nil, err
-			}
 			host, owner, name := canonicalRepoIdentifier(repo.PlatformHost, repo.RepoOwner, repo.RepoName)
 			if owner == "" || name == "" {
 				continue
+			}
+			platform, err := canonicalizeRequiredNotificationPlatform(repo.Platform)
+			if err != nil {
+				return "", nil, err
 			}
 			key := platform + "\x00" + host + "\x00" + owner + "\x00" + name
 			if _, ok := seen[key]; ok {

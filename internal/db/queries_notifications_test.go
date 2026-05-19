@@ -394,6 +394,29 @@ func TestReadPropagationSuccessDoesNotClearNewerUnreadActivity(t *testing.T) {
 	assert.Nil(unread[0].SourceAckQueuedAt)
 }
 
+func TestUpsertNotificationsIgnoresStaleSourceUpdates(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	seedNotificationRepo(t, d)
+	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
+	newerUnread := notificationFixture("mention", "mention", now.Add(time.Minute))
+	newerUnread.SubjectTitle = "newer unread activity"
+	require.NoError(d.UpsertNotifications(t.Context(), []Notification{newerUnread}))
+
+	staleRead := notificationFixture("mention", "mention", now)
+	staleRead.SubjectTitle = "stale read payload"
+	staleRead.Unread = false
+	require.NoError(d.UpsertNotifications(t.Context(), []Notification{staleRead}))
+
+	items, err := d.ListNotifications(t.Context(), ListNotificationsOpts{State: "all"})
+	require.NoError(err)
+	require.Len(items, 1)
+	assert.True(items[0].Unread)
+	assert.Equal("newer unread activity", items[0].SubjectTitle)
+	assert.True(newerUnread.SourceUpdatedAt.Equal(items[0].SourceUpdatedAt))
+}
+
 func TestNotificationMutationsReturnOnlyUpdatedIDs(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)
@@ -454,6 +477,14 @@ func TestNotificationsHideUnmonitoredRepos(t *testing.T) {
 	require.NoError(err)
 	assert.Equal(1, summary.Unread)
 	assert.Equal(map[string]int{"github.com/acme/widget": 1}, summary.ByRepo)
+
+	emptyRepoSet := []NotificationRepoFilter{{}}
+	items, err = d.ListNotifications(t.Context(), ListNotificationsOpts{State: "all", Repos: emptyRepoSet})
+	require.NoError(err)
+	assert.Empty(items)
+	summary, err = d.NotificationSummary(t.Context(), ListNotificationsOpts{State: "all", Repos: emptyRepoSet})
+	require.NoError(err)
+	assert.Zero(summary.Unread)
 }
 
 func TestNotificationSummaryRepoFacetsIncludePlatformHost(t *testing.T) {

@@ -1733,6 +1733,22 @@ components:
         - is_draft
         - title
       type: object
+    OperationAvailability:
+      additionalProperties: false
+      properties:
+        available:
+          type: boolean
+        code:
+          type: string
+        required_capability:
+          type: string
+        retry_at:
+          type: string
+        unavailable_reason:
+          type: string
+      required:
+        - available
+      type: object
     PlatformIdentityPayload:
       additionalProperties: false
       properties:
@@ -2234,6 +2250,10 @@ components:
           type: boolean
         capabilities:
           $ref: "#/components/schemas/ProviderCapabilitiesResponse"
+        operations:
+          additionalProperties:
+            $ref: "#/components/schemas/OperationAvailability"
+          type: object
       required:
         - ID
         - Platform
@@ -2255,6 +2275,7 @@ components:
         - BackfillIssueCompletedAt
         - CreatedAt
         - capabilities
+        - operations
       type: object
     RepoSummaryAuthorResponse:
       additionalProperties: false
@@ -2375,6 +2396,10 @@ components:
         open_pr_count:
           format: int64
           type: integer
+        operations:
+          additionalProperties:
+            $ref: "#/components/schemas/OperationAvailability"
+          type: object
         owner:
           type: string
         platform_host:
@@ -2410,6 +2435,7 @@ components:
         - commit_timeline
         - active_authors
         - recent_issues
+        - operations
       type: object
     ResolveItemResponse:
       additionalProperties: false

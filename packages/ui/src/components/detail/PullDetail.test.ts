@@ -420,4 +420,32 @@ describe("PullDetail approvals", () => {
       ).toBeNull();
     });
   });
+
+  it("renders the merge button as disabled with reason when operations.merge_pr.available is false", async () => {
+    const detail = pullDetail();
+    detail.repo.capabilities.merge_mutation = true;
+
+    renderPullDetail(detail, {
+      AllowSquashMerge: true,
+      AllowMergeCommit: false,
+      AllowRebaseMerge: false,
+      ViewerCanMerge: true,
+      operations: {
+        merge_pr: {
+          available: false,
+          code: "rate_limited",
+          unavailable_reason: "github.com rate-limited; retry at 14:35",
+          retry_at: "2026-05-19T14:35:00Z",
+        },
+      },
+    });
+
+    const button = await vi.waitFor(() => {
+      const found = screen.queryByRole("button", { name: /merge/i });
+      expect(found).not.toBeNull();
+      return found as HTMLButtonElement;
+    });
+    expect(button.disabled).toBe(true);
+    expect(button.title).toBe("github.com rate-limited; retry at 14:35");
+  });
 });

@@ -125,6 +125,7 @@ func (s *Server) repoResponse(repo db.Repo) repoResponse {
 		BackfillIssueCompletedAt: repo.BackfillIssueCompletedAt,
 		CreatedAt:                repo.CreatedAt,
 		Capabilities:             s.capabilitiesForRepo(repo),
+		Operations:               s.repoOperations(repo),
 	}
 }
 

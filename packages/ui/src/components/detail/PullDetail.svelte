@@ -4,6 +4,7 @@
     DiffFile,
     KanbanStatus,
     Label,
+    OperationAvailability,
     ProviderCapabilities,
     PullRequest,
   } from "../../api/types.js";
@@ -522,6 +523,7 @@
     allowMerge: boolean;
     allowRebase: boolean;
     viewerCanMerge: boolean;
+    operations?: Record<string, OperationAvailability>;
   };
 
   let repoSettings = $state<RepoSettings | null>(null);
@@ -541,6 +543,7 @@
         allowMerge: data.AllowMergeCommit,
         allowRebase: data.AllowRebaseMerge,
         viewerCanMerge: data.ViewerCanMerge,
+        operations: data.operations,
       };
     }).catch(() => {
       if (requestID === repoSettingsRequestID) {
@@ -1476,17 +1479,23 @@
               oncompleted={closeActionMenu}
             />
           {/if}
-          {#if repoSettings && capabilities.merge_mutation && repoSettings.viewerCanMerge}
+          {@const mergeOp = repoSettings?.operations?.merge_pr}
+          {@const mergeOpUnavailable = mergeOp !== undefined && !mergeOp.available}
+          {#if repoSettings && (mergeOp !== undefined
+              || (capabilities.merge_mutation && repoSettings.viewerCanMerge))}
             {@const mergeSettings = repoSettings}
             {@const mergeDisabledByConflicts = hasMergeConflicts(pr)}
+            {@const mergeTitle = mergeDisabledByConflicts
+              ? "Resolve merge conflicts before merging"
+              : mergeOpUnavailable
+                ? mergeOp?.unavailable_reason ?? ""
+                : ""}
             <ActionButton
               class="btn--merge"
-              disabled={stalePR || mergeDisabledByConflicts}
-              title={mergeDisabledByConflicts
-                ? "Resolve merge conflicts before merging"
-                : ""}
+              disabled={stalePR || mergeDisabledByConflicts || mergeOpUnavailable}
+              title={mergeTitle}
               onclick={() => {
-                if (stalePR) return;
+                if (stalePR || mergeOpUnavailable) return;
                 runOpenMerge(buildOpenMergeInput(pr, capabilities));
               }}
               tone="success"

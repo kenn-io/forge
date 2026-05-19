@@ -786,6 +786,15 @@ type MrImportMetadataResponse struct {
 	Title            string  `json:"title"`
 }
 
+// OperationAvailability defines model for OperationAvailability.
+type OperationAvailability struct {
+	Available          bool    `json:"available"`
+	Code               *string `json:"code,omitempty"`
+	RequiredCapability *string `json:"required_capability,omitempty"`
+	RetryAt            *string `json:"retry_at,omitempty"`
+	UnavailableReason  *string `json:"unavailable_reason,omitempty"`
+}
+
 // PlatformIdentityPayload defines model for PlatformIdentityPayload.
 type PlatformIdentityPayload struct {
 	Name         string `json:"name"`
@@ -962,27 +971,28 @@ type RepoRefResponse struct {
 // RepoResponse defines model for RepoResponse.
 type RepoResponse struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema                   *string                      `json:"$schema,omitempty"`
-	AllowMergeCommit         bool                         `json:"AllowMergeCommit"`
-	AllowRebaseMerge         bool                         `json:"AllowRebaseMerge"`
-	AllowSquashMerge         bool                         `json:"AllowSquashMerge"`
-	BackfillIssueComplete    bool                         `json:"BackfillIssueComplete"`
-	BackfillIssueCompletedAt *time.Time                   `json:"BackfillIssueCompletedAt"`
-	BackfillIssuePage        int64                        `json:"BackfillIssuePage"`
-	BackfillPRComplete       bool                         `json:"BackfillPRComplete"`
-	BackfillPRCompletedAt    *time.Time                   `json:"BackfillPRCompletedAt"`
-	BackfillPRPage           int64                        `json:"BackfillPRPage"`
-	CreatedAt                time.Time                    `json:"CreatedAt"`
-	ID                       int64                        `json:"ID"`
-	LastSyncCompletedAt      *time.Time                   `json:"LastSyncCompletedAt"`
-	LastSyncError            string                       `json:"LastSyncError"`
-	LastSyncStartedAt        *time.Time                   `json:"LastSyncStartedAt"`
-	Name                     string                       `json:"Name"`
-	Owner                    string                       `json:"Owner"`
-	Platform                 string                       `json:"Platform"`
-	PlatformHost             string                       `json:"PlatformHost"`
-	ViewerCanMerge           bool                         `json:"ViewerCanMerge"`
-	Capabilities             ProviderCapabilitiesResponse `json:"capabilities"`
+	Schema                   *string                          `json:"$schema,omitempty"`
+	AllowMergeCommit         bool                             `json:"AllowMergeCommit"`
+	AllowRebaseMerge         bool                             `json:"AllowRebaseMerge"`
+	AllowSquashMerge         bool                             `json:"AllowSquashMerge"`
+	BackfillIssueComplete    bool                             `json:"BackfillIssueComplete"`
+	BackfillIssueCompletedAt *time.Time                       `json:"BackfillIssueCompletedAt"`
+	BackfillIssuePage        int64                            `json:"BackfillIssuePage"`
+	BackfillPRComplete       bool                             `json:"BackfillPRComplete"`
+	BackfillPRCompletedAt    *time.Time                       `json:"BackfillPRCompletedAt"`
+	BackfillPRPage           int64                            `json:"BackfillPRPage"`
+	CreatedAt                time.Time                        `json:"CreatedAt"`
+	ID                       int64                            `json:"ID"`
+	LastSyncCompletedAt      *time.Time                       `json:"LastSyncCompletedAt"`
+	LastSyncError            string                           `json:"LastSyncError"`
+	LastSyncStartedAt        *time.Time                       `json:"LastSyncStartedAt"`
+	Name                     string                           `json:"Name"`
+	Owner                    string                           `json:"Owner"`
+	Platform                 string                           `json:"Platform"`
+	PlatformHost             string                           `json:"PlatformHost"`
+	ViewerCanMerge           bool                             `json:"ViewerCanMerge"`
+	Capabilities             ProviderCapabilitiesResponse     `json:"capabilities"`
+	Operations               map[string]OperationAvailability `json:"operations"`
 }
 
 // RepoSummaryAuthorResponse defines model for RepoSummaryAuthorResponse.
@@ -1035,6 +1045,7 @@ type RepoSummaryResponse struct {
 	Name                 string                            `json:"name"`
 	OpenIssueCount       int64                             `json:"open_issue_count"`
 	OpenPrCount          int64                             `json:"open_pr_count"`
+	Operations           map[string]OperationAvailability  `json:"operations"`
 	Owner                string                            `json:"owner"`
 	PlatformHost         string                            `json:"platform_host"`
 	RecentIssues         *[]RepoSummaryIssueResponse       `json:"recent_issues"`

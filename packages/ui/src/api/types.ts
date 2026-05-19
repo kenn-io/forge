@@ -15,6 +15,8 @@ export type PullRequest =
   components["schemas"]["MergeRequestResponse"];
 export type ProviderCapabilities =
   components["schemas"]["ProviderCapabilitiesResponse"];
+export type OperationAvailability =
+  components["schemas"]["OperationAvailability"];
 export type Issue =
   components["schemas"]["IssueResponse"];
 export type IssueEvent = components["schemas"]["IssueEvent"];

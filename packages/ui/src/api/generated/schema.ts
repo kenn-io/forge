@@ -2396,6 +2396,13 @@ export interface components {
             state: string;
             title: string;
         };
+        OperationAvailability: {
+            available: boolean;
+            code?: string;
+            required_capability?: string;
+            retry_at?: string;
+            unavailable_reason?: string;
+        };
         PlatformIdentityPayload: {
             name: string;
             owner: string;
@@ -2630,6 +2637,9 @@ export interface components {
             PlatformHost: string;
             ViewerCanMerge: boolean;
             capabilities: components["schemas"]["ProviderCapabilitiesResponse"];
+            operations: {
+                [key: string]: components["schemas"]["OperationAvailability"];
+            };
         };
         RepoSummaryAuthorResponse: {
             /** Format: int64 */
@@ -2680,6 +2690,9 @@ export interface components {
             open_issue_count: number;
             /** Format: int64 */
             open_pr_count: number;
+            operations: {
+                [key: string]: components["schemas"]["OperationAvailability"];
+            };
             owner: string;
             platform_host: string;
             recent_issues: components["schemas"]["RepoSummaryIssueResponse"][] | null;

@@ -219,6 +219,7 @@ func (s *Server) toRepoSummaryResponse(
 		OpenIssueCount:      summary.OpenIssueCount,
 		ActiveAuthors:       make([]repoSummaryAuthorResponse, 0, len(summary.ActiveAuthors)),
 		RecentIssues:        make([]repoSummaryIssueResponse, 0, len(summary.RecentIssues)),
+		Operations:          s.repoOperations(summary.Repo),
 	}
 	if summary.Repo.LastSyncStartedAt != nil {
 		resp.LastSyncStartedAt = formatUTCRFC3339(*summary.Repo.LastSyncStartedAt)

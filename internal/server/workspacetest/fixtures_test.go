@@ -167,6 +167,20 @@ func runGit(t *testing.T, dir string, args ...string) {
 	require.NoError(t, err, "git %v failed: %s", args, out)
 }
 
+func testGitSHA(t *testing.T, dir, ref string) string {
+	t.Helper()
+	cmd := exec.Command("git", "rev-parse", ref)
+	cmd.Dir = dir
+	cmd.Env = append(
+		gitenv.StripAll(os.Environ()),
+		"GIT_CONFIG_GLOBAL=/dev/null",
+		"GIT_CONFIG_SYSTEM=/dev/null",
+	)
+	out, err := cmd.Output()
+	require.NoError(t, err)
+	return strings.TrimSpace(string(out))
+}
+
 func seedPROnHost(
 	t *testing.T, database *db.DB,
 	host, owner, name string, number int,
@@ -205,6 +219,39 @@ func seedPROnHost(
 	require.NoError(t, database.EnsureKanbanState(ctx, prID))
 
 	return prID
+}
+
+func seedIssue(
+	t *testing.T, database *db.DB,
+	owner, name string, number int, state string,
+) int64 {
+	t.Helper()
+	ctx := t.Context()
+
+	repoID, err := database.UpsertRepo(
+		ctx, db.GitHubRepoIdentity("github.com", owner, name),
+	)
+	require.NoError(t, err)
+
+	now := time.Now().UTC().Truncate(time.Second)
+	issue := &db.Issue{
+		RepoID:         repoID,
+		PlatformID:     int64(number) * 1000,
+		Number:         number,
+		URL:            fmt.Sprintf("https://github.com/%s/%s/issues/%d", owner, name, number),
+		Title:          fmt.Sprintf("Test Issue #%d", number),
+		Author:         "testuser",
+		State:          state,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		LastActivityAt: now,
+	}
+	if state == "closed" {
+		issue.ClosedAt = &now
+	}
+	issueID, err := database.UpsertIssue(ctx, issue)
+	require.NoError(t, err)
+	return issueID
 }
 
 func createReadyWorkspace(

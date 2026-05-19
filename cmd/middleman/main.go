@@ -188,6 +188,8 @@ func runCLI(args []string, stdout io.Writer) error {
 			return runConfigCLI(args[1:], stdout)
 		case "pty-owner":
 			return runPtyOwnerCLI(args[1:])
+		case "status":
+			return runStatusCLI(args[1:], stdout)
 		}
 	}
 
@@ -278,6 +280,40 @@ func runConfigRead(args []string, stdout io.Writer) error {
 	default:
 		return fmt.Errorf("unsupported config key %q", fs.Arg(0))
 	}
+}
+
+func runStatusCLI(args []string, stdout io.Writer) error {
+	fs := flag.NewFlagSet("middleman status", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	configPath := fs.String(
+		"config", config.DefaultConfigPath(),
+		"path to config file",
+	)
+	asJSON := fs.Bool("json", false, "render output as JSON")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	if err := config.EnsureDefault(*configPath); err != nil {
+		return fmt.Errorf("ensure config: %w", err)
+	}
+	cfg, err := config.Load(*configPath)
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
+
+	if err := os.MkdirAll(cfg.DataDir, 0o700); err != nil {
+		return fmt.Errorf(
+			"create data directory %s: %w", cfg.DataDir, err,
+		)
+	}
+
+	st, err := runtimelock.Read(cfg.DataDir)
+	if err != nil {
+		return fmt.Errorf("read runtime status: %w", err)
+	}
+
+	return runtimelock.FormatStatus(stdout, st, *asJSON)
 }
 
 func run(configPath string) error {

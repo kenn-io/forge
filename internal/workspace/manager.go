@@ -35,6 +35,7 @@ type Manager struct {
 	db                     *db.DB
 	worktreeDir            string
 	clones                 *gitclone.Manager
+	locks                  *FileLockManager
 	tmuxCmd                []string
 	ptyOwner               PtyOwnerClient
 	preferPtyOwner         bool
@@ -102,6 +103,7 @@ func NewManager(
 	return &Manager{
 		db:                     database,
 		worktreeDir:            worktreeDir,
+		locks:                  NewFileLockManager(),
 		retryQueued:            make(map[string]bool),
 		issueBranchSlugEnabled: true,
 	}
@@ -130,6 +132,22 @@ func (m *Manager) defaultIssueBranch(issueNumber int, title string) string {
 // operations. Called after the clone manager is initialized.
 func (m *Manager) SetClones(clones *gitclone.Manager) {
 	m.clones = clones
+}
+
+// withRepoLock acquires a lock for the clone directory, executes the function,
+// and releases the lock. The lock is released even if the function panics.
+func (m *Manager) withRepoLock(ctx context.Context, cloneDir string, fn func() error) error {
+	lock, err := m.locks.Acquire(ctx, cloneDir)
+	if err != nil {
+		return fmt.Errorf("acquire worktree lock for %q: %w", cloneDir, err)
+	}
+	defer func() {
+		if err := lock.Unlock(); err != nil {
+			slog.Warn("failed to release worktree lock",
+				"path", cloneDir, "err", err)
+		}
+	}()
+	return fn()
 }
 
 // SetTmuxCommand sets the command + argv prefix for every tmux
@@ -408,30 +426,32 @@ func (m *Manager) Setup(
 		)
 	}
 
-	branch, err := m.addWorktree(ctx, cloneDir, ws)
-	if err != nil {
-		return m.failSetup(
-			ctx,
-			ws.ID, workspaceSetupStageWorktree, err,
-		)
-	}
-	ws.WorkspaceBranch = branch
-	if err := m.updateWorkspaceBranch(
-		ctx, ws.ID, branch,
-	); err != nil {
-		m.rollbackWorktree(ctx, cloneDir, ws, branch)
-		return m.failSetup(
-			ctx,
-			ws.ID, workspaceSetupStageWorktree, err,
-		)
-	}
+	var branch string
+	err = m.withRepoLock(ctx, cloneDir, func() error {
+		var addErr error
+		branch, addErr = m.addWorktree(ctx, cloneDir, ws)
+		if addErr != nil {
+			return addErr
+		}
+		ws.WorkspaceBranch = branch
+		if err := m.updateWorkspaceBranch(
+			ctx, ws.ID, branch,
+		); err != nil {
+			m.rollbackWorktree(ctx, cloneDir, ws, branch)
+			return fmt.Errorf("update workspace branch: %w", err)
+		}
 
-	err = m.newTerminalSession(ctx, ws)
+		sessionErr := m.newTerminalSession(ctx, ws)
+		if sessionErr != nil {
+			m.rollbackWorktree(ctx, cloneDir, ws, branch)
+			return fmt.Errorf("new terminal session: %w", sessionErr)
+		}
+		return nil
+	})
 	if err != nil {
-		m.rollbackWorktree(ctx, cloneDir, ws, branch)
 		return m.failSetup(
 			ctx,
-			ws.ID, workspaceSetupStageTmuxSession, err,
+			ws.ID, workspaceSetupStageWorktree, err,
 		)
 	}
 	m.recordSetupEvent(
@@ -925,13 +945,15 @@ func (m *Manager) cleanupWorkspaceArtifactsForDelete(
 		return err
 	}
 
-	_ = runGit(
-		ctx, cloneDir,
-		"worktree", "remove", "--force", ws.WorktreePath,
-	)
-	m.deleteWorkspaceBranches(ctx, cloneDir, ws, ws.WorkspaceBranch)
-	_ = runGit(ctx, cloneDir, "worktree", "prune")
-	return nil
+	return m.withRepoLock(ctx, cloneDir, func() error {
+		_ = runGit(
+			ctx, cloneDir,
+			"worktree", "remove", "--force", ws.WorktreePath,
+		)
+		m.deleteWorkspaceBranches(ctx, cloneDir, ws, ws.WorkspaceBranch)
+		_ = runGit(ctx, cloneDir, "worktree", "prune")
+		return nil
+	})
 }
 
 func (m *Manager) cleanupTmuxSession(

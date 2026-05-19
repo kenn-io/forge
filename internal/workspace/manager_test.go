@@ -2441,3 +2441,109 @@ func TestWorkspaceBranchCandidatesUsesBareFallbackOnlyForLegacyWorkspace(t *test
 	got := workspaceBranchCandidates(ws, workspaceBranchUnknown)
 	assert.Equal([]string{"middleman/issue-10"}, got)
 }
+
+func TestFileLockManager_Acquire_And_Release(t *testing.T) {
+	require := require.New(t)
+	mgr := NewFileLockManager()
+	ctx := t.Context()
+	lockPath := t.TempDir()
+
+	// Acquire lock
+	lock1, err := mgr.Acquire(ctx, lockPath)
+	require.NoError(err)
+	require.NotNil(lock1)
+
+	// Release lock
+	err = lock1.Unlock()
+	require.NoError(err)
+
+	// Should be able to acquire again
+	lock2, err := mgr.Acquire(ctx, lockPath)
+	require.NoError(err)
+	require.NotNil(lock2)
+
+	err = lock2.Unlock()
+	require.NoError(err)
+}
+
+func TestFileLockManager_Blocks_Concurrent_Acquires(t *testing.T) {
+	require := require.New(t)
+	mgr := NewFileLockManager()
+	ctx := t.Context()
+	lockPath := t.TempDir()
+
+	// Acquire first lock
+	lock1, err := mgr.Acquire(ctx, lockPath)
+	require.NoError(err)
+
+	// Try to acquire second lock concurrently
+	done := make(chan error)
+	go func() {
+		lock2, err := mgr.Acquire(ctx, lockPath)
+		if err == nil {
+			defer lock2.Unlock()
+		}
+		done <- err
+	}()
+
+	// Give the goroutine time to try acquiring
+	time.Sleep(100 * time.Millisecond)
+
+	// Release the first lock
+	err = lock1.Unlock()
+	require.NoError(err)
+
+	// Now the second acquire should succeed
+	err = <-done
+	require.NoError(err)
+}
+
+func TestManagerWithRepoLock_ReleaseOnSuccess(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	wtDir := t.TempDir()
+
+	mgr := NewManager(d, wtDir)
+
+	lockPath := t.TempDir()
+	callCount := 0
+
+	err := mgr.withRepoLock(ctx, lockPath, func() error {
+		callCount++
+		return nil
+	})
+
+	require.NoError(err)
+	require.Equal(1, callCount)
+
+	// Lock should be released, so we should be able to acquire it
+	lock, err := mgr.locks.Acquire(ctx, lockPath)
+	require.NoError(err)
+	require.NotNil(lock)
+	lock.Unlock()
+}
+
+func TestManagerWithRepoLock_ReleaseOnError(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	wtDir := t.TempDir()
+
+	mgr := NewManager(d, wtDir)
+
+	lockPath := t.TempDir()
+	testErr := errors.New("test error")
+
+	err := mgr.withRepoLock(ctx, lockPath, func() error {
+		return testErr
+	})
+
+	require.ErrorIs(err, testErr)
+
+	// Lock should still be released even after error
+	lock, err := mgr.locks.Acquire(ctx, lockPath)
+	require.NoError(err)
+	require.NotNil(lock)
+	lock.Unlock()
+}

@@ -34,12 +34,12 @@ func (s *Server) livez(_ context.Context, _ *struct{}) (*healthOutput, error) {
 
 func (s *Server) healthz(ctx context.Context, _ *struct{}) (*healthOutput, error) {
 	if s.db == nil {
-		return nil, huma.Error503ServiceUnavailable("database unavailable")
+		return nil, problemServiceUnavailable("database unavailable")
 	}
 
 	var probe int
 	if err := s.db.ReadDB().QueryRowContext(ctx, "SELECT 1").Scan(&probe); err != nil {
-		return nil, huma.Error503ServiceUnavailable("database unavailable")
+		return nil, problemServiceUnavailable("database unavailable")
 	}
 
 	return &healthOutput{

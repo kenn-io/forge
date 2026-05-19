@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"path"
@@ -415,7 +416,7 @@ func (s *Server) previewRepos(
 	input *repoPreviewInput,
 ) (*repoPreviewOutput, error) {
 	if s.cfgPath == "" {
-		return nil, huma.Error404NotFound("settings not available")
+		return nil, problemNotFound(CodeSettingsUnavailable, "settings not available", nil)
 	}
 
 	provider, host, err := normalizeImportPlatform(
@@ -423,13 +424,13 @@ func (s *Server) previewRepos(
 		importRequestHost(input.Body.Host, input.Body.PlatformHost),
 	)
 	if err != nil {
-		return nil, huma.Error400BadRequest(err.Error())
+		return nil, problemValidation("body.provider", err.Error())
 	}
 	owner, pattern, err := normalizeImportOwnerPattern(
 		provider, input.Body.Owner, input.Body.Pattern,
 	)
 	if err != nil {
-		return nil, huma.Error400BadRequest(err.Error())
+		return nil, problemValidation("body", err.Error())
 	}
 
 	s.cfgMu.Lock()
@@ -440,24 +441,28 @@ func (s *Server) previewRepos(
 	if provider == platform.KindGitHub {
 		client, err := s.syncer.ClientForHost(host)
 		if err != nil {
-			return nil, huma.Error502BadGateway("GitHub API error: " + err.Error())
+			return nil, problemUpstream("GitHub API error: "+err.Error(), "github", host)
 		}
 		rows, err = buildRepoPreviewRows(
 			ctx, client, exactConfiguredRepoSet(repos), owner, pattern, host,
 		)
 		if err != nil {
-			return nil, huma.Error502BadGateway("GitHub API error: " + err.Error())
+			return nil, problemUpstream("GitHub API error: "+err.Error(), "github", host)
 		}
 	} else {
 		reader, err := s.syncer.RepositoryReader(provider, host)
 		if err != nil {
-			return nil, huma.Error502BadGateway("Provider API error: " + err.Error())
+			return nil, problemUpstream(
+				"Provider API error: "+err.Error(), string(provider), host,
+			)
 		}
 		rows, err = buildPlatformRepoPreviewRows(
 			ctx, reader, provider, host, exactConfiguredRepoSet(repos), owner, pattern,
 		)
 		if err != nil {
-			return nil, huma.Error502BadGateway("Provider API error: " + err.Error())
+			return nil, problemUpstream(
+				"Provider API error: "+err.Error(), string(provider), host,
+			)
 		}
 	}
 	return &repoPreviewOutput{
@@ -529,10 +534,19 @@ func configFromResolvedRepo(candidate config.Repo, ref ghclient.RepoRef) config.
 	return repo
 }
 
+// bulkApplyError is a sentinel carrying the wire problem produced by
+// applyBulkExactRepos so the handler can return it directly without
+// re-classifying status codes.
+type bulkApplyError struct {
+	problem huma.StatusError
+}
+
+func (e *bulkApplyError) Error() string { return e.problem.Error() }
+
 func (s *Server) applyBulkExactRepos(
 	ctx context.Context,
 	resolved []resolvedBulkRepo,
-) (settingsResponse, int, error) {
+) (settingsResponse, error) {
 	s.cfgMu.Lock()
 	existing := exactConfiguredRepoSet(s.cfg.Repos)
 	addConfigs := make([]config.Repo, 0, len(resolved))
@@ -548,8 +562,11 @@ func (s *Server) applyBulkExactRepos(
 	}
 	if len(addConfigs) == 0 {
 		s.cfgMu.Unlock()
-		return settingsResponse{}, http.StatusBadRequest,
-			fmt.Errorf("all selected repositories are already configured")
+		return settingsResponse{}, &bulkApplyError{problem: problemBadRequest(
+			CodeBadRequest,
+			"all selected repositories are already configured",
+			nil,
+		)}
 	}
 
 	prev := slices.Clone(s.cfg.Repos)
@@ -557,23 +574,26 @@ func (s *Server) applyBulkExactRepos(
 	if err := s.cfg.Validate(); err != nil {
 		s.cfg.Repos = prev
 		s.cfgMu.Unlock()
-		return settingsResponse{}, http.StatusBadRequest, err
+		return settingsResponse{}, &bulkApplyError{problem: problemBadRequest(
+			CodeBadRequest, err.Error(), nil,
+		)}
 	}
 	if err := s.cfg.Save(s.cfgPath); err != nil {
 		s.cfg.Repos = prev
 		s.cfgMu.Unlock()
-		return settingsResponse{}, http.StatusInternalServerError,
-			fmt.Errorf("save config: %w", err)
+		return settingsResponse{}, &bulkApplyError{problem: problemInternal(
+			"save config: " + err.Error(),
+		)}
 	}
 	if err := s.persistResolvedRepos(ctx, addRefs); err != nil {
 		s.cfg.Repos = prev
 		s.cfgMu.Unlock()
-		return settingsResponse{}, http.StatusInternalServerError, err
+		return settingsResponse{}, &bulkApplyError{problem: problemInternal(err.Error())}
 	}
 	s.mergeTrackedRepos(addRefs)
 	s.cfgMu.Unlock()
 
-	return s.buildLocalSettingsResponse(), http.StatusCreated, nil
+	return s.buildLocalSettingsResponse(), nil
 }
 
 func (s *Server) bulkAddRepos(
@@ -581,11 +601,11 @@ func (s *Server) bulkAddRepos(
 	input *bulkAddReposInput,
 ) (*bulkAddReposOutput, error) {
 	if s.cfgPath == "" {
-		return nil, huma.Error404NotFound("settings not available")
+		return nil, problemNotFound(CodeSettingsUnavailable, "settings not available", nil)
 	}
 
 	if len(input.Body.Repos) == 0 {
-		return nil, huma.Error400BadRequest("repos are required")
+		return nil, problemValidation("body.repos", "repos are required")
 	}
 
 	candidates := make([]config.Repo, 0, len(input.Body.Repos))
@@ -595,7 +615,7 @@ func (s *Server) bulkAddRepos(
 	for _, raw := range input.Body.Repos {
 		repo, err := normalizeExactRepoInput(raw)
 		if err != nil {
-			return nil, huma.Error400BadRequest(err.Error())
+			return nil, problemValidation("body.repos", err.Error())
 		}
 		key := configuredRepoImportKey(repo)
 		if _, ok := existing[key]; ok {
@@ -604,19 +624,24 @@ func (s *Server) bulkAddRepos(
 		candidates = append(candidates, repo)
 	}
 	if len(candidates) == 0 {
-		return nil, huma.Error400BadRequest(
+		return nil, problemBadRequest(
+			CodeBadRequest,
 			"all selected repositories are already configured",
+			nil,
 		)
 	}
 
 	resolved, err := validateBulkExactRepos(ctx, s.syncer, candidates)
 	if err != nil {
-		status, msg := classifyResolveError(err)
-		return nil, huma.NewError(status, msg)
+		return nil, classifyResolveProblem(err)
 	}
-	resp, status, err := s.applyBulkExactRepos(ctx, resolved)
+	resp, err := s.applyBulkExactRepos(ctx, resolved)
 	if err != nil {
-		return nil, huma.NewError(status, err.Error())
+		var bae *bulkApplyError
+		if errors.As(err, &bae) {
+			return nil, bae.problem
+		}
+		return nil, problemInternal(err.Error())
 	}
 
 	s.syncer.TriggerRun(context.WithoutCancel(ctx))

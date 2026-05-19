@@ -1,7 +1,6 @@
 package runtimelock
 
 import (
-	"errors"
 	"os"
 	"testing"
 
@@ -38,7 +37,7 @@ func TestAcquireSecondCallReturnsCollision(t *testing.T) {
 	require.Error(err)
 
 	var cerr *CollisionError
-	require.True(errors.As(err, &cerr))
+	require.ErrorAs(err, &cerr)
 	require.Equal(dir, cerr.DataDir)
 	require.Equal(LockPath(dir), cerr.LockPath)
 }
@@ -56,7 +55,7 @@ func TestAcquireCollisionWithMetadata(t *testing.T) {
 
 	_, err = Acquire(dir)
 	var cerr *CollisionError
-	require.True(errors.As(err, &cerr))
+	require.ErrorAs(err, &cerr)
 	require.NotNil(cerr.Metadata)
 	require.Equal(meta, *cerr.Metadata)
 }
@@ -71,7 +70,7 @@ func TestAcquireCollisionWithoutMetadata(t *testing.T) {
 
 	_, err = Acquire(dir)
 	var cerr *CollisionError
-	require.True(errors.As(err, &cerr))
+	require.ErrorAs(err, &cerr)
 	require.Nil(cerr.Metadata)
 	require.Equal(ReasonMetadataMissing, cerr.MetadataUnavailable)
 }

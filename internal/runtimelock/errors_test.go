@@ -22,12 +22,12 @@ func TestCollisionErrorImplementsError(t *testing.T) {
 
 	// errors.As pattern (this is the exact idiom Acquire callers use).
 	var asTarget *CollisionError
-	require.True(errors.As(error(cerr), &asTarget))
+	require.ErrorAs(error(cerr), &asTarget)
 	require.Equal(cerr, asTarget)
 
 	// A plain non-collision error must not match.
 	asTarget = nil
-	require.False(errors.As(errors.New("unrelated"), &asTarget))
+	require.NotErrorAs(errors.New("unrelated"), &asTarget)
 	require.Nil(asTarget)
 }
 

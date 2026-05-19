@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -111,7 +110,7 @@ func TestStartupLockCollisionAndStatus(t *testing.T) {
 	err := second.Run()
 	require.Error(err)
 	var exitErr *exec.ExitError
-	require.True(errors.As(err, &exitErr))
+	require.ErrorAs(err, &exitErr)
 	require.Equal(1, exitErr.ExitCode())
 	require.Contains(stderr.String(), "another middleman instance is already running")
 	require.Contains(stderr.String(), dataDir)

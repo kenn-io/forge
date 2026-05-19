@@ -34,6 +34,9 @@ const (
 	defaultSyncBudgetPerHour = 500
 	defaultPlatform          = "github"
 	defaultPlatformHost      = platformpkg.DefaultGitHubHost
+	defaultSSEBufferSize     = 256
+	minSSEBufferSize         = 16
+	maxSSEBufferSize         = 16384
 )
 
 const (
@@ -518,23 +521,35 @@ type Shell struct {
 }
 
 type Config struct {
-	SyncInterval               string           `toml:"sync_interval"`
-	GitHubTokenEnv             string           `toml:"github_token_env"`
-	DefaultPlatformHost        string           `toml:"default_platform_host"`
-	Host                       string           `toml:"host"`
-	Port                       int              `toml:"port"`
-	BasePath                   string           `toml:"base_path"`
-	DataDir                    string           `toml:"data_dir"`
-	SyncBudgetPerHour          int              `toml:"sync_budget_per_hour"`
-	IssueWorkspaceBranchStyle  string           `toml:"issue_workspace_branch_style"`
-	Repos                      []Repo           `toml:"repos"`
-	Platforms                  []PlatformConfig `toml:"platforms"`
-	Activity                   Activity         `toml:"activity"`
-	Terminal                   Terminal         `toml:"terminal"`
-	Agents                     []Agent          `toml:"agents"`
-	Roborev                    Roborev          `toml:"roborev"`
-	Tmux                       Tmux             `toml:"tmux"`
-	Shell                      Shell            `toml:"shell"`
+	SyncInterval              string           `toml:"sync_interval"`
+	GitHubTokenEnv            string           `toml:"github_token_env"`
+	DefaultPlatformHost       string           `toml:"default_platform_host"`
+	Host                      string           `toml:"host"`
+	Port                      int              `toml:"port"`
+	BasePath                  string           `toml:"base_path"`
+	DataDir                   string           `toml:"data_dir"`
+	SyncBudgetPerHour         int              `toml:"sync_budget_per_hour"`
+	SSEBufferSize             int              `toml:"sse_buffer_size"`
+	IssueWorkspaceBranchStyle string           `toml:"issue_workspace_branch_style"`
+	Repos                     []Repo           `toml:"repos"`
+	Platforms                 []PlatformConfig `toml:"platforms"`
+	Activity                  Activity         `toml:"activity"`
+	Terminal                  Terminal         `toml:"terminal"`
+	Agents                    []Agent          `toml:"agents"`
+	Roborev                   Roborev          `toml:"roborev"`
+	Tmux                      Tmux             `toml:"tmux"`
+	Shell                     Shell            `toml:"shell"`
+}
+
+// SSEBufferSizeOrDefault returns the configured SSE replay ring size,
+// falling back to the package default. A nil receiver is treated as
+// fully default-configured so tests that pass cfg = nil into the
+// server still get a working ring size.
+func (c *Config) SSEBufferSizeOrDefault() int {
+	if c == nil || c.SSEBufferSize == 0 {
+		return defaultSSEBufferSize
+	}
+	return c.SSEBufferSize
 }
 
 func DefaultConfigPath() string {
@@ -711,6 +726,10 @@ func Load(path string) (*Config, error) {
 		cfg.IssueWorkspaceBranchStyle = defaultIssueWorkspaceBranchStyle
 	}
 
+	if cfg.SSEBufferSize == 0 {
+		cfg.SSEBufferSize = defaultSSEBufferSize
+	}
+
 	if cfg.BasePath == "" {
 		cfg.BasePath = defaultBasePath
 	} else {
@@ -815,6 +834,14 @@ func (c *Config) Validate() error {
 		return fmt.Errorf(
 			"config: sync_budget_per_hour must be >= 50 or omitted, got %d",
 			c.SyncBudgetPerHour,
+		)
+	}
+
+	if c.SSEBufferSize != 0 &&
+		(c.SSEBufferSize < minSSEBufferSize || c.SSEBufferSize > maxSSEBufferSize) {
+		return fmt.Errorf(
+			"config: sse_buffer_size must be between %d and %d or omitted, got %d",
+			minSSEBufferSize, maxSSEBufferSize, c.SSEBufferSize,
 		)
 	}
 
@@ -1280,6 +1307,7 @@ type configFile struct {
 	Host                      string           `toml:"host"`
 	Port                      int              `toml:"port"`
 	SyncBudgetPerHour         int              `toml:"sync_budget_per_hour,omitempty"`
+	SSEBufferSize             int              `toml:"sse_buffer_size,omitempty"`
 	BasePath                  string           `toml:"base_path,omitempty"`
 	DataDir                   string           `toml:"data_dir,omitempty"`
 	IssueWorkspaceBranchStyle string           `toml:"issue_workspace_branch_style,omitempty"`
@@ -1315,6 +1343,9 @@ func (c *Config) Save(path string) error {
 	}
 	if c.SyncBudgetPerHour != defaultSyncBudgetPerHour {
 		f.SyncBudgetPerHour = c.SyncBudgetPerHour
+	}
+	if c.SSEBufferSize != 0 && c.SSEBufferSize != defaultSSEBufferSize {
+		f.SSEBufferSize = c.SSEBufferSize
 	}
 	if c.BasePath != defaultBasePath {
 		f.BasePath = c.BasePath

@@ -1805,6 +1805,124 @@ name = "b"
 	})
 }
 
+func TestSSEBufferSize(t *testing.T) {
+	t.Run("default is 256 when unset", func(t *testing.T) {
+		path := writeConfig(t, `
+[[repos]]
+owner = "a"
+name = "b"
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		Assert.Equal(t, 256, cfg.SSEBufferSize)
+		Assert.Equal(t, 256, cfg.SSEBufferSizeOrDefault())
+	})
+
+	t.Run("nil receiver returns default", func(t *testing.T) {
+		var cfg *Config
+		Assert.Equal(t, 256, cfg.SSEBufferSizeOrDefault())
+	})
+
+	t.Run("rejects below minimum", func(t *testing.T) {
+		path := writeConfig(t, `
+sse_buffer_size = 8
+[[repos]]
+owner = "a"
+name = "b"
+`)
+		_, err := Load(path)
+		require.Error(t, err)
+		Assert.Contains(t, err.Error(), "sse_buffer_size must be between 16 and 16384")
+	})
+
+	t.Run("rejects above maximum", func(t *testing.T) {
+		path := writeConfig(t, `
+sse_buffer_size = 20000
+[[repos]]
+owner = "a"
+name = "b"
+`)
+		_, err := Load(path)
+		require.Error(t, err)
+		Assert.Contains(t, err.Error(), "sse_buffer_size must be between 16 and 16384")
+	})
+
+	t.Run("accepts valid value in range", func(t *testing.T) {
+		path := writeConfig(t, `
+sse_buffer_size = 1024
+[[repos]]
+owner = "a"
+name = "b"
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		Assert.Equal(t, 1024, cfg.SSEBufferSize)
+		Assert.Equal(t, 1024, cfg.SSEBufferSizeOrDefault())
+	})
+
+	t.Run("accepts boundary minimum 16", func(t *testing.T) {
+		path := writeConfig(t, `
+sse_buffer_size = 16
+[[repos]]
+owner = "a"
+name = "b"
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		Assert.Equal(t, 16, cfg.SSEBufferSize)
+	})
+
+	t.Run("accepts boundary maximum 16384", func(t *testing.T) {
+		path := writeConfig(t, `
+sse_buffer_size = 16384
+[[repos]]
+owner = "a"
+name = "b"
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		Assert.Equal(t, 16384, cfg.SSEBufferSize)
+	})
+
+	t.Run("round-trips through Save", func(t *testing.T) {
+		require := require.New(t)
+		path := writeConfig(t, `
+sse_buffer_size = 1024
+[[repos]]
+owner = "a"
+name = "b"
+`)
+		cfg, err := Load(path)
+		require.NoError(err)
+
+		savePath := filepath.Join(t.TempDir(), "saved.toml")
+		require.NoError(cfg.Save(savePath))
+
+		cfg2, err := Load(savePath)
+		require.NoError(err)
+		Assert.Equal(t, 1024, cfg2.SSEBufferSize)
+	})
+
+	t.Run("default value is omitted from Save output", func(t *testing.T) {
+		require := require.New(t)
+		path := writeConfig(t, `
+[[repos]]
+owner = "a"
+name = "b"
+`)
+		cfg, err := Load(path)
+		require.NoError(err)
+
+		savePath := filepath.Join(t.TempDir(), "saved.toml")
+		require.NoError(cfg.Save(savePath))
+
+		// Reload should still produce the default.
+		cfg2, err := Load(savePath)
+		require.NoError(err)
+		Assert.Equal(t, 256, cfg2.SSEBufferSize)
+	})
+}
+
 func TestRoborevEndpointDefault(t *testing.T) {
 	cfg := &Config{}
 	Assert.Equal(

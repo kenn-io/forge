@@ -410,7 +410,7 @@ func newServer(
 		cfgPath:                cfgPath,
 		options:                options,
 		now:                    time.Now,
-		hub:                    NewEventHub(),
+		hub:                    NewEventHubWithCapacity(cfg.SSEBufferSizeOrDefault()),
 		tmuxActivity:           newTmuxActivityTracker(nil),
 		labelCatalogRefreshIDs: make(map[int64]struct{}),
 		bgCtx: shutdownAwareContext{

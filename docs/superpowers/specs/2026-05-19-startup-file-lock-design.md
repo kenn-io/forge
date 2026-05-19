@@ -78,8 +78,9 @@ Two files at the root of `data_dir`, beside the existing `middleman.db`:
   run here at least once"; nothing more.
 - `<data_dir>/middleman.run.json` — JSON metadata about the running
   daemon. Written under the held lock immediately after `net.Listen`
-  returns the bound listener (so `port=0` configurations record the
-  resolved port). Removed on graceful shutdown. Stale instances from
+  returns the bound listener, so the recorded port matches the actual
+  bound port even if the configured value and the resolved value
+  ever diverge. Removed on graceful shutdown. Stale instances from
   crashes are unlinked at the next successful start.
 
 The `data_dir/` subtree already contains `middleman.db`, the SQLite WAL
@@ -108,12 +109,16 @@ the least intrusive layout and the easiest to find when troubleshooting.
   the configured `cfg.Host`. For a config of `0.0.0.0:0`, this might
   be `0.0.0.0` (depending on the platform); for `127.0.0.1:0`, it's
   `127.0.0.1`.
-- `port` (int): the **bound** port. When the config sets `port=0`,
-  this is the kernel-assigned port from `net.Listen`. The redundant
-  host + port shape is preserved beside `listen_addr` because it is
-  easier to query programmatically.
-- `listen_addr` (string): the bound `host:port`, formatted with
-  `net.JoinHostPort` so IPv6 literals are bracketed correctly.
+- `port` (int): the **bound** port reported by `ln.Addr()`. Today's
+  config validator requires `port >= 1`, so the bound port equals
+  the configured port in practice. Recording the bound port (rather
+  than `cfg.Port`) is robust to a future relaxation of that
+  validator and to any bind-time resolution differences. The
+  redundant host + port shape is preserved beside `listen_addr`
+  because it is easier to query programmatically.
+- `listen_addr` (string): the bound `host:port` as returned by
+  `ln.Addr().String()` (which already brackets IPv6 literals via
+  `net.JoinHostPort` internally).
 - `started_at` (string): UTC RFC3339, per the project's
   "UTC-everywhere-except-presentation" convention.
 - `version`, `commit` (strings): the same values used by `middleman
@@ -136,49 +141,53 @@ gains a lock acquisition step and reorders the listener bind to happen
 synchronously instead of inside the existing `go func() {
 srv.ListenAndServe(addr) }()`. The new ordering:
 
-1. `config.EnsureDefault`, `config.Load` (unchanged).
-2. `os.MkdirAll(cfg.DataDir, 0o700)` (unchanged).
-3. **NEW**: construct `lock := flock.New(filepath.Join(cfg.DataDir,
-   "middleman.lock"))`. Call `ok, err := lock.TryLock()`.
-   - If `err != nil`: return a wrapped error; main exits via the
-     existing `slog.Error("fatal", "err", err)` path.
-   - If `!ok`: best-effort read of `middleman.run.json`. Print the
-     collision banner to stderr (see "Collision Banner" below). Return
-     a sentinel error so main exits with status 1. The slog `err` line
-     uses a short message like `"another middleman is already running"`
-     — the banner carries the operator detail.
-4. **NEW**: under the held lock, `os.Stat` the metadata file. If it
-   exists, `slog.Warn("previous run terminated uncleanly; removing
-   stale metadata")` and `os.Remove` it. ENOENT is the normal path
-   (no log line).
-5. **NEW** (deferred): `defer lock.Unlock()` and `defer
-   os.Remove(<data_dir>/middleman.run.json)`. The lock-file path is
-   not added to defers.
-6. Open DB, build provider tokens, resolve repos, build syncer — same
-   work as today.
-7. **NEW**: `ln, err := net.Listen("tcp", cfg.ListenAddr())`. On error,
-   return the wrapped listen error (this is still distinct from the
-   lock collision — a non-port-collision listen failure has nothing
-   to do with the lock).
-8. **NEW**: write the fresh `middleman.run.json` using
-   `net.JoinHostPort(host, port)` from `ln.Addr().(*net.TCPAddr)`.
-9. **NEW**: wire `syncer.SetOnStatusChange`, `syncer.SetOnSyncCompleted`,
-   `syncer.Start(ctx)`, set the SSE hub's initial status — same code as
-   today, just runs after the listener is bound and metadata is written.
-10. **NEW**: start the server with `srv.Serve(ln)` in a goroutine
-    instead of `srv.ListenAndServe(addr)`. `Server` already exposes
-    `Serve(ln net.Listener)` for this exact use case.
+- `config.EnsureDefault`, `config.Load` (unchanged).
+- `os.MkdirAll(cfg.DataDir, 0o700)` (unchanged).
+- **NEW**: `handle, err := runtimelock.Acquire(cfg.DataDir)`. Acquire
+  opens the lock file, calls `TryLock`, removes any stale
+  `middleman.run.json` under the held lock (logging a `slog.Warn`
+  for the stale-removal case), and returns the handle.
+  - If `err != nil` and `errors.As` matches `*CollisionError`: read
+    the metadata file from the error, print the collision banner to
+    stderr (see "Collision Banner" below), return a sentinel error
+    so main exits with status 1. The `slog.Error` fatal line stays
+    terse (`"another middleman is already running"`).
+  - If `err != nil` otherwise: return the wrapped error; main exits
+    via the existing `slog.Error("fatal", "err", err)` path with no
+    banner.
+- **NEW**: `defer handle.Release()`. Release removes the metadata
+  file (best-effort) and unlocks. The lock-file path stays on disk.
+- Open DB, build provider tokens, resolve repos, build syncer — same
+  work as today.
+- **NEW**: `ln, err := net.Listen("tcp", cfg.ListenAddr())`. On error,
+  return the wrapped listen error (still distinct from the lock
+  collision — a non-port-collision listen failure has nothing to do
+  with the lock).
+- **NEW**: `handle.WriteMetadata(meta)` with values built from
+  `ln.Addr().(*net.TCPAddr)` (IP, Port), `ln.Addr().String()` for the
+  string form, `os.Getpid()`, `time.Now().UTC().Format(time.RFC3339)`,
+  and the existing `version` / `commit` package globals.
+- **NEW**: wire `syncer.SetOnStatusChange`, `syncer.SetOnSyncCompleted`,
+  `syncer.Start(ctx)`, set the SSE hub's initial status — same code as
+  today, just runs after the listener is bound and metadata is written.
+- **NEW**: start the server with `srv.Serve(ln)` in a goroutine
+  instead of `srv.ListenAndServe(addr)`. `Server` already exposes
+  `Serve(ln net.Listener)` for this exact use case.
 
-The defers run in reverse order on return: `os.Remove(.run.json)` then
-`lock.Unlock()`. The lock-file path stays on disk; the next startup
-re-opens it.
+The signal-context wait and the existing `defer srv.Shutdown(...)` /
+`defer syncer.Stop()` chain are unchanged. Because `defer
+handle.Release()` is registered before those teardown defers, it runs
+LAST (LIFO), so the lock stays held through full server + syncer
+drain. Inside Release, `os.Remove(middleman.run.json)` runs before
+`flock.Unlock()`, so the metadata file is gone before the lock is
+released; readers between those two ticks see "metadata unavailable".
 
-The total ordering keeps the lock-held-without-metadata window to the
-synchronous work between step 4 and step 8 (DB open, provider setup,
-listener bind). In practice this is hundreds of milliseconds, not
-seconds. During this window, `middleman status` correctly reports
-"daemon running but metadata is missing or corrupt" rather than stale
-data, because step 4 removed any prior `.run.json`.
+The lock-held-without-metadata window is the synchronous work between
+stale-metadata removal (inside Acquire) and the WriteMetadata call —
+DB open, provider setup, and listener bind. During this window,
+`middleman status` correctly reports "daemon running but metadata is
+missing or corrupt" rather than stale data, because Acquire already
+removed any prior `.run.json`.
 
 ## `middleman status` Subcommand
 
@@ -197,27 +206,32 @@ middleman status [--config <path>] [--json]
 
 Behavior:
 
-1. Load the config to resolve `data_dir`.
-2. Construct `lock := flock.New(<data_dir>/middleman.lock)` and call
-   `ok, err := lock.TryLock()`.
-   - `err != nil` (e.g., parent dir missing): exit 1 with the wrapped
-     error.
-   - `ok == true`: print `"no running daemon"` and `lock.Unlock()`.
-     The lock file is left on disk. Exit 0.
-   - `ok == false`: read `<data_dir>/middleman.run.json` best-effort;
-     print PID, host, port, listen_addr, started_at, version, commit.
-     If metadata is missing or corrupt, print `"running (metadata
-     unavailable: <reason>)"` and the data_dir + lock path. Exit 0.
+- Load the config to resolve `data_dir`.
+- Call `status, err := runtimelock.Read(cfg.DataDir)`. Read constructs
+  a `flock.New`, attempts `TryLock`, and releases immediately if it
+  acquires. The returned `Status` captures three cases: lock-acquired
+  (no running daemon), lock-busy-with-parsed-metadata, and
+  lock-busy-with-metadata-error.
+- On Read error (e.g., parent dir missing, EACCES on the lock file
+  path): exit 1 with the wrapped error.
+- On `status.Running == false`: print `"no running daemon"`. The lock
+  file is left on disk. Exit 0.
+- On `status.Running == true` with parsed metadata: print PID, host,
+  port, listen_addr, started_at, version, commit. Exit 0.
+- On `status.Running == true` with a metadata error: print `"running
+  (metadata unavailable: <reason>)"` and the data_dir + lock path.
+  Exit 0.
 
-The TryLock-then-release pattern is safe: the kernel reserves the
-lock for the calling fd; releasing it immediately doesn't disturb any
-other process that wasn't already in line. `flock.New` opens the path
-with `O_CREATE | O_RDONLY` (POSIX) or the Windows equivalent, so
-`status` will create the empty lock file the first time it runs on a
-data_dir that has never hosted a daemon — that's fine because the
-file is otherwise empty and persists by design. The `--config` default
-ensures the parent directory exists; if it does not, the lock-file
-open fails with ENOENT and `status` exits 1 with a wrapped error.
+The TryLock-then-release pattern inside `Read` is safe: the kernel
+reserves the lock only for the calling fd; releasing it immediately
+doesn't disturb any other process that wasn't already in line.
+`flock.New` opens the path with `O_CREATE | O_RDONLY` (POSIX) or the
+Windows equivalent, so `status` will create the empty lock file the
+first time it runs on a `data_dir` that has never hosted a daemon —
+that's fine because the file is otherwise empty and persists by
+design. The `--config` default ensures the parent directory exists;
+if it does not, the lock-file open fails with ENOENT and `status`
+exits 1 with a wrapped error.
 
 `--json` output schema:
 
@@ -299,7 +313,10 @@ acquisition, metadata read/write, and status rendering logic so
 - `(*Handle).WriteMetadata(meta Metadata) error`: atomic temp+rename
   write of the metadata file.
 - `(*Handle).Release() error`: removes metadata, unlocks. Idempotent;
-  safe to call from a defer.
+  safe to call from a defer. Internally logs `slog.Warn` for any
+  best-effort failure (metadata remove, unlock) so the returned error
+  carries the same information for callers that check it, and a
+  deferred call still surfaces failures via the log.
 - `runtimelock.Read(dataDir string) (Status, error)`: the
   `middleman status` reader. Probes the lock, reads metadata when
   busy, returns a `Status` struct.
@@ -315,19 +332,22 @@ match the JSON keys.
 ## Error Handling
 
 - All errors from `runtimelock.Acquire` other than collision (e.g.,
-  `MkdirAll` failure for an unwritable `data_dir`, EACCES on the lock
-  file) bubble up unwrapped through the existing `run() -> main`
-  return path. They produce the existing `slog.Error("fatal", ...)`
-  output with no banner; these are configuration or filesystem
-  problems unrelated to the multi-instance case.
-- `WriteMetadata` failures (rename, fsync, MkdirAll on rename target)
-  log `slog.Warn("write runtime metadata", "err", err)` and continue.
-  The lock is still held; the daemon is still safe; only the
-  metadata file is missing. Status will report "metadata unavailable"
-  in that window. This is preferable to aborting startup over a
-  cosmetic write failure.
-- `Release` failures (Remove on the metadata file, Unlock) log
-  `slog.Warn`. They cannot block shutdown.
+  EACCES on the lock file, an unwritable lock-file directory, an
+  ENOSPC at the kernel locking layer) bubble up unwrapped through
+  the existing `run() -> main` return path. They produce the
+  existing `slog.Error("fatal", ...)` output with no banner; these
+  are configuration or filesystem problems unrelated to the
+  multi-instance case. (The caller is responsible for `MkdirAll` on
+  `data_dir`; `Acquire` does not create the directory.)
+- `WriteMetadata` returns its error to the caller; main's call site
+  logs `slog.Warn("write runtime metadata", "err", err)` and
+  continues. The lock is still held; the daemon is still safe; only
+  the metadata file is missing. Status will report "metadata
+  unavailable" in that window. This is preferable to aborting
+  startup over a cosmetic write failure.
+- `Release` logs its own best-effort failures internally as
+  `slog.Warn` (see Packaging). Whether called directly or via
+  `defer`, the warning still appears.
 - Stale-metadata `os.Remove` failure during startup logs `slog.Warn`
   and continues; the next successful metadata write replaces the
   stale file regardless.
@@ -346,9 +366,9 @@ Cases:
 1. **Acquire on empty data_dir succeeds.** Lock file is created;
    metadata file is absent until the caller writes it.
 2. **Second Acquire fails with CollisionError.** Holds the first
-   handle, calls Acquire again, asserts `errors.As(err,
-   &*CollisionError{})`. Verifies the data_dir + lock-file paths on
-   the error.
+   handle, calls Acquire again, declares `var cerr *CollisionError`
+   and asserts `errors.As(err, &cerr)`. Verifies the data_dir +
+   lock-file paths on the error.
 3. **CollisionError surfaces metadata when present.** First handle
    writes metadata; second Acquire's CollisionError carries the
    parsed Metadata.
@@ -360,10 +380,13 @@ Cases:
    and the file is gone.
 6. **Release removes metadata, leaves lock file.** Sanity check that
    the lock file persists across restarts.
-7. **Atomic write integrity.** Write metadata, kill the in-process
-   write at the rename point, verify the original file (if any) is
-   still parseable; the temp file may exist but never replaces the
-   target in a half-written state.
+7. **Atomic write integrity.** After a successful WriteMetadata,
+   simulate a crash mid-write by creating a sibling
+   `.middleman.run.json.tmp` file with garbage contents (no rename),
+   then call WriteMetadata again. Assert the final
+   `middleman.run.json` parses to the latest payload and that the
+   garbage temp file from the simulated crash is gone (the real
+   writer cleans up after itself or overwrites the temp path).
 8. **`Read` reports running with metadata.** Acquire + WriteMetadata
    in one goroutine; in a sibling goroutine call `Read` and verify
    the parsed metadata.
@@ -380,9 +403,12 @@ Cases:
     (subprocess writing real files; in-process `runCLI` exercising
     the same paths). Cover the three states.
 14. **End-to-end collision E2E.** Two `middleman` subprocesses
-    against the same `data_dir` via `t.TempDir()`. First binds a
-    real ephemeral port (`port = 0` in the config). Second's exit
-    code is 1; stderr matches the banner shape.
+    against the same `data_dir` via `t.TempDir()`. The test
+    pre-resolves a free TCP port with `net.Listen("tcp",
+    "127.0.0.1:0")`, closes the listener, and writes that port into
+    the config so both subprocesses target the same address. The
+    first subprocess starts successfully; the second's exit code is
+    1; the second's stderr matches the banner shape.
 
 The Windows path uses the same `gofrs/flock` API. We do not run
 Windows tests in CI today, but the `_windows` build-tag is not

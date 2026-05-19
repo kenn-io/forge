@@ -206,6 +206,17 @@
       onSyncStatus: (status) => {
         syncStore.setSyncStatus(status);
       },
+      onReconnectStale: () => {
+        // The replay ring rolled past the client's cursor while it
+        // was disconnected (long sleep, extended network outage).
+        // Refetch view state from scratch instead of relying on the
+        // missed broadcasts. sync.refreshSyncStatus() picks up the
+        // current daemon state since no sync_status frame will replay.
+        void pullsStore.loadPulls();
+        void issuesStore.loadIssues();
+        void activityStore.loadActivity();
+        void syncStore.refreshSyncStatus();
+      },
     });
 
     const si: StoreInstances = {

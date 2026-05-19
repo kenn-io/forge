@@ -140,6 +140,28 @@ describe("createEventsStore event dispatch", () => {
     ).not.toThrow();
     expect(onSyncStatus).not.toHaveBeenCalled();
   });
+
+  it("fires onReconnectStale for reconnect.stale frames", () => {
+    const onReconnectStale = vi.fn();
+    const store = createEventsStore({ onReconnectStale });
+    store.connect();
+    const src = instances[0];
+    expect(src).toBeDefined();
+    emit(src as StubEventSource, "reconnect.stale", { data: "{}" });
+    expect(onReconnectStale).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores unknown event types without throwing", () => {
+    const onDataChanged = vi.fn();
+    const store = createEventsStore({ onDataChanged });
+    store.connect();
+    expect(() =>
+      emit(instances[0] as StubEventSource, "totally_unknown", {
+        data: "{}",
+      }),
+    ).not.toThrow();
+    expect(onDataChanged).not.toHaveBeenCalled();
+  });
 });
 
 describe("createEventsStore connection lifecycle", () => {

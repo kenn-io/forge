@@ -134,6 +134,97 @@ that call `t.Run`, `t.Parallel`, or `t.Deadline` inside the bubble.
 `synctest.Wait` is race-detector synchronization, so it is useful under
 `go test -race` when the test is structurally eligible.
 
+## HTTP testing discipline
+
+A test of user-visible HTTP behavior is **wire-level** when both of the
+following hold:
+
+1. The request flows through `srv.ServeHTTP`, so every middleware the
+   production server installs runs against the test request.
+2. Assertions read the response a client would actually observe: status
+   code, response headers, and response body bytes. The handler
+   function's return value is not consulted.
+
+Two transports satisfy this definition:
+
+- **In-process via `httptest.NewRecorder`** is the default for
+  request / response tests. Used by `internal/server/apitest/` and the
+  in-package `doJSON` helper. Fast, no port allocation, deterministic.
+  Fires every middleware. Does not faithfully simulate streaming I/O:
+  there is no `net.Conn` behind the recorder, the recorder buffers
+  writes until the handler returns, and `Flush` on the wrapped writer
+  does not push bytes toward an attached reader.
+- **Real socket via `httptest.NewServer`** is required for streaming,
+  hijack, long-lived, or `Flush`-sensitive endpoints. Used by
+  `internal/server/e2etest/` and the in-package `TestSSE_*` tests in
+  `internal/server/server_test.go`.
+
+Direct handler-function calls (for example, `s.handleSSE(w, r)`) are not
+wire-level. They bypass routing and every middleware. Allow them only
+when the test injects a fault into the `http.ResponseWriter` itself
+(deadline failures, hijack errors, write cancellation simulated by a
+wrapping writer) or otherwise probes control flow that cannot be
+expressed against a real or simulated wire. The two existing tests of
+this shape (`TestSSE_TerminatesOnInitialDeadlineFailure` and
+`TestSSE_TerminatesOnMidStreamDeadlineFailure`) are the legitimate
+exception, not a path to avoid.
+
+For new code that ships user-visible HTTP behavior:
+
+- Default to a wire-level test in `internal/server/apitest/` (recorder
+  transport, generated client). The OpenAPI contract is what consumers
+  see, and parsing through the generated types catches schema drift the
+  test author would not catch with an ad-hoc struct.
+- Use `internal/server/e2etest/` for any streaming, hijack, or
+  `Flush`-sensitive endpoint. SSE, the roborev proxy streams, and any
+  future WebSocket flow belong here. Real socket is non-negotiable
+  because the recorder collapses the `Flush` timing observable.
+- Use a raw `http.Request` over the recorder transport when the test
+  exercises a path the generated client cannot construct, such as a
+  deliberately wrong `Content-Type`, an intentionally malformed body,
+  or any preflight failure that only the runtime mutation guard can
+  produce. Add a comment naming the reason; this is the only signal a
+  reader has that the test is intentionally not using the generated
+  client.
+- Direct handler-function calls are allowed only for fault injection on
+  the `http.ResponseWriter`. Add a comment naming the fault being
+  injected.
+
+Handler-internal helper unit tests (URL parsing helpers, label diff
+functions, capability resolution) are fine as plain function unit tests
+in `package server` and are not in scope. The rule applies to tests of
+user-visible HTTP behavior, not to tests of internal helpers that
+compose into a handler.
+
+The bug classes wire-level tests catch:
+
+| Bug class | Assertion target |
+|-----------|------------------|
+| Time field serialization (`Z` vs `+00:00`) | Raw response body; handler-internal tests inspect `time.Time` values before marshaling. |
+| Error code missing from OpenAPI doc | `apitest/` generated client surfaces unknown status variants and schema mismatches against `generated.ErrorModel`. |
+| Header set in handler but stripped by middleware | `resp.Header`, not the handler's `w.Header()` before middleware ran. |
+| Status code overridden by middleware | `resp.StatusCode`, not the handler's return. |
+| Mutation guard short-circuits before handler dispatch | `srv.ServeHTTP` runs the full middleware chain; handler-internal tests calling the handler directly miss this entirely. |
+| SSE Content-Type / Cache-Control drift | Real-socket read; the recorder does not faithfully simulate what a real client sees on a buffered stream. |
+
+Three worked examples ship the discipline:
+
+- `internal/server/e2etest/sse_contract_test.go` pins the SSE response
+  headers and first cached `sync_status` frame on the wire.
+- `internal/server/apitest/mutation_guard_test.go` sends a raw `POST`
+  with `Content-Type: text/plain` and asserts the 415 response shape.
+- `internal/server/workspacetest/issue_workspace_conflict_test.go`
+  reproduces an in-package 409 test as a black-box example that decodes
+  through `generated.ErrorModel`. The original in-package test stays in
+  place.
+
+A `make lint-wire` target is intentionally out of scope. Either it
+would flag the legitimate fault-injection tests and require annotation
+comments to suppress (one-time churn for low ongoing value), or it
+would enforce a no-internal-imports rule already enforced informally by
+Go's package boundary. A future lint can be added if there is
+measurable churn around the rule.
+
 ## Related context
 
 - [`context/provider-architecture.md`](./provider-architecture.md) documents the

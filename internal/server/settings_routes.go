@@ -43,38 +43,52 @@ func (s *Server) registerSettingsAPI(api huma.API) {
 		OperationID: "get-settings",
 		Method:      http.MethodGet,
 		Path:        "/settings",
+		Summary:     "Get settings",
+		Tags:        []string{"Settings"},
 	}, s.getSettings)
 	huma.Register(api, huma.Operation{
 		OperationID: "update-settings",
 		Method:      http.MethodPut,
 		Path:        "/settings",
+		Summary:     "Update settings",
+		Tags:        []string{"Settings"},
 	}, s.updateSettings)
 	huma.Register(api, huma.Operation{
 		OperationID:   "add-repo",
 		Method:        http.MethodPost,
 		Path:          "/repos",
 		DefaultStatus: http.StatusCreated,
+		Summary:       "Add repository",
+		Tags:          []string{"Settings"},
 	}, s.addConfiguredRepo)
 	huma.Register(api, huma.Operation{
 		OperationID: "refresh-repo",
 		Method:      http.MethodPost,
 		Path:        "/repo/{provider}/{owner}/{name}/refresh",
+		Summary:     "Refresh repository",
+		Tags:        []string{"Settings"},
 	}, s.refreshConfiguredRepo)
 	huma.Register(api, huma.Operation{
 		OperationID: "refresh-repo-on-host",
 		Method:      http.MethodPost,
 		Path:        "/host/{platform_host}/repo/{provider}/{owner}/{name}/refresh",
+		Summary:     "Refresh repository",
+		Tags:        []string{"Settings"},
 	}, s.refreshConfiguredRepoOnHost)
 	huma.Register(api, huma.Operation{
 		OperationID:   "delete-repo",
 		Method:        http.MethodDelete,
 		Path:          "/repo/{provider}/{owner}/{name}",
 		DefaultStatus: http.StatusNoContent,
+		Summary:       "Delete repository",
+		Tags:          []string{"Settings"},
 	}, s.deleteConfiguredRepo)
 	huma.Register(api, huma.Operation{
 		OperationID:   "delete-repo-on-host",
 		Method:        http.MethodDelete,
 		Path:          "/host/{platform_host}/repo/{provider}/{owner}/{name}",
 		DefaultStatus: http.StatusNoContent,
+		Summary:       "Delete repository",
+		Tags:          []string{"Settings"},
 	}, s.deleteConfiguredRepoOnHost)
 }

@@ -421,16 +421,36 @@ func apiConfig(basePath string) huma.Config {
 	return config
 }
 
+// documentOperation returns an operation-builder callback that sets Summary,
+// Tags, and OperationID on the resulting *huma.Operation. Use it with the
+// huma.Get/Post/Put/Patch/Delete convenience helpers so routes registered
+// through shorthand still carry the metadata that the OpenAPI contract test
+// enforces.
+func documentOperation(
+	operationID, summary string, tags ...string,
+) func(*huma.Operation) {
+	return func(o *huma.Operation) {
+		o.OperationID = operationID
+		o.Summary = summary
+		o.Tags = tags
+	}
+}
+
 func (s *Server) registerAPI(api huma.API) {
 	huma.Register(api, huma.Operation{
 		OperationID: "get-version",
 		Method:      http.MethodGet,
 		Path:        "/version",
+		Summary:     "Get server version",
+		Tags:        []string{"System"},
 	}, s.getVersion)
 
-	huma.Get(api, "/activity", s.listActivity)
-	huma.Get(api, "/pulls", s.listPulls)
-	huma.Get(api, "/issues", s.listIssues)
+	huma.Get(api, "/activity", s.listActivity,
+		documentOperation("list-activity", "List activity", "Activity"))
+	huma.Get(api, "/pulls", s.listPulls,
+		documentOperation("list-pulls", "List pull requests", "Pull Requests"))
+	huma.Get(api, "/issues", s.listIssues,
+		documentOperation("list-issues", "List issues", "Issues"))
 	s.registerProviderRepoAPI(api)
 
 	huma.Register(api, huma.Operation{
@@ -438,32 +458,43 @@ func (s *Server) registerAPI(api huma.API) {
 		Method:        http.MethodGet,
 		Path:          "/repos/summary",
 		DefaultStatus: http.StatusOK,
+		Summary:       "List repository summaries",
+		Tags:          []string{"Repositories"},
 	}, s.listRepoSummaries)
 	huma.Register(api, huma.Operation{
 		OperationID:   "set-starred",
 		Method:        http.MethodPut,
 		Path:          "/starred",
 		DefaultStatus: http.StatusOK,
+		Summary:       "Star repository",
+		Tags:          []string{"Settings"},
 	}, s.setStarred)
 	huma.Register(api, huma.Operation{
 		OperationID:   "unset-starred",
 		Method:        http.MethodDelete,
 		Path:          "/starred",
 		DefaultStatus: http.StatusOK,
+		Summary:       "Unstar repository",
+		Tags:          []string{"Settings"},
 	}, s.unsetStarred)
 
-	huma.Get(api, "/repos", s.listRepos)
+	huma.Get(api, "/repos", s.listRepos,
+		documentOperation("list-repos", "List repositories", "Repositories"))
 	huma.Register(api, huma.Operation{
 		OperationID:   "preview-repos",
 		Method:        http.MethodPost,
 		Path:          "/repos/preview",
 		DefaultStatus: http.StatusOK,
+		Summary:       "Preview repositories",
+		Tags:          []string{"Repositories"},
 	}, s.previewRepos)
 	huma.Register(api, huma.Operation{
 		OperationID:   "bulk-add-repos",
 		Method:        http.MethodPost,
 		Path:          "/repos/bulk",
 		DefaultStatus: http.StatusCreated,
+		Summary:       "Bulk add repositories",
+		Tags:          []string{"Repositories"},
 	}, s.bulkAddRepos)
 	s.registerSettingsAPI(api)
 	huma.Register(api, huma.Operation{
@@ -471,11 +502,15 @@ func (s *Server) registerAPI(api huma.API) {
 		Method:        http.MethodPost,
 		Path:          "/sync",
 		DefaultStatus: http.StatusAccepted,
+		Summary:       "Trigger sync",
+		Tags:          []string{"Sync"},
 	}, s.triggerSync)
 	huma.Register(api, huma.Operation{
 		OperationID: "stream-events",
 		Method:      http.MethodGet,
 		Path:        "/events",
+		Summary:     "Stream server events",
+		Tags:        []string{"System"},
 		Responses: map[string]*huma.Response{
 			"200": {
 				Description: "Server-sent event stream",
@@ -485,59 +520,83 @@ func (s *Server) registerAPI(api huma.API) {
 			},
 		},
 	}, s.streamEvents)
-	huma.Get(api, "/sync/status", s.syncStatus)
-	huma.Get(api, "/rate-limits", s.getRateLimits)
+	huma.Get(api, "/sync/status", s.syncStatus,
+		documentOperation("get-sync-status", "Get sync status", "Sync"))
+	huma.Get(api, "/rate-limits", s.getRateLimits,
+		documentOperation("get-rate-limits", "Get rate limits", "Sync"))
 	huma.Register(api, huma.Operation{
 		OperationID: "get-roborev-status",
 		Method:      http.MethodGet,
 		Path:        "/roborev/status",
+		Summary:     "Get roborev status",
+		Tags:        []string{"Roborev"},
 	}, s.getRoborevStatus)
 
-	huma.Get(api, "/stacks", s.listStacks)
+	huma.Get(api, "/stacks", s.listStacks,
+		documentOperation("list-stacks", "List stacks", "Stacks"))
 
 	huma.Register(api, huma.Operation{
 		OperationID:   "create-workspace",
 		Method:        http.MethodPost,
 		Path:          "/workspaces",
 		DefaultStatus: http.StatusAccepted,
+		Summary:       "Create workspace",
+		Tags:          []string{"Workspaces"},
 	}, s.createWorkspace)
-	huma.Get(api, "/workspaces", s.listWorkspaces)
-	huma.Get(api, "/workspaces/{id}", s.getWorkspace)
-	huma.Get(api, "/workspaces/{id}/commits", s.getWorkspaceCommits)
-	huma.Get(api, "/workspaces/{id}/diff", s.getWorkspaceDiff)
-	huma.Get(api, "/workspaces/{id}/files", s.getWorkspaceFiles)
+	huma.Get(api, "/workspaces", s.listWorkspaces,
+		documentOperation("list-workspaces", "List workspaces", "Workspaces"))
+	huma.Get(api, "/workspaces/{id}", s.getWorkspace,
+		documentOperation("get-workspace", "Get workspace", "Workspaces"))
+	huma.Get(api, "/workspaces/{id}/commits", s.getWorkspaceCommits,
+		documentOperation("get-workspace-commits", "Get workspace commits", "Workspaces"))
+	huma.Get(api, "/workspaces/{id}/diff", s.getWorkspaceDiff,
+		documentOperation("get-workspace-diff", "Get workspace diff", "Workspaces"))
+	huma.Get(api, "/workspaces/{id}/files", s.getWorkspaceFiles,
+		documentOperation("get-workspace-files", "Get workspace files", "Workspaces"))
 	huma.Register(api, huma.Operation{
 		OperationID:   "retry-workspace",
 		Method:        http.MethodPost,
 		Path:          "/workspaces/{id}/retry",
 		DefaultStatus: http.StatusAccepted,
+		Summary:       "Retry workspace",
+		Tags:          []string{"Workspaces"},
 	}, s.retryWorkspace)
 	huma.Register(api, huma.Operation{
 		OperationID: "get-workspace-runtime",
 		Method:      http.MethodGet,
 		Path:        "/workspaces/{id}/runtime",
+		Summary:     "Get workspace runtime",
+		Tags:        []string{"Workspaces"},
 	}, s.getWorkspaceRuntime)
 	huma.Register(api, huma.Operation{
 		OperationID: "launch-workspace-runtime-session",
 		Method:      http.MethodPost,
 		Path:        "/workspaces/{id}/runtime/sessions",
+		Summary:     "Launch workspace runtime session",
+		Tags:        []string{"Workspaces"},
 	}, s.launchWorkspaceRuntimeSession)
 	huma.Register(api, huma.Operation{
 		OperationID:   "stop-workspace-runtime-session",
 		Method:        http.MethodDelete,
 		Path:          "/workspaces/{id}/runtime/sessions/{session_key}",
 		DefaultStatus: http.StatusNoContent,
+		Summary:       "Stop workspace runtime session",
+		Tags:          []string{"Workspaces"},
 	}, s.stopWorkspaceRuntimeSession)
 	huma.Register(api, huma.Operation{
 		OperationID: "ensure-workspace-runtime-shell",
 		Method:      http.MethodPost,
 		Path:        "/workspaces/{id}/runtime/shell",
+		Summary:     "Ensure workspace runtime shell",
+		Tags:        []string{"Workspaces"},
 	}, s.ensureWorkspaceRuntimeShell)
 	huma.Register(api, huma.Operation{
 		OperationID:   "delete-workspace",
 		Method:        http.MethodDelete,
 		Path:          "/workspaces/{id}",
 		DefaultStatus: http.StatusNoContent,
+		Summary:       "Delete workspace",
+		Tags:          []string{"Workspaces"},
 	}, s.deleteWorkspace)
 
 	huma.Register(api, huma.Operation{
@@ -545,32 +604,44 @@ func (s *Server) registerAPI(api huma.API) {
 		Method:        http.MethodPost,
 		Path:          "/projects",
 		DefaultStatus: http.StatusCreated,
+		Summary:       "Register project",
+		Tags:          []string{"Projects"},
 	}, s.registerProject)
 	huma.Register(api, huma.Operation{
 		OperationID: "list-projects",
 		Method:      http.MethodGet,
 		Path:        "/projects",
+		Summary:     "List projects",
+		Tags:        []string{"Projects"},
 	}, s.listProjects)
 	huma.Register(api, huma.Operation{
 		OperationID: "get-project",
 		Method:      http.MethodGet,
 		Path:        "/projects/{project_id}",
+		Summary:     "Get project",
+		Tags:        []string{"Projects"},
 	}, s.getProject)
 	huma.Register(api, huma.Operation{
 		OperationID:   "register-worktree",
 		Method:        http.MethodPost,
 		Path:          "/projects/{project_id}/worktrees",
 		DefaultStatus: http.StatusCreated,
+		Summary:       "Register worktree",
+		Tags:          []string{"Projects"},
 	}, s.registerWorktree)
 	huma.Register(api, huma.Operation{
 		OperationID: "list-worktrees",
 		Method:      http.MethodGet,
 		Path:        "/projects/{project_id}/worktrees",
+		Summary:     "List worktrees",
+		Tags:        []string{"Projects"},
 	}, s.listWorktrees)
 	huma.Register(api, huma.Operation{
 		OperationID: "list-launch-targets",
 		Method:      http.MethodGet,
 		Path:        "/projects/{project_id}/launch-targets",
+		Summary:     "List launch targets",
+		Tags:        []string{"Projects"},
 	}, s.listLaunchTargets)
 }
 
@@ -586,78 +657,114 @@ func (s *Server) registerProviderRepoAPI(api huma.API) {
 	issuePath := issueRepoPath + "/{number}"
 	hostIssuePath := hostIssueRepoPath + "/{number}"
 
-	huma.Get(api, pullPath, s.getPull)
-	huma.Get(api, hostPullPath, s.getPullOnHost)
-	huma.Get(api, pullPath+"/import-metadata", s.getMRImportMetadata)
-	huma.Get(api, hostPullPath+"/import-metadata", s.getMRImportMetadataOnHost)
-	huma.Register(api, huma.Operation{OperationID: "set-kanban-state", Method: http.MethodPut, Path: pullPath + "/state", DefaultStatus: http.StatusOK}, s.setKanbanState)
-	huma.Register(api, huma.Operation{OperationID: "set-kanban-state-on-host", Method: http.MethodPut, Path: hostPullPath + "/state", DefaultStatus: http.StatusOK}, s.setKanbanStateOnHost)
-	huma.Register(api, huma.Operation{OperationID: "edit-pr-content", Method: http.MethodPatch, Path: pullPath, DefaultStatus: http.StatusOK}, s.editPRContent)
-	huma.Register(api, huma.Operation{OperationID: "edit-pr-content-on-host", Method: http.MethodPatch, Path: hostPullPath, DefaultStatus: http.StatusOK}, s.editPRContentOnHost)
-	huma.Register(api, huma.Operation{OperationID: "post-pr-comment", Method: http.MethodPost, Path: pullPath + "/comments", DefaultStatus: http.StatusCreated}, s.postComment)
-	huma.Register(api, huma.Operation{OperationID: "post-pr-comment-on-host", Method: http.MethodPost, Path: hostPullPath + "/comments", DefaultStatus: http.StatusCreated}, s.postCommentOnHost)
-	huma.Register(api, huma.Operation{OperationID: "edit-pr-comment", Method: http.MethodPatch, Path: pullPath + "/comments/{comment_id}", DefaultStatus: http.StatusOK}, s.editComment)
-	huma.Register(api, huma.Operation{OperationID: "edit-pr-comment-on-host", Method: http.MethodPatch, Path: hostPullPath + "/comments/{comment_id}", DefaultStatus: http.StatusOK}, s.editCommentOnHost)
-	huma.Register(api, huma.Operation{OperationID: "set-pr-labels", Method: http.MethodPut, Path: pullPath + "/labels", DefaultStatus: http.StatusOK}, s.setPullLabels)
-	huma.Register(api, huma.Operation{OperationID: "set-pr-labels-on-host", Method: http.MethodPut, Path: hostPullPath + "/labels", DefaultStatus: http.StatusOK}, s.setPullLabelsOnHost)
+	huma.Get(api, pullPath, s.getPull,
+		documentOperation("get-pull", "Get pull request", "Pull Requests"))
+	huma.Get(api, hostPullPath, s.getPullOnHost,
+		documentOperation("get-pull-on-host", "Get pull request", "Pull Requests"))
+	huma.Get(api, pullPath+"/import-metadata", s.getMRImportMetadata,
+		documentOperation("get-pull-import-metadata", "Get pull request import metadata", "Pull Requests"))
+	huma.Get(api, hostPullPath+"/import-metadata", s.getMRImportMetadataOnHost,
+		documentOperation("get-pull-import-metadata-on-host", "Get pull request import metadata", "Pull Requests"))
+	huma.Register(api, huma.Operation{OperationID: "set-kanban-state", Method: http.MethodPut, Path: pullPath + "/state", DefaultStatus: http.StatusOK, Summary: "Set pull request kanban state", Tags: []string{"Pull Requests"}}, s.setKanbanState)
+	huma.Register(api, huma.Operation{OperationID: "set-kanban-state-on-host", Method: http.MethodPut, Path: hostPullPath + "/state", DefaultStatus: http.StatusOK, Summary: "Set pull request kanban state", Tags: []string{"Pull Requests"}}, s.setKanbanStateOnHost)
+	huma.Register(api, huma.Operation{OperationID: "edit-pr-content", Method: http.MethodPatch, Path: pullPath, DefaultStatus: http.StatusOK, Summary: "Edit pull request content", Tags: []string{"Pull Requests"}}, s.editPRContent)
+	huma.Register(api, huma.Operation{OperationID: "edit-pr-content-on-host", Method: http.MethodPatch, Path: hostPullPath, DefaultStatus: http.StatusOK, Summary: "Edit pull request content", Tags: []string{"Pull Requests"}}, s.editPRContentOnHost)
+	huma.Register(api, huma.Operation{OperationID: "post-pr-comment", Method: http.MethodPost, Path: pullPath + "/comments", DefaultStatus: http.StatusCreated, Summary: "Post pull request comment", Tags: []string{"Pull Requests"}}, s.postComment)
+	huma.Register(api, huma.Operation{OperationID: "post-pr-comment-on-host", Method: http.MethodPost, Path: hostPullPath + "/comments", DefaultStatus: http.StatusCreated, Summary: "Post pull request comment", Tags: []string{"Pull Requests"}}, s.postCommentOnHost)
+	huma.Register(api, huma.Operation{OperationID: "edit-pr-comment", Method: http.MethodPatch, Path: pullPath + "/comments/{comment_id}", DefaultStatus: http.StatusOK, Summary: "Edit pull request comment", Tags: []string{"Pull Requests"}}, s.editComment)
+	huma.Register(api, huma.Operation{OperationID: "edit-pr-comment-on-host", Method: http.MethodPatch, Path: hostPullPath + "/comments/{comment_id}", DefaultStatus: http.StatusOK, Summary: "Edit pull request comment", Tags: []string{"Pull Requests"}}, s.editCommentOnHost)
+	huma.Register(api, huma.Operation{OperationID: "set-pr-labels", Method: http.MethodPut, Path: pullPath + "/labels", DefaultStatus: http.StatusOK, Summary: "Set pull request labels", Tags: []string{"Pull Requests"}}, s.setPullLabels)
+	huma.Register(api, huma.Operation{OperationID: "set-pr-labels-on-host", Method: http.MethodPut, Path: hostPullPath + "/labels", DefaultStatus: http.StatusOK, Summary: "Set pull request labels", Tags: []string{"Pull Requests"}}, s.setPullLabelsOnHost)
 
-	huma.Register(api, huma.Operation{OperationID: "create-issue", Method: http.MethodPost, Path: issueRepoPath, DefaultStatus: http.StatusCreated}, s.createIssue)
-	huma.Register(api, huma.Operation{OperationID: "create-issue-on-host", Method: http.MethodPost, Path: hostIssueRepoPath, DefaultStatus: http.StatusCreated}, s.createIssueOnHost)
-	huma.Get(api, issuePath, s.getIssue)
-	huma.Get(api, hostIssuePath, s.getIssueOnHost)
-	huma.Register(api, huma.Operation{OperationID: "post-issue-comment", Method: http.MethodPost, Path: issuePath + "/comments", DefaultStatus: http.StatusCreated}, s.postIssueComment)
-	huma.Register(api, huma.Operation{OperationID: "post-issue-comment-on-host", Method: http.MethodPost, Path: hostIssuePath + "/comments", DefaultStatus: http.StatusCreated}, s.postIssueCommentOnHost)
-	huma.Register(api, huma.Operation{OperationID: "edit-issue-content", Method: http.MethodPatch, Path: issuePath, DefaultStatus: http.StatusOK}, s.editIssueContent)
-	huma.Register(api, huma.Operation{OperationID: "edit-issue-content-on-host", Method: http.MethodPatch, Path: hostIssuePath, DefaultStatus: http.StatusOK}, s.editIssueContentOnHost)
-	huma.Register(api, huma.Operation{OperationID: "edit-issue-comment", Method: http.MethodPatch, Path: issuePath + "/comments/{comment_id}", DefaultStatus: http.StatusOK}, s.editIssueComment)
-	huma.Register(api, huma.Operation{OperationID: "edit-issue-comment-on-host", Method: http.MethodPatch, Path: hostIssuePath + "/comments/{comment_id}", DefaultStatus: http.StatusOK}, s.editIssueCommentOnHost)
-	huma.Register(api, huma.Operation{OperationID: "set-issue-labels", Method: http.MethodPut, Path: issuePath + "/labels", DefaultStatus: http.StatusOK}, s.setIssueLabels)
-	huma.Register(api, huma.Operation{OperationID: "set-issue-labels-on-host", Method: http.MethodPut, Path: hostIssuePath + "/labels", DefaultStatus: http.StatusOK}, s.setIssueLabelsOnHost)
+	huma.Register(api, huma.Operation{OperationID: "create-issue", Method: http.MethodPost, Path: issueRepoPath, DefaultStatus: http.StatusCreated, Summary: "Create issue", Tags: []string{"Issues"}}, s.createIssue)
+	huma.Register(api, huma.Operation{OperationID: "create-issue-on-host", Method: http.MethodPost, Path: hostIssueRepoPath, DefaultStatus: http.StatusCreated, Summary: "Create issue", Tags: []string{"Issues"}}, s.createIssueOnHost)
+	huma.Get(api, issuePath, s.getIssue,
+		documentOperation("get-issue", "Get issue", "Issues"))
+	huma.Get(api, hostIssuePath, s.getIssueOnHost,
+		documentOperation("get-issue-on-host", "Get issue", "Issues"))
+	huma.Register(api, huma.Operation{OperationID: "post-issue-comment", Method: http.MethodPost, Path: issuePath + "/comments", DefaultStatus: http.StatusCreated, Summary: "Post issue comment", Tags: []string{"Issues"}}, s.postIssueComment)
+	huma.Register(api, huma.Operation{OperationID: "post-issue-comment-on-host", Method: http.MethodPost, Path: hostIssuePath + "/comments", DefaultStatus: http.StatusCreated, Summary: "Post issue comment", Tags: []string{"Issues"}}, s.postIssueCommentOnHost)
+	huma.Register(api, huma.Operation{OperationID: "edit-issue-content", Method: http.MethodPatch, Path: issuePath, DefaultStatus: http.StatusOK, Summary: "Edit issue content", Tags: []string{"Issues"}}, s.editIssueContent)
+	huma.Register(api, huma.Operation{OperationID: "edit-issue-content-on-host", Method: http.MethodPatch, Path: hostIssuePath, DefaultStatus: http.StatusOK, Summary: "Edit issue content", Tags: []string{"Issues"}}, s.editIssueContentOnHost)
+	huma.Register(api, huma.Operation{OperationID: "edit-issue-comment", Method: http.MethodPatch, Path: issuePath + "/comments/{comment_id}", DefaultStatus: http.StatusOK, Summary: "Edit issue comment", Tags: []string{"Issues"}}, s.editIssueComment)
+	huma.Register(api, huma.Operation{OperationID: "edit-issue-comment-on-host", Method: http.MethodPatch, Path: hostIssuePath + "/comments/{comment_id}", DefaultStatus: http.StatusOK, Summary: "Edit issue comment", Tags: []string{"Issues"}}, s.editIssueCommentOnHost)
+	huma.Register(api, huma.Operation{OperationID: "set-issue-labels", Method: http.MethodPut, Path: issuePath + "/labels", DefaultStatus: http.StatusOK, Summary: "Set issue labels", Tags: []string{"Issues"}}, s.setIssueLabels)
+	huma.Register(api, huma.Operation{OperationID: "set-issue-labels-on-host", Method: http.MethodPut, Path: hostIssuePath + "/labels", DefaultStatus: http.StatusOK, Summary: "Set issue labels", Tags: []string{"Issues"}}, s.setIssueLabelsOnHost)
 
-	huma.Post(api, repoPath+"/resolve/{number}", s.resolveItem)
-	huma.Post(api, hostRepoPath+"/resolve/{number}", s.resolveItemOnHost)
-	huma.Get(api, repoPath, s.getRepo)
-	huma.Get(api, hostRepoPath, s.getRepoOnHost)
-	huma.Register(api, huma.Operation{OperationID: "list-repo-labels", Method: http.MethodGet, Path: repoPath + "/labels", DefaultStatus: http.StatusOK}, s.listRepoLabels)
-	huma.Register(api, huma.Operation{OperationID: "list-repo-labels-on-host", Method: http.MethodGet, Path: hostRepoPath + "/labels", DefaultStatus: http.StatusOK}, s.listRepoLabelsOnHost)
-	huma.Get(api, repoPath+"/comment-autocomplete", s.getCommentAutocomplete)
-	huma.Get(api, hostRepoPath+"/comment-autocomplete", s.getCommentAutocompleteOnHost)
+	huma.Post(api, repoPath+"/resolve/{number}", s.resolveItem,
+		documentOperation("resolve-item", "Resolve repository item", "Repositories"))
+	huma.Post(api, hostRepoPath+"/resolve/{number}", s.resolveItemOnHost,
+		documentOperation("resolve-item-on-host", "Resolve repository item", "Repositories"))
+	huma.Get(api, repoPath, s.getRepo,
+		documentOperation("get-repo", "Get repository", "Repositories"))
+	huma.Get(api, hostRepoPath, s.getRepoOnHost,
+		documentOperation("get-repo-on-host", "Get repository", "Repositories"))
+	huma.Register(api, huma.Operation{OperationID: "list-repo-labels", Method: http.MethodGet, Path: repoPath + "/labels", DefaultStatus: http.StatusOK, Summary: "List repository labels", Tags: []string{"Repositories"}}, s.listRepoLabels)
+	huma.Register(api, huma.Operation{OperationID: "list-repo-labels-on-host", Method: http.MethodGet, Path: hostRepoPath + "/labels", DefaultStatus: http.StatusOK, Summary: "List repository labels", Tags: []string{"Repositories"}}, s.listRepoLabelsOnHost)
+	huma.Get(api, repoPath+"/comment-autocomplete", s.getCommentAutocomplete,
+		documentOperation("get-comment-autocomplete", "Get comment autocomplete", "Repositories"))
+	huma.Get(api, hostRepoPath+"/comment-autocomplete", s.getCommentAutocompleteOnHost,
+		documentOperation("get-comment-autocomplete-on-host", "Get comment autocomplete", "Repositories"))
 
-	huma.Post(api, pullPath+"/approve", s.approvePR)
-	huma.Post(api, hostPullPath+"/approve", s.approvePROnHost)
-	huma.Post(api, pullPath+"/approve-workflows", s.approveWorkflows)
-	huma.Post(api, hostPullPath+"/approve-workflows", s.approveWorkflowsOnHost)
-	huma.Post(api, pullPath+"/ready-for-review", s.readyForReview)
-	huma.Post(api, hostPullPath+"/ready-for-review", s.readyForReviewOnHost)
-	huma.Post(api, pullPath+"/merge", s.mergePR)
-	huma.Post(api, hostPullPath+"/merge", s.mergePROnHost)
-	huma.Post(api, pullPath+"/sync", s.syncPR)
-	huma.Post(api, hostPullPath+"/sync", s.syncPROnHost)
-	huma.Post(api, pullPath+"/ci-refresh", s.syncPRCI)
-	huma.Post(api, hostPullPath+"/ci-refresh", s.syncPRCIOnHost)
-	huma.Register(api, huma.Operation{OperationID: "enqueue-pr-sync", Method: http.MethodPost, Path: pullPath + "/sync/async", DefaultStatus: http.StatusAccepted}, s.enqueuePRSync)
-	huma.Register(api, huma.Operation{OperationID: "enqueue-pr-sync-on-host", Method: http.MethodPost, Path: hostPullPath + "/sync/async", DefaultStatus: http.StatusAccepted}, s.enqueuePRSyncOnHost)
-	huma.Post(api, issuePath+"/sync", s.syncIssue)
-	huma.Post(api, hostIssuePath+"/sync", s.syncIssueOnHost)
-	huma.Register(api, huma.Operation{OperationID: "enqueue-issue-sync", Method: http.MethodPost, Path: issuePath + "/sync/async", DefaultStatus: http.StatusAccepted}, s.enqueueIssueSync)
-	huma.Register(api, huma.Operation{OperationID: "enqueue-issue-sync-on-host", Method: http.MethodPost, Path: hostIssuePath + "/sync/async", DefaultStatus: http.StatusAccepted}, s.enqueueIssueSyncOnHost)
-	huma.Register(api, huma.Operation{OperationID: "set-pr-github-state", Method: http.MethodPost, Path: pullPath + "/github-state", DefaultStatus: http.StatusOK}, s.setPRGitHubState)
-	huma.Register(api, huma.Operation{OperationID: "set-pr-github-state-on-host", Method: http.MethodPost, Path: hostPullPath + "/github-state", DefaultStatus: http.StatusOK}, s.setPRGitHubStateOnHost)
-	huma.Register(api, huma.Operation{OperationID: "set-issue-github-state", Method: http.MethodPost, Path: issuePath + "/github-state", DefaultStatus: http.StatusOK}, s.setIssueGitHubState)
-	huma.Register(api, huma.Operation{OperationID: "set-issue-github-state-on-host", Method: http.MethodPost, Path: hostIssuePath + "/github-state", DefaultStatus: http.StatusOK}, s.setIssueGitHubStateOnHost)
+	huma.Post(api, pullPath+"/approve", s.approvePR,
+		documentOperation("approve-pull", "Approve pull request", "Pull Requests"))
+	huma.Post(api, hostPullPath+"/approve", s.approvePROnHost,
+		documentOperation("approve-pull-on-host", "Approve pull request", "Pull Requests"))
+	huma.Post(api, pullPath+"/approve-workflows", s.approveWorkflows,
+		documentOperation("approve-pull-workflows", "Approve pull request workflows", "Pull Requests"))
+	huma.Post(api, hostPullPath+"/approve-workflows", s.approveWorkflowsOnHost,
+		documentOperation("approve-pull-workflows-on-host", "Approve pull request workflows", "Pull Requests"))
+	huma.Post(api, pullPath+"/ready-for-review", s.readyForReview,
+		documentOperation("mark-pull-ready-for-review", "Mark pull request ready for review", "Pull Requests"))
+	huma.Post(api, hostPullPath+"/ready-for-review", s.readyForReviewOnHost,
+		documentOperation("mark-pull-ready-for-review-on-host", "Mark pull request ready for review", "Pull Requests"))
+	huma.Post(api, pullPath+"/merge", s.mergePR,
+		documentOperation("merge-pull", "Merge pull request", "Pull Requests"))
+	huma.Post(api, hostPullPath+"/merge", s.mergePROnHost,
+		documentOperation("merge-pull-on-host", "Merge pull request", "Pull Requests"))
+	huma.Post(api, pullPath+"/sync", s.syncPR,
+		documentOperation("sync-pull", "Sync pull request", "Pull Requests"))
+	huma.Post(api, hostPullPath+"/sync", s.syncPROnHost,
+		documentOperation("sync-pull-on-host", "Sync pull request", "Pull Requests"))
+	huma.Post(api, pullPath+"/ci-refresh", s.syncPRCI,
+		documentOperation("refresh-pull-ci", "Refresh pull request CI", "Pull Requests"))
+	huma.Post(api, hostPullPath+"/ci-refresh", s.syncPRCIOnHost,
+		documentOperation("refresh-pull-ci-on-host", "Refresh pull request CI", "Pull Requests"))
+	huma.Register(api, huma.Operation{OperationID: "enqueue-pr-sync", Method: http.MethodPost, Path: pullPath + "/sync/async", DefaultStatus: http.StatusAccepted, Summary: "Enqueue pull request sync", Tags: []string{"Pull Requests"}}, s.enqueuePRSync)
+	huma.Register(api, huma.Operation{OperationID: "enqueue-pr-sync-on-host", Method: http.MethodPost, Path: hostPullPath + "/sync/async", DefaultStatus: http.StatusAccepted, Summary: "Enqueue pull request sync", Tags: []string{"Pull Requests"}}, s.enqueuePRSyncOnHost)
+	huma.Post(api, issuePath+"/sync", s.syncIssue,
+		documentOperation("sync-issue", "Sync issue", "Issues"))
+	huma.Post(api, hostIssuePath+"/sync", s.syncIssueOnHost,
+		documentOperation("sync-issue-on-host", "Sync issue", "Issues"))
+	huma.Register(api, huma.Operation{OperationID: "enqueue-issue-sync", Method: http.MethodPost, Path: issuePath + "/sync/async", DefaultStatus: http.StatusAccepted, Summary: "Enqueue issue sync", Tags: []string{"Issues"}}, s.enqueueIssueSync)
+	huma.Register(api, huma.Operation{OperationID: "enqueue-issue-sync-on-host", Method: http.MethodPost, Path: hostIssuePath + "/sync/async", DefaultStatus: http.StatusAccepted, Summary: "Enqueue issue sync", Tags: []string{"Issues"}}, s.enqueueIssueSyncOnHost)
+	huma.Register(api, huma.Operation{OperationID: "set-pr-github-state", Method: http.MethodPost, Path: pullPath + "/github-state", DefaultStatus: http.StatusOK, Summary: "Set pull request GitHub state", Tags: []string{"Pull Requests"}}, s.setPRGitHubState)
+	huma.Register(api, huma.Operation{OperationID: "set-pr-github-state-on-host", Method: http.MethodPost, Path: hostPullPath + "/github-state", DefaultStatus: http.StatusOK, Summary: "Set pull request GitHub state", Tags: []string{"Pull Requests"}}, s.setPRGitHubStateOnHost)
+	huma.Register(api, huma.Operation{OperationID: "set-issue-github-state", Method: http.MethodPost, Path: issuePath + "/github-state", DefaultStatus: http.StatusOK, Summary: "Set issue GitHub state", Tags: []string{"Issues"}}, s.setIssueGitHubState)
+	huma.Register(api, huma.Operation{OperationID: "set-issue-github-state-on-host", Method: http.MethodPost, Path: hostIssuePath + "/github-state", DefaultStatus: http.StatusOK, Summary: "Set issue GitHub state", Tags: []string{"Issues"}}, s.setIssueGitHubStateOnHost)
 
-	huma.Get(api, pullPath+"/commits", s.getCommits)
-	huma.Get(api, hostPullPath+"/commits", s.getCommitsOnHost)
-	huma.Get(api, pullPath+"/diff", s.getDiff)
-	huma.Get(api, hostPullPath+"/diff", s.getDiffOnHost)
-	huma.Get(api, pullPath+"/files", s.getFiles)
-	huma.Get(api, hostPullPath+"/files", s.getFilesOnHost)
-	huma.Get(api, pullPath+"/file-preview", s.getFilePreview)
-	huma.Get(api, hostPullPath+"/file-preview", s.getFilePreviewOnHost)
-	huma.Get(api, pullPath+"/stack", s.getStackForPR)
-	huma.Get(api, hostPullPath+"/stack", s.getStackForPROnHost)
-	huma.Register(api, huma.Operation{OperationID: "create-issue-workspace", Method: http.MethodPost, Path: issuePath + "/workspace", DefaultStatus: http.StatusAccepted}, s.createIssueWorkspace)
-	huma.Register(api, huma.Operation{OperationID: "create-issue-workspace-on-host", Method: http.MethodPost, Path: hostIssuePath + "/workspace", DefaultStatus: http.StatusAccepted}, s.createIssueWorkspaceOnHost)
+	huma.Get(api, pullPath+"/commits", s.getCommits,
+		documentOperation("get-pull-commits", "Get pull request commits", "Pull Requests"))
+	huma.Get(api, hostPullPath+"/commits", s.getCommitsOnHost,
+		documentOperation("get-pull-commits-on-host", "Get pull request commits", "Pull Requests"))
+	huma.Get(api, pullPath+"/diff", s.getDiff,
+		documentOperation("get-pull-diff", "Get pull request diff", "Pull Requests"))
+	huma.Get(api, hostPullPath+"/diff", s.getDiffOnHost,
+		documentOperation("get-pull-diff-on-host", "Get pull request diff", "Pull Requests"))
+	huma.Get(api, pullPath+"/files", s.getFiles,
+		documentOperation("get-pull-files", "Get pull request files", "Pull Requests"))
+	huma.Get(api, hostPullPath+"/files", s.getFilesOnHost,
+		documentOperation("get-pull-files-on-host", "Get pull request files", "Pull Requests"))
+	huma.Get(api, pullPath+"/file-preview", s.getFilePreview,
+		documentOperation("get-pull-file-preview", "Get pull request file preview", "Pull Requests"))
+	huma.Get(api, hostPullPath+"/file-preview", s.getFilePreviewOnHost,
+		documentOperation("get-pull-file-preview-on-host", "Get pull request file preview", "Pull Requests"))
+	huma.Get(api, pullPath+"/stack", s.getStackForPR,
+		documentOperation("get-pull-stack", "Get pull request stack", "Pull Requests"))
+	huma.Get(api, hostPullPath+"/stack", s.getStackForPROnHost,
+		documentOperation("get-pull-stack-on-host", "Get pull request stack", "Pull Requests"))
+	huma.Register(api, huma.Operation{OperationID: "create-issue-workspace", Method: http.MethodPost, Path: issuePath + "/workspace", DefaultStatus: http.StatusAccepted, Summary: "Create issue workspace", Tags: []string{"Issues"}}, s.createIssueWorkspace)
+	huma.Register(api, huma.Operation{OperationID: "create-issue-workspace-on-host", Method: http.MethodPost, Path: hostIssuePath + "/workspace", DefaultStatus: http.StatusAccepted, Summary: "Create issue workspace", Tags: []string{"Issues"}}, s.createIssueWorkspaceOnHost)
 }
 
 func NewOpenAPI() *huma.OpenAPI {

@@ -2,6 +2,7 @@ package config
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"net"
@@ -1087,10 +1088,10 @@ func appendTokenEnvName(names []string, name string) []string {
 	return append(names, name)
 }
 
-var execCommand = exec.Command
+var execCommand = exec.CommandContext
 
 func ghAuthToken() string {
-	out, err := execCommand("gh", "auth", "token").Output()
+	out, err := execCommand(context.Background(), "gh", "auth", "token").Output()
 	if err != nil {
 		return ""
 	}

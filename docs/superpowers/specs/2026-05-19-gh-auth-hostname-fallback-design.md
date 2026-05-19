@@ -2,15 +2,18 @@
 
 ## Motivation
 
-middleman supports multi-provider authentication. For GitHub-family hosts the
-resolution chain is:
+middleman supports multi-provider authentication. For GitHub-family hosts
+the current resolution chain (`internal/config/config.go`
+`TokenForPlatformHost`) tries each step in order:
 
-1. Repo-level `token_env` (if set on the `[[repos]]` entry).
-2. `[[platforms]]` entry whose `(type, host)` matches the repo's
-   `(platform, platform_host)` and has `token_env` set.
-3. Provider default env var, e.g. `MIDDLEMAN_GITHUB_TOKEN`.
-4. **`gh auth token`** — only reached today when the repo's host is
-   `github.com` (and only via `cfg.GitHubToken()`).
+- Repo-level `token_env` (if set on the `[[repos]]` entry).
+- `[[platforms]]` entry whose `(type, host)` matches the repo's
+  `(platform, platform_host)` and has `token_env` set.
+- `MIDDLEMAN_GITHUB_TOKEN` via `cfg.GitHubToken()`.
+- **`gh auth token`** — bare, no `--hostname` argument. Reached today for
+  any github host (`github.com` or a GHE host) once the env-var step
+  comes up empty, via the path `TokenForPlatformHost -> GitHubToken ->
+  ghAuthToken`.
 
 The `gh auth token` invocation in `internal/config/config.go` is unscoped:
 
@@ -45,8 +48,9 @@ In scope:
 - Bound the subprocess at 5 seconds.
 - Keep the older-`gh` (no `--hostname` flag) compatibility for `github.com`
   only.
-- Test seam: make the subprocess injectable so unit tests stub `gh` without
-  relying on `PATH` shenanigans.
+- Tests stub the subprocess via the existing `PATH`-based fake-`gh`
+  pattern, with the fake extended to inspect argv and emit controlled
+  stdout/stderr/exit-code.
 
 Out of scope:
 
@@ -58,17 +62,33 @@ Out of scope:
 
 ## Decisions
 
-D1. **Host-scoped helper everywhere.** Replace `ghAuthToken()` with
-`ghAuthTokenForHost(ctx, host)`. The exported wrapper `cfg.GitHubToken()`
-becomes a thin call to `ghAuthTokenForHost(ctx, platform.DefaultGitHubHost)`.
-Every call into `gh auth token` knows which host it is resolving.
+D1. **Host-scoped helper everywhere.** Replace `ghAuthToken()` with an
+internal helper `ghAuthTokenForHost(host string)`. Every call into
+`gh auth token` knows which host it is resolving. (`cfg.GitHubToken()`'s
+env-var-then-gh contract is preserved via a new internal
+`gitHubTokenForHost(host)` — see D2.)
 
 D2. **Thread host through `TokenForPlatformHost`.** When the resolution
-chain reaches the `gh` step for `(platform == github, host)`, call
-`ghAuthTokenForHost(ctx, host)` rather than the previous host-agnostic
-`cfg.GitHubToken()`. The behavior for a `github.com` repo is unchanged;
-the behavior for a GHE host now reaches `gh auth token --hostname <ghe>`
-instead of bare `gh auth token`.
+chain reaches the github-fallback step for `(platform == github, host)`,
+call a host-aware internal helper that preserves the existing env-var
+contract:
+
+```go
+func (c *Config) gitHubTokenForHost(host string) string {
+    if token := os.Getenv(c.GitHubTokenEnv); token != "" {
+        return token
+    }
+    return ghAuthTokenForHost(host)
+}
+```
+
+`TokenForPlatformHost` for `(github, host)` calls
+`c.gitHubTokenForHost(host)` rather than the previous host-agnostic
+`c.GitHubToken()`. `cfg.GitHubToken()` becomes
+`c.gitHubTokenForHost(platformpkg.DefaultGitHubHost)`. The
+`MIDDLEMAN_GITHUB_TOKEN` fallback continues to work for any github
+host that lacks a more specific match; the only behavior change is that
+the `gh` step is now host-scoped.
 
 D3. **Older-`gh` compatibility for `github.com` only.** If
 `gh auth token --hostname github.com` fails specifically because the
@@ -92,11 +112,25 @@ D5. **Narrow detection of the older-`gh` case.**
 Missing binary (`exec.LookPath` failure / `*exec.Error`), context deadline,
 auth failure, or any other nonzero exit do not trigger the bare retry.
 
-D6. **Injectable test seam.** Keep the `var execCommand = exec.CommandContext`
-pattern. Tests stub it by replacing the variable with a fake that returns
-controlled stdout/stderr/exit-code; no test depends on `PATH` for stubbing
-`gh`, although we keep the existing PATH-based fakes for regression
-coverage where they are clearer.
+For detection to see the rejection text, the implementation must capture
+stderr explicitly — `Output()` populates `*exec.ExitError.Stderr` only
+when `cmd.Stderr` is unset, so the helper should assign
+`cmd.Stderr = &buf` and use `cmd.Output()`, or use `cmd.CombinedOutput()`
+and parse from the combined buffer. Either is fine; the spec does not
+mandate one.
+
+D6. **Test seam.** Keep the existing PATH-based fake-`gh` pattern that
+`setFakeGHCLI` already uses. The package-level `var execCommand =
+exec.CommandContext` exists so tests can swap to a function-replacement
+seam if a particular case needs it, but the default approach for new
+tests is the same as the old ones: write a small shell script to a temp
+dir and set `PATH=$dir`. New tests extend the fake's behavior (argv
+capture, controlled exit code, controlled stderr) inside the script
+rather than introducing a function-replacement seam.
+
+The variable changes from `exec.Command` to `exec.CommandContext` so the
+helper can pass its 5-second timeout context through; tests do not need
+to do anything different to keep working with the new signature.
 
 ## Architecture
 
@@ -104,54 +138,65 @@ coverage where they are clearer.
 TokenForPlatformHost(platform, host, repoTokenEnv)
   -> repo token_env? -> return os.Getenv(repoTokenEnv)
   -> [[platforms]] match? -> return os.Getenv(pc.TokenEnv)
-  -> provider default env? -> return os.Getenv(defaultEnv)
-  -> platform == "github"? -> ghAuthTokenForHost(ctx, host)
-                              -> exec.CommandContext(ctx, "gh", "auth",
-                                                     "token",
-                                                     "--hostname", host)
-                              -> if host == "github.com" AND
-                                    isUnsupportedHostnameFlag(err, stderr):
-                                     retry bare exec.CommandContext(ctx, "gh",
-                                                                    "auth",
-                                                                    "token")
-                              -> return strings.TrimSpace(stdout) or ""
+  -> defaultTokenEnvForPlatformHost match? -> return os.Getenv(defaultEnv)
+                                              (forgejo/codeberg.org,
+                                               gitea/gitea.com)
+  -> platform == "github"? -> c.gitHubTokenForHost(host)
+                              -> os.Getenv(c.GitHubTokenEnv) if non-empty
+                              -> else ghAuthTokenForHost(host)
+                                       -> ctx, cancel := WithTimeout(
+                                                Background, 5s)
+                                       -> execCommand(ctx, "gh", "auth",
+                                                      "token",
+                                                      "--hostname", host)
+                                       -> if host == "github.com" AND
+                                             isUnsupportedHostnameFlag(
+                                                 err, stderr):
+                                            retry execCommand(ctx, "gh",
+                                                              "auth",
+                                                              "token")
+                                       -> return strings.TrimSpace(stdout)
+                                          or ""
   -> default: return ""
 
-GitHubToken() = ghAuthTokenForHost(ctx, DefaultGitHubHost)
-                — back-compat wrapper used by provider startup to seed the
-                default github.com slot. Behavior is identical to today
-                modulo the now-explicit --hostname github.com argument.
+GitHubToken() = c.gitHubTokenForHost(platformpkg.DefaultGitHubHost)
+
+  Direct caller: provider_startup.collectProviderTokens seeds the
+  default github.com slot through this method. Behavior is identical to
+  today for that caller modulo the now-explicit --hostname github.com
+  argument when the env var is empty.
 ```
 
-The 5-second timeout is created inside `ghAuthTokenForHost` so all callers
-inherit it without plumbing a context through every site:
+The 5-second timeout is created inside `ghAuthTokenForHost` so callers
+don't have to plumb a context through every site:
 
 ```go
 ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 defer cancel()
+cmd := execCommand(ctx, "gh", "auth", "token", "--hostname", host)
 ```
 
-Callers do not need to thread a context themselves; we are not introducing
-context-aware token resolution to the rest of the codebase as part of this
-change. (If the surrounding code grows context plumbing later, the helper
-can accept an external context without a signature break — see "Future
-work".)
+This change does not introduce context-aware token resolution to the
+rest of the codebase.
 
 ## Components
 
 - `internal/config/config.go`
   - Replace `ghAuthToken()` with `ghAuthTokenForHost(host string)` (no
     exported signature change; it's an internal helper).
+  - Add `c.gitHubTokenForHost(host string)` (method on `*Config`):
+    checks `os.Getenv(c.GitHubTokenEnv)` then falls back to
+    `ghAuthTokenForHost(host)`.
   - Add `isUnsupportedHostnameFlag(err error, stderr []byte) bool`
     (file-local).
   - Change `var execCommand = exec.Command` to
     `var execCommand = exec.CommandContext`. The variable still serves as
     the test seam.
-  - Update `cfg.GitHubToken()` to delegate to
-    `ghAuthTokenForHost(platform.DefaultGitHubHost)`.
+  - Update `cfg.GitHubToken()` to return
+    `c.gitHubTokenForHost(platformpkg.DefaultGitHubHost)`.
   - Update `cfg.TokenForPlatformHost` so the final-fallback path for
-    `platform == "github"` calls `ghAuthTokenForHost(host)` instead of
-    `cfg.GitHubToken()`.
+    `platform == "github"` calls `c.gitHubTokenForHost(host)` instead of
+    `c.GitHubToken()`.
 
 - `internal/config/config_test.go`
   - Extend `setFakeGHCLI` (or add a sibling helper) so a fake `gh` can
@@ -190,9 +235,21 @@ work".)
 ## Data flow
 
 No persisted state changes. No DB migration. No API surface change. No
-new env var or TOML key. The only behavioral difference visible to a
-user is that `gh auth login --hostname ghe.example` now feeds the GHE
-host's token resolution without `MIDDLEMAN_GITHUB_TOKEN` being set.
+new env var or TOML key. User-visible behavior changes are limited to
+how the `gh` step resolves:
+
+- A user with `gh auth login --hostname ghe.example` and
+  `platform_host = "ghe.example"` configured now gets the GHE token
+  without setting `MIDDLEMAN_GITHUB_TOKEN`. (New.)
+- A user with multiple `gh` accounts (e.g. github.com plus a GHE host)
+  and `MIDDLEMAN_GITHUB_TOKEN` empty stops returning gh's default-host
+  token for non-default hosts and instead resolves each host's token
+  independently. (Implicit bug fix.)
+- A user on an older `gh` that does not support `--hostname` and
+  `platform_host = "ghe.example"` with `MIDDLEMAN_GITHUB_TOKEN` empty:
+  today returns the bare-`gh` token (wrong host); after this change
+  returns empty for that GHE host, surfacing the existing missing-token
+  error. github.com keeps working via the bare retry.
 
 ## Error handling
 
@@ -235,9 +292,9 @@ timeout, stubbed subprocess).
 ## Future work
 
 - If middleman grows context-aware token resolution end-to-end, the
-  helper's signature is ready: `ghAuthTokenForHost(ctx context.Context,
-  host string)`. The internal-only helper can accept an external context
-  without a signature break.
+  internal helper can grow a `ctx context.Context` parameter without
+  breaking the exported `cfg.GitHubToken()` and
+  `cfg.TokenForPlatformHost` APIs.
 - If a similar `gh`-style fallback ever shows up for another provider,
   we would generalize the helper and detection logic. Not part of this
   change.

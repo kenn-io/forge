@@ -1554,6 +1554,92 @@ name = "b"
 	Assert.Equal(t, "xterm", cfg.Terminal.Renderer)
 }
 
+func TestIssueWorkspaceBranchStyleDefaultsToSlug(t *testing.T) {
+	path := writeConfig(t, `
+[[repos]]
+owner = "a"
+name = "b"
+`)
+	cfg, err := Load(path)
+	require.NoError(t, err)
+
+	Assert.Equal(t, IssueWorkspaceBranchStyleSlug, cfg.IssueWorkspaceBranchStyle)
+	Assert.True(t, cfg.IssueWorkspaceBranchSlugEnabled())
+}
+
+func TestIssueWorkspaceBranchStyleAcceptsBare(t *testing.T) {
+	path := writeConfig(t, `
+issue_workspace_branch_style = "bare"
+
+[[repos]]
+owner = "a"
+name = "b"
+`)
+	cfg, err := Load(path)
+	require.NoError(t, err)
+
+	Assert.Equal(t, IssueWorkspaceBranchStyleBare, cfg.IssueWorkspaceBranchStyle)
+	Assert.False(t, cfg.IssueWorkspaceBranchSlugEnabled())
+}
+
+func TestIssueWorkspaceBranchStyleRejectsInvalidValue(t *testing.T) {
+	path := writeConfig(t, `
+issue_workspace_branch_style = "fancy"
+
+[[repos]]
+owner = "a"
+name = "b"
+`)
+	_, err := Load(path)
+	require.Error(t, err)
+	Assert.Contains(t, err.Error(), "invalid issue_workspace_branch_style")
+}
+
+func TestIssueWorkspaceBranchStyleRoundTrip(t *testing.T) {
+	assert := Assert.New(t)
+	path := writeConfig(t, `
+issue_workspace_branch_style = "bare"
+
+[[repos]]
+owner = "a"
+name = "b"
+`)
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.Equal(IssueWorkspaceBranchStyleBare, cfg.IssueWorkspaceBranchStyle)
+
+	savePath := filepath.Join(t.TempDir(), "saved.toml")
+	require.NoError(t, cfg.Save(savePath))
+
+	cfg2, err := Load(savePath)
+	require.NoError(t, err)
+	assert.Equal(IssueWorkspaceBranchStyleBare, cfg2.IssueWorkspaceBranchStyle)
+	assert.False(cfg2.IssueWorkspaceBranchSlugEnabled())
+}
+
+func TestIssueWorkspaceBranchStyleSlugIsOmittedFromSavedConfig(t *testing.T) {
+	assert := Assert.New(t)
+	path := writeConfig(t, `
+issue_workspace_branch_style = "slug"
+
+[[repos]]
+owner = "a"
+name = "b"
+`)
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.Equal(IssueWorkspaceBranchStyleSlug, cfg.IssueWorkspaceBranchStyle)
+
+	savePath := filepath.Join(t.TempDir(), "saved.toml")
+	require.NoError(t, cfg.Save(savePath))
+
+	data, err := os.ReadFile(savePath)
+	require.NoError(t, err)
+	// The default style should not be written back to disk; the
+	// field is treated as opt-out only.
+	assert.NotContains(string(data), "issue_workspace_branch_style")
+}
+
 func TestTerminalRendererRejectsInvalidValue(t *testing.T) {
 	path := writeConfig(t, `
 [[repos]]

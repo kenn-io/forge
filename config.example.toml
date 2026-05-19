@@ -7,6 +7,12 @@ default_platform_host = "github.com"
 host = "127.0.0.1"
 port = 8091
 
+# Style of branch name created for new issue workspaces. "slug" (default)
+# appends a sanitized slug derived from the issue title onto the bare
+# middleman/issue-<n> form, e.g. middleman/issue-1234-add-foo-to-bar.
+# Set to "bare" to keep the legacy middleman/issue-<n> form.
+# issue_workspace_branch_style = "slug"
+
 [terminal]
 # Terminal renderer: "xterm" (default) or "ghostty-web"
 renderer = "xterm"

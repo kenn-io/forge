@@ -35,6 +35,18 @@ const (
 	defaultPlatformHost      = platformpkg.DefaultGitHubHost
 )
 
+const (
+	// IssueWorkspaceBranchStyleSlug appends a slug derived from the
+	// issue title onto middleman/issue-<n>, producing recognizable
+	// branch names that match common GitHub workflow conventions.
+	IssueWorkspaceBranchStyleSlug = "slug"
+	// IssueWorkspaceBranchStyleBare keeps the original
+	// middleman/issue-<n> form with no title slug appended.
+	IssueWorkspaceBranchStyleBare = "bare"
+
+	defaultIssueWorkspaceBranchStyle = IssueWorkspaceBranchStyleSlug
+)
+
 type Repo struct {
 	Owner        string `toml:"owner" json:"owner"`
 	Name         string `toml:"name" json:"name"`
@@ -505,22 +517,23 @@ type Shell struct {
 }
 
 type Config struct {
-	SyncInterval        string           `toml:"sync_interval"`
-	GitHubTokenEnv      string           `toml:"github_token_env"`
-	DefaultPlatformHost string           `toml:"default_platform_host"`
-	Host                string           `toml:"host"`
-	Port                int              `toml:"port"`
-	BasePath            string           `toml:"base_path"`
-	DataDir             string           `toml:"data_dir"`
-	SyncBudgetPerHour   int              `toml:"sync_budget_per_hour"`
-	Repos               []Repo           `toml:"repos"`
-	Platforms           []PlatformConfig `toml:"platforms"`
-	Activity            Activity         `toml:"activity"`
-	Terminal            Terminal         `toml:"terminal"`
-	Agents              []Agent          `toml:"agents"`
-	Roborev             Roborev          `toml:"roborev"`
-	Tmux                Tmux             `toml:"tmux"`
-	Shell               Shell            `toml:"shell"`
+	SyncInterval               string           `toml:"sync_interval"`
+	GitHubTokenEnv             string           `toml:"github_token_env"`
+	DefaultPlatformHost        string           `toml:"default_platform_host"`
+	Host                       string           `toml:"host"`
+	Port                       int              `toml:"port"`
+	BasePath                   string           `toml:"base_path"`
+	DataDir                    string           `toml:"data_dir"`
+	SyncBudgetPerHour          int              `toml:"sync_budget_per_hour"`
+	IssueWorkspaceBranchStyle  string           `toml:"issue_workspace_branch_style"`
+	Repos                      []Repo           `toml:"repos"`
+	Platforms                  []PlatformConfig `toml:"platforms"`
+	Activity                   Activity         `toml:"activity"`
+	Terminal                   Terminal         `toml:"terminal"`
+	Agents                     []Agent          `toml:"agents"`
+	Roborev                    Roborev          `toml:"roborev"`
+	Tmux                       Tmux             `toml:"tmux"`
+	Shell                      Shell            `toml:"shell"`
 }
 
 func DefaultConfigPath() string {
@@ -693,6 +706,10 @@ func Load(path string) (*Config, error) {
 		cfg.SyncBudgetPerHour = defaultSyncBudgetPerHour
 	}
 
+	if strings.TrimSpace(cfg.IssueWorkspaceBranchStyle) == "" {
+		cfg.IssueWorkspaceBranchStyle = defaultIssueWorkspaceBranchStyle
+	}
+
 	if cfg.BasePath == "" {
 		cfg.BasePath = defaultBasePath
 	} else {
@@ -825,6 +842,21 @@ func (c *Config) Validate() error {
 		return fmt.Errorf(
 			"config: invalid activity time_range %q",
 			c.Activity.TimeRange,
+		)
+	}
+
+	c.IssueWorkspaceBranchStyle = strings.TrimSpace(c.IssueWorkspaceBranchStyle)
+	if c.IssueWorkspaceBranchStyle == "" {
+		c.IssueWorkspaceBranchStyle = defaultIssueWorkspaceBranchStyle
+	}
+	switch c.IssueWorkspaceBranchStyle {
+	case IssueWorkspaceBranchStyleSlug, IssueWorkspaceBranchStyleBare:
+	default:
+		return fmt.Errorf(
+			"config: invalid issue_workspace_branch_style %q: must be %q or %q",
+			c.IssueWorkspaceBranchStyle,
+			IssueWorkspaceBranchStyleSlug,
+			IssueWorkspaceBranchStyleBare,
 		)
 	}
 
@@ -1148,6 +1180,23 @@ func (c *Config) TmuxAgentSessionsEnabled() bool {
 		*c.Tmux.AgentSessions
 }
 
+// IssueWorkspaceBranchSlugEnabled reports whether new issue
+// workspaces should derive a title slug onto their branch name.
+// Defaults to true (the "slug" style); returns false for "bare".
+func (c *Config) IssueWorkspaceBranchSlugEnabled() bool {
+	if c == nil {
+		return true
+	}
+	switch strings.TrimSpace(c.IssueWorkspaceBranchStyle) {
+	case "", IssueWorkspaceBranchStyleSlug:
+		return true
+	case IssueWorkspaceBranchStyleBare:
+		return false
+	default:
+		return true
+	}
+}
+
 func reposForSave(repos []Repo) []Repo {
 	if repos == nil {
 		return nil
@@ -1168,22 +1217,23 @@ func reposForSave(repos []Repo) []Repo {
 
 // configFile is the subset of Config written to disk.
 type configFile struct {
-	SyncInterval        string           `toml:"sync_interval"`
-	GitHubTokenEnv      string           `toml:"github_token_env"`
-	DefaultPlatformHost string           `toml:"default_platform_host,omitempty"`
-	Host                string           `toml:"host"`
-	Port                int              `toml:"port"`
-	SyncBudgetPerHour   int              `toml:"sync_budget_per_hour,omitempty"`
-	BasePath            string           `toml:"base_path,omitempty"`
-	DataDir             string           `toml:"data_dir,omitempty"`
-	Repos               []Repo           `toml:"repos"`
-	Platforms           []PlatformConfig `toml:"platforms,omitempty"`
-	Activity            Activity         `toml:"activity"`
-	Terminal            Terminal         `toml:"terminal,omitempty"`
-	Agents              []Agent          `toml:"agents,omitempty"`
-	Roborev             Roborev          `toml:"roborev,omitempty"`
-	Tmux                Tmux             `toml:"tmux,omitempty"`
-	Shell               Shell            `toml:"shell,omitempty"`
+	SyncInterval              string           `toml:"sync_interval"`
+	GitHubTokenEnv            string           `toml:"github_token_env"`
+	DefaultPlatformHost       string           `toml:"default_platform_host,omitempty"`
+	Host                      string           `toml:"host"`
+	Port                      int              `toml:"port"`
+	SyncBudgetPerHour         int              `toml:"sync_budget_per_hour,omitempty"`
+	BasePath                  string           `toml:"base_path,omitempty"`
+	DataDir                   string           `toml:"data_dir,omitempty"`
+	IssueWorkspaceBranchStyle string           `toml:"issue_workspace_branch_style,omitempty"`
+	Repos                     []Repo           `toml:"repos"`
+	Platforms                 []PlatformConfig `toml:"platforms,omitempty"`
+	Activity                  Activity         `toml:"activity"`
+	Terminal                  Terminal         `toml:"terminal,omitempty"`
+	Agents                    []Agent          `toml:"agents,omitempty"`
+	Roborev                   Roborev          `toml:"roborev,omitempty"`
+	Tmux                      Tmux             `toml:"tmux,omitempty"`
+	Shell                     Shell            `toml:"shell,omitempty"`
 }
 
 // Save writes the current config to the given path.
@@ -1214,6 +1264,9 @@ func (c *Config) Save(path string) error {
 	}
 	if c.DataDir != DefaultDataDir() {
 		f.DataDir = c.DataDir
+	}
+	if c.IssueWorkspaceBranchStyle != defaultIssueWorkspaceBranchStyle {
+		f.IssueWorkspaceBranchStyle = c.IssueWorkspaceBranchStyle
 	}
 
 	var buf bytes.Buffer

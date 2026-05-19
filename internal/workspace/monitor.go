@@ -107,7 +107,12 @@ func (m *PRMonitor) detectAssociatedPR(
 	if currentBranch == "" {
 		return 0, false, nil
 	}
-	if currentBranch == issueWorkspaceBranch(ws.ItemNumber) {
+	// Skip while the workspace is still on its managed issue branch:
+	// no associated PR can exist yet. Compare to the persisted branch
+	// (which honors the configured slug/bare style) rather than
+	// recomputing, so an issue rename never desyncs detection.
+	if currentBranch == ws.GitHeadRef ||
+		currentBranch == issueWorkspaceBranch(ws.ItemNumber) {
 		return 0, false, nil
 	}
 

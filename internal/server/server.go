@@ -430,6 +430,9 @@ func newServer(
 		s.workspaces = workspace.NewManager(database, options.WorktreeDir)
 		s.workspacePRMonitor = workspace.NewPRMonitor(database)
 		s.workspaces.SetTmuxCommand(tmuxCmd)
+		s.workspaces.SetIssueBranchSlugEnabled(
+			cfg.IssueWorkspaceBranchSlugEnabled(),
+		)
 		ptyOwnerDir := options.PtyOwnerDir
 		if ptyOwnerDir == "" {
 			ptyOwnerDir = filepath.Join(

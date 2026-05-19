@@ -16468,11 +16468,12 @@ func TestWorkspaceCreateIssueE2E(t *testing.T) {
 	require.NotEmpty(created.ID)
 	assert.Equal("issue", created.ItemType)
 	assert.Equal(7, created.ItemNumber)
-	assert.Equal("middleman/issue-7", created.GitHeadRef)
+	// seedIssue uses title "Test Issue" → slug style appends "-test-issue".
+	assert.Equal("middleman/issue-7-test-issue", created.GitHeadRef)
 
 	ready := waitForWorkspaceReady(t, ctx, fixture.client, created.ID)
 	assert.Equal(
-		"middleman/issue-7",
+		"middleman/issue-7-test-issue",
 		gitOutput(t, ready.WorktreePath, "branch", "--show-current"),
 	)
 	assert.Equal(
@@ -16494,6 +16495,75 @@ func TestWorkspaceCreateIssueE2E(t *testing.T) {
 	require.NotNil(issueDetail.Workspace)
 	assert.Equal(created.ID, issueDetail.Workspace.ID)
 	assert.NotEmpty(issueDetail.Workspace.Status)
+}
+
+func TestWorkspaceCreateIssueUsesTitleSlugInBranch(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	fixture := setupWorkspaceServerFixture(t, nil)
+	ctx := context.Background()
+
+	// Replace the seed title with a multi-word issue title to make
+	// sure the slug appears in the issue-workspace branch name.
+	seedIssueOnHost(
+		t, fixture.database, "github.com", "acme", "widget", 8,
+		"open", "Add foo to bar",
+	)
+
+	createRR := doJSON(
+		t,
+		fixture.server,
+		http.MethodPost,
+		"/api/v1/issues/gh/acme/widget/8/workspace",
+		map[string]string{},
+	)
+	require.Equal(http.StatusAccepted, createRR.Code, createRR.Body.String())
+
+	var created rawWorkspaceStatusResponse
+	require.NoError(json.NewDecoder(createRR.Body).Decode(&created))
+	assert.Equal("middleman/issue-8-add-foo-to-bar", created.GitHeadRef)
+
+	ready := waitForWorkspaceReady(t, ctx, fixture.client, created.ID)
+	assert.Equal(
+		"middleman/issue-8-add-foo-to-bar",
+		gitOutput(t, ready.WorktreePath, "branch", "--show-current"),
+	)
+}
+
+func TestWorkspaceCreateIssueBareStyleConfigOptOut(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	cfg := &config.Config{
+		IssueWorkspaceBranchStyle: config.IssueWorkspaceBranchStyleBare,
+	}
+	fixture := setupWorkspaceServerFixture(t, cfg)
+	ctx := context.Background()
+
+	seedIssueOnHost(
+		t, fixture.database, "github.com", "acme", "widget", 9,
+		"open", "Add foo to bar",
+	)
+
+	createRR := doJSON(
+		t,
+		fixture.server,
+		http.MethodPost,
+		"/api/v1/issues/gh/acme/widget/9/workspace",
+		map[string]string{},
+	)
+	require.Equal(http.StatusAccepted, createRR.Code, createRR.Body.String())
+
+	var created rawWorkspaceStatusResponse
+	require.NoError(json.NewDecoder(createRR.Body).Decode(&created))
+	assert.Equal("middleman/issue-9", created.GitHeadRef)
+
+	ready := waitForWorkspaceReady(t, ctx, fixture.client, created.ID)
+	assert.Equal(
+		"middleman/issue-9",
+		gitOutput(t, ready.WorktreePath, "branch", "--show-current"),
+	)
 }
 
 func TestWorkspaceCreateIssueIsIdempotent(t *testing.T) {
@@ -16551,7 +16621,7 @@ func TestWorkspaceCreateIssueAfterDeleteRecreatesBranch(t *testing.T) {
 	require.NoError(json.NewDecoder(createRR.Body).Decode(&created))
 	ready := waitForWorkspaceReady(t, ctx, fixture.client, created.ID)
 	assert.Equal(
-		"middleman/issue-7",
+		"middleman/issue-7-test-issue",
 		gitOutput(t, ready.WorktreePath, "branch", "--show-current"),
 	)
 
@@ -16577,7 +16647,7 @@ func TestWorkspaceCreateIssueAfterDeleteRecreatesBranch(t *testing.T) {
 	require.NoError(json.NewDecoder(recreateRR.Body).Decode(&recreated))
 	recreatedReady := waitForWorkspaceReady(t, ctx, fixture.client, recreated.ID)
 	assert.Equal(
-		"middleman/issue-7",
+		"middleman/issue-7-test-issue",
 		gitOutput(t, recreatedReady.WorktreePath, "branch", "--show-current"),
 	)
 }
@@ -16638,12 +16708,16 @@ func TestWorkspaceCreateIssueBranchConflictReturnsTyped409(t *testing.T) {
 
 	seedIssue(t, fixture.database, "acme", "widget", 7, "open")
 
+	// seedIssue uses the title "Test Issue", which the slug style
+	// turns into "middleman/issue-7-test-issue". Pre-create that
+	// branch so CreateIssue surfaces a branch conflict.
+	const slugBranch = "middleman/issue-7-test-issue"
 	mainSHA := testGitSHA(t, fixture.remote, "refs/heads/main")
 	runGit(
 		t,
 		fixture.bare,
 		"update-ref",
-		"refs/heads/middleman/issue-7",
+		"refs/heads/"+slugBranch,
 		mainSHA,
 	)
 
@@ -16669,9 +16743,9 @@ func TestWorkspaceCreateIssueBranchConflictReturnsTyped409(t *testing.T) {
 	for _, errDetail := range problem.Errors {
 		locations[errDetail.Location] = errDetail.Value
 	}
-	assert.Equal("middleman/issue-7", locations["body.git_head_ref"])
+	assert.Equal(slugBranch, locations["body.git_head_ref"])
 	assert.Equal(
-		"middleman/issue-7-2",
+		slugBranch+"-2",
 		locations["body.suggested_git_head_ref"],
 	)
 
@@ -16681,7 +16755,7 @@ func TestWorkspaceCreateIssueBranchConflictReturnsTyped409(t *testing.T) {
 		http.MethodPost,
 		"/api/v1/issues/gh/acme/widget/7/workspace",
 		map[string]any{
-			"git_head_ref":          "middleman/issue-7",
+			"git_head_ref":          slugBranch,
 			"reuse_existing_branch": true,
 		},
 	)
@@ -16691,14 +16765,14 @@ func TestWorkspaceCreateIssueBranchConflictReturnsTyped409(t *testing.T) {
 	require.NoError(json.NewDecoder(reuseRR.Body).Decode(&reused))
 	reusedReady := waitForWorkspaceReady(t, ctx, fixture.client, reused.ID)
 	assert.Equal(
-		"middleman/issue-7",
+		slugBranch,
 		gitOutput(t, reusedReady.WorktreePath, "branch", "--show-current"),
 	)
 
 	stored, err := fixture.database.GetWorkspace(ctx, reused.ID)
 	require.NoError(err)
 	require.NotNil(stored)
-	assert.Equal("middleman/issue-7", stored.WorkspaceBranch)
+	assert.Equal(slugBranch, stored.WorkspaceBranch)
 }
 
 func prepareIssueWorkspaceAssociationFixture(

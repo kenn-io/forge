@@ -32,15 +32,16 @@ import (
 // intentionally not a generic host worktree browser or arbitrary Git
 // automation layer.
 type Manager struct {
-	db             *db.DB
-	worktreeDir    string
-	clones         *gitclone.Manager
-	tmuxCmd        []string
-	ptyOwner       PtyOwnerClient
-	preferPtyOwner bool
-	retryMu        sync.Mutex
-	retryQueued    map[string]bool
-	runtimeTmuxMu  sync.Mutex
+	db                     *db.DB
+	worktreeDir            string
+	clones                 *gitclone.Manager
+	tmuxCmd                []string
+	ptyOwner               PtyOwnerClient
+	preferPtyOwner         bool
+	retryMu                sync.Mutex
+	retryQueued            map[string]bool
+	runtimeTmuxMu          sync.Mutex
+	issueBranchSlugEnabled bool
 }
 
 // CreateIssueOptions controls how issue-backed workspaces choose their branch.
@@ -99,10 +100,30 @@ func NewManager(
 	database *db.DB, worktreeDir string,
 ) *Manager {
 	return &Manager{
-		db:          database,
-		worktreeDir: worktreeDir,
-		retryQueued: make(map[string]bool),
+		db:                     database,
+		worktreeDir:            worktreeDir,
+		retryQueued:            make(map[string]bool),
+		issueBranchSlugEnabled: true,
 	}
+}
+
+// SetIssueBranchSlugEnabled controls whether issue-workspace branch
+// names include a slug derived from the issue title. When false, the
+// manager keeps the legacy bare middleman/issue-<n> form. Default is
+// true, matching the configured default issue_workspace_branch_style.
+func (m *Manager) SetIssueBranchSlugEnabled(enabled bool) {
+	m.issueBranchSlugEnabled = enabled
+}
+
+// defaultIssueBranch returns the middleman issue-workspace branch
+// name to use when the caller did not pass an explicit GitHeadRef.
+// When the slug style is enabled and the issue has a usable title,
+// the bare middleman/issue-<n> is suffixed with a sanitized slug.
+func (m *Manager) defaultIssueBranch(issueNumber int, title string) string {
+	if m.issueBranchSlugEnabled {
+		return issueWorkspaceBranchWithTitle(issueNumber, title)
+	}
+	return issueWorkspaceBranch(issueNumber)
 }
 
 // SetClones sets the git clone manager used for bare clone
@@ -239,7 +260,7 @@ func (m *Manager) CreateIssue(
 
 	gitHeadRef := opts.GitHeadRef
 	if gitHeadRef == "" {
-		gitHeadRef = issueWorkspaceBranch(issueNumber)
+		gitHeadRef = m.defaultIssueBranch(issueNumber, issue.Title)
 	}
 	if err := validateLocalBranchName(ctx, "", gitHeadRef); err != nil {
 		return nil, err
@@ -588,10 +609,6 @@ func workspaceStartRef(ws *Workspace) string {
 
 func syntheticPRWorktreeBranch(mrNumber int) string {
 	return fmt.Sprintf("middleman/pr-%d", mrNumber)
-}
-
-func issueWorkspaceBranch(issueNumber int) string {
-	return fmt.Sprintf("middleman/issue-%d", issueNumber)
 }
 
 func setBranchUpstream(
@@ -1976,7 +1993,15 @@ func workspaceBranchCandidates(
 ) []string {
 	if managedBranch == workspaceBranchUnknown {
 		if ws.ItemType == db.WorkspaceItemTypeIssue {
-			return []string{issueWorkspaceBranch(ws.ItemNumber)}
+			// Prefer the persisted branch (which honors any title
+			// slug) but fall back to the bare middleman/issue-<n>
+			// form so cleanup still finds pre-slug branches if the
+			// workspace pre-dates this feature.
+			bare := issueWorkspaceBranch(ws.ItemNumber)
+			if ws.GitHeadRef != "" && ws.GitHeadRef != bare {
+				return []string{ws.GitHeadRef, bare}
+			}
+			return []string{bare}
 		}
 		return []string{syntheticPRWorktreeBranch(ws.ItemNumber)}
 	}

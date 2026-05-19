@@ -189,6 +189,49 @@ func TestEventHub_CloseUnsubscribesAll(t *testing.T) {
 	assert.False(t, ok2)
 }
 
+func TestEventHub_ConfigChangedCachedForNewSubscribers(t *testing.T) {
+	hub := NewEventHub()
+	defer hub.Close()
+
+	hub.Broadcast(Event{
+		Type: "config.changed",
+		Data: map[string]any{"valid": true},
+	})
+
+	ch, _ := hub.Subscribe(t.Context(), true)
+
+	select {
+	case ev := <-ch:
+		assert.Equal(t, "config.changed", ev.Event.Type)
+	case <-time.After(time.Second):
+		require.FailNow(t, "expected cached config.changed event")
+	}
+}
+
+func TestEventHub_LatestConfigStatusReplayedToLateSubscriber(t *testing.T) {
+	assert := assert.New(t)
+
+	hub := NewEventHub()
+	defer hub.Close()
+
+	hub.Broadcast(Event{
+		Type: "config.changed",
+		Data: map[string]any{"valid": false, "error": "first"},
+	})
+	hub.Broadcast(Event{
+		Type: "config.changed",
+		Data: map[string]any{"valid": true},
+	})
+
+	ch, _ := hub.Subscribe(t.Context(), true)
+
+	ev := <-ch
+	assert.Equal("config.changed", ev.Event.Type)
+	data, ok := ev.Event.Data.(map[string]any)
+	require.True(t, ok)
+	assert.Equal(true, data["valid"], "subscriber should see the most recent config status")
+}
+
 func TestEventHub_BroadcastAfterSlowConsumerEviction(t *testing.T) {
 	hub := NewEventHub()
 	defer hub.Close()

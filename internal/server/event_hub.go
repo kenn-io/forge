@@ -30,17 +30,18 @@ type RecordedEvent struct {
 // EventHub manages SSE subscribers with fan-out broadcasting, monotonic
 // event ids, and a ring buffer of recent events for replay on reconnect.
 type EventHub struct {
-	mu             sync.Mutex
-	subscribers    map[uint64]chan RecordedEvent
-	nextSubID      uint64
-	nextEventID    uint64
-	lastSyncStatus *RecordedEvent
-	ring           []RecordedEvent
-	ringHead       int
-	ringCount      int
-	done           chan struct{}
-	closeOnce      sync.Once
-	closed         bool // guarded by mu
+	mu               sync.Mutex
+	subscribers      map[uint64]chan RecordedEvent
+	nextSubID        uint64
+	nextEventID      uint64
+	lastSyncStatus   *RecordedEvent
+	lastConfigStatus *RecordedEvent
+	ring             []RecordedEvent
+	ringHead         int
+	ringCount        int
+	done             chan struct{}
+	closeOnce        sync.Once
+	closed           bool // guarded by mu
 }
 
 // NewEventHub creates a ready-to-use hub with the default ring capacity.
@@ -67,8 +68,9 @@ func NewEventHubWithCapacity(capacity int) *EventHub {
 // cached sync_status exists, it is pre-loaded onto the subscriber's
 // channel so a fresh client with no cursor learns the latest sync state
 // without a round-trip. Callers that handle replay themselves (the
-// cursor-bearing SSE path) pass false to avoid duplicating the cached
-// status with a ring-replay copy.
+// cursor-bearing SSE path) pass false to avoid duplicating cached
+// events with ring-replay copies. The latest config.changed event is
+// also pre-loaded for fresh subscribers when injectCached is true.
 //
 // Returns the event channel and the hub's done channel. If the hub is
 // already closed, returns an immediately-closed channel and the closed
@@ -88,6 +90,11 @@ func (h *EventHub) Subscribe(
 	ch := make(chan RecordedEvent, 16)
 	if injectCached && h.lastSyncStatus != nil {
 		ch <- *h.lastSyncStatus
+	}
+	// Replay the latest config event so a client connecting after a
+	// parse error still learns the daemon is running on stale config.
+	if injectCached && h.lastConfigStatus != nil {
+		ch <- *h.lastConfigStatus
 	}
 	h.subscribers[id] = ch
 	h.mu.Unlock()
@@ -117,11 +124,11 @@ func (h *EventHub) unsubscribe(id uint64) {
 }
 
 // Broadcast sends an event to all subscribers, stamps it with the next
-// monotonic id, records it in the ring buffer, and (for sync_status
-// events) updates the cached latest-status pointer. Slow consumers
-// (full channel) are evicted. Returns the assigned id, which is useful
-// for tests and for callers that need to correlate the broadcast with
-// downstream state.
+// monotonic id, records it in the ring buffer, and updates cached
+// latest-status pointers for event types that fresh subscribers need.
+// Slow consumers (full channel) are evicted. Returns the assigned id,
+// which is useful for tests and for callers that need to correlate the
+// broadcast with downstream state.
 func (h *EventHub) Broadcast(event Event) uint64 {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -129,9 +136,13 @@ func (h *EventHub) Broadcast(event Event) uint64 {
 	h.nextEventID++
 	rec := RecordedEvent{ID: h.nextEventID, Event: event}
 
-	if event.Type == "sync_status" {
+	switch event.Type {
+	case "sync_status":
 		copyRec := rec
 		h.lastSyncStatus = &copyRec
+	case "config.changed":
+		copyRec := rec
+		h.lastConfigStatus = &copyRec
 	}
 
 	h.ringStoreLocked(rec)

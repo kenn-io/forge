@@ -123,7 +123,7 @@ test.describe("detail action buttons", () => {
       await access(readyWorkspace.worktree_path);
       expect(
         gitOutput(readyWorkspace.worktree_path, ["branch", "--show-current"]),
-      ).toBe("middleman/issue-10");
+      ).toBe("middleman/issue-10-widget-rendering-broken-on-safari");
     } finally {
       await api?.dispose();
       await isolatedServer?.stop();

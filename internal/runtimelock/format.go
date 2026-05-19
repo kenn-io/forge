@@ -1,6 +1,7 @@
 package runtimelock
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 )
@@ -36,4 +37,65 @@ func FormatCollisionBanner(w io.Writer, cerr *CollisionError, configPath, defaul
 	} else {
 		fmt.Fprintln(w, "  Run `middleman status` to inspect it.")
 	}
+}
+
+// statusJSON is the wire shape of FormatStatus(..., asJSON=true).
+// Defined explicitly so the JSON keys do not depend on a field-order
+// accident in Status.
+type statusJSON struct {
+	Running       bool      `json:"running"`
+	DataDir       string    `json:"data_dir"`
+	LockFile      string    `json:"lock_file"`
+	Metadata      *Metadata `json:"metadata"`
+	MetadataError string    `json:"metadata_error,omitempty"`
+}
+
+// FormatStatus renders st to w. When asJSON is true, a single indented
+// JSON object is written followed by a trailing newline. Otherwise a
+// human-readable multi-line summary is written using the same key
+// alignment as the collision banner.
+func FormatStatus(w io.Writer, st Status, asJSON bool) error {
+	if asJSON {
+		payload := statusJSON{
+			Running:       st.Running,
+			DataDir:       st.DataDir,
+			LockFile:      st.LockPath,
+			Metadata:      st.Metadata,
+			MetadataError: string(st.MetadataUnavailable),
+		}
+		data, err := json.MarshalIndent(payload, "", "  ")
+		if err != nil {
+			return fmt.Errorf("encode status json: %w", err)
+		}
+		if _, err := w.Write(data); err != nil {
+			return err
+		}
+		_, err = fmt.Fprintln(w)
+		return err
+	}
+
+	switch {
+	case !st.Running:
+		fmt.Fprintln(w, "no running daemon")
+	case st.Metadata != nil:
+		fmt.Fprintln(w, "running")
+	default:
+		fmt.Fprintf(w, "running (metadata unavailable: %s)\n", st.MetadataUnavailable)
+	}
+
+	fmt.Fprintf(w, "  data_dir:     %s\n", st.DataDir)
+	fmt.Fprintf(w, "  lock file:    %s\n", st.LockPath)
+
+	if st.Metadata != nil {
+		m := st.Metadata
+		fmt.Fprintf(w, "  pid:          %d\n", m.PID)
+		fmt.Fprintf(w, "  host:         %s\n", m.Host)
+		fmt.Fprintf(w, "  port:         %d\n", m.Port)
+		fmt.Fprintf(w, "  listen_addr:  %s\n", m.ListenAddr)
+		fmt.Fprintf(w, "  started_at:   %s\n", m.StartedAt)
+		fmt.Fprintf(w, "  version:      %s\n", m.Version)
+		fmt.Fprintf(w, "  commit:       %s\n", m.Commit)
+	}
+
+	return nil
 }

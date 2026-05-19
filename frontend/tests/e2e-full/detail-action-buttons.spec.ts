@@ -485,7 +485,7 @@ test.describe("detail action buttons", () => {
     }
   });
 
-  test("repo merge permission hides merge action end-to-end", async ({ page }) => {
+  test("repo merge permission disables merge action with reason end-to-end", async ({ page }) => {
     let isolatedServer: IsolatedE2EServer | null = null;
     try {
       isolatedServer = await startIsolatedE2EServer();
@@ -500,15 +500,28 @@ test.describe("detail action buttons", () => {
         `${baseURL}/api/v1/repo/github/acme/widgets`,
       );
       expect(settingsResponse.ok()).toBe(true);
-      const settings = await settingsResponse.json() as { ViewerCanMerge: boolean };
+      const settings = await settingsResponse.json() as {
+        ViewerCanMerge: boolean;
+        operations: Record<string, { available: boolean; code?: string }>;
+      };
       expect(settings.ViewerCanMerge).toBe(false);
+      expect(settings.operations.merge_pr.available).toBe(false);
+      expect(settings.operations.merge_pr.code).toBe("viewer_cannot_merge");
 
       await page.goto(`${baseURL}/pulls/github/acme/widgets/1`);
       await expect(page.locator(".pull-detail")).toBeVisible();
       await expect(page.locator(".detail-title")).toContainText(
         "Add widget caching layer",
       );
-      await expect(page.locator(".btn--merge")).toHaveCount(0);
+      const merge = page.locator(".btn--merge").first();
+      await expect(merge).toBeVisible();
+      await expect(merge).toBeDisabled();
+      await expect(merge).toHaveAttribute(
+        "title",
+        "You do not have permission to merge in this repository",
+      );
+      // Clicking a disabled merge button must not open the merge modal.
+      await merge.click({ force: true });
       await expect(
         page.locator(".modal-title", { hasText: "Merge Pull Request" }),
       ).toHaveCount(0);

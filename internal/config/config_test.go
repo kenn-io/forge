@@ -2344,3 +2344,79 @@ func TestGhAuthTokenForHostTimesOut(t *testing.T) {
 		"helper should return shortly after timeout, took %s", elapsed,
 	)
 }
+
+func TestTokenForPlatformHostUsesGHWithHostnameForGHE(t *testing.T) {
+	argvPath := setFakeGHCLIScript(t, fakeGHCLIOptions{
+		Stdout: "ghe-secret",
+	})
+	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "")
+
+	cfg := &Config{GitHubTokenEnv: "MIDDLEMAN_GITHUB_TOKEN"}
+	got := cfg.TokenForPlatformHost("github", "ghe.example.com", "")
+	Assert.Equal(t, "ghe-secret", got)
+
+	argv := readFakeGHArgv(t, argvPath)
+	require.Len(t, argv, 1)
+	Assert.Equal(t, "auth token --hostname ghe.example.com", argv[0])
+}
+
+func TestTokenForPlatformHostPrefersEnvOverGHForGHE(t *testing.T) {
+	argvPath := setFakeGHCLIScript(t, fakeGHCLIOptions{
+		Stdout: "ghe-from-gh",
+	})
+	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "ghe-from-env")
+
+	cfg := &Config{GitHubTokenEnv: "MIDDLEMAN_GITHUB_TOKEN"}
+	got := cfg.TokenForPlatformHost("github", "ghe.example.com", "")
+	Assert.Equal(t, "ghe-from-env", got)
+
+	Assert.Empty(t, readFakeGHArgv(t, argvPath), "env var should short-circuit gh")
+}
+
+func TestTokenForPlatformHostPrefersPlatformsEntryOverGHForGHE(t *testing.T) {
+	argvPath := setFakeGHCLIScript(t, fakeGHCLIOptions{
+		Stdout: "ghe-from-gh",
+	})
+	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "")
+	t.Setenv("PLATFORMS_GHE_TOKEN", "ghe-from-platforms")
+
+	cfg := &Config{
+		GitHubTokenEnv: "MIDDLEMAN_GITHUB_TOKEN",
+		Platforms: []PlatformConfig{
+			{Type: "github", Host: "ghe.example.com", TokenEnv: "PLATFORMS_GHE_TOKEN"},
+		},
+	}
+	got := cfg.TokenForPlatformHost("github", "ghe.example.com", "")
+	Assert.Equal(t, "ghe-from-platforms", got)
+
+	Assert.Empty(t, readFakeGHArgv(t, argvPath), "[[platforms]] should short-circuit gh")
+}
+
+func TestTokenForPlatformHostPrefersRepoTokenEnvOverGHForGHE(t *testing.T) {
+	argvPath := setFakeGHCLIScript(t, fakeGHCLIOptions{
+		Stdout: "ghe-from-gh",
+	})
+	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "")
+	t.Setenv("REPO_GHE_TOKEN", "ghe-from-repo")
+
+	cfg := &Config{GitHubTokenEnv: "MIDDLEMAN_GITHUB_TOKEN"}
+	got := cfg.TokenForPlatformHost("github", "ghe.example.com", "REPO_GHE_TOKEN")
+	Assert.Equal(t, "ghe-from-repo", got)
+
+	Assert.Empty(t, readFakeGHArgv(t, argvPath), "repo token_env should short-circuit gh")
+}
+
+func TestGitHubTokenInvokesGHWithGithubComHostname(t *testing.T) {
+	argvPath := setFakeGHCLIScript(t, fakeGHCLIOptions{
+		Stdout: "default-host-secret",
+	})
+	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "")
+
+	cfg := &Config{GitHubTokenEnv: "MIDDLEMAN_GITHUB_TOKEN"}
+	got := cfg.GitHubToken()
+	Assert.Equal(t, "default-host-secret", got)
+
+	argv := readFakeGHArgv(t, argvPath)
+	require.Len(t, argv, 1)
+	Assert.Equal(t, "auth token --hostname github.com", argv[0])
+}

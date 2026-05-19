@@ -970,10 +970,18 @@ func (c *Config) SyncDuration() time.Duration {
 }
 
 func (c *Config) GitHubToken() string {
+	return c.gitHubTokenForHost(platformpkg.DefaultGitHubHost)
+}
+
+// gitHubTokenForHost resolves a github token for a specific host. The
+// configured GitHubTokenEnv env var wins when non-empty, otherwise
+// the helper falls back to `gh auth token --hostname <host>`. Internal
+// callers go through GitHubToken() or TokenForPlatformHost.
+func (c *Config) gitHubTokenForHost(host string) string {
 	if token := os.Getenv(c.GitHubTokenEnv); token != "" {
 		return token
 	}
-	return ghAuthTokenForHost(platformpkg.DefaultGitHubHost)
+	return ghAuthTokenForHost(host)
 }
 
 func (c *Config) TokenForPlatformHost(platform, host, repoTokenEnv string) string {
@@ -1002,7 +1010,7 @@ func (c *Config) TokenForPlatformHost(platform, host, repoTokenEnv string) strin
 		return os.Getenv(defaultTokenEnv)
 	}
 	if p == defaultPlatform {
-		return c.GitHubToken()
+		return c.gitHubTokenForHost(h)
 	}
 	return ""
 }

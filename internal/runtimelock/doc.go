@@ -5,5 +5,3 @@
 // metadata file and unlocks. Read reports liveness via a try-and-release
 // probe of the same lock.
 package runtimelock
-
-import _ "github.com/gofrs/flock"

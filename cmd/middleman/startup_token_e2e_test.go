@@ -9,8 +9,6 @@ import (
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/wesm/middleman/internal/config"
-	"github.com/wesm/middleman/internal/db"
-	"github.com/wesm/middleman/internal/testutil/dbtest"
 )
 
 // TestCollectProviderTokensInvokesGHWithHostnameForEnterprise wires the
@@ -24,11 +22,6 @@ import (
 // would run it on startup.
 func TestCollectProviderTokensInvokesGHWithHostnameForEnterprise(t *testing.T) {
 	assert := Assert.New(t)
-
-	// Real SQLite-backed DB exists in the startup path; opening one
-	// here keeps the test honest about the dependency even though
-	// token resolution itself doesn't touch the database.
-	var _ *db.DB = dbtest.Open(t)
 
 	// Fake gh on PATH. Records argv (one invocation per line) and
 	// emits a host-scoped token on stdout.

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -23,6 +24,7 @@ import (
 	ghclient "github.com/wesm/middleman/internal/github"
 	"github.com/wesm/middleman/internal/platform"
 	"github.com/wesm/middleman/internal/ptyowner"
+	"github.com/wesm/middleman/internal/runtimelock"
 	"github.com/wesm/middleman/internal/server"
 	"github.com/wesm/middleman/internal/stacks"
 	"github.com/wesm/middleman/internal/web"
@@ -302,6 +304,26 @@ func run(configPath string) error {
 		)
 	}
 
+	lockHandle, err := runtimelock.Acquire(cfg.DataDir)
+	if err != nil {
+		var cerr *runtimelock.CollisionError
+		if errors.As(err, &cerr) {
+			runtimelock.FormatCollisionBanner(
+				os.Stderr, cerr, configPath, config.DefaultConfigPath(),
+			)
+			return fmt.Errorf(
+				"another middleman is already running on %s",
+				cfg.DataDir,
+			)
+		}
+		return fmt.Errorf("acquire runtime lock: %w", err)
+	}
+	defer func() {
+		if err := lockHandle.Release(); err != nil {
+			slog.Warn("release runtime lock", "err", err)
+		}
+	}()
+
 	database, err := db.Open(cfg.DBPath())
 	if err != nil {
 		return fmt.Errorf("open database: %w", err)
@@ -405,12 +427,21 @@ func run(configPath string) error {
 	srv.SetVersion(displayVersion)
 
 	addr := cfg.ListenAddr()
-	slog.Info(fmt.Sprintf("starting server at http://%s", addr))
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return fmt.Errorf("listen on %s: %w", addr, err)
+	}
+
+	if err := writeRuntimeMetadata(lockHandle, ln); err != nil {
+		slog.Warn("write runtime metadata", "err", err)
+	}
+
+	slog.Info(fmt.Sprintf("starting server at http://%s", ln.Addr().String()))
 
 	errCh := make(chan error, 1)
 	go func() {
-		if listenErr := srv.ListenAndServe(addr); !errors.Is(listenErr, http.ErrServerClosed) {
-			errCh <- listenErr
+		if serveErr := srv.Serve(ln); !errors.Is(serveErr, http.ErrServerClosed) {
+			errCh <- serveErr
 		}
 	}()
 
@@ -421,6 +452,26 @@ func run(configPath string) error {
 	case err := <-errCh:
 		return fmt.Errorf("server: %w", err)
 	}
+}
+
+// writeRuntimeMetadata snapshots the bound listener and process state
+// into the runtime metadata file. The recorded port comes from
+// ln.Addr() (not cfg.Port) so it matches the kernel-assigned value if
+// they ever diverge.
+func writeRuntimeMetadata(h *runtimelock.Handle, ln net.Listener) error {
+	tcpAddr, ok := ln.Addr().(*net.TCPAddr)
+	if !ok {
+		return fmt.Errorf("listener returned non-TCP address %T", ln.Addr())
+	}
+	return h.WriteMetadata(runtimelock.Metadata{
+		PID:        os.Getpid(),
+		Host:       tcpAddr.IP.String(),
+		Port:       tcpAddr.Port,
+		ListenAddr: ln.Addr().String(),
+		StartedAt:  time.Now().UTC().Format(time.RFC3339),
+		Version:    version,
+		Commit:     commit,
+	})
 }
 
 func resolveStartupRepos(

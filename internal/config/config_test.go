@@ -2256,6 +2256,9 @@ func TestGhAuthTokenForHostPassesHostnameFlag(t *testing.T) {
 }
 
 func TestGhAuthTokenForHostRetriesBareWhenOldGHRejectsHostnameFlag(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
 	dir := t.TempDir()
 	argvPath := filepath.Join(dir, "argv")
 	ghPath := filepath.Join(dir, "gh")
@@ -2273,17 +2276,17 @@ case "$*" in
 	;;
 esac
 `
-	require.NoError(t, os.WriteFile(ghPath, []byte(script), 0o755))
+	require.NoError(os.WriteFile(ghPath, []byte(script), 0o755))
 	t.Setenv("PATH", dir)
 	t.Setenv("FAKE_GH_ARGV", argvPath)
 
 	got := ghAuthTokenForHost("github.com")
-	Assert.Equal(t, "gh-secret-bare", got)
+	assert.Equal("gh-secret-bare", got)
 
 	argv := readFakeGHArgv(t, argvPath)
-	require.Len(t, argv, 2)
-	Assert.Equal(t, "auth token --hostname github.com", argv[0])
-	Assert.Equal(t, "auth token", argv[1])
+	require.Len(argv, 2)
+	assert.Equal("auth token --hostname github.com", argv[0])
+	assert.Equal("auth token", argv[1])
 }
 
 func TestGhAuthTokenForHostDoesNotRetryBareOnAuthFailure(t *testing.T) {
@@ -2301,6 +2304,9 @@ func TestGhAuthTokenForHostDoesNotRetryBareOnAuthFailure(t *testing.T) {
 }
 
 func TestGhAuthTokenForHostDoesNotRetryBareOnGHEFlagRejection(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
 	dir := t.TempDir()
 	argvPath := filepath.Join(dir, "argv")
 	ghPath := filepath.Join(dir, "gh")
@@ -2309,16 +2315,16 @@ printf '%s\n' "$*" >> "$FAKE_GH_ARGV"
 printf 'unknown flag: --hostname\n' 1>&2
 exit 2
 `
-	require.NoError(t, os.WriteFile(ghPath, []byte(script), 0o755))
+	require.NoError(os.WriteFile(ghPath, []byte(script), 0o755))
 	t.Setenv("PATH", dir)
 	t.Setenv("FAKE_GH_ARGV", argvPath)
 
 	got := ghAuthTokenForHost("ghe.example.com")
-	Assert.Empty(t, got)
+	assert.Empty(got)
 
 	argv := readFakeGHArgv(t, argvPath)
-	require.Len(t, argv, 1, "non-github.com host must not retry bare")
-	Assert.Equal(t, "auth token --hostname ghe.example.com", argv[0])
+	require.Len(argv, 1, "non-github.com host must not retry bare")
+	assert.Equal("auth token --hostname ghe.example.com", argv[0])
 }
 
 func TestGhAuthTokenForHostReturnsEmptyWhenBinaryMissing(t *testing.T) {

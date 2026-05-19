@@ -2412,3 +2412,32 @@ func (f *fakePtyOwnerClient) Snapshot(
 		Title:  f.SnapshotTitle,
 	}, nil
 }
+
+func TestWorkspaceBranchCandidatesDoesNotIncludeBareForSluggedWorkspace(t *testing.T) {
+	// Slug-style issue workspace whose bare-form branch name might
+	// be a user-owned local branch unrelated to middleman. Cleanup
+	// must return only the persisted GitHeadRef so the unrelated
+	// branch is not deleted.
+	assert := Assert.New(t)
+	ws := &Workspace{
+		ItemType:   db.WorkspaceItemTypeIssue,
+		ItemNumber: 10,
+		GitHeadRef: "middleman/issue-10-widget-rendering-broken",
+	}
+	got := workspaceBranchCandidates(ws, workspaceBranchUnknown)
+	assert.Equal([]string{"middleman/issue-10-widget-rendering-broken"}, got)
+}
+
+func TestWorkspaceBranchCandidatesUsesBareFallbackOnlyForLegacyWorkspace(t *testing.T) {
+	// Pre-feature issue workspaces have no recorded GitHeadRef.
+	// Cleanup must still find the bare middleman/issue-<n> branch
+	// those workspaces actually use.
+	assert := Assert.New(t)
+	ws := &Workspace{
+		ItemType:   db.WorkspaceItemTypeIssue,
+		ItemNumber: 10,
+		GitHeadRef: "",
+	}
+	got := workspaceBranchCandidates(ws, workspaceBranchUnknown)
+	assert.Equal([]string{"middleman/issue-10"}, got)
+}

@@ -1993,15 +1993,16 @@ func workspaceBranchCandidates(
 ) []string {
 	if managedBranch == workspaceBranchUnknown {
 		if ws.ItemType == db.WorkspaceItemTypeIssue {
-			// Prefer the persisted branch (which honors any title
-			// slug) but fall back to the bare middleman/issue-<n>
-			// form so cleanup still finds pre-slug branches if the
-			// workspace pre-dates this feature.
-			bare := issueWorkspaceBranch(ws.ItemNumber)
-			if ws.GitHeadRef != "" && ws.GitHeadRef != bare {
-				return []string{ws.GitHeadRef, bare}
+			// Trust the persisted branch. The bare-form fallback
+			// only applies when GitHeadRef is empty (pre-feature
+			// workspaces); a slug-style workspace's bare-form
+			// branch may be a user-owned local branch that
+			// middleman never created, so cleanup must not delete
+			// it as a candidate.
+			if ws.GitHeadRef != "" {
+				return []string{ws.GitHeadRef}
 			}
-			return []string{bare}
+			return []string{issueWorkspaceBranch(ws.ItemNumber)}
 		}
 		return []string{syntheticPRWorktreeBranch(ws.ItemNumber)}
 	}

@@ -172,7 +172,7 @@ the path where the test deliberately violates a precondition the generated
 client always satisfies. The accompanying comment names the reason in the
 test source.
 
-### 3. Branch-conflict 409 — converted from in-package to apitest/
+### 3. Branch-conflict 409 — converted from in-package to workspacetest/
 
 **Bug class:** structured error JSON shape drifts away from the published
 OpenAPI contract.
@@ -183,35 +183,33 @@ the local `doJSON` helper, decodes the response into an in-package
 `rawProblemDetail` struct, and accesses package-internal fixture helpers
 (`setupWorkspaceServerFixture`, `runGit`, `testGitSHA`).
 
-**Migration:** create a sibling in `internal/server/apitest/` that exercises
-the same endpoint and behavior through the generated client. The migration
-is not a transport change — both shapes go through `srv.ServeHTTP` via the
-recorder transport — but a package-boundary change:
+**Migration target:** `internal/server/workspacetest/`, which is already a
+black-box test package (`package workspacetest`) and already has an
+exported-API workspace fixture (its own `setupWorkspaceServerFixture` that
+spins up a real git remote and constructs `server.Server` plus the
+generated `apiclient.Client`). It is the natural home for migrated
+workspace-touching tests; `apitest/` does not have git fixtures and would
+require duplicating them.
 
-- The apitest/ version cannot import `package server`'s unexported helpers
-  or types. It must construct the server using only the exported API
-  (`server.New`, `server.NewWithConfig`, exported fixtures) and parse the
-  response through the generated client's `ErrorModel` (see
-  `internal/apiclient/generated/client.gen.go`, type `ErrorModel`).
+The migration is not a transport change — both shapes go through
+`srv.ServeHTTP` via the recorder transport — but a package-boundary
+change:
+
+- The workspacetest/ version cannot import `package server`'s unexported
+  helpers or types. It uses the package-local `setupWorkspaceServerFixture`
+  (which already lives in `internal/server/workspacetest/fixtures_test.go`)
+  and the generated `apiclient.Client` for the request.
 - The asserted fields are: status 409, the problem `type` URN, status,
   detail substring, and the two `errors[]` location / value pairs
   (`body.git_head_ref` and `body.suggested_git_head_ref`).
-- The reuse-branch happy-path follow-up (existing test's second
+- The response is parsed through the generated client's `ErrorModel` shape
+  (see `internal/apiclient/generated/client.gen.go`, type `ErrorModel`).
+- The reuse-branch happy-path follow-up (existing in-package test's second
   assertion) becomes a separate test in the migrated file to keep
   scope narrow.
 
-The original test stays in place. The point of the migration is to show
-the side-by-side shape, not to replace coverage.
-
-Note on git fixtures: the original in-package test sets up a real git
-remote via `setupWorkspaceServerFixture`, which depends on package-internal
-helpers. The migrated test reuses the same exported configuration paths
-(create a temp dir, write a config that points to the workspace clone,
-load via `config.Load`). If the workspace fixture is too tied to internal
-helpers to extract cleanly, the migration may instead exercise a narrower
-slice of the conflict case using a stubbed workspace error path. The
-implementation plan resolves which approach is feasible without growing
-scope.
+The original in-package test stays in place. The point of the migration is
+to show the side-by-side shape, not to replace coverage.
 
 ## Lint target
 
@@ -247,14 +245,15 @@ a future lint can be added when there is measurable churn around the rule.
   pin paving test.
 - `internal/server/apitest/mutation_guard_test.go` — new file, 415
   mutation-guard paving test.
-- `internal/server/apitest/issue_workspace_conflict_test.go` — new file,
-  migrated branch-conflict example.
+- `internal/server/workspacetest/issue_workspace_conflict_test.go` — new
+  file, migrated branch-conflict example.
 
-If a `mockGH` or fixture helper is missing in apitest/ relative to what
-the migration needs, extend the existing `apitest/fixtures_test.go`
-minimally. Do not introduce a parallel set of mocks; reuse what
-`internal/server/apitest/fixtures_test.go` and the workspace fixture
-exports already provide.
+If a `mockGH` or fixture helper is missing in the chosen test package
+relative to what a new test needs, extend the existing
+`fixtures_test.go` in that package minimally. Do not introduce a parallel
+set of mocks; reuse what `internal/server/apitest/fixtures_test.go`,
+`internal/server/e2etest/fixtures_test.go`, and
+`internal/server/workspacetest/fixtures_test.go` already provide.
 
 ## Acceptance criteria
 
@@ -262,6 +261,11 @@ exports already provide.
   the two transports, the cultural rule, the fault-injection exception,
   and the bug-class table.
 - `CLAUDE.md` has one new bullet under Testing linking to the section.
-- The two paving tests pass under `make test` and `make test-short`.
-- The migrated test passes alongside (not replacing) the original.
+- The two paving tests pass under `make test`. The mutation-guard test in
+  apitest/ also passes under `make test-short`. The SSE contract test in
+  e2etest/ follows whatever the existing e2etest/ short-skip behavior is
+  for that package (do not introduce a new short-mode skip in the test).
+- The migrated branch-conflict test passes under `make test` (workspacetest
+  already skips itself under `-short`; the new test inherits that skip).
+  The original in-package test continues to pass unchanged.
 - `make vet` and `make lint` are clean.

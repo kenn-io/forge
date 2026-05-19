@@ -10,7 +10,7 @@ The middleman backend registers most routes through Huma's shorthand convenience
 
 - Verbose, path-derived `OperationID` values (e.g., `GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberCommits`) that surface in the generated Go API client as method names. These can shift when paths change and are unpleasant to type and read.
 - Auto-generated `Summary` strings that read like sentences scraped from the route pattern ("Get pulls by provider by owner by name by number"), not what the operation actually does.
-- No `Tags`, so Swagger UI renders the entire API as one flat alphabetical pile with no grouping.
+- No `Tags`, so middleman's API docs UI (Huma serves Stoplight Elements at `/docs` by default) renders the entire API as one flat alphabetical pile with no grouping.
 
 middleman already has an AST-level guardrail at `internal/server/route_registration_test.go:16` that blocks raw `http.ServeMux.Handle` registrations on `/api/...` paths. The metadata equivalent is missing: nothing prevents a maintainer from adding a new `huma.Get` shorthand without metadata. This design adds that guardrail at the live-OpenAPI level and backfills the existing routes to satisfy it.
 
@@ -26,9 +26,9 @@ In scope:
 Out of scope:
 
 - Health endpoints (`/healthz`, `/livez`) — registered on a separate Huma API with OpenAPI/docs output disabled. They never appear in `/api/v1/openapi.json` and need no taxonomy decisions.
-- Hidden operations — terminal WebSocket upgrades and the roborev proxy. Hidden ops never enter the OpenAPI document (`internal/server/huma_routes.go` and the Huma runtime both honor `Hidden=true`), so the test naturally excludes them.
+- Hidden operations — terminal WebSocket upgrades and the roborev proxy. They are registered through `api.Adapter().Handle` rather than `huma.Register`, so they never call `oapi.AddOperation` and never enter `api.OpenAPI().Paths` regardless of the `Hidden=true` flag. The test walks `Paths` and naturally excludes them.
 - A route-inventory-from-markdown pattern. middleman has high route churn and the maintenance burden of a separate inventory exceeds its value.
-- Renaming the existing already-explicit `OperationID` values that already match the convention. Where an existing ID conflicts with the new convention or duplicates another, this design renames it; otherwise it stays.
+- Bulk renaming of already-conforming explicit `OperationID` values. Where an existing ID conflicts with the new convention or duplicates another after backfill, this design renames it; otherwise it stays.
 - Frontend changes. The TypeScript schema regenerates, but no frontend code is touched in this design.
 
 ## Design
@@ -46,7 +46,7 @@ Each non-Hidden operation is tagged with exactly one tag from this set:
 - `Stacks` — `list-stacks`.
 - `Workspaces` — workspace lifecycle and runtime operations.
 - `Projects` — project + worktree registration and listing, plus `list-launch-targets`.
-- `Roborev` — `get-roborev-status` only. The proxy operations are Hidden.
+- `Roborev` — `get-roborev-status` only. The roborev proxy operations live on a different `huma.API` instance entirely and never reach the `/api/v1/openapi.json` document.
 - `System` — `/version` and `/events` (SSE). Catch-all for cross-domain server-info endpoints.
 
 Each route gets exactly one tag. Host-prefixed variants get the same tag as their non-host counterpart, because the `host/{platform_host}/` prefix is a URL routing concern, not a semantic one.
@@ -68,9 +68,9 @@ Examples:
 - `Get sync status`
 - `Connect workspace terminal` — only if a Hidden route is later un-hidden; Hidden ops do not need a Summary today.
 
-This matches the OpenAPI convention used by Stripe, GitHub, and Linear, and matches Huma's own `GenerateSummary` shape so the diff against the auto-generated values is small. The same resource verbiage is used in both the Summary and the OperationID, varying only by separator and capitalization.
+Imperative-mood summaries are the OpenAPI convention used by Stripe, GitHub, and Linear. The same resource verbiage is used in both the Summary and the OperationID, varying only by separator and capitalization, so a maintainer who writes one almost has the other.
 
-Host-prefixed and non-host variants share the same Summary. They're the same operation; the path difference is a routing concern. Differentiating them in the Summary would read like duplication noise in Swagger UI.
+Host-prefixed and non-host variants share the same Summary. They're the same operation; the path difference is a routing concern. Differentiating them in the Summary would read like duplication noise in the docs UI.
 
 ### OperationID convention
 
@@ -101,21 +101,22 @@ This avoids `comment`-only or `label`-only IDs that could collide once new resou
 
 ### Test design
 
-The test lives in `internal/server/` (suggested filename `route_metadata_test.go`, suggested function name `TestHumaContractMetadata`). It does not need a database, mock GitHub client, or a running server: it constructs the OpenAPI document with `server.NewOpenAPI()`, which is already used by `cmd/middleman-openapi/main.go`.
+The test lives in `internal/server/` (suggested filename `route_metadata_test.go`, suggested function name `TestHumaContractMetadata`). It constructs the OpenAPI document with `server.NewOpenAPI()` — the same call `cmd/middleman-openapi/main.go` uses to write the checked-in `frontend/openapi/openapi.yaml` — so the test asserts against the exact same document the generated clients are built from. It needs no database, mock GitHub client, or running server because `NewOpenAPI` builds against a fresh `*Server{}`.
 
 Procedure:
 
-1. Build the document: `openAPI := server.NewOpenAPI()`. This calls `s.registerAPI(api)` on a fresh `*Server{}` and returns `api.OpenAPI()`.
-2. Walk `openAPI.Paths`. For each `(path, *huma.PathItem)`, walk each non-nil HTTP-method operation pointer (`Get`, `Put`, `Post`, `Delete`, `Options`, `Head`, `Patch`, `Trace`).
-3. For each `*huma.Operation` found:
-   - Assert `strings.TrimSpace(op.Summary) != ""`.
-   - Assert `op.Metadata["_convenience_summary"] == nil`. This is what catches auto-generated values that happen to be non-empty.
-   - Assert `strings.TrimSpace(op.OperationID) != ""` and `op.Metadata["_convenience_id"] == nil`.
-   - Assert `len(op.Tags) >= 1` and each entry is a non-empty trimmed string.
-   - Record `op.OperationID -> "METHOD PATH"` in a `map[string]string`. If the key already exists, record the collision.
-4. After the walk, collect failures into a slice and call `assert.Empty` on it. The failure message lists every failing route as `METHOD PATH: <issue>` so a maintainer who breaks the test sees exactly which route to fix and why (`missing Summary`, `auto-generated OperationID`, `missing Tags`, `duplicate OperationID with METHOD PATH`).
+- Build the document. `openAPI := server.NewOpenAPI()` calls `s.registerAPI(api)` on a fresh `*Server{}` and returns `api.OpenAPI()`.
+- Walk `openAPI.Paths`. For each `(path, *huma.PathItem)`, walk each non-nil HTTP-method operation pointer (`Get`, `Put`, `Post`, `Delete`, `Options`, `Head`, `Patch`, `Trace`).
+- For each `*huma.Operation` found, append one entry to a `failures []string` slice for every check that does not pass:
+  - `strings.TrimSpace(op.Summary) == ""` → `METHOD PATH: missing Summary`.
+  - `op.Metadata["_convenience_summary"] != nil` → `METHOD PATH: auto-generated Summary`. This is what catches auto-generated values that happen to be non-empty.
+  - `strings.TrimSpace(op.OperationID) == ""` → `METHOD PATH: missing OperationID`.
+  - `op.Metadata["_convenience_id"] != nil` → `METHOD PATH: auto-generated OperationID`.
+  - `len(op.Tags) < 1` or any entry is an empty trimmed string → `METHOD PATH: missing Tags`.
+  - The OperationID already appears in a `seen map[string]string` populated by prior iterations → `METHOD PATH: duplicate OperationID with METHOD PATH` (the prior entry).
+- After the walk, call `assert.Empty(t, failures, strings.Join(failures, "\n"))` once. This surfaces every offending route in one failed assertion so a maintainer who breaks the test sees exactly which routes to fix and why.
 
-The test uses testify (`require` for the document build; `assert` plus a local `assert := assert.New(t)` helper for per-route checks so multiple failures surface in one run).
+The test uses testify (`require` for the document build; `assert.Empty` on the final `failures` slice). It does not run per-route assertions — collecting into the slice lets one test invocation report every offender at once rather than aborting on the first.
 
 A negative-case smoke test in the same file verifies the assertion has teeth: it constructs a tiny in-process `huma.API` with one route registered via `huma.Get` and no metadata, walks it with the same helper used by the production test, and asserts the helper returns at least one failure. This guards against the test becoming a no-op if Huma changes how it marks auto-generated values.
 
@@ -169,13 +170,13 @@ The plan runs `make api-generate` once after the source backfill is complete and
 - `internal/apiclient/generated/client.gen.go` — regenerated, checked in.
 - `packages/ui/src/api/generated/schema.ts` — regenerated, checked in.
 
-Roughly 130 routes in total are backfilled (~100 reachable through `registerAPI`/`registerProviderRepoAPI` plus ~10 under `registerSettingsAPI`, with host-variant doubling on most repo-scoped routes).
+On the order of a hundred routes are backfilled, split between `registerAPI`/`registerProviderRepoAPI` in `huma_routes.go` and `registerSettingsAPI` in `settings_routes.go`. Most repo-scoped routes are duplicated as host-prefixed variants and contribute two entries each.
 
 ## Risks
 
 - **Diff size.** The regenerated `client.gen.go` and `schema.ts` will be large because every operation's generated method/type name changes. Reviewer load is mitigated by committing the source changes in one logical commit and the regeneration in a second commit so the human-edited and machine-emitted changes can be reviewed separately.
 - **OperationID collisions.** Renaming an existing explicit OperationID can collide with another route in the same document. The test catches this, but it surfaces only after the change. Mitigation: the plan introduces the helper + the new OperationID in small batches per file (`huma_routes.go` first, then `settings_routes.go`) and runs the test after each batch.
-- **Hidden marker false negatives.** If a future maintainer adds a route via `api.Adapter().Handle` without setting `Hidden=true` and without going through `huma.Register`, the operation might bypass the OpenAPI document entirely (`api.OpenAPI().Paths` won't see it) and the test won't notice. This is the same gap the existing AST-level guardrail addresses (it blocks raw mux registrations); the AST test continues to cover it. No new mitigation needed.
+- **Adapter().Handle bypass.** Routes registered through `api.Adapter().Handle(op, handler)` never reach `huma.Register`, which means they never call `oapi.AddOperation` and never enter `api.OpenAPI().Paths` regardless of whether `Hidden=true` is set. The test will not see them. middleman uses this path today for the terminal upgrades and the roborev proxy, all of which are intentional. The risk is a future maintainer adding a public route via Adapter().Handle and expecting the test to police it. Mitigation: the existing AST-level guardrail (`route_registration_test.go`) already blocks raw mux registrations; the metadata test does not extend to Adapter().Handle, and that's an explicit limitation. Adding an AST check for Adapter().Handle public routes is a separate follow-up if it becomes a real problem.
 - **Huma internals shift.** If Huma changes the `Metadata["_convenience_*"]` marker key or removes it entirely, the test loses its primary signal for distinguishing auto-generated values. The negative-case smoke test catches this on the next Huma upgrade. If the marker disappears, the test falls back to checking `op.Summary != huma.GenerateSummary(method, path, response)`, but that path is not implemented in v1 because the marker is the cleaner signal.
 
 ## Open questions

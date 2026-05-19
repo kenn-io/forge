@@ -392,3 +392,288 @@ func TestSSE_TerminatesOnMidStreamDeadlineFailure(t *testing.T) {
 	// Deadline failed before event write — body must be empty
 	assert.Empty(t, rec.Body.String(), "no output should be written after deadline failure")
 }
+
+// sseFrame is the parsed form of one id:/event:/data: SSE record.
+type sseFrame struct {
+	ID    string
+	Event string
+	Data  string
+}
+
+// readSSEFrame reads from r until it has one complete frame (terminated
+// by a blank line) or the timeout fires. Returns the frame, or fails
+// the test if no frame arrives in time.
+func readSSEFrame(t *testing.T, scanner *bufio.Scanner) sseFrame {
+	t.Helper()
+	var f sseFrame
+	for scanner.Scan() {
+		line := scanner.Text()
+		switch {
+		case strings.HasPrefix(line, "id: "):
+			f.ID = strings.TrimPrefix(line, "id: ")
+		case strings.HasPrefix(line, "event: "):
+			f.Event = strings.TrimPrefix(line, "event: ")
+		case strings.HasPrefix(line, "data: "):
+			f.Data = strings.TrimPrefix(line, "data: ")
+		case line == "":
+			if f.Event != "" {
+				return f
+			}
+		}
+	}
+	require.FailNow(t, "scanner ended before a complete frame")
+	return f
+}
+
+func TestSSE_FrameIncludesID(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	s := newTestServer(t)
+	ts := httptest.NewServer(s)
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/api/v1/events")
+	require.NoError(err)
+	defer resp.Body.Close()
+
+	require.Eventually(func() bool {
+		s.hub.mu.Lock()
+		defer s.hub.mu.Unlock()
+		return len(s.hub.subscribers) == 1
+	}, 2*time.Second, 10*time.Millisecond)
+
+	gotID := s.hub.Broadcast(Event{Type: "data_changed", Data: map[string]string{"k": "v"}})
+
+	scanner := bufio.NewScanner(resp.Body)
+	f := readSSEFrame(t, scanner)
+	assert.Equal("data_changed", f.Event)
+	assert.JSONEq(`{"k":"v"}`, f.Data)
+	assert.Equal("1", f.ID)
+	assert.Equal(uint64(1), gotID, "Broadcast should return the assigned id")
+}
+
+func TestSSE_LastEventIDHeaderReplaysMissedEvents(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	s := newTestServer(t)
+	// Prime the ring with three events the client supposedly saw.
+	for i := 1; i <= 3; i++ {
+		s.hub.Broadcast(Event{Type: "data_changed", Data: i})
+	}
+	ts := httptest.NewServer(s)
+	defer ts.Close()
+
+	req, err := http.NewRequestWithContext(
+		t.Context(), http.MethodGet, ts.URL+"/api/v1/events", nil,
+	)
+	require.NoError(err)
+	req.Header.Set("Last-Event-ID", "1")
+	resp, err := ts.Client().Do(req)
+	require.NoError(err)
+	defer resp.Body.Close()
+
+	scanner := bufio.NewScanner(resp.Body)
+	f2 := readSSEFrame(t, scanner)
+	f3 := readSSEFrame(t, scanner)
+	assert.Equal("2", f2.ID)
+	assert.Equal("3", f3.ID)
+	assert.Equal("data_changed", f2.Event)
+	assert.Equal("data_changed", f3.Event)
+}
+
+func TestSSE_SinceQueryReplaysMissedEvents(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	s := newTestServer(t)
+	for i := 1; i <= 3; i++ {
+		s.hub.Broadcast(Event{Type: "data_changed", Data: i})
+	}
+	ts := httptest.NewServer(s)
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/api/v1/events?since=2")
+	require.NoError(err)
+	defer resp.Body.Close()
+
+	scanner := bufio.NewScanner(resp.Body)
+	f := readSSEFrame(t, scanner)
+	assert.Equal("3", f.ID)
+	assert.Equal("data_changed", f.Event)
+}
+
+func TestSSE_LastEventIDHeaderOverridesSinceQuery(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	s := newTestServer(t)
+	for i := 1; i <= 5; i++ {
+		s.hub.Broadcast(Event{Type: "data_changed", Data: i})
+	}
+	ts := httptest.NewServer(s)
+	defer ts.Close()
+
+	req, err := http.NewRequestWithContext(
+		t.Context(), http.MethodGet, ts.URL+"/api/v1/events?since=1", nil,
+	)
+	require.NoError(err)
+	req.Header.Set("Last-Event-ID", "4")
+	resp, err := ts.Client().Do(req)
+	require.NoError(err)
+	defer resp.Body.Close()
+
+	scanner := bufio.NewScanner(resp.Body)
+	f := readSSEFrame(t, scanner)
+	// Header wins, only id=5 replays.
+	assert.Equal("5", f.ID)
+}
+
+func TestSSE_StaleCursorEmitsReconnectStale(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	database := openTestDB(t)
+	s := newServerWithHub(t, database, NewEventHubWithCapacity(4))
+	ts := httptest.NewServer(s)
+	defer ts.Close()
+
+	// Fill past capacity so cursor 2 falls out of the ring.
+	for i := 1; i <= 10; i++ {
+		s.hub.Broadcast(Event{Type: "data_changed", Data: i})
+	}
+
+	req, err := http.NewRequestWithContext(
+		t.Context(), http.MethodGet, ts.URL+"/api/v1/events", nil,
+	)
+	require.NoError(err)
+	req.Header.Set("Last-Event-ID", "2")
+	resp, err := ts.Client().Do(req)
+	require.NoError(err)
+	defer resp.Body.Close()
+
+	scanner := bufio.NewScanner(resp.Body)
+	f := readSSEFrame(t, scanner)
+	assert.Equal("reconnect.stale", f.Event)
+	assert.Equal("11", f.ID, "synthetic id should follow last broadcast id")
+
+	// And a new broadcast continues from id 12.
+	require.Eventually(func() bool {
+		s.hub.mu.Lock()
+		defer s.hub.mu.Unlock()
+		return len(s.hub.subscribers) == 1
+	}, 2*time.Second, 10*time.Millisecond)
+	s.hub.Broadcast(Event{Type: "data_changed", Data: "post-stale"})
+	live := readSSEFrame(t, scanner)
+	assert.Equal("12", live.ID)
+}
+
+func TestSSE_InvalidCursorTreatedAsNoCursor(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	s := newTestServer(t)
+	// Cache a sync_status the no-cursor path delivers on subscribe.
+	s.hub.Broadcast(Event{Type: "sync_status", Data: map[string]bool{"running": false}})
+
+	ts := httptest.NewServer(s)
+	defer ts.Close()
+
+	req, err := http.NewRequestWithContext(
+		t.Context(), http.MethodGet, ts.URL+"/api/v1/events", nil,
+	)
+	require.NoError(err)
+	req.Header.Set("Last-Event-ID", "not-a-number")
+	resp, err := ts.Client().Do(req)
+	require.NoError(err)
+	defer resp.Body.Close()
+
+	scanner := bufio.NewScanner(resp.Body)
+	f := readSSEFrame(t, scanner)
+	assert.Equal("sync_status", f.Event,
+		"unparsable cursor falls back to no-cursor + cached delivery")
+}
+
+func TestSSE_CursorAtHeadReplaysNothing(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	s := newTestServer(t)
+	for i := 1; i <= 3; i++ {
+		s.hub.Broadcast(Event{Type: "data_changed", Data: i})
+	}
+	ts := httptest.NewServer(s)
+	defer ts.Close()
+
+	req, err := http.NewRequestWithContext(
+		t.Context(), http.MethodGet, ts.URL+"/api/v1/events", nil,
+	)
+	require.NoError(err)
+	req.Header.Set("Last-Event-ID", "3")
+	resp, err := ts.Client().Do(req)
+	require.NoError(err)
+	defer resp.Body.Close()
+
+	// Wait for subscribe so the broadcast below isn't dropped.
+	require.Eventually(func() bool {
+		s.hub.mu.Lock()
+		defer s.hub.mu.Unlock()
+		return len(s.hub.subscribers) == 1
+	}, 2*time.Second, 10*time.Millisecond)
+
+	id := s.hub.Broadcast(Event{Type: "data_changed", Data: "future"})
+
+	scanner := bufio.NewScanner(resp.Body)
+	f := readSSEFrame(t, scanner)
+	assert.Equal("4", f.ID)
+	assert.Equal(uint64(4), id)
+}
+
+func TestParseLastEventID_HeaderWins(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "/api/v1/events?since=42", nil)
+	r.Header.Set("Last-Event-ID", "99")
+	got, ok := parseLastEventID(r)
+	assert.True(t, ok)
+	assert.Equal(t, uint64(99), got)
+}
+
+func TestParseLastEventID_FallsBackToQuery(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "/api/v1/events?since=42", nil)
+	got, ok := parseLastEventID(r)
+	assert.True(t, ok)
+	assert.Equal(t, uint64(42), got)
+}
+
+func TestParseLastEventID_AbsentMeansNoCursor(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "/api/v1/events", nil)
+	_, ok := parseLastEventID(r)
+	assert.False(t, ok)
+}
+
+func TestParseLastEventID_InvalidHeaderFallsBackToQuery(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "/api/v1/events?since=7", nil)
+	r.Header.Set("Last-Event-ID", "garbage")
+	got, ok := parseLastEventID(r)
+	assert.True(t, ok)
+	assert.Equal(t, uint64(7), got)
+}
+
+func TestParseLastEventID_AllUnparsableMeansNoCursor(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "/api/v1/events?since=abc", nil)
+	r.Header.Set("Last-Event-ID", "xyz")
+	_, ok := parseLastEventID(r)
+	assert.False(t, ok)
+}
+
+// newServerWithHub builds a Server bypassing newServer's
+// NewEventHub allocation, useful for tests that need a non-default
+// ring capacity.
+func newServerWithHub(t *testing.T, database *db.DB, hub *EventHub) *Server {
+	t.Helper()
+	s := New(database, nil, nil, "/", nil, ServerOptions{})
+	// Replace the hub atomically before any subscribers exist.
+	s.hub.Close()
+	s.hub = hub
+	return s
+}

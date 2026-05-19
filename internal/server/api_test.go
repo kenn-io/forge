@@ -16904,7 +16904,7 @@ func TestWorkspaceMonitorPassBroadcastsInvalidationEvents(t *testing.T) {
 	ctx := t.Context()
 
 	fixture, created := prepareIssueWorkspaceAssociationFixture(t)
-	ch, _ := fixture.server.Hub().Subscribe(ctx)
+	ch, _ := fixture.server.Hub().Subscribe(ctx, true)
 
 	fixture.server.runWorkspacePRMonitorPass(ctx)
 
@@ -16923,16 +16923,16 @@ func TestWorkspaceMonitorPassBroadcastsInvalidationEvents(t *testing.T) {
 
 func readEventMatching(
 	t *testing.T,
-	ch <-chan Event,
+	ch <-chan RecordedEvent,
 	matches func(Event) bool,
 ) Event {
 	t.Helper()
 	timeout := time.After(2 * time.Second)
 	for {
 		select {
-		case ev := <-ch:
-			if matches(ev) {
-				return ev
+		case rec := <-ch:
+			if matches(rec.Event) {
+				return rec.Event
 			}
 		case <-timeout:
 			require.FailNow(t, "timed out waiting for matching event")

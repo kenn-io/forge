@@ -1,10 +1,13 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -31,10 +34,102 @@ func roundTripConfigString(t *testing.T, content string) (*Config, *Config) {
 
 func setFakeGHCLI(t *testing.T, stdout string) {
 	t.Helper()
+	setFakeGHCLIScript(t, fakeGHCLIOptions{Stdout: stdout})
+}
+
+type fakeGHCLIOptions struct {
+	// Stdout is echoed verbatim on success.
+	Stdout string
+	// Stderr is echoed to stderr regardless of exit code.
+	Stderr string
+	// ExitCode is the exit status of the fake gh. Default 0.
+	ExitCode int
+	// SleepSeconds, if >0, makes the fake sleep before exiting.
+	SleepSeconds int
+}
+
+// setFakeGHCLIScript writes a fake `gh` to a temp dir and points PATH
+// at it. The fake records its argv to <tempdir>/argv (one entry per
+// invocation, newline-separated), then emits stdout/stderr/exit per
+// opts. The argv-file path is returned and also exported via
+// FAKE_GH_ARGV so the script can locate it.
+//
+// To keep PATH minimal (the fake gh should be the only resolvable
+// `gh`), the helper embeds absolute paths for any external tools the
+// script needs — currently just `sleep` when SleepSeconds > 0.
+func setFakeGHCLIScript(t *testing.T, opts fakeGHCLIOptions) string {
+	t.Helper()
 	dir := t.TempDir()
+	argvPath := filepath.Join(dir, "argv")
 	ghPath := filepath.Join(dir, "gh")
-	require.NoError(t, os.WriteFile(ghPath, []byte("#!/bin/sh\necho "+stdout+"\n"), 0o755))
+	script := "#!/bin/sh\n"
+	script += "printf '%s\\n' \"$*\" >> \"$FAKE_GH_ARGV\"\n"
+	if opts.SleepSeconds > 0 {
+		// exec replaces the shell so there's no orphaned child
+		// holding stdout open after the parent gets SIGKILL'd by
+		// CommandContext; without exec, cmd.Output() blocks for
+		// the full sleep duration even after the shell is dead.
+		// SleepSeconds is therefore terminal in the script: any
+		// stderr/stdout/exit configured below is unreachable when
+		// SleepSeconds > 0, by design (the test stops the helper
+		// via context timeout, not by letting the fake finish).
+		sleepBin := resolveSleepBinary(t)
+		script += fmt.Sprintf("exec %s %d\n", sleepBin, opts.SleepSeconds)
+	}
+	if opts.Stderr != "" {
+		script += "printf '%s\\n' " + shellSingleQuote(opts.Stderr) + " 1>&2\n"
+	}
+	if opts.Stdout != "" {
+		script += "printf '%s\\n' " + shellSingleQuote(opts.Stdout) + "\n"
+	}
+	script += fmt.Sprintf("exit %d\n", opts.ExitCode)
+	require.NoError(t, os.WriteFile(ghPath, []byte(script), 0o755))
 	t.Setenv("PATH", dir)
+	t.Setenv("FAKE_GH_ARGV", argvPath)
+	return argvPath
+}
+
+// resolveSleepBinary returns an absolute path to a `sleep` binary,
+// looked up under the test's original PATH before we replaced it with
+// the fake-gh dir. Tests that need sleep inline it as an absolute path
+// so the fake-gh script does not depend on the runtime PATH.
+func resolveSleepBinary(t *testing.T) string {
+	t.Helper()
+	for _, dir := range filepath.SplitList(originalTestPATH) {
+		candidate := filepath.Join(dir, "sleep")
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+			return candidate
+		}
+	}
+	require.FailNow(t, fmt.Sprintf("sleep binary not found on PATH %q", originalTestPATH))
+	return ""
+}
+
+// originalTestPATH captures the test process's PATH at package init,
+// before any test mutates it via t.Setenv. Used to locate external
+// utilities the fake-gh script needs.
+var originalTestPATH = os.Getenv("PATH")
+
+// shellSingleQuote escapes s for safe inclusion inside single quotes
+// in a /bin/sh script.
+func shellSingleQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
+}
+
+// readFakeGHArgv returns the recorded argv strings, one per
+// invocation, in call order. Returns nil when no calls were made.
+func readFakeGHArgv(t *testing.T, path string) []string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	require.NoError(t, err)
+	raw := strings.TrimRight(string(data), "\n")
+	if raw == "" {
+		return nil
+	}
+	return strings.Split(raw, "\n")
 }
 
 func TestLoadValid(t *testing.T) {
@@ -2144,5 +2239,108 @@ func TestTokenEnvNamesIncludesFallbackProviderDefaultsForRepoTokenEnv(t *testing
 			"REPO_GITEA_TOKEN",
 		},
 		cfg.TokenEnvNames(),
+	)
+}
+
+func TestGhAuthTokenForHostPassesHostnameFlag(t *testing.T) {
+	argvPath := setFakeGHCLIScript(t, fakeGHCLIOptions{
+		Stdout: "gh-secret-github",
+	})
+
+	got := ghAuthTokenForHost("github.com")
+	Assert.Equal(t, "gh-secret-github", got)
+
+	argv := readFakeGHArgv(t, argvPath)
+	require.Len(t, argv, 1)
+	Assert.Equal(t, "auth token --hostname github.com", argv[0])
+}
+
+func TestGhAuthTokenForHostRetriesBareWhenOldGHRejectsHostnameFlag(t *testing.T) {
+	dir := t.TempDir()
+	argvPath := filepath.Join(dir, "argv")
+	ghPath := filepath.Join(dir, "gh")
+	// Older gh rejects --hostname; bare succeeds.
+	script := `#!/bin/sh
+printf '%s\n' "$*" >> "$FAKE_GH_ARGV"
+case "$*" in
+*--hostname*)
+	printf 'unknown flag: --hostname\n' 1>&2
+	exit 2
+	;;
+*)
+	printf 'gh-secret-bare\n'
+	exit 0
+	;;
+esac
+`
+	require.NoError(t, os.WriteFile(ghPath, []byte(script), 0o755))
+	t.Setenv("PATH", dir)
+	t.Setenv("FAKE_GH_ARGV", argvPath)
+
+	got := ghAuthTokenForHost("github.com")
+	Assert.Equal(t, "gh-secret-bare", got)
+
+	argv := readFakeGHArgv(t, argvPath)
+	require.Len(t, argv, 2)
+	Assert.Equal(t, "auth token --hostname github.com", argv[0])
+	Assert.Equal(t, "auth token", argv[1])
+}
+
+func TestGhAuthTokenForHostDoesNotRetryBareOnAuthFailure(t *testing.T) {
+	argvPath := setFakeGHCLIScript(t, fakeGHCLIOptions{
+		Stderr:   "no oauth token",
+		ExitCode: 1,
+	})
+
+	got := ghAuthTokenForHost("github.com")
+	Assert.Empty(t, got)
+
+	argv := readFakeGHArgv(t, argvPath)
+	require.Len(t, argv, 1, "should not retry bare on non-flag-rejection failure")
+	Assert.Equal(t, "auth token --hostname github.com", argv[0])
+}
+
+func TestGhAuthTokenForHostDoesNotRetryBareOnGHEFlagRejection(t *testing.T) {
+	dir := t.TempDir()
+	argvPath := filepath.Join(dir, "argv")
+	ghPath := filepath.Join(dir, "gh")
+	script := `#!/bin/sh
+printf '%s\n' "$*" >> "$FAKE_GH_ARGV"
+printf 'unknown flag: --hostname\n' 1>&2
+exit 2
+`
+	require.NoError(t, os.WriteFile(ghPath, []byte(script), 0o755))
+	t.Setenv("PATH", dir)
+	t.Setenv("FAKE_GH_ARGV", argvPath)
+
+	got := ghAuthTokenForHost("ghe.example.com")
+	Assert.Empty(t, got)
+
+	argv := readFakeGHArgv(t, argvPath)
+	require.Len(t, argv, 1, "non-github.com host must not retry bare")
+	Assert.Equal(t, "auth token --hostname ghe.example.com", argv[0])
+}
+
+func TestGhAuthTokenForHostReturnsEmptyWhenBinaryMissing(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	Assert.Empty(t, ghAuthTokenForHost("github.com"))
+}
+
+func TestGhAuthTokenForHostTimesOut(t *testing.T) {
+	// Fake gh sleeps longer than the timeout, so the helper must
+	// return "" once the context expires.
+	setFakeGHCLIScript(t, fakeGHCLIOptions{
+		Stdout:       "never-reached",
+		SleepSeconds: 10,
+	})
+
+	start := time.Now()
+	got := ghAuthTokenForHost("github.com")
+	elapsed := time.Since(start)
+
+	Assert.Empty(t, got)
+	Assert.Less(
+		t, elapsed, ghAuthExecTimeout+2*time.Second,
+		"helper should return shortly after timeout, took %s", elapsed,
 	)
 }

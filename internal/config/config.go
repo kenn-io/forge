@@ -973,7 +973,7 @@ func (c *Config) GitHubToken() string {
 	if token := os.Getenv(c.GitHubTokenEnv); token != "" {
 		return token
 	}
-	return ghAuthToken()
+	return ghAuthTokenForHost(platformpkg.DefaultGitHubHost)
 }
 
 func (c *Config) TokenForPlatformHost(platform, host, repoTokenEnv string) string {
@@ -1090,12 +1090,60 @@ func appendTokenEnvName(names []string, name string) []string {
 
 var execCommand = exec.CommandContext
 
-func ghAuthToken() string {
-	out, err := execCommand(context.Background(), "gh", "auth", "token").Output()
-	if err != nil {
-		return ""
+// ghAuthExecTimeout bounds each gh subprocess invocation. gh auth
+// token is a local lookup and returns in milliseconds; 5s is generous
+// and prevents a hung gh from stalling startup.
+const ghAuthExecTimeout = 5 * time.Second
+
+// ghAuthTokenForHost returns the token gh has stored for host, or "".
+// Older gh versions that do not recognize --hostname trigger a fallback
+// to bare `gh auth token` only when host is the default github.com.
+// Any other host returns empty without retry so the caller surfaces a
+// missing-token error rather than the wrong host's token.
+func ghAuthTokenForHost(host string) string {
+	ctx, cancel := context.WithTimeout(context.Background(), ghAuthExecTimeout)
+	defer cancel()
+
+	out, stderr, err := runGHAuthToken(ctx, "--hostname", host)
+	if err == nil {
+		return strings.TrimSpace(string(out))
 	}
-	return strings.TrimSpace(string(out))
+	if host == platformpkg.DefaultGitHubHost &&
+		isUnsupportedHostnameFlag(err, stderr) {
+		out, _, err = runGHAuthToken(ctx)
+		if err == nil {
+			return strings.TrimSpace(string(out))
+		}
+	}
+	return ""
+}
+
+// runGHAuthToken invokes `gh auth token` with the given extra args
+// under ctx. stderr is captured explicitly so the caller can inspect
+// the rejection text from older gh versions (cmd.Output() only fills
+// *ExitError.Stderr when cmd.Stderr is unset).
+func runGHAuthToken(ctx context.Context, extraArgs ...string) ([]byte, []byte, error) {
+	args := append([]string{"auth", "token"}, extraArgs...)
+	cmd := execCommand(ctx, "gh", args...)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	return out, stderr.Bytes(), err
+}
+
+// isUnsupportedHostnameFlag reports whether the gh invocation failed
+// specifically because the installed gh does not recognize the
+// --hostname flag (cobra/pflag rejection text). Missing-binary,
+// context-deadline, auth-failure, and unrelated nonzero exits all
+// return false so the caller does not retry bare.
+func isUnsupportedHostnameFlag(err error, stderr []byte) bool {
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		return false
+	}
+	text := string(stderr)
+	return strings.Contains(text, "unknown flag: --hostname") ||
+		strings.Contains(text, "unknown shorthand flag")
 }
 
 func (c *Config) BudgetPerHour() int {

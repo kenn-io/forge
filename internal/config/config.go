@@ -790,7 +790,7 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("config: host %q is not loopback; only loopback addresses are supported", c.Host)
 	}
 
-	if c.Port < 1 || c.Port > 65535 {
+	if c.Port < 0 || c.Port > 65535 {
 		return fmt.Errorf("config: invalid port %d", c.Port)
 	}
 

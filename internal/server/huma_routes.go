@@ -1425,9 +1425,8 @@ func (s *Server) createIssue(
 		ctx, platformRepoRefFromDB(*repo), title, input.Body.Body,
 	)
 	if err != nil {
-		return nil, problemUpstream(
-			"provider API error: "+err.Error(),
-			string(repoProviderKind(*repo)), repoProviderHost(*repo),
+		return nil, providerCallProblem(
+			err, string(repoProviderKind(*repo)), repoProviderHost(*repo),
 		)
 	}
 

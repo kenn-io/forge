@@ -366,6 +366,21 @@ func problemBranchConflict(branch, suggested string) huma.StatusError {
 	)
 }
 
+// providerCallProblem translates a provider-call error into a wire
+// problem. Provider/host narrow the upstream problem when no platform.Error
+// is in the chain; when one is, mapPlatformError handles the translation
+// (and ignores the provider/host arguments).
+func providerCallProblem(err error, provider, host string) huma.StatusError {
+	if err == nil {
+		return nil
+	}
+	var pe *platform.Error
+	if errors.As(err, &pe) {
+		return mapPlatformError(err)
+	}
+	return problemUpstream(err.Error(), provider, host)
+}
+
 // mapPlatformError translates an error from internal/platform into a wire
 // problem. Returns nil for nil input or context cancellation so callers
 // can propagate those without altering control flow. Returns a generic

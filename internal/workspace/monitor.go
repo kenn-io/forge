@@ -108,11 +108,16 @@ func (m *PRMonitor) detectAssociatedPR(
 		return 0, false, nil
 	}
 	// Skip while the workspace is still on its managed issue branch:
-	// no associated PR can exist yet. Compare to the persisted branch
-	// (which honors the configured slug/bare style) rather than
-	// recomputing, so an issue rename never desyncs detection.
-	if currentBranch == ws.GitHeadRef ||
-		currentBranch == issueWorkspaceBranch(ws.ItemNumber) {
+	// no associated PR can exist yet. The bare-form fallback only
+	// applies when the workspace pre-dates the slug feature (empty
+	// GitHeadRef); otherwise a user who hand-checks-out the legacy
+	// bare branch name on a slug-style workspace would silently
+	// suppress PR detection for an unrelated branch.
+	managedBranch := ws.GitHeadRef
+	if managedBranch == "" {
+		managedBranch = issueWorkspaceBranch(ws.ItemNumber)
+	}
+	if currentBranch == managedBranch {
 		return 0, false, nil
 	}
 

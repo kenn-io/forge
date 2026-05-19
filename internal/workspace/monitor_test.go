@@ -235,6 +235,74 @@ func TestPRMonitorRunOnceSkipsSyntheticIssueBranch(t *testing.T) {
 	assert.Nil(ws.AssociatedPRNumber)
 }
 
+func TestPRMonitorRunOnceAssociatesPRWhenSlugWorkspaceCheckedOutToBareBranch(t *testing.T) {
+	// Regression: a slug-style workspace (GitHeadRef = the slugged
+	// branch) checked out to the legacy bare-form branch
+	// `middleman/issue-<n>` is NOT on its managed branch and should
+	// not suppress PR detection. The bare-form fallback only applies
+	// to pre-feature workspaces with an empty GitHeadRef.
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := context.Background()
+
+	repoID := seedRepo(t, d, "github.com", "acme", "widget")
+	seedIssue(t, d, repoID, 7, "Track workspace association")
+
+	worktreePath := setupMonitorRepo(t)
+	runWorkspaceTestGit(t, worktreePath, "checkout", "-b", "middleman/issue-7")
+	require.NoError(os.WriteFile(
+		filepath.Join(worktreePath, "feature.txt"), []byte("feature\n"), 0o644,
+	))
+	runWorkspaceTestGit(t, worktreePath, "add", ".")
+	runWorkspaceTestGit(t, worktreePath, "commit", "-m", "feature commit")
+	headSHA, err := gitHeadSHA(ctx, worktreePath)
+	require.NoError(err)
+
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	_, err = d.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:          repoID,
+		PlatformID:      repoID*10000 + 42,
+		Number:          42,
+		Title:           "Test PR",
+		Author:          "author",
+		State:           "open",
+		HeadBranch:      "middleman/issue-7",
+		PlatformHeadSHA: headSHA,
+		BaseBranch:      "main",
+		CreatedAt:       now,
+		UpdatedAt:       now,
+		LastActivityAt:  now,
+	})
+	require.NoError(err)
+
+	require.NoError(d.InsertWorkspace(ctx, &db.Workspace{
+		ID:           "ws-issue-slug",
+		PlatformHost: "github.com",
+		RepoOwner:    "acme",
+		RepoName:     "widget",
+		ItemType:     db.WorkspaceItemTypeIssue,
+		ItemNumber:   7,
+		GitHeadRef:   "middleman/issue-7-track-workspace-association",
+		WorktreePath: worktreePath,
+		TmuxSession:  "middleman-ws-issue-slug",
+		Status:       "ready",
+	}))
+
+	monitor := NewPRMonitor(d)
+	updates, err := monitor.RunOnce(ctx)
+	require.NoError(err)
+	require.Len(updates, 1)
+	assert.Equal("ws-issue-slug", updates[0].WorkspaceID)
+	assert.Equal(42, updates[0].PRNumber)
+
+	ws, err := d.GetWorkspace(ctx, "ws-issue-slug")
+	require.NoError(err)
+	require.NotNil(ws)
+	require.NotNil(ws.AssociatedPRNumber)
+	assert.Equal(42, *ws.AssociatedPRNumber)
+}
+
 func TestPRMonitorRunOnceUsesUpstreamRemoteIdentity(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

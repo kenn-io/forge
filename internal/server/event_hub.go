@@ -207,6 +207,15 @@ func (h *EventHub) AssignSyntheticID() uint64 {
 	return h.nextEventID
 }
 
+// SubscriberCount returns the current number of live subscribers.
+// Useful for tests that need to synchronize broadcasts with subscriber
+// registration.
+func (h *EventHub) SubscriberCount() int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return len(h.subscribers)
+}
+
 // Close shuts down the hub: closes the done channel so SSE handlers
 // exit, marks the hub closed so future Subscribe calls fail fast,
 // then cleans up all subscriber channels.

@@ -31,6 +31,28 @@ func setupTestServer(t *testing.T) (*server.Server, *db.DB) {
 	return srv, database
 }
 
+// setupTestServerWithSSEBufferSize boots a server whose SSE replay
+// buffer holds the configured number of recent events. Used to exercise
+// the stale-cursor path with a small, deterministic ring.
+func setupTestServerWithSSEBufferSize(
+	t *testing.T, size int,
+) (*server.Server, *db.DB, *config.Config) {
+	t.Helper()
+	database := dbtest.Open(t)
+
+	syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
+	t.Cleanup(syncer.Stop)
+
+	cfg := &config.Config{
+		Host:          "127.0.0.1",
+		Port:          8091,
+		BasePath:      "/",
+		SSEBufferSize: size,
+	}
+	srv := server.New(database, syncer, nil, "/", cfg, server.ServerOptions{})
+	return srv, database, cfg
+}
+
 func setupWithBasePath(t *testing.T, basePath string, _ any) *server.Server {
 	t.Helper()
 	database := dbtest.Open(t)

@@ -198,6 +198,12 @@ func (s *Server) trackHTTPConn(_ net.Conn, state http.ConnState) {
 // retain the returned pointer beyond the server's lifetime.
 func (s *Server) Hub() *EventHub { return s.hub }
 
+// SubscriberCount returns the number of live SSE subscribers. Intended
+// for tests that need to wait for a connection to register before
+// broadcasting (broadcasts issued before subscription would otherwise
+// race against the handler's Subscribe call).
+func (s *Server) SubscriberCount() int { return s.hub.SubscriberCount() }
+
 // SetVersion sets the version string returned by GET /api/v1/version.
 func (s *Server) SetVersion(v string) { s.version = v }
 

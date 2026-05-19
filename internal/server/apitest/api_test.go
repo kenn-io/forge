@@ -43,7 +43,7 @@ func TestAPIGetPull(t *testing.T) {
 	seedPRWithHeadSHA(t, database, "acme", "widget", 1, "abc123def456")
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberWithResponse(
+	resp, err := client.HTTP.GetPullWithResponse(
 		t.Context(), "gh", "acme", "widget", 1,
 	)
 	require.NoError(err)
@@ -62,7 +62,7 @@ func TestAPIGetPullAcceptsMixedCaseRepoPath(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 1)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberWithResponse(
+	resp, err := client.HTTP.GetPullWithResponse(
 		t.Context(), "gh", "Acme", "Widget", 1,
 	)
 	require.NoError(err)
@@ -119,7 +119,7 @@ func TestAPIGetPullIncludesBranches(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 1)
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberWithResponse(
+	resp, err := client.HTTP.GetPullWithResponse(
 		t.Context(), "gh", "acme", "widget", 1,
 	)
 	require.NoError(err)
@@ -141,7 +141,7 @@ func TestAPIGetPullIncludesLabels(t *testing.T) {
 	}})
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberWithResponse(
+	resp, err := client.HTTP.GetPullWithResponse(
 		t.Context(), "gh", "acme", "widget", 1,
 	)
 	require.NoError(err)
@@ -229,7 +229,7 @@ func TestAPIGetIssueIncludesLabels(t *testing.T) {
 	}})
 	client := setupTestClient(t, srv)
 
-	resp, err := client.HTTP.GetIssuesByProviderByOwnerByNameByNumberWithResponse(
+	resp, err := client.HTTP.GetIssueWithResponse(
 		t.Context(), "gh", "acme", "widget", 5,
 	)
 	require.NoError(err)

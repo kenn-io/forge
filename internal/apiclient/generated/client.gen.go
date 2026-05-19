@@ -1262,8 +1262,8 @@ type WorktreeResponse struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// GetActivityParams defines parameters for GetActivity.
-type GetActivityParams struct {
+// ListActivityParams defines parameters for ListActivity.
+type ListActivityParams struct {
 	Repo   *string   `form:"repo,omitempty" json:"repo,omitempty"`
 	Types  *[]string `form:"types,omitempty" json:"types,omitempty"`
 	Search *string   `form:"search,omitempty" json:"search,omitempty"`
@@ -1271,8 +1271,8 @@ type GetActivityParams struct {
 	Since  *string   `form:"since,omitempty" json:"since,omitempty"`
 }
 
-// GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiffParams defines parameters for GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiff.
-type GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiffParams struct {
+// GetPullDiffOnHostParams defines parameters for GetPullDiffOnHost.
+type GetPullDiffOnHostParams struct {
 	Whitespace *string `form:"whitespace,omitempty" json:"whitespace,omitempty"`
 
 	// Commit Scope to a single commit SHA
@@ -1285,8 +1285,8 @@ type GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiffParams struct 
 	To *string `form:"to,omitempty" json:"to,omitempty"`
 }
 
-// GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreviewParams defines parameters for GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreview.
-type GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreviewParams struct {
+// GetPullFilePreviewOnHostParams defines parameters for GetPullFilePreviewOnHost.
+type GetPullFilePreviewOnHostParams struct {
 	// Path Changed file path to preview
 	Path *string `form:"path,omitempty" json:"path,omitempty"`
 
@@ -1300,8 +1300,8 @@ type GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreviewParams 
 	To *string `form:"to,omitempty" json:"to,omitempty"`
 }
 
-// GetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocompleteParams defines parameters for GetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocomplete.
-type GetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocompleteParams struct {
+// GetCommentAutocompleteOnHostParams defines parameters for GetCommentAutocompleteOnHost.
+type GetCommentAutocompleteOnHostParams struct {
 	Trigger *string `form:"trigger,omitempty" json:"trigger,omitempty"`
 	Q       *string `form:"q,omitempty" json:"q,omitempty"`
 	Limit   *int64  `form:"limit,omitempty" json:"limit,omitempty"`
@@ -1328,8 +1328,8 @@ type ListPullsParams struct {
 	Offset  *int64  `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
-// GetPullsByProviderByOwnerByNameByNumberDiffParams defines parameters for GetPullsByProviderByOwnerByNameByNumberDiff.
-type GetPullsByProviderByOwnerByNameByNumberDiffParams struct {
+// GetPullDiffParams defines parameters for GetPullDiff.
+type GetPullDiffParams struct {
 	Whitespace *string `form:"whitespace,omitempty" json:"whitespace,omitempty"`
 
 	// Commit Scope to a single commit SHA
@@ -1342,8 +1342,8 @@ type GetPullsByProviderByOwnerByNameByNumberDiffParams struct {
 	To *string `form:"to,omitempty" json:"to,omitempty"`
 }
 
-// GetPullsByProviderByOwnerByNameByNumberFilePreviewParams defines parameters for GetPullsByProviderByOwnerByNameByNumberFilePreview.
-type GetPullsByProviderByOwnerByNameByNumberFilePreviewParams struct {
+// GetPullFilePreviewParams defines parameters for GetPullFilePreview.
+type GetPullFilePreviewParams struct {
 	// Path Changed file path to preview
 	Path *string `form:"path,omitempty" json:"path,omitempty"`
 
@@ -1357,8 +1357,8 @@ type GetPullsByProviderByOwnerByNameByNumberFilePreviewParams struct {
 	To *string `form:"to,omitempty" json:"to,omitempty"`
 }
 
-// GetRepoByProviderByOwnerByNameCommentAutocompleteParams defines parameters for GetRepoByProviderByOwnerByNameCommentAutocomplete.
-type GetRepoByProviderByOwnerByNameCommentAutocompleteParams struct {
+// GetCommentAutocompleteParams defines parameters for GetCommentAutocomplete.
+type GetCommentAutocompleteParams struct {
 	Trigger *string `form:"trigger,omitempty" json:"trigger,omitempty"`
 	Q       *string `form:"q,omitempty" json:"q,omitempty"`
 	Limit   *int64  `form:"limit,omitempty" json:"limit,omitempty"`
@@ -1374,8 +1374,8 @@ type DeleteWorkspaceParams struct {
 	Force *bool `form:"force,omitempty" json:"force,omitempty"`
 }
 
-// GetWorkspacesByIdDiffParams defines parameters for GetWorkspacesByIdDiff.
-type GetWorkspacesByIdDiffParams struct {
+// GetWorkspaceDiffParams defines parameters for GetWorkspaceDiff.
+type GetWorkspaceDiffParams struct {
 	// Base Diff base: head, pushed, or merge-target
 	Base *string `form:"base,omitempty" json:"base,omitempty"`
 
@@ -1395,8 +1395,8 @@ type GetWorkspacesByIdDiffParams struct {
 	To *string `form:"to,omitempty" json:"to,omitempty"`
 }
 
-// GetWorkspacesByIdFilesParams defines parameters for GetWorkspacesByIdFiles.
-type GetWorkspacesByIdFilesParams struct {
+// GetWorkspaceFilesParams defines parameters for GetWorkspaceFiles.
+type GetWorkspaceFilesParams struct {
 	// Base Diff base: head, pushed, or merge-target
 	Base *string `form:"base,omitempty" json:"base,omitempty"`
 
@@ -1437,8 +1437,8 @@ type CreateIssueWorkspaceOnHostJSONRequestBody = CreateIssueWorkspaceHostInputBo
 // EditPrContentOnHostJSONRequestBody defines body for EditPrContentOnHost for application/json ContentType.
 type EditPrContentOnHostJSONRequestBody = EditPRContentHostInputBody
 
-// PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveJSONRequestBody defines body for PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApprove for application/json ContentType.
-type PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveJSONRequestBody = ApprovePRHostInputBody
+// ApprovePullOnHostJSONRequestBody defines body for ApprovePullOnHost for application/json ContentType.
+type ApprovePullOnHostJSONRequestBody = ApprovePRHostInputBody
 
 // PostPrCommentOnHostJSONRequestBody defines body for PostPrCommentOnHost for application/json ContentType.
 type PostPrCommentOnHostJSONRequestBody = PostCommentHostInputBody
@@ -1452,8 +1452,8 @@ type SetPrGithubStateOnHostJSONRequestBody = GithubStateHostInputBody
 // SetPrLabelsOnHostJSONRequestBody defines body for SetPrLabelsOnHost for application/json ContentType.
 type SetPrLabelsOnHostJSONRequestBody = SetLabelsRequest
 
-// PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeJSONRequestBody defines body for PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMerge for application/json ContentType.
-type PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeJSONRequestBody = MergePRHostInputBody
+// MergePullOnHostJSONRequestBody defines body for MergePullOnHost for application/json ContentType.
+type MergePullOnHostJSONRequestBody = MergePRHostInputBody
 
 // SetKanbanStateOnHostJSONRequestBody defines body for SetKanbanStateOnHost for application/json ContentType.
 type SetKanbanStateOnHostJSONRequestBody = SetKanbanStateHostInputBody
@@ -1488,8 +1488,8 @@ type RegisterWorktreeJSONRequestBody = RegisterWorktreeInputBody
 // EditPrContentJSONRequestBody defines body for EditPrContent for application/json ContentType.
 type EditPrContentJSONRequestBody = EditPRContentInputBody
 
-// PostPullsByProviderByOwnerByNameByNumberApproveJSONRequestBody defines body for PostPullsByProviderByOwnerByNameByNumberApprove for application/json ContentType.
-type PostPullsByProviderByOwnerByNameByNumberApproveJSONRequestBody = ApprovePRInputBody
+// ApprovePullJSONRequestBody defines body for ApprovePull for application/json ContentType.
+type ApprovePullJSONRequestBody = ApprovePRInputBody
 
 // PostPrCommentJSONRequestBody defines body for PostPrComment for application/json ContentType.
 type PostPrCommentJSONRequestBody = PostCommentInputBody
@@ -1503,8 +1503,8 @@ type SetPrGithubStateJSONRequestBody = GithubStateInputBody
 // SetPrLabelsJSONRequestBody defines body for SetPrLabels for application/json ContentType.
 type SetPrLabelsJSONRequestBody = SetLabelsRequest
 
-// PostPullsByProviderByOwnerByNameByNumberMergeJSONRequestBody defines body for PostPullsByProviderByOwnerByNameByNumberMerge for application/json ContentType.
-type PostPullsByProviderByOwnerByNameByNumberMergeJSONRequestBody = MergePRInputBody
+// MergePullJSONRequestBody defines body for MergePull for application/json ContentType.
+type MergePullJSONRequestBody = MergePRInputBody
 
 // SetKanbanStateJSONRequestBody defines body for SetKanbanState for application/json ContentType.
 type SetKanbanStateJSONRequestBody = SetKanbanStateInputBody
@@ -1606,8 +1606,8 @@ func WithRequestEditorFn(fn RequestEditorFn) ClientOption {
 
 // The interface specification for the client above.
 type ClientInterface interface {
-	// GetActivity request
-	GetActivity(ctx context.Context, params *GetActivityParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// ListActivity request
+	ListActivity(ctx context.Context, params *ListActivityParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// StreamEvents request
 	StreamEvents(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1617,8 +1617,8 @@ type ClientInterface interface {
 
 	CreateIssueOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, body CreateIssueOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// GetHostByPlatformHostIssuesByProviderByOwnerByNameByNumber request
-	GetHostByPlatformHostIssuesByProviderByOwnerByNameByNumber(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// GetIssueOnHost request
+	GetIssueOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// EditIssueContentOnHostWithBody request with any body
 	EditIssueContentOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1645,8 +1645,8 @@ type ClientInterface interface {
 
 	SetIssueLabelsOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body SetIssueLabelsOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// PostHostByPlatformHostIssuesByProviderByOwnerByNameByNumberSync request
-	PostHostByPlatformHostIssuesByProviderByOwnerByNameByNumberSync(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// SyncIssueOnHost request
+	SyncIssueOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// EnqueueIssueSyncOnHost request
 	EnqueueIssueSyncOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1656,24 +1656,24 @@ type ClientInterface interface {
 
 	CreateIssueWorkspaceOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body CreateIssueWorkspaceOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// GetHostByPlatformHostPullsByProviderByOwnerByNameByNumber request
-	GetHostByPlatformHostPullsByProviderByOwnerByNameByNumber(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// GetPullOnHost request
+	GetPullOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// EditPrContentOnHostWithBody request with any body
 	EditPrContentOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	EditPrContentOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body EditPrContentOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWithBody request with any body
-	PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// ApprovePullOnHostWithBody request with any body
+	ApprovePullOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApprove(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+	ApprovePullOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body ApprovePullOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkflows request
-	PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkflows(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// ApprovePullWorkflowsOnHost request
+	ApprovePullWorkflowsOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberCiRefresh request
-	PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberCiRefresh(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// RefreshPullCiOnHost request
+	RefreshPullCiOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// PostPrCommentOnHostWithBody request with any body
 	PostPrCommentOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1685,49 +1685,49 @@ type ClientInterface interface {
 
 	EditPrCommentOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, commentId int64, body EditPrCommentOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberCommits request
-	GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberCommits(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// GetPullCommitsOnHost request
+	GetPullCommitsOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiff request
-	GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiff(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, params *GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiffParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// GetPullDiffOnHost request
+	GetPullDiffOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, params *GetPullDiffOnHostParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreview request
-	GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreview(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, params *GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreviewParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// GetPullFilePreviewOnHost request
+	GetPullFilePreviewOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, params *GetPullFilePreviewOnHostParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFiles request
-	GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFiles(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// GetPullFilesOnHost request
+	GetPullFilesOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// SetPrGithubStateOnHostWithBody request with any body
 	SetPrGithubStateOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	SetPrGithubStateOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body SetPrGithubStateOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberImportMetadata request
-	GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberImportMetadata(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// GetPullImportMetadataOnHost request
+	GetPullImportMetadataOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// SetPrLabelsOnHostWithBody request with any body
 	SetPrLabelsOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	SetPrLabelsOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body SetPrLabelsOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeWithBody request with any body
-	PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// MergePullOnHostWithBody request with any body
+	MergePullOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMerge(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+	MergePullOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body MergePullOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberReadyForReview request
-	PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberReadyForReview(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// MarkPullReadyForReviewOnHost request
+	MarkPullReadyForReviewOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberStack request
-	GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberStack(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// GetPullStackOnHost request
+	GetPullStackOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// SetKanbanStateOnHostWithBody request with any body
 	SetKanbanStateOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	SetKanbanStateOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body SetKanbanStateOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberSync request
-	PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberSync(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// SyncPullOnHost request
+	SyncPullOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// EnqueuePrSyncOnHost request
 	EnqueuePrSyncOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1735,11 +1735,11 @@ type ClientInterface interface {
 	// DeleteRepoOnHost request
 	DeleteRepoOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// GetHostByPlatformHostRepoByProviderByOwnerByName request
-	GetHostByPlatformHostRepoByProviderByOwnerByName(ctx context.Context, platformHost string, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// GetRepoOnHost request
+	GetRepoOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// GetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocomplete request
-	GetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocomplete(ctx context.Context, platformHost string, provider string, owner string, name string, params *GetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocompleteParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// GetCommentAutocompleteOnHost request
+	GetCommentAutocompleteOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, params *GetCommentAutocompleteOnHostParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListRepoLabelsOnHost request
 	ListRepoLabelsOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1747,8 +1747,8 @@ type ClientInterface interface {
 	// RefreshRepoOnHost request
 	RefreshRepoOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// PostHostByPlatformHostRepoByProviderByOwnerByNameResolveByNumber request
-	PostHostByPlatformHostRepoByProviderByOwnerByNameResolveByNumber(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// ResolveRepoItemOnHost request
+	ResolveRepoItemOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListIssues request
 	ListIssues(ctx context.Context, params *ListIssuesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1758,8 +1758,8 @@ type ClientInterface interface {
 
 	CreateIssue(ctx context.Context, provider string, owner string, name string, body CreateIssueJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// GetIssuesByProviderByOwnerByNameByNumber request
-	GetIssuesByProviderByOwnerByNameByNumber(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// GetIssue request
+	GetIssue(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// EditIssueContentWithBody request with any body
 	EditIssueContentWithBody(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1786,8 +1786,8 @@ type ClientInterface interface {
 
 	SetIssueLabels(ctx context.Context, provider string, owner string, name string, number int64, body SetIssueLabelsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// PostIssuesByProviderByOwnerByNameByNumberSync request
-	PostIssuesByProviderByOwnerByNameByNumberSync(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// SyncIssue request
+	SyncIssue(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// EnqueueIssueSync request
 	EnqueueIssueSync(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1822,24 +1822,24 @@ type ClientInterface interface {
 	// ListPulls request
 	ListPulls(ctx context.Context, params *ListPullsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// GetPullsByProviderByOwnerByNameByNumber request
-	GetPullsByProviderByOwnerByNameByNumber(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// GetPull request
+	GetPull(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// EditPrContentWithBody request with any body
 	EditPrContentWithBody(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	EditPrContent(ctx context.Context, provider string, owner string, name string, number int64, body EditPrContentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// PostPullsByProviderByOwnerByNameByNumberApproveWithBody request with any body
-	PostPullsByProviderByOwnerByNameByNumberApproveWithBody(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// ApprovePullWithBody request with any body
+	ApprovePullWithBody(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	PostPullsByProviderByOwnerByNameByNumberApprove(ctx context.Context, provider string, owner string, name string, number int64, body PostPullsByProviderByOwnerByNameByNumberApproveJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+	ApprovePull(ctx context.Context, provider string, owner string, name string, number int64, body ApprovePullJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// PostPullsByProviderByOwnerByNameByNumberApproveWorkflows request
-	PostPullsByProviderByOwnerByNameByNumberApproveWorkflows(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// ApprovePullWorkflows request
+	ApprovePullWorkflows(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// PostPullsByProviderByOwnerByNameByNumberCiRefresh request
-	PostPullsByProviderByOwnerByNameByNumberCiRefresh(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// RefreshPullCi request
+	RefreshPullCi(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// PostPrCommentWithBody request with any body
 	PostPrCommentWithBody(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1851,49 +1851,49 @@ type ClientInterface interface {
 
 	EditPrComment(ctx context.Context, provider string, owner string, name string, number int64, commentId int64, body EditPrCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// GetPullsByProviderByOwnerByNameByNumberCommits request
-	GetPullsByProviderByOwnerByNameByNumberCommits(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// GetPullCommits request
+	GetPullCommits(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// GetPullsByProviderByOwnerByNameByNumberDiff request
-	GetPullsByProviderByOwnerByNameByNumberDiff(ctx context.Context, provider string, owner string, name string, number int64, params *GetPullsByProviderByOwnerByNameByNumberDiffParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// GetPullDiff request
+	GetPullDiff(ctx context.Context, provider string, owner string, name string, number int64, params *GetPullDiffParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// GetPullsByProviderByOwnerByNameByNumberFilePreview request
-	GetPullsByProviderByOwnerByNameByNumberFilePreview(ctx context.Context, provider string, owner string, name string, number int64, params *GetPullsByProviderByOwnerByNameByNumberFilePreviewParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// GetPullFilePreview request
+	GetPullFilePreview(ctx context.Context, provider string, owner string, name string, number int64, params *GetPullFilePreviewParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// GetPullsByProviderByOwnerByNameByNumberFiles request
-	GetPullsByProviderByOwnerByNameByNumberFiles(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// GetPullFiles request
+	GetPullFiles(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// SetPrGithubStateWithBody request with any body
 	SetPrGithubStateWithBody(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	SetPrGithubState(ctx context.Context, provider string, owner string, name string, number int64, body SetPrGithubStateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// GetPullsByProviderByOwnerByNameByNumberImportMetadata request
-	GetPullsByProviderByOwnerByNameByNumberImportMetadata(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// GetPullImportMetadata request
+	GetPullImportMetadata(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// SetPrLabelsWithBody request with any body
 	SetPrLabelsWithBody(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	SetPrLabels(ctx context.Context, provider string, owner string, name string, number int64, body SetPrLabelsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// PostPullsByProviderByOwnerByNameByNumberMergeWithBody request with any body
-	PostPullsByProviderByOwnerByNameByNumberMergeWithBody(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// MergePullWithBody request with any body
+	MergePullWithBody(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	PostPullsByProviderByOwnerByNameByNumberMerge(ctx context.Context, provider string, owner string, name string, number int64, body PostPullsByProviderByOwnerByNameByNumberMergeJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+	MergePull(ctx context.Context, provider string, owner string, name string, number int64, body MergePullJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// PostPullsByProviderByOwnerByNameByNumberReadyForReview request
-	PostPullsByProviderByOwnerByNameByNumberReadyForReview(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// MarkPullReadyForReview request
+	MarkPullReadyForReview(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// GetPullsByProviderByOwnerByNameByNumberStack request
-	GetPullsByProviderByOwnerByNameByNumberStack(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// GetPullStack request
+	GetPullStack(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// SetKanbanStateWithBody request with any body
 	SetKanbanStateWithBody(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	SetKanbanState(ctx context.Context, provider string, owner string, name string, number int64, body SetKanbanStateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// PostPullsByProviderByOwnerByNameByNumberSync request
-	PostPullsByProviderByOwnerByNameByNumberSync(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// SyncPull request
+	SyncPull(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// EnqueuePrSync request
 	EnqueuePrSync(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1904,11 +1904,11 @@ type ClientInterface interface {
 	// DeleteRepo request
 	DeleteRepo(ctx context.Context, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// GetRepoByProviderByOwnerByName request
-	GetRepoByProviderByOwnerByName(ctx context.Context, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// GetRepo request
+	GetRepo(ctx context.Context, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// GetRepoByProviderByOwnerByNameCommentAutocomplete request
-	GetRepoByProviderByOwnerByNameCommentAutocomplete(ctx context.Context, provider string, owner string, name string, params *GetRepoByProviderByOwnerByNameCommentAutocompleteParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// GetCommentAutocomplete request
+	GetCommentAutocomplete(ctx context.Context, provider string, owner string, name string, params *GetCommentAutocompleteParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListRepoLabels request
 	ListRepoLabels(ctx context.Context, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1916,8 +1916,8 @@ type ClientInterface interface {
 	// RefreshRepo request
 	RefreshRepo(ctx context.Context, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// PostRepoByProviderByOwnerByNameResolveByNumber request
-	PostRepoByProviderByOwnerByNameResolveByNumber(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// ResolveRepoItem request
+	ResolveRepoItem(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListRepos request
 	ListRepos(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1973,8 +1973,8 @@ type ClientInterface interface {
 	// GetVersion request
 	GetVersion(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// GetWorkspaces request
-	GetWorkspaces(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// ListWorkspaces request
+	ListWorkspaces(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// CreateWorkspaceWithBody request with any body
 	CreateWorkspaceWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1984,17 +1984,17 @@ type ClientInterface interface {
 	// DeleteWorkspace request
 	DeleteWorkspace(ctx context.Context, id string, params *DeleteWorkspaceParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// GetWorkspacesById request
-	GetWorkspacesById(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// GetWorkspace request
+	GetWorkspace(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// GetWorkspacesByIdCommits request
-	GetWorkspacesByIdCommits(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// GetWorkspaceCommits request
+	GetWorkspaceCommits(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// GetWorkspacesByIdDiff request
-	GetWorkspacesByIdDiff(ctx context.Context, id string, params *GetWorkspacesByIdDiffParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// GetWorkspaceDiff request
+	GetWorkspaceDiff(ctx context.Context, id string, params *GetWorkspaceDiffParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// GetWorkspacesByIdFiles request
-	GetWorkspacesByIdFiles(ctx context.Context, id string, params *GetWorkspacesByIdFilesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// GetWorkspaceFiles request
+	GetWorkspaceFiles(ctx context.Context, id string, params *GetWorkspaceFilesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// RetryWorkspace request
 	RetryWorkspace(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -2014,8 +2014,8 @@ type ClientInterface interface {
 	EnsureWorkspaceRuntimeShell(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
-func (c *Client) GetActivity(ctx context.Context, params *GetActivityParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetActivityRequest(c.Server, params)
+func (c *Client) ListActivity(ctx context.Context, params *ListActivityParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListActivityRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -2062,8 +2062,8 @@ func (c *Client) CreateIssueOnHost(ctx context.Context, platformHost string, pro
 	return c.Client.Do(req)
 }
 
-func (c *Client) GetHostByPlatformHostIssuesByProviderByOwnerByNameByNumber(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetHostByPlatformHostIssuesByProviderByOwnerByNameByNumberRequest(c.Server, platformHost, provider, owner, name, number)
+func (c *Client) GetIssueOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetIssueOnHostRequest(c.Server, platformHost, provider, owner, name, number)
 	if err != nil {
 		return nil, err
 	}
@@ -2194,8 +2194,8 @@ func (c *Client) SetIssueLabelsOnHost(ctx context.Context, platformHost string, 
 	return c.Client.Do(req)
 }
 
-func (c *Client) PostHostByPlatformHostIssuesByProviderByOwnerByNameByNumberSync(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostHostByPlatformHostIssuesByProviderByOwnerByNameByNumberSyncRequest(c.Server, platformHost, provider, owner, name, number)
+func (c *Client) SyncIssueOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSyncIssueOnHostRequest(c.Server, platformHost, provider, owner, name, number)
 	if err != nil {
 		return nil, err
 	}
@@ -2242,8 +2242,8 @@ func (c *Client) CreateIssueWorkspaceOnHost(ctx context.Context, platformHost st
 	return c.Client.Do(req)
 }
 
-func (c *Client) GetHostByPlatformHostPullsByProviderByOwnerByNameByNumber(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberRequest(c.Server, platformHost, provider, owner, name, number)
+func (c *Client) GetPullOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetPullOnHostRequest(c.Server, platformHost, provider, owner, name, number)
 	if err != nil {
 		return nil, err
 	}
@@ -2278,8 +2278,8 @@ func (c *Client) EditPrContentOnHost(ctx context.Context, platformHost string, p
 	return c.Client.Do(req)
 }
 
-func (c *Client) PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveRequestWithBody(c.Server, platformHost, provider, owner, name, number, contentType, body)
+func (c *Client) ApprovePullOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewApprovePullOnHostRequestWithBody(c.Server, platformHost, provider, owner, name, number, contentType, body)
 	if err != nil {
 		return nil, err
 	}
@@ -2290,8 +2290,8 @@ func (c *Client) PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberAppro
 	return c.Client.Do(req)
 }
 
-func (c *Client) PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApprove(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveRequest(c.Server, platformHost, provider, owner, name, number, body)
+func (c *Client) ApprovePullOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body ApprovePullOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewApprovePullOnHostRequest(c.Server, platformHost, provider, owner, name, number, body)
 	if err != nil {
 		return nil, err
 	}
@@ -2302,8 +2302,8 @@ func (c *Client) PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberAppro
 	return c.Client.Do(req)
 }
 
-func (c *Client) PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkflows(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkflowsRequest(c.Server, platformHost, provider, owner, name, number)
+func (c *Client) ApprovePullWorkflowsOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewApprovePullWorkflowsOnHostRequest(c.Server, platformHost, provider, owner, name, number)
 	if err != nil {
 		return nil, err
 	}
@@ -2314,8 +2314,8 @@ func (c *Client) PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberAppro
 	return c.Client.Do(req)
 }
 
-func (c *Client) PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberCiRefresh(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostHostByPlatformHostPullsByProviderByOwnerByNameByNumberCiRefreshRequest(c.Server, platformHost, provider, owner, name, number)
+func (c *Client) RefreshPullCiOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRefreshPullCiOnHostRequest(c.Server, platformHost, provider, owner, name, number)
 	if err != nil {
 		return nil, err
 	}
@@ -2374,8 +2374,8 @@ func (c *Client) EditPrCommentOnHost(ctx context.Context, platformHost string, p
 	return c.Client.Do(req)
 }
 
-func (c *Client) GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberCommits(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberCommitsRequest(c.Server, platformHost, provider, owner, name, number)
+func (c *Client) GetPullCommitsOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetPullCommitsOnHostRequest(c.Server, platformHost, provider, owner, name, number)
 	if err != nil {
 		return nil, err
 	}
@@ -2386,8 +2386,8 @@ func (c *Client) GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberCommit
 	return c.Client.Do(req)
 }
 
-func (c *Client) GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiff(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, params *GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiffParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiffRequest(c.Server, platformHost, provider, owner, name, number, params)
+func (c *Client) GetPullDiffOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, params *GetPullDiffOnHostParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetPullDiffOnHostRequest(c.Server, platformHost, provider, owner, name, number, params)
 	if err != nil {
 		return nil, err
 	}
@@ -2398,8 +2398,8 @@ func (c *Client) GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiff(c
 	return c.Client.Do(req)
 }
 
-func (c *Client) GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreview(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, params *GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreviewParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreviewRequest(c.Server, platformHost, provider, owner, name, number, params)
+func (c *Client) GetPullFilePreviewOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, params *GetPullFilePreviewOnHostParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetPullFilePreviewOnHostRequest(c.Server, platformHost, provider, owner, name, number, params)
 	if err != nil {
 		return nil, err
 	}
@@ -2410,8 +2410,8 @@ func (c *Client) GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePr
 	return c.Client.Do(req)
 }
 
-func (c *Client) GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFiles(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilesRequest(c.Server, platformHost, provider, owner, name, number)
+func (c *Client) GetPullFilesOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetPullFilesOnHostRequest(c.Server, platformHost, provider, owner, name, number)
 	if err != nil {
 		return nil, err
 	}
@@ -2446,8 +2446,8 @@ func (c *Client) SetPrGithubStateOnHost(ctx context.Context, platformHost string
 	return c.Client.Do(req)
 }
 
-func (c *Client) GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberImportMetadata(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberImportMetadataRequest(c.Server, platformHost, provider, owner, name, number)
+func (c *Client) GetPullImportMetadataOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetPullImportMetadataOnHostRequest(c.Server, platformHost, provider, owner, name, number)
 	if err != nil {
 		return nil, err
 	}
@@ -2482,8 +2482,8 @@ func (c *Client) SetPrLabelsOnHost(ctx context.Context, platformHost string, pro
 	return c.Client.Do(req)
 }
 
-func (c *Client) PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeRequestWithBody(c.Server, platformHost, provider, owner, name, number, contentType, body)
+func (c *Client) MergePullOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewMergePullOnHostRequestWithBody(c.Server, platformHost, provider, owner, name, number, contentType, body)
 	if err != nil {
 		return nil, err
 	}
@@ -2494,8 +2494,8 @@ func (c *Client) PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMerge
 	return c.Client.Do(req)
 }
 
-func (c *Client) PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMerge(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeRequest(c.Server, platformHost, provider, owner, name, number, body)
+func (c *Client) MergePullOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body MergePullOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewMergePullOnHostRequest(c.Server, platformHost, provider, owner, name, number, body)
 	if err != nil {
 		return nil, err
 	}
@@ -2506,8 +2506,8 @@ func (c *Client) PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMerge
 	return c.Client.Do(req)
 }
 
-func (c *Client) PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberReadyForReview(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostHostByPlatformHostPullsByProviderByOwnerByNameByNumberReadyForReviewRequest(c.Server, platformHost, provider, owner, name, number)
+func (c *Client) MarkPullReadyForReviewOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewMarkPullReadyForReviewOnHostRequest(c.Server, platformHost, provider, owner, name, number)
 	if err != nil {
 		return nil, err
 	}
@@ -2518,8 +2518,8 @@ func (c *Client) PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberReady
 	return c.Client.Do(req)
 }
 
-func (c *Client) GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberStack(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberStackRequest(c.Server, platformHost, provider, owner, name, number)
+func (c *Client) GetPullStackOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetPullStackOnHostRequest(c.Server, platformHost, provider, owner, name, number)
 	if err != nil {
 		return nil, err
 	}
@@ -2554,8 +2554,8 @@ func (c *Client) SetKanbanStateOnHost(ctx context.Context, platformHost string, 
 	return c.Client.Do(req)
 }
 
-func (c *Client) PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberSync(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostHostByPlatformHostPullsByProviderByOwnerByNameByNumberSyncRequest(c.Server, platformHost, provider, owner, name, number)
+func (c *Client) SyncPullOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSyncPullOnHostRequest(c.Server, platformHost, provider, owner, name, number)
 	if err != nil {
 		return nil, err
 	}
@@ -2590,8 +2590,8 @@ func (c *Client) DeleteRepoOnHost(ctx context.Context, platformHost string, prov
 	return c.Client.Do(req)
 }
 
-func (c *Client) GetHostByPlatformHostRepoByProviderByOwnerByName(ctx context.Context, platformHost string, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetHostByPlatformHostRepoByProviderByOwnerByNameRequest(c.Server, platformHost, provider, owner, name)
+func (c *Client) GetRepoOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetRepoOnHostRequest(c.Server, platformHost, provider, owner, name)
 	if err != nil {
 		return nil, err
 	}
@@ -2602,8 +2602,8 @@ func (c *Client) GetHostByPlatformHostRepoByProviderByOwnerByName(ctx context.Co
 	return c.Client.Do(req)
 }
 
-func (c *Client) GetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocomplete(ctx context.Context, platformHost string, provider string, owner string, name string, params *GetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocompleteParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocompleteRequest(c.Server, platformHost, provider, owner, name, params)
+func (c *Client) GetCommentAutocompleteOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, params *GetCommentAutocompleteOnHostParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetCommentAutocompleteOnHostRequest(c.Server, platformHost, provider, owner, name, params)
 	if err != nil {
 		return nil, err
 	}
@@ -2638,8 +2638,8 @@ func (c *Client) RefreshRepoOnHost(ctx context.Context, platformHost string, pro
 	return c.Client.Do(req)
 }
 
-func (c *Client) PostHostByPlatformHostRepoByProviderByOwnerByNameResolveByNumber(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostHostByPlatformHostRepoByProviderByOwnerByNameResolveByNumberRequest(c.Server, platformHost, provider, owner, name, number)
+func (c *Client) ResolveRepoItemOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewResolveRepoItemOnHostRequest(c.Server, platformHost, provider, owner, name, number)
 	if err != nil {
 		return nil, err
 	}
@@ -2686,8 +2686,8 @@ func (c *Client) CreateIssue(ctx context.Context, provider string, owner string,
 	return c.Client.Do(req)
 }
 
-func (c *Client) GetIssuesByProviderByOwnerByNameByNumber(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetIssuesByProviderByOwnerByNameByNumberRequest(c.Server, provider, owner, name, number)
+func (c *Client) GetIssue(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetIssueRequest(c.Server, provider, owner, name, number)
 	if err != nil {
 		return nil, err
 	}
@@ -2818,8 +2818,8 @@ func (c *Client) SetIssueLabels(ctx context.Context, provider string, owner stri
 	return c.Client.Do(req)
 }
 
-func (c *Client) PostIssuesByProviderByOwnerByNameByNumberSync(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostIssuesByProviderByOwnerByNameByNumberSyncRequest(c.Server, provider, owner, name, number)
+func (c *Client) SyncIssue(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSyncIssueRequest(c.Server, provider, owner, name, number)
 	if err != nil {
 		return nil, err
 	}
@@ -2974,8 +2974,8 @@ func (c *Client) ListPulls(ctx context.Context, params *ListPullsParams, reqEdit
 	return c.Client.Do(req)
 }
 
-func (c *Client) GetPullsByProviderByOwnerByNameByNumber(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetPullsByProviderByOwnerByNameByNumberRequest(c.Server, provider, owner, name, number)
+func (c *Client) GetPull(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetPullRequest(c.Server, provider, owner, name, number)
 	if err != nil {
 		return nil, err
 	}
@@ -3010,8 +3010,8 @@ func (c *Client) EditPrContent(ctx context.Context, provider string, owner strin
 	return c.Client.Do(req)
 }
 
-func (c *Client) PostPullsByProviderByOwnerByNameByNumberApproveWithBody(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostPullsByProviderByOwnerByNameByNumberApproveRequestWithBody(c.Server, provider, owner, name, number, contentType, body)
+func (c *Client) ApprovePullWithBody(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewApprovePullRequestWithBody(c.Server, provider, owner, name, number, contentType, body)
 	if err != nil {
 		return nil, err
 	}
@@ -3022,8 +3022,8 @@ func (c *Client) PostPullsByProviderByOwnerByNameByNumberApproveWithBody(ctx con
 	return c.Client.Do(req)
 }
 
-func (c *Client) PostPullsByProviderByOwnerByNameByNumberApprove(ctx context.Context, provider string, owner string, name string, number int64, body PostPullsByProviderByOwnerByNameByNumberApproveJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostPullsByProviderByOwnerByNameByNumberApproveRequest(c.Server, provider, owner, name, number, body)
+func (c *Client) ApprovePull(ctx context.Context, provider string, owner string, name string, number int64, body ApprovePullJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewApprovePullRequest(c.Server, provider, owner, name, number, body)
 	if err != nil {
 		return nil, err
 	}
@@ -3034,8 +3034,8 @@ func (c *Client) PostPullsByProviderByOwnerByNameByNumberApprove(ctx context.Con
 	return c.Client.Do(req)
 }
 
-func (c *Client) PostPullsByProviderByOwnerByNameByNumberApproveWorkflows(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostPullsByProviderByOwnerByNameByNumberApproveWorkflowsRequest(c.Server, provider, owner, name, number)
+func (c *Client) ApprovePullWorkflows(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewApprovePullWorkflowsRequest(c.Server, provider, owner, name, number)
 	if err != nil {
 		return nil, err
 	}
@@ -3046,8 +3046,8 @@ func (c *Client) PostPullsByProviderByOwnerByNameByNumberApproveWorkflows(ctx co
 	return c.Client.Do(req)
 }
 
-func (c *Client) PostPullsByProviderByOwnerByNameByNumberCiRefresh(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostPullsByProviderByOwnerByNameByNumberCiRefreshRequest(c.Server, provider, owner, name, number)
+func (c *Client) RefreshPullCi(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRefreshPullCiRequest(c.Server, provider, owner, name, number)
 	if err != nil {
 		return nil, err
 	}
@@ -3106,8 +3106,8 @@ func (c *Client) EditPrComment(ctx context.Context, provider string, owner strin
 	return c.Client.Do(req)
 }
 
-func (c *Client) GetPullsByProviderByOwnerByNameByNumberCommits(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetPullsByProviderByOwnerByNameByNumberCommitsRequest(c.Server, provider, owner, name, number)
+func (c *Client) GetPullCommits(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetPullCommitsRequest(c.Server, provider, owner, name, number)
 	if err != nil {
 		return nil, err
 	}
@@ -3118,8 +3118,8 @@ func (c *Client) GetPullsByProviderByOwnerByNameByNumberCommits(ctx context.Cont
 	return c.Client.Do(req)
 }
 
-func (c *Client) GetPullsByProviderByOwnerByNameByNumberDiff(ctx context.Context, provider string, owner string, name string, number int64, params *GetPullsByProviderByOwnerByNameByNumberDiffParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetPullsByProviderByOwnerByNameByNumberDiffRequest(c.Server, provider, owner, name, number, params)
+func (c *Client) GetPullDiff(ctx context.Context, provider string, owner string, name string, number int64, params *GetPullDiffParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetPullDiffRequest(c.Server, provider, owner, name, number, params)
 	if err != nil {
 		return nil, err
 	}
@@ -3130,8 +3130,8 @@ func (c *Client) GetPullsByProviderByOwnerByNameByNumberDiff(ctx context.Context
 	return c.Client.Do(req)
 }
 
-func (c *Client) GetPullsByProviderByOwnerByNameByNumberFilePreview(ctx context.Context, provider string, owner string, name string, number int64, params *GetPullsByProviderByOwnerByNameByNumberFilePreviewParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetPullsByProviderByOwnerByNameByNumberFilePreviewRequest(c.Server, provider, owner, name, number, params)
+func (c *Client) GetPullFilePreview(ctx context.Context, provider string, owner string, name string, number int64, params *GetPullFilePreviewParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetPullFilePreviewRequest(c.Server, provider, owner, name, number, params)
 	if err != nil {
 		return nil, err
 	}
@@ -3142,8 +3142,8 @@ func (c *Client) GetPullsByProviderByOwnerByNameByNumberFilePreview(ctx context.
 	return c.Client.Do(req)
 }
 
-func (c *Client) GetPullsByProviderByOwnerByNameByNumberFiles(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetPullsByProviderByOwnerByNameByNumberFilesRequest(c.Server, provider, owner, name, number)
+func (c *Client) GetPullFiles(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetPullFilesRequest(c.Server, provider, owner, name, number)
 	if err != nil {
 		return nil, err
 	}
@@ -3178,8 +3178,8 @@ func (c *Client) SetPrGithubState(ctx context.Context, provider string, owner st
 	return c.Client.Do(req)
 }
 
-func (c *Client) GetPullsByProviderByOwnerByNameByNumberImportMetadata(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetPullsByProviderByOwnerByNameByNumberImportMetadataRequest(c.Server, provider, owner, name, number)
+func (c *Client) GetPullImportMetadata(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetPullImportMetadataRequest(c.Server, provider, owner, name, number)
 	if err != nil {
 		return nil, err
 	}
@@ -3214,8 +3214,8 @@ func (c *Client) SetPrLabels(ctx context.Context, provider string, owner string,
 	return c.Client.Do(req)
 }
 
-func (c *Client) PostPullsByProviderByOwnerByNameByNumberMergeWithBody(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostPullsByProviderByOwnerByNameByNumberMergeRequestWithBody(c.Server, provider, owner, name, number, contentType, body)
+func (c *Client) MergePullWithBody(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewMergePullRequestWithBody(c.Server, provider, owner, name, number, contentType, body)
 	if err != nil {
 		return nil, err
 	}
@@ -3226,8 +3226,8 @@ func (c *Client) PostPullsByProviderByOwnerByNameByNumberMergeWithBody(ctx conte
 	return c.Client.Do(req)
 }
 
-func (c *Client) PostPullsByProviderByOwnerByNameByNumberMerge(ctx context.Context, provider string, owner string, name string, number int64, body PostPullsByProviderByOwnerByNameByNumberMergeJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostPullsByProviderByOwnerByNameByNumberMergeRequest(c.Server, provider, owner, name, number, body)
+func (c *Client) MergePull(ctx context.Context, provider string, owner string, name string, number int64, body MergePullJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewMergePullRequest(c.Server, provider, owner, name, number, body)
 	if err != nil {
 		return nil, err
 	}
@@ -3238,8 +3238,8 @@ func (c *Client) PostPullsByProviderByOwnerByNameByNumberMerge(ctx context.Conte
 	return c.Client.Do(req)
 }
 
-func (c *Client) PostPullsByProviderByOwnerByNameByNumberReadyForReview(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostPullsByProviderByOwnerByNameByNumberReadyForReviewRequest(c.Server, provider, owner, name, number)
+func (c *Client) MarkPullReadyForReview(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewMarkPullReadyForReviewRequest(c.Server, provider, owner, name, number)
 	if err != nil {
 		return nil, err
 	}
@@ -3250,8 +3250,8 @@ func (c *Client) PostPullsByProviderByOwnerByNameByNumberReadyForReview(ctx cont
 	return c.Client.Do(req)
 }
 
-func (c *Client) GetPullsByProviderByOwnerByNameByNumberStack(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetPullsByProviderByOwnerByNameByNumberStackRequest(c.Server, provider, owner, name, number)
+func (c *Client) GetPullStack(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetPullStackRequest(c.Server, provider, owner, name, number)
 	if err != nil {
 		return nil, err
 	}
@@ -3286,8 +3286,8 @@ func (c *Client) SetKanbanState(ctx context.Context, provider string, owner stri
 	return c.Client.Do(req)
 }
 
-func (c *Client) PostPullsByProviderByOwnerByNameByNumberSync(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostPullsByProviderByOwnerByNameByNumberSyncRequest(c.Server, provider, owner, name, number)
+func (c *Client) SyncPull(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSyncPullRequest(c.Server, provider, owner, name, number)
 	if err != nil {
 		return nil, err
 	}
@@ -3334,8 +3334,8 @@ func (c *Client) DeleteRepo(ctx context.Context, provider string, owner string, 
 	return c.Client.Do(req)
 }
 
-func (c *Client) GetRepoByProviderByOwnerByName(ctx context.Context, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetRepoByProviderByOwnerByNameRequest(c.Server, provider, owner, name)
+func (c *Client) GetRepo(ctx context.Context, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetRepoRequest(c.Server, provider, owner, name)
 	if err != nil {
 		return nil, err
 	}
@@ -3346,8 +3346,8 @@ func (c *Client) GetRepoByProviderByOwnerByName(ctx context.Context, provider st
 	return c.Client.Do(req)
 }
 
-func (c *Client) GetRepoByProviderByOwnerByNameCommentAutocomplete(ctx context.Context, provider string, owner string, name string, params *GetRepoByProviderByOwnerByNameCommentAutocompleteParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetRepoByProviderByOwnerByNameCommentAutocompleteRequest(c.Server, provider, owner, name, params)
+func (c *Client) GetCommentAutocomplete(ctx context.Context, provider string, owner string, name string, params *GetCommentAutocompleteParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetCommentAutocompleteRequest(c.Server, provider, owner, name, params)
 	if err != nil {
 		return nil, err
 	}
@@ -3382,8 +3382,8 @@ func (c *Client) RefreshRepo(ctx context.Context, provider string, owner string,
 	return c.Client.Do(req)
 }
 
-func (c *Client) PostRepoByProviderByOwnerByNameResolveByNumber(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostRepoByProviderByOwnerByNameResolveByNumberRequest(c.Server, provider, owner, name, number)
+func (c *Client) ResolveRepoItem(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewResolveRepoItemRequest(c.Server, provider, owner, name, number)
 	if err != nil {
 		return nil, err
 	}
@@ -3634,8 +3634,8 @@ func (c *Client) GetVersion(ctx context.Context, reqEditors ...RequestEditorFn) 
 	return c.Client.Do(req)
 }
 
-func (c *Client) GetWorkspaces(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetWorkspacesRequest(c.Server)
+func (c *Client) ListWorkspaces(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListWorkspacesRequest(c.Server)
 	if err != nil {
 		return nil, err
 	}
@@ -3682,8 +3682,8 @@ func (c *Client) DeleteWorkspace(ctx context.Context, id string, params *DeleteW
 	return c.Client.Do(req)
 }
 
-func (c *Client) GetWorkspacesById(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetWorkspacesByIdRequest(c.Server, id)
+func (c *Client) GetWorkspace(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetWorkspaceRequest(c.Server, id)
 	if err != nil {
 		return nil, err
 	}
@@ -3694,8 +3694,8 @@ func (c *Client) GetWorkspacesById(ctx context.Context, id string, reqEditors ..
 	return c.Client.Do(req)
 }
 
-func (c *Client) GetWorkspacesByIdCommits(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetWorkspacesByIdCommitsRequest(c.Server, id)
+func (c *Client) GetWorkspaceCommits(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetWorkspaceCommitsRequest(c.Server, id)
 	if err != nil {
 		return nil, err
 	}
@@ -3706,8 +3706,8 @@ func (c *Client) GetWorkspacesByIdCommits(ctx context.Context, id string, reqEdi
 	return c.Client.Do(req)
 }
 
-func (c *Client) GetWorkspacesByIdDiff(ctx context.Context, id string, params *GetWorkspacesByIdDiffParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetWorkspacesByIdDiffRequest(c.Server, id, params)
+func (c *Client) GetWorkspaceDiff(ctx context.Context, id string, params *GetWorkspaceDiffParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetWorkspaceDiffRequest(c.Server, id, params)
 	if err != nil {
 		return nil, err
 	}
@@ -3718,8 +3718,8 @@ func (c *Client) GetWorkspacesByIdDiff(ctx context.Context, id string, params *G
 	return c.Client.Do(req)
 }
 
-func (c *Client) GetWorkspacesByIdFiles(ctx context.Context, id string, params *GetWorkspacesByIdFilesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetWorkspacesByIdFilesRequest(c.Server, id, params)
+func (c *Client) GetWorkspaceFiles(ctx context.Context, id string, params *GetWorkspaceFilesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetWorkspaceFilesRequest(c.Server, id, params)
 	if err != nil {
 		return nil, err
 	}
@@ -3802,8 +3802,8 @@ func (c *Client) EnsureWorkspaceRuntimeShell(ctx context.Context, id string, req
 	return c.Client.Do(req)
 }
 
-// NewGetActivityRequest generates requests for GetActivity
-func NewGetActivityRequest(server string, params *GetActivityParams) (*http.Request, error) {
+// NewListActivityRequest generates requests for ListActivity
+func NewListActivityRequest(server string, params *ListActivityParams) (*http.Request, error) {
 	var err error
 
 	serverURL, err := url.Parse(server)
@@ -4010,8 +4010,8 @@ func NewCreateIssueOnHostRequestWithBody(server string, platformHost string, pro
 	return req, nil
 }
 
-// NewGetHostByPlatformHostIssuesByProviderByOwnerByNameByNumberRequest generates requests for GetHostByPlatformHostIssuesByProviderByOwnerByNameByNumber
-func NewGetHostByPlatformHostIssuesByProviderByOwnerByNameByNumberRequest(server string, platformHost string, provider string, owner string, name string, number int64) (*http.Request, error) {
+// NewGetIssueOnHostRequest generates requests for GetIssueOnHost
+func NewGetIssueOnHostRequest(server string, platformHost string, provider string, owner string, name string, number int64) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -4454,8 +4454,8 @@ func NewSetIssueLabelsOnHostRequestWithBody(server string, platformHost string, 
 	return req, nil
 }
 
-// NewPostHostByPlatformHostIssuesByProviderByOwnerByNameByNumberSyncRequest generates requests for PostHostByPlatformHostIssuesByProviderByOwnerByNameByNumberSync
-func NewPostHostByPlatformHostIssuesByProviderByOwnerByNameByNumberSyncRequest(server string, platformHost string, provider string, owner string, name string, number int64) (*http.Request, error) {
+// NewSyncIssueOnHostRequest generates requests for SyncIssueOnHost
+func NewSyncIssueOnHostRequest(server string, platformHost string, provider string, owner string, name string, number int64) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -4653,8 +4653,8 @@ func NewCreateIssueWorkspaceOnHostRequestWithBody(server string, platformHost st
 	return req, nil
 }
 
-// NewGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberRequest generates requests for GetHostByPlatformHostPullsByProviderByOwnerByNameByNumber
-func NewGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberRequest(server string, platformHost string, provider string, owner string, name string, number int64) (*http.Request, error) {
+// NewGetPullOnHostRequest generates requests for GetPullOnHost
+func NewGetPullOnHostRequest(server string, platformHost string, provider string, owner string, name string, number int64) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -4790,19 +4790,19 @@ func NewEditPrContentOnHostRequestWithBody(server string, platformHost string, p
 	return req, nil
 }
 
-// NewPostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveRequest calls the generic PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApprove builder with application/json body
-func NewPostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveRequest(server string, platformHost string, provider string, owner string, name string, number int64, body PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveJSONRequestBody) (*http.Request, error) {
+// NewApprovePullOnHostRequest calls the generic ApprovePullOnHost builder with application/json body
+func NewApprovePullOnHostRequest(server string, platformHost string, provider string, owner string, name string, number int64, body ApprovePullOnHostJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
 	buf, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
 	}
 	bodyReader = bytes.NewReader(buf)
-	return NewPostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveRequestWithBody(server, platformHost, provider, owner, name, number, "application/json", bodyReader)
+	return NewApprovePullOnHostRequestWithBody(server, platformHost, provider, owner, name, number, "application/json", bodyReader)
 }
 
-// NewPostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveRequestWithBody generates requests for PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApprove with any type of body
-func NewPostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveRequestWithBody(server string, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
+// NewApprovePullOnHostRequestWithBody generates requests for ApprovePullOnHost with any type of body
+func NewApprovePullOnHostRequestWithBody(server string, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -4865,8 +4865,8 @@ func NewPostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveRequest
 	return req, nil
 }
 
-// NewPostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkflowsRequest generates requests for PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkflows
-func NewPostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkflowsRequest(server string, platformHost string, provider string, owner string, name string, number int64) (*http.Request, error) {
+// NewApprovePullWorkflowsOnHostRequest generates requests for ApprovePullWorkflowsOnHost
+func NewApprovePullWorkflowsOnHostRequest(server string, platformHost string, provider string, owner string, name string, number int64) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -4927,8 +4927,8 @@ func NewPostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkflo
 	return req, nil
 }
 
-// NewPostHostByPlatformHostPullsByProviderByOwnerByNameByNumberCiRefreshRequest generates requests for PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberCiRefresh
-func NewPostHostByPlatformHostPullsByProviderByOwnerByNameByNumberCiRefreshRequest(server string, platformHost string, provider string, owner string, name string, number int64) (*http.Request, error) {
+// NewRefreshPullCiOnHostRequest generates requests for RefreshPullCiOnHost
+func NewRefreshPullCiOnHostRequest(server string, platformHost string, provider string, owner string, name string, number int64) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -5146,8 +5146,8 @@ func NewEditPrCommentOnHostRequestWithBody(server string, platformHost string, p
 	return req, nil
 }
 
-// NewGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberCommitsRequest generates requests for GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberCommits
-func NewGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberCommitsRequest(server string, platformHost string, provider string, owner string, name string, number int64) (*http.Request, error) {
+// NewGetPullCommitsOnHostRequest generates requests for GetPullCommitsOnHost
+func NewGetPullCommitsOnHostRequest(server string, platformHost string, provider string, owner string, name string, number int64) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -5208,8 +5208,8 @@ func NewGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberCommitsRequest(
 	return req, nil
 }
 
-// NewGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiffRequest generates requests for GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiff
-func NewGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiffRequest(server string, platformHost string, provider string, owner string, name string, number int64, params *GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiffParams) (*http.Request, error) {
+// NewGetPullDiffOnHostRequest generates requests for GetPullDiffOnHost
+func NewGetPullDiffOnHostRequest(server string, platformHost string, provider string, owner string, name string, number int64, params *GetPullDiffOnHostParams) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -5340,8 +5340,8 @@ func NewGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiffRequest(ser
 	return req, nil
 }
 
-// NewGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreviewRequest generates requests for GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreview
-func NewGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreviewRequest(server string, platformHost string, provider string, owner string, name string, number int64, params *GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreviewParams) (*http.Request, error) {
+// NewGetPullFilePreviewOnHostRequest generates requests for GetPullFilePreviewOnHost
+func NewGetPullFilePreviewOnHostRequest(server string, platformHost string, provider string, owner string, name string, number int64, params *GetPullFilePreviewOnHostParams) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -5472,8 +5472,8 @@ func NewGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreviewRequ
 	return req, nil
 }
 
-// NewGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilesRequest generates requests for GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFiles
-func NewGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilesRequest(server string, platformHost string, provider string, owner string, name string, number int64) (*http.Request, error) {
+// NewGetPullFilesOnHostRequest generates requests for GetPullFilesOnHost
+func NewGetPullFilesOnHostRequest(server string, platformHost string, provider string, owner string, name string, number int64) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -5609,8 +5609,8 @@ func NewSetPrGithubStateOnHostRequestWithBody(server string, platformHost string
 	return req, nil
 }
 
-// NewGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberImportMetadataRequest generates requests for GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberImportMetadata
-func NewGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberImportMetadataRequest(server string, platformHost string, provider string, owner string, name string, number int64) (*http.Request, error) {
+// NewGetPullImportMetadataOnHostRequest generates requests for GetPullImportMetadataOnHost
+func NewGetPullImportMetadataOnHostRequest(server string, platformHost string, provider string, owner string, name string, number int64) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -5746,19 +5746,19 @@ func NewSetPrLabelsOnHostRequestWithBody(server string, platformHost string, pro
 	return req, nil
 }
 
-// NewPostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeRequest calls the generic PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMerge builder with application/json body
-func NewPostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeRequest(server string, platformHost string, provider string, owner string, name string, number int64, body PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeJSONRequestBody) (*http.Request, error) {
+// NewMergePullOnHostRequest calls the generic MergePullOnHost builder with application/json body
+func NewMergePullOnHostRequest(server string, platformHost string, provider string, owner string, name string, number int64, body MergePullOnHostJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
 	buf, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
 	}
 	bodyReader = bytes.NewReader(buf)
-	return NewPostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeRequestWithBody(server, platformHost, provider, owner, name, number, "application/json", bodyReader)
+	return NewMergePullOnHostRequestWithBody(server, platformHost, provider, owner, name, number, "application/json", bodyReader)
 }
 
-// NewPostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeRequestWithBody generates requests for PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMerge with any type of body
-func NewPostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeRequestWithBody(server string, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
+// NewMergePullOnHostRequestWithBody generates requests for MergePullOnHost with any type of body
+func NewMergePullOnHostRequestWithBody(server string, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -5821,8 +5821,8 @@ func NewPostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeRequestWi
 	return req, nil
 }
 
-// NewPostHostByPlatformHostPullsByProviderByOwnerByNameByNumberReadyForReviewRequest generates requests for PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberReadyForReview
-func NewPostHostByPlatformHostPullsByProviderByOwnerByNameByNumberReadyForReviewRequest(server string, platformHost string, provider string, owner string, name string, number int64) (*http.Request, error) {
+// NewMarkPullReadyForReviewOnHostRequest generates requests for MarkPullReadyForReviewOnHost
+func NewMarkPullReadyForReviewOnHostRequest(server string, platformHost string, provider string, owner string, name string, number int64) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -5883,8 +5883,8 @@ func NewPostHostByPlatformHostPullsByProviderByOwnerByNameByNumberReadyForReview
 	return req, nil
 }
 
-// NewGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberStackRequest generates requests for GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberStack
-func NewGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberStackRequest(server string, platformHost string, provider string, owner string, name string, number int64) (*http.Request, error) {
+// NewGetPullStackOnHostRequest generates requests for GetPullStackOnHost
+func NewGetPullStackOnHostRequest(server string, platformHost string, provider string, owner string, name string, number int64) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -6020,8 +6020,8 @@ func NewSetKanbanStateOnHostRequestWithBody(server string, platformHost string, 
 	return req, nil
 }
 
-// NewPostHostByPlatformHostPullsByProviderByOwnerByNameByNumberSyncRequest generates requests for PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberSync
-func NewPostHostByPlatformHostPullsByProviderByOwnerByNameByNumberSyncRequest(server string, platformHost string, provider string, owner string, name string, number int64) (*http.Request, error) {
+// NewSyncPullOnHostRequest generates requests for SyncPullOnHost
+func NewSyncPullOnHostRequest(server string, platformHost string, provider string, owner string, name string, number int64) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -6199,8 +6199,8 @@ func NewDeleteRepoOnHostRequest(server string, platformHost string, provider str
 	return req, nil
 }
 
-// NewGetHostByPlatformHostRepoByProviderByOwnerByNameRequest generates requests for GetHostByPlatformHostRepoByProviderByOwnerByName
-func NewGetHostByPlatformHostRepoByProviderByOwnerByNameRequest(server string, platformHost string, provider string, owner string, name string) (*http.Request, error) {
+// NewGetRepoOnHostRequest generates requests for GetRepoOnHost
+func NewGetRepoOnHostRequest(server string, platformHost string, provider string, owner string, name string) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -6254,8 +6254,8 @@ func NewGetHostByPlatformHostRepoByProviderByOwnerByNameRequest(server string, p
 	return req, nil
 }
 
-// NewGetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocompleteRequest generates requests for GetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocomplete
-func NewGetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocompleteRequest(server string, platformHost string, provider string, owner string, name string, params *GetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocompleteParams) (*http.Request, error) {
+// NewGetCommentAutocompleteOnHostRequest generates requests for GetCommentAutocompleteOnHost
+func NewGetCommentAutocompleteOnHostRequest(server string, platformHost string, provider string, owner string, name string, params *GetCommentAutocompleteOnHostParams) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -6473,8 +6473,8 @@ func NewRefreshRepoOnHostRequest(server string, platformHost string, provider st
 	return req, nil
 }
 
-// NewPostHostByPlatformHostRepoByProviderByOwnerByNameResolveByNumberRequest generates requests for PostHostByPlatformHostRepoByProviderByOwnerByNameResolveByNumber
-func NewPostHostByPlatformHostRepoByProviderByOwnerByNameResolveByNumberRequest(server string, platformHost string, provider string, owner string, name string, number int64) (*http.Request, error) {
+// NewResolveRepoItemOnHostRequest generates requests for ResolveRepoItemOnHost
+func NewResolveRepoItemOnHostRequest(server string, platformHost string, provider string, owner string, name string, number int64) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -6725,8 +6725,8 @@ func NewCreateIssueRequestWithBody(server string, provider string, owner string,
 	return req, nil
 }
 
-// NewGetIssuesByProviderByOwnerByNameByNumberRequest generates requests for GetIssuesByProviderByOwnerByNameByNumber
-func NewGetIssuesByProviderByOwnerByNameByNumberRequest(server string, provider string, owner string, name string, number int64) (*http.Request, error) {
+// NewGetIssueRequest generates requests for GetIssue
+func NewGetIssueRequest(server string, provider string, owner string, name string, number int64) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -7127,8 +7127,8 @@ func NewSetIssueLabelsRequestWithBody(server string, provider string, owner stri
 	return req, nil
 }
 
-// NewPostIssuesByProviderByOwnerByNameByNumberSyncRequest generates requests for PostIssuesByProviderByOwnerByNameByNumberSync
-func NewPostIssuesByProviderByOwnerByNameByNumberSyncRequest(server string, provider string, owner string, name string, number int64) (*http.Request, error) {
+// NewSyncIssueRequest generates requests for SyncIssue
+func NewSyncIssueRequest(server string, provider string, owner string, name string, number int64) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -7666,8 +7666,8 @@ func NewListPullsRequest(server string, params *ListPullsParams) (*http.Request,
 	return req, nil
 }
 
-// NewGetPullsByProviderByOwnerByNameByNumberRequest generates requests for GetPullsByProviderByOwnerByNameByNumber
-func NewGetPullsByProviderByOwnerByNameByNumberRequest(server string, provider string, owner string, name string, number int64) (*http.Request, error) {
+// NewGetPullRequest generates requests for GetPull
+func NewGetPullRequest(server string, provider string, owner string, name string, number int64) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -7789,19 +7789,19 @@ func NewEditPrContentRequestWithBody(server string, provider string, owner strin
 	return req, nil
 }
 
-// NewPostPullsByProviderByOwnerByNameByNumberApproveRequest calls the generic PostPullsByProviderByOwnerByNameByNumberApprove builder with application/json body
-func NewPostPullsByProviderByOwnerByNameByNumberApproveRequest(server string, provider string, owner string, name string, number int64, body PostPullsByProviderByOwnerByNameByNumberApproveJSONRequestBody) (*http.Request, error) {
+// NewApprovePullRequest calls the generic ApprovePull builder with application/json body
+func NewApprovePullRequest(server string, provider string, owner string, name string, number int64, body ApprovePullJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
 	buf, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
 	}
 	bodyReader = bytes.NewReader(buf)
-	return NewPostPullsByProviderByOwnerByNameByNumberApproveRequestWithBody(server, provider, owner, name, number, "application/json", bodyReader)
+	return NewApprovePullRequestWithBody(server, provider, owner, name, number, "application/json", bodyReader)
 }
 
-// NewPostPullsByProviderByOwnerByNameByNumberApproveRequestWithBody generates requests for PostPullsByProviderByOwnerByNameByNumberApprove with any type of body
-func NewPostPullsByProviderByOwnerByNameByNumberApproveRequestWithBody(server string, provider string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
+// NewApprovePullRequestWithBody generates requests for ApprovePull with any type of body
+func NewApprovePullRequestWithBody(server string, provider string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -7857,8 +7857,8 @@ func NewPostPullsByProviderByOwnerByNameByNumberApproveRequestWithBody(server st
 	return req, nil
 }
 
-// NewPostPullsByProviderByOwnerByNameByNumberApproveWorkflowsRequest generates requests for PostPullsByProviderByOwnerByNameByNumberApproveWorkflows
-func NewPostPullsByProviderByOwnerByNameByNumberApproveWorkflowsRequest(server string, provider string, owner string, name string, number int64) (*http.Request, error) {
+// NewApprovePullWorkflowsRequest generates requests for ApprovePullWorkflows
+func NewApprovePullWorkflowsRequest(server string, provider string, owner string, name string, number int64) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -7912,8 +7912,8 @@ func NewPostPullsByProviderByOwnerByNameByNumberApproveWorkflowsRequest(server s
 	return req, nil
 }
 
-// NewPostPullsByProviderByOwnerByNameByNumberCiRefreshRequest generates requests for PostPullsByProviderByOwnerByNameByNumberCiRefresh
-func NewPostPullsByProviderByOwnerByNameByNumberCiRefreshRequest(server string, provider string, owner string, name string, number int64) (*http.Request, error) {
+// NewRefreshPullCiRequest generates requests for RefreshPullCi
+func NewRefreshPullCiRequest(server string, provider string, owner string, name string, number int64) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -8110,8 +8110,8 @@ func NewEditPrCommentRequestWithBody(server string, provider string, owner strin
 	return req, nil
 }
 
-// NewGetPullsByProviderByOwnerByNameByNumberCommitsRequest generates requests for GetPullsByProviderByOwnerByNameByNumberCommits
-func NewGetPullsByProviderByOwnerByNameByNumberCommitsRequest(server string, provider string, owner string, name string, number int64) (*http.Request, error) {
+// NewGetPullCommitsRequest generates requests for GetPullCommits
+func NewGetPullCommitsRequest(server string, provider string, owner string, name string, number int64) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -8165,8 +8165,8 @@ func NewGetPullsByProviderByOwnerByNameByNumberCommitsRequest(server string, pro
 	return req, nil
 }
 
-// NewGetPullsByProviderByOwnerByNameByNumberDiffRequest generates requests for GetPullsByProviderByOwnerByNameByNumberDiff
-func NewGetPullsByProviderByOwnerByNameByNumberDiffRequest(server string, provider string, owner string, name string, number int64, params *GetPullsByProviderByOwnerByNameByNumberDiffParams) (*http.Request, error) {
+// NewGetPullDiffRequest generates requests for GetPullDiff
+func NewGetPullDiffRequest(server string, provider string, owner string, name string, number int64, params *GetPullDiffParams) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -8290,8 +8290,8 @@ func NewGetPullsByProviderByOwnerByNameByNumberDiffRequest(server string, provid
 	return req, nil
 }
 
-// NewGetPullsByProviderByOwnerByNameByNumberFilePreviewRequest generates requests for GetPullsByProviderByOwnerByNameByNumberFilePreview
-func NewGetPullsByProviderByOwnerByNameByNumberFilePreviewRequest(server string, provider string, owner string, name string, number int64, params *GetPullsByProviderByOwnerByNameByNumberFilePreviewParams) (*http.Request, error) {
+// NewGetPullFilePreviewRequest generates requests for GetPullFilePreview
+func NewGetPullFilePreviewRequest(server string, provider string, owner string, name string, number int64, params *GetPullFilePreviewParams) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -8415,8 +8415,8 @@ func NewGetPullsByProviderByOwnerByNameByNumberFilePreviewRequest(server string,
 	return req, nil
 }
 
-// NewGetPullsByProviderByOwnerByNameByNumberFilesRequest generates requests for GetPullsByProviderByOwnerByNameByNumberFiles
-func NewGetPullsByProviderByOwnerByNameByNumberFilesRequest(server string, provider string, owner string, name string, number int64) (*http.Request, error) {
+// NewGetPullFilesRequest generates requests for GetPullFiles
+func NewGetPullFilesRequest(server string, provider string, owner string, name string, number int64) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -8538,8 +8538,8 @@ func NewSetPrGithubStateRequestWithBody(server string, provider string, owner st
 	return req, nil
 }
 
-// NewGetPullsByProviderByOwnerByNameByNumberImportMetadataRequest generates requests for GetPullsByProviderByOwnerByNameByNumberImportMetadata
-func NewGetPullsByProviderByOwnerByNameByNumberImportMetadataRequest(server string, provider string, owner string, name string, number int64) (*http.Request, error) {
+// NewGetPullImportMetadataRequest generates requests for GetPullImportMetadata
+func NewGetPullImportMetadataRequest(server string, provider string, owner string, name string, number int64) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -8661,19 +8661,19 @@ func NewSetPrLabelsRequestWithBody(server string, provider string, owner string,
 	return req, nil
 }
 
-// NewPostPullsByProviderByOwnerByNameByNumberMergeRequest calls the generic PostPullsByProviderByOwnerByNameByNumberMerge builder with application/json body
-func NewPostPullsByProviderByOwnerByNameByNumberMergeRequest(server string, provider string, owner string, name string, number int64, body PostPullsByProviderByOwnerByNameByNumberMergeJSONRequestBody) (*http.Request, error) {
+// NewMergePullRequest calls the generic MergePull builder with application/json body
+func NewMergePullRequest(server string, provider string, owner string, name string, number int64, body MergePullJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
 	buf, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
 	}
 	bodyReader = bytes.NewReader(buf)
-	return NewPostPullsByProviderByOwnerByNameByNumberMergeRequestWithBody(server, provider, owner, name, number, "application/json", bodyReader)
+	return NewMergePullRequestWithBody(server, provider, owner, name, number, "application/json", bodyReader)
 }
 
-// NewPostPullsByProviderByOwnerByNameByNumberMergeRequestWithBody generates requests for PostPullsByProviderByOwnerByNameByNumberMerge with any type of body
-func NewPostPullsByProviderByOwnerByNameByNumberMergeRequestWithBody(server string, provider string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
+// NewMergePullRequestWithBody generates requests for MergePull with any type of body
+func NewMergePullRequestWithBody(server string, provider string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -8729,8 +8729,8 @@ func NewPostPullsByProviderByOwnerByNameByNumberMergeRequestWithBody(server stri
 	return req, nil
 }
 
-// NewPostPullsByProviderByOwnerByNameByNumberReadyForReviewRequest generates requests for PostPullsByProviderByOwnerByNameByNumberReadyForReview
-func NewPostPullsByProviderByOwnerByNameByNumberReadyForReviewRequest(server string, provider string, owner string, name string, number int64) (*http.Request, error) {
+// NewMarkPullReadyForReviewRequest generates requests for MarkPullReadyForReview
+func NewMarkPullReadyForReviewRequest(server string, provider string, owner string, name string, number int64) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -8784,8 +8784,8 @@ func NewPostPullsByProviderByOwnerByNameByNumberReadyForReviewRequest(server str
 	return req, nil
 }
 
-// NewGetPullsByProviderByOwnerByNameByNumberStackRequest generates requests for GetPullsByProviderByOwnerByNameByNumberStack
-func NewGetPullsByProviderByOwnerByNameByNumberStackRequest(server string, provider string, owner string, name string, number int64) (*http.Request, error) {
+// NewGetPullStackRequest generates requests for GetPullStack
+func NewGetPullStackRequest(server string, provider string, owner string, name string, number int64) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -8907,8 +8907,8 @@ func NewSetKanbanStateRequestWithBody(server string, provider string, owner stri
 	return req, nil
 }
 
-// NewPostPullsByProviderByOwnerByNameByNumberSyncRequest generates requests for PostPullsByProviderByOwnerByNameByNumberSync
-func NewPostPullsByProviderByOwnerByNameByNumberSyncRequest(server string, provider string, owner string, name string, number int64) (*http.Request, error) {
+// NewSyncPullRequest generates requests for SyncPull
+func NewSyncPullRequest(server string, provider string, owner string, name string, number int64) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -9092,8 +9092,8 @@ func NewDeleteRepoRequest(server string, provider string, owner string, name str
 	return req, nil
 }
 
-// NewGetRepoByProviderByOwnerByNameRequest generates requests for GetRepoByProviderByOwnerByName
-func NewGetRepoByProviderByOwnerByNameRequest(server string, provider string, owner string, name string) (*http.Request, error) {
+// NewGetRepoRequest generates requests for GetRepo
+func NewGetRepoRequest(server string, provider string, owner string, name string) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -9140,8 +9140,8 @@ func NewGetRepoByProviderByOwnerByNameRequest(server string, provider string, ow
 	return req, nil
 }
 
-// NewGetRepoByProviderByOwnerByNameCommentAutocompleteRequest generates requests for GetRepoByProviderByOwnerByNameCommentAutocomplete
-func NewGetRepoByProviderByOwnerByNameCommentAutocompleteRequest(server string, provider string, owner string, name string, params *GetRepoByProviderByOwnerByNameCommentAutocompleteParams) (*http.Request, error) {
+// NewGetCommentAutocompleteRequest generates requests for GetCommentAutocomplete
+func NewGetCommentAutocompleteRequest(server string, provider string, owner string, name string, params *GetCommentAutocompleteParams) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -9338,8 +9338,8 @@ func NewRefreshRepoRequest(server string, provider string, owner string, name st
 	return req, nil
 }
 
-// NewPostRepoByProviderByOwnerByNameResolveByNumberRequest generates requests for PostRepoByProviderByOwnerByNameResolveByNumber
-func NewPostRepoByProviderByOwnerByNameResolveByNumberRequest(server string, provider string, owner string, name string, number int64) (*http.Request, error) {
+// NewResolveRepoItemRequest generates requests for ResolveRepoItem
+func NewResolveRepoItemRequest(server string, provider string, owner string, name string, number int64) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -9871,8 +9871,8 @@ func NewGetVersionRequest(server string) (*http.Request, error) {
 	return req, nil
 }
 
-// NewGetWorkspacesRequest generates requests for GetWorkspaces
-func NewGetWorkspacesRequest(server string) (*http.Request, error) {
+// NewListWorkspacesRequest generates requests for ListWorkspaces
+func NewListWorkspacesRequest(server string) (*http.Request, error) {
 	var err error
 
 	serverURL, err := url.Parse(server)
@@ -9994,8 +9994,8 @@ func NewDeleteWorkspaceRequest(server string, id string, params *DeleteWorkspace
 	return req, nil
 }
 
-// NewGetWorkspacesByIdRequest generates requests for GetWorkspacesById
-func NewGetWorkspacesByIdRequest(server string, id string) (*http.Request, error) {
+// NewGetWorkspaceRequest generates requests for GetWorkspace
+func NewGetWorkspaceRequest(server string, id string) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -10028,8 +10028,8 @@ func NewGetWorkspacesByIdRequest(server string, id string) (*http.Request, error
 	return req, nil
 }
 
-// NewGetWorkspacesByIdCommitsRequest generates requests for GetWorkspacesByIdCommits
-func NewGetWorkspacesByIdCommitsRequest(server string, id string) (*http.Request, error) {
+// NewGetWorkspaceCommitsRequest generates requests for GetWorkspaceCommits
+func NewGetWorkspaceCommitsRequest(server string, id string) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -10062,8 +10062,8 @@ func NewGetWorkspacesByIdCommitsRequest(server string, id string) (*http.Request
 	return req, nil
 }
 
-// NewGetWorkspacesByIdDiffRequest generates requests for GetWorkspacesByIdDiff
-func NewGetWorkspacesByIdDiffRequest(server string, id string, params *GetWorkspacesByIdDiffParams) (*http.Request, error) {
+// NewGetWorkspaceDiffRequest generates requests for GetWorkspaceDiff
+func NewGetWorkspaceDiffRequest(server string, id string, params *GetWorkspaceDiffParams) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -10198,8 +10198,8 @@ func NewGetWorkspacesByIdDiffRequest(server string, id string, params *GetWorksp
 	return req, nil
 }
 
-// NewGetWorkspacesByIdFilesRequest generates requests for GetWorkspacesByIdFiles
-func NewGetWorkspacesByIdFilesRequest(server string, id string, params *GetWorkspacesByIdFilesParams) (*http.Request, error) {
+// NewGetWorkspaceFilesRequest generates requests for GetWorkspaceFiles
+func NewGetWorkspaceFilesRequest(server string, id string, params *GetWorkspaceFilesParams) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -10551,16 +10551,16 @@ func WithBaseURL(baseURL string) ClientOption {
 
 // ClientWithResponsesInterface is the interface specification for the client with responses above.
 type ClientWithResponsesInterface interface {
-	// GetActivityWithResponse request
-	GetActivityWithResponse(ctx context.Context, params *GetActivityParams, reqEditors ...RequestEditorFn) (*GetActivityResponse, error)
+	// ListActivityWithResponse request
+	ListActivityWithResponse(ctx context.Context, params *ListActivityParams, reqEditors ...RequestEditorFn) (*ListActivityResponse, error)
 
 	// CreateIssueOnHostWithBodyWithResponse request with any body
 	CreateIssueOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateIssueOnHostResponse, error)
 
 	CreateIssueOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, body CreateIssueOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateIssueOnHostResponse, error)
 
-	// GetHostByPlatformHostIssuesByProviderByOwnerByNameByNumberWithResponse request
-	GetHostByPlatformHostIssuesByProviderByOwnerByNameByNumberWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetHostByPlatformHostIssuesByProviderByOwnerByNameByNumberResponse, error)
+	// GetIssueOnHostWithResponse request
+	GetIssueOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetIssueOnHostResponse, error)
 
 	// EditIssueContentOnHostWithBodyWithResponse request with any body
 	EditIssueContentOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*EditIssueContentOnHostResponse, error)
@@ -10587,8 +10587,8 @@ type ClientWithResponsesInterface interface {
 
 	SetIssueLabelsOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body SetIssueLabelsOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*SetIssueLabelsOnHostResponse, error)
 
-	// PostHostByPlatformHostIssuesByProviderByOwnerByNameByNumberSyncWithResponse request
-	PostHostByPlatformHostIssuesByProviderByOwnerByNameByNumberSyncWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostHostByPlatformHostIssuesByProviderByOwnerByNameByNumberSyncResponse, error)
+	// SyncIssueOnHostWithResponse request
+	SyncIssueOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*SyncIssueOnHostResponse, error)
 
 	// EnqueueIssueSyncOnHostWithResponse request
 	EnqueueIssueSyncOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*EnqueueIssueSyncOnHostResponse, error)
@@ -10598,24 +10598,24 @@ type ClientWithResponsesInterface interface {
 
 	CreateIssueWorkspaceOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body CreateIssueWorkspaceOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateIssueWorkspaceOnHostResponse, error)
 
-	// GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberWithResponse request
-	GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberResponse, error)
+	// GetPullOnHostWithResponse request
+	GetPullOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetPullOnHostResponse, error)
 
 	// EditPrContentOnHostWithBodyWithResponse request with any body
 	EditPrContentOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*EditPrContentOnHostResponse, error)
 
 	EditPrContentOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body EditPrContentOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*EditPrContentOnHostResponse, error)
 
-	// PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWithBodyWithResponse request with any body
-	PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveResponse, error)
+	// ApprovePullOnHostWithBodyWithResponse request with any body
+	ApprovePullOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ApprovePullOnHostResponse, error)
 
-	PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveJSONRequestBody, reqEditors ...RequestEditorFn) (*PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveResponse, error)
+	ApprovePullOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body ApprovePullOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*ApprovePullOnHostResponse, error)
 
-	// PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkflowsWithResponse request
-	PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkflowsWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkflowsResponse, error)
+	// ApprovePullWorkflowsOnHostWithResponse request
+	ApprovePullWorkflowsOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*ApprovePullWorkflowsOnHostResponse, error)
 
-	// PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberCiRefreshWithResponse request
-	PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberCiRefreshWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberCiRefreshResponse, error)
+	// RefreshPullCiOnHostWithResponse request
+	RefreshPullCiOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*RefreshPullCiOnHostResponse, error)
 
 	// PostPrCommentOnHostWithBodyWithResponse request with any body
 	PostPrCommentOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostPrCommentOnHostResponse, error)
@@ -10627,49 +10627,49 @@ type ClientWithResponsesInterface interface {
 
 	EditPrCommentOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, commentId int64, body EditPrCommentOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*EditPrCommentOnHostResponse, error)
 
-	// GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberCommitsWithResponse request
-	GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberCommitsWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberCommitsResponse, error)
+	// GetPullCommitsOnHostWithResponse request
+	GetPullCommitsOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetPullCommitsOnHostResponse, error)
 
-	// GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiffWithResponse request
-	GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiffWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, params *GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiffParams, reqEditors ...RequestEditorFn) (*GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiffResponse, error)
+	// GetPullDiffOnHostWithResponse request
+	GetPullDiffOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, params *GetPullDiffOnHostParams, reqEditors ...RequestEditorFn) (*GetPullDiffOnHostResponse, error)
 
-	// GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreviewWithResponse request
-	GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreviewWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, params *GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreviewParams, reqEditors ...RequestEditorFn) (*GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreviewResponse, error)
+	// GetPullFilePreviewOnHostWithResponse request
+	GetPullFilePreviewOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, params *GetPullFilePreviewOnHostParams, reqEditors ...RequestEditorFn) (*GetPullFilePreviewOnHostResponse, error)
 
-	// GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilesWithResponse request
-	GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilesWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilesResponse, error)
+	// GetPullFilesOnHostWithResponse request
+	GetPullFilesOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetPullFilesOnHostResponse, error)
 
 	// SetPrGithubStateOnHostWithBodyWithResponse request with any body
 	SetPrGithubStateOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetPrGithubStateOnHostResponse, error)
 
 	SetPrGithubStateOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body SetPrGithubStateOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*SetPrGithubStateOnHostResponse, error)
 
-	// GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberImportMetadataWithResponse request
-	GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberImportMetadataWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberImportMetadataResponse, error)
+	// GetPullImportMetadataOnHostWithResponse request
+	GetPullImportMetadataOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetPullImportMetadataOnHostResponse, error)
 
 	// SetPrLabelsOnHostWithBodyWithResponse request with any body
 	SetPrLabelsOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetPrLabelsOnHostResponse, error)
 
 	SetPrLabelsOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body SetPrLabelsOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*SetPrLabelsOnHostResponse, error)
 
-	// PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeWithBodyWithResponse request with any body
-	PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeResponse, error)
+	// MergePullOnHostWithBodyWithResponse request with any body
+	MergePullOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*MergePullOnHostResponse, error)
 
-	PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeJSONRequestBody, reqEditors ...RequestEditorFn) (*PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeResponse, error)
+	MergePullOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body MergePullOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*MergePullOnHostResponse, error)
 
-	// PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberReadyForReviewWithResponse request
-	PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberReadyForReviewWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberReadyForReviewResponse, error)
+	// MarkPullReadyForReviewOnHostWithResponse request
+	MarkPullReadyForReviewOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*MarkPullReadyForReviewOnHostResponse, error)
 
-	// GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberStackWithResponse request
-	GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberStackWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberStackResponse, error)
+	// GetPullStackOnHostWithResponse request
+	GetPullStackOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetPullStackOnHostResponse, error)
 
 	// SetKanbanStateOnHostWithBodyWithResponse request with any body
 	SetKanbanStateOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetKanbanStateOnHostResponse, error)
 
 	SetKanbanStateOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body SetKanbanStateOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*SetKanbanStateOnHostResponse, error)
 
-	// PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberSyncWithResponse request
-	PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberSyncWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberSyncResponse, error)
+	// SyncPullOnHostWithResponse request
+	SyncPullOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*SyncPullOnHostResponse, error)
 
 	// EnqueuePrSyncOnHostWithResponse request
 	EnqueuePrSyncOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*EnqueuePrSyncOnHostResponse, error)
@@ -10677,11 +10677,11 @@ type ClientWithResponsesInterface interface {
 	// DeleteRepoOnHostWithResponse request
 	DeleteRepoOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*DeleteRepoOnHostResponse, error)
 
-	// GetHostByPlatformHostRepoByProviderByOwnerByNameWithResponse request
-	GetHostByPlatformHostRepoByProviderByOwnerByNameWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*GetHostByPlatformHostRepoByProviderByOwnerByNameResponse, error)
+	// GetRepoOnHostWithResponse request
+	GetRepoOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*GetRepoOnHostResponse, error)
 
-	// GetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocompleteWithResponse request
-	GetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocompleteWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, params *GetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocompleteParams, reqEditors ...RequestEditorFn) (*GetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocompleteResponse, error)
+	// GetCommentAutocompleteOnHostWithResponse request
+	GetCommentAutocompleteOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, params *GetCommentAutocompleteOnHostParams, reqEditors ...RequestEditorFn) (*GetCommentAutocompleteOnHostResponse, error)
 
 	// ListRepoLabelsOnHostWithResponse request
 	ListRepoLabelsOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*ListRepoLabelsOnHostResponse, error)
@@ -10689,8 +10689,8 @@ type ClientWithResponsesInterface interface {
 	// RefreshRepoOnHostWithResponse request
 	RefreshRepoOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*RefreshRepoOnHostResponse, error)
 
-	// PostHostByPlatformHostRepoByProviderByOwnerByNameResolveByNumberWithResponse request
-	PostHostByPlatformHostRepoByProviderByOwnerByNameResolveByNumberWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostHostByPlatformHostRepoByProviderByOwnerByNameResolveByNumberResponse, error)
+	// ResolveRepoItemOnHostWithResponse request
+	ResolveRepoItemOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*ResolveRepoItemOnHostResponse, error)
 
 	// ListIssuesWithResponse request
 	ListIssuesWithResponse(ctx context.Context, params *ListIssuesParams, reqEditors ...RequestEditorFn) (*ListIssuesResponse, error)
@@ -10700,8 +10700,8 @@ type ClientWithResponsesInterface interface {
 
 	CreateIssueWithResponse(ctx context.Context, provider string, owner string, name string, body CreateIssueJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateIssueResponse, error)
 
-	// GetIssuesByProviderByOwnerByNameByNumberWithResponse request
-	GetIssuesByProviderByOwnerByNameByNumberWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetIssuesByProviderByOwnerByNameByNumberResponse, error)
+	// GetIssueWithResponse request
+	GetIssueWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetIssueResponse, error)
 
 	// EditIssueContentWithBodyWithResponse request with any body
 	EditIssueContentWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*EditIssueContentResponse, error)
@@ -10728,8 +10728,8 @@ type ClientWithResponsesInterface interface {
 
 	SetIssueLabelsWithResponse(ctx context.Context, provider string, owner string, name string, number int64, body SetIssueLabelsJSONRequestBody, reqEditors ...RequestEditorFn) (*SetIssueLabelsResponse, error)
 
-	// PostIssuesByProviderByOwnerByNameByNumberSyncWithResponse request
-	PostIssuesByProviderByOwnerByNameByNumberSyncWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostIssuesByProviderByOwnerByNameByNumberSyncResponse, error)
+	// SyncIssueWithResponse request
+	SyncIssueWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*SyncIssueResponse, error)
 
 	// EnqueueIssueSyncWithResponse request
 	EnqueueIssueSyncWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*EnqueueIssueSyncResponse, error)
@@ -10764,24 +10764,24 @@ type ClientWithResponsesInterface interface {
 	// ListPullsWithResponse request
 	ListPullsWithResponse(ctx context.Context, params *ListPullsParams, reqEditors ...RequestEditorFn) (*ListPullsResponse, error)
 
-	// GetPullsByProviderByOwnerByNameByNumberWithResponse request
-	GetPullsByProviderByOwnerByNameByNumberWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetPullsByProviderByOwnerByNameByNumberResponse, error)
+	// GetPullWithResponse request
+	GetPullWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetPullResponse, error)
 
 	// EditPrContentWithBodyWithResponse request with any body
 	EditPrContentWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*EditPrContentResponse, error)
 
 	EditPrContentWithResponse(ctx context.Context, provider string, owner string, name string, number int64, body EditPrContentJSONRequestBody, reqEditors ...RequestEditorFn) (*EditPrContentResponse, error)
 
-	// PostPullsByProviderByOwnerByNameByNumberApproveWithBodyWithResponse request with any body
-	PostPullsByProviderByOwnerByNameByNumberApproveWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostPullsByProviderByOwnerByNameByNumberApproveResponse, error)
+	// ApprovePullWithBodyWithResponse request with any body
+	ApprovePullWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ApprovePullResponse, error)
 
-	PostPullsByProviderByOwnerByNameByNumberApproveWithResponse(ctx context.Context, provider string, owner string, name string, number int64, body PostPullsByProviderByOwnerByNameByNumberApproveJSONRequestBody, reqEditors ...RequestEditorFn) (*PostPullsByProviderByOwnerByNameByNumberApproveResponse, error)
+	ApprovePullWithResponse(ctx context.Context, provider string, owner string, name string, number int64, body ApprovePullJSONRequestBody, reqEditors ...RequestEditorFn) (*ApprovePullResponse, error)
 
-	// PostPullsByProviderByOwnerByNameByNumberApproveWorkflowsWithResponse request
-	PostPullsByProviderByOwnerByNameByNumberApproveWorkflowsWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostPullsByProviderByOwnerByNameByNumberApproveWorkflowsResponse, error)
+	// ApprovePullWorkflowsWithResponse request
+	ApprovePullWorkflowsWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*ApprovePullWorkflowsResponse, error)
 
-	// PostPullsByProviderByOwnerByNameByNumberCiRefreshWithResponse request
-	PostPullsByProviderByOwnerByNameByNumberCiRefreshWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostPullsByProviderByOwnerByNameByNumberCiRefreshResponse, error)
+	// RefreshPullCiWithResponse request
+	RefreshPullCiWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*RefreshPullCiResponse, error)
 
 	// PostPrCommentWithBodyWithResponse request with any body
 	PostPrCommentWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostPrCommentResponse, error)
@@ -10793,49 +10793,49 @@ type ClientWithResponsesInterface interface {
 
 	EditPrCommentWithResponse(ctx context.Context, provider string, owner string, name string, number int64, commentId int64, body EditPrCommentJSONRequestBody, reqEditors ...RequestEditorFn) (*EditPrCommentResponse, error)
 
-	// GetPullsByProviderByOwnerByNameByNumberCommitsWithResponse request
-	GetPullsByProviderByOwnerByNameByNumberCommitsWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetPullsByProviderByOwnerByNameByNumberCommitsResponse, error)
+	// GetPullCommitsWithResponse request
+	GetPullCommitsWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetPullCommitsResponse, error)
 
-	// GetPullsByProviderByOwnerByNameByNumberDiffWithResponse request
-	GetPullsByProviderByOwnerByNameByNumberDiffWithResponse(ctx context.Context, provider string, owner string, name string, number int64, params *GetPullsByProviderByOwnerByNameByNumberDiffParams, reqEditors ...RequestEditorFn) (*GetPullsByProviderByOwnerByNameByNumberDiffResponse, error)
+	// GetPullDiffWithResponse request
+	GetPullDiffWithResponse(ctx context.Context, provider string, owner string, name string, number int64, params *GetPullDiffParams, reqEditors ...RequestEditorFn) (*GetPullDiffResponse, error)
 
-	// GetPullsByProviderByOwnerByNameByNumberFilePreviewWithResponse request
-	GetPullsByProviderByOwnerByNameByNumberFilePreviewWithResponse(ctx context.Context, provider string, owner string, name string, number int64, params *GetPullsByProviderByOwnerByNameByNumberFilePreviewParams, reqEditors ...RequestEditorFn) (*GetPullsByProviderByOwnerByNameByNumberFilePreviewResponse, error)
+	// GetPullFilePreviewWithResponse request
+	GetPullFilePreviewWithResponse(ctx context.Context, provider string, owner string, name string, number int64, params *GetPullFilePreviewParams, reqEditors ...RequestEditorFn) (*GetPullFilePreviewResponse, error)
 
-	// GetPullsByProviderByOwnerByNameByNumberFilesWithResponse request
-	GetPullsByProviderByOwnerByNameByNumberFilesWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetPullsByProviderByOwnerByNameByNumberFilesResponse, error)
+	// GetPullFilesWithResponse request
+	GetPullFilesWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetPullFilesResponse, error)
 
 	// SetPrGithubStateWithBodyWithResponse request with any body
 	SetPrGithubStateWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetPrGithubStateResponse, error)
 
 	SetPrGithubStateWithResponse(ctx context.Context, provider string, owner string, name string, number int64, body SetPrGithubStateJSONRequestBody, reqEditors ...RequestEditorFn) (*SetPrGithubStateResponse, error)
 
-	// GetPullsByProviderByOwnerByNameByNumberImportMetadataWithResponse request
-	GetPullsByProviderByOwnerByNameByNumberImportMetadataWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetPullsByProviderByOwnerByNameByNumberImportMetadataResponse, error)
+	// GetPullImportMetadataWithResponse request
+	GetPullImportMetadataWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetPullImportMetadataResponse, error)
 
 	// SetPrLabelsWithBodyWithResponse request with any body
 	SetPrLabelsWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetPrLabelsResponse, error)
 
 	SetPrLabelsWithResponse(ctx context.Context, provider string, owner string, name string, number int64, body SetPrLabelsJSONRequestBody, reqEditors ...RequestEditorFn) (*SetPrLabelsResponse, error)
 
-	// PostPullsByProviderByOwnerByNameByNumberMergeWithBodyWithResponse request with any body
-	PostPullsByProviderByOwnerByNameByNumberMergeWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostPullsByProviderByOwnerByNameByNumberMergeResponse, error)
+	// MergePullWithBodyWithResponse request with any body
+	MergePullWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*MergePullResponse, error)
 
-	PostPullsByProviderByOwnerByNameByNumberMergeWithResponse(ctx context.Context, provider string, owner string, name string, number int64, body PostPullsByProviderByOwnerByNameByNumberMergeJSONRequestBody, reqEditors ...RequestEditorFn) (*PostPullsByProviderByOwnerByNameByNumberMergeResponse, error)
+	MergePullWithResponse(ctx context.Context, provider string, owner string, name string, number int64, body MergePullJSONRequestBody, reqEditors ...RequestEditorFn) (*MergePullResponse, error)
 
-	// PostPullsByProviderByOwnerByNameByNumberReadyForReviewWithResponse request
-	PostPullsByProviderByOwnerByNameByNumberReadyForReviewWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostPullsByProviderByOwnerByNameByNumberReadyForReviewResponse, error)
+	// MarkPullReadyForReviewWithResponse request
+	MarkPullReadyForReviewWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*MarkPullReadyForReviewResponse, error)
 
-	// GetPullsByProviderByOwnerByNameByNumberStackWithResponse request
-	GetPullsByProviderByOwnerByNameByNumberStackWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetPullsByProviderByOwnerByNameByNumberStackResponse, error)
+	// GetPullStackWithResponse request
+	GetPullStackWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetPullStackResponse, error)
 
 	// SetKanbanStateWithBodyWithResponse request with any body
 	SetKanbanStateWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetKanbanStateResponse, error)
 
 	SetKanbanStateWithResponse(ctx context.Context, provider string, owner string, name string, number int64, body SetKanbanStateJSONRequestBody, reqEditors ...RequestEditorFn) (*SetKanbanStateResponse, error)
 
-	// PostPullsByProviderByOwnerByNameByNumberSyncWithResponse request
-	PostPullsByProviderByOwnerByNameByNumberSyncWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostPullsByProviderByOwnerByNameByNumberSyncResponse, error)
+	// SyncPullWithResponse request
+	SyncPullWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*SyncPullResponse, error)
 
 	// EnqueuePrSyncWithResponse request
 	EnqueuePrSyncWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*EnqueuePrSyncResponse, error)
@@ -10846,11 +10846,11 @@ type ClientWithResponsesInterface interface {
 	// DeleteRepoWithResponse request
 	DeleteRepoWithResponse(ctx context.Context, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*DeleteRepoResponse, error)
 
-	// GetRepoByProviderByOwnerByNameWithResponse request
-	GetRepoByProviderByOwnerByNameWithResponse(ctx context.Context, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*GetRepoByProviderByOwnerByNameResponse, error)
+	// GetRepoWithResponse request
+	GetRepoWithResponse(ctx context.Context, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*GetRepoResponse, error)
 
-	// GetRepoByProviderByOwnerByNameCommentAutocompleteWithResponse request
-	GetRepoByProviderByOwnerByNameCommentAutocompleteWithResponse(ctx context.Context, provider string, owner string, name string, params *GetRepoByProviderByOwnerByNameCommentAutocompleteParams, reqEditors ...RequestEditorFn) (*GetRepoByProviderByOwnerByNameCommentAutocompleteResponse, error)
+	// GetCommentAutocompleteWithResponse request
+	GetCommentAutocompleteWithResponse(ctx context.Context, provider string, owner string, name string, params *GetCommentAutocompleteParams, reqEditors ...RequestEditorFn) (*GetCommentAutocompleteResponse, error)
 
 	// ListRepoLabelsWithResponse request
 	ListRepoLabelsWithResponse(ctx context.Context, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*ListRepoLabelsResponse, error)
@@ -10858,8 +10858,8 @@ type ClientWithResponsesInterface interface {
 	// RefreshRepoWithResponse request
 	RefreshRepoWithResponse(ctx context.Context, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*RefreshRepoResponse, error)
 
-	// PostRepoByProviderByOwnerByNameResolveByNumberWithResponse request
-	PostRepoByProviderByOwnerByNameResolveByNumberWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostRepoByProviderByOwnerByNameResolveByNumberResponse, error)
+	// ResolveRepoItemWithResponse request
+	ResolveRepoItemWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*ResolveRepoItemResponse, error)
 
 	// ListReposWithResponse request
 	ListReposWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListReposResponse, error)
@@ -10915,8 +10915,8 @@ type ClientWithResponsesInterface interface {
 	// GetVersionWithResponse request
 	GetVersionWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetVersionResponse, error)
 
-	// GetWorkspacesWithResponse request
-	GetWorkspacesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetWorkspacesResponse, error)
+	// ListWorkspacesWithResponse request
+	ListWorkspacesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListWorkspacesResponse, error)
 
 	// CreateWorkspaceWithBodyWithResponse request with any body
 	CreateWorkspaceWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateWorkspaceResponse, error)
@@ -10926,17 +10926,17 @@ type ClientWithResponsesInterface interface {
 	// DeleteWorkspaceWithResponse request
 	DeleteWorkspaceWithResponse(ctx context.Context, id string, params *DeleteWorkspaceParams, reqEditors ...RequestEditorFn) (*DeleteWorkspaceResponse, error)
 
-	// GetWorkspacesByIdWithResponse request
-	GetWorkspacesByIdWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetWorkspacesByIdResponse, error)
+	// GetWorkspaceWithResponse request
+	GetWorkspaceWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetWorkspaceResponse, error)
 
-	// GetWorkspacesByIdCommitsWithResponse request
-	GetWorkspacesByIdCommitsWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetWorkspacesByIdCommitsResponse, error)
+	// GetWorkspaceCommitsWithResponse request
+	GetWorkspaceCommitsWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetWorkspaceCommitsResponse, error)
 
-	// GetWorkspacesByIdDiffWithResponse request
-	GetWorkspacesByIdDiffWithResponse(ctx context.Context, id string, params *GetWorkspacesByIdDiffParams, reqEditors ...RequestEditorFn) (*GetWorkspacesByIdDiffResponse, error)
+	// GetWorkspaceDiffWithResponse request
+	GetWorkspaceDiffWithResponse(ctx context.Context, id string, params *GetWorkspaceDiffParams, reqEditors ...RequestEditorFn) (*GetWorkspaceDiffResponse, error)
 
-	// GetWorkspacesByIdFilesWithResponse request
-	GetWorkspacesByIdFilesWithResponse(ctx context.Context, id string, params *GetWorkspacesByIdFilesParams, reqEditors ...RequestEditorFn) (*GetWorkspacesByIdFilesResponse, error)
+	// GetWorkspaceFilesWithResponse request
+	GetWorkspaceFilesWithResponse(ctx context.Context, id string, params *GetWorkspaceFilesParams, reqEditors ...RequestEditorFn) (*GetWorkspaceFilesResponse, error)
 
 	// RetryWorkspaceWithResponse request
 	RetryWorkspaceWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*RetryWorkspaceResponse, error)
@@ -10956,7 +10956,7 @@ type ClientWithResponsesInterface interface {
 	EnsureWorkspaceRuntimeShellWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*EnsureWorkspaceRuntimeShellResponse, error)
 }
 
-type GetActivityResponse struct {
+type ListActivityResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *ActivityResponse
@@ -10964,7 +10964,7 @@ type GetActivityResponse struct {
 }
 
 // Status returns HTTPResponse.Status
-func (r GetActivityResponse) Status() string {
+func (r ListActivityResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -10972,7 +10972,7 @@ func (r GetActivityResponse) Status() string {
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r GetActivityResponse) StatusCode() int {
+func (r ListActivityResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -11002,7 +11002,7 @@ func (r CreateIssueOnHostResponse) StatusCode() int {
 	return 0
 }
 
-type GetHostByPlatformHostIssuesByProviderByOwnerByNameByNumberResponse struct {
+type GetIssueOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *IssueDetailResponse
@@ -11010,7 +11010,7 @@ type GetHostByPlatformHostIssuesByProviderByOwnerByNameByNumberResponse struct {
 }
 
 // Status returns HTTPResponse.Status
-func (r GetHostByPlatformHostIssuesByProviderByOwnerByNameByNumberResponse) Status() string {
+func (r GetIssueOnHostResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -11018,7 +11018,7 @@ func (r GetHostByPlatformHostIssuesByProviderByOwnerByNameByNumberResponse) Stat
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r GetHostByPlatformHostIssuesByProviderByOwnerByNameByNumberResponse) StatusCode() int {
+func (r GetIssueOnHostResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -11140,7 +11140,7 @@ func (r SetIssueLabelsOnHostResponse) StatusCode() int {
 	return 0
 }
 
-type PostHostByPlatformHostIssuesByProviderByOwnerByNameByNumberSyncResponse struct {
+type SyncIssueOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *IssueDetailResponse
@@ -11148,7 +11148,7 @@ type PostHostByPlatformHostIssuesByProviderByOwnerByNameByNumberSyncResponse str
 }
 
 // Status returns HTTPResponse.Status
-func (r PostHostByPlatformHostIssuesByProviderByOwnerByNameByNumberSyncResponse) Status() string {
+func (r SyncIssueOnHostResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -11156,7 +11156,7 @@ func (r PostHostByPlatformHostIssuesByProviderByOwnerByNameByNumberSyncResponse)
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r PostHostByPlatformHostIssuesByProviderByOwnerByNameByNumberSyncResponse) StatusCode() int {
+func (r SyncIssueOnHostResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -11208,7 +11208,7 @@ func (r CreateIssueWorkspaceOnHostResponse) StatusCode() int {
 	return 0
 }
 
-type GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberResponse struct {
+type GetPullOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *MergeRequestDetailResponse
@@ -11216,7 +11216,7 @@ type GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberResponse struct {
 }
 
 // Status returns HTTPResponse.Status
-func (r GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberResponse) Status() string {
+func (r GetPullOnHostResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -11224,7 +11224,7 @@ func (r GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberResponse) Statu
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberResponse) StatusCode() int {
+func (r GetPullOnHostResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -11254,7 +11254,7 @@ func (r EditPrContentOnHostResponse) StatusCode() int {
 	return 0
 }
 
-type PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveResponse struct {
+type ApprovePullOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *ActionStatusBody
@@ -11262,7 +11262,7 @@ type PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveResponse s
 }
 
 // Status returns HTTPResponse.Status
-func (r PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveResponse) Status() string {
+func (r ApprovePullOnHostResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -11270,14 +11270,14 @@ func (r PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveRespons
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveResponse) StatusCode() int {
+func (r ApprovePullOnHostResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
 	return 0
 }
 
-type PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkflowsResponse struct {
+type ApprovePullWorkflowsOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *ActionStatusBody
@@ -11285,7 +11285,7 @@ type PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkflowsR
 }
 
 // Status returns HTTPResponse.Status
-func (r PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkflowsResponse) Status() string {
+func (r ApprovePullWorkflowsOnHostResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -11293,14 +11293,14 @@ func (r PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkflo
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkflowsResponse) StatusCode() int {
+func (r ApprovePullWorkflowsOnHostResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
 	return 0
 }
 
-type PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberCiRefreshResponse struct {
+type RefreshPullCiOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *MergeRequestDetailResponse
@@ -11308,7 +11308,7 @@ type PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberCiRefreshResponse
 }
 
 // Status returns HTTPResponse.Status
-func (r PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberCiRefreshResponse) Status() string {
+func (r RefreshPullCiOnHostResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -11316,7 +11316,7 @@ func (r PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberCiRefreshRespo
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberCiRefreshResponse) StatusCode() int {
+func (r RefreshPullCiOnHostResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -11369,7 +11369,7 @@ func (r EditPrCommentOnHostResponse) StatusCode() int {
 	return 0
 }
 
-type GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberCommitsResponse struct {
+type GetPullCommitsOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *CommitsResponse
@@ -11377,7 +11377,7 @@ type GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberCommitsResponse st
 }
 
 // Status returns HTTPResponse.Status
-func (r GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberCommitsResponse) Status() string {
+func (r GetPullCommitsOnHostResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -11385,14 +11385,14 @@ func (r GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberCommitsResponse
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberCommitsResponse) StatusCode() int {
+func (r GetPullCommitsOnHostResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
 	return 0
 }
 
-type GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiffResponse struct {
+type GetPullDiffOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *DiffResponse
@@ -11400,7 +11400,7 @@ type GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiffResponse struc
 }
 
 // Status returns HTTPResponse.Status
-func (r GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiffResponse) Status() string {
+func (r GetPullDiffOnHostResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -11408,14 +11408,14 @@ func (r GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiffResponse) S
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiffResponse) StatusCode() int {
+func (r GetPullDiffOnHostResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
 	return 0
 }
 
-type GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreviewResponse struct {
+type GetPullFilePreviewOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *FilePreviewResponse
@@ -11423,7 +11423,7 @@ type GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreviewRespons
 }
 
 // Status returns HTTPResponse.Status
-func (r GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreviewResponse) Status() string {
+func (r GetPullFilePreviewOnHostResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -11431,14 +11431,14 @@ func (r GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreviewResp
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreviewResponse) StatusCode() int {
+func (r GetPullFilePreviewOnHostResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
 	return 0
 }
 
-type GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilesResponse struct {
+type GetPullFilesOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *FilesResponse
@@ -11446,7 +11446,7 @@ type GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilesResponse stru
 }
 
 // Status returns HTTPResponse.Status
-func (r GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilesResponse) Status() string {
+func (r GetPullFilesOnHostResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -11454,7 +11454,7 @@ func (r GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilesResponse) 
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilesResponse) StatusCode() int {
+func (r GetPullFilesOnHostResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -11484,7 +11484,7 @@ func (r SetPrGithubStateOnHostResponse) StatusCode() int {
 	return 0
 }
 
-type GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberImportMetadataResponse struct {
+type GetPullImportMetadataOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *MrImportMetadataResponse
@@ -11492,7 +11492,7 @@ type GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberImportMetadataResp
 }
 
 // Status returns HTTPResponse.Status
-func (r GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberImportMetadataResponse) Status() string {
+func (r GetPullImportMetadataOnHostResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -11500,7 +11500,7 @@ func (r GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberImportMetadataR
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberImportMetadataResponse) StatusCode() int {
+func (r GetPullImportMetadataOnHostResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -11530,7 +11530,7 @@ func (r SetPrLabelsOnHostResponse) StatusCode() int {
 	return 0
 }
 
-type PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeResponse struct {
+type MergePullOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *MergePRBody
@@ -11538,7 +11538,7 @@ type PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeResponse str
 }
 
 // Status returns HTTPResponse.Status
-func (r PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeResponse) Status() string {
+func (r MergePullOnHostResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -11546,14 +11546,14 @@ func (r PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeResponse)
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeResponse) StatusCode() int {
+func (r MergePullOnHostResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
 	return 0
 }
 
-type PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberReadyForReviewResponse struct {
+type MarkPullReadyForReviewOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *ActionStatusBody
@@ -11561,7 +11561,7 @@ type PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberReadyForReviewRes
 }
 
 // Status returns HTTPResponse.Status
-func (r PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberReadyForReviewResponse) Status() string {
+func (r MarkPullReadyForReviewOnHostResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -11569,14 +11569,14 @@ func (r PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberReadyForReview
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberReadyForReviewResponse) StatusCode() int {
+func (r MarkPullReadyForReviewOnHostResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
 	return 0
 }
 
-type GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberStackResponse struct {
+type GetPullStackOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *StackContextResponse
@@ -11584,7 +11584,7 @@ type GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberStackResponse stru
 }
 
 // Status returns HTTPResponse.Status
-func (r GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberStackResponse) Status() string {
+func (r GetPullStackOnHostResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -11592,7 +11592,7 @@ func (r GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberStackResponse) 
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberStackResponse) StatusCode() int {
+func (r GetPullStackOnHostResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -11621,7 +11621,7 @@ func (r SetKanbanStateOnHostResponse) StatusCode() int {
 	return 0
 }
 
-type PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberSyncResponse struct {
+type SyncPullOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *MergeRequestDetailResponse
@@ -11629,7 +11629,7 @@ type PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberSyncResponse stru
 }
 
 // Status returns HTTPResponse.Status
-func (r PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberSyncResponse) Status() string {
+func (r SyncPullOnHostResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -11637,7 +11637,7 @@ func (r PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberSyncResponse) 
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberSyncResponse) StatusCode() int {
+func (r SyncPullOnHostResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -11688,7 +11688,7 @@ func (r DeleteRepoOnHostResponse) StatusCode() int {
 	return 0
 }
 
-type GetHostByPlatformHostRepoByProviderByOwnerByNameResponse struct {
+type GetRepoOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *RepoResponse
@@ -11696,7 +11696,7 @@ type GetHostByPlatformHostRepoByProviderByOwnerByNameResponse struct {
 }
 
 // Status returns HTTPResponse.Status
-func (r GetHostByPlatformHostRepoByProviderByOwnerByNameResponse) Status() string {
+func (r GetRepoOnHostResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -11704,14 +11704,14 @@ func (r GetHostByPlatformHostRepoByProviderByOwnerByNameResponse) Status() strin
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r GetHostByPlatformHostRepoByProviderByOwnerByNameResponse) StatusCode() int {
+func (r GetRepoOnHostResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
 	return 0
 }
 
-type GetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocompleteResponse struct {
+type GetCommentAutocompleteOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *CommentAutocompleteResponse
@@ -11719,7 +11719,7 @@ type GetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocompleteResponse
 }
 
 // Status returns HTTPResponse.Status
-func (r GetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocompleteResponse) Status() string {
+func (r GetCommentAutocompleteOnHostResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -11727,7 +11727,7 @@ func (r GetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocompleteRespo
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r GetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocompleteResponse) StatusCode() int {
+func (r GetCommentAutocompleteOnHostResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -11780,7 +11780,7 @@ func (r RefreshRepoOnHostResponse) StatusCode() int {
 	return 0
 }
 
-type PostHostByPlatformHostRepoByProviderByOwnerByNameResolveByNumberResponse struct {
+type ResolveRepoItemOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *ResolveItemResponse
@@ -11788,7 +11788,7 @@ type PostHostByPlatformHostRepoByProviderByOwnerByNameResolveByNumberResponse st
 }
 
 // Status returns HTTPResponse.Status
-func (r PostHostByPlatformHostRepoByProviderByOwnerByNameResolveByNumberResponse) Status() string {
+func (r ResolveRepoItemOnHostResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -11796,7 +11796,7 @@ func (r PostHostByPlatformHostRepoByProviderByOwnerByNameResolveByNumberResponse
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r PostHostByPlatformHostRepoByProviderByOwnerByNameResolveByNumberResponse) StatusCode() int {
+func (r ResolveRepoItemOnHostResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -11849,7 +11849,7 @@ func (r CreateIssueResponse) StatusCode() int {
 	return 0
 }
 
-type GetIssuesByProviderByOwnerByNameByNumberResponse struct {
+type GetIssueResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *IssueDetailResponse
@@ -11857,7 +11857,7 @@ type GetIssuesByProviderByOwnerByNameByNumberResponse struct {
 }
 
 // Status returns HTTPResponse.Status
-func (r GetIssuesByProviderByOwnerByNameByNumberResponse) Status() string {
+func (r GetIssueResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -11865,7 +11865,7 @@ func (r GetIssuesByProviderByOwnerByNameByNumberResponse) Status() string {
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r GetIssuesByProviderByOwnerByNameByNumberResponse) StatusCode() int {
+func (r GetIssueResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -11987,7 +11987,7 @@ func (r SetIssueLabelsResponse) StatusCode() int {
 	return 0
 }
 
-type PostIssuesByProviderByOwnerByNameByNumberSyncResponse struct {
+type SyncIssueResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *IssueDetailResponse
@@ -11995,7 +11995,7 @@ type PostIssuesByProviderByOwnerByNameByNumberSyncResponse struct {
 }
 
 // Status returns HTTPResponse.Status
-func (r PostIssuesByProviderByOwnerByNameByNumberSyncResponse) Status() string {
+func (r SyncIssueResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -12003,7 +12003,7 @@ func (r PostIssuesByProviderByOwnerByNameByNumberSyncResponse) Status() string {
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r PostIssuesByProviderByOwnerByNameByNumberSyncResponse) StatusCode() int {
+func (r SyncIssueResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -12216,7 +12216,7 @@ func (r ListPullsResponse) StatusCode() int {
 	return 0
 }
 
-type GetPullsByProviderByOwnerByNameByNumberResponse struct {
+type GetPullResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *MergeRequestDetailResponse
@@ -12224,7 +12224,7 @@ type GetPullsByProviderByOwnerByNameByNumberResponse struct {
 }
 
 // Status returns HTTPResponse.Status
-func (r GetPullsByProviderByOwnerByNameByNumberResponse) Status() string {
+func (r GetPullResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -12232,7 +12232,7 @@ func (r GetPullsByProviderByOwnerByNameByNumberResponse) Status() string {
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r GetPullsByProviderByOwnerByNameByNumberResponse) StatusCode() int {
+func (r GetPullResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -12262,7 +12262,7 @@ func (r EditPrContentResponse) StatusCode() int {
 	return 0
 }
 
-type PostPullsByProviderByOwnerByNameByNumberApproveResponse struct {
+type ApprovePullResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *ActionStatusBody
@@ -12270,7 +12270,7 @@ type PostPullsByProviderByOwnerByNameByNumberApproveResponse struct {
 }
 
 // Status returns HTTPResponse.Status
-func (r PostPullsByProviderByOwnerByNameByNumberApproveResponse) Status() string {
+func (r ApprovePullResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -12278,14 +12278,14 @@ func (r PostPullsByProviderByOwnerByNameByNumberApproveResponse) Status() string
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r PostPullsByProviderByOwnerByNameByNumberApproveResponse) StatusCode() int {
+func (r ApprovePullResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
 	return 0
 }
 
-type PostPullsByProviderByOwnerByNameByNumberApproveWorkflowsResponse struct {
+type ApprovePullWorkflowsResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *ActionStatusBody
@@ -12293,7 +12293,7 @@ type PostPullsByProviderByOwnerByNameByNumberApproveWorkflowsResponse struct {
 }
 
 // Status returns HTTPResponse.Status
-func (r PostPullsByProviderByOwnerByNameByNumberApproveWorkflowsResponse) Status() string {
+func (r ApprovePullWorkflowsResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -12301,14 +12301,14 @@ func (r PostPullsByProviderByOwnerByNameByNumberApproveWorkflowsResponse) Status
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r PostPullsByProviderByOwnerByNameByNumberApproveWorkflowsResponse) StatusCode() int {
+func (r ApprovePullWorkflowsResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
 	return 0
 }
 
-type PostPullsByProviderByOwnerByNameByNumberCiRefreshResponse struct {
+type RefreshPullCiResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *MergeRequestDetailResponse
@@ -12316,7 +12316,7 @@ type PostPullsByProviderByOwnerByNameByNumberCiRefreshResponse struct {
 }
 
 // Status returns HTTPResponse.Status
-func (r PostPullsByProviderByOwnerByNameByNumberCiRefreshResponse) Status() string {
+func (r RefreshPullCiResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -12324,7 +12324,7 @@ func (r PostPullsByProviderByOwnerByNameByNumberCiRefreshResponse) Status() stri
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r PostPullsByProviderByOwnerByNameByNumberCiRefreshResponse) StatusCode() int {
+func (r RefreshPullCiResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -12377,7 +12377,7 @@ func (r EditPrCommentResponse) StatusCode() int {
 	return 0
 }
 
-type GetPullsByProviderByOwnerByNameByNumberCommitsResponse struct {
+type GetPullCommitsResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *CommitsResponse
@@ -12385,7 +12385,7 @@ type GetPullsByProviderByOwnerByNameByNumberCommitsResponse struct {
 }
 
 // Status returns HTTPResponse.Status
-func (r GetPullsByProviderByOwnerByNameByNumberCommitsResponse) Status() string {
+func (r GetPullCommitsResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -12393,14 +12393,14 @@ func (r GetPullsByProviderByOwnerByNameByNumberCommitsResponse) Status() string 
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r GetPullsByProviderByOwnerByNameByNumberCommitsResponse) StatusCode() int {
+func (r GetPullCommitsResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
 	return 0
 }
 
-type GetPullsByProviderByOwnerByNameByNumberDiffResponse struct {
+type GetPullDiffResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *DiffResponse
@@ -12408,7 +12408,7 @@ type GetPullsByProviderByOwnerByNameByNumberDiffResponse struct {
 }
 
 // Status returns HTTPResponse.Status
-func (r GetPullsByProviderByOwnerByNameByNumberDiffResponse) Status() string {
+func (r GetPullDiffResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -12416,14 +12416,14 @@ func (r GetPullsByProviderByOwnerByNameByNumberDiffResponse) Status() string {
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r GetPullsByProviderByOwnerByNameByNumberDiffResponse) StatusCode() int {
+func (r GetPullDiffResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
 	return 0
 }
 
-type GetPullsByProviderByOwnerByNameByNumberFilePreviewResponse struct {
+type GetPullFilePreviewResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *FilePreviewResponse
@@ -12431,7 +12431,7 @@ type GetPullsByProviderByOwnerByNameByNumberFilePreviewResponse struct {
 }
 
 // Status returns HTTPResponse.Status
-func (r GetPullsByProviderByOwnerByNameByNumberFilePreviewResponse) Status() string {
+func (r GetPullFilePreviewResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -12439,14 +12439,14 @@ func (r GetPullsByProviderByOwnerByNameByNumberFilePreviewResponse) Status() str
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r GetPullsByProviderByOwnerByNameByNumberFilePreviewResponse) StatusCode() int {
+func (r GetPullFilePreviewResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
 	return 0
 }
 
-type GetPullsByProviderByOwnerByNameByNumberFilesResponse struct {
+type GetPullFilesResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *FilesResponse
@@ -12454,7 +12454,7 @@ type GetPullsByProviderByOwnerByNameByNumberFilesResponse struct {
 }
 
 // Status returns HTTPResponse.Status
-func (r GetPullsByProviderByOwnerByNameByNumberFilesResponse) Status() string {
+func (r GetPullFilesResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -12462,7 +12462,7 @@ func (r GetPullsByProviderByOwnerByNameByNumberFilesResponse) Status() string {
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r GetPullsByProviderByOwnerByNameByNumberFilesResponse) StatusCode() int {
+func (r GetPullFilesResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -12492,7 +12492,7 @@ func (r SetPrGithubStateResponse) StatusCode() int {
 	return 0
 }
 
-type GetPullsByProviderByOwnerByNameByNumberImportMetadataResponse struct {
+type GetPullImportMetadataResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *MrImportMetadataResponse
@@ -12500,7 +12500,7 @@ type GetPullsByProviderByOwnerByNameByNumberImportMetadataResponse struct {
 }
 
 // Status returns HTTPResponse.Status
-func (r GetPullsByProviderByOwnerByNameByNumberImportMetadataResponse) Status() string {
+func (r GetPullImportMetadataResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -12508,7 +12508,7 @@ func (r GetPullsByProviderByOwnerByNameByNumberImportMetadataResponse) Status() 
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r GetPullsByProviderByOwnerByNameByNumberImportMetadataResponse) StatusCode() int {
+func (r GetPullImportMetadataResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -12538,7 +12538,7 @@ func (r SetPrLabelsResponse) StatusCode() int {
 	return 0
 }
 
-type PostPullsByProviderByOwnerByNameByNumberMergeResponse struct {
+type MergePullResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *MergePRBody
@@ -12546,7 +12546,7 @@ type PostPullsByProviderByOwnerByNameByNumberMergeResponse struct {
 }
 
 // Status returns HTTPResponse.Status
-func (r PostPullsByProviderByOwnerByNameByNumberMergeResponse) Status() string {
+func (r MergePullResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -12554,14 +12554,14 @@ func (r PostPullsByProviderByOwnerByNameByNumberMergeResponse) Status() string {
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r PostPullsByProviderByOwnerByNameByNumberMergeResponse) StatusCode() int {
+func (r MergePullResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
 	return 0
 }
 
-type PostPullsByProviderByOwnerByNameByNumberReadyForReviewResponse struct {
+type MarkPullReadyForReviewResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *ActionStatusBody
@@ -12569,7 +12569,7 @@ type PostPullsByProviderByOwnerByNameByNumberReadyForReviewResponse struct {
 }
 
 // Status returns HTTPResponse.Status
-func (r PostPullsByProviderByOwnerByNameByNumberReadyForReviewResponse) Status() string {
+func (r MarkPullReadyForReviewResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -12577,14 +12577,14 @@ func (r PostPullsByProviderByOwnerByNameByNumberReadyForReviewResponse) Status()
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r PostPullsByProviderByOwnerByNameByNumberReadyForReviewResponse) StatusCode() int {
+func (r MarkPullReadyForReviewResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
 	return 0
 }
 
-type GetPullsByProviderByOwnerByNameByNumberStackResponse struct {
+type GetPullStackResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *StackContextResponse
@@ -12592,7 +12592,7 @@ type GetPullsByProviderByOwnerByNameByNumberStackResponse struct {
 }
 
 // Status returns HTTPResponse.Status
-func (r GetPullsByProviderByOwnerByNameByNumberStackResponse) Status() string {
+func (r GetPullStackResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -12600,7 +12600,7 @@ func (r GetPullsByProviderByOwnerByNameByNumberStackResponse) Status() string {
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r GetPullsByProviderByOwnerByNameByNumberStackResponse) StatusCode() int {
+func (r GetPullStackResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -12629,7 +12629,7 @@ func (r SetKanbanStateResponse) StatusCode() int {
 	return 0
 }
 
-type PostPullsByProviderByOwnerByNameByNumberSyncResponse struct {
+type SyncPullResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *MergeRequestDetailResponse
@@ -12637,7 +12637,7 @@ type PostPullsByProviderByOwnerByNameByNumberSyncResponse struct {
 }
 
 // Status returns HTTPResponse.Status
-func (r PostPullsByProviderByOwnerByNameByNumberSyncResponse) Status() string {
+func (r SyncPullResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -12645,7 +12645,7 @@ func (r PostPullsByProviderByOwnerByNameByNumberSyncResponse) Status() string {
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r PostPullsByProviderByOwnerByNameByNumberSyncResponse) StatusCode() int {
+func (r SyncPullResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -12719,7 +12719,7 @@ func (r DeleteRepoResponse) StatusCode() int {
 	return 0
 }
 
-type GetRepoByProviderByOwnerByNameResponse struct {
+type GetRepoResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *RepoResponse
@@ -12727,7 +12727,7 @@ type GetRepoByProviderByOwnerByNameResponse struct {
 }
 
 // Status returns HTTPResponse.Status
-func (r GetRepoByProviderByOwnerByNameResponse) Status() string {
+func (r GetRepoResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -12735,14 +12735,14 @@ func (r GetRepoByProviderByOwnerByNameResponse) Status() string {
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r GetRepoByProviderByOwnerByNameResponse) StatusCode() int {
+func (r GetRepoResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
 	return 0
 }
 
-type GetRepoByProviderByOwnerByNameCommentAutocompleteResponse struct {
+type GetCommentAutocompleteResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *CommentAutocompleteResponse
@@ -12750,7 +12750,7 @@ type GetRepoByProviderByOwnerByNameCommentAutocompleteResponse struct {
 }
 
 // Status returns HTTPResponse.Status
-func (r GetRepoByProviderByOwnerByNameCommentAutocompleteResponse) Status() string {
+func (r GetCommentAutocompleteResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -12758,7 +12758,7 @@ func (r GetRepoByProviderByOwnerByNameCommentAutocompleteResponse) Status() stri
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r GetRepoByProviderByOwnerByNameCommentAutocompleteResponse) StatusCode() int {
+func (r GetCommentAutocompleteResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -12811,7 +12811,7 @@ func (r RefreshRepoResponse) StatusCode() int {
 	return 0
 }
 
-type PostRepoByProviderByOwnerByNameResolveByNumberResponse struct {
+type ResolveRepoItemResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *ResolveItemResponse
@@ -12819,7 +12819,7 @@ type PostRepoByProviderByOwnerByNameResolveByNumberResponse struct {
 }
 
 // Status returns HTTPResponse.Status
-func (r PostRepoByProviderByOwnerByNameResolveByNumberResponse) Status() string {
+func (r ResolveRepoItemResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -12827,7 +12827,7 @@ func (r PostRepoByProviderByOwnerByNameResolveByNumberResponse) Status() string 
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r PostRepoByProviderByOwnerByNameResolveByNumberResponse) StatusCode() int {
+func (r ResolveRepoItemResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -13153,7 +13153,7 @@ func (r GetVersionResponse) StatusCode() int {
 	return 0
 }
 
-type GetWorkspacesResponse struct {
+type ListWorkspacesResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *ListWorkspacesOutputBody
@@ -13161,7 +13161,7 @@ type GetWorkspacesResponse struct {
 }
 
 // Status returns HTTPResponse.Status
-func (r GetWorkspacesResponse) Status() string {
+func (r ListWorkspacesResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -13169,7 +13169,7 @@ func (r GetWorkspacesResponse) Status() string {
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r GetWorkspacesResponse) StatusCode() int {
+func (r ListWorkspacesResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -13221,7 +13221,7 @@ func (r DeleteWorkspaceResponse) StatusCode() int {
 	return 0
 }
 
-type GetWorkspacesByIdResponse struct {
+type GetWorkspaceResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *WorkspaceResponse
@@ -13229,7 +13229,7 @@ type GetWorkspacesByIdResponse struct {
 }
 
 // Status returns HTTPResponse.Status
-func (r GetWorkspacesByIdResponse) Status() string {
+func (r GetWorkspaceResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -13237,14 +13237,14 @@ func (r GetWorkspacesByIdResponse) Status() string {
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r GetWorkspacesByIdResponse) StatusCode() int {
+func (r GetWorkspaceResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
 	return 0
 }
 
-type GetWorkspacesByIdCommitsResponse struct {
+type GetWorkspaceCommitsResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *CommitsResponse
@@ -13252,7 +13252,7 @@ type GetWorkspacesByIdCommitsResponse struct {
 }
 
 // Status returns HTTPResponse.Status
-func (r GetWorkspacesByIdCommitsResponse) Status() string {
+func (r GetWorkspaceCommitsResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -13260,14 +13260,14 @@ func (r GetWorkspacesByIdCommitsResponse) Status() string {
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r GetWorkspacesByIdCommitsResponse) StatusCode() int {
+func (r GetWorkspaceCommitsResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
 	return 0
 }
 
-type GetWorkspacesByIdDiffResponse struct {
+type GetWorkspaceDiffResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *DiffResponse
@@ -13275,7 +13275,7 @@ type GetWorkspacesByIdDiffResponse struct {
 }
 
 // Status returns HTTPResponse.Status
-func (r GetWorkspacesByIdDiffResponse) Status() string {
+func (r GetWorkspaceDiffResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -13283,14 +13283,14 @@ func (r GetWorkspacesByIdDiffResponse) Status() string {
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r GetWorkspacesByIdDiffResponse) StatusCode() int {
+func (r GetWorkspaceDiffResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
 	return 0
 }
 
-type GetWorkspacesByIdFilesResponse struct {
+type GetWorkspaceFilesResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *FilesResponse
@@ -13298,7 +13298,7 @@ type GetWorkspacesByIdFilesResponse struct {
 }
 
 // Status returns HTTPResponse.Status
-func (r GetWorkspacesByIdFilesResponse) Status() string {
+func (r GetWorkspaceFilesResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -13306,7 +13306,7 @@ func (r GetWorkspacesByIdFilesResponse) Status() string {
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r GetWorkspacesByIdFilesResponse) StatusCode() int {
+func (r GetWorkspaceFilesResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -13427,13 +13427,13 @@ func (r EnsureWorkspaceRuntimeShellResponse) StatusCode() int {
 	return 0
 }
 
-// GetActivityWithResponse request returning *GetActivityResponse
-func (c *ClientWithResponses) GetActivityWithResponse(ctx context.Context, params *GetActivityParams, reqEditors ...RequestEditorFn) (*GetActivityResponse, error) {
-	rsp, err := c.GetActivity(ctx, params, reqEditors...)
+// ListActivityWithResponse request returning *ListActivityResponse
+func (c *ClientWithResponses) ListActivityWithResponse(ctx context.Context, params *ListActivityParams, reqEditors ...RequestEditorFn) (*ListActivityResponse, error) {
+	rsp, err := c.ListActivity(ctx, params, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseGetActivityResponse(rsp)
+	return ParseListActivityResponse(rsp)
 }
 
 // CreateIssueOnHostWithBodyWithResponse request with arbitrary body returning *CreateIssueOnHostResponse
@@ -13453,13 +13453,13 @@ func (c *ClientWithResponses) CreateIssueOnHostWithResponse(ctx context.Context,
 	return ParseCreateIssueOnHostResponse(rsp)
 }
 
-// GetHostByPlatformHostIssuesByProviderByOwnerByNameByNumberWithResponse request returning *GetHostByPlatformHostIssuesByProviderByOwnerByNameByNumberResponse
-func (c *ClientWithResponses) GetHostByPlatformHostIssuesByProviderByOwnerByNameByNumberWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetHostByPlatformHostIssuesByProviderByOwnerByNameByNumberResponse, error) {
-	rsp, err := c.GetHostByPlatformHostIssuesByProviderByOwnerByNameByNumber(ctx, platformHost, provider, owner, name, number, reqEditors...)
+// GetIssueOnHostWithResponse request returning *GetIssueOnHostResponse
+func (c *ClientWithResponses) GetIssueOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetIssueOnHostResponse, error) {
+	rsp, err := c.GetIssueOnHost(ctx, platformHost, provider, owner, name, number, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseGetHostByPlatformHostIssuesByProviderByOwnerByNameByNumberResponse(rsp)
+	return ParseGetIssueOnHostResponse(rsp)
 }
 
 // EditIssueContentOnHostWithBodyWithResponse request with arbitrary body returning *EditIssueContentOnHostResponse
@@ -13547,13 +13547,13 @@ func (c *ClientWithResponses) SetIssueLabelsOnHostWithResponse(ctx context.Conte
 	return ParseSetIssueLabelsOnHostResponse(rsp)
 }
 
-// PostHostByPlatformHostIssuesByProviderByOwnerByNameByNumberSyncWithResponse request returning *PostHostByPlatformHostIssuesByProviderByOwnerByNameByNumberSyncResponse
-func (c *ClientWithResponses) PostHostByPlatformHostIssuesByProviderByOwnerByNameByNumberSyncWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostHostByPlatformHostIssuesByProviderByOwnerByNameByNumberSyncResponse, error) {
-	rsp, err := c.PostHostByPlatformHostIssuesByProviderByOwnerByNameByNumberSync(ctx, platformHost, provider, owner, name, number, reqEditors...)
+// SyncIssueOnHostWithResponse request returning *SyncIssueOnHostResponse
+func (c *ClientWithResponses) SyncIssueOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*SyncIssueOnHostResponse, error) {
+	rsp, err := c.SyncIssueOnHost(ctx, platformHost, provider, owner, name, number, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParsePostHostByPlatformHostIssuesByProviderByOwnerByNameByNumberSyncResponse(rsp)
+	return ParseSyncIssueOnHostResponse(rsp)
 }
 
 // EnqueueIssueSyncOnHostWithResponse request returning *EnqueueIssueSyncOnHostResponse
@@ -13582,13 +13582,13 @@ func (c *ClientWithResponses) CreateIssueWorkspaceOnHostWithResponse(ctx context
 	return ParseCreateIssueWorkspaceOnHostResponse(rsp)
 }
 
-// GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberWithResponse request returning *GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberResponse
-func (c *ClientWithResponses) GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberResponse, error) {
-	rsp, err := c.GetHostByPlatformHostPullsByProviderByOwnerByNameByNumber(ctx, platformHost, provider, owner, name, number, reqEditors...)
+// GetPullOnHostWithResponse request returning *GetPullOnHostResponse
+func (c *ClientWithResponses) GetPullOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetPullOnHostResponse, error) {
+	rsp, err := c.GetPullOnHost(ctx, platformHost, provider, owner, name, number, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberResponse(rsp)
+	return ParseGetPullOnHostResponse(rsp)
 }
 
 // EditPrContentOnHostWithBodyWithResponse request with arbitrary body returning *EditPrContentOnHostResponse
@@ -13608,39 +13608,39 @@ func (c *ClientWithResponses) EditPrContentOnHostWithResponse(ctx context.Contex
 	return ParseEditPrContentOnHostResponse(rsp)
 }
 
-// PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWithBodyWithResponse request with arbitrary body returning *PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveResponse
-func (c *ClientWithResponses) PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveResponse, error) {
-	rsp, err := c.PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWithBody(ctx, platformHost, provider, owner, name, number, contentType, body, reqEditors...)
+// ApprovePullOnHostWithBodyWithResponse request with arbitrary body returning *ApprovePullOnHostResponse
+func (c *ClientWithResponses) ApprovePullOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ApprovePullOnHostResponse, error) {
+	rsp, err := c.ApprovePullOnHostWithBody(ctx, platformHost, provider, owner, name, number, contentType, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParsePostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveResponse(rsp)
+	return ParseApprovePullOnHostResponse(rsp)
 }
 
-func (c *ClientWithResponses) PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveJSONRequestBody, reqEditors ...RequestEditorFn) (*PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveResponse, error) {
-	rsp, err := c.PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApprove(ctx, platformHost, provider, owner, name, number, body, reqEditors...)
+func (c *ClientWithResponses) ApprovePullOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body ApprovePullOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*ApprovePullOnHostResponse, error) {
+	rsp, err := c.ApprovePullOnHost(ctx, platformHost, provider, owner, name, number, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParsePostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveResponse(rsp)
+	return ParseApprovePullOnHostResponse(rsp)
 }
 
-// PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkflowsWithResponse request returning *PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkflowsResponse
-func (c *ClientWithResponses) PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkflowsWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkflowsResponse, error) {
-	rsp, err := c.PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkflows(ctx, platformHost, provider, owner, name, number, reqEditors...)
+// ApprovePullWorkflowsOnHostWithResponse request returning *ApprovePullWorkflowsOnHostResponse
+func (c *ClientWithResponses) ApprovePullWorkflowsOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*ApprovePullWorkflowsOnHostResponse, error) {
+	rsp, err := c.ApprovePullWorkflowsOnHost(ctx, platformHost, provider, owner, name, number, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParsePostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkflowsResponse(rsp)
+	return ParseApprovePullWorkflowsOnHostResponse(rsp)
 }
 
-// PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberCiRefreshWithResponse request returning *PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberCiRefreshResponse
-func (c *ClientWithResponses) PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberCiRefreshWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberCiRefreshResponse, error) {
-	rsp, err := c.PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberCiRefresh(ctx, platformHost, provider, owner, name, number, reqEditors...)
+// RefreshPullCiOnHostWithResponse request returning *RefreshPullCiOnHostResponse
+func (c *ClientWithResponses) RefreshPullCiOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*RefreshPullCiOnHostResponse, error) {
+	rsp, err := c.RefreshPullCiOnHost(ctx, platformHost, provider, owner, name, number, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParsePostHostByPlatformHostPullsByProviderByOwnerByNameByNumberCiRefreshResponse(rsp)
+	return ParseRefreshPullCiOnHostResponse(rsp)
 }
 
 // PostPrCommentOnHostWithBodyWithResponse request with arbitrary body returning *PostPrCommentOnHostResponse
@@ -13677,40 +13677,40 @@ func (c *ClientWithResponses) EditPrCommentOnHostWithResponse(ctx context.Contex
 	return ParseEditPrCommentOnHostResponse(rsp)
 }
 
-// GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberCommitsWithResponse request returning *GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberCommitsResponse
-func (c *ClientWithResponses) GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberCommitsWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberCommitsResponse, error) {
-	rsp, err := c.GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberCommits(ctx, platformHost, provider, owner, name, number, reqEditors...)
+// GetPullCommitsOnHostWithResponse request returning *GetPullCommitsOnHostResponse
+func (c *ClientWithResponses) GetPullCommitsOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetPullCommitsOnHostResponse, error) {
+	rsp, err := c.GetPullCommitsOnHost(ctx, platformHost, provider, owner, name, number, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberCommitsResponse(rsp)
+	return ParseGetPullCommitsOnHostResponse(rsp)
 }
 
-// GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiffWithResponse request returning *GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiffResponse
-func (c *ClientWithResponses) GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiffWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, params *GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiffParams, reqEditors ...RequestEditorFn) (*GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiffResponse, error) {
-	rsp, err := c.GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiff(ctx, platformHost, provider, owner, name, number, params, reqEditors...)
+// GetPullDiffOnHostWithResponse request returning *GetPullDiffOnHostResponse
+func (c *ClientWithResponses) GetPullDiffOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, params *GetPullDiffOnHostParams, reqEditors ...RequestEditorFn) (*GetPullDiffOnHostResponse, error) {
+	rsp, err := c.GetPullDiffOnHost(ctx, platformHost, provider, owner, name, number, params, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiffResponse(rsp)
+	return ParseGetPullDiffOnHostResponse(rsp)
 }
 
-// GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreviewWithResponse request returning *GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreviewResponse
-func (c *ClientWithResponses) GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreviewWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, params *GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreviewParams, reqEditors ...RequestEditorFn) (*GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreviewResponse, error) {
-	rsp, err := c.GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreview(ctx, platformHost, provider, owner, name, number, params, reqEditors...)
+// GetPullFilePreviewOnHostWithResponse request returning *GetPullFilePreviewOnHostResponse
+func (c *ClientWithResponses) GetPullFilePreviewOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, params *GetPullFilePreviewOnHostParams, reqEditors ...RequestEditorFn) (*GetPullFilePreviewOnHostResponse, error) {
+	rsp, err := c.GetPullFilePreviewOnHost(ctx, platformHost, provider, owner, name, number, params, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreviewResponse(rsp)
+	return ParseGetPullFilePreviewOnHostResponse(rsp)
 }
 
-// GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilesWithResponse request returning *GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilesResponse
-func (c *ClientWithResponses) GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilesWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilesResponse, error) {
-	rsp, err := c.GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFiles(ctx, platformHost, provider, owner, name, number, reqEditors...)
+// GetPullFilesOnHostWithResponse request returning *GetPullFilesOnHostResponse
+func (c *ClientWithResponses) GetPullFilesOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetPullFilesOnHostResponse, error) {
+	rsp, err := c.GetPullFilesOnHost(ctx, platformHost, provider, owner, name, number, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilesResponse(rsp)
+	return ParseGetPullFilesOnHostResponse(rsp)
 }
 
 // SetPrGithubStateOnHostWithBodyWithResponse request with arbitrary body returning *SetPrGithubStateOnHostResponse
@@ -13730,13 +13730,13 @@ func (c *ClientWithResponses) SetPrGithubStateOnHostWithResponse(ctx context.Con
 	return ParseSetPrGithubStateOnHostResponse(rsp)
 }
 
-// GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberImportMetadataWithResponse request returning *GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberImportMetadataResponse
-func (c *ClientWithResponses) GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberImportMetadataWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberImportMetadataResponse, error) {
-	rsp, err := c.GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberImportMetadata(ctx, platformHost, provider, owner, name, number, reqEditors...)
+// GetPullImportMetadataOnHostWithResponse request returning *GetPullImportMetadataOnHostResponse
+func (c *ClientWithResponses) GetPullImportMetadataOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetPullImportMetadataOnHostResponse, error) {
+	rsp, err := c.GetPullImportMetadataOnHost(ctx, platformHost, provider, owner, name, number, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberImportMetadataResponse(rsp)
+	return ParseGetPullImportMetadataOnHostResponse(rsp)
 }
 
 // SetPrLabelsOnHostWithBodyWithResponse request with arbitrary body returning *SetPrLabelsOnHostResponse
@@ -13756,39 +13756,39 @@ func (c *ClientWithResponses) SetPrLabelsOnHostWithResponse(ctx context.Context,
 	return ParseSetPrLabelsOnHostResponse(rsp)
 }
 
-// PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeWithBodyWithResponse request with arbitrary body returning *PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeResponse
-func (c *ClientWithResponses) PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeResponse, error) {
-	rsp, err := c.PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeWithBody(ctx, platformHost, provider, owner, name, number, contentType, body, reqEditors...)
+// MergePullOnHostWithBodyWithResponse request with arbitrary body returning *MergePullOnHostResponse
+func (c *ClientWithResponses) MergePullOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*MergePullOnHostResponse, error) {
+	rsp, err := c.MergePullOnHostWithBody(ctx, platformHost, provider, owner, name, number, contentType, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParsePostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeResponse(rsp)
+	return ParseMergePullOnHostResponse(rsp)
 }
 
-func (c *ClientWithResponses) PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeJSONRequestBody, reqEditors ...RequestEditorFn) (*PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeResponse, error) {
-	rsp, err := c.PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMerge(ctx, platformHost, provider, owner, name, number, body, reqEditors...)
+func (c *ClientWithResponses) MergePullOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body MergePullOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*MergePullOnHostResponse, error) {
+	rsp, err := c.MergePullOnHost(ctx, platformHost, provider, owner, name, number, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParsePostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeResponse(rsp)
+	return ParseMergePullOnHostResponse(rsp)
 }
 
-// PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberReadyForReviewWithResponse request returning *PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberReadyForReviewResponse
-func (c *ClientWithResponses) PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberReadyForReviewWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberReadyForReviewResponse, error) {
-	rsp, err := c.PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberReadyForReview(ctx, platformHost, provider, owner, name, number, reqEditors...)
+// MarkPullReadyForReviewOnHostWithResponse request returning *MarkPullReadyForReviewOnHostResponse
+func (c *ClientWithResponses) MarkPullReadyForReviewOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*MarkPullReadyForReviewOnHostResponse, error) {
+	rsp, err := c.MarkPullReadyForReviewOnHost(ctx, platformHost, provider, owner, name, number, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParsePostHostByPlatformHostPullsByProviderByOwnerByNameByNumberReadyForReviewResponse(rsp)
+	return ParseMarkPullReadyForReviewOnHostResponse(rsp)
 }
 
-// GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberStackWithResponse request returning *GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberStackResponse
-func (c *ClientWithResponses) GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberStackWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberStackResponse, error) {
-	rsp, err := c.GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberStack(ctx, platformHost, provider, owner, name, number, reqEditors...)
+// GetPullStackOnHostWithResponse request returning *GetPullStackOnHostResponse
+func (c *ClientWithResponses) GetPullStackOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetPullStackOnHostResponse, error) {
+	rsp, err := c.GetPullStackOnHost(ctx, platformHost, provider, owner, name, number, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberStackResponse(rsp)
+	return ParseGetPullStackOnHostResponse(rsp)
 }
 
 // SetKanbanStateOnHostWithBodyWithResponse request with arbitrary body returning *SetKanbanStateOnHostResponse
@@ -13808,13 +13808,13 @@ func (c *ClientWithResponses) SetKanbanStateOnHostWithResponse(ctx context.Conte
 	return ParseSetKanbanStateOnHostResponse(rsp)
 }
 
-// PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberSyncWithResponse request returning *PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberSyncResponse
-func (c *ClientWithResponses) PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberSyncWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberSyncResponse, error) {
-	rsp, err := c.PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberSync(ctx, platformHost, provider, owner, name, number, reqEditors...)
+// SyncPullOnHostWithResponse request returning *SyncPullOnHostResponse
+func (c *ClientWithResponses) SyncPullOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*SyncPullOnHostResponse, error) {
+	rsp, err := c.SyncPullOnHost(ctx, platformHost, provider, owner, name, number, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParsePostHostByPlatformHostPullsByProviderByOwnerByNameByNumberSyncResponse(rsp)
+	return ParseSyncPullOnHostResponse(rsp)
 }
 
 // EnqueuePrSyncOnHostWithResponse request returning *EnqueuePrSyncOnHostResponse
@@ -13835,22 +13835,22 @@ func (c *ClientWithResponses) DeleteRepoOnHostWithResponse(ctx context.Context, 
 	return ParseDeleteRepoOnHostResponse(rsp)
 }
 
-// GetHostByPlatformHostRepoByProviderByOwnerByNameWithResponse request returning *GetHostByPlatformHostRepoByProviderByOwnerByNameResponse
-func (c *ClientWithResponses) GetHostByPlatformHostRepoByProviderByOwnerByNameWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*GetHostByPlatformHostRepoByProviderByOwnerByNameResponse, error) {
-	rsp, err := c.GetHostByPlatformHostRepoByProviderByOwnerByName(ctx, platformHost, provider, owner, name, reqEditors...)
+// GetRepoOnHostWithResponse request returning *GetRepoOnHostResponse
+func (c *ClientWithResponses) GetRepoOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*GetRepoOnHostResponse, error) {
+	rsp, err := c.GetRepoOnHost(ctx, platformHost, provider, owner, name, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseGetHostByPlatformHostRepoByProviderByOwnerByNameResponse(rsp)
+	return ParseGetRepoOnHostResponse(rsp)
 }
 
-// GetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocompleteWithResponse request returning *GetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocompleteResponse
-func (c *ClientWithResponses) GetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocompleteWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, params *GetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocompleteParams, reqEditors ...RequestEditorFn) (*GetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocompleteResponse, error) {
-	rsp, err := c.GetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocomplete(ctx, platformHost, provider, owner, name, params, reqEditors...)
+// GetCommentAutocompleteOnHostWithResponse request returning *GetCommentAutocompleteOnHostResponse
+func (c *ClientWithResponses) GetCommentAutocompleteOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, params *GetCommentAutocompleteOnHostParams, reqEditors ...RequestEditorFn) (*GetCommentAutocompleteOnHostResponse, error) {
+	rsp, err := c.GetCommentAutocompleteOnHost(ctx, platformHost, provider, owner, name, params, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseGetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocompleteResponse(rsp)
+	return ParseGetCommentAutocompleteOnHostResponse(rsp)
 }
 
 // ListRepoLabelsOnHostWithResponse request returning *ListRepoLabelsOnHostResponse
@@ -13871,13 +13871,13 @@ func (c *ClientWithResponses) RefreshRepoOnHostWithResponse(ctx context.Context,
 	return ParseRefreshRepoOnHostResponse(rsp)
 }
 
-// PostHostByPlatformHostRepoByProviderByOwnerByNameResolveByNumberWithResponse request returning *PostHostByPlatformHostRepoByProviderByOwnerByNameResolveByNumberResponse
-func (c *ClientWithResponses) PostHostByPlatformHostRepoByProviderByOwnerByNameResolveByNumberWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostHostByPlatformHostRepoByProviderByOwnerByNameResolveByNumberResponse, error) {
-	rsp, err := c.PostHostByPlatformHostRepoByProviderByOwnerByNameResolveByNumber(ctx, platformHost, provider, owner, name, number, reqEditors...)
+// ResolveRepoItemOnHostWithResponse request returning *ResolveRepoItemOnHostResponse
+func (c *ClientWithResponses) ResolveRepoItemOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*ResolveRepoItemOnHostResponse, error) {
+	rsp, err := c.ResolveRepoItemOnHost(ctx, platformHost, provider, owner, name, number, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParsePostHostByPlatformHostRepoByProviderByOwnerByNameResolveByNumberResponse(rsp)
+	return ParseResolveRepoItemOnHostResponse(rsp)
 }
 
 // ListIssuesWithResponse request returning *ListIssuesResponse
@@ -13906,13 +13906,13 @@ func (c *ClientWithResponses) CreateIssueWithResponse(ctx context.Context, provi
 	return ParseCreateIssueResponse(rsp)
 }
 
-// GetIssuesByProviderByOwnerByNameByNumberWithResponse request returning *GetIssuesByProviderByOwnerByNameByNumberResponse
-func (c *ClientWithResponses) GetIssuesByProviderByOwnerByNameByNumberWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetIssuesByProviderByOwnerByNameByNumberResponse, error) {
-	rsp, err := c.GetIssuesByProviderByOwnerByNameByNumber(ctx, provider, owner, name, number, reqEditors...)
+// GetIssueWithResponse request returning *GetIssueResponse
+func (c *ClientWithResponses) GetIssueWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetIssueResponse, error) {
+	rsp, err := c.GetIssue(ctx, provider, owner, name, number, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseGetIssuesByProviderByOwnerByNameByNumberResponse(rsp)
+	return ParseGetIssueResponse(rsp)
 }
 
 // EditIssueContentWithBodyWithResponse request with arbitrary body returning *EditIssueContentResponse
@@ -14000,13 +14000,13 @@ func (c *ClientWithResponses) SetIssueLabelsWithResponse(ctx context.Context, pr
 	return ParseSetIssueLabelsResponse(rsp)
 }
 
-// PostIssuesByProviderByOwnerByNameByNumberSyncWithResponse request returning *PostIssuesByProviderByOwnerByNameByNumberSyncResponse
-func (c *ClientWithResponses) PostIssuesByProviderByOwnerByNameByNumberSyncWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostIssuesByProviderByOwnerByNameByNumberSyncResponse, error) {
-	rsp, err := c.PostIssuesByProviderByOwnerByNameByNumberSync(ctx, provider, owner, name, number, reqEditors...)
+// SyncIssueWithResponse request returning *SyncIssueResponse
+func (c *ClientWithResponses) SyncIssueWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*SyncIssueResponse, error) {
+	rsp, err := c.SyncIssue(ctx, provider, owner, name, number, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParsePostIssuesByProviderByOwnerByNameByNumberSyncResponse(rsp)
+	return ParseSyncIssueResponse(rsp)
 }
 
 // EnqueueIssueSyncWithResponse request returning *EnqueueIssueSyncResponse
@@ -14114,13 +14114,13 @@ func (c *ClientWithResponses) ListPullsWithResponse(ctx context.Context, params 
 	return ParseListPullsResponse(rsp)
 }
 
-// GetPullsByProviderByOwnerByNameByNumberWithResponse request returning *GetPullsByProviderByOwnerByNameByNumberResponse
-func (c *ClientWithResponses) GetPullsByProviderByOwnerByNameByNumberWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetPullsByProviderByOwnerByNameByNumberResponse, error) {
-	rsp, err := c.GetPullsByProviderByOwnerByNameByNumber(ctx, provider, owner, name, number, reqEditors...)
+// GetPullWithResponse request returning *GetPullResponse
+func (c *ClientWithResponses) GetPullWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetPullResponse, error) {
+	rsp, err := c.GetPull(ctx, provider, owner, name, number, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseGetPullsByProviderByOwnerByNameByNumberResponse(rsp)
+	return ParseGetPullResponse(rsp)
 }
 
 // EditPrContentWithBodyWithResponse request with arbitrary body returning *EditPrContentResponse
@@ -14140,39 +14140,39 @@ func (c *ClientWithResponses) EditPrContentWithResponse(ctx context.Context, pro
 	return ParseEditPrContentResponse(rsp)
 }
 
-// PostPullsByProviderByOwnerByNameByNumberApproveWithBodyWithResponse request with arbitrary body returning *PostPullsByProviderByOwnerByNameByNumberApproveResponse
-func (c *ClientWithResponses) PostPullsByProviderByOwnerByNameByNumberApproveWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostPullsByProviderByOwnerByNameByNumberApproveResponse, error) {
-	rsp, err := c.PostPullsByProviderByOwnerByNameByNumberApproveWithBody(ctx, provider, owner, name, number, contentType, body, reqEditors...)
+// ApprovePullWithBodyWithResponse request with arbitrary body returning *ApprovePullResponse
+func (c *ClientWithResponses) ApprovePullWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ApprovePullResponse, error) {
+	rsp, err := c.ApprovePullWithBody(ctx, provider, owner, name, number, contentType, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParsePostPullsByProviderByOwnerByNameByNumberApproveResponse(rsp)
+	return ParseApprovePullResponse(rsp)
 }
 
-func (c *ClientWithResponses) PostPullsByProviderByOwnerByNameByNumberApproveWithResponse(ctx context.Context, provider string, owner string, name string, number int64, body PostPullsByProviderByOwnerByNameByNumberApproveJSONRequestBody, reqEditors ...RequestEditorFn) (*PostPullsByProviderByOwnerByNameByNumberApproveResponse, error) {
-	rsp, err := c.PostPullsByProviderByOwnerByNameByNumberApprove(ctx, provider, owner, name, number, body, reqEditors...)
+func (c *ClientWithResponses) ApprovePullWithResponse(ctx context.Context, provider string, owner string, name string, number int64, body ApprovePullJSONRequestBody, reqEditors ...RequestEditorFn) (*ApprovePullResponse, error) {
+	rsp, err := c.ApprovePull(ctx, provider, owner, name, number, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParsePostPullsByProviderByOwnerByNameByNumberApproveResponse(rsp)
+	return ParseApprovePullResponse(rsp)
 }
 
-// PostPullsByProviderByOwnerByNameByNumberApproveWorkflowsWithResponse request returning *PostPullsByProviderByOwnerByNameByNumberApproveWorkflowsResponse
-func (c *ClientWithResponses) PostPullsByProviderByOwnerByNameByNumberApproveWorkflowsWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostPullsByProviderByOwnerByNameByNumberApproveWorkflowsResponse, error) {
-	rsp, err := c.PostPullsByProviderByOwnerByNameByNumberApproveWorkflows(ctx, provider, owner, name, number, reqEditors...)
+// ApprovePullWorkflowsWithResponse request returning *ApprovePullWorkflowsResponse
+func (c *ClientWithResponses) ApprovePullWorkflowsWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*ApprovePullWorkflowsResponse, error) {
+	rsp, err := c.ApprovePullWorkflows(ctx, provider, owner, name, number, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParsePostPullsByProviderByOwnerByNameByNumberApproveWorkflowsResponse(rsp)
+	return ParseApprovePullWorkflowsResponse(rsp)
 }
 
-// PostPullsByProviderByOwnerByNameByNumberCiRefreshWithResponse request returning *PostPullsByProviderByOwnerByNameByNumberCiRefreshResponse
-func (c *ClientWithResponses) PostPullsByProviderByOwnerByNameByNumberCiRefreshWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostPullsByProviderByOwnerByNameByNumberCiRefreshResponse, error) {
-	rsp, err := c.PostPullsByProviderByOwnerByNameByNumberCiRefresh(ctx, provider, owner, name, number, reqEditors...)
+// RefreshPullCiWithResponse request returning *RefreshPullCiResponse
+func (c *ClientWithResponses) RefreshPullCiWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*RefreshPullCiResponse, error) {
+	rsp, err := c.RefreshPullCi(ctx, provider, owner, name, number, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParsePostPullsByProviderByOwnerByNameByNumberCiRefreshResponse(rsp)
+	return ParseRefreshPullCiResponse(rsp)
 }
 
 // PostPrCommentWithBodyWithResponse request with arbitrary body returning *PostPrCommentResponse
@@ -14209,40 +14209,40 @@ func (c *ClientWithResponses) EditPrCommentWithResponse(ctx context.Context, pro
 	return ParseEditPrCommentResponse(rsp)
 }
 
-// GetPullsByProviderByOwnerByNameByNumberCommitsWithResponse request returning *GetPullsByProviderByOwnerByNameByNumberCommitsResponse
-func (c *ClientWithResponses) GetPullsByProviderByOwnerByNameByNumberCommitsWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetPullsByProviderByOwnerByNameByNumberCommitsResponse, error) {
-	rsp, err := c.GetPullsByProviderByOwnerByNameByNumberCommits(ctx, provider, owner, name, number, reqEditors...)
+// GetPullCommitsWithResponse request returning *GetPullCommitsResponse
+func (c *ClientWithResponses) GetPullCommitsWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetPullCommitsResponse, error) {
+	rsp, err := c.GetPullCommits(ctx, provider, owner, name, number, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseGetPullsByProviderByOwnerByNameByNumberCommitsResponse(rsp)
+	return ParseGetPullCommitsResponse(rsp)
 }
 
-// GetPullsByProviderByOwnerByNameByNumberDiffWithResponse request returning *GetPullsByProviderByOwnerByNameByNumberDiffResponse
-func (c *ClientWithResponses) GetPullsByProviderByOwnerByNameByNumberDiffWithResponse(ctx context.Context, provider string, owner string, name string, number int64, params *GetPullsByProviderByOwnerByNameByNumberDiffParams, reqEditors ...RequestEditorFn) (*GetPullsByProviderByOwnerByNameByNumberDiffResponse, error) {
-	rsp, err := c.GetPullsByProviderByOwnerByNameByNumberDiff(ctx, provider, owner, name, number, params, reqEditors...)
+// GetPullDiffWithResponse request returning *GetPullDiffResponse
+func (c *ClientWithResponses) GetPullDiffWithResponse(ctx context.Context, provider string, owner string, name string, number int64, params *GetPullDiffParams, reqEditors ...RequestEditorFn) (*GetPullDiffResponse, error) {
+	rsp, err := c.GetPullDiff(ctx, provider, owner, name, number, params, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseGetPullsByProviderByOwnerByNameByNumberDiffResponse(rsp)
+	return ParseGetPullDiffResponse(rsp)
 }
 
-// GetPullsByProviderByOwnerByNameByNumberFilePreviewWithResponse request returning *GetPullsByProviderByOwnerByNameByNumberFilePreviewResponse
-func (c *ClientWithResponses) GetPullsByProviderByOwnerByNameByNumberFilePreviewWithResponse(ctx context.Context, provider string, owner string, name string, number int64, params *GetPullsByProviderByOwnerByNameByNumberFilePreviewParams, reqEditors ...RequestEditorFn) (*GetPullsByProviderByOwnerByNameByNumberFilePreviewResponse, error) {
-	rsp, err := c.GetPullsByProviderByOwnerByNameByNumberFilePreview(ctx, provider, owner, name, number, params, reqEditors...)
+// GetPullFilePreviewWithResponse request returning *GetPullFilePreviewResponse
+func (c *ClientWithResponses) GetPullFilePreviewWithResponse(ctx context.Context, provider string, owner string, name string, number int64, params *GetPullFilePreviewParams, reqEditors ...RequestEditorFn) (*GetPullFilePreviewResponse, error) {
+	rsp, err := c.GetPullFilePreview(ctx, provider, owner, name, number, params, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseGetPullsByProviderByOwnerByNameByNumberFilePreviewResponse(rsp)
+	return ParseGetPullFilePreviewResponse(rsp)
 }
 
-// GetPullsByProviderByOwnerByNameByNumberFilesWithResponse request returning *GetPullsByProviderByOwnerByNameByNumberFilesResponse
-func (c *ClientWithResponses) GetPullsByProviderByOwnerByNameByNumberFilesWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetPullsByProviderByOwnerByNameByNumberFilesResponse, error) {
-	rsp, err := c.GetPullsByProviderByOwnerByNameByNumberFiles(ctx, provider, owner, name, number, reqEditors...)
+// GetPullFilesWithResponse request returning *GetPullFilesResponse
+func (c *ClientWithResponses) GetPullFilesWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetPullFilesResponse, error) {
+	rsp, err := c.GetPullFiles(ctx, provider, owner, name, number, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseGetPullsByProviderByOwnerByNameByNumberFilesResponse(rsp)
+	return ParseGetPullFilesResponse(rsp)
 }
 
 // SetPrGithubStateWithBodyWithResponse request with arbitrary body returning *SetPrGithubStateResponse
@@ -14262,13 +14262,13 @@ func (c *ClientWithResponses) SetPrGithubStateWithResponse(ctx context.Context, 
 	return ParseSetPrGithubStateResponse(rsp)
 }
 
-// GetPullsByProviderByOwnerByNameByNumberImportMetadataWithResponse request returning *GetPullsByProviderByOwnerByNameByNumberImportMetadataResponse
-func (c *ClientWithResponses) GetPullsByProviderByOwnerByNameByNumberImportMetadataWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetPullsByProviderByOwnerByNameByNumberImportMetadataResponse, error) {
-	rsp, err := c.GetPullsByProviderByOwnerByNameByNumberImportMetadata(ctx, provider, owner, name, number, reqEditors...)
+// GetPullImportMetadataWithResponse request returning *GetPullImportMetadataResponse
+func (c *ClientWithResponses) GetPullImportMetadataWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetPullImportMetadataResponse, error) {
+	rsp, err := c.GetPullImportMetadata(ctx, provider, owner, name, number, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseGetPullsByProviderByOwnerByNameByNumberImportMetadataResponse(rsp)
+	return ParseGetPullImportMetadataResponse(rsp)
 }
 
 // SetPrLabelsWithBodyWithResponse request with arbitrary body returning *SetPrLabelsResponse
@@ -14288,39 +14288,39 @@ func (c *ClientWithResponses) SetPrLabelsWithResponse(ctx context.Context, provi
 	return ParseSetPrLabelsResponse(rsp)
 }
 
-// PostPullsByProviderByOwnerByNameByNumberMergeWithBodyWithResponse request with arbitrary body returning *PostPullsByProviderByOwnerByNameByNumberMergeResponse
-func (c *ClientWithResponses) PostPullsByProviderByOwnerByNameByNumberMergeWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostPullsByProviderByOwnerByNameByNumberMergeResponse, error) {
-	rsp, err := c.PostPullsByProviderByOwnerByNameByNumberMergeWithBody(ctx, provider, owner, name, number, contentType, body, reqEditors...)
+// MergePullWithBodyWithResponse request with arbitrary body returning *MergePullResponse
+func (c *ClientWithResponses) MergePullWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*MergePullResponse, error) {
+	rsp, err := c.MergePullWithBody(ctx, provider, owner, name, number, contentType, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParsePostPullsByProviderByOwnerByNameByNumberMergeResponse(rsp)
+	return ParseMergePullResponse(rsp)
 }
 
-func (c *ClientWithResponses) PostPullsByProviderByOwnerByNameByNumberMergeWithResponse(ctx context.Context, provider string, owner string, name string, number int64, body PostPullsByProviderByOwnerByNameByNumberMergeJSONRequestBody, reqEditors ...RequestEditorFn) (*PostPullsByProviderByOwnerByNameByNumberMergeResponse, error) {
-	rsp, err := c.PostPullsByProviderByOwnerByNameByNumberMerge(ctx, provider, owner, name, number, body, reqEditors...)
+func (c *ClientWithResponses) MergePullWithResponse(ctx context.Context, provider string, owner string, name string, number int64, body MergePullJSONRequestBody, reqEditors ...RequestEditorFn) (*MergePullResponse, error) {
+	rsp, err := c.MergePull(ctx, provider, owner, name, number, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParsePostPullsByProviderByOwnerByNameByNumberMergeResponse(rsp)
+	return ParseMergePullResponse(rsp)
 }
 
-// PostPullsByProviderByOwnerByNameByNumberReadyForReviewWithResponse request returning *PostPullsByProviderByOwnerByNameByNumberReadyForReviewResponse
-func (c *ClientWithResponses) PostPullsByProviderByOwnerByNameByNumberReadyForReviewWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostPullsByProviderByOwnerByNameByNumberReadyForReviewResponse, error) {
-	rsp, err := c.PostPullsByProviderByOwnerByNameByNumberReadyForReview(ctx, provider, owner, name, number, reqEditors...)
+// MarkPullReadyForReviewWithResponse request returning *MarkPullReadyForReviewResponse
+func (c *ClientWithResponses) MarkPullReadyForReviewWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*MarkPullReadyForReviewResponse, error) {
+	rsp, err := c.MarkPullReadyForReview(ctx, provider, owner, name, number, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParsePostPullsByProviderByOwnerByNameByNumberReadyForReviewResponse(rsp)
+	return ParseMarkPullReadyForReviewResponse(rsp)
 }
 
-// GetPullsByProviderByOwnerByNameByNumberStackWithResponse request returning *GetPullsByProviderByOwnerByNameByNumberStackResponse
-func (c *ClientWithResponses) GetPullsByProviderByOwnerByNameByNumberStackWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetPullsByProviderByOwnerByNameByNumberStackResponse, error) {
-	rsp, err := c.GetPullsByProviderByOwnerByNameByNumberStack(ctx, provider, owner, name, number, reqEditors...)
+// GetPullStackWithResponse request returning *GetPullStackResponse
+func (c *ClientWithResponses) GetPullStackWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetPullStackResponse, error) {
+	rsp, err := c.GetPullStack(ctx, provider, owner, name, number, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseGetPullsByProviderByOwnerByNameByNumberStackResponse(rsp)
+	return ParseGetPullStackResponse(rsp)
 }
 
 // SetKanbanStateWithBodyWithResponse request with arbitrary body returning *SetKanbanStateResponse
@@ -14340,13 +14340,13 @@ func (c *ClientWithResponses) SetKanbanStateWithResponse(ctx context.Context, pr
 	return ParseSetKanbanStateResponse(rsp)
 }
 
-// PostPullsByProviderByOwnerByNameByNumberSyncWithResponse request returning *PostPullsByProviderByOwnerByNameByNumberSyncResponse
-func (c *ClientWithResponses) PostPullsByProviderByOwnerByNameByNumberSyncWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostPullsByProviderByOwnerByNameByNumberSyncResponse, error) {
-	rsp, err := c.PostPullsByProviderByOwnerByNameByNumberSync(ctx, provider, owner, name, number, reqEditors...)
+// SyncPullWithResponse request returning *SyncPullResponse
+func (c *ClientWithResponses) SyncPullWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*SyncPullResponse, error) {
+	rsp, err := c.SyncPull(ctx, provider, owner, name, number, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParsePostPullsByProviderByOwnerByNameByNumberSyncResponse(rsp)
+	return ParseSyncPullResponse(rsp)
 }
 
 // EnqueuePrSyncWithResponse request returning *EnqueuePrSyncResponse
@@ -14376,22 +14376,22 @@ func (c *ClientWithResponses) DeleteRepoWithResponse(ctx context.Context, provid
 	return ParseDeleteRepoResponse(rsp)
 }
 
-// GetRepoByProviderByOwnerByNameWithResponse request returning *GetRepoByProviderByOwnerByNameResponse
-func (c *ClientWithResponses) GetRepoByProviderByOwnerByNameWithResponse(ctx context.Context, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*GetRepoByProviderByOwnerByNameResponse, error) {
-	rsp, err := c.GetRepoByProviderByOwnerByName(ctx, provider, owner, name, reqEditors...)
+// GetRepoWithResponse request returning *GetRepoResponse
+func (c *ClientWithResponses) GetRepoWithResponse(ctx context.Context, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*GetRepoResponse, error) {
+	rsp, err := c.GetRepo(ctx, provider, owner, name, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseGetRepoByProviderByOwnerByNameResponse(rsp)
+	return ParseGetRepoResponse(rsp)
 }
 
-// GetRepoByProviderByOwnerByNameCommentAutocompleteWithResponse request returning *GetRepoByProviderByOwnerByNameCommentAutocompleteResponse
-func (c *ClientWithResponses) GetRepoByProviderByOwnerByNameCommentAutocompleteWithResponse(ctx context.Context, provider string, owner string, name string, params *GetRepoByProviderByOwnerByNameCommentAutocompleteParams, reqEditors ...RequestEditorFn) (*GetRepoByProviderByOwnerByNameCommentAutocompleteResponse, error) {
-	rsp, err := c.GetRepoByProviderByOwnerByNameCommentAutocomplete(ctx, provider, owner, name, params, reqEditors...)
+// GetCommentAutocompleteWithResponse request returning *GetCommentAutocompleteResponse
+func (c *ClientWithResponses) GetCommentAutocompleteWithResponse(ctx context.Context, provider string, owner string, name string, params *GetCommentAutocompleteParams, reqEditors ...RequestEditorFn) (*GetCommentAutocompleteResponse, error) {
+	rsp, err := c.GetCommentAutocomplete(ctx, provider, owner, name, params, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseGetRepoByProviderByOwnerByNameCommentAutocompleteResponse(rsp)
+	return ParseGetCommentAutocompleteResponse(rsp)
 }
 
 // ListRepoLabelsWithResponse request returning *ListRepoLabelsResponse
@@ -14412,13 +14412,13 @@ func (c *ClientWithResponses) RefreshRepoWithResponse(ctx context.Context, provi
 	return ParseRefreshRepoResponse(rsp)
 }
 
-// PostRepoByProviderByOwnerByNameResolveByNumberWithResponse request returning *PostRepoByProviderByOwnerByNameResolveByNumberResponse
-func (c *ClientWithResponses) PostRepoByProviderByOwnerByNameResolveByNumberWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*PostRepoByProviderByOwnerByNameResolveByNumberResponse, error) {
-	rsp, err := c.PostRepoByProviderByOwnerByNameResolveByNumber(ctx, provider, owner, name, number, reqEditors...)
+// ResolveRepoItemWithResponse request returning *ResolveRepoItemResponse
+func (c *ClientWithResponses) ResolveRepoItemWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*ResolveRepoItemResponse, error) {
+	rsp, err := c.ResolveRepoItem(ctx, provider, owner, name, number, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParsePostRepoByProviderByOwnerByNameResolveByNumberResponse(rsp)
+	return ParseResolveRepoItemResponse(rsp)
 }
 
 // ListReposWithResponse request returning *ListReposResponse
@@ -14595,13 +14595,13 @@ func (c *ClientWithResponses) GetVersionWithResponse(ctx context.Context, reqEdi
 	return ParseGetVersionResponse(rsp)
 }
 
-// GetWorkspacesWithResponse request returning *GetWorkspacesResponse
-func (c *ClientWithResponses) GetWorkspacesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetWorkspacesResponse, error) {
-	rsp, err := c.GetWorkspaces(ctx, reqEditors...)
+// ListWorkspacesWithResponse request returning *ListWorkspacesResponse
+func (c *ClientWithResponses) ListWorkspacesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListWorkspacesResponse, error) {
+	rsp, err := c.ListWorkspaces(ctx, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseGetWorkspacesResponse(rsp)
+	return ParseListWorkspacesResponse(rsp)
 }
 
 // CreateWorkspaceWithBodyWithResponse request with arbitrary body returning *CreateWorkspaceResponse
@@ -14630,40 +14630,40 @@ func (c *ClientWithResponses) DeleteWorkspaceWithResponse(ctx context.Context, i
 	return ParseDeleteWorkspaceResponse(rsp)
 }
 
-// GetWorkspacesByIdWithResponse request returning *GetWorkspacesByIdResponse
-func (c *ClientWithResponses) GetWorkspacesByIdWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetWorkspacesByIdResponse, error) {
-	rsp, err := c.GetWorkspacesById(ctx, id, reqEditors...)
+// GetWorkspaceWithResponse request returning *GetWorkspaceResponse
+func (c *ClientWithResponses) GetWorkspaceWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetWorkspaceResponse, error) {
+	rsp, err := c.GetWorkspace(ctx, id, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseGetWorkspacesByIdResponse(rsp)
+	return ParseGetWorkspaceResponse(rsp)
 }
 
-// GetWorkspacesByIdCommitsWithResponse request returning *GetWorkspacesByIdCommitsResponse
-func (c *ClientWithResponses) GetWorkspacesByIdCommitsWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetWorkspacesByIdCommitsResponse, error) {
-	rsp, err := c.GetWorkspacesByIdCommits(ctx, id, reqEditors...)
+// GetWorkspaceCommitsWithResponse request returning *GetWorkspaceCommitsResponse
+func (c *ClientWithResponses) GetWorkspaceCommitsWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetWorkspaceCommitsResponse, error) {
+	rsp, err := c.GetWorkspaceCommits(ctx, id, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseGetWorkspacesByIdCommitsResponse(rsp)
+	return ParseGetWorkspaceCommitsResponse(rsp)
 }
 
-// GetWorkspacesByIdDiffWithResponse request returning *GetWorkspacesByIdDiffResponse
-func (c *ClientWithResponses) GetWorkspacesByIdDiffWithResponse(ctx context.Context, id string, params *GetWorkspacesByIdDiffParams, reqEditors ...RequestEditorFn) (*GetWorkspacesByIdDiffResponse, error) {
-	rsp, err := c.GetWorkspacesByIdDiff(ctx, id, params, reqEditors...)
+// GetWorkspaceDiffWithResponse request returning *GetWorkspaceDiffResponse
+func (c *ClientWithResponses) GetWorkspaceDiffWithResponse(ctx context.Context, id string, params *GetWorkspaceDiffParams, reqEditors ...RequestEditorFn) (*GetWorkspaceDiffResponse, error) {
+	rsp, err := c.GetWorkspaceDiff(ctx, id, params, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseGetWorkspacesByIdDiffResponse(rsp)
+	return ParseGetWorkspaceDiffResponse(rsp)
 }
 
-// GetWorkspacesByIdFilesWithResponse request returning *GetWorkspacesByIdFilesResponse
-func (c *ClientWithResponses) GetWorkspacesByIdFilesWithResponse(ctx context.Context, id string, params *GetWorkspacesByIdFilesParams, reqEditors ...RequestEditorFn) (*GetWorkspacesByIdFilesResponse, error) {
-	rsp, err := c.GetWorkspacesByIdFiles(ctx, id, params, reqEditors...)
+// GetWorkspaceFilesWithResponse request returning *GetWorkspaceFilesResponse
+func (c *ClientWithResponses) GetWorkspaceFilesWithResponse(ctx context.Context, id string, params *GetWorkspaceFilesParams, reqEditors ...RequestEditorFn) (*GetWorkspaceFilesResponse, error) {
+	rsp, err := c.GetWorkspaceFiles(ctx, id, params, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseGetWorkspacesByIdFilesResponse(rsp)
+	return ParseGetWorkspaceFilesResponse(rsp)
 }
 
 // RetryWorkspaceWithResponse request returning *RetryWorkspaceResponse
@@ -14719,15 +14719,15 @@ func (c *ClientWithResponses) EnsureWorkspaceRuntimeShellWithResponse(ctx contex
 	return ParseEnsureWorkspaceRuntimeShellResponse(rsp)
 }
 
-// ParseGetActivityResponse parses an HTTP response from a GetActivityWithResponse call
-func ParseGetActivityResponse(rsp *http.Response) (*GetActivityResponse, error) {
+// ParseListActivityResponse parses an HTTP response from a ListActivityWithResponse call
+func ParseListActivityResponse(rsp *http.Response) (*ListActivityResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &GetActivityResponse{
+	response := &ListActivityResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
@@ -14785,15 +14785,15 @@ func ParseCreateIssueOnHostResponse(rsp *http.Response) (*CreateIssueOnHostRespo
 	return response, nil
 }
 
-// ParseGetHostByPlatformHostIssuesByProviderByOwnerByNameByNumberResponse parses an HTTP response from a GetHostByPlatformHostIssuesByProviderByOwnerByNameByNumberWithResponse call
-func ParseGetHostByPlatformHostIssuesByProviderByOwnerByNameByNumberResponse(rsp *http.Response) (*GetHostByPlatformHostIssuesByProviderByOwnerByNameByNumberResponse, error) {
+// ParseGetIssueOnHostResponse parses an HTTP response from a GetIssueOnHostWithResponse call
+func ParseGetIssueOnHostResponse(rsp *http.Response) (*GetIssueOnHostResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &GetHostByPlatformHostIssuesByProviderByOwnerByNameByNumberResponse{
+	response := &GetIssueOnHostResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
@@ -14983,15 +14983,15 @@ func ParseSetIssueLabelsOnHostResponse(rsp *http.Response) (*SetIssueLabelsOnHos
 	return response, nil
 }
 
-// ParsePostHostByPlatformHostIssuesByProviderByOwnerByNameByNumberSyncResponse parses an HTTP response from a PostHostByPlatformHostIssuesByProviderByOwnerByNameByNumberSyncWithResponse call
-func ParsePostHostByPlatformHostIssuesByProviderByOwnerByNameByNumberSyncResponse(rsp *http.Response) (*PostHostByPlatformHostIssuesByProviderByOwnerByNameByNumberSyncResponse, error) {
+// ParseSyncIssueOnHostResponse parses an HTTP response from a SyncIssueOnHostWithResponse call
+func ParseSyncIssueOnHostResponse(rsp *http.Response) (*SyncIssueOnHostResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &PostHostByPlatformHostIssuesByProviderByOwnerByNameByNumberSyncResponse{
+	response := &SyncIssueOnHostResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
@@ -15075,15 +15075,15 @@ func ParseCreateIssueWorkspaceOnHostResponse(rsp *http.Response) (*CreateIssueWo
 	return response, nil
 }
 
-// ParseGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberResponse parses an HTTP response from a GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberWithResponse call
-func ParseGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberResponse(rsp *http.Response) (*GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberResponse, error) {
+// ParseGetPullOnHostResponse parses an HTTP response from a GetPullOnHostWithResponse call
+func ParseGetPullOnHostResponse(rsp *http.Response) (*GetPullOnHostResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberResponse{
+	response := &GetPullOnHostResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
@@ -15141,15 +15141,15 @@ func ParseEditPrContentOnHostResponse(rsp *http.Response) (*EditPrContentOnHostR
 	return response, nil
 }
 
-// ParsePostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveResponse parses an HTTP response from a PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWithResponse call
-func ParsePostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveResponse(rsp *http.Response) (*PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveResponse, error) {
+// ParseApprovePullOnHostResponse parses an HTTP response from a ApprovePullOnHostWithResponse call
+func ParseApprovePullOnHostResponse(rsp *http.Response) (*ApprovePullOnHostResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveResponse{
+	response := &ApprovePullOnHostResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
@@ -15174,15 +15174,15 @@ func ParsePostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveRespo
 	return response, nil
 }
 
-// ParsePostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkflowsResponse parses an HTTP response from a PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkflowsWithResponse call
-func ParsePostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkflowsResponse(rsp *http.Response) (*PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkflowsResponse, error) {
+// ParseApprovePullWorkflowsOnHostResponse parses an HTTP response from a ApprovePullWorkflowsOnHostWithResponse call
+func ParseApprovePullWorkflowsOnHostResponse(rsp *http.Response) (*ApprovePullWorkflowsOnHostResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkflowsResponse{
+	response := &ApprovePullWorkflowsOnHostResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
@@ -15207,15 +15207,15 @@ func ParsePostHostByPlatformHostPullsByProviderByOwnerByNameByNumberApproveWorkf
 	return response, nil
 }
 
-// ParsePostHostByPlatformHostPullsByProviderByOwnerByNameByNumberCiRefreshResponse parses an HTTP response from a PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberCiRefreshWithResponse call
-func ParsePostHostByPlatformHostPullsByProviderByOwnerByNameByNumberCiRefreshResponse(rsp *http.Response) (*PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberCiRefreshResponse, error) {
+// ParseRefreshPullCiOnHostResponse parses an HTTP response from a RefreshPullCiOnHostWithResponse call
+func ParseRefreshPullCiOnHostResponse(rsp *http.Response) (*RefreshPullCiOnHostResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberCiRefreshResponse{
+	response := &RefreshPullCiOnHostResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
@@ -15306,15 +15306,15 @@ func ParseEditPrCommentOnHostResponse(rsp *http.Response) (*EditPrCommentOnHostR
 	return response, nil
 }
 
-// ParseGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberCommitsResponse parses an HTTP response from a GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberCommitsWithResponse call
-func ParseGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberCommitsResponse(rsp *http.Response) (*GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberCommitsResponse, error) {
+// ParseGetPullCommitsOnHostResponse parses an HTTP response from a GetPullCommitsOnHostWithResponse call
+func ParseGetPullCommitsOnHostResponse(rsp *http.Response) (*GetPullCommitsOnHostResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberCommitsResponse{
+	response := &GetPullCommitsOnHostResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
@@ -15339,15 +15339,15 @@ func ParseGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberCommitsRespon
 	return response, nil
 }
 
-// ParseGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiffResponse parses an HTTP response from a GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiffWithResponse call
-func ParseGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiffResponse(rsp *http.Response) (*GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiffResponse, error) {
+// ParseGetPullDiffOnHostResponse parses an HTTP response from a GetPullDiffOnHostWithResponse call
+func ParseGetPullDiffOnHostResponse(rsp *http.Response) (*GetPullDiffOnHostResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiffResponse{
+	response := &GetPullDiffOnHostResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
@@ -15372,15 +15372,15 @@ func ParseGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberDiffResponse(
 	return response, nil
 }
 
-// ParseGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreviewResponse parses an HTTP response from a GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreviewWithResponse call
-func ParseGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreviewResponse(rsp *http.Response) (*GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreviewResponse, error) {
+// ParseGetPullFilePreviewOnHostResponse parses an HTTP response from a GetPullFilePreviewOnHostWithResponse call
+func ParseGetPullFilePreviewOnHostResponse(rsp *http.Response) (*GetPullFilePreviewOnHostResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreviewResponse{
+	response := &GetPullFilePreviewOnHostResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
@@ -15405,15 +15405,15 @@ func ParseGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilePreviewRe
 	return response, nil
 }
 
-// ParseGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilesResponse parses an HTTP response from a GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilesWithResponse call
-func ParseGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilesResponse(rsp *http.Response) (*GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilesResponse, error) {
+// ParseGetPullFilesOnHostResponse parses an HTTP response from a GetPullFilesOnHostWithResponse call
+func ParseGetPullFilesOnHostResponse(rsp *http.Response) (*GetPullFilesOnHostResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberFilesResponse{
+	response := &GetPullFilesOnHostResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
@@ -15471,15 +15471,15 @@ func ParseSetPrGithubStateOnHostResponse(rsp *http.Response) (*SetPrGithubStateO
 	return response, nil
 }
 
-// ParseGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberImportMetadataResponse parses an HTTP response from a GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberImportMetadataWithResponse call
-func ParseGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberImportMetadataResponse(rsp *http.Response) (*GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberImportMetadataResponse, error) {
+// ParseGetPullImportMetadataOnHostResponse parses an HTTP response from a GetPullImportMetadataOnHostWithResponse call
+func ParseGetPullImportMetadataOnHostResponse(rsp *http.Response) (*GetPullImportMetadataOnHostResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberImportMetadataResponse{
+	response := &GetPullImportMetadataOnHostResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
@@ -15537,15 +15537,15 @@ func ParseSetPrLabelsOnHostResponse(rsp *http.Response) (*SetPrLabelsOnHostRespo
 	return response, nil
 }
 
-// ParsePostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeResponse parses an HTTP response from a PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeWithResponse call
-func ParsePostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeResponse(rsp *http.Response) (*PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeResponse, error) {
+// ParseMergePullOnHostResponse parses an HTTP response from a MergePullOnHostWithResponse call
+func ParseMergePullOnHostResponse(rsp *http.Response) (*MergePullOnHostResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeResponse{
+	response := &MergePullOnHostResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
@@ -15570,15 +15570,15 @@ func ParsePostHostByPlatformHostPullsByProviderByOwnerByNameByNumberMergeRespons
 	return response, nil
 }
 
-// ParsePostHostByPlatformHostPullsByProviderByOwnerByNameByNumberReadyForReviewResponse parses an HTTP response from a PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberReadyForReviewWithResponse call
-func ParsePostHostByPlatformHostPullsByProviderByOwnerByNameByNumberReadyForReviewResponse(rsp *http.Response) (*PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberReadyForReviewResponse, error) {
+// ParseMarkPullReadyForReviewOnHostResponse parses an HTTP response from a MarkPullReadyForReviewOnHostWithResponse call
+func ParseMarkPullReadyForReviewOnHostResponse(rsp *http.Response) (*MarkPullReadyForReviewOnHostResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberReadyForReviewResponse{
+	response := &MarkPullReadyForReviewOnHostResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
@@ -15603,15 +15603,15 @@ func ParsePostHostByPlatformHostPullsByProviderByOwnerByNameByNumberReadyForRevi
 	return response, nil
 }
 
-// ParseGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberStackResponse parses an HTTP response from a GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberStackWithResponse call
-func ParseGetHostByPlatformHostPullsByProviderByOwnerByNameByNumberStackResponse(rsp *http.Response) (*GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberStackResponse, error) {
+// ParseGetPullStackOnHostResponse parses an HTTP response from a GetPullStackOnHostWithResponse call
+func ParseGetPullStackOnHostResponse(rsp *http.Response) (*GetPullStackOnHostResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &GetHostByPlatformHostPullsByProviderByOwnerByNameByNumberStackResponse{
+	response := &GetPullStackOnHostResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
@@ -15662,15 +15662,15 @@ func ParseSetKanbanStateOnHostResponse(rsp *http.Response) (*SetKanbanStateOnHos
 	return response, nil
 }
 
-// ParsePostHostByPlatformHostPullsByProviderByOwnerByNameByNumberSyncResponse parses an HTTP response from a PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberSyncWithResponse call
-func ParsePostHostByPlatformHostPullsByProviderByOwnerByNameByNumberSyncResponse(rsp *http.Response) (*PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberSyncResponse, error) {
+// ParseSyncPullOnHostResponse parses an HTTP response from a SyncPullOnHostWithResponse call
+func ParseSyncPullOnHostResponse(rsp *http.Response) (*SyncPullOnHostResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &PostHostByPlatformHostPullsByProviderByOwnerByNameByNumberSyncResponse{
+	response := &SyncPullOnHostResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
@@ -15747,15 +15747,15 @@ func ParseDeleteRepoOnHostResponse(rsp *http.Response) (*DeleteRepoOnHostRespons
 	return response, nil
 }
 
-// ParseGetHostByPlatformHostRepoByProviderByOwnerByNameResponse parses an HTTP response from a GetHostByPlatformHostRepoByProviderByOwnerByNameWithResponse call
-func ParseGetHostByPlatformHostRepoByProviderByOwnerByNameResponse(rsp *http.Response) (*GetHostByPlatformHostRepoByProviderByOwnerByNameResponse, error) {
+// ParseGetRepoOnHostResponse parses an HTTP response from a GetRepoOnHostWithResponse call
+func ParseGetRepoOnHostResponse(rsp *http.Response) (*GetRepoOnHostResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &GetHostByPlatformHostRepoByProviderByOwnerByNameResponse{
+	response := &GetRepoOnHostResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
@@ -15780,15 +15780,15 @@ func ParseGetHostByPlatformHostRepoByProviderByOwnerByNameResponse(rsp *http.Res
 	return response, nil
 }
 
-// ParseGetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocompleteResponse parses an HTTP response from a GetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocompleteWithResponse call
-func ParseGetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocompleteResponse(rsp *http.Response) (*GetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocompleteResponse, error) {
+// ParseGetCommentAutocompleteOnHostResponse parses an HTTP response from a GetCommentAutocompleteOnHostWithResponse call
+func ParseGetCommentAutocompleteOnHostResponse(rsp *http.Response) (*GetCommentAutocompleteOnHostResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &GetHostByPlatformHostRepoByProviderByOwnerByNameCommentAutocompleteResponse{
+	response := &GetCommentAutocompleteOnHostResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
@@ -15879,15 +15879,15 @@ func ParseRefreshRepoOnHostResponse(rsp *http.Response) (*RefreshRepoOnHostRespo
 	return response, nil
 }
 
-// ParsePostHostByPlatformHostRepoByProviderByOwnerByNameResolveByNumberResponse parses an HTTP response from a PostHostByPlatformHostRepoByProviderByOwnerByNameResolveByNumberWithResponse call
-func ParsePostHostByPlatformHostRepoByProviderByOwnerByNameResolveByNumberResponse(rsp *http.Response) (*PostHostByPlatformHostRepoByProviderByOwnerByNameResolveByNumberResponse, error) {
+// ParseResolveRepoItemOnHostResponse parses an HTTP response from a ResolveRepoItemOnHostWithResponse call
+func ParseResolveRepoItemOnHostResponse(rsp *http.Response) (*ResolveRepoItemOnHostResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &PostHostByPlatformHostRepoByProviderByOwnerByNameResolveByNumberResponse{
+	response := &ResolveRepoItemOnHostResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
@@ -15978,15 +15978,15 @@ func ParseCreateIssueResponse(rsp *http.Response) (*CreateIssueResponse, error) 
 	return response, nil
 }
 
-// ParseGetIssuesByProviderByOwnerByNameByNumberResponse parses an HTTP response from a GetIssuesByProviderByOwnerByNameByNumberWithResponse call
-func ParseGetIssuesByProviderByOwnerByNameByNumberResponse(rsp *http.Response) (*GetIssuesByProviderByOwnerByNameByNumberResponse, error) {
+// ParseGetIssueResponse parses an HTTP response from a GetIssueWithResponse call
+func ParseGetIssueResponse(rsp *http.Response) (*GetIssueResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &GetIssuesByProviderByOwnerByNameByNumberResponse{
+	response := &GetIssueResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
@@ -16176,15 +16176,15 @@ func ParseSetIssueLabelsResponse(rsp *http.Response) (*SetIssueLabelsResponse, e
 	return response, nil
 }
 
-// ParsePostIssuesByProviderByOwnerByNameByNumberSyncResponse parses an HTTP response from a PostIssuesByProviderByOwnerByNameByNumberSyncWithResponse call
-func ParsePostIssuesByProviderByOwnerByNameByNumberSyncResponse(rsp *http.Response) (*PostIssuesByProviderByOwnerByNameByNumberSyncResponse, error) {
+// ParseSyncIssueResponse parses an HTTP response from a SyncIssueWithResponse call
+func ParseSyncIssueResponse(rsp *http.Response) (*SyncIssueResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &PostIssuesByProviderByOwnerByNameByNumberSyncResponse{
+	response := &SyncIssueResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
@@ -16499,15 +16499,15 @@ func ParseListPullsResponse(rsp *http.Response) (*ListPullsResponse, error) {
 	return response, nil
 }
 
-// ParseGetPullsByProviderByOwnerByNameByNumberResponse parses an HTTP response from a GetPullsByProviderByOwnerByNameByNumberWithResponse call
-func ParseGetPullsByProviderByOwnerByNameByNumberResponse(rsp *http.Response) (*GetPullsByProviderByOwnerByNameByNumberResponse, error) {
+// ParseGetPullResponse parses an HTTP response from a GetPullWithResponse call
+func ParseGetPullResponse(rsp *http.Response) (*GetPullResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &GetPullsByProviderByOwnerByNameByNumberResponse{
+	response := &GetPullResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
@@ -16565,15 +16565,15 @@ func ParseEditPrContentResponse(rsp *http.Response) (*EditPrContentResponse, err
 	return response, nil
 }
 
-// ParsePostPullsByProviderByOwnerByNameByNumberApproveResponse parses an HTTP response from a PostPullsByProviderByOwnerByNameByNumberApproveWithResponse call
-func ParsePostPullsByProviderByOwnerByNameByNumberApproveResponse(rsp *http.Response) (*PostPullsByProviderByOwnerByNameByNumberApproveResponse, error) {
+// ParseApprovePullResponse parses an HTTP response from a ApprovePullWithResponse call
+func ParseApprovePullResponse(rsp *http.Response) (*ApprovePullResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &PostPullsByProviderByOwnerByNameByNumberApproveResponse{
+	response := &ApprovePullResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
@@ -16598,15 +16598,15 @@ func ParsePostPullsByProviderByOwnerByNameByNumberApproveResponse(rsp *http.Resp
 	return response, nil
 }
 
-// ParsePostPullsByProviderByOwnerByNameByNumberApproveWorkflowsResponse parses an HTTP response from a PostPullsByProviderByOwnerByNameByNumberApproveWorkflowsWithResponse call
-func ParsePostPullsByProviderByOwnerByNameByNumberApproveWorkflowsResponse(rsp *http.Response) (*PostPullsByProviderByOwnerByNameByNumberApproveWorkflowsResponse, error) {
+// ParseApprovePullWorkflowsResponse parses an HTTP response from a ApprovePullWorkflowsWithResponse call
+func ParseApprovePullWorkflowsResponse(rsp *http.Response) (*ApprovePullWorkflowsResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &PostPullsByProviderByOwnerByNameByNumberApproveWorkflowsResponse{
+	response := &ApprovePullWorkflowsResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
@@ -16631,15 +16631,15 @@ func ParsePostPullsByProviderByOwnerByNameByNumberApproveWorkflowsResponse(rsp *
 	return response, nil
 }
 
-// ParsePostPullsByProviderByOwnerByNameByNumberCiRefreshResponse parses an HTTP response from a PostPullsByProviderByOwnerByNameByNumberCiRefreshWithResponse call
-func ParsePostPullsByProviderByOwnerByNameByNumberCiRefreshResponse(rsp *http.Response) (*PostPullsByProviderByOwnerByNameByNumberCiRefreshResponse, error) {
+// ParseRefreshPullCiResponse parses an HTTP response from a RefreshPullCiWithResponse call
+func ParseRefreshPullCiResponse(rsp *http.Response) (*RefreshPullCiResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &PostPullsByProviderByOwnerByNameByNumberCiRefreshResponse{
+	response := &RefreshPullCiResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
@@ -16730,15 +16730,15 @@ func ParseEditPrCommentResponse(rsp *http.Response) (*EditPrCommentResponse, err
 	return response, nil
 }
 
-// ParseGetPullsByProviderByOwnerByNameByNumberCommitsResponse parses an HTTP response from a GetPullsByProviderByOwnerByNameByNumberCommitsWithResponse call
-func ParseGetPullsByProviderByOwnerByNameByNumberCommitsResponse(rsp *http.Response) (*GetPullsByProviderByOwnerByNameByNumberCommitsResponse, error) {
+// ParseGetPullCommitsResponse parses an HTTP response from a GetPullCommitsWithResponse call
+func ParseGetPullCommitsResponse(rsp *http.Response) (*GetPullCommitsResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &GetPullsByProviderByOwnerByNameByNumberCommitsResponse{
+	response := &GetPullCommitsResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
@@ -16763,15 +16763,15 @@ func ParseGetPullsByProviderByOwnerByNameByNumberCommitsResponse(rsp *http.Respo
 	return response, nil
 }
 
-// ParseGetPullsByProviderByOwnerByNameByNumberDiffResponse parses an HTTP response from a GetPullsByProviderByOwnerByNameByNumberDiffWithResponse call
-func ParseGetPullsByProviderByOwnerByNameByNumberDiffResponse(rsp *http.Response) (*GetPullsByProviderByOwnerByNameByNumberDiffResponse, error) {
+// ParseGetPullDiffResponse parses an HTTP response from a GetPullDiffWithResponse call
+func ParseGetPullDiffResponse(rsp *http.Response) (*GetPullDiffResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &GetPullsByProviderByOwnerByNameByNumberDiffResponse{
+	response := &GetPullDiffResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
@@ -16796,15 +16796,15 @@ func ParseGetPullsByProviderByOwnerByNameByNumberDiffResponse(rsp *http.Response
 	return response, nil
 }
 
-// ParseGetPullsByProviderByOwnerByNameByNumberFilePreviewResponse parses an HTTP response from a GetPullsByProviderByOwnerByNameByNumberFilePreviewWithResponse call
-func ParseGetPullsByProviderByOwnerByNameByNumberFilePreviewResponse(rsp *http.Response) (*GetPullsByProviderByOwnerByNameByNumberFilePreviewResponse, error) {
+// ParseGetPullFilePreviewResponse parses an HTTP response from a GetPullFilePreviewWithResponse call
+func ParseGetPullFilePreviewResponse(rsp *http.Response) (*GetPullFilePreviewResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &GetPullsByProviderByOwnerByNameByNumberFilePreviewResponse{
+	response := &GetPullFilePreviewResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
@@ -16829,15 +16829,15 @@ func ParseGetPullsByProviderByOwnerByNameByNumberFilePreviewResponse(rsp *http.R
 	return response, nil
 }
 
-// ParseGetPullsByProviderByOwnerByNameByNumberFilesResponse parses an HTTP response from a GetPullsByProviderByOwnerByNameByNumberFilesWithResponse call
-func ParseGetPullsByProviderByOwnerByNameByNumberFilesResponse(rsp *http.Response) (*GetPullsByProviderByOwnerByNameByNumberFilesResponse, error) {
+// ParseGetPullFilesResponse parses an HTTP response from a GetPullFilesWithResponse call
+func ParseGetPullFilesResponse(rsp *http.Response) (*GetPullFilesResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &GetPullsByProviderByOwnerByNameByNumberFilesResponse{
+	response := &GetPullFilesResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
@@ -16895,15 +16895,15 @@ func ParseSetPrGithubStateResponse(rsp *http.Response) (*SetPrGithubStateRespons
 	return response, nil
 }
 
-// ParseGetPullsByProviderByOwnerByNameByNumberImportMetadataResponse parses an HTTP response from a GetPullsByProviderByOwnerByNameByNumberImportMetadataWithResponse call
-func ParseGetPullsByProviderByOwnerByNameByNumberImportMetadataResponse(rsp *http.Response) (*GetPullsByProviderByOwnerByNameByNumberImportMetadataResponse, error) {
+// ParseGetPullImportMetadataResponse parses an HTTP response from a GetPullImportMetadataWithResponse call
+func ParseGetPullImportMetadataResponse(rsp *http.Response) (*GetPullImportMetadataResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &GetPullsByProviderByOwnerByNameByNumberImportMetadataResponse{
+	response := &GetPullImportMetadataResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
@@ -16961,15 +16961,15 @@ func ParseSetPrLabelsResponse(rsp *http.Response) (*SetPrLabelsResponse, error) 
 	return response, nil
 }
 
-// ParsePostPullsByProviderByOwnerByNameByNumberMergeResponse parses an HTTP response from a PostPullsByProviderByOwnerByNameByNumberMergeWithResponse call
-func ParsePostPullsByProviderByOwnerByNameByNumberMergeResponse(rsp *http.Response) (*PostPullsByProviderByOwnerByNameByNumberMergeResponse, error) {
+// ParseMergePullResponse parses an HTTP response from a MergePullWithResponse call
+func ParseMergePullResponse(rsp *http.Response) (*MergePullResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &PostPullsByProviderByOwnerByNameByNumberMergeResponse{
+	response := &MergePullResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
@@ -16994,15 +16994,15 @@ func ParsePostPullsByProviderByOwnerByNameByNumberMergeResponse(rsp *http.Respon
 	return response, nil
 }
 
-// ParsePostPullsByProviderByOwnerByNameByNumberReadyForReviewResponse parses an HTTP response from a PostPullsByProviderByOwnerByNameByNumberReadyForReviewWithResponse call
-func ParsePostPullsByProviderByOwnerByNameByNumberReadyForReviewResponse(rsp *http.Response) (*PostPullsByProviderByOwnerByNameByNumberReadyForReviewResponse, error) {
+// ParseMarkPullReadyForReviewResponse parses an HTTP response from a MarkPullReadyForReviewWithResponse call
+func ParseMarkPullReadyForReviewResponse(rsp *http.Response) (*MarkPullReadyForReviewResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &PostPullsByProviderByOwnerByNameByNumberReadyForReviewResponse{
+	response := &MarkPullReadyForReviewResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
@@ -17027,15 +17027,15 @@ func ParsePostPullsByProviderByOwnerByNameByNumberReadyForReviewResponse(rsp *ht
 	return response, nil
 }
 
-// ParseGetPullsByProviderByOwnerByNameByNumberStackResponse parses an HTTP response from a GetPullsByProviderByOwnerByNameByNumberStackWithResponse call
-func ParseGetPullsByProviderByOwnerByNameByNumberStackResponse(rsp *http.Response) (*GetPullsByProviderByOwnerByNameByNumberStackResponse, error) {
+// ParseGetPullStackResponse parses an HTTP response from a GetPullStackWithResponse call
+func ParseGetPullStackResponse(rsp *http.Response) (*GetPullStackResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &GetPullsByProviderByOwnerByNameByNumberStackResponse{
+	response := &GetPullStackResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
@@ -17086,15 +17086,15 @@ func ParseSetKanbanStateResponse(rsp *http.Response) (*SetKanbanStateResponse, e
 	return response, nil
 }
 
-// ParsePostPullsByProviderByOwnerByNameByNumberSyncResponse parses an HTTP response from a PostPullsByProviderByOwnerByNameByNumberSyncWithResponse call
-func ParsePostPullsByProviderByOwnerByNameByNumberSyncResponse(rsp *http.Response) (*PostPullsByProviderByOwnerByNameByNumberSyncResponse, error) {
+// ParseSyncPullResponse parses an HTTP response from a SyncPullWithResponse call
+func ParseSyncPullResponse(rsp *http.Response) (*SyncPullResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &PostPullsByProviderByOwnerByNameByNumberSyncResponse{
+	response := &SyncPullResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
@@ -17204,15 +17204,15 @@ func ParseDeleteRepoResponse(rsp *http.Response) (*DeleteRepoResponse, error) {
 	return response, nil
 }
 
-// ParseGetRepoByProviderByOwnerByNameResponse parses an HTTP response from a GetRepoByProviderByOwnerByNameWithResponse call
-func ParseGetRepoByProviderByOwnerByNameResponse(rsp *http.Response) (*GetRepoByProviderByOwnerByNameResponse, error) {
+// ParseGetRepoResponse parses an HTTP response from a GetRepoWithResponse call
+func ParseGetRepoResponse(rsp *http.Response) (*GetRepoResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &GetRepoByProviderByOwnerByNameResponse{
+	response := &GetRepoResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
@@ -17237,15 +17237,15 @@ func ParseGetRepoByProviderByOwnerByNameResponse(rsp *http.Response) (*GetRepoBy
 	return response, nil
 }
 
-// ParseGetRepoByProviderByOwnerByNameCommentAutocompleteResponse parses an HTTP response from a GetRepoByProviderByOwnerByNameCommentAutocompleteWithResponse call
-func ParseGetRepoByProviderByOwnerByNameCommentAutocompleteResponse(rsp *http.Response) (*GetRepoByProviderByOwnerByNameCommentAutocompleteResponse, error) {
+// ParseGetCommentAutocompleteResponse parses an HTTP response from a GetCommentAutocompleteWithResponse call
+func ParseGetCommentAutocompleteResponse(rsp *http.Response) (*GetCommentAutocompleteResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &GetRepoByProviderByOwnerByNameCommentAutocompleteResponse{
+	response := &GetCommentAutocompleteResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
@@ -17336,15 +17336,15 @@ func ParseRefreshRepoResponse(rsp *http.Response) (*RefreshRepoResponse, error) 
 	return response, nil
 }
 
-// ParsePostRepoByProviderByOwnerByNameResolveByNumberResponse parses an HTTP response from a PostRepoByProviderByOwnerByNameResolveByNumberWithResponse call
-func ParsePostRepoByProviderByOwnerByNameResolveByNumberResponse(rsp *http.Response) (*PostRepoByProviderByOwnerByNameResolveByNumberResponse, error) {
+// ParseResolveRepoItemResponse parses an HTTP response from a ResolveRepoItemWithResponse call
+func ParseResolveRepoItemResponse(rsp *http.Response) (*ResolveRepoItemResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &PostRepoByProviderByOwnerByNameResolveByNumberResponse{
+	response := &ResolveRepoItemResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
@@ -17810,15 +17810,15 @@ func ParseGetVersionResponse(rsp *http.Response) (*GetVersionResponse, error) {
 	return response, nil
 }
 
-// ParseGetWorkspacesResponse parses an HTTP response from a GetWorkspacesWithResponse call
-func ParseGetWorkspacesResponse(rsp *http.Response) (*GetWorkspacesResponse, error) {
+// ParseListWorkspacesResponse parses an HTTP response from a ListWorkspacesWithResponse call
+func ParseListWorkspacesResponse(rsp *http.Response) (*ListWorkspacesResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &GetWorkspacesResponse{
+	response := &ListWorkspacesResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
@@ -17902,15 +17902,15 @@ func ParseDeleteWorkspaceResponse(rsp *http.Response) (*DeleteWorkspaceResponse,
 	return response, nil
 }
 
-// ParseGetWorkspacesByIdResponse parses an HTTP response from a GetWorkspacesByIdWithResponse call
-func ParseGetWorkspacesByIdResponse(rsp *http.Response) (*GetWorkspacesByIdResponse, error) {
+// ParseGetWorkspaceResponse parses an HTTP response from a GetWorkspaceWithResponse call
+func ParseGetWorkspaceResponse(rsp *http.Response) (*GetWorkspaceResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &GetWorkspacesByIdResponse{
+	response := &GetWorkspaceResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
@@ -17935,15 +17935,15 @@ func ParseGetWorkspacesByIdResponse(rsp *http.Response) (*GetWorkspacesByIdRespo
 	return response, nil
 }
 
-// ParseGetWorkspacesByIdCommitsResponse parses an HTTP response from a GetWorkspacesByIdCommitsWithResponse call
-func ParseGetWorkspacesByIdCommitsResponse(rsp *http.Response) (*GetWorkspacesByIdCommitsResponse, error) {
+// ParseGetWorkspaceCommitsResponse parses an HTTP response from a GetWorkspaceCommitsWithResponse call
+func ParseGetWorkspaceCommitsResponse(rsp *http.Response) (*GetWorkspaceCommitsResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &GetWorkspacesByIdCommitsResponse{
+	response := &GetWorkspaceCommitsResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
@@ -17968,15 +17968,15 @@ func ParseGetWorkspacesByIdCommitsResponse(rsp *http.Response) (*GetWorkspacesBy
 	return response, nil
 }
 
-// ParseGetWorkspacesByIdDiffResponse parses an HTTP response from a GetWorkspacesByIdDiffWithResponse call
-func ParseGetWorkspacesByIdDiffResponse(rsp *http.Response) (*GetWorkspacesByIdDiffResponse, error) {
+// ParseGetWorkspaceDiffResponse parses an HTTP response from a GetWorkspaceDiffWithResponse call
+func ParseGetWorkspaceDiffResponse(rsp *http.Response) (*GetWorkspaceDiffResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &GetWorkspacesByIdDiffResponse{
+	response := &GetWorkspaceDiffResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
@@ -18001,15 +18001,15 @@ func ParseGetWorkspacesByIdDiffResponse(rsp *http.Response) (*GetWorkspacesByIdD
 	return response, nil
 }
 
-// ParseGetWorkspacesByIdFilesResponse parses an HTTP response from a GetWorkspacesByIdFilesWithResponse call
-func ParseGetWorkspacesByIdFilesResponse(rsp *http.Response) (*GetWorkspacesByIdFilesResponse, error) {
+// ParseGetWorkspaceFilesResponse parses an HTTP response from a GetWorkspaceFilesWithResponse call
+func ParseGetWorkspaceFilesResponse(rsp *http.Response) (*GetWorkspaceFilesResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &GetWorkspacesByIdFilesResponse{
+	response := &GetWorkspaceFilesResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}

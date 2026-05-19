@@ -2968,7 +2968,7 @@ openapi: 3.1.0
 paths:
   /activity:
     get:
-      operationId: get-activity
+      operationId: list-activity
       parameters:
         - explode: false
           in: query
@@ -3012,7 +3012,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Get activity
+      summary: List activity
+      tags:
+        - Activity
   /events:
     get:
       operationId: stream-events
@@ -3027,6 +3029,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      summary: Stream server events
+      tags:
+        - System
   /host/{platform_host}/issues/{provider}/{owner}/{name}:
     post:
       operationId: create-issue-on-host
@@ -3070,9 +3075,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      summary: Create issue
+      tags:
+        - Issues
   /host/{platform_host}/issues/{provider}/{owner}/{name}/{number}:
     get:
-      operationId: get-host-by-platform-host-issues-by-provider-by-owner-by-name-by-number
+      operationId: get-issue-on-host
       parameters:
         - in: path
           name: provider
@@ -3113,7 +3121,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Get host by platform host issues by provider by owner by name by number
+      summary: Get issue
+      tags:
+        - Issues
     patch:
       operationId: edit-issue-content-on-host
       parameters:
@@ -3162,6 +3172,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      summary: Edit issue content
+      tags:
+        - Issues
   /host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/comments:
     post:
       operationId: post-issue-comment-on-host
@@ -3211,6 +3224,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      summary: Post issue comment
+      tags:
+        - Issues
   /host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/comments/{comment_id}:
     patch:
       operationId: edit-issue-comment-on-host
@@ -3266,6 +3282,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      summary: Edit issue comment
+      tags:
+        - Issues
   /host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/github-state:
     post:
       operationId: set-issue-github-state-on-host
@@ -3315,6 +3334,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      summary: Set issue GitHub state
+      tags:
+        - Issues
   /host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/labels:
     put:
       operationId: set-issue-labels-on-host
@@ -3364,9 +3386,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      summary: Set issue labels
+      tags:
+        - Issues
   /host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/sync:
     post:
-      operationId: post-host-by-platform-host-issues-by-provider-by-owner-by-name-by-number-sync
+      operationId: sync-issue-on-host
       parameters:
         - in: path
           name: provider
@@ -3407,7 +3432,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Post host by platform host issues by provider by owner by name by number sync
+      summary: Sync issue
+      tags:
+        - Issues
   /host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/sync/async:
     post:
       operationId: enqueue-issue-sync-on-host
@@ -3447,6 +3474,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      summary: Enqueue issue sync
+      tags:
+        - Issues
   /host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/workspace:
     post:
       operationId: create-issue-workspace-on-host
@@ -3496,9 +3526,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      summary: Create issue workspace
+      tags:
+        - Issues
   /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}:
     get:
-      operationId: get-host-by-platform-host-pulls-by-provider-by-owner-by-name-by-number
+      operationId: get-pull-on-host
       parameters:
         - in: path
           name: provider
@@ -3539,7 +3572,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Get host by platform host pulls by provider by owner by name by number
+      summary: Get pull request
+      tags:
+        - Pull Requests
     patch:
       operationId: edit-pr-content-on-host
       parameters:
@@ -3588,9 +3623,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      summary: Edit pull request content
+      tags:
+        - Pull Requests
   /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/approve:
     post:
-      operationId: post-host-by-platform-host-pulls-by-provider-by-owner-by-name-by-number-approve
+      operationId: approve-pull-on-host
       parameters:
         - in: path
           name: provider
@@ -3637,10 +3675,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Post host by platform host pulls by provider by owner by name by number approve
+      summary: Approve pull request
+      tags:
+        - Pull Requests
   /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/approve-workflows:
     post:
-      operationId: post-host-by-platform-host-pulls-by-provider-by-owner-by-name-by-number-approve-workflows
+      operationId: approve-pull-workflows-on-host
       parameters:
         - in: path
           name: provider
@@ -3681,10 +3721,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Post host by platform host pulls by provider by owner by name by number approve workflows
+      summary: Approve pull request workflows
+      tags:
+        - Pull Requests
   /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/ci-refresh:
     post:
-      operationId: post-host-by-platform-host-pulls-by-provider-by-owner-by-name-by-number-ci-refresh
+      operationId: refresh-pull-ci-on-host
       parameters:
         - in: path
           name: provider
@@ -3725,7 +3767,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Post host by platform host pulls by provider by owner by name by number ci refresh
+      summary: Refresh pull request CI
+      tags:
+        - Pull Requests
   /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/comments:
     post:
       operationId: post-pr-comment-on-host
@@ -3775,6 +3819,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      summary: Post pull request comment
+      tags:
+        - Pull Requests
   /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/comments/{comment_id}:
     patch:
       operationId: edit-pr-comment-on-host
@@ -3830,9 +3877,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      summary: Edit pull request comment
+      tags:
+        - Pull Requests
   /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/commits:
     get:
-      operationId: get-host-by-platform-host-pulls-by-provider-by-owner-by-name-by-number-commits
+      operationId: get-pull-commits-on-host
       parameters:
         - in: path
           name: provider
@@ -3873,10 +3923,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Get host by platform host pulls by provider by owner by name by number commits
+      summary: Get pull request commits
+      tags:
+        - Pull Requests
   /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/diff:
     get:
-      operationId: get-host-by-platform-host-pulls-by-provider-by-owner-by-name-by-number-diff
+      operationId: get-pull-diff-on-host
       parameters:
         - in: path
           name: provider
@@ -3943,10 +3995,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Get host by platform host pulls by provider by owner by name by number diff
+      summary: Get pull request diff
+      tags:
+        - Pull Requests
   /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/file-preview:
     get:
-      operationId: get-host-by-platform-host-pulls-by-provider-by-owner-by-name-by-number-file-preview
+      operationId: get-pull-file-preview-on-host
       parameters:
         - in: path
           name: provider
@@ -4015,10 +4069,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Get host by platform host pulls by provider by owner by name by number file preview
+      summary: Get pull request file preview
+      tags:
+        - Pull Requests
   /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/files:
     get:
-      operationId: get-host-by-platform-host-pulls-by-provider-by-owner-by-name-by-number-files
+      operationId: get-pull-files-on-host
       parameters:
         - in: path
           name: provider
@@ -4059,7 +4115,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Get host by platform host pulls by provider by owner by name by number files
+      summary: Get pull request files
+      tags:
+        - Pull Requests
   /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/github-state:
     post:
       operationId: set-pr-github-state-on-host
@@ -4109,9 +4167,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      summary: Set pull request GitHub state
+      tags:
+        - Pull Requests
   /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/import-metadata:
     get:
-      operationId: get-host-by-platform-host-pulls-by-provider-by-owner-by-name-by-number-import-metadata
+      operationId: get-pull-import-metadata-on-host
       parameters:
         - in: path
           name: provider
@@ -4152,7 +4213,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Get host by platform host pulls by provider by owner by name by number import metadata
+      summary: Get pull request import metadata
+      tags:
+        - Pull Requests
   /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/labels:
     put:
       operationId: set-pr-labels-on-host
@@ -4202,9 +4265,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      summary: Set pull request labels
+      tags:
+        - Pull Requests
   /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/merge:
     post:
-      operationId: post-host-by-platform-host-pulls-by-provider-by-owner-by-name-by-number-merge
+      operationId: merge-pull-on-host
       parameters:
         - in: path
           name: provider
@@ -4251,10 +4317,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Post host by platform host pulls by provider by owner by name by number merge
+      summary: Merge pull request
+      tags:
+        - Pull Requests
   /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/ready-for-review:
     post:
-      operationId: post-host-by-platform-host-pulls-by-provider-by-owner-by-name-by-number-ready-for-review
+      operationId: mark-pull-ready-for-review-on-host
       parameters:
         - in: path
           name: provider
@@ -4295,10 +4363,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Post host by platform host pulls by provider by owner by name by number ready for review
+      summary: Mark pull request ready for review
+      tags:
+        - Pull Requests
   /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/stack:
     get:
-      operationId: get-host-by-platform-host-pulls-by-provider-by-owner-by-name-by-number-stack
+      operationId: get-pull-stack-on-host
       parameters:
         - in: path
           name: provider
@@ -4339,7 +4409,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Get host by platform host pulls by provider by owner by name by number stack
+      summary: Get pull request stack
+      tags:
+        - Pull Requests
   /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/state:
     put:
       operationId: set-kanban-state-on-host
@@ -4385,9 +4457,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      summary: Set pull request kanban state
+      tags:
+        - Pull Requests
   /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/sync:
     post:
-      operationId: post-host-by-platform-host-pulls-by-provider-by-owner-by-name-by-number-sync
+      operationId: sync-pull-on-host
       parameters:
         - in: path
           name: provider
@@ -4428,7 +4503,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Post host by platform host pulls by provider by owner by name by number sync
+      summary: Sync pull request
+      tags:
+        - Pull Requests
   /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/sync/async:
     post:
       operationId: enqueue-pr-sync-on-host
@@ -4468,6 +4545,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      summary: Enqueue pull request sync
+      tags:
+        - Pull Requests
   /host/{platform_host}/repo/{provider}/{owner}/{name}:
     delete:
       operationId: delete-repo-on-host
@@ -4501,8 +4581,11 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      summary: Delete repository
+      tags:
+        - Settings
     get:
-      operationId: get-host-by-platform-host-repo-by-provider-by-owner-by-name
+      operationId: get-repo-on-host
       parameters:
         - in: path
           name: provider
@@ -4537,10 +4620,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Get host by platform host repo by provider by owner by name
+      summary: Get repository
+      tags:
+        - Repositories
   /host/{platform_host}/repo/{provider}/{owner}/{name}/comment-autocomplete:
     get:
-      operationId: get-host-by-platform-host-repo-by-provider-by-owner-by-name-comment-autocomplete
+      operationId: get-comment-autocomplete-on-host
       parameters:
         - in: path
           name: provider
@@ -4591,7 +4676,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Get host by platform host repo by provider by owner by name comment autocomplete
+      summary: Get comment autocomplete
+      tags:
+        - Repositories
   /host/{platform_host}/repo/{provider}/{owner}/{name}/labels:
     get:
       operationId: list-repo-labels-on-host
@@ -4629,6 +4716,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      summary: List repository labels
+      tags:
+        - Repositories
   /host/{platform_host}/repo/{provider}/{owner}/{name}/refresh:
     post:
       operationId: refresh-repo-on-host
@@ -4666,9 +4756,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      summary: Refresh repository
+      tags:
+        - Settings
   /host/{platform_host}/repo/{provider}/{owner}/{name}/resolve/{number}:
     post:
-      operationId: post-host-by-platform-host-repo-by-provider-by-owner-by-name-resolve-by-number
+      operationId: resolve-repo-item-on-host
       parameters:
         - in: path
           name: provider
@@ -4709,7 +4802,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Post host by platform host repo by provider by owner by name resolve by number
+      summary: Resolve repository item
+      tags:
+        - Repositories
   /issues:
     get:
       operationId: list-issues
@@ -4764,6 +4859,8 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: List issues
+      tags:
+        - Issues
   /issues/{provider}/{owner}/{name}:
     post:
       operationId: create-issue
@@ -4802,9 +4899,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      summary: Create issue
+      tags:
+        - Issues
   /issues/{provider}/{owner}/{name}/{number}:
     get:
-      operationId: get-issues-by-provider-by-owner-by-name-by-number
+      operationId: get-issue
       parameters:
         - in: path
           name: provider
@@ -4840,7 +4940,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Get issues by provider by owner by name by number
+      summary: Get issue
+      tags:
+        - Issues
     patch:
       operationId: edit-issue-content
       parameters:
@@ -4884,6 +4986,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      summary: Edit issue content
+      tags:
+        - Issues
   /issues/{provider}/{owner}/{name}/{number}/comments:
     post:
       operationId: post-issue-comment
@@ -4928,6 +5033,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      summary: Post issue comment
+      tags:
+        - Issues
   /issues/{provider}/{owner}/{name}/{number}/comments/{comment_id}:
     patch:
       operationId: edit-issue-comment
@@ -4978,6 +5086,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      summary: Edit issue comment
+      tags:
+        - Issues
   /issues/{provider}/{owner}/{name}/{number}/github-state:
     post:
       operationId: set-issue-github-state
@@ -5022,6 +5133,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      summary: Set issue GitHub state
+      tags:
+        - Issues
   /issues/{provider}/{owner}/{name}/{number}/labels:
     put:
       operationId: set-issue-labels
@@ -5066,9 +5180,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      summary: Set issue labels
+      tags:
+        - Issues
   /issues/{provider}/{owner}/{name}/{number}/sync:
     post:
-      operationId: post-issues-by-provider-by-owner-by-name-by-number-sync
+      operationId: sync-issue
       parameters:
         - in: path
           name: provider
@@ -5104,7 +5221,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Post issues by provider by owner by name by number sync
+      summary: Sync issue
+      tags:
+        - Issues
   /issues/{provider}/{owner}/{name}/{number}/sync/async:
     post:
       operationId: enqueue-issue-sync
@@ -5139,6 +5258,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      summary: Enqueue issue sync
+      tags:
+        - Issues
   /issues/{provider}/{owner}/{name}/{number}/workspace:
     post:
       operationId: create-issue-workspace
@@ -5183,6 +5305,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      summary: Create issue workspace
+      tags:
+        - Issues
   /projects:
     get:
       operationId: list-projects
@@ -5199,6 +5324,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      summary: List projects
+      tags:
+        - Projects
     post:
       operationId: register-project
       requestBody:
@@ -5220,6 +5348,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      summary: Register project
+      tags:
+        - Projects
   /projects/{project_id}:
     get:
       operationId: get-project
@@ -5242,6 +5373,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      summary: Get project
+      tags:
+        - Projects
   /projects/{project_id}/launch-targets:
     get:
       operationId: list-launch-targets
@@ -5264,6 +5398,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      summary: List launch targets
+      tags:
+        - Projects
   /projects/{project_id}/worktrees:
     get:
       operationId: list-worktrees
@@ -5286,6 +5423,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      summary: List worktrees
+      tags:
+        - Projects
     post:
       operationId: register-worktree
       parameters:
@@ -5313,6 +5453,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      summary: Register worktree
+      tags:
+        - Projects
   /pulls:
     get:
       operationId: list-pulls
@@ -5371,10 +5514,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: List pulls
+      summary: List pull requests
+      tags:
+        - Pull Requests
   /pulls/{provider}/{owner}/{name}/{number}:
     get:
-      operationId: get-pulls-by-provider-by-owner-by-name-by-number
+      operationId: get-pull
       parameters:
         - in: path
           name: provider
@@ -5410,7 +5555,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Get pulls by provider by owner by name by number
+      summary: Get pull request
+      tags:
+        - Pull Requests
     patch:
       operationId: edit-pr-content
       parameters:
@@ -5454,9 +5601,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      summary: Edit pull request content
+      tags:
+        - Pull Requests
   /pulls/{provider}/{owner}/{name}/{number}/approve:
     post:
-      operationId: post-pulls-by-provider-by-owner-by-name-by-number-approve
+      operationId: approve-pull
       parameters:
         - in: path
           name: provider
@@ -5498,10 +5648,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Post pulls by provider by owner by name by number approve
+      summary: Approve pull request
+      tags:
+        - Pull Requests
   /pulls/{provider}/{owner}/{name}/{number}/approve-workflows:
     post:
-      operationId: post-pulls-by-provider-by-owner-by-name-by-number-approve-workflows
+      operationId: approve-pull-workflows
       parameters:
         - in: path
           name: provider
@@ -5537,10 +5689,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Post pulls by provider by owner by name by number approve workflows
+      summary: Approve pull request workflows
+      tags:
+        - Pull Requests
   /pulls/{provider}/{owner}/{name}/{number}/ci-refresh:
     post:
-      operationId: post-pulls-by-provider-by-owner-by-name-by-number-ci-refresh
+      operationId: refresh-pull-ci
       parameters:
         - in: path
           name: provider
@@ -5576,7 +5730,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Post pulls by provider by owner by name by number ci refresh
+      summary: Refresh pull request CI
+      tags:
+        - Pull Requests
   /pulls/{provider}/{owner}/{name}/{number}/comments:
     post:
       operationId: post-pr-comment
@@ -5621,6 +5777,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      summary: Post pull request comment
+      tags:
+        - Pull Requests
   /pulls/{provider}/{owner}/{name}/{number}/comments/{comment_id}:
     patch:
       operationId: edit-pr-comment
@@ -5671,9 +5830,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      summary: Edit pull request comment
+      tags:
+        - Pull Requests
   /pulls/{provider}/{owner}/{name}/{number}/commits:
     get:
-      operationId: get-pulls-by-provider-by-owner-by-name-by-number-commits
+      operationId: get-pull-commits
       parameters:
         - in: path
           name: provider
@@ -5709,10 +5871,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Get pulls by provider by owner by name by number commits
+      summary: Get pull request commits
+      tags:
+        - Pull Requests
   /pulls/{provider}/{owner}/{name}/{number}/diff:
     get:
-      operationId: get-pulls-by-provider-by-owner-by-name-by-number-diff
+      operationId: get-pull-diff
       parameters:
         - in: path
           name: provider
@@ -5774,10 +5938,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Get pulls by provider by owner by name by number diff
+      summary: Get pull request diff
+      tags:
+        - Pull Requests
   /pulls/{provider}/{owner}/{name}/{number}/file-preview:
     get:
-      operationId: get-pulls-by-provider-by-owner-by-name-by-number-file-preview
+      operationId: get-pull-file-preview
       parameters:
         - in: path
           name: provider
@@ -5841,10 +6007,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Get pulls by provider by owner by name by number file preview
+      summary: Get pull request file preview
+      tags:
+        - Pull Requests
   /pulls/{provider}/{owner}/{name}/{number}/files:
     get:
-      operationId: get-pulls-by-provider-by-owner-by-name-by-number-files
+      operationId: get-pull-files
       parameters:
         - in: path
           name: provider
@@ -5880,7 +6048,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Get pulls by provider by owner by name by number files
+      summary: Get pull request files
+      tags:
+        - Pull Requests
   /pulls/{provider}/{owner}/{name}/{number}/github-state:
     post:
       operationId: set-pr-github-state
@@ -5925,9 +6095,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      summary: Set pull request GitHub state
+      tags:
+        - Pull Requests
   /pulls/{provider}/{owner}/{name}/{number}/import-metadata:
     get:
-      operationId: get-pulls-by-provider-by-owner-by-name-by-number-import-metadata
+      operationId: get-pull-import-metadata
       parameters:
         - in: path
           name: provider
@@ -5963,7 +6136,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Get pulls by provider by owner by name by number import metadata
+      summary: Get pull request import metadata
+      tags:
+        - Pull Requests
   /pulls/{provider}/{owner}/{name}/{number}/labels:
     put:
       operationId: set-pr-labels
@@ -6008,9 +6183,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      summary: Set pull request labels
+      tags:
+        - Pull Requests
   /pulls/{provider}/{owner}/{name}/{number}/merge:
     post:
-      operationId: post-pulls-by-provider-by-owner-by-name-by-number-merge
+      operationId: merge-pull
       parameters:
         - in: path
           name: provider
@@ -6052,10 +6230,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Post pulls by provider by owner by name by number merge
+      summary: Merge pull request
+      tags:
+        - Pull Requests
   /pulls/{provider}/{owner}/{name}/{number}/ready-for-review:
     post:
-      operationId: post-pulls-by-provider-by-owner-by-name-by-number-ready-for-review
+      operationId: mark-pull-ready-for-review
       parameters:
         - in: path
           name: provider
@@ -6091,10 +6271,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Post pulls by provider by owner by name by number ready for review
+      summary: Mark pull request ready for review
+      tags:
+        - Pull Requests
   /pulls/{provider}/{owner}/{name}/{number}/stack:
     get:
-      operationId: get-pulls-by-provider-by-owner-by-name-by-number-stack
+      operationId: get-pull-stack
       parameters:
         - in: path
           name: provider
@@ -6130,7 +6312,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Get pulls by provider by owner by name by number stack
+      summary: Get pull request stack
+      tags:
+        - Pull Requests
   /pulls/{provider}/{owner}/{name}/{number}/state:
     put:
       operationId: set-kanban-state
@@ -6171,9 +6355,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      summary: Set pull request kanban state
+      tags:
+        - Pull Requests
   /pulls/{provider}/{owner}/{name}/{number}/sync:
     post:
-      operationId: post-pulls-by-provider-by-owner-by-name-by-number-sync
+      operationId: sync-pull
       parameters:
         - in: path
           name: provider
@@ -6209,7 +6396,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Post pulls by provider by owner by name by number sync
+      summary: Sync pull request
+      tags:
+        - Pull Requests
   /pulls/{provider}/{owner}/{name}/{number}/sync/async:
     post:
       operationId: enqueue-pr-sync
@@ -6244,6 +6433,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      summary: Enqueue pull request sync
+      tags:
+        - Pull Requests
   /rate-limits:
     get:
       operationId: get-rate-limits
@@ -6261,6 +6453,8 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Get rate limits
+      tags:
+        - Sync
   /repo/{provider}/{owner}/{name}:
     delete:
       operationId: delete-repo
@@ -6289,8 +6483,11 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      summary: Delete repository
+      tags:
+        - Settings
     get:
-      operationId: get-repo-by-provider-by-owner-by-name
+      operationId: get-repo
       parameters:
         - in: path
           name: provider
@@ -6320,10 +6517,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Get repo by provider by owner by name
+      summary: Get repository
+      tags:
+        - Repositories
   /repo/{provider}/{owner}/{name}/comment-autocomplete:
     get:
-      operationId: get-repo-by-provider-by-owner-by-name-comment-autocomplete
+      operationId: get-comment-autocomplete
       parameters:
         - in: path
           name: provider
@@ -6369,7 +6568,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Get repo by provider by owner by name comment autocomplete
+      summary: Get comment autocomplete
+      tags:
+        - Repositories
   /repo/{provider}/{owner}/{name}/labels:
     get:
       operationId: list-repo-labels
@@ -6402,6 +6603,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      summary: List repository labels
+      tags:
+        - Repositories
   /repo/{provider}/{owner}/{name}/refresh:
     post:
       operationId: refresh-repo
@@ -6434,9 +6638,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      summary: Refresh repository
+      tags:
+        - Settings
   /repo/{provider}/{owner}/{name}/resolve/{number}:
     post:
-      operationId: post-repo-by-provider-by-owner-by-name-resolve-by-number
+      operationId: resolve-repo-item
       parameters:
         - in: path
           name: provider
@@ -6472,7 +6679,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Post repo by provider by owner by name resolve by number
+      summary: Resolve repository item
+      tags:
+        - Repositories
   /repos:
     get:
       operationId: list-repos
@@ -6493,7 +6702,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: List repos
+      summary: List repositories
+      tags:
+        - Repositories
     post:
       operationId: add-repo
       requestBody:
@@ -6515,6 +6726,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      summary: Add repository
+      tags:
+        - Settings
   /repos/bulk:
     post:
       operationId: bulk-add-repos
@@ -6537,6 +6751,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      summary: Bulk add repositories
+      tags:
+        - Repositories
   /repos/preview:
     post:
       operationId: preview-repos
@@ -6559,6 +6776,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      summary: Preview repositories
+      tags:
+        - Repositories
   /repos/summary:
     get:
       operationId: list-repo-summaries
@@ -6579,6 +6799,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      summary: List repository summaries
+      tags:
+        - Repositories
   /roborev/status:
     get:
       operationId: get-roborev-status
@@ -6595,6 +6818,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      summary: Get roborev status
+      tags:
+        - Roborev
   /settings:
     get:
       operationId: get-settings
@@ -6611,6 +6837,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      summary: Get settings
+      tags:
+        - Settings
     put:
       operationId: update-settings
       requestBody:
@@ -6632,6 +6861,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      summary: Update settings
+      tags:
+        - Settings
   /stacks:
     get:
       operationId: list-stacks
@@ -6659,6 +6891,8 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: List stacks
+      tags:
+        - Stacks
   /starred:
     delete:
       operationId: unset-starred
@@ -6677,6 +6911,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      summary: Unstar repository
+      tags:
+        - Settings
     put:
       operationId: set-starred
       requestBody:
@@ -6694,6 +6931,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      summary: Star repository
+      tags:
+        - Settings
   /sync:
     post:
       operationId: trigger-sync
@@ -6706,6 +6946,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      summary: Trigger sync
+      tags:
+        - Sync
   /sync/status:
     get:
       operationId: get-sync-status
@@ -6723,6 +6966,8 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Get sync status
+      tags:
+        - Sync
   /version:
     get:
       operationId: get-version
@@ -6739,9 +6984,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      summary: Get server version
+      tags:
+        - System
   /workspaces:
     get:
-      operationId: get-workspaces
+      operationId: list-workspaces
       responses:
         "200":
           content:
@@ -6755,7 +7003,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Get workspaces
+      summary: List workspaces
+      tags:
+        - Workspaces
     post:
       operationId: create-workspace
       requestBody:
@@ -6777,6 +7027,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      summary: Create workspace
+      tags:
+        - Workspaces
   /workspaces/{id}:
     delete:
       operationId: delete-workspace
@@ -6800,8 +7053,11 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      summary: Delete workspace
+      tags:
+        - Workspaces
     get:
-      operationId: get-workspaces-by-id
+      operationId: get-workspace
       parameters:
         - in: path
           name: id
@@ -6821,10 +7077,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Get workspaces by ID
+      summary: Get workspace
+      tags:
+        - Workspaces
   /workspaces/{id}/commits:
     get:
-      operationId: get-workspaces-by-id-commits
+      operationId: get-workspace-commits
       parameters:
         - in: path
           name: id
@@ -6844,10 +7102,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Get workspaces by ID commits
+      summary: Get workspace commits
+      tags:
+        - Workspaces
   /workspaces/{id}/diff:
     get:
-      operationId: get-workspaces-by-id-diff
+      operationId: get-workspace-diff
       parameters:
         - in: path
           name: id
@@ -6909,10 +7169,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Get workspaces by ID diff
+      summary: Get workspace diff
+      tags:
+        - Workspaces
   /workspaces/{id}/files:
     get:
-      operationId: get-workspaces-by-id-files
+      operationId: get-workspace-files
       parameters:
         - in: path
           name: id
@@ -6967,7 +7229,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Get workspaces by ID files
+      summary: Get workspace files
+      tags:
+        - Workspaces
   /workspaces/{id}/retry:
     post:
       operationId: retry-workspace
@@ -6990,6 +7254,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      summary: Retry workspace
+      tags:
+        - Workspaces
   /workspaces/{id}/runtime:
     get:
       operationId: get-workspace-runtime
@@ -7012,6 +7279,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      summary: Get workspace runtime
+      tags:
+        - Workspaces
   /workspaces/{id}/runtime/sessions:
     post:
       operationId: launch-workspace-runtime-session
@@ -7040,6 +7310,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      summary: Launch workspace runtime session
+      tags:
+        - Workspaces
   /workspaces/{id}/runtime/sessions/{session_key}:
     delete:
       operationId: stop-workspace-runtime-session
@@ -7063,6 +7336,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      summary: Stop workspace runtime session
+      tags:
+        - Workspaces
   /workspaces/{id}/runtime/shell:
     post:
       operationId: ensure-workspace-runtime-shell
@@ -7085,5 +7361,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      summary: Ensure workspace runtime shell
+      tags:
+        - Workspaces
 servers:
   - url: /api/v1

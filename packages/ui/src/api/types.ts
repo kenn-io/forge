@@ -32,7 +32,7 @@ export type CommentAutocompleteResponse =
   components["schemas"]["CommentAutocompleteResponse"];
 export type CommentAutocompleteReference =
   components["schemas"]["CommentAutocompleteReference"];
-export type ActivityParams = NonNullable<operations["get-activity"]["parameters"]["query"]>;
+export type ActivityParams = NonNullable<operations["list-activity"]["parameters"]["query"]>;
 export type PullsParams = operations["list-pulls"]["parameters"]["query"];
 export type IssuesParams = operations["list-issues"]["parameters"]["query"];
 export type MergeParams = components["schemas"]["MergePRInputBody"];

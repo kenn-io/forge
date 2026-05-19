@@ -11,8 +11,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get activity */
-        get: operations["get-activity"];
+        /** List activity */
+        get: operations["list-activity"];
         put?: never;
         post?: never;
         delete?: never;
@@ -28,6 +28,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Stream server events */
         get: operations["stream-events"];
         put?: never;
         post?: never;
@@ -46,6 +47,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Create issue */
         post: operations["create-issue-on-host"];
         delete?: never;
         options?: never;
@@ -60,13 +62,14 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get host by platform host issues by provider by owner by name by number */
-        get: operations["get-host-by-platform-host-issues-by-provider-by-owner-by-name-by-number"];
+        /** Get issue */
+        get: operations["get-issue-on-host"];
         put?: never;
         post?: never;
         delete?: never;
         options?: never;
         head?: never;
+        /** Edit issue content */
         patch: operations["edit-issue-content-on-host"];
         trace?: never;
     };
@@ -79,6 +82,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Post issue comment */
         post: operations["post-issue-comment-on-host"];
         delete?: never;
         options?: never;
@@ -99,6 +103,7 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
+        /** Edit issue comment */
         patch: operations["edit-issue-comment-on-host"];
         trace?: never;
     };
@@ -111,6 +116,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Set issue GitHub state */
         post: operations["set-issue-github-state-on-host"];
         delete?: never;
         options?: never;
@@ -126,6 +132,7 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
+        /** Set issue labels */
         put: operations["set-issue-labels-on-host"];
         post?: never;
         delete?: never;
@@ -143,8 +150,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Post host by platform host issues by provider by owner by name by number sync */
-        post: operations["post-host-by-platform-host-issues-by-provider-by-owner-by-name-by-number-sync"];
+        /** Sync issue */
+        post: operations["sync-issue-on-host"];
         delete?: never;
         options?: never;
         head?: never;
@@ -160,6 +167,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Enqueue issue sync */
         post: operations["enqueue-issue-sync-on-host"];
         delete?: never;
         options?: never;
@@ -176,6 +184,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Create issue workspace */
         post: operations["create-issue-workspace-on-host"];
         delete?: never;
         options?: never;
@@ -190,13 +199,14 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get host by platform host pulls by provider by owner by name by number */
-        get: operations["get-host-by-platform-host-pulls-by-provider-by-owner-by-name-by-number"];
+        /** Get pull request */
+        get: operations["get-pull-on-host"];
         put?: never;
         post?: never;
         delete?: never;
         options?: never;
         head?: never;
+        /** Edit pull request content */
         patch: operations["edit-pr-content-on-host"];
         trace?: never;
     };
@@ -209,8 +219,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Post host by platform host pulls by provider by owner by name by number approve */
-        post: operations["post-host-by-platform-host-pulls-by-provider-by-owner-by-name-by-number-approve"];
+        /** Approve pull request */
+        post: operations["approve-pull-on-host"];
         delete?: never;
         options?: never;
         head?: never;
@@ -226,8 +236,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Post host by platform host pulls by provider by owner by name by number approve workflows */
-        post: operations["post-host-by-platform-host-pulls-by-provider-by-owner-by-name-by-number-approve-workflows"];
+        /** Approve pull request workflows */
+        post: operations["approve-pull-workflows-on-host"];
         delete?: never;
         options?: never;
         head?: never;
@@ -243,8 +253,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Post host by platform host pulls by provider by owner by name by number ci refresh */
-        post: operations["post-host-by-platform-host-pulls-by-provider-by-owner-by-name-by-number-ci-refresh"];
+        /** Refresh pull request CI */
+        post: operations["refresh-pull-ci-on-host"];
         delete?: never;
         options?: never;
         head?: never;
@@ -260,6 +270,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Post pull request comment */
         post: operations["post-pr-comment-on-host"];
         delete?: never;
         options?: never;
@@ -280,6 +291,7 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
+        /** Edit pull request comment */
         patch: operations["edit-pr-comment-on-host"];
         trace?: never;
     };
@@ -290,8 +302,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get host by platform host pulls by provider by owner by name by number commits */
-        get: operations["get-host-by-platform-host-pulls-by-provider-by-owner-by-name-by-number-commits"];
+        /** Get pull request commits */
+        get: operations["get-pull-commits-on-host"];
         put?: never;
         post?: never;
         delete?: never;
@@ -307,8 +319,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get host by platform host pulls by provider by owner by name by number diff */
-        get: operations["get-host-by-platform-host-pulls-by-provider-by-owner-by-name-by-number-diff"];
+        /** Get pull request diff */
+        get: operations["get-pull-diff-on-host"];
         put?: never;
         post?: never;
         delete?: never;
@@ -324,8 +336,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get host by platform host pulls by provider by owner by name by number file preview */
-        get: operations["get-host-by-platform-host-pulls-by-provider-by-owner-by-name-by-number-file-preview"];
+        /** Get pull request file preview */
+        get: operations["get-pull-file-preview-on-host"];
         put?: never;
         post?: never;
         delete?: never;
@@ -341,8 +353,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get host by platform host pulls by provider by owner by name by number files */
-        get: operations["get-host-by-platform-host-pulls-by-provider-by-owner-by-name-by-number-files"];
+        /** Get pull request files */
+        get: operations["get-pull-files-on-host"];
         put?: never;
         post?: never;
         delete?: never;
@@ -360,6 +372,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Set pull request GitHub state */
         post: operations["set-pr-github-state-on-host"];
         delete?: never;
         options?: never;
@@ -374,8 +387,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get host by platform host pulls by provider by owner by name by number import metadata */
-        get: operations["get-host-by-platform-host-pulls-by-provider-by-owner-by-name-by-number-import-metadata"];
+        /** Get pull request import metadata */
+        get: operations["get-pull-import-metadata-on-host"];
         put?: never;
         post?: never;
         delete?: never;
@@ -392,6 +405,7 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
+        /** Set pull request labels */
         put: operations["set-pr-labels-on-host"];
         post?: never;
         delete?: never;
@@ -409,8 +423,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Post host by platform host pulls by provider by owner by name by number merge */
-        post: operations["post-host-by-platform-host-pulls-by-provider-by-owner-by-name-by-number-merge"];
+        /** Merge pull request */
+        post: operations["merge-pull-on-host"];
         delete?: never;
         options?: never;
         head?: never;
@@ -426,8 +440,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Post host by platform host pulls by provider by owner by name by number ready for review */
-        post: operations["post-host-by-platform-host-pulls-by-provider-by-owner-by-name-by-number-ready-for-review"];
+        /** Mark pull request ready for review */
+        post: operations["mark-pull-ready-for-review-on-host"];
         delete?: never;
         options?: never;
         head?: never;
@@ -441,8 +455,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get host by platform host pulls by provider by owner by name by number stack */
-        get: operations["get-host-by-platform-host-pulls-by-provider-by-owner-by-name-by-number-stack"];
+        /** Get pull request stack */
+        get: operations["get-pull-stack-on-host"];
         put?: never;
         post?: never;
         delete?: never;
@@ -459,6 +473,7 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
+        /** Set pull request kanban state */
         put: operations["set-kanban-state-on-host"];
         post?: never;
         delete?: never;
@@ -476,8 +491,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Post host by platform host pulls by provider by owner by name by number sync */
-        post: operations["post-host-by-platform-host-pulls-by-provider-by-owner-by-name-by-number-sync"];
+        /** Sync pull request */
+        post: operations["sync-pull-on-host"];
         delete?: never;
         options?: never;
         head?: never;
@@ -493,6 +508,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Enqueue pull request sync */
         post: operations["enqueue-pr-sync-on-host"];
         delete?: never;
         options?: never;
@@ -507,10 +523,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get host by platform host repo by provider by owner by name */
-        get: operations["get-host-by-platform-host-repo-by-provider-by-owner-by-name"];
+        /** Get repository */
+        get: operations["get-repo-on-host"];
         put?: never;
         post?: never;
+        /** Delete repository */
         delete: operations["delete-repo-on-host"];
         options?: never;
         head?: never;
@@ -524,8 +541,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get host by platform host repo by provider by owner by name comment autocomplete */
-        get: operations["get-host-by-platform-host-repo-by-provider-by-owner-by-name-comment-autocomplete"];
+        /** Get comment autocomplete */
+        get: operations["get-comment-autocomplete-on-host"];
         put?: never;
         post?: never;
         delete?: never;
@@ -541,6 +558,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** List repository labels */
         get: operations["list-repo-labels-on-host"];
         put?: never;
         post?: never;
@@ -559,6 +577,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Refresh repository */
         post: operations["refresh-repo-on-host"];
         delete?: never;
         options?: never;
@@ -575,8 +594,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Post host by platform host repo by provider by owner by name resolve by number */
-        post: operations["post-host-by-platform-host-repo-by-provider-by-owner-by-name-resolve-by-number"];
+        /** Resolve repository item */
+        post: operations["resolve-repo-item-on-host"];
         delete?: never;
         options?: never;
         head?: never;
@@ -609,6 +628,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Create issue */
         post: operations["create-issue"];
         delete?: never;
         options?: never;
@@ -623,13 +643,14 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get issues by provider by owner by name by number */
-        get: operations["get-issues-by-provider-by-owner-by-name-by-number"];
+        /** Get issue */
+        get: operations["get-issue"];
         put?: never;
         post?: never;
         delete?: never;
         options?: never;
         head?: never;
+        /** Edit issue content */
         patch: operations["edit-issue-content"];
         trace?: never;
     };
@@ -642,6 +663,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Post issue comment */
         post: operations["post-issue-comment"];
         delete?: never;
         options?: never;
@@ -662,6 +684,7 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
+        /** Edit issue comment */
         patch: operations["edit-issue-comment"];
         trace?: never;
     };
@@ -674,6 +697,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Set issue GitHub state */
         post: operations["set-issue-github-state"];
         delete?: never;
         options?: never;
@@ -689,6 +713,7 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
+        /** Set issue labels */
         put: operations["set-issue-labels"];
         post?: never;
         delete?: never;
@@ -706,8 +731,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Post issues by provider by owner by name by number sync */
-        post: operations["post-issues-by-provider-by-owner-by-name-by-number-sync"];
+        /** Sync issue */
+        post: operations["sync-issue"];
         delete?: never;
         options?: never;
         head?: never;
@@ -723,6 +748,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Enqueue issue sync */
         post: operations["enqueue-issue-sync"];
         delete?: never;
         options?: never;
@@ -739,6 +765,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Create issue workspace */
         post: operations["create-issue-workspace"];
         delete?: never;
         options?: never;
@@ -753,8 +780,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** List projects */
         get: operations["list-projects"];
         put?: never;
+        /** Register project */
         post: operations["register-project"];
         delete?: never;
         options?: never;
@@ -769,6 +798,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Get project */
         get: operations["get-project"];
         put?: never;
         post?: never;
@@ -785,6 +815,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** List launch targets */
         get: operations["list-launch-targets"];
         put?: never;
         post?: never;
@@ -801,8 +832,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** List worktrees */
         get: operations["list-worktrees"];
         put?: never;
+        /** Register worktree */
         post: operations["register-worktree"];
         delete?: never;
         options?: never;
@@ -817,7 +850,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List pulls */
+        /** List pull requests */
         get: operations["list-pulls"];
         put?: never;
         post?: never;
@@ -834,13 +867,14 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get pulls by provider by owner by name by number */
-        get: operations["get-pulls-by-provider-by-owner-by-name-by-number"];
+        /** Get pull request */
+        get: operations["get-pull"];
         put?: never;
         post?: never;
         delete?: never;
         options?: never;
         head?: never;
+        /** Edit pull request content */
         patch: operations["edit-pr-content"];
         trace?: never;
     };
@@ -853,8 +887,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Post pulls by provider by owner by name by number approve */
-        post: operations["post-pulls-by-provider-by-owner-by-name-by-number-approve"];
+        /** Approve pull request */
+        post: operations["approve-pull"];
         delete?: never;
         options?: never;
         head?: never;
@@ -870,8 +904,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Post pulls by provider by owner by name by number approve workflows */
-        post: operations["post-pulls-by-provider-by-owner-by-name-by-number-approve-workflows"];
+        /** Approve pull request workflows */
+        post: operations["approve-pull-workflows"];
         delete?: never;
         options?: never;
         head?: never;
@@ -887,8 +921,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Post pulls by provider by owner by name by number ci refresh */
-        post: operations["post-pulls-by-provider-by-owner-by-name-by-number-ci-refresh"];
+        /** Refresh pull request CI */
+        post: operations["refresh-pull-ci"];
         delete?: never;
         options?: never;
         head?: never;
@@ -904,6 +938,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Post pull request comment */
         post: operations["post-pr-comment"];
         delete?: never;
         options?: never;
@@ -924,6 +959,7 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
+        /** Edit pull request comment */
         patch: operations["edit-pr-comment"];
         trace?: never;
     };
@@ -934,8 +970,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get pulls by provider by owner by name by number commits */
-        get: operations["get-pulls-by-provider-by-owner-by-name-by-number-commits"];
+        /** Get pull request commits */
+        get: operations["get-pull-commits"];
         put?: never;
         post?: never;
         delete?: never;
@@ -951,8 +987,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get pulls by provider by owner by name by number diff */
-        get: operations["get-pulls-by-provider-by-owner-by-name-by-number-diff"];
+        /** Get pull request diff */
+        get: operations["get-pull-diff"];
         put?: never;
         post?: never;
         delete?: never;
@@ -968,8 +1004,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get pulls by provider by owner by name by number file preview */
-        get: operations["get-pulls-by-provider-by-owner-by-name-by-number-file-preview"];
+        /** Get pull request file preview */
+        get: operations["get-pull-file-preview"];
         put?: never;
         post?: never;
         delete?: never;
@@ -985,8 +1021,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get pulls by provider by owner by name by number files */
-        get: operations["get-pulls-by-provider-by-owner-by-name-by-number-files"];
+        /** Get pull request files */
+        get: operations["get-pull-files"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1004,6 +1040,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Set pull request GitHub state */
         post: operations["set-pr-github-state"];
         delete?: never;
         options?: never;
@@ -1018,8 +1055,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get pulls by provider by owner by name by number import metadata */
-        get: operations["get-pulls-by-provider-by-owner-by-name-by-number-import-metadata"];
+        /** Get pull request import metadata */
+        get: operations["get-pull-import-metadata"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1036,6 +1073,7 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
+        /** Set pull request labels */
         put: operations["set-pr-labels"];
         post?: never;
         delete?: never;
@@ -1053,8 +1091,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Post pulls by provider by owner by name by number merge */
-        post: operations["post-pulls-by-provider-by-owner-by-name-by-number-merge"];
+        /** Merge pull request */
+        post: operations["merge-pull"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1070,8 +1108,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Post pulls by provider by owner by name by number ready for review */
-        post: operations["post-pulls-by-provider-by-owner-by-name-by-number-ready-for-review"];
+        /** Mark pull request ready for review */
+        post: operations["mark-pull-ready-for-review"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1085,8 +1123,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get pulls by provider by owner by name by number stack */
-        get: operations["get-pulls-by-provider-by-owner-by-name-by-number-stack"];
+        /** Get pull request stack */
+        get: operations["get-pull-stack"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1103,6 +1141,7 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
+        /** Set pull request kanban state */
         put: operations["set-kanban-state"];
         post?: never;
         delete?: never;
@@ -1120,8 +1159,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Post pulls by provider by owner by name by number sync */
-        post: operations["post-pulls-by-provider-by-owner-by-name-by-number-sync"];
+        /** Sync pull request */
+        post: operations["sync-pull"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1137,6 +1176,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Enqueue pull request sync */
         post: operations["enqueue-pr-sync"];
         delete?: never;
         options?: never;
@@ -1168,10 +1208,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get repo by provider by owner by name */
-        get: operations["get-repo-by-provider-by-owner-by-name"];
+        /** Get repository */
+        get: operations["get-repo"];
         put?: never;
         post?: never;
+        /** Delete repository */
         delete: operations["delete-repo"];
         options?: never;
         head?: never;
@@ -1185,8 +1226,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get repo by provider by owner by name comment autocomplete */
-        get: operations["get-repo-by-provider-by-owner-by-name-comment-autocomplete"];
+        /** Get comment autocomplete */
+        get: operations["get-comment-autocomplete"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1202,6 +1243,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** List repository labels */
         get: operations["list-repo-labels"];
         put?: never;
         post?: never;
@@ -1220,6 +1262,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Refresh repository */
         post: operations["refresh-repo"];
         delete?: never;
         options?: never;
@@ -1236,8 +1279,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Post repo by provider by owner by name resolve by number */
-        post: operations["post-repo-by-provider-by-owner-by-name-resolve-by-number"];
+        /** Resolve repository item */
+        post: operations["resolve-repo-item"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1251,9 +1294,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List repos */
+        /** List repositories */
         get: operations["list-repos"];
         put?: never;
+        /** Add repository */
         post: operations["add-repo"];
         delete?: never;
         options?: never;
@@ -1270,6 +1314,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Bulk add repositories */
         post: operations["bulk-add-repos"];
         delete?: never;
         options?: never;
@@ -1286,6 +1331,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Preview repositories */
         post: operations["preview-repos"];
         delete?: never;
         options?: never;
@@ -1300,6 +1346,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** List repository summaries */
         get: operations["list-repo-summaries"];
         put?: never;
         post?: never;
@@ -1316,6 +1363,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Get roborev status */
         get: operations["get-roborev-status"];
         put?: never;
         post?: never;
@@ -1332,7 +1380,9 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Get settings */
         get: operations["get-settings"];
+        /** Update settings */
         put: operations["update-settings"];
         post?: never;
         delete?: never;
@@ -1366,8 +1416,10 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
+        /** Star repository */
         put: operations["set-starred"];
         post?: never;
+        /** Unstar repository */
         delete: operations["unset-starred"];
         options?: never;
         head?: never;
@@ -1383,6 +1435,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Trigger sync */
         post: operations["trigger-sync"];
         delete?: never;
         options?: never;
@@ -1414,6 +1467,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Get server version */
         get: operations["get-version"];
         put?: never;
         post?: never;
@@ -1430,9 +1484,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get workspaces */
-        get: operations["get-workspaces"];
+        /** List workspaces */
+        get: operations["list-workspaces"];
         put?: never;
+        /** Create workspace */
         post: operations["create-workspace"];
         delete?: never;
         options?: never;
@@ -1447,10 +1502,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get workspaces by ID */
-        get: operations["get-workspaces-by-id"];
+        /** Get workspace */
+        get: operations["get-workspace"];
         put?: never;
         post?: never;
+        /** Delete workspace */
         delete: operations["delete-workspace"];
         options?: never;
         head?: never;
@@ -1464,8 +1520,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get workspaces by ID commits */
-        get: operations["get-workspaces-by-id-commits"];
+        /** Get workspace commits */
+        get: operations["get-workspace-commits"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1481,8 +1537,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get workspaces by ID diff */
-        get: operations["get-workspaces-by-id-diff"];
+        /** Get workspace diff */
+        get: operations["get-workspace-diff"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1498,8 +1554,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get workspaces by ID files */
-        get: operations["get-workspaces-by-id-files"];
+        /** Get workspace files */
+        get: operations["get-workspace-files"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1517,6 +1573,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Retry workspace */
         post: operations["retry-workspace"];
         delete?: never;
         options?: never;
@@ -1531,6 +1588,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Get workspace runtime */
         get: operations["get-workspace-runtime"];
         put?: never;
         post?: never;
@@ -1549,6 +1607,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Launch workspace runtime session */
         post: operations["launch-workspace-runtime-session"];
         delete?: never;
         options?: never;
@@ -1566,6 +1625,7 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
+        /** Stop workspace runtime session */
         delete: operations["stop-workspace-runtime-session"];
         options?: never;
         head?: never;
@@ -1581,6 +1641,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Ensure workspace runtime shell */
         post: operations["ensure-workspace-runtime-shell"];
         delete?: never;
         options?: never;
@@ -2954,7 +3015,7 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
-    "get-activity": {
+    "list-activity": {
         parameters: {
             query?: {
                 repo?: string;
@@ -3056,7 +3117,7 @@ export interface operations {
             };
         };
     };
-    "get-host-by-platform-host-issues-by-provider-by-owner-by-name-by-number": {
+    "get-issue-on-host": {
         parameters: {
             query?: never;
             header?: never;
@@ -3287,7 +3348,7 @@ export interface operations {
             };
         };
     };
-    "post-host-by-platform-host-issues-by-provider-by-owner-by-name-by-number-sync": {
+    "sync-issue-on-host": {
         parameters: {
             query?: never;
             header?: never;
@@ -3394,7 +3455,7 @@ export interface operations {
             };
         };
     };
-    "get-host-by-platform-host-pulls-by-provider-by-owner-by-name-by-number": {
+    "get-pull-on-host": {
         parameters: {
             query?: never;
             header?: never;
@@ -3468,7 +3529,7 @@ export interface operations {
             };
         };
     };
-    "post-host-by-platform-host-pulls-by-provider-by-owner-by-name-by-number-approve": {
+    "approve-pull-on-host": {
         parameters: {
             query?: never;
             header?: never;
@@ -3507,7 +3568,7 @@ export interface operations {
             };
         };
     };
-    "post-host-by-platform-host-pulls-by-provider-by-owner-by-name-by-number-approve-workflows": {
+    "approve-pull-workflows-on-host": {
         parameters: {
             query?: never;
             header?: never;
@@ -3542,7 +3603,7 @@ export interface operations {
             };
         };
     };
-    "post-host-by-platform-host-pulls-by-provider-by-owner-by-name-by-number-ci-refresh": {
+    "refresh-pull-ci-on-host": {
         parameters: {
             query?: never;
             header?: never;
@@ -3656,7 +3717,7 @@ export interface operations {
             };
         };
     };
-    "get-host-by-platform-host-pulls-by-provider-by-owner-by-name-by-number-commits": {
+    "get-pull-commits-on-host": {
         parameters: {
             query?: never;
             header?: never;
@@ -3691,7 +3752,7 @@ export interface operations {
             };
         };
     };
-    "get-host-by-platform-host-pulls-by-provider-by-owner-by-name-by-number-diff": {
+    "get-pull-diff-on-host": {
         parameters: {
             query?: {
                 whitespace?: string;
@@ -3734,7 +3795,7 @@ export interface operations {
             };
         };
     };
-    "get-host-by-platform-host-pulls-by-provider-by-owner-by-name-by-number-file-preview": {
+    "get-pull-file-preview-on-host": {
         parameters: {
             query?: {
                 /** @description Changed file path to preview */
@@ -3778,7 +3839,7 @@ export interface operations {
             };
         };
     };
-    "get-host-by-platform-host-pulls-by-provider-by-owner-by-name-by-number-files": {
+    "get-pull-files-on-host": {
         parameters: {
             query?: never;
             header?: never;
@@ -3852,7 +3913,7 @@ export interface operations {
             };
         };
     };
-    "get-host-by-platform-host-pulls-by-provider-by-owner-by-name-by-number-import-metadata": {
+    "get-pull-import-metadata-on-host": {
         parameters: {
             query?: never;
             header?: never;
@@ -3926,7 +3987,7 @@ export interface operations {
             };
         };
     };
-    "post-host-by-platform-host-pulls-by-provider-by-owner-by-name-by-number-merge": {
+    "merge-pull-on-host": {
         parameters: {
             query?: never;
             header?: never;
@@ -3965,7 +4026,7 @@ export interface operations {
             };
         };
     };
-    "post-host-by-platform-host-pulls-by-provider-by-owner-by-name-by-number-ready-for-review": {
+    "mark-pull-ready-for-review-on-host": {
         parameters: {
             query?: never;
             header?: never;
@@ -4000,7 +4061,7 @@ export interface operations {
             };
         };
     };
-    "get-host-by-platform-host-pulls-by-provider-by-owner-by-name-by-number-stack": {
+    "get-pull-stack-on-host": {
         parameters: {
             query?: never;
             header?: never;
@@ -4072,7 +4133,7 @@ export interface operations {
             };
         };
     };
-    "post-host-by-platform-host-pulls-by-provider-by-owner-by-name-by-number-sync": {
+    "sync-pull-on-host": {
         parameters: {
             query?: never;
             header?: never;
@@ -4140,7 +4201,7 @@ export interface operations {
             };
         };
     };
-    "get-host-by-platform-host-repo-by-provider-by-owner-by-name": {
+    "get-repo-on-host": {
         parameters: {
             query?: never;
             header?: never;
@@ -4206,7 +4267,7 @@ export interface operations {
             };
         };
     };
-    "get-host-by-platform-host-repo-by-provider-by-owner-by-name-comment-autocomplete": {
+    "get-comment-autocomplete-on-host": {
         parameters: {
             query?: {
                 trigger?: string;
@@ -4312,7 +4373,7 @@ export interface operations {
             };
         };
     };
-    "post-host-by-platform-host-repo-by-provider-by-owner-by-name-resolve-by-number": {
+    "resolve-repo-item-on-host": {
         parameters: {
             query?: never;
             header?: never;
@@ -4420,7 +4481,7 @@ export interface operations {
             };
         };
     };
-    "get-issues-by-provider-by-owner-by-name-by-number": {
+    "get-issue": {
         parameters: {
             query?: never;
             header?: never;
@@ -4645,7 +4706,7 @@ export interface operations {
             };
         };
     };
-    "post-issues-by-provider-by-owner-by-name-by-number-sync": {
+    "sync-issue": {
         parameters: {
             query?: never;
             header?: never;
@@ -4976,7 +5037,7 @@ export interface operations {
             };
         };
     };
-    "get-pulls-by-provider-by-owner-by-name-by-number": {
+    "get-pull": {
         parameters: {
             query?: never;
             header?: never;
@@ -5048,7 +5109,7 @@ export interface operations {
             };
         };
     };
-    "post-pulls-by-provider-by-owner-by-name-by-number-approve": {
+    "approve-pull": {
         parameters: {
             query?: never;
             header?: never;
@@ -5086,7 +5147,7 @@ export interface operations {
             };
         };
     };
-    "post-pulls-by-provider-by-owner-by-name-by-number-approve-workflows": {
+    "approve-pull-workflows": {
         parameters: {
             query?: never;
             header?: never;
@@ -5120,7 +5181,7 @@ export interface operations {
             };
         };
     };
-    "post-pulls-by-provider-by-owner-by-name-by-number-ci-refresh": {
+    "refresh-pull-ci": {
         parameters: {
             query?: never;
             header?: never;
@@ -5231,7 +5292,7 @@ export interface operations {
             };
         };
     };
-    "get-pulls-by-provider-by-owner-by-name-by-number-commits": {
+    "get-pull-commits": {
         parameters: {
             query?: never;
             header?: never;
@@ -5265,7 +5326,7 @@ export interface operations {
             };
         };
     };
-    "get-pulls-by-provider-by-owner-by-name-by-number-diff": {
+    "get-pull-diff": {
         parameters: {
             query?: {
                 whitespace?: string;
@@ -5307,7 +5368,7 @@ export interface operations {
             };
         };
     };
-    "get-pulls-by-provider-by-owner-by-name-by-number-file-preview": {
+    "get-pull-file-preview": {
         parameters: {
             query?: {
                 /** @description Changed file path to preview */
@@ -5350,7 +5411,7 @@ export interface operations {
             };
         };
     };
-    "get-pulls-by-provider-by-owner-by-name-by-number-files": {
+    "get-pull-files": {
         parameters: {
             query?: never;
             header?: never;
@@ -5422,7 +5483,7 @@ export interface operations {
             };
         };
     };
-    "get-pulls-by-provider-by-owner-by-name-by-number-import-metadata": {
+    "get-pull-import-metadata": {
         parameters: {
             query?: never;
             header?: never;
@@ -5494,7 +5555,7 @@ export interface operations {
             };
         };
     };
-    "post-pulls-by-provider-by-owner-by-name-by-number-merge": {
+    "merge-pull": {
         parameters: {
             query?: never;
             header?: never;
@@ -5532,7 +5593,7 @@ export interface operations {
             };
         };
     };
-    "post-pulls-by-provider-by-owner-by-name-by-number-ready-for-review": {
+    "mark-pull-ready-for-review": {
         parameters: {
             query?: never;
             header?: never;
@@ -5566,7 +5627,7 @@ export interface operations {
             };
         };
     };
-    "get-pulls-by-provider-by-owner-by-name-by-number-stack": {
+    "get-pull-stack": {
         parameters: {
             query?: never;
             header?: never;
@@ -5636,7 +5697,7 @@ export interface operations {
             };
         };
     };
-    "post-pulls-by-provider-by-owner-by-name-by-number-sync": {
+    "sync-pull": {
         parameters: {
             query?: never;
             header?: never;
@@ -5731,7 +5792,7 @@ export interface operations {
             };
         };
     };
-    "get-repo-by-provider-by-owner-by-name": {
+    "get-repo": {
         parameters: {
             query?: never;
             header?: never;
@@ -5795,7 +5856,7 @@ export interface operations {
             };
         };
     };
-    "get-repo-by-provider-by-owner-by-name-comment-autocomplete": {
+    "get-comment-autocomplete": {
         parameters: {
             query?: {
                 trigger?: string;
@@ -5898,7 +5959,7 @@ export interface operations {
             };
         };
     };
-    "post-repo-by-provider-by-owner-by-name-resolve-by-number": {
+    "resolve-repo-item": {
         parameters: {
             query?: never;
             header?: never;
@@ -6358,7 +6419,7 @@ export interface operations {
             };
         };
     };
-    "get-workspaces": {
+    "list-workspaces": {
         parameters: {
             query?: never;
             header?: never;
@@ -6420,7 +6481,7 @@ export interface operations {
             };
         };
     };
-    "get-workspaces-by-id": {
+    "get-workspace": {
         parameters: {
             query?: never;
             header?: never;
@@ -6482,7 +6543,7 @@ export interface operations {
             };
         };
     };
-    "get-workspaces-by-id-commits": {
+    "get-workspace-commits": {
         parameters: {
             query?: never;
             header?: never;
@@ -6513,7 +6574,7 @@ export interface operations {
             };
         };
     };
-    "get-workspaces-by-id-diff": {
+    "get-workspace-diff": {
         parameters: {
             query?: {
                 /** @description Diff base: head, pushed, or merge-target */
@@ -6557,7 +6618,7 @@ export interface operations {
             };
         };
     };
-    "get-workspaces-by-id-files": {
+    "get-workspace-files": {
         parameters: {
             query?: {
                 /** @description Diff base: head, pushed, or merge-target */

@@ -376,7 +376,7 @@ func TestWorkspaceResponseIncludesTmuxWorkingState(t *testing.T) {
 
 	waitForWorkspaceReady(t, ctx, client, wsID)
 
-	getResp, err := client.HTTP.GetWorkspacesById(ctx, wsID)
+	getResp, err := client.HTTP.GetWorkspace(ctx, wsID)
 	require.NoError(err)
 	defer getResp.Body.Close()
 	require.Equal(http.StatusOK, getResp.StatusCode)
@@ -390,7 +390,7 @@ func TestWorkspaceResponseIncludesTmuxWorkingState(t *testing.T) {
 	assert.Equal("⠴ t3code-b5014b03", *got.TmuxPaneTitle)
 	assert.True(got.TmuxWorking)
 
-	listResp, err := client.HTTP.GetWorkspaces(ctx)
+	listResp, err := client.HTTP.ListWorkspaces(ctx)
 	require.NoError(err)
 	defer listResp.Body.Close()
 	require.Equal(http.StatusOK, listResp.StatusCode)
@@ -613,7 +613,7 @@ func TestListWorkspacesFetchesTmuxActivityConcurrently(t *testing.T) {
 		require.NoError(err)
 	}
 
-	resp, err := client.HTTP.GetWorkspaces(ctx)
+	resp, err := client.HTTP.ListWorkspaces(ctx)
 	require.NoError(err)
 	defer resp.Body.Close()
 	require.Equal(http.StatusOK, resp.StatusCode)
@@ -668,7 +668,7 @@ func TestWorkspaceListReturnsUnknownWhenTmuxActivityProbeTimesOut(t *testing.T) 
 
 	requestCtx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
-	resp, err := client.HTTP.GetWorkspaces(requestCtx)
+	resp, err := client.HTTP.ListWorkspaces(requestCtx)
 	require.NoError(err)
 	defer resp.Body.Close()
 	require.Equal(http.StatusOK, resp.StatusCode)
@@ -754,7 +754,7 @@ func TestConcurrentWorkspaceListsCoalesceTmuxActivityProbe(t *testing.T) {
 	for range 2 {
 		go func() {
 			defer wg.Done()
-			resp, getErr := client.HTTP.GetWorkspaces(ctx)
+			resp, getErr := client.HTTP.ListWorkspaces(ctx)
 			errs <- getErr
 			if resp != nil {
 				resp.Body.Close()
@@ -853,7 +853,7 @@ func TestWorkspaceListTmuxActivityRefreshesEveryReadyWorkspace(t *testing.T) {
 		return time.Date(2026, 4, 23, 12, 0, 0, 0, time.UTC)
 	})
 
-	resp, err := client.HTTP.GetWorkspaces(ctx)
+	resp, err := client.HTTP.ListWorkspaces(ctx)
 	require.NoError(err)
 	defer resp.Body.Close()
 	require.Equal(http.StatusOK, resp.StatusCode)
@@ -942,7 +942,7 @@ func TestWorkspaceListTmuxActivityStressDoesNotLeakProcesses(t *testing.T) {
 	for range 48 {
 		go func() {
 			defer wg.Done()
-			resp, getErr := client.HTTP.GetWorkspaces(ctx)
+			resp, getErr := client.HTTP.ListWorkspaces(ctx)
 			errs <- getErr
 			if resp != nil {
 				resp.Body.Close()
@@ -984,7 +984,7 @@ func getRawWorkspaceActivity(
 	TmuxLastOutputAt   *string `json:"tmux_last_output_at"`
 } {
 	t.Helper()
-	resp, err := client.HTTP.GetWorkspacesById(ctx, wsID)
+	resp, err := client.HTTP.GetWorkspace(ctx, wsID)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
@@ -1202,7 +1202,7 @@ func TestWorkspaceShutdownCancellationPersistsFailureViaAPI(t *testing.T) {
 	t.Cleanup(func() { gracefulShutdown(t, restarted) })
 	restartedClient := setupTestClient(t, restarted)
 
-	getResp, err := restartedClient.HTTP.GetWorkspacesByIdWithResponse(
+	getResp, err := restartedClient.HTTP.GetWorkspaceWithResponse(
 		ctx, wsID,
 	)
 	require.NoError(err)
@@ -1287,7 +1287,7 @@ func TestWorkspaceSetupFailureRollbackCleansWorktreeViaAPI(t *testing.T) {
 	var failed *generated.WorkspaceResponse
 	require.Eventually(
 		func() bool {
-			getResp, getErr := client.HTTP.GetWorkspacesByIdWithResponse(
+			getResp, getErr := client.HTTP.GetWorkspaceWithResponse(
 				ctx, wsID,
 			)
 			require.NoError(getErr)
@@ -1400,7 +1400,7 @@ func TestWorkspaceRetryWhileCreatingQueuesAndRunsAfterFailureViaAPI(t *testing.T
 	var ready *generated.WorkspaceResponse
 	require.Eventually(
 		func() bool {
-			getResp, getErr := client.HTTP.GetWorkspacesByIdWithResponse(
+			getResp, getErr := client.HTTP.GetWorkspaceWithResponse(
 				ctx, wsID,
 			)
 			require.NoError(getErr)
@@ -1587,7 +1587,7 @@ func TestTmuxWrapperAttachSession(t *testing.T) {
 	// Poll for status == "ready".
 	require.Eventually(
 		func() bool {
-			getResp, getErr := client.HTTP.GetWorkspacesByIdWithResponse(
+			getResp, getErr := client.HTTP.GetWorkspaceWithResponse(
 				ctx, wsID,
 			)
 			if getErr != nil || getResp.JSON200 == nil {
@@ -1709,7 +1709,7 @@ func TestWorkspaceSetupResourceExhaustionGetsHelpfulErrorViaAPI(t *testing.T) {
 	var failed *generated.WorkspaceResponse
 	require.Eventually(
 		func() bool {
-			getResp, getErr := client.HTTP.GetWorkspacesByIdWithResponse(
+			getResp, getErr := client.HTTP.GetWorkspaceWithResponse(
 				ctx, wsID,
 			)
 			require.NoError(getErr)
@@ -1778,7 +1778,7 @@ func TestTmuxWrapperKillSession(t *testing.T) {
 	// session is known to exist from the manager's perspective.
 	require.Eventually(
 		func() bool {
-			getResp, getErr := client.HTTP.GetWorkspacesByIdWithResponse(
+			getResp, getErr := client.HTTP.GetWorkspaceWithResponse(
 				ctx, wsID,
 			)
 			if getErr != nil || getResp.JSON200 == nil {
@@ -1852,7 +1852,7 @@ func TestDeleteWorkspacePreservesRowWhenTmuxKillFails(t *testing.T) {
 
 	require.Eventually(
 		func() bool {
-			getResp, getErr := client.HTTP.GetWorkspacesByIdWithResponse(
+			getResp, getErr := client.HTTP.GetWorkspaceWithResponse(
 				ctx, wsID,
 			)
 			if getErr != nil || getResp.JSON200 == nil {
@@ -1880,7 +1880,7 @@ func TestDeleteWorkspacePreservesRowWhenTmuxKillFails(t *testing.T) {
 		"permission denied",
 	)
 
-	getResp, err := client.HTTP.GetWorkspacesByIdWithResponse(ctx, wsID)
+	getResp, err := client.HTTP.GetWorkspaceWithResponse(ctx, wsID)
 	require.NoError(err)
 	require.Equal(http.StatusOK, getResp.StatusCode())
 	require.NotNil(getResp.JSON200)
@@ -1925,7 +1925,7 @@ func TestDeleteWorkspaceTreatsTmuxServerExitAsGoneE2E(t *testing.T) {
 
 	require.Eventually(
 		func() bool {
-			getResp, getErr := client.HTTP.GetWorkspacesByIdWithResponse(
+			getResp, getErr := client.HTTP.GetWorkspaceWithResponse(
 				t.Context(), wsID,
 			)
 			if getErr != nil || getResp.JSON200 == nil {
@@ -1943,7 +1943,7 @@ func TestDeleteWorkspaceTreatsTmuxServerExitAsGoneE2E(t *testing.T) {
 	require.NoError(err)
 	require.Equal(http.StatusNoContent, delResp.StatusCode())
 
-	getResp, err := client.HTTP.GetWorkspacesByIdWithResponse(t.Context(), wsID)
+	getResp, err := client.HTTP.GetWorkspaceWithResponse(t.Context(), wsID)
 	require.NoError(err)
 	require.Equal(http.StatusNotFound, getResp.StatusCode())
 
@@ -1995,7 +1995,7 @@ func TestDeleteErroredWorkspaceAllowsUnavailableTmux(t *testing.T) {
 
 	require.Eventually(
 		func() bool {
-			getResp, getErr := client.HTTP.GetWorkspacesByIdWithResponse(
+			getResp, getErr := client.HTTP.GetWorkspaceWithResponse(
 				ctx, wsID,
 			)
 			if getErr != nil || getResp.JSON200 == nil {
@@ -2013,7 +2013,7 @@ func TestDeleteErroredWorkspaceAllowsUnavailableTmux(t *testing.T) {
 	require.NoError(err)
 	require.Equal(http.StatusNoContent, delResp.StatusCode())
 
-	getResp, err := client.HTTP.GetWorkspacesByIdWithResponse(ctx, wsID)
+	getResp, err := client.HTTP.GetWorkspaceWithResponse(ctx, wsID)
 	require.NoError(err)
 	assert.Equal(http.StatusNotFound, getResp.StatusCode())
 }
@@ -2074,7 +2074,7 @@ func attachWebsocketAndExpectInternalError(t *testing.T, scriptBody string) {
 
 	require.Eventually(
 		func() bool {
-			getResp, getErr := client.HTTP.GetWorkspacesByIdWithResponse(
+			getResp, getErr := client.HTTP.GetWorkspaceWithResponse(
 				ctx, wsID,
 			)
 			if getErr != nil || getResp.JSON200 == nil {

@@ -244,7 +244,7 @@ func waitForWorkspaceReady(
 	defer ticker.Stop()
 
 	for {
-		getResp, err := client.HTTP.GetWorkspacesByIdWithResponse(waitCtx, wsID)
+		getResp, err := client.HTTP.GetWorkspaceWithResponse(waitCtx, wsID)
 		require.NoError(t, err, "polling workspace readiness: %s", wsID)
 		if getResp.StatusCode() == http.StatusOK &&
 			getResp.JSON200 != nil &&

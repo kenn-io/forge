@@ -692,9 +692,9 @@ func (s *Server) registerProviderRepoAPI(api huma.API) {
 	huma.Register(api, huma.Operation{OperationID: "set-issue-labels-on-host", Method: http.MethodPut, Path: hostIssuePath + "/labels", DefaultStatus: http.StatusOK, Summary: "Set issue labels", Tags: []string{"Issues"}}, s.setIssueLabelsOnHost)
 
 	huma.Post(api, repoPath+"/resolve/{number}", s.resolveItem,
-		documentOperation("resolve-item", "Resolve repository item", "Repositories"))
+		documentOperation("resolve-repo-item", "Resolve repository item", "Repositories"))
 	huma.Post(api, hostRepoPath+"/resolve/{number}", s.resolveItemOnHost,
-		documentOperation("resolve-item-on-host", "Resolve repository item", "Repositories"))
+		documentOperation("resolve-repo-item-on-host", "Resolve repository item", "Repositories"))
 	huma.Get(api, repoPath, s.getRepo,
 		documentOperation("get-repo", "Get repository", "Repositories"))
 	huma.Get(api, hostRepoPath, s.getRepoOnHost,

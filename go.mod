@@ -11,6 +11,7 @@ require (
 	github.com/coder/websocket v1.8.14
 	github.com/creack/pty/v2 v2.0.1
 	github.com/danielgtaylor/huma/v2 v2.37.3
+	github.com/fsnotify/fsnotify v1.9.0
 	github.com/gofrs/flock v0.13.0
 	github.com/golang-migrate/migrate/v4 v4.19.1
 	github.com/google/go-github/v84 v84.0.0
@@ -72,7 +73,6 @@ require (
 	github.com/fatih/color v1.18.0 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/fsnotify/fsevents v0.2.0 // indirect
-	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/fvbommel/sortorder v1.1.0 // indirect
 	github.com/getkin/kin-openapi v0.133.0 // indirect
 	github.com/go-fed/httpsig v1.1.0 // indirect

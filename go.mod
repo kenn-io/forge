@@ -11,6 +11,7 @@ require (
 	github.com/coder/websocket v1.8.14
 	github.com/creack/pty/v2 v2.0.1
 	github.com/danielgtaylor/huma/v2 v2.37.3
+	github.com/gofrs/flock v0.13.0
 	github.com/golang-migrate/migrate/v4 v4.19.1
 	github.com/google/go-github/v84 v84.0.0
 	github.com/oapi-codegen/runtime v1.3.1
@@ -94,7 +95,6 @@ require (
 	github.com/go-openapi/swag/typeutils v0.25.5 // indirect
 	github.com/go-openapi/swag/yamlutils v0.25.5 // indirect
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
-	github.com/gofrs/flock v0.13.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.0 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect

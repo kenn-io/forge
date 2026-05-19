@@ -10538,26 +10538,22 @@ func assertUnsupportedCapabilityProblem(
 	assert := Assert.New(t)
 
 	var problem struct {
-		Title  string `json:"title"`
-		Status int    `json:"status"`
-		Detail string `json:"detail"`
-		Errors []struct {
-			Message  string         `json:"message"`
-			Location string         `json:"location"`
-			Value    map[string]any `json:"value"`
-		} `json:"errors"`
+		Title   string         `json:"title"`
+		Status  int            `json:"status"`
+		Detail  string         `json:"detail"`
+		Code    string         `json:"code"`
+		Details map[string]any `json:"details"`
 	}
 	require.NoError(json.NewDecoder(body).Decode(&problem))
 	assert.Equal(http.StatusText(http.StatusConflict), problem.Title)
 	assert.Equal(http.StatusConflict, problem.Status)
 	assert.Contains(problem.Detail, "Unsupported provider capability")
-	require.Len(problem.Errors, 1)
-	assert.Equal("unsupported_capability", problem.Errors[0].Message)
-	assert.Equal("provider.capabilities", problem.Errors[0].Location)
-	assert.Equal("unsupported_capability", problem.Errors[0].Value["code"])
-	assert.Equal(provider, problem.Errors[0].Value["provider"])
-	assert.Equal(host, problem.Errors[0].Value["platform_host"])
-	assert.Equal(capability, problem.Errors[0].Value["capability"])
+	assert.Equal("unsupportedCapability", problem.Code,
+		"top-level RFC 9457 code must be the camelCase wire literal")
+	require.NotNil(problem.Details, "details must be present on unsupportedCapability problem")
+	assert.Equal(capability, problem.Details["capability"])
+	assert.Equal(provider, problem.Details["provider"])
+	assert.Equal(host, problem.Details["platformHost"])
 }
 
 func TestAPIGitealikeLockedPRPersistsThroughServer(t *testing.T) {

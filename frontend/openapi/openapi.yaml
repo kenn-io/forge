@@ -617,53 +617,6 @@ components:
         value:
           description: The value at the given location
       type: object
-    ErrorModel:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - /api/v1/schemas/ErrorModel.json
-          format: uri
-          readOnly: true
-          type: string
-        detail:
-          description: A human-readable explanation specific to this occurrence of the problem.
-          examples:
-            - Property foo is required but is missing.
-          type: string
-        errors:
-          description: Optional list of individual error details
-          items:
-            $ref: "#/components/schemas/ErrorDetail"
-          type:
-            - array
-            - "null"
-        instance:
-          description: A URI reference that identifies the specific occurrence of the problem.
-          examples:
-            - https://example.com/error-log/abc123
-          format: uri
-          type: string
-        status:
-          description: HTTP status code
-          examples:
-            - 400
-          format: int64
-          type: integer
-        title:
-          description: A short, human-readable summary of the problem type. This value should not change between occurrences of the error.
-          examples:
-            - Bad Request
-          type: string
-        type:
-          default: about:blank
-          description: A URI reference to human-readable documentation for the error.
-          examples:
-            - https://example.com/errors/example
-          format: uri
-          type: string
-      type: object
     FilePreviewResponse:
       additionalProperties: false
       properties:
@@ -1825,6 +1778,85 @@ components:
           type: string
       required:
         - body
+      type: object
+    ProblemError:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/ProblemError.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          description: Machine-readable error code. Stable across occurrences.
+          enum:
+            - badRequest
+            - branchConflict
+            - commentNotFound
+            - conflict
+            - forbidden
+            - internalError
+            - issueNotFound
+            - notFound
+            - payloadTooLarge
+            - projectNotFound
+            - pullNotFound
+            - rateLimited
+            - repoNotFound
+            - serviceUnavailable
+            - settingsUnavailable
+            - unauthorized
+            - unsupportedCapability
+            - upstreamError
+            - validationError
+            - workspaceNotFound
+          examples:
+            - badRequest
+          type: string
+        detail:
+          description: A human-readable explanation specific to this occurrence of the problem.
+          examples:
+            - Property foo is required but is missing.
+          type: string
+        details:
+          additionalProperties: {}
+          description: Machine-readable error context, keyed by code-specific conventions.
+          type: object
+        errors:
+          description: Optional list of individual error details
+          items:
+            $ref: "#/components/schemas/ErrorDetail"
+          type:
+            - array
+            - "null"
+        instance:
+          description: A URI reference that identifies the specific occurrence of the problem.
+          examples:
+            - https://example.com/error-log/abc123
+          format: uri
+          type: string
+        status:
+          description: HTTP status code
+          examples:
+            - 400
+          format: int64
+          type: integer
+        title:
+          description: A short, human-readable summary of the problem type. This value should not change between occurrences of the error.
+          examples:
+            - Bad Request
+          type: string
+        type:
+          default: about:blank
+          description: A URI reference to human-readable documentation for the error.
+          examples:
+            - https://example.com/errors/example
+          format: uri
+          type: string
+      required:
+        - code
       type: object
     ProjectResponse:
       additionalProperties: false
@@ -3070,7 +3102,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: List activity
       tags:
@@ -3087,7 +3119,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Stream server events
       tags:
@@ -3133,7 +3165,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Create issue
       tags:
@@ -3179,7 +3211,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Get issue
       tags:
@@ -3230,7 +3262,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Edit issue content
       tags:
@@ -3282,7 +3314,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Post issue comment
       tags:
@@ -3340,7 +3372,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Edit issue comment
       tags:
@@ -3392,7 +3424,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Set issue GitHub state
       tags:
@@ -3444,7 +3476,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Set issue labels
       tags:
@@ -3490,7 +3522,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Sync issue
       tags:
@@ -3532,7 +3564,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Enqueue issue sync
       tags:
@@ -3584,7 +3616,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Create issue workspace
       tags:
@@ -3630,7 +3662,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Get pull request
       tags:
@@ -3681,7 +3713,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Edit pull request content
       tags:
@@ -3733,7 +3765,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Approve pull request
       tags:
@@ -3779,7 +3811,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Approve pull request workflows
       tags:
@@ -3825,7 +3857,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Refresh pull request CI
       tags:
@@ -3877,7 +3909,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Post pull request comment
       tags:
@@ -3935,7 +3967,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Edit pull request comment
       tags:
@@ -3981,7 +4013,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Get pull request commits
       tags:
@@ -4053,7 +4085,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Get pull request diff
       tags:
@@ -4127,7 +4159,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Get pull request file preview
       tags:
@@ -4173,7 +4205,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Get pull request files
       tags:
@@ -4225,7 +4257,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Set pull request GitHub state
       tags:
@@ -4271,7 +4303,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Get pull request import metadata
       tags:
@@ -4323,7 +4355,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Set pull request labels
       tags:
@@ -4375,7 +4407,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Merge pull request
       tags:
@@ -4421,7 +4453,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Mark pull request ready for review
       tags:
@@ -4467,7 +4499,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Get pull request stack
       tags:
@@ -4515,7 +4547,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Set pull request kanban state
       tags:
@@ -4561,7 +4593,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Sync pull request
       tags:
@@ -4603,7 +4635,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Enqueue pull request sync
       tags:
@@ -4639,7 +4671,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Delete repository
       tags:
@@ -4678,7 +4710,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Get repository
       tags:
@@ -4734,7 +4766,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Get comment autocomplete
       tags:
@@ -4774,7 +4806,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: List repository labels
       tags:
@@ -4814,7 +4846,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Refresh repository
       tags:
@@ -4860,7 +4892,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Resolve repository item
       tags:
@@ -4916,7 +4948,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: List issues
       tags:
@@ -4957,7 +4989,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Create issue
       tags:
@@ -4998,7 +5030,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Get issue
       tags:
@@ -5044,7 +5076,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Edit issue content
       tags:
@@ -5091,7 +5123,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Post issue comment
       tags:
@@ -5144,7 +5176,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Edit issue comment
       tags:
@@ -5191,7 +5223,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Set issue GitHub state
       tags:
@@ -5238,7 +5270,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Set issue labels
       tags:
@@ -5279,7 +5311,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Sync issue
       tags:
@@ -5316,7 +5348,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Enqueue issue sync
       tags:
@@ -5363,7 +5395,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Create issue workspace
       tags:
@@ -5382,7 +5414,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: List projects
       tags:
@@ -5406,7 +5438,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Register project
       tags:
@@ -5431,7 +5463,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Get project
       tags:
@@ -5456,7 +5488,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: List launch targets
       tags:
@@ -5481,7 +5513,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: List worktrees
       tags:
@@ -5511,7 +5543,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Register worktree
       tags:
@@ -5572,7 +5604,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: List pull requests
       tags:
@@ -5613,7 +5645,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Get pull request
       tags:
@@ -5659,7 +5691,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Edit pull request content
       tags:
@@ -5706,7 +5738,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Approve pull request
       tags:
@@ -5747,7 +5779,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Approve pull request workflows
       tags:
@@ -5788,7 +5820,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Refresh pull request CI
       tags:
@@ -5835,7 +5867,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Post pull request comment
       tags:
@@ -5888,7 +5920,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Edit pull request comment
       tags:
@@ -5929,7 +5961,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Get pull request commits
       tags:
@@ -5996,7 +6028,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Get pull request diff
       tags:
@@ -6065,7 +6097,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Get pull request file preview
       tags:
@@ -6106,7 +6138,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Get pull request files
       tags:
@@ -6153,7 +6185,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Set pull request GitHub state
       tags:
@@ -6194,7 +6226,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Get pull request import metadata
       tags:
@@ -6241,7 +6273,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Set pull request labels
       tags:
@@ -6288,7 +6320,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Merge pull request
       tags:
@@ -6329,7 +6361,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Mark pull request ready for review
       tags:
@@ -6370,7 +6402,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Get pull request stack
       tags:
@@ -6413,7 +6445,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Set pull request kanban state
       tags:
@@ -6454,7 +6486,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Sync pull request
       tags:
@@ -6491,7 +6523,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Enqueue pull request sync
       tags:
@@ -6510,7 +6542,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Get rate limits
       tags:
@@ -6541,7 +6573,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Delete repository
       tags:
@@ -6575,7 +6607,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Get repository
       tags:
@@ -6626,7 +6658,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Get comment autocomplete
       tags:
@@ -6661,7 +6693,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: List repository labels
       tags:
@@ -6696,7 +6728,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Refresh repository
       tags:
@@ -6737,7 +6769,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Resolve repository item
       tags:
@@ -6760,7 +6792,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: List repositories
       tags:
@@ -6784,7 +6816,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Add repository
       tags:
@@ -6809,7 +6841,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Bulk add repositories
       tags:
@@ -6834,7 +6866,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Preview repositories
       tags:
@@ -6857,7 +6889,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: List repository summaries
       tags:
@@ -6876,7 +6908,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Get roborev status
       tags:
@@ -6895,7 +6927,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Get settings
       tags:
@@ -6919,7 +6951,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Update settings
       tags:
@@ -6948,7 +6980,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: List stacks
       tags:
@@ -6969,7 +7001,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Unstar repository
       tags:
@@ -6989,7 +7021,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Star repository
       tags:
@@ -7004,7 +7036,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Trigger sync
       tags:
@@ -7023,7 +7055,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Get sync status
       tags:
@@ -7042,7 +7074,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Get server version
       tags:
@@ -7061,7 +7093,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: List workspaces
       tags:
@@ -7085,7 +7117,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Create workspace
       tags:
@@ -7111,7 +7143,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Delete workspace
       tags:
@@ -7135,7 +7167,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Get workspace
       tags:
@@ -7160,7 +7192,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Get workspace commits
       tags:
@@ -7227,7 +7259,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Get workspace diff
       tags:
@@ -7287,7 +7319,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Get workspace files
       tags:
@@ -7312,7 +7344,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Retry workspace
       tags:
@@ -7337,7 +7369,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Get workspace runtime
       tags:
@@ -7368,7 +7400,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Launch workspace runtime session
       tags:
@@ -7394,7 +7426,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Stop workspace runtime session
       tags:
@@ -7419,7 +7451,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: "#/components/schemas/ErrorModel"
+                $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Ensure workspace runtime shell
       tags:

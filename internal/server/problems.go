@@ -88,10 +88,10 @@ func allProblemCodes() []ProblemCode {
 // are new.
 //
 // The Go type name "ProblemError" intentionally differs from huma's
-// "ErrorModel" to avoid shadowing the upstream type, but the wire schema
-// is named "ErrorModel" (via the huma.RegisterTypeAlias call below) so
-// the generated OpenAPI document and downstream clients keep the
-// existing symbol name.
+// "ErrorModel" to avoid shadowing the upstream type. The OpenAPI schema
+// name therefore becomes ProblemError too, and generated clients pick
+// up that symbol (components["schemas"]["ProblemError"] in TS,
+// apiclient.ProblemError in Go).
 type ProblemError struct {
 	// Type is a URI reference identifying the problem type. Defaults to
 	// "about:blank" per RFC 9457 when not set.
@@ -124,12 +124,6 @@ type ProblemError struct {
 	// {retryAfter: "2026-05-19T12:00:00Z"}).
 	Details map[string]any `json:"details,omitempty" doc:"Machine-readable error context, keyed by code-specific conventions."`
 }
-
-// Schema name override: keep the generated wire schema named "ErrorModel"
-// even though the Go type is "ProblemError". This means generated TS
-// `components["schemas"]["ErrorModel"]` and generated Go
-// `apiclient.ErrorModel` keep their existing symbol names.
-func (ProblemError) SchemaName() string { return "ErrorModel" }
 
 // Error returns Detail (or the code if Detail is empty) so ProblemError
 // satisfies the error interface.

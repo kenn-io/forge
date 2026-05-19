@@ -107,6 +107,78 @@ func (e MergeRequestResponseState) Valid() bool {
 	}
 }
 
+// Defines values for ProblemErrorCode.
+const (
+	BadRequest            ProblemErrorCode = "badRequest"
+	BranchConflict        ProblemErrorCode = "branchConflict"
+	CommentNotFound       ProblemErrorCode = "commentNotFound"
+	Conflict              ProblemErrorCode = "conflict"
+	Forbidden             ProblemErrorCode = "forbidden"
+	InternalError         ProblemErrorCode = "internalError"
+	IssueNotFound         ProblemErrorCode = "issueNotFound"
+	NotFound              ProblemErrorCode = "notFound"
+	PayloadTooLarge       ProblemErrorCode = "payloadTooLarge"
+	ProjectNotFound       ProblemErrorCode = "projectNotFound"
+	PullNotFound          ProblemErrorCode = "pullNotFound"
+	RateLimited           ProblemErrorCode = "rateLimited"
+	RepoNotFound          ProblemErrorCode = "repoNotFound"
+	ServiceUnavailable    ProblemErrorCode = "serviceUnavailable"
+	SettingsUnavailable   ProblemErrorCode = "settingsUnavailable"
+	Unauthorized          ProblemErrorCode = "unauthorized"
+	UnsupportedCapability ProblemErrorCode = "unsupportedCapability"
+	UpstreamError         ProblemErrorCode = "upstreamError"
+	ValidationError       ProblemErrorCode = "validationError"
+	WorkspaceNotFound     ProblemErrorCode = "workspaceNotFound"
+)
+
+// Valid indicates whether the value is a known member of the ProblemErrorCode enum.
+func (e ProblemErrorCode) Valid() bool {
+	switch e {
+	case BadRequest:
+		return true
+	case BranchConflict:
+		return true
+	case CommentNotFound:
+		return true
+	case Conflict:
+		return true
+	case Forbidden:
+		return true
+	case InternalError:
+		return true
+	case IssueNotFound:
+		return true
+	case NotFound:
+		return true
+	case PayloadTooLarge:
+		return true
+	case ProjectNotFound:
+		return true
+	case PullNotFound:
+		return true
+	case RateLimited:
+		return true
+	case RepoNotFound:
+		return true
+	case ServiceUnavailable:
+		return true
+	case SettingsUnavailable:
+		return true
+	case Unauthorized:
+		return true
+	case UnsupportedCapability:
+		return true
+	case UpstreamError:
+		return true
+	case ValidationError:
+		return true
+	case WorkspaceNotFound:
+		return true
+	default:
+		return false
+	}
+}
+
 // ActionStatusBody defines model for ActionStatusBody.
 type ActionStatusBody struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -385,30 +457,6 @@ type ErrorDetail struct {
 
 	// Value The value at the given location
 	Value interface{} `json:"value,omitempty"`
-}
-
-// ErrorModel defines model for ErrorModel.
-type ErrorModel struct {
-	// Schema A URL to the JSON Schema for this object.
-	Schema *string `json:"$schema,omitempty"`
-
-	// Detail A human-readable explanation specific to this occurrence of the problem.
-	Detail *string `json:"detail,omitempty"`
-
-	// Errors Optional list of individual error details
-	Errors *[]ErrorDetail `json:"errors,omitempty"`
-
-	// Instance A URI reference that identifies the specific occurrence of the problem.
-	Instance *string `json:"instance,omitempty"`
-
-	// Status HTTP status code
-	Status *int64 `json:"status,omitempty"`
-
-	// Title A short, human-readable summary of the problem type. This value should not change between occurrences of the error.
-	Title *string `json:"title,omitempty"`
-
-	// Type A URI reference to human-readable documentation for the error.
-	Type *string `json:"type,omitempty"`
 }
 
 // FilePreviewResponse defines model for FilePreviewResponse.
@@ -830,6 +878,39 @@ type PostIssueCommentInputBody struct {
 	Schema *string `json:"$schema,omitempty"`
 	Body   string  `json:"body"`
 }
+
+// ProblemError defines model for ProblemError.
+type ProblemError struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string `json:"$schema,omitempty"`
+
+	// Code Machine-readable error code. Stable across occurrences.
+	Code ProblemErrorCode `json:"code"`
+
+	// Detail A human-readable explanation specific to this occurrence of the problem.
+	Detail *string `json:"detail,omitempty"`
+
+	// Details Machine-readable error context, keyed by code-specific conventions.
+	Details *map[string]interface{} `json:"details,omitempty"`
+
+	// Errors Optional list of individual error details
+	Errors *[]ErrorDetail `json:"errors,omitempty"`
+
+	// Instance A URI reference that identifies the specific occurrence of the problem.
+	Instance *string `json:"instance,omitempty"`
+
+	// Status HTTP status code
+	Status *int64 `json:"status,omitempty"`
+
+	// Title A short, human-readable summary of the problem type. This value should not change between occurrences of the error.
+	Title *string `json:"title,omitempty"`
+
+	// Type A URI reference to human-readable documentation for the error.
+	Type *string `json:"type,omitempty"`
+}
+
+// ProblemErrorCode Machine-readable error code. Stable across occurrences.
+type ProblemErrorCode string
 
 // ProjectResponse defines model for ProjectResponse.
 type ProjectResponse struct {
@@ -10986,7 +11067,7 @@ type ListActivityResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *ActivityResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -11009,7 +11090,7 @@ type CreateIssueOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON201                       *IssueResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -11032,7 +11113,7 @@ type GetIssueOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *IssueDetailResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -11055,7 +11136,7 @@ type EditIssueContentOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *IssueDetailResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -11078,7 +11159,7 @@ type PostIssueCommentOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON201                       *IssueEvent
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -11101,7 +11182,7 @@ type EditIssueCommentOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *IssueEvent
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -11124,7 +11205,7 @@ type SetIssueGithubStateOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *GithubStateOutputBody
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -11147,7 +11228,7 @@ type SetIssueLabelsOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *ItemLabelsResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -11170,7 +11251,7 @@ type SyncIssueOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *IssueDetailResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -11192,7 +11273,7 @@ func (r SyncIssueOnHostResponse) StatusCode() int {
 type EnqueueIssueSyncOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -11215,7 +11296,7 @@ type CreateIssueWorkspaceOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON202                       *WorkspaceResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -11238,7 +11319,7 @@ type GetPullOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *MergeRequestDetailResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -11261,7 +11342,7 @@ type EditPrContentOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *MergeRequestDetailResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -11284,7 +11365,7 @@ type ApprovePullOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *ActionStatusBody
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -11307,7 +11388,7 @@ type ApprovePullWorkflowsOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *ActionStatusBody
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -11330,7 +11411,7 @@ type RefreshPullCiOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *MergeRequestDetailResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -11353,7 +11434,7 @@ type PostPrCommentOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON201                       *MREvent
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -11376,7 +11457,7 @@ type EditPrCommentOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *MREvent
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -11399,7 +11480,7 @@ type GetPullCommitsOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *CommitsResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -11422,7 +11503,7 @@ type GetPullDiffOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *DiffResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -11445,7 +11526,7 @@ type GetPullFilePreviewOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *FilePreviewResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -11468,7 +11549,7 @@ type GetPullFilesOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *FilesResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -11491,7 +11572,7 @@ type SetPrGithubStateOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *GithubStateOutputBody
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -11514,7 +11595,7 @@ type GetPullImportMetadataOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *MrImportMetadataResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -11537,7 +11618,7 @@ type SetPrLabelsOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *ItemLabelsResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -11560,7 +11641,7 @@ type MergePullOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *MergePRBody
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -11583,7 +11664,7 @@ type MarkPullReadyForReviewOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *ActionStatusBody
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -11606,7 +11687,7 @@ type GetPullStackOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *StackContextResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -11628,7 +11709,7 @@ func (r GetPullStackOnHostResponse) StatusCode() int {
 type SetKanbanStateOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -11651,7 +11732,7 @@ type SyncPullOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *MergeRequestDetailResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -11673,7 +11754,7 @@ func (r SyncPullOnHostResponse) StatusCode() int {
 type EnqueuePrSyncOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -11695,7 +11776,7 @@ func (r EnqueuePrSyncOnHostResponse) StatusCode() int {
 type DeleteRepoOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -11718,7 +11799,7 @@ type GetRepoOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *RepoResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -11741,7 +11822,7 @@ type GetCommentAutocompleteOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *CommentAutocompleteResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -11764,7 +11845,7 @@ type ListRepoLabelsOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *RepoLabelsResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -11787,7 +11868,7 @@ type RefreshRepoOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *SettingsResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -11810,7 +11891,7 @@ type ResolveRepoItemOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *ResolveItemResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -11833,7 +11914,7 @@ type ListIssuesResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *[]IssueResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -11856,7 +11937,7 @@ type CreateIssueResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON201                       *IssueResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -11879,7 +11960,7 @@ type GetIssueResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *IssueDetailResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -11902,7 +11983,7 @@ type EditIssueContentResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *IssueDetailResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -11925,7 +12006,7 @@ type PostIssueCommentResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON201                       *IssueEvent
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -11948,7 +12029,7 @@ type EditIssueCommentResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *IssueEvent
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -11971,7 +12052,7 @@ type SetIssueGithubStateResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *GithubStateOutputBody
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -11994,7 +12075,7 @@ type SetIssueLabelsResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *ItemLabelsResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -12017,7 +12098,7 @@ type SyncIssueResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *IssueDetailResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -12039,7 +12120,7 @@ func (r SyncIssueResponse) StatusCode() int {
 type EnqueueIssueSyncResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -12062,7 +12143,7 @@ type CreateIssueWorkspaceResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON202                       *WorkspaceResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -12085,7 +12166,7 @@ type ListProjectsResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *ListProjectsOutputBody
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -12108,7 +12189,7 @@ type RegisterProjectResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON201                       *ProjectResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -12131,7 +12212,7 @@ type GetProjectResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *ProjectResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -12154,7 +12235,7 @@ type ListLaunchTargetsResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *ListLaunchTargetsOutputBody
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -12177,7 +12258,7 @@ type ListWorktreesResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *ListWorktreesOutputBody
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -12200,7 +12281,7 @@ type RegisterWorktreeResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON201                       *WorktreeResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -12223,7 +12304,7 @@ type ListPullsResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *[]MergeRequestResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -12246,7 +12327,7 @@ type GetPullResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *MergeRequestDetailResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -12269,7 +12350,7 @@ type EditPrContentResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *MergeRequestDetailResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -12292,7 +12373,7 @@ type ApprovePullResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *ActionStatusBody
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -12315,7 +12396,7 @@ type ApprovePullWorkflowsResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *ActionStatusBody
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -12338,7 +12419,7 @@ type RefreshPullCiResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *MergeRequestDetailResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -12361,7 +12442,7 @@ type PostPrCommentResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON201                       *MREvent
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -12384,7 +12465,7 @@ type EditPrCommentResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *MREvent
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -12407,7 +12488,7 @@ type GetPullCommitsResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *CommitsResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -12430,7 +12511,7 @@ type GetPullDiffResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *DiffResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -12453,7 +12534,7 @@ type GetPullFilePreviewResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *FilePreviewResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -12476,7 +12557,7 @@ type GetPullFilesResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *FilesResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -12499,7 +12580,7 @@ type SetPrGithubStateResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *GithubStateOutputBody
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -12522,7 +12603,7 @@ type GetPullImportMetadataResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *MrImportMetadataResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -12545,7 +12626,7 @@ type SetPrLabelsResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *ItemLabelsResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -12568,7 +12649,7 @@ type MergePullResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *MergePRBody
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -12591,7 +12672,7 @@ type MarkPullReadyForReviewResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *ActionStatusBody
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -12614,7 +12695,7 @@ type GetPullStackResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *StackContextResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -12636,7 +12717,7 @@ func (r GetPullStackResponse) StatusCode() int {
 type SetKanbanStateResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -12659,7 +12740,7 @@ type SyncPullResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *MergeRequestDetailResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -12681,7 +12762,7 @@ func (r SyncPullResponse) StatusCode() int {
 type EnqueuePrSyncResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -12704,7 +12785,7 @@ type GetRateLimitsResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *RateLimitsResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -12726,7 +12807,7 @@ func (r GetRateLimitsResponse) StatusCode() int {
 type DeleteRepoResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -12749,7 +12830,7 @@ type GetRepoResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *RepoResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -12772,7 +12853,7 @@ type GetCommentAutocompleteResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *CommentAutocompleteResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -12795,7 +12876,7 @@ type ListRepoLabelsResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *RepoLabelsResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -12818,7 +12899,7 @@ type RefreshRepoResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *SettingsResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -12841,7 +12922,7 @@ type ResolveRepoItemResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *ResolveItemResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -12864,7 +12945,7 @@ type ListReposResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *[]RepoResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -12887,7 +12968,7 @@ type AddRepoResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON201                       *SettingsResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -12910,7 +12991,7 @@ type BulkAddReposResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON201                       *SettingsResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -12933,7 +13014,7 @@ type PreviewReposResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *RepoPreviewResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -12956,7 +13037,7 @@ type ListRepoSummariesResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *[]RepoSummaryResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -12979,7 +13060,7 @@ type GetRoborevStatusResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *RoborevStatusResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -13002,7 +13083,7 @@ type GetSettingsResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *SettingsResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -13025,7 +13106,7 @@ type UpdateSettingsResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *SettingsResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -13048,7 +13129,7 @@ type ListStacksResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *[]StackResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -13070,7 +13151,7 @@ func (r ListStacksResponse) StatusCode() int {
 type UnsetStarredResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -13092,7 +13173,7 @@ func (r UnsetStarredResponse) StatusCode() int {
 type SetStarredResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -13114,7 +13195,7 @@ func (r SetStarredResponse) StatusCode() int {
 type TriggerSyncResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -13137,7 +13218,7 @@ type GetSyncStatusResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *SyncStatus
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -13160,7 +13241,7 @@ type GetVersionResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *VersionOutputBody
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -13183,7 +13264,7 @@ type ListWorkspacesResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *ListWorkspacesOutputBody
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -13206,7 +13287,7 @@ type CreateWorkspaceResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON202                       *WorkspaceResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -13228,7 +13309,7 @@ func (r CreateWorkspaceResponse) StatusCode() int {
 type DeleteWorkspaceResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -13251,7 +13332,7 @@ type GetWorkspaceResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *WorkspaceResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -13274,7 +13355,7 @@ type GetWorkspaceCommitsResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *CommitsResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -13297,7 +13378,7 @@ type GetWorkspaceDiffResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *DiffResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -13320,7 +13401,7 @@ type GetWorkspaceFilesResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *FilesResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -13343,7 +13424,7 @@ type RetryWorkspaceResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON202                       *WorkspaceResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -13366,7 +13447,7 @@ type GetWorkspaceRuntimeResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *WorkspaceRuntimeResponse
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -13389,7 +13470,7 @@ type LaunchWorkspaceRuntimeSessionResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *SessionInfo
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -13411,7 +13492,7 @@ func (r LaunchWorkspaceRuntimeSessionResponse) StatusCode() int {
 type StopWorkspaceRuntimeSessionResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -13434,7 +13515,7 @@ type EnsureWorkspaceRuntimeShellResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *SessionInfo
-	ApplicationproblemJSONDefault *ErrorModel
+	ApplicationproblemJSONDefault *ProblemError
 }
 
 // Status returns HTTPResponse.Status
@@ -14767,7 +14848,7 @@ func ParseListActivityResponse(rsp *http.Response) (*ListActivityResponse, error
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -14800,7 +14881,7 @@ func ParseCreateIssueOnHostResponse(rsp *http.Response) (*CreateIssueOnHostRespo
 		response.JSON201 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -14833,7 +14914,7 @@ func ParseGetIssueOnHostResponse(rsp *http.Response) (*GetIssueOnHostResponse, e
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -14866,7 +14947,7 @@ func ParseEditIssueContentOnHostResponse(rsp *http.Response) (*EditIssueContentO
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -14899,7 +14980,7 @@ func ParsePostIssueCommentOnHostResponse(rsp *http.Response) (*PostIssueCommentO
 		response.JSON201 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -14932,7 +15013,7 @@ func ParseEditIssueCommentOnHostResponse(rsp *http.Response) (*EditIssueCommentO
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -14965,7 +15046,7 @@ func ParseSetIssueGithubStateOnHostResponse(rsp *http.Response) (*SetIssueGithub
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -14998,7 +15079,7 @@ func ParseSetIssueLabelsOnHostResponse(rsp *http.Response) (*SetIssueLabelsOnHos
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -15031,7 +15112,7 @@ func ParseSyncIssueOnHostResponse(rsp *http.Response) (*SyncIssueOnHostResponse,
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -15057,7 +15138,7 @@ func ParseEnqueueIssueSyncOnHostResponse(rsp *http.Response) (*EnqueueIssueSyncO
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -15090,7 +15171,7 @@ func ParseCreateIssueWorkspaceOnHostResponse(rsp *http.Response) (*CreateIssueWo
 		response.JSON202 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -15123,7 +15204,7 @@ func ParseGetPullOnHostResponse(rsp *http.Response) (*GetPullOnHostResponse, err
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -15156,7 +15237,7 @@ func ParseEditPrContentOnHostResponse(rsp *http.Response) (*EditPrContentOnHostR
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -15189,7 +15270,7 @@ func ParseApprovePullOnHostResponse(rsp *http.Response) (*ApprovePullOnHostRespo
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -15222,7 +15303,7 @@ func ParseApprovePullWorkflowsOnHostResponse(rsp *http.Response) (*ApprovePullWo
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -15255,7 +15336,7 @@ func ParseRefreshPullCiOnHostResponse(rsp *http.Response) (*RefreshPullCiOnHostR
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -15288,7 +15369,7 @@ func ParsePostPrCommentOnHostResponse(rsp *http.Response) (*PostPrCommentOnHostR
 		response.JSON201 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -15321,7 +15402,7 @@ func ParseEditPrCommentOnHostResponse(rsp *http.Response) (*EditPrCommentOnHostR
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -15354,7 +15435,7 @@ func ParseGetPullCommitsOnHostResponse(rsp *http.Response) (*GetPullCommitsOnHos
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -15387,7 +15468,7 @@ func ParseGetPullDiffOnHostResponse(rsp *http.Response) (*GetPullDiffOnHostRespo
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -15420,7 +15501,7 @@ func ParseGetPullFilePreviewOnHostResponse(rsp *http.Response) (*GetPullFilePrev
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -15453,7 +15534,7 @@ func ParseGetPullFilesOnHostResponse(rsp *http.Response) (*GetPullFilesOnHostRes
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -15486,7 +15567,7 @@ func ParseSetPrGithubStateOnHostResponse(rsp *http.Response) (*SetPrGithubStateO
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -15519,7 +15600,7 @@ func ParseGetPullImportMetadataOnHostResponse(rsp *http.Response) (*GetPullImpor
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -15552,7 +15633,7 @@ func ParseSetPrLabelsOnHostResponse(rsp *http.Response) (*SetPrLabelsOnHostRespo
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -15585,7 +15666,7 @@ func ParseMergePullOnHostResponse(rsp *http.Response) (*MergePullOnHostResponse,
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -15618,7 +15699,7 @@ func ParseMarkPullReadyForReviewOnHostResponse(rsp *http.Response) (*MarkPullRea
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -15651,7 +15732,7 @@ func ParseGetPullStackOnHostResponse(rsp *http.Response) (*GetPullStackOnHostRes
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -15677,7 +15758,7 @@ func ParseSetKanbanStateOnHostResponse(rsp *http.Response) (*SetKanbanStateOnHos
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -15710,7 +15791,7 @@ func ParseSyncPullOnHostResponse(rsp *http.Response) (*SyncPullOnHostResponse, e
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -15736,7 +15817,7 @@ func ParseEnqueuePrSyncOnHostResponse(rsp *http.Response) (*EnqueuePrSyncOnHostR
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -15762,7 +15843,7 @@ func ParseDeleteRepoOnHostResponse(rsp *http.Response) (*DeleteRepoOnHostRespons
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -15795,7 +15876,7 @@ func ParseGetRepoOnHostResponse(rsp *http.Response) (*GetRepoOnHostResponse, err
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -15828,7 +15909,7 @@ func ParseGetCommentAutocompleteOnHostResponse(rsp *http.Response) (*GetCommentA
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -15861,7 +15942,7 @@ func ParseListRepoLabelsOnHostResponse(rsp *http.Response) (*ListRepoLabelsOnHos
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -15894,7 +15975,7 @@ func ParseRefreshRepoOnHostResponse(rsp *http.Response) (*RefreshRepoOnHostRespo
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -15927,7 +16008,7 @@ func ParseResolveRepoItemOnHostResponse(rsp *http.Response) (*ResolveRepoItemOnH
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -15960,7 +16041,7 @@ func ParseListIssuesResponse(rsp *http.Response) (*ListIssuesResponse, error) {
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -15993,7 +16074,7 @@ func ParseCreateIssueResponse(rsp *http.Response) (*CreateIssueResponse, error) 
 		response.JSON201 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -16026,7 +16107,7 @@ func ParseGetIssueResponse(rsp *http.Response) (*GetIssueResponse, error) {
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -16059,7 +16140,7 @@ func ParseEditIssueContentResponse(rsp *http.Response) (*EditIssueContentRespons
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -16092,7 +16173,7 @@ func ParsePostIssueCommentResponse(rsp *http.Response) (*PostIssueCommentRespons
 		response.JSON201 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -16125,7 +16206,7 @@ func ParseEditIssueCommentResponse(rsp *http.Response) (*EditIssueCommentRespons
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -16158,7 +16239,7 @@ func ParseSetIssueGithubStateResponse(rsp *http.Response) (*SetIssueGithubStateR
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -16191,7 +16272,7 @@ func ParseSetIssueLabelsResponse(rsp *http.Response) (*SetIssueLabelsResponse, e
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -16224,7 +16305,7 @@ func ParseSyncIssueResponse(rsp *http.Response) (*SyncIssueResponse, error) {
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -16250,7 +16331,7 @@ func ParseEnqueueIssueSyncResponse(rsp *http.Response) (*EnqueueIssueSyncRespons
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -16283,7 +16364,7 @@ func ParseCreateIssueWorkspaceResponse(rsp *http.Response) (*CreateIssueWorkspac
 		response.JSON202 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -16316,7 +16397,7 @@ func ParseListProjectsResponse(rsp *http.Response) (*ListProjectsResponse, error
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -16349,7 +16430,7 @@ func ParseRegisterProjectResponse(rsp *http.Response) (*RegisterProjectResponse,
 		response.JSON201 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -16382,7 +16463,7 @@ func ParseGetProjectResponse(rsp *http.Response) (*GetProjectResponse, error) {
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -16415,7 +16496,7 @@ func ParseListLaunchTargetsResponse(rsp *http.Response) (*ListLaunchTargetsRespo
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -16448,7 +16529,7 @@ func ParseListWorktreesResponse(rsp *http.Response) (*ListWorktreesResponse, err
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -16481,7 +16562,7 @@ func ParseRegisterWorktreeResponse(rsp *http.Response) (*RegisterWorktreeRespons
 		response.JSON201 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -16514,7 +16595,7 @@ func ParseListPullsResponse(rsp *http.Response) (*ListPullsResponse, error) {
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -16547,7 +16628,7 @@ func ParseGetPullResponse(rsp *http.Response) (*GetPullResponse, error) {
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -16580,7 +16661,7 @@ func ParseEditPrContentResponse(rsp *http.Response) (*EditPrContentResponse, err
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -16613,7 +16694,7 @@ func ParseApprovePullResponse(rsp *http.Response) (*ApprovePullResponse, error) 
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -16646,7 +16727,7 @@ func ParseApprovePullWorkflowsResponse(rsp *http.Response) (*ApprovePullWorkflow
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -16679,7 +16760,7 @@ func ParseRefreshPullCiResponse(rsp *http.Response) (*RefreshPullCiResponse, err
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -16712,7 +16793,7 @@ func ParsePostPrCommentResponse(rsp *http.Response) (*PostPrCommentResponse, err
 		response.JSON201 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -16745,7 +16826,7 @@ func ParseEditPrCommentResponse(rsp *http.Response) (*EditPrCommentResponse, err
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -16778,7 +16859,7 @@ func ParseGetPullCommitsResponse(rsp *http.Response) (*GetPullCommitsResponse, e
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -16811,7 +16892,7 @@ func ParseGetPullDiffResponse(rsp *http.Response) (*GetPullDiffResponse, error) 
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -16844,7 +16925,7 @@ func ParseGetPullFilePreviewResponse(rsp *http.Response) (*GetPullFilePreviewRes
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -16877,7 +16958,7 @@ func ParseGetPullFilesResponse(rsp *http.Response) (*GetPullFilesResponse, error
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -16910,7 +16991,7 @@ func ParseSetPrGithubStateResponse(rsp *http.Response) (*SetPrGithubStateRespons
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -16943,7 +17024,7 @@ func ParseGetPullImportMetadataResponse(rsp *http.Response) (*GetPullImportMetad
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -16976,7 +17057,7 @@ func ParseSetPrLabelsResponse(rsp *http.Response) (*SetPrLabelsResponse, error) 
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -17009,7 +17090,7 @@ func ParseMergePullResponse(rsp *http.Response) (*MergePullResponse, error) {
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -17042,7 +17123,7 @@ func ParseMarkPullReadyForReviewResponse(rsp *http.Response) (*MarkPullReadyForR
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -17075,7 +17156,7 @@ func ParseGetPullStackResponse(rsp *http.Response) (*GetPullStackResponse, error
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -17101,7 +17182,7 @@ func ParseSetKanbanStateResponse(rsp *http.Response) (*SetKanbanStateResponse, e
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -17134,7 +17215,7 @@ func ParseSyncPullResponse(rsp *http.Response) (*SyncPullResponse, error) {
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -17160,7 +17241,7 @@ func ParseEnqueuePrSyncResponse(rsp *http.Response) (*EnqueuePrSyncResponse, err
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -17193,7 +17274,7 @@ func ParseGetRateLimitsResponse(rsp *http.Response) (*GetRateLimitsResponse, err
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -17219,7 +17300,7 @@ func ParseDeleteRepoResponse(rsp *http.Response) (*DeleteRepoResponse, error) {
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -17252,7 +17333,7 @@ func ParseGetRepoResponse(rsp *http.Response) (*GetRepoResponse, error) {
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -17285,7 +17366,7 @@ func ParseGetCommentAutocompleteResponse(rsp *http.Response) (*GetCommentAutocom
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -17318,7 +17399,7 @@ func ParseListRepoLabelsResponse(rsp *http.Response) (*ListRepoLabelsResponse, e
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -17351,7 +17432,7 @@ func ParseRefreshRepoResponse(rsp *http.Response) (*RefreshRepoResponse, error) 
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -17384,7 +17465,7 @@ func ParseResolveRepoItemResponse(rsp *http.Response) (*ResolveRepoItemResponse,
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -17417,7 +17498,7 @@ func ParseListReposResponse(rsp *http.Response) (*ListReposResponse, error) {
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -17450,7 +17531,7 @@ func ParseAddRepoResponse(rsp *http.Response) (*AddRepoResponse, error) {
 		response.JSON201 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -17483,7 +17564,7 @@ func ParseBulkAddReposResponse(rsp *http.Response) (*BulkAddReposResponse, error
 		response.JSON201 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -17516,7 +17597,7 @@ func ParsePreviewReposResponse(rsp *http.Response) (*PreviewReposResponse, error
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -17549,7 +17630,7 @@ func ParseListRepoSummariesResponse(rsp *http.Response) (*ListRepoSummariesRespo
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -17582,7 +17663,7 @@ func ParseGetRoborevStatusResponse(rsp *http.Response) (*GetRoborevStatusRespons
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -17615,7 +17696,7 @@ func ParseGetSettingsResponse(rsp *http.Response) (*GetSettingsResponse, error) 
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -17648,7 +17729,7 @@ func ParseUpdateSettingsResponse(rsp *http.Response) (*UpdateSettingsResponse, e
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -17681,7 +17762,7 @@ func ParseListStacksResponse(rsp *http.Response) (*ListStacksResponse, error) {
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -17707,7 +17788,7 @@ func ParseUnsetStarredResponse(rsp *http.Response) (*UnsetStarredResponse, error
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -17733,7 +17814,7 @@ func ParseSetStarredResponse(rsp *http.Response) (*SetStarredResponse, error) {
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -17759,7 +17840,7 @@ func ParseTriggerSyncResponse(rsp *http.Response) (*TriggerSyncResponse, error) 
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -17792,7 +17873,7 @@ func ParseGetSyncStatusResponse(rsp *http.Response) (*GetSyncStatusResponse, err
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -17825,7 +17906,7 @@ func ParseGetVersionResponse(rsp *http.Response) (*GetVersionResponse, error) {
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -17858,7 +17939,7 @@ func ParseListWorkspacesResponse(rsp *http.Response) (*ListWorkspacesResponse, e
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -17891,7 +17972,7 @@ func ParseCreateWorkspaceResponse(rsp *http.Response) (*CreateWorkspaceResponse,
 		response.JSON202 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -17917,7 +17998,7 @@ func ParseDeleteWorkspaceResponse(rsp *http.Response) (*DeleteWorkspaceResponse,
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -17950,7 +18031,7 @@ func ParseGetWorkspaceResponse(rsp *http.Response) (*GetWorkspaceResponse, error
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -17983,7 +18064,7 @@ func ParseGetWorkspaceCommitsResponse(rsp *http.Response) (*GetWorkspaceCommitsR
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -18016,7 +18097,7 @@ func ParseGetWorkspaceDiffResponse(rsp *http.Response) (*GetWorkspaceDiffRespons
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -18049,7 +18130,7 @@ func ParseGetWorkspaceFilesResponse(rsp *http.Response) (*GetWorkspaceFilesRespo
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -18082,7 +18163,7 @@ func ParseRetryWorkspaceResponse(rsp *http.Response) (*RetryWorkspaceResponse, e
 		response.JSON202 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -18115,7 +18196,7 @@ func ParseGetWorkspaceRuntimeResponse(rsp *http.Response) (*GetWorkspaceRuntimeR
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -18148,7 +18229,7 @@ func ParseLaunchWorkspaceRuntimeSessionResponse(rsp *http.Response) (*LaunchWork
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -18174,7 +18255,7 @@ func ParseStopWorkspaceRuntimeSessionResponse(rsp *http.Response) (*StopWorkspac
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -18207,7 +18288,7 @@ func ParseEnsureWorkspaceRuntimeShellResponse(rsp *http.Response) (*EnsureWorksp
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
+		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

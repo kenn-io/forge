@@ -1017,7 +1017,7 @@ func TestAPIMergePRForwardsGitHubErrorDetailsAndLogsError(t *testing.T) {
 	require.NoError(err)
 	require.Equal(http.StatusBadGateway, resp.StatusCode())
 
-	var body generated.ErrorModel
+	var body generated.ProblemError
 	require.NoError(json.Unmarshal(resp.Body, &body))
 	require.NotNil(body.Detail)
 	assert.Contains(*body.Detail, "Required status check \"build\" is failing")

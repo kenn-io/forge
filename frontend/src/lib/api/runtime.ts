@@ -40,7 +40,7 @@ export const client = createRuntimeClient();
 export function apiErrorMessage(
   error:
     | Pick<
-        Partial<components["schemas"]["ErrorModel"]>,
+        Partial<components["schemas"]["ProblemError"]>,
         "detail" | "title"
       >
     | undefined,

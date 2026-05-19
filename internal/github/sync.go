@@ -1239,6 +1239,13 @@ func (s *Syncer) RepositoryReader(
 	return s.clients.RepositoryReader(kind, canonicalRepoHost(host))
 }
 
+// Registry returns the boot-time platform registry. Callers must not
+// mutate the returned registry; it is shared by every sync codepath and
+// rebuilt only on daemon restart.
+func (s *Syncer) Registry() *platform.Registry {
+	return s.clients
+}
+
 func (s *Syncer) LabelReader(
 	kind platform.Kind,
 	host string,

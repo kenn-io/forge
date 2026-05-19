@@ -21,6 +21,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 	"github.com/wesm/middleman/internal/config"
+	"github.com/wesm/middleman/internal/configwatch"
 	"github.com/wesm/middleman/internal/db"
 	"github.com/wesm/middleman/internal/gitclone"
 	ghclient "github.com/wesm/middleman/internal/github"
@@ -130,16 +131,22 @@ func (c shutdownAwareContext) Value(key any) any {
 
 // Server holds the HTTP mux and its dependencies.
 type Server struct {
-	db                     *db.DB
-	syncer                 *ghclient.Syncer
-	clones                 *gitclone.Manager
-	workspaces             *workspace.Manager
-	workspacePRMonitor     *workspace.PRMonitor
-	tmuxActivity           *tmuxActivityTracker
-	runtime                *localruntime.Manager
-	cfg                    *config.Config
-	cfgPath                string
-	cfgMu                  sync.Mutex
+	db                 *db.DB
+	syncer             *ghclient.Syncer
+	clones             *gitclone.Manager
+	workspaces         *workspace.Manager
+	workspacePRMonitor *workspace.PRMonitor
+	tmuxActivity       *tmuxActivityTracker
+	runtime            *localruntime.Manager
+	cfg                *config.Config
+	cfgPath            string
+	cfgMu              sync.Mutex
+	// bootCfgSnapshot freezes the subset of config fields that are
+	// bound at startup (registry, listeners, clone manager, etc.) so a
+	// config-file watcher reload can detect when those changed and
+	// surface restart_required to the UI without ever mutating them.
+	bootCfgSnapshot        startupConfigSnapshot
+	configWatcher          *configwatch.Watcher
 	basePath               string
 	options                ServerOptions
 	version                string
@@ -414,6 +421,7 @@ func newServer(
 		clones:                 clones,
 		cfg:                    cfg,
 		cfgPath:                cfgPath,
+		bootCfgSnapshot:        snapshotStartupConfig(cfg),
 		options:                options,
 		now:                    time.Now,
 		hub:                    NewEventHubWithCapacity(cfg.SSEBufferSizeOrDefault()),
@@ -501,6 +509,11 @@ func newServer(
 	if s.workspaces != nil {
 		s.runBackground(s.runWorkspacePRMonitorLoop)
 	}
+
+	// Watch the config file so an external edit (vim, dotfiles deploy,
+	// sd -i, etc.) is picked up without a restart. Watcher init failures
+	// are logged inside startConfigWatcher; the server still serves.
+	s.startConfigWatcher()
 
 	healthAPI := humago.New(mux, healthAPIConfig())
 	s.registerHealthAPI(healthAPI)

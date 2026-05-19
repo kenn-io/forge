@@ -5,48 +5,88 @@ import (
 	"sync"
 )
 
+// DefaultSSEBufferSize is the ring-buffer capacity used when no explicit
+// size is configured. Sized to cover a typical sleep/wake window of
+// burst broadcasts (a few hundred PR refreshes) without being so large
+// that a maxed-out replay overwhelms a slow client.
+const DefaultSSEBufferSize = 256
+
 // Event represents an SSE event to broadcast.
 type Event struct {
 	Type string
 	Data any
 }
 
-// EventHub manages SSE subscribers with fan-out broadcasting.
+// RecordedEvent is an Event stamped with its monotonically-increasing
+// ID. The hub assigns the ID at broadcast time, scoped to its lifetime
+// (so daemon restart resets the sequence). Subscribers receive
+// RecordedEvent values so the SSE handler can write the id back out on
+// the wire and clients can carry it on reconnect.
+type RecordedEvent struct {
+	ID    uint64
+	Event Event
+}
+
+// EventHub manages SSE subscribers with fan-out broadcasting, monotonic
+// event ids, and a ring buffer of recent events for replay on reconnect.
 type EventHub struct {
 	mu             sync.Mutex
-	subscribers    map[uint64]chan Event
-	nextID         uint64
-	lastSyncStatus *Event
+	subscribers    map[uint64]chan RecordedEvent
+	nextSubID      uint64
+	nextEventID    uint64
+	lastSyncStatus *RecordedEvent
+	ring           []RecordedEvent
+	ringHead       int
+	ringCount      int
 	done           chan struct{}
 	closeOnce      sync.Once
 	closed         bool // guarded by mu
 }
 
-// NewEventHub creates a ready-to-use hub.
+// NewEventHub creates a ready-to-use hub with the default ring capacity.
 func NewEventHub() *EventHub {
+	return NewEventHubWithCapacity(DefaultSSEBufferSize)
+}
+
+// NewEventHubWithCapacity creates a hub whose ring buffer holds at most
+// capacity recent events. Capacity must be >= 1; values smaller than 1
+// would mean the hub cannot replay anything and break the stale-cursor
+// detection logic that needs at least one event to compare against.
+func NewEventHubWithCapacity(capacity int) *EventHub {
+	if capacity < 1 {
+		panic("server: NewEventHubWithCapacity requires capacity >= 1")
+	}
 	return &EventHub{
-		subscribers: make(map[uint64]chan Event),
+		subscribers: make(map[uint64]chan RecordedEvent),
+		ring:        make([]RecordedEvent, capacity),
 		done:        make(chan struct{}),
 	}
 }
 
-// Subscribe registers a new subscriber. Returns the event channel and
-// the hub's done channel. The event channel is pre-loaded with the
-// cached lastSyncStatus if available. If the hub is already closed,
-// returns an immediately-closed channel and the closed done channel
-// so callers can exit cleanly without leaking a goroutine.
-func (h *EventHub) Subscribe(ctx context.Context) (<-chan Event, <-chan struct{}) {
+// Subscribe registers a new subscriber. When injectCached is true and a
+// cached sync_status exists, it is pre-loaded onto the subscriber's
+// channel so a fresh client with no cursor learns the latest sync state
+// without a round-trip. Callers that handle replay themselves (the
+// cursor-bearing SSE path) pass false to avoid duplicating the cached
+// status with a ring-replay copy.
+//
+// Returns the event channel and the hub's done channel. If the hub is
+// already closed, returns an immediately-closed channel and the closed
+// done channel so callers can exit cleanly without leaking a goroutine.
+func (h *EventHub) Subscribe(
+	ctx context.Context, injectCached bool,
+) (<-chan RecordedEvent, <-chan struct{}) {
 	h.mu.Lock()
 	if h.closed {
 		h.mu.Unlock()
-		ch := make(chan Event)
+		ch := make(chan RecordedEvent)
 		close(ch)
 		return ch, h.done
 	}
-	id := h.nextID
-	h.nextID++
-	ch := make(chan Event, 16)
-	if h.lastSyncStatus != nil {
+	id := h.nextSubID
+	h.nextSubID++
+	ch := make(chan RecordedEvent, 16)
+	if injectCached && h.lastSyncStatus != nil {
 		ch <- *h.lastSyncStatus
 	}
 	h.subscribers[id] = ch
@@ -76,26 +116,95 @@ func (h *EventHub) unsubscribe(id uint64) {
 	h.unsubscribeLocked(id)
 }
 
-// Broadcast sends an event to all subscribers. If event.Type is
-// "sync_status", the event is cached for future subscribers.
-// Slow consumers (full channel) are evicted.
-func (h *EventHub) Broadcast(event Event) {
+// Broadcast sends an event to all subscribers, stamps it with the next
+// monotonic id, records it in the ring buffer, and (for sync_status
+// events) updates the cached latest-status pointer. Slow consumers
+// (full channel) are evicted. Returns the assigned id, which is useful
+// for tests and for callers that need to correlate the broadcast with
+// downstream state.
+func (h *EventHub) Broadcast(event Event) uint64 {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
+	h.nextEventID++
+	rec := RecordedEvent{ID: h.nextEventID, Event: event}
+
 	if event.Type == "sync_status" {
-		e := event // copy
-		h.lastSyncStatus = &e
+		copyRec := rec
+		h.lastSyncStatus = &copyRec
 	}
+
+	h.ringStoreLocked(rec)
 
 	for id, ch := range h.subscribers {
 		select {
-		case ch <- event:
+		case ch <- rec:
 		default:
 			// Slow consumer — evict
 			h.unsubscribeLocked(id)
 		}
 	}
+
+	return rec.ID
+}
+
+// ringStoreLocked appends rec to the ring buffer, overwriting the oldest
+// slot once full. Caller must hold mu.
+func (h *EventHub) ringStoreLocked(rec RecordedEvent) {
+	capacity := len(h.ring)
+	if h.ringCount < capacity {
+		h.ring[(h.ringHead+h.ringCount)%capacity] = rec
+		h.ringCount++
+		return
+	}
+	h.ring[h.ringHead] = rec
+	h.ringHead = (h.ringHead + 1) % capacity
+}
+
+// RingSnapshotSince returns the recorded events with ID greater than
+// cursor in chronological order, plus a stale flag.
+//
+//	stale=true  : the cursor predates the ring's oldest event AND the
+//	              ring contains at least one event. The caller should
+//	              emit a reconnect.stale frame and skip replay.
+//	stale=false : the returned slice is the (possibly empty) replay.
+//	              Empty means the cursor is at or ahead of head.
+func (h *EventHub) RingSnapshotSince(
+	cursor uint64,
+) (events []RecordedEvent, stale bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	if h.ringCount == 0 {
+		// No history at all — treat as "nothing missed."
+		// The handler will still resume live delivery.
+		return nil, false
+	}
+
+	oldest := h.ring[h.ringHead].ID
+	if cursor+1 < oldest {
+		return nil, true
+	}
+
+	out := make([]RecordedEvent, 0, h.ringCount)
+	for i := 0; i < h.ringCount; i++ {
+		rec := h.ring[(h.ringHead+i)%len(h.ring)]
+		if rec.ID > cursor {
+			out = append(out, rec)
+		}
+	}
+	return out, false
+}
+
+// AssignSyntheticID consumes one event id without recording an entry in
+// the ring or updating the cached sync_status. Used by the SSE handler
+// to label the synthetic reconnect.stale frame so client cursors remain
+// monotonic across stale boundaries.
+func (h *EventHub) AssignSyntheticID() uint64 {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.nextEventID++
+	return h.nextEventID
 }
 
 // Close shuts down the hub: closes the done channel so SSE handlers

@@ -56,6 +56,13 @@ func unsupportedCapabilityProblem(repo db.Repo, capability string) huma.StatusEr
 	return problemUnsupportedCapability(repo, capability)
 }
 
+func (s *Server) requireSyncerCapability(repo db.Repo, capability string) error {
+	if s.syncer == nil {
+		return unsupportedCapabilityProblem(repo, capability)
+	}
+	return nil
+}
+
 func (s *Server) requireRepoRouteCapability(
 	ctx context.Context,
 	provider, platformHost, owner, name, capability string,

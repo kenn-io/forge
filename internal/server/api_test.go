@@ -9381,6 +9381,116 @@ func TestAPICapabilityGatedRouteReturnsLookupProblemBeforeCapabilityProblem(t *t
 	}
 }
 
+func TestAPICapabilityGatedMutationsHandleMissingSyncer(t *testing.T) {
+	database := dbtest.Open(t)
+	srv := New(database, nil, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	seedPR(t, database, "acme", "widget", 7)
+	seedIssue(t, database, "acme", "widget", 11, "open")
+
+	tests := []struct {
+		name       string
+		method     string
+		path       string
+		body       any
+		capability string
+	}{
+		{
+			name:       "PR content",
+			method:     http.MethodPatch,
+			path:       "/api/v1/pulls/gh/acme/widget/7",
+			body:       map[string]string{"title": "Updated title"},
+			capability: "state_mutation",
+		},
+		{
+			name:       "issue content",
+			method:     http.MethodPatch,
+			path:       "/api/v1/issues/gh/acme/widget/11",
+			body:       map[string]string{"title": "Updated title"},
+			capability: "state_mutation",
+		},
+		{
+			name:       "PR comment",
+			method:     http.MethodPost,
+			path:       "/api/v1/pulls/gh/acme/widget/7/comments",
+			body:       map[string]string{"body": "hello"},
+			capability: "comment_mutation",
+		},
+		{
+			name:       "issue comment",
+			method:     http.MethodPost,
+			path:       "/api/v1/issues/gh/acme/widget/11/comments",
+			body:       map[string]string{"body": "hello"},
+			capability: "comment_mutation",
+		},
+		{
+			name:       "issue creation",
+			method:     http.MethodPost,
+			path:       "/api/v1/issues/gh/acme/widget",
+			body:       map[string]string{"title": "New issue", "body": "Issue body"},
+			capability: "issue_mutation",
+		},
+		{
+			name:       "review approval",
+			method:     http.MethodPost,
+			path:       "/api/v1/pulls/gh/acme/widget/7/approve",
+			body:       map[string]string{"body": "looks good"},
+			capability: "review_mutation",
+		},
+		{
+			name:       "workflow approval",
+			method:     http.MethodPost,
+			path:       "/api/v1/pulls/gh/acme/widget/7/approve-workflows",
+			body:       nil,
+			capability: "workflow_approval",
+		},
+		{
+			name:       "ready for review",
+			method:     http.MethodPost,
+			path:       "/api/v1/pulls/gh/acme/widget/7/ready-for-review",
+			body:       nil,
+			capability: "ready_for_review",
+		},
+		{
+			name:   "merge",
+			method: http.MethodPost,
+			path:   "/api/v1/pulls/gh/acme/widget/7/merge",
+			body: map[string]string{
+				"method":         "squash",
+				"commit_title":   "Merge PR",
+				"commit_message": "Merge PR",
+			},
+			capability: "merge_mutation",
+		},
+		{
+			name:       "PR state",
+			method:     http.MethodPost,
+			path:       "/api/v1/pulls/gh/acme/widget/7/github-state",
+			body:       map[string]string{"state": "closed"},
+			capability: "state_mutation",
+		},
+		{
+			name:       "issue state",
+			method:     http.MethodPost,
+			path:       "/api/v1/issues/gh/acme/widget/11/github-state",
+			body:       map[string]string{"state": "closed"},
+			capability: "state_mutation",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require := require.New(t)
+
+			rr := doJSON(t, srv, tt.method, tt.path, tt.body)
+			require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
+			assertUnsupportedCapabilityProblem(
+				t, rr.Body, "github", "github.com", tt.capability,
+			)
+		})
+	}
+}
+
 // TestAPIRateLimitedEnvelope drives a provider mutation through a fake
 // gitlab provider that returns a platform.Error with ErrCodeRateLimited
 // and a known ResetAt. The handler routes the failure through

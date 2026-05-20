@@ -1082,6 +1082,9 @@ func (s *Server) editPRContent(
 	if err != nil {
 		return nil, err
 	}
+	if err := s.requireSyncerCapability(*repo, capabilityStateMutation); err != nil {
+		return nil, err
+	}
 
 	mutator, err := s.syncer.MergeRequestContentMutator(
 		repoProviderKind(*repo), repoProviderHost(*repo),
@@ -1164,6 +1167,9 @@ func (s *Server) editIssueContent(
 	if err != nil {
 		return nil, err
 	}
+	if err := s.requireSyncerCapability(*repo, capabilityStateMutation); err != nil {
+		return nil, err
+	}
 
 	mutator, err := s.syncer.IssueContentMutator(
 		repoProviderKind(*repo), repoProviderHost(*repo),
@@ -1239,6 +1245,9 @@ func (s *Server) postComment(ctx context.Context, input *postCommentInput) (*pos
 	if err != nil {
 		return nil, err
 	}
+	if err := s.requireSyncerCapability(*repo, capabilityCommentMutation); err != nil {
+		return nil, err
+	}
 
 	mutator, err := s.syncer.CommentMutator(
 		repoProviderKind(*repo), repoProviderHost(*repo),
@@ -1288,6 +1297,9 @@ func (s *Server) editComment(ctx context.Context, input *editCommentInput) (*edi
 		capabilityCommentMutation,
 	)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.requireSyncerCapability(*repo, capabilityCommentMutation); err != nil {
 		return nil, err
 	}
 
@@ -1417,6 +1429,9 @@ func (s *Server) createIssue(
 	if !capabilityEnabled(s.capabilitiesForRepo(*repo), capabilityIssueMutation) {
 		return nil, unsupportedCapabilityProblem(*repo, capabilityIssueMutation)
 	}
+	if err := s.requireSyncerCapability(*repo, capabilityIssueMutation); err != nil {
+		return nil, err
+	}
 
 	mutator, err := s.syncer.IssueMutator(
 		repoProviderKind(*repo), repoProviderHost(*repo),
@@ -1544,6 +1559,9 @@ func (s *Server) postIssueComment(ctx context.Context, input *postIssueCommentIn
 	if !capabilityEnabled(s.capabilitiesForRepo(*repo), capabilityCommentMutation) {
 		return nil, unsupportedCapabilityProblem(*repo, capabilityCommentMutation)
 	}
+	if err := s.requireSyncerCapability(*repo, capabilityCommentMutation); err != nil {
+		return nil, err
+	}
 
 	mutator, err := s.syncer.CommentMutator(
 		repoProviderKind(*repo), repoProviderHost(*repo),
@@ -1595,6 +1613,9 @@ func (s *Server) editIssueComment(ctx context.Context, input *editIssueCommentIn
 	}
 	if !capabilityEnabled(s.capabilitiesForRepo(*repo), capabilityCommentMutation) {
 		return nil, unsupportedCapabilityProblem(*repo, capabilityCommentMutation)
+	}
+	if err := s.requireSyncerCapability(*repo, capabilityCommentMutation); err != nil {
+		return nil, err
 	}
 
 	mutator, err := s.syncer.CommentMutator(
@@ -1735,6 +1756,9 @@ func (s *Server) approvePR(ctx context.Context, input *approvePRInput) (*actionS
 	if err != nil {
 		return nil, err
 	}
+	if err := s.requireSyncerCapability(*repo, capabilityReviewMutation); err != nil {
+		return nil, err
+	}
 
 	mutator, err := s.syncer.ReviewMutator(
 		repoProviderKind(*repo), repoProviderHost(*repo),
@@ -1776,6 +1800,9 @@ func (s *Server) approveWorkflows(ctx context.Context, input *repoNumberInput) (
 		capabilityWorkflowApproval,
 	)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.requireSyncerCapability(*repo, capabilityWorkflowApproval); err != nil {
 		return nil, err
 	}
 
@@ -1885,6 +1912,9 @@ func (s *Server) readyForReview(ctx context.Context, input *repoNumberInput) (*a
 	if err != nil {
 		return nil, err
 	}
+	if err := s.requireSyncerCapability(*repo, capabilityReadyForReview); err != nil {
+		return nil, err
+	}
 
 	mutator, err := s.syncer.ReadyForReviewMutator(
 		repoProviderKind(*repo), repoProviderHost(*repo),
@@ -1969,6 +1999,9 @@ func (s *Server) mergePR(ctx context.Context, input *mergePRInput) (*mergePROutp
 		capabilityMergeMutation,
 	)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.requireSyncerCapability(*repo, capabilityMergeMutation); err != nil {
 		return nil, err
 	}
 
@@ -2115,6 +2148,9 @@ func (s *Server) setPRGitHubState(
 	if err != nil {
 		return nil, err
 	}
+	if err := s.requireSyncerCapability(*repo, capabilityStateMutation); err != nil {
+		return nil, err
+	}
 
 	mutator, err := s.syncer.StateMutator(
 		repoProviderKind(*repo), repoProviderHost(*repo),
@@ -2236,6 +2272,9 @@ func (s *Server) setIssueGitHubState(
 	}
 	if issue == nil {
 		return nil, problemNotFound(CodeIssueNotFound, "issue not found", nil)
+	}
+	if err := s.requireSyncerCapability(*repo, capabilityStateMutation); err != nil {
+		return nil, err
 	}
 
 	mutator, err := s.syncer.StateMutator(

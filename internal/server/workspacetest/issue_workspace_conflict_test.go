@@ -32,20 +32,20 @@ func TestIssueWorkspaceConflictExposesTyped409ThroughGeneratedClient(t *testing.
 
 	seedIssue(t, fixture.database, "acme", "widget", 7, "open")
 
-	// Pre-create the branch the handler would otherwise allocate, so
-	// the next workspace request hits the typed conflict path.
+	branch := "middleman/issue-7"
+
+	// Pre-create the requested branch so the next workspace request hits
+	// the typed conflict path regardless of the default branch style.
 	mainSHA := testGitSHA(t, fixture.remote, "refs/heads/main")
 	runGit(
 		t,
 		fixture.bare,
-		"update-ref",
-		"refs/heads/middleman/issue-7",
-		mainSHA,
+		"update-ref", "refs/heads/"+branch, mainSHA,
 	)
 
 	resp, err := fixture.client.HTTP.CreateIssueWorkspaceWithResponse(
 		t.Context(), "gh", "acme", "widget", 7,
-		generated.CreateIssueWorkspaceInputBody{},
+		generated.CreateIssueWorkspaceInputBody{GitHeadRef: &branch},
 	)
 	require.NoError(err)
 	require.Equal(http.StatusConflict, resp.StatusCode(), string(resp.Body))
@@ -71,9 +71,9 @@ func TestIssueWorkspaceConflictExposesTyped409ThroughGeneratedClient(t *testing.
 		}
 		locations[*e.Location] = e.Value
 	}
-	assert.Equal("middleman/issue-7", locations["body.git_head_ref"])
+	assert.Equal(branch, locations["body.git_head_ref"])
 	assert.Equal(
-		"middleman/issue-7-2",
+		branch+"-2",
 		locations["body.suggested_git_head_ref"],
 	)
 }

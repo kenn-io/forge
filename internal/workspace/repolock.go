@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gofrs/flock"
+	"golang.org/x/sync/semaphore"
 )
 
 // Locker is a held repository lock returned by FileLockManager.Acquire.
@@ -34,19 +35,19 @@ type FileLockManager struct {
 
 // repoLockState holds the per-repo serialization primitives.
 //
-// The channel semaphore is the in-process mutex: it enforces exclusion
-// between goroutines while still allowing Acquire(ctx, ...) to return
-// promptly when ctx is canceled while waiting. The Flock enforces
-// exclusion between this process and any other middleman process holding
-// the same on-disk lock file. Both are required: gofrs/flock returns
-// success immediately when the same *Flock instance is already locked
-// (see flock_unix.go:48), so a shared Flock alone does not serialize
+// The semaphore is the in-process mutex: it enforces exclusion between
+// goroutines while still allowing Acquire(ctx, ...) to return promptly
+// when ctx is canceled while waiting. The Flock enforces exclusion
+// between this process and any other middleman process holding the same
+// on-disk lock file. Both are required: gofrs/flock returns success
+// immediately when the same *Flock instance is already locked (see
+// flock_unix.go:48), so a shared Flock alone does not serialize
 // concurrent goroutines, and flock(2) on Linux locks the open file
 // description, so two fresh Flock instances in one process also fail to
 // serialize.
 type repoLockState struct {
-	sem  chan struct{}
-	file *flock.Flock
+	local *semaphore.Weighted
+	file  *flock.Flock
 }
 
 // fileLockRetryDelay is the poll interval inside TryLockContext when the
@@ -68,8 +69,8 @@ func (m *FileLockManager) stateFor(lockPath string) *repoLockState {
 		return s
 	}
 	s := &repoLockState{
-		sem:  make(chan struct{}, 1),
-		file: flock.New(lockPath),
+		local: semaphore.NewWeighted(1),
+		file:  flock.New(lockPath),
 	}
 	m.states[lockPath] = s
 	return s
@@ -87,19 +88,17 @@ func (m *FileLockManager) Acquire(
 	lockPath := filepath.Join(repoRoot, ".middleman-worktree.lock")
 	state := m.stateFor(lockPath)
 
-	select {
-	case state.sem <- struct{}{}:
-	case <-ctx.Done():
-		return nil, fmt.Errorf("acquire worktree lock %q: %w", repoRoot, ctx.Err())
+	if err := state.local.Acquire(ctx, 1); err != nil {
+		return nil, fmt.Errorf("acquire worktree lock %q: %w", repoRoot, err)
 	}
 
 	locked, err := state.file.TryLockContext(ctx, fileLockRetryDelay)
 	if err != nil {
-		<-state.sem
+		state.local.Release(1)
 		return nil, fmt.Errorf("acquire worktree lock %q: %w", repoRoot, err)
 	}
 	if !locked {
-		<-state.sem
+		state.local.Release(1)
 		if err := ctx.Err(); err != nil {
 			return nil, fmt.Errorf("acquire worktree lock %q: %w", repoRoot, err)
 		}
@@ -124,7 +123,7 @@ func (h *fileLockHandle) Unlock() error {
 	}
 	h.released = true
 	err := h.state.file.Unlock()
-	<-h.state.sem
+	h.state.local.Release(1)
 	if err != nil {
 		return fmt.Errorf("release worktree lock: %w", err)
 	}

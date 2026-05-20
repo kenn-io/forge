@@ -4461,6 +4461,72 @@ func TestFetchIssueDetailPersistsIssueETag(t *testing.T) {
 	assert.Equal(`"issue-etag-v2"`, etag)
 }
 
+func TestBulkGraphQLGateUsesLocalMergeRequestCount(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", repo.Owner, repo.Name))
+	require.NoError(err)
+
+	now := time.Date(2024, 6, 1, 10, 0, 0, 0, time.UTC)
+	for number := 1; number <= largeRepoBulkGraphQLThreshold; number++ {
+		_, err := d.UpsertMergeRequest(ctx, &db.MergeRequest{
+			RepoID:         repoID,
+			PlatformID:     int64(number * 1000),
+			Number:         number,
+			URL:            fmt.Sprintf("https://github.com/owner/repo/pull/%d", number),
+			Title:          fmt.Sprintf("test PR %d", number),
+			Author:         "alice",
+			State:          "open",
+			CreatedAt:      now,
+			UpdatedAt:      now,
+			LastActivityAt: now,
+		})
+		require.NoError(err)
+	}
+
+	syncer := NewSyncer(nil, d, nil, []RepoRef{repo}, time.Minute, nil, nil)
+
+	assert.False(syncer.shouldUseBulkGraphQLForMRs(ctx, repo, repoID, 1),
+		"local open count should gate large-repo bulk behavior even when the fetched set is small")
+}
+
+func TestBulkGraphQLGateUsesLocalIssueCount(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", repo.Owner, repo.Name))
+	require.NoError(err)
+
+	now := time.Date(2024, 6, 1, 10, 0, 0, 0, time.UTC)
+	for number := 1; number <= largeRepoBulkGraphQLThreshold; number++ {
+		_, err := d.UpsertIssue(ctx, &db.Issue{
+			RepoID:         repoID,
+			PlatformID:     int64(number * 1000),
+			Number:         number,
+			URL:            fmt.Sprintf("https://github.com/owner/repo/issues/%d", number),
+			Title:          fmt.Sprintf("test issue %d", number),
+			Author:         "alice",
+			State:          "open",
+			CreatedAt:      now,
+			UpdatedAt:      now,
+			LastActivityAt: now,
+		})
+		require.NoError(err)
+	}
+
+	syncer := NewSyncer(nil, d, nil, []RepoRef{repo}, time.Minute, nil, nil)
+
+	assert.False(syncer.shouldUseBulkGraphQLForIssues(ctx, repo, repoID, 1),
+		"local open count should gate large-repo bulk behavior even when the fetched set is small")
+}
+
 func TestRunOnceLargeExistingRepoSkipsBulkGraphQLAndFetchesChangedPRDetail(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

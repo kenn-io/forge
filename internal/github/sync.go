@@ -3010,25 +3010,23 @@ func (s *Syncer) shouldUseBulkGraphQLForMRs(
 	repoID int64,
 	listCount int,
 ) bool {
-	if listCount < largeRepoBulkGraphQLThreshold {
-		return true
-	}
-	hasExisting, err := s.db.HasOpenMergeRequestsForRepo(ctx, repoID)
+	localOpenCount, err := s.db.CountOpenMergeRequestsForRepo(ctx, repoID)
 	if err != nil {
-		slog.Warn("check existing merge requests before GraphQL bulk fetch failed",
+		slog.Warn("count existing merge requests before GraphQL bulk fetch failed",
 			"repo", repo.Owner+"/"+repo.Name,
 			"err", err,
 		)
 		return true
 	}
-	if !hasExisting {
+	if localOpenCount < largeRepoBulkGraphQLThreshold {
 		return true
 	}
 	slog.Info("skipping GraphQL merge request bulk fetch for large existing repo",
 		"repo", repo.Owner+"/"+repo.Name,
 		"platform", repoPlatform(repo),
 		"host", repoHost(repo),
-		"total", listCount,
+		"local_open_total", localOpenCount,
+		"fetched_total", listCount,
 	)
 	return false
 }
@@ -3039,25 +3037,23 @@ func (s *Syncer) shouldUseBulkGraphQLForIssues(
 	repoID int64,
 	listCount int,
 ) bool {
-	if listCount < largeRepoBulkGraphQLThreshold {
-		return true
-	}
-	hasExisting, err := s.db.HasOpenIssuesForRepo(ctx, repoID)
+	localOpenCount, err := s.db.CountOpenIssuesForRepo(ctx, repoID)
 	if err != nil {
-		slog.Warn("check existing issues before GraphQL bulk fetch failed",
+		slog.Warn("count existing issues before GraphQL bulk fetch failed",
 			"repo", repo.Owner+"/"+repo.Name,
 			"err", err,
 		)
 		return true
 	}
-	if !hasExisting {
+	if localOpenCount < largeRepoBulkGraphQLThreshold {
 		return true
 	}
 	slog.Info("skipping GraphQL issue bulk fetch for large existing repo",
 		"repo", repo.Owner+"/"+repo.Name,
 		"platform", repoPlatform(repo),
 		"host", repoHost(repo),
-		"total", listCount,
+		"local_open_total", localOpenCount,
+		"fetched_total", listCount,
 	)
 	return false
 }

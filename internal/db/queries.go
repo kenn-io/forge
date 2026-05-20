@@ -2618,20 +2618,17 @@ func (d *DB) GetPreviouslyOpenMRNumbers(
 	return closed, rows.Err()
 }
 
-func (d *DB) HasOpenMergeRequestsForRepo(ctx context.Context, repoID int64) (bool, error) {
-	var exists bool
+func (d *DB) CountOpenMergeRequestsForRepo(ctx context.Context, repoID int64) (int, error) {
+	var count int
 	err := d.ro.QueryRowContext(ctx,
-		`SELECT EXISTS (
-			SELECT 1 FROM middleman_merge_requests
-			WHERE repo_id = ? AND state = 'open'
-			LIMIT 1
-		)`,
+		`SELECT COUNT(*) FROM middleman_merge_requests
+		WHERE repo_id = ? AND state = 'open'`,
 		repoID,
-	).Scan(&exists)
+	).Scan(&count)
 	if err != nil {
-		return false, fmt.Errorf("check open merge requests for repo: %w", err)
+		return 0, fmt.Errorf("count open merge requests for repo: %w", err)
 	}
-	return exists, nil
+	return count, nil
 }
 
 // MRDerivedFields holds computed fields that are refreshed after fetching timeline events.
@@ -3262,20 +3259,17 @@ func (d *DB) GetPreviouslyOpenIssueNumbers(
 	return closed, rows.Err()
 }
 
-func (d *DB) HasOpenIssuesForRepo(ctx context.Context, repoID int64) (bool, error) {
-	var exists bool
+func (d *DB) CountOpenIssuesForRepo(ctx context.Context, repoID int64) (int, error) {
+	var count int
 	err := d.ro.QueryRowContext(ctx,
-		`SELECT EXISTS (
-			SELECT 1 FROM middleman_issues
-			WHERE repo_id = ? AND state = 'open'
-			LIMIT 1
-		)`,
+		`SELECT COUNT(*) FROM middleman_issues
+		WHERE repo_id = ? AND state = 'open'`,
 		repoID,
-	).Scan(&exists)
+	).Scan(&count)
 	if err != nil {
-		return false, fmt.Errorf("check open issues for repo: %w", err)
+		return 0, fmt.Errorf("count open issues for repo: %w", err)
 	}
-	return exists, nil
+	return count, nil
 }
 
 func (d *DB) GetHTTPEtag(

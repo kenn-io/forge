@@ -4152,6 +4152,29 @@ func (c *conditionalPRTrackingClient) GetPullRequestIfChanged(
 	return pr, c.nextETag, false, err
 }
 
+type conditionalIssueTrackingClient struct {
+	mockClient
+	receivedETag     string
+	conditionalCalls atomic.Int32
+	notModified      bool
+	nextETag         string
+}
+
+func (c *conditionalIssueTrackingClient) GetIssueIfChanged(
+	ctx context.Context,
+	owner, repo string,
+	number int,
+	etag string,
+) (*gh.Issue, string, bool, error) {
+	c.conditionalCalls.Add(1)
+	c.receivedETag = etag
+	if c.notModified {
+		return nil, etag, true, nil
+	}
+	issue, err := c.GetIssue(ctx, owner, repo, number)
+	return issue, c.nextETag, false, err
+}
+
 func TestRunOnceIndexOnly(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
@@ -4343,6 +4366,99 @@ func TestFetchMRDetailPersistsPullRequestETag(t *testing.T) {
 	)
 	require.NoError(err)
 	assert.Equal(`"etag-v2"`, etag)
+}
+
+func TestFetchIssueDetailUsesPersistedIssueETag(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", repo.Owner, repo.Name))
+	require.NoError(err)
+	updatedAt := time.Date(2024, 6, 1, 10, 0, 0, 0, time.UTC)
+	detailFetchedAt := time.Date(2024, 6, 1, 9, 0, 0, 0, time.UTC)
+	_, err = d.UpsertIssue(ctx, &db.Issue{
+		RepoID:          repoID,
+		PlatformID:      1000,
+		Number:          1,
+		URL:             "https://github.com/owner/repo/issues/1",
+		Title:           "test issue",
+		Author:          "alice",
+		State:           "open",
+		CreatedAt:       updatedAt,
+		UpdatedAt:       updatedAt,
+		LastActivityAt:  updatedAt,
+		DetailFetchedAt: &detailFetchedAt,
+	})
+	require.NoError(err)
+	require.NoError(d.UpsertHTTPEtag(
+		ctx, "github", "github.com", "owner", "repo",
+		"issue", 1, `"issue-etag-v1"`,
+	))
+
+	mc := &conditionalIssueTrackingClient{notModified: true}
+	mc.comments = []*gh.IssueComment{{ID: new(int64)}}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, d, nil,
+		[]RepoRef{repo},
+		time.Minute, nil, testBudget(1000),
+	)
+
+	_, err = syncer.fetchIssueDetail(ctx, repo, repoID, 1)
+	require.NoError(err)
+
+	assert.Equal(int32(1), mc.conditionalCalls.Load())
+	assert.Equal(`"issue-etag-v1"`, mc.receivedETag)
+	assert.Zero(int(mc.listIssueCommentsCalled.Load()),
+		"304 should skip issue comment refresh")
+}
+
+func TestFetchIssueDetailPersistsIssueETag(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", repo.Owner, repo.Name))
+	require.NoError(err)
+	updatedAt := time.Date(2024, 6, 1, 10, 0, 0, 0, time.UTC)
+	issueID := int64(1000)
+	issueNumber := 1
+	issueTitle := "test issue"
+	issueState := "open"
+	issueURL := "https://github.com/owner/repo/issues/1"
+
+	mc := &conditionalIssueTrackingClient{nextETag: `"issue-etag-v2"`}
+	mc.getIssueFn = func(context.Context, string, string, int) (*gh.Issue, error) {
+		return &gh.Issue{
+			ID:        &issueID,
+			Number:    &issueNumber,
+			Title:     &issueTitle,
+			State:     &issueState,
+			HTMLURL:   &issueURL,
+			CreatedAt: makeTimestamp(updatedAt),
+			UpdatedAt: makeTimestamp(updatedAt),
+		}, nil
+	}
+	mc.comments = []*gh.IssueComment{}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, d, nil,
+		[]RepoRef{repo},
+		time.Minute, nil, testBudget(1000),
+	)
+
+	_, err = syncer.fetchIssueDetail(ctx, repo, repoID, 1)
+	require.NoError(err)
+
+	etag, err := d.GetHTTPEtag(
+		ctx, "github", "github.com", "owner", "repo",
+		"issue", 1,
+	)
+	require.NoError(err)
+	assert.Equal(`"issue-etag-v2"`, etag)
 }
 
 func TestRunOnceLargeExistingRepoSkipsBulkGraphQLAndFetchesChangedPRDetail(t *testing.T) {

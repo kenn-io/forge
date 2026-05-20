@@ -104,6 +104,15 @@ type conditionalPullRequestGetter interface {
 	) (*gh.PullRequest, string, bool, error)
 }
 
+type conditionalIssueGetter interface {
+	GetIssueIfChanged(
+		ctx context.Context,
+		owner, repo string,
+		number int,
+		etag string,
+	) (*gh.Issue, string, bool, error)
+}
+
 func graphQLEndpointForHost(platformHost string) string {
 	if platformHost == "" || platformHost == "github.com" {
 		return "https://api.github.com/graphql"
@@ -633,6 +642,38 @@ func (c *liveClient) GetIssue(
 		)
 	}
 	return issue, nil
+}
+
+func (c *liveClient) GetIssueIfChanged(
+	ctx context.Context,
+	owner, repo string,
+	number int,
+	etag string,
+) (*gh.Issue, string, bool, error) {
+	u := fmt.Sprintf("repos/%v/%v/issues/%v", owner, repo, number)
+	req, err := c.gh.NewRequest(http.MethodGet, u, nil)
+	if err != nil {
+		return nil, "", false, err
+	}
+	if etag != "" {
+		req.Header.Set("If-None-Match", etag)
+	}
+
+	issue := new(gh.Issue)
+	resp, err := c.gh.Do(ctx, req, issue)
+	c.trackRate(resp)
+	if err != nil {
+		if IsNotModified(err) {
+			return nil, etag, true, nil
+		}
+		return nil, "", false, fmt.Errorf(
+			"getting issue %s/%s#%d: %w", owner, repo, number, err,
+		)
+	}
+	if resp != nil && resp.Response != nil {
+		etag = resp.Header.Get("ETag")
+	}
+	return issue, etag, false, nil
 }
 
 func (c *liveClient) GetPullRequest(ctx context.Context, owner, repo string, number int) (*gh.PullRequest, error) {

@@ -4382,17 +4382,39 @@ func (s *Syncer) fetchIssueDetail(
 		return calls, fmt.Errorf("resolve client for %s/%s: %w", repo.Owner, repo.Name, err)
 	}
 
-	ghIssue, err := client.GetIssue(
-		ctx, repo.Owner, repo.Name, number,
+	ghIssue, newETag, notModified, err := s.getIssueForDetail(
+		ctx, client, repo, number,
 	)
 	calls++
 	if err == nil && ghIssue == nil {
+		if notModified {
+			if err := s.updateIssueDetailFetchedByRepoID(
+				ctx, repoID, number,
+			); err != nil {
+				return calls, fmt.Errorf(
+					"mark unchanged detail fetched for issue #%d: %w", number, err,
+				)
+			}
+			return calls, nil
+		}
 		err = fmt.Errorf("client returned nil issue")
 	}
 	if err != nil {
 		return calls, fmt.Errorf(
 			"get issue #%d: %w", number, err,
 		)
+	}
+	if newETag != "" {
+		if err := s.db.UpsertHTTPEtag(
+			ctx, string(repoPlatform(repo)), repoHost(repo),
+			repo.Owner, repo.Name, "issue", number, newETag,
+		); err != nil {
+			slog.Warn("persist issue ETag failed",
+				"repo", repo.Owner+"/"+repo.Name,
+				"number", number,
+				"err", err,
+			)
+		}
 	}
 
 	normalized, err := NormalizeIssue(repoID, ghIssue)
@@ -4426,6 +4448,36 @@ func (s *Syncer) fetchIssueDetail(
 	}
 
 	return calls, nil
+}
+
+func (s *Syncer) getIssueForDetail(
+	ctx context.Context,
+	client Client,
+	repo RepoRef,
+	number int,
+) (*gh.Issue, string, bool, error) {
+	conditional, ok := client.(conditionalIssueGetter)
+	if !ok {
+		issue, err := client.GetIssue(ctx, repo.Owner, repo.Name, number)
+		return issue, "", false, err
+	}
+
+	etag, err := s.db.GetHTTPEtag(
+		ctx, string(repoPlatform(repo)), repoHost(repo),
+		repo.Owner, repo.Name, "issue", number,
+	)
+	if err != nil {
+		slog.Warn("load issue ETag failed",
+			"repo", repo.Owner+"/"+repo.Name,
+			"number", number,
+			"err", err,
+		)
+		issue, err := client.GetIssue(ctx, repo.Owner, repo.Name, number)
+		return issue, "", false, err
+	}
+	return conditional.GetIssueIfChanged(
+		ctx, repo.Owner, repo.Name, number, etag,
+	)
 }
 
 func (s *Syncer) fetchProviderIssueDetail(

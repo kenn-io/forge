@@ -425,6 +425,57 @@ func readSSEFrame(t *testing.T, scanner *bufio.Scanner) sseFrame {
 	return f
 }
 
+type sseReadResult struct {
+	frame sseFrame
+	err   error
+}
+
+func readSSEFrameWithin(
+	t *testing.T,
+	scanner *bufio.Scanner,
+	timeout time.Duration,
+	stop func(),
+) sseFrame {
+	t.Helper()
+	result := make(chan sseReadResult, 1)
+	go func() {
+		var f sseFrame
+		for scanner.Scan() {
+			line := scanner.Text()
+			switch {
+			case strings.HasPrefix(line, "id: "):
+				f.ID = strings.TrimPrefix(line, "id: ")
+			case strings.HasPrefix(line, "event: "):
+				f.Event = strings.TrimPrefix(line, "event: ")
+			case strings.HasPrefix(line, "data: "):
+				f.Data = strings.TrimPrefix(line, "data: ")
+			case line == "":
+				if f.Event != "" {
+					result <- sseReadResult{frame: f}
+					return
+				}
+			}
+		}
+		if err := scanner.Err(); err != nil {
+			result <- sseReadResult{err: err}
+			return
+		}
+		result <- sseReadResult{err: io.ErrUnexpectedEOF}
+	}()
+
+	select {
+	case got := <-result:
+		require.NoError(t, got.err)
+		return got.frame
+	case <-time.After(timeout):
+		if stop != nil {
+			stop()
+		}
+		require.FailNow(t, "timed out reading SSE frame")
+		return sseFrame{}
+	}
+}
+
 func TestSSE_FrameIncludesID(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -628,6 +679,134 @@ func TestSSE_CursorAtHeadReplaysNothing(t *testing.T) {
 	f := readSSEFrame(t, scanner)
 	assert.Equal("4", f.ID)
 	assert.Equal(uint64(4), id)
+}
+
+type blockingFlushController struct {
+	mu               sync.Mutex
+	flushes          int
+	firstFlushCalled chan struct{}
+	releaseFirst     chan struct{}
+}
+
+func newBlockingFlushController() *blockingFlushController {
+	return &blockingFlushController{
+		firstFlushCalled: make(chan struct{}),
+		releaseFirst:     make(chan struct{}),
+	}
+}
+
+func (c *blockingFlushController) SetWriteDeadline(time.Time) error {
+	return nil
+}
+
+func (c *blockingFlushController) Flush() error {
+	c.mu.Lock()
+	c.flushes++
+	flushes := c.flushes
+	if flushes == 1 {
+		close(c.firstFlushCalled)
+	}
+	c.mu.Unlock()
+
+	if flushes == 1 {
+		<-c.releaseFirst
+	}
+	return nil
+}
+
+func TestSSE_ReplaySkipsLiveEventQueuedBeforeSnapshot(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	s := newTestServer(t)
+	for i := 1; i <= 2; i++ {
+		s.hub.Broadcast(Event{Type: "data_changed", Data: i})
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	reader, writer := io.Pipe()
+	defer reader.Close()
+
+	rc := newBlockingFlushController()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		defer writer.Close()
+		s.serveSSE(ctx, writer, rc, 2, true)
+	}()
+
+	select {
+	case <-rc.firstFlushCalled:
+	case <-time.After(2 * time.Second):
+		require.FailNow("serveSSE did not reach the initial flush")
+	}
+
+	// This event is queued on the live subscriber and recorded in the
+	// replay ring before RingSnapshotSince runs.
+	id3 := s.hub.Broadcast(Event{Type: "data_changed", Data: 3})
+	assert.Equal(uint64(3), id3)
+	close(rc.releaseFirst)
+
+	scanner := bufio.NewScanner(reader)
+	f3 := readSSEFrameWithin(t, scanner, 2*time.Second, func() {
+		cancel()
+		writer.Close()
+	})
+	assert.Equal("3", f3.ID)
+
+	id4 := s.hub.Broadcast(Event{Type: "data_changed", Data: 4})
+	assert.Equal(uint64(4), id4)
+	f4 := readSSEFrameWithin(t, scanner, 2*time.Second, func() {
+		cancel()
+		writer.Close()
+	})
+	assert.Equal("4", f4.ID)
+
+	cancel()
+	writer.Close()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		require.FailNow("serveSSE did not exit after cancellation")
+	}
+}
+
+func TestSSE_FutureCursorEmitsReconnectStaleThenLiveEvents(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	s := newTestServer(t)
+	ts := httptest.NewServer(s)
+	defer ts.Close()
+
+	req, err := http.NewRequestWithContext(
+		t.Context(), http.MethodGet, ts.URL+"/api/v1/events", nil,
+	)
+	require.NoError(err)
+	req.Header.Set("Last-Event-ID", "99")
+	resp, err := ts.Client().Do(req)
+	require.NoError(err)
+	defer resp.Body.Close()
+
+	scanner := bufio.NewScanner(resp.Body)
+	stale := readSSEFrameWithin(t, scanner, 2*time.Second, func() {
+		resp.Body.Close()
+	})
+	assert.Equal("reconnect.stale", stale.Event)
+	assert.Equal("1", stale.ID)
+
+	require.Eventually(func() bool {
+		s.hub.mu.Lock()
+		defer s.hub.mu.Unlock()
+		return len(s.hub.subscribers) == 1
+	}, 2*time.Second, 10*time.Millisecond)
+	id := s.hub.Broadcast(Event{Type: "data_changed", Data: "after-stale"})
+	assert.Equal(uint64(2), id)
+	live := readSSEFrameWithin(t, scanner, 2*time.Second, func() {
+		resp.Body.Close()
+	})
+	assert.Equal("2", live.ID)
 }
 
 func TestParseLastEventID_HeaderWins(t *testing.T) {

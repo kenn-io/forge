@@ -254,6 +254,7 @@ func TestEventHub_RingSnapshotSince_StaleCursor(t *testing.T) {
 }
 
 func TestEventHub_RingSnapshotSince_AtOrAheadHead(t *testing.T) {
+	assert := assert.New(t)
 	hub := NewEventHubWithCapacity(8)
 	defer hub.Close()
 
@@ -262,24 +263,31 @@ func TestEventHub_RingSnapshotSince_AtOrAheadHead(t *testing.T) {
 	}
 
 	replay, stale := hub.RingSnapshotSince(3)
-	assert.False(t, stale)
-	assert.Empty(t, replay)
+	assert.False(stale)
+	assert.Empty(replay)
 
 	replay, stale = hub.RingSnapshotSince(99)
-	assert.False(t, stale)
-	assert.Empty(t, replay)
+	assert.True(stale)
+	assert.Empty(replay)
 }
 
 func TestEventHub_RingSnapshotSince_EmptyRing(t *testing.T) {
+	assert := assert.New(t)
 	hub := NewEventHub()
 	defer hub.Close()
 
 	replay, stale := hub.RingSnapshotSince(0)
-	assert.False(t, stale)
-	assert.Empty(t, replay)
+	assert.False(stale)
+	assert.Empty(replay)
+
+	replay, stale = hub.RingSnapshotSince(1)
+	assert.True(stale)
+	assert.Empty(replay)
 }
 
 func TestEventHub_RingSnapshotSince_AdjacentCursorIsLive(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	// Cursor exactly one less than oldest is "the next event we missed
 	// is the oldest one in the ring" — not stale.
 	hub := NewEventHubWithCapacity(4)
@@ -291,10 +299,10 @@ func TestEventHub_RingSnapshotSince_AdjacentCursorIsLive(t *testing.T) {
 
 	// oldest = 7; cursor = 6 means client saw event 6 and missed 7,8,9,10.
 	replay, stale := hub.RingSnapshotSince(6)
-	assert.False(t, stale)
-	require.Len(t, replay, 4)
-	assert.Equal(t, uint64(7), replay[0].ID)
-	assert.Equal(t, uint64(10), replay[3].ID)
+	assert.False(stale)
+	require.Len(replay, 4)
+	assert.Equal(uint64(7), replay[0].ID)
+	assert.Equal(uint64(10), replay[3].ID)
 }
 
 func TestEventHub_AssignSyntheticIDIncrementsWithoutRecord(t *testing.T) {
@@ -321,6 +329,8 @@ func TestEventHub_AssignSyntheticIDIncrementsWithoutRecord(t *testing.T) {
 }
 
 func TestEventHub_CapacityRetainsLatest(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	hub := NewEventHubWithCapacity(3)
 	defer hub.Close()
 
@@ -329,11 +339,11 @@ func TestEventHub_CapacityRetainsLatest(t *testing.T) {
 	}
 
 	replay, stale := hub.RingSnapshotSince(4)
-	assert.False(t, stale)
-	require.Len(t, replay, 3)
-	assert.Equal(t, uint64(5), replay[0].ID)
-	assert.Equal(t, uint64(6), replay[1].ID)
-	assert.Equal(t, uint64(7), replay[2].ID)
+	assert.False(stale)
+	require.Len(replay, 3)
+	assert.Equal(uint64(5), replay[0].ID)
+	assert.Equal(uint64(6), replay[1].ID)
+	assert.Equal(uint64(7), replay[2].ID)
 }
 
 func TestNewEventHubWithCapacity_RejectsZero(t *testing.T) {

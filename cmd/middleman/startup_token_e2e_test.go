@@ -22,6 +22,7 @@ import (
 // would run it on startup.
 func TestCollectProviderTokensInvokesGHWithHostnameForEnterprise(t *testing.T) {
 	assert := Assert.New(t)
+	require := require.New(t)
 
 	// Fake gh on PATH. Records argv (one invocation per line) and
 	// emits a host-scoped token on stdout.
@@ -32,7 +33,7 @@ func TestCollectProviderTokensInvokesGHWithHostnameForEnterprise(t *testing.T) {
 	script := "#!/bin/sh\n" +
 		"printf '%s\\n' \"$*\" >> \"$FAKE_GH_ARGV\"\n" +
 		"printf '%s\\n' '" + fakeToken + "'\n"
-	require.NoError(t, os.WriteFile(ghPath, []byte(script), 0o755))
+	require.NoError(os.WriteFile(ghPath, []byte(script), 0o755))
 	t.Setenv("PATH", dir)
 	t.Setenv("FAKE_GH_ARGV", argvPath)
 
@@ -42,7 +43,7 @@ func TestCollectProviderTokensInvokesGHWithHostnameForEnterprise(t *testing.T) {
 	// Config with a GHE repo. Loading via the public API exercises
 	// the same parsing path the daemon takes.
 	configPath := filepath.Join(t.TempDir(), "config.toml")
-	require.NoError(t, os.WriteFile(configPath, []byte(`
+	require.NoError(os.WriteFile(configPath, []byte(`
 host = "127.0.0.1"
 port = 0
 
@@ -53,17 +54,17 @@ owner = "acme"
 name = "widget"
 `), 0o644))
 	cfg, err := config.Load(configPath)
-	require.NoError(t, err)
+	require.NoError(err)
 
 	tokens, err := collectProviderTokens(cfg)
-	require.NoError(t, err)
+	require.NoError(err)
 
 	key := providerHostKey("github", "ghe.example.com")
 	assert.Equal(fakeToken, tokens[key],
 		"GHE provider key should resolve to the gh-supplied host token")
 
 	data, err := os.ReadFile(argvPath)
-	require.NoError(t, err)
+	require.NoError(err)
 	invocations := strings.Split(
 		strings.TrimRight(string(data), "\n"), "\n",
 	)

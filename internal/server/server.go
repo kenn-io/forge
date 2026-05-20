@@ -897,6 +897,7 @@ func (s *Server) serveSSE(
 	// Resolve the replay path before entering the live loop so the
 	// client sees missed events (or a stale signal) before any new
 	// live broadcasts and never out of order with them.
+	deliveredThrough := cursor
 	if hasCursor {
 		replay, stale := s.hub.RingSnapshotSince(cursor)
 		if stale {
@@ -904,11 +905,13 @@ func (s *Server) serveSSE(
 			if !writeSSEFrame(w, rc, synID, "reconnect.stale", []byte("{}")) {
 				return
 			}
+			deliveredThrough = synID
 		} else {
 			for _, rec := range replay {
 				if !writeSSERecorded(w, rc, rec) {
 					return
 				}
+				deliveredThrough = rec.ID
 			}
 		}
 	}
@@ -931,7 +934,7 @@ func (s *Server) serveSSE(
 			if !ok {
 				return
 			}
-			if hasCursor && ev.ID <= cursor {
+			if hasCursor && ev.ID <= deliveredThrough {
 				// Already replayed; skip the duplicate that arrived
 				// via the cached-status pre-load or a race between
 				// the snapshot read and a fresh broadcast.

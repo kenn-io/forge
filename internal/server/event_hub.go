@@ -164,9 +164,11 @@ func (h *EventHub) ringStoreLocked(rec RecordedEvent) {
 // RingSnapshotSince returns the recorded events with ID greater than
 // cursor in chronological order, plus a stale flag.
 //
-//	stale=true  : the cursor predates the ring's oldest event AND the
-//	              ring contains at least one event. The caller should
-//	              emit a reconnect.stale frame and skip replay.
+//	stale=true  : the cursor cannot be verified against this hub's
+//	              retained history. It either predates the ring's
+//	              oldest event or points beyond this hub lifetime's
+//	              last assigned event. The caller should emit a
+//	              reconnect.stale frame and skip replay.
 //	stale=false : the returned slice is the (possibly empty) replay.
 //	              Empty means the cursor is at or ahead of head.
 func (h *EventHub) RingSnapshotSince(
@@ -176,9 +178,13 @@ func (h *EventHub) RingSnapshotSince(
 	defer h.mu.Unlock()
 
 	if h.ringCount == 0 {
-		// No history at all — treat as "nothing missed."
-		// The handler will still resume live delivery.
+		if cursor > 0 {
+			return nil, true
+		}
 		return nil, false
+	}
+	if cursor > h.nextEventID {
+		return nil, true
 	}
 
 	oldest := h.ring[h.ringHead].ID

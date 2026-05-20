@@ -186,6 +186,37 @@ func TestE2E_SSEStaleCursorEmitsReconnectStale(t *testing.T) {
 	assert.Equal("12", live.ID)
 }
 
+func TestE2E_SSEFutureCursorEmitsReconnectStale(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	srv, _ := setupTestServer(t)
+	defer gracefulShutdown(t, srv)
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(
+		ctx, http.MethodGet, ts.URL+"/api/v1/events", nil,
+	)
+	require.NoError(err)
+	req.Header.Set("Last-Event-ID", "99")
+	resp, err := ts.Client().Do(req)
+	require.NoError(err)
+	defer resp.Body.Close()
+
+	scanner := bufio.NewScanner(resp.Body)
+	stale := readSSEFrame(t, scanner)
+	assert.Equal("reconnect.stale", stale.Event)
+	assert.Equal("1", stale.ID)
+
+	waitForSubscribe(t, srv, 1)
+	srv.Hub().Broadcast(server.Event{Type: "data_changed", Data: "after-stale"})
+	live := readSSEFrame(t, scanner)
+	assert.Equal("2", live.ID)
+}
+
 func TestE2E_SSEFirstConnectGetsCachedSyncStatus(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

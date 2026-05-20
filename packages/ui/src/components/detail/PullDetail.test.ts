@@ -248,7 +248,7 @@ describe("PullDetail approvals", () => {
     expect(detailStore.refreshPendingCI).not.toHaveBeenCalled();
 
     await fireEvent.click(
-      screen.getByRole("button", { name: /CI:\s*pending \(1\)/i }),
+      screen.getByRole("button", { name: /CI:\s*1\s*pending\s*check/i }),
     );
 
     expect(detailStore.refreshPendingCI).toHaveBeenCalledTimes(1);

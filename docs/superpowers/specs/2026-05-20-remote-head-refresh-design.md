@@ -145,48 +145,54 @@ branch may have been deleted, permissions may be stale, or the provider may be
 temporarily unavailable. Do not clear the last observed SHA based on a missing
 ref alone.
 
-## Persistence
+## Observation State
 
-Store the last observed remote head separately from the PR's synced
-`platform_head_sha`.
+Keep the last observed remote head in process memory, not SQLite.
 
-`platform_head_sha` means "the provider state persisted by PR sync."
-`observed_remote_head_sha` means "the latest branch SHA seen by the workspace
-observer." Keeping them separate lets the observer detect a remote move before
-detail sync has caught up, and lets tests assert the observer's behavior without
-overloading provider-sync semantics.
+`platform_head_sha` remains the durable "provider state persisted by PR sync."
+The observer's last-seen SHA is only a debounce and edge-detection cache for the
+current middleman process. It does not need to survive daemon restart, does not
+belong in migrations, and should disappear when the process exits.
 
-Recommended schema:
+Recommended in-memory shape:
 
-```sql
-CREATE TABLE middleman_workspace_remote_heads (
-  workspace_id TEXT NOT NULL,
-  provider TEXT NOT NULL,
-  platform_host TEXT NOT NULL,
-  repo_path TEXT NOT NULL,
-  item_type TEXT NOT NULL,
-  item_number INTEGER NOT NULL,
-  remote_url TEXT NOT NULL,
-  branch_name TEXT NOT NULL,
-  observed_sha TEXT NOT NULL,
-  observed_at TEXT NOT NULL,
-  last_refresh_enqueued_at TEXT,
-  PRIMARY KEY (workspace_id, item_type, item_number),
-  FOREIGN KEY (workspace_id) REFERENCES middleman_workspaces(id) ON DELETE CASCADE
-);
+```go
+type remoteHeadKey struct {
+	WorkspaceID  string
+	Provider     platform.Kind
+	PlatformHost string
+	RepoPath     string
+	ItemType     string
+	ItemNumber   int
+	RemoteURL    string
+	BranchName   string
+}
+
+type remoteHeadObservation struct {
+	SHA                   string
+	ObservedAt            time.Time
+	LastRefreshEnqueuedAt time.Time
+	FailureCount          int
+	BackoffUntil          time.Time
+}
 ```
 
-The table is workspace-scoped because issue workspaces can become associated
-with a PR after creation and because workspace deletion should clean up local
-observation state. The provider fields are repeated to make debugging and future
-queries straightforward; the source of truth for item data remains the repo and
-PR tables.
+The map is workspace-scoped because issue workspaces can become associated with
+a PR after creation and because workspace deletion should drop local observation
+state. The provider fields are part of the key so duplicate-looking branch names
+on different provider hosts do not collide.
 
-On the first successful observation for a workspace/PR pair, store the SHA but
-do not emit a refresh event unless it differs from the current synced PR
-`platform_head_sha`. This prevents startup from producing a burst of refreshes
-for already-current rows while still catching remote moves that happened while
-middleman was stopped.
+On the first successful observation for a workspace/PR pair in a process, record
+the SHA but do not emit a refresh event unless it differs from the current
+synced PR `platform_head_sha`. This prevents startup from producing a burst of
+refreshes for already-current rows while still catching remote moves that
+happened while middleman was stopped.
+
+When middleman restarts, the observer starts with an empty map. The first pass
+compares the remote SHA to the durable PR row's `platform_head_sha`; that is
+enough to catch remote movement that happened while middleman was offline. After
+detail sync persists the new provider head, subsequent first observations are
+quiet.
 
 ## Scheduling
 
@@ -479,7 +485,7 @@ Backend tests:
 
 - Observer detects a remote SHA change via a fake `ls-remote` runner and
   enqueues one PR detail refresh for the provider-aware PR ref.
-- First observation stores SHA without enqueueing when it equals
+- First observation records SHA in memory without enqueueing when it equals
   `platform_head_sha`.
 - First observation enqueues refresh when it differs from `platform_head_sha`.
 - Multiple workspaces pointing at the same remote branch dedupe remote checks
@@ -487,7 +493,7 @@ Backend tests:
 - Issue workspace with a newly detected PR emits `workspace_pr_associated`,
   preserves the existing `workspace_status` compatibility event, and then
   observes the associated PR head.
-- Missing remote ref and transient command failure do not clear stored
+- Missing remote ref and transient command failure do not clear in-memory
   observation state.
 
 Server/SSE tests:

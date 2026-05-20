@@ -12,7 +12,7 @@ describe("isProblem", () => {
   it("accepts a body with a known code", () => {
     expect(
       isProblem({
-        code: "unsupportedCapability",
+        code: ProblemCodes.unsupportedCapability,
         type: "about:blank",
         details: { capability: "merge_mutation" },
       }),
@@ -68,7 +68,7 @@ describe("readProblem", () => {
       title: "Conflict",
       status: 409,
       detail: "Unsupported provider capability",
-      code: "unsupportedCapability",
+      code: ProblemCodes.unsupportedCapability,
       details: { capability: "merge_mutation", provider: "gitlab" },
     });
     const problem = await readProblem(response);
@@ -87,7 +87,7 @@ describe("problemCapability", () => {
   it("returns details.capability for an unsupportedCapability problem", () => {
     expect(
       problemCapability({
-        code: "unsupportedCapability",
+        code: ProblemCodes.unsupportedCapability,
         type: "about:blank",
         details: { capability: "merge_mutation" },
       }),
@@ -97,7 +97,7 @@ describe("problemCapability", () => {
   it("returns undefined for other codes", () => {
     expect(
       problemCapability({
-        code: "badRequest",
+        code: ProblemCodes.badRequest,
         type: "about:blank",
       }),
     ).toBeUndefined();
@@ -106,7 +106,7 @@ describe("problemCapability", () => {
   it("returns undefined when details.capability is missing", () => {
     expect(
       problemCapability({
-        code: "unsupportedCapability",
+        code: ProblemCodes.unsupportedCapability,
         type: "about:blank",
       }),
     ).toBeUndefined();
@@ -116,7 +116,7 @@ describe("problemCapability", () => {
 describe("problemRetryAfter", () => {
   it("parses an RFC 3339 retryAfter from a rateLimited problem", () => {
     const got = problemRetryAfter({
-      code: "rateLimited",
+      code: ProblemCodes.rateLimited,
       type: "about:blank",
       details: { retryAfter: "2026-05-19T12:00:00Z" },
     });
@@ -126,7 +126,7 @@ describe("problemRetryAfter", () => {
   it("returns undefined for other codes", () => {
     expect(
       problemRetryAfter({
-        code: "badRequest",
+        code: ProblemCodes.badRequest,
         type: "about:blank",
       }),
     ).toBeUndefined();
@@ -135,7 +135,7 @@ describe("problemRetryAfter", () => {
   it("returns undefined for malformed retryAfter", () => {
     expect(
       problemRetryAfter({
-        code: "rateLimited",
+        code: ProblemCodes.rateLimited,
         type: "about:blank",
         details: { retryAfter: "not-a-date" },
       }),

@@ -3,6 +3,7 @@
 // and isProblem from this module rather than substring-matching the
 // human-readable detail text — code is the stable contract.
 
+import { problemErrorCodeValues } from "./generated/schema";
 import type { components } from "./generated/schema";
 
 export type ProblemBody = components["schemas"]["ProblemError"];
@@ -12,32 +13,11 @@ export type ProblemBody = components["schemas"]["ProblemError"];
 // the union without manual sync.
 export type ProblemCode = ProblemBody["code"];
 
-// ProblemCodes is the runtime constant counterpart of ProblemCode for
-// `switch` / `case ProblemCodes.unsupportedCapability:` style branching.
-// Adding a code here is a typecheck failure if the wire enum drifts
-// because the keys are typed against the union literal.
-export const ProblemCodes = {
-  badRequest: "badRequest",
-  branchConflict: "branchConflict",
-  commentNotFound: "commentNotFound",
-  conflict: "conflict",
-  forbidden: "forbidden",
-  internalError: "internalError",
-  issueNotFound: "issueNotFound",
-  notFound: "notFound",
-  payloadTooLarge: "payloadTooLarge",
-  projectNotFound: "projectNotFound",
-  pullNotFound: "pullNotFound",
-  rateLimited: "rateLimited",
-  repoNotFound: "repoNotFound",
-  serviceUnavailable: "serviceUnavailable",
-  settingsUnavailable: "settingsUnavailable",
-  unauthorized: "unauthorized",
-  unsupportedCapability: "unsupportedCapability",
-  upstreamError: "upstreamError",
-  validationError: "validationError",
-  workspaceNotFound: "workspaceNotFound",
-} as const satisfies Record<ProblemCode, ProblemCode>;
+export const ProblemCodes = Object.fromEntries(
+  problemErrorCodeValues.map((code) => [code, code]),
+) as { readonly [K in ProblemCode]: K };
+
+const problemCodeValues = new Set<string>(problemErrorCodeValues);
 
 // isProblem narrows an unknown value (e.g. a parsed JSON response body)
 // to ProblemBody. It checks the top-level shape - object with a code
@@ -50,7 +30,7 @@ export function isProblem(value: unknown): value is ProblemBody {
   if (typeof code !== "string") {
     return false;
   }
-  return Object.prototype.hasOwnProperty.call(ProblemCodes, code);
+  return problemCodeValues.has(code);
 }
 
 // readProblem decodes a fetch Response body as a problem when the

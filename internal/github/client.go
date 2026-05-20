@@ -458,17 +458,23 @@ func (c *liveClient) ListOpenPullRequests(ctx context.Context, owner, repo strin
 		State:       "open",
 		ListOptions: gh.ListOptions{PerPage: 100},
 	}
-	all, err := collectPages(ctx, func(pageOpts *gh.ListOptions) ([]*gh.PullRequest, *gh.Response, error) {
+	progress := newMergeRequestListFetchProgressLogger(RepoRef{
+		Owner:        owner,
+		Name:         repo,
+		PlatformHost: c.platformHost,
+	}, "rest")
+	all, err := collectPagesWithProgress(ctx, func(pageOpts *gh.ListOptions) ([]*gh.PullRequest, *gh.Response, error) {
 		opts.ListOptions = *pageOpts
 		page, resp, err := c.gh.PullRequests.List(ctx, owner, repo, opts)
 		if err != nil {
 			return nil, nil, fmt.Errorf("listing open pull requests for %s/%s: %w", owner, repo, err)
 		}
 		return page, resp, nil
-	}, c.trackRate)
+	}, c.trackRate, progress.recordPage)
 	if err != nil {
 		return nil, err
 	}
+	progress.done()
 	return all, nil
 }
 

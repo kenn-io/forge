@@ -206,6 +206,7 @@ func TestListOpenIssuesLogsFetchProgressForLargeIssueSet(t *testing.T) {
 	assert.Contains(logs, "fetched=200")
 	assert.Contains(logs, `msg="issue list fetch completed"`)
 	assert.Contains(logs, "fetched=201")
+	assert.Contains(logs, "total=201")
 }
 
 func testIssuePage(page int, now string) []map[string]any {
@@ -229,6 +230,91 @@ func testIssuePage(page int, now string) []map[string]any {
 		})
 	}
 	return issues
+}
+
+func TestListOpenPullRequestsLogsFetchProgressForLargePullRequestSet(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	now := time.Date(2026, 5, 20, 12, 0, 0, 0, time.UTC).Format(time.RFC3339)
+
+	var buf bytes.Buffer
+	sw := &syncedWriter{w: &buf}
+	h := slog.NewTextHandler(sw, &slog.HandlerOptions{Level: slog.LevelInfo})
+	orig := slog.Default()
+	slog.SetDefault(slog.New(h))
+	t.Cleanup(func() { slog.SetDefault(orig) })
+
+	var serverURL string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v3/repos/conda-forge/staged-recipes/pulls", func(w http.ResponseWriter, r *http.Request) {
+		page, err := strconv.Atoi(r.URL.Query().Get("page"))
+		if err != nil || page == 0 {
+			page = 1
+		}
+		if page < 3 {
+			nextURL := fmt.Sprintf(
+				"%s/api/v3/repos/conda-forge/staged-recipes/pulls?page=%d&per_page=100",
+				serverURL, page+1,
+			)
+			w.Header().Set("Link", fmt.Sprintf(`<%s>; rel="next"`, nextURL))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(testPullRequestPage(page, now)); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	serverURL = srv.URL
+
+	ghClient, err := gh.NewClient(srv.Client()).WithEnterpriseURLs(
+		srv.URL+"/api/v3/", srv.URL+"/api/uploads/",
+	)
+	require.NoError(err)
+	c := &liveClient{gh: ghClient}
+
+	prs, err := c.ListOpenPullRequests(t.Context(), "conda-forge", "staged-recipes")
+	require.NoError(err)
+	require.Len(prs, 201)
+
+	logs := buf.String()
+	assert.Contains(logs, `msg="merge request list fetch started"`)
+	assert.Contains(logs, "repo=conda-forge/staged-recipes")
+	assert.Contains(logs, "platform=github")
+	assert.Contains(logs, "host=github.com")
+	assert.Contains(logs, "source=rest")
+	assert.Contains(logs, "fetched=100")
+	assert.Contains(logs, `msg="merge request list fetch progress"`)
+	assert.Contains(logs, "fetched=200")
+	assert.Contains(logs, `msg="merge request list fetch completed"`)
+	assert.Contains(logs, "fetched=201")
+	assert.Contains(logs, "total=201")
+}
+
+func testPullRequestPage(page int, now string) []map[string]any {
+	count := 100
+	if page == 3 {
+		count = 1
+	}
+	start := ((page - 1) * 100) + 1
+	prs := make([]map[string]any, 0, count)
+	for i := 0; i < count; i++ {
+		number := start + i
+		prs = append(prs, map[string]any{
+			"id":         number * 1000,
+			"number":     number,
+			"title":      fmt.Sprintf("Pull request %d", number),
+			"state":      "open",
+			"html_url":   fmt.Sprintf("https://github.com/conda-forge/staged-recipes/pull/%d", number),
+			"user":       map[string]any{"login": "alice"},
+			"created_at": now,
+			"updated_at": now,
+			"head":       map[string]any{"ref": "recipe", "sha": "abc123"},
+			"base":       map[string]any{"ref": "main", "sha": "def456"},
+		})
+	}
+	return prs
 }
 
 func TestListRepositoriesByOwnerUsesAuthenticatedEndpointForViewer(t *testing.T) {

@@ -27,8 +27,9 @@ const retryPageSize = 5
 type gqlPRQuery struct {
 	Repository struct {
 		PullRequests struct {
-			Nodes    []gqlPR
-			PageInfo pageInfo
+			TotalCount int
+			Nodes      []gqlPR
+			PageInfo   pageInfo
 		} `graphql:"pullRequests(first: $pageSize, states: OPEN, after: $cursor)"`
 	} `graphql:"repository(owner: $owner, name: $name)"`
 }
@@ -195,8 +196,9 @@ type gqlBaseRefChangedEvent struct {
 type gqlIssueQuery struct {
 	Repository struct {
 		Issues struct {
-			Nodes    []gqlIssue
-			PageInfo pageInfo
+			TotalCount int
+			Nodes      []gqlIssue
+			PageInfo   pageInfo
 		} `graphql:"issues(first: $pageSize, states: OPEN, after: $cursor)"`
 	} `graphql:"repository(owner: $owner, name: $name)"`
 }
@@ -659,7 +661,12 @@ func (g *GraphQLFetcher) FetchRepoPRs(
 func (g *GraphQLFetcher) fetchRepoPRsWithPageSize(
 	ctx context.Context, owner, name string, pageSize int,
 ) (*RepoBulkResult, error) {
-	gqlPRs, err := fetchAllPages(ctx, func(
+	progress := newMergeRequestListFetchProgressLogger(RepoRef{
+		Owner:        owner,
+		Name:         name,
+		PlatformHost: g.host,
+	}, "graphql")
+	gqlPRs, err := fetchAllPagesWithProgress(ctx, func(
 		ctx context.Context, cursor *string,
 	) ([]gqlPR, pageInfo, error) {
 		var q gqlPRQuery
@@ -672,12 +679,14 @@ func (g *GraphQLFetcher) fetchRepoPRsWithPageSize(
 		if err := g.client.Query(ctx, &q, vars); err != nil {
 			return nil, pageInfo{}, err
 		}
+		progress.setTotal(q.Repository.PullRequests.TotalCount)
 		return q.Repository.PullRequests.Nodes,
 			q.Repository.PullRequests.PageInfo, nil
-	})
+	}, progress.recordPage)
 	if err != nil {
 		return nil, err
 	}
+	progress.done()
 
 	result := &RepoBulkResult{
 		PullRequests: make([]BulkPR, 0, len(gqlPRs)),
@@ -728,6 +737,7 @@ func (g *GraphQLFetcher) fetchRepoIssuesWithPageSize(
 		if err := g.client.Query(ctx, &q, vars); err != nil {
 			return nil, pageInfo{}, err
 		}
+		progress.setTotal(q.Repository.Issues.TotalCount)
 		return q.Repository.Issues.Nodes,
 			q.Repository.Issues.PageInfo, nil
 	}, progress.recordPage)

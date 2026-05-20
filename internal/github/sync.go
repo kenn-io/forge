@@ -146,47 +146,63 @@ const (
 	displayNameFailureTTL = 15 * time.Minute
 )
 
-const issueSyncProgressLogInterval = 100
+const syncProgressLogInterval = 100
 
-type issueSyncProgressLogger struct {
+type itemSyncProgressLogger struct {
 	repo   RepoRef
 	source string
+	item   string
 	total  int
 }
 
-type issueListFetchProgressLogger struct {
+type listFetchProgressLogger struct {
 	repo    RepoRef
 	source  string
+	item    string
+	total   int
 	fetched int
 	started bool
 }
 
-func newIssueSyncProgressLogger(repo RepoRef, source string, total int) issueSyncProgressLogger {
-	progress := issueSyncProgressLogger{repo: repo, source: source, total: total}
+func newIssueSyncProgressLogger(repo RepoRef, source string, total int) itemSyncProgressLogger {
+	return newItemSyncProgressLogger(repo, source, "issue", total)
+}
+
+func newMergeRequestSyncProgressLogger(repo RepoRef, source string, total int) itemSyncProgressLogger {
+	return newItemSyncProgressLogger(repo, source, "merge request", total)
+}
+
+func newItemSyncProgressLogger(
+	repo RepoRef,
+	source string,
+	item string,
+	total int,
+) itemSyncProgressLogger {
+	progress := itemSyncProgressLogger{repo: repo, source: source, item: item, total: total}
 	if progress.enabled() {
-		progress.log("issue sync started", 0)
+		progress.log(progress.item+" sync started", 0)
 	}
 	return progress
 }
 
-func (p issueSyncProgressLogger) record(processed int) {
-	if !p.enabled() || processed >= p.total || processed%issueSyncProgressLogInterval != 0 {
+func (p itemSyncProgressLogger) record(processed int) {
+	if !p.enabled() || processed >= p.total || processed%syncProgressLogInterval != 0 {
 		return
 	}
-	p.log("issue sync progress", processed)
+	p.log(p.item+" sync progress", processed)
 }
 
-func (p issueSyncProgressLogger) done() {
+func (p itemSyncProgressLogger) done() {
 	if p.enabled() {
-		p.log("issue sync completed", p.total)
+		p.log(p.item+" sync completed", p.total)
 	}
 }
 
-func (p issueSyncProgressLogger) enabled() bool {
-	return p.total >= issueSyncProgressLogInterval
+func (p itemSyncProgressLogger) enabled() bool {
+	return p.total >= syncProgressLogInterval
 }
 
-func (p issueSyncProgressLogger) log(message string, processed int) {
+func (p itemSyncProgressLogger) log(message string, processed int) {
 	slog.Info(message,
 		"repo", p.repo.Owner+"/"+p.repo.Name,
 		"platform", string(repoPlatform(p.repo)),
@@ -197,42 +213,63 @@ func (p issueSyncProgressLogger) log(message string, processed int) {
 	)
 }
 
-func newIssueListFetchProgressLogger(repo RepoRef, source string) *issueListFetchProgressLogger {
-	return &issueListFetchProgressLogger{repo: repo, source: source}
+func newIssueListFetchProgressLogger(repo RepoRef, source string) *listFetchProgressLogger {
+	return newListFetchProgressLogger(repo, source, "issue")
 }
 
-func (p *issueListFetchProgressLogger) recordPage(fetched int, hasMore bool) {
+func newMergeRequestListFetchProgressLogger(repo RepoRef, source string) *listFetchProgressLogger {
+	return newListFetchProgressLogger(repo, source, "merge request")
+}
+
+func newListFetchProgressLogger(repo RepoRef, source, item string) *listFetchProgressLogger {
+	return &listFetchProgressLogger{repo: repo, source: source, item: item}
+}
+
+func (p *listFetchProgressLogger) setTotal(total int) {
+	if p != nil && total > 0 {
+		p.total = total
+	}
+}
+
+func (p *listFetchProgressLogger) recordPage(fetched int, hasMore bool) {
 	if p == nil || fetched <= 0 {
 		return
 	}
 	p.fetched += fetched
 	if !p.started {
-		if !hasMore && p.fetched < issueSyncProgressLogInterval {
+		if !hasMore && p.fetched < syncProgressLogInterval {
 			return
 		}
 		p.started = true
-		p.log("issue list fetch started")
+		p.log(p.item + " list fetch started")
 		return
 	}
 	if hasMore {
-		p.log("issue list fetch progress")
+		p.log(p.item + " list fetch progress")
 	}
 }
 
-func (p *issueListFetchProgressLogger) done() {
+func (p *listFetchProgressLogger) done() {
 	if p != nil && p.started {
-		p.log("issue list fetch completed")
+		if p.total == 0 {
+			p.total = p.fetched
+		}
+		p.log(p.item + " list fetch completed")
 	}
 }
 
-func (p *issueListFetchProgressLogger) log(message string) {
-	slog.Info(message,
-		"repo", p.repo.Owner+"/"+p.repo.Name,
+func (p *listFetchProgressLogger) log(message string) {
+	attrs := []any{
+		"repo", p.repo.Owner + "/" + p.repo.Name,
 		"platform", string(repoPlatform(p.repo)),
 		"host", repoHost(p.repo),
 		"source", p.source,
 		"fetched", p.fetched,
-	)
+	}
+	if p.total > 0 {
+		attrs = append(attrs, "total", p.total)
+	}
+	slog.Info(message, attrs...)
 }
 
 // Syncer periodically pulls PR data from GitHub into SQLite.
@@ -2921,7 +2958,8 @@ func (s *Syncer) syncMergeRequestsFromList(
 	}
 
 	var hadItemFailure bool
-	for _, mr := range mrs {
+	progress := newMergeRequestSyncProgressLogger(repo, "provider", len(mrs))
+	for i, mr := range mrs {
 		if err := s.indexUpsertMergeRequest(ctx, repo, repoID, mr); err != nil {
 			slog.Error("index upsert MR failed",
 				"repo", repo.Owner+"/"+repo.Name,
@@ -2930,6 +2968,7 @@ func (s *Syncer) syncMergeRequestsFromList(
 			)
 			hadItemFailure = true
 		}
+		progress.record(i + 1)
 	}
 
 	closedNumbers, err := s.db.GetPreviouslyOpenMRNumbers(
@@ -2955,6 +2994,7 @@ func (s *Syncer) syncMergeRequestsFromList(
 	if hadItemFailure {
 		return fmt.Errorf("one or more merge request sync items failed")
 	}
+	progress.done()
 	return nil
 }
 
@@ -3321,6 +3361,7 @@ func (s *Syncer) doSyncRepoGraphQL(
 ) error {
 	var failedScope failScope
 	stillOpen := make(map[int]bool, len(result.PullRequests))
+	progress := newMergeRequestSyncProgressLogger(repo, "graphql", len(result.PullRequests))
 
 	for i := range result.PullRequests {
 		bulk := &result.PullRequests[i]
@@ -3337,6 +3378,7 @@ func (s *Syncer) doSyncRepoGraphQL(
 			)
 			failedScope |= failMR
 		}
+		progress.record(i + 1)
 	}
 
 	// Detect closed PRs — same as REST path.
@@ -3362,6 +3404,7 @@ func (s *Syncer) doSyncRepoGraphQL(
 	if failedScope != 0 {
 		return fmt.Errorf("GraphQL sync had partial failures")
 	}
+	progress.done()
 	return nil
 }
 

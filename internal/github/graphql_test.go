@@ -374,8 +374,9 @@ func TestGraphQLFetcherFetchRepoIssuesLogsFetchProgressForPaginatedIssueSet(t *t
 			"data": map[string]any{
 				"repository": map[string]any{
 					"issues": map[string]any{
-						"nodes":    testGQLIssueNodes(((calls-1)*25)+1, count, now),
-						"pageInfo": pageInfo,
+						"totalCount": 51,
+						"nodes":      testGQLIssueNodes(((calls-1)*25)+1, count, now),
+						"pageInfo":   pageInfo,
 					},
 				},
 			},
@@ -402,6 +403,7 @@ func TestGraphQLFetcherFetchRepoIssuesLogsFetchProgressForPaginatedIssueSet(t *t
 	assert.Contains(logs, "platform=github")
 	assert.Contains(logs, "host=github.com")
 	assert.Contains(logs, "source=graphql")
+	assert.Contains(logs, "total=51")
 	assert.Contains(logs, "fetched=25")
 	assert.Contains(logs, `msg="issue list fetch progress"`)
 	assert.Contains(logs, "fetched=50")
@@ -433,6 +435,108 @@ func testGQLIssueNodes(start, count int, now string) []map[string]any {
 		})
 	}
 	return issues
+}
+
+func TestGraphQLFetcherFetchRepoPRsLogsFetchProgressForPaginatedPullRequestSet(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	now := time.Date(2026, 5, 20, 12, 0, 0, 0, time.UTC).Format(time.RFC3339)
+
+	var buf bytes.Buffer
+	sw := &syncedWriter{w: &buf}
+	h := slog.NewTextHandler(sw, &slog.HandlerOptions{Level: slog.LevelInfo})
+	orig := slog.Default()
+	slog.SetDefault(slog.New(h))
+	t.Cleanup(func() { slog.SetDefault(orig) })
+
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		w.Header().Set("Content-Type", "application/json")
+		pageInfo := map[string]any{"hasNextPage": true, "endCursor": fmt.Sprintf("cursor-%d", calls)}
+		if calls == 3 {
+			pageInfo = map[string]any{"hasNextPage": false, "endCursor": ""}
+		}
+		count := 25
+		if calls == 3 {
+			count = 1
+		}
+		resp := map[string]any{
+			"data": map[string]any{
+				"repository": map[string]any{
+					"pullRequests": map[string]any{
+						"totalCount": 51,
+						"nodes":      testGQLPRNodes(((calls-1)*25)+1, count, now),
+						"pageInfo":   pageInfo,
+					},
+				},
+			},
+		}
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}))
+	defer srv.Close()
+
+	fetcher := NewGraphQLFetcherWithClient(
+		githubv4.NewEnterpriseClient(srv.URL, srv.Client()), nil,
+	)
+
+	result, err := fetcher.FetchRepoPRs(t.Context(), "conda-forge", "staged-recipes")
+	require.NoError(err)
+	require.NotNil(result)
+	require.Len(result.PullRequests, 51)
+
+	logs := buf.String()
+	assert.Contains(logs, `msg="merge request list fetch started"`)
+	assert.Contains(logs, "repo=conda-forge/staged-recipes")
+	assert.Contains(logs, "platform=github")
+	assert.Contains(logs, "host=github.com")
+	assert.Contains(logs, "source=graphql")
+	assert.Contains(logs, "total=51")
+	assert.Contains(logs, "fetched=25")
+	assert.Contains(logs, `msg="merge request list fetch progress"`)
+	assert.Contains(logs, "fetched=50")
+	assert.Contains(logs, `msg="merge request list fetch completed"`)
+	assert.Contains(logs, "fetched=51")
+}
+
+func testGQLPRNodes(start, count int, now string) []map[string]any {
+	prs := make([]map[string]any, 0, count)
+	for i := range count {
+		number := start + i
+		prs = append(prs, map[string]any{
+			"databaseId":     number * 1000,
+			"number":         number,
+			"title":          fmt.Sprintf("Pull request %d", number),
+			"state":          "OPEN",
+			"isDraft":        false,
+			"body":           "",
+			"url":            fmt.Sprintf("https://github.com/conda-forge/staged-recipes/pull/%d", number),
+			"author":         map[string]any{"login": "alice"},
+			"createdAt":      now,
+			"updatedAt":      now,
+			"mergedAt":       nil,
+			"closedAt":       nil,
+			"additions":      1,
+			"deletions":      0,
+			"mergeable":      "MERGEABLE",
+			"reviewDecision": "",
+			"headRefName":    "recipe",
+			"baseRefName":    "main",
+			"headRefOid":     "abc123",
+			"baseRefOid":     "def456",
+			"headRepository": map[string]any{"url": "https://github.com/conda-forge/staged-recipes"},
+			"labels":         map[string]any{"nodes": []any{}},
+			"comments":       map[string]any{"nodes": []any{}, "pageInfo": map[string]any{"hasNextPage": false, "endCursor": ""}},
+			"reviews":        map[string]any{"nodes": []any{}, "pageInfo": map[string]any{"hasNextPage": false, "endCursor": ""}},
+			"allCommits":     map[string]any{"nodes": []any{}, "pageInfo": map[string]any{"hasNextPage": false, "endCursor": ""}},
+			"lastCommit":     map[string]any{"nodes": []any{}},
+			"timelineItems":  map[string]any{"nodes": []any{}, "pageInfo": map[string]any{"hasNextPage": false, "endCursor": ""}},
+		})
+	}
+	return prs
 }
 
 func TestNormalizeBulkCI(t *testing.T) {

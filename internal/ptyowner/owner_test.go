@@ -255,7 +255,6 @@ func TestClientEnsurePreservesStateOnContextCancellation(t *testing.T) {
 
 func TestClientEnsureSerializesConcurrentStarts(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("in-process PTY owner test requires a host PTY")
 	}
@@ -301,9 +300,10 @@ func TestClientEnsureSerializesConcurrentStarts(t *testing.T) {
 		require.NoError(err)
 	}
 
-	data, err := os.ReadFile(record)
-	require.NoError(err)
-	assert.Equal("start", string(data))
+	require.Eventually(func() bool {
+		data, err := os.ReadFile(record)
+		return err == nil && string(data) == "start"
+	}, 2*time.Second, 20*time.Millisecond)
 }
 
 func TestClientStopPreservesStateOnContextCancellation(t *testing.T) {

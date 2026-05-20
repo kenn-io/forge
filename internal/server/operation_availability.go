@@ -32,6 +32,16 @@ const (
 	availabilityCodeRateLimited           = "rate_limited"
 )
 
+// apiBucket identifies which API quota an operation consumes. GitHub
+// exposes REST and GraphQL as independent budgets, so a pause on one
+// must not block operations served by the other.
+type apiBucket int
+
+const (
+	apiBucketREST apiBucket = iota
+	apiBucketGraphQL
+)
+
 // OperationAvailability is the wire-level shape describing whether
 // a write operation can be invoked against a repository right now.
 // It collapses the inputs the UI would otherwise have to mirror
@@ -65,37 +75,48 @@ type RepoOperations struct {
 	ApproveWorkflow    OperationAvailability `json:"approve_workflow"`
 }
 
-// operationDescriptor lists the capabilities an operation needs.
-// requiredCapabilities is checked in declaration order so the first
-// missing capability becomes RequiredCapability, giving deterministic
-// behavior when multiple are absent.
+// operationDescriptor lists the capabilities an operation needs and
+// the API bucket it consumes. requiredCapabilities is checked in
+// declaration order so the first missing capability becomes
+// RequiredCapability, giving deterministic behavior when multiple
+// are absent.
 type operationDescriptor struct {
 	name                 string
 	requiredCapabilities []string
+	bucket               apiBucket
 }
 
+// All currently-cataloged mutations are served by REST. The bucket
+// field exists so a future GraphQL-backed operation opts in
+// explicitly rather than inheriting REST's rate-limit state.
 var (
-	descMergePR            = operationDescriptor{name: operationMergePR, requiredCapabilities: []string{capabilityMergeMutation}}
-	descClosePR            = operationDescriptor{name: operationClosePR, requiredCapabilities: []string{capabilityStateMutation}}
-	descReopenPR           = operationDescriptor{name: operationReopenPR, requiredCapabilities: []string{capabilityStateMutation}}
-	descMarkReadyForReview = operationDescriptor{name: operationMarkReadyForReview, requiredCapabilities: []string{capabilityReadyForReview}}
-	descSubmitReview       = operationDescriptor{name: operationSubmitReview, requiredCapabilities: []string{capabilityReviewMutation}}
-	descAddComment         = operationDescriptor{name: operationAddComment, requiredCapabilities: []string{capabilityCommentMutation}}
-	descAddLabel           = operationDescriptor{name: operationAddLabel, requiredCapabilities: []string{capabilityReadLabels, capabilityLabelMutation}}
-	descRemoveLabel        = operationDescriptor{name: operationRemoveLabel, requiredCapabilities: []string{capabilityReadLabels, capabilityLabelMutation}}
-	descCloseIssue         = operationDescriptor{name: operationCloseIssue, requiredCapabilities: []string{capabilityIssueMutation}}
-	descReopenIssue        = operationDescriptor{name: operationReopenIssue, requiredCapabilities: []string{capabilityIssueMutation}}
-	descApproveWorkflow    = operationDescriptor{name: operationApproveWorkflow, requiredCapabilities: []string{capabilityWorkflowApproval}}
+	descMergePR            = operationDescriptor{name: operationMergePR, requiredCapabilities: []string{capabilityMergeMutation}, bucket: apiBucketREST}
+	descClosePR            = operationDescriptor{name: operationClosePR, requiredCapabilities: []string{capabilityStateMutation}, bucket: apiBucketREST}
+	descReopenPR           = operationDescriptor{name: operationReopenPR, requiredCapabilities: []string{capabilityStateMutation}, bucket: apiBucketREST}
+	descMarkReadyForReview = operationDescriptor{name: operationMarkReadyForReview, requiredCapabilities: []string{capabilityReadyForReview}, bucket: apiBucketREST}
+	descSubmitReview       = operationDescriptor{name: operationSubmitReview, requiredCapabilities: []string{capabilityReviewMutation}, bucket: apiBucketREST}
+	descAddComment         = operationDescriptor{name: operationAddComment, requiredCapabilities: []string{capabilityCommentMutation}, bucket: apiBucketREST}
+	descAddLabel           = operationDescriptor{name: operationAddLabel, requiredCapabilities: []string{capabilityReadLabels, capabilityLabelMutation}, bucket: apiBucketREST}
+	descRemoveLabel        = operationDescriptor{name: operationRemoveLabel, requiredCapabilities: []string{capabilityReadLabels, capabilityLabelMutation}, bucket: apiBucketREST}
+	descCloseIssue         = operationDescriptor{name: operationCloseIssue, requiredCapabilities: []string{capabilityIssueMutation}, bucket: apiBucketREST}
+	descReopenIssue        = operationDescriptor{name: operationReopenIssue, requiredCapabilities: []string{capabilityIssueMutation}, bucket: apiBucketREST}
+	descApproveWorkflow    = operationDescriptor{name: operationApproveWorkflow, requiredCapabilities: []string{capabilityWorkflowApproval}, bucket: apiBucketREST}
 )
 
 // repoOperations derives the availability of every operation for a
 // repo from current provider capabilities, the repo's per-viewer
-// merge permission, and the host's REST/GraphQL rate-limit state.
+// merge permission, and the rate-limit state of the host's API
+// buckets. Each operation consults only the bucket it consumes, so
+// a paused GraphQL tracker does not block REST-backed operations
+// and vice versa.
 func (s *Server) repoOperations(repo db.Repo) RepoOperations {
 	caps := s.capabilitiesForRepo(repo)
-	rate := s.rateLimitedReason(repo)
+	rates := map[apiBucket]rateLimitAvailability{
+		apiBucketREST:    s.rateLimitedReason(repo, apiBucketREST),
+		apiBucketGraphQL: s.rateLimitedReason(repo, apiBucketGraphQL),
+	}
 	derive := func(op operationDescriptor) OperationAvailability {
-		return deriveOperationAvailability(op, caps, repo, rate)
+		return deriveOperationAvailability(op, caps, repo, rates[op.bucket])
 	}
 	return RepoOperations{
 		MergePR:            derive(descMergePR),
@@ -143,16 +164,15 @@ func deriveOperationAvailability(
 	return OperationAvailability{Available: true}
 }
 
-// rateLimitAvailability is the result of consulting the rate
-// trackers for a repo's host. limited is true when either the REST
-// or GraphQL tracker for the host is paused.
+// rateLimitAvailability is the result of consulting a rate tracker
+// for a repo's host. limited is true when the tracker is paused.
 type rateLimitAvailability struct {
 	limited bool
 	reason  string
 	retryAt string
 }
 
-func (s *Server) rateLimitedReason(repo db.Repo) rateLimitAvailability {
+func (s *Server) rateLimitedReason(repo db.Repo, bucket apiBucket) rateLimitAvailability {
 	if s == nil || s.syncer == nil {
 		return rateLimitAvailability{}
 	}
@@ -160,14 +180,16 @@ func (s *Server) rateLimitedReason(repo db.Repo) rateLimitAvailability {
 	providerName := string(repoProviderKind(repo))
 	key := ratelimit.RateBucketKey(providerName, host)
 
-	// Either tracker being paused blocks operations: REST handles
-	// the mutation calls themselves, but GraphQL shares the same
-	// API budget on GitHub, so its pause also signals that mutating
-	// the repo is likely to fail.
-	if rt, ok := s.syncer.RateTrackers()[key]; ok && rt != nil && rt.IsPaused() {
-		return formatRateLimit(host, rt.ResetAt())
+	var trackers map[string]*ratelimit.RateTracker
+	switch bucket {
+	case apiBucketREST:
+		trackers = s.syncer.RateTrackers()
+	case apiBucketGraphQL:
+		trackers = s.syncer.GQLRateTrackers()
+	default:
+		return rateLimitAvailability{}
 	}
-	if rt, ok := s.syncer.GQLRateTrackers()[key]; ok && rt != nil && rt.IsPaused() {
+	if rt, ok := trackers[key]; ok && rt != nil && rt.IsPaused() {
 		return formatRateLimit(host, rt.ResetAt())
 	}
 	return rateLimitAvailability{}

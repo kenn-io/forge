@@ -266,6 +266,53 @@ func TestAPIRepoResponseIncludesOperationsRateLimited(t *testing.T) {
 	assert.NotEmpty(merge.RetryAt)
 }
 
+func TestAPIRepoResponseIncludesOperationsGraphQLPauseDoesNotBlockREST(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	// Mutations in middleman are REST-backed, so a paused GraphQL
+	// tracker must leave merge_pr available; this guards against
+	// the earlier behavior that treated either tracker's pause as
+	// blocking every operation.
+	database := dbtest.Open(t)
+	restRT := ghclient.NewRateTracker(database, "github.com", "rest")
+	gqlRT := ghclient.NewRateTracker(database, "github.com", "graphql")
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": &mockGH{}},
+		database, nil,
+		[]ghclient.RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}},
+		time.Minute,
+		map[string]*ghclient.RateTracker{ratelimit.RateBucketKey("github", "github.com"): restRT},
+		nil,
+	)
+	syncer.SetFetchers(map[string]*ghclient.GraphQLFetcher{
+		"github.com": ghclient.NewGraphQLFetcher("fake-token", "github.com", gqlRT, nil),
+	})
+	t.Cleanup(syncer.Stop)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+
+	_, err := database.UpsertRepo(
+		t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+
+	// Pause GraphQL by reporting zero remaining requests with a
+	// future reset; leave REST untouched.
+	resetAt := time.Now().UTC().Add(30 * time.Minute)
+	gqlRT.UpdateFromRate(ratelimit.Rate{Limit: 5000, Remaining: 0, Reset: resetAt})
+
+	rr := doJSON(t, srv, http.MethodGet, "/api/v1/repo/github/acme/widget", nil)
+	require.Equal(http.StatusOK, rr.Code)
+
+	var resp repoResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+
+	merge := resp.Operations.MergePR
+	assert.True(merge.Available, "merge_pr is REST-backed; GraphQL pause must not block it")
+	assert.Empty(merge.Code)
+}
+
 func TestAPIRepoResponseIncludesOperationsViewerCannotMerge(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)

@@ -26,6 +26,8 @@
     expanded?: boolean | undefined;
     disabled?: boolean;
     class?: string;
+    ariaLabel?: string | undefined;
+    dataTestid?: string | undefined;
     onclick?: ((event: MouseEvent) => void) | undefined;
     children?: Snippet | undefined;
   }
@@ -41,6 +43,8 @@
     expanded = undefined,
     disabled = false,
     class: className = "",
+    ariaLabel = undefined,
+    dataTestid = undefined,
     onclick = undefined,
     children,
   }: Props = $props();
@@ -63,6 +67,8 @@
     {title}
     {style}
     aria-expanded={expanded}
+    aria-label={ariaLabel}
+    data-testid={dataTestid}
     {disabled}
     onclick={onclick}
   >{#if dot}<span class="chip__dot" aria-hidden="true"></span>{/if}{#if children}<span class="chip__label">{@render children()}</span>{/if}</button>
@@ -79,6 +85,8 @@
     ]}
     {title}
     {style}
+    aria-label={ariaLabel}
+    data-testid={dataTestid}
   >{#if dot}<span class="chip__dot" aria-hidden="true"></span>{/if}{#if children}<span class="chip__label">{@render children()}</span>{/if}</span>
 {/if}
 

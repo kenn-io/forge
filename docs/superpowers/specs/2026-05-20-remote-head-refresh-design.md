@@ -1,20 +1,22 @@
-# Remote Head Refresh Design
+# Pushed Head Refresh Design
 
 ## Goal
 
-Refresh PR detail and CI state when a middleman-managed workspace's remote PR
-head changes.
+Refresh PR detail and CI state when a middleman-managed workspace pushes a new
+PR head.
 
-The trigger should be the provider-visible branch update, not a local command
-shape such as "an agent ran `git push`." Detecting the remote head makes the
-feature work for launched agents, base workspace terminals, IDE Git
-integrations, manual shells, and pushes from another machine. Failed pushes and
-local-only commits naturally do not trigger a refresh.
+The trigger should be the workspace's local remote-tracking ref moving, not a
+provider poll and not a command-shape signal such as "an agent ran `git push`."
+A successful push updates the local `refs/remotes/{remote}/{branch}` ref for
+the pushed branch, so middleman can observe the pushed head from the workspace's
+Git metadata without calling the remote. Failed pushes and local-only commits
+naturally do not trigger a refresh because the remote-tracking ref does not
+move.
 
 The user-visible result is:
 
-- A PR detail tab updates soon after the branch backing that PR moves on the
-  remote.
+- A PR detail tab updates soon after the workspace pushes the branch backing
+  that PR.
 - Pending CI starts refreshing without the user leaving and reopening the PR.
 - Issue workspaces that become associated with a PR can gain the PR tab from
   the same monitoring path.
@@ -23,7 +25,7 @@ The user-visible result is:
 
 ## Current Behavior
 
-Middleman already has several pieces of this flow, but no remote-head observer.
+Middleman already has several pieces of this flow, but no pushed-head observer.
 
 - `internal/workspace/monitor.go` runs once at startup and every minute. It
   only examines ready issue workspaces with no `associated_pr_number`. It
@@ -43,36 +45,35 @@ Middleman already has several pieces of this flow, but no remote-head observer.
   own EventSource for `workspace_status` and refetches the active workspace
   when the event's `id` matches.
 
-The current PR monitor does not ask the provider or remote repository whether a
-branch changed. It cannot detect that a PR-backed workspace was pushed, and it
-cannot discover a new PR unless a normal sync has already inserted the PR row.
+The current PR monitor does not inspect remote-tracking refs. It cannot detect
+that a PR-backed workspace was pushed, and it cannot discover a new PR unless a
+normal sync has already inserted the PR row.
 
 ## Design Decision
 
-Add a `RemoteHeadObserver` for middleman-owned workspaces.
+Add a `PushedHeadObserver` for middleman-owned workspaces.
 
-The observer checks the remote branch SHA for workspaces that either own a PR or
-can be associated with one. When the observed remote head for a PR changes, it
-enqueues a PR detail sync, then emits targeted SSE events so connected clients
-can refresh the right UI state without waiting for a broad `data_changed`
-reload.
+The observer checks the local remote-tracking ref for workspaces that either own
+a PR or can be associated with one. When the observed pushed head for a PR
+changes, it enqueues a PR detail sync, then emits targeted SSE events so
+connected clients can refresh the right UI state without waiting for a broad
+`data_changed` reload.
 
 This design deliberately keeps the observer provider-neutral:
 
-- Use the persisted PR row as the preferred source of branch identity:
-  `HeadRepoCloneURL`, `HeadBranch`, `PlatformHeadSHA`, provider kind, host, and
-  repo path.
-- Use local Git upstream state only as a fallback or as association evidence for
-  issue workspaces.
+- Use the persisted PR row and workspace branch state to identify which
+  remote-tracking ref represents the PR head.
+- Use local Git upstream state as the source of the remote name and branch ref,
+  and as association evidence for issue workspaces.
 - Use provider identity everywhere: `(provider, platform_host, repo_path,
   owner, name, number)`.
 - Keep provider-specific optimizations optional behind the platform capability
   model.
 
-The first implementation should use Git remote inspection as the common path:
-`git ls-remote <clone-url> refs/heads/<head-branch>`. Provider API fast paths
-can be added later only if they fit behind a neutral remote-head capability and
-respect existing rate-limit budgets.
+The first implementation should use local Git ref inspection only. It should not
+call `git ls-remote`, fetch, or provider branch APIs. External pushes from other
+machines remain the responsibility of the normal provider sync loop; this
+feature exists to make workspace-originated pushes refresh quickly.
 
 ## Alternatives Considered
 
@@ -81,19 +82,27 @@ respect existing rate-limit budgets.
 Middleman could prepend a private `git` wrapper to launched agent `PATH` and
 notify the server when `git push` exits successfully.
 
-This is useful as a future acceleration path, but it is not sufficient as the
-primary design. It misses absolute-path Git invocations, non-agent terminals,
-IDE pushes, and pushes from other machines. It also reports a command success,
-not the provider-visible branch state.
+This is unnecessary for the primary design. A successful push moves the
+workspace's remote-tracking ref, so middleman can observe the effect without
+wrapping commands. A wrapper also misses absolute-path Git invocations and
+non-agent terminals.
 
 ### Git Trace2 command observation
 
 Launched sessions can set Git Trace2 environment variables and stream
 successful `push` command exits back to middleman.
 
-This is less invasive than a wrapper, but it still observes local command
-execution rather than remote state. It also provides weak ref-level detail and
-does not cover external pushes.
+This is unnecessary for the same reason as a wrapper: command observation is an
+indirect proxy for a pushed ref that Git already records locally.
+
+### Remote polling
+
+Middleman could call `git ls-remote` or provider branch APIs to query the remote
+branch directly.
+
+This is broader than needed for the workspace-push refresh loop. It adds network
+traffic, auth failure cases, rate-limit pressure, and backoff state even though
+the local push already updates the ref middleman needs to observe.
 
 ### Existing PR monitor only
 
@@ -106,7 +115,7 @@ workspaces, relies on already-synced PR rows, and emits broad invalidations.
 The observer scans ready middleman workspaces. It does not discover arbitrary
 host worktrees and does not become a generic Git automation API.
 
-A workspace is eligible for remote-head observation when:
+A workspace is eligible for pushed-head observation when:
 
 - `status == "ready"`;
 - `worktree_path` is non-empty;
@@ -119,40 +128,42 @@ A workspace is eligible for remote-head observation when:
 
 For issue workspaces with no associated PR, the observer may share the current
 association logic with the PR monitor. If it finds a unique PR, it persists
-`associated_pr_number` before checking the remote head. That persistence still
+`associated_pr_number` before checking the pushed head. That persistence still
 emits `workspace_status` so the terminal PR tab becomes available.
 
-## Remote Head Resolution
+## Pushed Head Resolution
 
 For each eligible PR, resolve the branch to observe in this order:
 
-1. Use the synced PR row's head clone URL and head branch.
-2. If the PR row has no usable head clone URL, use the workspace branch's
-   upstream remote URL and upstream branch when they uniquely match the PR row.
-3. If neither source is available, skip the workspace for that pass and log at
+1. Read the workspace branch's configured upstream remote and merge ref.
+2. Require the upstream branch to match the synced PR row's head branch, or to
+   uniquely identify the PR during issue-workspace association.
+3. Resolve `refs/remotes/{remote}/{branch}` with local Git.
+4. If no upstream or remote-tracking ref is available, skip the workspace for
+   that pass and log at
    debug level.
 
-The observed ref is `refs/heads/{head_branch}` on the resolved head repository,
-not the base repository's default branch and not the local worktree's current
-`HEAD`.
+The observed ref is the local remote-tracking ref for the pushed branch, not the
+base repository's default branch and not the local worktree's current `HEAD`.
 
-Fork PRs are expected to work because the PR row carries the head repository
-clone URL. Nested GitLab namespaces work because the route and sync identity
-remain provider-aware even though the Git remote check uses a clone URL.
+Fork PRs are expected to work when the workspace branch tracks the fork remote's
+head branch. Nested GitLab namespaces work because the route and sync identity
+remain provider-aware even though the Git check reads local refs.
 
-When `git ls-remote` returns no matching ref, treat it as a soft miss. The
-branch may have been deleted, permissions may be stale, or the provider may be
-temporarily unavailable. Do not clear the last observed SHA based on a missing
-ref alone.
+When the remote-tracking ref is missing, treat it as a soft miss. The branch may
+not have been pushed yet, the upstream may not be configured, or the workspace
+may still be on an issue-only branch. Do not clear the last observed SHA based
+on a missing ref alone.
 
 ## Observation State
 
-Keep the last observed remote head in process memory, not SQLite.
+Keep the last observed pushed head in process memory, not SQLite.
 
 `platform_head_sha` remains the durable "provider state persisted by PR sync."
-The observer's last-seen SHA is only a debounce and edge-detection cache for the
-current middleman process. It does not need to survive daemon restart, does not
-belong in migrations, and should disappear when the process exits.
+The observer's last-seen remote-tracking SHA is only a debounce and
+edge-detection cache for the current middleman process. It does not need to
+survive daemon restart, does not belong in migrations, and should disappear when
+the process exits.
 
 Recommended in-memory shape:
 
@@ -164,16 +175,15 @@ type remoteHeadKey struct {
 	RepoPath     string
 	ItemType     string
 	ItemNumber   int
-	RemoteURL    string
+	RemoteName   string
 	BranchName   string
+	TrackingRef  string
 }
 
 type remoteHeadObservation struct {
 	SHA                   string
 	ObservedAt            time.Time
 	LastRefreshEnqueuedAt time.Time
-	FailureCount          int
-	BackoffUntil          time.Time
 }
 ```
 
@@ -185,31 +195,32 @@ on different provider hosts do not collide.
 On the first successful observation for a workspace/PR pair in a process, record
 the SHA but do not emit a refresh event unless it differs from the current
 synced PR `platform_head_sha`. This prevents startup from producing a burst of
-refreshes for already-current rows while still catching remote moves that
-happened while middleman was stopped.
+refreshes for already-current rows while still catching pushed heads that moved
+while middleman was stopped.
 
 When middleman restarts, the observer starts with an empty map. The first pass
-compares the remote SHA to the durable PR row's `platform_head_sha`; that is
-enough to catch remote movement that happened while middleman was offline. After
-detail sync persists the new provider head, subsequent first observations are
-quiet.
+compares the local remote-tracking SHA to the durable PR row's
+`platform_head_sha`; that is enough to catch workspace pushes that happened
+while middleman was offline. After detail sync persists the new provider head,
+subsequent first observations are quiet.
 
 ## Scheduling
 
 Run the observer as a background loop when workspace support is configured.
 
 - Initial pass: after server startup, once the workspace manager is available.
-- Steady-state pass: every 20-30 seconds, with jitter to avoid synchronized
-  remote requests across many repos.
+- Steady-state pass: every few seconds. The check is local Git ref inspection,
+  so it should be cheap enough to feel live without adding network traffic.
 - Manual kick: after workspace setup completes and after an issue workspace gains
   an associated PR.
-- Backoff: per `(provider, platform_host, repo_path, branch)` after transient Git
-  failures.
+- Backoff: only for repeated local Git inspection failures such as missing or
+  unreadable worktrees.
 
-Remote checks should be bounded:
+Local checks should be bounded:
 
-- Limit concurrent `ls-remote` calls per provider host.
-- Deduplicate checks for workspaces that point at the same remote URL and branch.
+- Do not fetch, call `ls-remote`, or contact provider APIs.
+- Deduplicate checks for workspaces that point at the same worktree and
+  remote-tracking ref.
 - Use short command timeouts.
 - Strip Git environment using the same `gitenv.StripAll` pattern used by the
   existing workspace monitor.
@@ -220,10 +231,10 @@ noise.
 
 ## Refresh Queues
 
-When a changed remote SHA is detected:
+When a changed pushed SHA is detected:
 
-1. Persist the new observed SHA and observation time.
-2. Emit `workspace_remote_head_changed`.
+1. Record the new observed SHA and observation time in memory.
+2. Emit `workspace_pushed_head_changed`.
 3. Enqueue a high-priority PR detail sync for the changed PR.
 4. Emit `workspace_pr_refresh_queued`.
 5. When detail sync completes, emit `pr_detail_refreshed` and the existing
@@ -234,7 +245,7 @@ When a changed remote SHA is detected:
 
 The visible PR should win over background work. If the active detail tab matches
 the changed PR, the client may call the existing detail refresh path immediately
-after receiving `workspace_remote_head_changed` or
+after receiving `workspace_pushed_head_changed` or
 `workspace_pr_refresh_queued`. Other clients can wait for `pr_detail_refreshed`
 or broad `data_changed`.
 
@@ -249,9 +260,10 @@ All new events go through the existing `EventHub`. They receive monotonic ids,
 are stored in the replay ring, and participate in `Last-Event-ID` replay. They
 must use JSON-serializable payloads.
 
-### `workspace_remote_head_changed`
+### `workspace_pushed_head_changed`
 
-Sent when the observer sees a PR head branch SHA change on the remote.
+Sent when the observer sees the workspace's remote-tracking ref for a PR head
+branch move.
 
 ```json
 {
@@ -264,7 +276,9 @@ Sent when the observer sees a PR head branch SHA change on the remote.
   "number": 42,
   "old_sha": "1111111",
   "new_sha": "2222222",
+  "remote": "origin",
   "branch": "feature/widgets",
+  "tracking_ref": "refs/remotes/origin/feature/widgets",
   "observed_at": "2026-05-20T14:15:00Z"
 }
 ```
@@ -308,7 +322,7 @@ contains enough context to avoid guessing why the workspace changed.
 
 ### `workspace_pr_refresh_queued`
 
-Sent after a remote-head change enqueues PR detail sync.
+Sent after a pushed-head change enqueues PR detail sync.
 
 ```json
 {
@@ -421,11 +435,11 @@ second delivery mechanism.
 Client handling of `reconnect.stale` remains broad: reload pulls, issues,
 activity, and sync status. Workspace terminal views should also refetch their
 active workspace and runtime state when they add stale handling. This guarantees
-that a slept laptop does not miss a remote-head refresh forever.
+that a slept laptop does not miss a pushed-head refresh forever.
 
 Targeted events must be idempotent. A client may receive:
 
-- `workspace_remote_head_changed`, then `workspace_pr_refresh_queued`, then
+- `workspace_pushed_head_changed`, then `workspace_pr_refresh_queued`, then
   `pr_detail_refreshed`;
 - only `pr_detail_refreshed` after replay if earlier events were outside the
   buffer and `reconnect.stale` caused a broad reload;
@@ -462,16 +476,16 @@ initial implementation if it keeps the change smaller.
 
 ## Error Handling
 
-Remote-head observation errors must not fail normal sync.
+Pushed-head observation errors must not fail normal sync.
 
 - Missing ref: debug log and keep the previous observed SHA.
-- Auth or network failure: warn only after repeated failures for the same
-  remote/ref and apply backoff.
-- Invalid clone URL or branch name: debug log and skip until the next PR sync
-  updates the row.
-- Detail sync failure after a detected remote move: emit no completion event,
-  keep the queued/stale state bounded by existing detail sync retries and user
-  refresh actions.
+- Local Git inspection failure: warn only after repeated failures for the same
+  workspace/ref and apply backoff.
+- Missing upstream or branch name: debug log and skip until workspace setup or a
+  later local push configures the tracking ref.
+- Detail sync failure after a detected pushed-head change: emit no completion
+  event, keep the queued/stale state bounded by existing detail sync retries and
+  user refresh actions.
 - CI refresh failure: emit `pr_ci_refreshed` with warnings only if a response was
   persisted; otherwise rely on the existing warning/toast paths when the user
   opens or refreshes the PR.
@@ -483,18 +497,18 @@ worktree, checkout branches, update refs, or change branch upstreams.
 
 Backend tests:
 
-- Observer detects a remote SHA change via a fake `ls-remote` runner and
+- Observer detects a pushed SHA change via a fake local Git ref reader and
   enqueues one PR detail refresh for the provider-aware PR ref.
 - First observation records SHA in memory without enqueueing when it equals
   `platform_head_sha`.
 - First observation enqueues refresh when it differs from `platform_head_sha`.
-- Multiple workspaces pointing at the same remote branch dedupe remote checks
-  and do not enqueue duplicate in-flight detail syncs.
+- Multiple workspaces pointing at the same remote-tracking ref dedupe local
+  checks and do not enqueue duplicate in-flight detail syncs.
 - Issue workspace with a newly detected PR emits `workspace_pr_associated`,
   preserves the existing `workspace_status` compatibility event, and then
   observes the associated PR head.
-- Missing remote ref and transient command failure do not clear in-memory
-  observation state.
+- Missing tracking ref and transient local Git command failure do not clear
+  in-memory observation state.
 
 Server/SSE tests:
 
@@ -516,14 +530,15 @@ Frontend tests:
 
 E2E tests:
 
-- A ready PR workspace whose remote branch moves causes the active PR detail to
-  refresh without navigating away from the terminal or PR tab.
+- A ready PR workspace whose remote-tracking branch moves after push causes the
+  active PR detail to refresh without navigating away from the terminal or PR
+  tab.
 - An issue workspace that creates/pushes a branch and later gains a synced PR
   shows the PR tab after the association event.
 
 ## Acceptance Criteria
 
-- Remote PR head changes are detected without relying on local `git push`
+- Pushed PR head changes are detected without remote polling or local `git push`
   command interception.
 - PR detail sync is enqueued once per changed provider-aware PR head while work
   is already in flight.
@@ -539,8 +554,8 @@ E2E tests:
 - Replacing provider webhooks. Middleman remains local-first and pull-based.
 - Generic discovery of arbitrary Git worktrees outside middleman-managed
   workspaces.
-- A Git wrapper or Trace2 command observer. These can be added later as latency
-  optimizations, not correctness mechanisms.
+- A Git wrapper or Trace2 command observer.
+- Remote polling with `git ls-remote`, fetch, or provider branch APIs.
 - Removing broad `data_changed` invalidation in the first implementation.
 - A dedicated frontend CI slice store. Detail refresh is acceptable until store
   boundaries justify a narrower API.

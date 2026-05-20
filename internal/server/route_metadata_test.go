@@ -3,7 +3,12 @@ package server
 import (
 	"context"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
@@ -14,18 +19,33 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+var allowedAPITags = map[string]struct{}{
+	"Activity":      {},
+	"Issues":        {},
+	"Projects":      {},
+	"Pull Requests": {},
+	"Repositories":  {},
+	"Roborev":       {},
+	"Settings":      {},
+	"Stacks":        {},
+	"Sync":          {},
+	"System":        {},
+	"Workspaces":    {},
+}
+
 // collectMetadataFailures walks an OpenAPI document and returns one entry per
 // missing metadata field on every non-nil operation. The returned slice is
 // sorted so failure output is stable across test runs.
 //
 // The walker checks each operation for a non-empty Summary, a non-empty
-// OperationID, at least one non-empty Tag, and a globally-unique OperationID.
+// OperationID, exactly one non-empty Tag from the API tag taxonomy, and a
+// globally-unique OperationID.
 // It deliberately does not consult huma's internal _convenience_summary and
 // _convenience_id markers: those markers fire when an explicit value happens
 // to match what huma would auto-generate ("List issues" for GET /issues), so
 // they are not a reliable signal of "this was never set on purpose". The
-// non-empty Tag check carries that load instead, because huma never sets a
-// default tag list.
+// source-level convenience-route test enforces the registration pattern that
+// the live OpenAPI document cannot distinguish by value alone.
 func collectMetadataFailures(openAPI *huma.OpenAPI) []string {
 	var failures []string
 	seen := map[string]string{}
@@ -75,6 +95,10 @@ func collectMetadataFailures(openAPI *huma.OpenAPI) []string {
 					}
 				}
 			}
+			if len(op.Tags) > 0 && !usesKnownSingleTag(op.Tags) {
+				failures = append(failures,
+					label+": expected exactly one tag from the API tag taxonomy")
+			}
 			if op.OperationID != "" {
 				if prior, ok := seen[op.OperationID]; ok {
 					failures = append(failures,
@@ -88,9 +112,68 @@ func collectMetadataFailures(openAPI *huma.OpenAPI) []string {
 	return failures
 }
 
+func usesKnownSingleTag(tags []string) bool {
+	if len(tags) != 1 {
+		return false
+	}
+	_, ok := allowedAPITags[strings.TrimSpace(tags[0])]
+	return ok
+}
+
+func collectConvenienceRouteMetadataFailures(path string, source []byte) []string {
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, path, source, 0)
+	if err != nil {
+		return []string{fmt.Sprintf("%s: parse: %v", path, err)}
+	}
+
+	var failures []string
+	ast.Inspect(file, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		selector, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || !isHumaConvenienceMethod(selector.Sel.Name) {
+			return true
+		}
+		pkg, ok := selector.X.(*ast.Ident)
+		if !ok || pkg.Name != "huma" {
+			return true
+		}
+		for _, arg := range call.Args {
+			argCall, ok := arg.(*ast.CallExpr)
+			if !ok {
+				continue
+			}
+			ident, ok := argCall.Fun.(*ast.Ident)
+			if ok && ident.Name == "documentOperation" {
+				return true
+			}
+		}
+		pos := fset.Position(call.Pos())
+		failures = append(failures, fmt.Sprintf(
+			"%s:%d: huma.%s must use documentOperation for OpenAPI metadata",
+			path, pos.Line, selector.Sel.Name,
+		))
+		return true
+	})
+	sort.Strings(failures)
+	return failures
+}
+
+func isHumaConvenienceMethod(name string) bool {
+	switch name {
+	case "Get", "Post", "Put", "Patch", "Delete", "Head", "Options":
+		return true
+	default:
+		return false
+	}
+}
+
 // TestHumaContractMetadata asserts that every non-Hidden operation in the
-// live OpenAPI document carries an explicit Summary, at least one Tag, and a
-// unique non-empty OperationID.
+// live OpenAPI document carries an explicit Summary, exactly one known Tag,
+// and a unique non-empty OperationID.
 func TestHumaContractMetadata(t *testing.T) {
 	require := require.New(t)
 	openAPI := NewOpenAPI()
@@ -98,6 +181,25 @@ func TestHumaContractMetadata(t *testing.T) {
 	require.NotEmpty(openAPI.Paths, "OpenAPI document should expose paths")
 
 	failures := collectMetadataFailures(openAPI)
+	assert.Empty(t, failures, strings.Join(failures, "\n"))
+}
+
+func TestHumaConvenienceRoutesUseDocumentOperation(t *testing.T) {
+	require := require.New(t)
+
+	paths, err := filepath.Glob("*.go")
+	require.NoError(err)
+
+	var failures []string
+	for _, path := range paths {
+		if strings.HasSuffix(path, "_test.go") || path == "health_routes.go" {
+			continue
+		}
+		source, err := os.ReadFile(path)
+		require.NoError(err)
+		failures = append(failures,
+			collectConvenienceRouteMetadataFailures(path, source)...)
+	}
 	assert.Empty(t, failures, strings.Join(failures, "\n"))
 }
 
@@ -125,4 +227,42 @@ func TestRouteMetadataWalkerCatchesUnannotatedRoute(t *testing.T) {
 	failures := collectMetadataFailures(api.OpenAPI())
 	require.NotEmpty(failures,
 		"walker must flag unannotated routes; got no failures")
+}
+
+func TestRouteMetadataWalkerRejectsUnknownOrMultipleTags(t *testing.T) {
+	require := require.New(t)
+
+	mux := http.NewServeMux()
+	api := humago.New(mux, huma.DefaultConfig("test", "0.0.0"))
+
+	type emptyInput struct{}
+	type emptyOutput struct{}
+	huma.Get(api, "/bad-tag", func(
+		_ context.Context, _ *emptyInput,
+	) (*emptyOutput, error) {
+		return &emptyOutput{}, nil
+	}, func(op *huma.Operation) {
+		op.OperationID = "bad-tag"
+		op.Summary = "Get bad tag"
+		op.Tags = []string{"Pull Requests", "Not A Tag"}
+	})
+
+	failures := collectMetadataFailures(api.OpenAPI())
+	require.Contains(failures,
+		"GET /bad-tag: expected exactly one tag from the API tag taxonomy")
+}
+
+func TestConvenienceRouteMetadataWalkerRejectsTagOnlyCallback(t *testing.T) {
+	require := require.New(t)
+
+	source := []byte(`package server
+func (s *Server) register(api huma.API) {
+	huma.Get(api, "/tag-only", s.handler, func(op *huma.Operation) {
+		op.Tags = []string{"Issues"}
+	})
+}`)
+
+	failures := collectConvenienceRouteMetadataFailures("sample.go", source)
+	require.Contains(failures,
+		"sample.go:3: huma.Get must use documentOperation for OpenAPI metadata")
 }

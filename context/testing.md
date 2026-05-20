@@ -32,6 +32,38 @@ notice the regression:
 Regenerate OpenAPI and generated clients with `make api-generate` after Huma
 route or API type changes.
 
+## Huma API Contract
+
+Every public operation in `/api/v1/openapi.json` must have explicit OpenAPI
+metadata at the route registration site:
+
+- stable kebab-case `OperationID`;
+- short imperative `Summary`;
+- exactly one tag from the API tag taxonomy enforced in
+  `internal/server/route_metadata_test.go`.
+
+Use `documentOperation(...)` for Huma convenience helpers such as `huma.Get`
+and `huma.Post`. Use inline `Summary`, `Tags`, and `OperationID` fields for
+`huma.Register` blocks. Do not rely on Huma's generated summary or operation
+ID; those names feed checked-in generated clients, so changing an
+`OperationID` is a generated-client API change even when the HTTP path is
+unchanged.
+
+Health routes on the separate health Huma API intentionally disable OpenAPI and
+docs output. Terminal and proxy routes registered through `Adapter().Handle`
+must stay hidden or on a docs-disabled API unless they are promoted to public
+REST operations with the same metadata and generation workflow.
+
+For route metadata changes, run:
+
+```sh
+go test ./internal/server -run 'TestHumaContractMetadata|TestHumaConvenienceRoutesUseDocumentOperation|TestRouteMetadataWalker' -shuffle=on
+make api-generate
+```
+
+Then review generated Go and TypeScript client diffs for operation-name
+renames and update checked-in callers that use generated method/type names.
+
 Do not duplicate full-stack e2e tests across default-host and
 `/host/{platform_host}` route forms when the host route is only a generic
 wrapper. Add host-specific e2e coverage only for custom host logic, route

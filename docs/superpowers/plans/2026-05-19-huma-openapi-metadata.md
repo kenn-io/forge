@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make every non-Hidden operation in middleman's Huma-served OpenAPI document carry an explicit Summary, at least one Tag, and a stable, unique OperationID, and guard the invariant with a live-OpenAPI walker test.
+**Goal:** Make every non-Hidden operation in middleman's Huma-served OpenAPI document carry an explicit Summary, exactly one known Tag, and a stable, unique OperationID, and guard the invariant with live-OpenAPI and source-level tests.
 
 **Architecture:** Add a contract test in `internal/server/route_metadata_test.go` that walks the live `*huma.OpenAPI` document produced by `server.NewOpenAPI()`. Introduce a small `documentOperation` registration helper and use it (or inline `huma.Operation` fields) to attach Summary, Tags, and OperationID to every existing non-Hidden route. After the source backfill, regenerate the four checked-in API artifacts via `make api-generate` so the metadata flows into the Go client and TypeScript schema.
 
@@ -80,14 +80,8 @@ func collectMetadataFailures(openAPI *huma.OpenAPI) []string {
 			if strings.TrimSpace(op.Summary) == "" {
 				failures = append(failures, label+": missing Summary")
 			}
-			if op.Metadata["_convenience_summary"] != nil {
-				failures = append(failures, label+": auto-generated Summary")
-			}
 			if strings.TrimSpace(op.OperationID) == "" {
 				failures = append(failures, label+": missing OperationID")
-			}
-			if op.Metadata["_convenience_id"] != nil {
-				failures = append(failures, label+": auto-generated OperationID")
 			}
 			if len(op.Tags) < 1 {
 				failures = append(failures, label+": missing Tags")
@@ -97,6 +91,10 @@ func collectMetadataFailures(openAPI *huma.OpenAPI) []string {
 						failures = append(failures, label+": empty Tag")
 					}
 				}
+			}
+			if !usesKnownSingleTag(op.Tags) {
+				failures = append(failures,
+					label+": expected exactly one tag from the API tag taxonomy")
 			}
 			if op.OperationID != "" {
 				if prior, ok := seen[op.OperationID]; ok {
@@ -112,8 +110,8 @@ func collectMetadataFailures(openAPI *huma.OpenAPI) []string {
 }
 
 // TestHumaContractMetadata asserts that every non-Hidden operation in the
-// live OpenAPI document carries an explicit Summary, at least one Tag, and a
-// unique OperationID that is not the huma convenience-helper default.
+// live OpenAPI document carries an explicit Summary, exactly one known Tag,
+// and a unique OperationID.
 func TestHumaContractMetadata(t *testing.T) {
 	require := require.New(t)
 	openAPI := NewOpenAPI()
@@ -157,7 +155,7 @@ Run:
 nix run 'nixpkgs#go' -- test ./internal/server -run TestHumaContractMetadata -shuffle=on
 ```
 
-Expected: FAIL. Output contains entries like `GET /pulls: missing Summary`, `POST /pulls/{provider}/{owner}/{name}/{number}/approve: auto-generated OperationID`, `GET /version: missing Tags`.
+Expected: FAIL. Output contains entries like `GET /pulls: missing Summary`, `POST /pulls/{provider}/{owner}/{name}/{number}/approve: missing Tags`, `GET /version: missing Tags`.
 
 - [ ] **Step 3: Run the teeth-test in isolation and verify it passes**
 
@@ -1034,12 +1032,11 @@ get-settings, update-settings, add-repo, refresh-repo (and -on-host),
 delete-repo (and -on-host). All carry the Settings tag.
 
 With this commit every non-Hidden operation in /api/v1/openapi.json
-carries an explicit Summary, at least one Tag, and a unique
+carries an explicit Summary, exactly one known Tag, and a unique
 OperationID. The new TestHumaContractMetadata walks the live OpenAPI
 document and fails the build if a future change drops any of those
-three. A small teeth-test guards against the assertion becoming a
-no-op if Huma's _convenience_id/_convenience_summary marker keys ever
-move.
+three. Teeth-tests guard against the assertion becoming a no-op, and
+a source-level check keeps Huma convenience routes on documentOperation.
 EOF
 )"
 ```
@@ -1125,7 +1122,7 @@ For each match, rewrite the call site to the new OperationID-derived method name
 | `GetHostByPlatformHostIssuesByProviderByOwnerByNameByNumberWithResponse` | `GetIssueOnHostWithResponse` |
 | `PostIssuesByProviderByOwnerByNameByNumberSyncWithResponse` | `SyncIssueWithResponse` |
 | `PostHostByPlatformHostIssuesByProviderByOwnerByNameByNumberSyncWithResponse` | `SyncIssueOnHostWithResponse` |
-| `PostRepoByProviderByOwnerByNameResolveByNumberWithResponse` | `ResolveItemWithResponse` |
+| `PostRepoByProviderByOwnerByNameResolveByNumberWithResponse` | `ResolveRepoItemWithResponse` |
 | `GetActivityWithResponse` | `ListActivityWithResponse` |
 
 If the same line carries a `JSONRequestBody` type that was also renamed (for example `PostPullsByProviderByOwnerByNameByNumberMergeJSONRequestBody` → `MergePullJSONRequestBody`), rename that too.

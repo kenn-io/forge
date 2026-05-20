@@ -103,6 +103,12 @@ for diff, files, commits, file preview, or future repo-scoped provider work.
 The generated clients and `packages/ui/src/api/provider-routes.ts` should be the
 single frontend path builder for these routes.
 
+When adding or renaming provider-aware Huma routes, treat `OperationID` as a
+generated-client contract. Keep default-host and host-prefixed variants paired,
+use the same `Summary` and tag for both, and reserve the `-on-host` suffix for
+the host-prefixed operation ID. Run `make api-generate` and update generated
+client call sites in the same change.
+
 ## Frontend Threading
 
 Frontend state should keep a reusable provider ref:
@@ -130,4 +136,4 @@ Choose the smallest boundary that catches the regression:
 - optional container/live tests when fakes cannot validate provider API drift.
 
 Run Go tests with `-shuffle=on`. Regenerate OpenAPI and generated clients with
-`make api-generate` after Huma route or API type changes.
+`make api-generate` after Huma route, route metadata, or API type changes.

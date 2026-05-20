@@ -109,16 +109,16 @@ Procedure:
 - Walk `openAPI.Paths`. For each `(path, *huma.PathItem)`, walk each non-nil HTTP-method operation pointer (`Get`, `Put`, `Post`, `Delete`, `Options`, `Head`, `Patch`, `Trace`).
 - For each `*huma.Operation` found, append one entry to a `failures []string` slice for every check that does not pass:
   - `strings.TrimSpace(op.Summary) == ""` → `METHOD PATH: missing Summary`.
-  - `op.Metadata["_convenience_summary"] != nil` → `METHOD PATH: auto-generated Summary`. This is what catches auto-generated values that happen to be non-empty.
   - `strings.TrimSpace(op.OperationID) == ""` → `METHOD PATH: missing OperationID`.
-  - `op.Metadata["_convenience_id"] != nil` → `METHOD PATH: auto-generated OperationID`.
-  - `len(op.Tags) < 1` or any entry is an empty trimmed string → `METHOD PATH: missing Tags`.
+  - `len(op.Tags) < 1` → `METHOD PATH: missing Tags`.
+  - Any tag entry is an empty trimmed string → `METHOD PATH: empty Tag`.
+  - `op.Tags` is not exactly one tag from the taxonomy above → `METHOD PATH: expected exactly one tag from the API tag taxonomy`.
   - The OperationID already appears in a `seen map[string]string` populated by prior iterations → `METHOD PATH: duplicate OperationID with METHOD PATH` (the prior entry).
 - After the walk, call `assert.Empty(t, failures, strings.Join(failures, "\n"))` once. This surfaces every offending route in one failed assertion so a maintainer who breaks the test sees exactly which routes to fix and why.
 
 The test uses testify (`require` for the document build; `assert.Empty` on the final `failures` slice). It does not run per-route assertions — collecting into the slice lets one test invocation report every offender at once rather than aborting on the first.
 
-A negative-case smoke test in the same file verifies the assertion has teeth: it constructs a tiny in-process `huma.API` with one route registered via `huma.Get` and no metadata, walks it with the same helper used by the production test, and asserts the helper returns at least one failure. This guards against the test becoming a no-op if Huma changes how it marks auto-generated values.
+A negative-case smoke test in the same file verifies the assertion has teeth: it constructs a tiny in-process `huma.API` with one route registered via `huma.Get` and no metadata, walks it with the same helper used by the production test, and asserts the helper returns at least one failure. Another smoke test rejects unknown or multiple tags. A source-level AST test rejects production Huma convenience registrations (`Get`, `Post`, `Put`, `Patch`, `Delete`, `Head`, `Options`) that do not use `documentOperation`, because the live OpenAPI document cannot always distinguish an intentionally supplied summary or operation ID from Huma's generated default when the strings match.
 
 ### Source-level backfill style
 
@@ -177,7 +177,7 @@ On the order of a hundred routes are backfilled, split between `registerAPI`/`re
 - **Diff size.** The regenerated `client.gen.go` and `schema.ts` will be large because every operation's generated method/type name changes. Reviewer load is mitigated by committing the source changes in one logical commit and the regeneration in a second commit so the human-edited and machine-emitted changes can be reviewed separately.
 - **OperationID collisions.** Renaming an existing explicit OperationID can collide with another route in the same document. The test catches this, but it surfaces only after the change. Mitigation: the plan introduces the helper + the new OperationID in small batches per file (`huma_routes.go` first, then `settings_routes.go`) and runs the test after each batch.
 - **Adapter().Handle bypass.** Routes registered through `api.Adapter().Handle(op, handler)` never reach `huma.Register`, which means they never call `oapi.AddOperation` and never enter `api.OpenAPI().Paths` regardless of whether `Hidden=true` is set. The test will not see them. middleman uses this path today for the terminal upgrades and the roborev proxy, all of which are intentional. The risk is a future maintainer adding a public route via Adapter().Handle and expecting the test to police it. Mitigation: the existing AST-level guardrail (`route_registration_test.go`) already blocks raw mux registrations; the metadata test does not extend to Adapter().Handle, and that's an explicit limitation. Adding an AST check for Adapter().Handle public routes is a separate follow-up if it becomes a real problem.
-- **Huma internals shift.** If Huma changes the `Metadata["_convenience_*"]` marker key or removes it entirely, the test loses its primary signal for distinguishing auto-generated values. The negative-case smoke test catches this on the next Huma upgrade. If the marker disappears, the test falls back to checking `op.Summary != huma.GenerateSummary(method, path, response)`, but that path is not implemented in v1 because the marker is the cleaner signal.
+- **Huma internals shift.** The implementation intentionally avoids Huma's internal `Metadata["_convenience_*"]` markers because they are not a stable signal of maintainer intent when an explicit value matches Huma's default. The live OpenAPI walker enforces the public document shape, and the AST guardrail enforces use of `documentOperation` for convenience helpers.
 
 ## Open questions
 

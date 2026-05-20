@@ -34,14 +34,16 @@ type FileLockManager struct {
 
 // repoLockState holds the per-repo serialization primitives.
 //
-// The semaphore enforces exclusion between goroutines in this process.
-// The Flock enforces exclusion between this process and any other
-// middleman process holding the same on-disk lock file. Both are
-// required: gofrs/flock returns success immediately when the same
-// *Flock instance is already locked (see flock_unix.go:48), so a
-// shared Flock alone does not serialize concurrent goroutines, and
-// flock(2) on Linux locks the open file description, so two fresh
-// Flock instances in one process also fail to serialize.
+// The channel semaphore is the in-process mutex: it enforces exclusion
+// between goroutines while still allowing Acquire(ctx, ...) to return
+// promptly when ctx is canceled while waiting. The Flock enforces
+// exclusion between this process and any other middleman process holding
+// the same on-disk lock file. Both are required: gofrs/flock returns
+// success immediately when the same *Flock instance is already locked
+// (see flock_unix.go:48), so a shared Flock alone does not serialize
+// concurrent goroutines, and flock(2) on Linux locks the open file
+// description, so two fresh Flock instances in one process also fail to
+// serialize.
 type repoLockState struct {
 	sem  chan struct{}
 	file *flock.Flock

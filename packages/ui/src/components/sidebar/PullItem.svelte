@@ -4,6 +4,13 @@
   import { getStores, getHostState } from "../../context.js";
   import { timeAgo } from "../../utils/time.js";
   import { repoColor } from "../../utils/repo-color.js";
+  import { parseCIChecks, bucketCIChecks, safeDiagnosticText } from "../../utils/ci-buckets.js";
+  import {
+    warnOnUnknownConclusions,
+    warnOnMalformedCIChecksJSON,
+  } from "../../utils/ci-buckets-warn.js";
+  import CITokenCluster, { composeAriaLabel } from "../shared/CITokenCluster.svelte";
+  import CircleAlertIcon from "@lucide/svelte/icons/circle-alert";
   import Chip from "../shared/Chip.svelte";
   import GitHubLabels from "../shared/GitHubLabels.svelte";
 
@@ -106,6 +113,27 @@
       number: pr.Number,
     });
   }
+
+  const parsed = $derived(parseCIChecks(pr.CIChecksJSON));
+  const bucketed = $derived(bucketCIChecks(parsed.checks));
+
+  $effect(() => {
+    if (parsed.error !== null) {
+      warnOnMalformedCIChecksJSON(pr.CIChecksJSON, parsed.error, {
+        repo: `${pr.repo_owner}/${pr.repo_name}`,
+        number: pr.Number,
+      });
+    }
+  });
+
+  $effect(() => {
+    if (bucketed.unknown.length > 0) {
+      warnOnUnknownConclusions(bucketed.unknown, {
+        repo: `${pr.repo_owner}/${pr.repo_name}`,
+        number: pr.Number,
+      });
+    }
+  });
 </script>
 
 <button
@@ -161,24 +189,21 @@
           </svg>
         </span>
       {/if}
-      {#if pr.CIStatus === "success"}
-        <span class="ci-icon ci-icon--success" title="CI passing">
-          <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor">
-            <path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z"/>
-          </svg>
+      {#if parsed.error !== null}
+        <span
+          class="ci ci-unavailable"
+          data-testid="ci-token-unavailable"
+          title={`CI unavailable: ${safeDiagnosticText(parsed.error)}`}
+          aria-hidden="true"
+        >
+          <CircleAlertIcon size={10} strokeWidth={2.5} />
         </span>
-      {:else if pr.CIStatus === "failure"}
-        <span class="ci-icon ci-icon--failure" title="CI failing">
-          <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor">
-            <path d="M3.72 3.72a.75.75 0 011.06 0L8 6.94l3.22-3.22a.75.75 0 111.06 1.06L9.06 8l3.22 3.22a.75.75 0 11-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 01-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 010-1.06z"/>
-          </svg>
+        <span class="sr-only">CI unavailable: {safeDiagnosticText(parsed.error)}</span>
+      {:else if bucketed.all.length > 0}
+        <span class="ci" aria-hidden="true">
+          <CITokenCluster {bucketed} size="compact" pendingStyle="static" />
         </span>
-      {:else if pr.CIStatus === "pending"}
-        <span class="ci-icon ci-icon--pending" title="CI pending">
-          <svg width="10" height="10" viewBox="0 0 16 16">
-            <circle cx="8" cy="8" r="4" fill="currentColor"/>
-          </svg>
-        </span>
+        <span class="sr-only">{composeAriaLabel(bucketed)}</span>
       {/if}
       {#if pr.MergeableState === "dirty"}
         <span class="conflict-icon" title="Has merge conflicts">
@@ -353,22 +378,31 @@
     min-width: 0;
   }
 
-  .ci-icon {
-    display: flex;
+  .ci-unavailable {
+    color: var(--state-warn, var(--accent-amber, #c08a2a));
+    opacity: 0.85;
+  }
+
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .pull-item .ci {
+    display: inline-flex;
     align-items: center;
     flex-shrink: 0;
+    gap: 5px;
   }
 
-  .ci-icon--success {
-    color: var(--accent-green);
-  }
-
-  .ci-icon--failure {
-    color: var(--accent-red);
-  }
-
-  .ci-icon--pending {
-    color: var(--accent-amber);
+  :global(.mobile-main) .pull-item .ci {
+    gap: 3px;
   }
 
   .import-btn {

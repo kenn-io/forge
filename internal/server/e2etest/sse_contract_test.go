@@ -2,12 +2,14 @@ package e2etest
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -40,7 +42,14 @@ func TestSSEContractPinDeliversCachedSyncStatusFrame(t *testing.T) {
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
-	resp, err := ts.Client().Get(ts.URL + "/api/v1/events")
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(
+		ctx, http.MethodGet, ts.URL+"/api/v1/events", nil,
+	)
+	require.NoError(err)
+
+	resp, err := ts.Client().Do(req)
 	require.NoError(err)
 	defer resp.Body.Close()
 
@@ -76,6 +85,7 @@ func readFirstSSEFrame(t *testing.T, r io.Reader) (string, string) {
 			return eventType, data
 		}
 	}
+	require.NoError(t, scanner.Err())
 	require.FailNow(t, "did not read a complete SSE frame")
 	return "", ""
 }

@@ -30,24 +30,43 @@ test.describe.serial("issue description task list", () => {
     const body = page.locator(".body-section .markdown-body");
     const cb0 = body.locator('input[type="checkbox"][data-task-index="0"]');
     const cb1 = body.locator('input[type="checkbox"][data-task-index="1"]');
+    const cb0Expected = !(await cb0.isChecked());
+    const cb1Expected = !(await cb1.isChecked());
+    const checkboxMarker = (checked: boolean) => checked ? "[x]" : "[ ]";
+    const patchRoute = /\/api\/v1\/issues\/[^/]+\/[^/]+\/[^/]+\/11$/;
+    const persisted = page.waitForResponse((resp) => {
+      if (
+        resp.request().method() !== "PATCH"
+        || !patchRoute.test(resp.url())
+        || !resp.ok()
+      ) {
+        return false;
+      }
+      const body = resp.request().postData() ?? "";
+      return body.includes(
+        `${checkboxMarker(cb0Expected)} System preference detected on first launch`,
+      )
+        && body.includes(
+          `${checkboxMarker(cb1Expected)} Manual toggle in settings overrides system`,
+        );
+    }, { timeout: 5_000 });
 
-    await expect(cb0).not.toBeChecked();
     await cb0.click();
-    await expect(cb0).toBeChecked();
+    await expect(cb0).toBeChecked({ checked: cb0Expected });
     await cb1.click();
-    await expect(cb1).toBeChecked();
+    await expect(cb1).toBeChecked({ checked: cb1Expected });
 
-    await page.waitForTimeout(900);
+    await persisted;
     await page.reload();
     const reloadedBody = page.locator(".body-section .markdown-body");
     await reloadedBody.waitFor({ state: "visible" });
 
     await expect(
       reloadedBody.locator('input[type="checkbox"][data-task-index="0"]'),
-    ).toBeChecked();
+    ).toBeChecked({ checked: cb0Expected });
     await expect(
       reloadedBody.locator('input[type="checkbox"][data-task-index="1"]'),
-    ).toBeChecked();
+    ).toBeChecked({ checked: cb1Expected });
   });
 
   test("drag handle reorders a task item and persists on reload", async ({

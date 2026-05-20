@@ -9,11 +9,12 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/wesm/middleman/internal/procutil"
 )
 
 type Client struct {
@@ -103,7 +104,7 @@ func (c *Client) Ensure(ctx context.Context, session, cwd string) error {
 		return c.waitReady(ctx, session, nil, nil, nil)
 	}
 	exe, args := c.ownerCommand(exe, session, cwd, string(commandJSON))
-	cmd := exec.Command(exe, args...)
+	cmd := procutil.Command(exe, args...)
 	cmd.Env = c.ownerHelperEnvironment(os.Environ())
 	detachCommand(cmd)
 	stdout := newBoundedOutputBuffer(ownerOutputLimit)

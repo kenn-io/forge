@@ -506,6 +506,7 @@ func newServer(
 	s.registerHealthAPI(healthAPI)
 
 	api := humago.NewWithPrefix(mux, "/api/v1", apiConfig(basePath))
+	api.UseMiddleware(newResponseCompressionMiddleware(responseCompressionMinSize))
 	s.registerAPI(api)
 	if s.workspaces != nil {
 		s.registerTerminalAPI(api, tmuxCmd)

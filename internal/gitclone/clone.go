@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -465,7 +464,7 @@ func (m *Manager) git(
 func (m *Manager) gitWithInput(
 	ctx context.Context, host, dir string, input []byte, args ...string,
 ) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd := procutil.CommandContext(ctx, "git", args...)
 	if dir != "" {
 		cmd.Dir = dir
 	}

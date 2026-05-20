@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -126,10 +127,27 @@ func readTmuxRecord(t *testing.T, path string) [][]string {
 		}
 		i++
 		argv := parts[i : i+n]
+		for j := range argv {
+			argv[j] = normalizeRecordedTmuxArg(argv[j])
+		}
 		out = append(out, argv)
 		i += n
 	}
 	return out
+}
+
+func normalizeRecordedTmuxArg(arg string) string {
+	if runtime.GOOS != "windows" {
+		return arg
+	}
+	switch arg {
+	case "#session_name":
+		return "#{session_name}"
+	case "#pane_title":
+		return "#{pane_title}"
+	default:
+		return arg
+	}
 }
 
 func containsArg(argv []string, want string) bool {

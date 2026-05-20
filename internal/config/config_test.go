@@ -61,59 +61,24 @@ func setFakeGHCLIScript(t *testing.T, opts fakeGHCLIOptions) string {
 	t.Helper()
 	dir := t.TempDir()
 	argvPath := filepath.Join(dir, "argv")
-	ghPath := filepath.Join(dir, "gh")
-	script := "#!/bin/sh\n"
-	script += "printf '%s\\n' \"$*\" >> \"$FAKE_GH_ARGV\"\n"
-	if opts.SleepSeconds > 0 {
-		// exec replaces the shell so there's no orphaned child
-		// holding stdout open after the parent gets SIGKILL'd by
-		// CommandContext; without exec, cmd.Output() blocks for
-		// the full sleep duration even after the shell is dead.
-		// SleepSeconds is therefore terminal in the script: any
-		// stderr/stdout/exit configured below is unreachable when
-		// SleepSeconds > 0, by design (the test stops the helper
-		// via context timeout, not by letting the fake finish).
-		sleepBin := resolveSleepBinary(t)
-		script += fmt.Sprintf("exec %s %d\n", sleepBin, opts.SleepSeconds)
-	}
-	if opts.Stderr != "" {
-		script += "printf '%s\\n' " + shellSingleQuote(opts.Stderr) + " 1>&2\n"
-	}
-	if opts.Stdout != "" {
-		script += "printf '%s\\n' " + shellSingleQuote(opts.Stdout) + "\n"
-	}
-	script += fmt.Sprintf("exit %d\n", opts.ExitCode)
-	require.NoError(t, os.WriteFile(ghPath, []byte(script), 0o755))
-	t.Setenv("PATH", dir)
+	writeFakeGHCLI(t, dir, fakeGHCLIScript(t, opts))
 	t.Setenv("FAKE_GH_ARGV", argvPath)
 	return argvPath
 }
 
-// resolveSleepBinary returns an absolute path to a `sleep` binary,
-// looked up under the test's original PATH before we replaced it with
-// the fake-gh dir. Tests that need sleep inline it as an absolute path
-// so the fake-gh script does not depend on the runtime PATH.
-func resolveSleepBinary(t *testing.T) string {
+func setFakeGHCLIWithScript(t *testing.T, script string) string {
 	t.Helper()
-	for _, dir := range filepath.SplitList(originalTestPATH) {
-		candidate := filepath.Join(dir, "sleep")
-		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
-			return candidate
-		}
-	}
-	require.FailNow(t, fmt.Sprintf("sleep binary not found on PATH %q", originalTestPATH))
-	return ""
+	dir := t.TempDir()
+	argvPath := filepath.Join(dir, "argv")
+	writeFakeGHCLI(t, dir, script)
+	t.Setenv("FAKE_GH_ARGV", argvPath)
+	return argvPath
 }
 
-// originalTestPATH captures the test process's PATH at package init,
-// before any test mutates it via t.Setenv. Used to locate external
-// utilities the fake-gh script needs.
-var originalTestPATH = os.Getenv("PATH")
-
-// shellSingleQuote escapes s for safe inclusion inside single quotes
-// in a /bin/sh script.
-func shellSingleQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
+func writeFakeGHCLI(t *testing.T, dir, script string) {
+	t.Helper()
+	require.NoError(t, os.WriteFile(fakeGHCLIPath(dir), []byte(script), 0o755))
+	t.Setenv("PATH", dir)
 }
 
 // readFakeGHArgv returns the recorded argv strings, one per
@@ -125,11 +90,15 @@ func readFakeGHArgv(t *testing.T, path string) []string {
 		return nil
 	}
 	require.NoError(t, err)
-	raw := strings.TrimRight(string(data), "\n")
+	raw := strings.TrimRight(string(data), "\r\n")
 	if raw == "" {
 		return nil
 	}
-	return strings.Split(raw, "\n")
+	lines := strings.Split(raw, "\n")
+	for i := range lines {
+		lines[i] = strings.TrimRight(lines[i], "\r")
+	}
+	return lines
 }
 
 func TestLoadValid(t *testing.T) {
@@ -399,7 +368,7 @@ func TestMiddlemanHomeOverridesDefaultPaths(t *testing.T) {
 	t.Setenv("MIDDLEMAN_HOME", "/tmp/middleman-test")
 
 	assert.Equal(
-		"/tmp/middleman-test/config.toml",
+		filepath.FromSlash("/tmp/middleman-test/config.toml"),
 		DefaultConfigPath(),
 	)
 	assert.Equal("/tmp/middleman-test", DefaultDataDir())
@@ -411,15 +380,15 @@ func TestDefaultPathsWithoutMiddlemanHome(t *testing.T) {
 	t.Setenv("HOME", "/fakehome")
 
 	assert.Equal(
-		"/fakehome/.config/middleman/config.toml",
+		filepath.FromSlash("/fakehome/.config/middleman/config.toml"),
 		DefaultConfigPath(),
 	)
-	assert.Equal("/fakehome/.config/middleman", DefaultDataDir())
+	assert.Equal(filepath.FromSlash("/fakehome/.config/middleman"), DefaultDataDir())
 }
 
 func TestDBPath(t *testing.T) {
 	cfg := &Config{DataDir: "/tmp/middleman-test"}
-	expected := "/tmp/middleman-test/middleman.db"
+	expected := filepath.FromSlash("/tmp/middleman-test/middleman.db")
 	Assert.Equal(t, expected, cfg.DBPath())
 }
 
@@ -2463,26 +2432,9 @@ func TestGhAuthTokenForHostRetriesBareWhenOldGHRejectsHostnameFlag(t *testing.T)
 	assert := Assert.New(t)
 	require := require.New(t)
 
-	dir := t.TempDir()
-	argvPath := filepath.Join(dir, "argv")
-	ghPath := filepath.Join(dir, "gh")
-	// Older gh rejects --hostname; bare succeeds.
-	script := `#!/bin/sh
-printf '%s\n' "$*" >> "$FAKE_GH_ARGV"
-case "$*" in
-*--hostname*)
-	printf 'unknown flag: --hostname\n' 1>&2
-	exit 2
-	;;
-*)
-	printf 'gh-secret-bare\n'
-	exit 0
-	;;
-esac
-`
-	require.NoError(os.WriteFile(ghPath, []byte(script), 0o755))
-	t.Setenv("PATH", dir)
-	t.Setenv("FAKE_GH_ARGV", argvPath)
+	argvPath := setFakeGHCLIWithScript(
+		t, fakeGHCLIRejectHostnameThenBareScript(),
+	)
 
 	got := ghAuthTokenForHost("github.com")
 	assert.Equal("gh-secret-bare", got)
@@ -2511,17 +2463,7 @@ func TestGhAuthTokenForHostDoesNotRetryBareOnGHEFlagRejection(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 
-	dir := t.TempDir()
-	argvPath := filepath.Join(dir, "argv")
-	ghPath := filepath.Join(dir, "gh")
-	script := `#!/bin/sh
-printf '%s\n' "$*" >> "$FAKE_GH_ARGV"
-printf 'unknown flag: --hostname\n' 1>&2
-exit 2
-`
-	require.NoError(os.WriteFile(ghPath, []byte(script), 0o755))
-	t.Setenv("PATH", dir)
-	t.Setenv("FAKE_GH_ARGV", argvPath)
+	argvPath := setFakeGHCLIWithScript(t, fakeGHCLIRejectHostnameScript())
 
 	got := ghAuthTokenForHost("ghe.example.com")
 	assert.Empty(got)

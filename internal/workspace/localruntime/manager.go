@@ -18,6 +18,7 @@ import (
 
 	"github.com/creack/pty/v2"
 
+	"github.com/wesm/middleman/internal/procutil"
 	ptyownerruntime "github.com/wesm/middleman/internal/ptyowner/runtime"
 )
 
@@ -664,10 +665,10 @@ func (m *Manager) killTmuxSession(
 		return nil
 	}
 	args := append(command[1:], "kill-session", "-t", session)
-	cmd := exec.CommandContext(ctx, command[0], args...)
+	cmd := procutil.CommandContext(ctx, command[0], args...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
-	err := cmd.Run()
+	err := procutil.Run(ctx, cmd, "tmux subprocess capacity")
 	if err == nil || isTmuxSessionAbsent(stderr.Bytes(), err) {
 		return nil
 	}
@@ -711,12 +712,12 @@ func (m *Manager) refreshTmuxSessionClients(
 		command[1:],
 		"list-clients", "-t", session, "-F", "#{client_tty}",
 	)
-	listCmd := exec.CommandContext(ctx, command[0], listArgs...)
+	listCmd := procutil.CommandContext(ctx, command[0], listArgs...)
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	listCmd.Stdout = &stdout
 	listCmd.Stderr = &stderr
-	if err := listCmd.Run(); err != nil {
+	if err := procutil.Run(ctx, listCmd, "tmux subprocess capacity"); err != nil {
 		if isTmuxSessionAbsent(stderr.Bytes(), err) {
 			return nil
 		}
@@ -733,12 +734,14 @@ func (m *Manager) refreshTmuxSessionClients(
 			command[1:],
 			"refresh-client", "-t", client,
 		)
-		refreshCmd := exec.CommandContext(
+		refreshCmd := procutil.CommandContext(
 			ctx, command[0], refreshArgs...,
 		)
 		var refreshStderr bytes.Buffer
 		refreshCmd.Stderr = &refreshStderr
-		if err := refreshCmd.Run(); err != nil {
+		if err := procutil.Run(
+			ctx, refreshCmd, "tmux subprocess capacity",
+		); err != nil {
 			msg := strings.TrimSpace(refreshStderr.String())
 			if msg != "" {
 				err = fmt.Errorf("%w: %s", err, msg)
@@ -1516,7 +1519,7 @@ func startSession(
 	}
 
 	// Resolve the executable to an absolute path BEFORE setting
-	// cmd.Dir to the workspace worktree. exec.Command treats names
+	// cmd.Dir to the workspace worktree. procutil.Command treats names
 	// without separators as PATH lookups but treats names like
 	// "./agent" or "scripts/codex" as paths relative to cmd.Dir,
 	// which would let a malicious PR drop an executable into the
@@ -1537,7 +1540,7 @@ func startSession(
 		"cwd", cwd,
 	)
 
-	cmd := exec.Command(resolvedPath, command[1:]...)
+	cmd := procutil.Command(resolvedPath, command[1:]...)
 	if cwd != "" {
 		cmd.Dir = cwd
 	}
@@ -1931,12 +1934,22 @@ func resolveExecutable(name string) (string, error) {
 	if filepath.IsAbs(name) {
 		return name, nil
 	}
-	if !strings.ContainsRune(name, filepath.Separator) {
-		path, err := exec.LookPath(name)
-		if err != nil {
+	if !strings.ContainsAny(name, `/\`) {
+		path := procutil.ResolveBinary(name)
+		if path == name {
+			var err error
+			path, err = exec.LookPath(name)
+			if err != nil {
+				return "", fmt.Errorf(
+					"resolve session command %q via PATH: %w",
+					name, err,
+				)
+			}
+		}
+		if path == name {
 			return "", fmt.Errorf(
-				"resolve session command %q via PATH: %w",
-				name, err,
+				"resolve session command %q via PATH: not found",
+				name,
 			)
 		}
 		// LookPath joins the matched PATH entry with name; a

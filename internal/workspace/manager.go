@@ -168,12 +168,12 @@ func (m *Manager) tmuxExec(
 	ctx context.Context, extra ...string,
 ) *exec.Cmd {
 	if len(m.tmuxCmd) == 0 {
-		return exec.CommandContext(ctx, "tmux", extra...)
+		return procutil.CommandContext(ctx, "tmux", extra...)
 	}
 	args := make([]string, 0, len(m.tmuxCmd)-1+len(extra))
 	args = append(args, m.tmuxCmd[1:]...)
 	args = append(args, extra...)
-	return exec.CommandContext(ctx, m.tmuxCmd[0], args...)
+	return procutil.CommandContext(ctx, m.tmuxCmd[0], args...)
 }
 
 // Create persists a PR-backed middleman workspace.
@@ -665,7 +665,7 @@ func setBranchUpstream(
 func validateLocalBranchName(
 	ctx context.Context, dir, branch string,
 ) error {
-	cmd := exec.CommandContext(
+	cmd := procutil.CommandContext(
 		ctx, "git", "check-ref-format", "--branch", branch,
 	)
 	if dir != "" {
@@ -1742,7 +1742,7 @@ func userLoginShell() string {
 }
 
 func lookupPasswdShell(username string) string {
-	cmd := exec.Command("getent", "passwd", username)
+	cmd := procutil.Command("getent", "passwd", username)
 	out, err := procutil.Output(
 		context.Background(), cmd, "shell lookup subprocess capacity",
 	)
@@ -2153,7 +2153,7 @@ func localBranchExists(
 		"--quiet",
 		"refs/heads/"+branch,
 	)
-	err := cmd.Run()
+	err := procutil.Run(ctx, cmd, "git subprocess capacity")
 	if err == nil {
 		return true, nil
 	}
@@ -2167,7 +2167,7 @@ func localBranchExists(
 func workspaceGitCommand(
 	ctx context.Context, dir string, args ...string,
 ) *exec.Cmd {
-	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd := procutil.CommandContext(ctx, "git", args...)
 	if dir != "" {
 		cmd.Dir = dir
 	}

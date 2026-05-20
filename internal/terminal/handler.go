@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"os/exec"
 	"sync"
 	"time"
 
@@ -160,7 +159,7 @@ func (h *Handler) ServeHTTP(
 	argv := make([]string, 0, len(prefix)+3)
 	argv = append(argv, prefix...)
 	argv = append(argv, "attach-session", "-t", ws.TmuxSession)
-	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	cmd := procutil.CommandContext(ctx, argv[0], argv[1:]...)
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
 	logWebsocketDebug(
 		"workspace terminal starting tmux attach",

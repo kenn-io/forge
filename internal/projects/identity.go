@@ -17,6 +17,7 @@ import (
 	"github.com/wesm/middleman/internal/db"
 	"github.com/wesm/middleman/internal/gitenv"
 	platformpkg "github.com/wesm/middleman/internal/platform"
+	"github.com/wesm/middleman/internal/procutil"
 )
 
 type KnownPlatformHost struct {
@@ -47,7 +48,7 @@ func ResolveIdentityFromPathWithKnownPlatforms(
 	if err != nil {
 		return nil, fmt.Errorf("resolve path: %w", err)
 	}
-	cmd := exec.CommandContext(ctx, "git", "remote", "get-url", "origin")
+	cmd := procutil.CommandContext(ctx, "git", "remote", "get-url", "origin")
 	cmd.Dir = abs
 	cmd.Env = gitenv.StripAll(os.Environ())
 	out, err := cmd.Output()

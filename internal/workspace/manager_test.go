@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -20,6 +20,7 @@ import (
 	"github.com/wesm/middleman/internal/db"
 	"github.com/wesm/middleman/internal/gitclone"
 	"github.com/wesm/middleman/internal/gitenv"
+	"github.com/wesm/middleman/internal/procutil"
 	"github.com/wesm/middleman/internal/ptyowner"
 	"github.com/wesm/middleman/internal/testutil/dbtest"
 )
@@ -736,7 +737,7 @@ func configureForkPRRefs(
 
 func runWorkspaceTestGit(t *testing.T, dir string, args ...string) []byte {
 	t.Helper()
-	cmd := exec.Command("git", args...)
+	cmd := procutil.Command("git", args...)
 	cmd.Dir = dir
 	cmd.Env = append(
 		gitenv.StripAll(os.Environ()),
@@ -850,10 +851,27 @@ func readRecorderArgv(t *testing.T, path string) [][]string {
 		require.NoError(t, err)
 		i++
 		argv := parts[i : i+n]
+		for j := range argv {
+			argv[j] = normalizeRecordedTmuxArg(argv[j])
+		}
 		out = append(out, argv)
 		i += n
 	}
 	return out
+}
+
+func normalizeRecordedTmuxArg(arg string) string {
+	if runtime.GOOS != "windows" {
+		return arg
+	}
+	switch arg {
+	case "#session_name":
+		return "#{session_name}"
+	case "#pane_title":
+		return "#{pane_title}"
+	default:
+		return arg
+	}
 }
 
 func TestManagerEnsureTmuxHasSessionPrefix(t *testing.T) {

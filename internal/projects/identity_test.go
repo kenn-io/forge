@@ -10,6 +10,7 @@ import (
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/wesm/middleman/internal/gitenv"
+	"github.com/wesm/middleman/internal/procutil"
 )
 
 func TestParseRemoteURL_GitHubFormats(t *testing.T) {
@@ -208,7 +209,7 @@ func TestResolveIdentityFromPath_RequiresPath(t *testing.T) {
 }
 
 func runGit(dir string, args ...string) error {
-	cmd := exec.Command("git", args...)
+	cmd := procutil.Command("git", args...)
 	cmd.Dir = dir
 	cmd.Env = append(gitenv.StripAll(os.Environ()),
 		"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@example.com",

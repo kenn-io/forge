@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -21,6 +20,7 @@ import (
 	"github.com/wesm/middleman/internal/gitclone"
 	"github.com/wesm/middleman/internal/gitenv"
 	ghclient "github.com/wesm/middleman/internal/github"
+	"github.com/wesm/middleman/internal/procutil"
 	"github.com/wesm/middleman/internal/server"
 	"github.com/wesm/middleman/internal/testutil/dbtest"
 )
@@ -160,7 +160,7 @@ func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 
 func runGit(t *testing.T, dir string, args ...string) {
 	t.Helper()
-	cmd := exec.Command("git", append([]string{"-c", "init.defaultBranch=main"}, args...)...)
+	cmd := procutil.Command("git", append([]string{"-c", "init.defaultBranch=main"}, args...)...)
 	cmd.Dir = dir
 	cmd.Env = append(gitenv.StripAll(os.Environ()), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
 	out, err := cmd.CombinedOutput()

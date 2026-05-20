@@ -284,7 +284,7 @@ func TestWorktreeDiffRendersUntrackedSymlinkTarget(t *testing.T) {
 	runWorkspaceTestGit(t, work, "add", ".")
 	runWorkspaceTestGit(t, work, "commit", "-m", "init")
 	require.NoError(os.WriteFile(secret, []byte("do not expose\n"), 0o644))
-	require.NoError(os.Symlink(secret, filepath.Join(work, "secret-link")))
+	requireSymlink(t, secret, filepath.Join(work, "secret-link"))
 
 	diff, ok, err := WorktreeDiff(
 		t.Context(), work, WorktreeDiffBaseHead, false,
@@ -312,11 +312,23 @@ func TestOpenRegularUntrackedFileRejectsSymlinks(t *testing.T) {
 	secret := filepath.Join(root, "secret.txt")
 	link := filepath.Join(root, "secret-link")
 	require.NoError(os.WriteFile(secret, []byte("do not expose\n"), 0o644))
-	require.NoError(os.Symlink(secret, link))
+	requireSymlink(t, secret, link)
 
 	file, _, err := openRegularUntrackedFile(link)
 	require.Error(err)
 	require.Nil(file)
+}
+
+func requireSymlink(t *testing.T, oldname string, newname string) {
+	t.Helper()
+	err := os.Symlink(oldname, newname)
+	if err != nil && strings.Contains(
+		err.Error(),
+		"A required privilege is not held by the client",
+	) {
+		t.Skipf("symlink privilege unavailable: %v", err)
+	}
+	require.NoError(t, err)
 }
 
 func TestWorktreeDiffMarksLargeUntrackedFileBinary(t *testing.T) {

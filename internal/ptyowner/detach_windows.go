@@ -5,6 +5,8 @@ package ptyowner
 import (
 	"os/exec"
 	"syscall"
+
+	"github.com/wesm/middleman/internal/procutil"
 )
 
 const (
@@ -13,6 +15,7 @@ const (
 )
 
 func detachCommand(cmd *exec.Cmd) {
+	procutil.ConfigureBackgroundCommand(cmd)
 	if cmd.SysProcAttr == nil {
 		cmd.SysProcAttr = &syscall.SysProcAttr{}
 	}

@@ -2,11 +2,11 @@ package testutil
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"github.com/wesm/middleman/internal/procutil"
 	"github.com/wesm/middleman/internal/testutil/dbtest"
 )
 
@@ -26,7 +26,7 @@ func TestSetupDiffRepoDoesNotLeakIntoHostGitDir(t *testing.T) {
 	r := require.New(t)
 
 	host := t.TempDir()
-	initCmd := exec.Command("git", "init", "-q", "-b", "main", host)
+	initCmd := procutil.Command("git", "init", "-q", "-b", "main", host)
 	initCmd.Env = []string{
 		"PATH=" + os.Getenv("PATH"),
 		"HOME=" + os.Getenv("HOME"),

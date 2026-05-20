@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -29,10 +30,18 @@ func TestCollectProviderTokensInvokesGHWithHostnameForEnterprise(t *testing.T) {
 	dir := t.TempDir()
 	argvPath := filepath.Join(dir, "argv")
 	ghPath := filepath.Join(dir, "gh")
+	if runtime.GOOS == "windows" {
+		ghPath += ".cmd"
+	}
 	const fakeToken = "ghe-token-from-gh"
 	script := "#!/bin/sh\n" +
 		"printf '%s\\n' \"$*\" >> \"$FAKE_GH_ARGV\"\n" +
 		"printf '%s\\n' '" + fakeToken + "'\n"
+	if runtime.GOOS == "windows" {
+		script = "@echo off\r\n" +
+			"echo %*>>\"%FAKE_GH_ARGV%\"\r\n" +
+			"echo " + fakeToken + "\r\n"
+	}
 	require.NoError(os.WriteFile(ghPath, []byte(script), 0o755))
 	t.Setenv("PATH", dir)
 	t.Setenv("FAKE_GH_ARGV", argvPath)
@@ -66,8 +75,11 @@ name = "widget"
 	data, err := os.ReadFile(argvPath)
 	require.NoError(err)
 	invocations := strings.Split(
-		strings.TrimRight(string(data), "\n"), "\n",
+		strings.TrimRight(string(data), "\r\n"), "\n",
 	)
+	for i := range invocations {
+		invocations[i] = strings.TrimRight(invocations[i], "\r")
+	}
 	assert.Contains(invocations, "auth token --hostname ghe.example.com",
 		"expected gh auth token --hostname ghe.example.com invocation; got: %v",
 		invocations,

@@ -10,10 +10,11 @@ import (
 	"go/token"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
+
+	"github.com/wesm/middleman/internal/procutil"
 )
 
 const diagnosticMessage = "non-Huma HTTP route registration is not allowed; register API routes through the Huma route layer"
@@ -317,7 +318,7 @@ type listedPackageError struct {
 }
 
 func packageGoFiles(pattern string) ([]string, error) {
-	cmd := exec.Command("go", "list", "-json", pattern)
+	cmd := procutil.Command("go", "list", "-json", pattern)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()

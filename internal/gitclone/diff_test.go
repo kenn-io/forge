@@ -4,7 +4,6 @@ package gitclone
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -12,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/wesm/middleman/internal/gitenv"
+	"github.com/wesm/middleman/internal/procutil"
 )
 
 func TestDiff(t *testing.T) {
@@ -186,7 +186,7 @@ func TestDiffFilesEmpty(t *testing.T) {
 
 func getSHA(t *testing.T, dir, ref string) string {
 	t.Helper()
-	cmd := exec.Command("git", "-C", dir, "rev-parse", ref)
+	cmd := procutil.Command("git", "-C", dir, "rev-parse", ref)
 	cmd.Env = gitenv.StripAll(os.Environ())
 	out, err := cmd.Output()
 	require.NoError(t, err)

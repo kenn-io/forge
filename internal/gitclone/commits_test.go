@@ -2,7 +2,6 @@ package gitclone
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -10,11 +9,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/wesm/middleman/internal/gitenv"
+	"github.com/wesm/middleman/internal/procutil"
 )
 
 func commitTestRun(t *testing.T, dir string, name string, args ...string) {
 	t.Helper()
-	cmd := exec.Command(name, args...)
+	cmd := procutil.Command(name, args...)
 	cmd.Dir = dir
 	cmd.Env = append(gitenv.StripAll(os.Environ()),
 		"GIT_CONFIG_GLOBAL="+os.DevNull,
@@ -65,7 +65,7 @@ func setupCommitTestRepo(t *testing.T) (string, string, string) {
 
 func gitSHA(t *testing.T, dir, ref string) string {
 	t.Helper()
-	cmd := exec.Command("git", "rev-parse", ref)
+	cmd := procutil.Command("git", "rev-parse", ref)
 	cmd.Dir = dir
 	cmd.Env = append(gitenv.StripAll(os.Environ()), "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_SYSTEM="+os.DevNull)
 	out, err := cmd.Output()

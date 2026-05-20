@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/wesm/middleman/internal/config"
+	"github.com/wesm/middleman/internal/procutil"
 	_ "modernc.org/sqlite"
 )
 
@@ -621,7 +622,7 @@ func processStartTime(pid int) (string, error) {
 	if pid <= 0 {
 		return "", os.ErrProcessDone
 	}
-	out, err := exec.Command("ps", "-p", strconv.Itoa(pid), "-o", "lstart=").Output()
+	out, err := procutil.Command("ps", "-p", strconv.Itoa(pid), "-o", "lstart=").Output()
 	startedAt := strings.TrimSpace(string(out))
 	if startedAt == "" {
 		return "", os.ErrProcessDone
@@ -735,7 +736,7 @@ func removeSQLiteFiles(path string) error {
 }
 
 func startCommand(ctx context.Context, spec commandSpec) (*exec.Cmd, error) {
-	cmd := exec.CommandContext(ctx, spec.name, spec.args...)
+	cmd := procutil.CommandContext(ctx, spec.name, spec.args...)
 	cmd.Env = spec.env
 	cmd.Dir = spec.dir
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}

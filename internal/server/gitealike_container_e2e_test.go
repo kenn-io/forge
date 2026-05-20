@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -19,6 +18,7 @@ import (
 	"github.com/wesm/middleman/internal/platform"
 	platformforgejo "github.com/wesm/middleman/internal/platform/forgejo"
 	platformgitea "github.com/wesm/middleman/internal/platform/gitea"
+	"github.com/wesm/middleman/internal/procutil"
 	"github.com/wesm/middleman/internal/testutil/dbtest"
 )
 
@@ -242,7 +242,7 @@ func runGiteaLikeContainerFixture(
 	require.NoError(err)
 
 	manifestPath := filepath.Join(t.TempDir(), cfg.ScriptDir+"-manifest.json")
-	cmd := exec.CommandContext(
+	cmd := procutil.CommandContext(
 		ctx,
 		filepath.Join(repoRoot(t), "scripts/e2e", cfg.ScriptDir, "bootstrap.sh"),
 		manifestPath,

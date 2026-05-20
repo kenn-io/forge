@@ -183,15 +183,15 @@ dev-ephemeral-stop:
 
 # Run tests
 test: ensure-embed-dir ensure-tmp-dir
-	$(GOTESTSUM)=tmp/test-output.json -- ./... -shuffle=on
+	$(GOTESTSUM)=tmp/test-output.json -- -p 1 ./... -shuffle=on
 
 # Run fast tests only
 test-short: ensure-embed-dir ensure-tmp-dir
-	$(GOTESTSUM)=tmp/test-short-output.json -- ./... -short -shuffle=on
+	$(GOTESTSUM)=tmp/test-short-output.json -- -p 1 ./... -short -shuffle=on
 
 # Run integration tests that execute real git commands (excluded from test-short)
 test-integration: ensure-embed-dir ensure-tmp-dir
-	$(GOTESTSUM)=tmp/test-integration-output.json -- -tags integration ./... -shuffle=on
+	$(GOTESTSUM)=tmp/test-integration-output.json -- -p 1 -tags integration ./... -shuffle=on
 
 # Report per-package wall time for the slow race-test packages.
 race-times: ensure-embed-dir

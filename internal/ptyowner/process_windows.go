@@ -3,19 +3,21 @@
 package ptyowner
 
 import (
+	"context"
 	"os"
-	"os/exec"
 	"strconv"
 
 	gopty "github.com/aymanbagabas/go-pty"
+	"github.com/wesm/middleman/internal/procutil"
 )
 
 func configureOwnerCommand(*gopty.Cmd) {}
 
 func killOwnerProcess(process *os.Process) {
-	err := exec.Command(
+	cmd := procutil.Command(
 		"taskkill", "/T", "/F", "/PID", strconv.Itoa(process.Pid),
-	).Run()
+	)
+	err := procutil.Run(context.Background(), cmd, "taskkill subprocess capacity")
 	if err != nil {
 		_ = process.Kill()
 	}

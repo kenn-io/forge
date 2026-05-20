@@ -7,12 +7,12 @@ import (
 	"net"
 	"net/url"
 	"os"
-	"os/exec"
 	"strings"
 
 	"github.com/wesm/middleman/internal/db"
 	"github.com/wesm/middleman/internal/gitenv"
 	ghclient "github.com/wesm/middleman/internal/github"
+	"github.com/wesm/middleman/internal/procutil"
 )
 
 type PRAssociationUpdate struct {
@@ -286,7 +286,7 @@ func gitOutput(
 	dir string,
 	args ...string,
 ) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd := procutil.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
 	cmd.Env = append(
 		gitenv.StripAll(os.Environ()),

@@ -34,6 +34,10 @@ linters:
           msg: Do not create backend timezone conversions outside tests.
         - pattern: '^db\.Open$'
           msg: Use internal/testutil/dbtest fixtures in tests instead of db.Open.
+        - pattern: '^exec\.Command$'
+          msg: Use internal/procutil.Command so Windows subprocesses do not flash console windows.
+        - pattern: '^exec\.CommandContext$'
+          msg: Use internal/procutil.CommandContext so Windows subprocesses do not flash console windows.
       analyze-types: true
   exclusions:
     generated: lax

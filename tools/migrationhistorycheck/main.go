@@ -5,10 +5,11 @@ import (
 	"io"
 	"maps"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
+
+	"github.com/wesm/middleman/internal/procutil"
 )
 
 const (
@@ -240,7 +241,7 @@ func getenvDefault(key, fallback string) string {
 }
 
 func git(args ...string) (string, error) {
-	cmd := exec.Command("git", args...)
+	cmd := procutil.Command("git", args...)
 	if gitEnv != nil {
 		cmd.Env = gitEnv
 	}

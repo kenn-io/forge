@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -16,6 +17,7 @@ import (
 	"github.com/creack/pty/v2"
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/wesm/middleman/internal/procutil"
 	ptyownerruntime "github.com/wesm/middleman/internal/ptyowner/runtime"
 )
 
@@ -295,6 +297,10 @@ func TestTmuxSessionNameUsesOpaqueTargetHash(t *testing.T) {
 }
 
 func TestManagerLaunchCommandCleansUpWhenOwnerMarkingFails(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("tmux owner shell wrapper uses Unix shell semantics")
+	}
+
 	assert := Assert.New(t)
 	require := require.New(t)
 	dir := t.TempDir()
@@ -340,7 +346,7 @@ exit 0
 
 	launch, err := mgr.launchCommand(agent, "ws-1", t.TempDir())
 	require.NoError(err)
-	cmd := exec.Command(launch.Command[0], launch.Command[1:]...)
+	cmd := procutil.Command(launch.Command[0], launch.Command[1:]...)
 	cmd.Env = append(os.Environ(), "TMUX_RECORD="+record)
 
 	err = cmd.Run()
@@ -859,7 +865,7 @@ func TestSessionWatchLeavesOutputOpenForDrain(t *testing.T) {
 	_, err = writeEnd.WriteString("final output")
 	require.NoError(err)
 
-	cmd := exec.Command("sh", "-c", "exit 0")
+	cmd := procutil.Command("sh", "-c", "exit 0")
 	require.NoError(cmd.Start())
 	outputDone := make(chan struct{})
 	s := &session{
@@ -886,7 +892,7 @@ func TestSessionWatchClosesPTYAfterPostExitDrainTimeout(t *testing.T) {
 	defer readEnd.Close()
 	defer writeEnd.Close()
 
-	cmd := exec.Command("sh", "-c", "exit 0")
+	cmd := procutil.Command("sh", "-c", "exit 0")
 	require.NoError(cmd.Start())
 	outputDone := make(chan struct{})
 	s := &session{
@@ -1551,15 +1557,30 @@ func TestResolveExecutableRejectsRelativePaths(t *testing.T) {
 	assert := Assert.New(t)
 
 	// Absolute path: pass through unchanged.
-	got, err := resolveExecutable("/usr/local/bin/codex")
+	absCommand := "/usr/local/bin/codex"
+	if runtime.GOOS == "windows" {
+		absCommand = `C:\tools\codex.exe`
+	}
+	got, err := resolveExecutable(absCommand)
 	require.NoError(err)
-	assert.Equal("/usr/local/bin/codex", got)
+	assert.Equal(absCommand, got)
 
-	// PATH-resolvable: returns the full path. /bin/sh is present
-	// on every supported platform.
-	got, err = resolveExecutable("sh")
+	// PATH-resolvable: returns the full path.
+	exeName, exePath := writeFakeRuntimeTool(t, t.TempDir(), "fake-runtime-tool")
+	t.Setenv("PATH", filepath.Dir(exePath))
+	got, err = resolveExecutable(exeName)
 	require.NoError(err)
 	assert.True(filepath.IsAbs(got), "expected absolute path, got %q", got)
+	if runtime.GOOS == "windows" {
+		assert.True(
+			strings.EqualFold(exePath, got),
+			"expected %q, got %q",
+			exePath,
+			got,
+		)
+	} else {
+		assert.Equal(exePath, got)
+	}
 
 	// Relative paths must be rejected.
 	for _, rel := range []string{
@@ -1591,8 +1612,7 @@ func TestResolveExecutableForcesAbsoluteFromRelativePATH(t *testing.T) {
 	dir := t.TempDir()
 	binDir := filepath.Join(dir, "bin")
 	require.NoError(os.MkdirAll(binDir, 0o755))
-	exe := filepath.Join(binDir, "fake-runtime-tool")
-	require.NoError(os.WriteFile(exe, []byte("#!/bin/sh\nexit 0\n"), 0o755))
+	exeName, exe := writeFakeRuntimeTool(t, binDir, "fake-runtime-tool")
 
 	t.Chdir(dir)
 	t.Setenv("PATH", "bin")
@@ -1602,7 +1622,7 @@ func TestResolveExecutableForcesAbsoluteFromRelativePATH(t *testing.T) {
 	// rebinding is dangerous, so verify the absolute fallback runs.
 	t.Setenv("GODEBUG", "execerrdot=0")
 
-	got, err := resolveExecutable("fake-runtime-tool")
+	got, err := resolveExecutable(exeName)
 	require.NoError(err)
 	assert.True(
 		filepath.IsAbs(got),
@@ -1610,7 +1630,42 @@ func TestResolveExecutableForcesAbsoluteFromRelativePATH(t *testing.T) {
 			"inside cmd.Dir = the workspace worktree)",
 		got,
 	)
-	assert.Equal(exe, got)
+	if runtime.GOOS == "windows" {
+		assert.True(
+			strings.EqualFold(exe, got),
+			"expected %q, got %q",
+			exe,
+			got,
+		)
+	} else {
+		assert.Equal(exe, got)
+	}
+}
+
+func writeFakeRuntimeTool(
+	t *testing.T,
+	dir string,
+	name string,
+) (string, string) {
+	t.Helper()
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	if runtime.GOOS == "windows" {
+		t.Setenv("PATHEXT", ".COM;.EXE;.BAT;.CMD")
+		path := filepath.Join(dir, name+".cmd")
+		require.NoError(t, os.WriteFile(
+			path,
+			[]byte("@echo off\r\nexit /b 0\r\n"),
+			0o755,
+		))
+		return name, path
+	}
+	path := filepath.Join(dir, name)
+	require.NoError(t, os.WriteFile(
+		path,
+		[]byte("#!/bin/sh\nexit 0\n"),
+		0o755,
+	))
+	return name, path
 }
 
 // TestSessionEnvironmentStripsCredentials verifies that the
@@ -1702,7 +1757,7 @@ func TestHelperProcess(t *testing.T) {
 		if len(helperArgs) < 2 {
 			os.Exit(2)
 		}
-		child := exec.Command(
+		child := procutil.Command(
 			os.Args[0], "-test.run=TestHelperProcess", "--", "sleep",
 		)
 		if err := child.Start(); err != nil {

@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -26,6 +25,7 @@ import (
 	"github.com/wesm/middleman/internal/gitclone"
 	"github.com/wesm/middleman/internal/gitenv"
 	"github.com/wesm/middleman/internal/platform"
+	"github.com/wesm/middleman/internal/procutil"
 	"github.com/wesm/middleman/internal/testutil/dbtest"
 )
 
@@ -39,7 +39,7 @@ func setupBareRemoteForSyncTest(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	remote := filepath.Join(dir, "remote.git")
-	cmd := exec.Command("git", "init", "--bare", "--initial-branch=main", remote)
+	cmd := procutil.Command("git", "init", "--bare", "--initial-branch=main", remote)
 	cmd.Dir = dir
 	cmd.Env = append(gitenv.StripAll(os.Environ()),
 		"GIT_CONFIG_GLOBAL="+os.DevNull,

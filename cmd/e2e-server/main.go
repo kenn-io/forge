@@ -11,7 +11,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"slices"
@@ -25,6 +24,7 @@ import (
 	"github.com/wesm/middleman/internal/gitenv"
 	ghclient "github.com/wesm/middleman/internal/github"
 	"github.com/wesm/middleman/internal/platform"
+	"github.com/wesm/middleman/internal/procutil"
 	"github.com/wesm/middleman/internal/server"
 	"github.com/wesm/middleman/internal/stacks"
 	"github.com/wesm/middleman/internal/testutil"
@@ -171,7 +171,7 @@ func e2eGit(dir string, args ...string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("git: no args")
 	}
-	cmd := exec.Command("git", args...)
+	cmd := procutil.Command("git", args...)
 	cmd.Dir = dir
 	cmd.Env = append(gitenv.StripAll(os.Environ()),
 		"GIT_TERMINAL_PROMPT=0",

@@ -3,13 +3,13 @@ package main
 import (
 	"bytes"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/wesm/middleman/internal/procutil"
 )
 
 func TestAllowsNewMigration(t *testing.T) {
@@ -114,7 +114,7 @@ func gitCommandIn(t *testing.T, dir string, args ...string) {
 	t.Helper()
 
 	gitArgs := append([]string{"-c", "core.hooksPath=/dev/null"}, args...)
-	cmd := exec.Command("git", gitArgs...)
+	cmd := procutil.Command("git", gitArgs...)
 	cmd.Dir = dir
 	cmd.Env = cleanGitEnv(os.Environ())
 	output, err := cmd.CombinedOutput()

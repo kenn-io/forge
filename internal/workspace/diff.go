@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -817,7 +816,7 @@ func worktreeGitOutputWithInput(
 	if dir == "" {
 		return nil, errors.New("empty worktree dir")
 	}
-	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd := procutil.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
 	if input != nil {
 		cmd.Stdin = bytes.NewReader(input)

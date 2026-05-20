@@ -19,6 +19,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 	platformpkg "github.com/wesm/middleman/internal/platform"
+	"github.com/wesm/middleman/internal/procutil"
 )
 
 const (
@@ -1155,7 +1156,7 @@ func appendTokenEnvName(names []string, name string) []string {
 	return append(names, name)
 }
 
-var execCommand = exec.CommandContext
+var execCommand = procutil.CommandContext
 
 // ghAuthExecTimeout bounds each gh subprocess invocation. gh auth
 // token is a local lookup and returns in milliseconds; 5s is generous

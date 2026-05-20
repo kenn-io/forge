@@ -48,6 +48,7 @@ import (
 	forgejoplatform "github.com/wesm/middleman/internal/platform/forgejo"
 	giteaplatform "github.com/wesm/middleman/internal/platform/gitea"
 	"github.com/wesm/middleman/internal/platform/gitealike"
+	"github.com/wesm/middleman/internal/procutil"
 	"github.com/wesm/middleman/internal/ptyowner"
 	"github.com/wesm/middleman/internal/stacks"
 	"github.com/wesm/middleman/internal/testutil"
@@ -11487,7 +11488,7 @@ func TestAPIActivityStartupRepairsLegacyTimestampStorage(t *testing.T) {
 
 func runGit(t *testing.T, dir string, args ...string) {
 	t.Helper()
-	cmd := exec.Command("git", append([]string{"-c", "init.defaultBranch=main"}, args...)...)
+	cmd := procutil.Command("git", append([]string{"-c", "init.defaultBranch=main"}, args...)...)
 	cmd.Dir = dir
 	cmd.Env = append(gitenv.StripAll(os.Environ()), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
 	out, err := cmd.CombinedOutput()
@@ -11496,7 +11497,7 @@ func runGit(t *testing.T, dir string, args ...string) {
 
 func testGitSHA(t *testing.T, dir, ref string) string {
 	t.Helper()
-	cmd := exec.Command("git", "rev-parse", ref)
+	cmd := procutil.Command("git", "rev-parse", ref)
 	cmd.Dir = dir
 	cmd.Env = append(gitenv.StripAll(os.Environ()), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
 	out, err := cmd.Output()
@@ -12946,7 +12947,7 @@ func TestWorkspaceCreatesRustPtyManagerSessionE2E(t *testing.T) {
 		Tmux: config.Tmux{
 			Command: []string{filepath.Join(t.TempDir(), "missing-tmux")},
 		},
-		Shell: config.Shell{Command: rustPtyManagerShellCommandForTest()},
+		Shell: config.Shell{Command: rustPtyManagerShellCommandForTest(t)},
 	}
 	fixture := setupWorkspaceServerFixtureWithOptions(t, cfg, ServerOptions{
 		PtyOwnerDir:         ptyOwnerDir,
@@ -12971,7 +12972,7 @@ func TestWorkspaceCreatesRustPtyManagerSessionE2E(t *testing.T) {
 
 	if runtime.GOOS == "windows" {
 		workspaceTerminalConnWriteRead(
-			t, ctx, conn, "Write-Output rust-owner-one\r", "rust-owner-one",
+			t, ctx, conn, "rust-owner-one\r", "echo:rust-owner-one",
 		)
 	} else {
 		workspaceTerminalConnWriteRead(
@@ -13269,9 +13270,11 @@ func gitLocalRemoteURL(path string) string {
 	return (&url.URL{Scheme: "file", Path: slashPath}).String()
 }
 
-func rustPtyManagerShellCommandForTest() []string {
+func rustPtyManagerShellCommandForTest(t *testing.T) []string {
+	t.Helper()
 	if runtime.GOOS == "windows" {
-		return []string{"powershell.exe", "-NoLogo", "-NoProfile", "-NoExit"}
+		t.Setenv("MIDDLEMAN_SERVER_RUNTIME_HELPER", "1")
+		return serverRuntimeHelperCommand("echo")
 	}
 	return []string{"/bin/sh"}
 }
@@ -13284,7 +13287,7 @@ func buildRustPtyManagerForTest(t *testing.T) string {
 		t.Skip("cargo not available")
 	}
 	root := repoRootForTest(t)
-	cmd := exec.Command(cargo, "build", "-p", "middleman-pty-manager")
+	cmd := procutil.Command(cargo, "build", "-p", "middleman-pty-manager")
 	cmd.Dir = root
 	out, err := cmd.CombinedOutput()
 	require.NoError(t, err, string(out))
@@ -13759,6 +13762,10 @@ exit 0
 }
 
 func TestServerStartupReapsUnrecordedRuntimeTmuxSessionE2E(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("runtime tmux startup cleanup is Unix-only")
+	}
+
 	require := require.New(t)
 	assert := Assert.New(t)
 	dir := t.TempDir()
@@ -13832,6 +13839,10 @@ exit 0
 func TestWorkspaceResponseProbesStoredRuntimeTmuxSessionWithoutBaseE2E(
 	t *testing.T,
 ) {
+	if runtime.GOOS == "windows" {
+		t.Skip("stored runtime tmux probing is Unix-only")
+	}
+
 	require := require.New(t)
 	assert := Assert.New(t)
 	dir := t.TempDir()
@@ -16106,7 +16117,7 @@ func TestServerPtyOwnerHelperProcess(t *testing.T) {
 
 func gitOutput(t *testing.T, dir string, args ...string) string {
 	t.Helper()
-	cmd := exec.Command("git", args...)
+	cmd := procutil.Command("git", args...)
 	cmd.Dir = dir
 	cmd.Env = append(
 		gitenv.StripAll(os.Environ()),

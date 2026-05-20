@@ -6,6 +6,7 @@ require (
 	code.gitea.io/sdk/gitea v0.25.0
 	codeberg.org/mvdkleijn/forgejo-sdk/forgejo/v3 v3.0.0
 	github.com/BurntSushi/toml v1.6.0
+	github.com/andybalholm/brotli v1.2.0
 	github.com/aymanbagabas/go-pty v0.2.2
 	github.com/cenkalti/backoff/v5 v5.0.3
 	github.com/coder/websocket v1.8.14
@@ -14,6 +15,7 @@ require (
 	github.com/gofrs/flock v0.13.0
 	github.com/golang-migrate/migrate/v4 v4.19.1
 	github.com/google/go-github/v84 v84.0.0
+	github.com/klauspost/compress v1.18.5
 	github.com/oapi-codegen/runtime v1.3.1
 	github.com/shurcooL/githubv4 v0.0.0-20260209031235-2402fdf4a9ed
 	github.com/sourcegraph/go-diff v0.7.0
@@ -114,7 +116,6 @@ require (
 	github.com/inhies/go-bytesize v0.0.0-20220417184213-4913239db9cf // indirect
 	github.com/jonboulle/clockwork v0.5.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
-	github.com/klauspost/compress v1.18.5 // indirect
 	github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 // indirect
 	github.com/magiconair/properties v1.8.10 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect

@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/wesm/middleman/internal/db"
 	"github.com/wesm/middleman/internal/gitenv"
+	"github.com/wesm/middleman/internal/procutil"
 )
 
 // TestW1SliceAGate is the falsifiable capability gate from the convergence
@@ -760,7 +761,7 @@ func TestInitLocalOnlyGitRepoIgnoresInheritedGitEnv(t *testing.T) {
 	assert := Assert.New(t)
 
 	host := t.TempDir()
-	initCmd := exec.Command("git", "init", "-q", "-b", "main", host)
+	initCmd := procutil.Command("git", "init", "-q", "-b", "main", host)
 	initCmd.Env = gitenv.StripAll(os.Environ())
 	require.NoError(initCmd.Run(), "seed host repo")
 
@@ -784,7 +785,7 @@ func TestInitLocalOnlyGitRepoIgnoresInheritedGitEnv(t *testing.T) {
 // initLocalOnlyGitRepo runs `git init` in dir without configuring any remote,
 // matching the no-`gh` Add Existing path.
 func initLocalOnlyGitRepo(dir string) error {
-	cmd := exec.Command("git", "init", "-q")
+	cmd := procutil.Command("git", "init", "-q")
 	cmd.Dir = dir
 	cmd.Env = gitenv.StripAll(os.Environ())
 	if err := cmd.Run(); err != nil {

@@ -3,15 +3,16 @@
 package localruntime
 
 import (
-	"os/exec"
 	"strconv"
+
+	"github.com/wesm/middleman/internal/procutil"
 )
 
 func processAlive(pid int) bool {
 	if pid <= 0 {
 		return false
 	}
-	cmd := exec.Command(
+	cmd := procutil.Command(
 		"powershell",
 		"-NoProfile",
 		"-Command",

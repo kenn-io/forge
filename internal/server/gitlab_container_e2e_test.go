@@ -8,7 +8,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -22,6 +21,7 @@ import (
 	ghclient "github.com/wesm/middleman/internal/github"
 	"github.com/wesm/middleman/internal/platform"
 	platformgitlab "github.com/wesm/middleman/internal/platform/gitlab"
+	"github.com/wesm/middleman/internal/procutil"
 	"github.com/wesm/middleman/internal/testutil/dbtest"
 )
 
@@ -100,7 +100,7 @@ func TestGitLabContainerE2E(t *testing.T) {
 	require.NoError(err)
 
 	manifestPath := filepath.Join(t.TempDir(), "gitlab-manifest.json")
-	cmd := exec.CommandContext(
+	cmd := procutil.CommandContext(
 		ctx,
 		filepath.Join(repoRoot(t), "scripts/e2e/gitlab/bootstrap.sh"),
 		manifestPath,

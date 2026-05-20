@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/wesm/middleman/internal/gitenv"
+	"github.com/wesm/middleman/internal/procutil"
 )
 
 // setupTestRepo creates a bare "remote" repo with one commit and returns
@@ -43,7 +44,7 @@ func commitAndPush(t *testing.T, work, file, content, msg string) string {
 	run(t, work, "git", "add", ".")
 	run(t, work, "git", "commit", "-m", msg)
 	run(t, work, "git", "push", "origin", "main")
-	cmd := exec.Command("git", "-C", work, "rev-parse", "HEAD")
+	cmd := procutil.Command("git", "-C", work, "rev-parse", "HEAD")
 	cmd.Env = filteredGitTestEnv()
 	out, err := cmd.Output()
 	require.NoError(t, err)
@@ -59,7 +60,7 @@ func filteredGitTestEnv() []string {
 
 func run(t *testing.T, dir string, name string, args ...string) {
 	t.Helper()
-	cmd := exec.Command(name, args...)
+	cmd := procutil.Command(name, args...)
 	cmd.Dir = dir
 	cmd.Env = filteredGitTestEnv()
 	out, err := cmd.CombinedOutput()
@@ -333,7 +334,7 @@ func TestEnsureCloneRestoresOriginHead(t *testing.T) {
 	clonePath, err := mgr.ClonePath("github.com", "testowner", "testrepo")
 	require.NoError(err)
 	run(t, clonePath, "git", "symbolic-ref", "--delete", "refs/remotes/origin/HEAD")
-	_, err = exec.Command(
+	_, err = procutil.Command(
 		"git", "-C", clonePath, "symbolic-ref", "refs/remotes/origin/HEAD",
 	).Output()
 	require.Error(err)
@@ -397,7 +398,7 @@ func TestEnsureCloneToleratesUnresolvedRemoteHead(t *testing.T) {
 // is unset; `git config --get-all` signals that with exit code 1.
 func getFetchRefspecs(t *testing.T, clonePath string) []string {
 	t.Helper()
-	cmd := exec.Command("git", "-C", clonePath,
+	cmd := procutil.Command("git", "-C", clonePath,
 		"config", "--get-all", "remote.origin.fetch")
 	cmd.Env = append(gitenv.StripAll(os.Environ()),
 		"GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_SYSTEM="+os.DevNull)
@@ -420,7 +421,7 @@ func getFetchRefspecs(t *testing.T, clonePath string) []string {
 
 func gitSymbolicRef(t *testing.T, dir, ref string) string {
 	t.Helper()
-	cmd := exec.Command("git", "-C", dir, "symbolic-ref", ref)
+	cmd := procutil.Command("git", "-C", dir, "symbolic-ref", ref)
 	cmd.Env = filteredGitTestEnv()
 	out, err := cmd.Output()
 	require.NoError(t, err)
@@ -469,7 +470,7 @@ func TestMergeBase(t *testing.T) {
 	// Get the HEAD SHA.
 	clonePath, err := mgr.ClonePath("github.com", "testowner", "testrepo")
 	require.NoError(err)
-	cmd := exec.Command("git", "-C", clonePath, "rev-parse", "HEAD")
+	cmd := procutil.Command("git", "-C", clonePath, "rev-parse", "HEAD")
 	cmd.Env = filteredGitTestEnv()
 	out, err := cmd.Output()
 	require.NoError(err)

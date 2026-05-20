@@ -488,7 +488,7 @@ func TestClientEnsuresExternalManagerWithPowerShell(t *testing.T) {
 		Root:        root,
 		ManagerPath: managerPath,
 		Command: []string{
-			"powershell.exe", "-NoLogo", "-NoProfile", "-NoExit",
+			"powershell.exe", "-NoLogo", "-NoProfile", "-WindowStyle", "Hidden", "-NoExit",
 		},
 	}
 

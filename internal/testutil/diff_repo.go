@@ -5,13 +5,13 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"github.com/wesm/middleman/internal/db"
 	"github.com/wesm/middleman/internal/gitclone"
 	"github.com/wesm/middleman/internal/gitenv"
+	"github.com/wesm/middleman/internal/procutil"
 )
 
 // DiffRepoResult holds the SHAs from the test repo for use in assertions.
@@ -198,7 +198,7 @@ func git(dir string, args ...string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("git: no args")
 	}
-	cmd := exec.Command("git", args...)
+	cmd := procutil.Command("git", args...)
 	if dir != "" {
 		cmd.Dir = dir
 	}
@@ -223,7 +223,7 @@ func git(dir string, args ...string) error {
 }
 
 func revParse(dir, ref string) (string, error) {
-	cmd := exec.Command("git", "rev-parse", ref)
+	cmd := procutil.Command("git", "rev-parse", ref)
 	cmd.Dir = dir
 	cmd.Env = gitenv.StripAll(os.Environ())
 	out, err := cmd.Output()

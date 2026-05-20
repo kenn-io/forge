@@ -401,6 +401,82 @@ func seedGitLabReadOnlyCapabilityFixture(
 	return nil
 }
 
+// ciFixtureOptions controls the per-fixture choices that the
+// pr-ci-state/* endpoints feed into setPR1CIState. Centralising the
+// options struct keeps the divergent fields visible and forces every
+// fixture through the same anti-resync + provider-pin path.
+type ciFixtureOptions struct {
+	// statusName is the CIStatus column value ("failure", "success",
+	// "pending", etc.).
+	statusName string
+	// checksJSON is the raw CIChecksJSON to seed. The empty string ""
+	// writes an empty payload (the status-only fixture case). The
+	// helper always writes this value to CIChecksJSON — there is no
+	// "leave it alone" / "no-op" mode. If a transient state ever
+	// needs to skip touching CIChecksJSON, add a new option flag
+	// rather than overloading this field.
+	checksJSON string
+	// pinProviderTo optionally pins the fixture GitHub client's
+	// check-run status/conclusion for PR #1 so a sync triggered by a
+	// route transition can't overwrite the seeded payload. Nil means
+	// don't touch the fixture provider.
+	pinProviderTo *struct {
+		Status     string
+		Conclusion string
+	}
+}
+
+// setPR1CIState centralises the boilerplate shared by every
+// /__e2e/pr-ci-state/* endpoint: repo lookup, CIStatus + CIChecksJSON
+// write, the anti-resync detail_fetched_at stamp, an optional fixture
+// check-run pin, and the JSON response. New endpoints reduce to a few
+// lines of payload-building plus a single call here; the helper is the
+// only place every fixture path converges so no future endpoint can
+// forget the anti-resync stamp or the provider pin.
+func setPR1CIState(
+	w http.ResponseWriter,
+	r *http.Request,
+	database *db.DB,
+	fc *testutil.FixtureClient,
+	label string,
+	opts ciFixtureOptions,
+) {
+	repo, err := database.GetRepoByOwnerName(r.Context(), "acme", "widgets")
+	if err != nil || repo == nil {
+		http.Error(w, "repo not found", http.StatusNotFound)
+		return
+	}
+	if err := database.UpdateMRCIStatus(
+		r.Context(), repo.ID, 1, opts.statusName, opts.checksJSON,
+	); err != nil {
+		http.Error(w, "update "+label+" CI", http.StatusInternalServerError)
+		return
+	}
+	// Explicit anti-resync guarantee — every fixture stamps
+	// detail_fetched_at with ci_had_pending=false so the sync engine
+	// treats the seeded row as fresh and doesn't refetch + overwrite
+	// it. Centralised here so no future endpoint can forget it.
+	if err := database.UpdateMRDetailFetchedByRepoID(
+		r.Context(), repo.ID, 1, false,
+	); err != nil {
+		http.Error(w, "mark "+label+" CI fetched", http.StatusInternalServerError)
+		return
+	}
+	if opts.pinProviderTo != nil {
+		if !fc.SetPullRequestCheckRunStatus(
+			"acme", "widgets", 1,
+			opts.pinProviderTo.Status, opts.pinProviderTo.Conclusion,
+		) {
+			http.Error(w, "update fixture check runs", http.StatusNotFound)
+			return
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(map[string]string{"status": label}); err != nil {
+		slog.Warn("write e2e response", "err", err)
+	}
+}
+
 // run starts the e2e server and blocks until ctx is canceled or the
 // HTTP server errors out. Tests call it directly with a cancellable
 // context; main() wires it to SIGINT/SIGTERM.
@@ -855,14 +931,7 @@ func run(
 		}
 		if r.Method == http.MethodPost &&
 			r.URL.Path == "/__e2e/pr-ci-state/pending" {
-			repo, err := database.GetRepoByOwnerName(
-				r.Context(), "acme", "widgets",
-			)
-			if err != nil || repo == nil {
-				http.Error(w, "repo not found", http.StatusNotFound)
-				return
-			}
-			pendingChecks, err := json.Marshal([]db.CICheck{{
+			pendingPayload, err := json.Marshal([]db.CICheck{{
 				Name:       "build",
 				Status:     "in_progress",
 				Conclusion: "",
@@ -873,32 +942,14 @@ func run(
 				http.Error(w, "marshal pending checks", http.StatusInternalServerError)
 				return
 			}
-			if err := database.UpdateMRCIStatus(
-				r.Context(), repo.ID, 1, "pending", string(pendingChecks),
-			); err != nil {
-				http.Error(w, "update pending CI", http.StatusInternalServerError)
-				return
-			}
-			if err := database.UpdateMRDetailFetchedByRepoID(
-				r.Context(), repo.ID, 1, false,
-			); err != nil {
-				http.Error(w, "mark pending CI fetched", http.StatusInternalServerError)
-				return
-			}
-
-			if !fc.SetPullRequestCheckRunStatus(
-				"acme", "widgets", 1, "in_progress", "",
-			) {
-				http.Error(w, "update fixture check runs", http.StatusNotFound)
-				return
-			}
-
-			w.Header().Set("Content-Type", "application/json")
-			if err := json.NewEncoder(w).Encode(map[string]string{
-				"status": "pending",
-			}); err != nil {
-				slog.Warn("write e2e response", "err", err)
-			}
+			setPR1CIState(w, r, database, fc, "pending", ciFixtureOptions{
+				statusName: "pending",
+				checksJSON: string(pendingPayload),
+				pinProviderTo: &struct {
+					Status     string
+					Conclusion string
+				}{Status: "in_progress", Conclusion: ""},
+			})
 			return
 		}
 		if r.Method == http.MethodPost &&
@@ -920,19 +971,172 @@ func run(
 		}
 		if r.Method == http.MethodPost &&
 			r.URL.Path == "/__e2e/pr-ci-state/success" {
-			if !fc.SetPullRequestCheckRunStatus(
-				"acme", "widgets", 1, "completed", "success",
-			) {
-				http.Error(w, "update fixture check runs", http.StatusNotFound)
+			successPayload, err := json.Marshal([]db.CICheck{
+				{
+					Name:       "build",
+					Status:     "completed",
+					Conclusion: "success",
+					URL:        "https://github.com/acme/widgets/actions/runs/1/job/1",
+					App:        "GitHub Actions",
+				},
+				{
+					Name:       "test",
+					Status:     "completed",
+					Conclusion: "success",
+					App:        "GitHub Actions",
+				},
+			})
+			if err != nil {
+				http.Error(w, "marshal success checks", http.StatusInternalServerError)
 				return
 			}
-
-			w.Header().Set("Content-Type", "application/json")
-			if err := json.NewEncoder(w).Encode(map[string]string{
-				"status": "success",
-			}); err != nil {
-				slog.Warn("write e2e response", "err", err)
+			setPR1CIState(w, r, database, fc, "success", ciFixtureOptions{
+				statusName: "success",
+				checksJSON: string(successPayload),
+				pinProviderTo: &struct {
+					Status     string
+					Conclusion string
+				}{Status: "completed", Conclusion: "success"},
+			})
+			return
+		}
+		if r.Method == http.MethodPost &&
+			r.URL.Path == "/__e2e/pr-ci-state/mixed" {
+			mixedPayload, err := json.Marshal([]db.CICheck{
+				{
+					Name:       "build-darwin",
+					Status:     "completed",
+					Conclusion: "failure",
+					URL:        "https://github.com/acme/widgets/actions/runs/1/job/1",
+					App:        "GitHub Actions",
+				},
+				{
+					Name:       "build-linux",
+					Status:     "completed",
+					Conclusion: "success",
+					App:        "GitHub Actions",
+				},
+				{
+					Name:       "test-linux",
+					Status:     "completed",
+					Conclusion: "success",
+					App:        "GitHub Actions",
+				},
+				{
+					Name:       "deploy-staging",
+					Status:     "in_progress",
+					Conclusion: "",
+					App:        "GitHub Actions",
+				},
+				{
+					Name:       "build-windows",
+					Status:     "completed",
+					Conclusion: "skipped",
+					App:        "GitHub Actions",
+				},
+			})
+			if err != nil {
+				http.Error(w, "marshal mixed checks", http.StatusInternalServerError)
+				return
 			}
+			setPR1CIState(w, r, database, fc, "mixed", ciFixtureOptions{
+				statusName: "failure",
+				checksJSON: string(mixedPayload),
+				pinProviderTo: &struct {
+					Status     string
+					Conclusion string
+				}{Status: "completed", Conclusion: "failure"},
+			})
+			return
+		}
+		if r.Method == http.MethodPost &&
+			r.URL.Path == "/__e2e/pr-ci-state/malformed" {
+			// No fixture-provider analogue for malformed JSON exists
+			// — a real sync would replace the seeded text with a
+			// valid array. The anti-resync stamp inside
+			// setPR1CIState is the only defence.
+			setPR1CIState(w, r, database, fc, "malformed", ciFixtureOptions{
+				statusName: "failure",
+				checksJSON: "{not json",
+				// pinProviderTo intentionally nil
+			})
+			return
+		}
+		if r.Method == http.MethodPost &&
+			r.URL.Path == "/__e2e/pr-ci-state/status-only" {
+			// CIStatus is set but CIChecksJSON stays empty — exercises
+			// the transient sync state where the redesigned UI hides
+			// the chip. pinProviderTo stays nil so the provider can
+			// remain aligned with the absent payload.
+			setPR1CIState(w, r, database, fc, "status-only", ciFixtureOptions{
+				statusName: "success",
+				checksJSON: "",
+				// pinProviderTo intentionally nil
+			})
+			return
+		}
+		if r.Method == http.MethodPost &&
+			r.URL.Path == "/__e2e/pr-ci-state/dropdown-mixed" {
+			// 21-check payload spanning every bucket so the dropdown
+			// e2e can exercise the summary header, all five sections,
+			// and the "Show N more passed" toggle (passed count of 12
+			// exceeds the 8-row threshold).
+			checks := []db.CICheck{
+				{
+					Name:       "build-darwin",
+					Status:     "completed",
+					Conclusion: "failure",
+					App:        "GitHub Actions",
+				},
+			}
+			for i := 1; i <= 5; i++ {
+				checks = append(checks, db.CICheck{
+					Name:   fmt.Sprintf("pending-%d", i),
+					Status: "in_progress",
+					App:    "GitHub Actions",
+				})
+			}
+			for i := 1; i <= 12; i++ {
+				checks = append(checks, db.CICheck{
+					Name:       fmt.Sprintf("passed-%d", i),
+					Status:     "completed",
+					Conclusion: "success",
+					App:        "GitHub Actions",
+				})
+			}
+			checks = append(checks,
+				db.CICheck{
+					Name:       "skip-1",
+					Status:     "completed",
+					Conclusion: "skipped",
+					App:        "GitHub Actions",
+				},
+				db.CICheck{
+					Name:       "skip-2",
+					Status:     "completed",
+					Conclusion: "skipped",
+					App:        "GitHub Actions",
+				},
+				db.CICheck{
+					Name:       "weird",
+					Status:     "completed",
+					Conclusion: "mysterious_state",
+					App:        "GitHub Actions",
+				},
+			)
+			dropdownPayload, err := json.Marshal(checks)
+			if err != nil {
+				http.Error(w, "marshal dropdown-mixed checks", http.StatusInternalServerError)
+				return
+			}
+			setPR1CIState(w, r, database, fc, "dropdown-mixed", ciFixtureOptions{
+				statusName: "failure",
+				checksJSON: string(dropdownPayload),
+				pinProviderTo: &struct {
+					Status     string
+					Conclusion string
+				}{Status: "completed", Conclusion: "failure"},
+			})
 			return
 		}
 		if r.Method == http.MethodPost &&

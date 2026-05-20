@@ -899,9 +899,8 @@ func (s *Server) serveSSE(
 	// live broadcasts and never out of order with them.
 	deliveredThrough := cursor
 	if hasCursor {
-		replay, stale := s.hub.RingSnapshotSince(cursor)
+		replay, synID, stale := s.hub.ReplaySnapshotSince(cursor)
 		if stale {
-			synID := s.hub.AssignSyntheticID()
 			if !writeSSEFrame(w, rc, synID, "reconnect.stale", []byte("{}")) {
 				return
 			}

@@ -177,6 +177,33 @@ func (h *EventHub) RingSnapshotSince(
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
+	return h.ringSnapshotSinceLocked(cursor)
+}
+
+// ReplaySnapshotSince returns either the replay snapshot for cursor or,
+// when the cursor is stale, an already-assigned synthetic event id for a
+// reconnect.stale frame. The stale decision and synthetic id assignment
+// happen under the same hub lock so no real broadcast can receive an id
+// lower than the stale frame after stale has been observed.
+func (h *EventHub) ReplaySnapshotSince(
+	cursor uint64,
+) (events []RecordedEvent, staleID uint64, stale bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	events, stale = h.ringSnapshotSinceLocked(cursor)
+	if !stale {
+		return events, 0, false
+	}
+	h.nextEventID++
+	return nil, h.nextEventID, true
+}
+
+// ringSnapshotSinceLocked is the lock-held implementation of
+// RingSnapshotSince. Caller must hold mu.
+func (h *EventHub) ringSnapshotSinceLocked(
+	cursor uint64,
+) (events []RecordedEvent, stale bool) {
 	if h.ringCount == 0 {
 		if cursor > 0 {
 			return nil, true

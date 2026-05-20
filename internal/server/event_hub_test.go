@@ -328,6 +328,20 @@ func TestEventHub_AssignSyntheticIDIncrementsWithoutRecord(t *testing.T) {
 	assert.Equal(uint64(4), next)
 }
 
+func TestEventHub_ReplaySnapshotSinceAssignsStaleIDBeforeFutureBroadcast(t *testing.T) {
+	assert := assert.New(t)
+	hub := NewEventHub()
+	defer hub.Close()
+
+	replay, staleID, stale := hub.ReplaySnapshotSince(99)
+	assert.True(stale)
+	assert.Empty(replay)
+	assert.Equal(uint64(1), staleID)
+
+	next := hub.Broadcast(Event{Type: "data_changed", Data: "after-stale"})
+	assert.Equal(uint64(2), next)
+}
+
 func TestEventHub_CapacityRetainsLatest(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

@@ -17397,8 +17397,8 @@ func TestWorkspaceCreateIssueBranchConflictReturnsTyped409(t *testing.T) {
 	// branch on code rather than message text.
 	assert.Equal("branchConflict", problem.Code)
 	require.NotNil(problem.Details)
-	assert.Equal("middleman/issue-7", problem.Details["branch"])
-	assert.Equal("middleman/issue-7-2", problem.Details["suggestedBranch"])
+	assert.Equal(slugBranch, problem.Details["branch"])
+	assert.Equal(slugBranch+"-2", problem.Details["suggestedBranch"])
 
 	// The legacy Errors[] entries stay populated for clients that still
 	// introspect per-field huma details.

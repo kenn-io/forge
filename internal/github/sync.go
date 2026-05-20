@@ -147,6 +147,7 @@ const (
 )
 
 const syncProgressLogInterval = 100
+const largeRepoBulkGraphQLThreshold = syncProgressLogInterval
 
 type itemSyncProgressLogger struct {
 	repo   RepoRef
@@ -2796,9 +2797,13 @@ func (s *Syncer) indexSyncRepo(
 		} else {
 			// GraphQL path: if fetcher available and not rate-limited,
 			// do a bulk fetch that replaces both index upsert and
-			// detail drain for complete PRs.
+			// detail drain for complete PRs. For large repos that
+			// already have indexed rows, keep the refresh incremental:
+			// the list phase updates timestamps and the detail drain
+			// conditionally fetches individual stale PRs.
 			graphQLDone := false
-			if fetcher := s.fetcherFor(repo); fetcher != nil {
+			if fetcher := s.fetcherFor(repo); fetcher != nil &&
+				s.shouldUseBulkGraphQLForMRs(ctx, repo, repoID, len(openMRs)) {
 				if backoff, _ := fetcher.ShouldBackoff(); !backoff {
 					result, gqlErr := fetcher.FetchRepoPRs(
 						ctx, repo.Owner, repo.Name,
@@ -2877,7 +2882,8 @@ func (s *Syncer) indexSyncRepo(
 			}
 		} else {
 			graphQLIssuesDone := false
-			if fetcher := s.fetcherFor(repo); fetcher != nil {
+			if fetcher := s.fetcherFor(repo); fetcher != nil &&
+				s.shouldUseBulkGraphQLForIssues(ctx, repo, repoID, len(openIssues)+len(ghIssues)) {
 				if backoff, _ := fetcher.ShouldBackoff(); !backoff {
 					issueResult, gqlErr := fetcher.FetchRepoIssues(
 						ctx, repo.Owner, repo.Name,
@@ -2996,6 +3002,64 @@ func (s *Syncer) syncMergeRequestsFromList(
 	}
 	progress.done()
 	return nil
+}
+
+func (s *Syncer) shouldUseBulkGraphQLForMRs(
+	ctx context.Context,
+	repo RepoRef,
+	repoID int64,
+	listCount int,
+) bool {
+	if listCount < largeRepoBulkGraphQLThreshold {
+		return true
+	}
+	hasExisting, err := s.db.HasOpenMergeRequestsForRepo(ctx, repoID)
+	if err != nil {
+		slog.Warn("check existing merge requests before GraphQL bulk fetch failed",
+			"repo", repo.Owner+"/"+repo.Name,
+			"err", err,
+		)
+		return true
+	}
+	if !hasExisting {
+		return true
+	}
+	slog.Info("skipping GraphQL merge request bulk fetch for large existing repo",
+		"repo", repo.Owner+"/"+repo.Name,
+		"platform", repoPlatform(repo),
+		"host", repoHost(repo),
+		"total", listCount,
+	)
+	return false
+}
+
+func (s *Syncer) shouldUseBulkGraphQLForIssues(
+	ctx context.Context,
+	repo RepoRef,
+	repoID int64,
+	listCount int,
+) bool {
+	if listCount < largeRepoBulkGraphQLThreshold {
+		return true
+	}
+	hasExisting, err := s.db.HasOpenIssuesForRepo(ctx, repoID)
+	if err != nil {
+		slog.Warn("check existing issues before GraphQL bulk fetch failed",
+			"repo", repo.Owner+"/"+repo.Name,
+			"err", err,
+		)
+		return true
+	}
+	if !hasExisting {
+		return true
+	}
+	slog.Info("skipping GraphQL issue bulk fetch for large existing repo",
+		"repo", repo.Owner+"/"+repo.Name,
+		"platform", repoPlatform(repo),
+		"host", repoHost(repo),
+		"total", listCount,
+	)
+	return false
 }
 
 func (s *Syncer) indexUpsertMergeRequest(
@@ -3923,24 +3987,6 @@ func (s *Syncer) fetchMRDetail(
 		return calls, fmt.Errorf("resolve client for %s/%s: %w", repo.Owner, repo.Name, err)
 	}
 
-	fullPR, err := client.GetPullRequest(
-		ctx, repo.Owner, repo.Name, number,
-	)
-	calls++
-	if err == nil && fullPR == nil {
-		err = fmt.Errorf("client returned nil pull request")
-	}
-	if err != nil {
-		return calls, fmt.Errorf(
-			"get full PR #%d: %w", number, err,
-		)
-	}
-
-	normalized, err := NormalizePR(repoID, fullPR)
-	if err != nil {
-		return calls, fmt.Errorf("normalize full PR #%d: %w", number, err)
-	}
-
 	existing, err := s.db.GetMergeRequestByRepoIDAndNumber(
 		ctx, repoID, number,
 	)
@@ -3948,6 +3994,41 @@ func (s *Syncer) fetchMRDetail(
 		return calls, fmt.Errorf(
 			"get existing MR #%d: %w", number, err,
 		)
+	}
+
+	fullPR, newETag, notModified, err := s.getPullRequestForDetail(
+		ctx, client, repo, number,
+	)
+	calls++
+	if err == nil && fullPR == nil {
+		if notModified && existing != nil {
+			return s.markUnchangedMRDetailFetched(
+				ctx, repo, repoID, number, existing, calls,
+			)
+		}
+		err = fmt.Errorf("client returned nil pull request")
+	}
+	if err != nil {
+		return calls, fmt.Errorf(
+			"get full PR #%d: %w", number, err,
+		)
+	}
+	if newETag != "" {
+		if err := s.db.UpsertHTTPEtag(
+			ctx, string(repoPlatform(repo)), repoHost(repo),
+			repo.Owner, repo.Name, "pull_request", number, newETag,
+		); err != nil {
+			slog.Warn("persist pull request ETag failed",
+				"repo", repo.Owner+"/"+repo.Name,
+				"number", number,
+				"err", err,
+			)
+		}
+	}
+
+	normalized, err := NormalizePR(repoID, fullPR)
+	if err != nil {
+		return calls, fmt.Errorf("normalize full PR #%d: %w", number, err)
 	}
 	preserveMergeableStateIfOmitted(normalized, existing)
 
@@ -4080,6 +4161,75 @@ func (s *Syncer) fetchMRDetail(
 		}
 	}
 
+	return calls, nil
+}
+
+func (s *Syncer) getPullRequestForDetail(
+	ctx context.Context,
+	client Client,
+	repo RepoRef,
+	number int,
+) (*gh.PullRequest, string, bool, error) {
+	conditional, ok := client.(conditionalPullRequestGetter)
+	if !ok {
+		pr, err := client.GetPullRequest(ctx, repo.Owner, repo.Name, number)
+		return pr, "", false, err
+	}
+
+	etag, err := s.db.GetHTTPEtag(
+		ctx, string(repoPlatform(repo)), repoHost(repo),
+		repo.Owner, repo.Name, "pull_request", number,
+	)
+	if err != nil {
+		slog.Warn("load pull request ETag failed",
+			"repo", repo.Owner+"/"+repo.Name,
+			"number", number,
+			"err", err,
+		)
+		pr, err := client.GetPullRequest(ctx, repo.Owner, repo.Name, number)
+		return pr, "", false, err
+	}
+	return conditional.GetPullRequestIfChanged(
+		ctx, repo.Owner, repo.Name, number, etag,
+	)
+}
+
+func (s *Syncer) markUnchangedMRDetailFetched(
+	ctx context.Context,
+	repo RepoRef,
+	repoID int64,
+	number int,
+	existing *db.MergeRequest,
+	calls int,
+) (int, error) {
+	pending := existing.CIHadPending
+	if existing.CIHadPending && existing.PlatformHeadSHA != "" {
+		if err := s.refreshCIStatus(
+			ctx, repo, repoID, number, existing.PlatformHeadSHA,
+		); err != nil {
+			calls += 2
+			return calls, err
+		}
+		calls += 2
+		fresh, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoID, number)
+		if err == nil && fresh != nil {
+			pending = ciHasPending(fresh.CIChecksJSON)
+		}
+	}
+	if err := s.updateMRDetailFetchedByRepoID(ctx, repoID, number, pending); err != nil {
+		return calls, fmt.Errorf("mark unchanged detail fetched for MR #%d: %w", number, err)
+	}
+	if s.onMRSynced != nil {
+		fresh, fErr := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoID, number)
+		if fErr != nil {
+			slog.Warn("get MR for onMRSynced hook failed",
+				"repo", repo.Owner+"/"+repo.Name,
+				"number", number, "err", fErr,
+			)
+		} else {
+			s.onMRSynced(repo.Owner, repo.Name, fresh)
+		}
+	}
 	return calls, nil
 }
 
@@ -5449,6 +5599,10 @@ func (s *Syncer) buildDetailQueueItems(
 		)
 		return nil
 	}
+	prCountsByRepoID := make(map[int64]int, len(prs))
+	for _, pr := range prs {
+		prCountsByRepoID[pr.RepoID]++
+	}
 	for _, pr := range prs {
 		repo, rErr := s.db.GetRepoByID(ctx, pr.RepoID)
 		if rErr != nil || repo == nil {
@@ -5475,6 +5629,7 @@ func (s *Syncer) buildDetailQueueItems(
 			Starred:         pr.Starred,
 			Watched:         watched[watchKey],
 			IsOpen:          true,
+			LargeRepo:       prCountsByRepoID[pr.RepoID] >= largeRepoBulkGraphQLThreshold,
 		})
 	}
 
@@ -5487,6 +5642,10 @@ func (s *Syncer) buildDetailQueueItems(
 			"err", err,
 		)
 		return items
+	}
+	issueCountsByRepoID := make(map[int64]int, len(issues))
+	for _, issue := range issues {
+		issueCountsByRepoID[issue.RepoID]++
 	}
 	for _, issue := range issues {
 		repo, rErr := s.db.GetRepoByID(ctx, issue.RepoID)
@@ -5508,6 +5667,7 @@ func (s *Syncer) buildDetailQueueItems(
 			DetailFetchedAt: issue.DetailFetchedAt,
 			Starred:         issue.Starred,
 			IsOpen:          true,
+			LargeRepo:       issueCountsByRepoID[issue.RepoID] >= largeRepoBulkGraphQLThreshold,
 		})
 	}
 

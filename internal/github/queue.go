@@ -35,6 +35,7 @@ type QueueItem struct {
 	Starred         bool
 	Watched         bool
 	IsOpen          bool
+	LargeRepo       bool
 }
 
 // WorstCaseCost returns the maximum API calls this item's
@@ -106,6 +107,10 @@ func isEligible(qi *QueueItem, now time.Time) bool {
 	// Starred or watched: eligible if >15min since fetch.
 	if qi.Starred || qi.Watched {
 		return sinceLastFetch > starWatchInterval
+	}
+
+	if qi.LargeRepo {
+		return false
 	}
 
 	// Default: eligible if >30min since last fetch.

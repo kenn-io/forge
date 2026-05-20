@@ -4351,3 +4351,38 @@ func TestUpdateMRTitleBodyIgnoresStaleUpdate(t *testing.T) {
 	assert.Equal("current body", got.Body, "stale update should be ignored")
 	assert.True(got.UpdatedAt.Equal(newerUpdatedAt), "updated_at should not regress")
 }
+
+func TestHTTPEtagPersistence(t *testing.T) {
+	assert := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+
+	etag, err := d.GetHTTPEtag(
+		ctx, "github", "github.com", "OWNER", "Repo",
+		"pull_request", 7,
+	)
+	assert.NoError(err)
+	assert.Empty(etag)
+
+	assert.NoError(d.UpsertHTTPEtag(
+		ctx, "github", "github.com", "OWNER", "Repo",
+		"pull_request", 7, `"etag-v1"`,
+	))
+	etag, err = d.GetHTTPEtag(
+		ctx, "github", "github.com", "owner", "repo",
+		"pull_request", 7,
+	)
+	assert.NoError(err)
+	assert.Equal(`"etag-v1"`, etag)
+
+	assert.NoError(d.UpsertHTTPEtag(
+		ctx, "github", "github.com", "owner", "repo",
+		"pull_request", 7, `"etag-v2"`,
+	))
+	etag, err = d.GetHTTPEtag(
+		ctx, "github", "github.com", "OWNER", "Repo",
+		"pull_request", 7,
+	)
+	assert.NoError(err)
+	assert.Equal(`"etag-v2"`, etag)
+}

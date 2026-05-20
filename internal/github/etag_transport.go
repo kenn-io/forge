@@ -83,12 +83,12 @@ func (t *etagTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	switch resp.StatusCode {
 	case http.StatusOK:
 		etag := resp.Header.Get("ETag")
-		if etag != "" && !hasLinkNext(resp) {
+		if etag != "" {
 			t.cache.Store(url, etagEntry{etag: etag, cachedAt: time.Now()})
 		} else {
-			// No ETag, or response is paginated — drop any stale
-			// validator so the next request fetches fresh data
-			// instead of asserting an out-of-date If-None-Match.
+			// No ETag — drop any stale validator so the next request
+			// fetches fresh data instead of asserting an out-of-date
+			// If-None-Match.
 			t.cache.Delete(url)
 		}
 	case http.StatusNotModified:
@@ -106,15 +106,6 @@ func (t *etagTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 func isETagEligible(path string) bool {
 	return etagEligibleListPath.MatchString(path) ||
 		etagEligibleCommentPath.MatchString(path)
-}
-
-func hasLinkNext(resp *http.Response) bool {
-	for _, link := range resp.Header.Values("Link") {
-		if strings.Contains(link, `rel="next"`) {
-			return true
-		}
-	}
-	return false
 }
 
 // invalidateRepo drops cached ETag entries for the given repo's list

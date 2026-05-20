@@ -95,6 +95,15 @@ type Client interface {
 	InvalidateListETagsForRepo(owner, repo string, endpoints ...string)
 }
 
+type conditionalPullRequestGetter interface {
+	GetPullRequestIfChanged(
+		ctx context.Context,
+		owner, repo string,
+		number int,
+		etag string,
+	) (*gh.PullRequest, string, bool, error)
+}
+
 func graphQLEndpointForHost(platformHost string) string {
 	if platformHost == "" || platformHost == "github.com" {
 		return "https://api.github.com/graphql"
@@ -633,6 +642,36 @@ func (c *liveClient) GetPullRequest(ctx context.Context, owner, repo string, num
 		return nil, fmt.Errorf("getting pull request %s/%s#%d: %w", owner, repo, number, err)
 	}
 	return pr, nil
+}
+
+func (c *liveClient) GetPullRequestIfChanged(
+	ctx context.Context,
+	owner, repo string,
+	number int,
+	etag string,
+) (*gh.PullRequest, string, bool, error) {
+	u := fmt.Sprintf("repos/%v/%v/pulls/%v", owner, repo, number)
+	req, err := c.gh.NewRequest(http.MethodGet, u, nil)
+	if err != nil {
+		return nil, "", false, err
+	}
+	if etag != "" {
+		req.Header.Set("If-None-Match", etag)
+	}
+
+	pr := new(gh.PullRequest)
+	resp, err := c.gh.Do(ctx, req, pr)
+	c.trackRate(resp)
+	if err != nil {
+		if IsNotModified(err) {
+			return nil, etag, true, nil
+		}
+		return nil, "", false, fmt.Errorf("getting pull request %s/%s#%d: %w", owner, repo, number, err)
+	}
+	if resp != nil && resp.Response != nil {
+		etag = resp.Header.Get("ETag")
+	}
+	return pr, etag, false, nil
 }
 
 func (c *liveClient) GetUser(ctx context.Context, login string) (*gh.User, error) {

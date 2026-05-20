@@ -2618,6 +2618,22 @@ func (d *DB) GetPreviouslyOpenMRNumbers(
 	return closed, rows.Err()
 }
 
+func (d *DB) HasOpenMergeRequestsForRepo(ctx context.Context, repoID int64) (bool, error) {
+	var exists bool
+	err := d.ro.QueryRowContext(ctx,
+		`SELECT EXISTS (
+			SELECT 1 FROM middleman_merge_requests
+			WHERE repo_id = ? AND state = 'open'
+			LIMIT 1
+		)`,
+		repoID,
+	).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("check open merge requests for repo: %w", err)
+	}
+	return exists, nil
+}
+
 // MRDerivedFields holds computed fields that are refreshed after fetching timeline events.
 type MRDerivedFields struct {
 	ReviewDecision string
@@ -3244,6 +3260,78 @@ func (d *DB) GetPreviouslyOpenIssueNumbers(
 		}
 	}
 	return closed, rows.Err()
+}
+
+func (d *DB) HasOpenIssuesForRepo(ctx context.Context, repoID int64) (bool, error) {
+	var exists bool
+	err := d.ro.QueryRowContext(ctx,
+		`SELECT EXISTS (
+			SELECT 1 FROM middleman_issues
+			WHERE repo_id = ? AND state = 'open'
+			LIMIT 1
+		)`,
+		repoID,
+	).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("check open issues for repo: %w", err)
+	}
+	return exists, nil
+}
+
+func (d *DB) GetHTTPEtag(
+	ctx context.Context,
+	platform, platformHost, owner, name, resourceType string,
+	resourceNumber int,
+) (string, error) {
+	platformHost, owner, name = canonicalRepoLookupIdentifier(platformHost, owner, name)
+	var etag string
+	err := d.ro.QueryRowContext(ctx,
+		`SELECT etag FROM middleman_http_etags
+		WHERE platform = ?
+		  AND platform_host = ?
+		  AND owner_key = ?
+		  AND name_key = ?
+		  AND resource_type = ?
+		  AND resource_number = ?`,
+		platform, platformHost, owner, name, resourceType, resourceNumber,
+	).Scan(&etag)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("get http etag: %w", err)
+	}
+	return etag, nil
+}
+
+func (d *DB) UpsertHTTPEtag(
+	ctx context.Context,
+	platform, platformHost, owner, name, resourceType string,
+	resourceNumber int,
+	etag string,
+) error {
+	if etag == "" {
+		return nil
+	}
+	platformHost, owner, name = canonicalRepoLookupIdentifier(platformHost, owner, name)
+	_, err := d.rw.ExecContext(ctx,
+		`INSERT INTO middleman_http_etags (
+			platform, platform_host, owner_key, name_key,
+			resource_type, resource_number, etag, fetched_at
+		)
+		VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+		ON CONFLICT (
+			platform, platform_host, owner_key, name_key,
+			resource_type, resource_number
+		) DO UPDATE SET
+			etag = excluded.etag,
+			fetched_at = excluded.fetched_at`,
+		platform, platformHost, owner, name, resourceType, resourceNumber, etag,
+	)
+	if err != nil {
+		return fmt.Errorf("upsert http etag: %w", err)
+	}
+	return nil
 }
 
 // --- Detail Fetch Tracking ---

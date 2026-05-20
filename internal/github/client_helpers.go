@@ -14,6 +14,15 @@ func collectPages[T any](
 	listPage func(*gh.ListOptions) ([]T, *gh.Response, error),
 	onResp func(*gh.Response),
 ) ([]T, error) {
+	return collectPagesWithProgress(ctx, listPage, onResp, nil)
+}
+
+func collectPagesWithProgress[T any](
+	ctx context.Context,
+	listPage func(*gh.ListOptions) ([]T, *gh.Response, error),
+	onResp func(*gh.Response),
+	onPage func(int, bool),
+) ([]T, error) {
 	var all []T
 	opts := &gh.ListOptions{PerPage: 100}
 	for {
@@ -25,7 +34,11 @@ func collectPages[T any](
 			return nil, err
 		}
 		all = append(all, page...)
-		if resp == nil || resp.NextPage == 0 {
+		hasMore := resp != nil && resp.NextPage != 0
+		if onPage != nil {
+			onPage(len(page), hasMore)
+		}
+		if !hasMore {
 			return all, nil
 		}
 		opts.Page = resp.NextPage

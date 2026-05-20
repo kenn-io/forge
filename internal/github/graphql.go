@@ -564,6 +564,7 @@ func parseRateLimitHeaders(resp *http.Response) Rate {
 type GraphQLFetcher struct {
 	client      *githubv4.Client
 	rateTracker *RateTracker
+	host        string
 }
 
 // RateTracker returns the GraphQL rate tracker, or nil if none
@@ -614,6 +615,7 @@ func NewGraphQLFetcher(
 	return &GraphQLFetcher{
 		client:      gqlClient,
 		rateTracker: rateTracker,
+		host:        platformHost,
 	}
 }
 
@@ -708,7 +710,12 @@ func (g *GraphQLFetcher) FetchRepoIssues(
 func (g *GraphQLFetcher) fetchRepoIssuesWithPageSize(
 	ctx context.Context, owner, name string, pageSize int,
 ) (*RepoBulkResult, error) {
-	gqlIssues, err := fetchAllPages(ctx, func(
+	progress := newIssueListFetchProgressLogger(RepoRef{
+		Owner:        owner,
+		Name:         name,
+		PlatformHost: g.host,
+	}, "graphql")
+	gqlIssues, err := fetchAllPagesWithProgress(ctx, func(
 		ctx context.Context, cursor *string,
 	) ([]gqlIssue, pageInfo, error) {
 		var q gqlIssueQuery
@@ -723,10 +730,11 @@ func (g *GraphQLFetcher) fetchRepoIssuesWithPageSize(
 		}
 		return q.Repository.Issues.Nodes,
 			q.Repository.Issues.PageInfo, nil
-	})
+	}, progress.recordPage)
 	if err != nil {
 		return nil, err
 	}
+	progress.done()
 
 	result := &RepoBulkResult{
 		Issues: make([]BulkIssue, 0, len(gqlIssues)),

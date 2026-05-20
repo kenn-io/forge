@@ -20,6 +20,14 @@ func fetchAllPages[T any](
 	ctx context.Context,
 	queryFn func(ctx context.Context, cursor *string) ([]T, pageInfo, error),
 ) ([]T, error) {
+	return fetchAllPagesWithProgress(ctx, queryFn, nil)
+}
+
+func fetchAllPagesWithProgress[T any](
+	ctx context.Context,
+	queryFn func(ctx context.Context, cursor *string) ([]T, pageInfo, error),
+	onPage func(int, bool),
+) ([]T, error) {
 	var all []T
 	var cursor *string
 	for {
@@ -28,6 +36,9 @@ func fetchAllPages[T any](
 			return all, err
 		}
 		all = append(all, nodes...)
+		if onPage != nil {
+			onPage(len(nodes), pi.HasNextPage)
+		}
 		if !pi.HasNextPage {
 			break
 		}

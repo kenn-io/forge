@@ -1,8 +1,11 @@
 package github
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -12,6 +15,7 @@ import (
 	"time"
 
 	gh "github.com/google/go-github/v84/github"
+	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -143,6 +147,88 @@ func TestListTagsTracksRate(t *testing.T) {
 	require.Equal(1, rt.RequestsThisHour())
 	require.Equal(4997, rt.Remaining())
 	require.Equal(5000, rt.RateLimit())
+}
+
+func TestListOpenIssuesLogsFetchProgressForLargeIssueSet(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	now := time.Date(2026, 5, 20, 12, 0, 0, 0, time.UTC).Format(time.RFC3339)
+
+	var buf bytes.Buffer
+	sw := &syncedWriter{w: &buf}
+	h := slog.NewTextHandler(sw, &slog.HandlerOptions{Level: slog.LevelInfo})
+	orig := slog.Default()
+	slog.SetDefault(slog.New(h))
+	t.Cleanup(func() { slog.SetDefault(orig) })
+
+	var serverURL string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v3/repos/acme/widgets/issues", func(w http.ResponseWriter, r *http.Request) {
+		page, err := strconv.Atoi(r.URL.Query().Get("page"))
+		if err != nil || page == 0 {
+			page = 1
+		}
+		if page < 3 {
+			nextURL := fmt.Sprintf(
+				"%s/api/v3/repos/acme/widgets/issues?page=%d&per_page=100",
+				serverURL, page+1,
+			)
+			w.Header().Set("Link", fmt.Sprintf(`<%s>; rel="next"`, nextURL))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(testIssuePage(page, now)); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	serverURL = srv.URL
+
+	ghClient, err := gh.NewClient(srv.Client()).WithEnterpriseURLs(
+		srv.URL+"/api/v3/", srv.URL+"/api/uploads/",
+	)
+	require.NoError(err)
+	c := &liveClient{gh: ghClient}
+
+	issues, err := c.ListOpenIssues(t.Context(), "acme", "widgets")
+	require.NoError(err)
+	require.Len(issues, 201)
+
+	logs := buf.String()
+	assert.Contains(logs, `msg="issue list fetch started"`)
+	assert.Contains(logs, "repo=acme/widgets")
+	assert.Contains(logs, "platform=github")
+	assert.Contains(logs, "host=github.com")
+	assert.Contains(logs, "source=rest")
+	assert.Contains(logs, "fetched=100")
+	assert.Contains(logs, `msg="issue list fetch progress"`)
+	assert.Contains(logs, "fetched=200")
+	assert.Contains(logs, `msg="issue list fetch completed"`)
+	assert.Contains(logs, "fetched=201")
+}
+
+func testIssuePage(page int, now string) []map[string]any {
+	count := 100
+	if page == 3 {
+		count = 1
+	}
+	start := ((page - 1) * 100) + 1
+	issues := make([]map[string]any, 0, count)
+	for i := 0; i < count; i++ {
+		number := start + i
+		issues = append(issues, map[string]any{
+			"id":         number * 1000,
+			"number":     number,
+			"title":      fmt.Sprintf("Issue %d", number),
+			"state":      "open",
+			"html_url":   fmt.Sprintf("https://github.com/acme/widgets/issues/%d", number),
+			"user":       map[string]any{"login": "alice"},
+			"created_at": now,
+			"updated_at": now,
+		})
+	}
+	return issues
 }
 
 func TestListRepositoriesByOwnerUsesAuthenticatedEndpointForViewer(t *testing.T) {

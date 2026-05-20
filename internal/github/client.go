@@ -144,6 +144,7 @@ func NewClient(
 		gh:              ghClient,
 		httpClient:      tc,
 		rateTracker:     rateTracker,
+		platformHost:    platformHost,
 		graphQLEndpoint: graphQLEndpointForHost(platformHost),
 		etag:            et,
 	}, nil
@@ -153,6 +154,7 @@ type liveClient struct {
 	gh              *gh.Client
 	httpClient      *http.Client
 	rateTracker     *RateTracker
+	platformHost    string
 	graphQLEndpoint string
 	etag            *etagTransport
 	viewerMu        sync.Mutex
@@ -479,7 +481,12 @@ func (c *liveClient) ListOpenIssues(
 		Direction:   "desc",
 		ListOptions: gh.ListOptions{PerPage: 100},
 	}
-	issues, err := collectPages(ctx, func(pageOpts *gh.ListOptions) ([]*gh.Issue, *gh.Response, error) {
+	progress := newIssueListFetchProgressLogger(RepoRef{
+		Owner:        owner,
+		Name:         repo,
+		PlatformHost: c.platformHost,
+	}, "rest")
+	issues, err := collectPagesWithProgress(ctx, func(pageOpts *gh.ListOptions) ([]*gh.Issue, *gh.Response, error) {
 		opts.ListOptions = *pageOpts
 		issues, resp, err := c.gh.Issues.ListByRepo(
 			ctx, owner, repo, opts,
@@ -490,10 +497,11 @@ func (c *liveClient) ListOpenIssues(
 			)
 		}
 		return issues, resp, nil
-	}, c.trackRate)
+	}, c.trackRate, progress.recordPage)
 	if err != nil {
 		return nil, err
 	}
+	progress.done()
 
 	var all []*gh.Issue
 	// GitHub's Issues API returns PRs too — filter them out.

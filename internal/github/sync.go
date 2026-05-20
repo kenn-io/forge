@@ -154,6 +154,13 @@ type issueSyncProgressLogger struct {
 	total  int
 }
 
+type issueListFetchProgressLogger struct {
+	repo    RepoRef
+	source  string
+	fetched int
+	started bool
+}
+
 func newIssueSyncProgressLogger(repo RepoRef, source string, total int) issueSyncProgressLogger {
 	progress := issueSyncProgressLogger{repo: repo, source: source, total: total}
 	if progress.enabled() {
@@ -187,6 +194,44 @@ func (p issueSyncProgressLogger) log(message string, processed int) {
 		"source", p.source,
 		"processed", processed,
 		"total", p.total,
+	)
+}
+
+func newIssueListFetchProgressLogger(repo RepoRef, source string) *issueListFetchProgressLogger {
+	return &issueListFetchProgressLogger{repo: repo, source: source}
+}
+
+func (p *issueListFetchProgressLogger) recordPage(fetched int, hasMore bool) {
+	if p == nil || fetched <= 0 {
+		return
+	}
+	p.fetched += fetched
+	if !p.started {
+		if !hasMore && p.fetched < issueSyncProgressLogInterval {
+			return
+		}
+		p.started = true
+		p.log("issue list fetch started")
+		return
+	}
+	if hasMore {
+		p.log("issue list fetch progress")
+	}
+}
+
+func (p *issueListFetchProgressLogger) done() {
+	if p != nil && p.started {
+		p.log("issue list fetch completed")
+	}
+}
+
+func (p *issueListFetchProgressLogger) log(message string) {
+	slog.Info(message,
+		"repo", p.repo.Owner+"/"+p.repo.Name,
+		"platform", string(repoPlatform(p.repo)),
+		"host", repoHost(p.repo),
+		"source", p.source,
+		"fetched", p.fetched,
 	)
 }
 

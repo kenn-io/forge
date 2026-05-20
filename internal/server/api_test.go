@@ -9343,9 +9343,6 @@ func TestAPIUnsupportedCapabilityEnvelope(t *testing.T) {
 // providerCallProblem / mapPlatformError, which builds the rateLimited
 // problem with details.retryAfter populated as an RFC 3339 string.
 func TestAPIRateLimitedEnvelope(t *testing.T) {
-	require := require.New(t)
-	assert := Assert.New(t)
-
 	reset := time.Date(2026, 5, 19, 12, 0, 0, 0, time.UTC)
 	srv := setupGitLabIssueMutatorServer(t, &platform.Error{
 		Code:         platform.ErrCodeRateLimited,
@@ -9354,26 +9351,51 @@ func TestAPIRateLimitedEnvelope(t *testing.T) {
 		ResetAt:      &reset,
 	})
 
-	rr := doJSON(
-		t,
-		srv,
-		http.MethodPost,
-		"/api/v1/host/gitlab.example.com/issues/gl/group/project",
-		map[string]string{"title": "Rate limited", "body": "test"},
-	)
-	require.Equal(http.StatusTooManyRequests, rr.Code, rr.Body.String())
+	tests := []struct {
+		name   string
+		method string
+		path   string
+		body   any
+	}{
+		{
+			name:   "issue create",
+			method: http.MethodPost,
+			path:   "/api/v1/host/gitlab.example.com/issues/gl/group/project",
+			body:   map[string]string{"title": "Rate limited", "body": "test"},
+		},
+		{
+			name:   "pull content edit",
+			method: http.MethodPatch,
+			path:   "/api/v1/host/gitlab.example.com/pulls/gl/group/project/7",
+			body:   map[string]string{"title": "Rate limited"},
+		},
+	}
 
-	var problem rawProblemDetail
-	require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
-	assert.Equal("rateLimited", problem.Code)
-	require.NotNil(problem.Details)
-	assert.Equal("gitlab", problem.Details["provider"])
-	assert.Equal("gitlab.example.com", problem.Details["platformHost"])
-	retryAfter, ok := problem.Details["retryAfter"].(string)
-	require.True(ok, "details.retryAfter must be a string, got %T", problem.Details["retryAfter"])
-	parsed, parseErr := time.Parse(time.RFC3339, retryAfter)
-	require.NoError(parseErr)
-	assert.Equal(reset.UTC(), parsed.UTC())
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require := require.New(t)
+			assert := Assert.New(t)
+
+			rr := doJSON(t, srv, tt.method, tt.path, tt.body)
+			require.Equal(http.StatusTooManyRequests, rr.Code, rr.Body.String())
+
+			var problem rawProblemDetail
+			require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
+			assert.Equal("rateLimited", problem.Code)
+			require.NotNil(problem.Details)
+			assert.Equal("gitlab", problem.Details["provider"])
+			assert.Equal("gitlab.example.com", problem.Details["platformHost"])
+			retryAfter, ok := problem.Details["retryAfter"].(string)
+			require.True(
+				ok,
+				"details.retryAfter must be a string, got %T",
+				problem.Details["retryAfter"],
+			)
+			parsed, parseErr := time.Parse(time.RFC3339, retryAfter)
+			require.NoError(parseErr)
+			assert.Equal(reset.UTC(), parsed.UTC())
+		})
+	}
 }
 
 // TestAPIValidationErrorEnvelope sends an invalid kanban status and
@@ -9454,8 +9476,21 @@ func setupGitLabIssueMutatorServer(t *testing.T, createIssueErr error) *Server {
 	}
 	provider := &issueMutatorGitLabProvider{
 		apiTestGitLabProvider: apiTestGitLabProvider{
-			ref:           ref,
-			mergeRequests: nil,
+			ref: ref,
+			mergeRequests: []platform.MergeRequest{{
+				Repo:           ref,
+				PlatformID:     7001,
+				Number:         7,
+				URL:            "https://gitlab.example.com/group/project/-/merge_requests/7",
+				Title:          "Existing MR",
+				Author:         "alice",
+				State:          "open",
+				HeadBranch:     "feature",
+				BaseBranch:     "main",
+				CreatedAt:      now,
+				UpdatedAt:      now,
+				LastActivityAt: now,
+			}},
 			issues: []platform.Issue{{
 				Repo:           ref,
 				PlatformID:     8001,
@@ -9469,7 +9504,7 @@ func setupGitLabIssueMutatorServer(t *testing.T, createIssueErr error) *Server {
 				LastActivityAt: now,
 			}},
 		},
-		createIssueErr: createIssueErr,
+		providerErr: createIssueErr,
 	}
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
@@ -9502,12 +9537,13 @@ func setupGitLabIssueMutatorServer(t *testing.T, createIssueErr error) *Server {
 // CreateIssue. Used by TestAPIRateLimitedEnvelope.
 type issueMutatorGitLabProvider struct {
 	apiTestGitLabProvider
-	createIssueErr error
+	providerErr error
 }
 
 func (p *issueMutatorGitLabProvider) Capabilities() platform.Capabilities {
 	caps := p.apiTestGitLabProvider.Capabilities()
 	caps.IssueMutation = true
+	caps.StateMutation = true
 	return caps
 }
 
@@ -9516,7 +9552,16 @@ func (p *issueMutatorGitLabProvider) CreateIssue(
 	_ platform.RepoRef,
 	_, _ string,
 ) (platform.Issue, error) {
-	return platform.Issue{}, p.createIssueErr
+	return platform.Issue{}, p.providerErr
+}
+
+func (p *issueMutatorGitLabProvider) EditMergeRequestContent(
+	_ context.Context,
+	_ platform.RepoRef,
+	_ int,
+	_, _ *string,
+) (platform.MergeRequest, error) {
+	return platform.MergeRequest{}, p.providerErr
 }
 
 func TestAPIGitealikeReadSyncPersistsThroughServer(t *testing.T) {

@@ -385,6 +385,28 @@ func TestMapPlatformError(t *testing.T) {
 	}
 }
 
+func TestProviderCallProblemDoesNotReturnNilForContextWrappedPlatformError(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	got := providerCallProblem(
+		&platform.Error{
+			Code: platform.ErrCodeRateLimited,
+			Err:  context.Canceled,
+		},
+		"github",
+		"github.com",
+	)
+	require.NotNil(got)
+	pe, ok := got.(*ProblemError)
+	require.True(ok, "want *ProblemError, got %T", got)
+	assert.Equal(http.StatusBadGateway, pe.Status)
+	assert.Equal(CodeUpstreamError, pe.Code)
+	require.NotNil(pe.Details)
+	assert.Equal("github", pe.Details["provider"])
+	assert.Equal("github.com", pe.Details["platformHost"])
+}
+
 // TestHumaNewErrorIsReplaced confirms that legacy huma.Error4xx callers
 // still flow through to a ProblemError envelope so the migration is
 // incremental. As call sites move to typed helpers this test guards

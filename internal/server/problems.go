@@ -365,14 +365,26 @@ func problemBranchConflict(branch, suggested string) huma.StatusError {
 // is in the chain; when one is, mapPlatformError handles the translation
 // (and ignores the provider/host arguments).
 func providerCallProblem(err error, provider, host string) huma.StatusError {
+	return providerCallProblemWithDetail(err, provider, host, "")
+}
+
+func providerCallProblemWithDetail(
+	err error,
+	provider, host, detail string,
+) huma.StatusError {
 	if err == nil {
 		return nil
 	}
 	var pe *platform.Error
 	if errors.As(err, &pe) {
-		return mapPlatformError(err)
+		if mapped := mapPlatformError(err); mapped != nil {
+			return mapped
+		}
 	}
-	return problemUpstream(err.Error(), provider, host)
+	if detail == "" {
+		detail = err.Error()
+	}
+	return problemUpstream(detail, provider, host)
 }
 
 // mapPlatformError translates an error from internal/platform into a wire

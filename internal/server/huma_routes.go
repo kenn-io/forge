@@ -1102,9 +1102,10 @@ func (s *Server) editPRContent(
 		ctx, platformRepoRefFromDB(*repo), input.Number, input.Body.Title, input.Body.Body,
 	)
 	if err != nil {
-		return nil, problemUpstream(
-			"provider API error: "+err.Error(),
+		return nil, providerCallProblemWithDetail(
+			err,
 			string(repoProviderKind(*repo)), repoProviderHost(*repo),
+			"provider API error: "+err.Error(),
 		)
 	}
 
@@ -1183,9 +1184,10 @@ func (s *Server) editIssueContent(
 		ctx, platformRepoRefFromDB(*repo), input.Number, input.Body.Title, input.Body.Body,
 	)
 	if err != nil {
-		return nil, problemUpstream(
-			"provider API error: "+err.Error(),
+		return nil, providerCallProblemWithDetail(
+			err,
 			string(repoProviderKind(*repo)), repoProviderHost(*repo),
+			"provider API error: "+err.Error(),
 		)
 	}
 
@@ -1249,9 +1251,10 @@ func (s *Server) postComment(ctx context.Context, input *postCommentInput) (*pos
 		ctx, platformRepoRefFromDB(*repo), input.Number, input.Body.Body,
 	)
 	if err != nil {
-		return nil, problemUpstream(
-			"create comment on provider failed",
+		return nil, providerCallProblemWithDetail(
+			err,
 			string(repoProviderKind(*repo)), repoProviderHost(*repo),
+			"create comment on provider failed",
 		)
 	}
 
@@ -1318,9 +1321,10 @@ func (s *Server) editComment(ctx context.Context, input *editCommentInput) (*edi
 		ctx, platformRepoRefFromDB(*repo), input.Number, input.CommentID, input.Body.Body,
 	)
 	if err != nil {
-		return nil, problemUpstream(
-			"edit comment on provider failed",
+		return nil, providerCallProblemWithDetail(
+			err,
 			string(repoProviderKind(*repo)), repoProviderHost(*repo),
+			"edit comment on provider failed",
 		)
 	}
 	platformEvent.MergeRequestNumber = input.Number
@@ -1552,9 +1556,10 @@ func (s *Server) postIssueComment(ctx context.Context, input *postIssueCommentIn
 		ctx, platformRepoRefFromDB(*repo), input.Number, input.Body.Body,
 	)
 	if err != nil {
-		return nil, problemUpstream(
-			"create comment on provider failed",
+		return nil, providerCallProblemWithDetail(
+			err,
 			string(repoProviderKind(*repo)), repoProviderHost(*repo),
+			"create comment on provider failed",
 		)
 	}
 
@@ -1622,9 +1627,10 @@ func (s *Server) editIssueComment(ctx context.Context, input *editIssueCommentIn
 		ctx, platformRepoRefFromDB(*repo), input.Number, input.CommentID, input.Body.Body,
 	)
 	if err != nil {
-		return nil, problemUpstream(
-			"edit comment on provider failed",
+		return nil, providerCallProblemWithDetail(
+			err,
 			string(repoProviderKind(*repo)), repoProviderHost(*repo),
+			"edit comment on provider failed",
 		)
 	}
 	platformEvent.IssueNumber = input.Number
@@ -1741,9 +1747,10 @@ func (s *Server) approvePR(ctx context.Context, input *approvePRInput) (*actionS
 		ctx, platformRepoRefFromDB(*repo), input.Number, input.Body.Body,
 	)
 	if err != nil {
-		return nil, problemUpstream(
-			"provider API error",
+		return nil, providerCallProblemWithDetail(
+			err,
 			string(repoProviderKind(*repo)), repoProviderHost(*repo),
+			"provider API error",
 		)
 	}
 
@@ -1793,9 +1800,10 @@ func (s *Server) approveWorkflows(ctx context.Context, input *repoNumberInput) (
 
 	pr, err := client.GetPullRequest(ctx, input.Owner, input.Name, input.Number)
 	if err != nil {
-		return nil, problemUpstream(
-			"GitHub API error",
+		return nil, providerCallProblemWithDetail(
+			err,
 			string(repoProviderKind(*repo)), repoProviderHost(*repo),
+			"GitHub API error",
 		)
 	}
 	if pr == nil {
@@ -1809,9 +1817,10 @@ func (s *Server) approveWorkflows(ctx context.Context, input *repoNumberInput) (
 
 	runs, err := client.ListWorkflowRunsForHeadSHA(ctx, input.Owner, input.Name, headSHA)
 	if err != nil {
-		return nil, problemUpstream(
-			"GitHub API error",
+		return nil, providerCallProblemWithDetail(
+			err,
 			string(repoProviderKind(*repo)), repoProviderHost(*repo),
+			"GitHub API error",
 		)
 	}
 	pending := ghclient.FilterWorkflowRunsAwaitingApproval(runs, ghclient.PRSource{
@@ -1835,9 +1844,10 @@ func (s *Server) approveWorkflows(ctx context.Context, input *repoNumberInput) (
 					slog.Warn("sync after workflow approval failure", "err", syncErr)
 				}
 			}
-			return nil, problemUpstream(
-				err.Error(),
+			return nil, providerCallProblemWithDetail(
+				err,
 				string(repoProviderKind(*repo)), repoProviderHost(*repo),
+				err.Error(),
 			)
 		}
 		approvedCount++
@@ -1920,9 +1930,10 @@ func (s *Server) readyForReview(ctx context.Context, input *repoNumberInput) (*a
 			"number", input.Number,
 			"err", err,
 		)
-		return nil, problemUpstream(
-			err.Error(),
+		return nil, providerCallProblemWithDetail(
+			err,
 			string(repoProviderKind(*repo)), repoProviderHost(*repo),
+			err.Error(),
 		)
 	}
 	if pr.Number == 0 {
@@ -2012,9 +2023,10 @@ func (s *Server) mergePR(ctx context.Context, input *mergePRInput) (*mergePROutp
 			"owner", input.Owner, "repo", input.Name,
 			"number", input.Number, "method", input.Body.Method,
 			"err", err)
-		return nil, problemUpstream(
-			"provider merge error: "+err.Error(),
+		return nil, providerCallProblemWithDetail(
+			err,
 			string(repoProviderKind(*repo)), repoProviderHost(*repo),
+			"provider merge error: "+err.Error(),
 		)
 	}
 
@@ -2173,9 +2185,10 @@ func (s *Server) setPRGitHubState(
 				}
 			}
 		}
-		return nil, problemUpstream(
-			"GitHub API error: "+err.Error(),
+		return nil, providerCallProblemWithDetail(
+			err,
 			string(repoProviderKind(*repo)), repoProviderHost(*repo),
+			"GitHub API error: "+err.Error(),
 		)
 	}
 
@@ -2271,9 +2284,10 @@ func (s *Server) setIssueGitHubState(
 				}
 			}
 		}
-		return nil, problemUpstream(
-			"GitHub API error: "+err.Error(),
+		return nil, providerCallProblemWithDetail(
+			err,
 			string(repoProviderKind(*repo)), repoProviderHost(*repo),
+			"GitHub API error: "+err.Error(),
 		)
 	}
 
@@ -2425,9 +2439,10 @@ func (s *Server) syncPRCI(ctx context.Context, input *repoNumberInput) (*syncPRC
 		mr.PlatformHeadSHA,
 	)
 	if err != nil {
-		return nil, problemUpstream(
-			"refresh PR CI: "+err.Error(),
+		return nil, providerCallProblemWithDetail(
+			err,
 			string(repoProviderKind(*repo)), repoProviderHost(*repo),
+			"refresh PR CI: "+err.Error(),
 		)
 	}
 
@@ -2467,9 +2482,10 @@ func (s *Server) syncPR(ctx context.Context, input *repoNumberInput) (*syncPROut
 		if strings.Contains(syncErr.Error(), "is not tracked") {
 			return nil, problemForbidden(syncErr.Error(), nil)
 		}
-		return nil, problemUpstream(
-			"sync PR: "+syncErr.Error(),
+		return nil, providerCallProblemWithDetail(
+			syncErr,
 			string(repoProviderKind(*repo)), repoProviderHost(*repo),
+			"sync PR: "+syncErr.Error(),
 		)
 	}
 
@@ -2548,9 +2564,10 @@ func (s *Server) syncIssue(ctx context.Context, input *issueRepoNumberInput) (*s
 		if strings.Contains(err.Error(), "is not tracked") {
 			return nil, problemForbidden(err.Error(), nil)
 		}
-		return nil, problemUpstream(
-			"sync issue: "+err.Error(),
+		return nil, providerCallProblemWithDetail(
+			err,
 			string(repoProviderKind(*repo)), repoProviderHost(*repo),
+			"sync issue: "+err.Error(),
 		)
 	}
 

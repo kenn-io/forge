@@ -153,9 +153,10 @@ func (s *Server) setPullLabels(
 		ctx, platformRepoRefFromDB(*repo), input.Number, names,
 	)
 	if err != nil {
-		return nil, problemUpstream(
-			"provider API error: "+err.Error(),
+		return nil, providerCallProblemWithDetail(
+			err,
 			string(repoProviderKind(*repo)), repoProviderHost(*repo),
+			"provider API error: "+err.Error(),
 		)
 	}
 	labels := platform.DBLabels(providerLabels, time.Now().UTC())
@@ -200,9 +201,10 @@ func (s *Server) setIssueLabels(
 		ctx, platformRepoRefFromDB(*repo), input.Number, names,
 	)
 	if err != nil {
-		return nil, problemUpstream(
-			"provider API error: "+err.Error(),
+		return nil, providerCallProblemWithDetail(
+			err,
 			string(repoProviderKind(*repo)), repoProviderHost(*repo),
+			"provider API error: "+err.Error(),
 		)
 	}
 	labels := platform.DBLabels(providerLabels, time.Now().UTC())

@@ -9337,6 +9337,50 @@ func TestAPIUnsupportedCapabilityEnvelope(t *testing.T) {
 	assert.Equal("gitlab.example.com", problem.Details["platformHost"])
 }
 
+func TestAPICapabilityGatedRouteReturnsLookupProblemBeforeCapabilityProblem(t *testing.T) {
+	srv, _ := setupTestServer(t)
+
+	tests := []struct {
+		name     string
+		path     string
+		wantCode int
+		wantWire string
+	}{
+		{
+			name:     "unknown repo",
+			path:     "/api/v1/pulls/gh/acme/unknown/7",
+			wantCode: http.StatusNotFound,
+			wantWire: "repoNotFound",
+		},
+		{
+			name:     "invalid provider",
+			path:     "/api/v1/pulls/not-a-provider/acme/widget/7",
+			wantCode: http.StatusBadRequest,
+			wantWire: "badRequest",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require := require.New(t)
+			assert := Assert.New(t)
+
+			rr := doJSON(
+				t,
+				srv,
+				http.MethodPatch,
+				tt.path,
+				map[string]string{"title": "Updated title"},
+			)
+			require.Equal(tt.wantCode, rr.Code, rr.Body.String())
+
+			var problem rawProblemDetail
+			require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
+			assert.Equal(tt.wantWire, problem.Code)
+		})
+	}
+}
+
 // TestAPIRateLimitedEnvelope drives a provider mutation through a fake
 // gitlab provider that returns a platform.Error with ErrCodeRateLimited
 // and a known ResetAt. The handler routes the failure through

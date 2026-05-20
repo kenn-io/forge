@@ -658,6 +658,24 @@ func buildOpenPR(number int, updatedAt time.Time) *gh.PullRequest {
 	}
 }
 
+func buildOpenIssue(number int, updatedAt time.Time) *gh.Issue {
+	state := "open"
+	title := fmt.Sprintf("test issue %d", number)
+	url := fmt.Sprintf("https://github.com/owner/repo/issues/%d", number)
+	id := int64(number) * 1000
+	author := "alice"
+	return &gh.Issue{
+		ID:        &id,
+		Number:    &number,
+		Title:     &title,
+		HTMLURL:   &url,
+		State:     &state,
+		User:      &gh.User{Login: &author},
+		UpdatedAt: makeTimestamp(updatedAt),
+		CreatedAt: makeTimestamp(updatedAt),
+	}
+}
+
 func buildGitHubLabel(id int64, name, description, color string, isDefault bool) *gh.Label {
 	return &gh.Label{
 		ID:          &id,
@@ -7022,6 +7040,52 @@ func TestSyncOpenIssueFromBulkRemovesDeletedCommentsWhenCommentsAreComplete(t *t
 	events, err = d.ListIssueEvents(ctx, issue.ID)
 	require.NoError(err)
 	assert.Empty(events)
+}
+
+func TestSyncIssuesFromListLogsProgressForLargeIssueSets(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", repo.Owner, repo.Name))
+	require.NoError(err)
+
+	now := time.Now().UTC().Truncate(time.Second)
+	issues := make([]*gh.Issue, 0, 201)
+	for number := 1; number <= 201; number++ {
+		issues = append(issues, buildOpenIssue(number, now))
+	}
+
+	var buf bytes.Buffer
+	sw := &syncedWriter{w: &buf}
+	h := slog.NewTextHandler(sw, &slog.HandlerOptions{Level: slog.LevelInfo})
+	orig := slog.Default()
+	slog.SetDefault(slog.New(h))
+	t.Cleanup(func() { slog.SetDefault(orig) })
+
+	client := &mockClient{}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client},
+		d, nil, []RepoRef{repo}, time.Minute, nil, nil,
+	)
+
+	err = syncer.syncIssuesFromList(ctx, client, repo, repoID, issues, false)
+	require.NoError(err)
+
+	logs := buf.String()
+	assert.Contains(logs, `msg="issue sync started"`)
+	assert.Contains(logs, "repo=owner/repo")
+	assert.Contains(logs, "platform=github")
+	assert.Contains(logs, "host=github.com")
+	assert.Contains(logs, "source=rest")
+	assert.Contains(logs, "total=201")
+	assert.Contains(logs, `msg="issue sync progress"`)
+	assert.Contains(logs, "processed=100")
+	assert.Contains(logs, "processed=200")
+	assert.Contains(logs, `msg="issue sync completed"`)
+	assert.Contains(logs, "processed=201")
 }
 
 func TestSyncRepoGraphQLIssues(t *testing.T) {

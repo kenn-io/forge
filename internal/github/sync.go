@@ -146,6 +146,50 @@ const (
 	displayNameFailureTTL = 15 * time.Minute
 )
 
+const issueSyncProgressLogInterval = 100
+
+type issueSyncProgressLogger struct {
+	repo   RepoRef
+	source string
+	total  int
+}
+
+func newIssueSyncProgressLogger(repo RepoRef, source string, total int) issueSyncProgressLogger {
+	progress := issueSyncProgressLogger{repo: repo, source: source, total: total}
+	if progress.enabled() {
+		progress.log("issue sync started", 0)
+	}
+	return progress
+}
+
+func (p issueSyncProgressLogger) record(processed int) {
+	if !p.enabled() || processed >= p.total || processed%issueSyncProgressLogInterval != 0 {
+		return
+	}
+	p.log("issue sync progress", processed)
+}
+
+func (p issueSyncProgressLogger) done() {
+	if p.enabled() {
+		p.log("issue sync completed", p.total)
+	}
+}
+
+func (p issueSyncProgressLogger) enabled() bool {
+	return p.total >= issueSyncProgressLogInterval
+}
+
+func (p issueSyncProgressLogger) log(message string, processed int) {
+	slog.Info(message,
+		"repo", p.repo.Owner+"/"+p.repo.Name,
+		"platform", string(repoPlatform(p.repo)),
+		"host", repoHost(p.repo),
+		"source", p.source,
+		"processed", processed,
+		"total", p.total,
+	)
+}
+
 // Syncer periodically pulls PR data from GitHub into SQLite.
 type Syncer struct {
 	clients       *platform.Registry
@@ -3285,6 +3329,7 @@ func (s *Syncer) doSyncRepoGraphQLIssues(
 ) error {
 	var failedScope failScope
 	stillOpen := make(map[int]bool, len(result.Issues))
+	progress := newIssueSyncProgressLogger(repo, "graphql", len(result.Issues))
 
 	for i := range result.Issues {
 		bulk := &result.Issues[i]
@@ -3301,6 +3346,7 @@ func (s *Syncer) doSyncRepoGraphQLIssues(
 			)
 			failedScope |= failIssues
 		}
+		progress.record(i + 1)
 	}
 
 	// Detect closed issues — same as REST path.
@@ -3326,6 +3372,7 @@ func (s *Syncer) doSyncRepoGraphQLIssues(
 	if failedScope != 0 {
 		return fmt.Errorf("GraphQL issue sync had partial failures")
 	}
+	progress.done()
 	return nil
 }
 
@@ -4746,7 +4793,8 @@ func (s *Syncer) syncIssuesFromList(
 	}
 
 	var hadItemFailure bool
-	for _, ghIssue := range ghIssues {
+	progress := newIssueSyncProgressLogger(repo, "rest", len(ghIssues))
+	for i, ghIssue := range ghIssues {
 		if err := s.syncOpenIssue(ctx, client, repo, repoID, ghIssue, forceRefresh); err != nil {
 			slog.Error("sync issue failed",
 				"repo", repo.Owner+"/"+repo.Name,
@@ -4755,6 +4803,7 @@ func (s *Syncer) syncIssuesFromList(
 			)
 			hadItemFailure = true
 		}
+		progress.record(i + 1)
 	}
 
 	closedNumbers, err := s.db.GetPreviouslyOpenIssueNumbers(
@@ -4779,6 +4828,7 @@ func (s *Syncer) syncIssuesFromList(
 	if hadItemFailure {
 		return fmt.Errorf("one or more issue sync items failed")
 	}
+	progress.done()
 	return nil
 }
 
@@ -4796,7 +4846,8 @@ func (s *Syncer) syncPlatformIssuesFromList(
 	}
 
 	var hadItemFailure bool
-	for _, issue := range issues {
+	progress := newIssueSyncProgressLogger(repo, "provider", len(issues))
+	for i, issue := range issues {
 		if err := s.syncOpenPlatformIssue(ctx, reader, repo, repoID, issue, forceRefresh); err != nil {
 			slog.Error("sync issue failed",
 				"repo", repo.Owner+"/"+repo.Name,
@@ -4805,6 +4856,7 @@ func (s *Syncer) syncPlatformIssuesFromList(
 			)
 			hadItemFailure = true
 		}
+		progress.record(i + 1)
 	}
 
 	closedNumbers, err := s.db.GetPreviouslyOpenIssueNumbers(
@@ -4829,6 +4881,7 @@ func (s *Syncer) syncPlatformIssuesFromList(
 	if hadItemFailure {
 		return fmt.Errorf("one or more issue sync items failed")
 	}
+	progress.done()
 	return nil
 }
 

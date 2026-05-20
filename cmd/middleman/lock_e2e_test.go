@@ -77,6 +77,40 @@ func TestStartupLockCollisionAndStatus(t *testing.T) {
 	port := reserveFreePort(t)
 	writeMinimalConfig(t, cfgPath, dataDir, port)
 
+	startupLock, err := runtimelock.Acquire(dataDir)
+	require.NoError(err)
+	startupLockReleased := false
+	t.Cleanup(func() {
+		if !startupLockReleased {
+			require.NoError(startupLock.Release())
+		}
+	})
+
+	// `middleman status` while the lock is held before WriteMetadata:
+	// reports running, but metadata is unavailable.
+	startupStatusCmd := exec.Command(bin, "status", "--config", cfgPath)
+	var startupStatusOut bytes.Buffer
+	startupStatusCmd.Stdout = &startupStatusOut
+	startupStatusCmd.Stderr = os.Stderr
+	require.NoError(startupStatusCmd.Run())
+	require.Contains(startupStatusOut.String(), "running (metadata unavailable: missing")
+	require.Contains(startupStatusOut.String(), dataDir)
+	require.Contains(startupStatusOut.String(), runtimelock.LockPath(dataDir))
+
+	// `middleman status --json`: same lock-held/missing-metadata state.
+	startupJSONCmd := exec.Command(bin, "status", "--json", "--config", cfgPath)
+	var startupJSONOut bytes.Buffer
+	startupJSONCmd.Stdout = &startupJSONOut
+	startupJSONCmd.Stderr = os.Stderr
+	require.NoError(startupJSONCmd.Run())
+	require.Contains(startupJSONOut.String(), "\"running\": true")
+	require.Contains(startupJSONOut.String(), "\"data_dir\": \""+dataDir+"\"")
+	require.Contains(startupJSONOut.String(), "\"metadata\": null")
+	require.Contains(startupJSONOut.String(), "\"metadata_error\": \"missing\"")
+
+	require.NoError(startupLock.Release())
+	startupLockReleased = true
+
 	// First subprocess: should start and hold the lock. Don't use
 	// CommandContext here because its default Cancel sends SIGKILL,
 	// which bypasses signal.NotifyContext + defer chains in main.go and
@@ -107,7 +141,7 @@ func TestStartupLockCollisionAndStatus(t *testing.T) {
 	second := exec.Command(bin, "--config", cfgPath)
 	var stderr bytes.Buffer
 	second.Stderr = &stderr
-	err := second.Run()
+	err = second.Run()
 	require.Error(err)
 	var exitErr *exec.ExitError
 	require.ErrorAs(err, &exitErr)

@@ -922,6 +922,21 @@ type RepoLabelsResponse struct {
 	Syncing   bool     `json:"syncing"`
 }
 
+// RepoOperations defines model for RepoOperations.
+type RepoOperations struct {
+	AddComment         OperationAvailability `json:"add_comment"`
+	AddLabel           OperationAvailability `json:"add_label"`
+	ApproveWorkflow    OperationAvailability `json:"approve_workflow"`
+	CloseIssue         OperationAvailability `json:"close_issue"`
+	ClosePr            OperationAvailability `json:"close_pr"`
+	MarkReadyForReview OperationAvailability `json:"mark_ready_for_review"`
+	MergePr            OperationAvailability `json:"merge_pr"`
+	RemoveLabel        OperationAvailability `json:"remove_label"`
+	ReopenIssue        OperationAvailability `json:"reopen_issue"`
+	ReopenPr           OperationAvailability `json:"reopen_pr"`
+	SubmitReview       OperationAvailability `json:"submit_review"`
+}
+
 // RepoPreviewRequest defines model for RepoPreviewRequest.
 type RepoPreviewRequest struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -971,28 +986,28 @@ type RepoRefResponse struct {
 // RepoResponse defines model for RepoResponse.
 type RepoResponse struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema                   *string                          `json:"$schema,omitempty"`
-	AllowMergeCommit         bool                             `json:"AllowMergeCommit"`
-	AllowRebaseMerge         bool                             `json:"AllowRebaseMerge"`
-	AllowSquashMerge         bool                             `json:"AllowSquashMerge"`
-	BackfillIssueComplete    bool                             `json:"BackfillIssueComplete"`
-	BackfillIssueCompletedAt *time.Time                       `json:"BackfillIssueCompletedAt"`
-	BackfillIssuePage        int64                            `json:"BackfillIssuePage"`
-	BackfillPRComplete       bool                             `json:"BackfillPRComplete"`
-	BackfillPRCompletedAt    *time.Time                       `json:"BackfillPRCompletedAt"`
-	BackfillPRPage           int64                            `json:"BackfillPRPage"`
-	CreatedAt                time.Time                        `json:"CreatedAt"`
-	ID                       int64                            `json:"ID"`
-	LastSyncCompletedAt      *time.Time                       `json:"LastSyncCompletedAt"`
-	LastSyncError            string                           `json:"LastSyncError"`
-	LastSyncStartedAt        *time.Time                       `json:"LastSyncStartedAt"`
-	Name                     string                           `json:"Name"`
-	Owner                    string                           `json:"Owner"`
-	Platform                 string                           `json:"Platform"`
-	PlatformHost             string                           `json:"PlatformHost"`
-	ViewerCanMerge           bool                             `json:"ViewerCanMerge"`
-	Capabilities             ProviderCapabilitiesResponse     `json:"capabilities"`
-	Operations               map[string]OperationAvailability `json:"operations"`
+	Schema                   *string                      `json:"$schema,omitempty"`
+	AllowMergeCommit         bool                         `json:"AllowMergeCommit"`
+	AllowRebaseMerge         bool                         `json:"AllowRebaseMerge"`
+	AllowSquashMerge         bool                         `json:"AllowSquashMerge"`
+	BackfillIssueComplete    bool                         `json:"BackfillIssueComplete"`
+	BackfillIssueCompletedAt *time.Time                   `json:"BackfillIssueCompletedAt"`
+	BackfillIssuePage        int64                        `json:"BackfillIssuePage"`
+	BackfillPRComplete       bool                         `json:"BackfillPRComplete"`
+	BackfillPRCompletedAt    *time.Time                   `json:"BackfillPRCompletedAt"`
+	BackfillPRPage           int64                        `json:"BackfillPRPage"`
+	CreatedAt                time.Time                    `json:"CreatedAt"`
+	ID                       int64                        `json:"ID"`
+	LastSyncCompletedAt      *time.Time                   `json:"LastSyncCompletedAt"`
+	LastSyncError            string                       `json:"LastSyncError"`
+	LastSyncStartedAt        *time.Time                   `json:"LastSyncStartedAt"`
+	Name                     string                       `json:"Name"`
+	Owner                    string                       `json:"Owner"`
+	Platform                 string                       `json:"Platform"`
+	PlatformHost             string                       `json:"PlatformHost"`
+	ViewerCanMerge           bool                         `json:"ViewerCanMerge"`
+	Capabilities             ProviderCapabilitiesResponse `json:"capabilities"`
+	Operations               RepoOperations               `json:"operations"`
 }
 
 // RepoSummaryAuthorResponse defines model for RepoSummaryAuthorResponse.
@@ -1045,7 +1060,7 @@ type RepoSummaryResponse struct {
 	Name                 string                            `json:"name"`
 	OpenIssueCount       int64                             `json:"open_issue_count"`
 	OpenPrCount          int64                             `json:"open_pr_count"`
-	Operations           map[string]OperationAvailability  `json:"operations"`
+	Operations           RepoOperations                    `json:"operations"`
 	Owner                string                            `json:"owner"`
 	PlatformHost         string                            `json:"platform_host"`
 	RecentIssues         *[]RepoSummaryIssueResponse       `json:"recent_issues"`

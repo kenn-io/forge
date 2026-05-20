@@ -2066,6 +2066,44 @@ components:
         - syncing
         - sync_error
       type: object
+    RepoOperations:
+      additionalProperties: false
+      properties:
+        add_comment:
+          $ref: "#/components/schemas/OperationAvailability"
+        add_label:
+          $ref: "#/components/schemas/OperationAvailability"
+        approve_workflow:
+          $ref: "#/components/schemas/OperationAvailability"
+        close_issue:
+          $ref: "#/components/schemas/OperationAvailability"
+        close_pr:
+          $ref: "#/components/schemas/OperationAvailability"
+        mark_ready_for_review:
+          $ref: "#/components/schemas/OperationAvailability"
+        merge_pr:
+          $ref: "#/components/schemas/OperationAvailability"
+        remove_label:
+          $ref: "#/components/schemas/OperationAvailability"
+        reopen_issue:
+          $ref: "#/components/schemas/OperationAvailability"
+        reopen_pr:
+          $ref: "#/components/schemas/OperationAvailability"
+        submit_review:
+          $ref: "#/components/schemas/OperationAvailability"
+      required:
+        - merge_pr
+        - close_pr
+        - reopen_pr
+        - mark_ready_for_review
+        - submit_review
+        - add_comment
+        - add_label
+        - remove_label
+        - close_issue
+        - reopen_issue
+        - approve_workflow
+      type: object
     RepoPreviewRequest:
       additionalProperties: false
       properties:
@@ -2251,9 +2289,7 @@ components:
         capabilities:
           $ref: "#/components/schemas/ProviderCapabilitiesResponse"
         operations:
-          additionalProperties:
-            $ref: "#/components/schemas/OperationAvailability"
-          type: object
+          $ref: "#/components/schemas/RepoOperations"
       required:
         - ID
         - Platform
@@ -2397,9 +2433,7 @@ components:
           format: int64
           type: integer
         operations:
-          additionalProperties:
-            $ref: "#/components/schemas/OperationAvailability"
-          type: object
+          $ref: "#/components/schemas/RepoOperations"
         owner:
           type: string
         platform_host:

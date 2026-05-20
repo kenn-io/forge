@@ -4,9 +4,9 @@
     DiffFile,
     KanbanStatus,
     Label,
-    OperationAvailability,
     ProviderCapabilities,
     PullRequest,
+    RepoOperations,
   } from "../../api/types.js";
   import type { DetailSyncMode } from "../../stores/detail.svelte.js";
   import {
@@ -523,7 +523,7 @@
     allowMerge: boolean;
     allowRebase: boolean;
     viewerCanMerge: boolean;
-    operations?: Record<string, OperationAvailability>;
+    operations?: RepoOperations;
   };
 
   let repoSettings = $state<RepoSettings | null>(null);

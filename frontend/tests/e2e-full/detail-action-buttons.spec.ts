@@ -502,15 +502,13 @@ test.describe("detail action buttons", () => {
       expect(settingsResponse.ok()).toBe(true);
       const settings = await settingsResponse.json() as {
         ViewerCanMerge: boolean;
-        operations: Record<string, { available: boolean; code?: string }>;
+        operations: {
+          merge_pr: { available: boolean; code?: string };
+        };
       };
       expect(settings.ViewerCanMerge).toBe(false);
-      const mergeOp = settings.operations.merge_pr;
-      if (mergeOp === undefined) {
-        throw new Error("operations.merge_pr missing from repo response");
-      }
-      expect(mergeOp.available).toBe(false);
-      expect(mergeOp.code).toBe("viewer_cannot_merge");
+      expect(settings.operations.merge_pr.available).toBe(false);
+      expect(settings.operations.merge_pr.code).toBe("viewer_cannot_merge");
 
       await page.goto(`${baseURL}/pulls/github/acme/widgets/1`);
       await expect(page.locator(".pull-detail")).toBeVisible();

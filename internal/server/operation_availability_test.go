@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"net/http"
+	"reflect"
 	"testing"
 	"time"
 
@@ -165,15 +166,20 @@ func TestFormatRateLimit(t *testing.T) {
 	assert.Empty(unknown.retryAt)
 }
 
-func TestRepoOperationsCatalogIsStable(t *testing.T) {
-	// The catalog of operation names is a wire contract. Renaming
-	// a key here breaks frontends already in flight, so the test
-	// asserts the full list as a guard against accidental renames.
-	got := make([]string, 0, len(operationCatalog()))
-	for _, op := range operationCatalog() {
-		got = append(got, op.name)
+func TestRepoOperationsWireShape(t *testing.T) {
+	// The set of operation field names on RepoOperations is a wire
+	// contract. Renaming a json tag here breaks any frontend pinned
+	// to an older schema, so the test enumerates the full set as a
+	// guard against accidental renames.
+	require := require.New(t)
+	fields := reflect.VisibleFields(reflect.TypeFor[RepoOperations]())
+	tags := make([]string, 0, len(fields))
+	for _, f := range fields {
+		tag := f.Tag.Get("json")
+		require.NotEmpty(tag, "field %s missing json tag", f.Name)
+		tags = append(tags, tag)
 	}
-	require.Equal(t, []string{
+	require.Equal([]string{
 		"merge_pr",
 		"close_pr",
 		"reopen_pr",
@@ -185,7 +191,7 @@ func TestRepoOperationsCatalogIsStable(t *testing.T) {
 		"close_issue",
 		"reopen_issue",
 		"approve_workflow",
-	}, got)
+	}, tags)
 }
 
 // newServerWithRateTracker builds a Server whose syncer is wired
@@ -227,12 +233,7 @@ func TestAPIRepoResponseIncludesOperationsHealthy(t *testing.T) {
 	var resp repoResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 
-	// Wire shape: every catalog operation is present.
-	require.NotEmpty(resp.Operations)
-	for _, op := range operationCatalog() {
-		require.Contains(resp.Operations, op.name, "missing operation: %s", op.name)
-	}
-	merge := resp.Operations[operationMergePR]
+	merge := resp.Operations.MergePR
 	assert.True(merge.Available)
 	assert.Empty(merge.Code)
 	assert.Empty(merge.UnavailableReason)
@@ -258,8 +259,7 @@ func TestAPIRepoResponseIncludesOperationsRateLimited(t *testing.T) {
 	var resp repoResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 
-	require.NotEmpty(resp.Operations)
-	merge := resp.Operations[operationMergePR]
+	merge := resp.Operations.MergePR
 	assert.False(merge.Available)
 	assert.Equal(availabilityCodeRateLimited, merge.Code)
 	assert.Contains(merge.UnavailableReason, "rate-limited")
@@ -285,13 +285,12 @@ func TestAPIRepoResponseIncludesOperationsViewerCannotMerge(t *testing.T) {
 	var resp repoResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 
-	merge := resp.Operations[operationMergePR]
+	merge := resp.Operations.MergePR
 	assert.False(merge.Available)
 	assert.Equal(availabilityCodeViewerCannotMerge, merge.Code)
 	assert.Empty(merge.RequiredCapability)
 
 	// Other operations remain available because viewer_can_merge only
 	// gates merge_pr.
-	closePR := resp.Operations[operationClosePR]
-	assert.True(closePR.Available)
+	assert.True(resp.Operations.ClosePR.Available)
 }

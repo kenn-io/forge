@@ -52,8 +52,8 @@ type repoResponse struct {
 	BackfillIssueComplete    bool
 	BackfillIssueCompletedAt *time.Time
 	CreatedAt                time.Time
-	Capabilities             providerCapabilitiesResponse     `json:"capabilities"`
-	Operations               map[string]OperationAvailability `json:"operations"`
+	Capabilities             providerCapabilitiesResponse `json:"capabilities"`
+	Operations               RepoOperations               `json:"operations"`
 }
 
 // mergeRequestResponse extends db.MergeRequest with resolved repo owner/name fields.
@@ -173,7 +173,7 @@ type repoSummaryResponse struct {
 	TimelineUpdatedAt    string                           `json:"timeline_updated_at,omitempty"`
 	ActiveAuthors        []repoSummaryAuthorResponse      `json:"active_authors"`
 	RecentIssues         []repoSummaryIssueResponse       `json:"recent_issues"`
-	Operations           map[string]OperationAvailability `json:"operations"`
+	Operations           RepoOperations                   `json:"operations"`
 }
 
 type commentAutocompleteResponse struct {

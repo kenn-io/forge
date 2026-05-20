@@ -8,9 +8,9 @@ import (
 	"github.com/wesm/middleman/internal/ratelimit"
 )
 
-// Operation names used as keys in the operations map on the wire.
-// Adding or renaming a constant here is a breaking wire change; the
-// frontend depends on these literals to drive button enablement.
+// Operation names. These string literals are the JSON field names
+// of RepoOperations and are part of the wire contract; renaming one
+// is a breaking change for clients pinned to an older schema.
 const (
 	operationMergePR            = "merge_pr"
 	operationClosePR            = "close_pr"
@@ -45,6 +45,26 @@ type OperationAvailability struct {
 	RetryAt            string `json:"retry_at,omitempty"`
 }
 
+// RepoOperations carries the availability of every supported write
+// operation for a repository. Naming each operation as a struct
+// field (rather than a free-form string-keyed map) makes the set of
+// operations part of the OpenAPI contract: clients get typed access
+// to each field and adding a new operation requires an explicit
+// server change.
+type RepoOperations struct {
+	MergePR            OperationAvailability `json:"merge_pr"`
+	ClosePR            OperationAvailability `json:"close_pr"`
+	ReopenPR           OperationAvailability `json:"reopen_pr"`
+	MarkReadyForReview OperationAvailability `json:"mark_ready_for_review"`
+	SubmitReview       OperationAvailability `json:"submit_review"`
+	AddComment         OperationAvailability `json:"add_comment"`
+	AddLabel           OperationAvailability `json:"add_label"`
+	RemoveLabel        OperationAvailability `json:"remove_label"`
+	CloseIssue         OperationAvailability `json:"close_issue"`
+	ReopenIssue        OperationAvailability `json:"reopen_issue"`
+	ApproveWorkflow    OperationAvailability `json:"approve_workflow"`
+}
+
 // operationDescriptor lists the capabilities an operation needs.
 // requiredCapabilities is checked in declaration order so the first
 // missing capability becomes RequiredCapability, giving deterministic
@@ -54,38 +74,42 @@ type operationDescriptor struct {
 	requiredCapabilities []string
 }
 
-func operationCatalog() []operationDescriptor {
-	return []operationDescriptor{
-		{name: operationMergePR, requiredCapabilities: []string{capabilityMergeMutation}},
-		{name: operationClosePR, requiredCapabilities: []string{capabilityStateMutation}},
-		{name: operationReopenPR, requiredCapabilities: []string{capabilityStateMutation}},
-		{name: operationMarkReadyForReview, requiredCapabilities: []string{capabilityReadyForReview}},
-		{name: operationSubmitReview, requiredCapabilities: []string{capabilityReviewMutation}},
-		{name: operationAddComment, requiredCapabilities: []string{capabilityCommentMutation}},
-		{name: operationAddLabel, requiredCapabilities: []string{capabilityReadLabels, capabilityLabelMutation}},
-		{name: operationRemoveLabel, requiredCapabilities: []string{capabilityReadLabels, capabilityLabelMutation}},
-		{name: operationCloseIssue, requiredCapabilities: []string{capabilityIssueMutation}},
-		{name: operationReopenIssue, requiredCapabilities: []string{capabilityIssueMutation}},
-		{name: operationApproveWorkflow, requiredCapabilities: []string{capabilityWorkflowApproval}},
-	}
-}
+var (
+	descMergePR            = operationDescriptor{name: operationMergePR, requiredCapabilities: []string{capabilityMergeMutation}}
+	descClosePR            = operationDescriptor{name: operationClosePR, requiredCapabilities: []string{capabilityStateMutation}}
+	descReopenPR           = operationDescriptor{name: operationReopenPR, requiredCapabilities: []string{capabilityStateMutation}}
+	descMarkReadyForReview = operationDescriptor{name: operationMarkReadyForReview, requiredCapabilities: []string{capabilityReadyForReview}}
+	descSubmitReview       = operationDescriptor{name: operationSubmitReview, requiredCapabilities: []string{capabilityReviewMutation}}
+	descAddComment         = operationDescriptor{name: operationAddComment, requiredCapabilities: []string{capabilityCommentMutation}}
+	descAddLabel           = operationDescriptor{name: operationAddLabel, requiredCapabilities: []string{capabilityReadLabels, capabilityLabelMutation}}
+	descRemoveLabel        = operationDescriptor{name: operationRemoveLabel, requiredCapabilities: []string{capabilityReadLabels, capabilityLabelMutation}}
+	descCloseIssue         = operationDescriptor{name: operationCloseIssue, requiredCapabilities: []string{capabilityIssueMutation}}
+	descReopenIssue        = operationDescriptor{name: operationReopenIssue, requiredCapabilities: []string{capabilityIssueMutation}}
+	descApproveWorkflow    = operationDescriptor{name: operationApproveWorkflow, requiredCapabilities: []string{capabilityWorkflowApproval}}
+)
 
-// repoOperations derives the operation availability map for a repo
-// from current provider capabilities, the repo's per-viewer merge
-// permission, and the host's REST/GraphQL rate-limit state.
-//
-// The set of keys is fixed by operationCatalog() so the client can
-// rely on every operation appearing in every response.
-func (s *Server) repoOperations(repo db.Repo) map[string]OperationAvailability {
+// repoOperations derives the availability of every operation for a
+// repo from current provider capabilities, the repo's per-viewer
+// merge permission, and the host's REST/GraphQL rate-limit state.
+func (s *Server) repoOperations(repo db.Repo) RepoOperations {
 	caps := s.capabilitiesForRepo(repo)
 	rate := s.rateLimitedReason(repo)
-	catalog := operationCatalog()
-
-	out := make(map[string]OperationAvailability, len(catalog))
-	for _, op := range catalog {
-		out[op.name] = deriveOperationAvailability(op, caps, repo, rate)
+	derive := func(op operationDescriptor) OperationAvailability {
+		return deriveOperationAvailability(op, caps, repo, rate)
 	}
-	return out
+	return RepoOperations{
+		MergePR:            derive(descMergePR),
+		ClosePR:            derive(descClosePR),
+		ReopenPR:           derive(descReopenPR),
+		MarkReadyForReview: derive(descMarkReadyForReview),
+		SubmitReview:       derive(descSubmitReview),
+		AddComment:         derive(descAddComment),
+		AddLabel:           derive(descAddLabel),
+		RemoveLabel:        derive(descRemoveLabel),
+		CloseIssue:         derive(descCloseIssue),
+		ReopenIssue:        derive(descReopenIssue),
+		ApproveWorkflow:    derive(descApproveWorkflow),
+	}
 }
 
 func deriveOperationAvailability(

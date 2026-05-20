@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy } from "svelte";
+  import { onDestroy, untrack } from "svelte";
   import {
     Provider,
     PRListView,
@@ -33,6 +33,7 @@
   import { MonitorIcon, SpinnerIcon } from "./lib/icons.ts";
   import { showFlash } from "./lib/stores/flash.svelte.js";
   import { initItemRefHandler } from "./lib/utils/itemRefHandler.js";
+  import { globalRepoForSelectedRoute } from "./lib/utils/repoSelectionSync.js";
   import { runAppStartup } from "./lib/utils/appStartup.js";
   import {
     initTheme,
@@ -333,6 +334,20 @@
         stores.issues.clearIssueSelection();
       }
     }
+  });
+
+  // Keep the repo dropdown and sidebar list aligned with the item in
+  // the URL. Without this, navigating to a PR/issue link leaves the
+  // dropdown and left list pinned to whichever repo was picked before,
+  // even though the detail pane jumped to a different one.
+  $effect(() => {
+    if (!stores) return;
+    if (getUIConfig().hideRepoSelector) return;
+    if (!stores.settings.hasConfiguredRepos()) return;
+    const next = globalRepoForSelectedRoute(getRoute());
+    if (next === undefined) return;
+    if (untrack(getGlobalRepo) === next) return;
+    setGlobalRepo(next);
   });
 
   type DrawerItem = RoutedItemRef & {

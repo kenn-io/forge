@@ -3083,11 +3083,12 @@ func (s *Syncer) indexUpsertMergeRequest(
 	}
 
 	// Preserve fields list endpoints commonly omit.
+	needsCIDetailRefresh := false
 	if existing != nil {
 		normalized.Additions = existing.Additions
 		normalized.Deletions = existing.Deletions
 		preserveMergeableStateIfOmitted(normalized, existing)
-		preserveCIStateIfOmitted(normalized, existing)
+		needsCIDetailRefresh = preserveCIStateIfOmitted(normalized, existing)
 	}
 
 	if normalized.Author != "" &&
@@ -3110,6 +3111,14 @@ func (s *Syncer) indexUpsertMergeRequest(
 		return fmt.Errorf(
 			"upsert MR #%d: %w", mr.Number, err,
 		)
+	}
+	if needsCIDetailRefresh {
+		if err := s.clearMRDetailFetchedByRepoID(ctx, repoID, mr.Number); err != nil {
+			return fmt.Errorf(
+				"clear detail fetch marker for MR #%d: %w",
+				mr.Number, err,
+			)
+		}
 	}
 	if err := s.replaceMergeRequestLabels(ctx, repoID, mrID, normalized.Labels); err != nil {
 		return fmt.Errorf("persist labels for MR #%d: %w", mr.Number, err)
@@ -3157,11 +3166,12 @@ func (s *Syncer) indexUpsertMR(
 	}
 
 	// Preserve fields the list endpoint doesn't return.
+	needsCIDetailRefresh := false
 	if existing != nil {
 		normalized.Additions = existing.Additions
 		normalized.Deletions = existing.Deletions
 		preserveMergeableStateIfOmitted(normalized, existing)
-		preserveCIStateIfOmitted(normalized, existing)
+		needsCIDetailRefresh = preserveCIStateIfOmitted(normalized, existing)
 	}
 
 	if normalized.Author != "" &&
@@ -3185,6 +3195,14 @@ func (s *Syncer) indexUpsertMR(
 		return fmt.Errorf(
 			"upsert MR #%d: %w", ghPR.GetNumber(), err,
 		)
+	}
+	if needsCIDetailRefresh {
+		if err := s.clearMRDetailFetchedByRepoID(ctx, repoID, ghPR.GetNumber()); err != nil {
+			return fmt.Errorf(
+				"clear detail fetch marker for MR #%d: %w",
+				ghPR.GetNumber(), err,
+			)
+		}
 	}
 	if err := s.replaceMergeRequestLabels(ctx, repoID, mrID, normalized.Labels); err != nil {
 		return fmt.Errorf("persist labels for MR #%d: %w", ghPR.GetNumber(), err)
@@ -4545,6 +4563,14 @@ func (s *Syncer) updateMRDetailFetchedByRepoID(
 	return s.db.UpdateMRDetailFetchedByRepoID(
 		ctx, repoID, number, ciHadPending,
 	)
+}
+
+func (s *Syncer) clearMRDetailFetchedByRepoID(
+	ctx context.Context,
+	repoID int64,
+	number int,
+) error {
+	return s.db.ClearMRDetailFetchedByRepoID(ctx, repoID, number)
 }
 
 func (s *Syncer) updateIssueDetailFetchedByRepoID(
@@ -6262,21 +6288,25 @@ func preserveMergeableStateIfOmitted(
 func preserveCIStateIfOmitted(
 	normalized *db.MergeRequest,
 	existing *db.MergeRequest,
-) {
+) bool {
 	if normalized == nil || existing == nil {
-		return
+		return false
 	}
 	if normalized.PlatformHeadSHA == "" ||
 		existing.PlatformHeadSHA == "" ||
 		normalized.PlatformHeadSHA != existing.PlatformHeadSHA {
-		return
+		return false
 	}
+	ciStatusOmitted := normalized.CIStatus == ""
+	ciStatusChanged := !ciStatusOmitted &&
+		normalized.CIStatus != existing.CIStatus
 	if normalized.CIStatus == "" {
 		normalized.CIStatus = existing.CIStatus
 	}
-	if normalized.CIChecksJSON == "" {
+	if normalized.CIChecksJSON == "" && !ciStatusChanged {
 		normalized.CIChecksJSON = existing.CIChecksJSON
 	}
+	return ciStatusChanged && normalized.CIChecksJSON == ""
 }
 
 // syncMRDiff fetches the bare clone and computes diff SHAs for a single PR.

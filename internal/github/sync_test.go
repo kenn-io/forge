@@ -1819,6 +1819,25 @@ func TestPreserveCIStateKeepsOmittedStateForMatchingHead(t *testing.T) {
 	assert.Contains(normalized.CIChecksJSON, "build")
 }
 
+func TestPreserveCIStateClearsCachedChecksWhenStatusChanges(t *testing.T) {
+	assert := Assert.New(t)
+	normalized := db.MergeRequest{
+		PlatformHeadSHA: "same-head",
+		CIStatus:        "success",
+	}
+	existing := db.MergeRequest{
+		PlatformHeadSHA: "same-head",
+		CIStatus:        "failure",
+		CIChecksJSON:    `[{"name":"build","status":"completed","conclusion":"failure"}]`,
+	}
+
+	needsCIDetailRefresh := preserveCIStateIfOmitted(&normalized, &existing)
+
+	assert.True(needsCIDetailRefresh)
+	assert.Equal("success", normalized.CIStatus)
+	assert.Empty(normalized.CIChecksJSON)
+}
+
 func TestPreserveMergeableStateKeepsOmittedStateForMatchingKnownIdentity(t *testing.T) {
 	assert := Assert.New(t)
 	normalized := db.MergeRequest{

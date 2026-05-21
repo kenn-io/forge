@@ -3393,6 +3393,25 @@ func (d *DB) UpdateMRDetailFetchedByRepoID(
 	return nil
 }
 
+// ClearMRDetailFetchedByRepoID marks an existing merge request as needing a
+// fresh detail fetch for an already resolved provider-qualified repo row.
+func (d *DB) ClearMRDetailFetchedByRepoID(
+	ctx context.Context,
+	repoID int64,
+	number int,
+) error {
+	_, err := d.rw.ExecContext(ctx, `
+		UPDATE middleman_merge_requests
+		SET detail_fetched_at = NULL
+		WHERE repo_id = ? AND number = ?`,
+		repoID, number,
+	)
+	if err != nil {
+		return fmt.Errorf("clear mr detail fetched by repo id: %w", err)
+	}
+	return nil
+}
+
 // UpdateMRWorkflowApproval persists the workflow-approval snapshot
 // for a merge request. The result is tied to headSHA: a later GET
 // must compare the stored head SHA to the merge request's current

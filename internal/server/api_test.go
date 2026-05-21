@@ -2950,12 +2950,14 @@ func TestAPICIRefreshWarnsAndPreservesCIWhenProviderFails(t *testing.T) {
 	database := dbtest.Open(t)
 
 	ref := platform.RepoRef{
-		Platform:      platform.KindGitLab,
-		Host:          "gitlab.example.com",
-		Owner:         "group",
-		Name:          "project",
-		RepoPath:      "group/project",
-		DefaultBranch: "main",
+		Platform:           platform.KindGitLab,
+		Host:               "gitlab.example.com",
+		Owner:              "group",
+		Name:               "project",
+		RepoPath:           "group/project",
+		PlatformID:         4242,
+		PlatformExternalID: "gid://gitlab/Project/4242",
+		DefaultBranch:      "main",
 	}
 	provider := &apiTestGitLabProvider{
 		ref:   ref,
@@ -3026,6 +3028,123 @@ func TestAPICIRefreshWarnsAndPreservesCIWhenProviderFails(t *testing.T) {
 	assert.Equal("pending", stored.CIStatus)
 	assert.JSONEq(
 		`[{"name":"pipeline","status":"in_progress","conclusion":""}]`,
+		stored.CIChecksJSON,
+	)
+}
+
+func TestAPISyncRefreshesStaleCachedChecksWhenAggregateCIChanges(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := t.Context()
+	now := time.Now().UTC().Truncate(time.Second)
+	fetchedAt := now
+	database := dbtest.Open(t)
+
+	ref := platform.RepoRef{
+		Platform:           platform.KindGitLab,
+		Host:               "gitlab.example.com",
+		Owner:              "group",
+		Name:               "project",
+		RepoPath:           "group/project",
+		PlatformID:         4242,
+		PlatformExternalID: "gid://gitlab/Project/4242",
+		DefaultBranch:      "main",
+	}
+	provider := &apiTestGitLabProvider{
+		ref: ref,
+		mergeRequests: []platform.MergeRequest{{
+			Repo:           ref,
+			PlatformID:     7001,
+			Number:         7,
+			URL:            "https://gitlab.example.com/group/project/-/merge_requests/7",
+			Title:          "Refresh changed CI",
+			Author:         "ada",
+			State:          "open",
+			HeadBranch:     "feature",
+			BaseBranch:     "main",
+			HeadSHA:        "head-sha",
+			BaseSHA:        "base-sha",
+			CIStatus:       "pending",
+			CreatedAt:      now,
+			UpdatedAt:      now,
+			LastActivityAt: now,
+		}},
+		ciChecks: map[string][]platform.CICheck{
+			"head-sha": {{
+				Name:   "pipeline",
+				Status: "in_progress",
+			}},
+		},
+	}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	repoID, err := database.UpsertRepo(ctx, platform.DBRepoIdentity(ref))
+	require.NoError(err)
+	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:          repoID,
+		PlatformID:      7001,
+		Number:          7,
+		URL:             "https://gitlab.example.com/group/project/-/merge_requests/7",
+		Title:           "Refresh changed CI",
+		Author:          "ada",
+		State:           "open",
+		HeadBranch:      "feature",
+		BaseBranch:      "main",
+		PlatformHeadSHA: "head-sha",
+		PlatformBaseSHA: "base-sha",
+		CIStatus:        "failure",
+		CIChecksJSON:    `[{"name":"pipeline","status":"completed","conclusion":"failure"}]`,
+		CIHadPending:    false,
+		DetailFetchedAt: &fetchedAt,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+		LastActivityAt:  now,
+	})
+	require.NoError(err)
+
+	syncer := ghclient.NewSyncerWithRegistry(
+		registry,
+		database,
+		nil,
+		[]ghclient.RepoRef{{
+			Platform:     platform.KindGitLab,
+			PlatformHost: ref.Host,
+			Owner:        ref.Owner,
+			Name:         ref.Name,
+			RepoPath:     ref.RepoPath,
+		}},
+		time.Minute,
+		nil,
+		map[string]*ghclient.SyncBudget{
+			ghclient.RateBucketKey("gitlab", ref.Host): ghclient.NewSyncBudget(100),
+		},
+	)
+	t.Cleanup(syncer.Stop)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	client := setupTestClient(t, srv)
+
+	syncer.RunOnce(ctx)
+
+	resp, err := client.HTTP.GetPullOnHostWithResponse(
+		ctx, ref.Host, "gitlab", ref.Owner, ref.Name, 7,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode(), string(resp.Body))
+	require.NotNil(resp.JSON200)
+	assert.Equal("pending", resp.JSON200.MergeRequest.CIStatus)
+	assert.JSONEq(
+		`[{"name":"pipeline","status":"in_progress","conclusion":"","url":"","app":""}]`,
+		resp.JSON200.MergeRequest.CIChecksJSON,
+	)
+
+	stored, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.NotNil(stored.DetailFetchedAt)
+	assert.True(stored.CIHadPending)
+	assert.JSONEq(
+		`[{"name":"pipeline","status":"in_progress","conclusion":"","url":"","app":""}]`,
 		stored.CIChecksJSON,
 	)
 }

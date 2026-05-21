@@ -314,6 +314,7 @@ func buildCommandSpecs(run ephemeralRun, frontendArgs []string) commandSpecs {
 		"MIDDLEMAN_LOG_LEVEL":        envDefault("MIDDLEMAN_LOG_LEVEL", "debug"),
 		"MIDDLEMAN_LOG_FILE":         filepath.Join(run.logDir, "backend-dev.log"),
 		"MIDDLEMAN_LOG_STDERR_LEVEL": envDefault("MIDDLEMAN_LOG_STDERR_LEVEL", "info"),
+		"TELEMETRY_ENABLED":          envDefault("TELEMETRY_ENABLED", "0"),
 	})
 	frontendEnv := overlayEnv(sanitizedFrontendEnv(baseEnv), map[string]string{
 		"MIDDLEMAN_CONFIG": run.configPath,

@@ -239,6 +239,7 @@ func TestBuildCommandSpecsWiresEphemeralEnvironment(t *testing.T) {
 	assert.Equal("./scripts/dev-stack-backend.sh", specs.backend.name)
 	assert.Contains(specs.backend.env, "MIDDLEMAN_CONFIG=/tmp/middleman-dev/config.toml")
 	assert.Contains(specs.backend.env, "MIDDLEMAN_LOG_FILE=/tmp/middleman-dev/logs/backend-dev.log")
+	assert.Contains(specs.backend.env, "TELEMETRY_ENABLED=0")
 	assert.Equal("./scripts/frontend-dev.sh", specs.frontend.name)
 	assert.Equal([]string{"--port", "39302", "--host", "127.0.0.1"}, specs.frontend.args)
 	assert.Contains(specs.frontend.env, "MIDDLEMAN_CONFIG=/tmp/middleman-dev/config.toml")
@@ -257,6 +258,20 @@ func TestBuildCommandSpecsWiresEphemeralEnvironment(t *testing.T) {
 	assert.NotContains(specs.frontend.env, "SESSION_COOKIE=secret-cookie")
 	assert.Contains(specs.backend.env, "MIDDLEMAN_GITHUB_TOKEN=secret-token")
 	assert.Contains(specs.backend.env, "OPENAI_API_KEY=secret-openai")
+}
+
+func TestBuildCommandSpecsPreservesExplicitTelemetrySetting(t *testing.T) {
+	assert := Assert.New(t)
+	t.Setenv("TELEMETRY_ENABLED", "1")
+
+	specs := buildCommandSpecs(ephemeralRun{
+		configPath:   "/tmp/middleman-dev/config.toml",
+		backendURL:   "http://127.0.0.1:39301",
+		frontendPort: 39302,
+		logDir:       "/tmp/middleman-dev/logs",
+	}, nil)
+
+	assert.Contains(specs.backend.env, "TELEMETRY_ENABLED=1")
 }
 
 func TestBuildCommandSpecsReferenceExecutableScripts(t *testing.T) {

@@ -23,6 +23,15 @@ import (
 	"go.kenn.io/middleman/internal/testutil/dbtest"
 )
 
+func TestMain(m *testing.M) {
+	if os.Getenv("TELEMETRY_ENABLED") == "" {
+		if err := os.Setenv("TELEMETRY_ENABLED", "0"); err != nil {
+			panic(err)
+		}
+	}
+	os.Exit(m.Run())
+}
+
 func TestResolveStartupReposExpandsConfiguredGlobs(t *testing.T) {
 	assert := Assert.New(t)
 	cfg := &config.Config{

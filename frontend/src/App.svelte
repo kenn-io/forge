@@ -122,9 +122,11 @@
     if (!routeStores) return;
     if (getUIConfig().hideRepoSelector) return;
     if (!routeStores.settings.hasConfiguredRepos()) return;
+    const currentRepo = untrack(getGlobalRepo);
+    if (currentRepo === undefined) return;
     const next = globalRepoForSelectedRoute(getRoute());
     if (next === undefined) return;
-    if (untrack(getGlobalRepo) === next) return;
+    if (currentRepo === next) return;
     setGlobalRepo(next);
   }
 

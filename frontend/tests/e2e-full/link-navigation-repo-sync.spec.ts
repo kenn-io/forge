@@ -54,6 +54,12 @@ test.describe("deep-link repo dropdown + sidebar sync", () => {
   });
 
   test("navigating between PRs in different repos updates the dropdown each time", async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem(
+        "middleman-filter-repo", "github.com/acme/widgets",
+      );
+    });
+
     await page.goto("/pulls/github/acme/widgets/1");
     await waitForPullDetail(page);
     await expect(page.locator(".typeahead-value")).toHaveText(
@@ -67,6 +73,20 @@ test.describe("deep-link repo dropdown + sidebar sync", () => {
       "github.com/acme/tools",
       { timeout: 5_000 },
     );
+  });
+
+  test("selecting an item from All repos keeps the all-repo filter", async ({ page }) => {
+    await page.goto("/pulls");
+    await page.locator(".pull-item").first()
+      .waitFor({ state: "visible", timeout: 10_000 });
+
+    await expect(page.locator(".typeahead-value")).toHaveText("All repos");
+    await page.locator(".pull-item").filter({
+      hasText: "Add widget caching layer",
+    }).first().click();
+    await waitForPullDetail(page);
+
+    await expect(page.locator(".typeahead-value")).toHaveText("All repos");
   });
 
   test("opening /pulls without a selection preserves the user's chosen repo", async ({ page }) => {

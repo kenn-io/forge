@@ -1,25 +1,26 @@
 package telemetry
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
 	"os"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
 
 	"github.com/posthog/posthog-go"
+	"github.com/wesm/middleman/internal/db"
 )
 
 const (
-	EnabledEnv      = "TELEMETRY_ENABLED"
-	installIDFile   = "telemetry-id"
-	postHogAPIKey   = "phc_AzHd9YvuHR7M5poKzC6eW654d3SgKyBdoQPuwkWhimUf"
-	postHogEndpoint = "https://us.i.posthog.com"
+	EnabledEnv           = "TELEMETRY_ENABLED"
+	installIDMetadataKey = "telemetry.install_id"
+	postHogAPIKey        = "phc_AzHd9YvuHR7M5poKzC6eW654d3SgKyBdoQPuwkWhimUf"
+	postHogEndpoint      = "https://us.i.posthog.com"
 )
 
 type Client interface {
@@ -40,9 +41,9 @@ type enqueueCloser interface {
 }
 
 type Options struct {
-	DataDir string
-	Version string
-	Commit  string
+	Database *db.DB
+	Version  string
+	Commit   string
 }
 
 func EnabledFromEnv() bool {
@@ -53,11 +54,11 @@ func NewReporter(opts Options) (*Reporter, error) {
 	if !EnabledFromEnv() {
 		return DisabledReporter(), nil
 	}
-	if strings.TrimSpace(opts.DataDir) == "" {
-		return nil, errors.New("telemetry data dir is required")
+	if opts.Database == nil {
+		return nil, errors.New("telemetry database is required")
 	}
 
-	distinctID, err := loadOrCreateInstallID(opts.DataDir)
+	distinctID, err := loadOrCreateInstallID(context.Background(), opts.Database)
 	if err != nil {
 		return nil, err
 	}
@@ -140,28 +141,14 @@ func (r *Reporter) Close() error {
 	return r.client.Close()
 }
 
-func loadOrCreateInstallID(dataDir string) (string, error) {
-	if err := os.MkdirAll(dataDir, 0o700); err != nil {
-		return "", fmt.Errorf("create telemetry data dir: %w", err)
-	}
+func loadOrCreateInstallID(ctx context.Context, database *db.DB) (string, error) {
+	return database.GetOrCreateAppMetadataValue(ctx, installIDMetadataKey, randomInstallID)
+}
 
-	path := filepath.Join(dataDir, installIDFile)
-	if raw, err := os.ReadFile(path); err == nil {
-		id := strings.TrimSpace(string(raw))
-		if id != "" {
-			return id, nil
-		}
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return "", fmt.Errorf("read telemetry install id: %w", err)
-	}
-
+func randomInstallID() (string, error) {
 	buf := make([]byte, 16)
 	if _, err := rand.Read(buf); err != nil {
 		return "", fmt.Errorf("generate telemetry install id: %w", err)
 	}
-	id := hex.EncodeToString(buf)
-	if err := os.WriteFile(path, []byte(id+"\n"), 0o600); err != nil {
-		return "", fmt.Errorf("write telemetry install id: %w", err)
-	}
-	return id, nil
+	return hex.EncodeToString(buf), nil
 }

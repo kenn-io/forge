@@ -1,13 +1,12 @@
 package telemetry
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/posthog/posthog-go"
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/wesm/middleman/internal/testutil/dbtest"
 )
 
 type fakePostHogClient struct {
@@ -26,32 +25,35 @@ func TestNewReporterDisabledByEnvDoesNotCreateInstallID(t *testing.T) {
 	require := require.New(t)
 
 	t.Setenv(EnabledEnv, "0")
-	dataDir := t.TempDir()
+	database := dbtest.Open(t)
 
-	reporter, err := NewReporter(Options{DataDir: dataDir})
+	reporter, err := NewReporter(Options{Database: database})
 	require.NoError(err)
 
 	assert.False(reporter.Enabled())
-	assert.NoFileExists(filepath.Join(dataDir, installIDFile))
+	_, found, err := database.AppMetadataValue(t.Context(), installIDMetadataKey)
+	require.NoError(err)
+	assert.False(found)
 }
 
 func TestLoadOrCreateInstallIDIsStableAndAnonymous(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 
-	dataDir := t.TempDir()
+	database := dbtest.Open(t)
 
-	first, err := loadOrCreateInstallID(dataDir)
+	first, err := loadOrCreateInstallID(t.Context(), database)
 	require.NoError(err)
-	second, err := loadOrCreateInstallID(dataDir)
+	second, err := loadOrCreateInstallID(t.Context(), database)
 	require.NoError(err)
 
 	assert.Len(first, 32)
 	assert.Equal(first, second)
 
-	info, err := os.Stat(filepath.Join(dataDir, installIDFile))
+	stored, found, err := database.AppMetadataValue(t.Context(), installIDMetadataKey)
 	require.NoError(err)
-	assert.Equal(os.FileMode(0o600), info.Mode().Perm())
+	assert.True(found)
+	assert.Equal(first, stored)
 }
 
 func TestReporterCaptureUsesAnonymousDistinctID(t *testing.T) {

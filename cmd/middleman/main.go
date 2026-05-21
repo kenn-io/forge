@@ -403,9 +403,9 @@ func run(configPath string) error {
 	syncer.SetFetchers(startup.fetchers)
 
 	telemetryReporter := telemetry.NewReporterOrDisabled(telemetry.Options{
-		DataDir: cfg.DataDir,
-		Version: version,
-		Commit:  commit,
+		Database: database,
+		Version:  version,
+		Commit:   commit,
 	})
 	defer func() {
 		if err := telemetryReporter.Close(); err != nil {

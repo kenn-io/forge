@@ -1,0 +1,5 @@
+CREATE TABLE IF NOT EXISTS middleman_app_metadata (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

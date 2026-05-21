@@ -88,13 +88,8 @@ func (h *EventHub) Subscribe(
 	id := h.nextSubID
 	h.nextSubID++
 	ch := make(chan RecordedEvent, 16)
-	if injectCached && h.lastSyncStatus != nil {
-		ch <- *h.lastSyncStatus
-	}
-	// Replay the latest config event so a client connecting after a
-	// parse error still learns the daemon is running on stale config.
-	if injectCached && h.lastConfigStatus != nil {
-		ch <- *h.lastConfigStatus
+	if injectCached {
+		h.enqueueCachedLocked(ch)
 	}
 	h.subscribers[id] = ch
 	h.mu.Unlock()
@@ -105,6 +100,26 @@ func (h *EventHub) Subscribe(
 	}()
 
 	return ch, h.done
+}
+
+// enqueueCachedLocked preloads cached status events in monotonic ID order.
+// Caller must hold mu.
+func (h *EventHub) enqueueCachedLocked(ch chan<- RecordedEvent) {
+	var cached []RecordedEvent
+	if h.lastSyncStatus != nil {
+		cached = append(cached, *h.lastSyncStatus)
+	}
+	// Replay the latest config event so a client connecting after a
+	// parse error still learns the daemon is running on stale config.
+	if h.lastConfigStatus != nil {
+		cached = append(cached, *h.lastConfigStatus)
+	}
+	if len(cached) == 2 && cached[1].ID < cached[0].ID {
+		cached[0], cached[1] = cached[1], cached[0]
+	}
+	for _, rec := range cached {
+		ch <- rec
+	}
 }
 
 // unsubscribeLocked removes and closes the subscriber channel.

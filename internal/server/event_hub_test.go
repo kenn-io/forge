@@ -147,6 +147,28 @@ func TestEventHub_CacheUpdatedOnLatestSyncStatus(t *testing.T) {
 	assert.Equal(t, "t2", ev.Event.Data, "new subscriber should get the latest cached status")
 }
 
+func TestEventHub_CachedStatusesPreserveIDOrder(t *testing.T) {
+	assert := assert.New(t)
+
+	hub := NewEventHub()
+	defer hub.Close()
+
+	configID := hub.Broadcast(Event{
+		Type: "config.changed",
+		Data: map[string]any{"valid": true},
+	})
+	syncID := hub.Broadcast(Event{Type: "sync_status", Data: "running"})
+
+	ch, _ := hub.Subscribe(t.Context(), true)
+
+	first := <-ch
+	second := <-ch
+	assert.Equal(configID, first.ID)
+	assert.Equal("config.changed", first.Event.Type)
+	assert.Equal(syncID, second.ID)
+	assert.Equal("sync_status", second.Event.Type)
+}
+
 func TestEventHub_SubscribeOrderingWithBroadcast(t *testing.T) {
 	assert := assert.New(t)
 

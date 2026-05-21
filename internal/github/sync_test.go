@@ -5064,6 +5064,51 @@ func TestDetailQueueWatchedKeyIncludesProviderIdentity(t *testing.T) {
 	assert.True(watchedByPlatform[platform.KindGitLab])
 }
 
+func TestDetailQueueDerivesPendingCIFromCachedChecks(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	now := time.Date(2026, 5, 21, 10, 0, 0, 0, time.UTC)
+	fetchedAt := now.Add(-5 * time.Minute)
+	repo := RepoRef{
+		Platform:     platform.KindGitHub,
+		PlatformHost: "github.com",
+		Owner:        "owner",
+		Name:         "repo",
+	}
+	repoID, err := d.UpsertRepo(ctx, platform.DBRepoIdentity(platformRepoRef(repo)))
+	require.NoError(err)
+	_, err = d.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:          repoID,
+		PlatformID:      1001,
+		Number:          1,
+		URL:             "https://github.com/owner/repo/pull/1",
+		Title:           "pending ci",
+		State:           "open",
+		HeadBranch:      "feature",
+		BaseBranch:      "main",
+		PlatformHeadSHA: "head-sha",
+		CIChecksJSON:    `[{"name":"build","status":"in_progress","conclusion":""}]`,
+		CIHadPending:    false,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+		LastActivityAt:  now,
+		DetailFetchedAt: &fetchedAt,
+	})
+	require.NoError(err)
+
+	syncer := NewSyncer(nil, d, nil, []RepoRef{repo}, time.Minute, nil, nil)
+
+	items := syncer.buildDetailQueueItems(ctx)
+	require.Len(items, 1)
+	assert.True(items[0].CIHadPending)
+	queue := BuildQueue(items, now)
+	require.Len(queue, 1)
+	assert.Equal(1, queue[0].Number)
+}
+
 func TestDetailDrainRespectsBudget(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

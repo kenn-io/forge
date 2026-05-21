@@ -5673,6 +5673,7 @@ func (s *Syncer) buildDetailQueueItems(
 			platform.Kind(repo.Platform), repo.PlatformHost,
 			repo.Owner, repo.Name,
 		) + fmt.Sprintf("#%d", pr.Number)
+		ciHadPending := pr.CIHadPending || ciHasPending(pr.CIChecksJSON)
 		items = append(items, QueueItem{
 			Type:            QueueItemPR,
 			Platform:        platform.Kind(repo.Platform),
@@ -5682,7 +5683,7 @@ func (s *Syncer) buildDetailQueueItems(
 			PlatformHost:    repo.PlatformHost,
 			UpdatedAt:       pr.UpdatedAt,
 			DetailFetchedAt: pr.DetailFetchedAt,
-			CIHadPending:    pr.CIHadPending,
+			CIHadPending:    ciHadPending,
 			Starred:         pr.Starred,
 			Watched:         watched[watchKey],
 			IsOpen:          true,

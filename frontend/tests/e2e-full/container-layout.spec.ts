@@ -56,7 +56,7 @@ test.describe("container-aware layout", () => {
     await expect(page.getByRole("button", { name: "Sync" })).toBeVisible();
     await expect(page.locator(".sync-btn .sync-label")).not.toBeVisible();
 
-    await page.getByRole("button", { name: "All repos" }).click();
+    await page.locator(".typeahead-trigger").click();
     await expect(page.locator(".typeahead-list")).toBeVisible();
     const repoMenuStyle = await page.evaluate(() => {
       const list = document.querySelector(".typeahead-list");

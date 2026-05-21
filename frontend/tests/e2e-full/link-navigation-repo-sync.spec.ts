@@ -44,7 +44,7 @@ test.describe("deep-link repo dropdown + sidebar sync", () => {
       );
     });
 
-    await page.goto("/issues/github/acme/widgets/1");
+    await page.goto("/issues/github/acme/widgets/10");
     await waitForIssueDetail(page);
 
     await expect(page.locator(".typeahead-value")).toHaveText(

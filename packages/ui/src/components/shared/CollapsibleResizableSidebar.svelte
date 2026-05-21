@@ -119,6 +119,7 @@
   .list-layout {
     display: flex;
     flex: 1;
+    min-height: 0;
     overflow: hidden;
   }
 
@@ -141,6 +142,7 @@
   .main-area {
     flex: 1;
     min-width: 0;
+    min-height: 0;
     overflow-y: auto;
     background: var(--bg-primary);
     display: flex;

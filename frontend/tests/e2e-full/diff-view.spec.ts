@@ -454,6 +454,30 @@ test.describe("diff view", () => {
     await expect(secondRow).toHaveClass(/diff-file-row--active/);
   });
 
+  test("sidebar file jumps keep the outer detail frame pinned", async ({ page }) => {
+    await mockDiffApi(page, largeDiff);
+    await navigateToDiff(page);
+    await waitForDiffLoaded(page);
+    await waitForSidebarFilesLoaded(page);
+
+    const mainArea = page.locator(".main-area");
+    const diffArea = page.locator(".diff-area");
+    await expect.poll(() =>
+      mainArea.evaluate((el) => Math.round(el.scrollTop)),
+    ).toBe(0);
+
+    await page.locator(".diff-file-row", { hasText: "file_45.go" }).click();
+
+    await expect(page.locator('[data-file-path="src/pkg9/file_45.go"]'))
+      .toBeVisible();
+    await expect.poll(() =>
+      diffArea.evaluate((el) => Math.round(el.scrollTop)),
+    ).toBeGreaterThan(0);
+    await expect.poll(() =>
+      mainArea.evaluate((el) => Math.round(el.scrollTop)),
+    ).toBe(0);
+  });
+
   test("deleted file name has strikethrough in sidebar", async ({ page }) => {
     await mockDiffApi(page, smallDiff);
     await navigateToDiff(page);

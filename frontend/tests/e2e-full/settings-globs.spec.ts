@@ -104,6 +104,8 @@ test("settings imports a selected subset from a repository glob", async ({ page 
   await expect(apiOption).toBeVisible();
   await expect(page.getByRole("option", { name: /import-lab\/worker/ })).toHaveCount(0);
   await apiOption.click();
+  await expect(apiOption.locator("input[type='checkbox']")).toBeChecked();
+  await page.keyboard.press("Escape");
   await expect(selector).toContainText("github.com/import-lab/api");
 
   if (!api) throw new Error("settings-globs API context not initialized");

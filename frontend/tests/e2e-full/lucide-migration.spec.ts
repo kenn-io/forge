@@ -165,7 +165,9 @@ test.describe("lucide migration", () => {
     });
     await expect(option).toBeVisible();
     await option.click();
+    await expect(option.locator("input[type='checkbox']")).toBeChecked();
 
+    await page.keyboard.press("Escape");
     await expect(selector).toContainText("acme/widgets");
     await expect(selector.locator("svg")).toBeVisible();
   });

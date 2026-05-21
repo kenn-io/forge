@@ -56,11 +56,13 @@ test(
     await input.fill("widg");
 
     const option = page.getByRole("option", {
-      name: "acme/widgets",
+      name: "github.com/acme/widgets",
     });
     await expect(option).toBeVisible();
     await option.click();
+    await expect(option.locator("input[type='checkbox']")).toBeChecked();
 
+    await page.keyboard.press("Escape");
     await expect(selector).toContainText("acme/widgets");
     await expect(selector.locator("svg")).toBeVisible();
     await expect(

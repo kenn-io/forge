@@ -4,7 +4,9 @@ package config
 
 import (
 	"fmt"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -60,4 +62,19 @@ printf '%s\n' "$*" >> "$FAKE_GH_ARGV"
 printf 'unknown flag: --hostname\n' 1>&2
 exit 2
 `
+}
+
+func resolveSleepBinary(t *testing.T) string {
+	t.Helper()
+	path, err := exec.LookPath("sleep")
+	if err != nil {
+		t.Skipf("sleep binary not found: %v", err)
+	}
+	return shellSingleQuote(path)
+}
+
+// shellSingleQuote escapes s for safe inclusion inside single quotes
+// in a /bin/sh script.
+func shellSingleQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
 }

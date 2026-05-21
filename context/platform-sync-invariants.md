@@ -76,6 +76,8 @@ registry helpers return typed errors for missing providers or capabilities.
   platform error, not break unrelated sync work.
 - Mutation routes must check provider capabilities before posting comments,
   changing state, merging, requesting review, or approving workflows.
+  Server handlers translate these typed platform errors into the stable problem
+  envelope described in [`context/error-handling.md`](./error-handling.md).
 - Forgejo and Gitea currently expose only SDK-proven mutations: comments,
   issue creation, issue and PR content/state edits, merge, and review approval.
   Workflow approval and ready-for-review must remain hidden or return typed

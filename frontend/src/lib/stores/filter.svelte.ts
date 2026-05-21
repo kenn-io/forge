@@ -1,8 +1,24 @@
 const STORAGE_KEY = "middleman-filter-repo";
 
+export function parseRepoFilterValue(repo: string | undefined): string[] {
+  return (repo ?? "")
+    .split(",")
+    .map((part) => part.trim())
+    .filter((part) => part !== "");
+}
+
+export function serializeRepoFilterValue(repos: string[]): string | undefined {
+  const unique = Array.from(
+    new Set(repos.map((repo) => repo.trim()).filter((repo) => repo !== "")),
+  );
+  return unique.length > 0 ? unique.join(",") : undefined;
+}
+
 function loadPersistedRepo(): string | undefined {
   try {
-    return localStorage.getItem(STORAGE_KEY) || undefined;
+    return serializeRepoFilterValue(
+      parseRepoFilterValue(localStorage.getItem(STORAGE_KEY) || undefined),
+    );
   } catch {
     return undefined;
   }
@@ -15,10 +31,11 @@ export function getGlobalRepo(): string | undefined {
 }
 
 export function setGlobalRepo(repo: string | undefined): void {
-  filterRepo = repo || undefined;
+  const normalized = serializeRepoFilterValue(parseRepoFilterValue(repo));
+  filterRepo = normalized;
   try {
-    if (repo !== undefined) {
-      localStorage.setItem(STORAGE_KEY, repo);
+    if (normalized !== undefined) {
+      localStorage.setItem(STORAGE_KEY, normalized);
     } else {
       localStorage.removeItem(STORAGE_KEY);
     }

@@ -25,14 +25,18 @@ func (d *DB) ListActivity(
 	var args []any
 
 	if opts.Repo != "" {
-		host, pathKey := repoFilterHostAndPathKey(opts.Repo)
-		if pathKey != "" {
-			if host != "" {
-				whereClauses = append(whereClauses, "platform_host = ?")
-				args = append(args, host)
+		if cond := activityRepoFilterCondition(opts.RepoFilters, &args); cond != "" {
+			whereClauses = append(whereClauses, cond)
+		} else {
+			host, pathKey := repoFilterHostAndPathKey(opts.Repo)
+			if pathKey != "" {
+				if host != "" {
+					whereClauses = append(whereClauses, "platform_host = ?")
+					args = append(args, host)
+				}
+				whereClauses = append(whereClauses, "repo_path_key = ?")
+				args = append(args, pathKey)
 			}
-			whereClauses = append(whereClauses, "repo_path_key = ?")
-			args = append(args, pathKey)
 		}
 	}
 
@@ -174,6 +178,41 @@ func (d *DB) ListActivity(
 		items = append(items, it)
 	}
 	return items, rows.Err()
+}
+
+func activityRepoFilterCondition(filters []RepoFilter, args *[]any) string {
+	var groups []string
+	for _, filter := range filters {
+		var clauses []string
+		if filter.RepoPath != "" {
+			pathKey := canonicalRepoPathKey(filter.RepoPath)
+			if pathKey == "" {
+				continue
+			}
+			if filter.PlatformHost != "" {
+				host, _, _ := canonicalRepoLookupIdentifier(filter.PlatformHost, "", "")
+				clauses = append(clauses, "platform_host = ?")
+				*args = append(*args, host)
+			}
+			clauses = append(clauses, "repo_path_key = ?")
+			*args = append(*args, pathKey)
+		} else if filter.RepoOwner != "" && filter.RepoName != "" {
+			if filter.PlatformHost != "" {
+				host, _, _ := canonicalRepoLookupIdentifier(filter.PlatformHost, "", "")
+				clauses = append(clauses, "platform_host = ?")
+				*args = append(*args, host)
+			}
+			clauses = append(clauses, "repo_path_key = ?")
+			*args = append(*args, canonicalRepoPathKey(filter.RepoOwner+"/"+filter.RepoName))
+		}
+		if len(clauses) > 0 {
+			groups = append(groups, "("+strings.Join(clauses, " AND ")+")")
+		}
+	}
+	if len(groups) == 0 {
+		return ""
+	}
+	return "(" + strings.Join(groups, " OR ") + ")"
 }
 
 // dbTimeLayouts lists timestamp encodings that may already exist in SQLite.

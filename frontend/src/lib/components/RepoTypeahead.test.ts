@@ -109,6 +109,50 @@ describe("RepoTypeahead", () => {
     });
   });
 
+  it("allows selecting multiple repositories with checkboxes", async () => {
+    const onchange = vi.fn();
+    settingsStore.setConfiguredRepos([
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "import-lab",
+        name: "api",
+        repo_path: "import-lab/api",
+        is_glob: false,
+        matched_repo_count: 1,
+      },
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "import-lab",
+        name: "web",
+        repo_path: "import-lab/web",
+        is_glob: false,
+        matched_repo_count: 1,
+      },
+    ]);
+
+    const view = render(RepoTypeahead, {
+      props: {
+        selected: undefined,
+        onchange,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: /all repos/i }));
+    await fireEvent.mouseDown(screen.getByRole("option", { name: /github.com\/import-lab\/api/i }));
+    expect(onchange).toHaveBeenLastCalledWith("github.com/import-lab/api");
+
+    await view.rerender({
+      selected: "github.com/import-lab/api",
+      onchange,
+    });
+    await fireEvent.mouseDown(screen.getByRole("option", { name: /github.com\/import-lab\/web/i }));
+    expect(onchange).toHaveBeenLastCalledWith(
+      "github.com/import-lab/api,github.com/import-lab/web",
+    );
+  });
+
   it("drops removed repos after settings remove matching entries", async () => {
     const fetchedRepos = [
       {

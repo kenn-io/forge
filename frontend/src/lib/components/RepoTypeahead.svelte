@@ -4,6 +4,10 @@
   import { client } from "../api/runtime.js";
   import type { ConfigRepo, Repo } from "@middleman/ui/api/types";
   import { ChevronDownIcon } from "../icons.ts";
+  import {
+    parseRepoFilterValue,
+    serializeRepoFilterValue,
+  } from "../stores/filter.svelte.js";
   import { registerCheatsheetEntries } from "../stores/keyboard/registry.svelte.js";
 
   interface Props {
@@ -42,6 +46,8 @@
   let repoFetchVersion = 0;
   let latestRepoFetchKey = "";
 
+  type RepoOption = { value: string; owner: string; name: string };
+
   $effect(() => {
     const configuredRepoKey = configuredRepos
       .map((repo) => `${repo.provider}/${repo.platform_host}/${repo.repo_path || `${repo.owner}/${repo.name}`}`)
@@ -67,7 +73,7 @@
     stores?.settings?.isSettingsLoaded?.() ?? false,
   );
 
-  function optionFromRepo(repo: Repo): { value: string; owner: string; name: string } {
+  function optionFromRepo(repo: Repo): RepoOption {
     return {
       value: `${repo.PlatformHost}/${repo.Owner}/${repo.Name}`,
       owner: repo.Owner,
@@ -75,7 +81,7 @@
     };
   }
 
-  function optionFromConfigRepo(repo: ConfigRepo): { value: string; owner: string; name: string } {
+  function optionFromConfigRepo(repo: ConfigRepo): RepoOption {
     const path = repo.repo_path || `${repo.owner}/${repo.name}`;
     return {
       value: `${repo.platform_host}/${path}`,
@@ -87,20 +93,24 @@
   function mergeOptions(
     configured: ConfigRepo[],
     fetched: Repo[],
-  ): { value: string; owner: string; name: string }[] {
-    const merged = new Map<string, { value: string; owner: string; name: string }>();
+  ): RepoOption[] {
+    const merged: RepoOption[] = [];
+    const seen: string[] = [];
+    const addOption = (option: RepoOption) => {
+      if (seen.includes(option.value)) return;
+      seen.push(option.value);
+      merged.push(option);
+    };
 
     for (const repo of configured.filter((entry) => !entry.is_glob)) {
-      const option = optionFromConfigRepo(repo);
-      merged.set(option.value, option);
+      addOption(optionFromConfigRepo(repo));
     }
 
     for (const repo of fetched) {
-      const option = optionFromRepo(repo);
-      merged.set(option.value, option);
+      addOption(optionFromRepo(repo));
     }
 
-    return Array.from(merged.values());
+    return merged;
   }
 
   const options = $derived.by(() => {
@@ -118,14 +128,20 @@
     );
   });
 
-  const displayValue = $derived(
-    selected ?? "All repos",
-  );
+  const selectedValues = $derived(parseRepoFilterValue(selected));
+  const selectedSet = $derived(new Set(selectedValues));
+  const displayValue = $derived.by(() => {
+    if (selectedValues.length === 0) return "All repos";
+    if (selectedValues.length === 1) return selectedValues[0];
+    return `${selectedValues.length} repos`;
+  });
 
   $effect(() => {
-    if (!selected || reposLoading) return;
-    if (options.some((option) => option.value === selected)) return;
-    onchange(undefined);
+    if (selectedValues.length === 0 || reposLoading) return;
+    const validValues = new Set(options.map((option) => option.value));
+    const next = selectedValues.filter((value) => validValues.has(value));
+    if (next.length === selectedValues.length) return;
+    onchange(serializeRepoFilterValue(next));
   });
 
   async function openDropdown() {
@@ -141,9 +157,15 @@
     query = "";
   }
 
-  function select(value: string | undefined) {
-    onchange(value);
-    closeDropdown();
+  function clearSelection() {
+    onchange(undefined);
+  }
+
+  function toggleRepo(value: string) {
+    const next = selectedSet.has(value)
+      ? selectedValues.filter((repo) => repo !== value)
+      : [...selectedValues, value];
+    onchange(serializeRepoFilterValue(next));
   }
 
   function handleKeydown(e: KeyboardEvent) {
@@ -157,10 +179,17 @@
     } else if (e.key === "Enter") {
       e.preventDefault();
       if (highlightIndex === 0) {
-        select(undefined);
+        clearSelection();
       } else {
         const item = filtered[highlightIndex - 1];
-        if (item) select(item.value);
+        if (item) toggleRepo(item.value);
+      }
+    } else if (e.key === " ") {
+      e.preventDefault();
+      if (highlightIndex === 0) clearSelection();
+      else {
+        const item = filtered[highlightIndex - 1];
+        if (item) toggleRepo(item.value);
       }
     } else if (e.key === "Escape") {
       closeDropdown();
@@ -215,28 +244,45 @@
       aria-label="Filter repos"
       autocomplete="off"
     />
-    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
     <ul class="typeahead-list" role="listbox" onmousedown={preventBlur}>
       <li
         class="typeahead-option"
         class:highlighted={highlightIndex === 0}
-        class:selected={selected === undefined}
+        class:selected={selectedValues.length === 0}
         role="option"
-        aria-selected={selected === undefined}
-        onmousedown={() => select(undefined)}
+        aria-selected={selectedValues.length === 0}
+        onmousedown={clearSelection}
         onmouseenter={() => (highlightIndex = 0)}
-      >All repos</li>
+      >
+        <input
+          class="typeahead-checkbox"
+          type="checkbox"
+          checked={selectedValues.length === 0}
+          tabindex="-1"
+          aria-hidden="true"
+        />
+        <span>All repos</span>
+      </li>
       {#each filtered as option, i (option.value)}
         <li
           class="typeahead-option"
           class:highlighted={i + 1 === highlightIndex}
-          class:selected={option.value === selected}
+          class:selected={selectedSet.has(option.value)}
           role="option"
-          aria-selected={option.value === selected}
-          onmousedown={() => select(option.value)}
+          aria-selected={selectedSet.has(option.value)}
+          onmousedown={() => toggleRepo(option.value)}
           onmouseenter={() => (highlightIndex = i + 1)}
         >
-          {#each highlightSegments(option.value, query) as seg, segIndex (`${option.value}-${segIndex}-${seg.text}-${seg.match}`)}{#if seg.match}<mark class="match">{seg.text}</mark>{:else}{seg.text}{/if}{/each}
+          <input
+            class="typeahead-checkbox"
+            type="checkbox"
+            checked={selectedSet.has(option.value)}
+            tabindex="-1"
+            aria-hidden="true"
+          />
+          <span class="typeahead-option-label">
+            {#each highlightSegments(option.value, query) as seg, segIndex (`${option.value}-${segIndex}-${seg.text}-${seg.match}`)}{#if seg.match}<mark class="match">{seg.text}</mark>{:else}{seg.text}{/if}{/each}
+          </span>
         </li>
       {:else}
         <li class="typeahead-empty">No matching repos</li>
@@ -333,12 +379,30 @@
   }
 
   .typeahead-option {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     padding: 4px 8px;
     font-size: var(--font-size-xs);
     color: var(--text-secondary);
     cursor: pointer;
     border-radius: 3px;
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .typeahead-checkbox {
+    width: 12px;
+    height: 12px;
+    margin: 0;
+    flex-shrink: 0;
+    accent-color: var(--accent-blue);
+    pointer-events: none;
+  }
+
+  .typeahead-option-label {
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
   }

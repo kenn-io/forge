@@ -1156,6 +1156,51 @@ func TestAPIListPullsKeepsCachedCIDecorationsAfterIndexSync(t *testing.T) {
 	assert.JSONEq(checksJSON, pull.CIChecksJSON)
 }
 
+func TestAPIRepoFilterAcceptsMultipleRepos(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	srv, database := setupTestServer(t)
+
+	seedPROnHost(t, database, "github.com", "acme", "widget", 1)
+	seedPROnHost(t, database, "github.com", "acme", "worker", 2)
+	seedPROnHost(t, database, "github.com", "acme", "ignored", 3)
+	seedIssueOnHost(t, database, "github.com", "acme", "widget", 11, "open", "widget issue")
+	seedIssueOnHost(t, database, "github.com", "acme", "worker", 12, "open", "worker issue")
+	seedIssueOnHost(t, database, "github.com", "acme", "ignored", 13, "open", "ignored issue")
+
+	filter := url.QueryEscape("github.com/acme/widget,github.com/acme/worker")
+
+	rawPulls := doJSON(t, srv, http.MethodGet, "/api/v1/pulls?repo="+filter, nil)
+	require.Equal(http.StatusOK, rawPulls.Code)
+	var pulls []mergeRequestResponse
+	require.NoError(json.Unmarshal(rawPulls.Body.Bytes(), &pulls))
+	require.Len(pulls, 2)
+	assert.ElementsMatch([]string{"widget", "worker"}, []string{
+		pulls[0].RepoName,
+		pulls[1].RepoName,
+	})
+
+	rawIssues := doJSON(t, srv, http.MethodGet, "/api/v1/issues?repo="+filter, nil)
+	require.Equal(http.StatusOK, rawIssues.Code)
+	var issues []issueResponse
+	require.NoError(json.Unmarshal(rawIssues.Body.Bytes(), &issues))
+	require.Len(issues, 2)
+	assert.ElementsMatch([]string{"widget", "worker"}, []string{
+		issues[0].RepoName,
+		issues[1].RepoName,
+	})
+
+	since := url.QueryEscape(time.Now().UTC().Add(-time.Hour).Format(time.RFC3339))
+	rawActivity := doJSON(t, srv, http.MethodGet, "/api/v1/activity?since="+since+"&repo="+filter, nil)
+	require.Equal(http.StatusOK, rawActivity.Code)
+	var activity activityResponse
+	require.NoError(json.Unmarshal(rawActivity.Body.Bytes(), &activity))
+	require.NotEmpty(activity.Items)
+	for _, item := range activity.Items {
+		assert.Contains([]string{"widget", "worker"}, item.RepoName)
+	}
+}
+
 func TestAPIGetPullIsDBOnly(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)

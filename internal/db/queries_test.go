@@ -2032,6 +2032,34 @@ func TestListPullRequestsFilterByRepo(t *testing.T) {
 	Assert.Equal(t, repo1, prs[0].RepoID)
 }
 
+func TestListPullRequestsFilterByMultipleRepos(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	base := baseTime()
+
+	firstRepo := insertTestRepoWithHost(t, d, "owner", "repo1", "github.com")
+	secondRepo := insertTestRepoWithHost(t, d, "team", "repo2", "ghe.example.com")
+	thirdRepo := insertTestRepoWithHost(t, d, "owner", "repo3", "github.com")
+	insertTestMR(t, d, firstRepo, 1, "first", base)
+	insertTestMR(t, d, secondRepo, 2, "second", base.Add(time.Hour))
+	insertTestMR(t, d, thirdRepo, 3, "third", base.Add(2*time.Hour))
+
+	prs, err := d.ListMergeRequests(ctx, ListMergeRequestsOpts{
+		RepoFilters: []RepoFilter{
+			{PlatformHost: "github.com", RepoPath: "owner/repo1"},
+			{PlatformHost: "ghe.example.com", RepoPath: "team/repo2"},
+		},
+	})
+	require.NoError(err)
+	require.Len(prs, 2)
+	assert.Equal([]int64{secondRepo, firstRepo}, []int64{
+		prs[0].RepoID,
+		prs[1].RepoID,
+	})
+}
+
 func TestListPullRequestsFilterByRepoIncludesAllHostsByDefault(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
@@ -3170,6 +3198,34 @@ func TestListIssuesFilterByHostedRepoPath(t *testing.T) {
 	require.NoError(err)
 	require.Len(filtered, 1)
 	assert.Equal(nestedRepo, filtered[0].RepoID)
+}
+
+func TestListIssuesFilterByMultipleRepos(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	base := baseTime()
+
+	firstRepo := insertTestRepoWithHost(t, d, "owner", "repo1", "github.com")
+	secondRepo := insertTestRepoWithHost(t, d, "team", "repo2", "ghe.example.com")
+	thirdRepo := insertTestRepoWithHost(t, d, "owner", "repo3", "github.com")
+	insertTestIssue(t, d, firstRepo, 1, "first", base)
+	insertTestIssue(t, d, secondRepo, 2, "second", base.Add(time.Hour))
+	insertTestIssue(t, d, thirdRepo, 3, "third", base.Add(2*time.Hour))
+
+	issues, err := d.ListIssues(ctx, ListIssuesOpts{
+		RepoFilters: []RepoFilter{
+			{PlatformHost: "github.com", RepoPath: "owner/repo1"},
+			{PlatformHost: "ghe.example.com", RepoPath: "team/repo2"},
+		},
+	})
+	require.NoError(err)
+	require.Len(issues, 2)
+	assert.Equal([]int64{secondRepo, firstRepo}, []int64{
+		issues[0].RepoID,
+		issues[1].RepoID,
+	})
 }
 
 func TestListIssuesFilterBySearch(t *testing.T) {

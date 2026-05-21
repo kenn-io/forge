@@ -249,12 +249,20 @@ type ListMergeRequestsOpts struct {
 	RepoOwner    string
 	RepoName     string
 	RepoPath     string
+	RepoFilters  []RepoFilter
 	State        string
 	KanbanState  string
 	Starred      bool
 	Search       string
 	Limit        int
 	Offset       int
+}
+
+type RepoFilter struct {
+	PlatformHost string
+	RepoOwner    string
+	RepoName     string
+	RepoPath     string
 }
 
 type Issue struct {
@@ -305,6 +313,7 @@ type ListIssuesOpts struct {
 	RepoOwner    string
 	RepoName     string
 	RepoPath     string
+	RepoFilters  []RepoFilter
 	State        string
 	Starred      bool
 	Search       string
@@ -460,11 +469,12 @@ type WorkspaceTmuxSession struct {
 
 // ListActivityOpts holds filters and pagination for the activity feed.
 type ListActivityOpts struct {
-	Repo   string     // "owner/name" filter
-	Types  []string   // activity type filter
-	Search string     // title/body search
-	Limit  int        // page size (default 50, max 200)
-	Since  *time.Time // only return events created at or after this time
+	Repo        string       // "owner/name" filter
+	RepoFilters []RepoFilter // one or more repository filters
+	Types       []string     // activity type filter
+	Search      string       // title/body search
+	Limit       int          // page size (default 50, max 200)
+	Since       *time.Time   // only return events created at or after this time
 	// Cursor fields -- decoded from opaque token by the handler.
 	BeforeTime     *time.Time
 	BeforeSource   string

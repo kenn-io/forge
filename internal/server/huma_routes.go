@@ -796,14 +796,17 @@ func (s *Server) listPulls(ctx context.Context, input *listPullsInput) (*listPul
 		Search:      input.Q,
 		Limit:       input.Limit,
 		Offset:      input.Offset,
+		RepoFilters: parseRepoFilters(input.Repo),
 	}
-	if platformHost, owner, name, repoPath := parseRepoFilter(input.Repo); repoPath != "" {
-		opts.PlatformHost = platformHost
-		opts.RepoPath = repoPath
-	} else if owner != "" {
-		opts.PlatformHost = platformHost
-		opts.RepoOwner = owner
-		opts.RepoName = name
+	if len(opts.RepoFilters) == 0 {
+		if platformHost, owner, name, repoPath := parseRepoFilter(input.Repo); repoPath != "" {
+			opts.PlatformHost = platformHost
+			opts.RepoPath = repoPath
+		} else if owner != "" {
+			opts.PlatformHost = platformHost
+			opts.RepoOwner = owner
+			opts.RepoName = name
+		}
 	}
 
 	mrs, err := s.db.ListMergeRequests(ctx, opts)
@@ -1364,19 +1367,22 @@ func (s *Server) listIssues(ctx context.Context, input *listIssuesInput) (*listI
 	}
 
 	opts := db.ListIssuesOpts{
-		State:   input.State,
-		Search:  input.Q,
-		Starred: input.Starred,
-		Limit:   input.Limit,
-		Offset:  input.Offset,
+		State:       input.State,
+		Search:      input.Q,
+		Starred:     input.Starred,
+		Limit:       input.Limit,
+		Offset:      input.Offset,
+		RepoFilters: parseRepoFilters(input.Repo),
 	}
-	if platformHost, owner, name, repoPath := parseRepoFilter(input.Repo); repoPath != "" {
-		opts.PlatformHost = platformHost
-		opts.RepoPath = repoPath
-	} else if owner != "" {
-		opts.PlatformHost = platformHost
-		opts.RepoOwner = owner
-		opts.RepoName = name
+	if len(opts.RepoFilters) == 0 {
+		if platformHost, owner, name, repoPath := parseRepoFilter(input.Repo); repoPath != "" {
+			opts.PlatformHost = platformHost
+			opts.RepoPath = repoPath
+		} else if owner != "" {
+			opts.PlatformHost = platformHost
+			opts.RepoOwner = owner
+			opts.RepoName = name
+		}
 	}
 
 	issues, err := s.db.ListIssues(ctx, opts)
@@ -2685,9 +2691,10 @@ func (s *Server) enqueueIssueSync(ctx context.Context, input *issueRepoNumberInp
 
 func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*listActivityOutput, error) {
 	opts := db.ListActivityOpts{
-		Repo:   input.Repo,
-		Types:  input.Types,
-		Search: input.Search,
+		Repo:        input.Repo,
+		RepoFilters: parseRepoFilters(input.Repo),
+		Types:       input.Types,
+		Search:      input.Search,
 	}
 
 	opts.Limit = activitySafetyCap + 1

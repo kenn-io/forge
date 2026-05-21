@@ -99,6 +99,40 @@ func repoFilterHostAndPathKey(filter string) (string, string) {
 	return "", canonicalRepoPathKey(filter)
 }
 
+func repoListFilterCondition(repoAlias string, filters []RepoFilter, args *[]any) string {
+	var groups []string
+	for _, filter := range filters {
+		var clauses []string
+		if filter.RepoPath != "" {
+			if filter.PlatformHost != "" {
+				host, _, _ := canonicalRepoLookupIdentifier(filter.PlatformHost, "", "")
+				clauses = append(clauses, repoAlias+".platform_host = ?")
+				*args = append(*args, host)
+			}
+			clauses = append(clauses, repoAlias+".repo_path_key = ?")
+			*args = append(*args, canonicalRepoPathKey(filter.RepoPath))
+		} else if filter.RepoOwner != "" && filter.RepoName != "" {
+			_, owner, name := canonicalRepoLookupIdentifier(
+				"", filter.RepoOwner, filter.RepoName,
+			)
+			if filter.PlatformHost != "" {
+				host, _, _ := canonicalRepoLookupIdentifier(filter.PlatformHost, "", "")
+				clauses = append(clauses, repoAlias+".platform_host = ?")
+				*args = append(*args, host)
+			}
+			clauses = append(clauses, repoAlias+".owner_key = ? AND "+repoAlias+".name_key = ?")
+			*args = append(*args, owner, name)
+		}
+		if len(clauses) > 0 {
+			groups = append(groups, "("+strings.Join(clauses, " AND ")+")")
+		}
+	}
+	if len(groups) == 0 {
+		return ""
+	}
+	return "(" + strings.Join(groups, " OR ") + ")"
+}
+
 func GitHubRepoIdentity(host, owner, name string) RepoIdentity {
 	return canonicalRepoIdentity(RepoIdentity{
 		Platform:     "github",
@@ -2278,7 +2312,9 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 		args = append(args, state)
 	}
 
-	if opts.RepoPath != "" {
+	if cond := repoListFilterCondition("r", opts.RepoFilters, &args); cond != "" {
+		conds = append(conds, cond)
+	} else if opts.RepoPath != "" {
 		host, _, _ := canonicalRepoLookupIdentifier(opts.PlatformHost, "", "")
 		if host != "" {
 			conds = append(conds, "r.platform_host = ?")
@@ -3092,7 +3128,9 @@ func (d *DB) ListIssues(
 		args = append(args, state)
 	}
 
-	if opts.RepoPath != "" {
+	if cond := repoListFilterCondition("r", opts.RepoFilters, &args); cond != "" {
+		conds = append(conds, cond)
+	} else if opts.RepoPath != "" {
 		host, _, _ := canonicalRepoLookupIdentifier(opts.PlatformHost, "", "")
 		if host != "" {
 			conds = append(conds, "r.platform_host = ?")

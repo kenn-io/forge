@@ -73,6 +73,7 @@
     getGlobalRepo,
     applyConfigRepo,
     setGlobalRepo,
+    parseRepoFilterValue,
   } from "./lib/stores/filter.svelte.js";
   import {
     getUIConfig,
@@ -124,6 +125,7 @@
     if (!routeStores.settings.hasConfiguredRepos()) return;
     const currentRepo = untrack(getGlobalRepo);
     if (currentRepo === undefined) return;
+    if (parseRepoFilterValue(currentRepo).length !== 1) return;
     const next = globalRepoForSelectedRoute(getRoute());
     if (next === undefined) return;
     if (currentRepo === next) return;

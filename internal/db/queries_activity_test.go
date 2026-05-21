@@ -91,6 +91,36 @@ func TestListActivity(t *testing.T) {
 		}
 	})
 
+	t.Run("multiple repo filters", func(t *testing.T) {
+		assert := Assert.New(t)
+		require := require.New(t)
+		d := openTestDB(t)
+		ctx := t.Context()
+		base := baseTime()
+
+		firstRepo := insertTestRepoWithHost(t, d, "alice", "alpha", "github.com")
+		secondRepo := insertTestRepoWithHost(t, d, "bob", "beta", "ghe.example.com")
+		thirdRepo := insertTestRepoWithHost(t, d, "carol", "gamma", "github.com")
+		insertTestMR(t, d, firstRepo, 1, "first", base)
+		insertTestMR(t, d, secondRepo, 2, "second", base.Add(time.Hour))
+		insertTestMR(t, d, thirdRepo, 3, "third", base.Add(2*time.Hour))
+
+		items, err := d.ListActivity(ctx, ListActivityOpts{
+			Repo: "github.com/alice/alpha,ghe.example.com/bob/beta",
+			RepoFilters: []RepoFilter{
+				{PlatformHost: "github.com", RepoPath: "alice/alpha"},
+				{PlatformHost: "ghe.example.com", RepoPath: "bob/beta"},
+			},
+			Limit: 50,
+		})
+		require.NoError(err)
+		require.Len(items, 2)
+		assert.Equal([]string{"bob", "alice"}, []string{
+			items[0].RepoOwner,
+			items[1].RepoOwner,
+		})
+	})
+
 	t.Run("type filter", func(t *testing.T) {
 		assert := Assert.New(t)
 		items, err := d.ListActivity(ctx, ListActivityOpts{

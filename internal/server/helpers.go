@@ -191,6 +191,27 @@ func parseRepoFilter(repo string) (platformHost, owner, name, repoPath string) {
 	}
 }
 
+func parseRepoFilters(repo string) []db.RepoFilter {
+	parts := strings.Split(repo, ",")
+	filters := make([]db.RepoFilter, 0, len(parts))
+	for _, part := range parts {
+		platformHost, owner, name, repoPath := parseRepoFilter(part)
+		if repoPath != "" {
+			filters = append(filters, db.RepoFilter{
+				PlatformHost: platformHost,
+				RepoPath:     repoPath,
+			})
+		} else if owner != "" {
+			filters = append(filters, db.RepoFilter{
+				PlatformHost: platformHost,
+				RepoOwner:    owner,
+				RepoName:     name,
+			})
+		}
+	}
+	return filters
+}
+
 func validateStarredRequest(body starredRequest) bool {
 	return body.ItemType == "pr" || body.ItemType == "issue"
 }

@@ -61,3 +61,22 @@ func TestCommandResolvesWindowsPathextBinary(t *testing.T) {
 func TestShouldRunShebangScriptWithShellRejectsBareName(t *testing.T) {
 	Assert.False(t, shouldRunShebangScriptWithShell("fake-gh"))
 }
+
+func TestResolveCommandRunsShebangScriptWithResolvedShellDirectly(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	dir := t.TempDir()
+	shellPath := filepath.Join(dir, "sh.cmd")
+	scriptPath := filepath.Join(dir, "fake-gh")
+	require.NoError(os.WriteFile(shellPath, []byte("@echo off\r\nexit /b 0\r\n"), 0o755))
+	require.NoError(os.WriteFile(scriptPath, []byte("#!/bin/sh\nexit 0\n"), 0o755))
+	t.Setenv("PATH", dir)
+	t.Setenv("PATHEXT", ".COM;.EXE;.BAT;.CMD")
+
+	name, args := resolveCommand("fake-gh", []string{"arg-one"})
+
+	assert.Equal(strings.ToLower(shellPath), strings.ToLower(name))
+	assert.Equal([]string{scriptPath, "arg-one"}, args)
+	assert.NotContains(args, "-c")
+}

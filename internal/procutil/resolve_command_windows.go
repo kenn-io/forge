@@ -13,10 +13,7 @@ func resolveCommand(name string, arg []string) (string, []string) {
 	resolved := ResolveBinary(name)
 	if shouldRunShebangScriptWithShell(resolved) {
 		if shell := ResolveBinary("sh"); shell != "sh" {
-			return shell, append(
-				[]string{"-c", `exec sh "$0" "$@"`, resolved},
-				arg...,
-			)
+			return shell, append([]string{resolved}, arg...)
 		}
 	}
 	return resolved, arg

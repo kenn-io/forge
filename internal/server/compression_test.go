@@ -113,6 +113,25 @@ func TestHumaResponseCompressionPreservesHumagoUnwrap(t *testing.T) {
 	assert.Equal(t, "br", rr.Header().Get("Content-Encoding"))
 }
 
+func TestHumaResponseCompressionStreamsUncompressedWhenBodyExceedsCap(t *testing.T) {
+	mux := http.NewServeMux()
+	api := humago.NewWithPrefix(mux, "/api/v1", apiConfig("/"))
+	api.UseMiddleware(newResponseCompressionMiddleware(128))
+	registerCompressionTestRoutes(api)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/huge", nil)
+	req.Header.Set("Accept-Encoding", "br")
+	rr := httptest.NewRecorder()
+
+	mux.ServeHTTP(rr, req)
+
+	assert := assert.New(t)
+	assert.Equal(http.StatusOK, rr.Code)
+	assert.Empty(rr.Header().Get("Content-Encoding"))
+	assert.Equal("Accept-Encoding", rr.Header().Get("Vary"))
+	assert.Contains(rr.Body.String(), strings.Repeat("huge-payload ", 20))
+}
+
 func TestServerUsesResponseCompressionMiddleware(t *testing.T) {
 	database := dbtest.Open(t)
 	_, err := testutil.SeedFixtures(t.Context(), database)
@@ -146,6 +165,11 @@ func registerCompressionTestRoutes(api huma.API) {
 	huma.Get(api, "/small", func(ctx context.Context, input *struct{}) (*output, error) {
 		resp := &output{}
 		resp.Body.Text = "tiny"
+		return resp, nil
+	})
+	huma.Get(api, "/huge", func(ctx context.Context, input *struct{}) (*output, error) {
+		resp := &output{}
+		resp.Body.Text = strings.Repeat("huge-payload ", 100_000)
 		return resp, nil
 	})
 }

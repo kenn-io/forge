@@ -19,12 +19,19 @@ import (
 	"github.com/klauspost/compress/zstd"
 )
 
-const responseCompressionMinSize = 1024
+const (
+	responseCompressionMinSize  = 1024
+	responseCompressionMaxBytes = 1 << 20
+)
 
 type bufferedHumaContext struct {
-	inner  huma.Context
-	body   bytes.Buffer
-	status int
+	inner     huma.Context
+	w         http.ResponseWriter
+	body      bytes.Buffer
+	status    int
+	maxBuffer int
+	streaming bool
+	writeErr  error
 }
 
 func (c *bufferedHumaContext) Operation() *huma.Operation {
@@ -104,11 +111,38 @@ func (c *bufferedHumaContext) AppendHeader(name string, value string) {
 }
 
 func (c *bufferedHumaContext) BodyWriter() io.Writer {
-	return &c.body
+	return c
 }
 
 func (c *bufferedHumaContext) Unwrap() huma.Context {
 	return c.inner
+}
+
+func (c *bufferedHumaContext) Write(p []byte) (int, error) {
+	if c.streaming {
+		return c.w.Write(p)
+	}
+	if c.body.Len()+len(p) <= c.maxBuffer {
+		return c.body.Write(p)
+	}
+	c.streaming = true
+	status := c.status
+	if status == 0 {
+		status = http.StatusOK
+	}
+	c.w.WriteHeader(status)
+	if c.body.Len() > 0 {
+		if _, err := c.w.Write(c.body.Bytes()); err != nil {
+			c.writeErr = err
+			return 0, err
+		}
+		c.body.Reset()
+	}
+	n, err := c.w.Write(p)
+	if err != nil {
+		c.writeErr = err
+	}
+	return n, err
 }
 
 func newResponseCompressionMiddleware(
@@ -124,8 +158,15 @@ func newResponseCompressionMiddleware(
 			return
 		}
 
-		buffered := &bufferedHumaContext{inner: ctx}
+		buffered := &bufferedHumaContext{
+			inner:     ctx,
+			w:         w,
+			maxBuffer: responseCompressionMaxBytes,
+		}
 		next(buffered)
+		if buffered.streaming || buffered.writeErr != nil {
+			return
+		}
 
 		status := buffered.status
 		if status == 0 {

@@ -248,6 +248,7 @@ type ListMergeRequestsOpts struct {
 	PlatformHost string
 	RepoOwner    string
 	RepoName     string
+	RepoPath     string
 	State        string
 	KanbanState  string
 	Starred      bool
@@ -303,6 +304,7 @@ type ListIssuesOpts struct {
 	PlatformHost string
 	RepoOwner    string
 	RepoName     string
+	RepoPath     string
 	State        string
 	Starred      bool
 	Search       string

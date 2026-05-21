@@ -175,17 +175,19 @@ func (s *Server) lookupIssueID(ctx context.Context, ref repoNumberPathRef) (int6
 }
 
 // parseRepoFilter splits the repo query parameter when it is in owner/name or
-// platform_host/owner/name form and otherwise returns empty parts so callers
-// can ignore invalid input.
-func parseRepoFilter(repo string) (platformHost, owner, name string) {
-	parts := strings.Split(repo, "/")
+// platform_host/repo_path form and otherwise returns empty parts so callers can
+// ignore invalid input. Repo paths can contain slashes, so hosted filters keep
+// everything after the host together as repoPath.
+func parseRepoFilter(repo string) (platformHost, owner, name, repoPath string) {
+	parts := strings.Split(strings.Trim(repo, "/ "), "/")
 	switch len(parts) {
 	case 2:
-		return "", parts[0], parts[1]
-	case 3:
-		return parts[0], parts[1], parts[2]
+		return "", parts[0], parts[1], ""
 	default:
-		return "", "", ""
+		if len(parts) >= 3 {
+			return parts[0], "", "", strings.Join(parts[1:], "/")
+		}
+		return "", "", "", ""
 	}
 }
 

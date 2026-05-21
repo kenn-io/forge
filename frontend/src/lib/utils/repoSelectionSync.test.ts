@@ -21,7 +21,7 @@ const issueSelected = {
 };
 
 describe("globalRepoForSelectedRoute", () => {
-  it("returns platformHost/owner/name for a pulls route with a selected PR", () => {
+  it("returns platformHost/repoPath for a pulls route with a selected PR", () => {
     const route: Route = {
       page: "pulls", view: "list", selected: prSelected,
     };
@@ -30,7 +30,7 @@ describe("globalRepoForSelectedRoute", () => {
     );
   });
 
-  it("returns platformHost/owner/name for an issues route with a selected issue", () => {
+  it("returns platformHost/repoPath for an issues route with a selected issue", () => {
     const route: Route = {
       page: "issues", selected: issueSelected,
     };
@@ -39,7 +39,7 @@ describe("globalRepoForSelectedRoute", () => {
     );
   });
 
-  it("returns platformHost/owner/name for a focus PR route", () => {
+  it("returns platformHost/repoPath for a focus PR route", () => {
     const route: Route = {
       page: "focus",
       itemType: "pr",
@@ -55,7 +55,7 @@ describe("globalRepoForSelectedRoute", () => {
     );
   });
 
-  it("returns platformHost/owner/name for a focus issue route", () => {
+  it("returns platformHost/repoPath for a focus issue route", () => {
     const route: Route = {
       page: "focus",
       itemType: "issue",
@@ -68,6 +68,23 @@ describe("globalRepoForSelectedRoute", () => {
     };
     expect(globalRepoForSelectedRoute(route)).toBe(
       "gitlab.example.com/team/infra",
+    );
+  });
+
+  it("keeps nested repo paths intact", () => {
+    const route: Route = {
+      page: "issues",
+      selected: {
+        provider: "gitlab",
+        platformHost: "gitlab.example.com",
+        owner: "Group/SubGroup",
+        name: "Project.Special",
+        repoPath: "Group/SubGroup/Project.Special",
+        number: 17,
+      },
+    };
+    expect(globalRepoForSelectedRoute(route)).toBe(
+      "gitlab.example.com/Group/SubGroup/Project.Special",
     );
   });
 

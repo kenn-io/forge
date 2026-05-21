@@ -5745,6 +5745,30 @@ func TestAPIListPullsCasefoldsRepoNames(t *testing.T) {
 	assert.Equal("foo", (*resp.JSON200)[0].RepoName)
 }
 
+func TestAPIListPullsFiltersHostedNestedRepoPath(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	srv, database := setupTestServerWithRepos(t, &mockGH{}, []ghclient.RepoRef{
+		{Owner: "Group/SubGroup", Name: "Project.Special", PlatformHost: "ghe.example.com"},
+		{Owner: "other", Name: "repo", PlatformHost: "ghe.example.com"},
+	})
+
+	seedPROnHost(t, database, "ghe.example.com", "Group/SubGroup", "Project.Special", 1)
+	seedPROnHost(t, database, "ghe.example.com", "other", "repo", 2)
+
+	client := setupTestClient(t, srv)
+	repo := "ghe.example.com/Group/SubGroup/Project.Special"
+	resp, err := client.HTTP.ListPullsWithResponse(t.Context(), &generated.ListPullsParams{
+		Repo: &repo,
+	})
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.Len(*resp.JSON200, 1)
+	assert.Equal("group/subgroup", (*resp.JSON200)[0].RepoOwner)
+	assert.Equal("project.special", (*resp.JSON200)[0].RepoName)
+}
+
 func TestAPIListIssuesIncludesLabels(t *testing.T) {
 	require := require.New(t)
 	srv, database := setupTestServer(t)
@@ -5823,6 +5847,40 @@ func TestAPIListIssuesAcceptsHostQualifiedRepoFilter(t *testing.T) {
 	assert.Equal("acme", (*resp.JSON200)[0].RepoOwner)
 	assert.Equal("widget", (*resp.JSON200)[0].RepoName)
 	assert.EqualValues(7, (*resp.JSON200)[0].Number)
+}
+
+func TestAPIListIssuesFiltersHostedNestedRepoPath(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	srv, database := setupTestServerWithRepos(t, &mockGH{}, []ghclient.RepoRef{
+		{Owner: "Group/SubGroup", Name: "Project.Special", PlatformHost: "ghe.example.com"},
+		{Owner: "other", Name: "repo", PlatformHost: "ghe.example.com"},
+	})
+	seedIssueOnHost(
+		t, database,
+		"ghe.example.com", "Group/SubGroup", "Project.Special", 1,
+		"open", "Nested issue",
+	)
+	seedIssueOnHost(
+		t, database,
+		"ghe.example.com", "other", "repo", 2,
+		"open", "Other issue",
+	)
+	client := setupTestClient(t, srv)
+
+	repo := "ghe.example.com/Group/SubGroup/Project.Special"
+	resp, err := client.HTTP.ListIssuesWithResponse(
+		t.Context(), &generated.ListIssuesParams{Repo: &repo},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.Len(*resp.JSON200, 1)
+	assert.Equal("ghe.example.com", (*resp.JSON200)[0].PlatformHost)
+	assert.Equal("group/subgroup", (*resp.JSON200)[0].RepoOwner)
+	assert.Equal("project.special", (*resp.JSON200)[0].RepoName)
+	assert.EqualValues(1, (*resp.JSON200)[0].Number)
 }
 
 func TestAPIGetIssueUsesPlatformHostQuery(t *testing.T) {

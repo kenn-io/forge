@@ -2067,6 +2067,31 @@ func TestListPullRequestsFilterByRepoIncludesAllHostsByDefault(t *testing.T) {
 	assert.Equal(enterpriseRepo, enterpriseOnly[0].RepoID)
 }
 
+func TestListPullRequestsFilterByHostedRepoPath(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	base := baseTime()
+
+	nestedRepo := insertTestRepoWithHost(
+		t, d, "Group/SubGroup", "Project.Special", "ghe.example.com",
+	)
+	otherRepo := insertTestRepoWithHost(
+		t, d, "Other", "Project.Special", "ghe.example.com",
+	)
+	insertTestMR(t, d, nestedRepo, 1, "nested pr", base)
+	insertTestMR(t, d, otherRepo, 2, "other pr", base.Add(time.Hour))
+
+	filtered, err := d.ListMergeRequests(ctx, ListMergeRequestsOpts{
+		PlatformHost: "GHE.EXAMPLE.COM",
+		RepoPath:     "Group/SubGroup/Project.Special",
+	})
+	require.NoError(err)
+	require.Len(filtered, 1)
+	assert.Equal(nestedRepo, filtered[0].RepoID)
+}
+
 func TestPullRequestRepoScopedQueriesCanonicalizeOwnerName(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
@@ -3120,6 +3145,31 @@ func TestIssueRepoScopedQueriesCanonicalizeOwnerName(t *testing.T) {
 	gotID, err := d.GetIssueIDByRepoAndNumber(ctx, "Owner", "Repo", 7)
 	require.NoError(err)
 	assert.Equal(issueID, gotID)
+}
+
+func TestListIssuesFilterByHostedRepoPath(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	base := baseTime()
+
+	nestedRepo := insertTestRepoWithHost(
+		t, d, "Group/SubGroup", "Project.Special", "ghe.example.com",
+	)
+	otherRepo := insertTestRepoWithHost(
+		t, d, "Other", "Project.Special", "ghe.example.com",
+	)
+	insertTestIssue(t, d, nestedRepo, 1, "nested issue", base)
+	insertTestIssue(t, d, otherRepo, 2, "other issue", base.Add(time.Hour))
+
+	filtered, err := d.ListIssues(ctx, ListIssuesOpts{
+		PlatformHost: "GHE.EXAMPLE.COM",
+		RepoPath:     "Group/SubGroup/Project.Special",
+	})
+	require.NoError(err)
+	require.Len(filtered, 1)
+	assert.Equal(nestedRepo, filtered[0].RepoID)
 }
 
 func TestListIssuesFilterBySearch(t *testing.T) {

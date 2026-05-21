@@ -2278,7 +2278,15 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 		args = append(args, state)
 	}
 
-	if opts.RepoOwner != "" && opts.RepoName != "" {
+	if opts.RepoPath != "" {
+		host, _, _ := canonicalRepoLookupIdentifier(opts.PlatformHost, "", "")
+		if host != "" {
+			conds = append(conds, "r.platform_host = ?")
+			args = append(args, host)
+		}
+		conds = append(conds, "r.repo_path_key = ?")
+		args = append(args, canonicalRepoPathKey(opts.RepoPath))
+	} else if opts.RepoOwner != "" && opts.RepoName != "" {
 		_, owner, name := canonicalRepoLookupIdentifier(
 			"", opts.RepoOwner, opts.RepoName,
 		)
@@ -3071,7 +3079,15 @@ func (d *DB) ListIssues(
 		args = append(args, state)
 	}
 
-	if opts.RepoOwner != "" && opts.RepoName != "" {
+	if opts.RepoPath != "" {
+		host, _, _ := canonicalRepoLookupIdentifier(opts.PlatformHost, "", "")
+		if host != "" {
+			conds = append(conds, "r.platform_host = ?")
+			args = append(args, host)
+		}
+		conds = append(conds, "r.repo_path_key = ?")
+		args = append(args, canonicalRepoPathKey(opts.RepoPath))
+	} else if opts.RepoOwner != "" && opts.RepoName != "" {
 		host, owner, name := canonicalRepoLookupIdentifier(opts.PlatformHost, opts.RepoOwner, opts.RepoName)
 		if host != "" {
 			conds = append(conds, "r.platform_host = ?")

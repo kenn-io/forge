@@ -76,10 +76,11 @@ func main() {
 }
 
 type e2eServerInfo struct {
-	Host    string `json:"host"`
-	Port    int    `json:"port"`
-	BaseURL string `json:"base_url"`
-	PID     int    `json:"pid"`
+	Host       string `json:"host"`
+	Port       int    `json:"port"`
+	BaseURL    string `json:"base_url"`
+	PID        int    `json:"pid"`
+	ConfigPath string `json:"config_path"`
 }
 
 type e2eStaticProvider struct {
@@ -998,10 +999,11 @@ func run(
 	}
 
 	info := e2eServerInfo{
-		Host:    "127.0.0.1",
-		Port:    tcpAddr.Port,
-		BaseURL: fmt.Sprintf("http://127.0.0.1:%d", tcpAddr.Port),
-		PID:     os.Getpid(),
+		Host:       "127.0.0.1",
+		Port:       tcpAddr.Port,
+		BaseURL:    fmt.Sprintf("http://127.0.0.1:%d", tcpAddr.Port),
+		PID:        os.Getpid(),
+		ConfigPath: cfgPath,
 	}
 	if err := writeServerInfoFile(serverInfoFile, info); err != nil {
 		return fmt.Errorf("write server info file: %w", err)

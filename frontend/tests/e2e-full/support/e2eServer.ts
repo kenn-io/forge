@@ -14,6 +14,7 @@ export type E2EServerInfo = {
   port: number;
   base_url: string;
   pid: number;
+  config_path: string;
 };
 
 export type IsolatedE2EServer = {

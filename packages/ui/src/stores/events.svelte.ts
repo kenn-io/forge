@@ -1,5 +1,11 @@
 import type { SyncStatus } from "../api/types.js";
 
+export interface ConfigChangedEvent {
+  valid: boolean;
+  error?: string;
+  restart_required: boolean;
+}
+
 export interface EventsStoreOptions {
   /**
    * Base URL path (typically from config.basePath). Trailing
@@ -10,6 +16,8 @@ export interface EventsStoreOptions {
   onDataChanged?: () => void;
   /** Called on each `sync_status` SSE frame. */
   onSyncStatus?: (status: SyncStatus) => void;
+  /** Called on each `config.changed` SSE frame. */
+  onConfigChanged?: (event: ConfigChangedEvent) => void;
   /**
    * Called on a `reconnect.stale` SSE frame. The server emits this
    * when the client's Last-Event-ID cursor predates its replay ring,
@@ -59,6 +67,16 @@ export function createEventsStore(opts: EventsStoreOptions = {}) {
           (ev as MessageEvent).data,
         ) as SyncStatus;
         opts.onSyncStatus?.(status);
+      } catch {
+        // ignore malformed frames
+      }
+    });
+    source.addEventListener("config.changed", (ev) => {
+      try {
+        const event = JSON.parse(
+          (ev as MessageEvent).data,
+        ) as ConfigChangedEvent;
+        opts.onConfigChanged?.(event);
       } catch {
         // ignore malformed frames
       }

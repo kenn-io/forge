@@ -116,6 +116,18 @@
     appReady = false;
   }
 
+  function syncGlobalRepoWithRoute(
+    routeStores: StoreInstances | undefined = stores,
+  ): void {
+    if (!routeStores) return;
+    if (getUIConfig().hideRepoSelector) return;
+    if (!routeStores.settings.hasConfiguredRepos()) return;
+    const next = globalRepoForSelectedRoute(getRoute());
+    if (next === undefined) return;
+    if (untrack(getGlobalRepo) === next) return;
+    setGlobalRepo(next);
+  }
+
   function startFullAppShell(startupStores: StoreInstances) {
     if (cleanupFullAppShell) return;
     fullShellStores = startupStores;
@@ -131,6 +143,7 @@
     const cancelStartup = runAppStartup({
       getSettings,
       getStores: () => startupStores,
+      beforeInitialLoad: () => syncGlobalRepoWithRoute(startupStores),
       onReady: () => {
         appReady = true;
       },
@@ -341,13 +354,7 @@
   // dropdown and left list pinned to whichever repo was picked before,
   // even though the detail pane jumped to a different one.
   $effect(() => {
-    if (!stores) return;
-    if (getUIConfig().hideRepoSelector) return;
-    if (!stores.settings.hasConfiguredRepos()) return;
-    const next = globalRepoForSelectedRoute(getRoute());
-    if (next === undefined) return;
-    if (untrack(getGlobalRepo) === next) return;
-    setGlobalRepo(next);
+    syncGlobalRepoWithRoute();
   });
 
   type DrawerItem = RoutedItemRef & {

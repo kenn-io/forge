@@ -5,6 +5,7 @@ export interface AppStartupDeps {
   getSettings: () => Promise<Settings>;
   getStores: () => StoreInstances | undefined;
   onReady: () => void;
+  beforeInitialLoad?: () => void;
 }
 
 const SETTINGS_STARTUP_TIMEOUT_MS = 8_000;
@@ -67,6 +68,8 @@ export function runAppStartup(deps: AppStartupDeps): () => void {
         err,
       );
     }
+    if (cancelled) return;
+    deps.beforeInitialLoad?.();
     if (cancelled) return;
     deps.onReady();
     const stores = deps.getStores();

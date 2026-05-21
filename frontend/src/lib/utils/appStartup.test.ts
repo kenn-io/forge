@@ -91,6 +91,32 @@ describe("runAppStartup", () => {
     expect(stores.events.connect).toHaveBeenCalledTimes(1);
   });
 
+  it("runs the pre-load hook before marking the app ready and loading lists", async () => {
+    const stores = makeStores();
+    const beforeInitialLoad = vi.fn();
+    const onReady = vi.fn();
+
+    runAppStartup({
+      getSettings: () => Promise.resolve(makeSettings()),
+      getStores: () => stores,
+      beforeInitialLoad,
+      onReady,
+    });
+
+    await flushMicrotasks();
+
+    expect(beforeInitialLoad).toHaveBeenCalledTimes(1);
+    const beforeOrder = beforeInitialLoad.mock.invocationCallOrder[0] ?? 0;
+    const readyOrder = onReady.mock.invocationCallOrder[0] ?? 0;
+    const pullLoadOrder = vi.mocked(stores.pulls.loadPulls)
+      .mock.invocationCallOrder[0] ?? 0;
+    const issueLoadOrder = vi.mocked(stores.issues.loadIssues)
+      .mock.invocationCallOrder[0] ?? 0;
+    expect(beforeOrder).toBeLessThan(readyOrder);
+    expect(beforeOrder).toBeLessThan(pullLoadOrder);
+    expect(beforeOrder).toBeLessThan(issueLoadOrder);
+  });
+
   it("skips every post-await side effect when cancelled before settings resolve", async () => {
     const stores = makeStores();
     let resolveSettings: (value: Settings) => void = () => {};

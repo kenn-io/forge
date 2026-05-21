@@ -686,7 +686,7 @@ func (s *Server) registerAPI(api huma.API) {
 		Path:          "/notifications",
 		DefaultStatus: http.StatusOK,
 		Summary:       "List notifications",
-		Tags:          []string{"Notifications"},
+		Tags:          []string{"Activity"},
 	}, s.listNotifications)
 	huma.Register(api, huma.Operation{
 		OperationID:   "sync-notifications",
@@ -694,7 +694,7 @@ func (s *Server) registerAPI(api huma.API) {
 		Path:          "/notifications/sync",
 		DefaultStatus: http.StatusAccepted,
 		Summary:       "Sync notifications",
-		Tags:          []string{"Notifications"},
+		Tags:          []string{"Sync"},
 	}, s.syncNotifications)
 	huma.Register(api, huma.Operation{
 		OperationID:   "mark-notifications-read",
@@ -702,7 +702,7 @@ func (s *Server) registerAPI(api huma.API) {
 		Path:          "/notifications/read",
 		DefaultStatus: http.StatusOK,
 		Summary:       "Mark notifications read",
-		Tags:          []string{"Notifications"},
+		Tags:          []string{"Activity"},
 	}, s.markNotificationsRead)
 	huma.Register(api, huma.Operation{
 		OperationID:   "mark-notifications-done",
@@ -710,7 +710,7 @@ func (s *Server) registerAPI(api huma.API) {
 		Path:          "/notifications/done",
 		DefaultStatus: http.StatusOK,
 		Summary:       "Mark notifications done",
-		Tags:          []string{"Notifications"},
+		Tags:          []string{"Activity"},
 	}, s.markNotificationsDone)
 	huma.Register(api, huma.Operation{
 		OperationID:   "mark-notifications-undone",
@@ -718,7 +718,7 @@ func (s *Server) registerAPI(api huma.API) {
 		Path:          "/notifications/undone",
 		DefaultStatus: http.StatusOK,
 		Summary:       "Mark notifications undone",
-		Tags:          []string{"Notifications"},
+		Tags:          []string{"Activity"},
 	}, s.markNotificationsUndone)
 	huma.Get(api, "/pulls", s.listPulls,
 		documentOperation("list-pulls", "List pull requests", "Pull Requests"))

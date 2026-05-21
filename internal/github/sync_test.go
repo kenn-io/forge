@@ -4368,6 +4368,41 @@ func TestFetchMRDetailPersistsPullRequestETag(t *testing.T) {
 	assert.Equal(`"etag-v2"`, etag)
 }
 
+func TestFetchMRDetailDoesNotPersistPullRequestETagWhenDetailRefreshFails(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", repo.Owner, repo.Name))
+	require.NoError(err)
+	require.NoError(d.UpsertHTTPEtag(
+		ctx, "github", "github.com", "owner", "repo",
+		"pull_request", 1, `"etag-v1"`,
+	))
+
+	updatedAt := time.Date(2024, 6, 1, 10, 0, 0, 0, time.UTC)
+	mc := &conditionalPRTrackingClient{nextETag: `"etag-v2"`}
+	mc.singlePR = buildOpenPR(1, updatedAt)
+	mc.listIssueCommentsErr = fmt.Errorf("transient comments failure")
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, d, nil,
+		[]RepoRef{repo},
+		time.Minute, nil, testBudget(1000),
+	)
+
+	_, err = syncer.fetchMRDetail(ctx, repo, repoID, 1, false)
+	require.Error(err)
+
+	etag, err := d.GetHTTPEtag(
+		ctx, "github", "github.com", "owner", "repo",
+		"pull_request", 1,
+	)
+	require.NoError(err)
+	assert.Equal(`"etag-v1"`, etag)
+}
+
 func TestFetchIssueDetailUsesPersistedIssueETag(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
@@ -4459,6 +4494,57 @@ func TestFetchIssueDetailPersistsIssueETag(t *testing.T) {
 	)
 	require.NoError(err)
 	assert.Equal(`"issue-etag-v2"`, etag)
+}
+
+func TestFetchIssueDetailDoesNotPersistIssueETagWhenDetailRefreshFails(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", repo.Owner, repo.Name))
+	require.NoError(err)
+	require.NoError(d.UpsertHTTPEtag(
+		ctx, "github", "github.com", "owner", "repo",
+		"issue", 1, `"issue-etag-v1"`,
+	))
+
+	updatedAt := time.Date(2024, 6, 1, 10, 0, 0, 0, time.UTC)
+	issueID := int64(1000)
+	issueNumber := 1
+	issueTitle := "test issue"
+	issueState := "open"
+	issueURL := "https://github.com/owner/repo/issues/1"
+
+	mc := &conditionalIssueTrackingClient{nextETag: `"issue-etag-v2"`}
+	mc.getIssueFn = func(context.Context, string, string, int) (*gh.Issue, error) {
+		return &gh.Issue{
+			ID:        &issueID,
+			Number:    &issueNumber,
+			Title:     &issueTitle,
+			State:     &issueState,
+			HTMLURL:   &issueURL,
+			CreatedAt: makeTimestamp(updatedAt),
+			UpdatedAt: makeTimestamp(updatedAt),
+		}, nil
+	}
+	mc.listIssueCommentsErr = fmt.Errorf("transient comments failure")
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mc}, d, nil,
+		[]RepoRef{repo},
+		time.Minute, nil, testBudget(1000),
+	)
+
+	_, err = syncer.fetchIssueDetail(ctx, repo, repoID, 1)
+	require.Error(err)
+
+	etag, err := d.GetHTTPEtag(
+		ctx, "github", "github.com", "owner", "repo",
+		"issue", 1,
+	)
+	require.NoError(err)
+	assert.Equal(`"issue-etag-v1"`, etag)
 }
 
 func TestBulkGraphQLGateUsesLocalMergeRequestCount(t *testing.T) {

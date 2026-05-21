@@ -83,7 +83,12 @@ func (t *etagTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	switch resp.StatusCode {
 	case http.StatusOK:
 		etag := resp.Header.Get("ETag")
-		if etag != "" {
+		if responseHasNextPage(resp) {
+			// A page-1 validator does not prove the complete paginated
+			// collection is unchanged. Evict instead of allowing a later
+			// 304 to stop pagination before later pages are checked.
+			t.cache.Delete(url)
+		} else if etag != "" {
 			t.cache.Store(url, etagEntry{etag: etag, cachedAt: time.Now()})
 		} else {
 			// No ETag — drop any stale validator so the next request
@@ -101,6 +106,18 @@ func (t *etagTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 
 	return resp, nil
+}
+
+func responseHasNextPage(resp *http.Response) bool {
+	if resp == nil {
+		return false
+	}
+	for _, part := range strings.Split(resp.Header.Get("Link"), ",") {
+		if strings.Contains(part, `rel="next"`) {
+			return true
+		}
+	}
+	return false
 }
 
 func isETagEligible(path string) bool {

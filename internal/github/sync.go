@@ -4009,19 +4009,6 @@ func (s *Syncer) fetchMRDetail(
 			"get full PR #%d: %w", number, err,
 		)
 	}
-	if newETag != "" {
-		if err := s.db.UpsertHTTPEtag(
-			ctx, string(repoPlatform(repo)), repoHost(repo),
-			repo.Owner, repo.Name, "pull_request", number, newETag,
-		); err != nil {
-			slog.Warn("persist pull request ETag failed",
-				"repo", repo.Owner+"/"+repo.Name,
-				"number", number,
-				"err", err,
-			)
-		}
-	}
-
 	normalized, err := NormalizePR(repoID, fullPR)
 	if err != nil {
 		return calls, fmt.Errorf("normalize full PR #%d: %w", number, err)
@@ -4059,16 +4046,16 @@ func (s *Syncer) fetchMRDetail(
 	}
 
 	// Diff SHAs if clone available.
-	repoHost := repo.PlatformHost
-	if repoHost == "" {
-		repoHost = "github.com"
+	cloneRepoHost := repo.PlatformHost
+	if cloneRepoHost == "" {
+		cloneRepoHost = "github.com"
 	}
 	if s.clones != nil && cloneFetchOK {
 		headSHA := normalized.PlatformHeadSHA
 		baseSHA := normalized.PlatformBaseSHA
 		if headSHA != "" && baseSHA != "" {
 			mb, mbErr := s.clones.MergeBase(
-				ctx, repoHost, repo.Owner,
+				ctx, cloneRepoHost, repo.Owner,
 				repo.Name, baseSHA, headSHA,
 			)
 			if mbErr != nil {
@@ -4154,6 +4141,19 @@ func (s *Syncer) fetchMRDetail(
 			)
 		} else {
 			s.onMRSynced(repo.Owner, repo.Name, fresh)
+		}
+	}
+
+	if newETag != "" {
+		if err := s.db.UpsertHTTPEtag(
+			ctx, string(repoPlatform(repo)), repoHost(repo),
+			repo.Owner, repo.Name, "pull_request", number, newETag,
+		); err != nil {
+			slog.Warn("persist pull request ETag failed",
+				"repo", repo.Owner+"/"+repo.Name,
+				"number", number,
+				"err", err,
+			)
 		}
 	}
 
@@ -4400,19 +4400,6 @@ func (s *Syncer) fetchIssueDetail(
 			"get issue #%d: %w", number, err,
 		)
 	}
-	if newETag != "" {
-		if err := s.db.UpsertHTTPEtag(
-			ctx, string(repoPlatform(repo)), repoHost(repo),
-			repo.Owner, repo.Name, "issue", number, newETag,
-		); err != nil {
-			slog.Warn("persist issue ETag failed",
-				"repo", repo.Owner+"/"+repo.Name,
-				"number", number,
-				"err", err,
-			)
-		}
-	}
-
 	normalized, err := NormalizeIssue(repoID, ghIssue)
 	if err != nil {
 		return calls, fmt.Errorf("normalize issue #%d: %w", number, err)
@@ -4441,6 +4428,19 @@ func (s *Syncer) fetchIssueDetail(
 		return calls, fmt.Errorf(
 			"mark detail fetched for issue #%d: %w", number, err,
 		)
+	}
+
+	if newETag != "" {
+		if err := s.db.UpsertHTTPEtag(
+			ctx, string(repoPlatform(repo)), repoHost(repo),
+			repo.Owner, repo.Name, "issue", number, newETag,
+		); err != nil {
+			slog.Warn("persist issue ETag failed",
+				"repo", repo.Owner+"/"+repo.Name,
+				"number", number,
+				"err", err,
+			)
+		}
 	}
 
 	return calls, nil

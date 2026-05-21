@@ -133,12 +133,11 @@ func (s *Server) handleConfigFileChanged() {
 
 // applyConfigChange reloads the config file, copies hot-reloadable fields
 // onto the in-memory config, refreshes the syncer's repo set and runtime
-// targets, and returns the payload to broadcast. The whole apply runs
-// under cfgMu so concurrent Settings-UI mutations and a second watcher
-// reload cannot interleave. The lock is held until everything reachable
-// from s.cfg is consistent; the SSE broadcast is intentionally moved out
-// of this function (to handleConfigFileChanged) so a slow subscriber
-// cannot stall the daemon.
+// targets, and returns the payload to broadcast. Repository expansion can
+// touch provider clients, so it happens before taking cfgMu. The lock is
+// held only while applying the already-resolved result to in-memory state.
+// The SSE broadcast is intentionally moved out of this function (to
+// handleConfigFileChanged) so a slow subscriber cannot stall the daemon.
 func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
 	newCfg, err := config.Load(s.cfgPath)
 	if err != nil {
@@ -154,9 +153,8 @@ func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
 	}
 
 	s.cfgMu.Lock()
-	defer s.cfgMu.Unlock()
-
 	if s.cfg == nil {
+		s.cfgMu.Unlock()
 		// Defensive: a Server constructed without a cfg cannot be hot
 		// reloaded; treat the change as a parse error so subscribers
 		// learn nothing useful was applied.
@@ -165,15 +163,7 @@ func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
 			Error: "config reload disabled: server has no in-memory config",
 		}
 	}
-
-	// Apply hot-reloadable fields. Repos and Platforms are deep-copied
-	// so subsequent in-memory mutations from the Settings UI cannot
-	// surprise the file's last view.
-	s.cfg.Repos = slices.Clone(newCfg.Repos)
-	s.cfg.Platforms = slices.Clone(newCfg.Platforms)
-	s.cfg.Activity = newCfg.Activity
-	s.cfg.Terminal = newCfg.Terminal
-	s.cfg.Agents = cloneConfigAgents(newCfg.Agents)
+	s.cfgMu.Unlock()
 
 	restartRequired := s.bootCfgSnapshot.restartRequiredFor(newCfg)
 
@@ -190,6 +180,18 @@ func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
 		)
 		restartRequired = true
 	}
+
+	s.cfgMu.Lock()
+	defer s.cfgMu.Unlock()
+	// Apply hot-reloadable fields. Repos and Platforms are deep-copied
+	// so subsequent in-memory mutations from the Settings UI cannot
+	// surprise the file's last view.
+	s.cfg.Repos = slices.Clone(newCfg.Repos)
+	s.cfg.Platforms = slices.Clone(newCfg.Platforms)
+	s.cfg.Activity = newCfg.Activity
+	s.cfg.Terminal = newCfg.Terminal
+	s.cfg.Agents = cloneConfigAgents(newCfg.Agents)
+
 	s.syncer.SetRepos(resolved)
 
 	s.refreshRuntimeTargetsLocked()

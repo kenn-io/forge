@@ -231,6 +231,18 @@
       );
     }
 
+    async function handleConfigChanged(
+      event: { valid: boolean },
+    ): Promise<void> {
+      if (!event.valid) return;
+      await reloadSettingsAfterConfigChange();
+      await Promise.all([
+        pullsStore.loadPulls(),
+        issuesStore.loadIssues(),
+        activityStore.loadActivity(),
+      ]);
+    }
+
     const eventsStore = createEventsStore({
       ...(cfg.basePath != null && {
         getBasePath: () => cfg.basePath as string,
@@ -244,11 +256,7 @@
         syncStore.setSyncStatus(status);
       },
       onConfigChanged: (event) => {
-        if (!event.valid) return;
-        void reloadSettingsAfterConfigChange();
-        void pullsStore.loadPulls();
-        void issuesStore.loadIssues();
-        void activityStore.loadActivity();
+        void handleConfigChanged(event);
       },
       onReconnectStale: () => {
         // The replay ring rolled past the client's cursor while it

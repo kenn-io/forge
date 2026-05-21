@@ -169,7 +169,7 @@ func runGit(t *testing.T, dir string, args ...string) {
 
 func testGitSHA(t *testing.T, dir, ref string) string {
 	t.Helper()
-	cmd := exec.Command("git", "rev-parse", ref)
+	cmd := procutil.Command("git", "rev-parse", ref)
 	cmd.Dir = dir
 	cmd.Env = append(
 		gitenv.StripAll(os.Environ()),

@@ -1770,6 +1770,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/telemetry/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Capture telemetry event */
+        post: operations["capture-telemetry-event"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/version": {
         parameters: {
             query?: never;
@@ -3445,6 +3462,27 @@ export interface components {
             last_run_at?: string;
             progress?: string;
             running: boolean;
+        };
+        TelemetryEventInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/TelemetryEventInputBody.json
+             */
+            readonly $schema?: string;
+            event: string;
+            properties?: {
+                [key: string]: unknown;
+            };
+        };
+        TelemetryEventResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/TelemetryEventResponse.json
+             */
+            readonly $schema?: string;
+            status: string;
         };
         Terminal: {
             cursor_blink: boolean | null;
@@ -7735,6 +7773,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SyncStatus"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "capture-telemetry-event": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TelemetryEventInputBody"];
+            };
+        };
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TelemetryEventResponse"];
                 };
             };
             /** @description Error */

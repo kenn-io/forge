@@ -1480,6 +1480,21 @@ type SyncStatus struct {
 	Running     bool       `json:"running"`
 }
 
+// TelemetryEventInputBody defines model for TelemetryEventInputBody.
+type TelemetryEventInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema     *string                 `json:"$schema,omitempty"`
+	Event      string                  `json:"event"`
+	Properties *map[string]interface{} `json:"properties,omitempty"`
+}
+
+// TelemetryEventResponse defines model for TelemetryEventResponse.
+type TelemetryEventResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string `json:"$schema,omitempty"`
+	Status string  `json:"status"`
+}
+
 // Terminal defines model for Terminal.
 type Terminal struct {
 	CursorBlink   *bool   `json:"cursor_blink"`
@@ -1904,6 +1919,9 @@ type UnsetStarredJSONRequestBody = StarredRequest
 
 // SetStarredJSONRequestBody defines body for SetStarred for application/json ContentType.
 type SetStarredJSONRequestBody = StarredRequest
+
+// CaptureTelemetryEventJSONRequestBody defines body for CaptureTelemetryEvent for application/json ContentType.
+type CaptureTelemetryEventJSONRequestBody = TelemetryEventInputBody
 
 // CreateWorkspaceJSONRequestBody defines body for CreateWorkspace for application/json ContentType.
 type CreateWorkspaceJSONRequestBody = CreateWorkspaceInputBody
@@ -2433,6 +2451,11 @@ type ClientInterface interface {
 
 	// GetSyncStatus request
 	GetSyncStatus(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CaptureTelemetryEventWithBody request with any body
+	CaptureTelemetryEventWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	CaptureTelemetryEvent(ctx context.Context, body CaptureTelemetryEventJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetVersion request
 	GetVersion(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -4460,6 +4483,30 @@ func (c *Client) TriggerSync(ctx context.Context, reqEditors ...RequestEditorFn)
 
 func (c *Client) GetSyncStatus(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetSyncStatusRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CaptureTelemetryEventWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCaptureTelemetryEventRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CaptureTelemetryEvent(ctx context.Context, body CaptureTelemetryEventJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCaptureTelemetryEventRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -12281,6 +12328,46 @@ func NewGetSyncStatusRequest(server string) (*http.Request, error) {
 	return req, nil
 }
 
+// NewCaptureTelemetryEventRequest calls the generic CaptureTelemetryEvent builder with application/json body
+func NewCaptureTelemetryEventRequest(server string, body CaptureTelemetryEventJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCaptureTelemetryEventRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewCaptureTelemetryEventRequestWithBody generates requests for CaptureTelemetryEvent with any type of body
+func NewCaptureTelemetryEventRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/telemetry/events")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewGetVersionRequest generates requests for GetVersion
 func NewGetVersionRequest(server string) (*http.Request, error) {
 	var err error
@@ -13434,6 +13521,11 @@ type ClientWithResponsesInterface interface {
 
 	// GetSyncStatusWithResponse request
 	GetSyncStatusWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetSyncStatusResponse, error)
+
+	// CaptureTelemetryEventWithBodyWithResponse request with any body
+	CaptureTelemetryEventWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CaptureTelemetryEventResponse, error)
+
+	CaptureTelemetryEventWithResponse(ctx context.Context, body CaptureTelemetryEventJSONRequestBody, reqEditors ...RequestEditorFn) (*CaptureTelemetryEventResponse, error)
 
 	// GetVersionWithResponse request
 	GetVersionWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetVersionResponse, error)
@@ -16149,6 +16241,29 @@ func (r GetSyncStatusResponse) StatusCode() int {
 	return 0
 }
 
+type CaptureTelemetryEventResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON202                       *TelemetryEventResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r CaptureTelemetryEventResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CaptureTelemetryEventResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type GetVersionResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
@@ -17881,6 +17996,23 @@ func (c *ClientWithResponses) GetSyncStatusWithResponse(ctx context.Context, req
 		return nil, err
 	}
 	return ParseGetSyncStatusResponse(rsp)
+}
+
+// CaptureTelemetryEventWithBodyWithResponse request with arbitrary body returning *CaptureTelemetryEventResponse
+func (c *ClientWithResponses) CaptureTelemetryEventWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CaptureTelemetryEventResponse, error) {
+	rsp, err := c.CaptureTelemetryEventWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCaptureTelemetryEventResponse(rsp)
+}
+
+func (c *ClientWithResponses) CaptureTelemetryEventWithResponse(ctx context.Context, body CaptureTelemetryEventJSONRequestBody, reqEditors ...RequestEditorFn) (*CaptureTelemetryEventResponse, error) {
+	rsp, err := c.CaptureTelemetryEvent(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCaptureTelemetryEventResponse(rsp)
 }
 
 // GetVersionWithResponse request returning *GetVersionResponse
@@ -21717,6 +21849,39 @@ func ParseGetSyncStatusResponse(rsp *http.Response) (*GetSyncStatusResponse, err
 			return nil, err
 		}
 		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCaptureTelemetryEventResponse parses an HTTP response from a CaptureTelemetryEventWithResponse call
+func ParseCaptureTelemetryEventResponse(rsp *http.Response) (*CaptureTelemetryEventResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CaptureTelemetryEventResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 202:
+		var dest TelemetryEventResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON202 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest ProblemError

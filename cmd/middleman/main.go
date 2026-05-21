@@ -29,6 +29,7 @@ import (
 	"go.kenn.io/middleman/internal/runtimelock"
 	"go.kenn.io/middleman/internal/server"
 	"go.kenn.io/middleman/internal/stacks"
+	"go.kenn.io/middleman/internal/telemetry"
 	"go.kenn.io/middleman/internal/web"
 )
 
@@ -401,6 +402,24 @@ func run(configPath string) error {
 	)
 	syncer.SetFetchers(startup.fetchers)
 
+	telemetryReporter := telemetry.NewReporterOrDisabled(telemetry.Options{
+		DataDir: cfg.DataDir,
+		Version: version,
+		Commit:  commit,
+	})
+	defer func() {
+		if err := telemetryReporter.Close(); err != nil {
+			slog.Warn("close telemetry", "err", err)
+		}
+	}()
+	if telemetryReporter.Enabled() {
+		if err := telemetryReporter.Capture("server_started", map[string]any{
+			"repo_count": len(repos),
+		}); err != nil {
+			slog.Warn("capture telemetry event", "err", err)
+		}
+	}
+
 	assets, err := web.Assets()
 	if err != nil {
 		return fmt.Errorf("load frontend assets: %w", err)
@@ -411,6 +430,7 @@ func run(configPath string) error {
 		cfg, configPath, server.ServerOptions{
 			WorktreeDir:         filepath.Join(cfg.DataDir, "worktrees"),
 			PtyOwnerManagerPath: os.Getenv("MIDDLEMAN_PTY_MANAGER"),
+			Telemetry:           telemetryReporter,
 		},
 	)
 	slog.Debug(

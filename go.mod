@@ -18,6 +18,7 @@ require (
 	github.com/google/go-github/v84 v84.0.0
 	github.com/klauspost/compress v1.18.5
 	github.com/oapi-codegen/runtime v1.3.1
+	github.com/posthog/posthog-go v1.12.6
 	github.com/rest-sh/restish v0.21.2
 	github.com/shurcooL/githubv4 v0.0.0-20260209031235-2402fdf4a9ed
 	github.com/sourcegraph/go-diff v0.7.0
@@ -31,6 +32,7 @@ require (
 	go.yaml.in/yaml/v3 v3.0.4
 	golang.org/x/oauth2 v0.36.0
 	golang.org/x/sync v0.20.0
+	golang.org/x/sys v0.43.0
 	golang.org/x/text v0.36.0
 	golang.org/x/tools v0.43.0
 	modernc.org/sqlite v1.48.0
@@ -48,7 +50,6 @@ require (
 	github.com/alecthomas/chroma v0.10.0 // indirect
 	github.com/alexeyco/simpletable v1.0.0 // indirect
 	github.com/amzn/ion-go v1.1.3 // indirect
-	github.com/andybalholm/brotli v1.2.0 // indirect
 	github.com/apapsch/go-jsonmerge/v2 v2.0.0 // indirect
 	github.com/aymanbagabas/go-osc52 v1.2.1 // indirect
 	github.com/aymerick/douceur v0.2.0 // indirect
@@ -121,6 +122,7 @@ require (
 	github.com/go-openapi/swag/typeutils v0.25.5 // indirect
 	github.com/go-openapi/swag/yamlutils v0.25.5 // indirect
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
+	github.com/goccy/go-json v0.10.5 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.0 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
@@ -138,6 +140,7 @@ require (
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/hashicorp/go-retryablehttp v0.7.8 // indirect
 	github.com/hashicorp/go-version v1.9.0 // indirect
+	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
 	github.com/hexops/gotextdiff v1.0.3 // indirect
 	github.com/iancoleman/strcase v0.2.0 // indirect
 	github.com/in-toto/attestation v1.1.2 // indirect
@@ -257,7 +260,6 @@ require (
 	golang.org/x/image v0.18.0 // indirect
 	golang.org/x/mod v0.34.0 // indirect
 	golang.org/x/net v0.52.0 // indirect
-	golang.org/x/sys v0.43.0 // indirect
 	golang.org/x/term v0.42.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260401024825-9d38bb4040a9 // indirect

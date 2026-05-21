@@ -27,6 +27,7 @@ import (
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/ptyowner"
 	ptyownerruntime "go.kenn.io/middleman/internal/ptyowner/runtime"
+	"go.kenn.io/middleman/internal/telemetry"
 	"go.kenn.io/middleman/internal/workspace"
 	"go.kenn.io/middleman/internal/workspace/localruntime"
 )
@@ -74,6 +75,7 @@ type ServerOptions struct {
 	PtyOwnerManagerPath                string
 	PtyOwnerCommand                    []string
 	PtyOwnerInProcess                  bool
+	Telemetry                          telemetry.Client
 }
 
 type shutdownDeadline struct {
@@ -141,6 +143,7 @@ type Server struct {
 	workspacePushedHeadObserver *workspace.PushedHeadObserver
 	tmuxActivity                *tmuxActivityTracker
 	runtime                     *localruntime.Manager
+	telemetry                   telemetry.Client
 	cfg                         *config.Config
 	cfgPath                     string
 	cfgMu                       sync.Mutex
@@ -499,6 +502,7 @@ func newServer(
 		basePath:               basePath,
 		syncer:                 syncer,
 		clones:                 clones,
+		telemetry:              options.Telemetry,
 		cfg:                    cfg,
 		cfgPath:                cfgPath,
 		bootCfgSnapshot:        snapshotStartupConfig(cfg),

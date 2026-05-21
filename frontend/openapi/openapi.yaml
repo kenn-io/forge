@@ -3240,6 +3240,39 @@ components:
       required:
         - running
       type: object
+    TelemetryEventInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/TelemetryEventInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        event:
+          type: string
+        properties:
+          additionalProperties: {}
+          type: object
+      required:
+        - event
+      type: object
+    TelemetryEventResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/TelemetryEventResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        status:
+          type: string
+      required:
+        - status
+      type: object
     Terminal:
       additionalProperties: false
       properties:
@@ -8564,6 +8597,31 @@ paths:
       summary: Get sync status
       tags:
         - Sync
+  /telemetry/events:
+    post:
+      operationId: capture-telemetry-event
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TelemetryEventInputBody"
+        required: true
+      responses:
+        "202":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TelemetryEventResponse"
+          description: Accepted
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Capture telemetry event
+      tags:
+        - System
   /version:
     get:
       operationId: get-version

@@ -657,6 +657,14 @@ func (s *Server) registerAPI(api huma.API) {
 	huma.Get(api, "/rate-limits", s.getRateLimits,
 		documentOperation("get-rate-limits", "Get rate limits", "Sync"))
 	huma.Register(api, huma.Operation{
+		OperationID:   "capture-telemetry-event",
+		Method:        http.MethodPost,
+		Path:          "/telemetry/events",
+		DefaultStatus: http.StatusAccepted,
+		Summary:       "Capture telemetry event",
+		Tags:          []string{"System"},
+	}, s.captureTelemetryEvent)
+	huma.Register(api, huma.Operation{
 		OperationID: "get-roborev-status",
 		Method:      http.MethodGet,
 		Path:        "/roborev/status",

@@ -109,7 +109,7 @@ make vet        # go vet
 - When a test function has more than 3 assertions, create a local helper with `assert := Assert.New(t)` and use the helper methods for the rest of the checks
 - Do not use `t.Fatal`, `t.Fatalf`, `t.Error`, `t.Errorf`, `t.Fail`, or `t.FailNow` in tests; use testify assertions instead
 - Prefer the generated Go API client in `internal/apiclient` for integration-style API tests
-- For HTTP tests of user-visible behavior, follow the wire-level testing discipline in `context/testing.md` — exercise the request through `srv.ServeHTTP` and assert on the response a client would observe, not the handler's return value. The discipline names when to use `internal/server/apitest/`, `internal/server/e2etest/`, and the fault-injection exception.
+- For HTTP tests of user-visible behavior, follow the wire-level discipline in `context/testing.md`: route through `srv.ServeHTTP`, assert on what a client observes, and pick `internal/server/apitest/` or `internal/server/e2etest/` per the rules there.
 - Use `openTestDB(t)` helper for database tests
 - All tests use `t.TempDir()` for temp directories
 - Tests should be fast and isolated

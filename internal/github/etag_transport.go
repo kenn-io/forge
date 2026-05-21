@@ -112,7 +112,7 @@ func responseHasNextPage(resp *http.Response) bool {
 	if resp == nil {
 		return false
 	}
-	for _, part := range strings.Split(resp.Header.Get("Link"), ",") {
+	for part := range strings.SplitSeq(resp.Header.Get("Link"), ",") {
 		if strings.Contains(part, `rel="next"`) {
 			return true
 		}

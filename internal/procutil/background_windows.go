@@ -38,3 +38,7 @@ func binaryPathCandidates(dir, name string) []string {
 	}
 	return candidates
 }
+
+func isExecutableCandidate(os.FileInfo) bool {
+	return true
+}

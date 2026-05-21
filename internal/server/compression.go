@@ -107,6 +107,10 @@ func (c *bufferedHumaContext) BodyWriter() io.Writer {
 	return &c.body
 }
 
+func (c *bufferedHumaContext) Unwrap() huma.Context {
+	return c.inner
+}
+
 func newResponseCompressionMiddleware(
 	minSize int,
 ) func(huma.Context, func(huma.Context)) {
@@ -188,8 +192,8 @@ func selectResponseEncoding(header string) string {
 	best := ""
 	bestQ := 0.0
 	preferred := map[string]int{
-		zstdEncoding:   0,
-		brotliEncoding: 1,
+		brotliEncoding: 0,
+		zstdEncoding:   1,
 	}
 
 	for part := range strings.SplitSeq(header, ",") {

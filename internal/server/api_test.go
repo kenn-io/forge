@@ -12972,7 +12972,7 @@ func TestWorkspaceCreatesRustPtyManagerSessionE2E(t *testing.T) {
 
 	if runtime.GOOS == "windows" {
 		workspaceTerminalConnWriteRead(
-			t, ctx, conn, "rust-owner-one\r", "echo:rust-owner-one",
+			t, ctx, conn, "echo rust-owner-one\r", "rust-owner-one",
 		)
 	} else {
 		workspaceTerminalConnWriteRead(

@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"net/http"
-	"os/exec"
 	"strings"
 	"sync"
 	"testing"
@@ -12,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/wesm/middleman/internal/apiclient/generated"
+	"github.com/wesm/middleman/internal/procutil"
 )
 
 // TestWorkspaceConcurrentSameRepoOperationsE2E exercises the per-repo
@@ -176,7 +176,7 @@ func (e *unexpectedStatusError) Error() string {
 // each managed worktree adds one more.
 func listBareWorktrees(t *testing.T, bare string) int {
 	t.Helper()
-	cmd := exec.Command("git", "worktree", "list", "--porcelain")
+	cmd := procutil.Command("git", "worktree", "list", "--porcelain")
 	cmd.Dir = bare
 	out, err := cmd.CombinedOutput()
 	require.NoError(t, err, "git worktree list: %s", out)

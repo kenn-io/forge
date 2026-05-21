@@ -31,10 +31,10 @@ func TestHumaResponseCompressionNegotiatesZstdAndBrotli(t *testing.T) {
 		decode         func(t *testing.T, body io.Reader) string
 	}{
 		{
-			name:           "zstd preferred when both encodings are accepted equally",
+			name:           "brotli preferred when both encodings are accepted equally",
 			acceptEncoding: "br, zstd",
-			wantEncoding:   "zstd",
-			decode:         decodeZstdBody,
+			wantEncoding:   "br",
+			decode:         decodeBrotliBody,
 		},
 		{
 			name:           "brotli selected when client gives it higher quality",
@@ -90,6 +90,27 @@ func TestHumaResponseCompressionSkipsSmallResponses(t *testing.T) {
 	assert.Empty(rr.Header().Get("Content-Encoding"))
 	assert.Equal("Accept-Encoding", rr.Header().Get("Vary"))
 	assert.Contains(rr.Body.String(), `"text":"tiny"`)
+}
+
+func TestHumaResponseCompressionPreservesHumagoUnwrap(t *testing.T) {
+	mux := http.NewServeMux()
+	api := humago.NewWithPrefix(mux, "/api/v1", apiConfig("/"))
+	api.UseMiddleware(newResponseCompressionMiddleware(128))
+	api.UseMiddleware(func(ctx huma.Context, next func(huma.Context)) {
+		_, w := humago.Unwrap(ctx)
+		w.Header().Set("X-Unwrapped", "true")
+		next(ctx)
+	})
+	registerCompressionTestRoutes(api)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/payload", nil)
+	req.Header.Set("Accept-Encoding", "br")
+	rr := httptest.NewRecorder()
+
+	mux.ServeHTTP(rr, req)
+
+	assert.Equal(t, "true", rr.Header().Get("X-Unwrapped"))
+	assert.Equal(t, "br", rr.Header().Get("Content-Encoding"))
 }
 
 func TestServerUsesResponseCompressionMiddleware(t *testing.T) {

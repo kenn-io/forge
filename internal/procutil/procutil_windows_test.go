@@ -57,3 +57,7 @@ func TestCommandResolvesWindowsPathextBinary(t *testing.T) {
 
 	assert.Equal(strings.ToLower(toolPath), strings.ToLower(cmd.Path))
 }
+
+func TestShouldRunShebangScriptWithShellRejectsBareName(t *testing.T) {
+	Assert.False(t, shouldRunShebangScriptWithShell("fake-gh"))
+}

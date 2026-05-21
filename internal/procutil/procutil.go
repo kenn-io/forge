@@ -94,13 +94,24 @@ func binaryNeedsPathResolution(name string) bool {
 }
 
 func resolveBinaryFromPath(name string) (string, bool) {
+	resolved, err := exec.LookPath(name)
+	if err == nil {
+		if abs, absErr := filepath.Abs(resolved); absErr == nil {
+			return abs, true
+		}
+		return resolved, true
+	}
+	if errors.Is(err, exec.ErrDot) {
+		return "", false
+	}
+
 	for _, dir := range filepath.SplitList(os.Getenv("PATH")) {
-		if dir == "" {
-			dir = "."
+		if dir == "" || !filepath.IsAbs(dir) {
+			continue
 		}
 		for _, candidate := range binaryPathCandidates(dir, name) {
 			info, err := os.Stat(candidate)
-			if err == nil && !info.IsDir() {
+			if err == nil && !info.IsDir() && isExecutableCandidate(info) {
 				return candidate, true
 			}
 		}

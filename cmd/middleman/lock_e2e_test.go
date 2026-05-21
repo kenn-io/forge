@@ -14,6 +14,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/wesm/middleman/internal/procutil"
 	"github.com/wesm/middleman/internal/runtimelock"
 )
 
@@ -24,7 +25,7 @@ func buildMiddleman(t *testing.T) string {
 	t.Helper()
 	binDir := t.TempDir()
 	binPath := filepath.Join(binDir, "middleman")
-	cmd := exec.Command("go", "build", "-o", binPath, ".")
+	cmd := procutil.Command("go", "build", "-o", binPath, ".")
 	cmd.Stdout = os.Stderr
 	cmd.Stderr = os.Stderr
 	require.NoError(t, cmd.Run(), "go build ./cmd/middleman")
@@ -88,7 +89,7 @@ func TestStartupLockCollisionAndStatus(t *testing.T) {
 
 	// `middleman status` while the lock is held before WriteMetadata:
 	// reports running, but metadata is unavailable.
-	startupStatusCmd := exec.Command(bin, "status", "--config", cfgPath)
+	startupStatusCmd := procutil.Command(bin, "status", "--config", cfgPath)
 	var startupStatusOut bytes.Buffer
 	startupStatusCmd.Stdout = &startupStatusOut
 	startupStatusCmd.Stderr = os.Stderr
@@ -98,7 +99,7 @@ func TestStartupLockCollisionAndStatus(t *testing.T) {
 	require.Contains(startupStatusOut.String(), runtimelock.LockPath(dataDir))
 
 	// `middleman status --json`: same lock-held/missing-metadata state.
-	startupJSONCmd := exec.Command(bin, "status", "--json", "--config", cfgPath)
+	startupJSONCmd := procutil.Command(bin, "status", "--json", "--config", cfgPath)
 	var startupJSONOut bytes.Buffer
 	startupJSONCmd.Stdout = &startupJSONOut
 	startupJSONCmd.Stderr = os.Stderr
@@ -116,7 +117,7 @@ func TestStartupLockCollisionAndStatus(t *testing.T) {
 	// which bypasses signal.NotifyContext + defer chains in main.go and
 	// leaves the metadata file behind. Send SIGTERM explicitly when we
 	// want a graceful shutdown.
-	first := exec.Command(bin, "--config", cfgPath)
+	first := procutil.Command(bin, "--config", cfgPath)
 	first.Stdout = os.Stderr
 	first.Stderr = os.Stderr
 	first.Env = append(os.Environ(),
@@ -138,7 +139,7 @@ func TestStartupLockCollisionAndStatus(t *testing.T) {
 
 	// Second subprocess against the same data_dir + port. Should exit 1
 	// with the banner on stderr.
-	second := exec.Command(bin, "--config", cfgPath)
+	second := procutil.Command(bin, "--config", cfgPath)
 	var stderr bytes.Buffer
 	second.Stderr = &stderr
 	err = second.Run()
@@ -153,7 +154,7 @@ func TestStartupLockCollisionAndStatus(t *testing.T) {
 
 	// `middleman status` against the same config: reports running with
 	// metadata.
-	statusCmd := exec.Command(bin, "status", "--config", cfgPath)
+	statusCmd := procutil.Command(bin, "status", "--config", cfgPath)
 	var statusOut bytes.Buffer
 	statusCmd.Stdout = &statusOut
 	statusCmd.Stderr = os.Stderr
@@ -164,7 +165,7 @@ func TestStartupLockCollisionAndStatus(t *testing.T) {
 	require.Contains(statusOut.String(), "port:         "+strconv.Itoa(port))
 
 	// `middleman status --json`: same data, JSON shape.
-	jsonCmd := exec.Command(bin, "status", "--json", "--config", cfgPath)
+	jsonCmd := procutil.Command(bin, "status", "--json", "--config", cfgPath)
 	var jsonOut bytes.Buffer
 	jsonCmd.Stdout = &jsonOut
 	jsonCmd.Stderr = os.Stderr
@@ -184,7 +185,7 @@ func TestStartupLockCollisionAndStatus(t *testing.T) {
 	waitForNoFile(t, runtimelock.MetadataPath(dataDir), 10*time.Second)
 
 	// `middleman status` now reports not-running.
-	statusCmd2 := exec.Command(bin, "status", "--config", cfgPath)
+	statusCmd2 := procutil.Command(bin, "status", "--config", cfgPath)
 	var statusOut2 bytes.Buffer
 	statusCmd2.Stdout = &statusOut2
 	statusCmd2.Stderr = os.Stderr

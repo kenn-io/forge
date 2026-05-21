@@ -6467,7 +6467,6 @@ func TestE2ELargeRepoSkipsGraphQLAndUsesConditionalPRDetail(t *testing.T) {
 
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
-	client := setupTestClient(t, srv)
 
 	srv.syncer.RunOnce(ctx)
 
@@ -6476,17 +6475,18 @@ func TestE2ELargeRepoSkipsGraphQLAndUsesConditionalPRDetail(t *testing.T) {
 	assert.Equal(int32(1), conditionalCalls.Load(),
 		"only the changed PR should run a conditional detail fetch")
 
-	detailResp, err := client.HTTP.GetPullsByProviderByOwnerByNameByNumberWithResponse(
-		ctx, "gh", "acme", "widget", 1,
-	)
-	require.NoError(err)
-	require.Equal(http.StatusOK, detailResp.StatusCode())
-	require.NotNil(detailResp.JSON200)
-	assert.Equal("changed PR detail", detailResp.JSON200.MergeRequest.Title)
-	assert.Equal(int64(1), detailResp.JSON200.MergeRequest.CommentCount)
-	require.NotNil(detailResp.JSON200.Events)
-	require.Len(*detailResp.JSON200.Events, 1)
-	assert.Equal("detail comment", (*detailResp.JSON200.Events)[0].Body)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/pulls/gh/acme/widget/1", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+	require.Equal(http.StatusOK, rr.Code)
+
+	var detailResp mergeRequestDetailResponse
+	require.NoError(json.Unmarshal(rr.Body.Bytes(), &detailResp))
+	require.NotNil(detailResp.MergeRequest)
+	assert.Equal("changed PR detail", detailResp.MergeRequest.Title)
+	assert.Equal(1, detailResp.MergeRequest.CommentCount)
+	require.Len(detailResp.Events, 1)
+	assert.Equal("detail comment", detailResp.Events[0].Body)
 
 	etag, err := database.GetHTTPEtag(
 		ctx, "github", "github.com", "acme", "widget",

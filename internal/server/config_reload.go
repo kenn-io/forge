@@ -49,6 +49,7 @@ type startupConfigSnapshot struct {
 	Roborev             config.Roborev
 	Tmux                config.Tmux
 	Shell               config.Shell
+	TokenEnvNames       []string
 }
 
 func snapshotStartupConfig(cfg *config.Config) startupConfigSnapshot {
@@ -73,6 +74,8 @@ func snapshotStartupConfig(cfg *config.Config) startupConfigSnapshot {
 		snap.Tmux.AgentSessions = &v
 	}
 	snap.Shell.Command = slices.Clone(cfg.Shell.Command)
+	snap.TokenEnvNames = cfg.TokenEnvNames()
+	slices.Sort(snap.TokenEnvNames)
 	return snap
 }
 
@@ -124,6 +127,9 @@ func (s *Server) handleConfigFileChanged() {
 	if s.cfgPath == "" {
 		return
 	}
+	s.configReloadMu.Lock()
+	defer s.configReloadMu.Unlock()
+
 	event := s.applyConfigChange(s.bgCtx)
 	s.hub.Broadcast(Event{
 		Type: "config.changed",
@@ -171,7 +177,8 @@ func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
 	// whose (platform, host) the registry never learned about cannot
 	// reach a client without a restart; skip those for SetRepos but
 	// keep them in s.cfg so the UI mirrors the file.
-	resolved, skipped := s.resolveReposForReload(ctx, newCfg.Repos)
+	previous := s.syncer.TrackedRepos()
+	resolved, skipped := s.resolveReposForReload(ctx, newCfg.Repos, previous)
 	if len(skipped) > 0 {
 		slog.Info(
 			"config reload: skipping repos for unknown platform hosts",
@@ -213,6 +220,7 @@ func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
 func (s *Server) resolveReposForReload(
 	ctx context.Context,
 	repos []config.Repo,
+	previous []ghclient.RepoRef,
 ) ([]ghclient.RepoRef, []string) {
 	if s.syncer == nil {
 		return nil, nil
@@ -246,11 +254,7 @@ func (s *Server) resolveReposForReload(
 				"name", raw.Name,
 				"err", err,
 			)
-			if raw.HasNameGlob() {
-				expanded = ghclient.FallbackConfiguredRepoRefs(nil, raw)
-			} else {
-				expanded = ghclient.FallbackConfiguredRepoRefs(nil, raw)
-			}
+			expanded = ghclient.FallbackConfiguredRepoRefs(previous, raw)
 		}
 		for _, repo := range expanded {
 			key := strings.ToLower(string(repoPlatformOrDefault(repo))) + "\x00" +

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -12,8 +13,10 @@ import (
 	"testing"
 	"time"
 
+	gh "github.com/google/go-github/v84/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	ghclient "github.com/wesm/middleman/internal/github"
 )
 
 // waitForConfigWatcher blocks until the server's config watcher has
@@ -170,6 +173,29 @@ owner = "globex"
 name = "engine"
 `
 
+const validReloadConfigRepoTokenEnv = `
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "widget"
+token_env = "MIDDLEMAN_REPO_TOKEN"
+`
+
+const validReloadConfigGlobRepo = `
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "widget-*"
+`
+
 const validReloadConfigChangedActivity = `
 sync_interval = "5m"
 github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
@@ -265,6 +291,24 @@ func TestConfigReload_RestartRequiredOnStartupFieldChange(t *testing.T) {
 	assert.True(ev.RestartRequired, "sync_interval change should mark restart_required")
 }
 
+func TestConfigReload_RestartRequiredOnRepoTokenEnvChange(t *testing.T) {
+	assert := assert.New(t)
+
+	srv, _, cfgPath := setupTestServerWithConfigContent(
+		t, validReloadConfig, &mockGH{},
+	)
+	waitForConfigWatcher(t, srv, 2*time.Second)
+	stream := streamConfigEvents(t, srv)
+	defer stream.Close()
+
+	writeConfigToml(t, cfgPath, validReloadConfigRepoTokenEnv)
+
+	ev := waitForConfigEvent(t, stream, 2*time.Second)
+	assert.True(ev.Valid)
+	assert.True(ev.RestartRequired,
+		"repo token_env change should mark restart_required")
+}
+
 func TestConfigReload_InvalidConfigKeepsLastKnownGood(t *testing.T) {
 	assert := assert.New(t)
 
@@ -337,6 +381,39 @@ func TestConfigReload_NewRepoEntersSyncerTrackedSet(t *testing.T) {
 	}
 	assert.Contains(owners, "globex/engine",
 		"new repo from config edit should appear in syncer tracked set")
+}
+
+func TestConfigReload_GlobFailureKeepsPreviouslyTrackedMatches(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	srv, _, cfgPath := setupTestServerWithConfigContent(
+		t, validReloadConfig, &mockGH{
+			listReposByOwnerFn: func(context.Context, string) ([]*gh.Repository, error) {
+				return nil, errors.New("temporary repo listing failure")
+			},
+		},
+	)
+	waitForConfigWatcher(t, srv, 2*time.Second)
+	stream := streamConfigEvents(t, srv)
+	defer stream.Close()
+
+	srv.syncer.SetRepos([]ghclient.RepoRef{{
+		Owner:        "acme",
+		Name:         "widget-api",
+		PlatformHost: "github.com",
+		RepoPath:     "acme/widget-api",
+	}})
+
+	writeConfigToml(t, cfgPath, validReloadConfigGlobRepo)
+
+	ev := waitForConfigEvent(t, stream, 2*time.Second)
+	require.True(ev.Valid)
+
+	tracked := srv.syncer.TrackedRepos()
+	require.Len(tracked, 1)
+	assert.Equal("acme", tracked[0].Owner)
+	assert.Equal("widget-api", tracked[0].Name)
 }
 
 func TestConfigReload_DebouncesBurstedWrites(t *testing.T) {

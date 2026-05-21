@@ -141,6 +141,7 @@ type Server struct {
 	cfg                *config.Config
 	cfgPath            string
 	cfgMu              sync.Mutex
+	configReloadMu     sync.Mutex
 	// bootCfgSnapshot freezes the subset of config fields that are
 	// bound at startup (registry, listeners, clone manager, etc.) so a
 	// config-file watcher reload can detect when those changed and

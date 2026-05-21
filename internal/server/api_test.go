@@ -755,6 +755,21 @@ func withSeedPRTitle(title string) seedPROpt {
 	return func(pr *db.MergeRequest) { pr.Title = title }
 }
 
+func withSeedPRCI(status, checksJSON string) seedPROpt {
+	return func(pr *db.MergeRequest) {
+		pr.CIStatus = status
+		pr.CIChecksJSON = checksJSON
+	}
+}
+
+func withSeedPRTimes(createdAt, updatedAt, lastActivityAt time.Time) seedPROpt {
+	return func(pr *db.MergeRequest) {
+		pr.CreatedAt = createdAt
+		pr.UpdatedAt = updatedAt
+		pr.LastActivityAt = lastActivityAt
+	}
+}
+
 // seedPR inserts a repo and a PR into the DB, returning the PR's internal ID.
 func seedPR(t *testing.T, database *db.DB, owner, name string, number int, opts ...seedPROpt) int64 {
 	t.Helper()
@@ -1089,6 +1104,56 @@ func TestAPIListPulls(t *testing.T) {
 	assert.Equal("github", body[0].Repo.Provider)
 	assert.Equal("github.com", body[0].Repo.PlatformHost)
 	assert.Equal("acme/widget", body[0].Repo.RepoPath)
+}
+
+func TestAPIListPullsKeepsCachedCIDecorationsAfterIndexSync(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	now := time.Date(2026, 5, 20, 12, 0, 0, 0, time.UTC)
+	headSHA := "same-head"
+	baseSHA := "base-sha"
+	checksJSON := `[{"name":"build","status":"completed","conclusion":"failure"}]`
+
+	str := func(v string) *string { return &v }
+	mock := &mockGH{
+		listOpenPullRequestsFn: func(_ context.Context, _, _ string) ([]*gh.PullRequest, error) {
+			number := 1
+			id := int64(1001)
+			return []*gh.PullRequest{{
+				ID:        &id,
+				Number:    &number,
+				Title:     str("Cached CI PR"),
+				State:     str("open"),
+				HTMLURL:   str("https://github.com/acme/widget/pull/1"),
+				User:      &gh.User{Login: str("octocat")},
+				CreatedAt: &gh.Timestamp{Time: now},
+				UpdatedAt: &gh.Timestamp{Time: now},
+				Head:      &gh.PullRequestBranch{Ref: str("feature"), SHA: &headSHA},
+				Base:      &gh.PullRequestBranch{Ref: str("main"), SHA: &baseSHA},
+			}}, nil
+		},
+	}
+	srv, database := setupTestServerWithMock(t, mock)
+	seedPR(t, database, "acme", "widget", 1,
+		withSeedPRTitle("Cached CI PR"),
+		withSeedPRHeadSHA(headSHA),
+		withSeedPRBaseSHA(baseSHA),
+		withSeedPRCI("failure", checksJSON),
+		withSeedPRTimes(now, now, now),
+	)
+	client := setupTestClient(t, srv)
+
+	srv.syncer.RunOnce(ctx)
+
+	resp, err := client.HTTP.ListPullsWithResponse(ctx, nil)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.Len(*resp.JSON200, 1)
+	pull := (*resp.JSON200)[0]
+	assert.Equal("failure", pull.CIStatus)
+	assert.JSONEq(checksJSON, pull.CIChecksJSON)
 }
 
 func TestAPIGetPullIsDBOnly(t *testing.T) {

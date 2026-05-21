@@ -3087,6 +3087,7 @@ func (s *Syncer) indexUpsertMergeRequest(
 		normalized.Additions = existing.Additions
 		normalized.Deletions = existing.Deletions
 		preserveMergeableStateIfOmitted(normalized, existing)
+		preserveCIStateIfOmitted(normalized, existing)
 	}
 
 	if normalized.Author != "" &&
@@ -3133,7 +3134,7 @@ func (s *Syncer) indexUpsertMergeRequest(
 // indexUpsertMR upserts a PR from list endpoint data only. No
 // GetPullRequest, no timeline, no CI. Preserves fields that the
 // list endpoint does not return (additions, deletions,
-// mergeable_state) from the existing DB row.
+// mergeable_state, cached CI) from the existing DB row.
 func (s *Syncer) indexUpsertMR(
 	ctx context.Context,
 	client Client,
@@ -3160,6 +3161,7 @@ func (s *Syncer) indexUpsertMR(
 		normalized.Additions = existing.Additions
 		normalized.Deletions = existing.Deletions
 		preserveMergeableStateIfOmitted(normalized, existing)
+		preserveCIStateIfOmitted(normalized, existing)
 	}
 
 	if normalized.Author != "" &&
@@ -6253,6 +6255,26 @@ func preserveMergeableStateIfOmitted(
 	if normalized.MergeableState == "" ||
 		(normalized.MergeableState == "unknown" && existing.MergeableState != "") {
 		normalized.MergeableState = existing.MergeableState
+	}
+}
+
+func preserveCIStateIfOmitted(
+	normalized *db.MergeRequest,
+	existing *db.MergeRequest,
+) {
+	if normalized == nil || existing == nil {
+		return
+	}
+	if normalized.PlatformHeadSHA == "" ||
+		existing.PlatformHeadSHA == "" ||
+		normalized.PlatformHeadSHA != existing.PlatformHeadSHA {
+		return
+	}
+	if normalized.CIStatus == "" {
+		normalized.CIStatus = existing.CIStatus
+	}
+	if normalized.CIChecksJSON == "" {
+		normalized.CIChecksJSON = existing.CIChecksJSON
 	}
 }
 

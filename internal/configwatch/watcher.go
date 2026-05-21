@@ -150,25 +150,32 @@ func (w *Watcher) run(ctx context.Context) {
 	w.markReady(nil)
 
 	// debounceTimer is created lazily so we don't pay for a stopped
-	// timer on watchers that never see an event.
+	// timer on watchers that never see an event. The callback runs in
+	// this goroutine, not via time.AfterFunc, so Done only closes after
+	// any in-flight callback has returned.
 	var debounceTimer *time.Timer
+	var debounceC <-chan time.Time
 	defer func() {
 		if debounceTimer != nil {
-			debounceTimer.Stop()
+			if !debounceTimer.Stop() {
+				select {
+				case <-debounceTimer.C:
+				default:
+				}
+			}
 		}
 	}()
-
-	fire := func() {
-		// Skip empty defensive guard: if OnChange panics, propagate.
-		// Callers should keep OnChange robust; this watcher must not
-		// silently swallow callback errors.
-		w.onChange()
-	}
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
+		case <-debounceC:
+			debounceC = nil
+			// Skip empty defensive guard: if OnChange panics, propagate.
+			// Callers should keep OnChange robust; this watcher must not
+			// silently swallow callback errors.
+			w.onChange()
 		case ev, ok := <-fsw.Events:
 			if !ok {
 				return
@@ -186,10 +193,17 @@ func (w *Watcher) run(ctx context.Context) {
 			// editor save flows touch permissions and we'd rather
 			// be conservative.
 			if debounceTimer == nil {
-				debounceTimer = time.AfterFunc(w.debounce, fire)
+				debounceTimer = time.NewTimer(w.debounce)
 			} else {
+				if !debounceTimer.Stop() {
+					select {
+					case <-debounceTimer.C:
+					default:
+					}
+				}
 				debounceTimer.Reset(w.debounce)
 			}
+			debounceC = debounceTimer.C
 		case _, ok := <-fsw.Errors:
 			if !ok {
 				return

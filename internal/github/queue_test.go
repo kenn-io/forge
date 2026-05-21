@@ -176,6 +176,25 @@ func TestBuildQueueCIHadPendingMakesEligible(t *testing.T) {
 	assert.Greater(q[0].Score, 100.0)
 }
 
+func TestBuildQueueCIHadPendingBypassesLargeRepoGate(t *testing.T) {
+	assert := Assert.New(t)
+
+	fetched := testNow.Add(-10 * time.Minute)
+	items := []QueueItem{{
+		Type:            QueueItemPR,
+		Number:          9,
+		IsOpen:          true,
+		CIHadPending:    true,
+		LargeRepo:       true,
+		UpdatedAt:       testNow.Add(-1 * time.Hour),
+		DetailFetchedAt: &fetched,
+	}}
+
+	q := BuildQueue(items, testNow)
+	assert.Len(q, 1)
+	assert.Equal(9, q[0].Number)
+}
+
 func TestBuildQueueClosedRecentlyFetchedExcluded(t *testing.T) {
 	assert := Assert.New(t)
 

@@ -181,6 +181,43 @@ func TestETagTransport_MultiPageEvictsPageOneETag(t *testing.T) {
 	assert.False(t, ok, "multi-page page 1 ETag should not be cached")
 }
 
+func TestETagTransport_MultiHeaderLinkEvictsETag(t *testing.T) {
+	et := &etagTransport{base: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		rec := httptest.NewRecorder()
+		rec.Header().Set("ETag", `"multi-header"`)
+		rec.Header().Add("Link", `<https://api.github.com/repos/o/n/pulls?page=1>; rel="prev"`)
+		rec.Header().Add("Link", `<https://api.github.com/repos/o/n/pulls?page=3>; rel="next"`)
+		rec.WriteHeader(200)
+		return rec.Result(), nil
+	})}
+
+	url := "https://api.github.com/repos/o/n/pulls?page=2"
+	req, _ := http.NewRequest("GET", url, nil)
+	_, err := et.RoundTrip(req)
+	require.NoError(t, err)
+
+	_, ok := et.cache.Load(url)
+	assert.False(t, ok, "any paginated Link header should prevent caching")
+}
+
+func TestETagTransport_FinalPageLinkEvictsETag(t *testing.T) {
+	et := &etagTransport{base: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		rec := httptest.NewRecorder()
+		rec.Header().Set("ETag", `"final-page"`)
+		rec.Header().Set("Link", `<https://api.github.com/repos/o/n/pulls?page=1>; rel="prev"`)
+		rec.WriteHeader(200)
+		return rec.Result(), nil
+	})}
+
+	url := "https://api.github.com/repos/o/n/pulls?page=2"
+	req, _ := http.NewRequest("GET", url, nil)
+	_, err := et.RoundTrip(req)
+	require.NoError(t, err)
+
+	_, ok := et.cache.Load(url)
+	assert.False(t, ok, "final paginated pages should not cache validators")
+}
+
 func TestETagTransport_NonGETBypassesCache(t *testing.T) {
 	et := &etagTransport{base: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		assert.Empty(t, r.Header.Get("If-None-Match"))

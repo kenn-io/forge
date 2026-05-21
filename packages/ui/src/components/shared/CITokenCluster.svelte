@@ -88,9 +88,9 @@
     font-weight: 700;
     line-height: 1;
   }
-  .tok .ct { font-size: 0.95em; line-height: 1; }
+  .tok .ct { font-size: 0.9em; line-height: 1; }
   .tok :global(svg) { display: block; }
-  .qmark { font-weight: 800; font-size: 1em; line-height: 1; padding-right: 1px; }
+  .qmark { font-weight: 800; font-size: 0.9em; line-height: 1; padding-right: 1px; }
   .tok-red { color: var(--accent-red); }
   .tok-amber { color: var(--accent-amber); }
   .tok-green { color: var(--accent-green); }

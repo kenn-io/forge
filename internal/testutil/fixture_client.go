@@ -471,6 +471,26 @@ func (c *FixtureClient) SetPullRequestCheckRunStatus(
 	return true
 }
 
+// SetPullRequestCheckRuns replaces the seeded check runs for a PR head.
+func (c *FixtureClient) SetPullRequestCheckRuns(
+	owner, repo string,
+	number int,
+	runs []*gh.CheckRun,
+) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	headSHA := c.pullRequestHeadSHA(owner, repo, number)
+	if headSHA == "" {
+		return false
+	}
+	if c.CheckRuns == nil {
+		c.CheckRuns = make(map[string][]*gh.CheckRun)
+	}
+	c.CheckRuns[refKey(owner, repo, headSHA)] = cloneCheckRuns(runs)
+	return true
+}
+
 // PullRequestHeadSHA returns the seeded PR head SHA.
 func (c *FixtureClient) PullRequestHeadSHA(owner, repo string, number int) string {
 	c.mu.RLock()

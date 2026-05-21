@@ -221,6 +221,7 @@
       {:else}
         <Chip
           interactive={true}
+          tone="neutral"
           ariaLabel={composeAriaLabel(bucketed)}
           dataTestid="ci-chip"
           onclick={() => { expanded = !expanded; }}

@@ -424,6 +424,28 @@ type ciFixtureOptions struct {
 		Status     string
 		Conclusion string
 	}
+	// providerCheckRuns replaces the fixture provider's check runs for
+	// PR #1 when the test needs refreshes to preserve a multi-check payload.
+	providerCheckRuns []*gh.CheckRun
+}
+
+func ciChecksToCheckRuns(checks []db.CICheck) []*gh.CheckRun {
+	runs := make([]*gh.CheckRun, 0, len(checks))
+	for _, check := range checks {
+		name := check.Name
+		status := check.Status
+		conclusion := check.Conclusion
+		url := check.URL
+		app := check.App
+		runs = append(runs, &gh.CheckRun{
+			Name:       &name,
+			Status:     &status,
+			Conclusion: &conclusion,
+			HTMLURL:    &url,
+			App:        &gh.App{Name: &app},
+		})
+	}
+	return runs
 }
 
 // setPR1CIState centralises the boilerplate shared by every
@@ -468,6 +490,12 @@ func setPR1CIState(
 			opts.pinProviderTo.Status, opts.pinProviderTo.Conclusion,
 		) {
 			http.Error(w, "update fixture check runs", http.StatusNotFound)
+			return
+		}
+	}
+	if len(opts.providerCheckRuns) > 0 {
+		if !fc.SetPullRequestCheckRuns("acme", "widgets", 1, opts.providerCheckRuns) {
+			http.Error(w, "replace fixture check runs", http.StatusNotFound)
 			return
 		}
 	}
@@ -1091,9 +1119,10 @@ func run(
 			}
 			for i := 1; i <= 5; i++ {
 				checks = append(checks, db.CICheck{
-					Name:   fmt.Sprintf("pending-%d", i),
-					Status: "in_progress",
-					App:    "GitHub Actions",
+					Name:       fmt.Sprintf("pending-%d", i),
+					Status:     "completed",
+					Conclusion: "",
+					App:        "GitHub Actions",
 				})
 			}
 			for i := 1; i <= 12; i++ {
@@ -1130,12 +1159,9 @@ func run(
 				return
 			}
 			setPR1CIState(w, r, database, fc, "dropdown-mixed", ciFixtureOptions{
-				statusName: "failure",
-				checksJSON: string(dropdownPayload),
-				pinProviderTo: &struct {
-					Status     string
-					Conclusion string
-				}{Status: "completed", Conclusion: "failure"},
+				statusName:        "failure",
+				checksJSON:        string(dropdownPayload),
+				providerCheckRuns: ciChecksToCheckRuns(checks),
 			})
 			return
 		}

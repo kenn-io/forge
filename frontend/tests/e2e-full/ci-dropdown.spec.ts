@@ -77,12 +77,10 @@ test.describe("CI dropdown", () => {
       });
       await pendingChip.click();
       await firstRefresh;
-      expect(
-        await detail.locator(".ci-row .sync-spinner").count(),
-      ).toBeGreaterThan(0);
+      await expect(detail.locator(".ci-row .spin").first()).toBeVisible();
       await expect(
-        detail.locator(".ci-row .sync-spinner svg").first(),
-      ).toHaveAttribute("width", "12");
+        detail.locator(".ci-row .spin svg").first(),
+      ).toHaveAttribute("width", "14");
 
       const successResponse = await page.request.post(
         `${server.info.base_url}/__e2e/pr-ci-state/success`,
@@ -188,9 +186,9 @@ test.describe("CI dropdown", () => {
     expect(expandedActionRowBox!.y).toBeGreaterThan(actionRowBox!.y);
 
     await expect(detail.locator(".ci-name")).toHaveText([
+      "roborev",
       "build",
       "lint",
-      "roborev",
       "test",
     ]);
     await expect(detail.locator(".ci-duration")).toHaveText([

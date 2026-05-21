@@ -28,6 +28,27 @@ func TestResolveBinaryRejectsRelativePathMatch(t *testing.T) {
 	assert.Equal("fake-tool", got)
 }
 
+func TestResolveBinarySkipsRelativePathMatchForLaterAbsoluteMatch(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	root := t.TempDir()
+	safeDir := t.TempDir()
+	require.NoError(os.WriteFile(
+		filepath.Join(root, "fake-tool"),
+		[]byte("#!/bin/sh\nexit 0\n"),
+		0o755,
+	))
+	safeToolPath := filepath.Join(safeDir, "fake-tool")
+	require.NoError(os.WriteFile(safeToolPath, []byte("#!/bin/sh\nexit 0\n"), 0o755))
+	t.Chdir(root)
+	t.Setenv("PATH", "."+string(os.PathListSeparator)+safeDir)
+
+	got := ResolveBinary("fake-tool")
+
+	assert.Equal(safeToolPath, got)
+}
+
 func TestResolveBinarySkipsNonExecutablePathMatch(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

@@ -101,10 +101,6 @@ func resolveBinaryFromPath(name string) (string, bool) {
 		}
 		return resolved, true
 	}
-	if errors.Is(err, exec.ErrDot) {
-		return "", false
-	}
-
 	for _, dir := range filepath.SplitList(os.Getenv("PATH")) {
 		if dir == "" || !filepath.IsAbs(dir) {
 			continue

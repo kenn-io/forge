@@ -86,6 +86,28 @@ describe("csrfFetch", () => {
     await expect(request?.text()).resolves.toBe("q=notifications");
   });
 
+  it("accepts URLSearchParams from another browser realm", async () => {
+    let request: Request | null = null;
+    const inner = vi.fn(async (input: RequestInfo | URL) => {
+      request = input instanceof Request ? input : new Request(input);
+      return Response.json({});
+    });
+    const frame = document.createElement("iframe");
+    document.body.append(frame);
+    const OtherURLSearchParams = frame.contentWindow?.URLSearchParams;
+    if (!OtherURLSearchParams) throw new Error("missing iframe URLSearchParams");
+
+    const fetch = csrfFetch(inner);
+    await fetch("https://middleman.test/api/v1/search", {
+      method: "POST",
+      body: new OtherURLSearchParams({ q: "notifications" }) as BodyInit,
+    });
+
+    frame.remove();
+    expect(request?.headers.get("Content-Type")).not.toBe("application/json");
+    await expect(request?.text()).resolves.toBe("q=notifications");
+  });
+
   it("replaces Request text/plain content types on generated JSON mutations", async () => {
     let request: Request | null = null;
     const inner = vi.fn(async (input: RequestInfo | URL) => {

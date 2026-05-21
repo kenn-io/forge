@@ -189,9 +189,11 @@ func TestWatcher_StopsOnContextCancel(t *testing.T) {
 }
 
 func TestWatcher_DoneWaitsForInFlightCallback(t *testing.T) {
+	require := require.New(t)
+
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
-	require.NoError(t, os.WriteFile(path, []byte("a = 1"), 0o600))
+	require.NoError(os.WriteFile(path, []byte("a = 1"), 0o600))
 
 	callbackStarted := make(chan struct{})
 	callbackRelease := make(chan struct{})
@@ -203,23 +205,23 @@ func TestWatcher_DoneWaitsForInFlightCallback(t *testing.T) {
 			<-callbackRelease
 		},
 	})
-	require.NoError(t, err)
+	require.NoError(err)
 
 	ctx, cancel := context.WithCancel(t.Context())
 	w.Start(ctx)
-	require.NoError(t, w.WaitReady(ctx))
+	require.NoError(w.WaitReady(ctx))
 
-	require.NoError(t, os.WriteFile(path, []byte("a = 2"), 0o600))
+	require.NoError(os.WriteFile(path, []byte("a = 2"), 0o600))
 	select {
 	case <-callbackStarted:
 	case <-time.After(time.Second):
-		require.FailNow(t, "callback did not start")
+		require.FailNow("callback did not start")
 	}
 
 	cancel()
 	select {
 	case <-w.Done():
-		require.FailNow(t, "watcher stopped before callback returned")
+		require.FailNow("watcher stopped before callback returned")
 	case <-time.After(50 * time.Millisecond):
 	}
 
@@ -227,6 +229,6 @@ func TestWatcher_DoneWaitsForInFlightCallback(t *testing.T) {
 	select {
 	case <-w.Done():
 	case <-time.After(time.Second):
-		require.FailNow(t, "watcher did not stop after callback returned")
+		require.FailNow("watcher did not stop after callback returned")
 	}
 }

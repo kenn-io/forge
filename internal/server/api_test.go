@@ -1017,7 +1017,7 @@ func TestAPIMergePRForwardsGitHubErrorDetailsAndLogsError(t *testing.T) {
 	require.NoError(err)
 	require.Equal(http.StatusBadGateway, resp.StatusCode())
 
-	var body generated.ErrorModel
+	var body generated.ProblemError
 	require.NoError(json.Unmarshal(resp.Body, &body))
 	require.NotNil(body.Detail)
 	assert.Contains(*body.Detail, "Required status check \"build\" is failing")
@@ -9310,6 +9310,414 @@ func TestAPIGitLabUnsupportedMutationsReturnCodedCapabilityErrors(t *testing.T) 
 	}
 }
 
+// TestAPIUnsupportedCapabilityEnvelope is the wire-level guarantee that
+// the gitlab capability gate emits an RFC 9457 envelope with a top-level
+// `code = "unsupportedCapability"` and `details.capability` carrying the
+// capability the route required. Frontend callers branch on `code`.
+func TestAPIUnsupportedCapabilityEnvelope(t *testing.T) {
+	srv, _ := setupGitLabCapabilityServer(t)
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	rr := doJSON(
+		t,
+		srv,
+		http.MethodPost,
+		"/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/approve-workflows",
+		nil,
+	)
+	require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
+
+	var problem rawProblemDetail
+	require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
+	assert.Equal("unsupportedCapability", problem.Code)
+	require.NotNil(problem.Details)
+	assert.Equal("workflow_approval", problem.Details["capability"])
+	assert.Equal("gitlab", problem.Details["provider"])
+	assert.Equal("gitlab.example.com", problem.Details["platformHost"])
+}
+
+func TestAPICapabilityGatedRouteReturnsLookupProblemBeforeCapabilityProblem(t *testing.T) {
+	srv, _ := setupTestServer(t)
+
+	tests := []struct {
+		name     string
+		path     string
+		wantCode int
+		wantWire string
+	}{
+		{
+			name:     "unknown repo",
+			path:     "/api/v1/pulls/gh/acme/unknown/7",
+			wantCode: http.StatusNotFound,
+			wantWire: "repoNotFound",
+		},
+		{
+			name:     "invalid provider",
+			path:     "/api/v1/pulls/not-a-provider/acme/widget/7",
+			wantCode: http.StatusBadRequest,
+			wantWire: "badRequest",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require := require.New(t)
+			assert := Assert.New(t)
+
+			rr := doJSON(
+				t,
+				srv,
+				http.MethodPatch,
+				tt.path,
+				map[string]string{"title": "Updated title"},
+			)
+			require.Equal(tt.wantCode, rr.Code, rr.Body.String())
+
+			var problem rawProblemDetail
+			require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
+			assert.Equal(tt.wantWire, problem.Code)
+		})
+	}
+}
+
+func TestAPICapabilityGatedMutationsHandleMissingSyncer(t *testing.T) {
+	database := dbtest.Open(t)
+	srv := New(database, nil, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	seedPR(t, database, "acme", "widget", 7)
+	seedIssue(t, database, "acme", "widget", 11, "open")
+
+	tests := []struct {
+		name       string
+		method     string
+		path       string
+		body       any
+		capability string
+	}{
+		{
+			name:       "PR content",
+			method:     http.MethodPatch,
+			path:       "/api/v1/pulls/gh/acme/widget/7",
+			body:       map[string]string{"title": "Updated title"},
+			capability: "state_mutation",
+		},
+		{
+			name:       "issue content",
+			method:     http.MethodPatch,
+			path:       "/api/v1/issues/gh/acme/widget/11",
+			body:       map[string]string{"title": "Updated title"},
+			capability: "state_mutation",
+		},
+		{
+			name:       "PR comment",
+			method:     http.MethodPost,
+			path:       "/api/v1/pulls/gh/acme/widget/7/comments",
+			body:       map[string]string{"body": "hello"},
+			capability: "comment_mutation",
+		},
+		{
+			name:       "issue comment",
+			method:     http.MethodPost,
+			path:       "/api/v1/issues/gh/acme/widget/11/comments",
+			body:       map[string]string{"body": "hello"},
+			capability: "comment_mutation",
+		},
+		{
+			name:       "issue creation",
+			method:     http.MethodPost,
+			path:       "/api/v1/issues/gh/acme/widget",
+			body:       map[string]string{"title": "New issue", "body": "Issue body"},
+			capability: "issue_mutation",
+		},
+		{
+			name:       "review approval",
+			method:     http.MethodPost,
+			path:       "/api/v1/pulls/gh/acme/widget/7/approve",
+			body:       map[string]string{"body": "looks good"},
+			capability: "review_mutation",
+		},
+		{
+			name:       "workflow approval",
+			method:     http.MethodPost,
+			path:       "/api/v1/pulls/gh/acme/widget/7/approve-workflows",
+			body:       nil,
+			capability: "workflow_approval",
+		},
+		{
+			name:       "ready for review",
+			method:     http.MethodPost,
+			path:       "/api/v1/pulls/gh/acme/widget/7/ready-for-review",
+			body:       nil,
+			capability: "ready_for_review",
+		},
+		{
+			name:   "merge",
+			method: http.MethodPost,
+			path:   "/api/v1/pulls/gh/acme/widget/7/merge",
+			body: map[string]string{
+				"method":         "squash",
+				"commit_title":   "Merge PR",
+				"commit_message": "Merge PR",
+			},
+			capability: "merge_mutation",
+		},
+		{
+			name:       "PR state",
+			method:     http.MethodPost,
+			path:       "/api/v1/pulls/gh/acme/widget/7/github-state",
+			body:       map[string]string{"state": "closed"},
+			capability: "state_mutation",
+		},
+		{
+			name:       "issue state",
+			method:     http.MethodPost,
+			path:       "/api/v1/issues/gh/acme/widget/11/github-state",
+			body:       map[string]string{"state": "closed"},
+			capability: "state_mutation",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require := require.New(t)
+
+			rr := doJSON(t, srv, tt.method, tt.path, tt.body)
+			require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
+			assertUnsupportedCapabilityProblem(
+				t, rr.Body, "github", "github.com", tt.capability,
+			)
+		})
+	}
+}
+
+// TestAPIRateLimitedEnvelope drives a provider mutation through a fake
+// gitlab provider that returns a platform.Error with ErrCodeRateLimited
+// and a known ResetAt. The handler routes the failure through
+// providerCallProblem / mapPlatformError, which builds the rateLimited
+// problem with details.retryAfter populated as an RFC 3339 string.
+func TestAPIRateLimitedEnvelope(t *testing.T) {
+	reset := time.Date(2026, 5, 19, 12, 0, 0, 0, time.UTC)
+	srv := setupGitLabIssueMutatorServer(t, &platform.Error{
+		Code:         platform.ErrCodeRateLimited,
+		Provider:     platform.KindGitLab,
+		PlatformHost: "gitlab.example.com",
+		ResetAt:      &reset,
+	})
+
+	tests := []struct {
+		name   string
+		method string
+		path   string
+		body   any
+	}{
+		{
+			name:   "issue create",
+			method: http.MethodPost,
+			path:   "/api/v1/host/gitlab.example.com/issues/gl/group/project",
+			body:   map[string]string{"title": "Rate limited", "body": "test"},
+		},
+		{
+			name:   "pull content edit",
+			method: http.MethodPatch,
+			path:   "/api/v1/host/gitlab.example.com/pulls/gl/group/project/7",
+			body:   map[string]string{"title": "Rate limited"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require := require.New(t)
+			assert := Assert.New(t)
+
+			rr := doJSON(t, srv, tt.method, tt.path, tt.body)
+			require.Equal(http.StatusTooManyRequests, rr.Code, rr.Body.String())
+
+			var problem rawProblemDetail
+			require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
+			assert.Equal("rateLimited", problem.Code)
+			require.NotNil(problem.Details)
+			assert.Equal("gitlab", problem.Details["provider"])
+			assert.Equal("gitlab.example.com", problem.Details["platformHost"])
+			retryAfter, ok := problem.Details["retryAfter"].(string)
+			require.True(
+				ok,
+				"details.retryAfter must be a string, got %T",
+				problem.Details["retryAfter"],
+			)
+			parsed, parseErr := time.Parse(time.RFC3339, retryAfter)
+			require.NoError(parseErr)
+			assert.Equal(reset.UTC(), parsed.UTC())
+		})
+	}
+}
+
+// TestAPIValidationErrorEnvelope sends an invalid kanban status and
+// expects the typed validationError envelope with details.field and
+// details.allowed.
+func TestAPIValidationErrorEnvelope(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	srv, database := setupTestServer(t)
+	ctx := t.Context()
+	now := time.Now().UTC().Truncate(time.Second)
+	repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
+		Platform:     "github",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+	})
+	require.NoError(err)
+	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:         repoID,
+		PlatformID:     7777,
+		Number:         42,
+		URL:            "https://github.com/acme/widget/pull/42",
+		Title:          "Validation test",
+		Author:         "alice",
+		State:          "open",
+		HeadBranch:     "feature",
+		BaseBranch:     "main",
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		LastActivityAt: now,
+	})
+	require.NoError(err)
+
+	rr := doJSON(
+		t,
+		srv,
+		http.MethodPut,
+		"/api/v1/pulls/gh/acme/widget/42/state",
+		map[string]string{"status": "frobnicated"},
+	)
+	require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
+
+	var problem rawProblemDetail
+	require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
+	assert.Equal("validationError", problem.Code)
+	require.NotNil(problem.Details)
+	assert.Equal("body.status", problem.Details["field"])
+	allowed, ok := problem.Details["allowed"].([]any)
+	require.True(ok, "details.allowed must be an array, got %T", problem.Details["allowed"])
+	expected := []any{"new", "reviewing", "waiting", "awaiting_merge"}
+	assert.Equal(expected, allowed)
+}
+
+// setupGitLabIssueMutatorServer returns a server backed by a gitlab
+// provider whose IssueMutator.CreateIssue returns the supplied error.
+// The other capabilities are unchanged from setupGitLabCapabilityServer.
+func setupGitLabIssueMutatorServer(t *testing.T, createIssueErr error) *Server {
+	t.Helper()
+	require := require.New(t)
+	ctx := t.Context()
+	now := time.Now().UTC().Truncate(time.Second)
+
+	database := dbtest.Open(t)
+
+	ref := platform.RepoRef{
+		Platform:           platform.KindGitLab,
+		Host:               "gitlab.example.com",
+		Owner:              "group",
+		Name:               "project",
+		RepoPath:           "group/project",
+		PlatformID:         4242,
+		PlatformExternalID: "gid://gitlab/Project/4242",
+		WebURL:             "https://gitlab.example.com/group/project",
+		CloneURL:           "https://gitlab.example.com/group/project.git",
+		DefaultBranch:      "main",
+	}
+	provider := &issueMutatorGitLabProvider{
+		apiTestGitLabProvider: apiTestGitLabProvider{
+			ref: ref,
+			mergeRequests: []platform.MergeRequest{{
+				Repo:           ref,
+				PlatformID:     7001,
+				Number:         7,
+				URL:            "https://gitlab.example.com/group/project/-/merge_requests/7",
+				Title:          "Existing MR",
+				Author:         "alice",
+				State:          "open",
+				HeadBranch:     "feature",
+				BaseBranch:     "main",
+				CreatedAt:      now,
+				UpdatedAt:      now,
+				LastActivityAt: now,
+			}},
+			issues: []platform.Issue{{
+				Repo:           ref,
+				PlatformID:     8001,
+				Number:         11,
+				URL:            "https://gitlab.example.com/group/project/-/issues/11",
+				Title:          "Existing",
+				Author:         "alice",
+				State:          "open",
+				CreatedAt:      now,
+				UpdatedAt:      now,
+				LastActivityAt: now,
+			}},
+		},
+		providerErr: createIssueErr,
+	}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+
+	repo := ghclient.RepoRef{
+		Platform:           platform.KindGitLab,
+		Owner:              "group",
+		Name:               "project",
+		PlatformHost:       "gitlab.example.com",
+		RepoPath:           "group/project",
+		PlatformRepoID:     4242,
+		PlatformExternalID: "gid://gitlab/Project/4242",
+		WebURL:             "https://gitlab.example.com/group/project",
+		CloneURL:           "https://gitlab.example.com/group/project.git",
+		DefaultBranch:      "main",
+	}
+	syncer := ghclient.NewSyncerWithRegistry(
+		registry, database, nil, []ghclient.RepoRef{repo}, time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+
+	syncer.RunOnce(ctx)
+	return srv
+}
+
+// issueMutatorGitLabProvider embeds apiTestGitLabProvider but advertises
+// issue_mutation capability and returns the supplied error from
+// CreateIssue. Used by TestAPIRateLimitedEnvelope.
+type issueMutatorGitLabProvider struct {
+	apiTestGitLabProvider
+	providerErr error
+}
+
+func (p *issueMutatorGitLabProvider) Capabilities() platform.Capabilities {
+	caps := p.apiTestGitLabProvider.Capabilities()
+	caps.IssueMutation = true
+	caps.StateMutation = true
+	return caps
+}
+
+func (p *issueMutatorGitLabProvider) CreateIssue(
+	_ context.Context,
+	_ platform.RepoRef,
+	_, _ string,
+) (platform.Issue, error) {
+	return platform.Issue{}, p.providerErr
+}
+
+func (p *issueMutatorGitLabProvider) EditMergeRequestContent(
+	_ context.Context,
+	_ platform.RepoRef,
+	_ int,
+	_, _ *string,
+) (platform.MergeRequest, error) {
+	return platform.MergeRequest{}, p.providerErr
+}
+
 func TestAPIGitealikeReadSyncPersistsThroughServer(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
@@ -10538,26 +10946,22 @@ func assertUnsupportedCapabilityProblem(
 	assert := Assert.New(t)
 
 	var problem struct {
-		Title  string `json:"title"`
-		Status int    `json:"status"`
-		Detail string `json:"detail"`
-		Errors []struct {
-			Message  string         `json:"message"`
-			Location string         `json:"location"`
-			Value    map[string]any `json:"value"`
-		} `json:"errors"`
+		Title   string         `json:"title"`
+		Status  int            `json:"status"`
+		Detail  string         `json:"detail"`
+		Code    string         `json:"code"`
+		Details map[string]any `json:"details"`
 	}
 	require.NoError(json.NewDecoder(body).Decode(&problem))
 	assert.Equal(http.StatusText(http.StatusConflict), problem.Title)
 	assert.Equal(http.StatusConflict, problem.Status)
 	assert.Contains(problem.Detail, "Unsupported provider capability")
-	require.Len(problem.Errors, 1)
-	assert.Equal("unsupported_capability", problem.Errors[0].Message)
-	assert.Equal("provider.capabilities", problem.Errors[0].Location)
-	assert.Equal("unsupported_capability", problem.Errors[0].Value["code"])
-	assert.Equal(provider, problem.Errors[0].Value["provider"])
-	assert.Equal(host, problem.Errors[0].Value["platform_host"])
-	assert.Equal(capability, problem.Errors[0].Value["capability"])
+	assert.Equal("unsupportedCapability", problem.Code,
+		"top-level RFC 9457 code must be the camelCase wire literal")
+	require.NotNil(problem.Details, "details must be present on unsupportedCapability problem")
+	assert.Equal(capability, problem.Details["capability"])
+	assert.Equal(provider, problem.Details["provider"])
+	assert.Equal(host, problem.Details["platformHost"])
 }
 
 func TestAPIGitealikeLockedPRPersistsThroughServer(t *testing.T) {
@@ -16577,11 +16981,13 @@ type rawIssueDetailResponse struct {
 }
 
 type rawProblemDetail struct {
-	Type   string `json:"type"`
-	Title  string `json:"title"`
-	Status int    `json:"status"`
-	Detail string `json:"detail"`
-	Errors []struct {
+	Type    string         `json:"type"`
+	Title   string         `json:"title"`
+	Status  int            `json:"status"`
+	Detail  string         `json:"detail"`
+	Code    string         `json:"code"`
+	Details map[string]any `json:"details"`
+	Errors  []struct {
 		Message  string `json:"message"`
 		Location string `json:"location"`
 		Value    any    `json:"value"`
@@ -17185,7 +17591,16 @@ func TestWorkspaceCreateIssueBranchConflictReturnsTyped409(t *testing.T) {
 	)
 	assert.Equal(http.StatusConflict, problem.Status)
 	assert.NotEmpty(problem.Detail)
+	// Wire-typed envelope: code branchConflict, details carry the
+	// conflicting branch and a suggested alternative so the UI can
+	// branch on code rather than message text.
+	assert.Equal("branchConflict", problem.Code)
+	require.NotNil(problem.Details)
+	assert.Equal(slugBranch, problem.Details["branch"])
+	assert.Equal(slugBranch+"-2", problem.Details["suggestedBranch"])
 
+	// The legacy Errors[] entries stay populated for clients that still
+	// introspect per-field huma details.
 	locations := map[string]any{}
 	for _, errDetail := range problem.Errors {
 		locations[errDetail.Location] = errDetail.Value

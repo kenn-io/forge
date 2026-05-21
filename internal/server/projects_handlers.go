@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/danielgtaylor/huma/v2"
 	"github.com/wesm/middleman/internal/config"
 	"github.com/wesm/middleman/internal/db"
 	"github.com/wesm/middleman/internal/projects"
@@ -113,21 +112,21 @@ func (s *Server) registerProject(
 ) (*registerProjectOutput, error) {
 	rawPath := strings.TrimSpace(input.Body.LocalPath)
 	if rawPath == "" {
-		return nil, huma.Error400BadRequest("local_path is required")
+		return nil, problemValidation("body.local_path", "local_path is required")
 	}
 	abs, err := filepath.Abs(rawPath)
 	if err != nil {
-		return nil, huma.Error400BadRequest("resolve local_path: " + err.Error())
+		return nil, problemValidation("body.local_path", "resolve local_path: "+err.Error())
 	}
 	stat, err := os.Stat(abs)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return nil, huma.Error400BadRequest("local_path does not exist: " + abs)
+			return nil, problemValidation("body.local_path", "local_path does not exist: "+abs)
 		}
-		return nil, huma.Error500InternalServerError("stat local_path: " + err.Error())
+		return nil, problemInternal("stat local_path: " + err.Error())
 	}
 	if !stat.IsDir() {
-		return nil, huma.Error400BadRequest("local_path is not a directory: " + abs)
+		return nil, problemValidation("body.local_path", "local_path is not a directory: "+abs)
 	}
 
 	displayName := strings.TrimSpace(input.Body.DisplayName)
@@ -149,7 +148,7 @@ func (s *Server) registerProject(
 			Name:         identity.Name,
 		})
 		if upsertErr != nil {
-			return nil, huma.Error500InternalServerError(
+			return nil, problemInternal(
 				"upsert repo identity: " + upsertErr.Error(),
 			)
 		}
@@ -164,11 +163,13 @@ func (s *Server) registerProject(
 	})
 	if err != nil {
 		if errors.Is(err, db.ErrProjectPathTaken) {
-			return nil, huma.Error409Conflict(
-				"a project is already registered at " + abs,
+			return nil, problemConflict(
+				CodeConflict,
+				"a project is already registered at "+abs,
+				nil,
 			)
 		}
-		return nil, huma.Error500InternalServerError("register project: " + err.Error())
+		return nil, problemInternal("register project: " + err.Error())
 	}
 
 	return &registerProjectOutput{Body: projectResponseFromDB(created)}, nil
@@ -189,7 +190,8 @@ func (s *Server) resolveProjectIdentity(
 		owner := strings.TrimSpace(caller.Owner)
 		name := strings.TrimSpace(caller.Name)
 		if platform == "" || host == "" || owner == "" || name == "" {
-			return nil, huma.Error400BadRequest(
+			return nil, problemValidation(
+				"body.platform_identity",
 				"platform_identity requires platform, platform_host, owner, and name",
 			)
 		}
@@ -199,7 +201,7 @@ func (s *Server) resolveProjectIdentity(
 		ctx, abs, s.knownProjectPlatformHosts(),
 	)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(
+		return nil, problemInternal(
 			"resolve platform identity: " + err.Error(),
 		)
 	}
@@ -235,7 +237,7 @@ func (s *Server) listProjects(
 ) (*listProjectsOutput, error) {
 	rows, err := s.db.ListProjects(ctx)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("list projects: " + err.Error())
+		return nil, problemInternal("list projects: " + err.Error())
 	}
 	out := &listProjectsOutput{}
 	out.Body.Projects = projectResponsesFromDB(rows)
@@ -248,9 +250,9 @@ func (s *Server) getProject(
 	project, err := s.db.GetProjectByID(ctx, input.ProjectID)
 	if err != nil {
 		if errors.Is(err, db.ErrProjectNotFound) {
-			return nil, huma.Error404NotFound("project not found")
+			return nil, problemNotFound(CodeProjectNotFound, "project not found", nil)
 		}
-		return nil, huma.Error500InternalServerError("get project: " + err.Error())
+		return nil, problemInternal("get project: " + err.Error())
 	}
 	return &getProjectOutput{Body: projectResponseFromDB(project)}, nil
 }
@@ -260,15 +262,15 @@ func (s *Server) registerWorktree(
 ) (*registerWorktreeOutput, error) {
 	branch := strings.TrimSpace(input.Body.Branch)
 	if branch == "" {
-		return nil, huma.Error400BadRequest("branch is required")
+		return nil, problemValidation("body.branch", "branch is required")
 	}
 	path := strings.TrimSpace(input.Body.Path)
 	if path == "" {
-		return nil, huma.Error400BadRequest("path is required")
+		return nil, problemValidation("body.path", "path is required")
 	}
 	abs, err := filepath.Abs(path)
 	if err != nil {
-		return nil, huma.Error400BadRequest("resolve path: " + err.Error())
+		return nil, problemValidation("body.path", "resolve path: "+err.Error())
 	}
 
 	created, err := s.db.CreateProjectWorktree(ctx, db.CreateProjectWorktreeInput{
@@ -279,13 +281,15 @@ func (s *Server) registerWorktree(
 	if err != nil {
 		switch {
 		case errors.Is(err, db.ErrProjectNotFound):
-			return nil, huma.Error404NotFound("project not found")
+			return nil, problemNotFound(CodeProjectNotFound, "project not found", nil)
 		case errors.Is(err, db.ErrWorktreePathTaken):
-			return nil, huma.Error409Conflict(
-				"a worktree is already registered at " + abs,
+			return nil, problemConflict(
+				CodeConflict,
+				"a worktree is already registered at "+abs,
+				nil,
 			)
 		}
-		return nil, huma.Error500InternalServerError("register worktree: " + err.Error())
+		return nil, problemInternal("register worktree: " + err.Error())
 	}
 	return &registerWorktreeOutput{Body: worktreeResponseFromDB(created)}, nil
 }
@@ -296,9 +300,9 @@ func (s *Server) listWorktrees(
 	rows, err := s.db.ListProjectWorktrees(ctx, input.ProjectID)
 	if err != nil {
 		if errors.Is(err, db.ErrProjectNotFound) {
-			return nil, huma.Error404NotFound("project not found")
+			return nil, problemNotFound(CodeProjectNotFound, "project not found", nil)
 		}
-		return nil, huma.Error500InternalServerError("list worktrees: " + err.Error())
+		return nil, problemInternal("list worktrees: " + err.Error())
 	}
 	out := &listWorktreesOutput{}
 	out.Body.Worktrees = worktreeResponsesFromDB(rows)
@@ -310,9 +314,9 @@ func (s *Server) listLaunchTargets(
 ) (*listLaunchTargetsOutput, error) {
 	if _, err := s.db.GetProjectByID(ctx, input.ProjectID); err != nil {
 		if errors.Is(err, db.ErrProjectNotFound) {
-			return nil, huma.Error404NotFound("project not found")
+			return nil, problemNotFound(CodeProjectNotFound, "project not found", nil)
 		}
-		return nil, huma.Error500InternalServerError("get project: " + err.Error())
+		return nil, problemInternal("get project: " + err.Error())
 	}
 	// Resolve fresh on every call so PATH changes (a newly installed
 	// agent, a deleted binary) take effect without restarting the

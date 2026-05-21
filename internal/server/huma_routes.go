@@ -49,16 +49,16 @@ type getPullOutput = bodyOutput[mergeRequestDetailResponse]
 
 func providerRouteLookupError(err error) error {
 	if errors.Is(err, errRepoPathRequired) {
-		return huma.Error400BadRequest(err.Error())
+		return problemBadRequest(CodeBadRequest, err.Error(), nil)
 	}
 	if errors.Is(err, errRepoNotFound) {
-		return huma.Error404NotFound("repo not found")
+		return problemNotFound(CodeRepoNotFound, "repo not found", nil)
 	}
 	if strings.Contains(err.Error(), "platform_host is required") ||
 		strings.Contains(err.Error(), "unsupported platform") {
-		return huma.Error400BadRequest(err.Error())
+		return problemBadRequest(CodeBadRequest, err.Error(), nil)
 	}
-	return huma.Error500InternalServerError("get repo failed")
+	return problemInternal("get repo failed")
 }
 
 type getMRImportMetadataOutput = bodyOutput[mrImportMetadataResponse]
@@ -781,8 +781,10 @@ func (s *Server) listPulls(ctx context.Context, input *listPullsInput) (*listPul
 			"open": true, "closed": true, "all": true,
 		}
 		if !valid[input.State] {
-			return nil, huma.Error400BadRequest(
+			return nil, problemValidation(
+				"query.state",
 				"state must be one of: open, closed, all",
+				"open", "closed", "all",
 			)
 		}
 	}
@@ -806,12 +808,12 @@ func (s *Server) listPulls(ctx context.Context, input *listPullsInput) (*listPul
 
 	mrs, err := s.db.ListMergeRequests(ctx, opts)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("list pulls failed")
+		return nil, problemInternal("list pulls failed")
 	}
 
 	repoByID, err := s.lookupRepoMap(ctx)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("repo lookup failed")
+		return nil, problemInternal("repo lookup failed")
 	}
 
 	mrIDs := make([]int64, len(mrs))
@@ -820,7 +822,7 @@ func (s *Server) listPulls(ctx context.Context, input *listPullsInput) (*listPul
 	}
 	links, err := s.db.GetWorktreeLinksForMRs(ctx, mrIDs)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("load worktree links failed")
+		return nil, problemInternal("load worktree links failed")
 	}
 	linksByMR := indexWorktreeLinksByMR(links)
 
@@ -861,10 +863,10 @@ func (s *Server) getPull(ctx context.Context, input *repoNumberInput) (*getPullO
 	}
 	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("get pull request failed")
+		return nil, problemInternal("get pull request failed")
 	}
 	if mr == nil {
-		return nil, huma.Error404NotFound("pull request not found")
+		return nil, problemNotFound(CodePullNotFound, "pull request not found", nil)
 	}
 
 	body, err := s.buildPullDetailResponse(ctx, mr)
@@ -881,7 +883,7 @@ func (s *Server) buildPullDetailResponse(
 ) (mergeRequestDetailResponse, error) {
 	events, err := s.db.ListMREvents(ctx, mr.ID)
 	if err != nil {
-		return mergeRequestDetailResponse{}, huma.Error500InternalServerError("list mr events failed")
+		return mergeRequestDetailResponse{}, problemInternal("list mr events failed")
 	}
 	if events == nil {
 		events = []db.MREvent{}
@@ -889,16 +891,12 @@ func (s *Server) buildPullDetailResponse(
 
 	dbLinks, err := s.db.GetWorktreeLinksForMR(ctx, mr.ID)
 	if err != nil {
-		return mergeRequestDetailResponse{}, huma.Error500InternalServerError(
-			"load worktree links failed",
-		)
+		return mergeRequestDetailResponse{}, problemInternal("load worktree links failed")
 	}
 
 	repo, err := s.db.GetRepoByID(ctx, mr.RepoID)
 	if err != nil || repo == nil {
-		return mergeRequestDetailResponse{}, huma.Error500InternalServerError(
-			"load repo failed",
-		)
+		return mergeRequestDetailResponse{}, problemInternal("load repo failed")
 	}
 	resp := mergeRequestDetailResponse{
 		MergeRequest:     mr,
@@ -1014,12 +1012,10 @@ func (s *Server) getMRImportMetadata(
 	}
 	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(
-			"failed to query merge request",
-		)
+		return nil, problemInternal("failed to query merge request")
 	}
 	if mr == nil {
-		return nil, huma.Error404NotFound("merge request not found")
+		return nil, problemNotFound(CodePullNotFound, "merge request not found", nil)
 	}
 	return &getMRImportMetadataOutput{
 		Body: mrImportMetadataResponse{
@@ -1036,7 +1032,11 @@ func (s *Server) getMRImportMetadata(
 
 func (s *Server) setKanbanState(ctx context.Context, input *setKanbanStateInput) (*statusOnlyOutput, error) {
 	if !validKanbanStates[input.Body.Status] {
-		return nil, huma.Error400BadRequest("status must be one of: new, reviewing, waiting, awaiting_merge")
+		return nil, problemValidation(
+			"body.status",
+			"status must be one of: new, reviewing, waiting, awaiting_merge",
+			"new", "reviewing", "waiting", "awaiting_merge",
+		)
 	}
 
 	repo, err := s.lookupRepoByProviderRoute(
@@ -1053,10 +1053,10 @@ func (s *Server) setKanbanState(ctx context.Context, input *setKanbanStateInput)
 	}
 	mrID, err := s.lookupMRID(ctx, ref)
 	if err != nil {
-		return nil, huma.Error404NotFound(err.Error())
+		return nil, problemNotFound(CodePullNotFound, err.Error(), nil)
 	}
 	if err := s.db.SetKanbanState(ctx, mrID, input.Body.Status); err != nil {
-		return nil, huma.Error500InternalServerError("set kanban state failed")
+		return nil, problemInternal("set kanban state failed")
 	}
 
 	return &statusOnlyOutput{Status: http.StatusOK}, nil
@@ -1066,12 +1066,12 @@ func (s *Server) editPRContent(
 	ctx context.Context, input *editPRContentInput,
 ) (*editPRContentOutput, error) {
 	if input.Body.Title == nil && input.Body.Body == nil {
-		return nil, huma.Error400BadRequest(
+		return nil, problemValidation("body",
 			"at least one of title or body must be provided",
 		)
 	}
 	if input.Body.Title != nil && strings.TrimSpace(*input.Body.Title) == "" {
-		return nil, huma.Error400BadRequest("title must not be blank")
+		return nil, problemValidation("body.title", "title must not be blank")
 	}
 
 	repo, err := s.requireRepoRouteCapability(
@@ -1082,30 +1082,33 @@ func (s *Server) editPRContent(
 	if err != nil {
 		return nil, err
 	}
+	if err := s.requireSyncerCapability(*repo, capabilityStateMutation); err != nil {
+		return nil, err
+	}
 
 	mutator, err := s.syncer.MergeRequestContentMutator(
 		repoProviderKind(*repo), repoProviderHost(*repo),
 	)
 	if err != nil {
-		return nil, huma.Error404NotFound(err.Error())
+		return nil, unsupportedCapabilityProblem(*repo, capabilityStateMutation)
 	}
 
 	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(
-			"get pull request failed",
-		)
+		return nil, problemInternal("get pull request failed")
 	}
 	if mr == nil {
-		return nil, huma.Error404NotFound("pull request not found")
+		return nil, problemNotFound(CodePullNotFound, "pull request not found", nil)
 	}
 
 	updatedMR, err := mutator.EditMergeRequestContent(
 		ctx, platformRepoRefFromDB(*repo), input.Number, input.Body.Title, input.Body.Body,
 	)
 	if err != nil {
-		return nil, huma.Error502BadGateway(
-			"provider API error: " + err.Error(),
+		return nil, providerCallProblemWithDetail(
+			err,
+			string(repoProviderKind(*repo)), repoProviderHost(*repo),
+			"provider API error: "+err.Error(),
 		)
 	}
 
@@ -1128,16 +1131,12 @@ func (s *Server) editPRContent(
 	if err := s.db.UpdateMRTitleBody(
 		ctx, mr.ID, newTitle, newBody, updatedAt,
 	); err != nil {
-		return nil, huma.Error500InternalServerError(
-			"update title/body failed",
-		)
+		return nil, problemInternal("update title/body failed")
 	}
 
 	mr, err = s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil || mr == nil {
-		return nil, huma.Error500InternalServerError(
-			"re-read pull request failed",
-		)
+		return nil, problemInternal("re-read pull request failed")
 	}
 
 	body, err := s.buildPullDetailResponse(ctx, mr)
@@ -1152,12 +1151,12 @@ func (s *Server) editIssueContent(
 	ctx context.Context, input *editIssueContentInput,
 ) (*editIssueContentOutput, error) {
 	if input.Body.Title == nil && input.Body.Body == nil {
-		return nil, huma.Error400BadRequest(
+		return nil, problemValidation("body",
 			"at least one of title or body must be provided",
 		)
 	}
 	if input.Body.Title != nil && strings.TrimSpace(*input.Body.Title) == "" {
-		return nil, huma.Error400BadRequest("title must not be blank")
+		return nil, problemValidation("body.title", "title must not be blank")
 	}
 
 	repo, err := s.requireRepoRouteCapability(
@@ -1168,28 +1167,33 @@ func (s *Server) editIssueContent(
 	if err != nil {
 		return nil, err
 	}
+	if err := s.requireSyncerCapability(*repo, capabilityStateMutation); err != nil {
+		return nil, err
+	}
 
 	mutator, err := s.syncer.IssueContentMutator(
 		repoProviderKind(*repo), repoProviderHost(*repo),
 	)
 	if err != nil {
-		return nil, huma.Error404NotFound(err.Error())
+		return nil, unsupportedCapabilityProblem(*repo, capabilityStateMutation)
 	}
 
 	issue, err := s.db.GetIssueByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("get issue failed")
+		return nil, problemInternal("get issue failed")
 	}
 	if issue == nil {
-		return nil, huma.Error404NotFound("issue not found")
+		return nil, problemNotFound(CodeIssueNotFound, "issue not found", nil)
 	}
 
 	updatedIssue, err := mutator.EditIssueContent(
 		ctx, platformRepoRefFromDB(*repo), input.Number, input.Body.Title, input.Body.Body,
 	)
 	if err != nil {
-		return nil, huma.Error502BadGateway(
-			"provider API error: " + err.Error(),
+		return nil, providerCallProblemWithDetail(
+			err,
+			string(repoProviderKind(*repo)), repoProviderHost(*repo),
+			"provider API error: "+err.Error(),
 		)
 	}
 
@@ -1212,16 +1216,12 @@ func (s *Server) editIssueContent(
 	if err := s.db.UpdateIssueTitleBody(
 		ctx, issue.ID, newTitle, newBody, updatedAt,
 	); err != nil {
-		return nil, huma.Error500InternalServerError(
-			"update title/body failed",
-		)
+		return nil, problemInternal("update title/body failed")
 	}
 
 	issue, err = s.db.GetIssueByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil || issue == nil {
-		return nil, huma.Error500InternalServerError(
-			"re-read issue failed",
-		)
+		return nil, problemInternal("re-read issue failed")
 	}
 
 	body, err := s.buildIssueDetailResponse(ctx, repo, issue)
@@ -1234,7 +1234,7 @@ func (s *Server) editIssueContent(
 
 func (s *Server) postComment(ctx context.Context, input *postCommentInput) (*postCommentOutput, error) {
 	if strings.TrimSpace(input.Body.Body) == "" {
-		return nil, huma.Error400BadRequest("comment body must not be empty")
+		return nil, problemValidation("body.body", "comment body must not be empty")
 	}
 
 	repo, err := s.requireRepoRouteCapability(
@@ -1245,19 +1245,26 @@ func (s *Server) postComment(ctx context.Context, input *postCommentInput) (*pos
 	if err != nil {
 		return nil, err
 	}
+	if err := s.requireSyncerCapability(*repo, capabilityCommentMutation); err != nil {
+		return nil, err
+	}
 
 	mutator, err := s.syncer.CommentMutator(
 		repoProviderKind(*repo), repoProviderHost(*repo),
 	)
 	if err != nil {
-		return nil, huma.Error404NotFound(err.Error())
+		return nil, unsupportedCapabilityProblem(*repo, capabilityCommentMutation)
 	}
 
 	platformEvent, err := mutator.CreateMergeRequestComment(
 		ctx, platformRepoRefFromDB(*repo), input.Number, input.Body.Body,
 	)
 	if err != nil {
-		return nil, huma.Error502BadGateway("create comment on provider failed")
+		return nil, providerCallProblemWithDetail(
+			err,
+			string(repoProviderKind(*repo)), repoProviderHost(*repo),
+			"create comment on provider failed",
+		)
 	}
 
 	ref := repoNumberPathRef{
@@ -1268,7 +1275,7 @@ func (s *Server) postComment(ctx context.Context, input *postCommentInput) (*pos
 	}
 	mrID, err := s.lookupMRID(ctx, ref)
 	if err != nil {
-		return nil, huma.Error404NotFound(err.Error())
+		return nil, problemNotFound(CodePullNotFound, err.Error(), nil)
 	}
 
 	event := platform.DBMREvent(mrID, platformEvent)
@@ -1281,7 +1288,7 @@ func (s *Server) postComment(ctx context.Context, input *postCommentInput) (*pos
 
 func (s *Server) editComment(ctx context.Context, input *editCommentInput) (*editCommentOutput, error) {
 	if strings.TrimSpace(input.Body.Body) == "" {
-		return nil, huma.Error400BadRequest("comment body must not be empty")
+		return nil, problemValidation("body.body", "comment body must not be empty")
 	}
 
 	repo, err := s.requireRepoRouteCapability(
@@ -1292,12 +1299,15 @@ func (s *Server) editComment(ctx context.Context, input *editCommentInput) (*edi
 	if err != nil {
 		return nil, err
 	}
+	if err := s.requireSyncerCapability(*repo, capabilityCommentMutation); err != nil {
+		return nil, err
+	}
 
 	mutator, err := s.syncer.CommentMutator(
 		repoProviderKind(*repo), repoProviderHost(*repo),
 	)
 	if err != nil {
-		return nil, huma.Error404NotFound(err.Error())
+		return nil, unsupportedCapabilityProblem(*repo, capabilityCommentMutation)
 	}
 
 	ref := repoNumberPathRef{
@@ -1308,28 +1318,32 @@ func (s *Server) editComment(ctx context.Context, input *editCommentInput) (*edi
 	}
 	mrID, err := s.lookupMRID(ctx, ref)
 	if err != nil {
-		return nil, huma.Error404NotFound(err.Error())
+		return nil, problemNotFound(CodePullNotFound, err.Error(), nil)
 	}
 
 	exists, err := s.db.MRCommentEventExists(ctx, mrID, input.CommentID)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("validate comment target failed")
+		return nil, problemInternal("validate comment target failed")
 	}
 	if !exists {
-		return nil, huma.Error404NotFound("comment not found for pull request")
+		return nil, problemNotFound(CodeCommentNotFound, "comment not found for pull request", nil)
 	}
 
 	platformEvent, err := mutator.EditMergeRequestComment(
 		ctx, platformRepoRefFromDB(*repo), input.Number, input.CommentID, input.Body.Body,
 	)
 	if err != nil {
-		return nil, huma.Error502BadGateway("edit comment on provider failed")
+		return nil, providerCallProblemWithDetail(
+			err,
+			string(repoProviderKind(*repo)), repoProviderHost(*repo),
+			"edit comment on provider failed",
+		)
 	}
 	platformEvent.MergeRequestNumber = input.Number
 
 	event := platform.DBMREvent(mrID, platformEvent)
 	if err := s.db.UpsertMREvents(ctx, []db.MREvent{event}); err != nil {
-		return nil, huma.Error500InternalServerError("persist edited comment failed")
+		return nil, problemInternal("persist edited comment failed")
 	}
 
 	return &editCommentOutput{Body: event}, nil
@@ -1341,8 +1355,10 @@ func (s *Server) listIssues(ctx context.Context, input *listIssuesInput) (*listI
 			"open": true, "closed": true, "all": true,
 		}
 		if !valid[input.State] {
-			return nil, huma.Error400BadRequest(
+			return nil, problemValidation(
+				"query.state",
 				"state must be one of: open, closed, all",
+				"open", "closed", "all",
 			)
 		}
 	}
@@ -1365,12 +1381,12 @@ func (s *Server) listIssues(ctx context.Context, input *listIssuesInput) (*listI
 
 	issues, err := s.db.ListIssues(ctx, opts)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("list issues failed")
+		return nil, problemInternal("list issues failed")
 	}
 
 	repoByID, err := s.lookupRepoMap(ctx)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("repo lookup failed")
+		return nil, problemInternal("repo lookup failed")
 	}
 
 	out := make([]issueResponse, 0, len(issues))
@@ -1401,7 +1417,7 @@ func (s *Server) createIssue(
 ) (*createIssueOutput, error) {
 	title := strings.TrimSpace(input.Body.Title)
 	if title == "" {
-		return nil, huma.Error400BadRequest("issue title must not be empty")
+		return nil, problemValidation("body.title", "issue title must not be empty")
 	}
 
 	repo, err := s.lookupRepoByProviderRoute(
@@ -1413,43 +1429,40 @@ func (s *Server) createIssue(
 	if !capabilityEnabled(s.capabilitiesForRepo(*repo), capabilityIssueMutation) {
 		return nil, unsupportedCapabilityProblem(*repo, capabilityIssueMutation)
 	}
+	if err := s.requireSyncerCapability(*repo, capabilityIssueMutation); err != nil {
+		return nil, err
+	}
 
 	mutator, err := s.syncer.IssueMutator(
 		repoProviderKind(*repo), repoProviderHost(*repo),
 	)
 	if err != nil {
-		return nil, huma.Error404NotFound(err.Error())
+		return nil, unsupportedCapabilityProblem(*repo, capabilityIssueMutation)
 	}
 
 	platformIssue, err := mutator.CreateIssue(
 		ctx, platformRepoRefFromDB(*repo), title, input.Body.Body,
 	)
 	if err != nil {
-		return nil, huma.Error502BadGateway(
-			"provider API error: " + err.Error(),
+		return nil, providerCallProblem(
+			err, string(repoProviderKind(*repo)), repoProviderHost(*repo),
 		)
 	}
 
 	issue := platform.DBIssue(repo.ID, platformIssue)
 	issueID, err := s.db.UpsertIssue(ctx, issue)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(
-			"save issue failed",
-		)
+		return nil, problemInternal("save issue failed")
 	}
 	if err := s.db.ReplaceIssueLabels(ctx, repo.ID, issueID, issue.Labels); err != nil {
-		return nil, huma.Error500InternalServerError(
-			"save issue labels failed",
-		)
+		return nil, problemInternal("save issue labels failed")
 	}
 
 	savedIssue, err := s.db.GetIssueByRepoIDAndNumber(
 		ctx, repo.ID, issue.Number,
 	)
 	if err != nil || savedIssue == nil {
-		return nil, huma.Error500InternalServerError(
-			"re-read issue failed",
-		)
+		return nil, problemInternal("re-read issue failed")
 	}
 	savedIssue.ID = issueID
 
@@ -1480,10 +1493,10 @@ func (s *Server) getIssue(ctx context.Context, input *issueRepoNumberInput) (*ge
 	}
 	issue, err := s.db.GetIssueByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("get issue failed")
+		return nil, problemInternal("get issue failed")
 	}
 	if issue == nil {
-		return nil, huma.Error404NotFound("issue not found")
+		return nil, problemNotFound(CodeIssueNotFound, "issue not found", nil)
 	}
 
 	issueResp, err := s.buildIssueDetailResponse(ctx, repo, issue)
@@ -1500,7 +1513,7 @@ func (s *Server) buildIssueDetailResponse(
 ) (issueDetailResponse, error) {
 	events, err := s.db.ListIssueEvents(ctx, issue.ID)
 	if err != nil {
-		return issueDetailResponse{}, huma.Error500InternalServerError("list issue events failed")
+		return issueDetailResponse{}, problemInternal("list issue events failed")
 	}
 	if events == nil {
 		events = []db.IssueEvent{}
@@ -1534,7 +1547,7 @@ func (s *Server) buildIssueDetailResponse(
 
 func (s *Server) postIssueComment(ctx context.Context, input *postIssueCommentInput) (*postIssueCommentOutput, error) {
 	if strings.TrimSpace(input.Body.Body) == "" {
-		return nil, huma.Error400BadRequest("comment body must not be empty")
+		return nil, problemValidation("body.body", "comment body must not be empty")
 	}
 
 	repo, err := s.lookupRepoByProviderRoute(
@@ -1546,19 +1559,26 @@ func (s *Server) postIssueComment(ctx context.Context, input *postIssueCommentIn
 	if !capabilityEnabled(s.capabilitiesForRepo(*repo), capabilityCommentMutation) {
 		return nil, unsupportedCapabilityProblem(*repo, capabilityCommentMutation)
 	}
+	if err := s.requireSyncerCapability(*repo, capabilityCommentMutation); err != nil {
+		return nil, err
+	}
 
 	mutator, err := s.syncer.CommentMutator(
 		repoProviderKind(*repo), repoProviderHost(*repo),
 	)
 	if err != nil {
-		return nil, huma.Error404NotFound(err.Error())
+		return nil, unsupportedCapabilityProblem(*repo, capabilityCommentMutation)
 	}
 
 	platformEvent, err := mutator.CreateIssueComment(
 		ctx, platformRepoRefFromDB(*repo), input.Number, input.Body.Body,
 	)
 	if err != nil {
-		return nil, huma.Error502BadGateway("create comment on provider failed")
+		return nil, providerCallProblemWithDetail(
+			err,
+			string(repoProviderKind(*repo)), repoProviderHost(*repo),
+			"create comment on provider failed",
+		)
 	}
 
 	ref := repoNumberPathRef{
@@ -1569,7 +1589,7 @@ func (s *Server) postIssueComment(ctx context.Context, input *postIssueCommentIn
 	}
 	issueID, err := s.lookupIssueID(ctx, ref)
 	if err != nil {
-		return nil, huma.Error404NotFound(err.Error())
+		return nil, problemNotFound(CodeIssueNotFound, err.Error(), nil)
 	}
 
 	event := platform.DBIssueEvent(issueID, platformEvent)
@@ -1582,7 +1602,7 @@ func (s *Server) postIssueComment(ctx context.Context, input *postIssueCommentIn
 
 func (s *Server) editIssueComment(ctx context.Context, input *editIssueCommentInput) (*editIssueCommentOutput, error) {
 	if strings.TrimSpace(input.Body.Body) == "" {
-		return nil, huma.Error400BadRequest("comment body must not be empty")
+		return nil, problemValidation("body.body", "comment body must not be empty")
 	}
 
 	repo, err := s.lookupRepoByProviderRoute(
@@ -1594,12 +1614,15 @@ func (s *Server) editIssueComment(ctx context.Context, input *editIssueCommentIn
 	if !capabilityEnabled(s.capabilitiesForRepo(*repo), capabilityCommentMutation) {
 		return nil, unsupportedCapabilityProblem(*repo, capabilityCommentMutation)
 	}
+	if err := s.requireSyncerCapability(*repo, capabilityCommentMutation); err != nil {
+		return nil, err
+	}
 
 	mutator, err := s.syncer.CommentMutator(
 		repoProviderKind(*repo), repoProviderHost(*repo),
 	)
 	if err != nil {
-		return nil, huma.Error404NotFound(err.Error())
+		return nil, unsupportedCapabilityProblem(*repo, capabilityCommentMutation)
 	}
 
 	ref := repoNumberPathRef{
@@ -1610,28 +1633,32 @@ func (s *Server) editIssueComment(ctx context.Context, input *editIssueCommentIn
 	}
 	issueID, err := s.lookupIssueID(ctx, ref)
 	if err != nil {
-		return nil, huma.Error404NotFound(err.Error())
+		return nil, problemNotFound(CodeIssueNotFound, err.Error(), nil)
 	}
 
 	exists, err := s.db.IssueCommentEventExists(ctx, issueID, input.CommentID)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("validate comment target failed")
+		return nil, problemInternal("validate comment target failed")
 	}
 	if !exists {
-		return nil, huma.Error404NotFound("comment not found for issue")
+		return nil, problemNotFound(CodeCommentNotFound, "comment not found for issue", nil)
 	}
 
 	platformEvent, err := mutator.EditIssueComment(
 		ctx, platformRepoRefFromDB(*repo), input.Number, input.CommentID, input.Body.Body,
 	)
 	if err != nil {
-		return nil, huma.Error502BadGateway("edit comment on provider failed")
+		return nil, providerCallProblemWithDetail(
+			err,
+			string(repoProviderKind(*repo)), repoProviderHost(*repo),
+			"edit comment on provider failed",
+		)
 	}
 	platformEvent.IssueNumber = input.Number
 
 	event := platform.DBIssueEvent(issueID, platformEvent)
 	if err := s.db.UpsertIssueEvents(ctx, []db.IssueEvent{event}); err != nil {
-		return nil, huma.Error500InternalServerError("persist edited comment failed")
+		return nil, problemInternal("persist edited comment failed")
 	}
 
 	return &editIssueCommentOutput{Body: event}, nil
@@ -1643,7 +1670,7 @@ func (s *Server) setStarred(ctx context.Context, input *starredInput) (*statusOn
 		return nil, err
 	}
 	if err := s.db.SetStarred(ctx, input.Body.ItemType, repoID, input.Body.Number); err != nil {
-		return nil, huma.Error500InternalServerError("set starred failed")
+		return nil, problemInternal("set starred failed")
 	}
 	return &statusOnlyOutput{Status: http.StatusOK}, nil
 }
@@ -1654,7 +1681,7 @@ func (s *Server) unsetStarred(ctx context.Context, input *starredInput) (*status
 		return nil, err
 	}
 	if err := s.db.UnsetStarred(ctx, input.Body.ItemType, repoID, input.Body.Number); err != nil {
-		return nil, huma.Error500InternalServerError("unset starred failed")
+		return nil, problemInternal("unset starred failed")
 	}
 	return &statusOnlyOutput{Status: http.StatusOK}, nil
 }
@@ -1699,7 +1726,7 @@ func (s *Server) getCommentAutocomplete(
 			limit,
 		)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("list comment autocomplete users failed")
+			return nil, problemInternal("list comment autocomplete users failed")
 		}
 		return &commentAutocompleteOutput{Body: commentAutocompleteResponse{Users: users}}, nil
 	case "#":
@@ -1712,11 +1739,11 @@ func (s *Server) getCommentAutocomplete(
 			limit,
 		)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("list comment autocomplete references failed")
+			return nil, problemInternal("list comment autocomplete references failed")
 		}
 		return &commentAutocompleteOutput{Body: commentAutocompleteResponse{References: references}}, nil
 	default:
-		return nil, huma.Error400BadRequest("trigger must be @ or #")
+		return nil, problemValidation("query.trigger", "trigger must be @ or #", "@", "#")
 	}
 }
 
@@ -1729,19 +1756,26 @@ func (s *Server) approvePR(ctx context.Context, input *approvePRInput) (*actionS
 	if err != nil {
 		return nil, err
 	}
+	if err := s.requireSyncerCapability(*repo, capabilityReviewMutation); err != nil {
+		return nil, err
+	}
 
 	mutator, err := s.syncer.ReviewMutator(
 		repoProviderKind(*repo), repoProviderHost(*repo),
 	)
 	if err != nil {
-		return nil, huma.Error404NotFound(err.Error())
+		return nil, unsupportedCapabilityProblem(*repo, capabilityReviewMutation)
 	}
 
 	platformEvent, err := mutator.ApproveMergeRequest(
 		ctx, platformRepoRefFromDB(*repo), input.Number, input.Body.Body,
 	)
 	if err != nil {
-		return nil, huma.Error502BadGateway("provider API error")
+		return nil, providerCallProblemWithDetail(
+			err,
+			string(repoProviderKind(*repo)), repoProviderHost(*repo),
+			"provider API error",
+		)
 	}
 
 	ref := repoNumberPathRef{
@@ -1768,32 +1802,39 @@ func (s *Server) approveWorkflows(ctx context.Context, input *repoNumberInput) (
 	if err != nil {
 		return nil, err
 	}
+	if err := s.requireSyncerCapability(*repo, capabilityWorkflowApproval); err != nil {
+		return nil, err
+	}
 
 	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("get pull request failed")
+		return nil, problemInternal("get pull request failed")
 	}
 	if mr == nil {
-		return nil, huma.Error404NotFound("pull request not found")
+		return nil, problemNotFound(CodePullNotFound, "pull request not found", nil)
 	}
 
 	client, err := s.syncer.ClientForHost(repo.PlatformHost)
 	if err != nil {
-		return nil, huma.Error404NotFound(err.Error())
+		return nil, unsupportedCapabilityProblem(*repo, capabilityWorkflowApproval)
 	}
 	mutator, err := s.syncer.WorkflowApprovalMutator(
 		repoProviderKind(*repo), repoProviderHost(*repo),
 	)
 	if err != nil {
-		return nil, huma.Error404NotFound(err.Error())
+		return nil, unsupportedCapabilityProblem(*repo, capabilityWorkflowApproval)
 	}
 
 	pr, err := client.GetPullRequest(ctx, input.Owner, input.Name, input.Number)
 	if err != nil {
-		return nil, huma.Error502BadGateway("GitHub API error")
+		return nil, providerCallProblemWithDetail(
+			err,
+			string(repoProviderKind(*repo)), repoProviderHost(*repo),
+			"GitHub API error",
+		)
 	}
 	if pr == nil {
-		return nil, huma.Error404NotFound("pull request not found")
+		return nil, problemNotFound(CodePullNotFound, "pull request not found", nil)
 	}
 
 	headSHA := pr.GetHead().GetSHA()
@@ -1803,7 +1844,11 @@ func (s *Server) approveWorkflows(ctx context.Context, input *repoNumberInput) (
 
 	runs, err := client.ListWorkflowRunsForHeadSHA(ctx, input.Owner, input.Name, headSHA)
 	if err != nil {
-		return nil, huma.Error502BadGateway("GitHub API error")
+		return nil, providerCallProblemWithDetail(
+			err,
+			string(repoProviderKind(*repo)), repoProviderHost(*repo),
+			"GitHub API error",
+		)
 	}
 	pending := ghclient.FilterWorkflowRunsAwaitingApproval(runs, ghclient.PRSource{
 		Number:           input.Number,
@@ -1826,7 +1871,11 @@ func (s *Server) approveWorkflows(ctx context.Context, input *repoNumberInput) (
 					slog.Warn("sync after workflow approval failure", "err", syncErr)
 				}
 			}
-			return nil, huma.Error502BadGateway(err.Error())
+			return nil, providerCallProblemWithDetail(
+				err,
+				string(repoProviderKind(*repo)), repoProviderHost(*repo),
+				err.Error(),
+			)
 		}
 		approvedCount++
 	}
@@ -1863,12 +1912,15 @@ func (s *Server) readyForReview(ctx context.Context, input *repoNumberInput) (*a
 	if err != nil {
 		return nil, err
 	}
+	if err := s.requireSyncerCapability(*repo, capabilityReadyForReview); err != nil {
+		return nil, err
+	}
 
 	mutator, err := s.syncer.ReadyForReviewMutator(
 		repoProviderKind(*repo), repoProviderHost(*repo),
 	)
 	if err != nil {
-		return nil, huma.Error404NotFound(err.Error())
+		return nil, unsupportedCapabilityProblem(*repo, capabilityReadyForReview)
 	}
 
 	pr, err := mutator.MarkReadyForReview(ctx, platformRepoRefFromDB(*repo), input.Number)
@@ -1908,10 +1960,17 @@ func (s *Server) readyForReview(ctx context.Context, input *repoNumberInput) (*a
 			"number", input.Number,
 			"err", err,
 		)
-		return nil, huma.Error502BadGateway(err.Error())
+		return nil, providerCallProblemWithDetail(
+			err,
+			string(repoProviderKind(*repo)), repoProviderHost(*repo),
+			err.Error(),
+		)
 	}
 	if pr.Number == 0 {
-		return nil, huma.Error502BadGateway("provider API returned no pull request")
+		return nil, problemUpstream(
+			"provider API returned no pull request",
+			string(repoProviderKind(*repo)), repoProviderHost(*repo),
+		)
 	}
 
 	if repo != nil {
@@ -1927,7 +1986,11 @@ func (s *Server) readyForReview(ctx context.Context, input *repoNumberInput) (*a
 func (s *Server) mergePR(ctx context.Context, input *mergePRInput) (*mergePROutput, error) {
 	validMethods := map[string]bool{"merge": true, "squash": true, "rebase": true}
 	if !validMethods[input.Body.Method] {
-		return nil, huma.Error400BadRequest("invalid merge method: must be merge, squash, or rebase")
+		return nil, problemValidation(
+			"body.method",
+			"invalid merge method: must be merge, squash, or rebase",
+			"merge", "squash", "rebase",
+		)
 	}
 
 	repo, err := s.requireRepoRouteCapability(
@@ -1938,12 +2001,15 @@ func (s *Server) mergePR(ctx context.Context, input *mergePRInput) (*mergePROutp
 	if err != nil {
 		return nil, err
 	}
+	if err := s.requireSyncerCapability(*repo, capabilityMergeMutation); err != nil {
+		return nil, err
+	}
 
 	mutator, err := s.syncer.MergeMutator(
 		repoProviderKind(*repo), repoProviderHost(*repo),
 	)
 	if err != nil {
-		return nil, huma.Error404NotFound(err.Error())
+		return nil, unsupportedCapabilityProblem(*repo, capabilityMergeMutation)
 	}
 
 	result, err := mutator.MergeMergeRequest(
@@ -1973,21 +2039,28 @@ func (s *Server) mergePR(ctx context.Context, input *mergePRInput) (*mergePROutp
 						slog.Warn("background sync after merge failure", "err", syncErr)
 					}
 				})
-				return nil, huma.Error409Conflict(message)
+				return nil, problemConflict(CodeConflict, message, nil)
 			}
 
 			// Forward 4xx provider errors as-is so the user sees the real cause
 			// (e.g. 422 validation, 403 forbidden). 5xx becomes 502.
 			if status >= 400 && status < 500 {
-				return nil, huma.NewError(status, message)
+				return nil, newProblem(status, codeForStatus(status), message, nil)
 			}
-			return nil, huma.Error502BadGateway("provider merge error: " + message)
+			return nil, problemUpstream(
+				"provider merge error: "+message,
+				string(repoProviderKind(*repo)), repoProviderHost(*repo),
+			)
 		}
 		slog.Error("provider merge transport error",
 			"owner", input.Owner, "repo", input.Name,
 			"number", input.Number, "method", input.Body.Method,
 			"err", err)
-		return nil, huma.Error502BadGateway("provider merge error: " + err.Error())
+		return nil, providerCallProblemWithDetail(
+			err,
+			string(repoProviderKind(*repo)), repoProviderHost(*repo),
+			"provider merge error: "+err.Error(),
+		)
 	}
 
 	now := s.now().UTC()
@@ -2060,8 +2133,10 @@ func (s *Server) setPRGitHubState(
 	ctx context.Context, input *githubStateInput,
 ) (*githubStateOutput, error) {
 	if input.Body.State != "open" && input.Body.State != "closed" {
-		return nil, huma.Error400BadRequest(
+		return nil, problemValidation(
+			"body.state",
 			"state must be 'open' or 'closed'",
+			"open", "closed",
 		)
 	}
 
@@ -2073,26 +2148,29 @@ func (s *Server) setPRGitHubState(
 	if err != nil {
 		return nil, err
 	}
+	if err := s.requireSyncerCapability(*repo, capabilityStateMutation); err != nil {
+		return nil, err
+	}
 
 	mutator, err := s.syncer.StateMutator(
 		repoProviderKind(*repo), repoProviderHost(*repo),
 	)
 	if err != nil {
-		return nil, huma.Error404NotFound(err.Error())
+		return nil, unsupportedCapabilityProblem(*repo, capabilityStateMutation)
 	}
 
 	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(
-			"get pull request: " + err.Error(),
-		)
+		return nil, problemInternal("get pull request: " + err.Error())
 	}
 	if mr == nil {
-		return nil, huma.Error404NotFound("pull request not found")
+		return nil, problemNotFound(CodePullNotFound, "pull request not found", nil)
 	}
 	if mr.State == "merged" {
-		return nil, huma.Error409Conflict(
+		return nil, problemConflict(
+			CodeConflict,
 			"cannot change state of a merged pull request",
+			nil,
 		)
 	}
 
@@ -2107,23 +2185,31 @@ func (s *Server) setPRGitHubState(
 			{
 				client, clientErr := s.syncer.ClientForHost(repo.PlatformHost)
 				if clientErr != nil {
-					return nil, huma.Error404NotFound(clientErr.Error())
+					return nil, unsupportedCapabilityProblem(*repo, capabilityStateMutation)
 				}
 				ghPR, fetchErr := client.GetPullRequest(
 					ctx, input.Owner, input.Name, input.Number,
 				)
 				if fetchErr == nil {
 					if ghPR == nil {
-						return nil, huma.Error502BadGateway("GitHub API returned no pull request")
+						return nil, problemUpstream(
+							"GitHub API returned no pull request",
+							string(repoProviderKind(*repo)), repoProviderHost(*repo),
+						)
 					}
 					normalized, normalizeErr := ghclient.NormalizePR(repoID, ghPR)
 					if normalizeErr != nil {
-						return nil, huma.Error502BadGateway("GitHub API error: " + normalizeErr.Error())
+						return nil, problemUpstream(
+							"GitHub API error: "+normalizeErr.Error(),
+							string(repoProviderKind(*repo)), repoProviderHost(*repo),
+						)
 					}
 					_, _ = s.db.UpsertMergeRequest(ctx, normalized)
 					if ghPR.GetMerged() {
-						return nil, huma.Error409Conflict(
+						return nil, problemConflict(
+							CodeConflict,
 							"cannot change state of a merged pull request",
+							nil,
 						)
 					}
 					// Already in requested state (concurrent edit).
@@ -2135,8 +2221,10 @@ func (s *Server) setPRGitHubState(
 				}
 			}
 		}
-		return nil, huma.Error502BadGateway(
-			"GitHub API error: " + err.Error(),
+		return nil, providerCallProblemWithDetail(
+			err,
+			string(repoProviderKind(*repo)), repoProviderHost(*repo),
+			"GitHub API error: "+err.Error(),
 		)
 	}
 
@@ -2151,9 +2239,7 @@ func (s *Server) setPRGitHubState(
 		ctx, repoID, input.Number,
 		input.Body.State, nil, closedAt,
 	); err != nil {
-		return nil, huma.Error500InternalServerError(
-			"update mr state: " + err.Error(),
-		)
+		return nil, problemInternal("update mr state: " + err.Error())
 	}
 
 	out := &githubStateOutput{}
@@ -2165,8 +2251,10 @@ func (s *Server) setIssueGitHubState(
 	ctx context.Context, input *githubStateInput,
 ) (*githubStateOutput, error) {
 	if input.Body.State != "open" && input.Body.State != "closed" {
-		return nil, huma.Error400BadRequest(
+		return nil, problemValidation(
+			"body.state",
 			"state must be 'open' or 'closed'",
+			"open", "closed",
 		)
 	}
 
@@ -2180,17 +2268,20 @@ func (s *Server) setIssueGitHubState(
 	}
 	issue, err := s.db.GetIssueByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("get issue: " + err.Error())
+		return nil, problemInternal("get issue: " + err.Error())
 	}
 	if issue == nil {
-		return nil, huma.Error404NotFound("issue not found")
+		return nil, problemNotFound(CodeIssueNotFound, "issue not found", nil)
+	}
+	if err := s.requireSyncerCapability(*repo, capabilityStateMutation); err != nil {
+		return nil, err
 	}
 
 	mutator, err := s.syncer.StateMutator(
 		repoProviderKind(*repo), repoProviderHost(*repo),
 	)
 	if err != nil {
-		return nil, huma.Error404NotFound(err.Error())
+		return nil, unsupportedCapabilityProblem(*repo, capabilityStateMutation)
 	}
 
 	if _, err := mutator.SetIssueState(
@@ -2203,20 +2294,26 @@ func (s *Server) setIssueGitHubState(
 			// requested state (concurrent edit), treat as success.
 			client, clientErr := s.syncer.ClientForHost(repo.PlatformHost)
 			if clientErr != nil {
-				return nil, huma.Error404NotFound(clientErr.Error())
+				return nil, unsupportedCapabilityProblem(*repo, capabilityStateMutation)
 			}
 			ghIssue, fetchErr := client.GetIssue(
 				ctx, input.Owner, input.Name, input.Number,
 			)
 			if fetchErr == nil {
 				if ghIssue == nil {
-					return nil, huma.Error502BadGateway("GitHub API returned no issue")
+					return nil, problemUpstream(
+						"GitHub API returned no issue",
+						string(repoProviderKind(*repo)), repoProviderHost(*repo),
+					)
 				}
 				normalized, normalizeErr := ghclient.NormalizeIssue(
 					repo.ID, ghIssue,
 				)
 				if normalizeErr != nil {
-					return nil, huma.Error502BadGateway("GitHub API error: " + normalizeErr.Error())
+					return nil, problemUpstream(
+						"GitHub API error: "+normalizeErr.Error(),
+						string(repoProviderKind(*repo)), repoProviderHost(*repo),
+					)
 				}
 				_, _ = s.db.UpsertIssue(ctx, normalized)
 				if ghIssue.GetState() == input.Body.State {
@@ -2226,8 +2323,10 @@ func (s *Server) setIssueGitHubState(
 				}
 			}
 		}
-		return nil, huma.Error502BadGateway(
-			"GitHub API error: " + err.Error(),
+		return nil, providerCallProblemWithDetail(
+			err,
+			string(repoProviderKind(*repo)), repoProviderHost(*repo),
+			"GitHub API error: "+err.Error(),
 		)
 	}
 
@@ -2240,9 +2339,7 @@ func (s *Server) setIssueGitHubState(
 		ctx, repo.ID, issue.Number,
 		input.Body.State, closedAt,
 	); err != nil {
-		return nil, huma.Error500InternalServerError(
-			"update issue state: " + err.Error(),
-		)
+		return nil, problemInternal("update issue state: " + err.Error())
 	}
 
 	out := &githubStateOutput{}
@@ -2253,7 +2350,7 @@ func (s *Server) setIssueGitHubState(
 func (s *Server) listRepos(ctx context.Context, _ *struct{}) (*listReposOutput, error) {
 	repos, err := s.db.ListRepos(ctx)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("list repos failed")
+		return nil, problemInternal("list repos failed")
 	}
 	if repos == nil {
 		repos = []db.Repo{}
@@ -2275,9 +2372,7 @@ func (s *Server) listRepoSummaries(
 ) (*listRepoSummariesOutput, error) {
 	summaries, err := s.db.ListRepoSummaries(ctx)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(
-			"list repo summaries failed",
-		)
+		return nil, problemInternal("list repo summaries failed")
 	}
 	if s.cfg != nil {
 		summaries = s.filterConfiguredRepoSummaries(summaries)
@@ -2360,10 +2455,10 @@ func (s *Server) syncPRCI(ctx context.Context, input *repoNumberInput) (*syncPRC
 
 	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("get pull request: " + err.Error())
+		return nil, problemInternal("get pull request: " + err.Error())
 	}
 	if mr == nil {
-		return nil, huma.Error404NotFound("pull request not found")
+		return nil, problemNotFound(CodePullNotFound, "pull request not found", nil)
 	}
 	warnings, err := s.syncer.RefreshMRCIStatusOnProvider(
 		ctx,
@@ -2383,15 +2478,19 @@ func (s *Server) syncPRCI(ctx context.Context, input *repoNumberInput) (*syncPRC
 		mr.PlatformHeadSHA,
 	)
 	if err != nil {
-		return nil, huma.Error502BadGateway("refresh PR CI: " + err.Error())
+		return nil, providerCallProblemWithDetail(
+			err,
+			string(repoProviderKind(*repo)), repoProviderHost(*repo),
+			"refresh PR CI: "+err.Error(),
+		)
 	}
 
 	mr, err = s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("get pull request: " + err.Error())
+		return nil, problemInternal("get pull request: " + err.Error())
 	}
 	if mr == nil {
-		return nil, huma.Error404NotFound("pull request not found after CI refresh")
+		return nil, problemNotFound(CodePullNotFound, "pull request not found after CI refresh", nil)
 	}
 	body, err := s.buildPullDetailResponse(ctx, mr)
 	if err != nil {
@@ -2420,17 +2519,21 @@ func (s *Server) syncPR(ctx context.Context, input *repoNumberInput) (*syncPROut
 	)
 	if syncErr != nil && !errors.As(syncErr, &diffErr) {
 		if strings.Contains(syncErr.Error(), "is not tracked") {
-			return nil, huma.Error403Forbidden(syncErr.Error())
+			return nil, problemForbidden(syncErr.Error(), nil)
 		}
-		return nil, huma.Error502BadGateway("sync PR: " + syncErr.Error())
+		return nil, providerCallProblemWithDetail(
+			syncErr,
+			string(repoProviderKind(*repo)), repoProviderHost(*repo),
+			"sync PR: "+syncErr.Error(),
+		)
 	}
 
 	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("get pull request: " + err.Error())
+		return nil, problemInternal("get pull request: " + err.Error())
 	}
 	if mr == nil {
-		return nil, huma.Error404NotFound("pull request not found after sync")
+		return nil, problemNotFound(CodePullNotFound, "pull request not found after sync", nil)
 	}
 
 	body, err := s.buildPullDetailResponse(ctx, mr)
@@ -2498,22 +2601,26 @@ func (s *Server) syncIssue(ctx context.Context, input *issueRepoNumberInput) (*s
 	)
 	if err != nil {
 		if strings.Contains(err.Error(), "is not tracked") {
-			return nil, huma.Error403Forbidden(err.Error())
+			return nil, problemForbidden(err.Error(), nil)
 		}
-		return nil, huma.Error502BadGateway("sync issue: " + err.Error())
+		return nil, providerCallProblemWithDetail(
+			err,
+			string(repoProviderKind(*repo)), repoProviderHost(*repo),
+			"sync issue: "+err.Error(),
+		)
 	}
 
 	issue, err := s.db.GetIssueByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("get issue: " + err.Error())
+		return nil, problemInternal("get issue: " + err.Error())
 	}
 	if issue == nil {
-		return nil, huma.Error404NotFound("issue not found after sync")
+		return nil, problemNotFound(CodeIssueNotFound, "issue not found after sync", nil)
 	}
 
 	events, err := s.db.ListIssueEvents(ctx, issue.ID)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("list issue events: " + err.Error())
+		return nil, problemInternal("list issue events: " + err.Error())
 	}
 	if events == nil {
 		events = []db.IssueEvent{}
@@ -2588,7 +2695,7 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 	if input.Since != "" {
 		t, err := time.Parse(time.RFC3339, input.Since)
 		if err != nil {
-			return nil, huma.Error400BadRequest("invalid since: " + err.Error())
+			return nil, problemValidation("query.since", "invalid since: "+err.Error())
 		}
 		opts.Since = &t
 	} else {
@@ -2599,7 +2706,7 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 	if input.After != "" {
 		t, source, sourceID, err := db.DecodeCursor(input.After)
 		if err != nil {
-			return nil, huma.Error400BadRequest("invalid after cursor: " + err.Error())
+			return nil, problemValidation("query.after", "invalid after cursor: "+err.Error())
 		}
 		opts.AfterTime = &t
 		opts.AfterSource = source
@@ -2609,7 +2716,7 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 	items, err := s.db.ListActivity(ctx, opts)
 	if err != nil {
 		slog.Error("list activity failed", "err", err)
-		return nil, huma.Error500InternalServerError("list activity failed")
+		return nil, problemInternal("list activity failed")
 	}
 
 	if s.cfg != nil {
@@ -2693,9 +2800,7 @@ func (s *Server) resolveItem(
 	}
 	itemType, found, err := s.db.ResolveItemNumber(ctx, repo.ID, number)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(
-			"resolve item: " + err.Error(),
-		)
+		return nil, problemInternal("resolve item: " + err.Error())
 	}
 	if found {
 		return &resolveItemOutput{
@@ -2708,7 +2813,7 @@ func (s *Server) resolveItem(
 	}
 
 	if repoProviderKind(*repo) != platform.KindGitHub {
-		return nil, huma.Error404NotFound("item not found")
+		return nil, problemNotFound(CodeNotFound, "item not found", nil)
 	}
 
 	itemType, err = s.syncer.SyncItemByNumber(
@@ -2726,17 +2831,15 @@ func (s *Server) resolveItem(
 		if errors.As(err, &ghErr) {
 			if ghErr.Response != nil &&
 				ghErr.Response.StatusCode == 404 {
-				return nil, huma.Error404NotFound(
-					"item not found: " + err.Error(),
-				)
+				return nil, problemNotFound(CodeNotFound,
+					"item not found: "+err.Error(), nil)
 			}
-			return nil, huma.Error502BadGateway(
-				"GitHub API error: " + err.Error(),
+			return nil, problemUpstream(
+				"GitHub API error: "+err.Error(),
+				string(repoProviderKind(*repo)), repoProviderHost(*repo),
 			)
 		}
-		return nil, huma.Error500InternalServerError(
-			"resolve item: " + err.Error(),
-		)
+		return nil, problemInternal("resolve item: " + err.Error())
 	}
 	if diffErr != nil {
 		slog.Warn("resolve item: diff sync failed but PR row was synced",
@@ -2758,7 +2861,8 @@ func (s *Server) resolveItem(
 
 func (s *Server) lookupStarredRepoID(ctx context.Context, body starredRequest) (int64, error) {
 	if !validateStarredRequest(body) {
-		return 0, huma.Error400BadRequest("item_type must be 'pr' or 'issue'")
+		return 0, problemValidation("body.item_type",
+			"item_type must be 'pr' or 'issue'", "pr", "issue")
 	}
 
 	var (
@@ -2774,9 +2878,9 @@ func (s *Server) lookupStarredRepoID(ctx context.Context, body starredRequest) (
 	}
 	if err != nil {
 		if errors.Is(err, errRepoNotFound) {
-			return 0, huma.Error404NotFound(err.Error())
+			return 0, problemNotFound(CodeRepoNotFound, err.Error(), nil)
 		}
-		return 0, huma.Error500InternalServerError("repo lookup failed")
+		return 0, problemInternal("repo lookup failed")
 	}
 
 	return repoID, nil
@@ -2788,7 +2892,7 @@ type getCommitsOutput = bodyOutput[commitsResponse]
 
 func (s *Server) getCommits(ctx context.Context, input *repoNumberInput) (*getCommitsOutput, error) {
 	if s.clones == nil {
-		return nil, huma.Error503ServiceUnavailable("commits not available: clone manager not configured")
+		return nil, problemServiceUnavailable("commits not available: clone manager not configured")
 	}
 
 	repo, err := s.lookupRepoByProviderRoute(
@@ -2799,22 +2903,25 @@ func (s *Server) getCommits(ctx context.Context, input *repoNumberInput) (*getCo
 	}
 	shas, err := s.db.GetDiffSHAsByRepoID(ctx, repo.ID, input.Number)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("failed to look up PR")
+		return nil, problemInternal("failed to look up PR")
 	}
 	if shas == nil {
-		return nil, huma.Error404NotFound("pull request not found")
+		return nil, problemNotFound(CodePullNotFound, "pull request not found", nil)
 	}
 	if shas.DiffHeadSHA == "" || shas.MergeBaseSHA == "" {
-		return nil, huma.Error404NotFound("commits not available for this pull request")
+		return nil, problemNotFound(CodeNotFound, "commits not available for this pull request", nil)
 	}
 
 	host := repoProviderHost(*repo)
 	commits, err := s.clones.ListCommits(ctx, host, repo.Owner, repo.Name, shas.MergeBaseSHA, shas.DiffHeadSHA)
 	if err != nil {
 		if errors.Is(err, gitclone.ErrNotFound) {
-			return nil, huma.Error404NotFound("commits not available: referenced commit not found")
+			return nil, problemNotFound(CodeNotFound, "commits not available: referenced commit not found", nil)
 		}
-		return nil, huma.Error502BadGateway("failed to list commits: " + err.Error())
+		return nil, problemUpstream(
+			"failed to list commits: "+err.Error(),
+			string(repoProviderKind(*repo)), repoProviderHost(*repo),
+		)
 	}
 
 	resp := commitsResponse{Commits: make([]commitResponse, len(commits))}
@@ -2866,13 +2973,13 @@ func (s *Server) resolveDiffRange(
 	}
 	shas, err := s.db.GetDiffSHAsByRepoID(ctx, repo.ID, input.Number)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("failed to look up PR")
+		return nil, problemInternal("failed to look up PR")
 	}
 	if shas == nil {
-		return nil, huma.Error404NotFound("pull request not found")
+		return nil, problemNotFound(CodePullNotFound, "pull request not found", nil)
 	}
 	if shas.DiffHeadSHA == "" || shas.MergeBaseSHA == "" {
-		return nil, huma.Error404NotFound("diff not available for this pull request")
+		return nil, problemNotFound(CodeNotFound, "diff not available for this pull request", nil)
 	}
 
 	host := repoProviderHost(*repo)
@@ -2893,7 +3000,7 @@ func (s *Server) resolveDiffRange(
 		}
 		parent, err := s.clones.ParentOf(ctx, host, repo.Owner, repo.Name, input.Commit)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("failed to resolve parent: " + err.Error())
+			return nil, problemInternal("failed to resolve parent: " + err.Error())
 		}
 		diffFrom = parent
 		diffTo = input.Commit
@@ -2905,17 +3012,17 @@ func (s *Server) resolveDiffRange(
 		}
 		// In newest-first order, "from" (older) must have a higher index than "to" (newer).
 		if indexMap[input.From] <= indexMap[input.To] {
-			return nil, huma.Error400BadRequest("invalid range: 'from' must be older than 'to'")
+			return nil, problemValidation("query", "invalid range: 'from' must be older than 'to'")
 		}
 		parent, err := s.clones.ParentOf(ctx, host, repo.Owner, repo.Name, input.From)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("failed to resolve parent: " + err.Error())
+			return nil, problemInternal("failed to resolve parent: " + err.Error())
 		}
 		diffFrom = parent
 		diffTo = input.To
 
 	default:
-		return nil, huma.Error400BadRequest("invalid scope: use 'commit' alone or 'from'+'to' together")
+		return nil, problemValidation("query", "invalid scope: use 'commit' alone or 'from'+'to' together")
 	}
 
 	return &resolvedDiffRange{
@@ -2930,7 +3037,7 @@ func (s *Server) resolveDiffRange(
 
 func (s *Server) getDiff(ctx context.Context, input *getDiffInput) (*getDiffOutput, error) {
 	if s.clones == nil {
-		return nil, huma.Error503ServiceUnavailable("diff view not available: clone manager not configured")
+		return nil, problemServiceUnavailable("diff view not available: clone manager not configured")
 	}
 
 	resolved, err := s.resolveDiffRange(ctx, input)
@@ -2942,10 +3049,10 @@ func (s *Server) getDiff(ctx context.Context, input *getDiffInput) (*getDiffOutp
 	result, err := s.clones.Diff(ctx, resolved.host, resolved.owner, resolved.name, resolved.fromSHA, resolved.toSHA, hideWhitespace)
 	if err != nil {
 		if errors.Is(err, gitclone.ErrNotFound) {
-			return nil, huma.Error404NotFound("diff not available: referenced commit not found")
+			return nil, problemNotFound(CodeNotFound, "diff not available: referenced commit not found", nil)
 		}
 		slog.Error("failed to compute diff", "owner", input.Owner, "name", input.Name, "number", input.Number, "err", err)
-		return nil, huma.Error502BadGateway("failed to compute diff")
+		return nil, problemUpstream("failed to compute diff", "", "")
 	}
 
 	result.Stale = resolved.diffSHAs.Stale()
@@ -2977,10 +3084,10 @@ type getFilePreviewOutput = bodyOutput[filePreviewResponse]
 
 func (s *Server) getFilePreview(ctx context.Context, input *getFilePreviewInput) (*getFilePreviewOutput, error) {
 	if s.clones == nil {
-		return nil, huma.Error503ServiceUnavailable("file preview not available: clone manager not configured")
+		return nil, problemServiceUnavailable("file preview not available: clone manager not configured")
 	}
 	if strings.TrimSpace(input.Path) == "" {
-		return nil, huma.Error400BadRequest("path is required")
+		return nil, problemValidation("query.path", "path is required")
 	}
 
 	resolved, err := s.resolveDiffRange(ctx, &getDiffInput{
@@ -3009,10 +3116,10 @@ func (s *Server) getFilePreview(ctx context.Context, input *getFilePreviewInput)
 	)
 	if err != nil {
 		if errors.Is(err, gitclone.ErrNotFound) {
-			return nil, huma.Error404NotFound("file preview not available: referenced commit not found")
+			return nil, problemNotFound(CodeNotFound, "file preview not available: referenced commit not found", nil)
 		}
 		slog.Error("failed to validate preview path", "owner", input.Owner, "name", input.Name, "number", input.Number, "path", input.Path, "err", err)
-		return nil, huma.Error502BadGateway("failed to validate file preview")
+		return nil, problemUpstream("failed to validate file preview", "", "")
 	}
 	found := false
 	for _, file := range files {
@@ -3030,7 +3137,7 @@ func (s *Server) getFilePreview(ctx context.Context, input *getFilePreviewInput)
 		break
 	}
 	if !found {
-		return nil, huma.Error404NotFound("file preview not available: file is not changed in this diff")
+		return nil, problemNotFound(CodeNotFound, "file preview not available: file is not changed in this diff", nil)
 	}
 
 	content, err := s.clones.FileContent(
@@ -3044,13 +3151,13 @@ func (s *Server) getFilePreview(ctx context.Context, input *getFilePreviewInput)
 	)
 	if err != nil {
 		if errors.Is(err, gitclone.ErrNotFound) {
-			return nil, huma.Error404NotFound("file preview not available: referenced file not found")
+			return nil, problemNotFound(CodeNotFound, "file preview not available: referenced file not found", nil)
 		}
 		if errors.Is(err, gitclone.ErrTooLarge) {
-			return nil, huma.Error413RequestEntityTooLarge("file preview is too large")
+			return nil, problemPayloadTooLarge("file preview is too large", maxFilePreviewBytes)
 		}
 		slog.Error("failed to read file preview", "owner", input.Owner, "name", input.Name, "number", input.Number, "path", input.Path, "err", err)
-		return nil, huma.Error502BadGateway("failed to read file preview")
+		return nil, problemUpstream("failed to read file preview", "", "")
 	}
 
 	return &getFilePreviewOutput{Body: filePreviewResponse{
@@ -3097,7 +3204,7 @@ type getFilesOutput = bodyOutput[filesResponse]
 
 func (s *Server) getFiles(ctx context.Context, input *getFilesInput) (*getFilesOutput, error) {
 	if s.clones == nil {
-		return nil, huma.Error503ServiceUnavailable("files view not available: clone manager not configured")
+		return nil, problemServiceUnavailable("files view not available: clone manager not configured")
 	}
 
 	repo, err := s.lookupRepoByProviderRoute(
@@ -3108,23 +3215,23 @@ func (s *Server) getFiles(ctx context.Context, input *getFilesInput) (*getFilesO
 	}
 	shas, err := s.db.GetDiffSHAsByRepoID(ctx, repo.ID, input.Number)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("failed to look up PR")
+		return nil, problemInternal("failed to look up PR")
 	}
 	if shas == nil {
-		return nil, huma.Error404NotFound("pull request not found")
+		return nil, problemNotFound(CodePullNotFound, "pull request not found", nil)
 	}
 	if shas.DiffHeadSHA == "" || shas.MergeBaseSHA == "" {
-		return nil, huma.Error404NotFound("file list not available for this pull request")
+		return nil, problemNotFound(CodeNotFound, "file list not available for this pull request", nil)
 	}
 
 	host := repoProviderHost(*repo)
 	files, err := s.clones.DiffFiles(ctx, host, repo.Owner, repo.Name, shas.MergeBaseSHA, shas.DiffHeadSHA)
 	if err != nil {
 		if errors.Is(err, gitclone.ErrNotFound) {
-			return nil, huma.Error404NotFound("file list not available: referenced commit not found")
+			return nil, problemNotFound(CodeNotFound, "file list not available: referenced commit not found", nil)
 		}
 		slog.Error("failed to list files", "owner", input.Owner, "name", input.Name, "number", input.Number, "err", err)
-		return nil, huma.Error502BadGateway("failed to list files")
+		return nil, problemUpstream("failed to list files", "", "")
 	}
 
 	return &getFilesOutput{Body: filesResponse{
@@ -3144,7 +3251,7 @@ func (s *Server) validateSHAs(
 ) (map[string]int, error) {
 	commits, err := s.clones.ListCommits(ctx, host, input.Owner, input.Name, shas.MergeBaseSHA, shas.DiffHeadSHA)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("failed to list commits for validation: " + err.Error())
+		return nil, problemInternal("failed to list commits for validation: " + err.Error())
 	}
 	indexMap := make(map[string]int, len(commits))
 	for i, c := range commits {
@@ -3152,7 +3259,7 @@ func (s *Server) validateSHAs(
 	}
 	for _, sha := range userSHAs {
 		if _, ok := indexMap[sha]; !ok {
-			return nil, huma.Error400BadRequest("sha not in pull request: " + sha)
+			return nil, problemValidation("query", "sha not in pull request: "+sha)
 		}
 	}
 	return indexMap, nil
@@ -3163,16 +3270,16 @@ func (s *Server) validateSHAs(
 func (s *Server) listStacks(ctx context.Context, input *listStacksInput) (*listStacksOutput, error) {
 	if input.Repo != "" {
 		if strings.Count(input.Repo, "/") != 1 {
-			return nil, huma.Error400BadRequest("invalid repo filter: expected owner/name")
+			return nil, problemValidation("query.repo", "invalid repo filter: expected owner/name")
 		}
 		owner, name, _ := strings.Cut(input.Repo, "/")
 		if owner == "" || name == "" {
-			return nil, huma.Error400BadRequest("invalid repo filter: expected owner/name")
+			return nil, problemValidation("query.repo", "invalid repo filter: expected owner/name")
 		}
 	}
 	stackList, memberMap, err := s.db.ListStacksWithMembers(ctx, input.Repo)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("list stacks failed")
+		return nil, problemInternal("list stacks failed")
 	}
 
 	out := make([]stackResponse, 0, len(stackList))
@@ -3200,10 +3307,10 @@ func (s *Server) getStackForPR(ctx context.Context, input *repoNumberInput) (*ge
 	}
 	stack, members, err := s.db.GetStackForPRByRepoID(ctx, repo.ID, input.Number)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("get stack for pr failed")
+		return nil, problemInternal("get stack for pr failed")
 	}
 	if stack == nil {
-		return nil, huma.Error404NotFound("PR is not part of a stack")
+		return nil, problemNotFound(CodeNotFound, "PR is not part of a stack", nil)
 	}
 
 	var position int
@@ -3237,9 +3344,7 @@ func (s *Server) createWorkspace(
 	ctx context.Context, input *createWorkspaceInput,
 ) (*createWorkspaceOutput, error) {
 	if s.workspaces == nil {
-		return nil, huma.Error503ServiceUnavailable(
-			"workspace manager not configured",
-		)
+		return nil, problemServiceUnavailable("workspace manager not configured")
 	}
 
 	ws, err := s.workspaces.Create(
@@ -3251,32 +3356,26 @@ func (s *Server) createWorkspace(
 	)
 	if err != nil {
 		if errors.Is(err, workspace.ErrWorkspaceNotFound) {
-			return nil, huma.Error404NotFound(err.Error())
+			return nil, problemNotFound(CodeWorkspaceNotFound, err.Error(), nil)
 		}
 		if errors.Is(err, workspace.ErrWorkspaceNotSynced) {
-			return nil, huma.Error404NotFound(err.Error())
+			return nil, problemNotFound(CodeWorkspaceNotFound, err.Error(), nil)
 		}
 		if errors.Is(err, workspace.ErrWorkspaceDuplicate) {
-			return nil, huma.Error409Conflict(
-				"workspace already exists for this MR")
+			return nil, problemConflict(CodeConflict,
+				"workspace already exists for this MR", nil)
 		}
-		return nil, huma.Error500InternalServerError(
-			"create workspace: " + err.Error(),
-		)
+		return nil, problemInternal("create workspace: " + err.Error())
 	}
 
 	s.runWorkspaceSetup(ws)
 
 	summary, err := s.workspaces.GetSummary(ctx, ws.ID)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(
-			"get workspace summary: " + err.Error(),
-		)
+		return nil, problemInternal("get workspace summary: " + err.Error())
 	}
 	if summary == nil {
-		return nil, huma.Error500InternalServerError(
-			"workspace summary missing after create",
-		)
+		return nil, problemInternal("workspace summary missing after create")
 	}
 	return &createWorkspaceOutput{
 		Status: http.StatusAccepted,
@@ -3368,9 +3467,7 @@ func (s *Server) createIssueWorkspace(
 	ctx context.Context, input *createIssueWorkspaceInput,
 ) (*createWorkspaceOutput, error) {
 	if s.workspaces == nil {
-		return nil, huma.Error503ServiceUnavailable(
-			"workspace manager not configured",
-		)
+		return nil, problemServiceUnavailable("workspace manager not configured")
 	}
 	repo, err := s.lookupRepoByProviderRoute(
 		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
@@ -3387,21 +3484,15 @@ func (s *Server) createIssueWorkspace(
 		input.Number,
 	)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(
-			"lookup existing issue workspace: " + err.Error(),
-		)
+		return nil, problemInternal("lookup existing issue workspace: " + err.Error())
 	}
 	if existing != nil {
 		summary, getErr := s.workspaces.GetSummary(ctx, existing.ID)
 		if getErr != nil {
-			return nil, huma.Error500InternalServerError(
-				"get workspace summary: " + getErr.Error(),
-			)
+			return nil, problemInternal("get workspace summary: " + getErr.Error())
 		}
 		if summary == nil {
-			return nil, huma.Error500InternalServerError(
-				"workspace summary missing for existing workspace",
-			)
+			return nil, problemInternal("workspace summary missing for existing workspace")
 		}
 		return &createWorkspaceOutput{
 			Status: http.StatusAccepted,
@@ -3424,34 +3515,44 @@ func (s *Server) createIssueWorkspace(
 		msg := err.Error()
 		var branchConflict *workspace.IssueWorkspaceBranchConflictError
 		if errors.As(err, &branchConflict) {
-			conflict := &huma.ErrorModel{
-				Type:   issueWorkspaceBranchConflictType,
-				Title:  "Issue workspace branch conflict",
-				Status: http.StatusConflict,
-				Detail: "A local branch with the requested name already exists.",
-				Errors: []*huma.ErrorDetail{
-					{
-						Message:  "Requested branch already exists",
-						Location: "body.git_head_ref",
-						Value:    branchConflict.Branch,
-					},
-					{
-						Message:  "Suggested alternative branch name",
-						Location: "body.suggested_git_head_ref",
-						Value:    branchConflict.SuggestedBranch,
-					},
+			// Branch-conflict gets the typed problem envelope with
+			// Type carrying the URN and Details carrying the conflicting
+			// branch + suggested alternative. The legacy Errors[]
+			// entries are populated for callers still introspecting
+			// per-field huma error details.
+			conflict := newProblem(
+				http.StatusConflict,
+				CodeBranchConflict,
+				"A local branch with the requested name already exists.",
+				map[string]any{
+					"branch":          branchConflict.Branch,
+					"suggestedBranch": branchConflict.SuggestedBranch,
+				},
+			)
+			conflict.Type = issueWorkspaceBranchConflictType
+			conflict.Title = "Issue workspace branch conflict"
+			conflict.Errors = []*huma.ErrorDetail{
+				{
+					Message:  "Requested branch already exists",
+					Location: "body.git_head_ref",
+					Value:    branchConflict.Branch,
+				},
+				{
+					Message:  "Suggested alternative branch name",
+					Location: "body.suggested_git_head_ref",
+					Value:    branchConflict.SuggestedBranch,
 				},
 			}
 			return nil, conflict
 		}
 		if strings.Contains(msg, "not tracked") {
-			return nil, huma.Error404NotFound(msg)
+			return nil, problemNotFound(CodeNotFound, msg, nil)
 		}
 		if strings.Contains(msg, "not synced") {
-			return nil, huma.Error404NotFound(msg)
+			return nil, problemNotFound(CodeNotFound, msg, nil)
 		}
 		if strings.Contains(msg, "invalid branch name") {
-			return nil, huma.Error400BadRequest(msg)
+			return nil, problemValidation("body.git_head_ref", msg)
 		}
 		if strings.Contains(msg, "UNIQUE constraint") {
 			existing, getErr := s.workspaces.GetByIssue(
@@ -3471,23 +3572,17 @@ func (s *Server) createIssueWorkspace(
 				}
 			}
 		}
-		return nil, huma.Error500InternalServerError(
-			"create issue workspace: " + msg,
-		)
+		return nil, problemInternal("create issue workspace: " + msg)
 	}
 
 	s.runWorkspaceSetup(ws)
 
 	summary, err := s.workspaces.GetSummary(ctx, ws.ID)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(
-			"get workspace summary: " + err.Error(),
-		)
+		return nil, problemInternal("get workspace summary: " + err.Error())
 	}
 	if summary == nil {
-		return nil, huma.Error500InternalServerError(
-			"workspace summary missing after create",
-		)
+		return nil, problemInternal("workspace summary missing after create")
 	}
 
 	return &createWorkspaceOutput{
@@ -3516,9 +3611,7 @@ func (s *Server) listWorkspaces(
 
 	summaries, err := s.workspaces.ListSummaries(ctx)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(
-			"list workspaces failed",
-		)
+		return nil, problemInternal("list workspaces failed")
 	}
 
 	list := make([]workspaceResponse, len(summaries))
@@ -3564,19 +3657,15 @@ func (s *Server) getWorkspace(
 	ctx context.Context, input *getWorkspaceInput,
 ) (*getWorkspaceOutput, error) {
 	if s.workspaces == nil {
-		return nil, huma.Error503ServiceUnavailable(
-			"workspace manager not configured",
-		)
+		return nil, problemServiceUnavailable("workspace manager not configured")
 	}
 
 	summary, err := s.workspaces.GetSummary(ctx, input.ID)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(
-			"get workspace failed",
-		)
+		return nil, problemInternal("get workspace failed")
 	}
 	if summary == nil {
-		return nil, huma.Error404NotFound("workspace not found")
+		return nil, problemNotFound(CodeWorkspaceNotFound, "workspace not found", nil)
 	}
 
 	return &getWorkspaceOutput{
@@ -3599,12 +3688,11 @@ func (s *Server) getWorkspaceCommits(
 			"workspace_id", input.ID,
 			"err", err,
 		)
-		return nil, huma.Error502BadGateway("failed to list workspace commits")
+		return nil, problemUpstream("failed to list workspace commits", "", "")
 	}
 	if !ok {
-		return nil, huma.Error404NotFound(
-			"commits not available for this workspace",
-		)
+		return nil, problemNotFound(CodeNotFound,
+			"commits not available for this workspace", nil)
 	}
 
 	resp := commitsResponse{Commits: make([]commitResponse, len(commits))}
@@ -3643,9 +3731,7 @@ func (s *Server) getWorkspaceFiles(
 			"base", req.Base,
 			"err", diffErr,
 		)
-		return nil, huma.Error502BadGateway(
-			"failed to list workspace files",
-		)
+		return nil, problemUpstream("failed to list workspace files", "", "")
 	}
 	if !ok {
 		return nil, workspaceDiffBaseUnavailable(req.Base)
@@ -3695,9 +3781,7 @@ func (s *Server) getWorkspaceDiff(
 			"base", req.Base,
 			"err", diffErr,
 		)
-		return nil, huma.Error502BadGateway(
-			"failed to compute workspace diff",
-		)
+		return nil, problemUpstream("failed to compute workspace diff", "", "")
 	}
 	if !ok {
 		return nil, workspaceDiffBaseUnavailable(req.Base)
@@ -3715,23 +3799,23 @@ func (s *Server) workspaceDiffRequest(
 	baseInput string,
 ) (workspaceDiffRequest, error) {
 	if s.workspaces == nil {
-		return workspaceDiffRequest{}, huma.Error503ServiceUnavailable(
+		return workspaceDiffRequest{}, problemServiceUnavailable(
 			"workspace manager not configured",
 		)
 	}
 
 	summary, err := s.workspaces.GetSummary(ctx, id)
 	if err != nil {
-		return workspaceDiffRequest{}, huma.Error500InternalServerError(
-			"get workspace failed",
-		)
+		return workspaceDiffRequest{}, problemInternal("get workspace failed")
 	}
 	if summary == nil {
-		return workspaceDiffRequest{}, huma.Error404NotFound("workspace not found")
+		return workspaceDiffRequest{}, problemNotFound(
+			CodeWorkspaceNotFound, "workspace not found", nil,
+		)
 	}
 	if summary.Status != "ready" {
-		return workspaceDiffRequest{}, huma.Error409Conflict(
-			"workspace is not ready",
+		return workspaceDiffRequest{}, problemConflict(
+			CodeConflict, "workspace is not ready", nil,
 		)
 	}
 
@@ -3756,8 +3840,10 @@ func (s *Server) workspaceDiffRequest(
 			MergeTargetBranch: targetBranch,
 		}, nil
 	default:
-		return workspaceDiffRequest{}, huma.Error400BadRequest(
+		return workspaceDiffRequest{}, problemValidation(
+			"query.base",
 			"base must be head, pushed, or merge-target",
+			"head", "pushed", "merge-target",
 		)
 	}
 }
@@ -3800,9 +3886,7 @@ func (s *Server) applyWorkspaceDiffScope(
 			ctx, req.Summary.WorktreePath, commit,
 		)
 		if err != nil {
-			return huma.Error500InternalServerError(
-				"failed to resolve parent: " + err.Error(),
-			)
+			return problemInternal("failed to resolve parent: " + err.Error())
 		}
 		req.FromSHA = parent
 		req.ToSHA = commit
@@ -3814,7 +3898,7 @@ func (s *Server) applyWorkspaceDiffScope(
 			return err
 		}
 		if indexMap[from] < indexMap[to] {
-			return huma.Error400BadRequest(
+			return problemValidation("query",
 				"invalid range: 'from' must be older than or equal to 'to'",
 			)
 		}
@@ -3822,16 +3906,14 @@ func (s *Server) applyWorkspaceDiffScope(
 			ctx, req.Summary.WorktreePath, from,
 		)
 		if err != nil {
-			return huma.Error500InternalServerError(
-				"failed to resolve parent: " + err.Error(),
-			)
+			return problemInternal("failed to resolve parent: " + err.Error())
 		}
 		req.FromSHA = parent
 		req.ToSHA = to
 		return nil
 
 	default:
-		return huma.Error400BadRequest(
+		return problemValidation("query",
 			"invalid scope: use 'commit' alone or 'from'+'to' together",
 		)
 	}
@@ -3844,14 +3926,13 @@ func (s *Server) validateWorkspaceSHAs(
 ) (map[string]int, error) {
 	commits, ok, err := s.workspaceCommits(ctx, req)
 	if err != nil {
-		return nil, huma.Error502BadGateway(
-			"failed to list workspace commits: " + err.Error(),
+		return nil, problemUpstream(
+			"failed to list workspace commits: "+err.Error(), "", "",
 		)
 	}
 	if !ok {
-		return nil, huma.Error404NotFound(
-			"commits not available for this workspace",
-		)
+		return nil, problemNotFound(CodeNotFound,
+			"commits not available for this workspace", nil)
 	}
 	indexMap := make(map[string]int, len(commits))
 	for i, c := range commits {
@@ -3859,7 +3940,7 @@ func (s *Server) validateWorkspaceSHAs(
 	}
 	for _, sha := range shas {
 		if _, ok := indexMap[sha]; !ok {
-			return nil, huma.Error400BadRequest(
+			return nil, problemValidation("query",
 				"invalid scope: commit is not in this workspace branch",
 			)
 		}
@@ -3989,9 +4070,7 @@ func (s *Server) workspaceMergeTargetBranch(
 		summary.RepoName,
 	)
 	if err != nil {
-		return "", false, huma.Error500InternalServerError(
-			"get workspace repo failed",
-		)
+		return "", false, problemInternal("get workspace repo failed")
 	}
 	if repo == nil {
 		return "", false, nil
@@ -4001,9 +4080,7 @@ func (s *Server) workspaceMergeTargetBranch(
 		ctx, repo.ID, prNumber,
 	)
 	if err != nil {
-		return "", false, huma.Error500InternalServerError(
-			"get workspace pull request failed",
-		)
+		return "", false, problemInternal("get workspace pull request failed")
 	}
 	if mr == nil || strings.TrimSpace(mr.BaseBranch) == "" {
 		return "", false, nil
@@ -4015,35 +4092,29 @@ func workspaceDiffBaseUnavailable(
 	base workspace.WorktreeDiffBase,
 ) error {
 	if base == workspace.WorktreeDiffBaseMergeTarget {
-		return huma.Error404NotFound(
-			"workspace merge target branch not available",
-		)
+		return problemNotFound(CodeNotFound,
+			"workspace merge target branch not available", nil)
 	}
-	return huma.Error404NotFound(
-		"workspace pushed branch not available",
-	)
+	return problemNotFound(CodeNotFound,
+		"workspace pushed branch not available", nil)
 }
 
 func (s *Server) retryWorkspace(
 	ctx context.Context, input *retryWorkspaceInput,
 ) (*createWorkspaceOutput, error) {
 	if s.workspaces == nil {
-		return nil, huma.Error503ServiceUnavailable(
-			"workspace manager not configured",
-		)
+		return nil, problemServiceUnavailable("workspace manager not configured")
 	}
 
 	ws, startNow, err := s.workspaces.RequestRetry(ctx, input.ID)
 	if err != nil {
 		if errors.Is(err, workspace.ErrWorkspaceNotFound) {
-			return nil, huma.Error404NotFound(err.Error())
+			return nil, problemNotFound(CodeWorkspaceNotFound, err.Error(), nil)
 		}
 		if errors.Is(err, workspace.ErrWorkspaceInvalidState) {
-			return nil, huma.Error409Conflict(err.Error())
+			return nil, problemConflict(CodeConflict, err.Error(), nil)
 		}
-		return nil, huma.Error500InternalServerError(
-			"retry workspace: " + err.Error(),
-		)
+		return nil, problemInternal("retry workspace: " + err.Error())
 	}
 
 	if startNow {
@@ -4052,14 +4123,10 @@ func (s *Server) retryWorkspace(
 
 	summary, err := s.workspaces.GetSummary(ctx, ws.ID)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(
-			"get workspace summary: " + err.Error(),
-		)
+		return nil, problemInternal("get workspace summary: " + err.Error())
 	}
 	if summary == nil {
-		return nil, huma.Error500InternalServerError(
-			"workspace summary missing after retry",
-		)
+		return nil, problemInternal("workspace summary missing after retry")
 	}
 	resp := s.toWorkspaceResponse(ctx, summary)
 	s.hub.Broadcast(Event{
@@ -4307,7 +4374,7 @@ func (s *Server) launchWorkspaceRuntimeSession(
 	}
 	targetKey := strings.TrimSpace(input.Body.TargetKey)
 	if targetKey == "" {
-		return nil, huma.Error400BadRequest("target_key is required")
+		return nil, problemValidation("body.target_key", "target_key is required")
 	}
 
 	if targetKey == string(localruntime.LaunchTargetPlainShell) {
@@ -4315,9 +4382,7 @@ func (s *Server) launchWorkspaceRuntimeSession(
 			ctx, summary.ID, summary.WorktreePath,
 		)
 		if err != nil {
-			return nil, huma.Error500InternalServerError(
-				"ensure shell: " + err.Error(),
-			)
+			return nil, problemInternal("ensure shell: " + err.Error())
 		}
 		return &workspaceRuntimeSessionOutput{Body: session}, nil
 	}
@@ -4334,9 +4399,7 @@ func (s *Server) launchWorkspaceRuntimeSession(
 			session.CreatedAt,
 		); err != nil {
 			_ = s.runtime.Stop(ctx, summary.ID, session.Key)
-			return nil, huma.Error500InternalServerError(
-				"record runtime tmux session: " + err.Error(),
-			)
+			return nil, problemInternal("record runtime tmux session: " + err.Error())
 		}
 		if runtimeSessionTmuxSession(
 			s.runtime.ListSessions(summary.ID), session.Key,
@@ -4345,7 +4408,7 @@ func (s *Server) launchWorkspaceRuntimeSession(
 				ctx, summary.ID, session.TmuxSession,
 				session.CreatedAt,
 			); err != nil {
-				return nil, huma.Error500InternalServerError(
+				return nil, problemInternal(
 					"forget missing runtime tmux session: " + err.Error(),
 				)
 			}
@@ -4376,9 +4439,8 @@ func (s *Server) stopWorkspaceRuntimeSession(
 					ctx, summary.ID, targetKey,
 				)
 				if stopErr != nil {
-					return nil, huma.Error500InternalServerError(
-						"stop stored runtime tmux session: " +
-							stopErr.Error(),
+					return nil, problemInternal(
+						"stop stored runtime tmux session: " + stopErr.Error(),
 					)
 				}
 				if stopped {
@@ -4389,26 +4451,22 @@ func (s *Server) stopWorkspaceRuntimeSession(
 				ctx, summary.ID, input.SessionKey,
 			)
 			if stopErr != nil {
-				return nil, huma.Error500InternalServerError(
+				return nil, problemInternal(
 					"stop stored runtime tmux session: " + stopErr.Error(),
 				)
 			}
 			if stopped {
 				return nil, nil
 			}
-			return nil, huma.Error404NotFound(err.Error())
+			return nil, problemNotFound(CodeNotFound, err.Error(), nil)
 		}
-		return nil, huma.Error500InternalServerError(
-			"stop runtime session: " + err.Error(),
-		)
+		return nil, problemInternal("stop runtime session: " + err.Error())
 	}
 	if tmuxSession != "" {
 		if err := s.workspaces.ForgetRuntimeTmuxSession(
 			ctx, summary.ID, tmuxSession,
 		); err != nil {
-			return nil, huma.Error500InternalServerError(
-				"forget runtime tmux session: " + err.Error(),
-			)
+			return nil, problemInternal("forget runtime tmux session: " + err.Error())
 		}
 	}
 	return nil, nil
@@ -4447,9 +4505,7 @@ func (s *Server) ensureWorkspaceRuntimeShell(
 		ctx, summary.ID, summary.WorktreePath,
 	)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(
-			"ensure shell: " + err.Error(),
-		)
+		return nil, problemInternal("ensure shell: " + err.Error())
 	}
 	return &workspaceRuntimeSessionOutput{Body: session}, nil
 }
@@ -4459,24 +4515,19 @@ func (s *Server) getReadyRuntimeWorkspace(
 	id string,
 ) (*db.WorkspaceSummary, error) {
 	if s.workspaces == nil || s.runtime == nil {
-		return nil, huma.Error503ServiceUnavailable(
-			"workspace runtime not configured",
-		)
+		return nil, problemServiceUnavailable("workspace runtime not configured")
 	}
 
 	summary, err := s.workspaces.GetSummary(ctx, id)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(
-			"get workspace failed",
-		)
+		return nil, problemInternal("get workspace failed")
 	}
 	if summary == nil {
-		return nil, huma.Error404NotFound("workspace not found")
+		return nil, problemNotFound(CodeWorkspaceNotFound, "workspace not found", nil)
 	}
 	if summary.Status != "ready" {
-		return nil, huma.Error409Conflict(
-			"workspace not ready (status: " + summary.Status + ")",
-		)
+		return nil, problemConflict(CodeConflict,
+			"workspace not ready (status: "+summary.Status+")", nil)
 	}
 	return summary, nil
 }
@@ -4484,13 +4535,13 @@ func (s *Server) getReadyRuntimeWorkspace(
 func workspaceRuntimeLaunchError(err error) error {
 	msg := err.Error()
 	if strings.Contains(msg, "target not found") {
-		return huma.Error404NotFound(msg)
+		return problemNotFound(CodeNotFound, msg, nil)
 	}
 	if strings.Contains(msg, "not available") ||
 		strings.Contains(msg, "no command") {
-		return huma.Error400BadRequest(msg)
+		return problemBadRequest(CodeBadRequest, msg, nil)
 	}
-	return huma.Error500InternalServerError("launch session: " + msg)
+	return problemInternal("launch session: " + msg)
 }
 
 // deleteWorkspace tears down a middleman-managed workspace.
@@ -4501,9 +4552,7 @@ func (s *Server) deleteWorkspace(
 	ctx context.Context, input *deleteWorkspaceInput,
 ) (*struct{}, error) {
 	if s.workspaces == nil {
-		return nil, huma.Error503ServiceUnavailable(
-			"workspace manager not configured",
-		)
+		return nil, problemServiceUnavailable("workspace manager not configured")
 	}
 
 	if s.runtime != nil {
@@ -4526,17 +4575,13 @@ func (s *Server) deleteWorkspace(
 	)
 	if err != nil {
 		if errors.Is(err, workspace.ErrWorkspaceNotFound) {
-			return nil, huma.Error404NotFound(err.Error())
+			return nil, problemNotFound(CodeWorkspaceNotFound, err.Error(), nil)
 		}
-		return nil, huma.Error500InternalServerError(
-			"delete workspace: " + err.Error(),
-		)
+		return nil, problemInternal("delete workspace: " + err.Error())
 	}
 	if len(dirty) > 0 {
-		return nil, huma.Error409Conflict(
-			"workspace has uncommitted changes: " +
-				strings.Join(dirty, ", "),
-		)
+		return nil, problemConflict(CodeConflict,
+			"workspace has uncommitted changes: "+strings.Join(dirty, ", "), nil)
 	}
 
 	return nil, nil

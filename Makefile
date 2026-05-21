@@ -119,7 +119,7 @@ guardrail-check: frontend-api-client-check font-size-token-check huma-route-chec
 api-generate:
 	GOCACHE="$${GOCACHE:-/tmp/middleman-gocache}" go run ./cmd/middleman-openapi -out frontend/openapi/openapi.yaml
 	GOCACHE="$${GOCACHE:-/tmp/middleman-gocache}" go run ./cmd/middleman-openapi -out internal/apiclient/spec/openapi.json -version 3.0
-	cd packages/ui && bunx openapi-typescript ../../frontend/openapi/openapi.yaml -o src/api/generated/schema.ts
+	cd packages/ui && bunx openapi-typescript ../../frontend/openapi/openapi.yaml --enum-values -o src/api/generated/schema.ts
 	printf '%s\n' \
 		'/**' \
 		' * This file was auto-generated from frontend/openapi/openapi.yaml.' \

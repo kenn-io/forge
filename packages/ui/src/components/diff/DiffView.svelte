@@ -63,7 +63,9 @@
     if (!diffArea) return false;
     const el = diffArea.querySelector(`[data-file-path="${CSS.escape(path)}"]`);
     if (el) {
-      el.scrollIntoView({ behavior: "instant", block: "start" });
+      const areaRect = diffArea.getBoundingClientRect();
+      const elRect = el.getBoundingClientRect();
+      diffArea.scrollTop += elRect.top - areaRect.top;
     } else {
       return false;
     }

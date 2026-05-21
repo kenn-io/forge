@@ -10,6 +10,7 @@
     "./api/types": { "default": "./src/api/types.ts" },
     "./api/client": { "default": "./src/api/generated/client.ts" },
     "./api/schema": { "default": "./src/api/generated/schema.ts" },
+    "./api/problems": { "default": "./src/api/problems.ts" },
     "./api/provider-capabilities": { "default": "./src/api/provider-capabilities.ts" },
     "./api/provider-routes": { "default": "./src/api/provider-routes.ts" },
     "./utils/time": { "default": "./src/utils/time.ts" },

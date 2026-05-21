@@ -107,7 +107,7 @@ generate_api_artifacts() {
     tmp_schema="$(mktemp "$state_dir/frontend-schema.XXXXXX")"
     (
       cd frontend
-      "$BUN_BIN" x openapi-typescript openapi/openapi.yaml -o "../$tmp_schema"
+      "$BUN_BIN" x openapi-typescript openapi/openapi.yaml --enum-values -o "../$tmp_schema"
     )
     write_if_changed "$frontend_schema" "$tmp_schema" >/dev/null 2>&1 || true
     generate_frontend_client

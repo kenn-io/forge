@@ -1583,6 +1583,7 @@ endpoint = "http://custom:9999"
 
 func TestTerminalConfigRoundTrip(t *testing.T) {
 	assert := Assert.New(t)
+	require := require.New(t)
 	path := writeConfig(t, `
 [[repos]]
 owner = "a"
@@ -1590,32 +1591,61 @@ name = "b"
 
 [terminal]
 font_family = '  "Iosevka Term", monospace  '
+font_size = 16
+scrollback = 5000
+line_height = 1.2
+letter_spacing = 1
+cursor_blink = false
+font_ligatures = true
 renderer = "ghostty-web"
 `)
 	cfg, err := Load(path)
-	require.NoError(t, err)
+	require.NoError(err)
 	assert.Equal("\"Iosevka Term\", monospace", cfg.Terminal.FontFamily)
+	assert.Equal(16, cfg.Terminal.FontSize)
+	assert.Equal(5000, cfg.Terminal.Scrollback)
+	assert.InDelta(1.2, cfg.Terminal.LineHeight, 0.001)
+	assert.Equal(1, cfg.Terminal.LetterSpacing)
+	require.NotNil(cfg.Terminal.CursorBlink)
+	assert.False(*cfg.Terminal.CursorBlink)
+	assert.True(cfg.Terminal.FontLigatures)
 	assert.Equal("ghostty-web", cfg.Terminal.Renderer)
 
 	savePath := filepath.Join(t.TempDir(), "saved.toml")
-	require.NoError(t, cfg.Save(savePath))
+	require.NoError(cfg.Save(savePath))
 
 	cfg2, err := Load(savePath)
-	require.NoError(t, err)
+	require.NoError(err)
 	assert.Equal("\"Iosevka Term\", monospace", cfg2.Terminal.FontFamily)
+	assert.Equal(16, cfg2.Terminal.FontSize)
+	assert.Equal(5000, cfg2.Terminal.Scrollback)
+	assert.InDelta(1.2, cfg2.Terminal.LineHeight, 0.001)
+	assert.Equal(1, cfg2.Terminal.LetterSpacing)
+	require.NotNil(cfg2.Terminal.CursorBlink)
+	assert.False(*cfg2.Terminal.CursorBlink)
+	assert.True(cfg2.Terminal.FontLigatures)
 	assert.Equal("ghostty-web", cfg2.Terminal.Renderer)
 }
 
 func TestTerminalRendererDefaultsToXterm(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
 	path := writeConfig(t, `
 [[repos]]
 owner = "a"
 name = "b"
 `)
 	cfg, err := Load(path)
-	require.NoError(t, err)
+	require.NoError(err)
 
-	Assert.Equal(t, "xterm", cfg.Terminal.Renderer)
+	assert.Equal("xterm", cfg.Terminal.Renderer)
+	assert.Equal(14, cfg.Terminal.FontSize)
+	assert.Equal(1000, cfg.Terminal.Scrollback)
+	assert.InDelta(1.0, cfg.Terminal.LineHeight, 0.001)
+	assert.Equal(0, cfg.Terminal.LetterSpacing)
+	require.NotNil(cfg.Terminal.CursorBlink)
+	assert.True(*cfg.Terminal.CursorBlink)
+	assert.False(cfg.Terminal.FontLigatures)
 }
 
 func TestIssueWorkspaceBranchStyleDefaultsToSlug(t *testing.T) {

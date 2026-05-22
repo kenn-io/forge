@@ -3,6 +3,7 @@
   import { getStores } from "@middleman/ui";
   import { Terminal } from "@xterm/xterm";
   import { FitAddon } from "@xterm/addon-fit";
+  import { LigaturesAddon } from "@xterm/addon-ligatures/lib/addon-ligatures.mjs";
   import { WebglAddon } from "@xterm/addon-webgl";
   import "@xterm/xterm/css/xterm.css";
   import { workspaceTmuxWebSocketPath } from "../../api/workspace-runtime.js";
@@ -36,6 +37,8 @@
   let containerEl: HTMLDivElement;
   let terminal: Terminal | null = $state(null);
   let fitAddon: FitAddon | null = null;
+  let ligaturesAddon: LigaturesAddon | null = null;
+  let webglAddon: WebglAddon | null = null;
   let ws: WebSocket | null = null;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let restartTimer: ReturnType<typeof setTimeout> | null = null;
@@ -44,6 +47,12 @@
   let refreshFrame: number | null = null;
   let resizeFrame: number | null = null;
   let appliedTerminalFontFamily = "";
+  let appliedFontSize = 0;
+  let appliedScrollback = 0;
+  let appliedLineHeight = 0;
+  let appliedLetterSpacing = 0;
+  let appliedCursorBlink = true;
+  let appliedFontLigatures = false;
   let disposed = false;
   let exited = false;
   const encoder = new TextEncoder();
@@ -68,6 +77,18 @@
       .trim();
     return buildTerminalFontFamily(configured, defaultTerminalFontFamily());
   });
+  const terminalFontSize = $derived(settingsStore.getTerminalFontSize());
+  const terminalScrollback = $derived(settingsStore.getTerminalScrollback());
+  const terminalLineHeight = $derived(settingsStore.getTerminalLineHeight());
+  const terminalLetterSpacing = $derived(
+    settingsStore.getTerminalLetterSpacing(),
+  );
+  const terminalCursorBlink = $derived(
+    settingsStore.getTerminalCursorBlink(),
+  );
+  const terminalFontLigatures = $derived(
+    settingsStore.getTerminalFontLigatures(),
+  );
 
   function defaultWebsocketPath(): string {
     if (!workspaceId) return "";
@@ -162,6 +183,36 @@
 
     terminal.clearTextureAtlas();
     terminal.refresh(0, Math.max(0, terminal.rows - 1));
+  }
+
+  function recreateWebglAddon(): void {
+    if (!terminal) return;
+    webglAddon?.dispose();
+    webglAddon = null;
+    try {
+      const wgl = new WebglAddon();
+      wgl.onContextLoss(() => {
+        wgl.dispose();
+        if (webglAddon === wgl) webglAddon = null;
+        scheduleTerminalResize();
+      });
+      terminal.loadAddon(wgl);
+      webglAddon = wgl;
+      scheduleTerminalResize();
+    } catch {
+      // WebGL unavailable; canvas renderer used as fallback.
+    }
+  }
+
+  function syncLigaturesAddon(): void {
+    if (!terminal) return;
+    ligaturesAddon?.dispose();
+    ligaturesAddon = null;
+    if (terminalFontLigatures) {
+      ligaturesAddon = new LigaturesAddon();
+      terminal.loadAddon(ligaturesAddon);
+    }
+    recreateWebglAddon();
   }
 
   function scheduleTerminalRefresh(): void {
@@ -310,6 +361,10 @@
       ws = null;
     }
     if (terminal) {
+      ligaturesAddon?.dispose();
+      ligaturesAddon = null;
+      webglAddon?.dispose();
+      webglAddon = null;
       terminal.dispose();
       terminal = null;
     }
@@ -317,9 +372,32 @@
 
   $effect(() => {
     if (!terminal) return;
-    if (terminalFontFamily === appliedTerminalFontFamily) return;
+    if (
+      terminalFontFamily === appliedTerminalFontFamily &&
+      terminalFontSize === appliedFontSize &&
+      terminalScrollback === appliedScrollback &&
+      terminalLineHeight === appliedLineHeight &&
+      terminalLetterSpacing === appliedLetterSpacing &&
+      terminalCursorBlink === appliedCursorBlink &&
+      terminalFontLigatures === appliedFontLigatures
+    ) return;
+    const ligaturesChanged = terminalFontLigatures !== appliedFontLigatures;
     appliedTerminalFontFamily = terminalFontFamily;
+    appliedFontSize = terminalFontSize;
+    appliedScrollback = terminalScrollback;
+    appliedLineHeight = terminalLineHeight;
+    appliedLetterSpacing = terminalLetterSpacing;
+    appliedCursorBlink = terminalCursorBlink;
+    appliedFontLigatures = terminalFontLigatures;
     terminal.options.fontFamily = terminalFontFamily;
+    terminal.options.fontSize = terminalFontSize;
+    terminal.options.scrollback = terminalScrollback;
+    terminal.options.lineHeight = terminalLineHeight;
+    terminal.options.letterSpacing = terminalLetterSpacing;
+    terminal.options.cursorBlink = terminalCursorBlink;
+    if (ligaturesChanged) {
+      syncLigaturesAddon();
+    }
     redrawTerminalTextureAtlas();
     fitAddon?.fit();
   });
@@ -344,12 +422,13 @@
         },
         allowTransparency: false,
         customGlyphs: true,
-        cursorBlink: true,
+        cursorBlink: terminalCursorBlink,
         drawBoldTextInBrightColors: true,
         fontFamily: terminalFontFamily,
-        fontSize: 14,
-        letterSpacing: 0,
-        lineHeight: 1,
+        fontSize: terminalFontSize,
+        scrollback: terminalScrollback,
+        letterSpacing: terminalLetterSpacing,
+        lineHeight: terminalLineHeight,
         minimumContrastRatio: TERMINAL_MINIMUM_CONTRAST_RATIO,
         rescaleOverlappingGlyphs: true,
         scrollOnEraseInDisplay: true,
@@ -363,19 +442,19 @@
       fitAddon = fit;
       term.loadAddon(fit);
 
-      try {
-        const wgl = new WebglAddon();
-        wgl.onContextLoss(() => {
-          wgl.dispose();
-          scheduleTerminalResize();
-        });
-        term.loadAddon(wgl);
-        scheduleTerminalResize();
-      } catch {
-        // WebGL unavailable; canvas renderer used as fallback.
+      if (terminalFontLigatures) {
+        ligaturesAddon = new LigaturesAddon();
+        term.loadAddon(ligaturesAddon);
       }
+      recreateWebglAddon();
 
       appliedTerminalFontFamily = terminalFontFamily;
+      appliedFontSize = terminalFontSize;
+      appliedScrollback = terminalScrollback;
+      appliedLineHeight = terminalLineHeight;
+      appliedLetterSpacing = terminalLetterSpacing;
+      appliedCursorBlink = terminalCursorBlink;
+      appliedFontLigatures = terminalFontLigatures;
       fit.fit();
 
       term.onData((data: string) => {

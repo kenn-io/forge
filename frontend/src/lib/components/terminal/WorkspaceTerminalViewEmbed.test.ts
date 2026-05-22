@@ -10,20 +10,8 @@
 // props themselves. Mocking the api/runtime module here avoids the
 // captured-fetch problem entirely.
 
-import {
-  cleanup,
-  render,
-  screen,
-  waitFor,
-} from "@testing-library/svelte";
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vitest";
+import { cleanup, render, screen, waitFor } from "@testing-library/svelte";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   runtimeClient: {
@@ -82,7 +70,27 @@ vi.mock("@middleman/ui", async (importOriginal) => {
   return {
     ...actual,
     getStores: () => ({
-      settings: { getTerminalFontFamily: () => "" },
+      settings: {
+        getTerminalSettings: () => ({
+          font_family: "",
+          font_size: 14,
+          scrollback: 1000,
+          line_height: 1,
+          letter_spacing: 0,
+          cursor_blink: true,
+          font_ligatures: false,
+          renderer: "xterm",
+        }),
+        setTerminalSettings: vi.fn(),
+        getTerminalFontFamily: () => "",
+        getTerminalFontSize: () => 14,
+        getTerminalScrollback: () => 1000,
+        getTerminalLineHeight: () => 1,
+        getTerminalLetterSpacing: () => 0,
+        getTerminalCursorBlink: () => true,
+        getTerminalFontLigatures: () => false,
+        getTerminalRenderer: () => "xterm",
+      },
     }),
   };
 });
@@ -128,13 +136,10 @@ describe("WorkspaceTerminalView embed props", () => {
         disconnect(): void {}
       },
     );
-    vi.stubGlobal(
-      "requestAnimationFrame",
-      (callback: FrameRequestCallback) => {
-        callback(0);
-        return 1;
-      },
-    );
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    });
   });
 
   afterEach(() => {
@@ -154,9 +159,9 @@ describe("WorkspaceTerminalView embed props", () => {
     // workspace payload resolves; this confirms the component reached
     // steady state rather than failing the load early.
     await waitFor(() =>
-      expect(
-        screen.getAllByText("feature/embed-props").length,
-      ).toBeGreaterThan(0),
+      expect(screen.getAllByText("feature/embed-props").length).toBeGreaterThan(
+        0,
+      ),
     );
 
     // The workspace-list column header reads "Workspaces"; with
@@ -171,9 +176,9 @@ describe("WorkspaceTerminalView embed props", () => {
     });
 
     await waitFor(() =>
-      expect(
-        screen.getAllByText("feature/embed-props").length,
-      ).toBeGreaterThan(0),
+      expect(screen.getAllByText("feature/embed-props").length).toBeGreaterThan(
+        0,
+      ),
     );
 
     expect(screen.queryByText("Workspaces")).not.toBeNull();
@@ -189,15 +194,13 @@ describe("WorkspaceTerminalView embed props", () => {
     });
 
     await waitFor(() =>
-      expect(
-        screen.getAllByText("feature/embed-props").length,
-      ).toBeGreaterThan(0),
+      expect(screen.getAllByText("feature/embed-props").length).toBeGreaterThan(
+        0,
+      ),
     );
 
     expect(screen.queryByRole("button", { name: "PR" })).toBeNull();
-    expect(
-      screen.queryByRole("button", { name: "Reviews" }),
-    ).toBeNull();
+    expect(screen.queryByRole("button", { name: "Reviews" })).toBeNull();
   });
 
   it("renders the PR/Reviews segmented control by default", async () => {
@@ -206,14 +209,12 @@ describe("WorkspaceTerminalView embed props", () => {
     });
 
     await waitFor(() =>
-      expect(
-        screen.getAllByText("feature/embed-props").length,
-      ).toBeGreaterThan(0),
+      expect(screen.getAllByText("feature/embed-props").length).toBeGreaterThan(
+        0,
+      ),
     );
 
     expect(screen.getByRole("button", { name: "PR" })).toBeTruthy();
-    expect(
-      screen.getByRole("button", { name: "Reviews" }),
-    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Reviews" })).toBeTruthy();
   });
 });

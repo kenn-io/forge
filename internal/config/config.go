@@ -482,11 +482,24 @@ type Activity struct {
 const (
 	TerminalRendererXterm   = "xterm"
 	TerminalRendererGhostty = "ghostty-web"
+
+	DefaultTerminalFontSize      = 14
+	DefaultTerminalScrollback    = 1000
+	DefaultTerminalLineHeight    = 1.0
+	DefaultTerminalLetterSpacing = 0
+	DefaultTerminalCursorBlink   = true
+	DefaultTerminalFontLigatures = false
 )
 
 type Terminal struct {
-	FontFamily string `toml:"font_family,omitempty" json:"font_family"`
-	Renderer   string `toml:"renderer,omitempty" json:"renderer"`
+	FontFamily    string  `toml:"font_family,omitempty" json:"font_family"`
+	FontSize      int     `toml:"font_size,omitempty" json:"font_size"`
+	Scrollback    int     `toml:"scrollback,omitempty" json:"scrollback"`
+	LineHeight    float64 `toml:"line_height,omitempty" json:"line_height"`
+	LetterSpacing int     `toml:"letter_spacing,omitempty" json:"letter_spacing"`
+	CursorBlink   *bool   `toml:"cursor_blink,omitempty" json:"cursor_blink"`
+	FontLigatures bool    `toml:"font_ligatures,omitempty" json:"font_ligatures"`
+	Renderer      string  `toml:"renderer,omitempty" json:"renderer"`
 }
 
 type Agent struct {
@@ -890,6 +903,43 @@ func (c *Config) Validate() error {
 	}
 
 	c.Terminal.FontFamily = strings.TrimSpace(c.Terminal.FontFamily)
+	if c.Terminal.FontSize == 0 {
+		c.Terminal.FontSize = DefaultTerminalFontSize
+	}
+	if c.Terminal.FontSize < 8 || c.Terminal.FontSize > 32 {
+		return fmt.Errorf(
+			"config: invalid terminal.font_size %d: must be between 8 and 32",
+			c.Terminal.FontSize,
+		)
+	}
+	if c.Terminal.Scrollback == 0 {
+		c.Terminal.Scrollback = DefaultTerminalScrollback
+	}
+	if c.Terminal.Scrollback < 100 || c.Terminal.Scrollback > 100000 {
+		return fmt.Errorf(
+			"config: invalid terminal.scrollback %d: must be between 100 and 100000",
+			c.Terminal.Scrollback,
+		)
+	}
+	if c.Terminal.LineHeight == 0 {
+		c.Terminal.LineHeight = DefaultTerminalLineHeight
+	}
+	if c.Terminal.LineHeight < 0.8 || c.Terminal.LineHeight > 2 {
+		return fmt.Errorf(
+			"config: invalid terminal.line_height %.2f: must be between 0.8 and 2",
+			c.Terminal.LineHeight,
+		)
+	}
+	if c.Terminal.LetterSpacing < -2 || c.Terminal.LetterSpacing > 8 {
+		return fmt.Errorf(
+			"config: invalid terminal.letter_spacing %d: must be between -2 and 8",
+			c.Terminal.LetterSpacing,
+		)
+	}
+	if c.Terminal.CursorBlink == nil {
+		cursorBlink := DefaultTerminalCursorBlink
+		c.Terminal.CursorBlink = &cursorBlink
+	}
 	c.Terminal.Renderer = strings.TrimSpace(c.Terminal.Renderer)
 	if c.Terminal.Renderer == "" {
 		c.Terminal.Renderer = TerminalRendererXterm

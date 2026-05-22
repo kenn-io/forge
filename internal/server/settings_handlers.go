@@ -53,10 +53,7 @@ func (s *Server) buildLocalSettingsResponse() settingsResponse {
 	s.cfgMu.Lock()
 	repos := slices.Clone(s.cfg.Repos)
 	activity := s.cfg.Activity
-	terminal := s.cfg.Terminal
-	if terminal.Renderer == "" {
-		terminal.Renderer = config.TerminalRendererXterm
-	}
+	terminal := normalizeTerminalSettingsForResponse(s.cfg.Terminal)
 	agents := cloneConfigAgents(s.cfg.Agents)
 	s.cfgMu.Unlock()
 
@@ -81,6 +78,29 @@ func (s *Server) buildLocalSettingsResponse() settingsResponse {
 		Terminal: terminal,
 		Agents:   agents,
 	}
+}
+
+func normalizeTerminalSettingsForResponse(
+	terminal config.Terminal,
+) config.Terminal {
+	if terminal.FontSize == 0 {
+		terminal.FontSize = config.DefaultTerminalFontSize
+	}
+	if terminal.Scrollback == 0 {
+		terminal.Scrollback = config.DefaultTerminalScrollback
+	}
+	if terminal.LineHeight == 0 {
+		terminal.LineHeight = config.DefaultTerminalLineHeight
+	}
+	if terminal.CursorBlink == nil {
+		cursorBlink := config.DefaultTerminalCursorBlink
+		terminal.CursorBlink = &cursorBlink
+	}
+	terminal.Renderer = strings.TrimSpace(terminal.Renderer)
+	if terminal.Renderer == "" {
+		terminal.Renderer = config.TerminalRendererXterm
+	}
+	return terminal
 }
 
 func matchedRepoCount(

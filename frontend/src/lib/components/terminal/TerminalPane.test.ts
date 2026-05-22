@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
   ghosttyTerminalCtor,
+  ligaturesAddonCtor,
   mockGhosttyInit,
   mockWebglCtor,
   resizeObserverCallbacks,
@@ -13,6 +14,7 @@ const {
   xtermOpen,
 } = vi.hoisted(() => ({
   ghosttyTerminalCtor: vi.fn(),
+  ligaturesAddonCtor: vi.fn(),
   mockGhosttyInit: vi.fn().mockResolvedValue(undefined),
   mockWebglCtor: vi.fn(),
   resizeObserverCallbacks: [] as ResizeObserverCallback[],
@@ -30,6 +32,12 @@ const {
 
 let configuredRenderer: "xterm" | "ghostty-web" = "xterm";
 let configuredFontFamily = "";
+let configuredFontSize = 14;
+let configuredScrollback = 1000;
+let configuredLineHeight = 1;
+let configuredLetterSpacing = 0;
+let configuredCursorBlink = true;
+let configuredFontLigatures = false;
 let mockSockets: MockWebSocket[] = [];
 
 class MockWebSocket {
@@ -55,6 +63,12 @@ vi.mock("@middleman/ui", () => ({
   getStores: () => ({
     settings: {
       getTerminalFontFamily: () => configuredFontFamily,
+      getTerminalFontSize: () => configuredFontSize,
+      getTerminalScrollback: () => configuredScrollback,
+      getTerminalLineHeight: () => configuredLineHeight,
+      getTerminalLetterSpacing: () => configuredLetterSpacing,
+      getTerminalCursorBlink: () => configuredCursorBlink,
+      getTerminalFontLigatures: () => configuredFontLigatures,
       getTerminalRenderer: () => configuredRenderer,
     },
   }),
@@ -89,6 +103,13 @@ vi.mock("@xterm/addon-fit", () => ({
     const addon = { fit: vi.fn() };
     xtermFitAddons.push(addon);
     return addon;
+  }),
+}));
+
+vi.mock("@xterm/addon-ligatures/lib/addon-ligatures.mjs", () => ({
+  LigaturesAddon: vi.fn().mockImplementation(() => {
+    ligaturesAddonCtor();
+    return { dispose: vi.fn() };
   }),
 }));
 
@@ -130,7 +151,14 @@ describe("TerminalPane", () => {
   beforeEach(() => {
     configuredRenderer = "xterm";
     configuredFontFamily = "";
+    configuredFontSize = 14;
+    configuredScrollback = 1000;
+    configuredLineHeight = 1;
+    configuredLetterSpacing = 0;
+    configuredCursorBlink = true;
+    configuredFontLigatures = false;
     ghosttyTerminalCtor.mockReset();
+    ligaturesAddonCtor.mockReset();
     mockGhosttyInit.mockClear();
     mockWebglCtor.mockReset();
     resizeObserverCallbacks.length = 0;
@@ -141,21 +169,21 @@ describe("TerminalPane", () => {
     xtermOnDataHandlers.length = 0;
     mockSockets = [];
 
-    vi.stubGlobal("ResizeObserver", class {
-      constructor(callback: ResizeObserverCallback) {
-        resizeObserverCallbacks.push(callback);
-      }
-      observe(): void {}
-      disconnect(): void {}
-    });
-    vi.stubGlobal("WebSocket", MockWebSocket);
     vi.stubGlobal(
-      "requestAnimationFrame",
-      (callback: FrameRequestCallback) => {
-        callback(0);
-        return 1;
+      "ResizeObserver",
+      class {
+        constructor(callback: ResizeObserverCallback) {
+          resizeObserverCallbacks.push(callback);
+        }
+        observe(): void {}
+        disconnect(): void {}
       },
     );
+    vi.stubGlobal("WebSocket", MockWebSocket);
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    });
     vi.stubGlobal("cancelAnimationFrame", () => undefined);
   });
 
@@ -182,6 +210,11 @@ describe("TerminalPane", () => {
       expect.objectContaining({
         allowTransparency: false,
         customGlyphs: true,
+        cursorBlink: true,
+        fontSize: 14,
+        scrollback: 1000,
+        letterSpacing: 0,
+        lineHeight: 1,
         minimumContrastRatio: 4.5,
         rescaleOverlappingGlyphs: true,
         scrollOnEraseInDisplay: true,
@@ -189,6 +222,38 @@ describe("TerminalPane", () => {
       }),
     );
     expect(mockWebglCtor).toHaveBeenCalledWith(undefined);
+  });
+
+  it("uses configured terminal metrics for xterm.js", async () => {
+    configuredFontSize = 17;
+    configuredScrollback = 5000;
+    configuredLineHeight = 1.2;
+    configuredLetterSpacing = 1;
+    configuredCursorBlink = false;
+
+    render(TerminalPane, { props: { workspaceId: "ws-123" } });
+
+    await waitFor(() => expect(xtermTerminalCtor).toHaveBeenCalled());
+
+    expect(xtermTerminalCtor).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cursorBlink: false,
+        fontSize: 17,
+        scrollback: 5000,
+        lineHeight: 1.2,
+        letterSpacing: 1,
+      }),
+    );
+  });
+
+  it("loads the ligatures addon for xterm.js when enabled", async () => {
+    configuredFontLigatures = true;
+
+    render(TerminalPane, { props: { workspaceId: "ws-123" } });
+
+    await waitFor(() => expect(xtermTerminalCtor).toHaveBeenCalled());
+
+    expect(ligaturesAddonCtor).toHaveBeenCalledTimes(1);
   });
 
   it("does not rebuild the WebGL atlas during initial mount refresh", async () => {
@@ -239,7 +304,9 @@ describe("TerminalPane", () => {
 
     xtermOnDataHandlers[0]!("\x1b[<0;10;5M\x1b[<32;12;5M\x1b[<0;12;5m");
 
-    expect(sentText(mockSockets[0]!, mockSockets[0]!.sent.length - 1)).toBe("\x1b[<0;10;5M\x1b[<0;12;5m");
+    expect(sentText(mockSockets[0]!, mockSockets[0]!.sent.length - 1)).toBe(
+      "\x1b[<0;10;5M\x1b[<0;12;5m",
+    );
   });
 
   it("does not update drag filter state while disconnected", async () => {

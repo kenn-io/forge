@@ -23,10 +23,7 @@
     try {
       settings = await getSettings();
       settingsStore.setConfiguredRepos(settings.repos);
-      settingsStore.setTerminalFontFamily(
-        settings.terminal.font_family,
-      );
-      settingsStore.setTerminalRenderer(settings.terminal.renderer);
+      settingsStore.setTerminalSettings(settings.terminal);
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {
@@ -56,10 +53,7 @@
         terminal={settings.terminal}
         onUpdate={(terminal) => {
           settings = { ...settings!, terminal };
-          settingsStore.setTerminalFontFamily(
-            terminal.font_family,
-          );
-          settingsStore.setTerminalRenderer(terminal.renderer);
+          settingsStore.setTerminalSettings(terminal);
         }}
       />
     </SettingsSection>

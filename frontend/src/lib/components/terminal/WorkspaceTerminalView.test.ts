@@ -93,7 +93,24 @@ vi.mock("@middleman/ui", async (importOriginal) => {
     ...actual,
     getStores: () => ({
       settings: {
+        getTerminalSettings: () => ({
+          font_family: "",
+          font_size: 14,
+          scrollback: 1000,
+          line_height: 1,
+          letter_spacing: 0,
+          cursor_blink: true,
+          font_ligatures: false,
+          renderer: "ghostty-web",
+        }),
+        setTerminalSettings: vi.fn(),
         getTerminalFontFamily: () => "",
+        getTerminalFontSize: () => 14,
+        getTerminalScrollback: () => 1000,
+        getTerminalLineHeight: () => 1,
+        getTerminalLetterSpacing: () => 0,
+        getTerminalCursorBlink: () => true,
+        getTerminalFontLigatures: () => false,
         getTerminalRenderer: () => "ghostty-web",
       },
     }),
@@ -215,29 +232,34 @@ describe("WorkspaceTerminalView", () => {
           return Promise.resolve(Response.json(workspaceResponse));
         }
         if (pathname.endsWith("/api/v1/workspaces")) {
-          return Promise.resolve(Response.json({
-            workspaces: [workspaceResponse],
-          }));
+          return Promise.resolve(
+            Response.json({
+              workspaces: [workspaceResponse],
+            }),
+          );
         }
         return Promise.resolve(Response.json({}));
       }),
     );
-    vi.stubGlobal("EventSource", class {
-      addEventListener(): void {}
-      close(): void {}
-    });
-    vi.stubGlobal("ResizeObserver", class {
-      observe(): void {}
-      disconnect(): void {}
-    });
-    vi.stubGlobal("WebSocket", MockWebSocket);
     vi.stubGlobal(
-      "requestAnimationFrame",
-      (callback: FrameRequestCallback) => {
-        callback(0);
-        return 1;
+      "EventSource",
+      class {
+        addEventListener(): void {}
+        close(): void {}
       },
     );
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        observe(): void {}
+        disconnect(): void {}
+      },
+    );
+    vi.stubGlobal("WebSocket", MockWebSocket);
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    });
     vi.stubGlobal("cancelAnimationFrame", () => undefined);
   });
 
@@ -265,11 +287,12 @@ describe("WorkspaceTerminalView", () => {
     await waitFor(() =>
       expect(screen.queryByRole("tab", { name: /Helper/ })).toBeNull(),
     );
-    expect(screen.getByRole("tab", { name: /Home/ }).getAttribute(
-      "aria-selected",
-    )).toBe("true");
-    expect(localStorage.getItem("middleman-workspace-active-tab:ws-1"))
-      .toBe("home");
+    expect(
+      screen.getByRole("tab", { name: /Home/ }).getAttribute("aria-selected"),
+    ).toBe("true");
+    expect(localStorage.getItem("middleman-workspace-active-tab:ws-1")).toBe(
+      "home",
+    );
   });
 
   it("shows a relaunched agent with the same key and a new generation", async () => {
@@ -324,9 +347,11 @@ describe("WorkspaceTerminalView", () => {
     );
 
     await waitFor(() =>
-      expect(screen.getByRole("button", {
-        name: "Open shell drawer",
-      })).toBeTruthy(),
+      expect(
+        screen.getByRole("button", {
+          name: "Open shell drawer",
+        }),
+      ).toBeTruthy(),
     );
   });
 
@@ -353,9 +378,11 @@ describe("WorkspaceTerminalView", () => {
       }),
     );
     await waitFor(() =>
-      expect(screen.getByRole("button", {
-        name: "Open shell drawer",
-      })).toBeTruthy(),
+      expect(
+        screen.getByRole("button", {
+          name: "Open shell drawer",
+        }),
+      ).toBeTruthy(),
     );
 
     await fireEvent.click(shellButton);
@@ -369,9 +396,8 @@ describe("WorkspaceTerminalView", () => {
   it("ignores older runtime responses after shell cleanup refreshes", async () => {
     localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
     const staleRefresh = deferred<ReturnType<typeof runtimeWithShellSession>>();
-    const freshRefresh = deferred<
-      ReturnType<typeof runtimeWithoutShellSession>
-    >();
+    const freshRefresh =
+      deferred<ReturnType<typeof runtimeWithoutShellSession>>();
     mocks.getWorkspaceRuntime
       .mockResolvedValueOnce(runtimeWithShellSession())
       .mockResolvedValueOnce(runtimeWithShellSession())
@@ -397,9 +423,11 @@ describe("WorkspaceTerminalView", () => {
       }),
     );
     await waitFor(() =>
-      expect(screen.getByRole("button", {
-        name: "Open shell drawer",
-      })).toBeTruthy(),
+      expect(
+        screen.getByRole("button", {
+          name: "Open shell drawer",
+        }),
+      ).toBeTruthy(),
     );
 
     await fireEvent.click(shellButton);

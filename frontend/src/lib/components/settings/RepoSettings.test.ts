@@ -1,4 +1,10 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const mockRefreshSyncStatus = vi.fn();
@@ -46,20 +52,26 @@ describe("RepoSettings", () => {
   it("renders the glob count and refresh action", () => {
     render(RepoSettings, {
       props: {
-        repos: [{
-          provider: "github",
-          platform_host: "github.com",
-          owner: "roborev-dev",
-          name: "*",
-          repo_path: "roborev-dev/*",
-          is_glob: true,
-          matched_repo_count: 2,
-        }],
+        repos: [
+          {
+            provider: "github",
+            platform_host: "github.com",
+            owner: "roborev-dev",
+            name: "*",
+            repo_path: "roborev-dev/*",
+            is_glob: true,
+            matched_repo_count: 2,
+          },
+        ],
         onUpdate: vi.fn(),
       },
     });
 
-    expect(screen.getByText((_, element) => element?.textContent === "roborev-dev/* (2)")).toBeTruthy();
+    expect(
+      screen.getByText(
+        (_, element) => element?.textContent === "roborev-dev/* (2)",
+      ),
+    ).toBeTruthy();
     expect(screen.getByRole("button", { name: "Refresh" })).toBeTruthy();
   });
 
@@ -135,7 +147,9 @@ describe("RepoSettings", () => {
     const trigger = screen.getByRole("button", { name: "Add repositories…" });
     await fireEvent.click(trigger);
 
-    expect(screen.getByRole("dialog", { name: "Add repositories" })).toBeTruthy();
+    expect(
+      screen.getByRole("dialog", { name: "Add repositories" }),
+    ).toBeTruthy();
     expect(screen.getByLabelText("Repository pattern")).toBeTruthy();
 
     await fireEvent.click(screen.getByRole("button", { name: "Close" }));
@@ -150,7 +164,9 @@ describe("RepoSettings", () => {
       },
     });
 
-    const summary = screen.getByText("Advanced: add provider-scoped repo or tracking glob directly");
+    const summary = screen.getByText(
+      "Advanced: add provider-scoped repo or tracking glob directly",
+    );
     expect(summary).toBeTruthy();
     expect(summary.closest("details")?.hasAttribute("open")).toBe(false);
   });
@@ -164,7 +180,16 @@ describe("RepoSettings", () => {
         hide_closed: false,
         hide_bots: false,
       },
-      terminal: { font_family: "", renderer: "xterm" },
+      terminal: {
+        font_family: "",
+        font_size: 14,
+        scrollback: 1000,
+        line_height: 1,
+        letter_spacing: 0,
+        cursor_blink: true,
+        font_ligatures: false,
+        renderer: "xterm",
+      },
       agents: [],
     });
     mockRefreshRepo.mockResolvedValue({
@@ -175,21 +200,32 @@ describe("RepoSettings", () => {
         hide_closed: false,
         hide_bots: false,
       },
-      terminal: { font_family: "", renderer: "xterm" },
+      terminal: {
+        font_family: "",
+        font_size: 14,
+        scrollback: 1000,
+        line_height: 1,
+        letter_spacing: 0,
+        cursor_blink: true,
+        font_ligatures: false,
+        renderer: "xterm",
+      },
       agents: [],
     });
 
     render(RepoSettings, {
       props: {
-        repos: [{
-          provider: "github",
-          platform_host: "github.com",
-          owner: "acme",
-          name: "*",
-          repo_path: "acme/*",
-          is_glob: true,
-          matched_repo_count: 1,
-        }],
+        repos: [
+          {
+            provider: "github",
+            platform_host: "github.com",
+            owner: "acme",
+            name: "*",
+            repo_path: "acme/*",
+            is_glob: true,
+            matched_repo_count: 1,
+          },
+        ],
         onUpdate: vi.fn(),
       },
     });
@@ -209,33 +245,37 @@ describe("RepoSettings", () => {
   });
 
   it("updates repos and refreshes sync status after import", async () => {
-    const importedRepos = [{
-      provider: "github",
-      platform_host: "github.com",
-      owner: "acme",
-      name: "api",
-      repo_path: "acme/api",
-      is_glob: false,
-      matched_repo_count: 1,
-    }];
+    const importedRepos = [
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "api",
+        repo_path: "acme/api",
+        is_glob: false,
+        matched_repo_count: 1,
+      },
+    ];
     const onUpdate = vi.fn();
     mockPreviewRepos.mockResolvedValue({
       provider: "github",
       platform_host: "github.com",
       owner: "acme",
       pattern: "*",
-      repos: [{
-        provider: "github",
-        platform_host: "github.com",
-        owner: "acme",
-        name: "api",
-        repo_path: "acme/api",
-        description: "HTTP API",
-        private: false,
-        fork: false,
-        pushed_at: null,
-        already_configured: false,
-      }],
+      repos: [
+        {
+          provider: "github",
+          platform_host: "github.com",
+          owner: "acme",
+          name: "api",
+          repo_path: "acme/api",
+          description: "HTTP API",
+          private: false,
+          fork: false,
+          pushed_at: null,
+          already_configured: false,
+        },
+      ],
     });
     mockBulkAddRepos.mockResolvedValue({
       repos: importedRepos,
@@ -245,7 +285,16 @@ describe("RepoSettings", () => {
         hide_closed: false,
         hide_bots: false,
       },
-      terminal: { font_family: "", renderer: "xterm" },
+      terminal: {
+        font_family: "",
+        font_size: 14,
+        scrollback: 1000,
+        line_height: 1,
+        letter_spacing: 0,
+        cursor_blink: true,
+        font_ligatures: false,
+        renderer: "xterm",
+      },
       agents: [],
     });
     render(RepoSettings, {
@@ -255,11 +304,17 @@ describe("RepoSettings", () => {
       },
     });
 
-    await fireEvent.click(screen.getByRole("button", { name: "Add repositories…" }));
-    await fireEvent.input(screen.getByLabelText("Repository pattern"), { target: { value: "acme/*" } });
+    await fireEvent.click(
+      screen.getByRole("button", { name: "Add repositories…" }),
+    );
+    await fireEvent.input(screen.getByLabelText("Repository pattern"), {
+      target: { value: "acme/*" },
+    });
     await fireEvent.click(screen.getByRole("button", { name: "Preview" }));
     await screen.findByText("acme/api");
-    await fireEvent.click(screen.getByRole("button", { name: "Add selected repositories" }));
+    await fireEvent.click(
+      screen.getByRole("button", { name: "Add selected repositories" }),
+    );
 
     await waitFor(() => expect(onUpdate).toHaveBeenCalledWith(importedRepos));
     expect(mockRefreshSyncStatus).toHaveBeenCalled();

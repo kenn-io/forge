@@ -12,6 +12,9 @@ const terminalCtor = vi.fn();
 const terminalWrite = vi.fn();
 
 let configuredFontFamily = "";
+let configuredFontSize = 14;
+let configuredScrollback = 1000;
+let configuredCursorBlink = true;
 let sockets: MockWebSocket[] = [];
 
 class MockWebSocket {
@@ -44,6 +47,9 @@ vi.mock("@middleman/ui", () => ({
   getStores: () => ({
     settings: {
       getTerminalFontFamily: () => configuredFontFamily,
+      getTerminalFontSize: () => configuredFontSize,
+      getTerminalScrollback: () => configuredScrollback,
+      getTerminalCursorBlink: () => configuredCursorBlink,
     },
   }),
 }));
@@ -73,6 +79,9 @@ import GhosttyTerminalPane from "./GhosttyTerminalPane.svelte";
 describe("GhosttyTerminalPane", () => {
   beforeEach(() => {
     configuredFontFamily = "";
+    configuredFontSize = 14;
+    configuredScrollback = 1000;
+    configuredCursorBlink = true;
     delete window.__BASE_PATH__;
     window.__MIDDLEMAN_DEV_API_URL__ = "http://127.0.0.1:8091";
     terminalCtor.mockReset();
@@ -85,19 +94,19 @@ describe("GhosttyTerminalPane", () => {
     terminalWrite.mockReset();
     sockets = [];
 
-    vi.stubGlobal("ResizeObserver", class {
-      observe(): void {}
-      disconnect(): void {}
-    });
-
-    vi.stubGlobal("WebSocket", MockWebSocket);
     vi.stubGlobal(
-      "requestAnimationFrame",
-      (callback: FrameRequestCallback) => {
-        callback(0);
-        return 1;
+      "ResizeObserver",
+      class {
+        observe(): void {}
+        disconnect(): void {}
       },
     );
+
+    vi.stubGlobal("WebSocket", MockWebSocket);
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    });
     vi.stubGlobal("cancelAnimationFrame", () => undefined);
   });
 
@@ -115,13 +124,19 @@ describe("GhosttyTerminalPane", () => {
   }
 
   it("uses the configured settings font family for ghostty-web", async () => {
-    configuredFontFamily = "\"Fira Code\", monospace";
+    configuredFontFamily = '"Fira Code", monospace';
+    configuredFontSize = 16;
+    configuredScrollback = 5000;
+    configuredCursorBlink = false;
 
     await renderStarted({ workspaceId: "ws-123" });
 
     expect(terminalCtor).toHaveBeenCalledWith(
       expect.objectContaining({
-        fontFamily: "\"Fira Code\", monospace",
+        cursorBlink: false,
+        fontFamily: '"Fira Code", monospace',
+        fontSize: 16,
+        scrollback: 5000,
       }),
     );
   });
@@ -154,9 +169,7 @@ describe("GhosttyTerminalPane", () => {
     expect(sockets).toHaveLength(1);
     const url = new URL(socketAt(0).url);
     expect(url.origin).toBe("ws://localhost:3000");
-    expect(url.pathname).toBe(
-      "/middleman/ws/v1/workspaces/ws-123/terminal",
-    );
+    expect(url.pathname).toBe("/middleman/ws/v1/workspaces/ws-123/terminal");
   });
 
   it("connects to an explicit websocket path", async () => {

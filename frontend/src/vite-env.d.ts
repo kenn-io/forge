@@ -1,5 +1,9 @@
 /// <reference types="vite/client" />
 
+declare module "@xterm/addon-ligatures/lib/addon-ligatures.mjs" {
+  export { LigaturesAddon } from "@xterm/addon-ligatures";
+}
+
 interface MiddlemanConfig {
   theme?: {
     mode?: "light" | "dark" | "system";
@@ -125,11 +129,7 @@ interface ToolingStatus {
 interface WorkspaceHost {
   key: string;
   label: string;
-  connectionState:
-    | "connected"
-    | "connecting"
-    | "disconnected"
-    | "error";
+  connectionState: "connected" | "connecting" | "disconnected" | "error";
   transport?: "ssh" | "local";
   platform?: string;
   projects: WorkspaceProject[];
@@ -216,7 +216,14 @@ interface WorkspaceDetailContext {
 }
 
 interface MiddlemanNavigateEvent {
-  type: "pull" | "issue" | "activity" | "repos" | "board" | "reviews" | "workspaces";
+  type:
+    | "pull"
+    | "issue"
+    | "activity"
+    | "repos"
+    | "board"
+    | "reviews"
+    | "workspaces";
   owner?: string;
   name?: string;
   number?: number;
@@ -238,12 +245,10 @@ interface Window {
   __middleman_set_repo_filter?: (
     repo: { owner: string; name: string } | null,
   ) => void;
-  __middleman_update_selection?: (
-    selection: {
-      hostKey?: string | null;
-      worktreeKey?: string | null;
-    },
-  ) => void;
+  __middleman_update_selection?: (selection: {
+    hostKey?: string | null;
+    worktreeKey?: string | null;
+  }) => void;
   __middleman_update_host_state?: (
     hostKey: string,
     patch: {

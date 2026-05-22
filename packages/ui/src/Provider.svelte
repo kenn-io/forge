@@ -70,7 +70,11 @@
   import {
     createEventsStore,
   } from "./stores/events.svelte.js";
-  import type { ActivitySettings, ConfigRepo } from "./api/types.js";
+  import type {
+    ActivitySettings,
+    ConfigRepo,
+    TerminalSettingsInput,
+  } from "./api/types.js";
 
   interface Props {
     client: MiddlemanClient;
@@ -198,13 +202,10 @@
     function hydrateSettings(
       repos: ConfigRepo[],
       activity: ActivitySettings,
-      terminal: { font_family: string; renderer: string },
+      terminal: TerminalSettingsInput,
     ): void {
       settingsStore.setConfiguredRepos(repos);
-      settingsStore.setTerminalFontFamily(terminal.font_family);
-      settingsStore.setTerminalRenderer(
-        terminal.renderer === "ghostty-web" ? "ghostty-web" : "xterm",
-      );
+      settingsStore.setTerminalSettings(terminal);
       activityStore.hydrateDefaults(activity);
     }
 

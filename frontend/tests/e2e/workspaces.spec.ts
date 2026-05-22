@@ -6,14 +6,18 @@ test.beforeEach(async ({ page }) => {
   await mockApi(page);
 });
 
-test("workspaces route renders the terminal workspace list shell", async ({ page }) => {
+test("workspaces route renders the terminal workspace list shell", async ({
+  page,
+}) => {
   await page.goto("/workspaces");
   await expect(
     page.getByText("Select a workspace from the sidebar"),
   ).toBeVisible();
 });
 
-test("workspaces sidebar collapses and expands through the shared control", async ({ page }) => {
+test("workspaces sidebar collapses and expands through the shared control", async ({
+  page,
+}) => {
   await page.goto("/workspaces");
 
   const sidebar = page.locator(".sidebar").first();
@@ -24,54 +28,45 @@ test("workspaces sidebar collapses and expands through the shared control", asyn
     .click();
   await expect(sidebar).toHaveClass(/sidebar--collapsed/);
 
-  await sidebar
-    .getByRole("button", { name: "Expand sidebar" })
-    .click();
+  await sidebar.getByRole("button", { name: "Expand sidebar" }).click();
   await expect(sidebar).not.toHaveClass(/sidebar--collapsed/);
 });
 
 test("AppHeader workspaces tab navigates to /workspaces", async ({ page }) => {
   await page.goto("/pulls");
-  await page
-    .getByRole("button", { name: "Workspaces" })
-    .click();
+  await page.getByRole("button", { name: "Workspaces" }).click();
   await expect(page).toHaveURL(/\/workspaces$/);
 });
 
-test(
-  "repo selector renders icon and still filters repos",
-  async ({ page }) => {
-    await page.goto("/pulls");
+test("repo selector renders icon and still filters repos", async ({ page }) => {
+  await page.goto("/pulls");
 
-    const selector = page.getByTitle(
-      "Select repository",
-    );
-    await expect(selector).toBeVisible();
-    await expect(selector.locator("svg")).toBeVisible();
+  const selector = page.getByTitle("Select repository");
+  await expect(selector).toBeVisible();
+  await expect(selector.locator("svg")).toBeVisible();
 
-    await selector.click();
+  await selector.click();
 
-    const input = page.getByLabel("Filter repos");
-    await expect(input).toBeVisible();
-    await input.fill("widg");
+  const input = page.getByLabel("Filter repos");
+  await expect(input).toBeVisible();
+  await input.fill("widg");
 
-    const option = page.getByRole("option", {
-      name: "github.com/acme/widgets",
-    });
-    await expect(option).toBeVisible();
-    await option.click();
-    await expect(option.locator("input[type='checkbox']")).toBeChecked();
+  const option = page.getByRole("option", {
+    name: "github.com/acme/widgets",
+  });
+  await expect(option).toBeVisible();
+  await option.click();
+  await expect(option.locator("input[type='checkbox']")).toBeChecked();
 
-    await page.keyboard.press("Escape");
-    await expect(selector).toContainText("acme/widgets");
-    await expect(selector.locator("svg")).toBeVisible();
-    await expect(
-      page.getByText("Add browser regression coverage"),
-    ).toBeVisible();
-  },
-);
+  await page.keyboard.press("Escape");
+  await expect(selector).toContainText("acme/widgets");
+  await expect(selector.locator("svg")).toBeVisible();
+  await expect(page.getByText("Add browser regression coverage")).toBeVisible();
+});
 
-test("hideHeader suppresses AppHeader on the workspaces page", async ({ page }) => {
+test("hideHeader suppresses AppHeader on the workspaces page", async ({
+  page,
+}) => {
   await page.addInitScript(() => {
     window.__middleman_config = {
       embed: { hideHeader: true },
@@ -79,9 +74,7 @@ test("hideHeader suppresses AppHeader on the workspaces page", async ({ page }) 
   });
 
   await page.goto("/workspaces");
-  await expect(
-    page.locator("header.app-header"),
-  ).toHaveCount(0);
+  await expect(page.locator("header.app-header")).toHaveCount(0);
 });
 
 test("navigateToRoute bridge method works", async ({ page }) => {
@@ -110,7 +103,9 @@ test("workspace bridge methods are registered on startup", async ({ page }) => {
   });
 });
 
-test("provider-explicit embed detail route uses provider in detail request", async ({ page }) => {
+test("provider-explicit embed detail route uses provider in detail request", async ({
+  page,
+}) => {
   const detailRequest = page.waitForRequest(
     (request) =>
       request.method() === "GET" &&
@@ -168,7 +163,9 @@ test("provider-explicit embed detail route uses provider in detail request", asy
   await expect(page.getByText("Provider-explicit GitLab issue")).toBeVisible();
 });
 
-test("nested repo_path embed detail route loads matching detail content", async ({ page }) => {
+test("nested repo_path embed detail route loads matching detail content", async ({
+  page,
+}) => {
   const detailRequest = page.waitForRequest(
     (request) =>
       request.method() === "GET" &&
@@ -227,7 +224,9 @@ test("nested repo_path embed detail route loads matching detail content", async 
   await expect(page.getByText("Nested GitLab issue")).toBeVisible();
 });
 
-test("embed initialRoute opens detail surface without full app chrome", async ({ page }) => {
+test("embed initialRoute opens detail surface without full app chrome", async ({
+  page,
+}) => {
   await page.addInitScript(() => {
     window.__middleman_config = {
       embed: {
@@ -297,7 +296,9 @@ test("embed initialRoute opens detail surface without full app chrome", async ({
   await expect(page.getByText("Initial route GitLab issue")).toBeVisible();
 });
 
-test("full app initializes after navigating away from an initial embed route", async ({ page }) => {
+test("full app initializes after navigating away from an initial embed route", async ({
+  page,
+}) => {
   await page.route("**/api/v1/settings", async (route) => {
     await route.fulfill({
       status: 200,
@@ -312,6 +313,12 @@ test("full app initializes after navigating away from an initial embed route", a
         },
         terminal: {
           font_family: '"Fira Code", monospace',
+          font_size: 14,
+          scrollback: 1000,
+          line_height: 1,
+          letter_spacing: 0,
+          cursor_blink: true,
+          font_ligatures: false,
           renderer: "xterm",
         },
         agents: [],
@@ -342,7 +349,9 @@ test("full app initializes after navigating away from an initial embed route", a
   await expect(page.locator("header.app-header")).toBeVisible();
 });
 
-test("full app reinitializes after navigating through an embed route", async ({ page }) => {
+test("full app reinitializes after navigating through an embed route", async ({
+  page,
+}) => {
   let settingsRequests = 0;
   await page.addInitScript(() => {
     const OriginalEventSource = window.EventSource;
@@ -379,6 +388,12 @@ test("full app reinitializes after navigating through an embed route", async ({ 
         },
         terminal: {
           font_family: '"Fira Code", monospace',
+          font_size: 14,
+          scrollback: 1000,
+          line_height: 1,
+          letter_spacing: 0,
+          cursor_blink: true,
+          font_ligatures: false,
           renderer: "xterm",
         },
         agents: [],
@@ -389,8 +404,8 @@ test("full app reinitializes after navigating through an embed route", async ({ 
   await page.goto("/pulls");
   await expect(page.locator("header.app-header")).toBeVisible();
   await expect.poll(() => settingsRequests).toBe(1);
-  const initialEventSources = await page.evaluate(() =>
-    window.__middleman_event_source_counts?.().created ?? 0,
+  const initialEventSources = await page.evaluate(
+    () => window.__middleman_event_source_counts?.().created ?? 0,
   );
   expect(initialEventSources).toBeGreaterThan(0);
 
@@ -399,9 +414,13 @@ test("full app reinitializes after navigating through an embed route", async ({ 
   });
   await expect(page).toHaveURL(/\/workspaces\/embed\/list$/);
   await expect(page.locator("header.app-header")).toHaveCount(0);
-  await expect.poll(async () => page.evaluate(() =>
-    window.__middleman_event_source_counts?.().closed ?? 0,
-  )).toBeGreaterThanOrEqual(initialEventSources);
+  await expect
+    .poll(async () =>
+      page.evaluate(
+        () => window.__middleman_event_source_counts?.().closed ?? 0,
+      ),
+    )
+    .toBeGreaterThanOrEqual(initialEventSources);
 
   await page.evaluate(() => {
     window.__middleman_navigate_to_route?.("/pulls");
@@ -409,10 +428,18 @@ test("full app reinitializes after navigating through an embed route", async ({ 
   await expect(page).toHaveURL(/\/pulls$/);
   await expect(page.locator("header.app-header")).toBeVisible();
   await expect.poll(() => settingsRequests).toBe(2);
-  await expect.poll(async () => page.evaluate(() =>
-    window.__middleman_event_source_counts?.().created ?? 0,
-  )).toBeGreaterThan(initialEventSources);
-  await expect.poll(async () => page.evaluate(() =>
-    window.__middleman_event_source_counts?.().closed ?? 0,
-  )).toBeGreaterThanOrEqual(initialEventSources);
+  await expect
+    .poll(async () =>
+      page.evaluate(
+        () => window.__middleman_event_source_counts?.().created ?? 0,
+      ),
+    )
+    .toBeGreaterThan(initialEventSources);
+  await expect
+    .poll(async () =>
+      page.evaluate(
+        () => window.__middleman_event_source_counts?.().closed ?? 0,
+      ),
+    )
+    .toBeGreaterThanOrEqual(initialEventSources);
 });

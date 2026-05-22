@@ -1,13 +1,17 @@
-import type {
-  ConfigRepo,
-  TerminalRenderer,
-  TerminalSettings,
+import {
+  DEFAULT_TERMINAL_SETTINGS,
+  normalizeTerminalSettings,
+  type ConfigRepo,
+  type TerminalRenderer,
+  type TerminalSettingsInput,
+  type TerminalSettings,
 } from "../api/types.js";
 
 export function createSettingsStore() {
   let repos = $state<ConfigRepo[]>([]);
-  let terminalFontFamily = $state("");
-  let terminalRenderer = $state<TerminalRenderer>("xterm");
+  let terminalSettings = $state<TerminalSettings>({
+    ...DEFAULT_TERMINAL_SETTINGS,
+  });
   let loaded = $state(false);
 
   function getConfiguredRepos(): ConfigRepo[] {
@@ -19,24 +23,64 @@ export function createSettingsStore() {
     loaded = true;
   }
 
+  function getTerminalSettings(): TerminalSettings {
+    return terminalSettings;
+  }
+
+  function setTerminalSettings(
+    settings: TerminalSettingsInput | null | undefined,
+  ): void {
+    terminalSettings = normalizeTerminalSettings(settings);
+  }
+
   function getTerminalFontFamily(): string {
-    return terminalFontFamily;
+    return terminalSettings.font_family;
   }
 
   function setTerminalFontFamily(
     fontFamily: TerminalSettings["font_family"] | null | undefined,
   ): void {
-    terminalFontFamily = fontFamily ?? "";
+    terminalSettings = {
+      ...terminalSettings,
+      font_family: fontFamily ?? "",
+    };
+  }
+
+  function getTerminalFontSize(): number {
+    return terminalSettings.font_size;
+  }
+
+  function getTerminalScrollback(): number {
+    return terminalSettings.scrollback;
+  }
+
+  function getTerminalLineHeight(): number {
+    return terminalSettings.line_height;
+  }
+
+  function getTerminalLetterSpacing(): number {
+    return terminalSettings.letter_spacing;
+  }
+
+  function getTerminalCursorBlink(): boolean {
+    return terminalSettings.cursor_blink;
+  }
+
+  function getTerminalFontLigatures(): boolean {
+    return terminalSettings.font_ligatures;
   }
 
   function getTerminalRenderer(): TerminalRenderer {
-    return terminalRenderer;
+    return terminalSettings.renderer;
   }
 
   function setTerminalRenderer(
     renderer: TerminalSettings["renderer"] | null | undefined,
   ): void {
-    terminalRenderer = renderer === "ghostty-web" ? "ghostty-web" : "xterm";
+    terminalSettings = {
+      ...terminalSettings,
+      renderer: renderer === "ghostty-web" ? "ghostty-web" : "xterm",
+    };
   }
 
   function hasConfiguredRepos(): boolean {
@@ -50,8 +94,16 @@ export function createSettingsStore() {
   return {
     getConfiguredRepos,
     setConfiguredRepos,
+    getTerminalSettings,
+    setTerminalSettings,
     getTerminalFontFamily,
     setTerminalFontFamily,
+    getTerminalFontSize,
+    getTerminalScrollback,
+    getTerminalLineHeight,
+    getTerminalLetterSpacing,
+    getTerminalCursorBlink,
+    getTerminalFontLigatures,
     getTerminalRenderer,
     setTerminalRenderer,
     hasConfiguredRepos,
@@ -59,6 +111,4 @@ export function createSettingsStore() {
   };
 }
 
-export type SettingsStore = ReturnType<
-  typeof createSettingsStore
->;
+export type SettingsStore = ReturnType<typeof createSettingsStore>;

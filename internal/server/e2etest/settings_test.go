@@ -91,7 +91,11 @@ func TestSettingsAPIE2EReadUpdateAndValidation(t *testing.T) {
 				HideBots:   true,
 			},
 			Terminal: &generated.Terminal{
-				FontFamily: "\"Iosevka Term\", monospace",
+				FontFamily:    "\"Iosevka Term\", monospace",
+				FontSize:      18,
+				Scrollback:    5000,
+				LineHeight:    1.15,
+				FontLigatures: true,
 			},
 		},
 	)
@@ -108,6 +112,10 @@ func TestSettingsAPIE2EReadUpdateAndValidation(t *testing.T) {
 		"\"Iosevka Term\", monospace",
 		cfgAfterUpdate.Terminal.FontFamily,
 	)
+	assert.Equal(18, cfgAfterUpdate.Terminal.FontSize)
+	assert.Equal(5000, cfgAfterUpdate.Terminal.Scrollback)
+	assert.InDelta(1.15, cfgAfterUpdate.Terminal.LineHeight, 0.001)
+	assert.True(cfgAfterUpdate.Terminal.FontLigatures)
 }
 
 func TestRepoConfigAPIE2EAddDeleteAndErrors(t *testing.T) {

@@ -7,6 +7,7 @@
   import WorkspaceHome from "./WorkspaceHome.svelte";
   import WorkspaceTabs from "./WorkspaceTabs.svelte";
   import LaunchMenu from "./LaunchMenu.svelte";
+  import TerminalOptionsMenu from "./TerminalOptionsMenu.svelte";
   import ShellDrawer from "./ShellDrawer.svelte";
   import type { RuntimeSession } from "@middleman/ui/api/types";
   import {
@@ -1187,6 +1188,7 @@
                   }}
                 />
                 <div class="workspace-actions">
+                  <TerminalOptionsMenu />
                   <LaunchMenu
                     launchTargets={launchTargets}
                     {launchingKey}

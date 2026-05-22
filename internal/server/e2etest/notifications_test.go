@@ -7,9 +7,9 @@ import (
 
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/wesm/middleman/internal/apiclient"
-	"github.com/wesm/middleman/internal/apiclient/generated"
-	"github.com/wesm/middleman/internal/db"
+	"go.kenn.io/middleman/internal/apiclient"
+	"go.kenn.io/middleman/internal/apiclient/generated"
+	"go.kenn.io/middleman/internal/db"
 )
 
 func TestNotificationsTriageFlowE2E(t *testing.T) {

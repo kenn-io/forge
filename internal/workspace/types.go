@@ -1,6 +1,6 @@
 package workspace
 
-import "github.com/wesm/middleman/internal/db"
+import "go.kenn.io/middleman/internal/db"
 
 type (
 	Workspace        = db.Workspace

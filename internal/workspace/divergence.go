@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/wesm/middleman/internal/procutil"
+	"go.kenn.io/middleman/internal/procutil"
 )
 
 // Divergence reports how the worktree's HEAD has drifted from its

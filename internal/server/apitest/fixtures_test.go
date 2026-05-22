@@ -12,11 +12,11 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"github.com/wesm/middleman/internal/apiclient"
-	"github.com/wesm/middleman/internal/db"
-	ghclient "github.com/wesm/middleman/internal/github"
-	"github.com/wesm/middleman/internal/server"
-	"github.com/wesm/middleman/internal/testutil/dbtest"
+	"go.kenn.io/middleman/internal/apiclient"
+	"go.kenn.io/middleman/internal/db"
+	ghclient "go.kenn.io/middleman/internal/github"
+	"go.kenn.io/middleman/internal/server"
+	"go.kenn.io/middleman/internal/testutil/dbtest"
 )
 
 var defaultTestRepos = []ghclient.RepoRef{

@@ -11,7 +11,7 @@ import (
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/wesm/middleman/internal/db"
+	"go.kenn.io/middleman/internal/db"
 )
 
 func setupMonitorRepo(t *testing.T) string {

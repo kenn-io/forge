@@ -16,13 +16,13 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 	gh "github.com/google/go-github/v84/github"
-	"github.com/wesm/middleman/internal/db"
-	"github.com/wesm/middleman/internal/gitclone"
-	ghclient "github.com/wesm/middleman/internal/github"
-	"github.com/wesm/middleman/internal/platform"
-	"github.com/wesm/middleman/internal/platform/gitealike"
-	"github.com/wesm/middleman/internal/workspace"
-	"github.com/wesm/middleman/internal/workspace/localruntime"
+	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/middleman/internal/gitclone"
+	ghclient "go.kenn.io/middleman/internal/github"
+	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/middleman/internal/platform/gitealike"
+	"go.kenn.io/middleman/internal/workspace"
+	"go.kenn.io/middleman/internal/workspace/localruntime"
 )
 
 type listPullsInput struct {

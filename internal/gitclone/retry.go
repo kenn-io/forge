@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/cenkalti/backoff/v5"
-	internalretry "github.com/wesm/middleman/internal/retry"
+	internalretry "go.kenn.io/middleman/internal/retry"
 )
 
 // retryAttempts caps how many times a transient git smart-HTTP failure is

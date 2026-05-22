@@ -16,7 +16,7 @@ import (
 	gh "github.com/google/go-github/v84/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	ghclient "github.com/wesm/middleman/internal/github"
+	ghclient "go.kenn.io/middleman/internal/github"
 )
 
 // waitForConfigWatcher blocks until the server's config watcher has

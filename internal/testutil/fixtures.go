@@ -10,7 +10,7 @@ import (
 
 	gh "github.com/google/go-github/v84/github"
 	"github.com/stretchr/testify/require"
-	"github.com/wesm/middleman/internal/db"
+	"go.kenn.io/middleman/internal/db"
 )
 
 // SeedResult holds references to seeded data for use in E2E tests.

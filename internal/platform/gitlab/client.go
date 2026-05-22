@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/wesm/middleman/internal/platform"
-	"github.com/wesm/middleman/internal/ratelimit"
 	gitlab "gitlab.com/gitlab-org/api/client-go"
+	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/middleman/internal/ratelimit"
 )
 
 const (

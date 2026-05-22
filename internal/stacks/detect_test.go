@@ -6,8 +6,8 @@ import (
 
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	realdb "github.com/wesm/middleman/internal/db"
-	"github.com/wesm/middleman/internal/testutil/dbtest"
+	realdb "go.kenn.io/middleman/internal/db"
+	"go.kenn.io/middleman/internal/testutil/dbtest"
 )
 
 const (

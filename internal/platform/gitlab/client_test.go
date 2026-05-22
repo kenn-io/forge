@@ -13,9 +13,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/wesm/middleman/internal/platform"
-	"github.com/wesm/middleman/internal/ratelimit"
-	"github.com/wesm/middleman/internal/testutil/dbtest"
+	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/middleman/internal/ratelimit"
+	"go.kenn.io/middleman/internal/testutil/dbtest"
 )
 
 func TestClientLooksUpProjectByRawPathAndUsesNumericIDAfterLookup(t *testing.T) {

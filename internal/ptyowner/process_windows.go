@@ -8,7 +8,7 @@ import (
 	"strconv"
 
 	gopty "github.com/aymanbagabas/go-pty"
-	"github.com/wesm/middleman/internal/procutil"
+	"go.kenn.io/middleman/internal/procutil"
 )
 
 func configureOwnerCommand(*gopty.Cmd) {}

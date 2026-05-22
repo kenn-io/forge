@@ -4,8 +4,8 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/wesm/middleman/internal/db"
-	ghclient "github.com/wesm/middleman/internal/github"
+	"go.kenn.io/middleman/internal/db"
+	ghclient "go.kenn.io/middleman/internal/github"
 )
 
 // SyncCompletedHook returns a callback for Syncer.SetOnSyncCompleted

@@ -13,9 +13,9 @@ import (
 	"github.com/coder/websocket"
 	"github.com/creack/pty/v2"
 
-	"github.com/wesm/middleman/internal/procutil"
-	"github.com/wesm/middleman/internal/ptyowner"
-	"github.com/wesm/middleman/internal/workspace"
+	"go.kenn.io/middleman/internal/procutil"
+	"go.kenn.io/middleman/internal/ptyowner"
+	"go.kenn.io/middleman/internal/workspace"
 )
 
 // Handler serves WebSocket connections that bridge a

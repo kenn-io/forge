@@ -16,7 +16,7 @@ import (
 
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/wesm/middleman/internal/config"
+	"go.kenn.io/middleman/internal/config"
 	_ "modernc.org/sqlite"
 )
 

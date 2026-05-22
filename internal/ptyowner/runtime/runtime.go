@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/wesm/middleman/internal/ptyowner"
+	"go.kenn.io/middleman/internal/ptyowner"
 )
 
 type Owner interface {

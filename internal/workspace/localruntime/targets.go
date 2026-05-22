@@ -5,7 +5,7 @@ import (
 	"os/exec"
 	"slices"
 
-	"github.com/wesm/middleman/internal/config"
+	"go.kenn.io/middleman/internal/config"
 )
 
 type lookPathFunc func(string) (string, error)

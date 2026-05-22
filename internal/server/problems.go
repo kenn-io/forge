@@ -20,8 +20,8 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/wesm/middleman/internal/db"
-	"github.com/wesm/middleman/internal/platform"
+	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/middleman/internal/platform"
 )
 
 // ProblemCode is the machine-readable error code carried on the wire.

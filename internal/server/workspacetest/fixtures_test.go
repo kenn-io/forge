@@ -13,16 +13,16 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"github.com/wesm/middleman/internal/apiclient"
-	"github.com/wesm/middleman/internal/apiclient/generated"
-	"github.com/wesm/middleman/internal/config"
-	"github.com/wesm/middleman/internal/db"
-	"github.com/wesm/middleman/internal/gitclone"
-	"github.com/wesm/middleman/internal/gitenv"
-	ghclient "github.com/wesm/middleman/internal/github"
-	"github.com/wesm/middleman/internal/procutil"
-	"github.com/wesm/middleman/internal/server"
-	"github.com/wesm/middleman/internal/testutil/dbtest"
+	"go.kenn.io/middleman/internal/apiclient"
+	"go.kenn.io/middleman/internal/apiclient/generated"
+	"go.kenn.io/middleman/internal/config"
+	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/middleman/internal/gitclone"
+	"go.kenn.io/middleman/internal/gitenv"
+	ghclient "go.kenn.io/middleman/internal/github"
+	"go.kenn.io/middleman/internal/procutil"
+	"go.kenn.io/middleman/internal/server"
+	"go.kenn.io/middleman/internal/testutil/dbtest"
 )
 
 type workspaceServerFixture struct {

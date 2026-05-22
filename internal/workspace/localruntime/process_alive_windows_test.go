@@ -5,7 +5,7 @@ package localruntime
 import (
 	"strconv"
 
-	"github.com/wesm/middleman/internal/procutil"
+	"go.kenn.io/middleman/internal/procutil"
 )
 
 func processAlive(pid int) bool {

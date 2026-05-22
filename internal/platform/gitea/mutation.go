@@ -4,8 +4,8 @@ import (
 	"context"
 
 	giteasdk "code.gitea.io/sdk/gitea"
-	"github.com/wesm/middleman/internal/platform"
-	"github.com/wesm/middleman/internal/platform/gitealike"
+	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/middleman/internal/platform/gitealike"
 )
 
 func (c *Client) CreateMergeRequestComment(

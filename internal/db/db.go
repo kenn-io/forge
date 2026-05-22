@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/wesm/middleman/internal/db/dbupgrade"
+	"go.kenn.io/middleman/internal/db/dbupgrade"
 	_ "modernc.org/sqlite"
 )
 

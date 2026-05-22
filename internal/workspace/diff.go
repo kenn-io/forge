@@ -11,9 +11,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/wesm/middleman/internal/gitclone"
-	"github.com/wesm/middleman/internal/gitenv"
-	"github.com/wesm/middleman/internal/procutil"
+	"go.kenn.io/middleman/internal/gitclone"
+	"go.kenn.io/middleman/internal/gitenv"
+	"go.kenn.io/middleman/internal/procutil"
 )
 
 type WorktreeDiffBase string

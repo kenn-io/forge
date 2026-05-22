@@ -12,9 +12,9 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	gh "github.com/google/go-github/v84/github"
-	"github.com/wesm/middleman/internal/config"
-	ghclient "github.com/wesm/middleman/internal/github"
-	"github.com/wesm/middleman/internal/platform"
+	"go.kenn.io/middleman/internal/config"
+	ghclient "go.kenn.io/middleman/internal/github"
+	"go.kenn.io/middleman/internal/platform"
 )
 
 type repoPreviewInput struct {

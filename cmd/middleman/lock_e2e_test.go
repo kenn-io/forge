@@ -14,8 +14,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/wesm/middleman/internal/procutil"
-	"github.com/wesm/middleman/internal/runtimelock"
+	"go.kenn.io/middleman/internal/procutil"
+	"go.kenn.io/middleman/internal/runtimelock"
 )
 
 // buildMiddleman compiles the middleman binary into a per-test temp dir

@@ -8,9 +8,9 @@ import (
 
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/wesm/middleman/internal/apiclient/generated"
-	"github.com/wesm/middleman/internal/config"
-	"github.com/wesm/middleman/internal/workspace/localruntime"
+	"go.kenn.io/middleman/internal/apiclient/generated"
+	"go.kenn.io/middleman/internal/config"
+	"go.kenn.io/middleman/internal/workspace/localruntime"
 )
 
 func TestWorkspaceRuntimeTargetsE2E(t *testing.T) {

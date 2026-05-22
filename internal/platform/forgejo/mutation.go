@@ -4,8 +4,8 @@ import (
 	"context"
 
 	forgejosdk "codeberg.org/mvdkleijn/forgejo-sdk/forgejo/v3"
-	"github.com/wesm/middleman/internal/platform"
-	"github.com/wesm/middleman/internal/platform/gitealike"
+	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/middleman/internal/platform/gitealike"
 )
 
 func (c *Client) CreateMergeRequestComment(

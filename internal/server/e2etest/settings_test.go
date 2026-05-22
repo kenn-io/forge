@@ -13,8 +13,8 @@ import (
 	gh "github.com/google/go-github/v84/github"
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/wesm/middleman/internal/apiclient/generated"
-	"github.com/wesm/middleman/internal/config"
+	"go.kenn.io/middleman/internal/apiclient/generated"
+	"go.kenn.io/middleman/internal/config"
 )
 
 func doServerJSON(

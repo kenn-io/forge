@@ -24,13 +24,13 @@ import (
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/wesm/middleman/internal/apiclient"
-	"github.com/wesm/middleman/internal/apiclient/generated"
-	"github.com/wesm/middleman/internal/config"
-	"github.com/wesm/middleman/internal/db"
-	"github.com/wesm/middleman/internal/gitclone"
-	ghclient "github.com/wesm/middleman/internal/github"
-	"github.com/wesm/middleman/internal/testutil/dbtest"
+	"go.kenn.io/middleman/internal/apiclient"
+	"go.kenn.io/middleman/internal/apiclient/generated"
+	"go.kenn.io/middleman/internal/config"
+	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/middleman/internal/gitclone"
+	ghclient "go.kenn.io/middleman/internal/github"
+	"go.kenn.io/middleman/internal/testutil/dbtest"
 )
 
 type lockedBuffer struct {

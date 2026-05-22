@@ -19,16 +19,16 @@ import (
 	"time"
 
 	gh "github.com/google/go-github/v84/github"
-	"github.com/wesm/middleman/internal/config"
-	"github.com/wesm/middleman/internal/db"
-	"github.com/wesm/middleman/internal/gitenv"
-	ghclient "github.com/wesm/middleman/internal/github"
-	"github.com/wesm/middleman/internal/platform"
-	"github.com/wesm/middleman/internal/procutil"
-	"github.com/wesm/middleman/internal/server"
-	"github.com/wesm/middleman/internal/stacks"
-	"github.com/wesm/middleman/internal/testutil"
-	"github.com/wesm/middleman/internal/web"
+	"go.kenn.io/middleman/internal/config"
+	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/middleman/internal/gitenv"
+	ghclient "go.kenn.io/middleman/internal/github"
+	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/middleman/internal/procutil"
+	"go.kenn.io/middleman/internal/server"
+	"go.kenn.io/middleman/internal/stacks"
+	"go.kenn.io/middleman/internal/testutil"
+	"go.kenn.io/middleman/internal/web"
 )
 
 // defaultRoborevEndpoint is the address the e2e server points the

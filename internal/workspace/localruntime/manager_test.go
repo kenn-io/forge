@@ -17,8 +17,8 @@ import (
 	"github.com/creack/pty/v2"
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/wesm/middleman/internal/procutil"
-	ptyownerruntime "github.com/wesm/middleman/internal/ptyowner/runtime"
+	"go.kenn.io/middleman/internal/procutil"
+	ptyownerruntime "go.kenn.io/middleman/internal/ptyowner/runtime"
 )
 
 func requirePTYAvailable(t *testing.T) {

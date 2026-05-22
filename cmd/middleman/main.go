@@ -18,16 +18,16 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/wesm/middleman/internal/config"
-	"github.com/wesm/middleman/internal/db"
-	"github.com/wesm/middleman/internal/gitclone"
-	ghclient "github.com/wesm/middleman/internal/github"
-	"github.com/wesm/middleman/internal/platform"
-	"github.com/wesm/middleman/internal/ptyowner"
-	"github.com/wesm/middleman/internal/runtimelock"
-	"github.com/wesm/middleman/internal/server"
-	"github.com/wesm/middleman/internal/stacks"
-	"github.com/wesm/middleman/internal/web"
+	"go.kenn.io/middleman/internal/config"
+	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/middleman/internal/gitclone"
+	ghclient "go.kenn.io/middleman/internal/github"
+	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/middleman/internal/ptyowner"
+	"go.kenn.io/middleman/internal/runtimelock"
+	"go.kenn.io/middleman/internal/server"
+	"go.kenn.io/middleman/internal/stacks"
+	"go.kenn.io/middleman/internal/web"
 )
 
 type splitLogHandler struct {

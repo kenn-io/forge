@@ -5,7 +5,7 @@ import (
 	"errors"
 	"log/slog"
 
-	ghclient "github.com/wesm/middleman/internal/github"
+	ghclient "go.kenn.io/middleman/internal/github"
 )
 
 func (s *Server) enqueueDetailSync(

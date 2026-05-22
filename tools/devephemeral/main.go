@@ -21,8 +21,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/wesm/middleman/internal/config"
-	"github.com/wesm/middleman/internal/procutil"
+	"go.kenn.io/middleman/internal/config"
+	"go.kenn.io/middleman/internal/procutil"
 	_ "modernc.org/sqlite"
 )
 

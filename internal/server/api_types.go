@@ -3,9 +3,9 @@ package server
 import (
 	"time"
 
-	"github.com/wesm/middleman/internal/db"
-	"github.com/wesm/middleman/internal/gitclone"
-	"github.com/wesm/middleman/internal/workspace/localruntime"
+	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/middleman/internal/gitclone"
+	"go.kenn.io/middleman/internal/workspace/localruntime"
 )
 
 type worktreeLinkResponse struct {

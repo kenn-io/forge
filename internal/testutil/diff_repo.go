@@ -8,10 +8,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/wesm/middleman/internal/db"
-	"github.com/wesm/middleman/internal/gitclone"
-	"github.com/wesm/middleman/internal/gitenv"
-	"github.com/wesm/middleman/internal/procutil"
+	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/middleman/internal/gitclone"
+	"go.kenn.io/middleman/internal/gitenv"
+	"go.kenn.io/middleman/internal/procutil"
 )
 
 // DiffRepoResult holds the SHAs from the test repo for use in assertions.

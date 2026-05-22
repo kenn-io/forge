@@ -7,10 +7,10 @@ import (
 	"time"
 
 	forgejosdk "codeberg.org/mvdkleijn/forgejo-sdk/forgejo/v3"
-	ghsync "github.com/wesm/middleman/internal/github"
-	"github.com/wesm/middleman/internal/platform"
-	"github.com/wesm/middleman/internal/platform/gitealike"
-	"github.com/wesm/middleman/internal/ratelimit"
+	ghsync "go.kenn.io/middleman/internal/github"
+	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/middleman/internal/platform/gitealike"
+	"go.kenn.io/middleman/internal/ratelimit"
 )
 
 type ClientOption func(*clientOptions)

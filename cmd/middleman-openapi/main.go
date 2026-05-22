@@ -8,7 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/wesm/middleman/internal/server"
+	"go.kenn.io/middleman/internal/server"
 )
 
 func main() {

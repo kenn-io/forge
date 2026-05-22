@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"github.com/wesm/middleman/internal/procutil"
-	"github.com/wesm/middleman/internal/testutil/dbtest"
+	"go.kenn.io/middleman/internal/procutil"
+	"go.kenn.io/middleman/internal/testutil/dbtest"
 )
 
 // TestSetupDiffRepoDoesNotLeakIntoHostGitDir guards against regression

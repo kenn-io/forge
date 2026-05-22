@@ -11,7 +11,7 @@ import (
 	"time"
 
 	gh "github.com/google/go-github/v84/github"
-	"github.com/wesm/middleman/internal/platform"
+	"go.kenn.io/middleman/internal/platform"
 )
 
 func NormalizePullRequest(repo platform.RepoRef, ghPR *gh.PullRequest) (platform.MergeRequest, error) {

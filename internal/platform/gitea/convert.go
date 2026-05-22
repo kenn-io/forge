@@ -6,7 +6,7 @@ import (
 	"time"
 
 	giteasdk "code.gitea.io/sdk/gitea"
-	"github.com/wesm/middleman/internal/platform/gitealike"
+	"go.kenn.io/middleman/internal/platform/gitealike"
 )
 
 func convertRepository(repo *giteasdk.Repository) (gitealike.RepositoryDTO, error) {

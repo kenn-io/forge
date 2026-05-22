@@ -15,7 +15,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/wesm/middleman/internal/platform"
+	"go.kenn.io/middleman/internal/platform"
 )
 
 // structField is a tiny reflection helper for inspecting struct tags

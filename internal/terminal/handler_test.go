@@ -13,10 +13,10 @@ import (
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/wesm/middleman/internal/db"
-	"github.com/wesm/middleman/internal/ptyowner"
-	"github.com/wesm/middleman/internal/testutil/dbtest"
-	"github.com/wesm/middleman/internal/workspace"
+	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/middleman/internal/ptyowner"
+	"go.kenn.io/middleman/internal/testutil/dbtest"
+	"go.kenn.io/middleman/internal/workspace"
 )
 
 func openTestDB(t *testing.T) *db.DB {

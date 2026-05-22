@@ -5,7 +5,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/wesm/middleman/internal/db"
+	"go.kenn.io/middleman/internal/db"
 )
 
 // DetectChains finds linear PR chains from branch metadata.

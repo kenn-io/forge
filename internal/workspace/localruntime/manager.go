@@ -18,8 +18,8 @@ import (
 
 	"github.com/creack/pty/v2"
 
-	"github.com/wesm/middleman/internal/procutil"
-	ptyownerruntime "github.com/wesm/middleman/internal/ptyowner/runtime"
+	"go.kenn.io/middleman/internal/procutil"
+	ptyownerruntime "go.kenn.io/middleman/internal/ptyowner/runtime"
 )
 
 type SessionStatus string

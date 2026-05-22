@@ -15,8 +15,8 @@ import (
 
 	"golang.org/x/sync/singleflight"
 
-	"github.com/wesm/middleman/internal/gitenv"
-	"github.com/wesm/middleman/internal/procutil"
+	"go.kenn.io/middleman/internal/gitenv"
+	"go.kenn.io/middleman/internal/procutil"
 )
 
 // ensureCloneTimeout caps how long a single bare-clone create-or-fetch

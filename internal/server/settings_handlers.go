@@ -9,11 +9,11 @@ import (
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/wesm/middleman/internal/config"
-	"github.com/wesm/middleman/internal/db"
-	ghclient "github.com/wesm/middleman/internal/github"
-	"github.com/wesm/middleman/internal/platform"
-	"github.com/wesm/middleman/internal/workspace/localruntime"
+	"go.kenn.io/middleman/internal/config"
+	"go.kenn.io/middleman/internal/db"
+	ghclient "go.kenn.io/middleman/internal/github"
+	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/middleman/internal/workspace/localruntime"
 )
 
 type settingsResponse struct {

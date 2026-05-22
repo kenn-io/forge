@@ -11,9 +11,9 @@ import (
 	giteasdk "code.gitea.io/sdk/gitea"
 	Assert "github.com/stretchr/testify/assert"
 	Require "github.com/stretchr/testify/require"
-	ghsync "github.com/wesm/middleman/internal/github"
-	"github.com/wesm/middleman/internal/platform"
-	"github.com/wesm/middleman/internal/platform/gitealike"
+	ghsync "go.kenn.io/middleman/internal/github"
+	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/middleman/internal/platform/gitealike"
 )
 
 var (

@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/wesm/middleman/internal/config"
-	"github.com/wesm/middleman/internal/db"
-	"github.com/wesm/middleman/internal/projects"
-	"github.com/wesm/middleman/internal/workspace/localruntime"
+	"go.kenn.io/middleman/internal/config"
+	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/middleman/internal/projects"
+	"go.kenn.io/middleman/internal/workspace/localruntime"
 )
 
 type platformIdentityPayload struct {

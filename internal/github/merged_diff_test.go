@@ -14,10 +14,10 @@ import (
 	gh "github.com/google/go-github/v84/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/wesm/middleman/internal/db"
-	"github.com/wesm/middleman/internal/gitclone"
-	"github.com/wesm/middleman/internal/gitenv"
-	"github.com/wesm/middleman/internal/procutil"
+	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/middleman/internal/gitclone"
+	"go.kenn.io/middleman/internal/gitenv"
+	"go.kenn.io/middleman/internal/procutil"
 )
 
 // gitRun runs a git command in the given dir and returns trimmed stdout.

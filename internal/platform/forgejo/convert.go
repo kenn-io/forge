@@ -7,7 +7,7 @@ import (
 	"time"
 
 	forgejosdk "codeberg.org/mvdkleijn/forgejo-sdk/forgejo/v3"
-	"github.com/wesm/middleman/internal/platform/gitealike"
+	"go.kenn.io/middleman/internal/platform/gitealike"
 )
 
 func convertRepository(repo *forgejosdk.Repository) (gitealike.RepositoryDTO, error) {

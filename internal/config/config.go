@@ -18,8 +18,8 @@ import (
 	"unicode"
 
 	"github.com/BurntSushi/toml"
-	platformpkg "github.com/wesm/middleman/internal/platform"
-	"github.com/wesm/middleman/internal/procutil"
+	platformpkg "go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/middleman/internal/procutil"
 )
 
 const (

@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/wesm/middleman/internal/db"
+	"go.kenn.io/middleman/internal/db"
 )
 
 const RateReserveBuffer = 200

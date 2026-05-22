@@ -1,6 +1,6 @@
 package server
 
-import "github.com/wesm/middleman/internal/db"
+import "go.kenn.io/middleman/internal/db"
 
 func computeStackHealth(members []db.StackMemberWithPR) string {
 	if len(members) == 0 {

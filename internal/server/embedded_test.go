@@ -9,8 +9,8 @@ import (
 	"time"
 
 	Assert "github.com/stretchr/testify/assert"
-	ghclient "github.com/wesm/middleman/internal/github"
-	"github.com/wesm/middleman/internal/testutil/dbtest"
+	ghclient "go.kenn.io/middleman/internal/github"
+	"go.kenn.io/middleman/internal/testutil/dbtest"
 )
 
 func setupEmbeddedServer(

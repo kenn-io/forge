@@ -13,13 +13,13 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go/modules/compose"
 	"github.com/testcontainers/testcontainers-go/wait"
-	"github.com/wesm/middleman/internal/db"
-	ghclient "github.com/wesm/middleman/internal/github"
-	"github.com/wesm/middleman/internal/platform"
-	platformforgejo "github.com/wesm/middleman/internal/platform/forgejo"
-	platformgitea "github.com/wesm/middleman/internal/platform/gitea"
-	"github.com/wesm/middleman/internal/procutil"
-	"github.com/wesm/middleman/internal/testutil/dbtest"
+	"go.kenn.io/middleman/internal/db"
+	ghclient "go.kenn.io/middleman/internal/github"
+	"go.kenn.io/middleman/internal/platform"
+	platformforgejo "go.kenn.io/middleman/internal/platform/forgejo"
+	platformgitea "go.kenn.io/middleman/internal/platform/gitea"
+	"go.kenn.io/middleman/internal/procutil"
+	"go.kenn.io/middleman/internal/testutil/dbtest"
 )
 
 type giteaLikeContainerClient interface {

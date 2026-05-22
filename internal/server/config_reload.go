@@ -8,10 +8,10 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/wesm/middleman/internal/config"
-	"github.com/wesm/middleman/internal/configwatch"
-	ghclient "github.com/wesm/middleman/internal/github"
-	"github.com/wesm/middleman/internal/platform"
+	"go.kenn.io/middleman/internal/config"
+	"go.kenn.io/middleman/internal/configwatch"
+	ghclient "go.kenn.io/middleman/internal/github"
+	"go.kenn.io/middleman/internal/platform"
 )
 
 // configChangedEvent is the payload broadcast on the SSE "config.changed"

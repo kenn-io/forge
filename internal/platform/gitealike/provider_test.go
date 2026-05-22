@@ -7,7 +7,7 @@ import (
 
 	Assert "github.com/stretchr/testify/assert"
 	Require "github.com/stretchr/testify/require"
-	"github.com/wesm/middleman/internal/platform"
+	"go.kenn.io/middleman/internal/platform"
 )
 
 func TestProviderCapabilitiesEnableSharedReadBehavior(t *testing.T) {

@@ -18,11 +18,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/wesm/middleman/internal/db"
-	"github.com/wesm/middleman/internal/gitclone"
-	"github.com/wesm/middleman/internal/gitenv"
-	"github.com/wesm/middleman/internal/procutil"
-	"github.com/wesm/middleman/internal/workspace/localruntime"
+	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/middleman/internal/gitclone"
+	"go.kenn.io/middleman/internal/gitenv"
+	"go.kenn.io/middleman/internal/procutil"
+	"go.kenn.io/middleman/internal/workspace/localruntime"
 )
 
 // Manager owns middleman's persisted workspace lifecycle.

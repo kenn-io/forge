@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/wesm/middleman/internal/platform"
+	"go.kenn.io/middleman/internal/platform"
 )
 
 const maxCollectedPages = 1000

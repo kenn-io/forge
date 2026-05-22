@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/wesm/middleman/internal/config"
+	"go.kenn.io/middleman/internal/config"
 )
 
 // roborevProxy returns an HTTP handler that reverse-proxies requests

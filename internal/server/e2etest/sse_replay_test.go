@@ -12,7 +12,7 @@ import (
 
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/wesm/middleman/internal/server"
+	"go.kenn.io/middleman/internal/server"
 )
 
 // sseFrame is one parsed SSE record. The hub's daemon-level tests parse

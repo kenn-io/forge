@@ -9,10 +9,10 @@ import (
 	"os"
 	"strings"
 
-	"github.com/wesm/middleman/internal/db"
-	"github.com/wesm/middleman/internal/gitenv"
-	ghclient "github.com/wesm/middleman/internal/github"
-	"github.com/wesm/middleman/internal/procutil"
+	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/middleman/internal/gitenv"
+	ghclient "go.kenn.io/middleman/internal/github"
+	"go.kenn.io/middleman/internal/procutil"
 )
 
 type PRAssociationUpdate struct {

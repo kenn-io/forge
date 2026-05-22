@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	Assert "github.com/stretchr/testify/assert"
-	"github.com/wesm/middleman/internal/db"
+	"go.kenn.io/middleman/internal/db"
 )
 
 func member(number, pos int, state, ci, review string) db.StackMemberWithPR {

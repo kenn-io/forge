@@ -20,15 +20,15 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
-	"github.com/wesm/middleman/internal/config"
-	"github.com/wesm/middleman/internal/configwatch"
-	"github.com/wesm/middleman/internal/db"
-	"github.com/wesm/middleman/internal/gitclone"
-	ghclient "github.com/wesm/middleman/internal/github"
-	"github.com/wesm/middleman/internal/ptyowner"
-	ptyownerruntime "github.com/wesm/middleman/internal/ptyowner/runtime"
-	"github.com/wesm/middleman/internal/workspace"
-	"github.com/wesm/middleman/internal/workspace/localruntime"
+	"go.kenn.io/middleman/internal/config"
+	"go.kenn.io/middleman/internal/configwatch"
+	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/middleman/internal/gitclone"
+	ghclient "go.kenn.io/middleman/internal/github"
+	"go.kenn.io/middleman/internal/ptyowner"
+	ptyownerruntime "go.kenn.io/middleman/internal/ptyowner/runtime"
+	"go.kenn.io/middleman/internal/workspace"
+	"go.kenn.io/middleman/internal/workspace/localruntime"
 )
 
 type EmbedConfig struct {

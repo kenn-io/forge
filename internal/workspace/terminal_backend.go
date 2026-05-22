@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/wesm/middleman/internal/db"
-	"github.com/wesm/middleman/internal/ptyowner"
+	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/middleman/internal/ptyowner"
 )
 
 const (

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/wesm/middleman/internal/db"
+	"go.kenn.io/middleman/internal/db"
 )
 
 type repoNumberPathRef struct {

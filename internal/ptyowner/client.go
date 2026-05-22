@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/wesm/middleman/internal/procutil"
+	"go.kenn.io/middleman/internal/procutil"
 )
 
 type Client struct {

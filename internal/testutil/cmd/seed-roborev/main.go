@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/wesm/middleman/internal/testutil"
+	"go.kenn.io/middleman/internal/testutil"
 )
 
 func main() {

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/wesm/middleman/internal/gitclone"
+	"go.kenn.io/middleman/internal/gitclone"
 )
 
 const emptyTreeSHA = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"

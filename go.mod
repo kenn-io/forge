@@ -1,4 +1,4 @@
-module github.com/wesm/middleman
+module go.kenn.io/middleman
 
 go 1.26.0
 

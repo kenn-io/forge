@@ -3,13 +3,13 @@ package main
 import (
 	"fmt"
 
-	"github.com/wesm/middleman/internal/config"
-	"github.com/wesm/middleman/internal/db"
-	"github.com/wesm/middleman/internal/github"
-	"github.com/wesm/middleman/internal/platform"
-	forgejoclient "github.com/wesm/middleman/internal/platform/forgejo"
-	giteaclient "github.com/wesm/middleman/internal/platform/gitea"
-	gitlabclient "github.com/wesm/middleman/internal/platform/gitlab"
+	"go.kenn.io/middleman/internal/config"
+	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/middleman/internal/github"
+	"go.kenn.io/middleman/internal/platform"
+	forgejoclient "go.kenn.io/middleman/internal/platform/forgejo"
+	giteaclient "go.kenn.io/middleman/internal/platform/gitea"
+	gitlabclient "go.kenn.io/middleman/internal/platform/gitlab"
 )
 
 type providerFactory func(providerFactoryInput) (providerFactoryOutput, error)

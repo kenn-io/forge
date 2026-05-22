@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/wesm/middleman/internal/platform"
+	"go.kenn.io/middleman/internal/platform"
 )
 
 func NormalizeRepository(

@@ -6,9 +6,9 @@ import (
 
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	realdb "github.com/wesm/middleman/internal/db"
-	ghclient "github.com/wesm/middleman/internal/github"
-	"github.com/wesm/middleman/internal/platform"
+	realdb "go.kenn.io/middleman/internal/db"
+	ghclient "go.kenn.io/middleman/internal/github"
+	"go.kenn.io/middleman/internal/platform"
 )
 
 func TestSyncCompletedHookUsesProviderQualifiedRepoIdentity(t *testing.T) {

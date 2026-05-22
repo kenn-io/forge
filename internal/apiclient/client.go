@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/wesm/middleman/internal/apiclient/generated"
+	"go.kenn.io/middleman/internal/apiclient/generated"
 )
 
 type Client struct {

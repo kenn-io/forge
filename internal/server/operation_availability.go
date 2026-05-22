@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/wesm/middleman/internal/db"
-	"github.com/wesm/middleman/internal/ratelimit"
+	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/middleman/internal/ratelimit"
 )
 
 // Operation names. These string literals are the JSON field names

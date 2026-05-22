@@ -11,13 +11,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/wesm/middleman/internal/config"
-	"github.com/wesm/middleman/internal/db"
-	"github.com/wesm/middleman/internal/gitclone"
-	ghclient "github.com/wesm/middleman/internal/github"
-	"github.com/wesm/middleman/internal/server"
-	"github.com/wesm/middleman/internal/stacks"
-	"github.com/wesm/middleman/internal/web"
+	"go.kenn.io/middleman/internal/config"
+	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/middleman/internal/gitclone"
+	ghclient "go.kenn.io/middleman/internal/github"
+	"go.kenn.io/middleman/internal/server"
+	"go.kenn.io/middleman/internal/stacks"
+	"go.kenn.io/middleman/internal/web"
 )
 
 // Type aliases so external callers don't need to import

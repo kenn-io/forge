@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/wesm/middleman/internal/platform"
+	"go.kenn.io/middleman/internal/platform"
 )
 
 const defaultPageSize = 100

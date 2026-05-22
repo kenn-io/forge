@@ -3,7 +3,7 @@ package platform
 import (
 	"time"
 
-	"github.com/wesm/middleman/internal/db"
+	"go.kenn.io/middleman/internal/db"
 )
 
 func DBRepoIdentity(ref RepoRef) db.RepoIdentity {

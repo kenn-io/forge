@@ -11,8 +11,8 @@ import (
 
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	ghclient "github.com/wesm/middleman/internal/github"
-	"github.com/wesm/middleman/internal/testutil/dbtest"
+	ghclient "go.kenn.io/middleman/internal/github"
+	"go.kenn.io/middleman/internal/testutil/dbtest"
 )
 
 func setupWithBasePath(t *testing.T, basePath string, frontend fs.FS) *Server {

@@ -15,8 +15,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/wesm/middleman/internal/db"
-	"github.com/wesm/middleman/internal/testutil/dbtest"
+	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/middleman/internal/testutil/dbtest"
 )
 
 func openTestDB(t *testing.T) *db.DB {

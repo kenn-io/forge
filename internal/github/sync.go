@@ -15,11 +15,11 @@ import (
 	"time"
 
 	gh "github.com/google/go-github/v84/github"
-	"github.com/wesm/middleman/internal/config"
-	"github.com/wesm/middleman/internal/db"
-	"github.com/wesm/middleman/internal/gitclone"
-	"github.com/wesm/middleman/internal/platform"
-	platformgithub "github.com/wesm/middleman/internal/platform/github"
+	"go.kenn.io/middleman/internal/config"
+	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/middleman/internal/gitclone"
+	"go.kenn.io/middleman/internal/platform"
+	platformgithub "go.kenn.io/middleman/internal/platform/github"
 	"golang.org/x/sync/singleflight"
 )
 

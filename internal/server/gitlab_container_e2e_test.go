@@ -17,12 +17,12 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/compose"
 	"github.com/testcontainers/testcontainers-go/wait"
-	"github.com/wesm/middleman/internal/db"
-	ghclient "github.com/wesm/middleman/internal/github"
-	"github.com/wesm/middleman/internal/platform"
-	platformgitlab "github.com/wesm/middleman/internal/platform/gitlab"
-	"github.com/wesm/middleman/internal/procutil"
-	"github.com/wesm/middleman/internal/testutil/dbtest"
+	"go.kenn.io/middleman/internal/db"
+	ghclient "go.kenn.io/middleman/internal/github"
+	"go.kenn.io/middleman/internal/platform"
+	platformgitlab "go.kenn.io/middleman/internal/platform/gitlab"
+	"go.kenn.io/middleman/internal/procutil"
+	"go.kenn.io/middleman/internal/testutil/dbtest"
 )
 
 type gitLabContainerManifest struct {

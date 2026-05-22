@@ -14,7 +14,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/wesm/middleman/internal/procutil"
+	"go.kenn.io/middleman/internal/procutil"
 )
 
 const diagnosticMessage = "non-Huma HTTP route registration is not allowed; register API routes through the Huma route layer"

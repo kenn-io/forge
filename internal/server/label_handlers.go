@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/wesm/middleman/internal/db"
-	"github.com/wesm/middleman/internal/platform"
+	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/middleman/internal/platform"
 )
 
 type listRepoLabelsOutput = bodyOutput[repoLabelsResponse]

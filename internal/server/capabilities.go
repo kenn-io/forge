@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/wesm/middleman/internal/db"
+	"go.kenn.io/middleman/internal/db"
 )
 
 const (

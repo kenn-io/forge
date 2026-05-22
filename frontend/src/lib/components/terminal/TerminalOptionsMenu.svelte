@@ -11,10 +11,13 @@
   let terminal = $state<TerminalSettingsType>(
     settingsStore.getTerminalSettings(),
   );
+  let childSaving = $state(false);
 
   function toggleOpen(): void {
+    if (childSaving) return;
     if (!open) {
       terminal = settingsStore.getTerminalSettings();
+      childSaving = false;
     }
     open = !open;
   }
@@ -26,10 +29,12 @@
       if (rootEl && ev.target instanceof Node && rootEl.contains(ev.target)) {
         return;
       }
+      if (childSaving) return;
       open = false;
     }
     function onKeydown(ev: KeyboardEvent): void {
       if (ev.key === "Escape") {
+        if (childSaving) return;
         open = false;
       }
     }
@@ -67,6 +72,9 @@
         livePreview={true}
         onUpdate={(updated) => {
           terminal = updated;
+        }}
+        onSavingChange={(saving) => {
+          childSaving = saving;
         }}
       />
     </div>

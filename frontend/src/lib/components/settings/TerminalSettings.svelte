@@ -23,6 +23,7 @@
     onUpdate: (terminal: TerminalSettingsType) => void;
     compact?: boolean;
     livePreview?: boolean;
+    onSavingChange?: (saving: boolean) => void;
   }
 
   const {
@@ -30,6 +31,7 @@
     onUpdate,
     compact = false,
     livePreview = false,
+    onSavingChange,
   }: Props = $props();
 
   const { settings: settingsStore } = getStores();
@@ -249,6 +251,7 @@
 
   onDestroy(() => {
     if (!livePreview) return;
+    if (saving) return;
     settingsStore.setTerminalSettings(livePreviewBaseline ?? currentTerminal);
   });
 
@@ -324,6 +327,7 @@
     if (!isDirty) return;
 
     saving = true;
+    onSavingChange?.(true);
     try {
       const saved = await persistTerminalSettings(normalizedDraft);
       const updated = mergeSavedTerminal(saved, normalizedDraft);
@@ -341,6 +345,7 @@
       console.warn("Failed to save terminal settings:", err);
     } finally {
       saving = false;
+      onSavingChange?.(false);
     }
   }
 

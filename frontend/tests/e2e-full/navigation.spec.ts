@@ -67,4 +67,19 @@ test.describe("view navigation", () => {
     // Detail pane should now show the issue detail.
     await page.locator(".issue-detail").waitFor({ state: "visible", timeout: 10_000 });
   });
+
+  test("settings button toggles back to the previous route", async ({ page }) => {
+    await page.goto("/pulls/github/acme/widgets/1/files");
+    await expect(page).toHaveURL(/\/pulls\/github\/acme\/widgets\/1\/files$/);
+
+    await page.getByTitle("Settings").click();
+    await expect(page).toHaveURL(/\/settings$/);
+    await page.locator(".settings-page")
+      .waitFor({ state: "visible", timeout: 10_000 });
+
+    await page.getByTitle("Settings").click();
+    await expect(page).toHaveURL(/\/pulls\/github\/acme\/widgets\/1\/files$/);
+    await page.locator(".diff-file").first()
+      .waitFor({ state: "visible", timeout: 10_000 });
+  });
 });

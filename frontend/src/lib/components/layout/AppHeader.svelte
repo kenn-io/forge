@@ -54,6 +54,27 @@
 
   const syncing = $derived(sync.getSyncState()?.running ?? false);
   const compactHeader = $derived(getContainerSize() !== "wide");
+  let settingsReturnPath = "/";
+
+  function currentAppPath(): string {
+    const base = getBasePath();
+    const basePrefix = base === "/" ? "" : base.replace(/\/$/, "");
+    const fullPath = window.location.pathname + window.location.search;
+    if (basePrefix && fullPath.startsWith(basePrefix)) {
+      return fullPath.slice(basePrefix.length) || "/";
+    }
+    return fullPath;
+  }
+
+  function toggleSettings(): void {
+    if (getPage() === "settings") {
+      navigate(settingsReturnPath);
+      return;
+    }
+    settingsReturnPath = currentAppPath();
+    navigate("/settings");
+  }
+
   const compactNavOptions = $derived.by(() => {
     const options = [
       { value: "activity", label: "Activity" },
@@ -252,7 +273,7 @@
     {#if !isEmbedded()}
       <HeaderIconButton
         active={getPage() === "settings"}
-        onclick={() => navigate("/settings")}
+        onclick={toggleSettings}
         title="Settings"
       >
         <SettingsIcon size="14" strokeWidth="1.75" aria-hidden="true" />

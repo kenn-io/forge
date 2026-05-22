@@ -30,10 +30,10 @@ vi.mock("@middleman/ui", () => ({
   }),
   normalizeTerminalSettings: (terminal: {
     font_family?: string;
-    font_size?: number;
-    scrollback?: number;
-    line_height?: number;
-    letter_spacing?: number;
+    font_size?: number | null;
+    scrollback?: number | null;
+    line_height?: number | null;
+    letter_spacing?: number | null;
     cursor_blink?: boolean | null;
     font_ligatures?: boolean | null;
     renderer?: string | null;
@@ -412,7 +412,9 @@ describe("TerminalSettings", () => {
 
   it("retries save with legacy terminal fields for older backends", async () => {
     mockUpdateSettings
-      .mockRejectedValueOnce(new Error("validation failed"))
+      .mockRejectedValueOnce(
+        new Error("unknown field terminal.font_size"),
+      )
       .mockResolvedValueOnce({
         terminal: {
           font_family: "",
@@ -454,6 +456,202 @@ describe("TerminalSettings", () => {
     expect(onUpdate).toHaveBeenCalledWith({
       font_family: "",
       font_size: 17,
+      scrollback: 1000,
+      line_height: 1,
+      letter_spacing: 0,
+      cursor_blink: true,
+      font_ligatures: false,
+      renderer: "xterm",
+    });
+  });
+
+  it("does not retry validation failures with legacy terminal fields", async () => {
+    mockUpdateSettings.mockRejectedValueOnce(new Error("validation failed"));
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const onUpdate = vi.fn();
+
+    try {
+      render(TerminalSettings, {
+        props: {
+          terminal: {
+            font_family: "",
+            font_size: 14,
+            scrollback: 1000,
+            line_height: 1,
+            letter_spacing: 0,
+            cursor_blink: true,
+            font_ligatures: false,
+            renderer: "xterm",
+          },
+          onUpdate,
+        },
+      });
+
+      await fireEvent.input(screen.getByLabelText("Font size"), {
+        target: { value: "17" },
+      });
+      await fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+      await waitFor(() => {
+        expect(mockUpdateSettings).toHaveBeenCalledTimes(1);
+      });
+      expect(onUpdate).not.toHaveBeenCalled();
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("normalizes empty numeric drafts before saving", async () => {
+    mockUpdateSettings.mockResolvedValue({
+      terminal: {
+        font_family: "",
+        font_size: 14,
+        scrollback: 1000,
+        line_height: 1,
+        letter_spacing: 0,
+        cursor_blink: true,
+        font_ligatures: false,
+        renderer: "xterm",
+      },
+    });
+
+    render(TerminalSettings, {
+      props: {
+        terminal: {
+          font_family: "",
+          font_size: 18,
+          scrollback: 5000,
+          line_height: 1.15,
+          letter_spacing: 1,
+          cursor_blink: true,
+          font_ligatures: false,
+          renderer: "xterm",
+        },
+        onUpdate: vi.fn(),
+      },
+    });
+
+    await fireEvent.input(screen.getByLabelText("Font size"), {
+      target: { value: "" },
+    });
+    await fireEvent.input(screen.getByLabelText("Scrollback"), {
+      target: { value: "" },
+    });
+    await fireEvent.input(screen.getByLabelText("Line height"), {
+      target: { value: "" },
+    });
+    await fireEvent.input(screen.getByLabelText("Letter spacing"), {
+      target: { value: "" },
+    });
+    await fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(mockUpdateSettings).toHaveBeenCalledWith({
+        terminal: {
+          font_family: "",
+          font_size: 14,
+          scrollback: 1000,
+          line_height: 1,
+          letter_spacing: 0,
+          cursor_blink: true,
+          font_ligatures: false,
+          renderer: "xterm",
+        },
+      });
+    });
+  });
+
+  it("reverts unsaved live preview settings on unmount", async () => {
+    const { unmount } = render(TerminalSettings, {
+      props: {
+        terminal: {
+          font_family: "",
+          font_size: 14,
+          scrollback: 1000,
+          line_height: 1,
+          letter_spacing: 0,
+          cursor_blink: true,
+          font_ligatures: false,
+          renderer: "xterm",
+        },
+        livePreview: true,
+        onUpdate: vi.fn(),
+      },
+    });
+    mockSetTerminalSettings.mockClear();
+
+    await fireEvent.input(screen.getByLabelText("Font size"), {
+      target: { value: "19" },
+    });
+    expect(mockSetTerminalSettings).toHaveBeenLastCalledWith({
+      font_family: "",
+      font_size: 19,
+      scrollback: 1000,
+      line_height: 1,
+      letter_spacing: 0,
+      cursor_blink: true,
+      font_ligatures: false,
+      renderer: "xterm",
+    });
+
+    unmount();
+
+    expect(mockSetTerminalSettings).toHaveBeenLastCalledWith({
+      font_family: "",
+      font_size: 14,
+      scrollback: 1000,
+      line_height: 1,
+      letter_spacing: 0,
+      cursor_blink: true,
+      font_ligatures: false,
+      renderer: "xterm",
+    });
+  });
+
+  it("keeps the saved live preview baseline when unmounted after saving", async () => {
+    mockUpdateSettings.mockResolvedValue({
+      terminal: {
+        font_family: "",
+        font_size: 19,
+        scrollback: 1000,
+        line_height: 1,
+        letter_spacing: 0,
+        cursor_blink: true,
+        font_ligatures: false,
+        renderer: "xterm",
+      },
+    });
+    const { unmount } = render(TerminalSettings, {
+      props: {
+        terminal: {
+          font_family: "",
+          font_size: 14,
+          scrollback: 1000,
+          line_height: 1,
+          letter_spacing: 0,
+          cursor_blink: true,
+          font_ligatures: false,
+          renderer: "xterm",
+        },
+        livePreview: true,
+        onUpdate: vi.fn(),
+      },
+    });
+
+    await fireEvent.input(screen.getByLabelText("Font size"), {
+      target: { value: "19" },
+    });
+    await fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(mockUpdateSettings).toHaveBeenCalledTimes(1);
+    });
+    mockSetTerminalSettings.mockClear();
+
+    unmount();
+
+    expect(mockSetTerminalSettings).toHaveBeenLastCalledWith({
+      font_family: "",
+      font_size: 19,
       scrollback: 1000,
       line_height: 1,
       letter_spacing: 0,

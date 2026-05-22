@@ -15,11 +15,11 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	configpkg "github.com/wesm/middleman/internal/config"
-	ghclient "github.com/wesm/middleman/internal/github"
-	"github.com/wesm/middleman/internal/server"
-	"github.com/wesm/middleman/internal/testutil"
-	"github.com/wesm/middleman/internal/testutil/dbtest"
+	configpkg "go.kenn.io/middleman/internal/config"
+	ghclient "go.kenn.io/middleman/internal/github"
+	"go.kenn.io/middleman/internal/server"
+	"go.kenn.io/middleman/internal/testutil"
+	"go.kenn.io/middleman/internal/testutil/dbtest"
 )
 
 func TestDefaultServerComesFromMiddlemanConfig(t *testing.T) {

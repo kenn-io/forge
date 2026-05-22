@@ -20,7 +20,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
-	configpkg "github.com/wesm/middleman/internal/config"
+	configpkg "go.kenn.io/middleman/internal/config"
 	"go.yaml.in/yaml/v3"
 )
 

@@ -92,10 +92,16 @@ func DBMREvent(mrID int64, event MergeRequestEvent) db.MREvent {
 		MetadataJSON:       event.MetadataJSON,
 		CreatedAt:          event.CreatedAt,
 		DedupeKey:          event.DedupeKey,
+		PositionJSON:       event.PositionJSON,
+		Resolvable:         event.Resolvable,
+		Resolved:           event.Resolved,
 	}
 	if event.PlatformID != 0 || event.EventType == "issue_comment" || event.EventType == "review" {
 		platformID := event.PlatformID
 		out.PlatformID = &platformID
+	}
+	if event.DiscussionID != "" {
+		out.DiscussionID = &event.DiscussionID
 	}
 	return out
 }
@@ -115,6 +121,9 @@ func DBIssueEvent(issueID int64, event IssueEvent) db.IssueEvent {
 	if event.PlatformID != 0 || event.EventType == "issue_comment" {
 		platformID := event.PlatformID
 		out.PlatformID = &platformID
+	}
+	if event.DiscussionID != "" {
+		out.DiscussionID = &event.DiscussionID
 	}
 	return out
 }

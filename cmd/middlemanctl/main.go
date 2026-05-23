@@ -225,10 +225,7 @@ func scopedAPIPath(rawPath string) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("invalid API path segment %q: %w", segment, err)
 		}
-		if strings.Contains(decoded, "/") {
-			return "", fmt.Errorf("API path encoded slash segments are not allowed: %s", rawPath)
-		}
-		if decoded == "." || decoded == ".." {
+		if pathSegmentHasTraversal(decoded) {
 			return "", fmt.Errorf("API path dot segments are not allowed: %s", rawPath)
 		}
 	}
@@ -237,6 +234,21 @@ func scopedAPIPath(rawPath string) (string, error) {
 		return "", fmt.Errorf("API path must stay under %s: %s", apiPrefix, rawPath)
 	}
 	return cleanPath, nil
+}
+
+func pathSegmentHasTraversal(decoded string) bool {
+	if decoded == "." || decoded == ".." {
+		return true
+	}
+	if !strings.Contains(decoded, "/") {
+		return false
+	}
+	for subsegment := range strings.SplitSeq(decoded, "/") {
+		if subsegment == "" || subsegment == "." || subsegment == ".." {
+			return true
+		}
+	}
+	return false
 }
 
 func mustAPIURL(server, path string, query url.Values) string {
@@ -594,6 +606,9 @@ func makeRestishRequest(ctx context.Context, cfg cliConfig, method, requestURL s
 		return nil, err
 	}
 	req.Header.Set("Accept", "application/json")
+	if methodRequiresJSONContentType(req.Method) {
+		req.Header.Set("Content-Type", "application/json")
+	}
 
 	resp, err := cli.MakeRequest(req, cli.WithClient(&http.Client{Timeout: cfg.timeout}))
 	if err != nil {
@@ -611,4 +626,13 @@ func makeRestishRequest(ctx context.Context, cfg cliConfig, method, requestURL s
 		return nil, fmt.Errorf("middleman API returned %s", resp.Status)
 	}
 	return responseBody, nil
+}
+
+func methodRequiresJSONContentType(method string) bool {
+	switch strings.ToUpper(method) {
+	case http.MethodGet, http.MethodHead:
+		return false
+	default:
+		return true
+	}
 }

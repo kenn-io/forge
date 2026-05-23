@@ -247,6 +247,64 @@ func TestRawAPICommandRejectsDotSegmentPaths(t *testing.T) {
 	}
 }
 
+func TestRawAPICommandAllowsEncodedSlashesInRouteParameters(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	var got struct {
+		method string
+		url    string
+	}
+	cmd := newRootCommand(commandDeps{
+		Stdout: &bytes.Buffer{},
+		Stderr: &bytes.Buffer{},
+		Restish: func(_ context.Context, _ cliConfig, method, requestURL string, _ []string) ([]byte, error) {
+			got.method = method
+			got.url = requestURL
+			return nil, nil
+		},
+	})
+	cmd.SetArgs([]string{
+		"--server", "http://middleman.test/",
+		"api", "GET", "/host/gitlab.example.com/pulls/gl/Group%2FSubGroup/project/7",
+	})
+
+	require.NoError(cmd.Execute())
+	assert.Equal(http.MethodGet, got.method)
+	assert.Equal(
+		"http://middleman.test/api/v1/host/gitlab.example.com/pulls/gl/Group%2FSubGroup/project/7",
+		got.url,
+	)
+}
+
+func TestPullGetAllowsNestedOwners(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	var got struct {
+		method string
+		url    string
+	}
+	cmd := newRootCommand(commandDeps{
+		Stdout: &bytes.Buffer{},
+		Stderr: &bytes.Buffer{},
+		Restish: func(_ context.Context, _ cliConfig, method, requestURL string, _ []string) ([]byte, error) {
+			got.method = method
+			got.url = requestURL
+			return nil, nil
+		},
+	})
+	cmd.SetArgs([]string{
+		"--server", "http://middleman.test/",
+		"pulls", "get", "--host", "gitlab.example.com", "gl", "Group/SubGroup", "project", "7",
+	})
+
+	require.NoError(cmd.Execute())
+	assert.Equal(http.MethodGet, got.method)
+	assert.Equal(
+		"http://middleman.test/api/v1/host/gitlab.example.com/pulls/gl/Group%2FSubGroup/project/7",
+		got.url,
+	)
+}
+
 func TestAPIListCommandDiscoversOpenAPIOperations(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -332,6 +390,9 @@ func TestMiddlemanctlCommandsUseRealAPIAndSQLite(t *testing.T) {
 	apiListOut := runMiddlemanctl(t, ts.URL, "--output", "jsonl", "api", "list")
 	assert.Contains(apiListOut, `"method":"GET"`)
 	assert.Contains(apiListOut, `"path":"/pulls"`)
+
+	syncOut := runMiddlemanctl(t, ts.URL, "sync")
+	assert.Empty(syncOut)
 }
 
 func setupMiddlemanctlE2E(t *testing.T) *httptest.Server {
@@ -403,6 +464,25 @@ func TestRestishRequesterFetchesCompleteJSON(t *testing.T) {
 
 	require.NoError(err)
 	assert.JSONEq(fmt.Sprintf(`[{"name":%q}]`, longTitle), string(body))
+}
+
+func TestRestishRequesterSetsJSONContentTypeForMutations(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	t.Setenv("MIDDLEMANCTL_RESTISH_CONFIG_DIR", t.TempDir())
+	t.Setenv("MIDDLEMANCTL_RESTISH_CACHE_DIR", t.TempDir())
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(http.MethodPost, r.Method)
+		assert.Equal("application/json", r.Header.Get("Content-Type"))
+		assert.Equal("application/json", r.Header.Get("Accept"))
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	t.Cleanup(server.Close)
+
+	body, err := makeRestishRequest(context.Background(), cliConfig{timeout: 30 * time.Second}, http.MethodPost, server.URL+"/api/v1/sync", nil)
+
+	require.NoError(err)
+	assert.Empty(body)
 }
 
 func TestWriteResponseFetchesYAMLBodyOnly(t *testing.T) {

@@ -119,6 +119,34 @@ type RepoCommitTimelinePoint struct {
 	CommittedAt time.Time
 }
 
+type BranchCommit struct {
+	RepoID         int64
+	BranchName     string
+	CommitSHA      string
+	AuthorName     string
+	AuthorEmail    string
+	AuthoredAt     time.Time
+	CommitterName  string
+	CommitterEmail string
+	CommittedAt    time.Time
+	Subject        string
+}
+
+type BranchTip struct {
+	RepoID     int64
+	BranchName string
+	TipSHA     string
+	ObservedAt time.Time
+}
+
+type BranchForcePush struct {
+	RepoID     int64
+	BranchName string
+	BeforeSHA  string
+	AfterSHA   string
+	DetectedAt time.Time
+}
+
 type RepoActivityAuthor struct {
 	Login     string
 	ItemCount int

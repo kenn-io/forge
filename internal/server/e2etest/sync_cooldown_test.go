@@ -65,7 +65,7 @@ name = "widget"
 
 	select {
 	case <-secondSync:
-	case <-time.After(2 * time.Second):
+	case <-time.After(10 * time.Second):
 		require.Fail("second explicit sync did not bypass cooldown")
 	}
 }

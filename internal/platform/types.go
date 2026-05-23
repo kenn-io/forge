@@ -138,6 +138,10 @@ type MergeRequestEvent struct {
 	MetadataJSON       string
 	CreatedAt          time.Time
 	DedupeKey          string
+	DiscussionID       string
+	PositionJSON       string
+	Resolvable         bool
+	Resolved           bool
 }
 
 type IssueEvent struct {
@@ -152,6 +156,7 @@ type IssueEvent struct {
 	MetadataJSON       string
 	CreatedAt          time.Time
 	DedupeKey          string
+	DiscussionID       string
 }
 
 type Release struct {
@@ -211,6 +216,8 @@ type Capabilities struct {
 	ReadyForReview    bool
 	IssueMutation     bool
 	LabelMutation     bool
+	DiscussionReply   bool
+	DiscussionResolve bool
 }
 
 type RepositoryListOptions struct {

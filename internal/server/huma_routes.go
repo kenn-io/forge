@@ -701,6 +701,10 @@ func (s *Server) registerProviderRepoAPI(api huma.API) {
 	huma.Register(api, huma.Operation{OperationID: "post-pr-comment-on-host", Method: http.MethodPost, Path: hostPullPath + "/comments", DefaultStatus: http.StatusCreated, Summary: "Post pull request comment", Tags: []string{"Pull Requests"}}, s.postCommentOnHost)
 	huma.Register(api, huma.Operation{OperationID: "edit-pr-comment", Method: http.MethodPatch, Path: pullPath + "/comments/{comment_id}", DefaultStatus: http.StatusOK, Summary: "Edit pull request comment", Tags: []string{"Pull Requests"}}, s.editComment)
 	huma.Register(api, huma.Operation{OperationID: "edit-pr-comment-on-host", Method: http.MethodPatch, Path: hostPullPath + "/comments/{comment_id}", DefaultStatus: http.StatusOK, Summary: "Edit pull request comment", Tags: []string{"Pull Requests"}}, s.editCommentOnHost)
+	huma.Register(api, huma.Operation{OperationID: "reply-to-discussion", Method: http.MethodPost, Path: pullPath + "/discussions/{discussion_id}/reply", DefaultStatus: http.StatusCreated, Summary: "Reply to pull request discussion", Tags: []string{"Pull Requests"}}, s.replyToDiscussion)
+	huma.Register(api, huma.Operation{OperationID: "reply-to-discussion-on-host", Method: http.MethodPost, Path: hostPullPath + "/discussions/{discussion_id}/reply", DefaultStatus: http.StatusCreated, Summary: "Reply to pull request discussion", Tags: []string{"Pull Requests"}}, s.replyToDiscussionOnHost)
+	huma.Register(api, huma.Operation{OperationID: "resolve-discussion", Method: http.MethodPost, Path: pullPath + "/discussions/{discussion_id}/resolve", DefaultStatus: http.StatusOK, Summary: "Resolve pull request discussion", Tags: []string{"Pull Requests"}}, s.resolveDiscussion)
+	huma.Register(api, huma.Operation{OperationID: "resolve-discussion-on-host", Method: http.MethodPost, Path: hostPullPath + "/discussions/{discussion_id}/resolve", DefaultStatus: http.StatusOK, Summary: "Resolve pull request discussion", Tags: []string{"Pull Requests"}}, s.resolveDiscussionOnHost)
 	huma.Register(api, huma.Operation{OperationID: "set-pr-labels", Method: http.MethodPut, Path: pullPath + "/labels", DefaultStatus: http.StatusOK, Summary: "Set pull request labels", Tags: []string{"Pull Requests"}}, s.setPullLabels)
 	huma.Register(api, huma.Operation{OperationID: "set-pr-labels-on-host", Method: http.MethodPut, Path: hostPullPath + "/labels", DefaultStatus: http.StatusOK, Summary: "Set pull request labels", Tags: []string{"Pull Requests"}}, s.setPullLabelsOnHost)
 
@@ -1378,6 +1382,107 @@ func (s *Server) editComment(ctx context.Context, input *editCommentInput) (*edi
 	}
 
 	return &editCommentOutput{Body: event}, nil
+}
+
+func (s *Server) replyToDiscussion(ctx context.Context, input *replyToDiscussionInput) (*replyToDiscussionOutput, error) {
+	if strings.TrimSpace(input.Body.Body) == "" {
+		return nil, problemValidation("body.body", "reply body must not be empty")
+	}
+
+	repo, err := s.requireRepoRouteCapability(
+		ctx,
+		input.Provider, input.PlatformHost, input.Owner, input.Name,
+		capabilityCommentMutation,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.requireSyncerCapability(*repo, capabilityCommentMutation); err != nil {
+		return nil, err
+	}
+
+	provider, err := s.syncer.Registry().Provider(repoProviderKind(*repo), repoProviderHost(*repo))
+	if err != nil {
+		return nil, problemInternal("provider lookup failed")
+	}
+
+	replier, ok := provider.(platform.DiscussionReplier)
+	if !ok {
+		caps := provider.Capabilities()
+		if !caps.DiscussionReply {
+			return nil, unsupportedCapabilityProblem(*repo, "discussion_reply")
+		}
+		return nil, problemInternal("provider does not implement DiscussionReplier")
+	}
+
+	platformEvent, err := replier.ReplyToDiscussion(
+		ctx, platformRepoRefFromDB(*repo), input.Number, input.DiscussionID, input.Body.Body,
+	)
+	if err != nil {
+		return nil, providerCallProblemWithDetail(
+			err,
+			string(repoProviderKind(*repo)), repoProviderHost(*repo),
+			"reply to discussion on provider failed",
+		)
+	}
+
+	ref := repoNumberPathRef{
+		owner:        repo.Owner,
+		name:         repo.Name,
+		number:       input.Number,
+		platformHost: repo.PlatformHost,
+	}
+	mrID, err := s.lookupMRID(ctx, ref)
+	if err != nil {
+		return nil, problemNotFound(CodePullNotFound, err.Error(), nil)
+	}
+
+	event := platform.DBMREvent(mrID, platformEvent)
+	if err := s.db.UpsertMREvents(ctx, []db.MREvent{event}); err != nil {
+		_ = err
+	}
+
+	return &replyToDiscussionOutput{Status: http.StatusCreated, Body: event}, nil
+}
+
+func (s *Server) resolveDiscussion(ctx context.Context, input *resolveDiscussionInput) (*resolveDiscussionOutput, error) {
+	repo, err := s.requireRepoRouteCapability(
+		ctx,
+		input.Provider, input.PlatformHost, input.Owner, input.Name,
+		capabilityCommentMutation,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.requireSyncerCapability(*repo, capabilityCommentMutation); err != nil {
+		return nil, err
+	}
+
+	provider, err := s.syncer.Registry().Provider(repoProviderKind(*repo), repoProviderHost(*repo))
+	if err != nil {
+		return nil, problemInternal("provider lookup failed")
+	}
+
+	resolver, ok := provider.(platform.DiscussionResolver)
+	if !ok {
+		caps := provider.Capabilities()
+		if !caps.DiscussionResolve {
+			return nil, unsupportedCapabilityProblem(*repo, "discussion_resolve")
+		}
+		return nil, problemInternal("provider does not implement DiscussionResolver")
+	}
+
+	if err := resolver.ResolveDiscussion(
+		ctx, platformRepoRefFromDB(*repo), input.Number, input.DiscussionID, input.Body.Resolved,
+	); err != nil {
+		return nil, providerCallProblemWithDetail(
+			err,
+			string(repoProviderKind(*repo)), repoProviderHost(*repo),
+			"resolve discussion on provider failed",
+		)
+	}
+
+	return &resolveDiscussionOutput{}, nil
 }
 
 func (s *Server) listIssues(ctx context.Context, input *listIssuesInput) (*listIssuesOutput, error) {

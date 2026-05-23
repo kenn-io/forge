@@ -46,6 +46,30 @@ type editCommentHostInput struct {
 	}
 }
 
+type replyToDiscussionHostInput struct {
+	Provider     string `path:"provider"`
+	PlatformHost string `path:"platform_host"`
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
+	DiscussionID string `path:"discussion_id"`
+	Body         struct {
+		Body string `json:"body"`
+	}
+}
+
+type resolveDiscussionHostInput struct {
+	Provider     string `path:"provider"`
+	PlatformHost string `path:"platform_host"`
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
+	DiscussionID string `path:"discussion_id"`
+	Body         struct {
+		Resolved bool `json:"resolved"`
+	}
+}
+
 type createIssueHostInput struct {
 	Provider     string `path:"provider"`
 	PlatformHost string `path:"platform_host"`
@@ -289,6 +313,32 @@ func (s *Server) editCommentOnHost(ctx context.Context, input *editCommentHostIn
 		Body:         input.Body,
 	}
 	return s.editComment(ctx, &next)
+}
+
+func (s *Server) replyToDiscussionOnHost(ctx context.Context, input *replyToDiscussionHostInput) (*replyToDiscussionOutput, error) {
+	next := replyToDiscussionInput{
+		Provider:     input.Provider,
+		PlatformHost: input.PlatformHost,
+		Owner:        input.Owner,
+		Name:         input.Name,
+		Number:       input.Number,
+		DiscussionID: input.DiscussionID,
+		Body:         input.Body,
+	}
+	return s.replyToDiscussion(ctx, &next)
+}
+
+func (s *Server) resolveDiscussionOnHost(ctx context.Context, input *resolveDiscussionHostInput) (*resolveDiscussionOutput, error) {
+	next := resolveDiscussionInput{
+		Provider:     input.Provider,
+		PlatformHost: input.PlatformHost,
+		Owner:        input.Owner,
+		Name:         input.Name,
+		Number:       input.Number,
+		DiscussionID: input.DiscussionID,
+		Body:         input.Body,
+	}
+	return s.resolveDiscussion(ctx, &next)
 }
 
 func (s *Server) setPullLabelsOnHost(ctx context.Context, input *setPullLabelsHostInput) (*setLabelsOutput, error) {

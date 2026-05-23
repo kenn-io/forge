@@ -555,6 +555,7 @@ type IssueEvent struct {
 	Body               string    `json:"Body"`
 	CreatedAt          time.Time `json:"CreatedAt"`
 	DedupeKey          string    `json:"DedupeKey"`
+	DiscussionID       *string   `json:"DiscussionID"`
 	EventType          string    `json:"EventType"`
 	ID                 int64     `json:"ID"`
 	IssueID            int64     `json:"IssueID"`
@@ -671,12 +672,16 @@ type MREvent struct {
 	Body               string    `json:"Body"`
 	CreatedAt          time.Time `json:"CreatedAt"`
 	DedupeKey          string    `json:"DedupeKey"`
+	DiscussionID       *string   `json:"DiscussionID"`
 	EventType          string    `json:"EventType"`
 	ID                 int64     `json:"ID"`
 	MergeRequestID     int64     `json:"MergeRequestID"`
 	MetadataJSON       string    `json:"MetadataJSON"`
 	PlatformExternalID string    `json:"PlatformExternalID"`
 	PlatformID         *int64    `json:"PlatformID"`
+	PositionJSON       string    `json:"PositionJSON"`
+	Resolvable         bool      `json:"Resolvable"`
+	Resolved           bool      `json:"Resolved"`
 	Summary            string    `json:"Summary"`
 }
 
@@ -928,6 +933,8 @@ type ProjectResponse struct {
 // ProviderCapabilitiesResponse defines model for ProviderCapabilitiesResponse.
 type ProviderCapabilitiesResponse struct {
 	CommentMutation   bool `json:"comment_mutation"`
+	DiscussionReply   bool `json:"discussion_reply"`
+	DiscussionResolve bool `json:"discussion_resolve"`
 	IssueMutation     bool `json:"issue_mutation"`
 	LabelMutation     bool `json:"label_mutation"`
 	MergeMutation     bool `json:"merge_mutation"`
@@ -989,6 +996,20 @@ type RegisterWorktreeInputBody struct {
 	Schema *string `json:"$schema,omitempty"`
 	Branch string  `json:"branch"`
 	Path   string  `json:"path"`
+}
+
+// ReplyToDiscussionHostInputBody defines model for ReplyToDiscussionHostInputBody.
+type ReplyToDiscussionHostInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string `json:"$schema,omitempty"`
+	Body   string  `json:"body"`
+}
+
+// ReplyToDiscussionInputBody defines model for ReplyToDiscussionInputBody.
+type ReplyToDiscussionInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string `json:"$schema,omitempty"`
+	Body   string  `json:"body"`
 }
 
 // RepoLabelsResponse defines model for RepoLabelsResponse.
@@ -1148,6 +1169,20 @@ type RepoSummaryResponse struct {
 	Releases             *[]RepoSummaryReleaseResponse     `json:"releases"`
 	Repo                 RepoRefResponse                   `json:"repo"`
 	TimelineUpdatedAt    *string                           `json:"timeline_updated_at,omitempty"`
+}
+
+// ResolveDiscussionHostInputBody defines model for ResolveDiscussionHostInputBody.
+type ResolveDiscussionHostInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema   *string `json:"$schema,omitempty"`
+	Resolved bool    `json:"resolved"`
+}
+
+// ResolveDiscussionInputBody defines model for ResolveDiscussionInputBody.
+type ResolveDiscussionInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema   *string `json:"$schema,omitempty"`
+	Resolved bool    `json:"resolved"`
 }
 
 // ResolveItemResponse defines model for ResolveItemResponse.
@@ -1559,6 +1594,12 @@ type PostPrCommentOnHostJSONRequestBody = PostCommentHostInputBody
 // EditPrCommentOnHostJSONRequestBody defines body for EditPrCommentOnHost for application/json ContentType.
 type EditPrCommentOnHostJSONRequestBody = EditCommentHostInputBody
 
+// ReplyToDiscussionOnHostJSONRequestBody defines body for ReplyToDiscussionOnHost for application/json ContentType.
+type ReplyToDiscussionOnHostJSONRequestBody = ReplyToDiscussionHostInputBody
+
+// ResolveDiscussionOnHostJSONRequestBody defines body for ResolveDiscussionOnHost for application/json ContentType.
+type ResolveDiscussionOnHostJSONRequestBody = ResolveDiscussionHostInputBody
+
 // SetPrGithubStateOnHostJSONRequestBody defines body for SetPrGithubStateOnHost for application/json ContentType.
 type SetPrGithubStateOnHostJSONRequestBody = GithubStateHostInputBody
 
@@ -1609,6 +1650,12 @@ type PostPrCommentJSONRequestBody = PostCommentInputBody
 
 // EditPrCommentJSONRequestBody defines body for EditPrComment for application/json ContentType.
 type EditPrCommentJSONRequestBody = EditCommentInputBody
+
+// ReplyToDiscussionJSONRequestBody defines body for ReplyToDiscussion for application/json ContentType.
+type ReplyToDiscussionJSONRequestBody = ReplyToDiscussionInputBody
+
+// ResolveDiscussionJSONRequestBody defines body for ResolveDiscussion for application/json ContentType.
+type ResolveDiscussionJSONRequestBody = ResolveDiscussionInputBody
 
 // SetPrGithubStateJSONRequestBody defines body for SetPrGithubState for application/json ContentType.
 type SetPrGithubStateJSONRequestBody = GithubStateInputBody
@@ -1804,6 +1851,16 @@ type ClientInterface interface {
 	// GetPullDiffOnHost request
 	GetPullDiffOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, params *GetPullDiffOnHostParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// ReplyToDiscussionOnHostWithBody request with any body
+	ReplyToDiscussionOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, discussionId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	ReplyToDiscussionOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, discussionId string, body ReplyToDiscussionOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ResolveDiscussionOnHostWithBody request with any body
+	ResolveDiscussionOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, discussionId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	ResolveDiscussionOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, discussionId string, body ResolveDiscussionOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetPullFilePreviewOnHost request
 	GetPullFilePreviewOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, params *GetPullFilePreviewOnHostParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -1969,6 +2026,16 @@ type ClientInterface interface {
 
 	// GetPullDiff request
 	GetPullDiff(ctx context.Context, provider string, owner string, name string, number int64, params *GetPullDiffParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ReplyToDiscussionWithBody request with any body
+	ReplyToDiscussionWithBody(ctx context.Context, provider string, owner string, name string, number int64, discussionId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	ReplyToDiscussion(ctx context.Context, provider string, owner string, name string, number int64, discussionId string, body ReplyToDiscussionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ResolveDiscussionWithBody request with any body
+	ResolveDiscussionWithBody(ctx context.Context, provider string, owner string, name string, number int64, discussionId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	ResolveDiscussion(ctx context.Context, provider string, owner string, name string, number int64, discussionId string, body ResolveDiscussionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetPullFilePreview request
 	GetPullFilePreview(ctx context.Context, provider string, owner string, name string, number int64, params *GetPullFilePreviewParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -2501,6 +2568,54 @@ func (c *Client) GetPullCommitsOnHost(ctx context.Context, platformHost string, 
 
 func (c *Client) GetPullDiffOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, params *GetPullDiffOnHostParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetPullDiffOnHostRequest(c.Server, platformHost, provider, owner, name, number, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ReplyToDiscussionOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, discussionId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewReplyToDiscussionOnHostRequestWithBody(c.Server, platformHost, provider, owner, name, number, discussionId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ReplyToDiscussionOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, discussionId string, body ReplyToDiscussionOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewReplyToDiscussionOnHostRequest(c.Server, platformHost, provider, owner, name, number, discussionId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ResolveDiscussionOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, discussionId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewResolveDiscussionOnHostRequestWithBody(c.Server, platformHost, provider, owner, name, number, discussionId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ResolveDiscussionOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, discussionId string, body ResolveDiscussionOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewResolveDiscussionOnHostRequest(c.Server, platformHost, provider, owner, name, number, discussionId, body)
 	if err != nil {
 		return nil, err
 	}
@@ -3233,6 +3348,54 @@ func (c *Client) GetPullCommits(ctx context.Context, provider string, owner stri
 
 func (c *Client) GetPullDiff(ctx context.Context, provider string, owner string, name string, number int64, params *GetPullDiffParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetPullDiffRequest(c.Server, provider, owner, name, number, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ReplyToDiscussionWithBody(ctx context.Context, provider string, owner string, name string, number int64, discussionId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewReplyToDiscussionRequestWithBody(c.Server, provider, owner, name, number, discussionId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ReplyToDiscussion(ctx context.Context, provider string, owner string, name string, number int64, discussionId string, body ReplyToDiscussionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewReplyToDiscussionRequest(c.Server, provider, owner, name, number, discussionId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ResolveDiscussionWithBody(ctx context.Context, provider string, owner string, name string, number int64, discussionId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewResolveDiscussionRequestWithBody(c.Server, provider, owner, name, number, discussionId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ResolveDiscussion(ctx context.Context, provider string, owner string, name string, number int64, discussionId string, body ResolveDiscussionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewResolveDiscussionRequest(c.Server, provider, owner, name, number, discussionId, body)
 	if err != nil {
 		return nil, err
 	}
@@ -5449,6 +5612,170 @@ func NewGetPullDiffOnHostRequest(server string, platformHost string, provider st
 	if err != nil {
 		return nil, err
 	}
+
+	return req, nil
+}
+
+// NewReplyToDiscussionOnHostRequest calls the generic ReplyToDiscussionOnHost builder with application/json body
+func NewReplyToDiscussionOnHostRequest(server string, platformHost string, provider string, owner string, name string, number int64, discussionId string, body ReplyToDiscussionOnHostJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewReplyToDiscussionOnHostRequestWithBody(server, platformHost, provider, owner, name, number, discussionId, "application/json", bodyReader)
+}
+
+// NewReplyToDiscussionOnHostRequestWithBody generates requests for ReplyToDiscussionOnHost with any type of body
+func NewReplyToDiscussionOnHostRequestWithBody(server string, platformHost string, provider string, owner string, name string, number int64, discussionId string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam5 string
+
+	pathParam5, err = runtime.StyleParamWithOptions("simple", false, "discussion_id", discussionId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/pulls/%s/%s/%s/%s/discussions/%s/reply", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4, pathParam5)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewResolveDiscussionOnHostRequest calls the generic ResolveDiscussionOnHost builder with application/json body
+func NewResolveDiscussionOnHostRequest(server string, platformHost string, provider string, owner string, name string, number int64, discussionId string, body ResolveDiscussionOnHostJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewResolveDiscussionOnHostRequestWithBody(server, platformHost, provider, owner, name, number, discussionId, "application/json", bodyReader)
+}
+
+// NewResolveDiscussionOnHostRequestWithBody generates requests for ResolveDiscussionOnHost with any type of body
+func NewResolveDiscussionOnHostRequestWithBody(server string, platformHost string, provider string, owner string, name string, number int64, discussionId string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam5 string
+
+	pathParam5, err = runtime.StyleParamWithOptions("simple", false, "discussion_id", discussionId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/pulls/%s/%s/%s/%s/discussions/%s/resolve", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4, pathParam5)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
@@ -8403,6 +8730,156 @@ func NewGetPullDiffRequest(server string, provider string, owner string, name st
 	return req, nil
 }
 
+// NewReplyToDiscussionRequest calls the generic ReplyToDiscussion builder with application/json body
+func NewReplyToDiscussionRequest(server string, provider string, owner string, name string, number int64, discussionId string, body ReplyToDiscussionJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewReplyToDiscussionRequestWithBody(server, provider, owner, name, number, discussionId, "application/json", bodyReader)
+}
+
+// NewReplyToDiscussionRequestWithBody generates requests for ReplyToDiscussion with any type of body
+func NewReplyToDiscussionRequestWithBody(server string, provider string, owner string, name string, number int64, discussionId string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "discussion_id", discussionId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/pulls/%s/%s/%s/%s/discussions/%s/reply", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewResolveDiscussionRequest calls the generic ResolveDiscussion builder with application/json body
+func NewResolveDiscussionRequest(server string, provider string, owner string, name string, number int64, discussionId string, body ResolveDiscussionJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewResolveDiscussionRequestWithBody(server, provider, owner, name, number, discussionId, "application/json", bodyReader)
+}
+
+// NewResolveDiscussionRequestWithBody generates requests for ResolveDiscussion with any type of body
+func NewResolveDiscussionRequestWithBody(server string, provider string, owner string, name string, number int64, discussionId string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "discussion_id", discussionId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/pulls/%s/%s/%s/%s/discussions/%s/resolve", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewGetPullFilePreviewRequest generates requests for GetPullFilePreview
 func NewGetPullFilePreviewRequest(server string, provider string, owner string, name string, number int64, params *GetPullFilePreviewParams) (*http.Request, error) {
 	var err error
@@ -10746,6 +11223,16 @@ type ClientWithResponsesInterface interface {
 	// GetPullDiffOnHostWithResponse request
 	GetPullDiffOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, params *GetPullDiffOnHostParams, reqEditors ...RequestEditorFn) (*GetPullDiffOnHostResponse, error)
 
+	// ReplyToDiscussionOnHostWithBodyWithResponse request with any body
+	ReplyToDiscussionOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, discussionId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ReplyToDiscussionOnHostResponse, error)
+
+	ReplyToDiscussionOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, discussionId string, body ReplyToDiscussionOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*ReplyToDiscussionOnHostResponse, error)
+
+	// ResolveDiscussionOnHostWithBodyWithResponse request with any body
+	ResolveDiscussionOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, discussionId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ResolveDiscussionOnHostResponse, error)
+
+	ResolveDiscussionOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, discussionId string, body ResolveDiscussionOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*ResolveDiscussionOnHostResponse, error)
+
 	// GetPullFilePreviewOnHostWithResponse request
 	GetPullFilePreviewOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, params *GetPullFilePreviewOnHostParams, reqEditors ...RequestEditorFn) (*GetPullFilePreviewOnHostResponse, error)
 
@@ -10911,6 +11398,16 @@ type ClientWithResponsesInterface interface {
 
 	// GetPullDiffWithResponse request
 	GetPullDiffWithResponse(ctx context.Context, provider string, owner string, name string, number int64, params *GetPullDiffParams, reqEditors ...RequestEditorFn) (*GetPullDiffResponse, error)
+
+	// ReplyToDiscussionWithBodyWithResponse request with any body
+	ReplyToDiscussionWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, discussionId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ReplyToDiscussionResponse, error)
+
+	ReplyToDiscussionWithResponse(ctx context.Context, provider string, owner string, name string, number int64, discussionId string, body ReplyToDiscussionJSONRequestBody, reqEditors ...RequestEditorFn) (*ReplyToDiscussionResponse, error)
+
+	// ResolveDiscussionWithBodyWithResponse request with any body
+	ResolveDiscussionWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, discussionId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ResolveDiscussionResponse, error)
+
+	ResolveDiscussionWithResponse(ctx context.Context, provider string, owner string, name string, number int64, discussionId string, body ResolveDiscussionJSONRequestBody, reqEditors ...RequestEditorFn) (*ResolveDiscussionResponse, error)
 
 	// GetPullFilePreviewWithResponse request
 	GetPullFilePreviewWithResponse(ctx context.Context, provider string, owner string, name string, number int64, params *GetPullFilePreviewParams, reqEditors ...RequestEditorFn) (*GetPullFilePreviewResponse, error)
@@ -11522,6 +12019,51 @@ func (r GetPullDiffOnHostResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r GetPullDiffOnHostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ReplyToDiscussionOnHostResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON201                       *MREvent
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r ReplyToDiscussionOnHostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ReplyToDiscussionOnHostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ResolveDiscussionOnHostResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r ResolveDiscussionOnHostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ResolveDiscussionOnHostResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -12530,6 +13072,51 @@ func (r GetPullDiffResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r GetPullDiffResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ReplyToDiscussionResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON201                       *MREvent
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r ReplyToDiscussionResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ReplyToDiscussionResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ResolveDiscussionResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r ResolveDiscussionResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ResolveDiscussionResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -13808,6 +14395,40 @@ func (c *ClientWithResponses) GetPullDiffOnHostWithResponse(ctx context.Context,
 	return ParseGetPullDiffOnHostResponse(rsp)
 }
 
+// ReplyToDiscussionOnHostWithBodyWithResponse request with arbitrary body returning *ReplyToDiscussionOnHostResponse
+func (c *ClientWithResponses) ReplyToDiscussionOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, discussionId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ReplyToDiscussionOnHostResponse, error) {
+	rsp, err := c.ReplyToDiscussionOnHostWithBody(ctx, platformHost, provider, owner, name, number, discussionId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseReplyToDiscussionOnHostResponse(rsp)
+}
+
+func (c *ClientWithResponses) ReplyToDiscussionOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, discussionId string, body ReplyToDiscussionOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*ReplyToDiscussionOnHostResponse, error) {
+	rsp, err := c.ReplyToDiscussionOnHost(ctx, platformHost, provider, owner, name, number, discussionId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseReplyToDiscussionOnHostResponse(rsp)
+}
+
+// ResolveDiscussionOnHostWithBodyWithResponse request with arbitrary body returning *ResolveDiscussionOnHostResponse
+func (c *ClientWithResponses) ResolveDiscussionOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, discussionId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ResolveDiscussionOnHostResponse, error) {
+	rsp, err := c.ResolveDiscussionOnHostWithBody(ctx, platformHost, provider, owner, name, number, discussionId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseResolveDiscussionOnHostResponse(rsp)
+}
+
+func (c *ClientWithResponses) ResolveDiscussionOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, discussionId string, body ResolveDiscussionOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*ResolveDiscussionOnHostResponse, error) {
+	rsp, err := c.ResolveDiscussionOnHost(ctx, platformHost, provider, owner, name, number, discussionId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseResolveDiscussionOnHostResponse(rsp)
+}
+
 // GetPullFilePreviewOnHostWithResponse request returning *GetPullFilePreviewOnHostResponse
 func (c *ClientWithResponses) GetPullFilePreviewOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, params *GetPullFilePreviewOnHostParams, reqEditors ...RequestEditorFn) (*GetPullFilePreviewOnHostResponse, error) {
 	rsp, err := c.GetPullFilePreviewOnHost(ctx, platformHost, provider, owner, name, number, params, reqEditors...)
@@ -14338,6 +14959,40 @@ func (c *ClientWithResponses) GetPullDiffWithResponse(ctx context.Context, provi
 		return nil, err
 	}
 	return ParseGetPullDiffResponse(rsp)
+}
+
+// ReplyToDiscussionWithBodyWithResponse request with arbitrary body returning *ReplyToDiscussionResponse
+func (c *ClientWithResponses) ReplyToDiscussionWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, discussionId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ReplyToDiscussionResponse, error) {
+	rsp, err := c.ReplyToDiscussionWithBody(ctx, provider, owner, name, number, discussionId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseReplyToDiscussionResponse(rsp)
+}
+
+func (c *ClientWithResponses) ReplyToDiscussionWithResponse(ctx context.Context, provider string, owner string, name string, number int64, discussionId string, body ReplyToDiscussionJSONRequestBody, reqEditors ...RequestEditorFn) (*ReplyToDiscussionResponse, error) {
+	rsp, err := c.ReplyToDiscussion(ctx, provider, owner, name, number, discussionId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseReplyToDiscussionResponse(rsp)
+}
+
+// ResolveDiscussionWithBodyWithResponse request with arbitrary body returning *ResolveDiscussionResponse
+func (c *ClientWithResponses) ResolveDiscussionWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, discussionId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ResolveDiscussionResponse, error) {
+	rsp, err := c.ResolveDiscussionWithBody(ctx, provider, owner, name, number, discussionId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseResolveDiscussionResponse(rsp)
+}
+
+func (c *ClientWithResponses) ResolveDiscussionWithResponse(ctx context.Context, provider string, owner string, name string, number int64, discussionId string, body ResolveDiscussionJSONRequestBody, reqEditors ...RequestEditorFn) (*ResolveDiscussionResponse, error) {
+	rsp, err := c.ResolveDiscussion(ctx, provider, owner, name, number, discussionId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseResolveDiscussionResponse(rsp)
 }
 
 // GetPullFilePreviewWithResponse request returning *GetPullFilePreviewResponse
@@ -15473,6 +16128,65 @@ func ParseGetPullDiffOnHostResponse(rsp *http.Response) (*GetPullDiffOnHostRespo
 		}
 		response.JSON200 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseReplyToDiscussionOnHostResponse parses an HTTP response from a ReplyToDiscussionOnHostWithResponse call
+func ParseReplyToDiscussionOnHostResponse(rsp *http.Response) (*ReplyToDiscussionOnHostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ReplyToDiscussionOnHostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest MREvent
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseResolveDiscussionOnHostResponse parses an HTTP response from a ResolveDiscussionOnHostWithResponse call
+func ParseResolveDiscussionOnHostResponse(rsp *http.Response) (*ResolveDiscussionOnHostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ResolveDiscussionOnHostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
@@ -16897,6 +17611,65 @@ func ParseGetPullDiffResponse(rsp *http.Response) (*GetPullDiffResponse, error) 
 		}
 		response.JSON200 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseReplyToDiscussionResponse parses an HTTP response from a ReplyToDiscussionWithResponse call
+func ParseReplyToDiscussionResponse(rsp *http.Response) (*ReplyToDiscussionResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ReplyToDiscussionResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest MREvent
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseResolveDiscussionResponse parses an HTTP response from a ResolveDiscussionWithResponse call
+func ParseResolveDiscussionResponse(rsp *http.Response) (*ResolveDiscussionResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ResolveDiscussionResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {

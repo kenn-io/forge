@@ -102,20 +102,20 @@ newline-delimited JSON with --output jsonl.`),
 		}
 		body, err := deps.Restish(ctx, current, method, requestURL, bodyArgs)
 		if err != nil {
-			return cliConfig{}, nil, err
+			return current, body, err
 		}
 		return current, body, nil
 	}
 
 	request := func(ctx context.Context, method, path string, query url.Values, bodyArgs []string) error {
 		current, body, err := fetch(ctx, method, path, query, bodyArgs)
+		if len(body) > 0 {
+			if writeErr := writeResponse(deps.Stdout, current.output, body); writeErr != nil {
+				return writeErr
+			}
+		}
 		if err != nil {
 			return err
-		}
-		if len(body) > 0 {
-			if err := writeResponse(deps.Stdout, current.output, body); err != nil {
-				return err
-			}
 		}
 		return nil
 	}
@@ -623,7 +623,7 @@ func makeRestishRequest(ctx context.Context, cfg cliConfig, method, requestURL s
 		return nil, err
 	}
 	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("middleman API returned %s", resp.Status)
+		return responseBody, apiStatusError{Status: resp.Status, Body: responseBody}
 	}
 	return responseBody, nil
 }
@@ -635,4 +635,17 @@ func methodRequiresJSONContentType(method string) bool {
 	default:
 		return true
 	}
+}
+
+type apiStatusError struct {
+	Status string
+	Body   []byte
+}
+
+func (e apiStatusError) Error() string {
+	body := strings.TrimSpace(string(e.Body))
+	if body == "" {
+		return fmt.Sprintf("middleman API returned %s", e.Status)
+	}
+	return fmt.Sprintf("middleman API returned %s: %s", e.Status, body)
 }

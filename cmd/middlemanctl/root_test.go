@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -213,6 +214,26 @@ func TestRawAPICommandRejectsAbsoluteURLs(t *testing.T) {
 	require.Error(err)
 	assert.Contains(err.Error(), "absolute API URLs are not allowed")
 	assert.False(called)
+}
+
+func TestRawAPICommandWritesErrorResponseBody(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	var stdout bytes.Buffer
+	cmd := newRootCommand(commandDeps{
+		Stdout: &stdout,
+		Stderr: &bytes.Buffer{},
+		Restish: func(context.Context, cliConfig, string, string, []string) ([]byte, error) {
+			return []byte(`{"code":"not_found","details":{"repo":"acme/widget"}}`),
+				errors.New("middleman API returned 404 Not Found")
+		},
+	})
+	cmd.SetArgs([]string{"--server", "http://middleman.test/", "api", "GET", "/missing"})
+
+	err := cmd.Execute()
+
+	require.Error(err)
+	assert.JSONEq(`{"code":"not_found","details":{"repo":"acme/widget"}}`, stdout.String())
 }
 
 func TestRawAPICommandRejectsDotSegmentPaths(t *testing.T) {
@@ -483,6 +504,27 @@ func TestRestishRequesterSetsJSONContentTypeForMutations(t *testing.T) {
 
 	require.NoError(err)
 	assert.Empty(body)
+}
+
+func TestRestishRequesterReturnsErrorResponseBody(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	t.Setenv("MIDDLEMANCTL_RESTISH_CONFIG_DIR", t.TempDir())
+	t.Setenv("MIDDLEMANCTL_RESTISH_CACHE_DIR", t.TempDir())
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_, err := w.Write([]byte(`{"code":"not_found","details":{"repo":"acme/widget"}}`))
+		assert.NoError(err)
+	}))
+	t.Cleanup(server.Close)
+
+	body, err := makeRestishRequest(context.Background(), cliConfig{timeout: 30 * time.Second}, http.MethodGet, server.URL+"/api/v1/missing", nil)
+
+	require.Error(err)
+	assert.Contains(err.Error(), "404 Not Found")
+	assert.Contains(err.Error(), `"code":"not_found"`)
+	assert.JSONEq(`{"code":"not_found","details":{"repo":"acme/widget"}}`, string(body))
 }
 
 func TestWriteResponseFetchesYAMLBodyOnly(t *testing.T) {

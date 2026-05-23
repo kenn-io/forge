@@ -25,9 +25,10 @@ type remoteHeadKey struct {
 }
 
 type remoteHeadObservation struct {
-	SHA                   string
-	ObservedAt            time.Time
-	LastRefreshEnqueuedAt time.Time
+	SHA                    string
+	ObservedAt             time.Time
+	LastRefreshEnqueuedAt  time.Time
+	LastRefreshSucceededAt time.Time
 }
 
 type PushedHeadUpdate struct {
@@ -69,7 +70,10 @@ type remoteHeadGitReader interface {
 	RemoteTrackingSHA(ctx context.Context, dir, remote, branch string) (string, string, bool, error)
 }
 
-const pushedHeadGitTimeout = 2 * time.Second
+const (
+	pushedHeadGitTimeout           = 2 * time.Second
+	pushedHeadRefreshRetryInterval = 30 * time.Second
+)
 
 type gitRemoteHeadReader struct{}
 
@@ -130,7 +134,18 @@ func (o *PushedHeadObserver) MarkRefreshEnqueued(update PushedHeadUpdate, at tim
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	obs := o.observed[key]
+	obs.SHA = update.NewSHA
 	obs.LastRefreshEnqueuedAt = at
+	o.observed[key] = obs
+}
+
+func (o *PushedHeadObserver) MarkRefreshSucceeded(update PushedHeadUpdate, at time.Time) {
+	key := update.remoteHeadKey()
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	obs := o.observed[key]
+	obs.SHA = update.NewSHA
+	obs.LastRefreshSucceededAt = at
 	o.observed[key] = obs
 }
 
@@ -351,7 +366,15 @@ func (o *PushedHeadObserver) observeWorkspacePR(ctx context.Context, ws *Workspa
 	if strings.EqualFold(prior.SHA, lookup.sha) {
 		prior.ObservedAt = observedAt
 		o.observed[key] = prior
-		return PushedHeadUpdate{}, false, nil
+		providerSHA := strings.TrimSpace(mr.PlatformHeadSHA)
+		if providerSHA == "" || strings.EqualFold(providerSHA, lookup.sha) {
+			return PushedHeadUpdate{}, false, nil
+		}
+		if !prior.LastRefreshEnqueuedAt.IsZero() && observedAt.Sub(prior.LastRefreshEnqueuedAt) < pushedHeadRefreshRetryInterval {
+			return PushedHeadUpdate{}, false, nil
+		}
+		update.OldSHA = providerSHA
+		return update, true, nil
 	}
 	update.OldSHA = prior.SHA
 	prior.SHA = lookup.sha

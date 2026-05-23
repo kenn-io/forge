@@ -115,6 +115,9 @@ func (s *Server) enqueueWorkspacePushedHeadRefresh(change workspace.PushedHeadUp
 			)
 		},
 		func(ctx context.Context) {
+			if s.workspacePushedHeadObserver != nil {
+				s.workspacePushedHeadObserver.MarkRefreshSucceeded(change, s.now().UTC())
+			}
 			s.broadcastPRDetailRefreshed(ctx, change)
 			s.maybeEnqueuePushedHeadCIRefresh(ctx, change)
 		},

@@ -205,6 +205,48 @@ describe("Provider events store wiring", () => {
     );
   });
 
+  it("ignores targeted PR refreshes while an issue detail is visible", () => {
+    currentDetail = {
+      repo: {
+        provider: "github",
+        platform_host: "github.com",
+        repo_path: "acme/widget",
+      },
+      repo_owner: "acme",
+      repo_name: "widget",
+      issue: { Number: 7 },
+    };
+    render(Provider, { props: { client: stubClient } });
+
+    expect(() =>
+      captured.store?.options.onPRDetailRefreshed?.({
+        provider: "github",
+        platform_host: "github.com",
+        repo_path: "acme/widget",
+        owner: "acme",
+        name: "widget",
+        number: 42,
+        head_sha: "2222222",
+        synced_at: "2026-05-20T14:15:04Z",
+        warnings: [],
+      }),
+    ).not.toThrow();
+    expect(() =>
+      captured.store?.options.onPRCIRefreshed?.({
+        provider: "github",
+        platform_host: "github.com",
+        repo_path: "acme/widget",
+        owner: "acme",
+        name: "widget",
+        number: 42,
+        head_sha: "2222222",
+        refreshed_at: "2026-05-20T14:15:20Z",
+        warnings: [],
+      }),
+    ).not.toThrow();
+    expect(refreshDetailOnly).not.toHaveBeenCalled();
+  });
+
   it("ignores targeted PR detail refreshes for non-visible PRs", () => {
     currentDetail = {
       repo: {

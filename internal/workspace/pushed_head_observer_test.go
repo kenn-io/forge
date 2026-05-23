@@ -167,6 +167,70 @@ func TestPushedHeadObserverFirstObservationEnqueuesWhenProviderHeadDiffers(t *te
 	assert.Equal("refs/remotes/origin/feature/remote-head", change.TrackingRef)
 }
 
+func TestPushedHeadObserverRetriesObservedSHAUntilProviderHeadMatches(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	repoID := seedRepo(t, d, "github.com", "acme", "widget")
+	seedMRWithPlatformHead(t, d, repoID, 42, "feature/remote-head", "1111111")
+	insertPushedHeadWorkspace(t, d, "ws-pr", db.WorkspaceItemTypePullRequest, 42, nil)
+	reader := &fakeRemoteHeadReader{
+		branch:      "feature/remote-head",
+		upstream:    upstreamState{hasTracking: true, remoteName: "origin", branchName: "feature/remote-head"},
+		trackingSHA: "2222222",
+		trackingRef: "refs/remotes/origin/feature/remote-head",
+		trackingOK:  true,
+	}
+	now := time.Date(2026, 5, 20, 14, 15, 0, 0, time.UTC)
+	observer := NewPushedHeadObserver(d)
+	observer.SetGitReaderForTest(reader)
+	observer.SetNowForTest(func() time.Time { return now })
+
+	first, err := observer.RunOnce(context.Background())
+	require.NoError(err)
+	require.Len(first.HeadChanges, 1)
+	observer.MarkRefreshEnqueued(first.HeadChanges[0], now)
+
+	suppressed, err := observer.RunOnce(context.Background())
+	require.NoError(err)
+	assert.Empty(suppressed.HeadChanges)
+
+	now = now.Add(pushedHeadRefreshRetryInterval + time.Second)
+	retry, err := observer.RunOnce(context.Background())
+	require.NoError(err)
+	require.Len(retry.HeadChanges, 1)
+	assert.Equal("1111111", retry.HeadChanges[0].OldSHA)
+	assert.Equal("2222222", retry.HeadChanges[0].NewSHA)
+}
+
+func TestPushedHeadObserverDoesNotRetryAfterRefreshSucceeds(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	repoID := seedRepo(t, d, "github.com", "acme", "widget")
+	seedMRWithPlatformHead(t, d, repoID, 42, "feature/remote-head", "1111111")
+	insertPushedHeadWorkspace(t, d, "ws-pr", db.WorkspaceItemTypePullRequest, 42, nil)
+	reader := &fakeRemoteHeadReader{
+		branch:      "feature/remote-head",
+		upstream:    upstreamState{hasTracking: true, remoteName: "origin", branchName: "feature/remote-head"},
+		trackingSHA: "2222222",
+		trackingRef: "refs/remotes/origin/feature/remote-head",
+		trackingOK:  true,
+	}
+	observer := newPushedHeadObserverForTest(t, d, reader)
+
+	first, err := observer.RunOnce(context.Background())
+	require.NoError(err)
+	require.Len(first.HeadChanges, 1)
+	now := time.Date(2026, 5, 20, 14, 15, 0, 0, time.UTC)
+	observer.MarkRefreshSucceeded(first.HeadChanges[0], now)
+	seedMRWithPlatformHead(t, d, repoID, 42, "feature/remote-head", "2222222")
+
+	retry, err := observer.RunOnce(context.Background())
+	require.NoError(err)
+	assert.Empty(retry.HeadChanges)
+}
+
 func TestPushedHeadObserverDetectsSubsequentTrackingRefMove(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

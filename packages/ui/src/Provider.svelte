@@ -272,7 +272,7 @@
           detail.repo.repo_path === ref.repo_path &&
           detail.repo_owner === ref.owner &&
           detail.repo_name === ref.name &&
-          detail.merge_request.Number === ref.number
+          detail.merge_request?.Number === ref.number
         ) {
           void detailStore.refreshDetailOnly(
             ref.owner,
@@ -294,7 +294,7 @@
           detail.repo.repo_path === ref.repo_path &&
           detail.repo_owner === ref.owner &&
           detail.repo_name === ref.name &&
-          detail.merge_request.Number === ref.number
+          detail.merge_request?.Number === ref.number
         ) {
           void detailStore.refreshDetailOnly(
             ref.owner,

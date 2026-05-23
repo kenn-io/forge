@@ -1665,6 +1665,7 @@ export interface components {
             status: string;
         };
         Activity: {
+            collapse_threads: boolean;
             hide_bots: boolean;
             hide_closed: boolean;
             time_range: string;

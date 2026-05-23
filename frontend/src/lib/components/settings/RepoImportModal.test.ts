@@ -121,6 +121,7 @@ describe("RepoImportModal", () => {
         time_range: "7d",
         hide_closed: false,
         hide_bots: false,
+        collapse_threads: false,
       },
       terminal: {
         font_family: "",
@@ -191,6 +192,7 @@ describe("RepoImportModal", () => {
         time_range: "7d",
         hide_closed: false,
         hide_bots: false,
+        collapse_threads: false,
       },
       terminal: {
         font_family: "",

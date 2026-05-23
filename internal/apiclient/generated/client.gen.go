@@ -189,10 +189,11 @@ type ActionStatusBody struct {
 
 // Activity defines model for Activity.
 type Activity struct {
-	HideBots   bool   `json:"hide_bots"`
-	HideClosed bool   `json:"hide_closed"`
-	TimeRange  string `json:"time_range"`
-	ViewMode   string `json:"view_mode"`
+	CollapseThreads bool   `json:"collapse_threads"`
+	HideBots        bool   `json:"hide_bots"`
+	HideClosed      bool   `json:"hide_closed"`
+	TimeRange       string `json:"time_range"`
+	ViewMode        string `json:"view_mode"`
 }
 
 // ActivityItemResponse defines model for ActivityItemResponse.

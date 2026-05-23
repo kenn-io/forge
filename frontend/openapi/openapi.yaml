@@ -21,6 +21,8 @@ components:
     Activity:
       additionalProperties: false
       properties:
+        collapse_threads:
+          type: boolean
         hide_bots:
           type: boolean
         hide_closed:
@@ -34,6 +36,7 @@ components:
         - time_range
         - hide_closed
         - hide_bots
+        - collapse_threads
       type: object
     ActivityItemResponse:
       additionalProperties: false

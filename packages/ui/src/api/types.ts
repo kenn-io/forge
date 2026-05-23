@@ -66,6 +66,7 @@ export interface ActivitySettings {
   time_range: "24h" | "7d" | "30d" | "90d";
   hide_closed: boolean;
   hide_bots: boolean;
+  collapse_threads: boolean;
 }
 
 export type TerminalRenderer = "xterm" | "ghostty-web";

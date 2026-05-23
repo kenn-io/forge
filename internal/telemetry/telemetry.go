@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/posthog/posthog-go"
-	"github.com/wesm/middleman/internal/db"
+	"go.kenn.io/middleman/internal/db"
 )
 
 const (

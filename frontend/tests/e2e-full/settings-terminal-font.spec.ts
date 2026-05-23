@@ -240,14 +240,15 @@ test.describe("terminal options popover", () => {
       await expect
         .poll(() => terminalScreenSizeKey(page))
         .not.toBe(initialScreenSize);
-      let delayedSettingsSave = false;
+      let releaseSettingsSave: (() => void) | undefined;
       await page.route("**/api/v1/settings", async (route) => {
         if (
           route.request().method() === "PUT" &&
-          !delayedSettingsSave
+          releaseSettingsSave === undefined
         ) {
-          delayedSettingsSave = true;
-          await new Promise((resolve) => setTimeout(resolve, 300));
+          await new Promise<void>((resolve) => {
+            releaseSettingsSave = resolve;
+          });
         }
         await route.continue();
       });
@@ -257,10 +258,14 @@ test.describe("terminal options popover", () => {
           response.request().method() === "PUT",
       );
       await page.getByRole("button", { name: "Save", exact: true }).click();
+      await expect
+        .poll(() => releaseSettingsSave !== undefined)
+        .toBe(true);
       await page.keyboard.press("Escape");
       await expect(
         page.getByRole("dialog", { name: "Terminal options" }),
       ).toBeVisible();
+      releaseSettingsSave?.();
       const saveResponse = await saveResponsePromise;
       const saveBody = await saveResponse.text();
       expect(

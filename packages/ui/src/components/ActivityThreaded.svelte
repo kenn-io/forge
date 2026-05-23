@@ -4,8 +4,12 @@
   import {
     collapseActivityCommitRuns,
     isCollapsedActivityRow,
+    activityBranchKey,
     activityItemKey,
     activityRepoKey,
+    isDefaultBranchActivity,
+    isDefaultBranchForcePushActivity,
+    shortSha,
   } from "./activityRows.js";
   import {
     localDateLabel,
@@ -45,11 +49,13 @@
   }: Props = $props();
 
   interface ItemGroup {
+    kind: "item" | "branch";
     itemType: string;
     itemNumber: number;
     itemTitle: string;
     itemUrl: string;
     itemState: string;
+    branchName: string;
     provider: string;
     repoOwner: string;
     repoName: string;
@@ -79,14 +85,22 @@
     const itemMap = new Map<string, ActivityItem[]>();
 
     for (const item of items) {
-      const itemKey = activityItemKey({
-        provider: item.repo?.provider ?? "",
-        platformHost: item.platform_host ?? "",
-        owner: item.repo_owner,
-        name: item.repo_name,
-        itemType: item.item_type,
-        itemNumber: item.item_number,
-      });
+      const itemKey = isDefaultBranchActivity(item)
+        ? activityBranchKey({
+            provider: item.repo?.provider ?? "",
+            platformHost: item.platform_host ?? item.repo?.platform_host ?? "",
+            owner: item.repo_owner,
+            name: item.repo_name,
+            branchName: item.branch_name || "default branch",
+          })
+        : activityItemKey({
+            provider: item.repo?.provider ?? "",
+            platformHost: item.platform_host ?? "",
+            owner: item.repo_owner,
+            name: item.repo_name,
+            itemType: item.item_type,
+            itemNumber: item.item_number,
+          });
 
       let events = itemMap.get(itemKey);
       if (!events) {
@@ -107,12 +121,17 @@
       if (!first.repo) {
         throw new Error("activity group missing provider repo identity");
       }
+      const branch = first.branch_name || "default branch";
       allItemGroups.push({
+        kind: isDefaultBranchActivity(first) ? "branch" : "item",
         itemType: first.item_type,
         itemNumber: first.item_number,
-        itemTitle: first.item_title,
-        itemUrl: first.item_url,
+        itemTitle: isDefaultBranchActivity(first)
+          ? `${branch} updates on ${first.repo.owner}/${first.repo.name}`
+          : first.item_title,
+        itemUrl: first.activity_url || first.item_url,
         itemState: first.item_state,
+        branchName: branch,
         provider: first.repo.provider,
         repoOwner: first.repo.owner,
         repoName: first.repo.name,
@@ -178,6 +197,15 @@
   });
 
   function itemKeyOf(g: ItemGroup): string {
+    if (g.kind === "branch") {
+      return activityBranchKey({
+        provider: g.provider,
+        platformHost: g.platformHost,
+        owner: g.repoOwner,
+        name: g.repoName,
+        branchName: g.branchName,
+      });
+    }
     return activityItemKey({
       provider: g.provider,
       platformHost: g.platformHost,
@@ -195,6 +223,8 @@
       case "review": return "Review";
       case "commit": return "Commit";
       case "force_push": return "Force-pushed";
+      case "default_branch_commit": return "Commit";
+      case "default_branch_force_push": return "Force-pushed";
       default: return type;
     }
   }
@@ -204,7 +234,9 @@
       case "comment": return "evt-comment";
       case "review": return "evt-review";
       case "commit": return "evt-commit";
+      case "default_branch_commit": return "evt-commit";
       case "force_push": return "evt-force-push";
+      case "default_branch_force_push": return "evt-force-push";
       default: return "";
     }
   }
@@ -222,16 +254,25 @@
   }
 
   function handleItemClick(group: ItemGroup): void {
+    if (group.kind === "branch") {
+      if (group.itemUrl) window.open(group.itemUrl, "_blank", "noopener");
+      return;
+    }
     if (group.events.length > 0) {
       onSelectItem?.(group.events[0]!);
     }
   }
 
   function handleEventClick(event: ActivityItem): void {
+    if (isDefaultBranchActivity(event)) {
+      if (event.activity_url) window.open(event.activity_url, "_blank", "noopener");
+      return;
+    }
     onSelectItem?.(event);
   }
 
   function isSelectedItemGroup(group: ItemGroup): boolean {
+    if (group.kind === "branch") return false;
     return selectedItem?.itemType === group.itemType
       && selectedItem.owner === group.repoOwner
       && selectedItem.name === group.repoName
@@ -242,6 +283,21 @@
         || selectedItem.repoPath === group.repoPath)
       && (!selectedItem.platformHost
         || group.platformHost === selectedItem.platformHost);
+  }
+
+  function eventAuthor(event: ActivityItem): string {
+    return event.author_name || event.author;
+  }
+
+  function eventSummary(event: ActivityItem): string {
+    if (!isDefaultBranchActivity(event)) return "";
+    if (isDefaultBranchForcePushActivity(event)) {
+      const before = shortSha(event.before_sha);
+      const after = shortSha(event.after_sha);
+      return before && after ? `${before} -> ${after}` : event.body_preview;
+    }
+    const sha = shortSha(event.commit_sha);
+    return [sha, event.body_preview].filter(Boolean).join(" ");
   }
 </script>
 
@@ -282,9 +338,13 @@
               <ChevronRightIcon size="14" strokeWidth="2" aria-hidden="true" />
             {/if}
           </button>
-          <ItemKindChip
-            kind={itemGroup.itemType === "pr" ? "pr" : "issue"}
-          />
+          {#if itemGroup.kind === "branch"}
+            <Chip size="xs" uppercase={false} class="branch-chip chip--muted">Branch</Chip>
+          {:else}
+            <ItemKindChip
+              kind={itemGroup.itemType === "pr" ? "pr" : "issue"}
+            />
+          {/if}
           {#if !grouping.getGroupByRepo()}
             <Chip
               size="xs"
@@ -295,12 +355,16 @@
               <span class="repo-chip__label">{itemGroup.repoOwner}/{itemGroup.repoName}</span>
             </Chip>
           {/if}
-          {#if itemGroup.itemState === "merged"}
+          {#if itemGroup.kind !== "branch" && itemGroup.itemState === "merged"}
             <ItemStateChip state="merged" />
-          {:else if itemGroup.itemState === "closed"}
+          {:else if itemGroup.kind !== "branch" && itemGroup.itemState === "closed"}
             <ItemStateChip state="closed" />
           {/if}
-          <span class="item-ref">#{itemGroup.itemNumber}</span>
+          {#if itemGroup.kind === "branch"}
+            <span class="item-ref">{itemGroup.branchName}</span>
+          {:else}
+            <span class="item-ref">#{itemGroup.itemNumber}</span>
+          {/if}
           <span class="item-title">{itemGroup.itemTitle}</span>
           <span class="item-time">{relativeTime(itemGroup.latestTime)}</span>
         </div>
@@ -318,7 +382,10 @@
             {:else}
               <div class="event-row" onclick={() => handleEventClick(row)}>
                 <span class="event-type {eventClass(row.activity_type)}">{eventLabel(row.activity_type)}</span>
-                <span class="event-author">{row.author}</span>
+                {#if eventSummary(row)}
+                  <span class="event-summary">{eventSummary(row)}</span>
+                {/if}
+                <span class="event-author">{eventAuthor(row)}</span>
                 <span class="event-time">{relativeTime(row.created_at)}</span>
               </div>
             {/if}
@@ -467,6 +534,19 @@
   .event-author {
     font-size: var(--font-size-xs);
     color: var(--text-secondary);
+  }
+
+  .event-summary {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--text-primary);
+    font-size: var(--font-size-xs);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  :global(.branch-chip) {
+    flex-shrink: 0;
   }
 
   .event-time {

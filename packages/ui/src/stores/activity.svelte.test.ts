@@ -115,3 +115,23 @@ describe("activity store collapse state", () => {
     expect(s.getCollapseThreads()).toBe(false);
   });
 });
+
+describe("activity store default-branch visibility", () => {
+  it("shows default-branch activity by default and persists the hide flag", () => {
+    const s = makeStore();
+    s.initializeFromMount();
+    expect(s.getHideDefaultBranchActivity()).toBe(false);
+
+    s.setHideDefaultBranchActivity(true);
+    s.syncToURL();
+    expect(new URLSearchParams(window.location.search).get("hide_branch")).toBe("1");
+
+    const next = makeStore();
+    next.initializeFromMount();
+    expect(next.getHideDefaultBranchActivity()).toBe(true);
+
+    next.setHideDefaultBranchActivity(false);
+    next.syncToURL();
+    expect(new URLSearchParams(window.location.search).has("hide_branch")).toBe(false);
+  });
+});

@@ -34,6 +34,28 @@ function activityItem(
   };
 }
 
+function branchActivityItem(
+  id: string,
+  overrides: Partial<ActivityItem> = {},
+): ActivityItem {
+  return activityItem(id, {
+    activity_type: "default_branch_commit",
+    author: "alice",
+    author_name: "Alice Example",
+    body_preview: "Refresh cache warmer",
+    branch_name: "main",
+    commit_sha: "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+    committed_at: "2026-04-27T12:00:00Z",
+    item_number: 0,
+    item_state: "",
+    item_title: "",
+    item_type: "",
+    item_url: "",
+    activity_url: "https://github.com/acme/widgets/commit/a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+    ...overrides,
+  });
+}
+
 const expanded = vi.hoisted(() => ({ value: true }));
 const toggleThreadItem = vi.hoisted(() => vi.fn());
 
@@ -93,5 +115,31 @@ describe("ActivityThreaded collapse", () => {
       ".repo-chip.repo-tag .repo-chip__label",
     );
     expect(label?.textContent).toBe("acme/widgets");
+  });
+
+  it("groups branch activity by repo branch without an item number", async () => {
+    const { container } = render(ActivityThreaded, {
+      props: {
+        items: [
+          branchActivityItem("c1"),
+          branchActivityItem("c2", {
+            created_at: "2026-04-27T11:59:00Z",
+            commit_sha: "b1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+          }),
+        ],
+        onSelectItem: undefined,
+      },
+    });
+
+    expect(container.querySelectorAll(".item-row")).toHaveLength(1);
+    expect(container.textContent).toContain("main updates on acme/widgets");
+    expect(container.textContent).not.toContain("#0");
+
+    const caret = container.querySelector(".thread-caret");
+    expect(caret).not.toBeNull();
+    await fireEvent.click(caret!);
+    expect(toggleThreadItem).toHaveBeenCalledWith(
+      "github|github.com|acme/widgets:branch:main",
+    );
   });
 });

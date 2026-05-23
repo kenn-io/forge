@@ -9,11 +9,16 @@ export type TimeRange = "24h" | "7d" | "30d" | "90d";
 export type ViewMode = "flat" | "threaded";
 export type ItemFilter = "all" | "prs" | "issues";
 
-const DEFAULT_EVENT_TYPES = [
+export const DEFAULT_EVENT_TYPES = [
   "comment",
   "review",
   "commit",
   "force_push",
+] as const;
+
+export const DEFAULT_BRANCH_ACTIVITY_TYPES = [
+  "default_branch_commit",
+  "default_branch_force_push",
 ] as const;
 
 const RANGE_MS: Record<TimeRange, number> = {
@@ -66,6 +71,7 @@ export function createActivityStore(
 
   let hideClosedMerged = $state(false);
   let hideBots = $state(false);
+  let hideDefaultBranchActivity = $state(false);
   let enabledEvents = $state<Set<string>>(
     new Set(DEFAULT_EVENT_TYPES),
   );
@@ -109,6 +115,9 @@ export function createActivityStore(
   }
   function getHideBots(): boolean {
     return hideBots;
+  }
+  function getHideDefaultBranchActivity(): boolean {
+    return hideDefaultBranchActivity;
   }
   function getEnabledEvents(): Set<string> {
     return enabledEvents;
@@ -159,6 +168,9 @@ export function createActivityStore(
   }
   function setHideBots(v: boolean): void {
     hideBots = v;
+  }
+  function setHideDefaultBranchActivity(v: boolean): void {
+    hideDefaultBranchActivity = v;
   }
   function setEnabledEvents(events: Set<string>): void {
     enabledEvents = events;
@@ -413,6 +425,7 @@ export function createActivityStore(
       if (viewParam === "flat" || viewParam === "threaded")
         viewMode = viewParam;
     }
+    hideDefaultBranchActivity = sp.get("hide_branch") === "1";
     applyCollapsedFromURL();
     deriveFiltersFromTypes();
   }
@@ -430,6 +443,8 @@ export function createActivityStore(
     else sp.delete("range");
     if (viewMode !== "flat") sp.set("view", viewMode);
     else sp.delete("view");
+    if (hideDefaultBranchActivity) sp.set("hide_branch", "1");
+    else sp.delete("hide_branch");
     if (collapseThreads !== collapseThreadsDefault) {
       sp.set("collapsed", collapseThreads ? "1" : "0");
     } else {
@@ -454,6 +469,7 @@ export function createActivityStore(
     isThreadItemExpanded,
     getHideClosedMerged,
     getHideBots,
+    getHideDefaultBranchActivity,
     getEnabledEvents,
     getItemFilter,
     isInitialized,
@@ -466,6 +482,7 @@ export function createActivityStore(
     toggleThreadItem,
     setHideClosedMerged,
     setHideBots,
+    setHideDefaultBranchActivity,
     setEnabledEvents,
     setItemFilter,
     hydrateDefaults,

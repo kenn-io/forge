@@ -2,11 +2,23 @@
   import { onDestroy, onMount } from "svelte";
   import type { ActivityItem } from "../api/types.js";
   import { getStores } from "../context.js";
-  import type { ItemFilter, TimeRange } from "../stores/activity.svelte.js";
+  import {
+    DEFAULT_BRANCH_ACTIVITY_TYPES,
+    DEFAULT_EVENT_TYPES,
+    type ItemFilter,
+    type TimeRange,
+  } from "../stores/activity.svelte.js";
   import { parseAPITimestamp } from "../utils/time.js";
+  import Chip from "../components/shared/Chip.svelte";
   import ItemKindChip from "../components/shared/ItemKindChip.svelte";
   import ItemStateChip from "../components/shared/ItemStateChip.svelte";
   import SelectDropdown from "../components/shared/SelectDropdown.svelte";
+  import {
+    activityBranchKey,
+    isDefaultBranchActivity,
+    isDefaultBranchForcePushActivity,
+    shortSha,
+  } from "../components/activityRows.js";
   import {
     buildMobileActivityRepoOptions,
   } from "./mobileActivityRepoOptions.js";
@@ -90,6 +102,10 @@
       result = result.filter((item) => !isBot(item.author));
     }
 
+    if (activity.getHideDefaultBranchActivity()) {
+      result = result.filter((item) => !isDefaultBranchActivity(item));
+    }
+
     return result;
   });
 
@@ -97,7 +113,15 @@
     const map = new Map<string, ActivityItem[]>();
 
     for (const item of displayItems) {
-      const key = `${item.repo.platform_host}|${item.repo.repo_path}:${item.item_type}:${item.item_number}`;
+      const key = isDefaultBranchActivity(item)
+        ? activityBranchKey({
+            provider: item.repo.provider,
+            platformHost: item.repo.platform_host,
+            owner: item.repo.owner,
+            name: item.repo.name,
+            branchName: item.branch_name || "default branch",
+          })
+        : `${item.repo.platform_host}|${item.repo.repo_path}:${item.item_type}:${item.item_number}`;
       const bucket = map.get(key);
       if (bucket) bucket.push(item);
       else map.set(key, [item]);
@@ -136,14 +160,20 @@
     const filter = activity.getItemFilter();
     if (filter === "prs") types.push("new_pr");
     else if (filter === "issues") types.push("new_issue");
-    else types.push("new_pr", "new_issue");
+    else {
+      types.push("new_pr", "new_issue");
+      if (!activity.getHideDefaultBranchActivity()) {
+        types.push(...DEFAULT_BRANCH_ACTIVITY_TYPES);
+      }
+    }
 
     for (const eventType of activity.getEnabledEvents()) {
       types.push(eventType);
     }
 
     const allSelected = filter === "all"
-      && activity.getEnabledEvents().size === 4;
+      && activity.getEnabledEvents().size === DEFAULT_EVENT_TYPES.length
+      && !activity.getHideDefaultBranchActivity();
     activity.setActivityFilterTypes(allSelected ? [] : types);
     activity.syncToURL();
     void activity.loadActivity();
@@ -178,6 +208,13 @@
     applyFilters();
   }
 
+  function toggleHideDefaultBranchActivity(): void {
+    activity.setHideDefaultBranchActivity(
+      !activity.getHideDefaultBranchActivity(),
+    );
+    applyFilters();
+  }
+
   function handleSearchInput(event: Event): void {
     const value = (event.target as HTMLInputElement).value;
     searchInput = value;
@@ -190,6 +227,11 @@
   }
 
   function handleCardClick(group: ActivityGroup): void {
+    if (isDefaultBranchActivity(group.representative)) {
+      const url = group.representative.activity_url;
+      if (url) window.open(url, "_blank", "noopener");
+      return;
+    }
     onSelectItem?.(group.representative);
   }
 
@@ -203,8 +245,10 @@
       case "review":
         return "Review";
       case "commit":
+      case "default_branch_commit":
         return "Commit";
       case "force_push":
+      case "default_branch_force_push":
         return "Force-pushed";
       default:
         return type;
@@ -229,7 +273,9 @@
       case "comment": return "comment";
       case "review": return "review";
       case "commit": return "commit";
+      case "default_branch_commit": return "commit";
       case "force_push": return "force-push";
+      case "default_branch_force_push": return "force-push";
       default: return "opened";
     }
   }
@@ -240,6 +286,27 @@
 
   function repoLabel(item: ActivityItem): string {
     return `${item.repo.platform_host}/${item.repo.repo_path}`;
+  }
+
+  function branchName(item: ActivityItem): string {
+    return item.branch_name || "default branch";
+  }
+
+  function branchActivityTitle(item: ActivityItem): string {
+    if (isDefaultBranchForcePushActivity(item)) {
+      const before = shortSha(item.before_sha);
+      const after = shortSha(item.after_sha);
+      if (before && after) return `${before} -> ${after}`;
+    }
+    return item.body_preview || shortSha(item.commit_sha) || "Commit";
+  }
+
+  function eventDetail(event: ActivityItem): string {
+    if (!isDefaultBranchActivity(event)) return event.author;
+    if (isDefaultBranchForcePushActivity(event)) return branchActivityTitle(event);
+    return [shortSha(event.commit_sha), event.author_name || event.author]
+      .filter(Boolean)
+      .join(" · ");
   }
 </script>
 
@@ -304,6 +371,14 @@
         aria-pressed={activity.getHideBots()}
         onclick={toggleHideBots}
       >Hide bots</button>
+
+      <button
+        type="button"
+        class="mobile-filter-toggle"
+        class:active={activity.getHideDefaultBranchActivity()}
+        aria-pressed={activity.getHideDefaultBranchActivity()}
+        onclick={toggleHideDefaultBranchActivity}
+      >Hide branch</button>
     </div>
 
 
@@ -329,16 +404,23 @@
             >
               <span class="mobile-activity-card__top">
                 <span class="mobile-activity-card__chips">
-                  <ItemKindChip kind={item.item_type === "issue" ? "issue" : "pr"} size="md" />
-                  <span class="mobile-activity-number">#{item.item_number}</span>
-                  {#if item.item_state === "merged" || item.item_state === "closed"}
-                    <ItemStateChip state={item.item_state} size="md" />
+                  {#if isDefaultBranchActivity(item)}
+                    <Chip size="md" uppercase={false} class="chip--muted">Branch</Chip>
+                    <span class="mobile-activity-number">{branchName(item)}</span>
+                  {:else}
+                    <ItemKindChip kind={item.item_type === "issue" ? "issue" : "pr"} size="md" />
+                    <span class="mobile-activity-number">#{item.item_number}</span>
+                    {#if item.item_state === "merged" || item.item_state === "closed"}
+                      <ItemStateChip state={item.item_state} size="md" />
+                    {/if}
                   {/if}
                 </span>
                 <time>{relativeTime(group.latestTime)}</time>
               </span>
 
-              <span class="mobile-activity-card__title">{item.item_title}</span>
+              <span class="mobile-activity-card__title">
+                {isDefaultBranchActivity(item) ? branchActivityTitle(item) : item.item_title}
+              </span>
               <span class="mobile-activity-card__meta">
                 <span>{repoLabel(item)}</span>
                 <span>{group.eventCount} {group.eventCount === 1 ? "event" : "events"}</span>
@@ -359,7 +441,7 @@
                   <span class="mobile-activity-event__dot" aria-hidden="true"></span>
                   <span class="mobile-activity-event__body">
                     <strong>{eventLabel(event.activity_type)}</strong>
-                    <span>{event.author}</span>
+                    <span>{eventDetail(event)}</span>
                   </span>
                   <time>{relativeTime(event.created_at)}</time>
                 </button>

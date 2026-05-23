@@ -20,6 +20,66 @@ export function isCollapsedActivityRow(
   return "kind" in row && row.kind === "collapsed";
 }
 
+export function isDefaultBranchCommitActivity(
+  item: ActivityItem,
+): boolean {
+  return item.activity_type === "default_branch_commit";
+}
+
+export function isDefaultBranchForcePushActivity(
+  item: ActivityItem,
+): boolean {
+  return item.activity_type === "default_branch_force_push";
+}
+
+export function isDefaultBranchActivity(
+  item: ActivityItem,
+): boolean {
+  return isDefaultBranchCommitActivity(item)
+    || isDefaultBranchForcePushActivity(item);
+}
+
+export function shortSha(sha: string | undefined): string {
+  return sha ? sha.slice(0, 7) : "";
+}
+
+function repoKeyForItem(item: ActivityItem): string {
+  return activityRepoKey({
+    provider: item.repo?.provider ?? "",
+    platformHost: item.platform_host ?? item.repo?.platform_host ?? "",
+    owner: item.repo_owner,
+    name: item.repo_name,
+  });
+}
+
+function commitRunAuthor(item: ActivityItem): string {
+  return item.author_name || item.author;
+}
+
+function commitRunGroupKey(item: ActivityItem): string | null {
+  const author = commitRunAuthor(item);
+  if (item.activity_type === "commit") {
+    return [
+      "item",
+      repoKeyForItem(item),
+      item.item_type,
+      item.item_number,
+      author,
+    ].join("|");
+  }
+
+  if (isDefaultBranchCommitActivity(item)) {
+    return [
+      "branch",
+      repoKeyForItem(item),
+      item.branch_name ?? "",
+      author,
+    ].join("|");
+  }
+
+  return null;
+}
+
 export function collapseActivityCommitRuns(
   items: ActivityItem[],
 ): ActivityRow[] {
@@ -28,7 +88,8 @@ export function collapseActivityCommitRuns(
 
   while (i < items.length) {
     const item = items[i]!;
-    if (item.activity_type !== "commit") {
+    const groupKey = commitRunGroupKey(item);
+    if (groupKey === null) {
       result.push(item);
       i++;
       continue;
@@ -37,15 +98,7 @@ export function collapseActivityCommitRuns(
     let j = i + 1;
     while (j < items.length) {
       const next = items[j]!;
-      if (
-        next.activity_type !== "commit"
-        || next.author !== item.author
-        || next.repo_owner !== item.repo_owner
-        || next.repo_name !== item.repo_name
-        || next.item_number !== item.item_number
-      ) {
-        break;
-      }
+      if (commitRunGroupKey(next) !== groupKey) break;
       j++;
     }
 
@@ -60,7 +113,7 @@ export function collapseActivityCommitRuns(
       result.push({
         kind: "collapsed",
         id: `collapsed-${latest.id}-${count}`,
-        author: item.author,
+        author: commitRunAuthor(item),
         count,
         earliest: earliest.created_at,
         latest: latest.created_at,
@@ -89,4 +142,10 @@ export function activityItemKey(
   ref: ActivityRepoKeyRef & { itemType: string; itemNumber: number },
 ): string {
   return `${activityRepoKey(ref)}:${ref.itemType}:${ref.itemNumber}`;
+}
+
+export function activityBranchKey(
+  ref: ActivityRepoKeyRef & { branchName: string },
+): string {
+  return `${activityRepoKey(ref)}:branch:${ref.branchName}`;
 }

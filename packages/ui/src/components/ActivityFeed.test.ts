@@ -22,8 +22,37 @@ function activityItem(
     platform_host: "github.com",
     repo_owner: "acme",
     repo_name: "widgets",
+    repo: {
+      provider: "github",
+      platform_host: "github.com",
+      owner: "acme",
+      name: "widgets",
+      repo_path: "acme/widgets",
+    },
     ...overrides,
   };
+}
+
+function branchActivityItem(
+  id: string,
+  overrides: Partial<ActivityItem> = {},
+): ActivityItem {
+  return activityItem(id, {
+    activity_type: "default_branch_commit",
+    author: "alice",
+    author_name: "Alice Example",
+    body_preview: "Refresh cache warmer",
+    branch_name: "main",
+    commit_sha: "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+    committed_at: "2026-04-27T12:00:00Z",
+    item_number: 0,
+    item_state: "",
+    item_title: "",
+    item_type: "",
+    item_url: "",
+    activity_url: "https://github.com/acme/widgets/commit/a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+    ...overrides,
+  });
 }
 
 const items = vi.hoisted(() => ({ value: [] as ActivityItem[] }));
@@ -31,6 +60,8 @@ const viewMode = vi.hoisted(() => ({ value: "flat" as "flat" | "threaded" }));
 const collapseThreads = vi.hoisted(() => ({ value: false }));
 const collapseAllThreads = vi.hoisted(() => vi.fn());
 const expandAllThreads = vi.hoisted(() => vi.fn());
+const hideDefaultBranchActivity = vi.hoisted(() => ({ value: false }));
+const setActivityFilterTypes = vi.hoisted(() => vi.fn());
 
 vi.mock("../context.js", () => ({
   getNavigate: () => vi.fn(),
@@ -46,6 +77,7 @@ vi.mock("../context.js", () => ({
         new Set(["comment", "review", "commit", "force_push"]),
       getHideClosedMerged: () => false,
       getHideBots: () => false,
+      getHideDefaultBranchActivity: () => hideDefaultBranchActivity.value,
       getItemFilter: () => "all",
       getActivityItems: () => items.value,
       getActivityError: () => null,
@@ -58,11 +90,14 @@ vi.mock("../context.js", () => ({
       expandAllThreads,
       isThreadItemExpanded: () => true,
       toggleThreadItem: vi.fn(),
-      setActivityFilterTypes: vi.fn(),
+      setActivityFilterTypes,
       setItemFilter: vi.fn(),
       setEnabledEvents: vi.fn(),
       setHideClosedMerged: vi.fn(),
       setHideBots: vi.fn(),
+      setHideDefaultBranchActivity: vi.fn((value: boolean) => {
+        hideDefaultBranchActivity.value = value;
+      }),
       setActivitySearch: vi.fn(),
       setTimeRange: vi.fn(),
       setViewMode: vi.fn(),
@@ -86,6 +121,8 @@ describe("ActivityFeed compact mode", () => {
   beforeEach(() => {
     viewMode.value = "flat";
     collapseThreads.value = false;
+    hideDefaultBranchActivity.value = false;
+    setActivityFilterTypes.mockClear();
     items.value = [
       activityItem("selected"),
       activityItem("other", {
@@ -174,6 +211,70 @@ describe("ActivityFeed compact mode", () => {
       .toContain("Merged");
     expect(row?.querySelector(".badge")).not.toBeNull();
     expect(row?.querySelector(".state-badge")).not.toBeNull();
+  });
+
+  it("renders branch commits in compact rows without a fake item number", () => {
+    items.value = [branchActivityItem("branch-commit")];
+
+    const { container } = render(ActivityFeed, {
+      props: { compact: true },
+    });
+
+    const row = container.querySelector(".activity-compact-row");
+    expect(row?.textContent).toContain("Refresh cache warmer");
+    expect(row?.textContent).toContain("main");
+    expect(row?.textContent).toContain("a1b2c3d");
+    expect(row?.textContent).not.toContain("#0");
+    expect(row?.querySelector(".chip--kind-pr")).toBeNull();
+    expect(row?.querySelector(".chip--kind-issue")).toBeNull();
+  });
+
+  it("renders default-branch force-pushes in table rows", () => {
+    items.value = [
+      branchActivityItem("force-push", {
+        activity_type: "default_branch_force_push",
+        after_sha: "def5678901234567890123456789012345678901",
+        author: "middleman",
+        author_name: "",
+        before_sha: "abc1234901234567890123456789012345678901",
+        body_preview: "abc1234901234567890123456789012345678901 -> def5678901234567890123456789012345678901",
+        commit_sha: "",
+        activity_url: "",
+      }),
+    ];
+
+    const { container } = render(ActivityFeed, {
+      props: { compact: false },
+    });
+
+    const row = container.querySelector(".activity-row");
+    expect(row?.textContent).toContain("Force-pushed");
+    expect(row?.textContent).toContain("abc1234 -> def5678");
+    expect(row?.textContent).toContain("main");
+    expect(row?.textContent).not.toContain("#0");
+    expect(row?.querySelector(".chip--kind-pr")).toBeNull();
+    expect(row?.querySelector(".chip--kind-issue")).toBeNull();
+  });
+
+  it("can hide default-branch activity from the filter dropdown", async () => {
+    render(ActivityFeed, { props: { compact: true } });
+
+    await fireEvent.click(screen.getByRole("button", { name: "View" }));
+    await fireEvent.click(
+      screen.getByRole("button", {
+        name: "Hide default-branch activity",
+      }),
+    );
+
+    expect(hideDefaultBranchActivity.value).toBe(true);
+    expect(setActivityFilterTypes).toHaveBeenCalledWith([
+      "new_pr",
+      "new_issue",
+      "comment",
+      "review",
+      "commit",
+      "force_push",
+    ]);
   });
 });
 

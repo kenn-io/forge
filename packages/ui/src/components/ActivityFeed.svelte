@@ -1,13 +1,22 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
   import type { ActivityItem } from "../api/types.js";
-  import type { TimeRange, ViewMode } from "../stores/activity.svelte.js";
+  import {
+    DEFAULT_BRANCH_ACTIVITY_TYPES,
+    DEFAULT_EVENT_TYPES,
+    type TimeRange,
+    type ViewMode,
+  } from "../stores/activity.svelte.js";
   import { getStores, getNavigate, getSidebar } from "../context.js";
   import ActivityThreaded from "./ActivityThreaded.svelte";
   import FilterDropdown from "./shared/FilterDropdown.svelte";
   import {
     collapseActivityCommitRuns,
+    isDefaultBranchActivity,
+    isDefaultBranchCommitActivity,
+    isDefaultBranchForcePushActivity,
     isCollapsedActivityRow,
+    shortSha,
   } from "./activityRows.js";
   import {
     localDateLabel,
@@ -48,12 +57,7 @@
   let searchInput = $state("");
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
-  const EVENT_TYPES = [
-    "comment",
-    "review",
-    "commit",
-    "force_push",
-  ] as const;
+  const EVENT_TYPES = DEFAULT_EVENT_TYPES;
   type EventType = (typeof EVENT_TYPES)[number];
 
   const EVENT_LABELS: Record<EventType, string> = {
@@ -80,7 +84,8 @@
   const hiddenFilterCount = $derived(
     (EVENT_TYPES.length - activity.getEnabledEvents().size)
     + (activity.getHideClosedMerged() ? 1 : 0)
-    + (activity.getHideBots() ? 1 : 0),
+    + (activity.getHideBots() ? 1 : 0)
+    + (activity.getHideDefaultBranchActivity() ? 1 : 0),
   );
 
   let unsubSync: (() => void) | undefined;
@@ -104,10 +109,16 @@
     const filter = activity.getItemFilter();
     if (filter === "prs") types.push("new_pr");
     else if (filter === "issues") types.push("new_issue");
-    else { types.push("new_pr", "new_issue"); }
+    else {
+      types.push("new_pr", "new_issue");
+      if (!activity.getHideDefaultBranchActivity()) {
+        types.push(...DEFAULT_BRANCH_ACTIVITY_TYPES);
+      }
+    }
     for (const evt of activity.getEnabledEvents()) types.push(evt);
     const allSelected = filter === "all"
-      && activity.getEnabledEvents().size === EVENT_TYPES.length;
+      && activity.getEnabledEvents().size === EVENT_TYPES.length
+      && !activity.getHideDefaultBranchActivity();
     activity.setActivityFilterTypes(allSelected ? [] : types);
     activity.syncToURL();
     void activity.loadActivity();
@@ -164,12 +175,43 @@
       case "review": return "Review";
       case "commit": return "Commit";
       case "force_push": return "Force-pushed";
+      case "default_branch_commit": return "Commit";
+      case "default_branch_force_push": return "Force-pushed";
       default: return item.activity_type;
     }
   }
 
   function hasStateChip(item: ActivityItem): boolean {
+    if (isDefaultBranchActivity(item)) return false;
     return item.item_state === "merged" || item.item_state === "closed";
+  }
+
+  function branchName(item: ActivityItem): string {
+    return item.branch_name || "default branch";
+  }
+
+  function activityAuthor(item: ActivityItem): string {
+    return item.author_name || item.author;
+  }
+
+  function branchActivityTitle(item: ActivityItem): string {
+    if (isDefaultBranchForcePushActivity(item)) {
+      const before = shortSha(item.before_sha);
+      const after = shortSha(item.after_sha);
+      if (before && after) return `${before} -> ${after}`;
+    }
+    return item.body_preview || shortSha(item.commit_sha) || "Commit";
+  }
+
+  function branchActivityDetail(item: ActivityItem): string {
+    if (isDefaultBranchCommitActivity(item)) {
+      return shortSha(item.commit_sha);
+    }
+    return branchActivityTitle(item);
+  }
+
+  function activityLink(item: ActivityItem): string {
+    return item.activity_url || item.item_url;
   }
 
   const displayItems = $derived.by(() => {
@@ -187,6 +229,9 @@
     if (activity.getHideBots()) {
       result = result.filter((it) => !isBot(it.author));
     }
+    if (activity.getHideDefaultBranchActivity()) {
+      result = result.filter((it) => !isDefaultBranchActivity(it));
+    }
     return result;
   });
 
@@ -196,6 +241,7 @@
     activity.setEnabledEvents(new Set(EVENT_TYPES));
     activity.setHideClosedMerged(false);
     activity.setHideBots(false);
+    activity.setHideDefaultBranchActivity(false);
     applyFilters();
   }
 
@@ -213,6 +259,18 @@
     {
       title: "Visibility",
       items: [
+        {
+          id: "hide-default-branch",
+          label: "Hide default-branch activity",
+          active: activity.getHideDefaultBranchActivity(),
+          color: "var(--accent-teal)",
+          onSelect: () => {
+            activity.setHideDefaultBranchActivity(
+              !activity.getHideDefaultBranchActivity(),
+            );
+            applyFilters();
+          },
+        },
         {
           id: "hide-closed-merged",
           label: "Hide closed/merged",
@@ -304,7 +362,9 @@
       case "comment": return "evt-comment";
       case "review": return "evt-review";
       case "commit": return "evt-commit";
+      case "default_branch_commit": return "evt-commit";
       case "force_push": return "evt-force-push";
+      case "default_branch_force_push": return "evt-force-push";
       default: return "";
     }
   }
@@ -313,8 +373,8 @@
     const toneClass =
       type === "comment" ? "chip--amber"
       : type === "review" ? "chip--green"
-      : type === "commit" ? "chip--teal"
-      : type === "force_push" ? "chip--red"
+      : type === "commit" || type === "default_branch_commit" ? "chip--teal"
+      : type === "force_push" || type === "default_branch_force_push" ? "chip--red"
       : "chip--muted";
     return `evt-label ${eventClass(type)} ${toneClass}`;
   }
@@ -332,10 +392,16 @@
   }
 
   function handleRowClick(item: ActivityItem): void {
+    if (isDefaultBranchActivity(item)) {
+      const url = activityLink(item);
+      if (url) window.open(url, "_blank", "noopener");
+      return;
+    }
     onSelectItem?.(item);
   }
 
   function isSelectedActivityItem(item: ActivityItem): boolean {
+    if (isDefaultBranchActivity(item)) return false;
     return selectedItem?.itemType === item.item_type
       && selectedItem.owner === item.repo_owner
       && selectedItem.name === item.repo_name
@@ -449,11 +515,22 @@
                 type="button"
               >
                 <span class="compact-row-top">
-                  <ItemKindChip kind={row.representative.item_type} />
-                  <span class="item-number">#{row.representative.item_number}</span>
+                  {#if isDefaultBranchActivity(row.representative)}
+                    <Chip size="sm" uppercase={false} class="chip--muted branch-chip">Branch</Chip>
+                    <span class="branch-name">{branchName(row.representative)}</span>
+                  {:else}
+                    <ItemKindChip kind={row.representative.item_type} />
+                    <span class="item-number">#{row.representative.item_number}</span>
+                  {/if}
                   <span class="compact-time">{relativeTime(row.latest)}</span>
                 </span>
-                <span class="compact-title">{row.representative.item_title}</span>
+                <span class="compact-title">
+                  {#if isDefaultBranchActivity(row.representative)}
+                    {row.count} commits on {branchName(row.representative)}
+                  {:else}
+                    {row.representative.item_title}
+                  {/if}
+                </span>
                 <span class="compact-meta">
                   <span>{row.representative.repo_owner}/{row.representative.repo_name}</span>
                   <Chip
@@ -472,22 +549,32 @@
                 type="button"
               >
                 <span class="compact-row-top">
-                  <ItemKindChip kind={row.item_type} />
-                  <span class="item-number">#{row.item_number}</span>
-                  {#if hasStateChip(row)}
-                    <ItemStateChip state={row.item_state} />
+                  {#if isDefaultBranchActivity(row)}
+                    <Chip size="sm" uppercase={false} class="chip--muted branch-chip">Branch</Chip>
+                    <span class="branch-name">{branchName(row)}</span>
+                  {:else}
+                    <ItemKindChip kind={row.item_type} />
+                    <span class="item-number">#{row.item_number}</span>
+                    {#if hasStateChip(row)}
+                      <ItemStateChip state={row.item_state} />
+                    {/if}
                   {/if}
                   <span class="compact-time">{relativeTime(row.created_at)}</span>
                 </span>
-                <span class="compact-title">{row.item_title}</span>
+                <span class="compact-title">
+                  {isDefaultBranchActivity(row) ? branchActivityTitle(row) : row.item_title}
+                </span>
                 <span class="compact-meta">
                   <span>{row.repo_owner}/{row.repo_name}</span>
+                  {#if isDefaultBranchActivity(row) && branchActivityDetail(row)}
+                    <span class="sha">{branchActivityDetail(row)}</span>
+                  {/if}
                   <Chip
                     size="sm"
                     uppercase={false}
                     class={eventChipClass(row.activity_type)}
                   >{eventLabel(row)}</Chip>
-                  <span>{row.author}</span>
+                  <span>{activityAuthor(row)}</span>
                 </span>
               </button>
             {/if}
@@ -511,7 +598,11 @@
               {#if isCollapsedActivityRow(row)}
                 <tr class="activity-row collapsed-row" onclick={() => handleRowClick(row.representative)}>
                   <td class="col-kind">
-                    <ItemKindChip kind={row.representative.item_type} />
+                    {#if isDefaultBranchActivity(row.representative)}
+                      <Chip size="sm" uppercase={false} class="chip--muted branch-chip">Branch</Chip>
+                    {:else}
+                      <ItemKindChip kind={row.representative.item_type} />
+                    {/if}
                   </td>
                   <td class="col-event">
                     <Chip
@@ -522,25 +613,35 @@
                   </td>
                   <td class="col-repo">{row.representative.repo_owner}/{row.representative.repo_name}</td>
                   <td class="col-item">
-                    <span class="item-number">#{row.representative.item_number}</span>
-                    <span class="item-title">{row.representative.item_title}</span>
+                    {#if isDefaultBranchActivity(row.representative)}
+                      <span class="branch-name">{branchName(row.representative)}</span>
+                      <span class="item-title">{row.count} commits</span>
+                    {:else}
+                      <span class="item-number">#{row.representative.item_number}</span>
+                      <span class="item-title">{row.representative.item_title}</span>
+                    {/if}
                   </td>
                   <td class="col-author">{row.author}</td>
                   <td class="col-when">{relativeTime(row.earliest)} - {relativeTime(row.latest)}</td>
                   <td class="col-link">
                     <button
                       class="link-btn"
-                      title="Open on GitHub"
-                      onclick={(e) => handleLinkClick(e, row.representative.item_url)}
+                      title="Open activity"
+                      disabled={!activityLink(row.representative)}
+                      onclick={(e) => handleLinkClick(e, activityLink(row.representative))}
                     >&#x2197;</button>
                   </td>
                 </tr>
               {:else}
                 <tr class="activity-row" onclick={() => handleRowClick(row)}>
                   <td class="col-kind">
-                    <ItemKindChip kind={row.item_type} />
-                    {#if hasStateChip(row)}
-                      <ItemStateChip state={row.item_state} />
+                    {#if isDefaultBranchActivity(row)}
+                      <Chip size="sm" uppercase={false} class="chip--muted branch-chip">Branch</Chip>
+                    {:else}
+                      <ItemKindChip kind={row.item_type} />
+                      {#if hasStateChip(row)}
+                        <ItemStateChip state={row.item_state} />
+                      {/if}
                     {/if}
                   </td>
                   <td class="col-event">
@@ -552,17 +653,27 @@
                   </td>
                   <td class="col-repo">{row.repo_owner}/{row.repo_name}</td>
                   <td class="col-item">
-                    <span class="item-number">#{row.item_number}</span>
-                    <span class="item-title">{row.item_title}</span>
+                    {#if isDefaultBranchActivity(row)}
+                      <span class="branch-name">{branchName(row)}</span>
+                      {#if branchActivityDetail(row)}
+                        <span class="sha">{branchActivityDetail(row)}</span>
+                      {/if}
+                      <span class="item-title">{branchActivityTitle(row)}</span>
+                    {:else}
+                      <span class="item-number">#{row.item_number}</span>
+                      <span class="item-title">{row.item_title}</span>
+                    {/if}
                   </td>
-                  <td class="col-author">{row.author}</td>
+                  <td class="col-author">{activityAuthor(row)}</td>
                   <td class="col-when">{relativeTime(row.created_at)}</td>
                   <td class="col-link">
-                    <button
-                      class="link-btn"
-                      title="Open on GitHub"
-                      onclick={(e) => handleLinkClick(e, row.item_url)}
-                    >&#x2197;</button>
+                    {#if activityLink(row)}
+                      <button
+                        class="link-btn"
+                        title="Open activity"
+                        onclick={(e) => handleLinkClick(e, activityLink(row))}
+                      >&#x2197;</button>
+                    {/if}
                   </td>
                 </tr>
               {/if}
@@ -863,6 +974,16 @@
   .item-number {
     color: var(--text-muted);
     margin-right: 4px;
+  }
+
+  .branch-name,
+  .sha {
+    color: var(--text-muted);
+    margin-right: 4px;
+  }
+
+  :global(.branch-chip) {
+    flex-shrink: 0;
   }
 
   .item-title {

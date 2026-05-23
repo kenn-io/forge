@@ -50,6 +50,300 @@ func setupBareRemoteForSyncTest(t *testing.T) string {
 	return remote
 }
 
+type syncBranchActivityFixture struct {
+	DB       *db.DB
+	Repo     RepoRef
+	Remote   string
+	Work     string
+	Provider *syncTestRepositoryReadProvider
+	Syncer   *Syncer
+}
+
+func setupSyncBranchActivityFixture(t *testing.T, defaultBranch string) syncBranchActivityFixture {
+	t.Helper()
+	dir := t.TempDir()
+	remote := filepath.Join(dir, "remote.git")
+	syncActivityGitRun(t, dir, "init", "--bare", "--initial-branch=main", remote)
+	work := filepath.Join(dir, "work")
+	syncActivityGitRun(t, dir, "clone", remote, work)
+	syncActivityGitRun(t, work, "config", "user.email", "alice@example.com")
+	syncActivityGitRun(t, work, "config", "user.name", "Alice")
+
+	d := openTestDB(t)
+	clones := gitclone.New(t.TempDir(), nil)
+	repo := RepoRef{
+		Platform:           platform.KindGitLab,
+		PlatformHost:       "gitlab.example.com",
+		Owner:              "group",
+		Name:               "project",
+		RepoPath:           "group/project",
+		PlatformExternalID: "gid://gitlab/Project/branch-activity",
+		CloneURL:           remote,
+		DefaultBranch:      defaultBranch,
+	}
+	provider := &syncTestRepositoryReadProvider{
+		syncTestReadProvider: &syncTestReadProvider{
+			syncTestProvider: syncTestProvider{
+				kind: platform.KindGitLab,
+				host: "gitlab.example.com",
+			},
+		},
+		repository: platform.Repository{
+			Ref: platform.RepoRef{
+				Platform:           platform.KindGitLab,
+				Host:               "gitlab.example.com",
+				Owner:              "group",
+				Name:               "project",
+				RepoPath:           "group/project",
+				PlatformExternalID: "gid://gitlab/Project/branch-activity",
+				CloneURL:           remote,
+				DefaultBranch:      defaultBranch,
+			},
+			PlatformExternalID: "gid://gitlab/Project/branch-activity",
+			CloneURL:           remote,
+			DefaultBranch:      defaultBranch,
+		},
+	}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(t, err)
+	syncer := NewSyncerWithRegistry(registry, d, clones, []RepoRef{repo}, time.Minute, nil, nil)
+	return syncBranchActivityFixture{
+		DB:       d,
+		Repo:     repo,
+		Remote:   remote,
+		Work:     work,
+		Provider: provider,
+		Syncer:   syncer,
+	}
+}
+
+func syncActivityGitRun(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := procutil.Command("git", args...)
+	cmd.Dir = dir
+	cmd.Env = append(gitenv.StripAll(os.Environ()),
+		"GIT_CONFIG_GLOBAL="+os.DevNull,
+		"GIT_CONFIG_SYSTEM="+os.DevNull,
+	)
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, "git %v failed: %s", args, out)
+	return strings.TrimSpace(string(out))
+}
+
+func syncActivityCommit(t *testing.T, work, fileName, contents, subject string) string {
+	t.Helper()
+	require.NoError(t, os.WriteFile(filepath.Join(work, fileName), []byte(contents), 0o644))
+	syncActivityGitRun(t, work, "add", fileName)
+	syncActivityGitRun(t, work, "commit", "-m", subject)
+	return syncActivityGitRun(t, work, "rev-parse", "HEAD")
+}
+
+func syncActivityCommitAndPush(
+	t *testing.T,
+	work, fileName, contents, subject, branch string,
+) string {
+	t.Helper()
+	sha := syncActivityCommit(t, work, fileName, contents, subject)
+	syncActivityGitRun(t, work, "push", "origin", "HEAD:"+branch)
+	return sha
+}
+
+func syncActivityItems(
+	t *testing.T,
+	d *db.DB,
+	types ...string,
+) []db.ActivityItem {
+	t.Helper()
+	items, err := d.ListActivity(t.Context(), db.ListActivityOpts{
+		Limit: 50,
+		Types: types,
+	})
+	require.NoError(t, err)
+	return items
+}
+
+func syncActivityBranchCommits(t *testing.T, d *db.DB) []db.ActivityItem {
+	t.Helper()
+	return syncActivityItems(t, d, "default_branch_commit")
+}
+
+func syncActivityForcePushes(t *testing.T, d *db.DB) []db.ActivityItem {
+	t.Helper()
+	return syncActivityItems(t, d, "default_branch_force_push")
+}
+
+func requireSyncActivityRepoRow(t *testing.T, d *db.DB) db.Repo {
+	t.Helper()
+	repoRow, err := d.GetRepoByOwnerName(t.Context(), "group", "project")
+	require.NoError(t, err)
+	require.NotNil(t, repoRow)
+	return *repoRow
+}
+
+func TestSyncRepoRecordsDefaultBranchCommits(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	fixture := setupSyncBranchActivityFixture(t, "main")
+	sha := syncActivityCommitAndPush(
+		t,
+		fixture.Work,
+		"direct.txt",
+		"direct work\n",
+		"direct work",
+		"main",
+	)
+
+	require.NoError(fixture.Syncer.syncRepo(t.Context(), fixture.Repo))
+
+	commits := syncActivityBranchCommits(t, fixture.DB)
+	require.NotEmpty(commits)
+	var direct db.ActivityItem
+	for _, item := range commits {
+		if item.CommitSHA == sha {
+			direct = item
+			break
+		}
+	}
+	require.NotEmpty(direct.CommitSHA)
+	assert.Equal("default_branch_commit", direct.ActivityType)
+	assert.Equal("main", direct.BranchName)
+	assert.Equal("direct work", direct.BodyPreview)
+	assert.Equal("Alice", direct.AuthorName)
+	assert.Equal("alice@example.com", direct.AuthorEmail)
+	assert.Equal("Alice", direct.CommitterName)
+	assert.Equal("alice@example.com", direct.CommitterEmail)
+	assert.NotNil(direct.AuthoredAt)
+	assert.NotNil(direct.CommittedAt)
+
+	repoRow := requireSyncActivityRepoRow(t, fixture.DB)
+	tip, err := fixture.DB.GetBranchTip(t.Context(), repoRow.ID, "main")
+	require.NoError(err)
+	require.NotNil(tip)
+	assert.Equal(sha, tip.TipSHA)
+	assert.Empty(syncActivityForcePushes(t, fixture.DB))
+}
+
+func TestSyncRepoRecordsDefaultBranchForcePushBeforeUpdatingTip(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	fixture := setupSyncBranchActivityFixture(t, "main")
+	beforeSHA := syncActivityCommitAndPush(
+		t,
+		fixture.Work,
+		"before.txt",
+		"before\n",
+		"before rewrite",
+		"main",
+	)
+	require.NoError(fixture.Syncer.syncRepo(t.Context(), fixture.Repo))
+
+	syncActivityGitRun(t, fixture.Work, "checkout", "--orphan", "rewrite")
+	syncActivityGitRun(t, fixture.Work, "rm", "-r", "--cached", ".")
+	afterSHA := syncActivityCommit(t, fixture.Work, "after.txt", "after\n", "after rewrite")
+	syncActivityGitRun(t, fixture.Work, "push", "--force", "origin", "HEAD:main")
+
+	require.NoError(fixture.Syncer.syncRepo(t.Context(), fixture.Repo))
+
+	forcePushes := syncActivityForcePushes(t, fixture.DB)
+	require.Len(forcePushes, 1)
+	assert.Equal("default_branch_force_push", forcePushes[0].ActivityType)
+	assert.Equal("main", forcePushes[0].BranchName)
+	assert.Equal(beforeSHA, forcePushes[0].BeforeSHA)
+	assert.Equal(afterSHA, forcePushes[0].AfterSHA)
+
+	repoRow := requireSyncActivityRepoRow(t, fixture.DB)
+	tip, err := fixture.DB.GetBranchTip(t.Context(), repoRow.ID, "main")
+	require.NoError(err)
+	require.NotNil(tip)
+	assert.Equal(afterSHA, tip.TipSHA)
+}
+
+func TestSyncRepoSkipsBranchActivityWhenCloneFetchFails(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	fixture := setupSyncBranchActivityFixture(t, "main")
+	initialSHA := syncActivityCommitAndPush(
+		t,
+		fixture.Work,
+		"initial.txt",
+		"initial\n",
+		"initial branch activity",
+		"main",
+	)
+	require.NoError(fixture.Syncer.syncRepo(t.Context(), fixture.Repo))
+	repoRow := requireSyncActivityRepoRow(t, fixture.DB)
+	initialTip, err := fixture.DB.GetBranchTip(t.Context(), repoRow.ID, "main")
+	require.NoError(err)
+	require.NotNil(initialTip)
+	initialCommitCount := len(syncActivityBranchCommits(t, fixture.DB))
+
+	newSHA := syncActivityCommitAndPush(
+		t,
+		fixture.Work,
+		"new.txt",
+		"new\n",
+		"new branch activity",
+		"main",
+	)
+	offlineRemote := fixture.Remote + ".offline"
+	require.NoError(os.Rename(fixture.Remote, offlineRemote))
+	defer func() {
+		if _, err := os.Stat(fixture.Remote); errors.Is(err, os.ErrNotExist) {
+			require.NoError(os.Rename(offlineRemote, fixture.Remote))
+		}
+	}()
+
+	require.NoError(fixture.Syncer.syncRepo(t.Context(), fixture.Repo))
+
+	tip, err := fixture.DB.GetBranchTip(t.Context(), repoRow.ID, "main")
+	require.NoError(err)
+	require.NotNil(tip)
+	assert.Equal(initialSHA, tip.TipSHA)
+	assert.Equal(initialTip.ObservedAt, tip.ObservedAt)
+	assert.Len(syncActivityBranchCommits(t, fixture.DB), initialCommitCount)
+	for _, item := range syncActivityBranchCommits(t, fixture.DB) {
+		assert.NotEqual(newSHA, item.CommitSHA)
+	}
+	assert.Empty(syncActivityForcePushes(t, fixture.DB))
+}
+
+func TestSyncRepoDefaultBranchRenameDoesNotRecordForcePush(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	fixture := setupSyncBranchActivityFixture(t, "main")
+	mainSHA := syncActivityCommitAndPush(
+		t,
+		fixture.Work,
+		"main.txt",
+		"main\n",
+		"main branch work",
+		"main",
+	)
+	require.NoError(fixture.Syncer.syncRepo(t.Context(), fixture.Repo))
+
+	syncActivityGitRun(t, fixture.Work, "checkout", "--orphan", "trunk")
+	syncActivityGitRun(t, fixture.Work, "rm", "-r", "--cached", ".")
+	trunkSHA := syncActivityCommit(t, fixture.Work, "trunk.txt", "trunk\n", "trunk branch work")
+	syncActivityGitRun(t, fixture.Work, "push", "origin", "HEAD:trunk")
+	syncActivityGitRun(t, fixture.Remote, "symbolic-ref", "HEAD", "refs/heads/trunk")
+
+	renamedRepo := fixture.Repo
+	fixture.Provider.repository.Ref.DefaultBranch = "trunk"
+	fixture.Provider.repository.DefaultBranch = "trunk"
+	require.NoError(fixture.Syncer.syncRepo(t.Context(), renamedRepo))
+
+	assert.Empty(syncActivityForcePushes(t, fixture.DB))
+	repoRow := requireSyncActivityRepoRow(t, fixture.DB)
+	mainTip, err := fixture.DB.GetBranchTip(t.Context(), repoRow.ID, "main")
+	require.NoError(err)
+	require.NotNil(mainTip)
+	assert.Equal(mainSHA, mainTip.TipSHA)
+	trunkTip, err := fixture.DB.GetBranchTip(t.Context(), repoRow.ID, "trunk")
+	require.NoError(err)
+	require.NotNil(trunkTip)
+	assert.Equal(trunkSHA, trunkTip.TipSHA)
+}
+
 // testBudget builds a per-host budget map for use in NewSyncer calls.
 func testBudget(limit int) map[string]*SyncBudget {
 	return map[string]*SyncBudget{

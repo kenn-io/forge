@@ -147,6 +147,8 @@ export function createActivityStore(
     syncToURL();
   }
   function toggleThreadItem(key: string): void {
+    // Per-item overrides are session-only and intentionally not synced to the
+    // URL; only collapse-all/expand-all persist via collapseThreads.
     const next = new Set(expandOverrides);
     if (next.has(key)) next.delete(key);
     else next.add(key);

@@ -52,6 +52,15 @@ describe("activity store collapse state", () => {
     expect(s.isThreadItemExpanded("k2")).toBe(false);
   });
 
+  it("toggleThreadItem twice returns an item to the global state", () => {
+    const s = makeStore();
+    s.hydrateDefaults(settings(false));
+    s.toggleThreadItem("k1");
+    expect(s.isThreadItemExpanded("k1")).toBe(false);
+    s.toggleThreadItem("k1");
+    expect(s.isThreadItemExpanded("k1")).toBe(true);
+  });
+
   it("writes collapsed to the URL only when it differs from the server default", () => {
     const s = makeStore();
     s.hydrateDefaults(settings(false));

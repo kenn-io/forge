@@ -17,6 +17,7 @@ describe("renderMarkdown task lists", () => {
     expect(html).toContain('data-name="widgets"');
     expect(html).toContain('data-repo-path="acme/widgets"');
     expect(html).toContain('data-number="12"');
+    expect(html).not.toContain("data-external-url");
     expect(html).toContain('href="/issues/github/acme/tools/13"');
     expect(html).toContain('data-repo-path="acme/tools"');
   });

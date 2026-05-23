@@ -9,6 +9,7 @@ export type ItemReferenceType = "pr" | "issue";
 export type ResolvableItemReference = RepositoryRouteRef & {
   number: number;
   itemType?: ItemReferenceType | undefined;
+  externalUrl?: string | undefined;
 };
 
 export type ItemReferenceDataAttributes = {
@@ -18,6 +19,7 @@ export type ItemReferenceDataAttributes = {
   "data-repo-path": string;
   "data-number": string;
   "data-platform-host"?: string | undefined;
+  "data-external-url"?: string | undefined;
 };
 
 export type ItemReferenceLink = {
@@ -47,6 +49,9 @@ export function itemReferenceDataAttributes(
     "data-name": ref.name,
     "data-repo-path": ref.repoPath,
     "data-number": ref.number.toString(),
+    ...(ref.externalUrl && {
+      "data-external-url": ref.externalUrl,
+    }),
   };
 }
 
@@ -81,6 +86,7 @@ export function itemReferenceAnchorAttributes(
     ["data-name", link.dataAttributes["data-name"]],
     ["data-repo-path", link.dataAttributes["data-repo-path"]],
     ["data-number", link.dataAttributes["data-number"]],
+    ["data-external-url", link.dataAttributes["data-external-url"]],
   ];
   return attrs
     .filter(([, value]) => value !== undefined)

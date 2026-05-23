@@ -26,6 +26,7 @@ async function resolveAndNavigate(
   name: string,
   repoPath: string,
   number: number,
+  externalUrl: string | undefined,
   thisRequestId: number,
 ): Promise<void> {
   try {
@@ -47,6 +48,10 @@ async function resolveAndNavigate(
     }
 
     if (!data.repo_tracked) {
+      if (externalUrl) {
+        window.open(externalUrl, "_blank", "noopener,noreferrer");
+        return;
+      }
       showFlash(
         `${owner}/${name} is not tracked. Add it in Settings to navigate here.`,
       );
@@ -81,6 +86,7 @@ function handleClick(e: MouseEvent): void {
   const name = anchor.dataset.name;
   const repoPath = anchor.dataset.repoPath;
   const numberStr = anchor.dataset.number;
+  const externalUrl = anchor.dataset.externalUrl;
   if (!provider || !owner || !name || !repoPath || !numberStr) return;
 
   e.preventDefault();
@@ -92,6 +98,7 @@ function handleClick(e: MouseEvent): void {
     name,
     repoPath,
     parseInt(numberStr, 10),
+    externalUrl,
     requestId,
   );
 }

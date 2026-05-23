@@ -149,6 +149,7 @@
         repoPath,
         number,
         itemType: sourceType === "PullRequest" ? "pr" : "issue",
+        externalUrl: sourceUrl ?? undefined,
       });
       return {
         ...link,

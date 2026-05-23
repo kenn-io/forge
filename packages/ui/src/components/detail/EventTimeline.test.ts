@@ -281,6 +281,7 @@ describe("EventTimeline", () => {
     assert(link.getAttribute("data-name")).toBe("kit");
     assert(link.getAttribute("data-repo-path")).toBe("kenn-io/kit");
     assert(link.getAttribute("data-number")).toBe("1");
+    assert(link.getAttribute("data-external-url")).toBe("https://github.com/kenn-io/kit/pull/1");
   });
 
   it("keeps external cross-reference links when item metadata is incomplete", () => {

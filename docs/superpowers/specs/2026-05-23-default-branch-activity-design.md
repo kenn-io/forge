@@ -27,6 +27,24 @@ reviews, and pull-request commits.
   feature; prefer focused files and methods in existing packages unless a real
   ownership boundary emerges.
 
+## Code Ownership
+
+Keep the implementation in existing package boundaries:
+
+- Git operations live on `gitclone.Manager` in `internal/gitclone/`, likely in a
+  focused file such as `branch_activity.go`. This includes resolving default
+  branch refs, checking ancestor relationships, and walking first-parent commits
+  for a ref/range.
+- Persistence lives in `internal/db/queries_branch_activity.go`, with DB types
+  in `internal/db/types.go` as needed.
+- Activity-feed SQL remains in `internal/db/queries_activity.go`, extending the
+  existing unified query and cursor semantics.
+- API serialization remains in `internal/server/huma_routes.go` and
+  `internal/server/api_types.go`.
+- Sync orchestration is added as a per-repo step in `internal/github/sync.go`,
+  because that file currently dispatches all provider sync work. The branch
+  tracking logic it calls must stay provider-neutral and clone-backed.
+
 ## Non-Goals
 
 - Do not resolve git authors or committers to provider users in v1.
@@ -65,6 +83,11 @@ Store both authored and committed timestamps. `committed_at` is the Activity
 sort key because it represents when the commit landed in the rewritten history;
 `authored_at` can drift and would make rebased commits appear stale.
 
+The migration follows `context/db-migrations.md`: add a new numbered
+up/down migration, keep it append-only, and include hot-path indexes. At minimum
+the commit table needs indexes for `(repo_id, committed_at DESC)` and
+`(committed_at DESC)`, plus the unique `(repo_id, commit_sha)` key.
+
 Add a branch-tip table:
 
 ```text
@@ -96,6 +119,8 @@ middleman_branch_force_pushes
 
 Use a dedupe key such as `(repo_id, branch_name, before_sha, after_sha)` so a
 retry after a partial sync does not duplicate the same detected rewrite.
+Index force-push rows by `(repo_id, detected_at DESC)` and `(detected_at DESC)`
+for Activity queries.
 
 Retain only rows needed by the maximum Activity time range, currently 90 days.
 Prune older branch commits and force-push rows during sync so the tables do not
@@ -110,8 +135,8 @@ clone manager remains the source of Git data.
 For each repo:
 
 1. Read the persisted default branch from `middleman_repos`.
-2. Read the previous tip for `(repo_id, default_branch)` from
-   `middleman_branch_tips`.
+2. If a branch name is known, read the previous tip for
+   `(repo_id, default_branch)` from `middleman_branch_tips`.
 3. Run the existing clone fetch.
 4. Resolve `refs/remotes/origin/<default_branch>` in the clone.
 5. If there was a previous tip, run
@@ -130,6 +155,17 @@ For each repo:
 This ordering is important. Updating the tip before comparing ancestry loses
 the force-push signal.
 
+If clone fetch fails, skip branch-activity extraction for that repo entirely and
+do not update `middleman_branch_tips`. A stale local clone should not create new
+feed rows or advance the force-push baseline.
+
+If `middleman_repos.default_branch` is empty or the stored branch ref cannot be
+resolved after fetch, try to resolve the remote HEAD symbolic ref and use that
+branch name. When the branch name is discovered only after fetch, look up the
+previous tip for that resolved branch before detecting a force-push. If neither
+the stored default branch nor remote HEAD can identify a branch, skip
+branch-activity extraction for that repo and log a warning.
+
 If the upstream default branch changes, do not compare the previous branch's
 tip to the new branch's tip and do not create a force-push row. Start tracking
 the new branch from its current tip. Previously persisted activity remains
@@ -146,6 +182,26 @@ These rows have repository identity, branch name, SHA metadata, author text, and
 timestamps, but no PR or issue number. The response model should make repo-level
 activity explicit rather than stuffing branch commits into PR/issue fields.
 
+Use one concrete Huma schema rather than a discriminated union for v1. Extend
+the existing activity item response with optional repo-level fields:
+
+- `branch_name`
+- `commit_sha`
+- `before_sha`
+- `after_sha`
+- `author_name`
+- `author_email`
+- `committer_name`
+- `committer_email`
+- `authored_at`
+- `committed_at`
+- `activity_url`
+
+For repo-level branch activity, PR/issue fields such as `item_type`,
+`item_number`, `item_title`, `item_url`, and `item_state` are optional or empty
+and must not fake a pull-request or issue identity. Existing PR/issue rows keep
+their current fields.
+
 Search should match commit subject, author name/email, committer name/email,
 branch name, and SHA prefixes. Repo filters and time-window filters apply
 through the same SQL query as other activity.
@@ -153,6 +209,12 @@ through the same SQL query as other activity.
 Commit links are derived at API serialization time. Use provider metadata and
 the SHA to build the best known web URL for the provider/host; if no reliable
 template exists, omit the link rather than persisting one.
+
+Activity ordering remains deterministic across mixed sources. The SQL query
+sorts by `(created_at DESC, source DESC, source_id DESC)`, and cursors encode
+the same tuple. Branch commits and force-pushes get stable source prefixes and
+database IDs so rows with identical timestamps paginate consistently alongside
+PR/issue activity.
 
 ## Filtering
 
@@ -186,6 +248,11 @@ Force-push rows should display:
 - branch
 - short before and after SHAs
 - detected time
+
+This applies to both the desktop Activity view and the `/m` mobile Activity
+route. Mobile rows can use the same compact information hierarchy as existing
+activity rows: repo/branch and time in the metadata line, with commit subject or
+force-push before/after summary as the main text.
 
 ## Threaded View
 
@@ -222,6 +289,8 @@ Database tests:
 - Search matches commit subject, raw author/committer fields, branch name, and
   SHA prefixes.
 - Retention pruning removes old branch commits and old force-push rows.
+- Concurrent or repeated sync attempts rely on unique keys and do not duplicate
+  branch commits or force-push rows.
 
 Git clone tests:
 
@@ -241,6 +310,8 @@ Server e2e tests:
 - The hide filter excludes both default-branch commits and force-pushes.
 - Response rows include provider-aware repo identity and do not fake PR/issue
   numbers for repo-level activity.
+- OpenAPI/codegen changes expose the optional branch activity fields in the
+  generated clients.
 
 Frontend tests:
 
@@ -249,3 +320,5 @@ Frontend tests:
 - Flat view renders branch commits and force-pushes as individual rows.
 - Threaded view groups branch activity by repo/default branch and rolls up
   commit runs without requiring a PR or issue item number.
+- The `/m` mobile Activity route renders branch commits and force-pushes without
+  overflowing or assuming a PR/issue number.

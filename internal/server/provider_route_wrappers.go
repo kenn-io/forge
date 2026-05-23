@@ -12,6 +12,15 @@ type repoNumberHostInput struct {
 	Number       int    `path:"number"`
 }
 
+type resolveItemHostInput struct {
+	Provider     string `path:"provider"`
+	PlatformHost string `path:"platform_host"`
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
+	ItemType     string `query:"item_type" enum:"pr,issue" doc:"Optional item type hint for providers whose issues and merge requests have separate number spaces."`
+}
+
 type setKanbanStateHostInput struct {
 	Provider     string `path:"provider"`
 	PlatformHost string `path:"platform_host"`
@@ -356,8 +365,15 @@ func (s *Server) setIssueLabelsOnHost(ctx context.Context, input *setIssueLabels
 	return s.setIssueLabels(ctx, &next)
 }
 
-func (s *Server) resolveItemOnHost(ctx context.Context, input *repoNumberHostInput) (*resolveItemOutput, error) {
-	next := repoNumberFromHost(input)
+func (s *Server) resolveItemOnHost(ctx context.Context, input *resolveItemHostInput) (*resolveItemOutput, error) {
+	next := resolveItemInput{
+		Provider:     input.Provider,
+		PlatformHost: input.PlatformHost,
+		Owner:        input.Owner,
+		Name:         input.Name,
+		Number:       input.Number,
+		ItemType:     input.ItemType,
+	}
 	return s.resolveItem(ctx, &next)
 }
 

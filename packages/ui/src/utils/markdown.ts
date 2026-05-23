@@ -1,7 +1,9 @@
 import { Marked } from "marked";
 import type { TokenizerAndRendererExtension } from "marked";
 import DOMPurify from "dompurify";
+import { canonicalProvider } from "../api/provider-routes.js";
 import { itemReferenceAnchorAttributes } from "./item-reference.js";
+import type { ItemReferenceType } from "./item-reference.js";
 
 interface RepoContext {
   provider: string;
@@ -20,35 +22,44 @@ type ItemRefToken = {
   name: string;
   repoPath: string;
   number: number;
+  itemType?: ItemReferenceType | undefined;
   text: string;
 };
 
 function itemRefExtension(repo?: RepoContext): TokenizerAndRendererExtension {
+  const supportsBangMR = canonicalProvider(repo?.provider ?? "") === "gitlab";
   return {
     name: "itemRef",
     level: "inline",
     start(src: string): number | undefined {
-      // Cross-repo: look for word chars before #
-      const crossIdx = src.search(/[\w.-]+\/[\w.-]+#\d/);
+      const marker = supportsBangMR ? "[#!]" : "#";
+      const crossIdx = src.search(new RegExp(`[\\w.-]+/[\\w./-]+${marker}\\d`));
       // Bare: look for # preceded by start or non-word
       const bareIdx = src.search(/(^|[^\w])#\d/);
+      const mrBareIdx = supportsBangMR ? src.search(/(^|[^\w])!\d/) : -1;
       const adjusted = bareIdx >= 0 && src[bareIdx] !== "#"
         ? bareIdx + 1
         : bareIdx;
-      if (crossIdx >= 0 && (adjusted < 0 || crossIdx <= adjusted)) {
-        return crossIdx;
-      }
-      return adjusted >= 0 ? adjusted : undefined;
+      const adjustedMR = mrBareIdx >= 0 && src[mrBareIdx] !== "!"
+        ? mrBareIdx + 1
+        : mrBareIdx;
+      return [crossIdx, adjusted, adjustedMR]
+        .filter((idx) => idx >= 0)
+        .sort((a, b) => a - b)[0];
     },
     tokenizer(this: { lexer: { state: { inLink: boolean } } }, src: string): ItemRefToken | undefined {
       if (this.lexer.state.inLink || !repo) return undefined;
 
       const crossMatch = src.match(
-        /^([\w.-]+)\/([\w.-]+)#(\d+)(?!\w)/,
+        /^([\w.-]+(?:\/[\w.-]+)+)([#!])(\d+)(?!\w)/,
       );
       if (crossMatch) {
-        const owner = crossMatch[1]!;
-        const name = crossMatch[2]!;
+        const repoPath = crossMatch[1]!;
+        const marker = crossMatch[2]!;
+        if (marker === "!" && !supportsBangMR) return undefined;
+        const parts = repoPath.split("/");
+        const name = parts.pop()!;
+        const owner = parts.join("/");
         return {
           type: "itemRef",
           raw: crossMatch[0],
@@ -56,10 +67,29 @@ function itemRefExtension(repo?: RepoContext): TokenizerAndRendererExtension {
           platformHost: repo.platformHost,
           owner,
           name,
-          repoPath: `${owner}/${name}`,
+          repoPath,
           number: parseInt(crossMatch[3]!, 10),
+          itemType: marker === "!" ? "pr" : undefined,
           text: crossMatch[0],
         };
+      }
+
+      if (supportsBangMR) {
+        const mrBareMatch = src.match(/^!(\d+)(?!\w)/);
+        if (mrBareMatch) {
+          return {
+            type: "itemRef",
+            raw: mrBareMatch[0],
+            provider: repo.provider,
+            platformHost: repo.platformHost,
+            owner: repo.owner,
+            name: repo.name,
+            repoPath: repo.repoPath,
+            number: parseInt(mrBareMatch[1]!, 10),
+            itemType: "pr",
+            text: mrBareMatch[0],
+          };
+        }
       }
 
       const bareMatch = src.match(/^#(\d+)(?!\w)/);
@@ -253,6 +283,7 @@ export function renderMarkdown(
         "data-name",
         "data-repo-path",
         "data-number",
+        "data-item-type",
         "data-external-url",
         "data-task-index",
         "draggable",

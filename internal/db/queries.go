@@ -3263,6 +3263,31 @@ func (d *DB) ResolveItemNumber(
 	return "", false, nil
 }
 
+// ResolveItemNumberOfType checks whether the given typed item number exists in a repo.
+func (d *DB) ResolveItemNumberOfType(
+	ctx context.Context, repoID int64, number int, itemType string,
+) (string, bool, error) {
+	var query string
+	switch itemType {
+	case "pr":
+		query = `SELECT 1 FROM middleman_merge_requests WHERE repo_id = ? AND number = ?`
+	case "issue":
+		query = `SELECT 1 FROM middleman_issues WHERE repo_id = ? AND number = ?`
+	default:
+		return "", false, fmt.Errorf("unsupported item type %q", itemType)
+	}
+
+	var exists int
+	err := d.ro.QueryRowContext(ctx, query, repoID, number).Scan(&exists)
+	if err == nil {
+		return itemType, true, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return "", false, fmt.Errorf("check %s: %w", itemType, err)
+	}
+	return "", false, nil
+}
+
 // UpdateIssueState sets the state and closed_at for an issue.
 func (d *DB) UpdateIssueState(
 	ctx context.Context,

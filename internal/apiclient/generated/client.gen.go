@@ -179,6 +179,42 @@ func (e ProblemErrorCode) Valid() bool {
 	}
 }
 
+// Defines values for ResolveRepoItemOnHostParamsItemType.
+const (
+	ResolveRepoItemOnHostParamsItemTypeIssue ResolveRepoItemOnHostParamsItemType = "issue"
+	ResolveRepoItemOnHostParamsItemTypePr    ResolveRepoItemOnHostParamsItemType = "pr"
+)
+
+// Valid indicates whether the value is a known member of the ResolveRepoItemOnHostParamsItemType enum.
+func (e ResolveRepoItemOnHostParamsItemType) Valid() bool {
+	switch e {
+	case ResolveRepoItemOnHostParamsItemTypeIssue:
+		return true
+	case ResolveRepoItemOnHostParamsItemTypePr:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ResolveRepoItemParamsItemType.
+const (
+	ResolveRepoItemParamsItemTypeIssue ResolveRepoItemParamsItemType = "issue"
+	ResolveRepoItemParamsItemTypePr    ResolveRepoItemParamsItemType = "pr"
+)
+
+// Valid indicates whether the value is a known member of the ResolveRepoItemParamsItemType enum.
+func (e ResolveRepoItemParamsItemType) Valid() bool {
+	switch e {
+	case ResolveRepoItemParamsItemTypeIssue:
+		return true
+	case ResolveRepoItemParamsItemTypePr:
+		return true
+	default:
+		return false
+	}
+}
+
 // ActionStatusBody defines model for ActionStatusBody.
 type ActionStatusBody struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -1420,6 +1456,15 @@ type GetCommentAutocompleteOnHostParams struct {
 	Limit   *int64  `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
+// ResolveRepoItemOnHostParams defines parameters for ResolveRepoItemOnHost.
+type ResolveRepoItemOnHostParams struct {
+	// ItemType Optional item type hint for providers whose issues and merge requests have separate number spaces.
+	ItemType *ResolveRepoItemOnHostParamsItemType `form:"item_type,omitempty" json:"item_type,omitempty"`
+}
+
+// ResolveRepoItemOnHostParamsItemType defines parameters for ResolveRepoItemOnHost.
+type ResolveRepoItemOnHostParamsItemType string
+
 // ListIssuesParams defines parameters for ListIssues.
 type ListIssuesParams struct {
 	Repo    *string `form:"repo,omitempty" json:"repo,omitempty"`
@@ -1476,6 +1521,15 @@ type GetCommentAutocompleteParams struct {
 	Q       *string `form:"q,omitempty" json:"q,omitempty"`
 	Limit   *int64  `form:"limit,omitempty" json:"limit,omitempty"`
 }
+
+// ResolveRepoItemParams defines parameters for ResolveRepoItem.
+type ResolveRepoItemParams struct {
+	// ItemType Optional item type hint for providers whose issues and merge requests have separate number spaces.
+	ItemType *ResolveRepoItemParamsItemType `form:"item_type,omitempty" json:"item_type,omitempty"`
+}
+
+// ResolveRepoItemParamsItemType defines parameters for ResolveRepoItem.
+type ResolveRepoItemParamsItemType string
 
 // ListStacksParams defines parameters for ListStacks.
 type ListStacksParams struct {
@@ -1861,7 +1915,7 @@ type ClientInterface interface {
 	RefreshRepoOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ResolveRepoItemOnHost request
-	ResolveRepoItemOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+	ResolveRepoItemOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, params *ResolveRepoItemOnHostParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListIssues request
 	ListIssues(ctx context.Context, params *ListIssuesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -2030,7 +2084,7 @@ type ClientInterface interface {
 	RefreshRepo(ctx context.Context, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ResolveRepoItem request
-	ResolveRepoItem(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+	ResolveRepoItem(ctx context.Context, provider string, owner string, name string, number int64, params *ResolveRepoItemParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListRepos request
 	ListRepos(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -2751,8 +2805,8 @@ func (c *Client) RefreshRepoOnHost(ctx context.Context, platformHost string, pro
 	return c.Client.Do(req)
 }
 
-func (c *Client) ResolveRepoItemOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewResolveRepoItemOnHostRequest(c.Server, platformHost, provider, owner, name, number)
+func (c *Client) ResolveRepoItemOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, params *ResolveRepoItemOnHostParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewResolveRepoItemOnHostRequest(c.Server, platformHost, provider, owner, name, number, params)
 	if err != nil {
 		return nil, err
 	}
@@ -3495,8 +3549,8 @@ func (c *Client) RefreshRepo(ctx context.Context, provider string, owner string,
 	return c.Client.Do(req)
 }
 
-func (c *Client) ResolveRepoItem(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewResolveRepoItemRequest(c.Server, provider, owner, name, number)
+func (c *Client) ResolveRepoItem(ctx context.Context, provider string, owner string, name string, number int64, params *ResolveRepoItemParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewResolveRepoItemRequest(c.Server, provider, owner, name, number, params)
 	if err != nil {
 		return nil, err
 	}
@@ -6587,7 +6641,7 @@ func NewRefreshRepoOnHostRequest(server string, platformHost string, provider st
 }
 
 // NewResolveRepoItemOnHostRequest generates requests for ResolveRepoItemOnHost
-func NewResolveRepoItemOnHostRequest(server string, platformHost string, provider string, owner string, name string, number int64) (*http.Request, error) {
+func NewResolveRepoItemOnHostRequest(server string, platformHost string, provider string, owner string, name string, number int64, params *ResolveRepoItemOnHostParams) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -6638,6 +6692,28 @@ func NewResolveRepoItemOnHostRequest(server string, platformHost string, provide
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.ItemType != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "item_type", *params.ItemType, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
 	}
 
 	req, err := http.NewRequest("POST", queryURL.String(), nil)
@@ -9452,7 +9528,7 @@ func NewRefreshRepoRequest(server string, provider string, owner string, name st
 }
 
 // NewResolveRepoItemRequest generates requests for ResolveRepoItem
-func NewResolveRepoItemRequest(server string, provider string, owner string, name string, number int64) (*http.Request, error) {
+func NewResolveRepoItemRequest(server string, provider string, owner string, name string, number int64, params *ResolveRepoItemParams) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -9496,6 +9572,28 @@ func NewResolveRepoItemRequest(server string, provider string, owner string, nam
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.ItemType != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "item_type", *params.ItemType, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
 	}
 
 	req, err := http.NewRequest("POST", queryURL.String(), nil)
@@ -10803,7 +10901,7 @@ type ClientWithResponsesInterface interface {
 	RefreshRepoOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*RefreshRepoOnHostResponse, error)
 
 	// ResolveRepoItemOnHostWithResponse request
-	ResolveRepoItemOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*ResolveRepoItemOnHostResponse, error)
+	ResolveRepoItemOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, params *ResolveRepoItemOnHostParams, reqEditors ...RequestEditorFn) (*ResolveRepoItemOnHostResponse, error)
 
 	// ListIssuesWithResponse request
 	ListIssuesWithResponse(ctx context.Context, params *ListIssuesParams, reqEditors ...RequestEditorFn) (*ListIssuesResponse, error)
@@ -10972,7 +11070,7 @@ type ClientWithResponsesInterface interface {
 	RefreshRepoWithResponse(ctx context.Context, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*RefreshRepoResponse, error)
 
 	// ResolveRepoItemWithResponse request
-	ResolveRepoItemWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*ResolveRepoItemResponse, error)
+	ResolveRepoItemWithResponse(ctx context.Context, provider string, owner string, name string, number int64, params *ResolveRepoItemParams, reqEditors ...RequestEditorFn) (*ResolveRepoItemResponse, error)
 
 	// ListReposWithResponse request
 	ListReposWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListReposResponse, error)
@@ -13985,8 +14083,8 @@ func (c *ClientWithResponses) RefreshRepoOnHostWithResponse(ctx context.Context,
 }
 
 // ResolveRepoItemOnHostWithResponse request returning *ResolveRepoItemOnHostResponse
-func (c *ClientWithResponses) ResolveRepoItemOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*ResolveRepoItemOnHostResponse, error) {
-	rsp, err := c.ResolveRepoItemOnHost(ctx, platformHost, provider, owner, name, number, reqEditors...)
+func (c *ClientWithResponses) ResolveRepoItemOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, params *ResolveRepoItemOnHostParams, reqEditors ...RequestEditorFn) (*ResolveRepoItemOnHostResponse, error) {
+	rsp, err := c.ResolveRepoItemOnHost(ctx, platformHost, provider, owner, name, number, params, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
@@ -14526,8 +14624,8 @@ func (c *ClientWithResponses) RefreshRepoWithResponse(ctx context.Context, provi
 }
 
 // ResolveRepoItemWithResponse request returning *ResolveRepoItemResponse
-func (c *ClientWithResponses) ResolveRepoItemWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*ResolveRepoItemResponse, error) {
-	rsp, err := c.ResolveRepoItem(ctx, provider, owner, name, number, reqEditors...)
+func (c *ClientWithResponses) ResolveRepoItemWithResponse(ctx context.Context, provider string, owner string, name string, number int64, params *ResolveRepoItemParams, reqEditors ...RequestEditorFn) (*ResolveRepoItemResponse, error) {
+	rsp, err := c.ResolveRepoItem(ctx, provider, owner, name, number, params, reqEditors...)
 	if err != nil {
 		return nil, err
 	}

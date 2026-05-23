@@ -7,6 +7,20 @@ import { navigate, buildItemRoute } from "../stores/router.svelte.js";
 import { showFlash } from "../stores/flash.svelte.js";
 
 let requestId = 0;
+type ItemRefType = "pr" | "issue";
+
+function safeExternalURL(raw: string | undefined): string | null {
+  if (!raw) return null;
+  try {
+    const url = new URL(raw);
+    if (url.protocol === "http:" || url.protocol === "https:") {
+      return url.href;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
 
 function findItemRef(target: EventTarget | null): HTMLAnchorElement | null {
   let el = target as HTMLElement | null;
@@ -26,6 +40,7 @@ async function resolveAndNavigate(
   name: string,
   repoPath: string,
   number: number,
+  itemType: ItemRefType | undefined,
   externalUrl: string | undefined,
   thisRequestId: number,
 ): Promise<void> {
@@ -33,7 +48,12 @@ async function resolveAndNavigate(
     const ref = { provider, platformHost, owner, name, repoPath };
     const { data, error, response } = await client.POST(
       providerRepoPath(ref, "/resolve/{number}"),
-      { params: { path: { ...providerRouteParams(ref), number } } },
+      {
+        params: {
+          path: { ...providerRouteParams(ref), number },
+          ...(itemType && { query: { item_type: itemType } }),
+        },
+      },
     );
 
     if (thisRequestId !== requestId) return;
@@ -48,8 +68,9 @@ async function resolveAndNavigate(
     }
 
     if (!data.repo_tracked) {
-      if (externalUrl) {
-        window.open(externalUrl, "_blank", "noopener,noreferrer");
+      const safeExternalUrl = safeExternalURL(externalUrl);
+      if (safeExternalUrl) {
+        window.open(safeExternalUrl, "_blank", "noopener,noreferrer");
         return;
       }
       showFlash(
@@ -86,6 +107,10 @@ function handleClick(e: MouseEvent): void {
   const name = anchor.dataset.name;
   const repoPath = anchor.dataset.repoPath;
   const numberStr = anchor.dataset.number;
+  const itemType =
+    anchor.dataset.itemType === "pr" || anchor.dataset.itemType === "issue"
+      ? anchor.dataset.itemType
+      : undefined;
   const externalUrl = anchor.dataset.externalUrl;
   if (!provider || !owner || !name || !repoPath || !numberStr) return;
 
@@ -98,6 +123,7 @@ function handleClick(e: MouseEvent): void {
     name,
     repoPath,
     parseInt(numberStr, 10),
+    itemType,
     externalUrl,
     requestId,
   );

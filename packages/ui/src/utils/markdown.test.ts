@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { buildCanonicalProviderItemURL } from "./item-reference.js";
 import { renderMarkdown } from "./markdown.js";
 
 describe("renderMarkdown task lists", () => {
@@ -23,8 +24,8 @@ describe("renderMarkdown task lists", () => {
     expect(html).toContain('data-external-url="https://github.com/acme/tools/issues/13"');
   });
 
-  it("renders gitlab item references with canonical provider fallback links", () => {
-    const html = renderMarkdown("See group/project#42", {
+  it("renders gitlab issue and merge request references with provider fallback links", () => {
+    const html = renderMarkdown("See group/project#42 and group/project!43 and !44", {
       provider: "gitlab",
       platformHost: "gitlab.example.com",
       owner: "group",
@@ -38,6 +39,37 @@ describe("renderMarkdown task lists", () => {
     expect(html).toContain(
       'data-external-url="https://gitlab.example.com/group/project/-/issues/42"',
     );
+    expect(html).toContain(
+      'href="/host/gitlab.example.com/pulls/gitlab/group/project/43"',
+    );
+    expect(html).toContain('data-item-type="pr"');
+    expect(html).toContain(
+      'data-external-url="https://gitlab.example.com/group/project/-/merge_requests/43"',
+    );
+    expect(html).toContain(
+      'href="/host/gitlab.example.com/pulls/gitlab/group/project/44"',
+    );
+  });
+
+  it("builds provider-canonical pull request fallback links", () => {
+    expect(buildCanonicalProviderItemURL({
+      provider: "github",
+      platformHost: "github.com",
+      owner: "acme",
+      name: "widgets",
+      repoPath: "acme/widgets",
+      number: 12,
+      itemType: "pr",
+    })).toBe("https://github.com/acme/widgets/pull/12");
+    expect(buildCanonicalProviderItemURL({
+      provider: "gitlab",
+      platformHost: "gitlab.example.com",
+      owner: "group",
+      name: "project",
+      repoPath: "group/project",
+      number: 42,
+      itemType: "pr",
+    })).toBe("https://gitlab.example.com/group/project/-/merge_requests/42");
   });
 
   it("renders disabled checkboxes by default", () => {

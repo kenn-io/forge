@@ -69,9 +69,24 @@ describe("itemRefHandler", () => {
       "data-name": "widgets",
       "data-repo-path": "acme/widgets",
       "data-number": "12",
+      "data-item-type": "pr",
       "data-external-url": "https://github.com/acme/widgets/pull/12",
     });
 
+    expect(mocks.post).toHaveBeenCalledWith(
+      "/repo/{provider}/{owner}/{name}/resolve/{number}",
+      {
+        params: {
+          path: {
+            provider: "github",
+            owner: "acme",
+            name: "widgets",
+            number: 12,
+          },
+          query: { item_type: "pr" },
+        },
+      },
+    );
     expect(mocks.navigate).toHaveBeenCalledWith("/pulls/github/acme/widgets/12");
     expect(open).not.toHaveBeenCalled();
     expect(mocks.showFlash).not.toHaveBeenCalled();
@@ -102,6 +117,31 @@ describe("itemRefHandler", () => {
     );
     expect(mocks.navigate).not.toHaveBeenCalled();
     expect(mocks.showFlash).not.toHaveBeenCalled();
+  });
+
+  it("rejects non-http external fallbacks for untracked references", async () => {
+    const open = vi.spyOn(window, "open").mockImplementation(() => null);
+    mocks.post.mockResolvedValue({
+      data: { repo_tracked: false, item_type: "issue" },
+      error: undefined,
+      response: { status: 200 },
+    });
+
+    await clickItemRef({
+      "data-provider": "github",
+      "data-platform-host": "github.com",
+      "data-owner": "other",
+      "data-name": "repo",
+      "data-repo-path": "other/repo",
+      "data-number": "77",
+      "data-external-url": "javascript:alert(1)",
+    });
+
+    expect(open).not.toHaveBeenCalled();
+    expect(mocks.navigate).not.toHaveBeenCalled();
+    expect(mocks.showFlash).toHaveBeenCalledWith(
+      "other/repo is not tracked. Add it in Settings to navigate here.",
+    );
   });
 
   it("keeps the not-tracked flash for references without an external fallback", async () => {

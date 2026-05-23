@@ -9132,7 +9132,7 @@ func TestResolveItem_PR(t *testing.T) {
 	client := setupTestClient(t, srv)
 
 	resp, err := client.HTTP.ResolveRepoItemWithResponse(
-		t.Context(), "gh", "acme", "widget", 42,
+		t.Context(), "gh", "acme", "widget", 42, nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -9150,7 +9150,7 @@ func TestResolveItem_Issue(t *testing.T) {
 	client := setupTestClient(t, srv)
 
 	resp, err := client.HTTP.ResolveRepoItemWithResponse(
-		t.Context(), "gh", "acme", "widget", 7,
+		t.Context(), "gh", "acme", "widget", 7, nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -9160,13 +9160,34 @@ func TestResolveItem_Issue(t *testing.T) {
 	require.True(resp.JSON200.RepoTracked)
 }
 
+func TestResolveItem_UsesItemTypeHint(t *testing.T) {
+	require := require.New(t)
+	repos := []ghclient.RepoRef{{Owner: "acme", Name: "widget"}}
+	srv, database := setupTestServerWithRepos(t, &mockGH{}, repos)
+	seedPR(t, database, "acme", "widget", 10)
+	seedIssue(t, database, "acme", "widget", 10, "open")
+	client := setupTestClient(t, srv)
+	itemType := generated.ResolveRepoItemParamsItemTypeIssue
+
+	resp, err := client.HTTP.ResolveRepoItemWithResponse(
+		t.Context(), "gh", "acme", "widget", 10,
+		&generated.ResolveRepoItemParams{ItemType: &itemType},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.Equal("issue", resp.JSON200.ItemType)
+	require.EqualValues(10, resp.JSON200.Number)
+	require.True(resp.JSON200.RepoTracked)
+}
+
 func TestResolveItem_UntrackedRepo(t *testing.T) {
 	require := require.New(t)
 	srv, _ := setupTestServer(t)
 	client := setupTestClient(t, srv)
 
 	resp, err := client.HTTP.ResolveRepoItemWithResponse(
-		t.Context(), "gh", "unknown", "repo", 1,
+		t.Context(), "gh", "unknown", "repo", 1, nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -9193,7 +9214,7 @@ func TestResolveItem_NotFoundOnGitHub(t *testing.T) {
 	client := setupTestClient(t, srv)
 
 	resp, err := client.HTTP.ResolveRepoItemWithResponse(
-		t.Context(), "gh", "acme", "widget", 999,
+		t.Context(), "gh", "acme", "widget", 999, nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusNotFound, resp.StatusCode())
@@ -9216,7 +9237,7 @@ func TestResolveItem_GitHubServerError(t *testing.T) {
 	client := setupTestClient(t, srv)
 
 	resp, err := client.HTTP.ResolveRepoItemWithResponse(
-		t.Context(), "gh", "acme", "widget", 999,
+		t.Context(), "gh", "acme", "widget", 999, nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusBadGateway, resp.StatusCode())

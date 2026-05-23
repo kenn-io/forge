@@ -4905,6 +4905,16 @@ paths:
           schema:
             format: int64
             type: integer
+        - description: Optional item type hint for providers whose issues and merge requests have separate number spaces.
+          explode: false
+          in: query
+          name: item_type
+          schema:
+            description: Optional item type hint for providers whose issues and merge requests have separate number spaces.
+            enum:
+              - pr
+              - issue
+            type: string
       responses:
         "200":
           content:
@@ -6782,6 +6792,16 @@ paths:
           schema:
             format: int64
             type: integer
+        - description: Optional item type hint for providers whose issues and merge requests have separate number spaces.
+          explode: false
+          in: query
+          name: item_type
+          schema:
+            description: Optional item type hint for providers whose issues and merge requests have separate number spaces.
+            enum:
+              - pr
+              - issue
+            type: string
       responses:
         "200":
           content:

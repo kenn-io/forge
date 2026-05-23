@@ -22,6 +22,7 @@ export type ItemReferenceDataAttributes = {
   "data-repo-path": string;
   "data-number": string;
   "data-platform-host"?: string | undefined;
+  "data-item-type"?: ItemReferenceType | undefined;
   "data-external-url"?: string | undefined;
 };
 
@@ -55,9 +56,19 @@ export function buildCanonicalProviderItemURL(
   const repoPath = encodeRepoPath(ref.repoPath);
   if (!host || !repoPath) return undefined;
   const provider = canonicalProvider(ref.provider);
-  const itemPath = provider === "gitlab"
-    ? `/-/issues/${encodeURIComponent(ref.number.toString())}`
-    : `/issues/${encodeURIComponent(ref.number.toString())}`;
+  const number = encodeURIComponent(ref.number.toString());
+  let itemPath: string;
+  if (ref.itemType === "pr") {
+    if (provider === "gitlab") {
+      itemPath = `/-/merge_requests/${number}`;
+    } else if (provider === "github") {
+      itemPath = `/pull/${number}`;
+    } else {
+      itemPath = `/pulls/${number}`;
+    }
+  } else {
+    itemPath = provider === "gitlab" ? `/-/issues/${number}` : `/issues/${number}`;
+  }
   return `https://${host}/${repoPath}${itemPath}`;
 }
 
@@ -84,6 +95,9 @@ export function itemReferenceDataAttributes(
     "data-name": ref.name,
     "data-repo-path": ref.repoPath,
     "data-number": ref.number.toString(),
+    ...(ref.itemType && {
+      "data-item-type": ref.itemType,
+    }),
     ...(externalUrl && {
       "data-external-url": externalUrl,
     }),
@@ -121,6 +135,7 @@ export function itemReferenceAnchorAttributes(
     ["data-name", link.dataAttributes["data-name"]],
     ["data-repo-path", link.dataAttributes["data-repo-path"]],
     ["data-number", link.dataAttributes["data-number"]],
+    ["data-item-type", link.dataAttributes["data-item-type"]],
     ["data-external-url", link.dataAttributes["data-external-url"]],
   ];
   return attrs

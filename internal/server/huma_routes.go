@@ -124,6 +124,15 @@ type issueRepoNumberInput struct {
 
 type getIssueOutput = bodyOutput[issueDetailResponse]
 
+type resolveItemInput struct {
+	Provider     string `path:"provider"`
+	PlatformHost string
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
+	ItemType     string `query:"item_type" enum:"pr,issue" doc:"Optional item type hint for providers whose issues and merge requests have separate number spaces."`
+}
+
 type postIssueCommentInput struct {
 	Provider     string `path:"provider"`
 	PlatformHost string
@@ -2780,9 +2789,16 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 }
 
 func (s *Server) resolveItem(
-	ctx context.Context, input *repoNumberInput,
+	ctx context.Context, input *resolveItemInput,
 ) (*resolveItemOutput, error) {
 	number := input.Number
+	requestedItemType := input.ItemType
+	if requestedItemType != "" &&
+		requestedItemType != "pr" &&
+		requestedItemType != "issue" {
+		return nil, problemValidation("query.item_type",
+			"item_type must be 'pr' or 'issue'", "pr", "issue")
+	}
 	repo, err := s.lookupRepoByProviderRoute(
 		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
 	)
@@ -2805,7 +2821,17 @@ func (s *Server) resolveItem(
 			},
 		}, nil
 	}
-	itemType, found, err := s.db.ResolveItemNumber(ctx, repo.ID, number)
+	var (
+		itemType string
+		found    bool
+	)
+	if requestedItemType != "" {
+		itemType, found, err = s.db.ResolveItemNumberOfType(
+			ctx, repo.ID, number, requestedItemType,
+		)
+	} else {
+		itemType, found, err = s.db.ResolveItemNumber(ctx, repo.ID, number)
+	}
 	if err != nil {
 		return nil, problemInternal("resolve item: " + err.Error())
 	}
@@ -2826,6 +2852,9 @@ func (s *Server) resolveItem(
 	itemType, err = s.syncer.SyncItemByNumber(
 		ctx, repo.Owner, repo.Name, number,
 	)
+	if err == nil && requestedItemType != "" && itemType != requestedItemType {
+		return nil, problemNotFound(CodeNotFound, "item not found", nil)
+	}
 	// A DiffSyncError means the PR row was upserted but the diff
 	// computation failed. Resolution doesn't need diff data, so treat
 	// the result as success here. The resolve response has no warnings

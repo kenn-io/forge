@@ -22,6 +22,8 @@ import (
 // consistent state — no wedged worktree, no half-created branch, no
 // corrupt `worktrees/` metadata.
 func TestWorkspaceConcurrentSameRepoOperationsE2E(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := Assert.New(t)
 

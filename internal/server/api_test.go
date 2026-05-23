@@ -13906,6 +13906,8 @@ func TestCleanupWorkspaceServerFixtureArtifactsKeepsDeletingAfterError(
 }
 
 func TestWorkspaceRuntimeTargetsRefreshAfterSettingsUpdateE2E(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := Assert.New(t)
 
@@ -14495,6 +14497,8 @@ func cleanupPtyOwnerWorkspace(
 }
 
 func TestWorkspaceRuntimeLaunchUnavailableTargetE2E(t *testing.T) {
+	t.Parallel()
+
 	disabled := false
 	cfg := &config.Config{Agents: []config.Agent{{
 		Key:     "disabled",
@@ -14518,6 +14522,8 @@ func TestWorkspaceRuntimeLaunchUnavailableTargetE2E(t *testing.T) {
 }
 
 func TestWorkspaceRuntimeLaunchPlainShellUsesShellSessionE2E(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := Assert.New(t)
 
@@ -15668,6 +15674,8 @@ func TestWorkspaceDeleteDirtyKeepsRuntimeSessionsE2E(t *testing.T) {
 // on these fields, so a regression here would silently turn the pills
 // off without any test failure at the unit-test layer.
 func TestWorkspaceListReportsCommitsAheadBehindE2E(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := Assert.New(t)
 
@@ -15724,6 +15732,8 @@ func TestWorkspaceListReportsCommitsAheadBehindE2E(t *testing.T) {
 }
 
 func TestWorkspaceDiffEndpointsReportHeadAndPushedE2E(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := Assert.New(t)
 
@@ -15797,6 +15807,8 @@ func TestWorkspaceDiffEndpointsReportHeadAndPushedE2E(t *testing.T) {
 }
 
 func TestWorkspaceCommitsEndpointListsBranchCommitsE2E(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := Assert.New(t)
 
@@ -15828,6 +15840,8 @@ func TestWorkspaceCommitsEndpointListsBranchCommitsE2E(t *testing.T) {
 }
 
 func TestWorkspaceDiffEndpointsAcceptCommitAndRangeScopesE2E(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 
 	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, nil)
@@ -15899,6 +15913,8 @@ func TestWorkspaceDiffEndpointsAcceptCommitAndRangeScopesE2E(t *testing.T) {
 }
 
 func TestWorkspaceDiffEndpointReportsMergeTargetE2E(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := Assert.New(t)
 
@@ -15950,6 +15966,8 @@ func TestWorkspaceDiffEndpointReportsMergeTargetE2E(t *testing.T) {
 }
 
 func TestWorkspaceDiffEndpointRejectsOriginBaseE2E(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 
 	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, nil)
@@ -15974,6 +15992,8 @@ func TestWorkspaceDiffEndpointRejectsOriginBaseE2E(t *testing.T) {
 }
 
 func TestWorkspaceDiffEndpointHandlesUntrackedSymlinkAndLargeFileE2E(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := Assert.New(t)
 
@@ -16018,6 +16038,8 @@ func TestWorkspaceDiffEndpointHandlesUntrackedSymlinkAndLargeFileE2E(t *testing.
 }
 
 func TestWorkspaceDiffEndpointMarksGeneratedFilesE2E(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := Assert.New(t)
 
@@ -16057,6 +16079,8 @@ func TestWorkspaceDiffEndpointMarksGeneratedFilesE2E(t *testing.T) {
 }
 
 func TestWorkspaceDiffEndpointScopesPatchByPathE2E(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := Assert.New(t)
 
@@ -17342,6 +17366,8 @@ type rawProblemDetail struct {
 }
 
 func TestWorkspaceCRUDE2E(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := Assert.New(t)
 
@@ -17417,6 +17443,8 @@ func TestWorkspaceCRUDE2E(t *testing.T) {
 }
 
 func TestWorkspaceRetryErroredWorkspaceE2E(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := Assert.New(t)
 
@@ -17457,6 +17485,8 @@ func TestWorkspaceRetryErroredWorkspaceE2E(t *testing.T) {
 }
 
 func TestWorkspaceRetryReadyWorkspaceConflictE2E(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := Assert.New(t)
 
@@ -17505,6 +17535,8 @@ func TestWorkspaceRetryReadyWorkspaceConflictE2E(t *testing.T) {
 }
 
 func TestWorkspaceCreateNotFound(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 
 	client, _, _, _ := setupTestServerWithWorkspaces(t)
@@ -17538,6 +17570,8 @@ func TestWorkspaceCreateNotFound(t *testing.T) {
 }
 
 func TestWorkspaceMRDetailHasWorkspace(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := Assert.New(t)
 
@@ -17583,6 +17617,8 @@ func TestWorkspaceMRDetailHasWorkspace(t *testing.T) {
 }
 
 func TestWorkspaceCreateDuplicate(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 
 	client, _, _, _ := setupTestServerWithWorkspaces(t)
@@ -17607,6 +17643,8 @@ func TestWorkspaceCreateDuplicate(t *testing.T) {
 }
 
 func TestWorkspaceCreateFetchesCloneThroughAPI(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := Assert.New(t)
 
@@ -17646,6 +17684,8 @@ func TestWorkspaceCreateFetchesCloneThroughAPI(t *testing.T) {
 }
 
 func TestWorkspaceCreateIssueE2E(t *testing.T) {
+	t.Parallel()
+
 	assert := Assert.New(t)
 	require := require.New(t)
 
@@ -17698,6 +17738,8 @@ func TestWorkspaceCreateIssueE2E(t *testing.T) {
 }
 
 func TestWorkspaceCreateIssueUsesTitleSlugInBranch(t *testing.T) {
+	t.Parallel()
+
 	assert := Assert.New(t)
 	require := require.New(t)
 
@@ -17732,6 +17774,8 @@ func TestWorkspaceCreateIssueUsesTitleSlugInBranch(t *testing.T) {
 }
 
 func TestWorkspaceCreateIssueBareStyleConfigOptOut(t *testing.T) {
+	t.Parallel()
+
 	assert := Assert.New(t)
 	require := require.New(t)
 
@@ -17767,6 +17811,8 @@ func TestWorkspaceCreateIssueBareStyleConfigOptOut(t *testing.T) {
 }
 
 func TestWorkspaceCreateIssueIsIdempotent(t *testing.T) {
+	t.Parallel()
+
 	assert := Assert.New(t)
 	require := require.New(t)
 
@@ -17800,6 +17846,8 @@ func TestWorkspaceCreateIssueIsIdempotent(t *testing.T) {
 }
 
 func TestWorkspaceCreateIssueAfterDeleteRecreatesBranch(t *testing.T) {
+	t.Parallel()
+
 	assert := Assert.New(t)
 	require := require.New(t)
 
@@ -17853,6 +17901,8 @@ func TestWorkspaceCreateIssueAfterDeleteRecreatesBranch(t *testing.T) {
 }
 
 func TestWorkspaceCreatePRAndIssueCanCoexistForSameRepoNumber(t *testing.T) {
+	t.Parallel()
+
 	assert := Assert.New(t)
 	require := require.New(t)
 
@@ -17900,6 +17950,8 @@ func TestWorkspaceCreatePRAndIssueCanCoexistForSameRepoNumber(t *testing.T) {
 }
 
 func TestWorkspaceCreateIssueBranchConflictReturnsTyped409(t *testing.T) {
+	t.Parallel()
+
 	assert := Assert.New(t)
 	require := require.New(t)
 
@@ -18043,6 +18095,8 @@ func prepareIssueWorkspaceAssociationFixture(
 }
 
 func TestWorkspaceIssueMonitorAssociatesPRAndKeepsIssueOwnership(t *testing.T) {
+	t.Parallel()
+
 	assert := Assert.New(t)
 	require := require.New(t)
 	ctx := context.Background()
@@ -18087,6 +18141,8 @@ func TestWorkspaceIssueMonitorAssociatesPRAndKeepsIssueOwnership(t *testing.T) {
 }
 
 func TestWorkspaceMonitorPassBroadcastsInvalidationEvents(t *testing.T) {
+	t.Parallel()
+
 	assert := Assert.New(t)
 	ctx := t.Context()
 
@@ -18128,6 +18184,8 @@ func readEventMatching(
 }
 
 func TestWorkspaceCreateUsesPRBranchAndFallbackBranch(t *testing.T) {
+	t.Parallel()
+
 	assert := Assert.New(t)
 	require := require.New(t)
 
@@ -18195,6 +18253,8 @@ func TestWorkspaceCreateUsesPRBranchAndFallbackBranch(t *testing.T) {
 }
 
 func TestWorkspaceCreateSameRepoHeadCloneURLTracksOriginBranchE2E(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := Assert.New(t)
 
@@ -18249,6 +18309,8 @@ func TestWorkspaceCreateSameRepoHeadCloneURLTracksOriginBranchE2E(t *testing.T) 
 }
 
 func TestWorkspaceCreatePortQualifiedHostTracksOriginBranchE2E(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := Assert.New(t)
 
@@ -18297,6 +18359,8 @@ func TestWorkspaceCreatePortQualifiedHostTracksOriginBranchE2E(t *testing.T) {
 }
 
 func TestWorkspaceDeleteRecreatesForkBranchName(t *testing.T) {
+	t.Parallel()
+
 	assert := Assert.New(t)
 	require := require.New(t)
 
@@ -18385,6 +18449,8 @@ func TestWorkspaceDeleteRecreatesForkBranchName(t *testing.T) {
 }
 
 func TestWorkspaceDeletePreservesUserCreatedBranch(t *testing.T) {
+	t.Parallel()
+
 	assert := Assert.New(t)
 	require := require.New(t)
 
@@ -18423,6 +18489,8 @@ func TestWorkspaceDeletePreservesUserCreatedBranch(t *testing.T) {
 }
 
 func TestWorkspaceCreatePreservesExistingLocalPreferredBranch(t *testing.T) {
+	t.Parallel()
+
 	assert := Assert.New(t)
 	require := require.New(t)
 
@@ -18481,6 +18549,8 @@ func TestWorkspaceCreatePreservesExistingLocalPreferredBranch(t *testing.T) {
 }
 
 func TestWorkspaceDeleteLegacySyntheticBranchAllowsRecreate(t *testing.T) {
+	t.Parallel()
+
 	assert := Assert.New(t)
 	require := require.New(t)
 
@@ -18670,6 +18740,8 @@ func seedPROnHost(
 }
 
 func TestWorkspaceDeleteDirty(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := Assert.New(t)
 

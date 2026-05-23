@@ -29,12 +29,12 @@ func TestWorktreeDiffFilesAgainstHead(t *testing.T) {
 	require.NoError(err)
 	require.True(ok)
 	require.Len(files, 2)
-	assert.Equal("f.txt", files[0].Path)
-	assert.Equal("modified", files[0].Status)
-	assert.Equal(1, files[0].Additions)
-	assert.Equal(1, files[0].Deletions)
-	assert.Equal("dirty-test.txt", files[1].Path)
-	assert.Equal("added", files[1].Status)
+	assert.Equal("dirty-test.txt", files[0].Path)
+	assert.Equal("added", files[0].Status)
+	assert.Equal("f.txt", files[1].Path)
+	assert.Equal("modified", files[1].Status)
+	assert.Equal(1, files[1].Additions)
+	assert.Equal(1, files[1].Deletions)
 }
 
 func TestWorktreeDiffFilesHidesWhitespaceOnlyChanges(t *testing.T) {

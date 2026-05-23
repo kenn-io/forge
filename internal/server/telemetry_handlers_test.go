@@ -51,7 +51,8 @@ func TestCaptureTelemetryEvent_QueuesEvent(t *testing.T) {
 	assert.Equal(http.StatusAccepted, rr.Code)
 	assert.Equal("app_loaded", telemetry.event)
 	assert.Equal("pulls", telemetry.properties["view"])
-	assert.Equal("ignored", telemetry.properties["distinct_id"])
+	assert.NotContains(telemetry.properties, "distinct_id")
+	assert.True(telemetry.properties["$geoip_disable"].(bool))
 
 	var body telemetryEventResponse
 	err := json.NewDecoder(rr.Body).Decode(&body)
@@ -98,4 +99,22 @@ func TestCaptureTelemetryEvent_RejectsMissingEvent(t *testing.T) {
 
 	assert.Equal(http.StatusBadRequest, rr.Code)
 	assert.Contains(rr.Body.String(), "telemetry event is required")
+}
+
+func TestCaptureTelemetryEvent_RejectsUnsupportedEvent(t *testing.T) {
+	assert := Assert.New(t)
+
+	srv := New(openTestDB(t), nil, nil, "/", nil, ServerOptions{})
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/telemetry/events",
+		strings.NewReader(`{"event":"repo_opened","properties":{"view":"pulls"}}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+
+	srv.ServeHTTP(rr, req)
+
+	assert.Equal(http.StatusBadRequest, rr.Code)
+	assert.Contains(rr.Body.String(), "unsupported telemetry event")
 }

@@ -2,7 +2,10 @@ package server
 
 import (
 	"context"
+	"errors"
 	"strings"
+
+	telemetrypkg "go.kenn.io/middleman/internal/telemetry"
 )
 
 type telemetryEventInput struct {
@@ -33,6 +36,23 @@ func (s *Server) captureTelemetryEvent(
 			CodeBadRequest, "telemetry event is too long", nil,
 		)
 	}
+	if !telemetrypkg.EventAllowed(event) {
+		return nil, problemBadRequest(
+			CodeBadRequest, "unsupported telemetry event", nil,
+		)
+	}
+
+	safeProperties, err := telemetrypkg.SanitizeProperties(
+		event, input.Body.Properties,
+	)
+	if err != nil {
+		if errors.Is(err, telemetrypkg.ErrUnsupportedEvent) {
+			return nil, problemBadRequest(
+				CodeBadRequest, "unsupported telemetry event", nil,
+			)
+		}
+		return nil, problemInternal("sanitize telemetry event failed")
+	}
 
 	if s.telemetry == nil || !s.telemetry.Enabled() {
 		return &telemetryEventOutput{
@@ -41,7 +61,12 @@ func (s *Server) captureTelemetryEvent(
 		}, nil
 	}
 
-	if err := s.telemetry.Capture(event, input.Body.Properties); err != nil {
+	if err := s.telemetry.Capture(event, safeProperties); err != nil {
+		if errors.Is(err, telemetrypkg.ErrUnsupportedEvent) {
+			return nil, problemBadRequest(
+				CodeBadRequest, "unsupported telemetry event", nil,
+			)
+		}
 		return nil, problemInternal("capture telemetry event failed")
 	}
 	return &telemetryEventOutput{

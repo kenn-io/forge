@@ -6,6 +6,83 @@ export interface ConfigChangedEvent {
   restart_required: boolean;
 }
 
+export interface WorkspacePushedHeadChangedEvent {
+  workspace_id: string;
+  provider: string;
+  platform_host: string;
+  repo_path: string;
+  owner: string;
+  name: string;
+  number: number;
+  old_sha: string;
+  new_sha: string;
+  remote: string;
+  branch: string;
+  tracking_ref: string;
+  observed_at: string;
+}
+
+export interface WorkspacePRAssociatedEvent {
+  workspace_id: string;
+  provider: string;
+  platform_host: string;
+  repo_path: string;
+  owner: string;
+  name: string;
+  issue_number: number;
+  pr_number: number;
+  associated_at: string;
+}
+
+export interface WorkspacePRRefreshQueuedEvent {
+  workspace_id: string;
+  provider: string;
+  platform_host: string;
+  repo_path: string;
+  owner: string;
+  name: string;
+  number: number;
+  head_sha: string;
+  priority: string;
+  queued_at: string;
+}
+
+export interface PRDetailRefreshedEvent {
+  provider: string;
+  platform_host: string;
+  repo_path: string;
+  owner: string;
+  name: string;
+  number: number;
+  head_sha: string;
+  synced_at: string;
+  warnings: string[];
+}
+
+export interface PRCIRefreshQueuedEvent {
+  provider: string;
+  platform_host: string;
+  repo_path: string;
+  owner: string;
+  name: string;
+  number: number;
+  head_sha: string;
+  priority: string;
+  queued_at: string;
+}
+
+export interface PRCIRefreshedEvent {
+  provider: string;
+  platform_host: string;
+  repo_path: string;
+  owner: string;
+  name: string;
+  number: number;
+  head_sha: string;
+  refreshed_at: string;
+  warnings: string[];
+}
+
 export interface EventsStoreOptions {
   /**
    * Base URL path (typically from config.basePath). Trailing
@@ -27,6 +104,18 @@ export interface EventsStoreOptions {
    * would after a hard refresh.
    */
   onReconnectStale?: () => void;
+  onWorkspacePushedHeadChanged?: (
+    event: WorkspacePushedHeadChangedEvent,
+  ) => void;
+  onWorkspacePRAssociated?: (
+    event: WorkspacePRAssociatedEvent,
+  ) => void;
+  onWorkspacePRRefreshQueued?: (
+    event: WorkspacePRRefreshQueuedEvent,
+  ) => void;
+  onPRDetailRefreshed?: (event: PRDetailRefreshedEvent) => void;
+  onPRCIRefreshQueued?: (event: PRCIRefreshQueuedEvent) => void;
+  onPRCIRefreshed?: (event: PRCIRefreshedEvent) => void;
 }
 
 /**
@@ -84,6 +173,36 @@ export function createEventsStore(opts: EventsStoreOptions = {}) {
     source.addEventListener("reconnect.stale", () => {
       opts.onReconnectStale?.();
     });
+    addJSONListener<WorkspacePushedHeadChangedEvent>(
+      source,
+      "workspace_pushed_head_changed",
+      opts.onWorkspacePushedHeadChanged,
+    );
+    addJSONListener<WorkspacePRAssociatedEvent>(
+      source,
+      "workspace_pr_associated",
+      opts.onWorkspacePRAssociated,
+    );
+    addJSONListener<WorkspacePRRefreshQueuedEvent>(
+      source,
+      "workspace_pr_refresh_queued",
+      opts.onWorkspacePRRefreshQueued,
+    );
+    addJSONListener<PRDetailRefreshedEvent>(
+      source,
+      "pr_detail_refreshed",
+      opts.onPRDetailRefreshed,
+    );
+    addJSONListener<PRCIRefreshQueuedEvent>(
+      source,
+      "pr_ci_refresh_queued",
+      opts.onPRCIRefreshQueued,
+    );
+    addJSONListener<PRCIRefreshedEvent>(
+      source,
+      "pr_ci_refreshed",
+      opts.onPRCIRefreshed,
+    );
   }
 
   function disconnect(): void {
@@ -98,6 +217,21 @@ export function createEventsStore(opts: EventsStoreOptions = {}) {
   }
 
   return { connect, disconnect, isConnected };
+}
+
+function addJSONListener<T>(
+  source: EventSource,
+  eventName: string,
+  callback: ((event: T) => void) | undefined,
+): void {
+  source.addEventListener(eventName, (ev) => {
+    if (!callback) return;
+    try {
+      callback(JSON.parse((ev as MessageEvent).data) as T);
+    } catch {
+      // ignore malformed frames
+    }
+  });
 }
 
 export type EventsStore = ReturnType<typeof createEventsStore>;

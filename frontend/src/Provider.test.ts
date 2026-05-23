@@ -35,6 +35,8 @@ const loadPulls = vi.fn(async () => undefined);
 const loadIssues = vi.fn(async () => undefined);
 const loadActivity = vi.fn(async () => undefined);
 const setSyncStatus = vi.fn();
+const refreshDetailOnly = vi.fn(async () => undefined);
+let currentDetail: unknown = null;
 
 vi.mock("@middleman/ui/stores/pulls", () => ({
   createPullsStore: () => ({
@@ -78,9 +80,9 @@ vi.mock("@middleman/ui/stores/sync", () => ({
 vi.mock("@middleman/ui/stores/detail", () => ({
   createDetailStore: () => ({
     loadDetail: vi.fn(),
-    refreshDetailOnly: vi.fn(),
+    refreshDetailOnly,
     isDetailLoading: () => false,
-    getDetail: () => null,
+    getDetail: () => currentDetail,
   }),
 }));
 
@@ -124,6 +126,8 @@ beforeEach(() => {
   loadIssues.mockClear();
   loadActivity.mockClear();
   setSyncStatus.mockClear();
+  refreshDetailOnly.mockClear();
+  currentDetail = null;
 });
 
 afterEach(() => {
@@ -161,6 +165,72 @@ describe("Provider events store wiring", () => {
 
     expect(setSyncStatus).toHaveBeenCalledTimes(1);
     expect(setSyncStatus).toHaveBeenCalledWith(status);
+  });
+
+  it("refreshes only the visible PR detail for matching targeted refresh events", () => {
+    currentDetail = {
+      repo: {
+        provider: "github",
+        platform_host: "github.com",
+        repo_path: "acme/widget",
+      },
+      repo_owner: "acme",
+      repo_name: "widget",
+      merge_request: { Number: 42 },
+    };
+    render(Provider, { props: { client: stubClient } });
+
+    captured.store?.options.onPRDetailRefreshed?.({
+      provider: "github",
+      platform_host: "github.com",
+      repo_path: "acme/widget",
+      owner: "acme",
+      name: "widget",
+      number: 42,
+      head_sha: "2222222",
+      synced_at: "2026-05-20T14:15:04Z",
+      warnings: [],
+    });
+
+    expect(refreshDetailOnly).toHaveBeenCalledTimes(1);
+    expect(refreshDetailOnly).toHaveBeenCalledWith(
+      "acme",
+      "widget",
+      42,
+      {
+        provider: "github",
+        platformHost: "github.com",
+        repoPath: "acme/widget",
+      },
+    );
+  });
+
+  it("ignores targeted PR detail refreshes for non-visible PRs", () => {
+    currentDetail = {
+      repo: {
+        provider: "github",
+        platform_host: "github.com",
+        repo_path: "acme/widget",
+      },
+      repo_owner: "acme",
+      repo_name: "widget",
+      merge_request: { Number: 42 },
+    };
+    render(Provider, { props: { client: stubClient } });
+
+    captured.store?.options.onPRDetailRefreshed?.({
+      provider: "github",
+      platform_host: "github.com",
+      repo_path: "acme/widget",
+      owner: "acme",
+      name: "widget",
+      number: 99,
+      head_sha: "2222222",
+      synced_at: "2026-05-20T14:15:04Z",
+      warnings: [],
+    });
+
+    expect(refreshDetailOnly).not.toHaveBeenCalled();
   });
 
   it("forwards basePath getter when config.basePath is set", () => {

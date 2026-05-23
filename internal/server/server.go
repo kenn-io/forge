@@ -132,17 +132,18 @@ func (c shutdownAwareContext) Value(key any) any {
 
 // Server holds the HTTP mux and its dependencies.
 type Server struct {
-	db                 *db.DB
-	syncer             *ghclient.Syncer
-	clones             *gitclone.Manager
-	workspaces         *workspace.Manager
-	workspacePRMonitor *workspace.PRMonitor
-	tmuxActivity       *tmuxActivityTracker
-	runtime            *localruntime.Manager
-	cfg                *config.Config
-	cfgPath            string
-	cfgMu              sync.Mutex
-	configReloadMu     sync.Mutex
+	db                          *db.DB
+	syncer                      *ghclient.Syncer
+	clones                      *gitclone.Manager
+	workspaces                  *workspace.Manager
+	workspacePRMonitor          *workspace.PRMonitor
+	workspacePushedHeadObserver *workspace.PushedHeadObserver
+	tmuxActivity                *tmuxActivityTracker
+	runtime                     *localruntime.Manager
+	cfg                         *config.Config
+	cfgPath                     string
+	cfgMu                       sync.Mutex
+	configReloadMu              sync.Mutex
 	// bootCfgSnapshot freezes the subset of config fields that are
 	// bound at startup (registry, listeners, clone manager, etc.) so a
 	// config-file watcher reload can detect when those changed and
@@ -266,12 +267,88 @@ func (s *Server) runWorkspacePRMonitorPass(ctx context.Context) {
 	}
 	for i := range updates {
 		update := updates[i]
-		s.hub.Broadcast(Event{
-			Type: "workspace_status",
-			Data: map[string]string{"id": update.WorkspaceID},
-		})
+		s.broadcastWorkspaceStatus(update.WorkspaceID)
 		s.hub.Broadcast(Event{Type: "data_changed", Data: struct{}{}})
 	}
+}
+
+func (s *Server) runWorkspacePushedHeadObserverLoop(ctx context.Context) {
+	if s.workspacePushedHeadObserver == nil {
+		return
+	}
+
+	s.runWorkspacePushedHeadObserverPass(ctx)
+
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.runWorkspacePushedHeadObserverPass(ctx)
+		}
+	}
+}
+
+func (s *Server) runWorkspacePushedHeadObserverPass(ctx context.Context) {
+	if s.workspacePushedHeadObserver == nil {
+		return
+	}
+
+	result, err := s.workspacePushedHeadObserver.RunOnce(ctx)
+	if err != nil {
+		slog.Warn("workspace pushed-head observer pass failed", "err", err)
+		return
+	}
+	for i := range result.Associations {
+		association := result.Associations[i]
+		s.hub.Broadcast(Event{
+			Type: "workspace_pr_associated",
+			Data: workspacePRAssociatedPayload{
+				WorkspaceID:  association.WorkspaceID,
+				Provider:     string(association.Provider),
+				PlatformHost: association.PlatformHost,
+				RepoPath:     association.RepoPath,
+				Owner:        association.Owner,
+				Name:         association.Name,
+				IssueNumber:  association.IssueNumber,
+				PRNumber:     association.PRNumber,
+				AssociatedAt: formatUTCRFC3339(association.AssociatedAt),
+			},
+		})
+		s.broadcastWorkspaceStatus(association.WorkspaceID)
+		s.hub.Broadcast(Event{Type: "data_changed", Data: struct{}{}})
+	}
+	for i := range result.HeadChanges {
+		change := result.HeadChanges[i]
+		s.hub.Broadcast(Event{
+			Type: "workspace_pushed_head_changed",
+			Data: workspacePushedHeadChangedPayload{
+				WorkspaceID:  change.WorkspaceID,
+				Provider:     string(change.Provider),
+				PlatformHost: change.PlatformHost,
+				RepoPath:     change.RepoPath,
+				Owner:        change.Owner,
+				Name:         change.Name,
+				Number:       change.Number,
+				OldSHA:       change.OldSHA,
+				NewSHA:       change.NewSHA,
+				Remote:       change.RemoteName,
+				Branch:       change.BranchName,
+				TrackingRef:  change.TrackingRef,
+				ObservedAt:   formatUTCRFC3339(change.ObservedAt),
+			},
+		})
+		s.enqueueWorkspacePushedHeadRefresh(change)
+	}
+}
+
+func (s *Server) broadcastWorkspaceStatus(workspaceID string) {
+	s.hub.Broadcast(Event{
+		Type: "workspace_status",
+		Data: map[string]string{"id": workspaceID},
+	})
 }
 
 // Shutdown stops the HTTP listener (if started via ListenAndServe
@@ -446,6 +523,7 @@ func newServer(
 	if options.WorktreeDir != "" {
 		s.workspaces = workspace.NewManager(database, options.WorktreeDir)
 		s.workspacePRMonitor = workspace.NewPRMonitor(database)
+		s.workspacePushedHeadObserver = workspace.NewPushedHeadObserver(database)
 		s.workspaces.SetTmuxCommand(tmuxCmd)
 		s.workspaces.SetIssueBranchSlugEnabled(
 			cfg.IssueWorkspaceBranchSlugEnabled(),
@@ -511,6 +589,7 @@ func newServer(
 
 	if s.workspaces != nil {
 		s.runBackground(s.runWorkspacePRMonitorLoop)
+		s.runBackground(s.runWorkspacePushedHeadObserverLoop)
 	}
 
 	// Watch the config file so an external edit (vim, dotfiles deploy,

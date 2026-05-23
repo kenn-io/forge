@@ -264,6 +264,50 @@
       onConfigChanged: (event) => {
         void handleConfigChanged(event);
       },
+      onPRDetailRefreshed: (ref) => {
+        const detail = detailStore.getDetail();
+        if (
+          detail?.repo?.provider === ref.provider &&
+          detail.repo.platform_host === ref.platform_host &&
+          detail.repo.repo_path === ref.repo_path &&
+          detail.repo_owner === ref.owner &&
+          detail.repo_name === ref.name &&
+          detail.merge_request.Number === ref.number
+        ) {
+          void detailStore.refreshDetailOnly(
+            ref.owner,
+            ref.name,
+            ref.number,
+            {
+              provider: ref.provider,
+              platformHost: ref.platform_host,
+              repoPath: ref.repo_path,
+            },
+          );
+        }
+      },
+      onPRCIRefreshed: (ref) => {
+        const detail = detailStore.getDetail();
+        if (
+          detail?.repo?.provider === ref.provider &&
+          detail.repo.platform_host === ref.platform_host &&
+          detail.repo.repo_path === ref.repo_path &&
+          detail.repo_owner === ref.owner &&
+          detail.repo_name === ref.name &&
+          detail.merge_request.Number === ref.number
+        ) {
+          void detailStore.refreshDetailOnly(
+            ref.owner,
+            ref.name,
+            ref.number,
+            {
+              provider: ref.provider,
+              platformHost: ref.platform_host,
+              repoPath: ref.repo_path,
+            },
+          );
+        }
+      },
       onReconnectStale: () => {
         // The replay ring rolled past the client's cursor while it
         // was disconnected (long sleep, extended network outage).

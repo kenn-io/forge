@@ -1017,6 +1017,25 @@
         }
       },
     );
+    source.addEventListener(
+      "workspace_pr_associated",
+      (e: MessageEvent) => {
+        try {
+          const data = JSON.parse(
+            e.data as string,
+          ) as { workspace_id?: string };
+          if (data.workspace_id === id) {
+            void fetchWorkspace();
+          }
+        } catch {
+          // Malformed SSE data; ignore.
+        }
+      },
+    );
+    source.addEventListener("reconnect.stale", () => {
+      void fetchWorkspace();
+      void fetchRuntime();
+    });
 
     void fetchWorkspace().then(() => {
       if (workspace?.status === "creating") {

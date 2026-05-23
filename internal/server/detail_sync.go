@@ -13,6 +13,15 @@ func (s *Server) enqueueDetailSync(
 	attrs []any,
 	fn func(context.Context) error,
 ) bool {
+	return s.enqueueDetailSyncWithCompletion(key, attrs, fn, nil)
+}
+
+func (s *Server) enqueueDetailSyncWithCompletion(
+	key string,
+	attrs []any,
+	fn func(context.Context) error,
+	after func(context.Context),
+) bool {
 	s.detailSyncMu.Lock()
 	if s.detailSyncInFlight == nil {
 		s.detailSyncInFlight = make(map[string]struct{})
@@ -42,6 +51,9 @@ func (s *Server) enqueueDetailSync(
 				"background PR diff sync failed",
 				append(attrs, "code", diffErr.Code, "err", diffErr.Err)...,
 			)
+		}
+		if after != nil {
+			after(ctx)
 		}
 		s.hub.Broadcast(Event{
 			Type: "data_changed",

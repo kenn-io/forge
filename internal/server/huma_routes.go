@@ -3692,6 +3692,9 @@ func (s *Server) runWorkspaceSetup(ws *workspace.Workspace) {
 				Type: "workspace_status",
 				Data: resp,
 			})
+			if setupErr == nil {
+				s.runWorkspacePushedHeadObserverPass(bgCtx)
+			}
 
 			next, queued, queueErr := s.workspaces.StartQueuedRetryIfErrored(
 				bgCtx, ws.ID,

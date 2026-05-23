@@ -151,6 +151,140 @@ describe("createEventsStore event dispatch", () => {
     expect(onReconnectStale).toHaveBeenCalledTimes(1);
   });
 
+  it("parses pushed-head refresh events and routes them to callbacks", () => {
+    const onWorkspacePushedHeadChanged = vi.fn();
+    const onWorkspacePRRefreshQueued = vi.fn();
+    const onPRDetailRefreshed = vi.fn();
+    const onPRCIRefreshQueued = vi.fn();
+    const onPRCIRefreshed = vi.fn();
+    const onWorkspacePRAssociated = vi.fn();
+    const store = createEventsStore({
+      onWorkspacePushedHeadChanged,
+      onWorkspacePRRefreshQueued,
+      onPRDetailRefreshed,
+      onPRCIRefreshQueued,
+      onPRCIRefreshed,
+      onWorkspacePRAssociated,
+    });
+    store.connect();
+    const source = instances[0] as StubEventSource;
+
+    emit(source, "workspace_pushed_head_changed", {
+      data: JSON.stringify({
+        workspace_id: "ws_123",
+        provider: "github",
+        platform_host: "github.com",
+        repo_path: "acme/widgets",
+        owner: "acme",
+        name: "widgets",
+        number: 42,
+        old_sha: "1111111",
+        new_sha: "2222222",
+        remote: "origin",
+        branch: "feature/widgets",
+        tracking_ref: "refs/remotes/origin/feature/widgets",
+        observed_at: "2026-05-20T14:15:00Z",
+      }),
+    });
+    emit(source, "workspace_pr_refresh_queued", {
+      data: JSON.stringify({
+        workspace_id: "ws_123",
+        provider: "github",
+        platform_host: "github.com",
+        repo_path: "acme/widgets",
+        owner: "acme",
+        name: "widgets",
+        number: 42,
+        head_sha: "2222222",
+        priority: "high",
+        queued_at: "2026-05-20T14:15:01Z",
+      }),
+    });
+    emit(source, "pr_detail_refreshed", {
+      data: JSON.stringify({
+        provider: "github",
+        platform_host: "github.com",
+        repo_path: "acme/widgets",
+        owner: "acme",
+        name: "widgets",
+        number: 42,
+        head_sha: "2222222",
+        synced_at: "2026-05-20T14:15:04Z",
+        warnings: [],
+      }),
+    });
+    emit(source, "pr_ci_refresh_queued", {
+      data: JSON.stringify({
+        provider: "github",
+        platform_host: "github.com",
+        repo_path: "acme/widgets",
+        owner: "acme",
+        name: "widgets",
+        number: 42,
+        head_sha: "2222222",
+        priority: "low",
+        queued_at: "2026-05-20T14:15:05Z",
+      }),
+    });
+    emit(source, "pr_ci_refreshed", {
+      data: JSON.stringify({
+        provider: "github",
+        platform_host: "github.com",
+        repo_path: "acme/widgets",
+        owner: "acme",
+        name: "widgets",
+        number: 42,
+        head_sha: "2222222",
+        refreshed_at: "2026-05-20T14:15:20Z",
+        warnings: [],
+      }),
+    });
+    emit(source, "workspace_pr_associated", {
+      data: JSON.stringify({
+        workspace_id: "ws_123",
+        provider: "github",
+        platform_host: "github.com",
+        repo_path: "acme/widgets",
+        owner: "acme",
+        name: "widgets",
+        issue_number: 7,
+        pr_number: 42,
+        associated_at: "2026-05-20T14:15:00Z",
+      }),
+    });
+
+    expect(onWorkspacePushedHeadChanged).toHaveBeenCalledWith(
+      expect.objectContaining({ workspace_id: "ws_123", new_sha: "2222222" }),
+    );
+    expect(onWorkspacePRRefreshQueued).toHaveBeenCalledWith(
+      expect.objectContaining({ workspace_id: "ws_123", priority: "high" }),
+    );
+    expect(onPRDetailRefreshed).toHaveBeenCalledWith(
+      expect.objectContaining({ repo_path: "acme/widgets", number: 42 }),
+    );
+    expect(onPRCIRefreshQueued).toHaveBeenCalledWith(
+      expect.objectContaining({ head_sha: "2222222", priority: "low" }),
+    );
+    expect(onPRCIRefreshed).toHaveBeenCalledWith(
+      expect.objectContaining({ refreshed_at: "2026-05-20T14:15:20Z" }),
+    );
+    expect(onWorkspacePRAssociated).toHaveBeenCalledWith(
+      expect.objectContaining({ issue_number: 7, pr_number: 42 }),
+    );
+  });
+
+  it("swallows malformed pushed-head refresh event frames", () => {
+    const onPRDetailRefreshed = vi.fn();
+    const store = createEventsStore({ onPRDetailRefreshed });
+    store.connect();
+    expect(() =>
+      emit(instances[0] as StubEventSource, "pr_detail_refreshed", {
+        data: "not-json",
+      }),
+    ).not.toThrow();
+    expect(onPRDetailRefreshed).not.toHaveBeenCalled();
+  });
+
   it("ignores unknown event types without throwing", () => {
     const onDataChanged = vi.fn();
     const store = createEventsStore({ onDataChanged });

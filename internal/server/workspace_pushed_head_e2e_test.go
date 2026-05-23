@@ -180,8 +180,3 @@ func insertPushedHeadE2EWorkspace(t *testing.T, database *db.DB, worktreePath st
 		Status:          "ready",
 	}))
 }
-
-//go:fix inline
-func ptr[T any](value T) *T {
-	return new(value)
-}

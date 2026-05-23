@@ -416,6 +416,42 @@ func TestUpsertMREventsUpdatesExistingReviewState(t *testing.T) {
 	assert.Equal(base.Add(time.Hour), events[0].CreatedAt)
 }
 
+func TestUpsertMREventsWithDiscussionID(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	base := baseTime()
+
+	repoID := insertTestRepo(t, d, "acme", "widget")
+	mrID := insertTestMR(t, d, repoID, 1, "discussion test", base)
+	platformID := int64(101)
+	discussionID := "abc123def"
+
+	require.NoError(d.UpsertMREvents(ctx, []MREvent{{
+		MergeRequestID: mrID,
+		PlatformID:     &platformID,
+		EventType:      "issue_comment",
+		Author:         "reviewer",
+		Body:           "needs fix",
+		CreatedAt:      base,
+		DedupeKey:      "note-101",
+		DiscussionID:   &discussionID,
+		PositionJSON:   `{"new_path":"main.go","new_line":42}`,
+		Resolvable:     true,
+		Resolved:       false,
+	}}))
+
+	events, err := d.ListMREvents(ctx, mrID)
+	require.NoError(err)
+	require.Len(events, 1)
+	assert.NotNil(events[0].DiscussionID)
+	assert.Equal("abc123def", *events[0].DiscussionID)
+	assert.Equal(`{"new_path":"main.go","new_line":42}`, events[0].PositionJSON)
+	assert.True(events[0].Resolvable)
+	assert.False(events[0].Resolved)
+}
+
 func TestUpsertIssueEventsUpdatesExistingEventBody(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

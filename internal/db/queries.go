@@ -3570,8 +3570,8 @@ func (d *DB) UpsertIssueEvents(ctx context.Context, events []IssueEvent) error {
 		stmt, err := tx.PrepareContext(ctx, `
 			INSERT INTO middleman_issue_events
 			    (issue_id, platform_id, platform_external_id, event_type, author, summary, body,
-			     metadata_json, created_at, dedupe_key)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			     metadata_json, created_at, dedupe_key, discussion_id)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(issue_id, dedupe_key) DO UPDATE SET
 			    issue_id       = excluded.issue_id,
 			    platform_id    = excluded.platform_id,
@@ -3581,7 +3581,8 @@ func (d *DB) UpsertIssueEvents(ctx context.Context, events []IssueEvent) error {
 			    summary        = excluded.summary,
 			    body           = excluded.body,
 			    metadata_json  = excluded.metadata_json,
-			    created_at     = excluded.created_at`)
+			    created_at     = excluded.created_at,
+			    discussion_id  = excluded.discussion_id`)
 		if err != nil {
 			return fmt.Errorf("prepare upsert issue events: %w", err)
 		}
@@ -3593,7 +3594,7 @@ func (d *DB) UpsertIssueEvents(ctx context.Context, events []IssueEvent) error {
 			if _, err := stmt.ExecContext(ctx,
 				e.IssueID, e.PlatformID, e.PlatformExternalID, e.EventType, e.Author,
 				e.Summary, e.Body, e.MetadataJSON, e.CreatedAt,
-				e.DedupeKey,
+				e.DedupeKey, e.DiscussionID,
 			); err != nil {
 				return fmt.Errorf("insert issue event (dedupe_key=%s): %w", e.DedupeKey, err)
 			}
@@ -3651,7 +3652,7 @@ func (d *DB) DeleteMissingIssueCommentEvents(
 func (d *DB) ListIssueEvents(ctx context.Context, issueID int64) ([]IssueEvent, error) {
 	rows, err := d.ro.QueryContext(ctx, `
 		SELECT id, issue_id, platform_id, platform_external_id, event_type, author, summary, body,
-		       metadata_json, created_at, dedupe_key
+		       metadata_json, created_at, dedupe_key, discussion_id
 		FROM middleman_issue_events
 		WHERE issue_id = ?
 		ORDER BY created_at DESC`, issueID,
@@ -3667,7 +3668,7 @@ func (d *DB) ListIssueEvents(ctx context.Context, issueID int64) ([]IssueEvent, 
 		var createdAtStr string
 		if err := rows.Scan(
 			&e.ID, &e.IssueID, &e.PlatformID, &e.PlatformExternalID, &e.EventType, &e.Author,
-			&e.Summary, &e.Body, &e.MetadataJSON, &createdAtStr, &e.DedupeKey,
+			&e.Summary, &e.Body, &e.MetadataJSON, &createdAtStr, &e.DedupeKey, &e.DiscussionID,
 		); err != nil {
 			return nil, fmt.Errorf("scan issue event: %w", err)
 		}

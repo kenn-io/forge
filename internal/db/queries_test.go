@@ -549,6 +549,49 @@ func TestIssueEventsDedupeIsScopedToIssue(t *testing.T) {
 	assert.Equal("gid://gitlab/Note/5002", secondEvents[0].PlatformExternalID)
 }
 
+func TestUpsertIssueEventsWithDiscussionID(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	base := baseTime()
+
+	repoID := insertTestRepo(t, d, "acme", "widget")
+	issueID, err := d.UpsertIssue(ctx, &Issue{
+		RepoID:         repoID,
+		PlatformID:     301,
+		Number:         5,
+		URL:            "https://gitlab.com/acme/widget/-/issues/5",
+		Title:          "discussion test",
+		Author:         "reporter",
+		State:          "open",
+		CreatedAt:      base,
+		UpdatedAt:      base,
+		LastActivityAt: base,
+	})
+	require.NoError(err)
+
+	platformID := int64(501)
+	discussionID := "issue-disc-xyz"
+
+	require.NoError(d.UpsertIssueEvents(ctx, []IssueEvent{{
+		IssueID:      issueID,
+		PlatformID:   &platformID,
+		EventType:    "issue_comment",
+		Author:       "commenter",
+		Body:         "issue comment",
+		CreatedAt:    base,
+		DedupeKey:    "issue-note-501",
+		DiscussionID: &discussionID,
+	}}))
+
+	events, err := d.ListIssueEvents(ctx, issueID)
+	require.NoError(err)
+	require.Len(events, 1)
+	assert.NotNil(events[0].DiscussionID)
+	assert.Equal("issue-disc-xyz", *events[0].DiscussionID)
+}
+
 func TestItemsPersistPlatformExternalID(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

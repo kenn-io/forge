@@ -81,6 +81,13 @@ func TestBranchActivityPersistence(t *testing.T) {
 		assert.Equal(base.Add(-30*time.Minute).UTC(), first.AuthoredAt)
 		assert.Equal("recent subject", second.Subject)
 		assert.NotContains(rows, "sha-old")
+
+		lifecycle := loadTestBranchCommitLifecycle(t, d, repoID, "sha-recent-1")
+		assert.False(lifecycle.CreatedAt.IsZero())
+		assert.False(lifecycle.UpdatedAt.IsZero())
+		assert.Condition(func() bool {
+			return !lifecycle.UpdatedAt.Before(lifecycle.CreatedAt)
+		})
 	})
 
 	t.Run("records force pushes idempotently and tracks tips", func(t *testing.T) {
@@ -114,6 +121,11 @@ func TestBranchActivityPersistence(t *testing.T) {
 		assert.Equal("main", tip.BranchName)
 		assert.Equal("after-sha", tip.TipSHA)
 		assert.Equal(base.Add(5*time.Minute).UTC(), tip.ObservedAt)
+		assert.False(tip.CreatedAt.IsZero())
+		assert.False(tip.UpdatedAt.IsZero())
+		assert.Condition(func() bool {
+			return !tip.UpdatedAt.Before(tip.CreatedAt)
+		})
 
 		fp := BranchForcePush{
 			RepoID:     repoID,
@@ -126,6 +138,8 @@ func TestBranchActivityPersistence(t *testing.T) {
 		require.NoError(d.InsertBranchForcePush(ctx, fp))
 
 		assert.Equal(1, countTestBranchForcePushes(t, d, repoID))
+		forcePushCreatedAt := loadOnlyTestBranchForcePushCreatedAt(t, d, repoID)
+		assert.False(forcePushCreatedAt.IsZero())
 	})
 
 	t.Run("prunes old force pushes outside retention", func(t *testing.T) {
@@ -210,6 +224,38 @@ func mustParseTestTime(t *testing.T, value string) time.Time {
 	return parsed
 }
 
+type testLifecycleTimestamps struct {
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+func loadTestBranchCommitLifecycle(
+	t *testing.T,
+	d *DB,
+	repoID int64,
+	commitSHA string,
+) testLifecycleTimestamps {
+	t.Helper()
+	var createdAt string
+	var updatedAt string
+	err := d.ro.QueryRow(`
+		SELECT created_at, updated_at
+		FROM middleman_branch_commits
+		WHERE repo_id = ? AND commit_sha = ?`,
+		repoID,
+		commitSHA,
+	).Scan(&createdAt, &updatedAt)
+	require.NoError(t, err)
+	created, err := parseDBTime(createdAt)
+	require.NoError(t, err)
+	updated, err := parseDBTime(updatedAt)
+	require.NoError(t, err)
+	return testLifecycleTimestamps{
+		CreatedAt: created,
+		UpdatedAt: updated,
+	}
+}
+
 func countTestBranchForcePushes(t *testing.T, d *DB, repoID int64) int {
 	t.Helper()
 	var count int
@@ -238,4 +284,23 @@ func loadOnlyTestBranchForcePushAfterSHA(
 	).Scan(&afterSHA)
 	require.NoError(t, err)
 	return afterSHA
+}
+
+func loadOnlyTestBranchForcePushCreatedAt(
+	t *testing.T,
+	d *DB,
+	repoID int64,
+) time.Time {
+	t.Helper()
+	var createdAt string
+	err := d.ro.QueryRow(`
+		SELECT created_at
+		FROM middleman_branch_force_pushes
+		WHERE repo_id = ?`,
+		repoID,
+	).Scan(&createdAt)
+	require.NoError(t, err)
+	parsed, err := parseDBTime(createdAt)
+	require.NoError(t, err)
+	return parsed
 }

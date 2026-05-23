@@ -31,7 +31,8 @@ func (d *DB) UpsertBranchCommits(
 			    committer_name  = excluded.committer_name,
 			    committer_email = excluded.committer_email,
 			    committed_at    = excluded.committed_at,
-			    subject         = excluded.subject`)
+			    subject         = excluded.subject,
+			    updated_at      = datetime('now')`)
 		if err != nil {
 			return fmt.Errorf("prepare upsert branch commits: %w", err)
 		}
@@ -71,8 +72,10 @@ func (d *DB) GetBranchTip(
 ) (*BranchTip, error) {
 	var tip BranchTip
 	var observedAt string
+	var createdAt string
+	var updatedAt string
 	err := d.ro.QueryRowContext(ctx, `
-		SELECT repo_id, branch_name, tip_sha, observed_at
+		SELECT repo_id, branch_name, tip_sha, observed_at, created_at, updated_at
 		FROM middleman_branch_tips
 		WHERE repo_id = ? AND branch_name = ?`,
 		repoID,
@@ -82,6 +85,8 @@ func (d *DB) GetBranchTip(
 		&tip.BranchName,
 		&tip.TipSHA,
 		&observedAt,
+		&createdAt,
+		&updatedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -98,6 +103,14 @@ func (d *DB) GetBranchTip(
 	if err != nil {
 		return nil, fmt.Errorf("parse branch tip observed_at: %w", err)
 	}
+	tip.CreatedAt, err = parseDBTime(createdAt)
+	if err != nil {
+		return nil, fmt.Errorf("parse branch tip created_at: %w", err)
+	}
+	tip.UpdatedAt, err = parseDBTime(updatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("parse branch tip updated_at: %w", err)
+	}
 	return &tip, nil
 }
 
@@ -110,7 +123,8 @@ func (d *DB) UpsertBranchTip(ctx context.Context, tip BranchTip) error {
 		VALUES (?, ?, ?, ?)
 		ON CONFLICT(repo_id, branch_name) DO UPDATE SET
 		    tip_sha     = excluded.tip_sha,
-		    observed_at = excluded.observed_at`,
+		    observed_at = excluded.observed_at,
+		    updated_at  = datetime('now')`,
 		tip.RepoID,
 		tip.BranchName,
 		tip.TipSHA,

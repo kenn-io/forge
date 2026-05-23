@@ -9,7 +9,9 @@ CREATE TABLE IF NOT EXISTS middleman_branch_commits (
     committer_name  TEXT NOT NULL DEFAULT '',
     committer_email TEXT NOT NULL DEFAULT '',
     committed_at    DATETIME NOT NULL,
-    subject         TEXT NOT NULL DEFAULT ''
+    subject         TEXT NOT NULL DEFAULT '',
+    created_at      DATETIME NOT NULL DEFAULT (datetime('now')),
+    updated_at      DATETIME NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_branch_commits_repo_sha
@@ -24,7 +26,9 @@ CREATE TABLE IF NOT EXISTS middleman_branch_tips (
     repo_id     INTEGER NOT NULL REFERENCES middleman_repos(id) ON DELETE CASCADE,
     branch_name TEXT NOT NULL,
     tip_sha     TEXT NOT NULL,
-    observed_at DATETIME NOT NULL
+    observed_at DATETIME NOT NULL,
+    created_at  DATETIME NOT NULL DEFAULT (datetime('now')),
+    updated_at  DATETIME NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_branch_tips_repo_branch
@@ -36,7 +40,8 @@ CREATE TABLE IF NOT EXISTS middleman_branch_force_pushes (
     branch_name TEXT NOT NULL,
     before_sha  TEXT NOT NULL,
     after_sha   TEXT NOT NULL,
-    detected_at DATETIME NOT NULL
+    detected_at DATETIME NOT NULL,
+    created_at  DATETIME NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_branch_force_pushes_dedupe

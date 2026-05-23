@@ -130,6 +130,8 @@ type BranchCommit struct {
 	CommitterEmail string
 	CommittedAt    time.Time
 	Subject        string
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
 }
 
 type BranchTip struct {
@@ -137,6 +139,8 @@ type BranchTip struct {
 	BranchName string
 	TipSHA     string
 	ObservedAt time.Time
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
 }
 
 type BranchForcePush struct {
@@ -145,6 +149,7 @@ type BranchForcePush struct {
 	BeforeSHA  string
 	AfterSHA   string
 	DetectedAt time.Time
+	CreatedAt  time.Time
 }
 
 type RepoActivityAuthor struct {

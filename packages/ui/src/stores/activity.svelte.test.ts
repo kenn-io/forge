@@ -70,6 +70,15 @@ describe("activity store collapse state", () => {
     expect(new URLSearchParams(window.location.search).has("collapsed")).toBe(false);
   });
 
+  it("writes collapsed=0 when expanding against a collapsed server default", () => {
+    const s = makeStore();
+    s.hydrateDefaults(settings(true));
+    s.expandAllThreads();
+    expect(new URLSearchParams(window.location.search).get("collapsed")).toBe("0");
+    s.collapseAllThreads();
+    expect(new URLSearchParams(window.location.search).has("collapsed")).toBe(false);
+  });
+
   it("applies collapsed=0 from the URL over a collapsed server default", () => {
     window.history.replaceState(null, "", "/?collapsed=0");
     const s = makeStore();

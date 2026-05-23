@@ -93,8 +93,14 @@ their own `t.TempDir` filesystem, SQLite fixture, provider fake, and server
 fixture. This especially applies to workspace/git e2e coverage where each test
 clones its own bare repo and worktree root. Keep tests serial when they call
 `t.Setenv`, mutate process-global state, rely on fixed ports or shared external
-resources, exercise real tmux/PTY sessions, or intentionally verify ordering
-against another test-visible shared resource.
+resources, or intentionally verify ordering against another test-visible shared
+resource.
+
+Real tmux and PTY tests can still run in parallel when each test owns its
+session names, temp dirs, sockets, and cleanup. If the bottleneck is external
+resource pressure rather than correctness, keep `t.Parallel()` and gate the
+expensive section with a package-level `golang.org/x/sync/semaphore.Weighted`
+instead of serializing the whole test.
 
 Keep splitting new high-volume tests into the existing black-box packages when
 they do not need unexported internals:

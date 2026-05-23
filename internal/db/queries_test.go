@@ -753,7 +753,7 @@ func TestProviderCanonicalReadPathsUseLookupKeys(t *testing.T) {
 	require.NoError(err)
 	assert.Equal([]string{"author"}, users)
 
-	refs, err := d.ListCommentAutocompleteReferences(ctx, "gitlab.example.com", "group/subgroup", "projectname", "GitLab", 10)
+	refs, err := d.ListCommentAutocompleteReferences(ctx, "gitlab.example.com", "group/subgroup", "projectname", "GitLab", "", 10)
 	require.NoError(err)
 	require.Len(refs, 2)
 	assert.Equal([]int{8, 7}, []int{refs[0].Number, refs[1].Number})
@@ -3512,17 +3512,30 @@ func TestListCommentAutocompleteReferences(t *testing.T) {
 	insertTestIssue(t, d, repoID, 17, "Mention bug", base.Add(2*time.Hour))
 	insertTestIssue(t, d, repoID, 101, "Numbered item", base.Add(time.Hour))
 
-	refs, err := d.ListCommentAutocompleteReferences(ctx, "github.com", "acme", "widget", "1", 10)
+	refs, err := d.ListCommentAutocompleteReferences(ctx, "github.com", "acme", "widget", "1", "", 10)
 	require.NoError(err)
 	require.Len(refs, 3)
 	assert.Equal(CommentAutocompleteReference{Kind: "pull", Number: 12, Title: "Polish mentions", State: "open"}, refs[0])
 	assert.Equal(CommentAutocompleteReference{Kind: "issue", Number: 17, Title: "Mention bug", State: "open"}, refs[1])
 	assert.Equal(CommentAutocompleteReference{Kind: "issue", Number: 101, Title: "Numbered item", State: "open"}, refs[2])
 
-	refs, err = d.ListCommentAutocompleteReferences(ctx, "github.com", "acme", "widget", "doc", 10)
+	refs, err = d.ListCommentAutocompleteReferences(ctx, "github.com", "acme", "widget", "doc", "", 10)
 	require.NoError(err)
 	require.Len(refs, 1)
 	assert.Equal(CommentAutocompleteReference{Kind: "pull", Number: 3, Title: "Add docs", State: "open"}, refs[0])
+
+	refs, err = d.ListCommentAutocompleteReferences(ctx, "github.com", "acme", "widget", "1", "issue", 10)
+	require.NoError(err)
+	assert.Equal([]CommentAutocompleteReference{
+		{Kind: "issue", Number: 17, Title: "Mention bug", State: "open"},
+		{Kind: "issue", Number: 101, Title: "Numbered item", State: "open"},
+	}, refs)
+
+	refs, err = d.ListCommentAutocompleteReferences(ctx, "github.com", "acme", "widget", "1", "pull", 10)
+	require.NoError(err)
+	assert.Equal([]CommentAutocompleteReference{
+		{Kind: "pull", Number: 12, Title: "Polish mentions", State: "open"},
+	}, refs)
 }
 
 func TestWorktreeLinksCascadeOnMRDelete(t *testing.T) {

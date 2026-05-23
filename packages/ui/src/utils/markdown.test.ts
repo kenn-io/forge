@@ -51,6 +51,20 @@ describe("renderMarkdown task lists", () => {
     );
   });
 
+  it("does not parse bang references outside GitLab repos", () => {
+    const html = renderMarkdown("See acme/tools!13 and !14", {
+      provider: "github",
+      platformHost: "github.com",
+      owner: "acme",
+      name: "widgets",
+      repoPath: "acme/widgets",
+    });
+
+    expect(html).toContain("acme/tools!13");
+    expect(html).toContain("!14");
+    expect(html).not.toContain('data-item-type="pr"');
+  });
+
   it("builds provider-canonical pull request fallback links", () => {
     expect(buildCanonicalProviderItemURL({
       provider: "github",

@@ -117,6 +117,8 @@ describe("comment draft persistence", () => {
     setCommentDraft("pull", "octo", "repo", 1, "", "ghe.example.com");
     setCommentDraft("issue", "octo", "repo", 1, "", "github.com");
     setCommentDraft("issue", "octo", "repo", 1, "", "ghe.example.com");
+    setCommentDraft("pull", "group", "project", 1, "", "gitlab.example.com");
+    setCommentDraft("issue", "group", "project", 1, "", "gitlab.example.com");
     clearCommentSubmitError("pull", "octo", "repo", 1);
     clearCommentSubmitError("pull", "octo", "repo", 2);
     clearCommentSubmitError("issue", "octo", "repo", 1);
@@ -133,6 +135,8 @@ describe("comment draft persistence", () => {
     finishCommentSubmit("pull", "octo", "repo", 1, "ghe.example.com");
     finishCommentSubmit("issue", "octo", "repo", 1, "github.com");
     finishCommentSubmit("issue", "octo", "repo", 1, "ghe.example.com");
+    finishCommentSubmit("pull", "group", "project", 1, "gitlab.example.com");
+    finishCommentSubmit("issue", "group", "project", 1, "gitlab.example.com");
     cleanup();
   });
 
@@ -662,6 +666,73 @@ describe("comment draft persistence", () => {
 
     await waitFor(() => {
       expect(getCommentDraft("issue", "octo", "repo", 1, "github.com")).toBe("#12 ");
+    });
+  });
+
+  it("uses GitLab issue and merge request reference prefixes for autocomplete", async () => {
+    const autocompleteQueries: Array<Record<string, unknown> | undefined> = [];
+
+    render(CommentBoxContextHarness, {
+      props: {
+        kind: "issue",
+        provider: "gitlab",
+        platformHost: "gitlab.example.com",
+        owner: "group",
+        name: "project",
+        repoPath: "group/project",
+        autocompleteResponse: {
+          users: [],
+          references: [
+            { kind: "pull", number: 12, title: "Polish mentions", state: "open" },
+            { kind: "issue", number: 17, title: "Mention bug", state: "open" },
+          ],
+        },
+        onAutocompleteQuery: (query: Record<string, unknown> | undefined) => {
+          autocompleteQueries.push(query);
+        },
+      },
+    });
+
+    setCommentDraft("issue", "group", "project", 1, "#1", "gitlab.example.com");
+    await waitFor(() => {
+      expect(getCommentEditorText()).toBe("#1");
+    });
+
+    await fireEvent.focus(getCommentEditor());
+
+    await waitFor(() => {
+      expect(screen.getByRole("option", { name: /#17/i })).toBeTruthy();
+    });
+    expect(screen.queryByRole("option", { name: /#12/i })).toBeNull();
+    expect(autocompleteQueries.at(-1)).toMatchObject({
+      query: { trigger: "#" },
+    });
+
+    await fireEvent.keyDown(getCommentEditor(), { key: "Enter" });
+
+    await waitFor(() => {
+      expect(getCommentDraft("issue", "group", "project", 1, "gitlab.example.com")).toBe("#17 ");
+    });
+
+    setCommentDraft("issue", "group", "project", 1, "!1", "gitlab.example.com");
+    await waitFor(() => {
+      expect(getCommentEditorText()).toBe("!1");
+    });
+
+    await fireEvent.focus(getCommentEditor());
+
+    await waitFor(() => {
+      expect(screen.getByRole("option", { name: /!12/i })).toBeTruthy();
+    });
+    expect(screen.queryByRole("option", { name: /!17/i })).toBeNull();
+    expect(autocompleteQueries.at(-1)).toMatchObject({
+      query: { trigger: "!" },
+    });
+
+    await fireEvent.keyDown(getCommentEditor(), { key: "Enter" });
+
+    await waitFor(() => {
+      expect(getCommentDraft("issue", "group", "project", 1, "gitlab.example.com")).toBe("!12 ");
     });
   });
 

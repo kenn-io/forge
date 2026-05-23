@@ -3779,10 +3779,10 @@ func (d *DB) ListCommentAutocompleteUsers(
 	return users, nil
 }
 
-// ListCommentAutocompleteReferences returns repo-scoped # suggestions for pulls and issues.
+// ListCommentAutocompleteReferences returns repo-scoped item reference suggestions.
 func (d *DB) ListCommentAutocompleteReferences(
 	ctx context.Context,
-	platformHost, owner, name, query string,
+	platformHost, owner, name, query, itemKind string,
 	limit int,
 ) ([]CommentAutocompleteReference, error) {
 	platformHost, owner, name = canonicalRepoLookupIdentifier(platformHost, owner, name)
@@ -3790,6 +3790,7 @@ func (d *DB) ListCommentAutocompleteReferences(
 		limit = 10
 	}
 	query = strings.TrimSpace(query)
+	itemKind = strings.TrimSpace(itemKind)
 	titleQuery := "%" + strings.ToLower(query) + "%"
 	numberPrefix := query + "%"
 
@@ -3809,9 +3810,12 @@ func (d *DB) ListCommentAutocompleteReferences(
 		)
 		SELECT kind, number, title, state
 		FROM candidates
-		WHERE ? = ''
-		   OR CAST(number AS TEXT) LIKE ?
-		   OR LOWER(title) LIKE ?
+		WHERE (? = '' OR kind = ?)
+		  AND (
+		       ? = ''
+		    OR CAST(number AS TEXT) LIKE ?
+		    OR LOWER(title) LIKE ?
+		  )
 		ORDER BY
 			CASE WHEN ? <> '' AND CAST(number AS TEXT) LIKE ? THEN 0 ELSE 1 END,
 			CASE WHEN ? <> '' AND LOWER(title) LIKE ? THEN 0 ELSE 1 END,
@@ -3819,6 +3823,7 @@ func (d *DB) ListCommentAutocompleteReferences(
 			number DESC
 		LIMIT ?`,
 		platformHost, owner, name,
+		itemKind, itemKind,
 		query, numberPrefix, titleQuery,
 		query, numberPrefix,
 		query, titleQuery,

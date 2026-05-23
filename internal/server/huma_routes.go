@@ -1744,13 +1744,28 @@ func (s *Server) getCommentAutocomplete(
 			return nil, problemInternal("list comment autocomplete users failed")
 		}
 		return &commentAutocompleteOutput{Body: commentAutocompleteResponse{Users: users}}, nil
-	case "#":
+	case "#", "!":
+		itemKind := ""
+		if repoProviderKind(*repo) == platform.KindGitLab {
+			itemKind = "issue"
+			if input.Trigger == "!" {
+				itemKind = "pull"
+			}
+		} else if input.Trigger == "!" {
+			return nil, problemValidation(
+				"query.trigger",
+				"trigger ! is only supported for GitLab merge requests",
+				"@",
+				"#",
+			)
+		}
 		references, err := s.db.ListCommentAutocompleteReferences(
 			ctx,
 			repo.PlatformHost,
 			input.Owner,
 			input.Name,
 			input.Q,
+			itemKind,
 			limit,
 		)
 		if err != nil {
@@ -1758,7 +1773,7 @@ func (s *Server) getCommentAutocomplete(
 		}
 		return &commentAutocompleteOutput{Body: commentAutocompleteResponse{References: references}}, nil
 	default:
-		return nil, problemValidation("query.trigger", "trigger must be @ or #", "@", "#")
+		return nil, problemValidation("query.trigger", "trigger must be @, #, or GitLab !", "@", "#", "!")
 	}
 }
 

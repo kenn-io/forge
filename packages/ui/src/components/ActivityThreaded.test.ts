@@ -79,6 +79,19 @@ describe("ActivityThreaded collapse", () => {
     expect(caret).not.toBeNull();
     await fireEvent.click(caret!);
     expect(toggleThreadItem).toHaveBeenCalledTimes(1);
+    expect(toggleThreadItem).toHaveBeenCalledWith(
+      "github|github.com|acme/widgets:pr:1",
+    );
     expect(onSelectItem).not.toHaveBeenCalled();
+  });
+
+  it("renders the repo chip label in non-grouped mode", () => {
+    const { container } = render(ActivityThreaded, {
+      props: { items: [activityItem("c1")], onSelectItem: undefined },
+    });
+    const label = container.querySelector(
+      ".repo-chip.repo-tag .repo-chip__label",
+    );
+    expect(label?.textContent).toBe("acme/widgets");
   });
 });

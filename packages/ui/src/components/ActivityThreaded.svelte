@@ -396,11 +396,17 @@
     color: var(--text-muted);
     background: none;
     border-radius: var(--radius-sm);
+    transition: color 0.1s, background 0.1s;
   }
 
   .thread-caret:hover {
     color: var(--text-primary);
     background: var(--bg-surface-hover);
+  }
+
+  .thread-caret:focus-visible {
+    outline: 2px solid var(--accent-blue);
+    outline-offset: 1px;
   }
 
   .item-ref {
@@ -501,11 +507,6 @@
 
   .threaded-view--compact .item-row {
     padding: 7px 10px;
-  }
-
-  .threaded-view--compact .thread-caret {
-    width: 22px;
-    height: 22px;
   }
 
   .threaded-view--compact .event-row {

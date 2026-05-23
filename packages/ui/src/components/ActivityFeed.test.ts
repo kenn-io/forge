@@ -137,6 +137,13 @@ describe("ActivityFeed compact mode", () => {
     ).toHaveLength(2);
   });
 
+  it("hides the collapse-all control in flat mode", () => {
+    render(ActivityFeed, { props: { compact: true } });
+    expect(
+      screen.queryByRole("button", { name: /Collapse all|Expand all/ }),
+    ).toBeNull();
+  });
+
   it("uses shared semantic chips for compact item kind and state", () => {
     items.value = [
       activityItem("merged", {

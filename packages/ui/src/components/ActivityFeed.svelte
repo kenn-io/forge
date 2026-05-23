@@ -16,6 +16,8 @@
   import Chip from "./shared/Chip.svelte";
   import ItemKindChip from "./shared/ItemKindChip.svelte";
   import ItemStateChip from "./shared/ItemStateChip.svelte";
+  import ChevronsDownUpIcon from "@lucide/svelte/icons/chevrons-down-up";
+  import ChevronsUpDownIcon from "@lucide/svelte/icons/chevrons-up-down";
 
   const { activity, settings, sync, grouping } = getStores();
   const navigate = getNavigate();
@@ -378,6 +380,28 @@
         : {}}
     />
 
+    {#if activity.getViewMode() === "threaded"}
+      <button
+        class="collapse-all-btn"
+        type="button"
+        aria-label={activity.getCollapseThreads() ? "Expand all" : "Collapse all"}
+        title={activity.getCollapseThreads() ? "Expand all" : "Collapse all"}
+        onclick={() =>
+          activity.getCollapseThreads()
+            ? activity.expandAllThreads()
+            : activity.collapseAllThreads()}
+      >
+        {#if activity.getCollapseThreads()}
+          <ChevronsUpDownIcon size="14" strokeWidth="2" aria-hidden="true" />
+        {:else}
+          <ChevronsDownUpIcon size="14" strokeWidth="2" aria-hidden="true" />
+        {/if}
+        <span class="collapse-all-label"
+          >{activity.getCollapseThreads() ? "Expand all" : "Collapse all"}</span
+        >
+      </button>
+    {/if}
+
     <input
       class="search-input"
       type="text"
@@ -616,6 +640,29 @@
     padding: 4px 8px;
   }
 
+  .collapse-all-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-muted);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface);
+  }
+
+  .collapse-all-btn:hover {
+    color: var(--text-primary);
+    border-color: var(--border-default);
+    background: var(--bg-surface-hover);
+  }
+
+  .collapse-all-btn:focus-visible {
+    outline: 2px solid var(--accent-blue);
+    outline-offset: 1px;
+  }
+
   .activity-feed--compact .controls-bar {
     align-items: stretch;
     flex-wrap: wrap;
@@ -643,6 +690,11 @@
     flex: 1 0 100%;
     width: 100%;
     margin-left: 0;
+  }
+
+  .activity-feed--compact .collapse-all-btn {
+    order: 4;
+    flex: 0 0 auto;
   }
 
   .activity-feed--compact :global(.filter-wrap) {

@@ -1,0 +1,6 @@
+interface:
+  display_name: "Optimize Go Test Duration"
+  short_description: "Trace and reduce Go test wall time"
+  default_prompt: "Use $optimize-go-test-duration to analyze this Go test suite's wall time with built-in tracing and make safe test-duration optimizations."
+policy:
+  allow_implicit_invocation: true

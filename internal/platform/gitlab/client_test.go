@@ -298,10 +298,9 @@ func TestReadClientFetchesMergeRequestsIssuesEventsReleasesTagsAndPipelines(t *t
 			writeJSON(w, `[{"id": 1001, "iid": 7, "project_id": 42, "title": "MR one", "state": "opened", "pipeline": {"id": 501, "status": "running"}}]`)
 		case "/api/v4/projects/42/merge_requests/7":
 			writeJSON(w, `{"id": 1001, "iid": 7, "project_id": 42, "title": "MR detail", "state": "opened", "source_branch": "feature", "target_branch": "main", "sha": "abc", "draft": false, "work_in_progress": true, "pipeline": {"id": 501, "status": "success"}}`)
-		case "/api/v4/projects/42/merge_requests/7/notes":
+		case "/api/v4/projects/42/merge_requests/7/discussions":
 			writeJSON(w, `[
-				{"id": 1, "body": "visible", "system": false, "author": {"username": "alice"}, "created_at": "2026-04-01T10:00:00Z"},
-				{"id": 2, "body": "changed title", "system": true, "author": {"username": "root"}, "created_at": "2026-04-01T11:00:00Z"}
+				{"id": "disc1", "notes": [{"id": 1, "body": "visible", "system": false, "author": {"username": "alice"}, "created_at": "2026-04-01T10:00:00Z"}]}
 			]`)
 		case "/api/v4/projects/42/merge_requests/7/commits":
 			writeJSON(w, `[{"id": "abcdef123456", "title": "commit title", "message": "commit body", "author_name": "Alice", "created_at": "2026-04-01T09:00:00Z"}]`)
@@ -309,10 +308,9 @@ func TestReadClientFetchesMergeRequestsIssuesEventsReleasesTagsAndPipelines(t *t
 			writeJSON(w, `[{"id": 2001, "iid": 5, "project_id": 42, "title": "Issue one", "state": "opened", "user_notes_count": 2}]`)
 		case "/api/v4/projects/42/issues/5":
 			writeJSON(w, `{"id": 2001, "iid": 5, "project_id": 42, "title": "Issue detail", "state": "opened"}`)
-		case "/api/v4/projects/42/issues/5/notes":
+		case "/api/v4/projects/42/issues/5/discussions":
 			writeJSON(w, `[
-				{"id": 10, "body": "issue note", "system": false, "author": {"username": "bob"}, "created_at": "2026-04-02T10:00:00Z"},
-				{"id": 11, "body": "closed", "system": true, "author": {"username": "bob"}, "created_at": "2026-04-02T11:00:00Z"}
+				{"id": "disc10", "notes": [{"id": 10, "body": "issue note", "system": false, "author": {"username": "bob"}, "created_at": "2026-04-02T10:00:00Z"}]}
 			]`)
 		case "/api/v4/projects/42/releases":
 			writeJSON(w, `[{"tag_name": "v1.0.0", "name": "One", "released_at": "2026-04-03T10:00:00Z", "created_at": "2026-04-03T09:00:00Z", "commit": {"id": "abc"}}]`)

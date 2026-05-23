@@ -40,7 +40,9 @@ func (c *Client) ReplyToDiscussion(
 		Author:             noteAuthorUsername(note),
 		Body:               note.Body,
 		CreatedAt:          timeValue(note.CreatedAt),
+		DedupeKey:          noteDedupeKey(normalizedRef, "mr", number, "note", strconv.FormatInt(note.ID, 10)),
 		DiscussionID:       discussionID,
+		PositionJSON:       serializeNotePosition(note.Position),
 		Resolvable:         note.Resolvable,
 		Resolved:           note.Resolved,
 	}, nil

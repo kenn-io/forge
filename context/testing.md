@@ -88,6 +88,14 @@ slow packages. CI also writes race timing JSON and summarizes slow packages and
 tests in the `go test -race` job summary. When a PR regresses race runtime, use
 the CI timing artifact rather than guessing from local timings alone.
 
+New full-stack server tests should default to `t.Parallel()` when they build
+their own `t.TempDir` filesystem, SQLite fixture, provider fake, and server
+fixture. This especially applies to workspace/git e2e coverage where each test
+clones its own bare repo and worktree root. Keep tests serial when they call
+`t.Setenv`, mutate process-global state, rely on fixed ports or shared external
+resources, exercise real tmux/PTY sessions, or intentionally verify ordering
+against another test-visible shared resource.
+
 Keep splitting new high-volume tests into the existing black-box packages when
 they do not need unexported internals:
 

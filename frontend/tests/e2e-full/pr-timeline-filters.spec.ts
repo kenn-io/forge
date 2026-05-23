@@ -52,7 +52,8 @@ test.describe("PR timeline filters", () => {
 
     await expect(page.getByText("Force-pushed")).toBeVisible();
     await expect(page.getByText("abc4444 -> def5555")).toBeVisible();
-    await expect(page.getByText("Referenced")).toBeVisible();
+    await expect(page.locator(".event-type", { hasText: "Referenced" }))
+      .toHaveCount(3);
     await expect(page.getByText("Widget rendering broken on Safari"))
       .toBeVisible();
     await expect(page.getByText("Title changed")).toBeVisible();

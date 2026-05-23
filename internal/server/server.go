@@ -71,6 +71,7 @@ type ServerOptions struct {
 	PtyOwnerExePath     string
 	PtyOwnerExeArgs     []string
 	PtyOwnerManagerPath string
+	PtyOwnerCommand     []string
 	PtyOwnerInProcess   bool
 }
 
@@ -460,6 +461,7 @@ func newServer(
 			ExePath:     options.PtyOwnerExePath,
 			ExeArgs:     append([]string(nil), options.PtyOwnerExeArgs...),
 			ManagerPath: options.PtyOwnerManagerPath,
+			Command:     append([]string(nil), options.PtyOwnerCommand...),
 			InProcess:   options.PtyOwnerInProcess,
 		}
 		if preferPtyOwnerForWorkspaces(runtime.GOOS, tmuxAvailable, options) {

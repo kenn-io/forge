@@ -2570,6 +2570,21 @@ func (d *DB) ListMREvents(ctx context.Context, mrID int64) ([]MREvent, error) {
 	return events, rows.Err()
 }
 
+// UpdateDiscussionResolved updates the resolved state for all events matching
+// the given merge request and discussion ID.
+func (d *DB) UpdateDiscussionResolved(ctx context.Context, mrID int64, discussionID string, resolved bool) error {
+	_, err := d.rw.ExecContext(ctx, `
+		UPDATE middleman_mr_events
+		SET resolved = ?
+		WHERE merge_request_id = ? AND discussion_id = ?`,
+		resolved, mrID, discussionID,
+	)
+	if err != nil {
+		return fmt.Errorf("update discussion resolved: %w", err)
+	}
+	return nil
+}
+
 // --- Kanban ---
 
 // EnsureKanbanState creates a kanban row with status "new" if one does not exist.

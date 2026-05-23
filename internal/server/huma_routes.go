@@ -1424,6 +1424,19 @@ func (s *Server) replyToDiscussion(ctx context.Context, input *replyToDiscussion
 		return nil, err
 	}
 
+	// Verify the MR exists locally before calling the provider to avoid
+	// creating upstream replies for untracked or non-existent PRs.
+	ref := repoNumberPathRef{
+		owner:        repo.Owner,
+		name:         repo.Name,
+		number:       input.Number,
+		platformHost: repo.PlatformHost,
+	}
+	mrID, err := s.lookupMRID(ctx, ref)
+	if err != nil {
+		return nil, problemNotFound(CodePullNotFound, err.Error(), nil)
+	}
+
 	provider, err := s.syncer.Registry().Provider(repoProviderKind(*repo), repoProviderHost(*repo))
 	if err != nil {
 		return nil, problemInternal("provider lookup failed")
@@ -1449,20 +1462,11 @@ func (s *Server) replyToDiscussion(ctx context.Context, input *replyToDiscussion
 		)
 	}
 
-	ref := repoNumberPathRef{
-		owner:        repo.Owner,
-		name:         repo.Name,
-		number:       input.Number,
-		platformHost: repo.PlatformHost,
-	}
-	mrID, err := s.lookupMRID(ctx, ref)
-	if err != nil {
-		return nil, problemNotFound(CodePullNotFound, err.Error(), nil)
-	}
-
 	event := platform.DBMREvent(mrID, platformEvent)
 	if err := s.db.UpsertMREvents(ctx, []db.MREvent{event}); err != nil {
-		_ = err
+		slog.ErrorContext(ctx, "failed to persist discussion reply event",
+			"mr_id", mrID, "discussion_id", input.DiscussionID, "error", err)
+		return nil, problemInternal("failed to persist reply event")
 	}
 
 	return &replyToDiscussionOutput{Status: http.StatusCreated, Body: event}, nil
@@ -1483,6 +1487,19 @@ func (s *Server) resolveDiscussion(ctx context.Context, input *resolveDiscussion
 	}
 	if err := s.requireSyncerCapability(*repo, capabilityDiscussionResolve); err != nil {
 		return nil, err
+	}
+
+	// Verify the MR exists locally before calling the provider to avoid
+	// resolving discussions on untracked or non-existent PRs.
+	ref := repoNumberPathRef{
+		owner:        repo.Owner,
+		name:         repo.Name,
+		number:       input.Number,
+		platformHost: repo.PlatformHost,
+	}
+	mrID, err := s.lookupMRID(ctx, ref)
+	if err != nil {
+		return nil, problemNotFound(CodePullNotFound, err.Error(), nil)
 	}
 
 	provider, err := s.syncer.Registry().Provider(repoProviderKind(*repo), repoProviderHost(*repo))
@@ -1507,6 +1524,14 @@ func (s *Server) resolveDiscussion(ctx context.Context, input *resolveDiscussion
 			string(repoProviderKind(*repo)), repoProviderHost(*repo),
 			"resolve discussion on provider failed",
 		)
+	}
+
+	// Update local discussion events' resolved state to keep dashboard in sync.
+	if err := s.db.UpdateDiscussionResolved(ctx, mrID, input.DiscussionID, input.Body.Resolved); err != nil {
+		slog.ErrorContext(ctx, "failed to update local discussion resolved state",
+			"mr_id", mrID, "discussion_id", input.DiscussionID, "error", err)
+		// Don't fail the request since the upstream mutation succeeded;
+		// the state will be corrected on the next sync.
 	}
 
 	return &resolveDiscussionOutput{Status: http.StatusOK}, nil

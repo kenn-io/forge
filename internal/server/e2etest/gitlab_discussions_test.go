@@ -649,3 +649,209 @@ func TestDiscussionEndpointsRequireCapability(t *testing.T) {
 
 	require.Equal(http.StatusConflict, rr.Code)
 }
+
+func TestDiscussionEndpointsRejectNonExistentMR(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+
+	database := dbtest.Open(t)
+
+	ref := platform.RepoRef{
+		Platform:           platform.KindGitLab,
+		Host:               "gitlab.com",
+		Owner:              "acme",
+		Name:               "widget",
+		RepoPath:           "acme/widget",
+		PlatformID:         1234,
+		PlatformExternalID: "gid://gitlab/Project/1234",
+		WebURL:             "https://gitlab.com/acme/widget",
+		CloneURL:           "https://gitlab.com/acme/widget.git",
+		DefaultBranch:      "main",
+	}
+
+	provider := &gitLabDiscussionProvider{ref: ref}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+
+	repo := ghclient.RepoRef{
+		Platform:           platform.KindGitLab,
+		Owner:              "acme",
+		Name:               "widget",
+		PlatformHost:       "gitlab.com",
+		RepoPath:           "acme/widget",
+		PlatformRepoID:     1234,
+		PlatformExternalID: "gid://gitlab/Project/1234",
+		WebURL:             "https://gitlab.com/acme/widget",
+		CloneURL:           "https://gitlab.com/acme/widget.git",
+		DefaultBranch:      "main",
+	}
+
+	syncer := ghclient.NewSyncerWithRegistry(
+		registry, database, nil, []ghclient.RepoRef{repo}, time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+
+	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
+	syncer.RunOnce(ctx)
+
+	// Note: We do NOT create an MR in the database, so MR #999 does not exist locally.
+	discussionID := "abc123def456789012345678901234567890abcd"
+
+	// Reply should fail with 404 before calling provider
+	body := `{"body":"test reply"}`
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/pulls/gitlab/acme/widget/999/discussions/"+discussionID+"/reply",
+		strings.NewReader(body),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	require.Equal(http.StatusNotFound, rr.Code)
+	require.Empty(provider.replyToDiscussionCalls, "provider should not be called for non-existent MR")
+
+	// Resolve should also fail with 404 before calling provider
+	body = `{"resolved":true}`
+	req = httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/pulls/gitlab/acme/widget/999/discussions/"+discussionID+"/resolve",
+		strings.NewReader(body),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	rr = httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	require.Equal(http.StatusNotFound, rr.Code)
+	require.Empty(provider.resolveDiscussionCalls, "provider should not be called for non-existent MR")
+}
+
+func TestResolveDiscussionUpdatesLocalState(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := t.Context()
+
+	database := dbtest.Open(t)
+
+	ref := platform.RepoRef{
+		Platform:           platform.KindGitLab,
+		Host:               "gitlab.com",
+		Owner:              "acme",
+		Name:               "widget",
+		RepoPath:           "acme/widget",
+		PlatformID:         1234,
+		PlatformExternalID: "gid://gitlab/Project/1234",
+		WebURL:             "https://gitlab.com/acme/widget",
+		CloneURL:           "https://gitlab.com/acme/widget.git",
+		DefaultBranch:      "main",
+	}
+
+	provider := &gitLabDiscussionProvider{ref: ref}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+
+	repo := ghclient.RepoRef{
+		Platform:           platform.KindGitLab,
+		Owner:              "acme",
+		Name:               "widget",
+		PlatformHost:       "gitlab.com",
+		RepoPath:           "acme/widget",
+		PlatformRepoID:     1234,
+		PlatformExternalID: "gid://gitlab/Project/1234",
+		WebURL:             "https://gitlab.com/acme/widget",
+		CloneURL:           "https://gitlab.com/acme/widget.git",
+		DefaultBranch:      "main",
+	}
+
+	syncer := ghclient.NewSyncerWithRegistry(
+		registry, database, nil, []ghclient.RepoRef{repo}, time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+
+	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
+	syncer.RunOnce(ctx)
+
+	dbRepo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.com",
+		Owner:        "acme",
+		Name:         "widget",
+		RepoPath:     "acme/widget",
+	})
+	require.NoError(err)
+	require.NotNil(dbRepo)
+
+	mrID, err := database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:         dbRepo.ID,
+		PlatformID:     1001,
+		Number:         7,
+		URL:            "https://gitlab.com/acme/widget/-/merge_requests/7",
+		Title:          "Test MR",
+		Author:         "author",
+		State:          "open",
+		CreatedAt:      time.Now().UTC(),
+		UpdatedAt:      time.Now().UTC(),
+		LastActivityAt: time.Now().UTC(),
+	})
+	require.NoError(err)
+
+	// Create a discussion event that is NOT resolved
+	discussionID := "abc123def456789012345678901234567890abcd"
+	platformID := int64(101)
+	require.NoError(database.UpsertMREvents(ctx, []db.MREvent{{
+		MergeRequestID: mrID,
+		PlatformID:     &platformID,
+		EventType:      "issue_comment",
+		Author:         "reviewer",
+		Body:           "needs fix",
+		CreatedAt:      time.Now().UTC(),
+		DedupeKey:      "note-101",
+		DiscussionID:   &discussionID,
+		Resolvable:     true,
+		Resolved:       false,
+	}}))
+
+	// Verify initial state
+	events, err := database.ListMREvents(ctx, mrID)
+	require.NoError(err)
+	require.Len(events, 1)
+	assert.False(events[0].Resolved)
+
+	// Resolve the discussion
+	body := `{"resolved":true}`
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/pulls/gitlab/acme/widget/7/discussions/"+discussionID+"/resolve",
+		strings.NewReader(body),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	require.Equal(http.StatusOK, rr.Code, "response: %s", rr.Body.String())
+
+	// Verify the local state was updated
+	events, err = database.ListMREvents(ctx, mrID)
+	require.NoError(err)
+	require.Len(events, 1)
+	assert.True(events[0].Resolved, "local event should be marked as resolved")
+
+	// Now unresolve it
+	body = `{"resolved":false}`
+	req = httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/pulls/gitlab/acme/widget/7/discussions/"+discussionID+"/resolve",
+		strings.NewReader(body),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	rr = httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	require.Equal(http.StatusOK, rr.Code, "response: %s", rr.Body.String())
+
+	// Verify the local state was updated back to unresolved
+	events, err = database.ListMREvents(ctx, mrID)
+	require.NoError(err)
+	require.Len(events, 1)
+	assert.False(events[0].Resolved, "local event should be marked as unresolved")
+}

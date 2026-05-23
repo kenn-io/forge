@@ -69,7 +69,7 @@ function itemRefExtension(repo?: RepoContext): TokenizerAndRendererExtension {
           name,
           repoPath,
           number: parseInt(crossMatch[3]!, 10),
-          itemType: marker === "!" ? "pr" : undefined,
+          itemType: marker === "!" ? "pr" : supportsBangMR ? "issue" : undefined,
           text: crossMatch[0],
         };
       }
@@ -103,6 +103,7 @@ function itemRefExtension(repo?: RepoContext): TokenizerAndRendererExtension {
           name: repo.name,
           repoPath: repo.repoPath,
           number: parseInt(bareMatch[1]!, 10),
+          itemType: supportsBangMR ? "issue" : undefined,
           text: bareMatch[0],
         };
       }

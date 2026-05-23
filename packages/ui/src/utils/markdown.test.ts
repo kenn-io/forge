@@ -25,7 +25,7 @@ describe("renderMarkdown task lists", () => {
   });
 
   it("renders gitlab issue and merge request references with provider fallback links", () => {
-    const html = renderMarkdown("See group/project#42 and group/project!43 and !44", {
+    const html = renderMarkdown("See #41 and group/project#42 and group/project!43 and !44", {
       provider: "gitlab",
       platformHost: "gitlab.example.com",
       owner: "group",
@@ -34,7 +34,16 @@ describe("renderMarkdown task lists", () => {
     });
 
     expect(html).toContain(
+      'href="/host/gitlab.example.com/issues/gitlab/group/project/41"',
+    );
+    expect(html).toContain(
+      'data-number="41" data-item-type="issue"',
+    );
+    expect(html).toContain(
       'href="/host/gitlab.example.com/issues/gitlab/group/project/42"',
+    );
+    expect(html).toContain(
+      'data-number="42" data-item-type="issue"',
     );
     expect(html).toContain(
       'data-external-url="https://gitlab.example.com/group/project/-/issues/42"',
@@ -48,6 +57,25 @@ describe("renderMarkdown task lists", () => {
     );
     expect(html).toContain(
       'href="/host/gitlab.example.com/pulls/gitlab/group/project/44"',
+    );
+  });
+
+  it("disambiguates overlapping gitlab issue and merge request numbers", () => {
+    const html = renderMarkdown("See #10, !10, group/project#10, and group/project!10", {
+      provider: "gitlab",
+      platformHost: "gitlab.example.com",
+      owner: "group",
+      name: "project",
+      repoPath: "group/project",
+    });
+
+    expect(html.match(/data-number="10" data-item-type="issue"/g)).toHaveLength(2);
+    expect(html.match(/data-number="10" data-item-type="pr"/g)).toHaveLength(2);
+    expect(html).toContain(
+      'data-external-url="https://gitlab.example.com/group/project/-/issues/10"',
+    );
+    expect(html).toContain(
+      'data-external-url="https://gitlab.example.com/group/project/-/merge_requests/10"',
     );
   });
 

@@ -126,6 +126,41 @@ describe("itemRefHandler", () => {
     );
   });
 
+  it("passes GitLab issue item type hints", async () => {
+    mocks.post.mockResolvedValue({
+      data: { repo_tracked: true, item_type: "issue" },
+      error: undefined,
+      response: { status: 200 },
+    });
+
+    await clickItemRef({
+      "data-provider": "gitlab",
+      "data-platform-host": "gitlab.example.com",
+      "data-owner": "group",
+      "data-name": "project",
+      "data-repo-path": "group/project",
+      "data-number": "10",
+      "data-item-type": "issue",
+      "data-external-url": "https://gitlab.example.com/group/project/-/issues/10",
+    });
+
+    expect(mocks.post).toHaveBeenCalledWith(
+      "/host/{platform_host}/repo/{provider}/{owner}/{name}/resolve/{number}",
+      {
+        params: {
+          path: {
+            platform_host: "gitlab.example.com",
+            provider: "gitlab",
+            owner: "group",
+            name: "project",
+            number: 10,
+          },
+          query: { item_type: "issue" },
+        },
+      },
+    );
+  });
+
   it("opens the provider URL when an untracked reference has an external fallback", async () => {
     const open = vi.spyOn(window, "open").mockImplementation(() => null);
     mocks.post.mockResolvedValue({

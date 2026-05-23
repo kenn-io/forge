@@ -235,6 +235,15 @@
     onSelectItem?.(group.representative);
   }
 
+  function handleEventClick(event: ActivityItem): void {
+    if (isDefaultBranchActivity(event)) {
+      const url = event.activity_url;
+      if (url) window.open(url, "_blank", "noopener");
+      return;
+    }
+    onSelectItem?.(event);
+  }
+
   function eventLabel(type: string): string {
     switch (type) {
       case "new_pr":
@@ -436,7 +445,7 @@
                   class:event-review={eventTone(event.activity_type) === "review"}
                   class:event-commit={eventTone(event.activity_type) === "commit"}
                   class:event-force-push={eventTone(event.activity_type) === "force-push"}
-                  onclick={() => onSelectItem?.(event)}
+                  onclick={() => handleEventClick(event)}
                 >
                   <span class="mobile-activity-event__dot" aria-hidden="true"></span>
                   <span class="mobile-activity-event__body">

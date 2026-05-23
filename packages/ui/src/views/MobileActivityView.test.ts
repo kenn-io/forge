@@ -1,4 +1,4 @@
-import { cleanup, render } from "@testing-library/svelte";
+import { cleanup, fireEvent, render } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ActivityItem } from "../api/types.js";
 import MobileActivityView from "./MobileActivityView.svelte";
@@ -101,5 +101,27 @@ describe("MobileActivityView branch activity", () => {
     expect(card?.textContent).not.toContain("#0");
     expect(card?.querySelector(".chip--kind-pr")).toBeNull();
     expect(card?.querySelector(".chip--kind-issue")).toBeNull();
+  });
+
+  it("does not select a PR or issue when tapping a branch event", async () => {
+    const open = vi
+      .spyOn(window, "open")
+      .mockImplementation(() => null);
+
+    const { container } = render(MobileActivityView, {
+      props: { onSelectItem },
+    });
+
+    const event = container.querySelector(".mobile-activity-event");
+    expect(event).not.toBeNull();
+    await fireEvent.click(event!);
+
+    expect(onSelectItem).not.toHaveBeenCalled();
+    expect(open).toHaveBeenCalledWith(
+      "https://github.com/acme/widgets/commit/a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+      "_blank",
+      "noopener",
+    );
+    open.mockRestore();
   });
 });

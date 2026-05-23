@@ -177,10 +177,17 @@ func (m *Manager) resolveRefInDir(
 	host, dir, ref string,
 ) (string, error) {
 	out, err := m.git(ctx, host, dir,
-		"rev-parse", "--verify", "--end-of-options", ref,
+		"rev-parse", "--verify", "--end-of-options", ref+"^{commit}",
 	)
 	if err != nil {
-		return "", err
+		return "", normalizeMissingCommitError(err)
 	}
 	return strings.TrimSpace(string(out)), nil
+}
+
+func normalizeMissingCommitError(err error) error {
+	if isMissingRefError(err) {
+		return fmt.Errorf("%w: %w", ErrNotFound, err)
+	}
+	return err
 }

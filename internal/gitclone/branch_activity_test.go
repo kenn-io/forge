@@ -107,6 +107,71 @@ func TestBranchActivityDetectsForcePush(t *testing.T) {
 	assert.NotEqual(oldTip, newTip)
 }
 
+func TestResolveRefRejectsNonCommitObjects(t *testing.T) {
+	require := require.New(t)
+
+	dir := t.TempDir()
+	remote := filepath.Join(dir, "remote.git")
+	commitTestRun(t, dir, "git", "init", "--bare", "--initial-branch=main", remote)
+
+	work := filepath.Join(dir, "work")
+	commitTestRun(t, dir, "git", "clone", remote, work)
+	commitTestRun(t, work, "git", "config", "user.email", "alice@example.com")
+	commitTestRun(t, work, "git", "config", "user.name", "Alice")
+	require.NoError(os.WriteFile(filepath.Join(work, "file.txt"), []byte("content\n"), 0o644))
+	commitTestRun(t, work, "git", "add", ".")
+	commitTestRun(t, work, "git", "commit", "-m", "base")
+	commitTestRun(t, work, "git", "push", "origin", "main")
+
+	mgr := New(filepath.Join(dir, "clones"), nil)
+	require.NoError(mgr.EnsureClone(t.Context(), "github.com", "acme", "widgets", remote))
+
+	blobSHA := gitSHA(t, work, "HEAD:file.txt")
+	_, err := mgr.ResolveRef(t.Context(), "github.com", "acme", "widgets", blobSHA)
+	require.Error(err)
+	require.ErrorIs(err, ErrNotFound)
+}
+
+func TestListBranchCommitsSinceAfterSHATakesPrecedence(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	dir := t.TempDir()
+	remote := filepath.Join(dir, "remote.git")
+	commitTestRun(t, dir, "git", "init", "--bare", "--initial-branch=main", remote)
+
+	work := filepath.Join(dir, "work")
+	commitTestRun(t, dir, "git", "clone", remote, work)
+	commitTestRun(t, work, "git", "config", "user.email", "alice@example.com")
+	commitTestRun(t, work, "git", "config", "user.name", "Alice")
+
+	require.NoError(os.WriteFile(filepath.Join(work, "base.txt"), []byte("base\n"), 0o644))
+	commitTestRun(t, work, "git", "add", ".")
+	commitTestRun(t, work, "git", "commit", "-m", "base")
+	afterSHA := gitSHA(t, work, "HEAD")
+
+	for _, subject := range []string{"main 1", "main 2"} {
+		require.NoError(os.WriteFile(filepath.Join(work, subject+".txt"), []byte(subject+"\n"), 0o644))
+		commitTestRun(t, work, "git", "add", ".")
+		commitTestRun(t, work, "git", "commit", "-m", subject)
+	}
+	commitTestRun(t, work, "git", "push", "origin", "main")
+
+	mgr := New(filepath.Join(dir, "clones"), nil)
+	require.NoError(mgr.EnsureClone(t.Context(), "github.com", "acme", "widgets", remote))
+
+	commits, err := mgr.ListBranchCommitsSince(
+		t.Context(), "github.com", "acme", "widgets", "main", time.Now().Add(24*time.Hour).UTC(), afterSHA,
+	)
+	require.NoError(err)
+
+	var subjects []string
+	for _, commit := range commits {
+		subjects = append(subjects, commit.Message)
+	}
+	assert.Equal([]string{"main 2", "main 1"}, subjects)
+}
+
 func TestResolveDefaultBranchFallsBackToOriginHEAD(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

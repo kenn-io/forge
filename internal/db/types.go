@@ -236,6 +236,10 @@ type MREvent struct {
 	MetadataJSON       string
 	CreatedAt          time.Time
 	DedupeKey          string
+	DiscussionID       *string
+	PositionJSON       string
+	Resolvable         bool
+	Resolved           bool
 }
 
 type KanbanState struct {
@@ -299,6 +303,7 @@ type IssueEvent struct {
 	MetadataJSON       string
 	CreatedAt          time.Time
 	DedupeKey          string
+	DiscussionID       *string
 }
 
 type CommentAutocompleteReference struct {

@@ -185,6 +185,8 @@ func (c *Client) Capabilities() platform.Capabilities {
 		ReadComments:      true,
 		ReadReleases:      true,
 		ReadCI:            true,
+		DiscussionReply:   true,
+		DiscussionResolve: true,
 	}
 }
 
@@ -820,3 +822,5 @@ var _ platform.IssueReader = (*Client)(nil)
 var _ platform.ReleaseReader = (*Client)(nil)
 var _ platform.TagReader = (*Client)(nil)
 var _ platform.CIReader = (*Client)(nil)
+var _ platform.DiscussionReplier = (*Client)(nil)
+var _ platform.DiscussionResolver = (*Client)(nil)

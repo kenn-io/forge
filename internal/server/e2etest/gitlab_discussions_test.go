@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -90,6 +91,24 @@ func TestGetPRDetailIncludesDiscussionID(t *testing.T) {
 
 type gitLabDiscussionProvider struct {
 	ref platform.RepoRef
+
+	// Track mutation calls for test assertions
+	replyToDiscussionCalls []replyToDiscussionCall
+	resolveDiscussionCalls []resolveDiscussionCall
+}
+
+type replyToDiscussionCall struct {
+	Ref          platform.RepoRef
+	Number       int
+	DiscussionID string
+	Body         string
+}
+
+type resolveDiscussionCall struct {
+	Ref          platform.RepoRef
+	Number       int
+	DiscussionID string
+	Resolved     bool
 }
 
 func (p *gitLabDiscussionProvider) Platform() platform.Kind {
@@ -161,6 +180,49 @@ func (p *gitLabDiscussionProvider) ListCIChecks(context.Context, platform.RepoRe
 	return nil, nil
 }
 
+func (p *gitLabDiscussionProvider) ReplyToDiscussion(
+	_ context.Context,
+	ref platform.RepoRef,
+	number int,
+	discussionID string,
+	body string,
+) (platform.MergeRequestEvent, error) {
+	p.replyToDiscussionCalls = append(p.replyToDiscussionCalls, replyToDiscussionCall{
+		Ref:          ref,
+		Number:       number,
+		DiscussionID: discussionID,
+		Body:         body,
+	})
+	return platform.MergeRequestEvent{
+		Repo:               ref,
+		PlatformID:         99999,
+		PlatformExternalID: "99999",
+		MergeRequestNumber: number,
+		EventType:          "issue_comment",
+		Author:             "test-user",
+		Body:               body,
+		CreatedAt:          time.Now().UTC(),
+		DedupeKey:          "reply-" + discussionID,
+		DiscussionID:       discussionID,
+	}, nil
+}
+
+func (p *gitLabDiscussionProvider) ResolveDiscussion(
+	_ context.Context,
+	ref platform.RepoRef,
+	number int,
+	discussionID string,
+	resolved bool,
+) error {
+	p.resolveDiscussionCalls = append(p.resolveDiscussionCalls, resolveDiscussionCall{
+		Ref:          ref,
+		Number:       number,
+		DiscussionID: discussionID,
+		Resolved:     resolved,
+	})
+	return nil
+}
+
 func TestGitLabRepoCapabilitiesIncludeDiscussions(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -223,4 +285,367 @@ func TestGitLabRepoCapabilitiesIncludeDiscussions(t *testing.T) {
 
 	assert.True(result.Capabilities.DiscussionReply)
 	assert.True(result.Capabilities.DiscussionResolve)
+}
+
+func TestReplyToDiscussionE2E(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := t.Context()
+
+	database := dbtest.Open(t)
+
+	ref := platform.RepoRef{
+		Platform:           platform.KindGitLab,
+		Host:               "gitlab.com",
+		Owner:              "acme",
+		Name:               "widget",
+		RepoPath:           "acme/widget",
+		PlatformID:         1234,
+		PlatformExternalID: "gid://gitlab/Project/1234",
+		WebURL:             "https://gitlab.com/acme/widget",
+		CloneURL:           "https://gitlab.com/acme/widget.git",
+		DefaultBranch:      "main",
+	}
+
+	provider := &gitLabDiscussionProvider{ref: ref}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+
+	repo := ghclient.RepoRef{
+		Platform:           platform.KindGitLab,
+		Owner:              "acme",
+		Name:               "widget",
+		PlatformHost:       "gitlab.com",
+		RepoPath:           "acme/widget",
+		PlatformRepoID:     1234,
+		PlatformExternalID: "gid://gitlab/Project/1234",
+		WebURL:             "https://gitlab.com/acme/widget",
+		CloneURL:           "https://gitlab.com/acme/widget.git",
+		DefaultBranch:      "main",
+	}
+
+	syncer := ghclient.NewSyncerWithRegistry(
+		registry, database, nil, []ghclient.RepoRef{repo}, time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+
+	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
+	syncer.RunOnce(ctx)
+
+	// Create an MR to reply to
+	dbRepo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.com",
+		Owner:        "acme",
+		Name:         "widget",
+		RepoPath:     "acme/widget",
+	})
+	require.NoError(err)
+	require.NotNil(dbRepo)
+
+	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:         dbRepo.ID,
+		PlatformID:     1001,
+		Number:         7,
+		URL:            "https://gitlab.com/acme/widget/-/merge_requests/7",
+		Title:          "Test MR",
+		Author:         "author",
+		State:          "open",
+		CreatedAt:      time.Now().UTC(),
+		UpdatedAt:      time.Now().UTC(),
+		LastActivityAt: time.Now().UTC(),
+	})
+	require.NoError(err)
+
+	// Valid 40-char hex discussion ID
+	discussionID := "abc123def456789012345678901234567890abcd"
+	body := `{"body":"This is my reply"}`
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/pulls/gitlab/acme/widget/7/discussions/"+discussionID+"/reply",
+		strings.NewReader(body),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	require.Equal(http.StatusCreated, rr.Code, "response: %s", rr.Body.String())
+
+	// Verify the provider was called with correct arguments
+	require.Len(provider.replyToDiscussionCalls, 1)
+	call := provider.replyToDiscussionCalls[0]
+	assert.Equal(7, call.Number)
+	assert.Equal(discussionID, call.DiscussionID)
+	assert.Equal("This is my reply", call.Body)
+	assert.Equal("acme", call.Ref.Owner)
+	assert.Equal("widget", call.Ref.Name)
+
+	// Verify the reply event was persisted
+	var result struct {
+		Author       string  `json:"Author"`
+		Body         string  `json:"Body"`
+		DiscussionID *string `json:"DiscussionID"`
+	}
+	err = json.NewDecoder(rr.Body).Decode(&result)
+	require.NoError(err)
+	assert.Equal("test-user", result.Author)
+	assert.Equal("This is my reply", result.Body)
+	require.NotNil(result.DiscussionID)
+	assert.Equal(discussionID, *result.DiscussionID)
+}
+
+func TestReplyToDiscussionRejectsInvalidDiscussionID(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+
+	database := dbtest.Open(t)
+
+	ref := platform.RepoRef{
+		Platform:           platform.KindGitLab,
+		Host:               "gitlab.com",
+		Owner:              "acme",
+		Name:               "widget",
+		RepoPath:           "acme/widget",
+		PlatformID:         1234,
+		PlatformExternalID: "gid://gitlab/Project/1234",
+		WebURL:             "https://gitlab.com/acme/widget",
+		CloneURL:           "https://gitlab.com/acme/widget.git",
+		DefaultBranch:      "main",
+	}
+
+	provider := &gitLabDiscussionProvider{ref: ref}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+
+	repo := ghclient.RepoRef{
+		Platform:           platform.KindGitLab,
+		Owner:              "acme",
+		Name:               "widget",
+		PlatformHost:       "gitlab.com",
+		RepoPath:           "acme/widget",
+		PlatformRepoID:     1234,
+		PlatformExternalID: "gid://gitlab/Project/1234",
+		WebURL:             "https://gitlab.com/acme/widget",
+		CloneURL:           "https://gitlab.com/acme/widget.git",
+		DefaultBranch:      "main",
+	}
+
+	syncer := ghclient.NewSyncerWithRegistry(
+		registry, database, nil, []ghclient.RepoRef{repo}, time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+
+	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
+	syncer.RunOnce(ctx)
+
+	dbRepo2, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.com",
+		Owner:        "acme",
+		Name:         "widget",
+		RepoPath:     "acme/widget",
+	})
+	require.NoError(err)
+	require.NotNil(dbRepo2)
+
+	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:         dbRepo2.ID,
+		PlatformID:     1001,
+		Number:         7,
+		URL:            "https://gitlab.com/acme/widget/-/merge_requests/7",
+		Title:          "Test MR",
+		Author:         "author",
+		State:          "open",
+		CreatedAt:      time.Now().UTC(),
+		UpdatedAt:      time.Now().UTC(),
+		LastActivityAt: time.Now().UTC(),
+	})
+	require.NoError(err)
+
+	// Test various invalid discussion IDs (URL-safe but invalid for GitLab)
+	invalidIDs := []string{
+		"..-..-..-..-etc-passwd---------",          // path traversal attempt (40 chars)
+		"abc-2F-123--------------------------",     // would-be encoded slash (40 chars)
+		"short",                                    // too short
+		"abc123def456789012345678901234",           // 31 chars, not 40
+		"ABCDEF1234567890123456789012345678901234", // uppercase not allowed
+		"xyz-invalid-chars-1234567890123456789012", // non-hex chars
+	}
+
+	for _, invalidID := range invalidIDs {
+		body := `{"body":"test"}`
+		req := httptest.NewRequest(
+			http.MethodPost,
+			"/api/v1/pulls/gitlab/acme/widget/7/discussions/"+invalidID+"/reply",
+			strings.NewReader(body),
+		)
+		req.Header.Set("Content-Type", "application/json")
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, req)
+
+		// Should not succeed - either 400 (validation) or 500 (internal error from invalid format)
+		require.NotEqual(http.StatusCreated, rr.Code, "should reject invalid discussion ID: %s", invalidID)
+	}
+
+	// Verify provider was never called with invalid IDs
+	require.Empty(provider.replyToDiscussionCalls)
+}
+
+func TestResolveDiscussionE2E(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := t.Context()
+
+	database := dbtest.Open(t)
+
+	ref := platform.RepoRef{
+		Platform:           platform.KindGitLab,
+		Host:               "gitlab.com",
+		Owner:              "acme",
+		Name:               "widget",
+		RepoPath:           "acme/widget",
+		PlatformID:         1234,
+		PlatformExternalID: "gid://gitlab/Project/1234",
+		WebURL:             "https://gitlab.com/acme/widget",
+		CloneURL:           "https://gitlab.com/acme/widget.git",
+		DefaultBranch:      "main",
+	}
+
+	provider := &gitLabDiscussionProvider{ref: ref}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+
+	repo := ghclient.RepoRef{
+		Platform:           platform.KindGitLab,
+		Owner:              "acme",
+		Name:               "widget",
+		PlatformHost:       "gitlab.com",
+		RepoPath:           "acme/widget",
+		PlatformRepoID:     1234,
+		PlatformExternalID: "gid://gitlab/Project/1234",
+		WebURL:             "https://gitlab.com/acme/widget",
+		CloneURL:           "https://gitlab.com/acme/widget.git",
+		DefaultBranch:      "main",
+	}
+
+	syncer := ghclient.NewSyncerWithRegistry(
+		registry, database, nil, []ghclient.RepoRef{repo}, time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+
+	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
+	syncer.RunOnce(ctx)
+
+	dbRepo3, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.com",
+		Owner:        "acme",
+		Name:         "widget",
+		RepoPath:     "acme/widget",
+	})
+	require.NoError(err)
+	require.NotNil(dbRepo3)
+
+	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:         dbRepo3.ID,
+		PlatformID:     1001,
+		Number:         7,
+		URL:            "https://gitlab.com/acme/widget/-/merge_requests/7",
+		Title:          "Test MR",
+		Author:         "author",
+		State:          "open",
+		CreatedAt:      time.Now().UTC(),
+		UpdatedAt:      time.Now().UTC(),
+		LastActivityAt: time.Now().UTC(),
+	})
+	require.NoError(err)
+
+	// Valid 40-char hex discussion ID
+	discussionID := "abc123def456789012345678901234567890abcd"
+	body := `{"resolved":true}`
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/pulls/gitlab/acme/widget/7/discussions/"+discussionID+"/resolve",
+		strings.NewReader(body),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	require.Equal(http.StatusOK, rr.Code, "response: %s", rr.Body.String())
+
+	// Verify the provider was called with correct arguments
+	require.Len(provider.resolveDiscussionCalls, 1)
+	call := provider.resolveDiscussionCalls[0]
+	assert.Equal(7, call.Number)
+	assert.Equal(discussionID, call.DiscussionID)
+	assert.True(call.Resolved)
+	assert.Equal("acme", call.Ref.Owner)
+	assert.Equal("widget", call.Ref.Name)
+}
+
+func TestDiscussionEndpointsRequireCapability(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+
+	// Use the default test server which has GitHub provider (no discussion capabilities)
+	srv, database := setupTestServer(t)
+
+	repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
+		Platform:     "github",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+		RepoPath:     "acme/widget",
+	})
+	require.NoError(err)
+
+	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:         repoID,
+		PlatformID:     1001,
+		Number:         7,
+		URL:            "https://github.com/acme/widget/pull/7",
+		Title:          "Test PR",
+		Author:         "author",
+		State:          "open",
+		CreatedAt:      time.Now().UTC(),
+		UpdatedAt:      time.Now().UTC(),
+		LastActivityAt: time.Now().UTC(),
+	})
+	require.NoError(err)
+
+	discussionID := "abc123def456789012345678901234567890abcd"
+
+	// Reply should fail for GitHub (no discussion capability)
+	body := `{"body":"test"}`
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/pulls/github/acme/widget/7/discussions/"+discussionID+"/reply",
+		strings.NewReader(body),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	require.Equal(http.StatusConflict, rr.Code)
+
+	var errResp struct {
+		Code string `json:"code"`
+	}
+	err = json.NewDecoder(rr.Body).Decode(&errResp)
+	require.NoError(err)
+	require.Equal("unsupportedCapability", errResp.Code)
+
+	// Resolve should also fail for GitHub
+	body = `{"resolved":true}`
+	req = httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/pulls/github/acme/widget/7/discussions/"+discussionID+"/resolve",
+		strings.NewReader(body),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	rr = httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	require.Equal(http.StatusConflict, rr.Code)
 }

@@ -2,11 +2,23 @@ package gitlab
 
 import (
 	"context"
+	"fmt"
+	"regexp"
 	"strconv"
 
 	gitlab "gitlab.com/gitlab-org/api/client-go"
 	"go.kenn.io/middleman/internal/platform"
 )
+
+// discussionIDPattern validates GitLab discussion IDs which are 40-char hex strings.
+var discussionIDPattern = regexp.MustCompile(`^[a-f0-9]{40}$`)
+
+func validateDiscussionID(discussionID string) error {
+	if !discussionIDPattern.MatchString(discussionID) {
+		return fmt.Errorf("invalid discussion ID format: must be 40-character hex string")
+	}
+	return nil
+}
 
 func (c *Client) ReplyToDiscussion(
 	ctx context.Context,
@@ -15,6 +27,10 @@ func (c *Client) ReplyToDiscussion(
 	discussionID string,
 	body string,
 ) (platform.MergeRequestEvent, error) {
+	if err := validateDiscussionID(discussionID); err != nil {
+		return platform.MergeRequestEvent{}, err
+	}
+
 	pid, normalizedRef, err := c.projectScopedArg(ctx, ref)
 	if err != nil {
 		return platform.MergeRequestEvent{}, err
@@ -55,6 +71,10 @@ func (c *Client) ResolveDiscussion(
 	discussionID string,
 	resolved bool,
 ) error {
+	if err := validateDiscussionID(discussionID); err != nil {
+		return err
+	}
+
 	pid, _, err := c.projectScopedArg(ctx, ref)
 	if err != nil {
 		return err

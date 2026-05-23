@@ -8,15 +8,17 @@ import (
 )
 
 const (
-	capabilityCommentMutation  = "comment_mutation"
-	capabilityStateMutation    = "state_mutation"
-	capabilityMergeMutation    = "merge_mutation"
-	capabilityReviewMutation   = "review_mutation"
-	capabilityWorkflowApproval = "workflow_approval"
-	capabilityReadyForReview   = "ready_for_review"
-	capabilityIssueMutation    = "issue_mutation"
-	capabilityReadLabels       = "read_labels"
-	capabilityLabelMutation    = "label_mutation"
+	capabilityCommentMutation   = "comment_mutation"
+	capabilityStateMutation     = "state_mutation"
+	capabilityMergeMutation     = "merge_mutation"
+	capabilityReviewMutation    = "review_mutation"
+	capabilityWorkflowApproval  = "workflow_approval"
+	capabilityReadyForReview    = "ready_for_review"
+	capabilityIssueMutation     = "issue_mutation"
+	capabilityReadLabels        = "read_labels"
+	capabilityLabelMutation     = "label_mutation"
+	capabilityDiscussionReply   = "discussion_reply"
+	capabilityDiscussionResolve = "discussion_resolve"
 )
 
 func capabilityEnabled(
@@ -42,6 +44,10 @@ func capabilityEnabled(
 		return caps.ReadLabels
 	case capabilityLabelMutation:
 		return caps.LabelMutation
+	case capabilityDiscussionReply:
+		return caps.DiscussionReply
+	case capabilityDiscussionResolve:
+		return caps.DiscussionResolve
 	default:
 		return false
 	}

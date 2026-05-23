@@ -8,6 +8,7 @@ import (
 	"mime"
 	"net/http"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -187,6 +188,16 @@ type resolveDiscussionInput struct {
 }
 
 type resolveDiscussionOutput = okStatusOutput
+
+// discussionIDPattern validates GitLab discussion IDs which are 40-char lowercase hex strings.
+var discussionIDPattern = regexp.MustCompile(`^[a-f0-9]{40}$`)
+
+func validateDiscussionID(discussionID string) error {
+	if !discussionIDPattern.MatchString(discussionID) {
+		return problemValidation("path.discussion_id", "discussion_id must be a 40-character lowercase hex string")
+	}
+	return nil
+}
 
 type createIssueInput struct {
 	Provider     string `path:"provider"`
@@ -1397,16 +1408,19 @@ func (s *Server) replyToDiscussion(ctx context.Context, input *replyToDiscussion
 	if strings.TrimSpace(input.Body.Body) == "" {
 		return nil, problemValidation("body.body", "reply body must not be empty")
 	}
+	if err := validateDiscussionID(input.DiscussionID); err != nil {
+		return nil, err
+	}
 
 	repo, err := s.requireRepoRouteCapability(
 		ctx,
 		input.Provider, input.PlatformHost, input.Owner, input.Name,
-		capabilityCommentMutation,
+		capabilityDiscussionReply,
 	)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.requireSyncerCapability(*repo, capabilityCommentMutation); err != nil {
+	if err := s.requireSyncerCapability(*repo, capabilityDiscussionReply); err != nil {
 		return nil, err
 	}
 
@@ -1455,15 +1469,19 @@ func (s *Server) replyToDiscussion(ctx context.Context, input *replyToDiscussion
 }
 
 func (s *Server) resolveDiscussion(ctx context.Context, input *resolveDiscussionInput) (*resolveDiscussionOutput, error) {
+	if err := validateDiscussionID(input.DiscussionID); err != nil {
+		return nil, err
+	}
+
 	repo, err := s.requireRepoRouteCapability(
 		ctx,
 		input.Provider, input.PlatformHost, input.Owner, input.Name,
-		capabilityCommentMutation,
+		capabilityDiscussionResolve,
 	)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.requireSyncerCapability(*repo, capabilityCommentMutation); err != nil {
+	if err := s.requireSyncerCapability(*repo, capabilityDiscussionResolve); err != nil {
 		return nil, err
 	}
 
@@ -1491,7 +1509,7 @@ func (s *Server) resolveDiscussion(ctx context.Context, input *resolveDiscussion
 		)
 	}
 
-	return &resolveDiscussionOutput{}, nil
+	return &resolveDiscussionOutput{Status: http.StatusOK}, nil
 }
 
 func (s *Server) listIssues(ctx context.Context, input *listIssuesInput) (*listIssuesOutput, error) {

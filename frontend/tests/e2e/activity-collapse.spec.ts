@@ -128,8 +128,30 @@ test.describe("threaded activity collapse", () => {
     await expect(page.locator(".activity-detail")).toBeVisible();
     await expect(page.locator(".activity-pane")).toBeVisible();
 
-    // The collapse control is still present in the narrow side pane.
-    await page.getByRole("button", { name: "Collapse all" }).click();
+    // In the narrow pane the control is icon-only: the button is present by
+    // its accessible name, but its text label is hidden to avoid stacking.
+    const collapseBtn = page.getByRole("button", { name: "Collapse all" });
+    await expect(collapseBtn).toBeVisible();
+    await expect(
+      page.locator(".collapse-all-btn .collapse-all-label"),
+    ).toBeHidden();
+    await collapseBtn.click();
     await expect(page.locator(".event-row")).toHaveCount(0);
+  });
+
+  test("expand all restores every item's events", async ({ page }) => {
+    await mockActivity(page);
+    await page.goto("/?view=threaded");
+
+    const eventRows = page.locator(".event-row");
+    await expect(eventRows.first()).toBeVisible();
+    const initialCount = await eventRows.count();
+
+    await page.getByRole("button", { name: "Collapse all" }).click();
+    await expect(eventRows).toHaveCount(0);
+
+    // The control flips to Expand all; clicking it brings every event back.
+    await page.getByRole("button", { name: "Expand all" }).click();
+    await expect(eventRows).toHaveCount(initialCount);
   });
 });

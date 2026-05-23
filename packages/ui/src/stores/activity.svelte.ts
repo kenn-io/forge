@@ -179,7 +179,15 @@ export function createActivityStore(
     collapseThreadsDefault = activity.collapse_threads;
     collapseThreads = activity.collapse_threads;
     expandOverrides = new Set();
-    if (initialized) applyCollapsedFromURL();
+    if (initialized) {
+      applyCollapsedFromURL();
+      // Once a settings reload makes the live state match the new default,
+      // drop the now-redundant collapsed param so a later default change is
+      // not shadowed by a stale override.
+      if (collapseThreads === collapseThreadsDefault) {
+        deleteCollapsedParam();
+      }
+    }
   }
 
   function initializeFromMount(): void {
@@ -372,6 +380,15 @@ export function createActivityStore(
     const v = sp.get("collapsed");
     if (v === "1") collapseThreads = true;
     else if (v === "0") collapseThreads = false;
+  }
+
+  function deleteCollapsedParam(): void {
+    const sp = new URLSearchParams(window.location.search);
+    if (!sp.has("collapsed")) return;
+    sp.delete("collapsed");
+    const qs = sp.toString();
+    const path = window.location.pathname || getBasePath();
+    history.replaceState(null, "", path + (qs ? `?${qs}` : ""));
   }
 
   function syncFromURL(): void {

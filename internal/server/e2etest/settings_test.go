@@ -62,6 +62,7 @@ func TestSettingsAPIE2EReadUpdateAndValidation(t *testing.T) {
 	require.Len(*settings.Repos, 1)
 	assert.Equal("acme", (*settings.Repos)[0].Owner)
 	assert.Equal("threaded", settings.Activity.ViewMode)
+	assert.False(settings.Activity.CollapseThreads)
 
 	invalidResp := doServerJSON(
 		t, ts.Client(), http.MethodPut,
@@ -102,6 +103,10 @@ func TestSettingsAPIE2EReadUpdateAndValidation(t *testing.T) {
 	)
 	defer updateResp.Body.Close()
 	require.Equal(http.StatusOK, updateResp.StatusCode)
+
+	var updated generated.SettingsResponse
+	require.NoError(json.NewDecoder(updateResp.Body).Decode(&updated))
+	assert.True(updated.Activity.CollapseThreads)
 
 	cfgAfterUpdate, err := config.Load(cfgPath)
 	require.NoError(err)

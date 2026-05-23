@@ -702,6 +702,13 @@
     flex: 0 0 auto;
   }
 
+  /* In the narrow side pane the labeled button wraps to its own row and
+     stacks awkwardly, so collapse to an icon-only control there. The
+     aria-label/title keep the accessible name intact. */
+  .activity-feed--compact .collapse-all-label {
+    display: none;
+  }
+
   .activity-feed--compact :global(.filter-wrap) {
     order: 3;
     flex-shrink: 0;

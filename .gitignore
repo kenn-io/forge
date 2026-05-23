@@ -35,3 +35,4 @@ frontend/src/lib/api/generated/
 internal/apiclient/spec/openapi.json
 __pycache__/
 *.py[cod]
+.pi/superpowers-state.json

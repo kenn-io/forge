@@ -240,12 +240,27 @@ test.describe("terminal options popover", () => {
       await expect
         .poll(() => terminalScreenSizeKey(page))
         .not.toBe(initialScreenSize);
+      let delayedSettingsSave = false;
+      await page.route("**/api/v1/settings", async (route) => {
+        if (
+          route.request().method() === "PUT" &&
+          !delayedSettingsSave
+        ) {
+          delayedSettingsSave = true;
+          await new Promise((resolve) => setTimeout(resolve, 300));
+        }
+        await route.continue();
+      });
       const saveResponsePromise = page.waitForResponse(
         (response) =>
           response.url().endsWith("/api/v1/settings") &&
           response.request().method() === "PUT",
       );
       await page.getByRole("button", { name: "Save", exact: true }).click();
+      await page.keyboard.press("Escape");
+      await expect(
+        page.getByRole("dialog", { name: "Terminal options" }),
+      ).toBeVisible();
       const saveResponse = await saveResponsePromise;
       const saveBody = await saveResponse.text();
       expect(

@@ -1,4 +1,7 @@
 import {
+  canonicalProvider,
+} from "../api/provider-routes.js";
+import {
   buildIssueRoute,
   buildRoutedItemRoute,
   type RepositoryRouteRef,
@@ -27,6 +30,37 @@ export type ItemReferenceLink = {
   dataAttributes: ItemReferenceDataAttributes;
 };
 
+const defaultHosts: Record<string, string> = {
+  github: "github.com",
+  gitlab: "gitlab.com",
+};
+
+function providerHost(provider: string, platformHost: string | undefined): string | null {
+  return platformHost?.trim() || defaultHosts[canonicalProvider(provider)] || null;
+}
+
+function encodeRepoPath(repoPath: string): string {
+  return repoPath
+    .replace(/^\/+|\/+$/g, "")
+    .split("/")
+    .filter(Boolean)
+    .map((part) => encodeURIComponent(part))
+    .join("/");
+}
+
+export function buildCanonicalProviderItemURL(
+  ref: ResolvableItemReference,
+): string | undefined {
+  const host = providerHost(ref.provider, ref.platformHost);
+  const repoPath = encodeRepoPath(ref.repoPath);
+  if (!host || !repoPath) return undefined;
+  const provider = canonicalProvider(ref.provider);
+  const itemPath = provider === "gitlab"
+    ? `/-/issues/${encodeURIComponent(ref.number.toString())}`
+    : `/issues/${encodeURIComponent(ref.number.toString())}`;
+  return `https://${host}/${repoPath}${itemPath}`;
+}
+
 export function buildItemReferenceHref(ref: ResolvableItemReference): string {
   if (ref.itemType === "pr") {
     return buildRoutedItemRoute({ ...ref, itemType: "pr" });
@@ -40,6 +74,7 @@ export function buildItemReferenceHref(ref: ResolvableItemReference): string {
 export function itemReferenceDataAttributes(
   ref: ResolvableItemReference,
 ): ItemReferenceDataAttributes {
+  const externalUrl = ref.externalUrl ?? buildCanonicalProviderItemURL(ref);
   return {
     "data-provider": ref.provider,
     ...(ref.platformHost && {
@@ -49,8 +84,8 @@ export function itemReferenceDataAttributes(
     "data-name": ref.name,
     "data-repo-path": ref.repoPath,
     "data-number": ref.number.toString(),
-    ...(ref.externalUrl && {
-      "data-external-url": ref.externalUrl,
+    ...(externalUrl && {
+      "data-external-url": externalUrl,
     }),
   };
 }

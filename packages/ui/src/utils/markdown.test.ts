@@ -17,9 +17,27 @@ describe("renderMarkdown task lists", () => {
     expect(html).toContain('data-name="widgets"');
     expect(html).toContain('data-repo-path="acme/widgets"');
     expect(html).toContain('data-number="12"');
-    expect(html).not.toContain("data-external-url");
+    expect(html).toContain('data-external-url="https://github.com/acme/widgets/issues/12"');
     expect(html).toContain('href="/issues/github/acme/tools/13"');
     expect(html).toContain('data-repo-path="acme/tools"');
+    expect(html).toContain('data-external-url="https://github.com/acme/tools/issues/13"');
+  });
+
+  it("renders gitlab item references with canonical provider fallback links", () => {
+    const html = renderMarkdown("See group/project#42", {
+      provider: "gitlab",
+      platformHost: "gitlab.example.com",
+      owner: "group",
+      name: "project",
+      repoPath: "group/project",
+    });
+
+    expect(html).toContain(
+      'href="/host/gitlab.example.com/issues/gitlab/group/project/42"',
+    );
+    expect(html).toContain(
+      'data-external-url="https://gitlab.example.com/group/project/-/issues/42"',
+    );
   });
 
   it("renders disabled checkboxes by default", () => {

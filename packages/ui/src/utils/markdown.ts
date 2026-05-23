@@ -253,6 +253,7 @@ export function renderMarkdown(
         "data-name",
         "data-repo-path",
         "data-number",
+        "data-external-url",
         "data-task-index",
         "draggable",
       ],

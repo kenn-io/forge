@@ -635,6 +635,7 @@ port = 8091
 [activity]
 view_mode = "threaded"
 time_range = "7d"
+collapse_threads = true
 
 [terminal]
 renderer = "xterm"
@@ -701,6 +702,9 @@ func Load(path string) (*Config, error) {
 		DefaultPlatformHost: defaultPlatformHost,
 		Host:                defaultHost,
 		Port:                defaultPort,
+		Activity: Activity{
+			CollapseThreads: true,
+		},
 	}
 
 	data, err := os.ReadFile(path)

@@ -2813,7 +2813,7 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 		}
 		item.ActivityURL = it.ActivityURL
 		if item.ActivityURL == "" {
-			item.ActivityURL = branchCommitActivityURL(it)
+			item.ActivityURL = branchActivityURL(it)
 		}
 		out[i] = item
 	}
@@ -2823,8 +2823,8 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 	}, nil
 }
 
-func branchCommitActivityURL(it db.ActivityItem) string {
-	if it.CommitSHA == "" {
+func branchActivityURL(it db.ActivityItem) string {
+	if it.CommitSHA == "" && (it.BeforeSHA == "" || it.AfterSHA == "") {
 		return ""
 	}
 	kind := platform.Kind(it.Platform)
@@ -2839,8 +2839,16 @@ func branchCommitActivityURL(it db.ActivityItem) string {
 	repoPath := escapedRepoPath(it.RepoOwner, it.RepoName)
 	switch meta.Kind {
 	case platform.KindGitHub, platform.KindForgejo, platform.KindGitea:
+		if it.CommitSHA == "" {
+			return "https://" + host + "/" + repoPath + "/compare/" +
+				url.PathEscape(it.BeforeSHA) + "..." + url.PathEscape(it.AfterSHA)
+		}
 		return "https://" + host + "/" + repoPath + "/commit/" + url.PathEscape(it.CommitSHA)
 	case platform.KindGitLab:
+		if it.CommitSHA == "" {
+			return "https://" + host + "/" + repoPath + "/-/compare/" +
+				url.PathEscape(it.BeforeSHA) + "..." + url.PathEscape(it.AfterSHA)
+		}
 		return "https://" + host + "/" + repoPath + "/-/commit/" + url.PathEscape(it.CommitSHA)
 	default:
 		return ""

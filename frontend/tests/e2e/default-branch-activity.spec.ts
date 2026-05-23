@@ -53,7 +53,8 @@ function branchForcePush(createdAt: string): unknown {
     id: "force-1",
     cursor: "force-1",
     activity_type: "default_branch_force_push",
-    activity_url: "https://github.com/acme/widgets/compare/aaaaaaaa...bbbbbbbb",
+    activity_url:
+      "https://github.com/acme/widgets/compare/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     after_sha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     author: "middleman",
     before_sha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -81,7 +82,7 @@ function prComment(): unknown {
     activity_type: "comment",
     author: "marius",
     body_preview: "Looks good",
-    created_at: "2026-03-30T13:00:00Z",
+    created_at: "2026-03-30T14:02:30Z",
     item_number: 42,
     item_state: "open",
     item_title: "Add browser regression coverage",
@@ -95,13 +96,26 @@ function prComment(): unknown {
 }
 
 const activityItems = [
-  branchForcePush("2026-03-30T14:04:00Z"),
+  branchForcePush("2026-03-30T14:06:00Z"),
+  branchCommit(
+    "commit-5",
+    "5555555555555555555555555555555555555555",
+    "Ship direct main commit 5",
+    "2026-03-30T14:05:00Z",
+  ),
+  branchCommit(
+    "commit-4",
+    "4444444444444444444444444444444444444444",
+    "Ship direct main commit 4",
+    "2026-03-30T14:04:00Z",
+  ),
   branchCommit(
     "commit-3",
     "3333333333333333333333333333333333333333",
     "Ship direct main commit 3",
     "2026-03-30T14:03:00Z",
   ),
+  prComment(),
   branchCommit(
     "commit-2",
     "2222222222222222222222222222222222222222",
@@ -114,7 +128,6 @@ const activityItems = [
     "Ship direct main commit 1",
     "2026-03-30T14:01:00Z",
   ),
-  prComment(),
 ];
 
 async function mockDefaultBranchActivity(page: Page): Promise<void> {
@@ -152,7 +165,7 @@ async function mockDefaultBranchActivity(page: Page): Promise<void> {
           time_range: "7d",
           hide_closed: false,
           hide_bots: false,
-          collapse_threads: false,
+          collapse_threads: true,
         },
         terminal: {
           font_family: "",
@@ -197,7 +210,7 @@ test.describe("default branch activity", () => {
     await page.goto("/?view=flat");
 
     const branchRows = page.locator(".activity-row", { hasText: "Branch" });
-    await expect(branchRows).toHaveCount(4);
+    await expect(branchRows).toHaveCount(6);
     await expect(
       page.locator(".activity-row", {
         hasText: "Ship direct main commit 1",
@@ -218,30 +231,64 @@ test.describe("default branch activity", () => {
     ).toBeVisible();
   });
 
-  test("rolls branch commits into the threaded branch item", async ({ page }) => {
+  test("renders branch activity as threaded top-level rows", async ({ page }) => {
     await mockDefaultBranchActivity(page);
     await page.goto("/?view=threaded");
 
-    const branchItem = page.locator(".item-row", {
-      hasText: "main updates on acme/widgets",
-    });
-    await expect(branchItem).toBeVisible();
-    await expect(branchItem).toContainText("main");
+    await expect(
+      page.locator(".item-row", {
+        hasText: "main updates on acme/widgets",
+      }),
+    ).toHaveCount(0);
+    await expect(
+      page.locator(".item-row", {
+        hasText: "3 commits",
+      }),
+    ).toBeVisible();
+    await expect(
+      page.locator(".item-row", {
+        hasText: "Add browser regression coverage",
+      }),
+    ).toBeVisible();
+    await expect(
+      page.locator(".item-row", {
+        hasText: "Ship direct main commit 2",
+      }),
+    ).toBeVisible();
     await expect(page.locator(".item-row", { hasText: "#0" })).toHaveCount(0);
     await expect(
       page.locator(".event-row.collapsed-event", { hasText: "3 commits" }),
-    ).toBeVisible();
-    await expect(
-      page.locator(".event-row", { hasText: "Force-pushed" }),
-    ).toBeVisible();
+    ).toHaveCount(0);
 
-    await branchItem.click();
+    const forcePushRow = page.locator(".branch-activity-row", {
+      hasText: "Force-pushed",
+    });
+    await expect(forcePushRow).toBeVisible();
+    await forcePushRow.click();
     await expect(page.locator(".activity-detail")).toHaveCount(0);
     await expect
       .poll(() =>
         page.evaluate(() => window.__middlemanOpenedURL),
       )
       .toContain("github.com/acme/widgets/compare");
+  });
+
+  test("branch rows open externally without selecting an item", async ({ page }) => {
+    await mockDefaultBranchActivity(page);
+    await page.goto("/?view=threaded");
+
+    const commitRow = page.locator(".branch-activity-row", {
+      hasText: "Ship direct main commit 2",
+    });
+    await expect(commitRow).toBeVisible();
+
+    await commitRow.click();
+    await expect(page.locator(".activity-detail")).toHaveCount(0);
+    await expect
+      .poll(() =>
+        page.evaluate(() => window.__middlemanOpenedURL),
+      )
+      .toContain("github.com/acme/widgets/commit/2222222");
   });
 });
 
@@ -265,7 +312,7 @@ test.describe("mobile default branch activity", () => {
     });
     await expect(branchCard).toBeVisible();
     await expect(branchCard).toContainText("Branch");
-    await expect(branchCard).toContainText("4 events");
+    await expect(branchCard).toContainText("6 events");
     await expect(page.locator(".mobile-activity-card", { hasText: "#0" }))
       .toHaveCount(0);
 

@@ -198,6 +198,39 @@ func TestResolveDefaultBranchFallsBackToOriginHEAD(t *testing.T) {
 	assert.Equal(gitSHA(t, work, "main"), ref)
 }
 
+func TestResolveDefaultBranchStripsOriginPrefixBeforeOriginHEADFallback(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	dir := t.TempDir()
+	remote := filepath.Join(dir, "remote.git")
+	commitTestRun(t, dir, "git", "init", "--bare", "--initial-branch=main", remote)
+
+	work := filepath.Join(dir, "work")
+	commitTestRun(t, dir, "git", "clone", remote, work)
+	commitTestRun(t, work, "git", "config", "user.email", "alice@example.com")
+	commitTestRun(t, work, "git", "config", "user.name", "Alice")
+	require.NoError(os.WriteFile(filepath.Join(work, "main.txt"), []byte("main\n"), 0o644))
+	commitTestRun(t, work, "git", "add", ".")
+	commitTestRun(t, work, "git", "commit", "-m", "main")
+	commitTestRun(t, work, "git", "push", "origin", "main")
+
+	commitTestRun(t, work, "git", "checkout", "-b", "release")
+	require.NoError(os.WriteFile(filepath.Join(work, "release.txt"), []byte("release\n"), 0o644))
+	commitTestRun(t, work, "git", "add", ".")
+	commitTestRun(t, work, "git", "commit", "-m", "release")
+	releaseSHA := gitSHA(t, work, "HEAD")
+	commitTestRun(t, work, "git", "push", "origin", "release")
+
+	mgr := New(filepath.Join(dir, "clones"), nil)
+	require.NoError(mgr.EnsureClone(t.Context(), "github.com", "acme", "widgets", remote))
+
+	branch, ref, err := mgr.ResolveDefaultBranch(t.Context(), "github.com", "acme", "widgets", "origin/release")
+	require.NoError(err)
+	assert.Equal("release", branch)
+	assert.Equal(releaseSHA, ref)
+}
+
 func TestResolveDefaultBranchPrefersLiteralOriginPrefixedBranch(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

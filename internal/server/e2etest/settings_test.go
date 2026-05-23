@@ -62,7 +62,7 @@ func TestSettingsAPIE2EReadUpdateAndValidation(t *testing.T) {
 	require.Len(*settings.Repos, 1)
 	assert.Equal("acme", (*settings.Repos)[0].Owner)
 	assert.Equal("threaded", settings.Activity.ViewMode)
-	assert.False(settings.Activity.CollapseThreads)
+	assert.True(settings.Activity.CollapseThreads)
 
 	invalidResp := doServerJSON(
 		t, ts.Client(), http.MethodPut,

@@ -23,11 +23,12 @@ func (m *Manager) ResolveDefaultBranch(
 
 	preferred = strings.TrimSpace(preferred)
 	if preferred != "" {
-		remoteRef := remoteBranchRef(preferred)
-		if sha, err := m.resolveRefInDir(ctx, host, dir, remoteRef); err == nil {
-			return preferred, sha, nil
-		} else if !isMissingRefError(err) {
-			return "", "", fmt.Errorf("resolve preferred default branch %s: %w", preferred, err)
+		for _, candidate := range branchActivityRefCandidates(preferred) {
+			if sha, err := m.resolveRefInDir(ctx, host, dir, candidate); err == nil {
+				return defaultBranchNameForResolvedCandidate(preferred, candidate), sha, nil
+			} else if !isMissingRefError(err) {
+				return "", "", fmt.Errorf("resolve preferred default branch %s: %w", preferred, err)
+			}
 		}
 	}
 
@@ -47,6 +48,15 @@ func (m *Manager) ResolveDefaultBranch(
 		return "", "", fmt.Errorf("resolve origin HEAD target %s: %w", remoteRef, err)
 	}
 	return branch, sha, nil
+}
+
+func defaultBranchNameForResolvedCandidate(preferred, candidate string) string {
+	if branch, ok := strings.CutPrefix(preferred, "origin/"); ok &&
+		branch != "" &&
+		candidate == remoteBranchRef(branch) {
+		return branch
+	}
+	return preferred
 }
 
 // ResolveRef resolves a branch, ref, or SHA in the clone to a commit SHA.

@@ -4,12 +4,12 @@
   import {
     collapseActivityCommitRuns,
     isCollapsedActivityRow,
-    activityBranchKey,
     activityItemKey,
     activityRepoKey,
     isDefaultBranchActivity,
     isDefaultBranchForcePushActivity,
     shortSha,
+    type ActivityRow,
   } from "./activityRows.js";
   import {
     localDateLabel,
@@ -49,7 +49,7 @@
   }: Props = $props();
 
   interface ItemGroup {
-    kind: "item" | "branch";
+    kind: "item";
     itemType: string;
     itemNumber: number;
     itemTitle: string;
@@ -68,13 +68,32 @@
     >;
   }
 
+  interface ItemEntry {
+    kind: "item";
+    group: ItemGroup;
+  }
+
+  interface BranchEntry {
+    kind: "branch";
+    row: ActivityRow;
+    provider: string;
+    repoOwner: string;
+    repoName: string;
+    repoPath: string;
+    platformHost: string;
+    latestTime: string;
+    eventCount: number;
+  }
+
+  type ThreadedEntry = ItemEntry | BranchEntry;
+
   interface RepoGroup {
     key: string;
     repo: string;
     itemCount: number;
     eventCount: number;
     latestTime: string;
-    items: ItemGroup[];
+    items: ThreadedEntry[];
   }
 
   const grouped = $derived.by(() => {
@@ -83,24 +102,22 @@
     // Phase 1: group events by item, using a composite key that
     // includes repo to prevent cross-repo collisions.
     const itemMap = new Map<string, ActivityItem[]>();
+    const branchItems: ActivityItem[] = [];
 
     for (const item of items) {
-      const itemKey = isDefaultBranchActivity(item)
-        ? activityBranchKey({
-            provider: item.repo?.provider ?? "",
-            platformHost: item.platform_host ?? item.repo?.platform_host ?? "",
-            owner: item.repo_owner,
-            name: item.repo_name,
-            branchName: item.branch_name || "default branch",
-          })
-        : activityItemKey({
-            provider: item.repo?.provider ?? "",
-            platformHost: item.platform_host ?? "",
-            owner: item.repo_owner,
-            name: item.repo_name,
-            itemType: item.item_type,
-            itemNumber: item.item_number,
-          });
+      if (isDefaultBranchActivity(item)) {
+        branchItems.push(item);
+        continue;
+      }
+
+      const itemKey = activityItemKey({
+        provider: item.repo?.provider ?? "",
+        platformHost: item.platform_host ?? "",
+        owner: item.repo_owner,
+        name: item.repo_name,
+        itemType: item.item_type,
+        itemNumber: item.item_number,
+      });
 
       let events = itemMap.get(itemKey);
       if (!events) {
@@ -110,8 +127,8 @@
       events.push(item);
     }
 
-    // Phase 2: build ItemGroup array from the map.
-    const allItemGroups: ItemGroup[] = [];
+    // Phase 2: build threaded entries from item groups and branch rows.
+    const threadedEntries: ThreadedEntry[] = [];
 
     for (const [, events] of itemMap) {
       events.sort((a, b) =>
@@ -122,71 +139,77 @@
         throw new Error("activity group missing provider repo identity");
       }
       const branch = first.branch_name || "default branch";
-      allItemGroups.push({
-        kind: isDefaultBranchActivity(first) ? "branch" : "item",
-        itemType: first.item_type,
-        itemNumber: first.item_number,
-        itemTitle: isDefaultBranchActivity(first)
-          ? `${branch} updates on ${first.repo.owner}/${first.repo.name}`
-          : first.item_title,
-        itemUrl: first.activity_url || first.item_url,
-        itemState: first.item_state,
-        branchName: branch,
-        provider: first.repo.provider,
-        repoOwner: first.repo.owner,
-        repoName: first.repo.name,
-        repoPath: first.repo.repo_path,
-        platformHost: first.repo.platform_host,
-        latestTime: first.created_at,
-        events,
-        displayEvents: collapseActivityCommitRuns(events),
+      threadedEntries.push({
+        kind: "item",
+        group: {
+          kind: "item",
+          itemType: first.item_type,
+          itemNumber: first.item_number,
+          itemTitle: first.item_title,
+          itemUrl: first.activity_url || first.item_url,
+          itemState: first.item_state,
+          branchName: branch,
+          provider: first.repo.provider,
+          repoOwner: first.repo.owner,
+          repoName: first.repo.name,
+          repoPath: first.repo.repo_path,
+          platformHost: first.repo.platform_host,
+          latestTime: first.created_at,
+          events,
+          displayEvents: collapseActivityCommitRuns(events),
+        },
       });
     }
 
-    allItemGroups.sort((a, b) =>
-      parseAPITimestamp(b.latestTime).getTime() - parseAPITimestamp(a.latestTime).getTime());
+    for (const item of branchItems) {
+      threadedEntries.push(branchEntryFromRow(item));
+    }
+
+    threadedEntries.sort((a, b) =>
+      parseAPITimestamp(entryLatestTime(b)).getTime() - parseAPITimestamp(entryLatestTime(a)).getTime());
+
+    const allEntries = collapseTopLevelBranchRuns(threadedEntries);
 
     if (!byRepo) {
-      if (allItemGroups.length === 0) return [];
+      if (allEntries.length === 0) return [];
       return [{
         key: "",
         repo: "",
-        itemCount: allItemGroups.length,
-        eventCount: allItemGroups.reduce((n, g) => n + g.events.length, 0),
-        latestTime: allItemGroups[0]?.latestTime ?? "",
-        items: allItemGroups,
+        itemCount: allEntries.length,
+        eventCount: allEntries.reduce((n, entry) => n + entryEventCount(entry), 0),
+        latestTime: entryLatestTime(allEntries[0]!),
+        items: allEntries,
       }];
     }
 
-    // Grouped: bucket ItemGroups by repo.
-    const repoMap = new Map<string, ItemGroup[]>();
+    // Grouped: bucket threaded entries by repo.
+    const repoMap = new Map<string, ThreadedEntry[]>();
     const repoLabels = new Map<string, string>();
-    for (const ig of allItemGroups) {
+    for (const entry of allEntries) {
       const repoKey = activityRepoKey({
-        provider: ig.provider,
-        platformHost: ig.platformHost,
-        owner: ig.repoOwner,
-        name: ig.repoName,
+        provider: entryProvider(entry),
+        platformHost: entryPlatformHost(entry),
+        owner: entryRepoOwner(entry),
+        name: entryRepoName(entry),
       });
-      repoLabels.set(repoKey, `${ig.repoOwner}/${ig.repoName}`);
+      repoLabels.set(repoKey, `${entryRepoOwner(entry)}/${entryRepoName(entry)}`);
       let bucket = repoMap.get(repoKey);
       if (!bucket) {
         bucket = [];
         repoMap.set(repoKey, bucket);
       }
-      bucket.push(ig);
+      bucket.push(entry);
     }
 
     const repoGroups: RepoGroup[] = [];
-    for (const [repoKey, itemGroups] of repoMap) {
-      const allEvents = itemGroups.flatMap((g) => g.events);
+    for (const [repoKey, entries] of repoMap) {
       repoGroups.push({
         key: repoKey,
         repo: repoLabels.get(repoKey) ?? "",
-        itemCount: itemGroups.length,
-        eventCount: allEvents.length,
-        latestTime: itemGroups[0]?.latestTime ?? "",
-        items: itemGroups,
+        itemCount: entries.length,
+        eventCount: entries.reduce((n, entry) => n + entryEventCount(entry), 0),
+        latestTime: entryLatestTime(entries[0]!),
+        items: entries,
       });
     }
 
@@ -196,16 +219,78 @@
     return repoGroups;
   });
 
-  function itemKeyOf(g: ItemGroup): string {
-    if (g.kind === "branch") {
-      return activityBranchKey({
-        provider: g.provider,
-        platformHost: g.platformHost,
-        owner: g.repoOwner,
-        name: g.repoName,
-        branchName: g.branchName,
-      });
+  function branchEntryFromRow(row: ActivityRow): BranchEntry {
+    const item = branchRowRepresentative(row);
+    if (!item.repo) {
+      throw new Error("branch activity row missing provider repo identity");
     }
+    return {
+      kind: "branch",
+      row,
+      provider: item.repo.provider,
+      repoOwner: item.repo.owner,
+      repoName: item.repo.name,
+      repoPath: item.repo.repo_path,
+      platformHost: item.repo.platform_host,
+      latestTime: isCollapsedActivityRow(row) ? row.latest : row.created_at,
+      eventCount: isCollapsedActivityRow(row) ? row.count : 1,
+    };
+  }
+
+  function collapseTopLevelBranchRuns(
+    entries: ThreadedEntry[],
+  ): ThreadedEntry[] {
+    const result: ThreadedEntry[] = [];
+    let i = 0;
+    while (i < entries.length) {
+      const entry = entries[i]!;
+      if (entry.kind !== "branch") {
+        result.push(entry);
+        i++;
+        continue;
+      }
+
+      const branchItems: ActivityItem[] = [];
+      let j = i;
+      while (j < entries.length) {
+        const branchEntry = entries[j]!;
+        if (branchEntry.kind !== "branch") break;
+        branchItems.push(branchRowRepresentative(branchEntry.row));
+        j++;
+      }
+      for (const row of collapseActivityCommitRuns(branchItems)) {
+        result.push(branchEntryFromRow(row));
+      }
+      i = j;
+    }
+    return result;
+  }
+
+  function entryLatestTime(entry: ThreadedEntry): string {
+    return entry.kind === "item" ? entry.group.latestTime : entry.latestTime;
+  }
+
+  function entryEventCount(entry: ThreadedEntry): number {
+    return entry.kind === "item" ? entry.group.events.length : entry.eventCount;
+  }
+
+  function entryProvider(entry: ThreadedEntry): string {
+    return entry.kind === "item" ? entry.group.provider : entry.provider;
+  }
+
+  function entryPlatformHost(entry: ThreadedEntry): string {
+    return entry.kind === "item" ? entry.group.platformHost : entry.platformHost;
+  }
+
+  function entryRepoOwner(entry: ThreadedEntry): string {
+    return entry.kind === "item" ? entry.group.repoOwner : entry.repoOwner;
+  }
+
+  function entryRepoName(entry: ThreadedEntry): string {
+    return entry.kind === "item" ? entry.group.repoName : entry.repoName;
+  }
+
+  function itemKeyOf(g: ItemGroup): string {
     return activityItemKey({
       provider: g.provider,
       platformHost: g.platformHost,
@@ -214,6 +299,17 @@
       itemType: g.itemType,
       itemNumber: g.itemNumber,
     });
+  }
+
+  function entryKeyOf(entry: ThreadedEntry): string {
+    if (entry.kind === "item") return itemKeyOf(entry.group);
+    if (isCollapsedActivityRow(entry.row)) return entry.row.id;
+    return `${activityRepoKey({
+      provider: entry.provider,
+      platformHost: entry.platformHost,
+      owner: entry.repoOwner,
+      name: entry.repoName,
+    })}:branch-activity:${entry.row.id}`;
   }
 
   function eventLabel(type: string): string {
@@ -254,13 +350,13 @@
   }
 
   function handleItemClick(group: ItemGroup): void {
-    if (group.kind === "branch") {
-      if (group.itemUrl) window.open(group.itemUrl, "_blank", "noopener");
-      return;
-    }
     if (group.events.length > 0) {
       onSelectItem?.(group.events[0]!);
     }
+  }
+
+  function handleBranchRowClick(row: ActivityRow): void {
+    handleEventClick(branchRowRepresentative(row));
   }
 
   function handleEventClick(event: ActivityItem): void {
@@ -272,7 +368,6 @@
   }
 
   function isSelectedItemGroup(group: ItemGroup): boolean {
-    if (group.kind === "branch") return false;
     return selectedItem?.itemType === group.itemType
       && selectedItem.owner === group.repoOwner
       && selectedItem.name === group.repoName
@@ -299,6 +394,20 @@
     const sha = shortSha(event.commit_sha);
     return [sha, event.body_preview].filter(Boolean).join(" ");
   }
+
+  function branchName(item: ActivityItem): string {
+    return item.branch_name || "default branch";
+  }
+
+  function branchRowRepresentative(row: ActivityRow): ActivityItem {
+    return isCollapsedActivityRow(row) ? row.representative : row;
+  }
+
+  function branchRowTitle(row: ActivityRow): string {
+    if (isCollapsedActivityRow(row)) return `${row.count} commits`;
+    const summary = eventSummary(row);
+    return [eventLabel(row.activity_type), summary].filter(Boolean).join(" ");
+  }
 </script>
 
 <div class="threaded-view" class:threaded-view--compact={compact}>
@@ -311,8 +420,38 @@
         </div>
       {/if}
 
-      {#each repoGroup.items as itemGroup (itemKeyOf(itemGroup))}
-        {@const key = itemKeyOf(itemGroup)}
+      {#each repoGroup.items as entry (entryKeyOf(entry))}
+        {#if entry.kind === "branch"}
+          {@const row = entry.row}
+          {@const item = branchRowRepresentative(row)}
+          <!-- svelte-ignore a11y_click_events_have_key_events -->
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <div
+            class="item-row branch-activity-row"
+            onclick={() => handleBranchRowClick(row)}
+          >
+            <span class="thread-caret-spacer" aria-hidden="true"></span>
+            <Chip size="xs" uppercase={false} class="branch-chip chip--muted">Branch</Chip>
+            {#if !grouping.getGroupByRepo()}
+              <Chip
+                size="xs"
+                uppercase={false}
+                class="repo-chip repo-tag"
+                style="color: {repoColor(`${entry.repoOwner}/${entry.repoName}`)}; background: color-mix(in srgb, {repoColor(`${entry.repoOwner}/${entry.repoName}`)} 15%, transparent);"
+              >
+                <span class="repo-chip__label">{entry.repoOwner}/{entry.repoName}</span>
+              </Chip>
+            {/if}
+            <span class="item-ref">{branchName(item)}</span>
+            <span class="branch-event-type {eventClass(item.activity_type)}">
+              {isCollapsedActivityRow(row) ? `${row.count} commits` : eventLabel(item.activity_type)}
+            </span>
+            <span class="item-title">{branchRowTitle(row)}</span>
+            <span class="item-time">{relativeTime(entry.latestTime)}</span>
+          </div>
+        {:else}
+          {@const itemGroup = entry.group}
+          {@const key = itemKeyOf(itemGroup)}
         <!-- svelte-ignore a11y_click_events_have_key_events -->
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div
@@ -338,13 +477,9 @@
               <ChevronRightIcon size="14" strokeWidth="2" aria-hidden="true" />
             {/if}
           </button>
-          {#if itemGroup.kind === "branch"}
-            <Chip size="xs" uppercase={false} class="branch-chip chip--muted">Branch</Chip>
-          {:else}
-            <ItemKindChip
-              kind={itemGroup.itemType === "pr" ? "pr" : "issue"}
-            />
-          {/if}
+          <ItemKindChip
+            kind={itemGroup.itemType === "pr" ? "pr" : "issue"}
+          />
           {#if !grouping.getGroupByRepo()}
             <Chip
               size="xs"
@@ -355,16 +490,12 @@
               <span class="repo-chip__label">{itemGroup.repoOwner}/{itemGroup.repoName}</span>
             </Chip>
           {/if}
-          {#if itemGroup.kind !== "branch" && itemGroup.itemState === "merged"}
+          {#if itemGroup.itemState === "merged"}
             <ItemStateChip state="merged" />
-          {:else if itemGroup.kind !== "branch" && itemGroup.itemState === "closed"}
+          {:else if itemGroup.itemState === "closed"}
             <ItemStateChip state="closed" />
           {/if}
-          {#if itemGroup.kind === "branch"}
-            <span class="item-ref">{itemGroup.branchName}</span>
-          {:else}
-            <span class="item-ref">#{itemGroup.itemNumber}</span>
-          {/if}
+          <span class="item-ref">#{itemGroup.itemNumber}</span>
           <span class="item-title">{itemGroup.itemTitle}</span>
           <span class="item-time">{relativeTime(itemGroup.latestTime)}</span>
         </div>
@@ -390,6 +521,7 @@
               </div>
             {/if}
           {/each}
+        {/if}
         {/if}
       {/each}
     </div>
@@ -476,6 +608,12 @@
     outline-offset: 1px;
   }
 
+  .thread-caret-spacer {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+  }
+
   .item-ref {
     font-size: var(--font-size-sm);
     color: var(--text-muted);
@@ -530,6 +668,16 @@
   .event-type.evt-review { color: var(--accent-green); }
   .event-type.evt-commit { color: var(--accent-teal); }
   .event-type.evt-force-push { color: var(--accent-red); }
+
+  .branch-event-type {
+    font-size: var(--font-size-xs);
+    font-weight: 500;
+    flex-shrink: 0;
+    color: var(--text-secondary);
+  }
+
+  .branch-event-type.evt-commit { color: var(--accent-teal); }
+  .branch-event-type.evt-force-push { color: var(--accent-red); }
 
   .event-author {
     font-size: var(--font-size-xs);

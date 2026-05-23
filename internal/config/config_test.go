@@ -405,7 +405,7 @@ name = "b"
 	assert.Equal("7d", cfg.Activity.TimeRange)
 	assert.False(cfg.Activity.HideClosed)
 	assert.False(cfg.Activity.HideBots)
-	assert.False(cfg.Activity.CollapseThreads)
+	assert.True(cfg.Activity.CollapseThreads)
 }
 
 func TestLoadActivityExplicit(t *testing.T) {
@@ -429,6 +429,21 @@ collapse_threads = true
 	assert.True(cfg.Activity.HideClosed)
 	assert.True(cfg.Activity.HideBots)
 	assert.True(cfg.Activity.CollapseThreads)
+}
+
+func TestLoadActivityExplicitCollapseThreadsFalse(t *testing.T) {
+	assert := Assert.New(t)
+	path := writeConfig(t, `
+[[repos]]
+owner = "a"
+name = "b"
+
+[activity]
+collapse_threads = false
+`)
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.False(cfg.Activity.CollapseThreads)
 }
 
 func TestLoadActivityInvalidViewMode(t *testing.T) {

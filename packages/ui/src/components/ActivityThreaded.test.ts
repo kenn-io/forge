@@ -117,29 +117,68 @@ describe("ActivityThreaded collapse", () => {
     expect(label?.textContent).toBe("acme/widgets");
   });
 
-  it("groups branch activity by repo branch without an item number", async () => {
+  it("renders branch activity as top-level rows interleaved with item threads", async () => {
     const { container } = render(ActivityThreaded, {
       props: {
         items: [
-          branchActivityItem("c1"),
+          branchActivityItem("c4", {
+            created_at: "2026-04-27T12:04:00Z",
+            commit_sha: "d1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+          }),
+          branchActivityItem("c3", {
+            created_at: "2026-04-27T12:03:00Z",
+            commit_sha: "c1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+          }),
           branchActivityItem("c2", {
-            created_at: "2026-04-27T11:59:00Z",
+            created_at: "2026-04-27T12:02:00Z",
             commit_sha: "b1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+          }),
+          activityItem("pr-comment", {
+            created_at: "2026-04-27T12:01:30Z",
+          }),
+          branchActivityItem("c1", {
+            created_at: "2026-04-27T12:01:00Z",
           }),
         ],
         onSelectItem: undefined,
       },
     });
 
-    expect(container.querySelectorAll(".item-row")).toHaveLength(1);
-    expect(container.textContent).toContain("main updates on acme/widgets");
+    const rows = Array.from(container.querySelectorAll(".item-row"));
+    expect(rows).toHaveLength(3);
+    expect(rows[0]?.textContent).toContain("3 commits");
+    expect(rows[1]?.textContent).toContain("Add widget caching layer");
+    expect(rows[2]?.textContent).toContain("Refresh cache warmer");
+    expect(container.textContent).not.toContain("main updates on acme/widgets");
     expect(container.textContent).not.toContain("#0");
+    expect(
+      container.querySelector(".branch-activity-row .thread-caret"),
+    ).toBeNull();
+  });
 
-    const caret = container.querySelector(".thread-caret");
-    expect(caret).not.toBeNull();
-    await fireEvent.click(caret!);
-    expect(toggleThreadItem).toHaveBeenCalledWith(
-      "github|github.com|acme/widgets:branch:main",
+  it("opens branch activity rows externally without selecting a PR or issue", async () => {
+    const onSelectItem = vi.fn();
+    const open = vi
+      .spyOn(window, "open")
+      .mockImplementation(() => null);
+
+    const { container } = render(ActivityThreaded, {
+      props: {
+        items: [branchActivityItem("c1")],
+        onSelectItem,
+      },
+    });
+
+    const row = container.querySelector(".branch-activity-row");
+    expect(row).not.toBeNull();
+    await fireEvent.click(row!);
+
+    expect(onSelectItem).not.toHaveBeenCalled();
+    expect(open).toHaveBeenCalledWith(
+      "https://github.com/acme/widgets/commit/a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+      "_blank",
+      "noopener",
     );
+    open.mockRestore();
   });
 });

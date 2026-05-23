@@ -13199,6 +13199,99 @@ func TestAPIListActivityReturnsDefaultBranchActivity(t *testing.T) {
 	assert.Zero(commit["item_number"])
 }
 
+func TestAPIListActivityReturnsProviderCompareURLsForDefaultBranchForcePushes(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	ctx := t.Context()
+	base := time.Now().UTC().Add(-time.Hour).Truncate(time.Second)
+	beforeSHA := "before1234567890abcdef"
+	afterSHA := "after1234567890abcdef"
+
+	tests := []struct {
+		name     string
+		identity db.RepoIdentity
+		wantURL  string
+	}{
+		{
+			name:     "github",
+			identity: db.GitHubRepoIdentity("github.com", "acme", "github-widget"),
+			wantURL:  "https://github.com/acme/github-widget/compare/" + beforeSHA + "..." + afterSHA,
+		},
+		{
+			name: "forgejo",
+			identity: db.RepoIdentity{
+				Platform:     "forgejo",
+				PlatformHost: "codeberg.org",
+				Owner:        "acme",
+				Name:         "forgejo-widget",
+			},
+			wantURL: "https://codeberg.org/acme/forgejo-widget/compare/" + beforeSHA + "..." + afterSHA,
+		},
+		{
+			name: "gitea",
+			identity: db.RepoIdentity{
+				Platform:     "gitea",
+				PlatformHost: "gitea.com",
+				Owner:        "acme",
+				Name:         "gitea-widget",
+			},
+			wantURL: "https://gitea.com/acme/gitea-widget/compare/" + beforeSHA + "..." + afterSHA,
+		},
+		{
+			name: "gitlab",
+			identity: db.RepoIdentity{
+				Platform:     "gitlab",
+				PlatformHost: "gitlab.com",
+				Owner:        "acme/platform",
+				Name:         "gitlab-widget",
+			},
+			wantURL: "https://gitlab.com/acme/platform/gitlab-widget/-/compare/" + beforeSHA + "..." + afterSHA,
+		},
+	}
+
+	for i, tt := range tests {
+		repoID, err := database.UpsertRepo(ctx, tt.identity)
+		require.NoError(err)
+		require.NoError(database.InsertBranchForcePush(ctx, db.BranchForcePush{
+			RepoID:     repoID,
+			BranchName: "main",
+			BeforeSHA:  beforeSHA,
+			AfterSHA:   afterSHA,
+			DetectedAt: base.Add(time.Duration(i) * time.Minute),
+		}))
+	}
+
+	since := url.QueryEscape(base.Add(-time.Minute).Format(time.RFC3339))
+	rr := doJSON(t, srv, http.MethodGet, "/api/v1/activity?since="+since, nil)
+	require.Equal(http.StatusOK, rr.Code)
+	var body struct {
+		Items []map[string]any `json:"items"`
+	}
+	require.NoError(json.NewDecoder(rr.Body).Decode(&body))
+
+	gotURLs := make(map[string]string)
+	for _, item := range body.Items {
+		if item["activity_type"] != "default_branch_force_push" {
+			continue
+		}
+		repo, ok := item["repo"].(map[string]any)
+		require.True(ok)
+		repoPath, ok := repo["repo_path"].(string)
+		require.True(ok)
+		activityURL, _ := item["activity_url"].(string)
+		gotURLs[repoPath] = activityURL
+	}
+
+	for _, tt := range tests {
+		repo := tt.identity.RepoPath
+		if repo == "" {
+			repo = tt.identity.Owner + "/" + tt.identity.Name
+		}
+		assert.Equal(tt.wantURL, gotURLs[repo], tt.name)
+	}
+}
+
 func TestAPIListActivityCanHideDefaultBranchActivity(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

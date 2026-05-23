@@ -17,6 +17,11 @@ port = 8091
 # Terminal renderer: "xterm" (default) or "ghostty-web"
 renderer = "xterm"
 
+[activity]
+view_mode = "threaded"
+time_range = "7d"
+collapse_threads = true
+
 [[platforms]]
 type = "gitlab"
 host = "gitlab.com"

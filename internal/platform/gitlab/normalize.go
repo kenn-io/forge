@@ -358,6 +358,37 @@ func NormalizeIssueNotes(
 	return events
 }
 
+func NormalizeIssueDiscussions(
+	repo platform.RepoRef,
+	issueNumber int,
+	discussions []*gitlab.Discussion,
+) []platform.IssueEvent {
+	var events []platform.IssueEvent
+	for _, discussion := range discussions {
+		if discussion == nil {
+			continue
+		}
+		for _, note := range discussion.Notes {
+			if note == nil || note.System {
+				continue
+			}
+			events = append(events, platform.IssueEvent{
+				Repo:               repo,
+				PlatformID:         note.ID,
+				PlatformExternalID: strconv.FormatInt(note.ID, 10),
+				IssueNumber:        issueNumber,
+				EventType:          "issue_comment",
+				Author:             noteAuthorUsername(note),
+				Body:               note.Body,
+				CreatedAt:          timeValue(note.CreatedAt),
+				DedupeKey:          noteDedupeKey(repo, "issue", issueNumber, "note", strconv.FormatInt(note.ID, 10)),
+				DiscussionID:       discussion.ID,
+			})
+		}
+	}
+	return events
+}
+
 func noteDedupeKey(
 	repo platform.RepoRef,
 	parentKind string,

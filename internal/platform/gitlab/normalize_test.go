@@ -478,6 +478,39 @@ func TestNormalizeMergeRequestDiscussions(t *testing.T) {
 	assert.False(events[2].Resolvable)
 }
 
+func TestNormalizeIssueDiscussions(t *testing.T) {
+	assert := assert.New(t)
+	repo := platform.RepoRef{
+		Platform: platform.KindGitLab,
+		Host:     "gitlab.com",
+		Owner:    "acme",
+		Name:     "widget",
+		RepoPath: "acme/widget",
+	}
+
+	discussions := []*gitlab.Discussion{
+		{
+			ID: "issue-disc-111",
+			Notes: []*gitlab.Note{
+				{
+					ID:        301,
+					Body:      "I can reproduce this",
+					System:    false,
+					Author:    gitlab.NoteAuthor{Username: "reporter"},
+					CreatedAt: timePtr(time.Date(2026, 5, 22, 14, 0, 0, 0, time.UTC)),
+				},
+			},
+		},
+	}
+
+	events := NormalizeIssueDiscussions(repo, 10, discussions)
+
+	assert.Len(events, 1)
+	assert.Equal("issue-disc-111", events[0].DiscussionID)
+	assert.Equal("reporter", events[0].Author)
+	assert.Equal(10, events[0].IssueNumber)
+}
+
 func testGitLabRepoRef() platform.RepoRef {
 	return platform.RepoRef{
 		Platform:   platform.KindGitLab,

@@ -55,7 +55,18 @@ import (
 	"go.kenn.io/middleman/internal/testutil/dbtest"
 	"go.kenn.io/middleman/internal/workspace"
 	"go.kenn.io/middleman/internal/workspace/localruntime"
+	"golang.org/x/sync/semaphore"
 )
+
+var ptyE2ESemaphore = semaphore.NewWeighted(2)
+
+func acquirePTYE2ESlot(t *testing.T) func() {
+	t.Helper()
+	require.NoError(t, ptyE2ESemaphore.Acquire(t.Context(), 1))
+	return func() {
+		ptyE2ESemaphore.Release(1)
+	}
+}
 
 func requirePTYAvailable(t *testing.T) {
 	t.Helper()
@@ -14104,6 +14115,9 @@ func TestWorkspacePtyOwnerTitleMarksWorkspaceWorkingE2E(t *testing.T) {
 func TestWorkspaceCreatesRustPtyManagerSessionE2E(t *testing.T) {
 	if runtime.GOOS != "windows" {
 		requirePTYAvailable(t)
+		t.Parallel()
+		releasePTYSlot := acquirePTYE2ESlot(t)
+		defer releasePTYSlot()
 	}
 	require := require.New(t)
 	assert := Assert.New(t)
@@ -14231,6 +14245,10 @@ func TestRustPtyManagerRejectsConcurrentAttachmentsE2E(t *testing.T) {
 		t.Skip("concurrent attach coverage is exercised by the Rust owner tests on Windows")
 	}
 	requirePTYAvailable(t)
+	t.Parallel()
+	releasePTYSlot := acquirePTYE2ESlot(t)
+	defer releasePTYSlot()
+
 	require := require.New(t)
 	assert := Assert.New(t)
 
@@ -17082,6 +17100,9 @@ func TestWorkspaceRuntimeSessionTerminalTmuxBackedWebSocketE2E(
 	if err != nil {
 		t.Skip("tmux not available")
 	}
+	t.Parallel()
+	releasePTYSlot := acquirePTYE2ESlot(t)
+	defer releasePTYSlot()
 
 	require := require.New(t)
 	assert := Assert.New(t)

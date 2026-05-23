@@ -452,22 +452,6 @@ func (c *Client) ListCIChecks(
 	return []platform.CICheck{NormalizePipeline(normalizedRef, pipelines[0])}, nil
 }
 
-func (c *Client) listMergeRequestNotes(ctx context.Context, pid any, number int) ([]*gitlab.Note, error) {
-	opt := &gitlab.ListMergeRequestNotesOptions{ListOptions: gitlab.ListOptions{Page: 1, PerPage: defaultPageSize}}
-	var out []*gitlab.Note
-	for {
-		notes, resp, err := c.api.Notes.ListMergeRequestNotes(pid, int64(number), opt, gitlab.WithContext(ctx))
-		if err != nil {
-			return nil, mapGitLabError("list_merge_request_notes", err)
-		}
-		out = append(out, notes...)
-		if resp == nil || resp.NextPage == 0 {
-			return out, nil
-		}
-		opt.Page = resp.NextPage
-	}
-}
-
 func (c *Client) listMergeRequestDiscussions(ctx context.Context, pid any, number int) ([]*gitlab.Discussion, error) {
 	opt := &gitlab.ListMergeRequestDiscussionsOptions{ListOptions: gitlab.ListOptions{Page: 1, PerPage: defaultPageSize}}
 	var out []*gitlab.Discussion
@@ -477,22 +461,6 @@ func (c *Client) listMergeRequestDiscussions(ctx context.Context, pid any, numbe
 			return nil, mapGitLabError("list_merge_request_discussions", err)
 		}
 		out = append(out, discussions...)
-		if resp == nil || resp.NextPage == 0 {
-			return out, nil
-		}
-		opt.Page = resp.NextPage
-	}
-}
-
-func (c *Client) listIssueNotes(ctx context.Context, pid any, number int) ([]*gitlab.Note, error) {
-	opt := &gitlab.ListIssueNotesOptions{ListOptions: gitlab.ListOptions{Page: 1, PerPage: defaultPageSize}}
-	var out []*gitlab.Note
-	for {
-		notes, resp, err := c.api.Notes.ListIssueNotes(pid, int64(number), opt, gitlab.WithContext(ctx))
-		if err != nil {
-			return nil, mapGitLabError("list_issue_notes", err)
-		}
-		out = append(out, notes...)
 		if resp == nil || resp.NextPage == 0 {
 			return out, nil
 		}

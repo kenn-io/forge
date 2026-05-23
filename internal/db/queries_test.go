@@ -447,7 +447,7 @@ func TestUpsertMREventsWithDiscussionID(t *testing.T) {
 	require.Len(events, 1)
 	assert.NotNil(events[0].DiscussionID)
 	assert.Equal("abc123def", *events[0].DiscussionID)
-	assert.Equal(`{"new_path":"main.go","new_line":42}`, events[0].PositionJSON)
+	assert.JSONEq(`{"new_path":"main.go","new_line":42}`, events[0].PositionJSON)
 	assert.True(events[0].Resolvable)
 	assert.False(events[0].Resolved)
 }

@@ -83,7 +83,7 @@ func TestGetPRDetailIncludesDiscussionID(t *testing.T) {
 	require.Len(result.Events, 1)
 	assert.NotNil(result.Events[0].DiscussionID)
 	assert.Equal("disc-abc123", *result.Events[0].DiscussionID)
-	assert.Equal(`{"new_path":"main.go","new_line":42}`, result.Events[0].PositionJSON)
+	assert.JSONEq(`{"new_path":"main.go","new_line":42}`, result.Events[0].PositionJSON)
 	assert.True(result.Events[0].Resolvable)
 	assert.False(result.Events[0].Resolved)
 }

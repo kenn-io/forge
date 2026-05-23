@@ -35,4 +35,6 @@ frontend/src/lib/api/generated/
 internal/apiclient/spec/openapi.json
 __pycache__/
 *.py[cod]
+# roborev snapshots
+/.roborev/
 .pi/superpowers-state.json

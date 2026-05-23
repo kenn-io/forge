@@ -632,6 +632,7 @@ func TestOpenRepairsLegacyTimestampStorage(t *testing.T) {
 	require.NoError(removeWorkflowApprovalColumnsForTest(raw))
 	require.NoError(removeMergeRequestLockedColumnForTest(raw))
 	require.NoError(removeProviderIdentityColumnsForTest(raw))
+	require.NoError(removeDiscussionColumnsForTest(raw))
 	_, err = raw.ExecContext(ctx,
 		`UPDATE schema_migrations SET version = ?, dirty = FALSE`,
 		9,
@@ -736,6 +737,7 @@ func TestOpenRepairsBrokenWorkspaceMigrationVersion11(t *testing.T) {
 	require.NoError(removeWorkflowApprovalColumnsForTest(raw))
 	require.NoError(removeMergeRequestLockedColumnForTest(raw))
 	require.NoError(removeProviderIdentityColumnsForTest(raw))
+	require.NoError(removeDiscussionColumnsForTest(raw))
 	_, err = raw.Exec(`UPDATE schema_migrations SET version = 11, dirty = FALSE`)
 	require.NoError(err)
 	require.NoError(raw.Close())
@@ -855,6 +857,7 @@ func TestOpenMigratesWorkspaceUniquenessAndPreservesSetupEvents(t *testing.T) {
 	require.NoError(removeWorkflowApprovalColumnsForTest(raw))
 	require.NoError(removeMergeRequestLockedColumnForTest(raw))
 	require.NoError(removeProviderIdentityColumnsForTest(raw))
+	require.NoError(removeDiscussionColumnsForTest(raw))
 	_, err = raw.Exec(`UPDATE schema_migrations SET version = 11, dirty = FALSE`)
 	require.NoError(err)
 	require.NoError(raw.Close())
@@ -1303,6 +1306,18 @@ func removeWorkflowApprovalColumnsForTest(raw *sql.DB) error {
 		}
 	}
 	return nil
+}
+
+func removeDiscussionColumnsForTest(raw *sql.DB) error {
+	_, err := raw.Exec(`
+		DROP INDEX IF EXISTS idx_mr_events_discussion;
+		ALTER TABLE middleman_mr_events DROP COLUMN discussion_id;
+		ALTER TABLE middleman_mr_events DROP COLUMN position_json;
+		ALTER TABLE middleman_mr_events DROP COLUMN resolvable;
+		ALTER TABLE middleman_mr_events DROP COLUMN resolved;
+		ALTER TABLE middleman_issue_events DROP COLUMN discussion_id;
+	`)
+	return err
 }
 
 func openSchemaVersion4DBForTest(t *testing.T) (string, *sql.DB) {

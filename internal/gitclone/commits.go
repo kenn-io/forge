@@ -14,10 +14,14 @@ const emptyTreeSHA = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 
 // Commit holds metadata for a single commit in a PR's history.
 type Commit struct {
-	SHA        string
-	AuthorName string
-	AuthoredAt time.Time
-	Message    string // first line only
+	SHA            string
+	AuthorName     string
+	AuthorEmail    string
+	AuthoredAt     time.Time
+	CommitterName  string
+	CommitterEmail string
+	CommittedAt    time.Time
+	Message        string // first line only
 }
 
 type CommitTimelinePoint struct {
@@ -38,7 +42,7 @@ func (m *Manager) ListCommits(
 		return nil, err
 	}
 
-	args := []string{"log", "--first-parent", "--format=%H%x00%an%x00%aI%x00%s"}
+	args := []string{"log", "--first-parent", "--format=" + commitLogFormat}
 	if mergeBase == emptyTreeSHA {
 		// Empty tree is not a commit — list all ancestors of head.
 		args = append(args, headSHA)
@@ -51,6 +55,12 @@ func (m *Manager) ListCommits(
 		return nil, fmt.Errorf("list commits: %w", err)
 	}
 
+	return parseCommitLog(out)
+}
+
+const commitLogFormat = "%H%x00%an%x00%ae%x00%aI%x00%cn%x00%ce%x00%cI%x00%s"
+
+func parseCommitLog(out []byte) ([]Commit, error) {
 	var commits []Commit
 	scanner := bufio.NewScanner(bytes.NewReader(out))
 	scanner.Buffer(make([]byte, 0, bufio.MaxScanTokenSize), 1024*1024)
@@ -59,19 +69,27 @@ func (m *Manager) ListCommits(
 		if line == "" {
 			continue
 		}
-		parts := strings.SplitN(line, "\x00", 4)
-		if len(parts) != 4 {
+		parts := strings.SplitN(line, "\x00", 8)
+		if len(parts) != 8 {
 			return nil, fmt.Errorf("unexpected git log line: %q", line)
 		}
-		t, err := time.Parse(time.RFC3339, parts[2])
+		authoredAt, err := time.Parse(time.RFC3339, parts[3])
 		if err != nil {
-			return nil, fmt.Errorf("parse commit date %q: %w", parts[2], err)
+			return nil, fmt.Errorf("parse authored date %q: %w", parts[3], err)
+		}
+		committedAt, err := time.Parse(time.RFC3339, parts[6])
+		if err != nil {
+			return nil, fmt.Errorf("parse committed date %q: %w", parts[6], err)
 		}
 		commits = append(commits, Commit{
-			SHA:        parts[0],
-			AuthorName: parts[1],
-			AuthoredAt: t,
-			Message:    parts[3],
+			SHA:            parts[0],
+			AuthorName:     parts[1],
+			AuthorEmail:    parts[2],
+			AuthoredAt:     authoredAt,
+			CommitterName:  parts[4],
+			CommitterEmail: parts[5],
+			CommittedAt:    committedAt,
+			Message:        parts[7],
 		})
 	}
 	return commits, scanner.Err()

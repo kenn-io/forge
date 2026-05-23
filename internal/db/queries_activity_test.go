@@ -449,6 +449,41 @@ func TestListActivity(t *testing.T) {
 		}
 	})
 
+	t.Run("search matches branch force push metadata and sha prefixes", func(t *testing.T) {
+		tests := []struct {
+			name   string
+			search string
+		}{
+			{name: "branch", search: "release/v2"},
+			{name: "before sha prefix", search: "before123"},
+			{name: "after sha prefix", search: "after456"},
+		}
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				require := require.New(t)
+				d := openTestDB(t)
+				ctx := t.Context()
+				base := baseTime()
+				repoID := insertTestRepo(t, d, "alice", "alpha")
+				require.NoError(d.InsertBranchForcePush(ctx, BranchForcePush{
+					RepoID:     repoID,
+					BranchName: "release/v2",
+					BeforeSHA:  "before123abcdef",
+					AfterSHA:   "after456abcdef",
+					DetectedAt: base,
+				}))
+
+				items, err := d.ListActivity(ctx, ListActivityOpts{
+					Search: tc.search,
+					Limit:  50,
+				})
+				require.NoError(err)
+				require.Len(items, 1)
+				require.Equal("default_branch_force_push", items[0].ActivityType)
+			})
+		}
+	})
+
 	t.Run("type filter can hide default branch activity", func(t *testing.T) {
 		assert := Assert.New(t)
 		require := require.New(t)

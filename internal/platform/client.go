@@ -109,6 +109,26 @@ type ReviewMutator interface {
 	ApproveMergeRequest(ctx context.Context, ref RepoRef, number int, body string) (MergeRequestEvent, error)
 }
 
+type DiscussionReplier interface {
+	ReplyToDiscussion(
+		ctx context.Context,
+		ref RepoRef,
+		number int,
+		discussionID string,
+		body string,
+	) (MergeRequestEvent, error)
+}
+
+type DiscussionResolver interface {
+	ResolveDiscussion(
+		ctx context.Context,
+		ref RepoRef,
+		number int,
+		discussionID string,
+		resolved bool,
+	) error
+}
+
 type MergeRequestContentMutator interface {
 	EditMergeRequestContent(
 		ctx context.Context,

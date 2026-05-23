@@ -387,21 +387,32 @@ type RateLimit struct {
 
 // ActivityItem represents one row in the unified activity feed.
 type ActivityItem struct {
-	ActivityType string // new_pr, new_issue, comment, review, commit
-	Source       string // pr, issue, pre, ise
-	SourceID     int64  // PK from the source table
-	Platform     string
-	PlatformHost string
-	RepoOwner    string
-	RepoName     string
-	ItemType     string // pr or issue
-	ItemNumber   int
-	ItemTitle    string
-	ItemURL      string
-	ItemState    string // open, merged, closed
-	Author       string
-	CreatedAt    time.Time
-	BodyPreview  string
+	ActivityType   string // new_pr, new_issue, comment, review, commit, default_branch_*
+	Source         string // pr, issue, pre, ise, bc, bfp
+	SourceID       int64  // PK from the source table
+	Platform       string
+	PlatformHost   string
+	RepoOwner      string
+	RepoName       string
+	ItemType       string // pr, issue, or empty for repo-level activity
+	ItemNumber     int
+	ItemTitle      string
+	ItemURL        string
+	ItemState      string // open, merged, closed
+	Author         string
+	CreatedAt      time.Time
+	BodyPreview    string
+	BranchName     string
+	CommitSHA      string
+	BeforeSHA      string
+	AfterSHA       string
+	AuthorName     string
+	AuthorEmail    string
+	CommitterName  string
+	CommitterEmail string
+	AuthoredAt     *time.Time
+	CommittedAt    *time.Time
+	ActivityURL    string
 }
 
 // Stack represents a detected chain of dependent PRs.

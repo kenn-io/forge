@@ -13136,6 +13136,113 @@ func TestAPIListActivity(t *testing.T) {
 	assert.Equal("github.com", (*resp.JSON200.Items)[0].PlatformHost)
 }
 
+func TestAPIListActivityReturnsDefaultBranchActivity(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	ctx := t.Context()
+	base := time.Now().UTC().Add(-time.Hour).Truncate(time.Second)
+	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+
+	committedAt := base.Add(10 * time.Minute)
+	require.NoError(database.UpsertBranchCommits(ctx, []db.BranchCommit{{
+		RepoID:         repoID,
+		BranchName:     "main",
+		CommitSHA:      "abc123def456abc123def456abc123def456abcd",
+		AuthorName:     "Commit Author",
+		AuthorEmail:    "author@example.com",
+		AuthoredAt:     committedAt.Add(-time.Minute),
+		CommitterName:  "Committer Person",
+		CommitterEmail: "committer@example.com",
+		CommittedAt:    committedAt,
+		Subject:        "ship default branch work",
+	}}))
+	detectedAt := base.Add(20 * time.Minute)
+	require.NoError(database.InsertBranchForcePush(ctx, db.BranchForcePush{
+		RepoID:     repoID,
+		BranchName: "main",
+		BeforeSHA:  "before1234567890",
+		AfterSHA:   "after1234567890",
+		DetectedAt: detectedAt,
+	}))
+
+	since := url.QueryEscape(base.Format(time.RFC3339))
+	rr := doJSON(t, srv, http.MethodGet, "/api/v1/activity?since="+since, nil)
+	require.Equal(http.StatusOK, rr.Code)
+	var body struct {
+		Items []map[string]any `json:"items"`
+	}
+	require.NoError(json.NewDecoder(rr.Body).Decode(&body))
+	require.Len(body.Items, 2)
+
+	forcePush := body.Items[0]
+	assert.Equal("default_branch_force_push", forcePush["activity_type"])
+	assert.Equal("main", forcePush["branch_name"])
+	assert.Equal("before1234567890", forcePush["before_sha"])
+	assert.Equal("after1234567890", forcePush["after_sha"])
+	assert.Empty(forcePush["item_type"])
+	assert.Zero(forcePush["item_number"])
+	assert.Equal(formatUTCRFC3339(detectedAt), forcePush["created_at"])
+
+	commit := body.Items[1]
+	assert.Equal("default_branch_commit", commit["activity_type"])
+	assert.Equal("main", commit["branch_name"])
+	assert.Equal("abc123def456abc123def456abc123def456abcd", commit["commit_sha"])
+	assert.Equal("Commit Author", commit["author_name"])
+	assert.Equal("author@example.com", commit["author_email"])
+	assert.Equal("Committer Person", commit["committer_name"])
+	assert.Equal("committer@example.com", commit["committer_email"])
+	assert.Equal(formatUTCRFC3339(committedAt), commit["committed_at"])
+	assert.Equal("https://github.com/acme/widget/commit/abc123def456abc123def456abc123def456abcd", commit["activity_url"])
+	assert.Empty(commit["item_type"])
+	assert.Zero(commit["item_number"])
+}
+
+func TestAPIListActivityCanHideDefaultBranchActivity(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	client := setupTestClient(t, srv)
+	ctx := t.Context()
+	base := time.Now().UTC().Add(-time.Hour).Truncate(time.Second)
+	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	seedPR(t, database, "acme", "widget", 1, withSeedPRTimes(base, base, base))
+	require.NoError(database.UpsertBranchCommits(ctx, []db.BranchCommit{{
+		RepoID:         repoID,
+		BranchName:     "main",
+		CommitSHA:      "abc123def456abc123def456abc123def456abcd",
+		AuthorName:     "Commit Author",
+		AuthorEmail:    "author@example.com",
+		AuthoredAt:     base.Add(9 * time.Minute),
+		CommitterName:  "Committer Person",
+		CommitterEmail: "committer@example.com",
+		CommittedAt:    base.Add(10 * time.Minute),
+		Subject:        "ship default branch work",
+	}}))
+	require.NoError(database.InsertBranchForcePush(ctx, db.BranchForcePush{
+		RepoID:     repoID,
+		BranchName: "main",
+		BeforeSHA:  "before1234567890",
+		AfterSHA:   "after1234567890",
+		DetectedAt: base.Add(20 * time.Minute),
+	}))
+
+	since := base.Add(-time.Minute).Format(time.RFC3339)
+	types := []string{"new_pr"}
+	resp, err := client.HTTP.ListActivityWithResponse(
+		ctx, &generated.ListActivityParams{Since: &since, Types: &types},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.NotNil(resp.JSON200.Items)
+	require.Len(*resp.JSON200.Items, 1)
+	assert.Equal("new_pr", (*resp.JSON200.Items)[0].ActivityType)
+	assert.Equal(int64(1), (*resp.JSON200.Items)[0].ItemNumber)
+}
+
 func TestAPIListActivityAcceptsHostQualifiedRepoFilter(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

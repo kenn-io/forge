@@ -43,9 +43,31 @@ components:
       properties:
         activity_type:
           type: string
+        activity_url:
+          type: string
+        after_sha:
+          type: string
         author:
           type: string
+        author_email:
+          type: string
+        author_name:
+          type: string
+        authored_at:
+          type: string
+        before_sha:
+          type: string
         body_preview:
+          type: string
+        branch_name:
+          type: string
+        commit_sha:
+          type: string
+        committed_at:
+          type: string
+        committer_email:
+          type: string
+        committer_name:
           type: string
         created_at:
           type: string

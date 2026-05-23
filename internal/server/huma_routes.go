@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"mime"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -2777,7 +2778,7 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 
 	out := make([]activityItemResponse, len(items))
 	for i, it := range items {
-		out[i] = activityItemResponse{
+		item := activityItemResponse{
 			ID:           it.Source + ":" + strconv.FormatInt(it.SourceID, 10),
 			Cursor:       db.EncodeCursor(it.CreatedAt, it.Source, it.SourceID),
 			ActivityType: it.ActivityType,
@@ -2796,11 +2797,65 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 			CreatedAt:    formatUTCRFC3339(it.CreatedAt),
 			BodyPreview:  it.BodyPreview,
 		}
+		item.BranchName = it.BranchName
+		item.CommitSHA = it.CommitSHA
+		item.BeforeSHA = it.BeforeSHA
+		item.AfterSHA = it.AfterSHA
+		item.AuthorName = it.AuthorName
+		item.AuthorEmail = it.AuthorEmail
+		item.CommitterName = it.CommitterName
+		item.CommitterEmail = it.CommitterEmail
+		if it.AuthoredAt != nil {
+			item.AuthoredAt = formatUTCRFC3339(*it.AuthoredAt)
+		}
+		if it.CommittedAt != nil {
+			item.CommittedAt = formatUTCRFC3339(*it.CommittedAt)
+		}
+		item.ActivityURL = it.ActivityURL
+		if item.ActivityURL == "" {
+			item.ActivityURL = branchCommitActivityURL(it)
+		}
+		out[i] = item
 	}
 
 	return &listActivityOutput{
 		Body: activityResponse{Items: out, Capped: capped},
 	}, nil
+}
+
+func branchCommitActivityURL(it db.ActivityItem) string {
+	if it.CommitSHA == "" {
+		return ""
+	}
+	kind := platform.Kind(it.Platform)
+	meta, ok := platform.MetadataFor(kind)
+	if !ok {
+		return ""
+	}
+	host, ok := platform.HostOrDefault(meta.Kind, it.PlatformHost)
+	if !ok || host == "" {
+		return ""
+	}
+	repoPath := escapedRepoPath(it.RepoOwner, it.RepoName)
+	switch meta.Kind {
+	case platform.KindGitHub, platform.KindForgejo, platform.KindGitea:
+		return "https://" + host + "/" + repoPath + "/commit/" + url.PathEscape(it.CommitSHA)
+	case platform.KindGitLab:
+		return "https://" + host + "/" + repoPath + "/-/commit/" + url.PathEscape(it.CommitSHA)
+	default:
+		return ""
+	}
+}
+
+func escapedRepoPath(owner, name string) string {
+	parts := strings.Split(strings.Trim(owner+"/"+name, "/"), "/")
+	escaped := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if part != "" {
+			escaped = append(escaped, url.PathEscape(part))
+		}
+	}
+	return strings.Join(escaped, "/")
 }
 
 func (s *Server) resolveItem(

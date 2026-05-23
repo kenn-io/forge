@@ -373,19 +373,30 @@ type stackContextResponse struct {
 }
 
 type activityItemResponse struct {
-	ID           string          `json:"id"`
-	Cursor       string          `json:"cursor"`
-	ActivityType string          `json:"activity_type"`
-	Repo         repoRefResponse `json:"repo"`
-	PlatformHost string          `json:"platform_host"`
-	RepoOwner    string          `json:"repo_owner"`
-	RepoName     string          `json:"repo_name"`
-	ItemType     string          `json:"item_type"`
-	ItemNumber   int             `json:"item_number"`
-	ItemTitle    string          `json:"item_title"`
-	ItemURL      string          `json:"item_url"`
-	ItemState    string          `json:"item_state"`
-	Author       string          `json:"author"`
-	CreatedAt    string          `json:"created_at"`
-	BodyPreview  string          `json:"body_preview"`
+	ID             string          `json:"id"`
+	Cursor         string          `json:"cursor"`
+	ActivityType   string          `json:"activity_type"`
+	Repo           repoRefResponse `json:"repo"`
+	PlatformHost   string          `json:"platform_host"`
+	RepoOwner      string          `json:"repo_owner"`
+	RepoName       string          `json:"repo_name"`
+	ItemType       string          `json:"item_type"`
+	ItemNumber     int             `json:"item_number"`
+	ItemTitle      string          `json:"item_title"`
+	ItemURL        string          `json:"item_url"`
+	ItemState      string          `json:"item_state"`
+	Author         string          `json:"author"`
+	CreatedAt      string          `json:"created_at"`
+	BodyPreview    string          `json:"body_preview"`
+	BranchName     string          `json:"branch_name,omitempty"`
+	CommitSHA      string          `json:"commit_sha,omitempty"`
+	BeforeSHA      string          `json:"before_sha,omitempty"`
+	AfterSHA       string          `json:"after_sha,omitempty"`
+	AuthorName     string          `json:"author_name,omitempty"`
+	AuthorEmail    string          `json:"author_email,omitempty"`
+	CommitterName  string          `json:"committer_name,omitempty"`
+	CommitterEmail string          `json:"committer_email,omitempty"`
+	AuthoredAt     string          `json:"authored_at,omitempty"`
+	CommittedAt    string          `json:"committed_at,omitempty"`
+	ActivityURL    string          `json:"activity_url,omitempty"`
 }

@@ -246,7 +246,287 @@ func TestListActivity(t *testing.T) {
 		assert.Len(items, 4)
 	})
 
+	t.Run("includes branch commits and force pushes with stable cursor order", func(t *testing.T) {
+		assert := Assert.New(t)
+		require := require.New(t)
+		d := openTestDB(t)
+		ctx := t.Context()
+		base := baseTime()
+		repoID := insertTestRepo(t, d, "alice", "alpha")
+		prID := insertTestMR(t, d, repoID, 1, "Review branch", base.Add(-time.Hour))
+
+		require.NoError(d.UpsertMREvents(ctx, []MREvent{{
+			MergeRequestID: prID,
+			EventType:      "issue_comment",
+			Author:         "reviewer",
+			Body:           "same timestamp comment",
+			CreatedAt:      base,
+			DedupeKey:      "same-time-comment",
+		}}))
+		require.NoError(d.UpsertBranchCommits(ctx, []BranchCommit{
+			{
+				RepoID:         repoID,
+				BranchName:     "main",
+				CommitSHA:      "1111111111111111111111111111111111111111",
+				AuthorName:     "Alice",
+				AuthorEmail:    "alice@example.com",
+				AuthoredAt:     base.Add(-time.Minute),
+				CommitterName:  "Alice",
+				CommitterEmail: "alice@example.com",
+				CommittedAt:    base,
+				Subject:        "first branch commit",
+			},
+			{
+				RepoID:         repoID,
+				BranchName:     "main",
+				CommitSHA:      "2222222222222222222222222222222222222222",
+				AuthorName:     "Bob",
+				AuthorEmail:    "bob@example.com",
+				AuthoredAt:     base.Add(-30 * time.Second),
+				CommitterName:  "Bob",
+				CommitterEmail: "bob@example.com",
+				CommittedAt:    base,
+				Subject:        "second branch commit",
+			},
+		}))
+		require.NoError(d.InsertBranchForcePush(ctx, BranchForcePush{
+			RepoID:     repoID,
+			BranchName: "main",
+			BeforeSHA:  "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			AfterSHA:   "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+			DetectedAt: base,
+		}))
+
+		items, err := d.ListActivity(ctx, ListActivityOpts{Limit: 10})
+		require.NoError(err)
+		require.Len(items, 5)
+		assert.Equal([]string{"pre", "bfp", "bc", "bc", "pr"}, activitySources(items))
+		assert.Equal([]string{
+			"comment",
+			"default_branch_force_push",
+			"default_branch_commit",
+			"default_branch_commit",
+			"new_pr",
+		}, activityTypes(items))
+		assert.Greater(items[2].SourceID, items[3].SourceID)
+		assert.Equal("second branch commit", items[2].BodyPreview)
+		assert.Equal("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa -> bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", items[1].BodyPreview)
+
+		page1, err := d.ListActivity(ctx, ListActivityOpts{Limit: 2})
+		require.NoError(err)
+		require.Len(page1, 2)
+		last := page1[1]
+		page2, err := d.ListActivity(ctx, ListActivityOpts{
+			Limit:          10,
+			BeforeTime:     &last.CreatedAt,
+			BeforeSource:   last.Source,
+			BeforeSourceID: last.SourceID,
+		})
+		require.NoError(err)
+		require.NotEmpty(page2)
+
+		seen := make(map[string]bool)
+		for _, item := range page1 {
+			seen[activityKey(item)] = true
+		}
+		for _, item := range page2 {
+			assert.False(seen[activityKey(item)], "duplicate across pages: %s", activityKey(item))
+		}
+	})
+
+	t.Run("repo filters include branch activity only for matching repos", func(t *testing.T) {
+		assert := Assert.New(t)
+		require := require.New(t)
+		d := openTestDB(t)
+		ctx := t.Context()
+		base := baseTime()
+		firstRepo := insertTestRepoWithHost(t, d, "alice", "alpha", "github.com")
+		secondRepo := insertTestRepoWithHost(t, d, "bob", "beta", "ghe.example.com")
+		require.NoError(d.UpsertBranchCommits(ctx, []BranchCommit{
+			testBranchCommit(firstRepo, "main", "alice-sha", "alice branch work", base),
+			testBranchCommit(secondRepo, "main", "bob-sha", "bob branch work", base.Add(time.Minute)),
+		}))
+		require.NoError(d.InsertBranchForcePush(ctx, BranchForcePush{
+			RepoID:     secondRepo,
+			BranchName: "main",
+			BeforeSHA:  "before-bob",
+			AfterSHA:   "after-bob",
+			DetectedAt: base.Add(2 * time.Minute),
+		}))
+
+		items, err := d.ListActivity(ctx, ListActivityOpts{
+			Repo: "ghe.example.com/bob/beta",
+			RepoFilters: []RepoFilter{{
+				PlatformHost: "ghe.example.com",
+				RepoPath:     "bob/beta",
+			}},
+			Limit: 50,
+		})
+		require.NoError(err)
+		require.Len(items, 2)
+		for _, item := range items {
+			assert.Equal("ghe.example.com", item.PlatformHost)
+			assert.Equal("bob", item.RepoOwner)
+			assert.Equal("beta", item.RepoName)
+		}
+	})
+
+	t.Run("time window uses committed and detected timestamps", func(t *testing.T) {
+		assert := Assert.New(t)
+		require := require.New(t)
+		d := openTestDB(t)
+		ctx := t.Context()
+		base := baseTime()
+		repoID := insertTestRepo(t, d, "alice", "alpha")
+		require.NoError(d.UpsertBranchCommits(ctx, []BranchCommit{
+			testBranchCommit(repoID, "main", "old-commit-sha", "old branch commit", base.Add(-time.Hour)),
+			testBranchCommit(repoID, "main", "new-commit-sha", "new branch commit", base.Add(time.Hour)),
+		}))
+		require.NoError(d.InsertBranchForcePush(ctx, BranchForcePush{
+			RepoID:     repoID,
+			BranchName: "main",
+			BeforeSHA:  "old-before",
+			AfterSHA:   "old-after",
+			DetectedAt: base.Add(-30 * time.Minute),
+		}))
+		require.NoError(d.InsertBranchForcePush(ctx, BranchForcePush{
+			RepoID:     repoID,
+			BranchName: "main",
+			BeforeSHA:  "new-before",
+			AfterSHA:   "new-after",
+			DetectedAt: base.Add(30 * time.Minute),
+		}))
+
+		since := base
+		items, err := d.ListActivity(ctx, ListActivityOpts{Limit: 50, Since: &since})
+		require.NoError(err)
+		require.Len(items, 2)
+		assert.Equal([]string{"default_branch_commit", "default_branch_force_push"}, activityTypes(items))
+		assert.Equal([]string{"new branch commit", "new-before -> new-after"}, activityBodies(items))
+	})
+
+	t.Run("search matches branch commit metadata and sha prefixes", func(t *testing.T) {
+		tests := []struct {
+			name   string
+			search string
+		}{
+			{name: "subject", search: "metadata subject"},
+			{name: "branch", search: "release/v1"},
+			{name: "commit sha prefix", search: "abc123"},
+			{name: "author name", search: "Commit Author"},
+			{name: "author email", search: "author@example.com"},
+			{name: "committer name", search: "Committer Person"},
+			{name: "committer email", search: "committer@example.com"},
+		}
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				require := require.New(t)
+				d := openTestDB(t)
+				ctx := t.Context()
+				base := baseTime()
+				repoID := insertTestRepo(t, d, "alice", "alpha")
+				require.NoError(d.UpsertBranchCommits(ctx, []BranchCommit{{
+					RepoID:         repoID,
+					BranchName:     "release/v1",
+					CommitSHA:      "abc123def456abc123def456abc123def456abcd",
+					AuthorName:     "Commit Author",
+					AuthorEmail:    "author@example.com",
+					AuthoredAt:     base.Add(-time.Minute),
+					CommitterName:  "Committer Person",
+					CommitterEmail: "committer@example.com",
+					CommittedAt:    base,
+					Subject:        "metadata subject",
+				}}))
+
+				items, err := d.ListActivity(ctx, ListActivityOpts{
+					Search: tc.search,
+					Limit:  50,
+				})
+				require.NoError(err)
+				require.Len(items, 1)
+				require.Equal("default_branch_commit", items[0].ActivityType)
+			})
+		}
+	})
+
+	t.Run("type filter can hide default branch activity", func(t *testing.T) {
+		assert := Assert.New(t)
+		require := require.New(t)
+		d := openTestDB(t)
+		ctx := t.Context()
+		base := baseTime()
+		repoID := insertTestRepo(t, d, "alice", "alpha")
+		insertTestMR(t, d, repoID, 1, "Fix bug", base.Add(time.Minute))
+		require.NoError(d.UpsertBranchCommits(ctx, []BranchCommit{
+			testBranchCommit(repoID, "main", "branch-sha", "branch work", base.Add(2*time.Minute)),
+		}))
+		require.NoError(d.InsertBranchForcePush(ctx, BranchForcePush{
+			RepoID:     repoID,
+			BranchName: "main",
+			BeforeSHA:  "before-sha",
+			AfterSHA:   "after-sha",
+			DetectedAt: base.Add(3 * time.Minute),
+		}))
+
+		items, err := d.ListActivity(ctx, ListActivityOpts{
+			Types: []string{"new_pr"},
+			Limit: 50,
+		})
+		require.NoError(err)
+		require.Len(items, 1)
+		assert.Equal("new_pr", items[0].ActivityType)
+	})
+
 	_ = prID2
+}
+
+func testBranchCommit(
+	repoID int64,
+	branch string,
+	sha string,
+	subject string,
+	committedAt time.Time,
+) BranchCommit {
+	return BranchCommit{
+		RepoID:         repoID,
+		BranchName:     branch,
+		CommitSHA:      sha,
+		AuthorName:     "Test Author",
+		AuthorEmail:    "author@example.com",
+		AuthoredAt:     committedAt.Add(-time.Minute),
+		CommitterName:  "Test Committer",
+		CommitterEmail: "committer@example.com",
+		CommittedAt:    committedAt,
+		Subject:        subject,
+	}
+}
+
+func activityKey(item ActivityItem) string {
+	return fmt.Sprintf("%s:%d", item.Source, item.SourceID)
+}
+
+func activitySources(items []ActivityItem) []string {
+	sources := make([]string, len(items))
+	for i, item := range items {
+		sources[i] = item.Source
+	}
+	return sources
+}
+
+func activityTypes(items []ActivityItem) []string {
+	types := make([]string, len(items))
+	for i, item := range items {
+		types[i] = item.ActivityType
+	}
+	return types
+}
+
+func activityBodies(items []ActivityItem) []string {
+	bodies := make([]string, len(items))
+	for i, item := range items {
+		bodies[i] = item.BodyPreview
+	}
+	return bodies
 }
 
 func TestParseDBTime(t *testing.T) {

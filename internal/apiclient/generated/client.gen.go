@@ -234,21 +234,32 @@ type Activity struct {
 
 // ActivityItemResponse defines model for ActivityItemResponse.
 type ActivityItemResponse struct {
-	ActivityType string          `json:"activity_type"`
-	Author       string          `json:"author"`
-	BodyPreview  string          `json:"body_preview"`
-	CreatedAt    string          `json:"created_at"`
-	Cursor       string          `json:"cursor"`
-	Id           string          `json:"id"`
-	ItemNumber   int64           `json:"item_number"`
-	ItemState    string          `json:"item_state"`
-	ItemTitle    string          `json:"item_title"`
-	ItemType     string          `json:"item_type"`
-	ItemUrl      string          `json:"item_url"`
-	PlatformHost string          `json:"platform_host"`
-	Repo         RepoRefResponse `json:"repo"`
-	RepoName     string          `json:"repo_name"`
-	RepoOwner    string          `json:"repo_owner"`
+	ActivityType   string          `json:"activity_type"`
+	ActivityUrl    *string         `json:"activity_url,omitempty"`
+	AfterSha       *string         `json:"after_sha,omitempty"`
+	Author         string          `json:"author"`
+	AuthorEmail    *string         `json:"author_email,omitempty"`
+	AuthorName     *string         `json:"author_name,omitempty"`
+	AuthoredAt     *string         `json:"authored_at,omitempty"`
+	BeforeSha      *string         `json:"before_sha,omitempty"`
+	BodyPreview    string          `json:"body_preview"`
+	BranchName     *string         `json:"branch_name,omitempty"`
+	CommitSha      *string         `json:"commit_sha,omitempty"`
+	CommittedAt    *string         `json:"committed_at,omitempty"`
+	CommitterEmail *string         `json:"committer_email,omitempty"`
+	CommitterName  *string         `json:"committer_name,omitempty"`
+	CreatedAt      string          `json:"created_at"`
+	Cursor         string          `json:"cursor"`
+	Id             string          `json:"id"`
+	ItemNumber     int64           `json:"item_number"`
+	ItemState      string          `json:"item_state"`
+	ItemTitle      string          `json:"item_title"`
+	ItemType       string          `json:"item_type"`
+	ItemUrl        string          `json:"item_url"`
+	PlatformHost   string          `json:"platform_host"`
+	Repo           RepoRefResponse `json:"repo"`
+	RepoName       string          `json:"repo_name"`
+	RepoOwner      string          `json:"repo_owner"`
 }
 
 // ActivityResponse defines model for ActivityResponse.

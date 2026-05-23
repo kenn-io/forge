@@ -1673,8 +1673,19 @@ export interface components {
         };
         ActivityItemResponse: {
             activity_type: string;
+            activity_url?: string;
+            after_sha?: string;
             author: string;
+            author_email?: string;
+            author_name?: string;
+            authored_at?: string;
+            before_sha?: string;
             body_preview: string;
+            branch_name?: string;
+            commit_sha?: string;
+            committed_at?: string;
+            committer_email?: string;
+            committer_name?: string;
             created_at: string;
             cursor: string;
             id: string;

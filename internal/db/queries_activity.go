@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"database/sql"
 	"encoding/base64"
 	"fmt"
 	"strconv"
@@ -53,8 +54,13 @@ func (d *DB) ListActivity(
 	if opts.Search != "" {
 		pattern := "%" + opts.Search + "%"
 		whereClauses = append(whereClauses,
-			"(item_title LIKE ? OR body_preview LIKE ?)")
-		args = append(args, pattern, pattern)
+			"(item_title LIKE ? OR body_preview LIKE ? OR branch_name LIKE ? OR "+
+				"commit_sha LIKE ? OR before_sha LIKE ? OR after_sha LIKE ? OR "+
+				"author_name LIKE ? OR author_email LIKE ? OR "+
+				"committer_name LIKE ? OR committer_email LIKE ?)")
+		args = append(args,
+			pattern, pattern, pattern, pattern, pattern, pattern,
+			pattern, pattern, pattern, pattern)
 	}
 
 	// Time window filter.
@@ -93,7 +99,10 @@ func (d *DB) ListActivity(
 		       repo_owner, repo_name,
 		       item_type, item_number, item_title,
 		       item_url, item_state, author,
-		       created_at, body_preview
+		       created_at, body_preview,
+		       branch_name, commit_sha, before_sha, after_sha,
+		       author_name, author_email, committer_name, committer_email,
+		       authored_at, committed_at, activity_url
 		FROM (
 			SELECT 'new_pr' AS activity_type,
 			       'pr' AS source, p.id AS source_id,
@@ -103,7 +112,12 @@ func (d *DB) ListActivity(
 			       p.title AS item_title,
 			       p.url AS item_url, p.state AS item_state,
 			       p.author, p.created_at,
-			       '' AS body_preview
+			       '' AS body_preview,
+			       '' AS branch_name, '' AS commit_sha, '' AS before_sha, '' AS after_sha,
+			       '' AS author_name, '' AS author_email,
+			       '' AS committer_name, '' AS committer_email,
+			       NULL AS authored_at, NULL AS committed_at,
+			       '' AS activity_url
 			FROM middleman_merge_requests p
 			JOIN middleman_repos r ON p.repo_id = r.id
 			UNION ALL
@@ -112,6 +126,11 @@ func (d *DB) ListActivity(
 			       'issue', i.number, i.title,
 			       i.url, i.state,
 			       i.author, i.created_at,
+			       '',
+			       '', '', '', '',
+			       '', '',
+			       '', '',
+			       NULL, NULL,
 			       ''
 			FROM middleman_issues i
 			JOIN middleman_repos r ON i.repo_id = r.id
@@ -125,7 +144,12 @@ func (d *DB) ListActivity(
 			       'pr', p.number, p.title,
 			       p.url, p.state,
 			       e.author, e.created_at,
-			       substr(COALESCE(e.body, ''), 1, 200)
+			       substr(COALESCE(e.body, ''), 1, 200),
+			       '', '', '', '',
+			       '', '',
+			       '', '',
+			       NULL, NULL,
+			       ''
 			FROM middleman_mr_events e
 			JOIN middleman_merge_requests p ON e.merge_request_id = p.id
 			JOIN middleman_repos r ON p.repo_id = r.id
@@ -137,11 +161,44 @@ func (d *DB) ListActivity(
 			       'issue', i.number, i.title,
 			       i.url, i.state,
 			       e.author, e.created_at,
-			       substr(COALESCE(e.body, ''), 1, 200)
+			       substr(COALESCE(e.body, ''), 1, 200),
+			       '', '', '', '',
+			       '', '',
+			       '', '',
+			       NULL, NULL,
+			       ''
 			FROM middleman_issue_events e
 			JOIN middleman_issues i ON e.issue_id = i.id
 			JOIN middleman_repos r ON i.repo_id = r.id
 			WHERE e.event_type = 'issue_comment'
+			UNION ALL
+			SELECT 'default_branch_commit', 'bc', bc.id,
+			       r.platform, r.platform_host, r.owner, r.name, r.repo_path_key,
+			       '', 0, '',
+			       '', '',
+			       bc.author_name, bc.committed_at,
+			       bc.subject,
+			       bc.branch_name, bc.commit_sha, '', '',
+			       bc.author_name, bc.author_email,
+			       bc.committer_name, bc.committer_email,
+			       bc.authored_at, bc.committed_at,
+			       ''
+			FROM middleman_branch_commits bc
+			JOIN middleman_repos r ON bc.repo_id = r.id
+			UNION ALL
+			SELECT 'default_branch_force_push', 'bfp', bfp.id,
+			       r.platform, r.platform_host, r.owner, r.name, r.repo_path_key,
+			       '', 0, '',
+			       '', '',
+			       '', bfp.detected_at,
+			       bfp.before_sha || ' -> ' || bfp.after_sha,
+			       bfp.branch_name, '', bfp.before_sha, bfp.after_sha,
+			       '', '',
+			       '', '',
+			       NULL, NULL,
+			       ''
+			FROM middleman_branch_force_pushes bfp
+			JOIN middleman_repos r ON bfp.repo_id = r.id
 		) unified
 		%s
 		ORDER BY created_at DESC, source DESC, source_id DESC
@@ -159,12 +216,18 @@ func (d *DB) ListActivity(
 	for rows.Next() {
 		var it ActivityItem
 		var createdAtStr string
+		var authoredAtStr sql.NullString
+		var committedAtStr sql.NullString
 		if err := rows.Scan(
 			&it.ActivityType, &it.Source, &it.SourceID,
 			&it.Platform, &it.PlatformHost, &it.RepoOwner, &it.RepoName,
 			&it.ItemType, &it.ItemNumber, &it.ItemTitle,
 			&it.ItemURL, &it.ItemState, &it.Author,
 			&createdAtStr, &it.BodyPreview,
+			&it.BranchName, &it.CommitSHA, &it.BeforeSHA, &it.AfterSHA,
+			&it.AuthorName, &it.AuthorEmail,
+			&it.CommitterName, &it.CommitterEmail,
+			&authoredAtStr, &committedAtStr, &it.ActivityURL,
 		); err != nil {
 			return nil, fmt.Errorf("scan activity item: %w", err)
 		}
@@ -175,6 +238,24 @@ func (d *DB) ListActivity(
 				createdAtStr, err)
 		}
 		it.CreatedAt = t
+		if authoredAtStr.Valid && authoredAtStr.String != "" {
+			authoredAt, err := parseDBTime(authoredAtStr.String)
+			if err != nil {
+				return nil, fmt.Errorf(
+					"parse activity authored_at %q: %w",
+					authoredAtStr.String, err)
+			}
+			it.AuthoredAt = &authoredAt
+		}
+		if committedAtStr.Valid && committedAtStr.String != "" {
+			committedAt, err := parseDBTime(committedAtStr.String)
+			if err != nil {
+				return nil, fmt.Errorf(
+					"parse activity committed_at %q: %w",
+					committedAtStr.String, err)
+			}
+			it.CommittedAt = &committedAt
+		}
 		items = append(items, it)
 	}
 	return items, rows.Err()

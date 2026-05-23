@@ -4,6 +4,7 @@ import {
   collapseActivityCommitRuns,
   isCollapsedActivityRow,
 } from "./activityRows.js";
+import { activityItemKey, activityRepoKey } from "./activityRows.js";
 
 function item(
   id: string,
@@ -57,5 +58,37 @@ describe("collapseActivityCommitRuns", () => {
         && rows[1]!.activity_type,
     ).toBe("force_push");
     expect(isCollapsedActivityRow(rows[2]!)).toBe(true);
+  });
+});
+
+describe("activityRepoKey / activityItemKey", () => {
+  const base = {
+    provider: "github",
+    platformHost: "github.com",
+    owner: "acme",
+    name: "widgets",
+  };
+
+  it("includes provider so same owner/name on different providers differ", () => {
+    const a = activityRepoKey(base);
+    const b = activityRepoKey({ ...base, provider: "gitlab" });
+    expect(a).not.toBe(b);
+  });
+
+  it("includes host so same identity on different hosts differs", () => {
+    const a = activityRepoKey(base);
+    const b = activityRepoKey({ ...base, platformHost: "ghe.example.com" });
+    expect(a).not.toBe(b);
+  });
+
+  it("builds an item key as the repo key plus type and number", () => {
+    const item = { ...base, itemType: "pr", itemNumber: 42 };
+    expect(activityItemKey(item)).toBe(`${activityRepoKey(base)}:pr:42`);
+  });
+
+  it("separates a PR and an issue with the same number", () => {
+    const pr = { ...base, itemType: "pr", itemNumber: 42 };
+    const issue = { ...base, itemType: "issue", itemNumber: 42 };
+    expect(activityItemKey(pr)).not.toBe(activityItemKey(issue));
   });
 });

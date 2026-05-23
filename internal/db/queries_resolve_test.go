@@ -38,4 +38,17 @@ func TestResolveItemNumber(t *testing.T) {
 	_, found, err = database.ResolveItemNumber(ctx, repoID, 999)
 	require.NoError(err)
 	assert.False(found)
+
+	// Typed resolution avoids PR precedence for providers whose issue
+	// and merge request number spaces can overlap.
+	insertTestIssueWithOptions(t, database, testIssue(repoID, 10, withIssueTitle("Issue ten")))
+	itemType, found, err = database.ResolveItemNumberOfType(ctx, repoID, 10, "issue")
+	require.NoError(err)
+	assert.True(found)
+	assert.Equal("issue", itemType)
+
+	itemType, found, err = database.ResolveItemNumberOfType(ctx, repoID, 20, "pr")
+	require.NoError(err)
+	assert.False(found)
+	assert.Empty(itemType)
 }

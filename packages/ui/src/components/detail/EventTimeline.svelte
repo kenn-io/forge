@@ -8,6 +8,10 @@
   import { renderMarkdown } from "../../utils/markdown.js";
   import { timeAgo } from "../../utils/time.js";
   import { copyToClipboard } from "../../utils/clipboard.js";
+  import {
+    buildItemReferenceLink,
+    type ItemReferenceDataAttributes,
+  } from "../../utils/item-reference.js";
   import CommentEditor from "./CommentEditor.svelte";
 
   interface Props {
@@ -105,6 +109,54 @@
   function metadataString(metadata: Record<string, unknown>, key: string): string | null {
     const value = metadata[key];
     return typeof value === "string" && value.length > 0 ? value : null;
+  }
+
+  function metadataNumber(metadata: Record<string, unknown>, key: string): number | null {
+    const value = metadata[key];
+    if (typeof value === "number" && Number.isInteger(value) && value > 0) return value;
+    if (typeof value !== "string") return null;
+    const parsed = parseInt(value, 10);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+  }
+
+  type CrossReferenceLink = {
+    href: string;
+    internal: boolean;
+    dataAttributes?: ItemReferenceDataAttributes | undefined;
+  };
+
+  function crossReferenceLink(
+    metadata: Record<string, unknown>,
+    sourceUrl: string | null,
+  ): CrossReferenceLink | null {
+    const sourceType = metadataString(metadata, "source_type");
+    const owner = metadataString(metadata, "source_owner");
+    const name = metadataString(metadata, "source_repo");
+    const number = metadataNumber(metadata, "source_number");
+    if (
+      provider &&
+      owner &&
+      name &&
+      number !== null &&
+      (sourceType === "PullRequest" || sourceType === "Issue")
+    ) {
+      const repoPath = `${owner}/${name}`;
+      const link = buildItemReferenceLink({
+        provider,
+        platformHost,
+        owner,
+        name,
+        repoPath,
+        number,
+        itemType: sourceType === "PullRequest" ? "pr" : "issue",
+        externalUrl: sourceUrl ?? undefined,
+      });
+      return {
+        ...link,
+        internal: true,
+      };
+    }
+    return sourceUrl ? { href: sourceUrl, internal: false } : null;
   }
 
   let copiedId = $state<string | null>(null);
@@ -211,13 +263,15 @@
               {:else if event.EventType === "cross_referenced"}
                 {@const sourceUrl = metadataString(metadata, "source_url")}
                 {@const sourceTitle = metadataString(metadata, "source_title") ?? event.Summary}
+                {@const sourceLink = crossReferenceLink(metadata, sourceUrl)}
                 <span class="event-time">{timeAgo(event.CreatedAt)}</span>
-                {#if sourceUrl}
+                {#if sourceLink}
                   <a
-                    class="system-event-link"
-                    href={sourceUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                    class={["system-event-link", { "item-ref": sourceLink.internal }]}
+                    href={sourceLink.href}
+                    target={sourceLink.internal ? undefined : "_blank"}
+                    rel={sourceLink.internal ? undefined : "noopener noreferrer"}
+                    {...(sourceLink.dataAttributes ?? {})}
                   >
                     {sourceTitle}
                   </a>

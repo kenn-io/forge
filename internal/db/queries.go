@@ -3267,6 +3267,31 @@ func (d *DB) ResolveItemNumber(
 	return "", false, nil
 }
 
+// ResolveItemNumberOfType checks whether the given typed item number exists in a repo.
+func (d *DB) ResolveItemNumberOfType(
+	ctx context.Context, repoID int64, number int, itemType string,
+) (string, bool, error) {
+	var query string
+	switch itemType {
+	case "pr":
+		query = `SELECT 1 FROM middleman_merge_requests WHERE repo_id = ? AND number = ?`
+	case "issue":
+		query = `SELECT 1 FROM middleman_issues WHERE repo_id = ? AND number = ?`
+	default:
+		return "", false, fmt.Errorf("unsupported item type %q", itemType)
+	}
+
+	var exists int
+	err := d.ro.QueryRowContext(ctx, query, repoID, number).Scan(&exists)
+	if err == nil {
+		return itemType, true, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return "", false, fmt.Errorf("check %s: %w", itemType, err)
+	}
+	return "", false, nil
+}
+
 // UpdateIssueState sets the state and closed_at for an issue.
 func (d *DB) UpdateIssueState(
 	ctx context.Context,
@@ -3759,10 +3784,10 @@ func (d *DB) ListCommentAutocompleteUsers(
 	return users, nil
 }
 
-// ListCommentAutocompleteReferences returns repo-scoped # suggestions for pulls and issues.
+// ListCommentAutocompleteReferences returns repo-scoped item reference suggestions.
 func (d *DB) ListCommentAutocompleteReferences(
 	ctx context.Context,
-	platformHost, owner, name, query string,
+	platformHost, owner, name, query, itemKind string,
 	limit int,
 ) ([]CommentAutocompleteReference, error) {
 	platformHost, owner, name = canonicalRepoLookupIdentifier(platformHost, owner, name)
@@ -3770,6 +3795,7 @@ func (d *DB) ListCommentAutocompleteReferences(
 		limit = 10
 	}
 	query = strings.TrimSpace(query)
+	itemKind = strings.TrimSpace(itemKind)
 	titleQuery := "%" + strings.ToLower(query) + "%"
 	numberPrefix := query + "%"
 
@@ -3789,9 +3815,12 @@ func (d *DB) ListCommentAutocompleteReferences(
 		)
 		SELECT kind, number, title, state
 		FROM candidates
-		WHERE ? = ''
-		   OR CAST(number AS TEXT) LIKE ?
-		   OR LOWER(title) LIKE ?
+		WHERE (? = '' OR kind = ?)
+		  AND (
+		       ? = ''
+		    OR CAST(number AS TEXT) LIKE ?
+		    OR LOWER(title) LIKE ?
+		  )
 		ORDER BY
 			CASE WHEN ? <> '' AND CAST(number AS TEXT) LIKE ? THEN 0 ELSE 1 END,
 			CASE WHEN ? <> '' AND LOWER(title) LIKE ? THEN 0 ELSE 1 END,
@@ -3799,6 +3828,7 @@ func (d *DB) ListCommentAutocompleteReferences(
 			number DESC
 		LIMIT ?`,
 		platformHost, owner, name,
+		itemKind, itemKind,
 		query, numberPrefix, titleQuery,
 		query, numberPrefix,
 		query, titleQuery,

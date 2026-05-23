@@ -39,6 +39,12 @@
     void save(updated);
   }
 
+  function toggleCollapseThreads(): void {
+    const updated = { ...activity, collapse_threads: !activity.collapse_threads };
+    onUpdate(updated);
+    void save(updated);
+  }
+
   function setTimeRange(range_: ActivitySettingsType["time_range"]): void {
     const updated = { ...activity, time_range: range_ };
     onUpdate(updated);
@@ -64,6 +70,13 @@
     <button class="seg-btn" class:active={activity.view_mode === "flat"} onclick={() => setViewMode("flat")}>Flat</button>
     <button class="seg-btn" class:active={activity.view_mode === "threaded"} onclick={() => setViewMode("threaded")}>Threaded</button>
   </div>
+</div>
+
+<div class="setting-row">
+  <span class="setting-label">Collapse threads by default</span>
+  <button class="toggle-btn" class:toggle-on={activity.collapse_threads} onclick={toggleCollapseThreads} aria-label="Toggle collapse threads by default" aria-pressed={activity.collapse_threads}>
+    <span class="toggle-track"><span class="toggle-thumb"></span></span>
+  </button>
 </div>
 
 <div class="setting-row">

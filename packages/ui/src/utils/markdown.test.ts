@@ -1,7 +1,119 @@
 import { describe, expect, it } from "vitest";
+import { buildCanonicalProviderItemURL } from "./item-reference.js";
 import { renderMarkdown } from "./markdown.js";
 
 describe("renderMarkdown task lists", () => {
+  it("renders item references with the shared internal route and data attributes", () => {
+    const html = renderMarkdown("See #12 and acme/tools#13", {
+      provider: "github",
+      platformHost: "github.com",
+      owner: "acme",
+      name: "widgets",
+      repoPath: "acme/widgets",
+    });
+
+    expect(html).toContain('class="item-ref" href="/issues/github/acme/widgets/12"');
+    expect(html).toContain('data-platform-host="github.com"');
+    expect(html).toContain('data-owner="acme"');
+    expect(html).toContain('data-name="widgets"');
+    expect(html).toContain('data-repo-path="acme/widgets"');
+    expect(html).toContain('data-number="12"');
+    expect(html).toContain('data-external-url="https://github.com/acme/widgets/issues/12"');
+    expect(html).toContain('href="/issues/github/acme/tools/13"');
+    expect(html).toContain('data-repo-path="acme/tools"');
+    expect(html).toContain('data-external-url="https://github.com/acme/tools/issues/13"');
+  });
+
+  it("renders gitlab issue and merge request references with provider fallback links", () => {
+    const html = renderMarkdown("See #41 and group/project#42 and group/project!43 and !44", {
+      provider: "gitlab",
+      platformHost: "gitlab.example.com",
+      owner: "group",
+      name: "project",
+      repoPath: "group/project",
+    });
+
+    expect(html).toContain(
+      'href="/host/gitlab.example.com/issues/gitlab/group/project/41"',
+    );
+    expect(html).toContain(
+      'data-number="41" data-item-type="issue"',
+    );
+    expect(html).toContain(
+      'href="/host/gitlab.example.com/issues/gitlab/group/project/42"',
+    );
+    expect(html).toContain(
+      'data-number="42" data-item-type="issue"',
+    );
+    expect(html).toContain(
+      'data-external-url="https://gitlab.example.com/group/project/-/issues/42"',
+    );
+    expect(html).toContain(
+      'href="/host/gitlab.example.com/pulls/gitlab/group/project/43"',
+    );
+    expect(html).toContain('data-item-type="pr"');
+    expect(html).toContain(
+      'data-external-url="https://gitlab.example.com/group/project/-/merge_requests/43"',
+    );
+    expect(html).toContain(
+      'href="/host/gitlab.example.com/pulls/gitlab/group/project/44"',
+    );
+  });
+
+  it("disambiguates overlapping gitlab issue and merge request numbers", () => {
+    const html = renderMarkdown("See #10, !10, group/project#10, and group/project!10", {
+      provider: "gitlab",
+      platformHost: "gitlab.example.com",
+      owner: "group",
+      name: "project",
+      repoPath: "group/project",
+    });
+
+    expect(html.match(/data-number="10" data-item-type="issue"/g)).toHaveLength(2);
+    expect(html.match(/data-number="10" data-item-type="pr"/g)).toHaveLength(2);
+    expect(html).toContain(
+      'data-external-url="https://gitlab.example.com/group/project/-/issues/10"',
+    );
+    expect(html).toContain(
+      'data-external-url="https://gitlab.example.com/group/project/-/merge_requests/10"',
+    );
+  });
+
+  it("does not parse bang references outside GitLab repos", () => {
+    const html = renderMarkdown("See acme/tools!13 and !14", {
+      provider: "github",
+      platformHost: "github.com",
+      owner: "acme",
+      name: "widgets",
+      repoPath: "acme/widgets",
+    });
+
+    expect(html).toContain("acme/tools!13");
+    expect(html).toContain("!14");
+    expect(html).not.toContain('data-item-type="pr"');
+  });
+
+  it("builds provider-canonical pull request fallback links", () => {
+    expect(buildCanonicalProviderItemURL({
+      provider: "github",
+      platformHost: "github.com",
+      owner: "acme",
+      name: "widgets",
+      repoPath: "acme/widgets",
+      number: 12,
+      itemType: "pr",
+    })).toBe("https://github.com/acme/widgets/pull/12");
+    expect(buildCanonicalProviderItemURL({
+      provider: "gitlab",
+      platformHost: "gitlab.example.com",
+      owner: "group",
+      name: "project",
+      repoPath: "group/project",
+      number: 42,
+      itemType: "pr",
+    })).toBe("https://gitlab.example.com/group/project/-/merge_requests/42");
+  });
+
   it("renders disabled checkboxes by default", () => {
     const html = renderMarkdown("- [ ] one\n- [x] two");
     expect(html).toContain('disabled=""');

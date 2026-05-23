@@ -473,10 +473,11 @@ func cleanPath(path string) string {
 }
 
 type Activity struct {
-	ViewMode   string `toml:"view_mode" json:"view_mode"`
-	TimeRange  string `toml:"time_range" json:"time_range"`
-	HideClosed bool   `toml:"hide_closed" json:"hide_closed"`
-	HideBots   bool   `toml:"hide_bots" json:"hide_bots"`
+	ViewMode        string `toml:"view_mode" json:"view_mode"`
+	TimeRange       string `toml:"time_range" json:"time_range"`
+	HideClosed      bool   `toml:"hide_closed" json:"hide_closed"`
+	HideBots        bool   `toml:"hide_bots" json:"hide_bots"`
+	CollapseThreads bool   `toml:"collapse_threads" json:"collapse_threads"`
 }
 
 const (

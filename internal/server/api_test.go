@@ -55,7 +55,27 @@ import (
 	"go.kenn.io/middleman/internal/testutil/dbtest"
 	"go.kenn.io/middleman/internal/workspace"
 	"go.kenn.io/middleman/internal/workspace/localruntime"
+	"golang.org/x/sync/semaphore"
 )
+
+const serverRuntimeHelperMarker = "middleman-runtime-helper"
+
+var ptyE2ESemaphore = semaphore.NewWeighted(4)
+
+func runParallelPTYE2E(t *testing.T) {
+	t.Helper()
+	t.Parallel()
+	releasePTYSlot := acquirePTYE2ESlot(t)
+	t.Cleanup(releasePTYSlot)
+}
+
+func acquirePTYE2ESlot(t *testing.T) func() {
+	t.Helper()
+	require.NoError(t, ptyE2ESemaphore.Acquire(t.Context(), 1))
+	return func() {
+		ptyE2ESemaphore.Release(1)
+	}
+}
 
 func requirePTYAvailable(t *testing.T) {
 	t.Helper()
@@ -4721,6 +4741,69 @@ func TestAPICommentAutocomplete(t *testing.T) {
 		{Kind: "pull", Number: 12, Title: "Polish mentions", State: "open"},
 	}, refBody.References)
 	assert.Empty(refBody.Users)
+
+	bangReq := httptest.NewRequest(http.MethodGet, "/api/v1/repo/gh/acme/widget/comment-autocomplete?trigger=!&q=1&limit=10", nil)
+	bangRR := httptest.NewRecorder()
+	srv.ServeHTTP(bangRR, bangReq)
+	assert.Equal(http.StatusBadRequest, bangRR.Code, bangRR.Body.String())
+
+	gitlabRepoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.example.com",
+		Owner:        "group",
+		Name:         "project",
+	})
+	require.NoError(err)
+	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:         gitlabRepoID,
+		PlatformID:     12001,
+		Number:         12,
+		URL:            "https://gitlab.example.com/group/project/-/merge_requests/12",
+		Title:          "Polish merge request mentions",
+		Author:         "alice",
+		State:          "open",
+		HeadBranch:     "feature-12",
+		BaseBranch:     "main",
+		CreatedAt:      time.Now().UTC().Add(-3 * time.Hour).Truncate(time.Second),
+		UpdatedAt:      time.Now().UTC().Add(-3 * time.Hour).Truncate(time.Second),
+		LastActivityAt: time.Now().UTC().Add(-3 * time.Hour).Truncate(time.Second),
+	})
+	require.NoError(err)
+	_, err = database.UpsertIssue(ctx, &db.Issue{
+		RepoID:         gitlabRepoID,
+		PlatformID:     17001,
+		Number:         17,
+		URL:            "https://gitlab.example.com/group/project/-/issues/17",
+		Title:          "Mention issue",
+		Author:         "alex",
+		State:          "open",
+		CreatedAt:      time.Now().UTC().Add(-2 * time.Hour).Truncate(time.Second),
+		UpdatedAt:      time.Now().UTC().Add(-2 * time.Hour).Truncate(time.Second),
+		LastActivityAt: time.Now().UTC().Add(-2 * time.Hour).Truncate(time.Second),
+	})
+	require.NoError(err)
+
+	gitlabIssueReq := httptest.NewRequest(http.MethodGet, "/api/v1/host/gitlab.example.com/repo/gitlab/group/project/comment-autocomplete?trigger=%23&q=1&limit=10", nil)
+	gitlabIssueRR := httptest.NewRecorder()
+	srv.ServeHTTP(gitlabIssueRR, gitlabIssueReq)
+	require.Equal(http.StatusOK, gitlabIssueRR.Code, gitlabIssueRR.Body.String())
+
+	var gitlabIssueBody commentAutocompleteResponse
+	require.NoError(json.NewDecoder(gitlabIssueRR.Body).Decode(&gitlabIssueBody))
+	assert.Equal([]db.CommentAutocompleteReference{
+		{Kind: "issue", Number: 17, Title: "Mention issue", State: "open"},
+	}, gitlabIssueBody.References)
+
+	gitlabMRReq := httptest.NewRequest(http.MethodGet, "/api/v1/host/gitlab.example.com/repo/gitlab/group/project/comment-autocomplete?trigger=!&q=1&limit=10", nil)
+	gitlabMRRR := httptest.NewRecorder()
+	srv.ServeHTTP(gitlabMRRR, gitlabMRReq)
+	require.Equal(http.StatusOK, gitlabMRRR.Code, gitlabMRRR.Body.String())
+
+	var gitlabMRBody commentAutocompleteResponse
+	require.NoError(json.NewDecoder(gitlabMRRR.Body).Decode(&gitlabMRBody))
+	assert.Equal([]db.CommentAutocompleteReference{
+		{Kind: "pull", Number: 12, Title: "Polish merge request mentions", State: "open"},
+	}, gitlabMRBody.References)
 }
 
 func TestAPICommentAutocompleteUsesRepoPlatformHost(t *testing.T) {
@@ -9112,7 +9195,7 @@ func TestResolveItem_PR(t *testing.T) {
 	client := setupTestClient(t, srv)
 
 	resp, err := client.HTTP.ResolveRepoItemWithResponse(
-		t.Context(), "gh", "acme", "widget", 42,
+		t.Context(), "gh", "acme", "widget", 42, nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -9130,7 +9213,7 @@ func TestResolveItem_Issue(t *testing.T) {
 	client := setupTestClient(t, srv)
 
 	resp, err := client.HTTP.ResolveRepoItemWithResponse(
-		t.Context(), "gh", "acme", "widget", 7,
+		t.Context(), "gh", "acme", "widget", 7, nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -9140,13 +9223,73 @@ func TestResolveItem_Issue(t *testing.T) {
 	require.True(resp.JSON200.RepoTracked)
 }
 
+func TestResolveItem_UsesItemTypeHintForGitLab(t *testing.T) {
+	require := require.New(t)
+	repos := []ghclient.RepoRef{{
+		Platform:     platform.KindGitLab,
+		PlatformHost: "gitlab.example.com",
+		Owner:        "group",
+		Name:         "project",
+	}}
+	srv, database := setupTestServerWithRepos(t, &mockGH{}, repos)
+	repoID, err := database.UpsertRepo(t.Context(), db.RepoIdentity{
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.example.com",
+		Owner:        "group",
+		Name:         "project",
+	})
+	require.NoError(err)
+	now := time.Now().UTC().Truncate(time.Second)
+	_, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
+		RepoID:         repoID,
+		PlatformID:     10000,
+		Number:         10,
+		URL:            "https://gitlab.example.com/group/project/-/merge_requests/10",
+		Title:          "Test MR",
+		Author:         "testuser",
+		State:          "open",
+		HeadBranch:     "feature",
+		BaseBranch:     "main",
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		LastActivityAt: now,
+	})
+	require.NoError(err)
+	_, err = database.UpsertIssue(t.Context(), &db.Issue{
+		RepoID:         repoID,
+		PlatformID:     10001,
+		Number:         10,
+		URL:            "https://gitlab.example.com/group/project/-/issues/10",
+		Title:          "Test Issue",
+		Author:         "testuser",
+		State:          "open",
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		LastActivityAt: now,
+	})
+	require.NoError(err)
+	client := setupTestClient(t, srv)
+	itemType := generated.ResolveRepoItemOnHostParamsItemTypeIssue
+
+	resp, err := client.HTTP.ResolveRepoItemOnHostWithResponse(
+		t.Context(), "gitlab.example.com", "gitlab", "group", "project", 10,
+		&generated.ResolveRepoItemOnHostParams{ItemType: &itemType},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.Equal("issue", resp.JSON200.ItemType)
+	require.EqualValues(10, resp.JSON200.Number)
+	require.True(resp.JSON200.RepoTracked)
+}
+
 func TestResolveItem_UntrackedRepo(t *testing.T) {
 	require := require.New(t)
 	srv, _ := setupTestServer(t)
 	client := setupTestClient(t, srv)
 
 	resp, err := client.HTTP.ResolveRepoItemWithResponse(
-		t.Context(), "gh", "unknown", "repo", 1,
+		t.Context(), "gh", "unknown", "repo", 1, nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
@@ -9173,7 +9316,7 @@ func TestResolveItem_NotFoundOnGitHub(t *testing.T) {
 	client := setupTestClient(t, srv)
 
 	resp, err := client.HTTP.ResolveRepoItemWithResponse(
-		t.Context(), "gh", "acme", "widget", 999,
+		t.Context(), "gh", "acme", "widget", 999, nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusNotFound, resp.StatusCode())
@@ -9196,7 +9339,7 @@ func TestResolveItem_GitHubServerError(t *testing.T) {
 	client := setupTestClient(t, srv)
 
 	resp, err := client.HTTP.ResolveRepoItemWithResponse(
-		t.Context(), "gh", "acme", "widget", 999,
+		t.Context(), "gh", "acme", "widget", 999, nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusBadGateway, resp.StatusCode())
@@ -13913,6 +14056,8 @@ func TestCleanupWorkspaceServerFixtureArtifactsKeepsDeletingAfterError(
 }
 
 func TestWorkspaceRuntimeTargetsRefreshAfterSettingsUpdateE2E(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := Assert.New(t)
 
@@ -13979,6 +14124,8 @@ func TestWorkspaceRuntimeTargetsRefreshAfterSettingsUpdateE2E(t *testing.T) {
 }
 
 func TestWorkspaceCreatesPtyOwnerSessionWhenTmuxUnavailableE2E(t *testing.T) {
+	runParallelPTYE2E(t)
+
 	require := require.New(t)
 	assert := Assert.New(t)
 
@@ -14065,6 +14212,8 @@ func TestWorkspacePtyOwnerTitleMarksWorkspaceWorkingE2E(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("workspace clone fixture uses Unix-style local remotes")
 	}
+	runParallelPTYE2E(t)
+
 	require := require.New(t)
 	assert := Assert.New(t)
 
@@ -14110,6 +14259,8 @@ func TestWorkspaceCreatesRustPtyManagerSessionE2E(t *testing.T) {
 	if runtime.GOOS != "windows" {
 		requirePTYAvailable(t)
 	}
+	runParallelPTYE2E(t)
+
 	require := require.New(t)
 	assert := Assert.New(t)
 
@@ -14176,7 +14327,8 @@ func TestWorkspaceRuntimeLaunchesRustPtyManagerSessionE2E(t *testing.T) {
 	if runtime.GOOS != "windows" {
 		requirePTYAvailable(t)
 	}
-	t.Setenv("MIDDLEMAN_SERVER_RUNTIME_HELPER", "1")
+	runParallelPTYE2E(t)
+
 	require := require.New(t)
 	assert := Assert.New(t)
 
@@ -14236,6 +14388,8 @@ func TestRustPtyManagerRejectsConcurrentAttachmentsE2E(t *testing.T) {
 		t.Skip("concurrent attach coverage is exercised by the Rust owner tests on Windows")
 	}
 	requirePTYAvailable(t)
+	runParallelPTYE2E(t)
+
 	require := require.New(t)
 	assert := Assert.New(t)
 
@@ -14250,7 +14404,6 @@ func TestRustPtyManagerRejectsConcurrentAttachmentsE2E(t *testing.T) {
 	firstNeedle := "got:before-second"
 	thirdNeedle := "got:after-close"
 	if runtime.GOOS == "windows" {
-		t.Setenv("MIDDLEMAN_SERVER_RUNTIME_HELPER", "1")
 		command = serverRuntimeHelperCommand("echo")
 		readyNeedle = ""
 		firstNeedle = "echo:before-second"
@@ -14332,6 +14485,8 @@ func readPtyOwnerOutputUntil(
 }
 
 func TestWorkspacePtyOwnerTerminalRejectsConcurrentAttachmentsE2E(t *testing.T) {
+	runParallelPTYE2E(t)
+
 	require := require.New(t)
 	assert := Assert.New(t)
 
@@ -14367,6 +14522,8 @@ func TestWorkspacePtyOwnerTerminalRejectsConcurrentAttachmentsE2E(t *testing.T) 
 }
 
 func TestWorkspacePtyOwnerTerminalFlushesFinalOutputOnExitE2E(t *testing.T) {
+	runParallelPTYE2E(t)
+
 	require := require.New(t)
 
 	fixture, _, ptyOwnerDir := setupPtyOwnerWorkspaceFixture(t)
@@ -14413,8 +14570,6 @@ func setupPtyOwnerWorkspaceFixture(
 	cfg := &config.Config{Tmux: config.Tmux{
 		Command: []string{filepath.Join(dir, "missing-tmux")},
 	}}
-	t.Setenv("SHELL", "/bin/sh")
-	t.Setenv("MIDDLEMAN_SERVER_PTY_OWNER_HELPER", "1")
 	return setupWorkspaceServerFixtureWithOptions(
 		t, cfg, ptyOwnerServerOptions(ptyOwnerDir),
 	), dir, ptyOwnerDir
@@ -14428,6 +14583,7 @@ func ptyOwnerServerOptions(ptyOwnerDir string) ServerOptions {
 			"-test.run=TestServerPtyOwnerHelperProcess",
 			"--",
 		},
+		PtyOwnerCommand: []string{"/bin/sh"},
 	}
 }
 
@@ -14445,7 +14601,6 @@ func gitLocalRemoteURL(path string) string {
 func rustPtyManagerShellCommandForTest(t *testing.T) []string {
 	t.Helper()
 	if runtime.GOOS == "windows" {
-		t.Setenv("MIDDLEMAN_SERVER_RUNTIME_HELPER", "1")
 		return serverRuntimeHelperCommand("echo")
 	}
 	return []string{"/bin/sh"}
@@ -14502,6 +14657,8 @@ func cleanupPtyOwnerWorkspace(
 }
 
 func TestWorkspaceRuntimeLaunchUnavailableTargetE2E(t *testing.T) {
+	t.Parallel()
+
 	disabled := false
 	cfg := &config.Config{Agents: []config.Agent{{
 		Key:     "disabled",
@@ -14525,6 +14682,8 @@ func TestWorkspaceRuntimeLaunchUnavailableTargetE2E(t *testing.T) {
 }
 
 func TestWorkspaceRuntimeLaunchPlainShellUsesShellSessionE2E(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := Assert.New(t)
 
@@ -14557,7 +14716,7 @@ func TestWorkspaceRuntimeLaunchPlainShellUsesShellSessionE2E(t *testing.T) {
 }
 
 func TestWorkspaceRuntimeLaunchSingletonAndStopE2E(t *testing.T) {
-	t.Setenv("MIDDLEMAN_SERVER_RUNTIME_HELPER", "1")
+	runParallelPTYE2E(t)
 
 	require := require.New(t)
 	assert := Assert.New(t)
@@ -14622,7 +14781,7 @@ func TestWorkspaceRuntimeLaunchSingletonAndStopE2E(t *testing.T) {
 }
 
 func TestWorkspaceRuntimeNaturalAgentExitRemovesSessionE2E(t *testing.T) {
-	t.Setenv("MIDDLEMAN_SERVER_RUNTIME_HELPER", "1")
+	runParallelPTYE2E(t)
 
 	require := require.New(t)
 	assert := Assert.New(t)
@@ -15557,7 +15716,7 @@ exit 0
 }
 
 func TestWorkspaceDeleteStopsRuntimeSessionsE2E(t *testing.T) {
-	t.Setenv("MIDDLEMAN_SERVER_RUNTIME_HELPER", "1")
+	runParallelPTYE2E(t)
 
 	require := require.New(t)
 	assert := Assert.New(t)
@@ -15607,7 +15766,7 @@ func TestWorkspaceDeleteStopsRuntimeSessionsE2E(t *testing.T) {
 // survive — killing them on a delete that didn't actually happen would leave
 // the user with a workspace whose agent and shell were silently terminated.
 func TestWorkspaceDeleteDirtyKeepsRuntimeSessionsE2E(t *testing.T) {
-	t.Setenv("MIDDLEMAN_SERVER_RUNTIME_HELPER", "1")
+	runParallelPTYE2E(t)
 
 	require := require.New(t)
 	assert := Assert.New(t)
@@ -15675,6 +15834,8 @@ func TestWorkspaceDeleteDirtyKeepsRuntimeSessionsE2E(t *testing.T) {
 // on these fields, so a regression here would silently turn the pills
 // off without any test failure at the unit-test layer.
 func TestWorkspaceListReportsCommitsAheadBehindE2E(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := Assert.New(t)
 
@@ -15731,6 +15892,8 @@ func TestWorkspaceListReportsCommitsAheadBehindE2E(t *testing.T) {
 }
 
 func TestWorkspaceDiffEndpointsReportHeadAndPushedE2E(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := Assert.New(t)
 
@@ -15804,6 +15967,8 @@ func TestWorkspaceDiffEndpointsReportHeadAndPushedE2E(t *testing.T) {
 }
 
 func TestWorkspaceCommitsEndpointListsBranchCommitsE2E(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := Assert.New(t)
 
@@ -15835,6 +16000,8 @@ func TestWorkspaceCommitsEndpointListsBranchCommitsE2E(t *testing.T) {
 }
 
 func TestWorkspaceDiffEndpointsAcceptCommitAndRangeScopesE2E(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 
 	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, nil)
@@ -15906,6 +16073,8 @@ func TestWorkspaceDiffEndpointsAcceptCommitAndRangeScopesE2E(t *testing.T) {
 }
 
 func TestWorkspaceDiffEndpointReportsMergeTargetE2E(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := Assert.New(t)
 
@@ -15957,6 +16126,8 @@ func TestWorkspaceDiffEndpointReportsMergeTargetE2E(t *testing.T) {
 }
 
 func TestWorkspaceDiffEndpointRejectsOriginBaseE2E(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 
 	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, nil)
@@ -15981,6 +16152,8 @@ func TestWorkspaceDiffEndpointRejectsOriginBaseE2E(t *testing.T) {
 }
 
 func TestWorkspaceDiffEndpointHandlesUntrackedSymlinkAndLargeFileE2E(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := Assert.New(t)
 
@@ -16025,6 +16198,8 @@ func TestWorkspaceDiffEndpointHandlesUntrackedSymlinkAndLargeFileE2E(t *testing.
 }
 
 func TestWorkspaceDiffEndpointMarksGeneratedFilesE2E(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := Assert.New(t)
 
@@ -16064,6 +16239,8 @@ func TestWorkspaceDiffEndpointMarksGeneratedFilesE2E(t *testing.T) {
 }
 
 func TestWorkspaceDiffEndpointScopesPatchByPathE2E(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := Assert.New(t)
 
@@ -16389,7 +16566,7 @@ func TestWorkspaceRuntimeEnsureShellE2E(t *testing.T) {
 // filter; this test guards both the websocket route and the
 // config.Shell.Command -> manager.Options.ShellCommand wiring.
 func TestWorkspaceRuntimeShellTerminalWebSocketE2E(t *testing.T) {
-	t.Setenv("MIDDLEMAN_SERVER_RUNTIME_HELPER", "1")
+	runParallelPTYE2E(t)
 
 	require := require.New(t)
 	cfg := &config.Config{
@@ -16452,7 +16629,7 @@ func TestWorkspaceRuntimeShellTerminalWebSocketE2E(t *testing.T) {
 // 100ms timeout fires before attachment.Done — exactly the systemd-
 // run-wrapped shell case the user hit.
 func TestWorkspaceRuntimeShellTerminalDeliversExitFrameE2E(t *testing.T) {
-	t.Setenv("MIDDLEMAN_SERVER_RUNTIME_HELPER", "1")
+	runParallelPTYE2E(t)
 
 	require := require.New(t)
 	cfg := &config.Config{
@@ -16541,7 +16718,7 @@ func TestWorkspaceRuntimeShellTerminalDeliversExitFrameE2E(t *testing.T) {
 // deterministic (~750ms) and the second EnsureShell is guaranteed to
 // land inside it.
 func TestWorkspaceRuntimeEnsureShellAfterExitStartsFreshE2E(t *testing.T) {
-	t.Setenv("MIDDLEMAN_SERVER_RUNTIME_HELPER", "1")
+	runParallelPTYE2E(t)
 
 	require := require.New(t)
 	assert := Assert.New(t)
@@ -16680,7 +16857,7 @@ func TestBridgeRuntimeAttachmentSubscriberDropDoesNotEmitExitFrame(t *testing.T)
 }
 
 func TestWorkspaceRuntimeSessionTerminalWebSocketE2E(t *testing.T) {
-	t.Setenv("MIDDLEMAN_SERVER_RUNTIME_HELPER", "1")
+	runParallelPTYE2E(t)
 
 	require := require.New(t)
 	disableTmuxAgentSessions := false
@@ -16736,7 +16913,7 @@ func TestWorkspaceRuntimeSessionTerminalWebSocketE2E(t *testing.T) {
 }
 
 func TestWorkspaceRuntimeSessionTerminalWebSocketBasePathE2E(t *testing.T) {
-	t.Setenv("MIDDLEMAN_SERVER_RUNTIME_HELPER", "1")
+	runParallelPTYE2E(t)
 
 	require := require.New(t)
 	disableTmuxAgentSessions := false
@@ -16895,7 +17072,7 @@ func workspaceTerminalDialWithQuery(
 }
 
 func TestWorkspaceRuntimeSessionTerminalSkipsAltScreenReplayE2E(t *testing.T) {
-	t.Setenv("MIDDLEMAN_SERVER_RUNTIME_HELPER", "1")
+	runParallelPTYE2E(t)
 
 	require := require.New(t)
 	assert := Assert.New(t)
@@ -16997,7 +17174,7 @@ func TestWorkspaceRuntimeSessionTerminalSkipsAltScreenReplayE2E(t *testing.T) {
 }
 
 func TestWorkspaceRuntimeSessionTerminalAppliesInitialSizeE2E(t *testing.T) {
-	t.Setenv("MIDDLEMAN_SERVER_RUNTIME_HELPER", "1")
+	runParallelPTYE2E(t)
 
 	require := require.New(t)
 	// This intentionally goes through the generated HTTP client, the real
@@ -17065,6 +17242,7 @@ func TestWorkspaceRuntimeSessionTerminalTmuxBackedWebSocketE2E(
 	if err != nil {
 		t.Skip("tmux not available")
 	}
+	runParallelPTYE2E(t)
 
 	require := require.New(t)
 	assert := Assert.New(t)
@@ -17183,16 +17361,25 @@ func serverRuntimeHelperCommand(mode string) []string {
 		os.Args[0],
 		"-test.run=TestServerRuntimeHelperProcess",
 		"--",
+		serverRuntimeHelperMarker,
 		mode,
 	}
 }
 
 func TestServerRuntimeHelperProcess(t *testing.T) {
-	if os.Getenv("MIDDLEMAN_SERVER_RUNTIME_HELPER") != "1" {
+	args := os.Args
+	if sep := slices.Index(args, "--"); sep >= 0 {
+		args = args[sep+1:]
+	}
+	if len(args) > 0 && args[0] == serverRuntimeHelperMarker {
+		args = args[1:]
+	} else if os.Getenv("MIDDLEMAN_SERVER_RUNTIME_HELPER") != "1" {
 		return
 	}
-	args := os.Args
-	mode := args[len(args)-1]
+	if len(args) == 0 {
+		os.Exit(2)
+	}
+	mode := args[0]
 	switch mode {
 	case "sleep":
 		blockServerRuntimeHelper()
@@ -17250,13 +17437,14 @@ func blockServerRuntimeHelper() {
 }
 
 func TestServerPtyOwnerHelperProcess(t *testing.T) {
-	if os.Getenv("MIDDLEMAN_SERVER_PTY_OWNER_HELPER") != "1" {
-		return
-	}
 	args := os.Args
 	sep := slices.Index(args, "--")
 	if sep >= 0 {
 		args = args[sep+1:]
+	}
+	if os.Getenv("MIDDLEMAN_SERVER_PTY_OWNER_HELPER") != "1" &&
+		(len(args) == 0 || args[0] != "pty-owner") {
+		return
 	}
 	if len(args) > 0 && args[0] == "pty-owner" {
 		args = args[1:]
@@ -17349,6 +17537,8 @@ type rawProblemDetail struct {
 }
 
 func TestWorkspaceCRUDE2E(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := Assert.New(t)
 
@@ -17424,6 +17614,8 @@ func TestWorkspaceCRUDE2E(t *testing.T) {
 }
 
 func TestWorkspaceRetryErroredWorkspaceE2E(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := Assert.New(t)
 
@@ -17464,6 +17656,8 @@ func TestWorkspaceRetryErroredWorkspaceE2E(t *testing.T) {
 }
 
 func TestWorkspaceRetryReadyWorkspaceConflictE2E(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := Assert.New(t)
 
@@ -17512,6 +17706,8 @@ func TestWorkspaceRetryReadyWorkspaceConflictE2E(t *testing.T) {
 }
 
 func TestWorkspaceCreateNotFound(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 
 	client, _, _, _ := setupTestServerWithWorkspaces(t)
@@ -17545,6 +17741,8 @@ func TestWorkspaceCreateNotFound(t *testing.T) {
 }
 
 func TestWorkspaceMRDetailHasWorkspace(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := Assert.New(t)
 
@@ -17590,6 +17788,8 @@ func TestWorkspaceMRDetailHasWorkspace(t *testing.T) {
 }
 
 func TestWorkspaceCreateDuplicate(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 
 	client, _, _, _ := setupTestServerWithWorkspaces(t)
@@ -17614,6 +17814,8 @@ func TestWorkspaceCreateDuplicate(t *testing.T) {
 }
 
 func TestWorkspaceCreateFetchesCloneThroughAPI(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := Assert.New(t)
 
@@ -17653,6 +17855,8 @@ func TestWorkspaceCreateFetchesCloneThroughAPI(t *testing.T) {
 }
 
 func TestWorkspaceCreateIssueE2E(t *testing.T) {
+	t.Parallel()
+
 	assert := Assert.New(t)
 	require := require.New(t)
 
@@ -17705,6 +17909,8 @@ func TestWorkspaceCreateIssueE2E(t *testing.T) {
 }
 
 func TestWorkspaceCreateIssueUsesTitleSlugInBranch(t *testing.T) {
+	t.Parallel()
+
 	assert := Assert.New(t)
 	require := require.New(t)
 
@@ -17739,6 +17945,8 @@ func TestWorkspaceCreateIssueUsesTitleSlugInBranch(t *testing.T) {
 }
 
 func TestWorkspaceCreateIssueBareStyleConfigOptOut(t *testing.T) {
+	t.Parallel()
+
 	assert := Assert.New(t)
 	require := require.New(t)
 
@@ -17774,6 +17982,8 @@ func TestWorkspaceCreateIssueBareStyleConfigOptOut(t *testing.T) {
 }
 
 func TestWorkspaceCreateIssueIsIdempotent(t *testing.T) {
+	t.Parallel()
+
 	assert := Assert.New(t)
 	require := require.New(t)
 
@@ -17807,6 +18017,8 @@ func TestWorkspaceCreateIssueIsIdempotent(t *testing.T) {
 }
 
 func TestWorkspaceCreateIssueAfterDeleteRecreatesBranch(t *testing.T) {
+	t.Parallel()
+
 	assert := Assert.New(t)
 	require := require.New(t)
 
@@ -17860,6 +18072,8 @@ func TestWorkspaceCreateIssueAfterDeleteRecreatesBranch(t *testing.T) {
 }
 
 func TestWorkspaceCreatePRAndIssueCanCoexistForSameRepoNumber(t *testing.T) {
+	t.Parallel()
+
 	assert := Assert.New(t)
 	require := require.New(t)
 
@@ -17907,6 +18121,8 @@ func TestWorkspaceCreatePRAndIssueCanCoexistForSameRepoNumber(t *testing.T) {
 }
 
 func TestWorkspaceCreateIssueBranchConflictReturnsTyped409(t *testing.T) {
+	t.Parallel()
+
 	assert := Assert.New(t)
 	require := require.New(t)
 
@@ -18050,6 +18266,8 @@ func prepareIssueWorkspaceAssociationFixture(
 }
 
 func TestWorkspaceIssueMonitorAssociatesPRAndKeepsIssueOwnership(t *testing.T) {
+	t.Parallel()
+
 	assert := Assert.New(t)
 	require := require.New(t)
 	ctx := context.Background()
@@ -18094,6 +18312,8 @@ func TestWorkspaceIssueMonitorAssociatesPRAndKeepsIssueOwnership(t *testing.T) {
 }
 
 func TestWorkspaceMonitorPassBroadcastsInvalidationEvents(t *testing.T) {
+	t.Parallel()
+
 	assert := Assert.New(t)
 	ctx := t.Context()
 
@@ -18135,6 +18355,8 @@ func readEventMatching(
 }
 
 func TestWorkspaceCreateUsesPRBranchAndFallbackBranch(t *testing.T) {
+	t.Parallel()
+
 	assert := Assert.New(t)
 	require := require.New(t)
 
@@ -18202,6 +18424,8 @@ func TestWorkspaceCreateUsesPRBranchAndFallbackBranch(t *testing.T) {
 }
 
 func TestWorkspaceCreateSameRepoHeadCloneURLTracksOriginBranchE2E(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := Assert.New(t)
 
@@ -18256,6 +18480,8 @@ func TestWorkspaceCreateSameRepoHeadCloneURLTracksOriginBranchE2E(t *testing.T) 
 }
 
 func TestWorkspaceCreatePortQualifiedHostTracksOriginBranchE2E(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := Assert.New(t)
 
@@ -18304,6 +18530,8 @@ func TestWorkspaceCreatePortQualifiedHostTracksOriginBranchE2E(t *testing.T) {
 }
 
 func TestWorkspaceDeleteRecreatesForkBranchName(t *testing.T) {
+	t.Parallel()
+
 	assert := Assert.New(t)
 	require := require.New(t)
 
@@ -18392,6 +18620,8 @@ func TestWorkspaceDeleteRecreatesForkBranchName(t *testing.T) {
 }
 
 func TestWorkspaceDeletePreservesUserCreatedBranch(t *testing.T) {
+	t.Parallel()
+
 	assert := Assert.New(t)
 	require := require.New(t)
 
@@ -18430,6 +18660,8 @@ func TestWorkspaceDeletePreservesUserCreatedBranch(t *testing.T) {
 }
 
 func TestWorkspaceCreatePreservesExistingLocalPreferredBranch(t *testing.T) {
+	t.Parallel()
+
 	assert := Assert.New(t)
 	require := require.New(t)
 
@@ -18488,6 +18720,8 @@ func TestWorkspaceCreatePreservesExistingLocalPreferredBranch(t *testing.T) {
 }
 
 func TestWorkspaceDeleteLegacySyntheticBranchAllowsRecreate(t *testing.T) {
+	t.Parallel()
+
 	assert := Assert.New(t)
 	require := require.New(t)
 
@@ -18677,6 +18911,8 @@ func seedPROnHost(
 }
 
 func TestWorkspaceDeleteDirty(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := Assert.New(t)
 

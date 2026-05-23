@@ -21,6 +21,8 @@ components:
     Activity:
       additionalProperties: false
       properties:
+        collapse_threads:
+          type: boolean
         hide_bots:
           type: boolean
         hide_closed:
@@ -34,6 +36,7 @@ components:
         - time_range
         - hide_closed
         - hide_bots
+        - collapse_threads
       type: object
     ActivityItemResponse:
       additionalProperties: false
@@ -5100,6 +5103,16 @@ paths:
           schema:
             format: int64
             type: integer
+        - description: Optional item type hint for providers whose issues and merge requests have separate number spaces.
+          explode: false
+          in: query
+          name: item_type
+          schema:
+            description: Optional item type hint for providers whose issues and merge requests have separate number spaces.
+            enum:
+              - pr
+              - issue
+            type: string
       responses:
         "200":
           content:
@@ -7077,6 +7090,16 @@ paths:
           schema:
             format: int64
             type: integer
+        - description: Optional item type hint for providers whose issues and merge requests have separate number spaces.
+          explode: false
+          in: query
+          name: item_type
+          schema:
+            description: Optional item type hint for providers whose issues and merge requests have separate number spaces.
+            enum:
+              - pr
+              - issue
+            type: string
       responses:
         "200":
           content:

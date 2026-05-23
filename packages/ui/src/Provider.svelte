@@ -227,6 +227,7 @@
             : "7d",
           hide_closed: data.activity.hide_closed,
           hide_bots: data.activity.hide_bots,
+          collapse_threads: data.activity.collapse_threads,
         },
         data.terminal,
       );

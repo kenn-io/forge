@@ -1,4 +1,4 @@
-import { cleanup, render } from "@testing-library/svelte";
+import { cleanup, fireEvent, render } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ActivityItem } from "../api/types.js";
@@ -22,48 +22,76 @@ function activityItem(
     item_url: "https://github.com/acme/widgets/pull/1",
     platform_host: "github.com",
     repo_owner: "acme",
-    repo_name: "widgets-with-a-long-name",
+    repo_name: "widgets",
     repo: {
       provider: "github",
       platform_host: "github.com",
       owner: "acme",
-      name: "widgets-with-a-long-name",
-      repo_path: "acme/widgets-with-a-long-name",
+      name: "widgets",
+      repo_path: "acme/widgets",
     },
     ...overrides,
   };
 }
 
-const groupByRepo = vi.hoisted(() => ({
-  value: false,
-}));
+const expanded = vi.hoisted(() => ({ value: true }));
+const toggleThreadItem = vi.hoisted(() => vi.fn());
 
 vi.mock("../context.js", () => ({
   getStores: () => ({
-    grouping: {
-      getGroupByRepo: () => groupByRepo.value,
+    grouping: { getGroupByRepo: () => false },
+    activity: {
+      isThreadItemExpanded: () => expanded.value,
+      toggleThreadItem,
     },
   }),
 }));
 
-describe("ActivityThreaded", () => {
+describe("ActivityThreaded collapse", () => {
   afterEach(() => {
     cleanup();
-    groupByRepo.value = false;
+    expanded.value = true;
+    toggleThreadItem.mockClear();
   });
 
-  it("keeps repo chip selector compatibility and applies ellipsis to an inner label", () => {
+  it("shows events when the item is expanded", () => {
     const { container } = render(ActivityThreaded, {
-      props: {
-        items: [activityItem("comment")],
-        onSelectItem: undefined,
-      },
+      props: { items: [activityItem("c1")], onSelectItem: undefined },
     });
+    expect(container.querySelectorAll(".event-row").length).toBeGreaterThan(0);
+  });
 
-    const chip = container.querySelector(".repo-chip.repo-tag");
-    const label = chip?.querySelector(".repo-chip__label");
+  it("hides events but keeps the item row when collapsed", () => {
+    expanded.value = false;
+    const { container } = render(ActivityThreaded, {
+      props: { items: [activityItem("c1")], onSelectItem: undefined },
+    });
+    expect(container.querySelectorAll(".event-row")).toHaveLength(0);
+    expect(container.querySelectorAll(".item-row")).toHaveLength(1);
+  });
 
-    expect(chip).not.toBeNull();
-    expect(label?.textContent).toBe("acme/widgets-with-a-long-name");
+  it("toggles the item on caret click without selecting the row", async () => {
+    const onSelectItem = vi.fn();
+    const { container } = render(ActivityThreaded, {
+      props: { items: [activityItem("c1")], onSelectItem },
+    });
+    const caret = container.querySelector(".thread-caret");
+    expect(caret).not.toBeNull();
+    await fireEvent.click(caret!);
+    expect(toggleThreadItem).toHaveBeenCalledTimes(1);
+    expect(toggleThreadItem).toHaveBeenCalledWith(
+      "github|github.com|acme/widgets:pr:1",
+    );
+    expect(onSelectItem).not.toHaveBeenCalled();
+  });
+
+  it("renders the repo chip label in non-grouped mode", () => {
+    const { container } = render(ActivityThreaded, {
+      props: { items: [activityItem("c1")], onSelectItem: undefined },
+    });
+    const label = container.querySelector(
+      ".repo-chip.repo-tag .repo-chip__label",
+    );
+    expect(label?.textContent).toBe("acme/widgets");
   });
 });

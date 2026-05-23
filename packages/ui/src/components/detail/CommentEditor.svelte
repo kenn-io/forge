@@ -18,7 +18,11 @@
   } from "@tiptap/suggestion";
   import { Editor, EditorContent } from "svelte-tiptap";
 
-  import { providerRepoPath, providerRouteParams } from "../../api/provider-routes.js";
+  import {
+    canonicalProvider,
+    providerRepoPath,
+    providerRouteParams,
+  } from "../../api/provider-routes.js";
   import { getClient } from "../../context.js";
   import { computeCommentEditorMenuPosition } from "./commentEditorMenuPosition";
 
@@ -42,6 +46,8 @@
     insertText: string;
   }
 
+  type AutocompleteTrigger = "@" | "#" | "!";
+
   interface CommentAutocompleteReference {
     kind: string;
     number: number;
@@ -56,6 +62,7 @@
 
   const mentionSuggestionKey = new PluginKey("comment-editor-user-suggestion");
   const referenceSuggestionKey = new PluginKey("comment-editor-reference-suggestion");
+  const mergeRequestSuggestionKey = new PluginKey("comment-editor-merge-request-suggestion");
   const client = getClient();
 
   let {
@@ -96,8 +103,27 @@
     return current.getText({ blockSeparator: "\n" }).replace(/\n$/, "");
   }
 
+  function isGitLabRepo(): boolean {
+    return canonicalProvider(provider) === "gitlab";
+  }
+
+  function referenceKindForTrigger(trigger: AutocompleteTrigger): string | undefined {
+    if (!isGitLabRepo()) return undefined;
+    if (trigger === "!") return "pull";
+    if (trigger === "#") return "issue";
+    return undefined;
+  }
+
+  function referencePrefixForTrigger(trigger: AutocompleteTrigger): "#" | "!" {
+    return trigger === "!" ? "!" : "#";
+  }
+
+  function pullReferenceLabel(): "MR" | "PR" {
+    return isGitLabRepo() ? "MR" : "PR";
+  }
+
   function toSuggestionItems(
-    trigger: "@" | "#",
+    trigger: AutocompleteTrigger,
     response: CommentAutocompleteResponse,
   ): SuggestionItem[] {
     if (trigger === "@") {
@@ -109,18 +135,25 @@
       }));
     }
 
-    return (response.references ?? []).map((reference: CommentAutocompleteReference) => ({
-      id: `${reference.kind}:${reference.number}`,
-      label: `#${reference.number}`,
-      detail: `${reference.kind === "pull" ? "PR" : "Issue"} · ${reference.title}`,
-      insertText: `#${reference.number}`,
-    }));
+    const kindFilter = referenceKindForTrigger(trigger);
+    const prefix = referencePrefixForTrigger(trigger);
+    return (response.references ?? [])
+      .filter((reference: CommentAutocompleteReference) =>
+        kindFilter === undefined || reference.kind === kindFilter
+      )
+      .map((reference: CommentAutocompleteReference) => ({
+        id: `${reference.kind}:${reference.number}`,
+        label: `${prefix}${reference.number}`,
+        detail: `${reference.kind === "pull" ? pullReferenceLabel() : "Issue"} · ${reference.title}`,
+        insertText: `${prefix}${reference.number}`,
+      }));
   }
 
   async function loadSuggestionItems(
-    trigger: "@" | "#",
+    trigger: AutocompleteTrigger,
     query: string,
   ): Promise<SuggestionItem[]> {
+    if (trigger === "!" && !isGitLabRepo()) return [];
     suggestionAbortController?.abort();
     const abortController = new AbortController();
     suggestionAbortController = abortController;
@@ -350,6 +383,7 @@
     if (editor) {
       exitSuggestion(editor.view, mentionSuggestionKey);
       exitSuggestion(editor.view, referenceSuggestionKey);
+      exitSuggestion(editor.view, mergeRequestSuggestionKey);
     }
     removeSuggestionMenus();
   }
@@ -362,9 +396,13 @@
     });
   }
 
-  function createAutocompleteExtension(trigger: "@" | "#", pluginKey: PluginKey) {
+  function createAutocompleteExtension(trigger: AutocompleteTrigger, pluginKey: PluginKey) {
     return Extension.create({
-      name: trigger === "@" ? "commentUserAutocomplete" : "commentReferenceAutocomplete",
+      name: trigger === "@"
+        ? "commentUserAutocomplete"
+        : trigger === "!"
+          ? "commentMergeRequestAutocomplete"
+          : "commentReferenceAutocomplete",
       addProseMirrorPlugins() {
         return [
           Suggestion<SuggestionItem, SuggestionItem>({
@@ -372,7 +410,7 @@
             pluginKey,
             char: trigger,
             allowedPrefixes: [" ", "(", "["],
-            allow: () => !isComposingInput,
+            allow: () => !isComposingInput && (trigger !== "!" || isGitLabRepo()),
             items: async ({ query }) => loadSuggestionItems(trigger, query),
             command: ({ editor, range, props }) => {
               insertSuggestionText(editor, range, props.insertText);
@@ -388,7 +426,10 @@
     if (!editor) return false;
     const mentionState = mentionSuggestionKey.getState(editor.state) as { active?: boolean } | undefined;
     const referenceState = referenceSuggestionKey.getState(editor.state) as { active?: boolean } | undefined;
-    return mentionState?.active === true || referenceState?.active === true;
+    const mergeRequestState = mergeRequestSuggestionKey.getState(editor.state) as { active?: boolean } | undefined;
+    return mentionState?.active === true
+      || referenceState?.active === true
+      || mergeRequestState?.active === true;
   }
 
   function handleEditorKeydown(event: KeyboardEvent): boolean {
@@ -429,6 +470,7 @@
         HardBreak,
         createAutocompleteExtension("@", mentionSuggestionKey),
         createAutocompleteExtension("#", referenceSuggestionKey),
+        createAutocompleteExtension("!", mergeRequestSuggestionKey),
         Placeholder.configure({
           placeholder,
           emptyEditorClass: "is-editor-empty",

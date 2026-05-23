@@ -73,3 +73,20 @@ export function collapseActivityCommitRuns(
 
   return result;
 }
+
+export interface ActivityRepoKeyRef {
+  provider: string;
+  platformHost: string;
+  owner: string;
+  name: string;
+}
+
+export function activityRepoKey(ref: ActivityRepoKeyRef): string {
+  return `${ref.provider}|${ref.platformHost}|${ref.owner}/${ref.name}`;
+}
+
+export function activityItemKey(
+  ref: ActivityRepoKeyRef & { itemType: string; itemNumber: number },
+): string {
+  return `${activityRepoKey(ref)}:${ref.itemType}:${ref.itemNumber}`;
+}

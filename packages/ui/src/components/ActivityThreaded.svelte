@@ -4,6 +4,8 @@
   import {
     collapseActivityCommitRuns,
     isCollapsedActivityRow,
+    activityItemKey,
+    activityRepoKey,
   } from "./activityRows.js";
   import {
     localDateLabel,
@@ -13,8 +15,10 @@
   import ItemKindChip from "./shared/ItemKindChip.svelte";
   import ItemStateChip from "./shared/ItemStateChip.svelte";
 
-  const { grouping } = getStores();
+  const { grouping, activity } = getStores();
   import { repoColor } from "../utils/repo-color.js";
+  import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
+  import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
 
   interface Props {
     items: ActivityItem[];
@@ -59,6 +63,7 @@
   }
 
   interface RepoGroup {
+    key: string;
     repo: string;
     itemCount: number;
     eventCount: number;
@@ -74,8 +79,14 @@
     const itemMap = new Map<string, ActivityItem[]>();
 
     for (const item of items) {
-      const host = item.platform_host ?? "";
-      const itemKey = `${host}|${item.repo_owner}/${item.repo_name}:${item.item_type}:${item.item_number}`;
+      const itemKey = activityItemKey({
+        provider: item.repo?.provider ?? "",
+        platformHost: item.platform_host ?? "",
+        owner: item.repo_owner,
+        name: item.repo_name,
+        itemType: item.item_type,
+        itemNumber: item.item_number,
+      });
 
       let events = itemMap.get(itemKey);
       if (!events) {
@@ -119,6 +130,7 @@
     if (!byRepo) {
       if (allItemGroups.length === 0) return [];
       return [{
+        key: "",
         repo: "",
         itemCount: allItemGroups.length,
         eventCount: allItemGroups.reduce((n, g) => n + g.events.length, 0),
@@ -129,8 +141,15 @@
 
     // Grouped: bucket ItemGroups by repo.
     const repoMap = new Map<string, ItemGroup[]>();
+    const repoLabels = new Map<string, string>();
     for (const ig of allItemGroups) {
-      const repoKey = `${ig.repoOwner}/${ig.repoName}`;
+      const repoKey = activityRepoKey({
+        provider: ig.provider,
+        platformHost: ig.platformHost,
+        owner: ig.repoOwner,
+        name: ig.repoName,
+      });
+      repoLabels.set(repoKey, `${ig.repoOwner}/${ig.repoName}`);
       let bucket = repoMap.get(repoKey);
       if (!bucket) {
         bucket = [];
@@ -140,10 +159,11 @@
     }
 
     const repoGroups: RepoGroup[] = [];
-    for (const [repo, itemGroups] of repoMap) {
+    for (const [repoKey, itemGroups] of repoMap) {
       const allEvents = itemGroups.flatMap((g) => g.events);
       repoGroups.push({
-        repo,
+        key: repoKey,
+        repo: repoLabels.get(repoKey) ?? "",
         itemCount: itemGroups.length,
         eventCount: allEvents.length,
         latestTime: itemGroups[0]?.latestTime ?? "",
@@ -156,6 +176,17 @@
 
     return repoGroups;
   });
+
+  function itemKeyOf(g: ItemGroup): string {
+    return activityItemKey({
+      provider: g.provider,
+      platformHost: g.platformHost,
+      owner: g.repoOwner,
+      name: g.repoName,
+      itemType: g.itemType,
+      itemNumber: g.itemNumber,
+    });
+  }
 
   function eventLabel(type: string): string {
     switch (type) {
@@ -215,7 +246,7 @@
 </script>
 
 <div class="threaded-view" class:threaded-view--compact={compact}>
-  {#each grouped as repoGroup (repoGroup.repo)}
+  {#each grouped as repoGroup (repoGroup.key)}
     <div class="repo-section">
       {#if grouping.getGroupByRepo()}
         <div class="repo-header">
@@ -224,7 +255,8 @@
         </div>
       {/if}
 
-      {#each repoGroup.items as itemGroup (`${itemGroup.platformHost}|${itemGroup.repoOwner}/${itemGroup.repoName}:${itemGroup.itemType}:${itemGroup.itemNumber}`)}
+      {#each repoGroup.items as itemGroup (itemKeyOf(itemGroup))}
+        {@const key = itemKeyOf(itemGroup)}
         <!-- svelte-ignore a11y_click_events_have_key_events -->
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div
@@ -232,6 +264,24 @@
           class:selected={isSelectedItemGroup(itemGroup)}
           onclick={() => handleItemClick(itemGroup)}
         >
+          <button
+            class="thread-caret"
+            type="button"
+            aria-label={activity.isThreadItemExpanded(key)
+              ? "Collapse item activity"
+              : "Expand item activity"}
+            aria-expanded={activity.isThreadItemExpanded(key)}
+            onclick={(e) => {
+              e.stopPropagation();
+              activity.toggleThreadItem(key);
+            }}
+          >
+            {#if activity.isThreadItemExpanded(key)}
+              <ChevronDownIcon size="14" strokeWidth="2" aria-hidden="true" />
+            {:else}
+              <ChevronRightIcon size="14" strokeWidth="2" aria-hidden="true" />
+            {/if}
+          </button>
           <ItemKindChip
             kind={itemGroup.itemType === "pr" ? "pr" : "issue"}
           />
@@ -255,23 +305,25 @@
           <span class="item-time">{relativeTime(itemGroup.latestTime)}</span>
         </div>
 
-        {#each itemGroup.displayEvents as row (row.id)}
-          <!-- svelte-ignore a11y_click_events_have_key_events -->
-          <!-- svelte-ignore a11y_no_static_element_interactions -->
-          {#if isCollapsedActivityRow(row)}
-            <div class="event-row collapsed-event" onclick={() => handleEventClick(row.representative)}>
-              <span class="event-type evt-commit">{row.count} commits</span>
-              <span class="event-author">{row.author}</span>
-              <span class="event-time">{relativeTime(row.earliest)} - {relativeTime(row.latest)}</span>
-            </div>
-          {:else}
-            <div class="event-row" onclick={() => handleEventClick(row)}>
-              <span class="event-type {eventClass(row.activity_type)}">{eventLabel(row.activity_type)}</span>
-              <span class="event-author">{row.author}</span>
-              <span class="event-time">{relativeTime(row.created_at)}</span>
-            </div>
-          {/if}
-        {/each}
+        {#if activity.isThreadItemExpanded(key)}
+          {#each itemGroup.displayEvents as row (row.id)}
+            <!-- svelte-ignore a11y_click_events_have_key_events -->
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            {#if isCollapsedActivityRow(row)}
+              <div class="event-row collapsed-event" onclick={() => handleEventClick(row.representative)}>
+                <span class="event-type evt-commit">{row.count} commits</span>
+                <span class="event-author">{row.author}</span>
+                <span class="event-time">{relativeTime(row.earliest)} - {relativeTime(row.latest)}</span>
+              </div>
+            {:else}
+              <div class="event-row" onclick={() => handleEventClick(row)}>
+                <span class="event-type {eventClass(row.activity_type)}">{eventLabel(row.activity_type)}</span>
+                <span class="event-author">{row.author}</span>
+                <span class="event-time">{relativeTime(row.created_at)}</span>
+              </div>
+            {/if}
+          {/each}
+        {/if}
       {/each}
     </div>
   {/each}
@@ -332,6 +384,29 @@
   .item-row.selected {
     background: color-mix(in srgb, var(--accent-blue) 10%, transparent);
     box-shadow: inset 3px 0 0 var(--accent-blue);
+  }
+
+  .thread-caret {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+    color: var(--text-muted);
+    background: none;
+    border-radius: var(--radius-sm);
+    transition: color 0.1s, background 0.1s;
+  }
+
+  .thread-caret:hover {
+    color: var(--text-primary);
+    background: var(--bg-surface-hover);
+  }
+
+  .thread-caret:focus-visible {
+    outline: 2px solid var(--accent-blue);
+    outline-offset: 1px;
   }
 
   .item-ref {

@@ -54,6 +54,9 @@ export function createActivityStore(
   let searchQuery = $state<string | undefined>(undefined);
   let timeRange = $state<TimeRange>("7d");
   let viewMode = $state<ViewMode>("flat");
+  let collapseThreads = $state(false);
+  let collapseThreadsDefault = false;
+  let expandOverrides = $state<Set<string>>(new Set());
   let pollHandle: ReturnType<typeof setInterval> | null =
     null;
   let pollInFlight = false;
@@ -95,6 +98,12 @@ export function createActivityStore(
   function getViewMode(): ViewMode {
     return viewMode;
   }
+  function getCollapseThreads(): boolean {
+    return collapseThreads;
+  }
+  function isThreadItemExpanded(key: string): boolean {
+    return expandOverrides.has(key) ? collapseThreads : !collapseThreads;
+  }
   function getHideClosedMerged(): boolean {
     return hideClosedMerged;
   }
@@ -127,6 +136,24 @@ export function createActivityStore(
   function setViewMode(mode: ViewMode): void {
     viewMode = mode;
   }
+  function collapseAllThreads(): void {
+    collapseThreads = true;
+    expandOverrides = new Set();
+    syncToURL();
+  }
+  function expandAllThreads(): void {
+    collapseThreads = false;
+    expandOverrides = new Set();
+    syncToURL();
+  }
+  function toggleThreadItem(key: string): void {
+    // Per-item overrides are session-only and intentionally not synced to the
+    // URL; only collapse-all/expand-all persist via collapseThreads.
+    const next = new Set(expandOverrides);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    expandOverrides = next;
+  }
   function setHideClosedMerged(v: boolean): void {
     hideClosedMerged = v;
   }
@@ -149,6 +176,18 @@ export function createActivityStore(
     timeRange = activity.time_range;
     hideClosedMerged = activity.hide_closed;
     hideBots = activity.hide_bots;
+    collapseThreadsDefault = activity.collapse_threads;
+    collapseThreads = activity.collapse_threads;
+    expandOverrides = new Set();
+    if (initialized) {
+      applyCollapsedFromURL();
+      // Once a settings reload makes the live state match the new default,
+      // drop the now-redundant collapsed param so a later default change is
+      // not shadowed by a stale override.
+      if (collapseThreads === collapseThreadsDefault) {
+        deleteCollapsedParam();
+      }
+    }
   }
 
   function initializeFromMount(): void {
@@ -335,6 +374,23 @@ export function createActivityStore(
     );
   }
 
+  function applyCollapsedFromURL(): void {
+    const sp = new URLSearchParams(window.location.search);
+    if (!sp.has("collapsed")) return;
+    const v = sp.get("collapsed");
+    if (v === "1") collapseThreads = true;
+    else if (v === "0") collapseThreads = false;
+  }
+
+  function deleteCollapsedParam(): void {
+    const sp = new URLSearchParams(window.location.search);
+    if (!sp.has("collapsed")) return;
+    sp.delete("collapsed");
+    const qs = sp.toString();
+    const path = window.location.pathname || getBasePath();
+    history.replaceState(null, "", path + (qs ? `?${qs}` : ""));
+  }
+
   function syncFromURL(): void {
     const sp = new URLSearchParams(
       window.location.search,
@@ -357,6 +413,7 @@ export function createActivityStore(
       if (viewParam === "flat" || viewParam === "threaded")
         viewMode = viewParam;
     }
+    applyCollapsedFromURL();
     deriveFiltersFromTypes();
   }
 
@@ -373,6 +430,11 @@ export function createActivityStore(
     else sp.delete("range");
     if (viewMode !== "flat") sp.set("view", viewMode);
     else sp.delete("view");
+    if (collapseThreads !== collapseThreadsDefault) {
+      sp.set("collapsed", collapseThreads ? "1" : "0");
+    } else {
+      sp.delete("collapsed");
+    }
     const qs = sp.toString();
     const path = window.location.pathname || getBasePath();
     const url = path + (qs ? `?${qs}` : "");
@@ -388,6 +450,8 @@ export function createActivityStore(
     getActivitySearch,
     getTimeRange,
     getViewMode,
+    getCollapseThreads,
+    isThreadItemExpanded,
     getHideClosedMerged,
     getHideBots,
     getEnabledEvents,
@@ -397,6 +461,9 @@ export function createActivityStore(
     setActivitySearch,
     setTimeRange,
     setViewMode,
+    collapseAllThreads,
+    expandAllThreads,
+    toggleThreadItem,
     setHideClosedMerged,
     setHideBots,
     setEnabledEvents,

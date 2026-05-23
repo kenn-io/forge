@@ -124,6 +124,15 @@ type issueRepoNumberInput struct {
 
 type getIssueOutput = bodyOutput[issueDetailResponse]
 
+type resolveItemInput struct {
+	Provider     string `path:"provider"`
+	PlatformHost string
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
+	ItemType     string `query:"item_type" enum:"pr,issue" doc:"Optional item type hint for providers whose issues and merge requests have separate number spaces."`
+}
+
 type postIssueCommentInput struct {
 	Provider     string `path:"provider"`
 	PlatformHost string
@@ -1868,13 +1877,28 @@ func (s *Server) getCommentAutocomplete(
 			return nil, problemInternal("list comment autocomplete users failed")
 		}
 		return &commentAutocompleteOutput{Body: commentAutocompleteResponse{Users: users}}, nil
-	case "#":
+	case "#", "!":
+		itemKind := ""
+		if repoProviderKind(*repo) == platform.KindGitLab {
+			itemKind = "issue"
+			if input.Trigger == "!" {
+				itemKind = "pull"
+			}
+		} else if input.Trigger == "!" {
+			return nil, problemValidation(
+				"query.trigger",
+				"trigger ! is only supported for GitLab merge requests",
+				"@",
+				"#",
+			)
+		}
 		references, err := s.db.ListCommentAutocompleteReferences(
 			ctx,
 			repo.PlatformHost,
 			input.Owner,
 			input.Name,
 			input.Q,
+			itemKind,
 			limit,
 		)
 		if err != nil {
@@ -1882,7 +1906,7 @@ func (s *Server) getCommentAutocomplete(
 		}
 		return &commentAutocompleteOutput{Body: commentAutocompleteResponse{References: references}}, nil
 	default:
-		return nil, problemValidation("query.trigger", "trigger must be @ or #", "@", "#")
+		return nil, problemValidation("query.trigger", "trigger must be @, #, or GitLab !", "@", "#", "!")
 	}
 }
 
@@ -2913,9 +2937,16 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 }
 
 func (s *Server) resolveItem(
-	ctx context.Context, input *repoNumberInput,
+	ctx context.Context, input *resolveItemInput,
 ) (*resolveItemOutput, error) {
 	number := input.Number
+	requestedItemType := input.ItemType
+	if requestedItemType != "" &&
+		requestedItemType != "pr" &&
+		requestedItemType != "issue" {
+		return nil, problemValidation("query.item_type",
+			"item_type must be 'pr' or 'issue'", "pr", "issue")
+	}
 	repo, err := s.lookupRepoByProviderRoute(
 		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
 	)
@@ -2930,6 +2961,12 @@ func (s *Server) resolveItem(
 	if err != nil {
 		return nil, providerRouteLookupError(err)
 	}
+	providerKind := repoProviderKind(*repo)
+	providerHost := repoProviderHost(*repo)
+	itemTypeHint := requestedItemType
+	if providerKind != platform.KindGitLab {
+		itemTypeHint = ""
+	}
 	if !s.syncer.IsTrackedRepoOnHost(repo.Owner, repo.Name, repoProviderHost(*repo)) {
 		return &resolveItemOutput{
 			Body: resolveItemResponse{
@@ -2938,7 +2975,17 @@ func (s *Server) resolveItem(
 			},
 		}, nil
 	}
-	itemType, found, err := s.db.ResolveItemNumber(ctx, repo.ID, number)
+	var (
+		itemType string
+		found    bool
+	)
+	if itemTypeHint != "" {
+		itemType, found, err = s.db.ResolveItemNumberOfType(
+			ctx, repo.ID, number, itemTypeHint,
+		)
+	} else {
+		itemType, found, err = s.db.ResolveItemNumber(ctx, repo.ID, number)
+	}
 	if err != nil {
 		return nil, problemInternal("resolve item: " + err.Error())
 	}
@@ -2952,13 +2999,64 @@ func (s *Server) resolveItem(
 		}, nil
 	}
 
-	if repoProviderKind(*repo) != platform.KindGitHub {
+	if providerKind == platform.KindGitLab && itemTypeHint != "" {
+		var syncErr error
+		switch itemTypeHint {
+		case "pr":
+			syncErr = s.syncer.SyncMROnProvider(
+				ctx, providerKind, providerHost, repo.Owner, repo.Name, number,
+			)
+		case "issue":
+			syncErr = s.syncer.SyncIssueOnProvider(
+				ctx, providerKind, providerHost, repo.Owner, repo.Name, number,
+			)
+		}
+		var diffErr *ghclient.DiffSyncError
+		if syncErr != nil && !errors.As(syncErr, &diffErr) {
+			if strings.Contains(syncErr.Error(), "is not tracked") {
+				return nil, problemForbidden(syncErr.Error(), nil)
+			}
+			return nil, providerCallProblemWithDetail(
+				syncErr, string(providerKind), providerHost,
+				"resolve item: "+syncErr.Error(),
+			)
+		}
+		itemType, found, err = s.db.ResolveItemNumberOfType(
+			ctx, repo.ID, number, itemTypeHint,
+		)
+		if err != nil {
+			return nil, problemInternal("resolve item: " + err.Error())
+		}
+		if !found {
+			return nil, problemNotFound(CodeNotFound, "item not found", nil)
+		}
+		if diffErr != nil {
+			slog.Warn("resolve item: diff sync failed but PR row was synced",
+				"owner", repo.Owner,
+				"name", repo.Name,
+				"number", number,
+				"err", syncErr,
+			)
+		}
+		return &resolveItemOutput{
+			Body: resolveItemResponse{
+				ItemType:    itemType,
+				Number:      number,
+				RepoTracked: true,
+			},
+		}, nil
+	}
+
+	if providerKind != platform.KindGitHub {
 		return nil, problemNotFound(CodeNotFound, "item not found", nil)
 	}
 
 	itemType, err = s.syncer.SyncItemByNumber(
 		ctx, repo.Owner, repo.Name, number,
 	)
+	if err == nil && itemTypeHint != "" && itemType != itemTypeHint {
+		return nil, problemNotFound(CodeNotFound, "item not found", nil)
+	}
 	// A DiffSyncError means the PR row was upserted but the diff
 	// computation failed. Resolution doesn't need diff data, so treat
 	// the result as success here. The resolve response has no warnings

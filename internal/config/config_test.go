@@ -405,6 +405,7 @@ name = "b"
 	assert.Equal("7d", cfg.Activity.TimeRange)
 	assert.False(cfg.Activity.HideClosed)
 	assert.False(cfg.Activity.HideBots)
+	assert.False(cfg.Activity.CollapseThreads)
 }
 
 func TestLoadActivityExplicit(t *testing.T) {
@@ -419,6 +420,7 @@ view_mode = "threaded"
 time_range = "30d"
 hide_closed = true
 hide_bots = true
+collapse_threads = true
 `)
 	cfg, err := Load(path)
 	require.NoError(t, err)
@@ -426,6 +428,7 @@ hide_bots = true
 	assert.Equal("30d", cfg.Activity.TimeRange)
 	assert.True(cfg.Activity.HideClosed)
 	assert.True(cfg.Activity.HideBots)
+	assert.True(cfg.Activity.CollapseThreads)
 }
 
 func TestLoadActivityInvalidViewMode(t *testing.T) {
@@ -708,6 +711,7 @@ view_mode = "threaded"
 time_range = "30d"
 hide_closed = true
 hide_bots = true
+collapse_threads = true
 `)
 	assert.Equal("MY_TOKEN", cfg2.GitHubTokenEnv)
 	assert.Equal(cfg.SyncInterval, cfg2.SyncInterval)
@@ -720,6 +724,7 @@ hide_bots = true
 	assert.Equal(cfg.Activity.TimeRange, cfg2.Activity.TimeRange)
 	assert.Equal(cfg.Activity.HideClosed, cfg2.Activity.HideClosed)
 	assert.Equal(cfg.Activity.HideBots, cfg2.Activity.HideBots)
+	assert.Equal(cfg.Activity.CollapseThreads, cfg2.Activity.CollapseThreads)
 }
 
 func TestSavePreservesDefaults(t *testing.T) {

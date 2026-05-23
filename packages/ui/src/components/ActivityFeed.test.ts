@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ActivityItem } from "../api/types.js";
 import ActivityFeed from "./ActivityFeed.svelte";
@@ -26,9 +26,11 @@ function activityItem(
   };
 }
 
-const items = vi.hoisted(() => ({
-  value: [],
-}));
+const items = vi.hoisted(() => ({ value: [] as ActivityItem[] }));
+const viewMode = vi.hoisted(() => ({ value: "flat" as "flat" | "threaded" }));
+const collapseThreads = vi.hoisted(() => ({ value: false }));
+const collapseAllThreads = vi.hoisted(() => vi.fn());
+const expandAllThreads = vi.hoisted(() => vi.fn());
 
 vi.mock("../context.js", () => ({
   getNavigate: () => vi.fn(),
@@ -40,16 +42,22 @@ vi.mock("../context.js", () => ({
       startActivityPolling: vi.fn(),
       stopActivityPolling: vi.fn(),
       getActivitySearch: () => "",
-      getEnabledEvents: () => new Set(["comment", "review", "commit", "force_push"]),
+      getEnabledEvents: () =>
+        new Set(["comment", "review", "commit", "force_push"]),
       getHideClosedMerged: () => false,
       getHideBots: () => false,
       getItemFilter: () => "all",
       getActivityItems: () => items.value,
       getActivityError: () => null,
-      getViewMode: () => "flat",
+      getViewMode: () => viewMode.value,
       getTimeRange: () => "7d",
       isActivityLoading: () => false,
       isActivityCapped: () => false,
+      getCollapseThreads: () => collapseThreads.value,
+      collapseAllThreads,
+      expandAllThreads,
+      isThreadItemExpanded: () => true,
+      toggleThreadItem: vi.fn(),
       setActivityFilterTypes: vi.fn(),
       setItemFilter: vi.fn(),
       setEnabledEvents: vi.fn(),
@@ -76,6 +84,8 @@ vi.mock("../context.js", () => ({
 
 describe("ActivityFeed compact mode", () => {
   beforeEach(() => {
+    viewMode.value = "flat";
+    collapseThreads.value = false;
     items.value = [
       activityItem("selected"),
       activityItem("other", {
@@ -137,6 +147,13 @@ describe("ActivityFeed compact mode", () => {
     ).toHaveLength(2);
   });
 
+  it("hides the collapse-all control in flat mode", () => {
+    render(ActivityFeed, { props: { compact: true } });
+    expect(
+      screen.queryByRole("button", { name: /Collapse all|Expand all/ }),
+    ).toBeNull();
+  });
+
   it("uses shared semantic chips for compact item kind and state", () => {
     items.value = [
       activityItem("merged", {
@@ -157,5 +174,36 @@ describe("ActivityFeed compact mode", () => {
       .toContain("Merged");
     expect(row?.querySelector(".badge")).not.toBeNull();
     expect(row?.querySelector(".state-badge")).not.toBeNull();
+  });
+});
+
+describe("ActivityFeed collapse-all control", () => {
+  beforeEach(() => {
+    viewMode.value = "threaded";
+    collapseThreads.value = false;
+    items.value = [];
+  });
+
+  afterEach(() => {
+    cleanup();
+    collapseAllThreads.mockClear();
+    expandAllThreads.mockClear();
+  });
+
+  it("shows Collapse all and triggers collapseAllThreads when expanded", async () => {
+    render(ActivityFeed, { props: {} });
+    const btn = screen.getByRole("button", { name: "Collapse all" });
+    await fireEvent.click(btn);
+    expect(collapseAllThreads).toHaveBeenCalledTimes(1);
+    expect(expandAllThreads).not.toHaveBeenCalled();
+  });
+
+  it("shows Expand all and triggers expandAllThreads when collapsed", async () => {
+    collapseThreads.value = true;
+    render(ActivityFeed, { props: {} });
+    const btn = screen.getByRole("button", { name: "Expand all" });
+    await fireEvent.click(btn);
+    expect(expandAllThreads).toHaveBeenCalledTimes(1);
+    expect(collapseAllThreads).not.toHaveBeenCalled();
   });
 });

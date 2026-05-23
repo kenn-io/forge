@@ -216,6 +216,20 @@ describe("AppHeader", () => {
     expect(moon).toBeTruthy();
   });
 
+  it("returns to the previous page when the settings button is clicked again", async () => {
+    initTheme();
+    navigate("/pulls/github/acme/widgets/1/files");
+    render(AppHeader);
+
+    await fireEvent.click(screen.getByTitle("Settings"));
+    expect(window.location.pathname + window.location.search).toBe("/settings");
+
+    await fireEvent.click(screen.getByTitle("Settings"));
+    expect(window.location.pathname + window.location.search).toBe(
+      "/pulls/github/acme/widgets/1/files",
+    );
+  });
+
   it("renders the collapsed sidebar toggle as a header icon button", () => {
     initTheme();
     setSidebarCollapsed(true);

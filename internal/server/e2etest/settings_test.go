@@ -85,10 +85,11 @@ func TestSettingsAPIE2EReadUpdateAndValidation(t *testing.T) {
 		ts.URL+"/api/v1/settings",
 		generated.UpdateSettingsRequest{
 			Activity: &generated.Activity{
-				ViewMode:   "flat",
-				TimeRange:  "30d",
-				HideClosed: true,
-				HideBots:   true,
+				ViewMode:        "flat",
+				TimeRange:       "30d",
+				HideClosed:      true,
+				HideBots:        true,
+				CollapseThreads: true,
 			},
 			Terminal: &generated.Terminal{
 				FontFamily:    "\"Iosevka Term\", monospace",
@@ -108,6 +109,7 @@ func TestSettingsAPIE2EReadUpdateAndValidation(t *testing.T) {
 	assert.Equal("30d", cfgAfterUpdate.Activity.TimeRange)
 	assert.True(cfgAfterUpdate.Activity.HideClosed)
 	assert.True(cfgAfterUpdate.Activity.HideBots)
+	assert.True(cfgAfterUpdate.Activity.CollapseThreads)
 	assert.Equal(
 		"\"Iosevka Term\", monospace",
 		cfgAfterUpdate.Terminal.FontFamily,
@@ -116,6 +118,16 @@ func TestSettingsAPIE2EReadUpdateAndValidation(t *testing.T) {
 	assert.Equal(5000, cfgAfterUpdate.Terminal.Scrollback)
 	assert.InDelta(1.15, cfgAfterUpdate.Terminal.LineHeight, 0.001)
 	assert.True(cfgAfterUpdate.Terminal.FontLigatures)
+
+	reGetResp := doServerJSON(
+		t, ts.Client(), http.MethodGet,
+		ts.URL+"/api/v1/settings", nil,
+	)
+	defer reGetResp.Body.Close()
+	require.Equal(http.StatusOK, reGetResp.StatusCode)
+	var reGet generated.SettingsResponse
+	require.NoError(json.NewDecoder(reGetResp.Body).Decode(&reGet))
+	assert.True(reGet.Activity.CollapseThreads)
 }
 
 func TestRepoConfigAPIE2EAddDeleteAndErrors(t *testing.T) {

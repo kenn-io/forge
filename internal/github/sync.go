@@ -2396,11 +2396,12 @@ func (s *Syncer) syncDefaultBranchActivity(
 	}
 	if forcePush {
 		if err := s.db.InsertBranchForcePush(ctx, db.BranchForcePush{
-			RepoID:     repoID,
-			BranchName: branch,
-			BeforeSHA:  previousTip.TipSHA,
-			AfterSHA:   currentTip,
-			DetectedAt: now,
+			RepoID:           repoID,
+			BranchName:       branch,
+			BeforeSHA:        previousTip.TipSHA,
+			AfterSHA:         currentTip,
+			BeforeObservedAt: previousTip.ObservedAt,
+			DetectedAt:       now,
 		}); err != nil {
 			slog.Warn("insert default branch force push failed",
 				"repo", repo.Owner+"/"+repo.Name,

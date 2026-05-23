@@ -90,6 +90,47 @@ func TestBranchActivityPersistence(t *testing.T) {
 		})
 	})
 
+	t.Run("keeps the same commit sha on different tracked branches", func(t *testing.T) {
+		assert := Assert.New(t)
+		d := openTestDB(t)
+		ctx := t.Context()
+		base := baseTime()
+		repoID := insertTestRepo(t, d, "alice", "alpha")
+
+		err := d.UpsertBranchCommits(ctx, []BranchCommit{
+			{
+				RepoID:         repoID,
+				BranchName:     "master",
+				CommitSHA:      "shared-sha",
+				AuthorName:     "Alice",
+				AuthorEmail:    "alice@example.com",
+				AuthoredAt:     base,
+				CommitterName:  "Alice",
+				CommitterEmail: "alice@example.com",
+				CommittedAt:    base,
+				Subject:        "master subject",
+			},
+			{
+				RepoID:         repoID,
+				BranchName:     "main",
+				CommitSHA:      "shared-sha",
+				AuthorName:     "Alice",
+				AuthorEmail:    "alice@example.com",
+				AuthoredAt:     base.Add(time.Minute),
+				CommitterName:  "Alice",
+				CommitterEmail: "alice@example.com",
+				CommittedAt:    base.Add(time.Minute),
+				Subject:        "main subject",
+			},
+		})
+		require.NoError(t, err)
+
+		rows := loadTestBranchCommitsByBranch(t, d, repoID)
+		require.Len(t, rows, 2)
+		assert.Equal("master subject", rows["master/shared-sha"].Subject)
+		assert.Equal("main subject", rows["main/shared-sha"].Subject)
+	})
+
 	t.Run("records force pushes idempotently and tracks tips", func(t *testing.T) {
 		assert := Assert.New(t)
 		require := require.New(t)
@@ -140,6 +181,41 @@ func TestBranchActivityPersistence(t *testing.T) {
 		assert.Equal(1, countTestBranchForcePushes(t, d, repoID))
 		forcePushCreatedAt := loadOnlyTestBranchForcePushCreatedAt(t, d, repoID)
 		assert.False(forcePushCreatedAt.IsZero())
+	})
+
+	t.Run("records repeated force push pairs as distinct observed rewrites", func(t *testing.T) {
+		assert := Assert.New(t)
+		require := require.New(t)
+		d := openTestDB(t)
+		ctx := t.Context()
+		base := baseTime()
+		repoID := insertTestRepo(t, d, "alice", "alpha")
+
+		first := BranchForcePush{
+			RepoID:     repoID,
+			BranchName: "main",
+			BeforeSHA:  "sha-a",
+			AfterSHA:   "sha-b",
+			DetectedAt: base,
+		}
+		require.NoError(d.InsertBranchForcePush(ctx, first))
+		require.NoError(d.InsertBranchForcePush(ctx, first))
+		require.NoError(d.InsertBranchForcePush(ctx, BranchForcePush{
+			RepoID:     repoID,
+			BranchName: "main",
+			BeforeSHA:  "sha-b",
+			AfterSHA:   "sha-a",
+			DetectedAt: base.Add(time.Minute),
+		}))
+		require.NoError(d.InsertBranchForcePush(ctx, BranchForcePush{
+			RepoID:     repoID,
+			BranchName: "main",
+			BeforeSHA:  "sha-a",
+			AfterSHA:   "sha-b",
+			DetectedAt: base.Add(2 * time.Minute),
+		}))
+
+		assert.Equal(3, countTestBranchForcePushes(t, d, repoID))
 	})
 
 	t.Run("prunes old force pushes outside retention", func(t *testing.T) {
@@ -212,6 +288,51 @@ func loadTestBranchCommits(
 		commit.CommittedAt, err = parseDBTime(committedAt)
 		require.NoError(t, err)
 		commits[commit.CommitSHA] = commit
+	}
+	require.NoError(t, rows.Err())
+	return commits
+}
+
+func loadTestBranchCommitsByBranch(
+	t *testing.T,
+	d *DB,
+	repoID int64,
+) map[string]BranchCommit {
+	t.Helper()
+	rows, err := d.ro.Query(`
+		SELECT repo_id, branch_name, commit_sha, author_name, author_email,
+		       authored_at, committer_name, committer_email, committed_at,
+		       subject
+		FROM middleman_branch_commits
+		WHERE repo_id = ?`,
+		repoID,
+	)
+	require.NoError(t, err)
+	defer rows.Close()
+
+	commits := make(map[string]BranchCommit)
+	for rows.Next() {
+		var commit BranchCommit
+		var authoredAt string
+		var committedAt string
+		err := rows.Scan(
+			&commit.RepoID,
+			&commit.BranchName,
+			&commit.CommitSHA,
+			&commit.AuthorName,
+			&commit.AuthorEmail,
+			&authoredAt,
+			&commit.CommitterName,
+			&commit.CommitterEmail,
+			&committedAt,
+			&commit.Subject,
+		)
+		require.NoError(t, err)
+		commit.AuthoredAt, err = parseDBTime(authoredAt)
+		require.NoError(t, err)
+		commit.CommittedAt, err = parseDBTime(committedAt)
+		require.NoError(t, err)
+		commits[commit.BranchName+"/"+commit.CommitSHA] = commit
 	}
 	require.NoError(t, rows.Err())
 	return commits

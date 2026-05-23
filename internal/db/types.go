@@ -144,12 +144,13 @@ type BranchTip struct {
 }
 
 type BranchForcePush struct {
-	RepoID     int64
-	BranchName string
-	BeforeSHA  string
-	AfterSHA   string
-	DetectedAt time.Time
-	CreatedAt  time.Time
+	RepoID           int64
+	BranchName       string
+	BeforeSHA        string
+	AfterSHA         string
+	BeforeObservedAt time.Time
+	DetectedAt       time.Time
+	CreatedAt        time.Time
 }
 
 type RepoActivityAuthor struct {

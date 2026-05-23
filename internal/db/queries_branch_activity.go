@@ -23,8 +23,7 @@ func (d *DB) UpsertBranchCommits(
 			    subject
 			)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-			ON CONFLICT(repo_id, commit_sha) DO UPDATE SET
-			    branch_name     = excluded.branch_name,
+			ON CONFLICT(repo_id, branch_name, commit_sha) DO UPDATE SET
 			    author_name     = excluded.author_name,
 			    author_email    = excluded.author_email,
 			    authored_at     = excluded.authored_at,
@@ -148,14 +147,16 @@ func (d *DB) InsertBranchForcePush(
 	canonicalizeBranchForcePushTimestamps(&fp)
 	_, err := d.rw.ExecContext(ctx, `
 		INSERT INTO middleman_branch_force_pushes (
-		    repo_id, branch_name, before_sha, after_sha, detected_at
+		    repo_id, branch_name, before_sha, after_sha, before_observed_at,
+		    detected_at
 		)
-		VALUES (?, ?, ?, ?, ?)
-		ON CONFLICT(repo_id, branch_name, before_sha, after_sha) DO NOTHING`,
+		VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT(repo_id, branch_name, before_sha, after_sha, before_observed_at) DO NOTHING`,
 		fp.RepoID,
 		fp.BranchName,
 		fp.BeforeSHA,
 		fp.AfterSHA,
+		fp.BeforeObservedAt,
 		fp.DetectedAt,
 	)
 	if err != nil {
@@ -211,5 +212,9 @@ func canonicalizeBranchForcePushTimestamps(fp *BranchForcePush) {
 	if fp == nil {
 		return
 	}
+	if fp.BeforeObservedAt.IsZero() {
+		fp.BeforeObservedAt = fp.DetectedAt
+	}
+	fp.BeforeObservedAt = canonicalUTCTime(fp.BeforeObservedAt)
 	fp.DetectedAt = canonicalUTCTime(fp.DetectedAt)
 }

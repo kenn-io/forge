@@ -11,7 +11,6 @@
   import ActivityThreaded from "./ActivityThreaded.svelte";
   import FilterDropdown from "./shared/FilterDropdown.svelte";
   import {
-    collapseActivityCommitRuns,
     isDefaultBranchActivity,
     isDefaultBranchCommitActivity,
     isDefaultBranchForcePushActivity,
@@ -235,7 +234,7 @@
     return result;
   });
 
-  const flatRows = $derived(collapseActivityCommitRuns(displayItems));
+  const flatRows = $derived(displayItems);
 
   function resetFilters(): void {
     activity.setEnabledEvents(new Set(EVENT_TYPES));

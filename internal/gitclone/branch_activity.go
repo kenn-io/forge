@@ -151,18 +151,18 @@ func branchActivityRefCandidates(ref string) []string {
 		}
 		candidates = append(candidates, candidate)
 	}
+	if !strings.HasPrefix(ref, "refs/") {
+		add(remoteBranchRef(ref))
+	}
 	if branch, ok := strings.CutPrefix(ref, "origin/"); ok && branch != "" {
 		add(remoteBranchRef(branch))
-	}
-	if !strings.HasPrefix(ref, "refs/") && !strings.HasPrefix(ref, "origin/") {
-		add(remoteBranchRef(ref))
 	}
 	add(ref)
 	return candidates
 }
 
 func remoteBranchRef(branch string) string {
-	return "refs/remotes/origin/" + strings.TrimPrefix(branch, "origin/")
+	return "refs/remotes/origin/" + branch
 }
 
 func isMissingRefError(err error) bool {

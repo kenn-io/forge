@@ -47,7 +47,16 @@ async function mockIssueDetailAndTrackHosts(page: Page): Promise<string[]> {
           },
         ],
         activity: { hidden_authors: [] },
-        terminal: { font_family: "" },
+        terminal: {
+          font_family: "",
+          font_size: 14,
+          scrollback: 1000,
+          line_height: 1,
+          letter_spacing: 0,
+          cursor_blink: true,
+          font_ligatures: false,
+          renderer: "xterm",
+        },
       }),
     });
   });
@@ -68,17 +77,22 @@ async function mockIssueDetailAndTrackHosts(page: Page): Promise<string[]> {
 }
 
 test.describe("issue route platform host", () => {
-  test("direct issue load preserves platform_host in detail requests", async ({ page }) => {
+  test("direct issue load preserves platform_host in detail requests", async ({
+    page,
+  }) => {
     const seenHosts = await mockIssueDetailAndTrackHosts(page);
 
     await page.goto("/host/ghe.example.com/issues/github/acme/widgets/7");
 
-    await expect(page.locator(".issue-detail .detail-title"))
-      .toContainText("Mirror host issue");
+    await expect(page.locator(".issue-detail .detail-title")).toContainText(
+      "Mirror host issue",
+    );
     await expect.poll(() => seenHosts).toContain("ghe.example.com");
   });
 
-  test("popstate preserves platform_host in detail requests", async ({ page }) => {
+  test("popstate preserves platform_host in detail requests", async ({
+    page,
+  }) => {
     const seenHosts = await mockIssueDetailAndTrackHosts(page);
 
     await page.goto("/issues");
@@ -91,8 +105,9 @@ test.describe("issue route platform host", () => {
       window.dispatchEvent(new PopStateEvent("popstate"));
     });
 
-    await expect(page.locator(".issue-detail .detail-title"))
-      .toContainText("Mirror host issue");
+    await expect(page.locator(".issue-detail .detail-title")).toContainText(
+      "Mirror host issue",
+    );
     await expect.poll(() => seenHosts).toContain("ghe.example.com");
   });
 });

@@ -2824,12 +2824,36 @@ components:
     Terminal:
       additionalProperties: false
       properties:
+        cursor_blink:
+          type:
+            - boolean
+            - "null"
         font_family:
           type: string
+        font_ligatures:
+          type: boolean
+        font_size:
+          format: int64
+          type: integer
+        letter_spacing:
+          format: int64
+          type: integer
+        line_height:
+          format: double
+          type: number
         renderer:
           type: string
+        scrollback:
+          format: int64
+          type: integer
       required:
         - font_family
+        - font_size
+        - scrollback
+        - line_height
+        - letter_spacing
+        - cursor_blink
+        - font_ligatures
         - renderer
       type: object
     UpdateSettingsRequest:

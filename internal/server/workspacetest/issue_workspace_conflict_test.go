@@ -6,7 +6,7 @@ import (
 
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/wesm/middleman/internal/apiclient/generated"
+	"go.kenn.io/middleman/internal/apiclient/generated"
 )
 
 // TestIssueWorkspaceConflictExposesTyped409ThroughGeneratedClient is a

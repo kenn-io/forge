@@ -2932,8 +2932,18 @@ export interface components {
             running: boolean;
         };
         Terminal: {
+            cursor_blink: boolean | null;
             font_family: string;
+            font_ligatures: boolean;
+            /** Format: int64 */
+            font_size: number;
+            /** Format: int64 */
+            letter_spacing: number;
+            /** Format: double */
+            line_height: number;
             renderer: string;
+            /** Format: int64 */
+            scrollback: number;
         };
         UpdateSettingsRequest: {
             /**

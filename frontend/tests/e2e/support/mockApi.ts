@@ -195,7 +195,16 @@ const settings = {
     hide_closed: false,
     hide_bots: false,
   },
-  terminal: { font_family: "", renderer: "xterm" },
+  terminal: {
+    font_family: "",
+    font_size: 14,
+    scrollback: 1000,
+    line_height: 1,
+    letter_spacing: 0,
+    cursor_blink: true,
+    font_ligatures: false,
+    renderer: "xterm",
+  },
   agents: [],
 };
 
@@ -225,7 +234,11 @@ function makeRateLimits() {
   };
 }
 
-async function fulfillJson(route: Route, body: unknown, status = 200): Promise<void> {
+async function fulfillJson(
+  route: Route,
+  body: unknown,
+  status = 200,
+): Promise<void> {
   await route.fulfill({
     status,
     contentType: "application/json",
@@ -270,11 +283,7 @@ export async function mockApi(page: Page): Promise<void> {
           worktree_links: pr.worktree_links,
         });
       } else {
-        await fulfillJson(
-          route,
-          { error: "Not found" },
-          404,
-        );
+        await fulfillJson(route, { error: "Not found" }, 404);
       }
       return;
     }
@@ -352,9 +361,7 @@ export async function mockApi(page: Page): Promise<void> {
     );
     if (method === "GET" && singleRepoMatch) {
       const repo = repos.find(
-        (r) =>
-          r.Owner === singleRepoMatch[1] &&
-          r.Name === singleRepoMatch[2],
+        (r) => r.Owner === singleRepoMatch[1] && r.Name === singleRepoMatch[2],
       );
       if (!repo) {
         await fulfillJson(route, { error: "Not found" }, 404);
@@ -415,9 +422,7 @@ export async function mockApi(page: Page): Promise<void> {
         await fulfillJson(route, { title: "Not found" }, 404);
         return;
       }
-      const reqBody = JSON.parse(
-        (await route.request().postData()) ?? "{}",
-      );
+      const reqBody = JSON.parse((await route.request().postData()) ?? "{}");
       if (reqBody.title !== undefined) pr.Title = reqBody.title;
       if (reqBody.body !== undefined) pr.Body = reqBody.body;
       await fulfillJson(route, {

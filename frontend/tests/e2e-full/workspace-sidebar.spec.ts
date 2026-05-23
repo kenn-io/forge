@@ -45,9 +45,7 @@ async function readTerminalCanvasStats(
       const alpha = data[i + 3] ?? 0;
       if (
         alpha > 0 &&
-        Math.abs(red - 0x0d) +
-          Math.abs(green - 0x11) +
-          Math.abs(blue - 0x17) >
+        Math.abs(red - 0x0d) + Math.abs(green - 0x11) + Math.abs(blue - 0x17) >
           24
       ) {
         paintedPixels += 1;
@@ -78,7 +76,7 @@ async function waitForWorkspaceReady(
   for (let attempt = 0; attempt < 100; attempt += 1) {
     const response = await api.get(`/api/v1/workspaces/${workspaceId}`);
     expect(response.ok()).toBe(true);
-    const workspace = await response.json() as WorkspaceStatusResponse;
+    const workspace = (await response.json()) as WorkspaceStatusResponse;
     if (workspace.status === "ready") {
       return;
     }
@@ -94,7 +92,9 @@ async function waitForWorkspaceReady(
 test.describe("workspace sidebar full-stack", () => {
   test.describe.configure({ timeout: lockedWorkspaceTestTimeoutMs });
 
-  test("shows provider icons in group headers when workspaces span multiple providers", async ({ page }) => {
+  test("shows provider icons in group headers when workspaces span multiple providers", async ({
+    page,
+  }) => {
     let isolatedServer: IsolatedE2EServer | null = null;
     let api: APIRequestContext | null = null;
     try {
@@ -110,7 +110,8 @@ test.describe("workspace sidebar full-stack", () => {
         },
       );
       expect(githubResponse.status()).toBe(202);
-      const githubWorkspace = await githubResponse.json() as WorkspaceStatusResponse;
+      const githubWorkspace =
+        (await githubResponse.json()) as WorkspaceStatusResponse;
       await waitForWorkspaceReady(api, githubWorkspace.id);
 
       const gitlabResponse = await api.post(
@@ -120,36 +121,41 @@ test.describe("workspace sidebar full-stack", () => {
         },
       );
       expect(gitlabResponse.status()).toBe(202);
-      const gitlabWorkspace = await gitlabResponse.json() as WorkspaceStatusResponse;
+      const gitlabWorkspace =
+        (await gitlabResponse.json()) as WorkspaceStatusResponse;
       await waitForWorkspaceReady(api, gitlabWorkspace.id);
 
       const workspacesResponse = await api.get("/api/v1/workspaces");
       expect(workspacesResponse.ok()).toBe(true);
-      const workspacesPayload = await workspacesResponse.json() as {
+      const workspacesPayload = (await workspacesResponse.json()) as {
         workspaces: Array<{ repo: { provider: string } }>;
       };
       expect(
-        new Set(workspacesPayload.workspaces.map((workspace) => workspace.repo.provider)),
+        new Set(
+          workspacesPayload.workspaces.map(
+            (workspace) => workspace.repo.provider,
+          ),
+        ),
       ).toEqual(new Set(["github", "gitlab"]));
 
       await page.goto(
         `${isolatedServer.info.base_url}/terminal/${githubWorkspace.id}`,
       );
 
-      const githubGroup = page.locator(
-        ".workspace-list-sidebar .group-header",
-      ).filter({
-        has: page.locator(".group-label", { hasText: "acme/widgets" }),
-      });
+      const githubGroup = page
+        .locator(".workspace-list-sidebar .group-header")
+        .filter({
+          has: page.locator(".group-label", { hasText: "acme/widgets" }),
+        });
       await expect(
         githubGroup.getByRole("img", { name: "GitHub" }),
       ).toBeVisible();
 
-      const gitlabGroup = page.locator(
-        ".workspace-list-sidebar .group-header",
-      ).filter({
-        has: page.locator(".group-label", { hasText: "group/project" }),
-      });
+      const gitlabGroup = page
+        .locator(".workspace-list-sidebar .group-header")
+        .filter({
+          has: page.locator(".group-label", { hasText: "group/project" }),
+        });
       await expect(
         gitlabGroup.getByRole("img", { name: "GitLab" }),
       ).toBeVisible();
@@ -159,7 +165,9 @@ test.describe("workspace sidebar full-stack", () => {
     }
   });
 
-  test("issue workspaces expose the Issue tab and hide Reviews", async ({ page }) => {
+  test("issue workspaces expose the Issue tab and hide Reviews", async ({
+    page,
+  }) => {
     let isolatedServer: IsolatedE2EServer | null = null;
     let api: APIRequestContext | null = null;
     try {
@@ -176,7 +184,8 @@ test.describe("workspace sidebar full-stack", () => {
       );
       expect(createResponse.status()).toBe(202);
 
-      const createdWorkspace = await createResponse.json() as WorkspaceStatusResponse;
+      const createdWorkspace =
+        (await createResponse.json()) as WorkspaceStatusResponse;
       await waitForWorkspaceReady(api, createdWorkspace.id);
 
       await page.goto(
@@ -193,18 +202,22 @@ test.describe("workspace sidebar full-stack", () => {
         page.locator(".terminal-view .seg-btn", { hasText: "Reviews" }),
       ).toHaveCount(0);
 
-      await page.locator(".terminal-view .seg-btn", { hasText: "Issue" }).click();
+      await page
+        .locator(".terminal-view .seg-btn", { hasText: "Issue" })
+        .click();
       await expect(page.locator(".right-sidebar")).toBeVisible();
-      await expect(
-        page.locator(".right-sidebar .detail-title"),
-      ).toContainText("Widget rendering broken on Safari");
+      await expect(page.locator(".right-sidebar .detail-title")).toContainText(
+        "Widget rendering broken on Safari",
+      );
     } finally {
       await api?.dispose();
       await isolatedServer?.stop();
     }
   });
 
-  test("ghostty shell terminal paints output and accepts browser keyboard input", async ({ page }) => {
+  test("ghostty shell terminal paints output and accepts browser keyboard input", async ({
+    page,
+  }) => {
     let isolatedServer: IsolatedE2EServer | null = null;
     let api: APIRequestContext | null = null;
     try {
@@ -216,6 +229,12 @@ test.describe("workspace sidebar full-stack", () => {
         data: {
           terminal: {
             font_family: "",
+            font_size: 14,
+            scrollback: 1000,
+            line_height: 1,
+            letter_spacing: 0,
+            cursor_blink: true,
+            font_ligatures: false,
             renderer: "ghostty-web",
           },
         },
@@ -230,15 +249,14 @@ test.describe("workspace sidebar full-stack", () => {
       );
       expect(createResponse.status()).toBe(202);
 
-      const createdWorkspace = await createResponse.json() as WorkspaceStatusResponse;
+      const createdWorkspace =
+        (await createResponse.json()) as WorkspaceStatusResponse;
       await waitForWorkspaceReady(api, createdWorkspace.id);
 
       await page.goto(
         `${isolatedServer.info.base_url}/terminal/${createdWorkspace.id}`,
       );
-      await page
-        .getByRole("button", { name: "Open shell drawer" })
-        .click();
+      await page.getByRole("button", { name: "Open shell drawer" }).click();
 
       const canvas = page.locator(".shell-drawer .terminal-container canvas");
       await expect(canvas).toBeVisible();
@@ -257,13 +275,16 @@ test.describe("workspace sidebar full-stack", () => {
       await page.keyboard.press("Enter");
 
       await expect
-        .poll(async () => {
-          const stats = await readTerminalCanvasStats(canvas);
-          return (
-            stats.hash !== beforeInput.hash &&
-            Math.abs(stats.paintedPixels - beforeInput.paintedPixels) > 300
-          );
-        }, { timeout: 10_000 })
+        .poll(
+          async () => {
+            const stats = await readTerminalCanvasStats(canvas);
+            return (
+              stats.hash !== beforeInput.hash &&
+              Math.abs(stats.paintedPixels - beforeInput.paintedPixels) > 300
+            );
+          },
+          { timeout: 10_000 },
+        )
         .toBe(true);
     } finally {
       await api?.dispose();

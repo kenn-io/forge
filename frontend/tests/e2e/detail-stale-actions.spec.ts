@@ -214,7 +214,16 @@ async function mockSettings(page: Page): Promise<void> {
           },
         ],
         activity: { hidden_authors: [] },
-        terminal: { font_family: "" },
+        terminal: {
+          font_family: "",
+          font_size: 14,
+          scrollback: 1000,
+          line_height: 1,
+          letter_spacing: 0,
+          cursor_blink: true,
+          font_ligatures: false,
+          renderer: "xterm",
+        },
       }),
     });
   });
@@ -260,37 +269,31 @@ async function setupHeldPR(
   });
 
   // Fast PR: instant detail GET.
-  await page.route(
-    pullDetailApiPath(fast),
-    async (route: Route) => {
-      if (route.request().method() === "GET") {
-        await route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify(detailEnvelopePR(fast)),
-        });
-        return;
-      }
-      await route.fallback();
-    },
-  );
+  await page.route(pullDetailApiPath(fast), async (route: Route) => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(detailEnvelopePR(fast)),
+      });
+      return;
+    }
+    await route.fallback();
+  });
 
   // Slow PR: held until release().
-  await page.route(
-    pullDetailApiPath(slow),
-    async (route: Route) => {
-      if (route.request().method() === "GET") {
-        await slowDelay;
-        await route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify(detailEnvelopePR(slow)),
-        });
-        return;
-      }
-      await route.fallback();
-    },
-  );
+  await page.route(pullDetailApiPath(slow), async (route: Route) => {
+    if (route.request().method() === "GET") {
+      await slowDelay;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(detailEnvelopePR(slow)),
+      });
+      return;
+    }
+    await route.fallback();
+  });
 
   return { release };
 }
@@ -307,55 +310,46 @@ async function setupHeldIssue(
     release = resolve;
   });
 
-  await page.route(
-    issueDetailApiPath(fast),
-    async (route: Route) => {
-      if (route.request().method() === "GET") {
-        await route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify(detailEnvelopeIssue(fast)),
-        });
-        return;
-      }
-      await route.fallback();
-    },
-  );
+  await page.route(issueDetailApiPath(fast), async (route: Route) => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(detailEnvelopeIssue(fast)),
+      });
+      return;
+    }
+    await route.fallback();
+  });
 
-  await page.route(
-    issueDetailApiPath(slow),
-    async (route: Route) => {
-      if (route.request().method() === "GET") {
-        await slowDelay;
-        await route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify(detailEnvelopeIssue(slow)),
-        });
-        return;
-      }
-      await route.fallback();
-    },
-  );
+  await page.route(issueDetailApiPath(slow), async (route: Route) => {
+    if (route.request().method() === "GET") {
+      await slowDelay;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(detailEnvelopeIssue(slow)),
+      });
+      return;
+    }
+    await route.fallback();
+  });
 
   return { release };
 }
 
 async function mockPullDetail(page: Page, pr: typeof prA): Promise<void> {
-  await page.route(
-    pullDetailApiPath(pr),
-    async (route) => {
-      if (route.request().method() === "GET") {
-        await route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify(detailEnvelopePR(pr)),
-        });
-        return;
-      }
-      await route.fallback();
-    },
-  );
+  await page.route(pullDetailApiPath(pr), async (route) => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(detailEnvelopePR(pr)),
+      });
+      return;
+    }
+    await route.fallback();
+  });
 }
 
 async function gotoPullDetail(page: Page, pr: typeof prA): Promise<void> {
@@ -365,7 +359,9 @@ async function gotoPullDetail(page: Page, pr: typeof prA): Promise<void> {
 }
 
 test.describe("PR detail merge modal route reset", () => {
-  test("merge button is disabled when the PR has merge conflicts", async ({ page }) => {
+  test("merge button is disabled when the PR has merge conflicts", async ({
+    page,
+  }) => {
     await mockApi(page);
     await mockSettings(page);
 
@@ -468,25 +464,24 @@ test.describe("PR detail merge modal route reset", () => {
     });
   }
 
-  test("merge modal closes when the route changes and does not reopen for the new PR", async ({ page }) => {
+  test("merge modal closes when the route changes and does not reopen for the new PR", async ({
+    page,
+  }) => {
     await mockApi(page);
     await mockSettings(page);
 
     for (const pr of [prA, prB]) {
-      await page.route(
-        pullDetailApiPath(pr),
-        async (route) => {
-          if (route.request().method() === "GET") {
-            await route.fulfill({
-              status: 200,
-              contentType: "application/json",
-              body: JSON.stringify(detailEnvelopePR(pr)),
-            });
-            return;
-          }
-          await route.fallback();
-        },
-      );
+      await page.route(pullDetailApiPath(pr), async (route) => {
+        if (route.request().method() === "GET") {
+          await route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify(detailEnvelopePR(pr)),
+          });
+          return;
+        }
+        await route.fallback();
+      });
     }
 
     await page.goto(
@@ -502,14 +497,17 @@ test.describe("PR detail merge modal route reset", () => {
 
     // Navigate to PR B. The action-local reset must close the
     // modal as soon as the props change.
-    await page.evaluate(([owner, name, number]) => {
-      window.history.pushState(
-        null,
-        "",
-        `/pulls/github/${owner}/${name}/${number}`,
-      );
-      window.dispatchEvent(new PopStateEvent("popstate"));
-    }, [prB.repo_owner, prB.repo_name, prB.Number] as const);
+    await page.evaluate(
+      ([owner, name, number]) => {
+        window.history.pushState(
+          null,
+          "",
+          `/pulls/github/${owner}/${name}/${number}`,
+        );
+        window.dispatchEvent(new PopStateEvent("popstate"));
+      },
+      [prB.repo_owner, prB.repo_name, prB.Number] as const,
+    );
 
     await expect(page.locator(".detail-title")).toContainText(prB.Title);
     await expect(
@@ -517,7 +515,9 @@ test.describe("PR detail merge modal route reset", () => {
     ).toHaveCount(0);
   });
 
-  test("hides merge actions when repo permissions disallow merging", async ({ page }) => {
+  test("hides merge actions when repo permissions disallow merging", async ({
+    page,
+  }) => {
     await mockApi(page);
     await mockSettings(page);
 
@@ -567,25 +567,24 @@ test.describe("PR detail merge modal route reset", () => {
     ).toHaveCount(0);
   });
 
-  test("merge actions wait for settings that match the selected repo", async ({ page }) => {
+  test("merge actions wait for settings that match the selected repo", async ({
+    page,
+  }) => {
     await mockApi(page);
     await mockSettings(page);
 
     for (const pr of [prA, prSquashOnly]) {
-      await page.route(
-        pullDetailApiPath(pr),
-        async (route) => {
-          if (route.request().method() === "GET") {
-            await route.fulfill({
-              status: 200,
-              contentType: "application/json",
-              body: JSON.stringify(detailEnvelopePR(pr)),
-            });
-            return;
-          }
-          await route.fallback();
-        },
-      );
+      await page.route(pullDetailApiPath(pr), async (route) => {
+        if (route.request().method() === "GET") {
+          await route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify(detailEnvelopePR(pr)),
+          });
+          return;
+        }
+        await route.fallback();
+      });
     }
 
     let releaseSquashSettings!: () => void;
@@ -593,33 +592,30 @@ test.describe("PR detail merge modal route reset", () => {
       releaseSquashSettings = resolve;
     });
 
-    await page.route(
-      repoSettingsApiPath(prSquashOnly),
-      async (route) => {
-        if (route.request().method() === "GET") {
-          await squashSettingsReady;
-          await route.fulfill({
-            status: 200,
-            contentType: "application/json",
-            body: JSON.stringify({
-              ID: prSquashOnly.RepoID,
-              Owner: prSquashOnly.repo_owner,
-              Name: prSquashOnly.repo_name,
-              AllowSquashMerge: true,
-              AllowMergeCommit: false,
-              AllowRebaseMerge: false,
-              ViewerCanMerge: true,
-              LastSyncStartedAt: "2026-04-01T12:00:00Z",
-              LastSyncCompletedAt: "2026-04-01T12:00:30Z",
-              LastSyncError: "",
-              CreatedAt: "2026-03-01T00:00:00Z",
-            }),
-          });
-          return;
-        }
-        await route.fallback();
-      },
-    );
+    await page.route(repoSettingsApiPath(prSquashOnly), async (route) => {
+      if (route.request().method() === "GET") {
+        await squashSettingsReady;
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            ID: prSquashOnly.RepoID,
+            Owner: prSquashOnly.repo_owner,
+            Name: prSquashOnly.repo_name,
+            AllowSquashMerge: true,
+            AllowMergeCommit: false,
+            AllowRebaseMerge: false,
+            ViewerCanMerge: true,
+            LastSyncStartedAt: "2026-04-01T12:00:00Z",
+            LastSyncCompletedAt: "2026-04-01T12:00:30Z",
+            LastSyncError: "",
+            CreatedAt: "2026-03-01T00:00:00Z",
+          }),
+        });
+        return;
+      }
+      await route.fallback();
+    });
 
     await page.goto(
       `/pulls/github/${prA.repo_owner}/${prA.repo_name}/${prA.Number}`,
@@ -627,14 +623,21 @@ test.describe("PR detail merge modal route reset", () => {
     await expect(page.locator(".detail-title")).toContainText(prA.Title);
     await expect(page.locator(".btn--merge")).toBeVisible();
 
-    await page.evaluate(([owner, name, number]) => {
-      window.history.pushState(
-        null,
-        "",
-        `/pulls/github/${owner}/${name}/${number}`,
-      );
-      window.dispatchEvent(new PopStateEvent("popstate"));
-    }, [prSquashOnly.repo_owner, prSquashOnly.repo_name, prSquashOnly.Number] as const);
+    await page.evaluate(
+      ([owner, name, number]) => {
+        window.history.pushState(
+          null,
+          "",
+          `/pulls/github/${owner}/${name}/${number}`,
+        );
+        window.dispatchEvent(new PopStateEvent("popstate"));
+      },
+      [
+        prSquashOnly.repo_owner,
+        prSquashOnly.repo_name,
+        prSquashOnly.Number,
+      ] as const,
+    );
 
     await expect(page.locator(".detail-title")).toContainText(
       prSquashOnly.Title,
@@ -662,52 +665,51 @@ test.describe("PR detail merge modal route reset", () => {
 });
 
 test.describe("detail load-error banner", () => {
-  test("PR: failing route shows banner over the previous PR", async ({ page }) => {
+  test("PR: failing route shows banner over the previous PR", async ({
+    page,
+  }) => {
     await mockApi(page);
     await mockSettings(page);
 
-    await page.route(
-      pullDetailApiPath(prA),
-      async (route) => {
-        if (route.request().method() === "GET") {
-          await route.fulfill({
-            status: 200,
-            contentType: "application/json",
-            body: JSON.stringify(detailEnvelopePR(prA)),
-          });
-          return;
-        }
-        await route.fallback();
-      },
-    );
-    await page.route(
-      pullDetailApiPath(prB),
-      async (route) => {
-        if (route.request().method() === "GET") {
-          await route.fulfill({
-            status: 500,
-            contentType: "application/json",
-            body: JSON.stringify({ detail: "upstream offline" }),
-          });
-          return;
-        }
-        await route.fallback();
-      },
-    );
+    await page.route(pullDetailApiPath(prA), async (route) => {
+      if (route.request().method() === "GET") {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(detailEnvelopePR(prA)),
+        });
+        return;
+      }
+      await route.fallback();
+    });
+    await page.route(pullDetailApiPath(prB), async (route) => {
+      if (route.request().method() === "GET") {
+        await route.fulfill({
+          status: 500,
+          contentType: "application/json",
+          body: JSON.stringify({ detail: "upstream offline" }),
+        });
+        return;
+      }
+      await route.fallback();
+    });
 
     await page.goto(
       `/pulls/github/${prA.repo_owner}/${prA.repo_name}/${prA.Number}`,
     );
     await expect(page.locator(".detail-title")).toContainText(prA.Title);
 
-    await page.evaluate(([owner, name, number]) => {
-      window.history.pushState(
-        null,
-        "",
-        `/pulls/github/${owner}/${name}/${number}`,
-      );
-      window.dispatchEvent(new PopStateEvent("popstate"));
-    }, [prB.repo_owner, prB.repo_name, prB.Number] as const);
+    await page.evaluate(
+      ([owner, name, number]) => {
+        window.history.pushState(
+          null,
+          "",
+          `/pulls/github/${owner}/${name}/${number}`,
+        );
+        window.dispatchEvent(new PopStateEvent("popstate"));
+      },
+      [prB.repo_owner, prB.repo_name, prB.Number] as const,
+    );
 
     const banner = page.getByTestId("detail-load-error");
     await expect(banner).toBeVisible();
@@ -715,38 +717,34 @@ test.describe("detail load-error banner", () => {
     await expect(page.locator(".detail-title")).toContainText(prA.Title);
   });
 
-  test("issue: failing route shows banner over the previous issue", async ({ page }) => {
+  test("issue: failing route shows banner over the previous issue", async ({
+    page,
+  }) => {
     await mockApi(page);
     await mockSettings(page);
 
-    await page.route(
-      issueDetailApiPath(issueX),
-      async (route) => {
-        if (route.request().method() === "GET") {
-          await route.fulfill({
-            status: 200,
-            contentType: "application/json",
-            body: JSON.stringify(detailEnvelopeIssue(issueX)),
-          });
-          return;
-        }
-        await route.fallback();
-      },
-    );
-    await page.route(
-      issueDetailApiPath(issueY),
-      async (route) => {
-        if (route.request().method() === "GET") {
-          await route.fulfill({
-            status: 500,
-            contentType: "application/json",
-            body: JSON.stringify({ detail: "upstream offline" }),
-          });
-          return;
-        }
-        await route.fallback();
-      },
-    );
+    await page.route(issueDetailApiPath(issueX), async (route) => {
+      if (route.request().method() === "GET") {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(detailEnvelopeIssue(issueX)),
+        });
+        return;
+      }
+      await route.fallback();
+    });
+    await page.route(issueDetailApiPath(issueY), async (route) => {
+      if (route.request().method() === "GET") {
+        await route.fulfill({
+          status: 500,
+          contentType: "application/json",
+          body: JSON.stringify({ detail: "upstream offline" }),
+        });
+        return;
+      }
+      await route.fallback();
+    });
 
     await page.goto(
       `/issues/github/${issueX.repo_owner}/${issueX.repo_name}/${issueX.Number}`,
@@ -755,14 +753,17 @@ test.describe("detail load-error banner", () => {
       issueX.Title,
     );
 
-    await page.evaluate(([owner, name, number]) => {
-      window.history.pushState(
-        null,
-        "",
-        `/issues/github/${owner}/${name}/${number}`,
-      );
-      window.dispatchEvent(new PopStateEvent("popstate"));
-    }, [issueY.repo_owner, issueY.repo_name, issueY.Number] as const);
+    await page.evaluate(
+      ([owner, name, number]) => {
+        window.history.pushState(
+          null,
+          "",
+          `/issues/github/${owner}/${name}/${number}`,
+        );
+        window.dispatchEvent(new PopStateEvent("popstate"));
+      },
+      [issueY.repo_owner, issueY.repo_name, issueY.Number] as const,
+    );
 
     const banner = page.getByTestId("detail-load-error");
     await expect(banner).toBeVisible();
@@ -774,7 +775,9 @@ test.describe("detail load-error banner", () => {
 });
 
 test.describe("PR detail stale-action gating", () => {
-  test("conflict warning hides while a clean PR is loading", async ({ page }) => {
+  test("conflict warning hides while a clean PR is loading", async ({
+    page,
+  }) => {
     const conflictedPR = {
       ...prA,
       MergeableState: "dirty",
@@ -793,14 +796,17 @@ test.describe("PR detail stale-action gating", () => {
     );
     await expect(page.getByText("This branch has conflicts")).toBeVisible();
 
-    await page.evaluate(([owner, name, number]) => {
-      window.history.pushState(
-        null,
-        "",
-        `/pulls/github/${owner}/${name}/${number}`,
-      );
-      window.dispatchEvent(new PopStateEvent("popstate"));
-    }, [cleanPR.repo_owner, cleanPR.repo_name, cleanPR.Number] as const);
+    await page.evaluate(
+      ([owner, name, number]) => {
+        window.history.pushState(
+          null,
+          "",
+          `/pulls/github/${owner}/${name}/${number}`,
+        );
+        window.dispatchEvent(new PopStateEvent("popstate"));
+      },
+      [cleanPR.repo_owner, cleanPR.repo_name, cleanPR.Number] as const,
+    );
 
     await expect(page.locator(".detail-title")).toContainText(
       conflictedPR.Title,
@@ -812,22 +818,29 @@ test.describe("PR detail stale-action gating", () => {
     await expect(page.getByText("This branch has conflicts")).toHaveCount(0);
   });
 
-  test("close, comment, and create-workspace are inert while the new PR is loading", async ({ page }) => {
+  test("close, comment, and create-workspace are inert while the new PR is loading", async ({
+    page,
+  }) => {
     const userMutations = recordUserMutations(page);
     const { release } = await setupHeldPR(page, prA, prB);
 
-    await page.goto(`/pulls/github/${prA.repo_owner}/${prA.repo_name}/${prA.Number}`);
+    await page.goto(
+      `/pulls/github/${prA.repo_owner}/${prA.repo_name}/${prA.Number}`,
+    );
     await expect(page.locator(".detail-title")).toContainText(prA.Title);
 
     // Trigger an in-place navigation to the slow PR via popstate.
-    await page.evaluate(([owner, name, number]) => {
-      window.history.pushState(
-        null,
-        "",
-        `/pulls/github/${owner}/${name}/${number}`,
-      );
-      window.dispatchEvent(new PopStateEvent("popstate"));
-    }, [prB.repo_owner, prB.repo_name, prB.Number] as const);
+    await page.evaluate(
+      ([owner, name, number]) => {
+        window.history.pushState(
+          null,
+          "",
+          `/pulls/github/${owner}/${name}/${number}`,
+        );
+        window.dispatchEvent(new PopStateEvent("popstate"));
+      },
+      [prB.repo_owner, prB.repo_name, prB.Number] as const,
+    );
 
     // PR A is still on screen because B is held.
     await expect(page.locator(".detail-title")).toContainText(prA.Title);
@@ -847,9 +860,7 @@ test.describe("PR detail stale-action gating", () => {
     await createWs.click({ force: true }).catch(() => {});
 
     // Comment submit: disabled.
-    const commentSubmit = page
-      .locator(".comment-box .submit-btn")
-      .first();
+    const commentSubmit = page.locator(".comment-box .submit-btn").first();
     await expect(commentSubmit).toBeDisabled();
 
     // Release the slow load. PR B now displays and the controls
@@ -862,7 +873,9 @@ test.describe("PR detail stale-action gating", () => {
     expect(userMutations).toEqual([]);
   });
 
-  test("existing workspace navigation is inert while the new PR is loading", async ({ page }) => {
+  test("existing workspace navigation is inert while the new PR is loading", async ({
+    page,
+  }) => {
     const prWithWorkspace = {
       ...prA,
       workspace: { id: "ws-pr-a" },
@@ -876,14 +889,17 @@ test.describe("PR detail stale-action gating", () => {
       prWithWorkspace.Title,
     );
 
-    await page.evaluate(([owner, name, number]) => {
-      window.history.pushState(
-        null,
-        "",
-        `/pulls/github/${owner}/${name}/${number}`,
-      );
-      window.dispatchEvent(new PopStateEvent("popstate"));
-    }, [prB.repo_owner, prB.repo_name, prB.Number] as const);
+    await page.evaluate(
+      ([owner, name, number]) => {
+        window.history.pushState(
+          null,
+          "",
+          `/pulls/github/${owner}/${name}/${number}`,
+        );
+        window.dispatchEvent(new PopStateEvent("popstate"));
+      },
+      [prB.repo_owner, prB.repo_name, prB.Number] as const,
+    );
 
     await expect(page.locator(".detail-title")).toContainText(
       prWithWorkspace.Title,
@@ -900,7 +916,9 @@ test.describe("PR detail stale-action gating", () => {
 });
 
 test.describe("issue detail stale-action gating", () => {
-  test("star, close, comment, and create-workspace are inert while the new issue is loading", async ({ page }) => {
+  test("star, close, comment, and create-workspace are inert while the new issue is loading", async ({
+    page,
+  }) => {
     const userMutations = recordUserMutations(page);
     const { release } = await setupHeldIssue(page, issueX, issueY);
 
@@ -911,14 +929,17 @@ test.describe("issue detail stale-action gating", () => {
       issueX.Title,
     );
 
-    await page.evaluate(([owner, name, number]) => {
-      window.history.pushState(
-        null,
-        "",
-        `/issues/github/${owner}/${name}/${number}`,
-      );
-      window.dispatchEvent(new PopStateEvent("popstate"));
-    }, [issueY.repo_owner, issueY.repo_name, issueY.Number] as const);
+    await page.evaluate(
+      ([owner, name, number]) => {
+        window.history.pushState(
+          null,
+          "",
+          `/issues/github/${owner}/${name}/${number}`,
+        );
+        window.dispatchEvent(new PopStateEvent("popstate"));
+      },
+      [issueY.repo_owner, issueY.repo_name, issueY.Number] as const,
+    );
 
     // Issue X is still on screen because Y is held.
     await expect(page.locator(".issue-detail .detail-title")).toContainText(
@@ -932,8 +953,7 @@ test.describe("issue detail stale-action gating", () => {
     await expect(closeBtn).toBeDisabled();
     await closeBtn.click({ force: true }).catch(() => {});
 
-    const createWs = page
-      .locator(".issue-detail button.btn--workspace");
+    const createWs = page.locator(".issue-detail button.btn--workspace");
     await expect(createWs).toBeDisabled();
     await createWs.click({ force: true }).catch(() => {});
 
@@ -951,7 +971,9 @@ test.describe("issue detail stale-action gating", () => {
     expect(userMutations).toEqual([]);
   });
 
-  test("existing workspace navigation is inert while the new issue is loading", async ({ page }) => {
+  test("existing workspace navigation is inert while the new issue is loading", async ({
+    page,
+  }) => {
     const issueWithWorkspace = {
       ...issueX,
       workspace: { id: "ws-issue-x" },
@@ -965,14 +987,17 @@ test.describe("issue detail stale-action gating", () => {
       issueWithWorkspace.Title,
     );
 
-    await page.evaluate(([owner, name, number]) => {
-      window.history.pushState(
-        null,
-        "",
-        `/issues/github/${owner}/${name}/${number}`,
-      );
-      window.dispatchEvent(new PopStateEvent("popstate"));
-    }, [issueY.repo_owner, issueY.repo_name, issueY.Number] as const);
+    await page.evaluate(
+      ([owner, name, number]) => {
+        window.history.pushState(
+          null,
+          "",
+          `/issues/github/${owner}/${name}/${number}`,
+        );
+        window.dispatchEvent(new PopStateEvent("popstate"));
+      },
+      [issueY.repo_owner, issueY.repo_name, issueY.Number] as const,
+    );
 
     await expect(page.locator(".issue-detail .detail-title")).toContainText(
       issueWithWorkspace.Title,

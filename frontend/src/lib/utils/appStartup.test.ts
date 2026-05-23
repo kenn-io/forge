@@ -7,6 +7,7 @@ function makeStores(): StoreInstances {
   return {
     settings: {
       setConfiguredRepos: vi.fn(),
+      setTerminalSettings: vi.fn(),
       setTerminalFontFamily: vi.fn(),
       setTerminalRenderer: vi.fn(),
     },
@@ -42,7 +43,13 @@ function makeSettings(): Settings {
       hide_bots: false,
     },
     terminal: {
-      font_family: "\"Fira Code\", monospace",
+      font_family: '"Fira Code", monospace',
+      font_size: 14,
+      scrollback: 1000,
+      line_height: 1,
+      letter_spacing: 0,
+      cursor_blink: true,
+      font_ligatures: false,
       renderer: "xterm",
     },
     agents: [],
@@ -75,11 +82,8 @@ describe("runAppStartup", () => {
     expect(stores.settings.setConfiguredRepos).toHaveBeenCalledWith(
       settings.repos,
     );
-    expect(stores.settings.setTerminalFontFamily).toHaveBeenCalledWith(
-      settings.terminal.font_family,
-    );
-    expect(stores.settings.setTerminalRenderer).toHaveBeenCalledWith(
-      settings.terminal.renderer,
+    expect(stores.settings.setTerminalSettings).toHaveBeenCalledWith(
+      settings.terminal,
     );
     expect(stores.activity.hydrateDefaults).toHaveBeenCalledWith(
       settings.activity,
@@ -108,10 +112,10 @@ describe("runAppStartup", () => {
     expect(beforeInitialLoad).toHaveBeenCalledTimes(1);
     const beforeOrder = beforeInitialLoad.mock.invocationCallOrder[0] ?? 0;
     const readyOrder = onReady.mock.invocationCallOrder[0] ?? 0;
-    const pullLoadOrder = vi.mocked(stores.pulls.loadPulls)
-      .mock.invocationCallOrder[0] ?? 0;
-    const issueLoadOrder = vi.mocked(stores.issues.loadIssues)
-      .mock.invocationCallOrder[0] ?? 0;
+    const pullLoadOrder =
+      vi.mocked(stores.pulls.loadPulls).mock.invocationCallOrder[0] ?? 0;
+    const issueLoadOrder =
+      vi.mocked(stores.issues.loadIssues).mock.invocationCallOrder[0] ?? 0;
     expect(beforeOrder).toBeLessThan(readyOrder);
     expect(beforeOrder).toBeLessThan(pullLoadOrder);
     expect(beforeOrder).toBeLessThan(issueLoadOrder);

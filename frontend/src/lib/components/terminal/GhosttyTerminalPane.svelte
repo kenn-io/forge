@@ -74,6 +74,11 @@
       .trim();
     return buildTerminalFontFamily(configured, defaultTerminalFontFamily());
   });
+  const terminalFontSize = $derived(settingsStore.getTerminalFontSize());
+  const terminalScrollback = $derived(settingsStore.getTerminalScrollback());
+  const terminalCursorBlink = $derived(
+    settingsStore.getTerminalCursorBlink(),
+  );
 
   function defaultWebsocketPath(): string {
     if (!workspaceId) return "";
@@ -320,6 +325,9 @@
   $effect(() => {
     if (!terminal) return;
     terminal.options.fontFamily = terminalFontFamily;
+    terminal.options.fontSize = terminalFontSize;
+    terminal.options.scrollback = terminalScrollback;
+    terminal.options.cursorBlink = terminalCursorBlink;
     fitAddon?.fit();
   });
 
@@ -344,9 +352,10 @@
           foreground: "#c9d1d9",
           cursor: "#58a6ff",
         },
-        cursorBlink: true,
+        cursorBlink: terminalCursorBlink,
         fontFamily: terminalFontFamily,
-        fontSize: 14,
+        fontSize: terminalFontSize,
+        scrollback: terminalScrollback,
       });
       terminal = term;
 

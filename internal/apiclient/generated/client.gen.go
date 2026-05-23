@@ -1275,8 +1275,14 @@ type SyncStatus struct {
 
 // Terminal defines model for Terminal.
 type Terminal struct {
-	FontFamily string `json:"font_family"`
-	Renderer   string `json:"renderer"`
+	CursorBlink   *bool   `json:"cursor_blink"`
+	FontFamily    string  `json:"font_family"`
+	FontLigatures bool    `json:"font_ligatures"`
+	FontSize      int64   `json:"font_size"`
+	LetterSpacing int64   `json:"letter_spacing"`
+	LineHeight    float64 `json:"line_height"`
+	Renderer      string  `json:"renderer"`
+	Scrollback    int64   `json:"scrollback"`
 }
 
 // UpdateSettingsRequest defines model for UpdateSettingsRequest.

@@ -1,8 +1,7 @@
 import type { components, operations } from "./generated/schema.js";
 
 export type Repo = components["schemas"]["RepoResponse"];
-export type RepoSummary =
-  components["schemas"]["RepoSummaryResponse"];
+export type RepoSummary = components["schemas"]["RepoSummaryResponse"];
 export type RepoSummaryAuthor =
   components["schemas"]["RepoSummaryAuthorResponse"];
 export type RepoSummaryIssue =
@@ -11,38 +10,34 @@ export type RepoSummaryCommitPointResponse =
   components["schemas"]["RepoSummaryCommitPointResponse"];
 export type RepoSummaryReleaseResponse =
   components["schemas"]["RepoSummaryReleaseResponse"];
-export type PullRequest =
-  components["schemas"]["MergeRequestResponse"];
+export type PullRequest = components["schemas"]["MergeRequestResponse"];
 export type ProviderCapabilities =
   components["schemas"]["ProviderCapabilitiesResponse"];
 export type OperationAvailability =
   components["schemas"]["OperationAvailability"];
-export type RepoOperations =
-  components["schemas"]["RepoOperations"];
-export type Issue =
-  components["schemas"]["IssueResponse"];
+export type RepoOperations = components["schemas"]["RepoOperations"];
+export type Issue = components["schemas"]["IssueResponse"];
 export type IssueEvent = components["schemas"]["IssueEvent"];
 export type IssueDetail = components["schemas"]["IssueDetailResponse"];
 export type PREvent = components["schemas"]["MREvent"];
 export type PullDetail = components["schemas"]["MergeRequestDetailResponse"];
 export type SyncStatus = components["schemas"]["SyncStatus"];
-export type RateLimitHostStatus =
-  components["schemas"]["RateLimitHostStatus"];
-export type RateLimitsResponse =
-  components["schemas"]["RateLimitsResponse"];
+export type RateLimitHostStatus = components["schemas"]["RateLimitHostStatus"];
+export type RateLimitsResponse = components["schemas"]["RateLimitsResponse"];
 export type ActivityItem = components["schemas"]["ActivityItemResponse"];
 export type ActivityResponse = components["schemas"]["ActivityResponse"];
 export type CommentAutocompleteResponse =
   components["schemas"]["CommentAutocompleteResponse"];
 export type CommentAutocompleteReference =
   components["schemas"]["CommentAutocompleteReference"];
-export type ActivityParams = NonNullable<operations["list-activity"]["parameters"]["query"]>;
+export type ActivityParams = NonNullable<
+  operations["list-activity"]["parameters"]["query"]
+>;
 export type PullsParams = operations["list-pulls"]["parameters"]["query"];
 export type IssuesParams = operations["list-issues"]["parameters"]["query"];
 export type MergeParams = components["schemas"]["MergePRInputBody"];
 
-export type WorktreeLink =
-  components["schemas"]["WorktreeLinkResponse"];
+export type WorktreeLink = components["schemas"]["WorktreeLinkResponse"];
 export type LaunchTarget = components["schemas"]["LaunchTarget"];
 export type RuntimeSession = components["schemas"]["SessionInfo"];
 export type WorkspaceRuntime =
@@ -77,7 +72,49 @@ export type TerminalRenderer = "xterm" | "ghostty-web";
 
 export interface TerminalSettings {
   font_family: string;
+  font_size: number;
+  scrollback: number;
+  line_height: number;
+  letter_spacing: number;
+  cursor_blink: boolean;
+  font_ligatures: boolean;
   renderer: TerminalRenderer;
+}
+
+export const DEFAULT_TERMINAL_SETTINGS: TerminalSettings = {
+  font_family: "",
+  font_size: 14,
+  scrollback: 1000,
+  line_height: 1,
+  letter_spacing: 0,
+  cursor_blink: true,
+  font_ligatures: false,
+  renderer: "xterm",
+};
+
+export type TerminalSettingsInput = Partial<
+  Omit<TerminalSettings, "cursor_blink" | "renderer">
+> & {
+  cursor_blink?: boolean | null;
+  renderer?: string | null;
+};
+
+export function normalizeTerminalSettings(
+  terminal: TerminalSettingsInput | null | undefined,
+): TerminalSettings {
+  return {
+    font_family: terminal?.font_family ?? DEFAULT_TERMINAL_SETTINGS.font_family,
+    font_size: terminal?.font_size ?? DEFAULT_TERMINAL_SETTINGS.font_size,
+    scrollback: terminal?.scrollback ?? DEFAULT_TERMINAL_SETTINGS.scrollback,
+    line_height: terminal?.line_height ?? DEFAULT_TERMINAL_SETTINGS.line_height,
+    letter_spacing:
+      terminal?.letter_spacing ?? DEFAULT_TERMINAL_SETTINGS.letter_spacing,
+    cursor_blink:
+      terminal?.cursor_blink ?? DEFAULT_TERMINAL_SETTINGS.cursor_blink,
+    font_ligatures:
+      terminal?.font_ligatures ?? DEFAULT_TERMINAL_SETTINGS.font_ligatures,
+    renderer: terminal?.renderer === "ghostty-web" ? "ghostty-web" : "xterm",
+  };
 }
 
 export interface AgentSettings {
@@ -157,11 +194,7 @@ export interface CommitInfo {
 export interface WorkspaceHost {
   key: string;
   label: string;
-  connectionState:
-    | "connected"
-    | "connecting"
-    | "disconnected"
-    | "error";
+  connectionState: "connected" | "connecting" | "disconnected" | "error";
   transport?: "ssh" | "local";
   platform?: string;
   projects: WorkspaceProject[];

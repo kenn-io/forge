@@ -332,6 +332,16 @@ command = ["codex", "--full-auto"]
 	assert.Equal(1, resp.Repos[0].MatchedRepoCount)
 	assert.Equal("threaded", resp.Activity.ViewMode)
 	assert.Empty(resp.Terminal.FontFamily)
+	assert.Equal(config.DefaultTerminalFontSize, resp.Terminal.FontSize)
+	assert.Equal(config.DefaultTerminalScrollback, resp.Terminal.Scrollback)
+	assert.InDelta(
+		config.DefaultTerminalLineHeight,
+		resp.Terminal.LineHeight,
+		0.001,
+	)
+	require.NotNil(resp.Terminal.CursorBlink)
+	assert.True(*resp.Terminal.CursorBlink)
+	assert.False(resp.Terminal.FontLigatures)
 	require.Len(resp.Agents, 1)
 	assert.Equal("codex", resp.Agents[0].Key)
 	assert.Equal([]string{"codex", "--full-auto"}, resp.Agents[0].Command)
@@ -348,7 +358,11 @@ func TestHandleUpdateSettings(t *testing.T) {
 		HideBots:   true,
 	}
 	terminal := config.Terminal{
-		FontFamily: "\"Fira Code\", monospace",
+		FontFamily:    "\"Fira Code\", monospace",
+		FontSize:      16,
+		Scrollback:    5000,
+		LineHeight:    1.15,
+		FontLigatures: true,
 	}
 	body := updateSettingsRequest{
 		Activity: &activity,
@@ -365,6 +379,10 @@ func TestHandleUpdateSettings(t *testing.T) {
 	assert.Equal("threaded", cfg2.Activity.ViewMode)
 	assert.Equal("30d", cfg2.Activity.TimeRange)
 	assert.Equal("\"Fira Code\", monospace", cfg2.Terminal.FontFamily)
+	assert.Equal(16, cfg2.Terminal.FontSize)
+	assert.Equal(5000, cfg2.Terminal.Scrollback)
+	assert.InDelta(1.15, cfg2.Terminal.LineHeight, 0.001)
+	assert.True(cfg2.Terminal.FontLigatures)
 }
 
 func TestHandleUpdateTerminalSettingsPreservesActivity(t *testing.T) {
@@ -387,7 +405,10 @@ hide_bots = true
 `, &mockGH{})
 
 	terminal := config.Terminal{
-		FontFamily: "\"Iosevka Term\", monospace",
+		FontFamily:    "\"Iosevka Term\", monospace",
+		FontSize:      15,
+		Scrollback:    2000,
+		LetterSpacing: 1,
 	}
 	body := updateSettingsRequest{
 		Terminal: &terminal,
@@ -404,6 +425,9 @@ hide_bots = true
 	assert.True(cfg2.Activity.HideClosed)
 	assert.True(cfg2.Activity.HideBots)
 	assert.Equal("\"Iosevka Term\", monospace", cfg2.Terminal.FontFamily)
+	assert.Equal(15, cfg2.Terminal.FontSize)
+	assert.Equal(2000, cfg2.Terminal.Scrollback)
+	assert.Equal(1, cfg2.Terminal.LetterSpacing)
 }
 
 func TestHandleUpdateSettingsPersistsAgents(t *testing.T) {

@@ -50,6 +50,10 @@ export {
   buildRoutedItemRoute,
 } from "./routes.js";
 export { supportsLocked } from "./api/provider-capabilities.js";
+export {
+  DEFAULT_TERMINAL_SETTINGS,
+  normalizeTerminalSettings,
+} from "./api/types.js";
 export type {
   FocusListRouteRef,
   IssueRouteRef,
@@ -58,6 +62,7 @@ export type {
   RepositoryRouteRef,
   RoutedItemRef,
 } from "./routes.js";
+export type { TerminalSettingsInput } from "./api/types.js";
 
 // Store factories
 export { createPullsStore } from "./stores/pulls.svelte.js";

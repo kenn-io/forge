@@ -1,6 +1,7 @@
 package gitlab
 
 import (
+	"encoding/json"
 	"fmt"
 	"path"
 	"reflect"
@@ -278,6 +279,58 @@ func NormalizeMergeRequestNotes(
 		})
 	}
 	return events
+}
+
+func NormalizeMergeRequestDiscussions(
+	repo platform.RepoRef,
+	mrNumber int,
+	discussions []*gitlab.Discussion,
+) []platform.MergeRequestEvent {
+	var events []platform.MergeRequestEvent
+	for _, discussion := range discussions {
+		if discussion == nil {
+			continue
+		}
+		for _, note := range discussion.Notes {
+			if note == nil || note.System {
+				continue
+			}
+			events = append(events, platform.MergeRequestEvent{
+				Repo:               repo,
+				PlatformID:         note.ID,
+				PlatformExternalID: strconv.FormatInt(note.ID, 10),
+				MergeRequestNumber: mrNumber,
+				EventType:          "issue_comment",
+				Author:             noteAuthorUsername(note),
+				Body:               note.Body,
+				CreatedAt:          timeValue(note.CreatedAt),
+				DedupeKey:          noteDedupeKey(repo, "mr", mrNumber, "note", strconv.FormatInt(note.ID, 10)),
+				DiscussionID:       discussion.ID,
+				PositionJSON:       serializeNotePosition(note.Position),
+				Resolvable:         note.Resolvable,
+				Resolved:           note.Resolved,
+			})
+		}
+	}
+	return events
+}
+
+func noteAuthorUsername(note *gitlab.Note) string {
+	if note == nil || note.Author.Username == "" {
+		return ""
+	}
+	return note.Author.Username
+}
+
+func serializeNotePosition(pos *gitlab.NotePosition) string {
+	if pos == nil {
+		return ""
+	}
+	data, err := json.Marshal(pos)
+	if err != nil {
+		return ""
+	}
+	return string(data)
 }
 
 func NormalizeIssueNotes(

@@ -391,6 +391,93 @@ func TestGitLabCIStatusMappingTable(t *testing.T) {
 	}
 }
 
+func TestNormalizeMergeRequestDiscussions(t *testing.T) {
+	assert := assert.New(t)
+	createdAt1 := time.Date(2026, 5, 22, 10, 0, 0, 0, time.UTC)
+	createdAt2 := time.Date(2026, 5, 22, 11, 0, 0, 0, time.UTC)
+	createdAt3 := time.Date(2026, 5, 22, 12, 0, 0, 0, time.UTC)
+	repo := platform.RepoRef{
+		Platform: platform.KindGitLab,
+		Host:     "gitlab.com",
+		Owner:    "acme",
+		Name:     "widget",
+		RepoPath: "acme/widget",
+	}
+
+	discussions := []*gitlab.Discussion{
+		{
+			ID: "disc-abc123",
+			Notes: []*gitlab.Note{
+				{
+					ID:         101,
+					Body:       "needs fix on this line",
+					System:     false,
+					Resolvable: true,
+					Resolved:   false,
+					Author:     gitlab.NoteAuthor{Username: "reviewer"},
+					CreatedAt:  &createdAt1,
+					Position: &gitlab.NotePosition{
+						NewPath: "main.go",
+						NewLine: 42,
+					},
+				},
+				{
+					ID:         102,
+					Body:       "fixed!",
+					System:     false,
+					Resolvable: true,
+					Resolved:   true,
+					Author:     gitlab.NoteAuthor{Username: "author"},
+					CreatedAt:  &createdAt2,
+				},
+			},
+		},
+		{
+			ID: "disc-def456",
+			Notes: []*gitlab.Note{
+				{
+					ID:     201,
+					Body:   "system note",
+					System: true,
+					Author: gitlab.NoteAuthor{Username: "gitlab"},
+				},
+				{
+					ID:         202,
+					Body:       "general comment",
+					System:     false,
+					Resolvable: false,
+					Author:     gitlab.NoteAuthor{Username: "commenter"},
+					CreatedAt:  &createdAt3,
+				},
+			},
+		},
+	}
+
+	events := NormalizeMergeRequestDiscussions(repo, 7, discussions)
+
+	// Should have 3 events (system note filtered)
+	assert.Len(events, 3)
+
+	// First note from first discussion
+	assert.Equal("disc-abc123", events[0].DiscussionID)
+	assert.Equal("reviewer", events[0].Author)
+	assert.Equal("needs fix on this line", events[0].Body)
+	assert.True(events[0].Resolvable)
+	assert.False(events[0].Resolved)
+	assert.Contains(events[0].PositionJSON, "main.go")
+	assert.Contains(events[0].PositionJSON, "42")
+
+	// Second note from first discussion
+	assert.Equal("disc-abc123", events[1].DiscussionID)
+	assert.Equal("author", events[1].Author)
+	assert.True(events[1].Resolved)
+
+	// Note from second discussion (system note skipped)
+	assert.Equal("disc-def456", events[2].DiscussionID)
+	assert.Equal("commenter", events[2].Author)
+	assert.False(events[2].Resolvable)
+}
+
 func testGitLabRepoRef() platform.RepoRef {
 	return platform.RepoRef{
 		Platform:   platform.KindGitLab,

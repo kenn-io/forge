@@ -242,6 +242,12 @@
     return `${mode} · ${activity.getTimeRange()}`;
   });
 
+  const collapseThreads = $derived(activity.getCollapseThreads());
+
+  const collapseAllLabel = $derived(
+    collapseThreads ? "Expand all" : "Collapse all",
+  );
+
   const filterSections = $derived.by(() => [
     {
       title: "View",
@@ -384,21 +390,19 @@
       <button
         class="collapse-all-btn"
         type="button"
-        aria-label={activity.getCollapseThreads() ? "Expand all" : "Collapse all"}
-        title={activity.getCollapseThreads() ? "Expand all" : "Collapse all"}
+        aria-label={collapseAllLabel}
+        title={collapseAllLabel}
         onclick={() =>
-          activity.getCollapseThreads()
+          collapseThreads
             ? activity.expandAllThreads()
             : activity.collapseAllThreads()}
       >
-        {#if activity.getCollapseThreads()}
+        {#if collapseThreads}
           <ChevronsUpDownIcon size="14" strokeWidth="2" aria-hidden="true" />
         {:else}
           <ChevronsDownUpIcon size="14" strokeWidth="2" aria-hidden="true" />
         {/if}
-        <span class="collapse-all-label"
-          >{activity.getCollapseThreads() ? "Expand all" : "Collapse all"}</span
-        >
+        <span class="collapse-all-label">{collapseAllLabel}</span>
       </button>
     {/if}
 
@@ -650,6 +654,7 @@
     border: 1px solid var(--border-muted);
     border-radius: var(--radius-sm);
     background: var(--bg-surface);
+    cursor: pointer;
   }
 
   .collapse-all-btn:hover {

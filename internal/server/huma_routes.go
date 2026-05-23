@@ -151,6 +151,34 @@ type editIssueCommentInput struct {
 
 type editIssueCommentOutput = bodyOutput[db.IssueEvent]
 
+type replyToDiscussionInput struct {
+	Provider     string `path:"provider"`
+	PlatformHost string
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
+	DiscussionID string `path:"discussion_id"`
+	Body         struct {
+		Body string `json:"body"`
+	}
+}
+
+type replyToDiscussionOutput = createdOutput[db.MREvent]
+
+type resolveDiscussionInput struct {
+	Provider     string `path:"provider"`
+	PlatformHost string
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
+	DiscussionID string `path:"discussion_id"`
+	Body         struct {
+		Resolved bool `json:"resolved"`
+	}
+}
+
+type resolveDiscussionOutput = okStatusOutput
+
 type createIssueInput struct {
 	Provider     string `path:"provider"`
 	PlatformHost string

@@ -83,13 +83,47 @@ describe("itemRefHandler", () => {
             name: "widgets",
             number: 12,
           },
-          query: { item_type: "pr" },
         },
       },
     );
     expect(mocks.navigate).toHaveBeenCalledWith("/pulls/github/acme/widgets/12");
     expect(open).not.toHaveBeenCalled();
     expect(mocks.showFlash).not.toHaveBeenCalled();
+  });
+
+  it("passes item type hints only for GitLab references", async () => {
+    mocks.post.mockResolvedValue({
+      data: { repo_tracked: true, item_type: "pr" },
+      error: undefined,
+      response: { status: 200 },
+    });
+
+    await clickItemRef({
+      "data-provider": "gitlab",
+      "data-platform-host": "gitlab.example.com",
+      "data-owner": "group",
+      "data-name": "project",
+      "data-repo-path": "group/project",
+      "data-number": "12",
+      "data-item-type": "pr",
+      "data-external-url": "https://gitlab.example.com/group/project/-/merge_requests/12",
+    });
+
+    expect(mocks.post).toHaveBeenCalledWith(
+      "/host/{platform_host}/repo/{provider}/{owner}/{name}/resolve/{number}",
+      {
+        params: {
+          path: {
+            platform_host: "gitlab.example.com",
+            provider: "gitlab",
+            owner: "group",
+            name: "project",
+            number: 12,
+          },
+          query: { item_type: "pr" },
+        },
+      },
+    );
   });
 
   it("opens the provider URL when an untracked reference has an external fallback", async () => {

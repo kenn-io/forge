@@ -9223,18 +9223,57 @@ func TestResolveItem_Issue(t *testing.T) {
 	require.True(resp.JSON200.RepoTracked)
 }
 
-func TestResolveItem_UsesItemTypeHint(t *testing.T) {
+func TestResolveItem_UsesItemTypeHintForGitLab(t *testing.T) {
 	require := require.New(t)
-	repos := []ghclient.RepoRef{{Owner: "acme", Name: "widget"}}
+	repos := []ghclient.RepoRef{{
+		Platform:     platform.KindGitLab,
+		PlatformHost: "gitlab.example.com",
+		Owner:        "group",
+		Name:         "project",
+	}}
 	srv, database := setupTestServerWithRepos(t, &mockGH{}, repos)
-	seedPR(t, database, "acme", "widget", 10)
-	seedIssue(t, database, "acme", "widget", 10, "open")
+	repoID, err := database.UpsertRepo(t.Context(), db.RepoIdentity{
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.example.com",
+		Owner:        "group",
+		Name:         "project",
+	})
+	require.NoError(err)
+	now := time.Now().UTC().Truncate(time.Second)
+	_, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
+		RepoID:         repoID,
+		PlatformID:     10000,
+		Number:         10,
+		URL:            "https://gitlab.example.com/group/project/-/merge_requests/10",
+		Title:          "Test MR",
+		Author:         "testuser",
+		State:          "open",
+		HeadBranch:     "feature",
+		BaseBranch:     "main",
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		LastActivityAt: now,
+	})
+	require.NoError(err)
+	_, err = database.UpsertIssue(t.Context(), &db.Issue{
+		RepoID:         repoID,
+		PlatformID:     10001,
+		Number:         10,
+		URL:            "https://gitlab.example.com/group/project/-/issues/10",
+		Title:          "Test Issue",
+		Author:         "testuser",
+		State:          "open",
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		LastActivityAt: now,
+	})
+	require.NoError(err)
 	client := setupTestClient(t, srv)
-	itemType := generated.ResolveRepoItemParamsItemTypeIssue
+	itemType := generated.ResolveRepoItemOnHostParamsItemTypeIssue
 
-	resp, err := client.HTTP.ResolveRepoItemWithResponse(
-		t.Context(), "gh", "acme", "widget", 10,
-		&generated.ResolveRepoItemParams{ItemType: &itemType},
+	resp, err := client.HTTP.ResolveRepoItemOnHostWithResponse(
+		t.Context(), "gitlab.example.com", "gitlab", "group", "project", 10,
+		&generated.ResolveRepoItemOnHostParams{ItemType: &itemType},
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())

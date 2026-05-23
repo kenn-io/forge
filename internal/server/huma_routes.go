@@ -2828,6 +2828,12 @@ func (s *Server) resolveItem(
 	if err != nil {
 		return nil, providerRouteLookupError(err)
 	}
+	providerKind := repoProviderKind(*repo)
+	providerHost := repoProviderHost(*repo)
+	itemTypeHint := requestedItemType
+	if providerKind != platform.KindGitLab {
+		itemTypeHint = ""
+	}
 	if !s.syncer.IsTrackedRepoOnHost(repo.Owner, repo.Name, repoProviderHost(*repo)) {
 		return &resolveItemOutput{
 			Body: resolveItemResponse{
@@ -2840,9 +2846,9 @@ func (s *Server) resolveItem(
 		itemType string
 		found    bool
 	)
-	if requestedItemType != "" {
+	if itemTypeHint != "" {
 		itemType, found, err = s.db.ResolveItemNumberOfType(
-			ctx, repo.ID, number, requestedItemType,
+			ctx, repo.ID, number, itemTypeHint,
 		)
 	} else {
 		itemType, found, err = s.db.ResolveItemNumber(ctx, repo.ID, number)
@@ -2860,14 +2866,62 @@ func (s *Server) resolveItem(
 		}, nil
 	}
 
-	if repoProviderKind(*repo) != platform.KindGitHub {
+	if providerKind == platform.KindGitLab && itemTypeHint != "" {
+		var syncErr error
+		switch itemTypeHint {
+		case "pr":
+			syncErr = s.syncer.SyncMROnProvider(
+				ctx, providerKind, providerHost, repo.Owner, repo.Name, number,
+			)
+		case "issue":
+			syncErr = s.syncer.SyncIssueOnProvider(
+				ctx, providerKind, providerHost, repo.Owner, repo.Name, number,
+			)
+		}
+		var diffErr *ghclient.DiffSyncError
+		if syncErr != nil && !errors.As(syncErr, &diffErr) {
+			if strings.Contains(syncErr.Error(), "is not tracked") {
+				return nil, problemForbidden(syncErr.Error(), nil)
+			}
+			return nil, providerCallProblemWithDetail(
+				syncErr, string(providerKind), providerHost,
+				"resolve item: "+syncErr.Error(),
+			)
+		}
+		itemType, found, err = s.db.ResolveItemNumberOfType(
+			ctx, repo.ID, number, itemTypeHint,
+		)
+		if err != nil {
+			return nil, problemInternal("resolve item: " + err.Error())
+		}
+		if !found {
+			return nil, problemNotFound(CodeNotFound, "item not found", nil)
+		}
+		if diffErr != nil {
+			slog.Warn("resolve item: diff sync failed but PR row was synced",
+				"owner", repo.Owner,
+				"name", repo.Name,
+				"number", number,
+				"err", syncErr,
+			)
+		}
+		return &resolveItemOutput{
+			Body: resolveItemResponse{
+				ItemType:    itemType,
+				Number:      number,
+				RepoTracked: true,
+			},
+		}, nil
+	}
+
+	if providerKind != platform.KindGitHub {
 		return nil, problemNotFound(CodeNotFound, "item not found", nil)
 	}
 
 	itemType, err = s.syncer.SyncItemByNumber(
 		ctx, repo.Owner, repo.Name, number,
 	)
-	if err == nil && requestedItemType != "" && itemType != requestedItemType {
+	if err == nil && itemTypeHint != "" && itemType != itemTypeHint {
 		return nil, problemNotFound(CodeNotFound, "item not found", nil)
 	}
 	// A DiffSyncError means the PR row was upserted but the diff

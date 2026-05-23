@@ -1,4 +1,5 @@
 import {
+  canonicalProvider,
   providerRepoPath,
   providerRouteParams,
 } from "@middleman/ui/api/provider-routes";
@@ -46,12 +47,14 @@ async function resolveAndNavigate(
 ): Promise<void> {
   try {
     const ref = { provider, platformHost, owner, name, repoPath };
+    const itemTypeHint =
+      canonicalProvider(provider) === "gitlab" ? itemType : undefined;
     const { data, error, response } = await client.POST(
       providerRepoPath(ref, "/resolve/{number}"),
       {
         params: {
           path: { ...providerRouteParams(ref), number },
-          ...(itemType && { query: { item_type: itemType } }),
+          ...(itemTypeHint && { query: { item_type: itemTypeHint } }),
         },
       },
     );

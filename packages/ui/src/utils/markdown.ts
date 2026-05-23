@@ -1,6 +1,7 @@
 import { Marked } from "marked";
 import type { TokenizerAndRendererExtension } from "marked";
 import DOMPurify from "dompurify";
+import { itemReferenceAnchorAttributes } from "./item-reference.js";
 
 interface RepoContext {
   provider: string;
@@ -79,11 +80,7 @@ function itemRefExtension(repo?: RepoContext): TokenizerAndRendererExtension {
     },
     renderer(token): string {
       const t = token as unknown as ItemRefToken;
-      const hostAttr = t.platformHost ? ` data-platform-host="${t.platformHost}"` : "";
-      const href = t.platformHost
-        ? `https://${t.platformHost}/${t.repoPath}/issues/${t.number}`
-        : `/${t.provider}/${t.repoPath}/issues/${t.number}`;
-      return `<a class="item-ref" href="${href}" data-provider="${t.provider}"${hostAttr} data-owner="${t.owner}" data-name="${t.name}" data-repo-path="${t.repoPath}" data-number="${t.number}">${t.text}</a>`;
+      return `<a ${itemReferenceAnchorAttributes(t)}>${t.text}</a>`;
     },
   };
 }

@@ -2,6 +2,25 @@ import { describe, expect, it } from "vitest";
 import { renderMarkdown } from "./markdown.js";
 
 describe("renderMarkdown task lists", () => {
+  it("renders item references with the shared internal route and data attributes", () => {
+    const html = renderMarkdown("See #12 and acme/tools#13", {
+      provider: "github",
+      platformHost: "github.com",
+      owner: "acme",
+      name: "widgets",
+      repoPath: "acme/widgets",
+    });
+
+    expect(html).toContain('class="item-ref" href="/issues/github/acme/widgets/12"');
+    expect(html).toContain('data-platform-host="github.com"');
+    expect(html).toContain('data-owner="acme"');
+    expect(html).toContain('data-name="widgets"');
+    expect(html).toContain('data-repo-path="acme/widgets"');
+    expect(html).toContain('data-number="12"');
+    expect(html).toContain('href="/issues/github/acme/tools/13"');
+    expect(html).toContain('data-repo-path="acme/tools"');
+  });
+
   it("renders disabled checkboxes by default", () => {
     const html = renderMarkdown("- [ ] one\n- [x] two");
     expect(html).toContain('disabled=""');

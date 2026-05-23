@@ -68,7 +68,10 @@ New store internals:
   hydrated server default. Used to decide bidirectional URL writes.
 - `expandOverrides` — reactive `$state(new Set<string>())`. Items the user has
   individually flipped away from the global default since the last
-  collapse-all/expand-all. Session only; never persisted.
+  collapse-all/expand-all. Session only; never persisted. Reset to empty by
+  `collapseAllThreads`, `expandAllThreads`, and `hydrateDefaults`, so an override
+  never outlives the global state it was relative to (otherwise a changed server
+  default would invert stale overrides).
 
 `expandOverrides` is mutated by reassignment, not in-place `add`/`delete`/`clear`,
 matching the store's existing `enabledEvents` pattern (`activity.svelte.ts:323`,
@@ -105,7 +108,9 @@ The collapse param is therefore tri-state and compared against the hydrated
 server default, not a constant:
 
 - `hydrateDefaults(activity)` sets `collapseThreadsDefault = activity.collapse_threads`
-  and `collapseThreads = activity.collapse_threads`.
+  and `collapseThreads = activity.collapse_threads`, and resets
+  `expandOverrides = new Set()` so a changed server default cannot invert stale
+  per-item overrides.
 - `syncFromURL()` reads `collapsed`: `"1"` sets `collapseThreads = true`, `"0"`
   sets `false`, absent leaves the hydrated value.
 - `syncToURL()` writes `collapsed = collapseThreads ? "1" : "0"` when
@@ -116,60 +121,74 @@ default) while making a live override reload-safe regardless of which default th
 user has chosen. The pre-existing one-sided sync for `view` and `range` is left
 unchanged; this change is scoped to the new field.
 
-## Shared Item Key (identity-correct)
+## Shared Keys (identity-correct)
 
-The current grouping key (`ActivityThreaded.svelte:78`) and keyed `{#each}`
-(`:227`) are built inline as
-`${platformHost}|${owner}/${name}:${itemType}:${itemNumber}` and omit `provider`.
-That contradicts the project identity invariant `(platform, platform_host, owner,
-name)` and lets overrides collide across providers that share a host.
+Several keys in `ActivityThreaded.svelte` omit `provider`, contradicting the
+project identity invariant `(platform, platform_host, owner, name)`:
 
-Extract one helper and use it for grouping, the keyed `{#each}`, and the override
-key:
+- The item grouping key (`:78`) and keyed item `{#each}` (`:227`) use
+  `${platformHost}|${owner}/${name}:${itemType}:${itemNumber}`, so per-item
+  collapse overrides could collide across providers that share a host.
+- The repo bucket key (`repoMap`, `:131`) and keyed repo `{#each}` (`:218`) use
+  `${owner}/${name}` only, so two distinct repositories that share an owner/name
+  across providers or hosts merge into one repo section.
+
+Extract two helpers and use them wherever a repo or item identity is keyed:
 
 ```ts
 // packages/ui/src/components/activityRows.ts
-export interface ActivityItemKeyRef {
+export interface ActivityRepoKeyRef {
   provider: string;
   platformHost: string;
   owner: string;
   name: string;
-  itemType: string;
-  itemNumber: number;
 }
 
-export function activityItemKey(ref: ActivityItemKeyRef): string {
-  return `${ref.provider}|${ref.platformHost}|${ref.owner}/${ref.name}` +
-    `:${ref.itemType}:${ref.itemNumber}`;
+export function activityRepoKey(ref: ActivityRepoKeyRef): string {
+  return `${ref.provider}|${ref.platformHost}|${ref.owner}/${ref.name}`;
+}
+
+export function activityItemKey(
+  ref: ActivityRepoKeyRef & { itemType: string; itemNumber: number },
+): string {
+  return `${activityRepoKey(ref)}:${ref.itemType}:${ref.itemNumber}`;
 }
 ```
 
-The grouping pass derives `provider` from `item.repo?.provider ?? ""` (the
-existing flat fields supply host/owner/name and the group's representative is
-already guarded by the `first.repo` throw). The per-group call site passes the
-`ItemGroup`'s `provider`, `platformHost`, `repoOwner`, `repoName`, `itemType`,
-`itemNumber`, producing keys identical to the grouping pass. The same call feeds
-`isThreadItemExpanded` / `toggleThreadItem`.
+The item grouping pass derives `provider` from `item.repo?.provider ?? ""` (the
+flat fields supply host/owner/name and the representative is already guarded by
+the `first.repo` throw). The per-group call sites pass the `ItemGroup` /
+`RepoGroup` identity fields, producing keys identical to the grouping passes. The
+item-key call also feeds `isThreadItemExpanded` / `toggleThreadItem`.
+
+`RepoGroup` gains a `key` field (from `activityRepoKey`) used for bucketing and
+the repo `{#each}`; its existing `repo` field stays the `owner/name` display
+label. Disambiguating that label when two repositories share `owner/name` is out
+of scope.
 
 ## Frontend Changes
 
 - `packages/ui/src/stores/activity.svelte.ts`: add the state, reads, and writes
   above; extend `hydrateDefaults`, `syncToURL`, `syncFromURL`; export the new API.
-- `packages/ui/src/components/activityRows.ts`: add `activityItemKey` and its ref
-  type.
+- `packages/ui/src/components/activityRows.ts`: add `activityRepoKey`,
+  `activityItemKey`, and the `ActivityRepoKeyRef` type.
 - `packages/ui/src/components/ActivityFeed.svelte`: render a Collapse-all /
   Expand-all toggle in `.controls-bar`, only when `viewMode === "threaded"`. It
   reflects `getCollapseThreads()` — `ChevronsDownUp` + "Collapse all" when
-  expanded, `ChevronsUpDown` + "Expand all" when collapsed — with an `aria-label`
-  and `title`. The existing compact CSS already wraps the controls bar, so it fits
-  the side pane.
+  expanded, `ChevronsUpDown` + "Expand all" when collapsed (both present in
+  `@lucide/svelte@1.3.0`) — with an `aria-label` and `title`. The compact controls
+  bar assigns explicit `order` values to its existing children (search `order:1`,
+  `.filter-group` `order:2`, `.filter-wrap` `order:3`), so the new toggle gets its
+  own explicit compact `order` and flex rule rather than relying on default
+  wrapping, ensuring predictable placement in the side pane.
 - `packages/ui/src/components/ActivityThreaded.svelte`: prepend a chevron caret
   `<button>` to each `item-row` (`ChevronDown` expanded / `ChevronRight`
   collapsed). Its `onclick` calls `toggleThreadItem(key)` and `stopPropagation()`
   so the row's open-detail click does not also fire. Wrap the
   `{#each itemGroup.displayEvents}` block in `{#if isThreadItemExpanded(key)}`.
-  Replace both inline keys with `activityItemKey(...)`. Add compact caret sizing
-  for the side pane.
+  Replace the item grouping and item `{#each}` keys with `activityItemKey(...)`,
+  and the `repoMap` bucket and repo `{#each}` keys with `activityRepoKey(...)`
+  (carried on a new `RepoGroup.key`). Add compact caret sizing for the side pane.
 - `packages/ui/src/api/types.ts`: add `collapse_threads: boolean` to the
   hand-maintained `ActivitySettings` interface.
 - `packages/ui/src/Provider.svelte`: add `collapse_threads` to the field-by-field
@@ -178,9 +197,10 @@ already guarded by the `first.repo` throw). The per-group call site passes the
   `frontend/src/lib/utils/appStartup.ts` and `ActivitySettings.svelte` pass
   `settings.activity` through wholesale and need no per-field change.
 - `frontend/src/lib/components/settings/ActivitySettings.svelte`: add a "Collapse
-  threads by default" toggle (same toggle pattern as Hide bots) that PUTs
-  `collapse_threads` and re-hydrates. This is what makes the choice survive fresh
-  navigation, exactly like `view_mode`.
+  threads by default" toggle placed directly after "Default view mode" (it is a
+  threaded-mode default, not a visibility filter), using the same toggle control
+  as Hide bots, that PUTs `collapse_threads` and re-hydrates. This is what makes
+  the choice survive fresh navigation, exactly like `view_mode`.
 
 ## Backend Changes
 
@@ -205,12 +225,14 @@ Follow the wire-level discipline in `context/testing.md` and the e2e mandate.
   `syncToURL`/`syncFromURL` are bidirectional (server default `true` plus
   `collapsed=0` survives a reload simulation; default `false` plus `collapsed=1`
   survives; matching live and default writes no param); `isThreadItemExpanded`
-  override math; `collapseAllThreads`/`expandAllThreads` clear overrides.
-- `activityItemKey` unit test: two items differing only by `provider` (or host)
-  produce different keys.
-- Component test (`ActivityThreaded`): a caret hides/shows an item's events; a
-  caret click does not invoke the row's `onSelectItem`; Collapse-all hides all
-  events and clears prior single-item overrides.
+  override math; `collapseAllThreads`/`expandAllThreads` flip state and clear
+  overrides; `hydrateDefaults` resets the default and clears overrides.
+- `activityRepoKey` / `activityItemKey` unit test: two items (or repos) differing
+  only by `provider` (or host) produce different keys.
+- Component test (`ActivityThreaded`): a caret hides/shows an item's events, and a
+  caret click does not invoke the row's `onSelectItem`.
+- Component test (`ActivityFeed`): the Collapse-all / Expand-all toggle renders
+  only in Threaded mode and invokes `collapseAllThreads` / `expandAllThreads`.
 - Playwright e2e: in Threaded mode, Collapse-all hides events; expanding one item
   shows only its events; reload preserves the URL-encoded state; the caret and
   control work in the side pane with a detail open.

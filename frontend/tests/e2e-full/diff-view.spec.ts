@@ -185,6 +185,23 @@ const largeDiff = makeLargeDiff();
 // Stale fixture reuses small diff with stale flag.
 const staleDiff = { ...smallDiff, stale: true };
 
+const hunklessTextDiff: DiffResult = withServerDiffData({
+  stale: false,
+  whitespace_only_count: 0,
+  files: [
+    {
+      path: "internal/server/config.go",
+      old_path: "internal/server/config.go",
+      status: "modified",
+      is_binary: false,
+      is_whitespace_only: false,
+      additions: 0,
+      deletions: 0,
+      hunks: [],
+    },
+  ],
+});
+
 const previewDiff: DiffResult = withServerDiffData({
   stale: smallDiff.stale,
   whitespace_only_count: smallDiff.whitespace_only_count,
@@ -1238,6 +1255,16 @@ test.describe("diff view", () => {
 
     const binaryFile = page.locator('[data-file-path="assets/logo.png"]');
     await expect(binaryFile.locator(".binary-notice")).toHaveText("Binary file changed");
+  });
+
+  test("hunkless textual file shows empty state instead of loading", async ({ page }) => {
+    await mockDiffApi(page, hunklessTextDiff);
+    await navigateToDiff(page);
+    await waitForDiffLoaded(page);
+
+    const file = page.locator('[data-file-path="internal/server/config.go"]');
+    await expect(file.getByText("No textual changes")).toBeVisible();
+    await expect(file.getByRole("status")).toHaveCount(0);
   });
 
   test("deleted file path has strikethrough styling in diff header", async ({ page }) => {

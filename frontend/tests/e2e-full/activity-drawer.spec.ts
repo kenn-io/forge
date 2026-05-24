@@ -1,8 +1,59 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
-import type { DiffResult, FilesResult } from "@middleman/ui/api/types";
+import type { DiffFile, DiffLine, DiffResult, FilesResult } from "@middleman/ui/api/types";
+
+type DiffFixtureFile = Omit<DiffFile, "patch"> & { patch?: string };
+type DiffFixture = Omit<DiffResult, "files" | "tree_paths" | "tree_git_status"> & {
+  files: DiffFixtureFile[];
+};
+
+function patchLinePrefix(line: DiffLine): string {
+  if (line.type === "add") return "+";
+  if (line.type === "delete") return "-";
+  return " ";
+}
+
+function patchRange(start: number, count: number): string {
+  return count === 1 ? `${start}` : `${start},${count}`;
+}
+
+function patchForFile(file: DiffFixtureFile): string {
+  if (file.is_binary || file.hunks.length === 0) return "";
+  const oldPath = file.status === "added" ? "/dev/null" : `a/${file.old_path || file.path}`;
+  const newPath = file.status === "deleted" ? "/dev/null" : `b/${file.path}`;
+  const lines = [
+    `diff --git a/${file.old_path || file.path} b/${file.path}`,
+    `--- ${oldPath}`,
+    `+++ ${newPath}`,
+  ];
+  for (const hunk of file.hunks) {
+    lines.push(
+      `@@ -${patchRange(hunk.old_start, hunk.old_count)} +${patchRange(hunk.new_start, hunk.new_count)} @@${hunk.section ? ` ${hunk.section}` : ""}`,
+    );
+    for (const line of hunk.lines) {
+      lines.push(`${patchLinePrefix(line)}${line.content}`);
+    }
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+function withServerDiffData(fixture: DiffFixture): DiffResult {
+  const files = fixture.files.map((file) => ({
+    ...file,
+    patch: file.patch ?? patchForFile(file),
+  }));
+  return {
+    ...fixture,
+    files,
+    tree_paths: files.map((file) => file.path),
+    tree_git_status: files.map((file) => ({
+      path: file.path,
+      status: file.status === "copied" ? "renamed" : file.status,
+    })),
+  };
+}
 
 // Minimal diff fixture: one modified file.
-const tinyDiff: DiffResult = {
+const tinyDiff: DiffResult = withServerDiffData({
   stale: false,
   whitespace_only_count: 0,
   files: [
@@ -31,11 +82,11 @@ const tinyDiff: DiffResult = {
       ],
     },
   ],
-};
+});
 
 // Multi-file diff fixture: 20 files with 20 lines each to force the
 // diff area to overflow in the kanban drawer.
-const multiFileDiff: DiffResult = {
+const multiFileDiff: DiffResult = withServerDiffData({
   stale: false,
   whitespace_only_count: 0,
   files: Array.from({ length: 20 }, (_, i) => ({
@@ -71,7 +122,7 @@ const multiFileDiff: DiffResult = {
       },
     ],
   })),
-};
+});
 
 function filesFromDiff(fixture: DiffResult): FilesResult {
   return {
@@ -82,6 +133,8 @@ function filesFromDiff(fixture: DiffResult): FilesResult {
       deletions: 0,
       hunks: [],
     })),
+    tree_paths: fixture.tree_paths,
+    tree_git_status: fixture.tree_git_status,
   };
 }
 

@@ -1,4 +1,7 @@
 <script lang="ts">
+  import { FileTree } from "@pierre/trees";
+  import type { FileTreeOptions } from "@pierre/trees";
+  import { onMount } from "svelte";
   import type { DiffFile } from "../../api/types.js";
   import { getStores } from "../../context.js";
   import CommitListSection from "./CommitListSection.svelte";
@@ -15,64 +18,17 @@
   }
 
   const { showCommits = true, resetKey = "" }: Props = $props();
+  let treeHost: HTMLElement | undefined = $state();
+  let tree: FileTree | undefined;
+  let renderedTreeKey = "";
+  let syncingSelection = false;
 
-  function filename(path: string): string {
-    const i = path.lastIndexOf("/");
-    return i >= 0 ? path.slice(i + 1) : path;
-  }
-
-  interface FileGroup { dir: string; files: DiffFile[] }
-
-  function groupByDir(files: DiffFile[]): FileGroup[] {
-    // Group all files with the same directory together regardless of
-    // input order — API can return files in diff order, not path-sorted.
-    const map = new Map<string, DiffFile[]>();
-    for (const f of files) {
-      const i = f.path.lastIndexOf("/");
-      const dir = i > 0 ? f.path.slice(0, i) : "";
-      const bucket = map.get(dir);
-      if (bucket) bucket.push(f);
-      else map.set(dir, [f]);
-    }
-    const result: FileGroup[] = [];
-    for (const [dir, dirFiles] of map) {
-      result.push({ dir, files: dirFiles });
-    }
-    return result;
-  }
-
-  function statusLetter(s: string): string {
-    switch (s) {
-      case "modified": return "M";
-      case "added": return "A";
-      case "deleted": return "D";
-      case "renamed": return "R";
-      case "copied": return "C";
-      default: return "?";
-    }
-  }
-
-  function statusColor(s: string): string {
-    switch (s) {
-      case "modified": return "var(--accent-amber)";
-      case "added": return "var(--accent-green)";
-      case "deleted": return "var(--accent-red)";
-      case "renamed":
-      case "copied": return "var(--accent-blue)";
-      default: return "var(--text-muted)";
-    }
-  }
-
-  function handleFileRowClick(path: string): void {
+  function handleTreeSelection(paths: readonly string[]): void {
+    if (syncingSelection) return;
     const selection = window.getSelection();
     if (selection && !selection.isCollapsed) return;
-    diff.requestScrollToFile(path);
-  }
-
-  function handleFileRowKeydown(event: KeyboardEvent, path: string): void {
-    if (event.key !== "Enter" && event.key !== " ") return;
-    event.preventDefault();
-    diff.requestScrollToFile(path);
+    const path = paths[0];
+    if (path) diff.requestScrollToFile(path);
   }
 
   // Per-diff file filter input (shown when 10+ files in diff).
@@ -88,16 +44,106 @@
   const showFileFilter = $derived(
     (diff.getVisibleFileList()?.files.length ?? 0) >= 10,
   );
-  const filteredDiffFiles = $derived.by(() => {
+  const filteredFileList = $derived.by(() => {
     const list = diff.getVisibleFileList();
     if (!list) return null;
     // Only apply filter when the filter UI is visible to avoid
     // silent hiding when the next PR has fewer files.
-    if (!showFileFilter) return list.files;
+    if (!showFileFilter) return list;
     const q = fileFilterText.trim().toLowerCase();
-    if (!q) return list.files;
-    return list.files.filter((f) => f.path.toLowerCase().includes(q));
+    if (!q) return list;
+    const files = list.files.filter((f) => f.path.toLowerCase().includes(q));
+    const paths = new Set(files.map((file) => file.path));
+    return {
+      ...list,
+      files,
+      tree_paths: list.tree_paths.filter((path) => paths.has(path)),
+      tree_git_status: list.tree_git_status.filter((item) => paths.has(item.path)),
+    };
   });
+  const filteredDiffFiles = $derived(filteredFileList?.files ?? null);
+  const treePaths = $derived(filteredFileList?.tree_paths ?? []);
+  const treeGitStatus = $derived(filteredFileList?.tree_git_status ?? []);
+  const treeKey = $derived(
+    `${treePaths.join("\0")}\n${treeGitStatus.map((item) => `${item.path}:${item.status}`).join("\0")}`,
+  );
+  const treeOptions = $derived<FileTreeOptions>({
+    paths: treePaths,
+    initialExpansion: "open",
+    flattenEmptyDirectories: true,
+    density: "compact",
+    icons: { set: "complete", colored: false },
+    gitStatus: treeGitStatus,
+    onSelectionChange: handleTreeSelection,
+    unsafeCSS: `
+      [data-type='item'] {
+        box-sizing: border-box;
+        max-width: calc(100% - var(--trees-item-margin-x) * 2);
+        overflow: hidden;
+      }
+      [data-item-section='icon'],
+      [data-item-section='git'],
+      [data-item-section='action'] {
+        flex-shrink: 0;
+      }
+      [data-item-section='content'] {
+        flex: 1 1 auto;
+        max-width: none;
+      }
+      [data-truncate-group-container='middle'],
+      [data-truncate-container],
+      [data-truncate-grid] {
+        width: 100%;
+        max-width: 100%;
+      }
+      [data-truncate-group-container='middle'] > div {
+        min-width: 0;
+        overflow: hidden;
+      }
+      [data-item-git-status='deleted'] [data-item-section='content'] {
+        text-decoration: line-through;
+        opacity: 0.7;
+      }
+    `,
+  });
+
+  onMount(() => {
+    return () => {
+      tree?.cleanUp();
+      tree = undefined;
+    };
+  });
+
+  $effect(() => {
+    if (!treeHost || !filteredDiffFiles) return;
+    if (tree && renderedTreeKey === treeKey) return;
+    tree?.cleanUp();
+    tree = new FileTree(treeOptions);
+    tree.render({ fileTreeContainer: treeHost });
+    renderedTreeKey = treeKey;
+    syncActiveFileSelection();
+  });
+
+  $effect(() => {
+    diff.getActiveFile();
+    syncActiveFileSelection();
+  });
+
+  function syncActiveFileSelection(): void {
+    if (!tree) return;
+    const activeFile = diff.getActiveFile();
+    syncingSelection = true;
+    for (const selectedPath of tree.getSelectedPaths()) {
+      if (selectedPath !== activeFile) {
+        tree.getItem(selectedPath)?.deselect();
+      }
+    }
+    if (activeFile && tree.getItem(activeFile)) {
+      tree.getItem(activeFile)?.select();
+      tree.focusNearestPath(activeFile);
+    }
+    syncingSelection = false;
+  }
 </script>
 
 {#if showCommits}
@@ -117,27 +163,33 @@
         />
       </div>
     {/if}
-    {@const grouped = groupByDir(filteredDiffFiles)}
-    {#each grouped as group, gi (gi)}
-      {#if group.dir}
-        <div class="diff-dir-header">{group.dir}/</div>
-      {/if}
-      {#each group.files as f (f.path)}
-        <div
-          class="diff-file-row"
-          class:diff-file-row--active={diff.getActiveFile() === f.path}
-          class:diff-file-row--nested={!!group.dir}
-          role="button"
-          tabindex="0"
-          onclick={() => handleFileRowClick(f.path)}
-          onkeydown={(event) => handleFileRowKeydown(event, f.path)}
-          title={f.path}
-        >
-          <span class="diff-file-status" style="color: {statusColor(f.status)}">{statusLetter(f.status)}</span>
-          <span class="diff-file-name" class:diff-file-name--deleted={f.status === "deleted"}>{filename(f.path)}</span>
-        </div>
-      {/each}
-    {/each}
+    <div
+      class="diff-file-tree"
+      bind:this={treeHost}
+      style:--trees-fg-override="var(--text-primary)"
+      style:--trees-fg-muted-override="var(--text-secondary)"
+      style:--trees-bg-override="transparent"
+      style:--trees-bg-muted-override="var(--bg-surface-hover)"
+      style:--trees-accent-override="var(--accent-blue)"
+      style:--trees-selected-fg-override="var(--text-primary)"
+      style:--trees-selected-bg-override="color-mix(in srgb, var(--accent-blue) 10%, transparent)"
+      style:--trees-border-color-override="transparent"
+      style:--trees-font-family-override="var(--font-mono)"
+      style:--trees-font-size-override="var(--font-size-xs)"
+      style:--trees-border-radius-override="var(--radius-sm)"
+      style:--trees-padding-inline-override="8px"
+      style:--trees-item-padding-x-override="6px"
+      style:--trees-item-margin-x-override="4px"
+      style:--trees-icon-width-override="14px"
+      style:--trees-git-lane-width-override="16px"
+      style:--trees-action-lane-width-override="0px"
+      style:--trees-file-icon-color="var(--text-muted)"
+      style:--trees-git-added-color-override="var(--accent-green)"
+      style:--trees-git-deleted-color-override="var(--accent-red)"
+      style:--trees-git-modified-color-override="var(--accent-amber)"
+      style:--trees-git-renamed-color-override="var(--accent-blue)"
+      aria-label="Changed files"
+    ></div>
   {/if}
 </div>
 
@@ -145,7 +197,11 @@
   .diff-files {
     border-bottom: 1px solid var(--border-muted);
     padding: 4px 0;
-    overflow-y: auto;
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
   }
 
   .diff-files-filter {
@@ -182,63 +238,11 @@
     50% { opacity: 1; }
   }
 
-  .diff-dir-header {
-    padding: 5px 12px 2px 24px;
-    font-family: var(--font-mono);
-    font-size: var(--font-size-2xs);
-    color: var(--text-muted);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .diff-file-row {
-    display: flex;
-    align-items: center;
-    gap: 5px;
+  .diff-file-tree {
+    display: block;
+    flex: 1 1 auto;
     width: 100%;
-    padding: 2px 12px 2px 24px;
-    text-align: left;
-    color: var(--text-secondary);
-    transition: background 0.15s ease;
-    cursor: pointer;
-  }
-
-  .diff-file-row--nested {
-    padding-left: 36px;
-  }
-
-  .diff-file-row:hover {
-    background: var(--bg-surface-hover);
-    color: var(--text-primary);
-  }
-
-  .diff-file-row--active {
-    background: color-mix(in srgb, var(--accent-blue) 10%, transparent);
-    color: var(--text-primary);
-  }
-
-  .diff-file-status {
-    font-family: var(--font-mono);
-    font-size: var(--font-size-2xs);
-    font-weight: 700;
-    width: 12px;
-    flex-shrink: 0;
-    text-align: center;
-  }
-
-  .diff-file-name {
-    font-family: var(--font-mono);
-    font-size: var(--font-size-xs);
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    user-select: text;
-  }
-
-  .diff-file-name--deleted {
-    text-decoration: line-through;
-    opacity: 0.7;
+    height: 100%;
+    min-height: 0;
   }
 </style>

@@ -3,10 +3,15 @@ import type { DiffFile, DiffLine, DiffResult, FilesResult } from "@middleman/ui/
 import { acquireExclusiveLock } from "./support/exclusiveLock";
 import { startIsolatedE2EServer } from "./support/e2eServer";
 
+type DiffFixtureFile = Omit<DiffFile, "patch"> & { patch?: string };
+type DiffFixture = Omit<DiffResult, "files" | "tree_paths" | "tree_git_status"> & {
+  files: DiffFixtureFile[];
+};
+
 // --- Fixtures ---
 
 // Small fixture: 4 files covering modified (multi-hunk), added, deleted, binary.
-const smallDiff: DiffResult = {
+const smallDiff: DiffResult = withServerDiffData({
   stale: false,
   whitespace_only_count: 0,
   files: [
@@ -122,11 +127,11 @@ const smallDiff: DiffResult = {
       hunks: [],
     },
   ],
-};
+});
 
 // Generate a large diff (50 files) for perf tests.
-function makeLargeDiff(): typeof smallDiff {
-  const files: DiffFile[] = [];
+function makeLargeDiff(): DiffResult {
+  const files: DiffFixtureFile[] = [];
   for (let i = 0; i < 50; i++) {
     const lines: DiffLine[] = [];
     for (let j = 1; j <= 20; j++) {
@@ -148,7 +153,7 @@ function makeLargeDiff(): typeof smallDiff {
       hunks: [{ old_start: 1, old_count: 20, new_start: 1, new_count: 20, lines }],
     });
   }
-  return { stale: false, whitespace_only_count: 0, files };
+  return withServerDiffData({ stale: false, whitespace_only_count: 0, files });
 }
 
 const largeDiff = makeLargeDiff();
@@ -156,8 +161,9 @@ const largeDiff = makeLargeDiff();
 // Stale fixture reuses small diff with stale flag.
 const staleDiff = { ...smallDiff, stale: true };
 
-const previewDiff: DiffResult = {
-  ...smallDiff,
+const previewDiff: DiffResult = withServerDiffData({
+  stale: smallDiff.stale,
+  whitespace_only_count: smallDiff.whitespace_only_count,
   files: [
     {
       path: "docs/preview.md",
@@ -187,23 +193,106 @@ const previewDiff: DiffResult = {
     },
     ...smallDiff.files,
   ],
-};
+});
 
 // --- Helpers ---
 
-function filesFromDiff(fixture: DiffResult): FilesResult {
+function cssString(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
+function treeFileItems(pageOrLocator: Page | ReturnType<Page["locator"]>) {
+  return pageOrLocator.locator(".diff-file-tree [data-item-type=\"file\"]");
+}
+
+function treeFileItem(pageOrLocator: Page | ReturnType<Page["locator"]>, path: string) {
+  return pageOrLocator.locator(`.diff-file-tree [data-item-path="${cssString(path)}"]`);
+}
+
+function diffAdditions(file: ReturnType<Page["locator"]>) {
+  return file.locator(".pierre-diff [data-line-type=\"change-addition\"]");
+}
+
+function diffDeletions(file: ReturnType<Page["locator"]>) {
+  return file.locator(".pierre-diff [data-line-type=\"change-deletion\"]");
+}
+
+function diffContext(file: ReturnType<Page["locator"]>) {
+  return file.locator(".pierre-diff [data-line-type=\"context\"]");
+}
+
+function diffHunkHeaders(file: ReturnType<Page["locator"]>) {
+  return file.locator(".pierre-diff [data-gutter] [data-separator=\"metadata\"]");
+}
+
+function patchLinePrefix(line: DiffLine): string {
+  switch (line.type) {
+    case "add":
+      return "+";
+    case "delete":
+      return "-";
+    default:
+      return " ";
+  }
+}
+
+function patchRange(start: number, count: number): string {
+  return count === 1 ? `${start}` : `${start},${count}`;
+}
+
+function patchForFile(file: DiffFixtureFile): string {
+  if (file.is_binary || file.hunks.length === 0) return "";
+  const oldPath = file.status === "added" ? "/dev/null" : `a/${file.old_path || file.path}`;
+  const newPath = file.status === "deleted" ? "/dev/null" : `b/${file.path}`;
+  const lines = [
+    `diff --git a/${file.old_path || file.path} b/${file.path}`,
+    `--- ${oldPath}`,
+    `+++ ${newPath}`,
+  ];
+  for (const hunk of file.hunks) {
+    lines.push(
+      `@@ -${patchRange(hunk.old_start, hunk.old_count)} +${patchRange(hunk.new_start, hunk.new_count)} @@${hunk.section ? ` ${hunk.section}` : ""}`,
+    );
+    for (const line of hunk.lines) {
+      lines.push(`${patchLinePrefix(line)}${line.content}`);
+    }
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+function withServerDiffData(fixture: DiffFixture): DiffResult {
+  const files = fixture.files.map((file) => ({
+    ...file,
+    patch: file.patch ?? patchForFile(file),
+  }));
   return {
-    stale: fixture.stale,
-    files: fixture.files.map((f) => ({
+    ...fixture,
+    files,
+    tree_paths: files.map((file) => file.path),
+    tree_git_status: files.map((file) => ({
+      path: file.path,
+      status: file.status === "copied" ? "renamed" : file.status,
+    })),
+  };
+}
+
+function filesFromDiff(fixture: DiffResult): FilesResult {
+  const diff = withServerDiffData(fixture as DiffFixture);
+  return {
+    stale: diff.stale,
+    files: diff.files.map((f) => ({
       ...f,
       additions: 0,
       deletions: 0,
       hunks: [],
     })),
+    tree_paths: diff.tree_paths,
+    tree_git_status: diff.tree_git_status,
   };
 }
 
 async function mockDiffApi(page: Page, fixture: typeof smallDiff): Promise<void> {
+  const responseFixture = withServerDiffData(fixture as DiffFixture);
   await page.route("**/api/v1/pulls/github/acme/widgets/1/files", async (route) => {
     await route.fulfill({
       status: 200,
@@ -215,7 +304,7 @@ async function mockDiffApi(page: Page, fixture: typeof smallDiff): Promise<void>
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify(fixture),
+      body: JSON.stringify(responseFixture),
     });
   });
 }
@@ -285,7 +374,7 @@ async function waitForDiffLoaded(page: Page): Promise<void> {
 }
 
 async function waitForSidebarFilesLoaded(page: Page): Promise<void> {
-  await page.locator(".diff-file-row").first()
+  await treeFileItems(page).first()
     .waitFor({ state: "visible", timeout: 10_000 });
 }
 
@@ -315,7 +404,7 @@ test.describe("diff view", () => {
     await waitForSidebarFilesLoaded(page);
 
     // Sidebar inline file list shows all 4 files under the selected PR.
-    await expect(page.locator(".diff-file-row")).toHaveCount(4);
+    await expect(treeFileItems(page)).toHaveCount(4);
 
     // Toolbar is visible.
     await expect(page.locator(".diff-toolbar")).toBeVisible();
@@ -415,31 +504,35 @@ test.describe("diff view", () => {
     await waitForDiffLoaded(page);
     await waitForSidebarFilesLoaded(page);
 
-    // Files are grouped by directory in insertion order, each in its own group:
-    //   internal/server/handler.go (M)
-    //   frontend/src/lib/utils/format.ts (A)
-    //   internal/legacy/old_handler.go (D)
-    //   assets/logo.png (M, binary)
-    const statuses = page.locator(".diff-file-row .diff-file-status");
-    await expect(statuses.nth(0)).toHaveText("M");
-    await expect(statuses.nth(1)).toHaveText("A");
-    await expect(statuses.nth(2)).toHaveText("D");
-    await expect(statuses.nth(3)).toHaveText("M");
+    await expect(treeFileItem(page, "internal/server/handler.go"))
+      .toHaveAttribute("data-item-git-status", "modified");
+    await expect(treeFileItem(page, "frontend/src/lib/utils/format.ts"))
+      .toHaveAttribute("data-item-git-status", "added");
+    await expect(treeFileItem(page, "internal/legacy/old_handler.go"))
+      .toHaveAttribute("data-item-git-status", "deleted");
+    await expect(treeFileItem(page, "assets/logo.png"))
+      .toHaveAttribute("data-item-git-status", "modified");
+    const statusLanes = await treeFileItem(page, "internal/server/handler.go")
+      .evaluate((node) => Array.from(
+        node.querySelectorAll("[data-item-section='git'], [data-item-section='decoration']"),
+      ).map((section) => section.textContent?.trim()).filter(Boolean));
+    expect(statusLanes).toEqual(["M"]);
   });
 
-  test("sidebar shows directory headers for grouped files", async ({ page }) => {
+  test("sidebar shows folders for grouped files", async ({ page }) => {
     await mockDiffApi(page, smallDiff);
     await navigateToDiff(page);
     await waitForDiffLoaded(page);
     await waitForSidebarFilesLoaded(page);
 
-    // Each file lives in a different directory, so all 4 should render headers.
-    const dirHeaders = page.locator(".diff-dir-header");
-    await expect(dirHeaders).toHaveCount(4);
-    await expect(dirHeaders.nth(0)).toHaveText("internal/server/");
-    await expect(dirHeaders.nth(1)).toHaveText("frontend/src/lib/utils/");
-    await expect(dirHeaders.nth(2)).toHaveText("internal/legacy/");
-    await expect(dirHeaders.nth(3)).toHaveText("assets/");
+    await expect(page.locator(".diff-file-tree [data-item-path=\"internal/server/\"]"))
+      .toBeVisible();
+    await expect(page.locator(".diff-file-tree [data-item-path=\"frontend/src/lib/utils/\"]"))
+      .toBeVisible();
+    await expect(page.locator(".diff-file-tree [data-item-path=\"internal/legacy/\"]"))
+      .toBeVisible();
+    await expect(page.locator(".diff-file-tree [data-item-path=\"assets/\"]"))
+      .toBeVisible();
   });
 
   test("clicking a sidebar file row highlights it as active", async ({ page }) => {
@@ -448,10 +541,10 @@ test.describe("diff view", () => {
     await waitForDiffLoaded(page);
     await waitForSidebarFilesLoaded(page);
 
-    const secondRow = page.locator(".diff-file-row").nth(1);
+    const secondRow = treeFileItem(page, "frontend/src/lib/utils/format.ts");
     await secondRow.click();
 
-    await expect(secondRow).toHaveClass(/diff-file-row--active/);
+    await expect(secondRow).toHaveAttribute("aria-selected", "true");
   });
 
   test("sidebar file jumps keep the outer detail frame pinned", async ({ page }) => {
@@ -466,7 +559,7 @@ test.describe("diff view", () => {
       mainArea.evaluate((el) => Math.round(el.scrollTop)),
     ).toBe(0);
 
-    await page.locator(".diff-file-row", { hasText: "file_45.go" }).click();
+    await treeFileItem(page, "src/pkg9/file_45.go").click();
 
     await expect(page.locator('[data-file-path="src/pkg9/file_45.go"]'))
       .toBeVisible();
@@ -484,10 +577,8 @@ test.describe("diff view", () => {
     await waitForDiffLoaded(page);
     await waitForSidebarFilesLoaded(page);
 
-    // Third row is the deleted file (old_handler.go).
-    const deletedName = page.locator(".diff-file-row").nth(2)
-      .locator(".diff-file-name");
-    await expect(deletedName).toHaveClass(/diff-file-name--deleted/);
+    await expect(treeFileItem(page, "internal/legacy/old_handler.go"))
+      .toHaveAttribute("data-item-git-status", "deleted");
   });
 
   test("detail tabs switch between conversation and files views", async ({ page }) => {
@@ -565,7 +656,7 @@ test.describe("diff view", () => {
     await navigateToDiff(page);
     await waitForDiffLoaded(page);
 
-    const firstCodeLine = page.locator(".diff-line .code").first();
+    const firstCodeLine = page.locator(".pierre-diff [data-line]").first();
 
     await openDiffFilterMenu(page);
     const wrapToggle = page.getByRole("switch", { name: "Word wrap" });
@@ -606,11 +697,11 @@ test.describe("diff view", () => {
       .toContainText("New paragraph that should be highlighted.");
 
     const handlerFile = page.locator('[data-file-path="internal/server/handler.go"]');
-    await expect(handlerFile.locator(".diff-line--del").first()).toBeVisible();
-    await expect(handlerFile.locator(".diff-line--add").first()).toBeVisible();
+    await expect(diffDeletions(handlerFile).first()).toBeVisible();
+    await expect(diffAdditions(handlerFile).first()).toBeVisible();
     await expect(handlerFile.locator(".diff-text-preview")).toHaveCount(0);
 
-    await page.locator(".diff-file-row", { hasText: "logo.png" }).click();
+    await treeFileItem(page, "assets/logo.png").click();
     await expect(page.locator(".diff-image-preview img[alt='assets/logo.png']"))
       .toBeVisible();
   });
@@ -636,7 +727,7 @@ test.describe("diff view", () => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify(smallDiff),
+        body: JSON.stringify(withServerDiffData(smallDiff as DiffFixture)),
       });
     });
     await page.route("**/api/v1/pulls/github/acme/widgets/1/file-preview**", async (route) => {
@@ -660,7 +751,7 @@ test.describe("diff view", () => {
 
     await openDiffFilterMenu(page);
     await page.getByRole("switch", { name: "Rich preview" }).click();
-    await page.locator(".diff-file-row", { hasText: "logo.png" }).click();
+    await treeFileItem(page, "assets/logo.png").click();
 
     const image = page.locator(".diff-image-preview img[alt='assets/logo.png']");
     await expect(image).toHaveAttribute("src", `data:image/png;base64,${firstLogo}`);
@@ -670,7 +761,7 @@ test.describe("diff view", () => {
     await openDiffFilterMenu(page);
     await page.getByRole("switch", { name: "Hide whitespace changes" }).click();
     await expect.poll(() => diffFetchCount).toBeGreaterThan(initialDiffFetchCount);
-    await page.locator(".diff-file-row", { hasText: "logo.png" }).click();
+    await treeFileItem(page, "assets/logo.png").click();
 
     await expect.poll(() => previewFetchCount).toBe(2);
     await expect(image).toHaveAttribute("src", `data:image/png;base64,${secondLogo}`);
@@ -701,10 +792,10 @@ test.describe("diff view", () => {
     await categoryFilter.getByRole("button", { name: "Code (3)" }).click();
 
     await expect(page.locator(".diff-file")).toHaveCount(3);
-    await expect(page.locator(".diff-file-row")).toHaveCount(3);
+    await expect(treeFileItems(page)).toHaveCount(3);
     await expect(page.locator(".diff-file", { hasText: "assets/logo.png" }))
       .toHaveCount(0);
-    await expect(page.locator(".diff-file-row", { hasText: "logo.png" }))
+    await expect(treeFileItem(page, "assets/logo.png"))
       .toHaveCount(0);
 
     await expect(categoryFilter.getByRole("button", { name: "Code (3)" }))
@@ -712,7 +803,7 @@ test.describe("diff view", () => {
     await categoryFilter.getByRole("button", { name: "All (4)" }).click();
 
     await expect(page.locator(".diff-file")).toHaveCount(4);
-    await expect(page.locator(".diff-file-row")).toHaveCount(4);
+    await expect(treeFileItems(page)).toHaveCount(4);
   });
 
   test("hide whitespace toggle triggers re-fetch", async ({ page }) => {
@@ -733,7 +824,7 @@ test.describe("diff view", () => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify(fixture),
+        body: JSON.stringify(withServerDiffData(fixture as DiffFixture)),
       });
     });
 
@@ -755,22 +846,22 @@ test.describe("diff view", () => {
     await waitForDiffLoaded(page);
     await waitForSidebarFilesLoaded(page);
 
-    const rows = page.locator(".diff-file-row");
+    const rows = treeFileItems(page);
 
     // First file is active after initial load.
-    await expect(rows.nth(0)).toHaveClass(/diff-file-row--active/);
+    await expect(rows.nth(0)).toHaveAttribute("aria-selected", "true");
 
     // Press j to move to next file.
     await page.keyboard.press("j");
-    await expect(rows.nth(1)).toHaveClass(/diff-file-row--active/, { timeout: 2_000 });
+    await expect(rows.nth(1)).toHaveAttribute("aria-selected", "true", { timeout: 2_000 });
 
     // Press j again.
     await page.keyboard.press("j");
-    await expect(rows.nth(2)).toHaveClass(/diff-file-row--active/, { timeout: 2_000 });
+    await expect(rows.nth(2)).toHaveAttribute("aria-selected", "true", { timeout: 2_000 });
 
     // Press k to move back.
     await page.keyboard.press("k");
-    await expect(rows.nth(1)).toHaveClass(/diff-file-row--active/, { timeout: 2_000 });
+    await expect(rows.nth(1)).toHaveAttribute("aria-selected", "true", { timeout: 2_000 });
   });
 
   test("stale diff banner is shown when diff is stale", async ({ page }) => {
@@ -798,16 +889,16 @@ test.describe("diff view", () => {
     const firstFile = page.locator(".diff-file").first();
 
     // Hunk headers.
-    const hunkHeaders = firstFile.locator(".hunk-header");
+    const hunkHeaders = diffHunkHeaders(firstFile);
     await expect(hunkHeaders).toHaveCount(2);
     await expect(hunkHeaders.first()).toContainText("@@ -10,7 +10,8 @@ func handleRequest");
 
     // Added lines (+ marker).
-    const addedLines = firstFile.locator(".diff-line--add");
+    const addedLines = diffAdditions(firstFile);
     await expect(addedLines.first()).toBeVisible();
 
     // Deleted lines (- marker).
-    const deletedLines = firstFile.locator(".diff-line--del");
+    const deletedLines = diffDeletions(firstFile);
     await expect(deletedLines.first()).toBeVisible();
   });
 
@@ -831,18 +922,27 @@ test.describe("diff view", () => {
     await expect(deletedHeader).toHaveClass(/file-path--deleted/);
   });
 
-  test("collapsed region shows unchanged line count between hunks", async ({ page }) => {
+  test("Pierre diff renders the gutter and content as aligned grid columns", async ({ page }) => {
     await mockDiffApi(page, smallDiff);
     await navigateToDiff(page);
     await waitForDiffLoaded(page);
 
-    // First file (handler.go) has 2 hunks with a gap between them.
-    // Hunk 1 ends at old line 14 (old_start=10, old_count=7 -> ends at 17),
-    // Hunk 2 starts at old line 30 -> gap = 30 - 17 = 13 unchanged lines.
     const firstFile = page.locator(".diff-file").first();
-    const collapsed = firstFile.locator(".collapsed-region");
-    await expect(collapsed).toHaveCount(1);
-    await expect(collapsed).toContainText("unchanged lines");
+    await expect(diffHunkHeaders(firstFile)).toHaveCount(2);
+    const layout = await firstFile.locator(".pierre-diff").evaluate((host) => {
+      const root = host.shadowRoot;
+      const code = root?.querySelector("code[data-unified]");
+      const gutter = root?.querySelector("[data-gutter]");
+      const content = root?.querySelector("[data-content]");
+      if (!code || !gutter || !content) return null;
+      return {
+        codeDisplay: getComputedStyle(code).display,
+        gutterRight: gutter.getBoundingClientRect().right,
+        contentLeft: content.getBoundingClientRect().left,
+      };
+    });
+    expect(layout?.codeDisplay).toBe("grid");
+    expect(Math.round(layout!.gutterRight)).toBe(Math.round(layout!.contentLeft));
   });
 
   test("fallback file list renders when selected PR is filtered out of sidebar", async ({ page }) => {
@@ -856,7 +956,7 @@ test.describe("diff view", () => {
     const pr1 = page.locator(".pull-item").filter({ hasText: "caching layer" });
     await expect(pr1).toHaveCount(1);
     const detailFiles = page.locator(".files-layout > .files-sidebar");
-    await expect(detailFiles.locator(".diff-file-row")).toHaveCount(4);
+    await expect(treeFileItems(detailFiles)).toHaveCount(4);
 
     // Filter the sidebar to exclude PR 1 by searching for a different PR.
     await page.locator(".search-input").fill("race");
@@ -868,7 +968,7 @@ test.describe("diff view", () => {
     // The selected PR can disappear from the outer list, but the detail
     // Files pane keeps its file list available.
     await expect(page.locator(".pull-list > .diff-files-wrap")).toHaveCount(0);
-    await expect(detailFiles.locator(".diff-file-row")).toHaveCount(4);
+    await expect(treeFileItems(detailFiles)).toHaveCount(4);
   });
 
   test("inline file filter appears for large diffs and narrows list", async ({ page }) => {
@@ -880,15 +980,15 @@ test.describe("diff view", () => {
     // Filter input is visible because diff has 50 files (>= 10 threshold).
     const filterInput = page.locator(".diff-files-filter__input").first();
     await expect(filterInput).toBeVisible();
-    await expect(page.locator(".diff-file-row")).toHaveCount(50);
+    await expect(treeFileItems(page)).toHaveCount(50);
 
     // Narrow the list — "file_1" matches file_1, file_10..file_19 = 11 files.
     await filterInput.fill("file_1");
-    await expect(page.locator(".diff-file-row")).toHaveCount(11);
+    await expect(treeFileItems(page)).toHaveCount(11);
 
     // Clearing filter restores full list.
     await filterInput.fill("");
-    await expect(page.locator(".diff-file-row")).toHaveCount(50);
+    await expect(treeFileItems(page)).toHaveCount(50);
   });
 
   test("inline file filter is hidden for small diffs", async ({ page }) => {
@@ -916,7 +1016,7 @@ test.describe("diff view", () => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify(largeDiff),
+        body: JSON.stringify(withServerDiffData(largeDiff as DiffFixture)),
       });
     });
 
@@ -927,7 +1027,7 @@ test.describe("diff view", () => {
     // Type into filter on PR 1.
     const filterInput = page.locator(".diff-files-filter__input").first();
     await filterInput.fill("file_1");
-    await expect(page.locator(".diff-file-row")).toHaveCount(11);
+    await expect(treeFileItems(page)).toHaveCount(11);
 
     // Switch to PR 2.
     await page.goto("/pulls/github/acme/widgets/2/files");
@@ -936,7 +1036,7 @@ test.describe("diff view", () => {
     // Filter input is empty and full list shows.
     const filterOnPR2 = page.locator(".diff-files-filter__input").first();
     await expect(filterOnPR2).toHaveValue("");
-    await expect(page.locator(".diff-file-row")).toHaveCount(50);
+    await expect(treeFileItems(page)).toHaveCount(50);
   });
 
   test("file filter doesn't silently hide files when switching to small-diff PR", async ({ page }) => {
@@ -954,7 +1054,7 @@ test.describe("diff view", () => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify(smallDiff),
+        body: JSON.stringify(withServerDiffData(smallDiff as DiffFixture)),
       });
     });
 
@@ -964,7 +1064,7 @@ test.describe("diff view", () => {
 
     // Type into filter on PR 1.
     await page.locator(".diff-files-filter__input").first().fill("nomatch");
-    await expect(page.locator(".diff-file-row")).toHaveCount(0);
+    await expect(treeFileItems(page)).toHaveCount(0);
 
     // Switch to PR 2 (small diff — filter input hidden).
     await page.goto("/pulls/github/acme/widgets/2/files");
@@ -972,7 +1072,7 @@ test.describe("diff view", () => {
 
     // Filter input is hidden and all 4 files show (stale query doesn't apply).
     await expect(page.locator(".diff-files-filter__input")).toHaveCount(0);
-    await expect(page.locator(".diff-file-row")).toHaveCount(4);
+    await expect(treeFileItems(page)).toHaveCount(4);
   });
 
   test("fallback file list renders when selected PR's repo group is collapsed", async ({ page }) => {
@@ -985,7 +1085,7 @@ test.describe("diff view", () => {
     const pr1 = page.locator(".pull-item").filter({ hasText: "caching layer" });
     await expect(pr1).toHaveCount(1);
     const detailFiles = page.locator(".files-layout > .files-sidebar");
-    await expect(detailFiles.locator(".diff-file-row")).toHaveCount(4);
+    await expect(treeFileItems(detailFiles)).toHaveCount(4);
 
     // Collapse the acme/widgets repo group (containing the selected PR).
     await page.locator(".repo-header", { hasText: "acme/widgets" }).click();
@@ -996,7 +1096,7 @@ test.describe("diff view", () => {
     await expect(page.locator(".pull-item").filter({ hasText: "caching layer" }))
       .toHaveCount(0);
     await expect(page.locator(".pull-list > .diff-files-wrap")).toHaveCount(0);
-    await expect(detailFiles.locator(".diff-file-row")).toHaveCount(4);
+    await expect(treeFileItems(detailFiles)).toHaveCount(4);
   });
 
   test("commit scope resets when switching PRs", async ({ page }) => {
@@ -1013,7 +1113,7 @@ test.describe("diff view", () => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify(smallDiff),
+        body: JSON.stringify(withServerDiffData(smallDiff as DiffFixture)),
       });
     });
     await page.route("**/api/v1/pulls/github/acme/widgets/*/commits", async (route) => {
@@ -1101,7 +1201,7 @@ test.describe("diff view", () => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify(fixtureFor(url)),
+        body: JSON.stringify(withServerDiffData(fixtureFor(url) as DiffFixture)),
       });
     });
     await page.route("**/api/v1/pulls/github/acme/widgets/1/commits", async (route) => {
@@ -1172,7 +1272,7 @@ test.describe("diff view performance", () => {
     await expect(page.locator(".diff-file .file-header")).toHaveCount(50, { timeout: 15_000 });
 
     // Sidebar inline file list should list all 50 files.
-    await expect(page.locator(".diff-file-row")).toHaveCount(50);
+    await expect(treeFileItems(page)).toHaveCount(50);
   });
 
   test("collapsing a file removes its content from the DOM", async ({ page }) => {
@@ -1212,7 +1312,7 @@ test.describe("diff view performance", () => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify(fixture),
+        body: JSON.stringify(withServerDiffData(fixture as DiffFixture)),
       });
     });
 
@@ -1275,12 +1375,12 @@ test.describe("diff view (git-backed)", () => {
     await page.goto("/pulls/github/acme/widgets/1/files");
     await page.locator(".diff-file").first()
       .waitFor({ state: "visible", timeout: 10_000 });
-    await page.locator(".diff-file-row").first()
+    await treeFileItems(page).first()
       .waitFor({ state: "visible", timeout: 10_000 });
 
     // Should have 4 changed files from the test repo.
     await expect(page.locator(".diff-file")).toHaveCount(4);
-    await expect(page.locator(".diff-file-row")).toHaveCount(4);
+    await expect(treeFileItems(page)).toHaveCount(4);
   });
 
   test("category filter counts and filtering come from the real diff API", async ({ page }) => {
@@ -1312,28 +1412,28 @@ test.describe("diff view (git-backed)", () => {
       await categoryFilter.getByRole("button", { name: "Tests (1)" }).click();
 
       await expect(page.locator(".diff-file")).toHaveCount(1);
-      await expect(page.locator(".diff-file-row")).toHaveCount(1);
+      await expect(treeFileItems(page)).toHaveCount(1);
       await expect(page.locator('[data-file-path="internal/cache_test.go"]'))
         .toBeVisible();
-      await expect(page.locator(".diff-file-row", { hasText: "cache_test.go" }))
+      await expect(treeFileItem(page, "internal/cache_test.go"))
         .toBeVisible();
       await expect(page.locator('[data-file-path="internal/cache.go"]'))
         .toHaveCount(0);
-      await expect(page.locator(".diff-file-row", { hasText: "cache.go" }))
+      await expect(treeFileItem(page, "internal/cache.go"))
         .toHaveCount(0);
 
       await categoryFilter.getByRole("button", { name: "Plans/docs (2)" })
         .click();
 
       await expect(page.locator(".diff-file")).toHaveCount(2);
-      await expect(page.locator(".diff-file-row")).toHaveCount(2);
+      await expect(treeFileItems(page)).toHaveCount(2);
       await expect(page.locator('[data-file-path="docs/cache-plan.md"]'))
         .toBeVisible();
       await expect(page.locator('[data-file-path="README.md"]'))
         .toBeVisible();
-      await expect(page.locator(".diff-file-row", { hasText: "cache-plan.md" }))
+      await expect(treeFileItem(page, "docs/cache-plan.md"))
         .toBeVisible();
-      await expect(page.locator(".diff-file-row", { hasText: "README.md" }))
+      await expect(treeFileItem(page, "README.md"))
         .toBeVisible();
       await expect(page.locator('[data-file-path="internal/cache_test.go"]'))
         .toHaveCount(0);
@@ -1358,8 +1458,8 @@ test.describe("diff view (git-backed)", () => {
       await page.getByRole("switch", { name: "Rich preview" }).click();
 
       const handlerFile = page.locator('[data-file-path="internal/handler.go"]');
-      await expect(handlerFile.locator(".diff-line--del").first()).toBeVisible();
-      await expect(handlerFile.locator(".diff-line--add").first()).toBeVisible();
+      await expect(diffDeletions(handlerFile).first()).toBeVisible();
+      await expect(diffAdditions(handlerFile).first()).toBeVisible();
       await expect(handlerFile.locator(".diff-text-preview")).toHaveCount(0);
 
       const categoryFilter = page.getByRole("group", {
@@ -1398,21 +1498,21 @@ test.describe("diff view (git-backed)", () => {
     await expect(handlerFile).toBeVisible();
 
     // Should have 2 hunks (two separate modified regions).
-    const hunks = handlerFile.locator(".hunk-header");
+    const hunks = diffHunkHeaders(handlerFile);
     await expect(hunks).toHaveCount(2);
 
     // Deleted line: old log.Println call.
-    const deletedLines = handlerFile.locator(".diff-line--del");
+    const deletedLines = diffDeletions(handlerFile);
     await expect(deletedLines.first()).toBeVisible();
 
     // Added line: new slog.Info call.
-    const addedLines = handlerFile.locator(".diff-line--add");
+    const addedLines = diffAdditions(handlerFile);
     await expect(addedLines.first()).toBeVisible();
 
     // Verify actual diff content -- the old log import was replaced.
-    await expect(handlerFile.locator(".diff-line--del .code").first())
+    await expect(diffDeletions(handlerFile).first())
       .toContainText("log");
-    await expect(handlerFile.locator(".diff-line--add .code").first())
+    await expect(diffAdditions(handlerFile).first())
       .toContainText("slog");
   });
 
@@ -1420,7 +1520,7 @@ test.describe("diff view (git-backed)", () => {
     await page.goto("/pulls/github/acme/widgets/1/files");
     await page.locator(".diff-file").first()
       .waitFor({ state: "visible", timeout: 10_000 });
-    await page.locator(".diff-file-row").first()
+    await treeFileItems(page).first()
       .waitFor({ state: "visible", timeout: 10_000 });
 
     const cacheFile = page.locator(
@@ -1429,28 +1529,24 @@ test.describe("diff view (git-backed)", () => {
     await expect(cacheFile).toBeVisible();
 
     // Only addition lines -- no deletions or context.
-    const addedLines = cacheFile.locator(".diff-line--add");
-    const deletedLines = cacheFile.locator(".diff-line--del");
+    const addedLines = diffAdditions(cacheFile);
+    const deletedLines = diffDeletions(cacheFile);
     await expect(addedLines.first()).toBeVisible();
     await expect(deletedLines).toHaveCount(0);
     // No context lines in a pure-add file.
-    const contextLines = cacheFile.locator(
-      ".diff-line:not(.diff-line--add):not(.diff-line--del)",
-    );
+    const contextLines = diffContext(cacheFile);
     await expect(contextLines).toHaveCount(0);
 
     // Sidebar status should be "A".
-    const cacheRow = page.locator(".diff-file-row", {
-      hasText: "cache.go",
-    });
-    await expect(cacheRow.locator(".diff-file-status")).toHaveText("A");
+    await expect(treeFileItem(page, "internal/cache.go"))
+      .toHaveAttribute("data-item-git-status", "added");
   });
 
   test("deleted file shows D status in sidebar and only deletion lines", async ({ page }) => {
     await page.goto("/pulls/github/acme/widgets/1/files");
     await page.locator(".diff-file").first()
       .waitFor({ state: "visible", timeout: 10_000 });
-    await page.locator(".diff-file-row").first()
+    await treeFileItems(page).first()
       .waitFor({ state: "visible", timeout: 10_000 });
 
     const configFile = page.locator(
@@ -1459,20 +1555,16 @@ test.describe("diff view (git-backed)", () => {
     await expect(configFile).toBeVisible();
 
     // Only deletion lines -- no additions or context.
-    const deletedLines = configFile.locator(".diff-line--del");
-    const addedLines = configFile.locator(".diff-line--add");
+    const deletedLines = diffDeletions(configFile);
+    const addedLines = diffAdditions(configFile);
     await expect(deletedLines.first()).toBeVisible();
     await expect(addedLines).toHaveCount(0);
-    const contextLines = configFile.locator(
-      ".diff-line:not(.diff-line--add):not(.diff-line--del)",
-    );
+    const contextLines = diffContext(configFile);
     await expect(contextLines).toHaveCount(0);
 
     // Sidebar status should be "D".
-    const configRow = page.locator(".diff-file-row", {
-      hasText: "config.yaml",
-    });
-    await expect(configRow.locator(".diff-file-status")).toHaveText("D");
+    await expect(treeFileItem(page, "config.yaml"))
+      .toHaveAttribute("data-item-git-status", "deleted");
   });
 
   test("hide whitespace toggle filters whitespace-only files", async ({ page }) => {
@@ -1491,7 +1583,7 @@ test.describe("diff view (git-backed)", () => {
     await expect(page.locator(".diff-file")).toHaveCount(3, { timeout: 10_000 });
   });
 
-  test("collapsed region appears between hunks in modified file", async ({ page }) => {
+  test("modified file renders multiple Pierre hunk separators", async ({ page }) => {
     await page.goto("/pulls/github/acme/widgets/1/files");
     await page.locator(".diff-file").first()
       .waitFor({ state: "visible", timeout: 10_000 });
@@ -1500,11 +1592,7 @@ test.describe("diff view (git-backed)", () => {
       '[data-file-path="internal/handler.go"]',
     );
 
-    // With 2 hunks separated by unchanged lines, there should be
-    // a collapsed region between them.
-    const collapsed = handlerFile.locator(".collapsed-region");
-    await expect(collapsed).toHaveCount(1);
-    await expect(collapsed).toContainText("unchanged lines");
+    await expect(diffHunkHeaders(handlerFile)).toHaveCount(2);
   });
 
   test("commit list uses UTC API values and local date rendering", async ({ page }) => {

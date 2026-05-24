@@ -18,6 +18,7 @@ function file(
     is_whitespace_only: false,
     additions,
     deletions,
+    patch: "",
     hunks: [],
   };
 }

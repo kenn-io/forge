@@ -67,6 +67,9 @@ index abc..def 100644
 	assert.Equal(2, f.Additions)
 	assert.Equal(1, f.Deletions)
 	assert.False(f.IsBinary)
+	assert.Contains(f.Patch, "diff --git a/src/main.go b/src/main.go\n")
+	assert.Contains(f.Patch, "@@ -10,6 +10,8 @@ func main() {\n")
+	assert.Contains(f.Patch, "+\tfmt.Println(\"new line 1\")\n")
 
 	require.Len(f.Hunks, 1)
 	h := f.Hunks[0]
@@ -113,4 +116,22 @@ index abc..def 100644
 
 	assert.True(lines[1].NoNewline, "deleted line should have no_newline")
 	assert.True(lines[2].NoNewline, "added line should have no_newline")
+	assert.Contains(files[0].Patch, "\\ No newline at end of file\n")
+}
+
+func TestTreeData(t *testing.T) {
+	assert := assert.New(t)
+
+	files := []DiffFile{
+		{Path: "src/changed.go", Status: "modified"},
+		{Path: "src/new.go", Status: "added"},
+		{Path: "src/copy.go", Status: "copied"},
+	}
+
+	assert.Equal([]string{"src/changed.go", "src/new.go", "src/copy.go"}, TreePaths(files))
+	assert.Equal([]TreeStatus{
+		{Path: "src/changed.go", Status: "modified"},
+		{Path: "src/new.go", Status: "added"},
+		{Path: "src/copy.go", Status: "renamed"},
+	}, TreeGitStatus(files))
 }

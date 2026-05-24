@@ -513,6 +513,8 @@ components:
           type: boolean
         old_path:
           type: string
+        patch:
+          type: string
         path:
           type: string
         status:
@@ -526,6 +528,7 @@ components:
         - is_whitespace_only
         - additions
         - deletions
+        - patch
         - hunks
       type: object
     DiffResponse:
@@ -546,6 +549,18 @@ components:
             - "null"
         stale:
           type: boolean
+        tree_git_status:
+          items:
+            $ref: "#/components/schemas/TreeStatus"
+          type:
+            - array
+            - "null"
+        tree_paths:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
         whitespace_only_count:
           format: int64
           type: integer
@@ -553,6 +568,8 @@ components:
         - stale
         - whitespace_only_count
         - files
+        - tree_paths
+        - tree_git_status
       type: object
     DiffReviewDraftComment:
       additionalProperties: false
@@ -945,6 +962,18 @@ components:
             - "null"
         stale:
           type: boolean
+        tree_git_status:
+          items:
+            $ref: "#/components/schemas/TreeStatus"
+          type:
+            - array
+            - "null"
+        tree_paths:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
         whitespace_only_count:
           format: int64
           type: integer
@@ -952,6 +981,8 @@ components:
         - stale
         - whitespace_only_count
         - files
+        - tree_paths
+        - tree_git_status
       type: object
     GithubStateHostInputBody:
       additionalProperties: false
@@ -3274,6 +3305,17 @@ components:
         - cursor_blink
         - font_ligatures
         - renderer
+      type: object
+    TreeStatus:
+      additionalProperties: false
+      properties:
+        path:
+          type: string
+        status:
+          type: string
+      required:
+        - path
+        - status
       type: object
     UpdateSettingsRequest:
       additionalProperties: false
@@ -7165,6 +7207,16 @@ paths:
           name: path
           schema:
             description: Changed file path to preview
+            type: string
+        - description: Optional diff side to read for context expansion
+          explode: false
+          in: query
+          name: side
+          schema:
+            description: Optional diff side to read for context expansion
+            enum:
+              - old
+              - new
             type: string
         - description: Scope to a single commit SHA
           explode: false

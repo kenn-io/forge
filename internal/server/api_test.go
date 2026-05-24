@@ -15307,6 +15307,62 @@ func TestAPIGetFilePreview_ReturnsDeletedFileContent(t *testing.T) {
 	assert.Contains(string(decoded), "wal_mode: true")
 }
 
+func TestAPIGetFilePreview_ReturnsRequestedDiffSideContent(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := t.Context()
+
+	dir := t.TempDir()
+	database := dbtest.Open(t)
+
+	seedPR(t, database, "acme", "widgets", 1)
+	diffRepo, err := testutil.SetupDiffRepo(ctx, dir, database)
+	require.NoError(err)
+
+	mock := &mockGH{}
+	repos := []ghclient.RepoRef{{
+		Owner: "acme", Name: "widgets", PlatformHost: "github.com",
+	}}
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": mock},
+		database, nil, repos, time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{
+		Clones: diffRepo.Manager,
+	})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	client := setupTestClient(t, srv)
+
+	path := "internal/handler.go"
+	oldSide := generated.Old
+	oldResp, err := client.HTTP.GetPullFilePreviewWithResponse(
+		ctx, "gh", "acme", "widgets", 1,
+		&generated.GetPullFilePreviewParams{Path: &path, Side: &oldSide},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, oldResp.StatusCode())
+	require.NotNil(oldResp.JSON200)
+	oldDecoded, err := base64.StdEncoding.DecodeString(oldResp.JSON200.Content)
+	require.NoError(err)
+
+	newSide := generated.New
+	newResp, err := client.HTTP.GetPullFilePreviewWithResponse(
+		ctx, "gh", "acme", "widgets", 1,
+		&generated.GetPullFilePreviewParams{Path: &path, Side: &newSide},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, newResp.StatusCode())
+	require.NotNil(newResp.JSON200)
+	newDecoded, err := base64.StdEncoding.DecodeString(newResp.JSON200.Content)
+	require.NoError(err)
+
+	assert.Contains(string(oldDecoded), `log.Println("handling request")`)
+	assert.NotContains(string(oldDecoded), "slog.Info")
+	assert.Contains(string(newDecoded), `slog.Info("handling request"`)
+	assert.NotContains(string(newDecoded), "log.Println")
+}
+
 func TestAPIGetDiff_Range(t *testing.T) {
 	require := require.New(t)
 
@@ -18609,6 +18665,7 @@ func TestWorkspaceDiffEndpointsReportHeadAndPushedE2E(t *testing.T) {
 			"z-empty.txt",
 		},
 	)
+	assertWorkspaceTreeData(t, *headFiles.Files, headFiles.TreePaths, headFiles.TreeGitStatus)
 
 	headFilesHideWhitespace := requestWorkspaceFiles(
 		t, srv, ws.Id, "head", "hide",
@@ -18629,6 +18686,7 @@ func TestWorkspaceDiffEndpointsReportHeadAndPushedE2E(t *testing.T) {
 		*headDiffHideWhitespace.Files,
 		[]string{".workspace-state.json", "dirty.go", "z-empty.txt"},
 	)
+	assertWorkspaceTreeData(t, *headDiffHideWhitespace.Files, headDiffHideWhitespace.TreePaths, headDiffHideWhitespace.TreeGitStatus)
 
 	pushedDiff := requestWorkspaceDiff(t, srv, ws.Id, "pushed")
 	require.NotNil(pushedDiff.Files)
@@ -18644,6 +18702,7 @@ func TestWorkspaceDiffEndpointsReportHeadAndPushedE2E(t *testing.T) {
 			"z-empty.txt",
 		},
 	)
+	assertWorkspaceTreeData(t, *pushedDiff.Files, pushedDiff.TreePaths, pushedDiff.TreeGitStatus)
 	assert.Equal(int64(1), pushedDiff.WhitespaceOnlyCount)
 }
 
@@ -18945,6 +19004,12 @@ func TestWorkspaceDiffEndpointScopesPatchByPathE2E(t *testing.T) {
 	file := (*diff.Files)[0]
 	assert.Equal("first.go", file.Path)
 	assert.Equal("added", file.Status)
+	assert.Contains(file.Patch, "diff --git a/first.go b/first.go\n")
+	assert.Contains(file.Patch, "new file mode 100644\n")
+	require.NotNil(diff.TreePaths)
+	assert.Equal([]string{"first.go"}, *diff.TreePaths)
+	require.NotNil(diff.TreeGitStatus)
+	assert.Equal([]generated.TreeStatus{{Path: "first.go", Status: "added"}}, *diff.TreeGitStatus)
 	require.NotNil(file.Hunks)
 	require.Len(*file.Hunks, 1)
 	assert.NotContains(workspaceDiffPaths(*diff.Files), "second.go")
@@ -19128,6 +19193,32 @@ func assertWorkspaceDiffPaths(
 	t.Helper()
 
 	Assert.Equal(t, want, workspaceDiffPaths(files))
+}
+
+func assertWorkspaceTreeData(
+	t *testing.T,
+	files []generated.DiffFile,
+	treePaths *[]string,
+	treeGitStatus *[]generated.TreeStatus,
+) {
+	t.Helper()
+
+	require.NotNil(t, treePaths)
+	require.NotNil(t, treeGitStatus)
+	paths := workspaceDiffPaths(files)
+	Assert.Equal(t, paths, *treePaths)
+	statuses := make([]generated.TreeStatus, 0, len(files))
+	for _, file := range files {
+		status := file.Status
+		if status == "copied" {
+			status = "renamed"
+		}
+		statuses = append(statuses, generated.TreeStatus{
+			Path:   file.Path,
+			Status: status,
+		})
+	}
+	Assert.Equal(t, statuses, *treeGitStatus)
 }
 
 func workspaceDiffPaths(files []generated.DiffFile) []string {

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDiffStore } from "@middleman/ui/stores/diff";
 import type { DiffStoreOptions } from "@middleman/ui/stores/diff";
-import type { DiffResult, FilesResult } from "@middleman/ui/api/types";
+import type { DiffFile, DiffResult, FilesResult, TreeGitStatus } from "@middleman/ui/api/types";
 
 const ownerRepoRef = { provider: "github", platformHost: "github.com", owner: "owner", name: "repo", repoPath: "owner/repo" };
 
@@ -16,19 +16,13 @@ interface TestGetOptions {
 }
 
 function makeDiffResult(files: string[]): DiffResult {
+  const diffFiles = files.map((path) => makeDiffFile(path, 1, 1));
   return {
     stale: false,
     whitespace_only_count: 0,
-    files: files.map((path) => ({
-      path,
-      old_path: path,
-      status: "modified" as const,
-      is_binary: false,
-      is_whitespace_only: false,
-      additions: 1,
-      deletions: 1,
-      hunks: [],
-    })),
+    files: diffFiles,
+    tree_paths: diffFiles.map((file) => file.path),
+    tree_git_status: diffFiles.map(treeStatusForFile),
   };
 }
 
@@ -36,19 +30,34 @@ function makeFilesResult(
   files: string[],
   overrides: Partial<FilesResult & { whitespace_only_count: number }> = {},
 ): FilesResult {
+  const diffFiles = files.map((path) => makeDiffFile(path, 0, 0));
   return {
     stale: false,
-    files: files.map((path) => ({
-      path,
-      old_path: path,
-      status: "modified" as const,
-      is_binary: false,
-      is_whitespace_only: false,
-      additions: 0,
-      deletions: 0,
-      hunks: [],
-    })),
+    files: diffFiles,
+    tree_paths: diffFiles.map((file) => file.path),
+    tree_git_status: diffFiles.map(treeStatusForFile),
     ...overrides,
+  };
+}
+
+function makeDiffFile(path: string, additions: number, deletions: number): DiffFile {
+  return {
+    path,
+    old_path: path,
+    status: "modified",
+    is_binary: false,
+    is_whitespace_only: false,
+    additions,
+    deletions,
+    hunks: [],
+    patch: "",
+  };
+}
+
+function treeStatusForFile(file: DiffFile): TreeGitStatus {
+  return {
+    path: file.path,
+    status: file.status === "copied" ? "renamed" : file.status,
   };
 }
 
@@ -1007,13 +1016,15 @@ describe("createDiffStore loadDiff", () => {
 
         if (url.includes("/files")) {
           // API returns files: null (Go nil slice serialization).
-          return Response.json({ stale: false, files: null });
+          return Response.json({ stale: false, files: null, tree_paths: null, tree_git_status: null });
         }
         if (url.includes("/diff")) {
           return Response.json({
             stale: false,
             whitespace_only_count: 0,
             files: null,
+            tree_paths: null,
+            tree_git_status: null,
           });
         }
         return Response.json({}, { status: 404 });
@@ -1030,52 +1041,12 @@ describe("createDiffStore loadDiff", () => {
   });
 
   it("filters loaded diff and file list by selected file category", async () => {
-    const result: DiffResult = {
-      stale: false,
-      whitespace_only_count: 0,
-      files: [
-        {
-          path: "docs/review-plan.md",
-          old_path: "docs/review-plan.md",
-          status: "modified",
-          is_binary: false,
-          is_whitespace_only: false,
-          additions: 1,
-          deletions: 1,
-          hunks: [],
-        },
-        {
-          path: "src/App.svelte",
-          old_path: "src/App.svelte",
-          status: "modified",
-          is_binary: false,
-          is_whitespace_only: false,
-          additions: 1,
-          deletions: 1,
-          hunks: [],
-        },
-        {
-          path: "src/App.test.ts",
-          old_path: "src/App.test.ts",
-          status: "modified",
-          is_binary: false,
-          is_whitespace_only: false,
-          additions: 1,
-          deletions: 1,
-          hunks: [],
-        },
-        {
-          path: "bun.lock",
-          old_path: "bun.lock",
-          status: "modified",
-          is_binary: false,
-          is_whitespace_only: false,
-          additions: 1,
-          deletions: 1,
-          hunks: [],
-        },
-      ],
-    };
+    const result = makeDiffResult([
+      "docs/review-plan.md",
+      "src/App.svelte",
+      "src/App.test.ts",
+      "bun.lock",
+    ]);
 
     vi.spyOn(globalThis, "fetch").mockImplementation(
       async (input: RequestInfo | URL) => {

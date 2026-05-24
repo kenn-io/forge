@@ -197,6 +197,24 @@ func (e ResolveRepoItemOnHostParamsItemType) Valid() bool {
 	}
 }
 
+// Defines values for GetPullFilePreviewParamsSide.
+const (
+	New GetPullFilePreviewParamsSide = "new"
+	Old GetPullFilePreviewParamsSide = "old"
+)
+
+// Valid indicates whether the value is a known member of the GetPullFilePreviewParamsSide enum.
+func (e GetPullFilePreviewParamsSide) Valid() bool {
+	switch e {
+	case New:
+		return true
+	case Old:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ResolveRepoItemParamsItemType.
 const (
 	ResolveRepoItemParamsItemTypeIssue ResolveRepoItemParamsItemType = "issue"
@@ -440,6 +458,7 @@ type DiffFile struct {
 	IsGenerated      bool    `json:"is_generated"`
 	IsWhitespaceOnly bool    `json:"is_whitespace_only"`
 	OldPath          string  `json:"old_path"`
+	Patch            string  `json:"patch"`
 	Path             string  `json:"path"`
 	Status           string  `json:"status"`
 }
@@ -447,10 +466,12 @@ type DiffFile struct {
 // DiffResponse defines model for DiffResponse.
 type DiffResponse struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema              *string     `json:"$schema,omitempty"`
-	Files               *[]DiffFile `json:"files"`
-	Stale               bool        `json:"stale"`
-	WhitespaceOnlyCount int64       `json:"whitespace_only_count"`
+	Schema              *string       `json:"$schema,omitempty"`
+	Files               *[]DiffFile   `json:"files"`
+	Stale               bool          `json:"stale"`
+	TreeGitStatus       *[]TreeStatus `json:"tree_git_status"`
+	TreePaths           *[]string     `json:"tree_paths"`
+	WhitespaceOnlyCount int64         `json:"whitespace_only_count"`
 }
 
 // DiffReviewDraftComment defines model for DiffReviewDraftComment.
@@ -624,10 +645,12 @@ type FilePreviewResponse struct {
 // FilesResponse defines model for FilesResponse.
 type FilesResponse struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema              *string     `json:"$schema,omitempty"`
-	Files               *[]DiffFile `json:"files"`
-	Stale               bool        `json:"stale"`
-	WhitespaceOnlyCount int64       `json:"whitespace_only_count"`
+	Schema              *string       `json:"$schema,omitempty"`
+	Files               *[]DiffFile   `json:"files"`
+	Stale               bool          `json:"stale"`
+	TreeGitStatus       *[]TreeStatus `json:"tree_git_status"`
+	TreePaths           *[]string     `json:"tree_paths"`
+	WhitespaceOnlyCount int64         `json:"whitespace_only_count"`
 }
 
 // GithubStateHostInputBody defines model for GithubStateHostInputBody.
@@ -1492,6 +1515,12 @@ type Terminal struct {
 	Scrollback    int64   `json:"scrollback"`
 }
 
+// TreeStatus defines model for TreeStatus.
+type TreeStatus struct {
+	Path   string `json:"path"`
+	Status string `json:"status"`
+}
+
 // UpdateSettingsRequest defines model for UpdateSettingsRequest.
 type UpdateSettingsRequest struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -1681,6 +1710,9 @@ type GetPullFilePreviewParams struct {
 	// Path Changed file path to preview
 	Path *string `form:"path,omitempty" json:"path,omitempty"`
 
+	// Side Optional diff side to read for context expansion
+	Side *GetPullFilePreviewParamsSide `form:"side,omitempty" json:"side,omitempty"`
+
 	// Commit Scope to a single commit SHA
 	Commit *string `form:"commit,omitempty" json:"commit,omitempty"`
 
@@ -1690,6 +1722,9 @@ type GetPullFilePreviewParams struct {
 	// To End SHA for range diff (inclusive)
 	To *string `form:"to,omitempty" json:"to,omitempty"`
 }
+
+// GetPullFilePreviewParamsSide defines parameters for GetPullFilePreview.
+type GetPullFilePreviewParamsSide string
 
 // GetCommentAutocompleteParams defines parameters for GetCommentAutocomplete.
 type GetCommentAutocompleteParams struct {
@@ -10174,6 +10209,22 @@ func NewGetPullFilePreviewRequest(server string, provider string, owner string, 
 		if params.Path != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "path", *params.Path, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Side != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "side", *params.Side, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
 				return nil, err
 			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
 				return nil, err

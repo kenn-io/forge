@@ -176,6 +176,7 @@ func ParsePatch(patch []byte, rawFiles []DiffFile) []DiffFile {
 			}
 			rawFiles[i].Hunks = append(rawFiles[i].Hunks, hunk)
 		}
+		rawFiles[i].Patch = buildPatch(rawFiles[i])
 	}
 
 	return rawFiles

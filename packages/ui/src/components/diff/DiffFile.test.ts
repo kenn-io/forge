@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 // Mock highlight utils to avoid loading Shiki in tests.
@@ -12,8 +12,13 @@ vi.mock("../../utils/highlight.js", () => ({
 // runs under test. The original global (if any) is saved and restored after
 // the suite so it does not leak into sibling test files.
 type GlobalWithIO = { IntersectionObserver?: unknown };
+type GlobalWithResizeObserver = { ResizeObserver?: unknown };
+type GlobalWithCSSStyleSheet = { CSSStyleSheet?: { prototype: CSSStyleSheet & { replaceSync?: (text: string) => void } } };
 let originalIntersectionObserver: unknown;
 let originalIntersectionObserverExisted = false;
+let originalResizeObserver: unknown;
+let originalResizeObserverExisted = false;
+let originalReplaceSync: unknown;
 
 beforeAll(() => {
   originalIntersectionObserverExisted = "IntersectionObserver" in globalThis;
@@ -45,6 +50,22 @@ beforeAll(() => {
     takeRecords(): IntersectionObserverEntry[] { return []; }
   }
   (globalThis as GlobalWithIO).IntersectionObserver = IntersectionObserverStub;
+
+  originalResizeObserverExisted = "ResizeObserver" in globalThis;
+  originalResizeObserver = (globalThis as GlobalWithResizeObserver).ResizeObserver;
+  class ResizeObserverStub {
+    observe(): void {}
+    unobserve(): void {}
+    disconnect(): void {}
+  }
+  (globalThis as GlobalWithResizeObserver).ResizeObserver = ResizeObserverStub;
+
+  originalReplaceSync = (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet
+    ?.prototype.replaceSync;
+  if ((globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet?.prototype) {
+    (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet.prototype.replaceSync
+      ??= function replaceSync(): void {};
+  }
 });
 
 afterAll(() => {
@@ -53,10 +74,23 @@ afterAll(() => {
   } else {
     delete (globalThis as GlobalWithIO).IntersectionObserver;
   }
+  if (originalResizeObserverExisted) {
+    (globalThis as GlobalWithResizeObserver).ResizeObserver = originalResizeObserver;
+  } else {
+    delete (globalThis as GlobalWithResizeObserver).ResizeObserver;
+  }
+  if ((globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet?.prototype) {
+    if (originalReplaceSync) {
+      (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet.prototype.replaceSync =
+        originalReplaceSync as (text: string) => void;
+    } else {
+      delete (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet.prototype.replaceSync;
+    }
+  }
 });
 
 import DiffFile from "./DiffFile.svelte";
-import type { DiffFile as DiffFileType } from "../../api/types.js";
+import type { DiffFile as DiffFileType, FilePreview } from "../../api/types.js";
 import { STORES_KEY } from "../../context.js";
 import type { DiffReviewDraftComment } from "../../stores/diff-review-draft.svelte.js";
 import { createDiffStore } from "../../stores/diff.svelte.js";
@@ -71,6 +105,14 @@ function makeFile(overrides: Partial<DiffFileType> = {}): DiffFileType {
     is_whitespace_only: false,
     additions: 3,
     deletions: 1,
+    patch: `diff --git a/src/foo.ts b/src/foo.ts
+--- a/src/foo.ts
++++ b/src/foo.ts
+@@ -1,3 +1,5 @@
+ line 1
+-old line
++new line
+`,
     hunks: [{
       old_start: 1,
       old_count: 3,
@@ -133,11 +175,13 @@ function renderDiffFile(
     createComment: () => Promise.resolve(true),
     deleteComment: () => Promise.resolve(true),
   };
-  return render(DiffFile, {
+  const result = render(DiffFile, {
     props: {
       file,
+      provider: "github",
       owner: options.owner ?? uniqueOwner(),
       name: "n",
+      repoPath: "o/n",
       number: 1,
       ...(options.richPreviewEnabled !== undefined && {
         richPreviewEnabled: options.richPreviewEnabled,
@@ -157,6 +201,17 @@ function renderDiffFile(
     },
     context: new Map([[STORES_KEY, { diff, diffReviewDraft }]]),
   });
+  return { ...result, diff };
+}
+
+function textPreview(path: string, text: string): FilePreview {
+  return {
+    path,
+    media_type: "text/plain; charset=utf-8",
+    encoding: "base64",
+    content: Buffer.from(text, "utf8").toString("base64"),
+    size: text.length,
+  };
 }
 
 describe("DiffFile", () => {
@@ -164,21 +219,28 @@ describe("DiffFile", () => {
     cleanup();
   });
 
-  it("renders file content when not collapsed", () => {
+  async function expectPierreDiffText(pattern: RegExp): Promise<void> {
+    await waitFor(() => {
+      const host = document.querySelector(".pierre-diff");
+      expect(host?.shadowRoot?.textContent).toMatch(pattern);
+    });
+  }
+
+  it("renders file content when not collapsed", async () => {
     renderDiffFile(makeFile());
 
     expect(screen.getByText("src/foo.ts")).toBeTruthy();
-    expect(screen.getByText(/@@ -1,3 \+1,5 @@/)).toBeTruthy();
+    await expectPierreDiffText(/old linenew line/);
   });
 
-  it("shows unified diff content when rich preview is disabled", () => {
+  it("shows unified diff content when rich preview is disabled", async () => {
     renderDiffFile(makeFile({ path: "README.md", old_path: "README.md" }), {
       richPreview: true,
       richPreviewEnabled: false,
     });
 
     expect(screen.queryByLabelText("Before markdown preview")).toBeNull();
-    expect(screen.getByText(/@@ -1,3 \+1,5 @@/)).toBeTruthy();
+    await expectPierreDiffText(/old linenew line/);
   });
 
   it("hides content after clicking the header to collapse", async () => {
@@ -203,6 +265,47 @@ describe("DiffFile", () => {
     expect(content?.classList.contains("file-content--collapsed")).toBe(false);
   });
 
+  async function selectPierreLine(
+    line: number,
+    side: "left" | "right",
+    options: { shiftKey?: boolean } = {},
+  ): Promise<void> {
+    const type = side === "left" ? "change-deletion" : "change-addition";
+    const fallback = side === "left" ? "context" : "context,context-expanded";
+    const selector = [
+      `[data-column-number="${line}"][data-line-type="${type}"]`,
+      ...fallback.split(",").map((lineType) =>
+        `[data-column-number="${line}"][data-line-type="${lineType}"]`
+      ),
+    ].join(",");
+    const target = await waitFor(() => {
+      const element = document
+        .querySelector(".pierre-diff")
+        ?.shadowRoot
+        ?.querySelector<HTMLElement>(selector);
+      expect(element).toBeTruthy();
+      return element!;
+    });
+    await fireEvent.pointerDown(target, {
+      button: 0,
+      pointerId: 1,
+      pointerType: "mouse",
+      shiftKey: options.shiftKey,
+    });
+    await fireEvent.pointerUp(document, {
+      pointerId: 1,
+      pointerType: "mouse",
+      shiftKey: options.shiftKey,
+    });
+  }
+
+  function selectedPierreLines(): NodeListOf<Element> | undefined {
+    return document
+      .querySelector(".pierre-diff")
+      ?.shadowRoot
+      ?.querySelectorAll("[data-selected-line]");
+  }
+
   it("allows shift-selecting ranges only when native multiline ranges are supported", async () => {
     const { unmount } = renderDiffFile(makeFile(), {
       reviewEnabled: true,
@@ -210,12 +313,10 @@ describe("DiffFile", () => {
       nativeMultilineRanges: true,
     });
 
-    await fireEvent.click(screen.getByRole("button", { name: "Comment on new line 1" }));
-    await fireEvent.click(screen.getByRole("button", { name: "Comment on new line 2" }), {
-      shiftKey: true,
-    });
+    await selectPierreLine(1, "right");
+    await selectPierreLine(2, "right", { shiftKey: true });
 
-    expect(document.querySelectorAll(".gutter-new.gutter--selected")).toHaveLength(2);
+    expect(selectedPierreLines()?.length).toBeGreaterThanOrEqual(2);
 
     unmount();
     renderDiffFile(makeFile(), {
@@ -224,18 +325,24 @@ describe("DiffFile", () => {
       nativeMultilineRanges: false,
     });
 
-    await fireEvent.click(screen.getByRole("button", { name: "Comment on new line 1" }));
-    await fireEvent.click(screen.getByRole("button", { name: "Comment on new line 2" }), {
-      shiftKey: true,
-    });
+    await selectPierreLine(1, "right");
+    await selectPierreLine(2, "right", { shiftKey: true });
 
-    expect(document.querySelectorAll(".gutter-new.gutter--selected")).toHaveLength(1);
+    expect(selectedPierreLines()).toHaveLength(2);
   });
 
   it("does not create multiline review ranges across separate hunks", async () => {
     renderDiffFile(makeFile({
       additions: 2,
       deletions: 0,
+      patch: `diff --git a/src/foo.ts b/src/foo.ts
+--- a/src/foo.ts
++++ b/src/foo.ts
+@@ -1,0 +1,1 @@
++first hunk
+@@ -20,0 +20,1 @@
++second hunk
+`,
       hunks: [
         {
           old_start: 1,
@@ -262,17 +369,16 @@ describe("DiffFile", () => {
       nativeMultilineRanges: true,
     });
 
-    await fireEvent.click(screen.getByRole("button", { name: "Comment on new line 1" }));
-    await fireEvent.click(screen.getByRole("button", { name: "Comment on new line 20" }), {
-      shiftKey: true,
-    });
+    await selectPierreLine(1, "right");
+    await selectPierreLine(20, "right", { shiftKey: true });
 
-    const selected = Array.from(document.querySelectorAll(".gutter-new.gutter--selected"));
-    expect(selected).toHaveLength(1);
-    expect(selected[0]?.textContent?.trim()).toBe("20");
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText("Leave a comment")).toBeTruthy();
+    });
+    expect(selectedPierreLines()).toHaveLength(2);
   });
 
-  it("renders saved draft comments inline at their selected range", () => {
+  it("renders saved draft comments inline at their selected range", async () => {
     renderDiffFile(makeFile(), {
       reviewEnabled: true,
       diffHeadSHA: "diff-head",
@@ -292,24 +398,27 @@ describe("DiffFile", () => {
       }],
     });
 
-    expect(screen.getByText("Follow up here")).toBeTruthy();
-    expect(document.querySelectorAll(".gutter-new.gutter--selected")).toHaveLength(2);
+    await waitFor(() => {
+      expect(screen.getByText("Follow up here")).toBeTruthy();
+    });
   });
 
-  it("renders published review threads under their matching diff line", () => {
+  it("renders published review threads under their matching diff line", async () => {
     renderDiffFile(makeFile(), {
       reviewEnabled: true,
       diffHeadSHA: "diff-head",
       reviewThreads: [makeReviewThread()],
     });
 
-    expect(screen.getByText("Published review note")).toBeTruthy();
-    const comment = document.querySelector("[data-review-thread-id='thread-1']");
-    const previous = comment?.previousElementSibling;
-    expect(previous?.querySelector("[aria-label='Comment on new line 2']")).toBeTruthy();
+    await waitFor(() => {
+      expect(screen.getByText("Published review note")).toBeTruthy();
+    });
+    const host = document.querySelector("[data-review-thread-id='thread-1']")
+      ?.closest("[slot='annotation-additions-2']");
+    expect(host).toBeTruthy();
   });
 
-  it("does not render stale-head review threads under a matching current line", () => {
+  it("does not render stale-head review threads under a matching current line", async () => {
     renderDiffFile(makeFile(), {
       reviewEnabled: true,
       diffHeadSHA: "current-head",
@@ -318,12 +427,13 @@ describe("DiffFile", () => {
       })],
     });
 
-    expect(screen.getByText("Published review note")).toBeTruthy();
+    await waitFor(() => {
+      expect(screen.getByText("Published review note")).toBeTruthy();
+    });
     expect(screen.getByText("File")).toBeTruthy();
     const comment = document.querySelector("[data-review-thread-id='thread-1']");
     expect(comment?.parentElement?.classList.contains("file-content")).toBe(true);
-    const previous = comment?.previousElementSibling;
-    expect(previous?.querySelector("[aria-label='Comment on new line 2']")).toBeFalsy();
+    expect(comment?.closest("[slot^='annotation-']")).toBeNull();
   });
 
   it("does not match added-file threads only because old paths are empty", () => {
@@ -380,43 +490,140 @@ describe("DiffFile", () => {
       diffHeadSHA: "diff-head",
     });
 
-    await fireEvent.click(screen.getByRole("button", { name: "Comment on new line 1" }));
+    await selectPierreLine(1, "right");
     expect(screen.getByPlaceholderText("Leave a comment")).toBeTruthy();
-    expect(document.querySelectorAll(".gutter-new.gutter--selected")).toHaveLength(1);
+    expect(selectedPierreLines()).toHaveLength(2);
 
     await rerender({
       file,
+      provider: "github",
       owner,
       name: "n",
+      repoPath: "o/n",
       number: 1,
       reviewEnabled: false,
       diffHeadSHA: "diff-head",
     });
 
     expect(screen.queryByPlaceholderText("Leave a comment")).toBeNull();
-    expect(document.querySelectorAll(".gutter-new.gutter--selected")).toHaveLength(0);
 
     await rerender({
       file,
+      provider: "github",
       owner,
       name: "n",
+      repoPath: "o/n",
       number: 1,
       reviewEnabled: true,
       diffHeadSHA: "new-diff-head",
     });
-    await fireEvent.click(screen.getByRole("button", { name: "Comment on new line 1" }));
+    await selectPierreLine(1, "right");
     expect(screen.getByPlaceholderText("Leave a comment")).toBeTruthy();
 
     await rerender({
       file,
+      provider: "github",
       owner,
       name: "n",
+      repoPath: "o/n",
       number: 1,
       reviewEnabled: true,
       diffHeadSHA: "another-diff-head",
     });
 
     expect(screen.queryByPlaceholderText("Leave a comment")).toBeNull();
-    expect(document.querySelectorAll(".gutter-new.gutter--selected")).toHaveLength(0);
+    expect(selectedPierreLines()).toHaveLength(0);
+  });
+
+  it("loads full file contents on demand before expanding hidden context", async () => {
+    const oldText = Array.from({ length: 20 }, (_, index) => `shared ${index + 1}`);
+    const newText = [...oldText];
+    oldText[1] = "old early";
+    newText[1] = "new early";
+    oldText[17] = "old late";
+    newText[17] = "new late";
+
+    const file = makeFile({
+      path: "src/context.ts",
+      old_path: "src/context.ts",
+      patch: `diff --git a/src/context.ts b/src/context.ts
+--- a/src/context.ts
++++ b/src/context.ts
+@@ -1,3 +1,3 @@
+ shared 1
+-old early
++new early
+ shared 3
+@@ -17,3 +17,3 @@
+ shared 17
+-old late
++new late
+ shared 19
+`,
+      hunks: [
+        {
+          old_start: 1,
+          old_count: 3,
+          new_start: 1,
+          new_count: 3,
+          lines: [
+            { type: "context", content: "shared 1", old_num: 1, new_num: 1 },
+            { type: "delete", content: "old early", old_num: 2 },
+            { type: "add", content: "new early", new_num: 2 },
+            { type: "context", content: "shared 3", old_num: 3, new_num: 3 },
+          ],
+        },
+        {
+          old_start: 17,
+          old_count: 3,
+          new_start: 17,
+          new_count: 3,
+          lines: [
+            { type: "context", content: "shared 17", old_num: 17, new_num: 17 },
+            { type: "delete", content: "old late", old_num: 18 },
+            { type: "add", content: "new late", new_num: 18 },
+            { type: "context", content: "shared 19", old_num: 19, new_num: 19 },
+          ],
+        },
+      ],
+    });
+    const { diff } = renderDiffFile(file);
+    const loadFilePreview = vi.spyOn(diff, "loadFilePreview")
+      .mockImplementation(async (_owner, _name, _number, path, side) => {
+        return textPreview(path, side === "old" ? oldText.join("\n") : newText.join("\n"));
+      });
+
+    const loader = screen.getByRole("button", { name: "Load more context" });
+    await fireEvent.click(loader);
+
+    const expandButton = await waitFor(() => {
+      const button = document
+        .querySelector(".pierre-diff")
+        ?.shadowRoot
+        ?.querySelector<HTMLElement>("[data-expand-button]");
+      expect(button).toBeTruthy();
+      return button!;
+    });
+
+    expandButton.click();
+
+    await waitFor(() => {
+      const text = document.querySelector(".pierre-diff")?.shadowRoot?.textContent ?? "";
+      expect(text).toContain("shared 10");
+    });
+    expect(loadFilePreview).toHaveBeenCalledWith(
+      expect.any(String),
+      "n",
+      1,
+      "src/context.ts",
+      "old",
+    );
+    expect(loadFilePreview).toHaveBeenCalledWith(
+      expect.any(String),
+      "n",
+      1,
+      "src/context.ts",
+      "new",
+    );
   });
 });

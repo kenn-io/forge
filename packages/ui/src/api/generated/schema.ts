@@ -2211,6 +2211,7 @@ export interface components {
             is_generated: boolean;
             is_whitespace_only: boolean;
             old_path: string;
+            patch: string;
             path: string;
             status: string;
         };
@@ -2223,6 +2224,8 @@ export interface components {
             readonly $schema?: string;
             files: components["schemas"]["DiffFile"][] | null;
             stale: boolean;
+            tree_git_status: components["schemas"]["TreeStatus"][] | null;
+            tree_paths: string[] | null;
             /** Format: int64 */
             whitespace_only_count: number;
         };
@@ -2434,6 +2437,8 @@ export interface components {
             readonly $schema?: string;
             files: components["schemas"]["DiffFile"][] | null;
             stale: boolean;
+            tree_git_status: components["schemas"]["TreeStatus"][] | null;
+            tree_paths: string[] | null;
             /** Format: int64 */
             whitespace_only_count: number;
         };
@@ -3459,6 +3464,10 @@ export interface components {
             renderer: string;
             /** Format: int64 */
             scrollback: number;
+        };
+        TreeStatus: {
+            path: string;
+            status: string;
         };
         UpdateSettingsRequest: {
             /**
@@ -6412,6 +6421,8 @@ export interface operations {
             query?: {
                 /** @description Changed file path to preview */
                 path?: string;
+                /** @description Optional diff side to read for context expansion */
+                side?: "old" | "new";
                 /** @description Scope to a single commit SHA */
                 commit?: string;
                 /** @description Start SHA for range diff (inclusive) */
@@ -8186,6 +8197,7 @@ type ReadonlyArray<T> = [
     unknown[]
 ] ? Readonly<Exclude<T, undefined>> : Readonly<Exclude<T, undefined>[]>;
 export const pathsHostPlatform_hostRepoProviderOwnerNameResolveNumberPostParametersQueryItem_typeValues: ReadonlyArray<FlattenedDeepRequired<paths>["/host/{platform_host}/repo/{provider}/{owner}/{name}/resolve/{number}"]["post"]["parameters"]["query"]["item_type"]> = ["pr", "issue"];
+export const pathsPullsProviderOwnerNameNumberFilePreviewGetParametersQuerySideValues: ReadonlyArray<FlattenedDeepRequired<paths>["/pulls/{provider}/{owner}/{name}/{number}/file-preview"]["get"]["parameters"]["query"]["side"]> = ["old", "new"];
 export const pathsRepoProviderOwnerNameResolveNumberPostParametersQueryItem_typeValues: ReadonlyArray<FlattenedDeepRequired<paths>["/repo/{provider}/{owner}/{name}/resolve/{number}"]["post"]["parameters"]["query"]["item_type"]> = ["pr", "issue"];
 export const mergeRequestKanbanStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MergeRequest"]["KanbanStatus"]> = ["new", "reviewing", "waiting", "awaiting_merge"];
 export const mergeRequestStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MergeRequest"]["State"]> = ["open", "closed", "merged"];

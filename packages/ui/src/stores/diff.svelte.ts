@@ -52,6 +52,8 @@ function normalizeDiffResult(data: DiffResponse): DiffResult {
   return {
     ...data,
     files: data.files ?? [],
+    tree_paths: data.tree_paths ?? [],
+    tree_git_status: data.tree_git_status ?? [],
   } as DiffResult;
 }
 
@@ -59,7 +61,24 @@ function normalizeFilesResult(data: FilesResponse): FilesResult {
   return {
     ...data,
     files: data.files ?? [],
+    tree_paths: data.tree_paths ?? [],
+    tree_git_status: data.tree_git_status ?? [],
   } as FilesResult;
+}
+
+function withVisibleTreeData<T extends DiffResult | FilesResult>(
+  result: T,
+  files: T["files"],
+): T {
+  const visiblePaths = new Set(files.map((file) => file.path));
+  return {
+    ...result,
+    files,
+    tree_paths: result.tree_paths.filter((path) => visiblePaths.has(path)),
+    tree_git_status: result.tree_git_status.filter((item) =>
+      visiblePaths.has(item.path),
+    ),
+  };
 }
 
 function apiBaseURL(basePath: string): string {
@@ -217,22 +236,30 @@ export function createDiffStore(opts?: DiffStoreOptions) {
   }
   function getFileList(): FilesResult | null {
     if (currentWorkspaceID && fileList) {
-      return { stale: fileList.stale, files: fileList.files ?? [] };
+      return { ...fileList, files: fileList.files ?? [] };
     }
     // Prefer diff.files once available — it respects hideWhitespace
     // and is authoritative. The lightweight /files response is a fast
     // preview used only until the full diff arrives.
-    if (diff) return { stale: diff.stale, files: diff.files ?? [] };
-    if (fileList) return { stale: fileList.stale, files: fileList.files ?? [] };
+    if (diff) {
+      return {
+        stale: diff.stale,
+        whitespace_only_count: diff.whitespace_only_count,
+        files: diff.files ?? [],
+        tree_paths: diff.tree_paths,
+        tree_git_status: diff.tree_git_status,
+      };
+    }
+    if (fileList) return { ...fileList, files: fileList.files ?? [] };
     return null;
   }
   function getVisibleFileList(): FilesResult | null {
     const list = getFileList();
     if (!list) return null;
-    return {
-      stale: list.stale,
-      files: filterDiffFilesByCategory(list.files, fileCategoryFilter),
-    };
+    return withVisibleTreeData(
+      list,
+      filterDiffFilesByCategory(list.files, fileCategoryFilter),
+    );
   }
   function getVisibleDiffFiles(): DiffResult["files"] {
     if (!diff) return [];
@@ -463,9 +490,10 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     name: string,
     number: number,
     path: string,
+    side?: "old" | "new",
   ): Promise<FilePreview> {
     const ref = currentRouteRef();
-    const key = `${ref.provider}:${ref.platformHost ?? ""}:${ref.repoPath}#${number}:${scopeCacheKey()}:${path}`;
+    const key = `${ref.provider}:${ref.platformHost ?? ""}:${ref.repoPath}#${number}:${scopeCacheKey()}:${path}:${side ?? "preview"}`;
     const cached = filePreviewCache.get(key);
     if (cached) return cached;
 
@@ -477,6 +505,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
             path: { ...providerRouteParams(ref), number },
             query: {
               path,
+              ...(side && { side }),
               ...(scope.kind === "commit" && { commit: scope.sha }),
               ...(scope.kind === "range" && {
                 from: scope.fromSha,

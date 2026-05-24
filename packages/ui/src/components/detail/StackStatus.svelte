@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy } from "svelte";
   import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
-  import GitBranchIcon from "@lucide/svelte/icons/git-branch";
+  import Layers2Icon from "@lucide/svelte/icons/layers-2";
   import XIcon from "@lucide/svelte/icons/x";
   import { providerItemPath, providerRouteParams } from "../../api/provider-routes.js";
   import { getClient, getNavigate, getStores } from "../../context.js";
@@ -210,7 +210,7 @@
         title={expanded ? "Collapse stack" : "Expand stack"}
         {expanded}
       >
-        <GitBranchIcon size={12} strokeWidth={2.3} aria-hidden="true" />
+        <Layers2Icon size={12} strokeWidth={2.3} aria-hidden="true" />
         <span class="stack-chip-label">Stacked: {data.position}/{data.size}</span>
         {#if downstackFailures.length > 0}
           <span class="stack-chip-failure" aria-hidden="true">

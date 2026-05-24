@@ -20,6 +20,8 @@ Use this document as the intent-level guide for frontend UI work in `middleman`.
 
 - Tokens: `frontend/src/app.css`
 - Shared primitives: `packages/ui/src/components/shared/`
+- Diff/file-tree adapters: `packages/ui/src/components/diff/PierreFileDiff.svelte`
+  and `packages/ui/src/components/diff/PierreFileTree.svelte`
 - Routed item references and URL builders: `packages/ui/src/routes.ts`
 - Svelte guidance: `skills/svelte-core-bestpractices/` (`svelte-core-bestpractices`) and `skills/svelte-code-writer/` (`svelte-code-writer`)
 - Interaction contracts: `context/ui-interaction-contracts.md`
@@ -126,6 +128,31 @@ Intent:
 
 - keep repository labels distinct from generic status chips
 - preserve GitHub-label semantics without collapsing them into a generic badge system
+
+### Pierre Diff And File Tree
+
+Use the local Pierre wrappers for changed-file UI:
+
+- `PierreFileDiff.svelte` wraps `@pierre/diffs`
+- `PierreFileTree.svelte` wraps `@pierre/trees`
+
+Intent:
+
+- keep Pierre lifecycle, Shadow DOM styling, theme selection, and selection/context
+  behavior in one place
+- let consumers pass app-level data such as `DiffFile[]`, selected path,
+  word-wrap state, and demand-loaded file text callbacks
+- avoid reimplementing direct `FileDiff` or `FileTree` setup in each files view
+
+Reference the upstream docs before changing wrapper options or behavior:
+
+- `@pierre/diffs`: <https://diffs.com/>
+- `@pierre/trees`: <https://trees.software/>
+
+Do not import `@pierre/diffs` or `@pierre/trees` directly in feature
+components unless the existing wrappers cannot express the use case. Prefer
+extending the wrappers with a small app-level prop over copying Pierre setup,
+theme overrides, or Shadow DOM CSS into another component.
 
 ## Tokens and semantics
 

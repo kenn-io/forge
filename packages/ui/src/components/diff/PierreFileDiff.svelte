@@ -50,6 +50,7 @@
   let renderAttemptKey = "";
 
   const fileKey = $derived(`${file.path}\0${file.old_path}\0${file.patch}`);
+  const emptyTextualDiff = $derived(!file.patch.trim() || file.hunks.length === 0);
   const pierreFile = $derived.by<FileDiffMetadata | undefined>(() => {
     return parsePierreFileDiff(file, {
       // Pierre marks patch-only diffs as partial and hides expansion controls.
@@ -163,7 +164,16 @@
   });
 
   $effect(() => {
-    if (!host || !active || !pierreFile) return;
+    if (!active) return;
+    if (emptyTextualDiff) {
+      removeDemandContextHandler();
+      renderAttemptKey = "";
+      pierreDiff = undefined;
+      rendered = true;
+      return;
+    }
+    if (!host) return;
+    if (!pierreFile) return;
     pierreDiff ??= new FileDiff<unknown>(pierreOptions, getPierreDiffWorkerPool());
     pierreDiff.setOptions(pierreOptions);
     const nextRenderAttemptKey = [
@@ -378,11 +388,16 @@
 </script>
 
 <div class="pierre-diff-shell" class:pierre-diff-shell--loading={!rendered} aria-busy={!rendered}>
-  <diffs-container
-    class="pierre-diff"
-    class:pierre-diff--pending={!rendered}
-    bind:this={host}
-  ></diffs-container>
+  {#if !emptyTextualDiff}
+    <diffs-container
+      class="pierre-diff"
+      class:pierre-diff--pending={!rendered}
+      bind:this={host}
+    ></diffs-container>
+  {/if}
+  {#if rendered && emptyTextualDiff}
+    <div class="empty-textual-diff">No textual changes</div>
+  {/if}
   {#if !rendered}
     <div class="pierre-diff-loading" role="status" aria-live="polite">
       <svg class="pierre-diff-spinner" width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
@@ -420,6 +435,14 @@
 
   .pierre-diff:empty {
     min-height: 48px;
+  }
+
+  .empty-textual-diff {
+    padding: 20px;
+    color: var(--diff-line-num);
+    font-size: var(--font-size-sm);
+    font-style: italic;
+    text-align: center;
   }
 
   .pierre-diff-loading {

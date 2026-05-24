@@ -250,6 +250,20 @@ describe("DiffFile", () => {
     }
   });
 
+  it("renders an empty textual diff state without staying stuck loading", async () => {
+    renderDiffFile(makeFile({
+      additions: 0,
+      deletions: 0,
+      patch: "",
+      hunks: [],
+    }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("status")).toBeNull();
+      expect(screen.getByText("No textual changes")).toBeTruthy();
+    });
+  });
+
   it("shows unified diff content when rich preview is disabled", async () => {
     renderDiffFile(makeFile({ path: "README.md", old_path: "README.md" }), {
       richPreview: true,

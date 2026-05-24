@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -406,28 +407,25 @@ func TestListActivity(t *testing.T) {
 		assert.Equal([]string{"new branch commit", "new-before -> new-after"}, activityBodies(items))
 	})
 
-	t.Run("default branch commit preview is capped", func(t *testing.T) {
+	t.Run("caps legacy default branch commit metadata in activity projection", func(t *testing.T) {
 		assert := Assert.New(t)
 		require := require.New(t)
 		d := openTestDB(t)
 		ctx := t.Context()
 		base := baseTime()
 		repoID := insertTestRepo(t, d, "alice", "alpha")
-		require.NoError(d.UpsertBranchCommits(ctx, []BranchCommit{
-			testBranchCommit(
-				repoID,
-				"main",
-				"branch-sha",
-				strings.Repeat("s", 240),
-				base,
-			),
-		}))
+		require.NoError(insertLegacyOversizedBranchCommit(ctx, d, repoID, base))
 
 		items, err := d.ListActivity(ctx, ListActivityOpts{Limit: 50})
 		require.NoError(err)
 		require.Len(items, 1)
 		assert.Equal("default_branch_commit", items[0].ActivityType)
 		assert.Len(items[0].BodyPreview, 200)
+		assert.Len(items[0].Author, branchCommitIdentityMaxBytes)
+		assert.Len(items[0].AuthorName, branchCommitIdentityMaxBytes)
+		assert.Len(items[0].AuthorEmail, branchCommitIdentityMaxBytes)
+		assert.Len(items[0].CommitterName, branchCommitIdentityMaxBytes)
+		assert.Len(items[0].CommitterEmail, branchCommitIdentityMaxBytes)
 	})
 
 	t.Run("search matches branch commit metadata and sha prefixes", func(t *testing.T) {
@@ -538,6 +536,33 @@ func TestListActivity(t *testing.T) {
 	})
 
 	_ = prID2
+}
+
+func insertLegacyOversizedBranchCommit(
+	ctx context.Context,
+	d *DB,
+	repoID int64,
+	committedAt time.Time,
+) error {
+	_, err := d.rw.ExecContext(ctx, `
+		INSERT INTO middleman_branch_commits (
+		    repo_id, branch_name, commit_sha, author_name, author_email,
+		    authored_at, committer_name, committer_email, committed_at,
+		    subject
+		)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		repoID,
+		"main",
+		"legacy-oversized-sha",
+		strings.Repeat("a", branchCommitIdentityMaxBytes+20),
+		strings.Repeat("e", branchCommitIdentityMaxBytes+20),
+		committedAt.Add(-time.Minute),
+		strings.Repeat("c", branchCommitIdentityMaxBytes+20),
+		strings.Repeat("m", branchCommitIdentityMaxBytes+20),
+		committedAt,
+		strings.Repeat("s", branchCommitSubjectMaxBytes+20),
+	)
+	return err
 }
 
 func testBranchCommit(

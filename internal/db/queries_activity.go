@@ -176,11 +176,13 @@ func (d *DB) ListActivity(
 			       r.platform, r.platform_host, r.owner, r.name, r.repo_path_key,
 			       '', 0, '',
 			       '', '',
-			       bc.author_name, bc.committed_at,
+			       substr(bc.author_name, 1, %[1]d), bc.committed_at,
 			       substr(bc.subject, 1, 200),
 			       bc.branch_name, bc.commit_sha, '', '',
-			       bc.author_name, bc.author_email,
-			       bc.committer_name, bc.committer_email,
+			       substr(bc.author_name, 1, %[1]d),
+			       substr(bc.author_email, 1, %[1]d),
+			       substr(bc.committer_name, 1, %[1]d),
+			       substr(bc.committer_email, 1, %[1]d),
 			       bc.authored_at, bc.committed_at,
 			       ''
 			FROM middleman_branch_commits bc
@@ -200,9 +202,9 @@ func (d *DB) ListActivity(
 			FROM middleman_branch_force_pushes bfp
 			JOIN middleman_repos r ON bfp.repo_id = r.id
 		) unified
-		%s
+		%[2]s
 		ORDER BY created_at DESC, source DESC, source_id DESC
-		LIMIT ?`, where)
+		LIMIT ?`, branchCommitIdentityMaxBytes, where)
 
 	args = append(args, limit)
 

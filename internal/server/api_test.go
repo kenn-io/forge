@@ -13260,18 +13260,25 @@ func TestAPIListActivityCapsDefaultBranchCommitMetadata(t *testing.T) {
 	require.NoError(err)
 
 	committedAt := base.Add(10 * time.Minute)
-	require.NoError(database.UpsertBranchCommits(ctx, []db.BranchCommit{{
-		RepoID:         repoID,
-		BranchName:     "main",
-		CommitSHA:      "abc123def456abc123def456abc123def456abcd",
-		AuthorName:     strings.Repeat("a", 300),
-		AuthorEmail:    strings.Repeat("e", 300),
-		AuthoredAt:     committedAt.Add(-time.Minute),
-		CommitterName:  strings.Repeat("c", 300),
-		CommitterEmail: strings.Repeat("m", 300),
-		CommittedAt:    committedAt,
-		Subject:        strings.Repeat("s", 700),
-	}}))
+	_, err = database.WriteDB().ExecContext(ctx, `
+		INSERT INTO middleman_branch_commits (
+		    repo_id, branch_name, commit_sha, author_name, author_email,
+		    authored_at, committer_name, committer_email, committed_at,
+		    subject
+		)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		repoID,
+		"main",
+		"abc123def456abc123def456abc123def456abcd",
+		strings.Repeat("a", 300),
+		strings.Repeat("e", 300),
+		committedAt.Add(-time.Minute),
+		strings.Repeat("c", 300),
+		strings.Repeat("m", 300),
+		committedAt,
+		strings.Repeat("s", 700),
+	)
+	require.NoError(err)
 
 	since := url.QueryEscape(base.Format(time.RFC3339))
 	rr := doJSON(t, srv, http.MethodGet, "/api/v1/activity?since="+since, nil)
@@ -13285,6 +13292,7 @@ func TestAPIListActivityCapsDefaultBranchCommitMetadata(t *testing.T) {
 	commit := body.Items[0]
 	assert.Equal("default_branch_commit", commit["activity_type"])
 	assert.Len(commit["body_preview"], 200)
+	assert.Len(commit["author"], 256)
 	assert.Len(commit["author_name"], 256)
 	assert.Len(commit["author_email"], 256)
 	assert.Len(commit["committer_name"], 256)

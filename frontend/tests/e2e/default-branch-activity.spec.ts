@@ -332,6 +332,9 @@ test.describe("default branch activity", () => {
     await expect(page.locator(".activity-detail-header")).toContainText(
       "Commit acme/widgets main Ship direct main commit 2",
     );
+    await expect(page.locator(".files-sidebar")).toContainText(
+      "direct-main.ts",
+    );
     await expect(page.locator(".file-header")).toContainText(
       "src/direct-main.ts",
     );

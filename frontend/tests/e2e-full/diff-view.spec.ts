@@ -526,6 +526,17 @@ async function waitForSidebarFilesLoaded(page: Page): Promise<void> {
     .waitFor({ state: "visible", timeout: 10_000 });
 }
 
+async function visiblePierreLoadingCount(page: Page): Promise<number> {
+  return await page.locator(".diff-file").evaluateAll((files) => {
+    return files.filter((file) => {
+      const rect = file.getBoundingClientRect();
+      return rect.bottom > 0
+        && rect.top < window.innerHeight
+        && file.querySelector(".pierre-diff-loading");
+    }).length;
+  });
+}
+
 async function openDiffFilterMenu(page: Page): Promise<void> {
   await page.getByRole("button", { name: "More diff filters" }).click();
 }
@@ -816,6 +827,21 @@ test.describe("diff view", () => {
 
     await expect(wrapToggle).toHaveAttribute("aria-checked", "true");
     await expect(firstCodeLine).toHaveCSS("white-space", "pre-wrap");
+  });
+
+  test("scrolled-in Pierre files do not get stuck on loading placeholders", async ({ page }) => {
+    await mockDiffApi(page, largeDiff);
+    await navigateToDiff(page);
+    await waitForDiffLoaded(page);
+
+    await page.locator(".diff-area").evaluate((area) => {
+      area.scrollTop = area.scrollHeight * 0.55;
+      area.dispatchEvent(new Event("scroll", { bubbles: true }));
+    });
+
+    await expect.poll(() => visiblePierreLoadingCount(page), {
+      timeout: 10_000,
+    }).toBe(0);
   });
 
   test("rich preview toggle renders markdown and browser images", async ({ page }) => {

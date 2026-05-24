@@ -46,6 +46,8 @@
   let themeType = $state<ThemeTypes>(appThemeType());
   let rendered = $state(false);
   let renderedFileKey = "";
+  let renderAttemptKey = "";
+  let allowBackgroundRender = $state(false);
 
   const fileKey = $derived(`${file.path}\0${file.old_path}\0${file.patch}`);
   const pierreFile = $derived.by<FileDiffMetadata | undefined>(() => {
@@ -125,6 +127,9 @@
 
   onMount(() => {
     let themeObserver: MutationObserver | undefined;
+    const backgroundRenderTimer = window.setTimeout(() => {
+      allowBackgroundRender = true;
+    }, 250);
     if (typeof MutationObserver !== "undefined") {
       themeObserver = new MutationObserver(() => {
         themeType = appThemeType();
@@ -135,6 +140,7 @@
     }
 
     return () => {
+      window.clearTimeout(backgroundRenderTimer);
       themeObserver?.disconnect();
       removeDemandContextHandler();
       contextLoadPromise = undefined;
@@ -151,12 +157,25 @@
     contextError = null;
     fullContext = undefined;
     rendered = false;
+    renderAttemptKey = "";
   });
 
   $effect(() => {
-    if (!host || !active || !pierreFile) return;
+    if (!host || !(active || allowBackgroundRender) || !pierreFile) return;
     pierreDiff ??= new FileDiff<unknown>(pierreOptions);
     pierreDiff.setOptions(pierreOptions);
+    const nextRenderAttemptKey = [
+      fileKey,
+      wordWrap,
+      fullContext ? "full" : "patch",
+      enableLineSelection,
+      annotationKey(lineAnnotations),
+    ].join("\0");
+    if (renderAttemptKey === nextRenderAttemptKey) {
+      pierreDiff.setSelectedLines(selectedRange);
+      return;
+    }
+    renderAttemptKey = nextRenderAttemptKey;
     rendered = false;
     if (fullContext) {
       renderFullContext(fullContext);
@@ -297,6 +316,13 @@
         cacheKey: `middleman:${file.path}:new`,
       },
     };
+  }
+
+  function annotationKey(annotations: DiffLineAnnotation<unknown>[]): string {
+    return annotations.map((annotation) => {
+      const metadata = annotation.metadata as { id?: unknown } | undefined;
+      return `${annotation.side}:${annotation.lineNumber}:${String(metadata?.id ?? "")}`;
+    }).join("|");
   }
 
   function hasCollapsedContext(f: DiffFile): boolean {

@@ -151,6 +151,7 @@ make vet        # go vet
 
 ## Pull Requests
 
+- Never delete, minimize, hide, resolve, or otherwise remove PR comments, review comments, review threads, or CI/review bot comments unless the user explicitly asks for that exact action. If a comment is stale, false-positive, superseded, or contradicted by current evidence, leave it in place and explain the evidence in a reply or final report instead.
 - PR descriptions should be concise: summarize what changed, not how or why in detail
 - When a PR adds or changes visible UI, use the `capture-playwright` skill to capture a Playwright screenshot or short video and attach it with `gh image`
 - Do this before opening the PR so the description can include the visual artifact links

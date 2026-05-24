@@ -44,6 +44,7 @@
   let contextLoadPromise: Promise<{ oldFile: FileContents; newFile: FileContents }> | undefined;
   let contextError: string | null = $state(null);
   let themeType = $state<ThemeTypes>(appThemeType());
+  let rendered = $state(false);
   let renderedFileKey = "";
 
   const fileKey = $derived(`${file.path}\0${file.old_path}\0${file.patch}`);
@@ -75,6 +76,7 @@
     tokenizeMaxLineLength: 2_000,
     onPostRender: () => {
       applyHunkHeaderLabels();
+      rendered = true;
     },
     unsafeCSS: `
       :host {
@@ -124,23 +126,28 @@
     contextLoadPromise = undefined;
     contextError = null;
     fullContext = undefined;
+    rendered = false;
   });
 
   $effect(() => {
     if (!host || !active || !pierreFile) return;
     pierreDiff ??= new FileDiff<unknown>(pierreOptions);
     pierreDiff.setOptions(pierreOptions);
+    rendered = false;
     if (fullContext) {
       renderFullContext(fullContext);
     } else {
-      pierreDiff.render({
+      const didRender = pierreDiff.render({
         fileContainer: host,
         fileDiff: pierreFile,
         forceRender: true,
         lineAnnotations,
       });
-      applyHunkHeaderLabels();
-      installDemandContextHandler();
+      if (didRender) {
+        applyHunkHeaderLabels();
+        rendered = true;
+        installDemandContextHandler();
+      }
     }
     pierreDiff.setSelectedLines(selectedRange);
   });
@@ -223,7 +230,8 @@
 
   function renderFullContext(context: { oldFile: FileContents; newFile: FileContents }): void {
     if (!pierreDiff || !host) return;
-    pierreDiff.render({
+    rendered = false;
+    const didRender = pierreDiff.render({
       fileContainer: host,
       oldFile: context.oldFile,
       newFile: context.newFile,
@@ -231,7 +239,10 @@
       lineAnnotations,
     });
     pierreDiff.setSelectedLines(selectedRange);
-    applyHunkHeaderLabels();
+    if (didRender) {
+      applyHunkHeaderLabels();
+      rendered = true;
+    }
   }
 
   async function loadFullContext(): Promise<{ oldFile: FileContents; newFile: FileContents }> {
@@ -314,19 +325,66 @@
   }
 </script>
 
-<diffs-container class="pierre-diff" bind:this={host}></diffs-container>
+<div class="pierre-diff-shell" class:pierre-diff-shell--loading={!rendered} aria-busy={!rendered}>
+  <diffs-container
+    class="pierre-diff"
+    class:pierre-diff--pending={!rendered}
+    bind:this={host}
+  ></diffs-container>
+  {#if !rendered}
+    <div class="pierre-diff-loading" role="status" aria-live="polite">
+      <svg class="pierre-diff-spinner" width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+        <circle cx="10" cy="10" r="8" stroke="currentColor" stroke-opacity="0.2" stroke-width="2" />
+        <path d="M18 10a8 8 0 0 0-8-8" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+      </svg>
+      <span>Loading diff</span>
+    </div>
+  {/if}
+</div>
 {#if contextError}
   <div class="context-error">Could not load more context: {contextError}</div>
 {/if}
 
 <style>
+  .pierre-diff-shell {
+    position: relative;
+    min-width: 100%;
+    width: 100%;
+    background: var(--bg-surface);
+  }
+
+  .pierre-diff-shell--loading {
+    min-height: 96px;
+  }
+
   .pierre-diff {
     min-width: 100%;
     width: 100%;
   }
 
+  .pierre-diff--pending {
+    visibility: hidden;
+  }
+
   .pierre-diff:empty {
     min-height: 48px;
+  }
+
+  .pierre-diff-loading {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    min-height: 96px;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    color: var(--text-muted);
+    font-size: var(--font-size-sm);
+    background: var(--bg-surface);
+  }
+
+  .pierre-diff-spinner {
+    animation: spin 0.8s linear infinite;
   }
 
   .context-error {
@@ -334,5 +392,11 @@
     color: var(--danger);
     border-top: 1px solid var(--diff-border);
     font-size: var(--font-size-xs);
+  }
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
   }
 </style>

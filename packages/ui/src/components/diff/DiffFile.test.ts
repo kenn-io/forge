@@ -227,6 +227,29 @@ describe("DiffFile", () => {
     await expectPierreDiffText(/old linenew line/);
   });
 
+  it("shows a loading state before viewport-gated Pierre rendering starts", async () => {
+    const visibleObserver = (globalThis as GlobalWithIO).IntersectionObserver;
+    class PendingIntersectionObserverStub {
+      root: Element | null = null;
+      rootMargin = "";
+      thresholds: readonly number[] = [];
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+      takeRecords(): IntersectionObserverEntry[] { return []; }
+    }
+    (globalThis as GlobalWithIO).IntersectionObserver = PendingIntersectionObserverStub;
+
+    try {
+      renderDiffFile(makeFile());
+
+      expect(screen.getByRole("status").textContent).toContain("Loading diff");
+      expect(document.querySelector(".pierre-diff--pending")).toBeTruthy();
+    } finally {
+      (globalThis as GlobalWithIO).IntersectionObserver = visibleObserver;
+    }
+  });
+
   it("shows unified diff content when rich preview is disabled", async () => {
     renderDiffFile(makeFile({ path: "README.md", old_path: "README.md" }), {
       richPreview: true,

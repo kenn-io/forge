@@ -1,4 +1,4 @@
-package main
+package ctl
 
 import (
 	"context"
@@ -30,6 +30,11 @@ const (
 
 type restishRequester func(context.Context, cliConfig, string, string, []string) ([]byte, error)
 
+type Options struct {
+	Stdout io.Writer
+	Stderr io.Writer
+}
+
 type commandDeps struct {
 	Stdout  io.Writer
 	Stderr  io.Writer
@@ -42,15 +47,55 @@ type cliConfig struct {
 	timeout time.Duration
 }
 
-func main() {
-	cmd := newRootCommand(commandDeps{})
-	if err := cmd.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
+func NewCommand(opts Options) *cobra.Command {
+	return newCommand(commandDeps{
+		Stdout: opts.Stdout,
+		Stderr: opts.Stderr,
+	})
 }
 
-func newRootCommand(deps commandDeps) *cobra.Command {
+func Execute(args []string, opts Options) error {
+	cmd := NewCommand(opts)
+	cmd.SetArgs(args)
+	return cmd.Execute()
+}
+
+var controlCommands = map[string]struct{}{
+	"activity":       {},
+	"api":            {},
+	"issues":         {},
+	"pulls":          {},
+	"quickstart":     {},
+	"rate-limits":    {},
+	"repo-summaries": {},
+	"repos":          {},
+	"stacks":         {},
+	"sync":           {},
+	"workspaces":     {},
+}
+
+func IsInvocation(args []string) bool {
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if _, ok := controlCommands[arg]; ok {
+			return true
+		}
+		switch {
+		case arg == "--server" || arg == "--output" || arg == "--timeout" || arg == "-o":
+			i++
+		case strings.HasPrefix(arg, "--server="),
+			strings.HasPrefix(arg, "--output="),
+			strings.HasPrefix(arg, "--timeout="),
+			strings.HasPrefix(arg, "-o="):
+		case strings.HasPrefix(arg, "-"):
+		default:
+			return false
+		}
+	}
+	return false
+}
+
+func newCommand(deps commandDeps) *cobra.Command {
 	if deps.Stdout == nil {
 		deps.Stdout = os.Stdout
 	}
@@ -62,21 +107,21 @@ func newRootCommand(deps commandDeps) *cobra.Command {
 	}
 
 	cfg := viper.New()
-	cfg.SetEnvPrefix("MIDDLEMANCTL")
+	cfg.SetEnvPrefix("MIDDLEMAN")
 	cfg.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
 	cfg.AutomaticEnv()
 	cfg.SetDefault("output", "json")
 	cfg.SetDefault("timeout", 30*time.Second)
 
 	root := &cobra.Command{
-		Use:   "middlemanctl",
+		Use:   "middleman",
 		Short: "Agent-oriented CLI for the middleman API",
-		Long: strings.TrimSpace(`middlemanctl serves middleman API content for agents.
+		Long: strings.TrimSpace(`middleman serves middleman API content for agents.
 
-Start with "middlemanctl quickstart" for the API shape, then use typed shortcuts
-like "middlemanctl pulls" or the Restish-backed escape hatch:
+Start with "middleman quickstart" for the API shape, then use typed shortcuts
+like "middleman pulls" or the Restish-backed escape hatch:
 
-  middlemanctl api METHOD PATH [body...]
+  middleman api METHOD PATH [body...]
 
 Responses are formatted as JSON by default, YAML with --output yaml, and
 newline-delimited JSON with --output jsonl.`),
@@ -133,7 +178,6 @@ newline-delimited JSON with --output jsonl.`),
 
 	root.AddCommand(newQuickstartCommand(cfg, deps.Stdout))
 	root.AddCommand(newAPICommand(request, listOperations))
-	root.AddCommand(newSimpleGetCommand("version", "Show server version", "/version", nil, request))
 	root.AddCommand(newSimpleGetCommand("repos", "List configured repositories", "/repos", nil, request))
 	root.AddCommand(newSimpleGetCommand("repo-summaries", "List repository summaries", "/repos/summary", nil, request))
 	root.AddCommand(newPullsCommand(request))
@@ -262,7 +306,7 @@ func mustAPIURL(server, path string, query url.Values) string {
 func newQuickstartCommand(cfg *viper.Viper, stdout io.Writer) *cobra.Command {
 	return &cobra.Command{
 		Use:   "quickstart",
-		Short: "Explain how middlemanctl talks to the API",
+		Short: "Explain how middleman talks to the API",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			current, err := readConfig(cfg)
 			if err != nil {
@@ -272,13 +316,13 @@ func newQuickstartCommand(cfg *viper.Viper, stdout io.Writer) *cobra.Command {
 				"api_base_url": mustAPIURL(current.server, apiPrefix, nil),
 				"formats":      []string{"json", "yaml", "jsonl"},
 				"commands": []map[string]string{
-					{"command": "middlemanctl version", "does": "GET /api/v1/version"},
-					{"command": "middlemanctl pulls --state open --limit 20", "does": "GET /api/v1/pulls with query parameters"},
-					{"command": "middlemanctl issues --output jsonl", "does": "Emit one issue JSON object per line"},
-					{"command": "middlemanctl api list", "does": "List API methods, paths, summaries, and parameters"},
-					{"command": "middlemanctl api GET /pulls", "does": "Raw Restish-backed request to /api/v1/pulls"},
-					{"command": "middlemanctl api GET /sync/status", "does": "Inspect sync state"},
-					{"command": "middlemanctl api POST /sync", "does": "Trigger a sync"},
+					{"command": "middleman pulls --state open --limit 20", "does": "GET /api/v1/pulls with query parameters"},
+					{"command": "middleman issues --output jsonl", "does": "Emit one issue JSON object per line"},
+					{"command": "middleman api list", "does": "List API methods, paths, summaries, and parameters"},
+					{"command": "middleman api GET /pulls", "does": "Raw Restish-backed request to /api/v1/pulls"},
+					{"command": "middleman api GET /version", "does": "Show server version"},
+					{"command": "middleman api GET /sync/status", "does": "Inspect sync state"},
+					{"command": "middleman api POST /sync", "does": "Trigger a sync"},
 				},
 				"notes": []string{
 					"PATH values without /api/v1 are automatically scoped to /api/v1.",
@@ -298,7 +342,7 @@ func newAPICommand(request func(context.Context, string, string, url.Values, []s
 		Short: "Call any middleman API path through Restish",
 		Long: strings.TrimSpace(`Call any middleman API path through Restish.
 
-Use "middlemanctl api list" to discover available methods and paths.`),
+Use "middleman api list" to discover available methods and paths.`),
 		Args: cobra.MinimumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return request(cmd.Context(), args[0], args[1], nil, args[2:])
@@ -586,7 +630,7 @@ func makeRestishRequest(ctx context.Context, cfg cliConfig, method, requestURL s
 	defer restishMu.Unlock()
 
 	viper.Reset()
-	cli.Init("middlemanctl_restish", "dev")
+	cli.Init("middleman_restish", "dev")
 	cli.Defaults()
 	cli.AddLoader(openapi.New())
 	viper.Set("rsh-no-cache", true)

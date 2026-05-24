@@ -18,6 +18,8 @@ import (
 	"syscall"
 	"time"
 
+	"go.kenn.io/middleman/internal/cli/ctl"
+	"go.kenn.io/middleman/internal/cli/serve"
 	"go.kenn.io/middleman/internal/config"
 	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/gitclone"
@@ -76,6 +78,8 @@ var (
 	commit    = "unknown"
 	buildDate = "unknown"
 )
+
+var runServer = run
 
 func main() {
 	closeLog, err := configureLogging(os.Stderr)
@@ -190,19 +194,19 @@ func runCLI(args []string, stdout io.Writer) error {
 			return runPtyOwnerCLI(args[1:])
 		case "status":
 			return runStatusCLI(args[1:], stdout)
+		case "serve":
+			return serve.Run(args[1:], runServer)
 		}
 	}
 
-	fs := flag.NewFlagSet("middleman", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	configPath := fs.String(
-		"config", config.DefaultConfigPath(),
-		"path to config file",
-	)
-	if err := fs.Parse(args); err != nil {
-		return err
+	if ctl.IsInvocation(args) {
+		return ctl.Execute(args, ctl.Options{
+			Stdout: stdout,
+			Stderr: os.Stderr,
+		})
 	}
-	return run(*configPath)
+
+	return serve.Run(args, runServer)
 }
 
 func runPtyOwnerCLI(args []string) error {

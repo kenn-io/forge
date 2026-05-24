@@ -1,4 +1,4 @@
-package main
+package ctl
 
 import (
 	"bytes"
@@ -34,7 +34,7 @@ port = 8123
 	var got struct {
 		url string
 	}
-	cmd := newRootCommand(commandDeps{
+	cmd := newCommand(commandDeps{
 		Stdout: &bytes.Buffer{},
 		Stderr: &bytes.Buffer{},
 		Restish: func(_ context.Context, _ cliConfig, _ string, requestURL string, _ []string) ([]byte, error) {
@@ -42,11 +42,11 @@ port = 8123
 			return nil, nil
 		},
 	})
-	cmd.SetArgs([]string{"version"})
+	cmd.SetArgs([]string{"repos"})
 
 	require.NoError(cmd.Execute())
 
-	assert.Equal("http://127.0.0.1:8123/api/v1/version", got.url)
+	assert.Equal("http://127.0.0.1:8123/api/v1/repos", got.url)
 }
 
 func TestRootHelpPointsAgentsToQuickstartAndAPI(t *testing.T) {
@@ -54,7 +54,7 @@ func TestRootHelpPointsAgentsToQuickstartAndAPI(t *testing.T) {
 	require := require.New(t)
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	cmd := newRootCommand(commandDeps{
+	cmd := newCommand(commandDeps{
 		Stdout: &stdout,
 		Stderr: &stderr,
 		Restish: func(context.Context, cliConfig, string, string, []string) ([]byte, error) {
@@ -78,7 +78,7 @@ func TestQuickstartFormatsStructuredOutput(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	var jsonOut bytes.Buffer
-	cmd := newRootCommand(commandDeps{
+	cmd := newCommand(commandDeps{
 		Stdout: &jsonOut,
 		Stderr: &bytes.Buffer{},
 	})
@@ -89,10 +89,11 @@ func TestQuickstartFormatsStructuredOutput(t *testing.T) {
 	var payload map[string]any
 	require.NoError(json.Unmarshal(jsonOut.Bytes(), &payload))
 	assert.Equal("http://middleman.test/api/v1", payload["api_base_url"])
-	assert.Contains(jsonOut.String(), "middlemanctl api GET /pulls")
+	assert.Contains(jsonOut.String(), "middleman api GET /pulls")
+	assert.Contains(jsonOut.String(), "middleman api GET /version")
 
 	var yamlOut bytes.Buffer
-	cmd = newRootCommand(commandDeps{
+	cmd = newCommand(commandDeps{
 		Stdout: &yamlOut,
 		Stderr: &bytes.Buffer{},
 	})
@@ -100,10 +101,10 @@ func TestQuickstartFormatsStructuredOutput(t *testing.T) {
 
 	require.NoError(cmd.Execute())
 	assert.Contains(yamlOut.String(), "api_base_url: http://middleman.test/api/v1")
-	assert.Contains(yamlOut.String(), "middlemanctl api GET /sync/status")
+	assert.Contains(yamlOut.String(), "middleman api GET /sync/status")
 
 	var jsonlOut bytes.Buffer
-	cmd = newRootCommand(commandDeps{
+	cmd = newCommand(commandDeps{
 		Stdout: &jsonlOut,
 		Stderr: &bytes.Buffer{},
 	})
@@ -126,7 +127,7 @@ func TestPullsCommandDelegatesToRestishWithAgentFriendlyDefaults(t *testing.T) {
 		bodyArgs []string
 	}
 	var stdout bytes.Buffer
-	cmd := newRootCommand(commandDeps{
+	cmd := newCommand(commandDeps{
 		Stdout: &stdout,
 		Stderr: &bytes.Buffer{},
 		Restish: func(_ context.Context, cfg cliConfig, method, requestURL string, bodyArgs []string) ([]byte, error) {
@@ -171,7 +172,7 @@ func TestRawAPICommandBuildsMiddlemanAPIURLAndBodyArgs(t *testing.T) {
 		url      string
 		bodyArgs []string
 	}
-	cmd := newRootCommand(commandDeps{
+	cmd := newCommand(commandDeps{
 		Stdout: &bytes.Buffer{},
 		Stderr: &bytes.Buffer{},
 		Restish: func(_ context.Context, _ cliConfig, method, requestURL string, bodyArgs []string) ([]byte, error) {
@@ -196,7 +197,7 @@ func TestRawAPICommandRejectsAbsoluteURLs(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	called := false
-	cmd := newRootCommand(commandDeps{
+	cmd := newCommand(commandDeps{
 		Stdout: &bytes.Buffer{},
 		Stderr: &bytes.Buffer{},
 		Restish: func(context.Context, cliConfig, string, string, []string) ([]byte, error) {
@@ -220,7 +221,7 @@ func TestRawAPICommandWritesErrorResponseBody(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	var stdout bytes.Buffer
-	cmd := newRootCommand(commandDeps{
+	cmd := newCommand(commandDeps{
 		Stdout: &stdout,
 		Stderr: &bytes.Buffer{},
 		Restish: func(context.Context, cliConfig, string, string, []string) ([]byte, error) {
@@ -249,7 +250,7 @@ func TestRawAPICommandRejectsDotSegmentPaths(t *testing.T) {
 			assert := assert.New(t)
 			require := require.New(t)
 			called := false
-			cmd := newRootCommand(commandDeps{
+			cmd := newCommand(commandDeps{
 				Stdout: &bytes.Buffer{},
 				Stderr: &bytes.Buffer{},
 				Restish: func(context.Context, cliConfig, string, string, []string) ([]byte, error) {
@@ -275,7 +276,7 @@ func TestRawAPICommandAllowsEncodedSlashesInRouteParameters(t *testing.T) {
 		method string
 		url    string
 	}
-	cmd := newRootCommand(commandDeps{
+	cmd := newCommand(commandDeps{
 		Stdout: &bytes.Buffer{},
 		Stderr: &bytes.Buffer{},
 		Restish: func(_ context.Context, _ cliConfig, method, requestURL string, _ []string) ([]byte, error) {
@@ -304,7 +305,7 @@ func TestPullGetAllowsNestedOwners(t *testing.T) {
 		method string
 		url    string
 	}
-	cmd := newRootCommand(commandDeps{
+	cmd := newCommand(commandDeps{
 		Stdout: &bytes.Buffer{},
 		Stderr: &bytes.Buffer{},
 		Restish: func(_ context.Context, _ cliConfig, method, requestURL string, _ []string) ([]byte, error) {
@@ -335,7 +336,7 @@ func TestAPIListCommandDiscoversOpenAPIOperations(t *testing.T) {
 		bodyArgs []string
 	}
 	var stdout bytes.Buffer
-	cmd := newRootCommand(commandDeps{
+	cmd := newCommand(commandDeps{
 		Stdout: &stdout,
 		Stderr: &bytes.Buffer{},
 		Restish: func(_ context.Context, _ cliConfig, method, requestURL string, bodyArgs []string) ([]byte, error) {
@@ -393,33 +394,33 @@ func TestMiddlemanctlCommandsUseRealAPIAndSQLite(t *testing.T) {
 	require := require.New(t)
 	ts := setupMiddlemanctlE2E(t)
 
-	pullsOut := runMiddlemanctl(t, ts.URL, "--output", "jsonl", "pulls", "--limit", "2")
+	pullsOut := runMiddleman(t, ts.URL, "--output", "jsonl", "pulls", "--limit", "2")
 	pullLines := strings.Split(strings.TrimSpace(pullsOut), "\n")
 	require.Len(pullLines, 2)
 	assert.NotZero(jsonNumberField(t, pullLines[0]))
 	assert.NotZero(jsonNumberField(t, pullLines[1]))
 
-	issuesOut := runMiddlemanctl(t, ts.URL, "--output", "jsonl", "issues", "--limit", "2")
+	issuesOut := runMiddleman(t, ts.URL, "--output", "jsonl", "issues", "--limit", "2")
 	issueLines := strings.Split(strings.TrimSpace(issuesOut), "\n")
 	require.Len(issueLines, 2)
 	assert.NotZero(jsonNumberField(t, issueLines[0]))
 	assert.NotZero(jsonNumberField(t, issueLines[1]))
 
-	versionOut := runMiddlemanctl(t, ts.URL, "api", "GET", "/version")
+	versionOut := runMiddleman(t, ts.URL, "api", "GET", "/version")
 	assert.Contains(versionOut, `"version"`)
 
-	apiListOut := runMiddlemanctl(t, ts.URL, "--output", "jsonl", "api", "list")
+	apiListOut := runMiddleman(t, ts.URL, "--output", "jsonl", "api", "list")
 	assert.Contains(apiListOut, `"method":"GET"`)
 	assert.Contains(apiListOut, `"path":"/pulls"`)
 
-	syncOut := runMiddlemanctl(t, ts.URL, "sync")
+	syncOut := runMiddleman(t, ts.URL, "sync")
 	assert.Empty(syncOut)
 }
 
 func setupMiddlemanctlE2E(t *testing.T) *httptest.Server {
 	t.Helper()
-	t.Setenv("MIDDLEMANCTL_RESTISH_CONFIG_DIR", t.TempDir())
-	t.Setenv("MIDDLEMANCTL_RESTISH_CACHE_DIR", t.TempDir())
+	t.Setenv("MIDDLEMAN_RESTISH_CONFIG_DIR", t.TempDir())
+	t.Setenv("MIDDLEMAN_RESTISH_CACHE_DIR", t.TempDir())
 
 	database := dbtest.Open(t)
 	_, err := testutil.SeedFixtures(t.Context(), database)
@@ -440,11 +441,11 @@ func setupMiddlemanctlE2E(t *testing.T) *httptest.Server {
 	return ts
 }
 
-func runMiddlemanctl(t *testing.T, serverURL string, args ...string) string {
+func runMiddleman(t *testing.T, serverURL string, args ...string) string {
 	t.Helper()
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	cmd := newRootCommand(commandDeps{
+	cmd := newCommand(commandDeps{
 		Stdout: &stdout,
 		Stderr: &stderr,
 	})
@@ -470,8 +471,8 @@ func jsonNumberField(t *testing.T, raw string) float64 {
 func TestRestishRequesterFetchesCompleteJSON(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	t.Setenv("MIDDLEMANCTL_RESTISH_CONFIG_DIR", t.TempDir())
-	t.Setenv("MIDDLEMANCTL_RESTISH_CACHE_DIR", t.TempDir())
+	t.Setenv("MIDDLEMAN_RESTISH_CONFIG_DIR", t.TempDir())
+	t.Setenv("MIDDLEMAN_RESTISH_CACHE_DIR", t.TempDir())
 	longTitle := strings.Repeat("repo-", 1200)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal("/api/v1/repos", r.URL.Path)
@@ -490,8 +491,8 @@ func TestRestishRequesterFetchesCompleteJSON(t *testing.T) {
 func TestRestishRequesterSetsJSONContentTypeForMutations(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	t.Setenv("MIDDLEMANCTL_RESTISH_CONFIG_DIR", t.TempDir())
-	t.Setenv("MIDDLEMANCTL_RESTISH_CACHE_DIR", t.TempDir())
+	t.Setenv("MIDDLEMAN_RESTISH_CONFIG_DIR", t.TempDir())
+	t.Setenv("MIDDLEMAN_RESTISH_CACHE_DIR", t.TempDir())
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(http.MethodPost, r.Method)
 		assert.Equal("application/json", r.Header.Get("Content-Type"))
@@ -509,8 +510,8 @@ func TestRestishRequesterSetsJSONContentTypeForMutations(t *testing.T) {
 func TestRestishRequesterReturnsErrorResponseBody(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	t.Setenv("MIDDLEMANCTL_RESTISH_CONFIG_DIR", t.TempDir())
-	t.Setenv("MIDDLEMANCTL_RESTISH_CACHE_DIR", t.TempDir())
+	t.Setenv("MIDDLEMAN_RESTISH_CONFIG_DIR", t.TempDir())
+	t.Setenv("MIDDLEMAN_RESTISH_CACHE_DIR", t.TempDir())
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)

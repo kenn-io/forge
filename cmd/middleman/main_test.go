@@ -429,6 +429,62 @@ func TestRunCLIConfigReadPortCreatesDefaultConfig(t *testing.T) {
 	assert.Contains(string(content), "port = 8091")
 }
 
+func TestRunCLIDefaultsToServe(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	original := runServer
+	t.Cleanup(func() { runServer = original })
+	var gotPath string
+	runServer = func(configPath string) error {
+		gotPath = configPath
+		return nil
+	}
+
+	var stdout bytes.Buffer
+	err := runCLI(nil, &stdout)
+
+	require.NoError(err)
+	assert.Equal(config.DefaultConfigPath(), gotPath)
+	assert.Empty(stdout.String())
+}
+
+func TestRunCLIServeSubcommandUsesServerRunner(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	original := runServer
+	t.Cleanup(func() { runServer = original })
+	var gotPath string
+	runServer = func(configPath string) error {
+		gotPath = configPath
+		return nil
+	}
+
+	cfgPath := filepath.Join(t.TempDir(), "config.toml")
+	var stdout bytes.Buffer
+	err := runCLI([]string{"serve", "-config", cfgPath}, &stdout)
+
+	require.NoError(err)
+	assert.Equal(cfgPath, gotPath)
+	assert.Empty(stdout.String())
+}
+
+func TestRunCLIControlCommandsDoNotStartServer(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	original := runServer
+	t.Cleanup(func() { runServer = original })
+	runServer = func(string) error {
+		return errors.New("serve should not start")
+	}
+
+	var stdout bytes.Buffer
+	err := runCLI([]string{"--server", "http://middleman.test", "quickstart"}, &stdout)
+
+	require.NoError(err)
+	assert.Contains(stdout.String(), `"api_base_url": "http://middleman.test/api/v1"`)
+	assert.Contains(stdout.String(), "middleman api GET /pulls")
+}
+
 func TestRunCLIPtyOwnerRejectsMissingRequiredFlags(t *testing.T) {
 	var stdout bytes.Buffer
 

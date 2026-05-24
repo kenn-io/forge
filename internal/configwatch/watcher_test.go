@@ -75,31 +75,38 @@ func TestWatcher_FiresAfterDebounce(t *testing.T) {
 
 func TestWatcher_DebouncesBurst(t *testing.T) {
 	assert := assert.New(t)
+	require := require.New(t)
+	const debounce = 250 * time.Millisecond
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
-	require.NoError(t, os.WriteFile(path, []byte("a = 1"), 0o600))
+	require.NoError(os.WriteFile(path, []byte("a = 1"), 0o600))
 
 	var count atomic.Int32
-	w := newTestWatcher(t, path, func() { count.Add(1) })
+	w, err := New(Options{
+		Path:     path,
+		OnChange: func() { count.Add(1) },
+		Debounce: debounce,
+	})
+	require.NoError(err)
 
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	w.Start(ctx)
-	require.NoError(t, w.WaitReady(ctx))
+	require.NoError(w.WaitReady(ctx))
 
 	// Five rapid writes; debounce should coalesce into a single callback.
 	for i := range 5 {
 		content := []byte("a = " + string(rune('0'+i)))
-		require.NoError(t, os.WriteFile(path, content, 0o600))
+		require.NoError(os.WriteFile(path, content, 0o600))
 		time.Sleep(2 * time.Millisecond)
 	}
 
 	waitForCount(t, &count, 1, time.Second)
 
 	// Give the debounce window a chance to lapse so any extra callback
-	// would have fired. The debounce is 25 ms; sleep well beyond that.
-	time.Sleep(100 * time.Millisecond)
+	// would have fired.
+	time.Sleep(2 * debounce)
 	assert.Equal(int32(1), count.Load(),
 		"expected exactly one callback from coalesced burst")
 }

@@ -938,6 +938,11 @@ test.describe("diff view", () => {
 
     // Hunk headers.
     await expectPierreDiffCount(firstFile, diffHunkSeparatorsSelector, 2);
+    await expectPierreDiffFirstText(
+      firstFile,
+      diffHunkSeparatorsSelector,
+      "@@ -10,5 +10,6 @@ func handleRequest",
+    );
 
     // Added lines (+ marker).
     await expectPierreDiffFirstVisible(firstFile, diffAdditionsSelector);

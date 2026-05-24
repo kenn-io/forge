@@ -530,12 +530,12 @@ describe("DiffFile", () => {
   });
 
   it("loads and expands hidden context from a single Pierre expander click", async () => {
-    const oldText = Array.from({ length: 20 }, (_, index) => `shared ${index + 1}`);
+    const oldText = Array.from({ length: 90 }, (_, index) => `shared ${index + 1}`);
     const newText = [...oldText];
     oldText[1] = "old early";
     newText[1] = "new early";
-    oldText[17] = "old late";
-    newText[17] = "new late";
+    oldText[77] = "old late";
+    newText[77] = "new late";
 
     const file = makeFile({
       path: "src/context.ts",
@@ -548,11 +548,11 @@ describe("DiffFile", () => {
 -old early
 +new early
  shared 3
-@@ -17,3 +17,3 @@
- shared 17
+@@ -77,3 +77,3 @@ lateContext
+ shared 77
 -old late
 +new late
- shared 19
+ shared 79
 `,
       hunks: [
         {
@@ -568,15 +568,15 @@ describe("DiffFile", () => {
           ],
         },
         {
-          old_start: 17,
+          old_start: 77,
           old_count: 3,
-          new_start: 17,
+          new_start: 77,
           new_count: 3,
           lines: [
-            { type: "context", content: "shared 17", old_num: 17, new_num: 17 },
-            { type: "delete", content: "old late", old_num: 18 },
-            { type: "add", content: "new late", new_num: 18 },
-            { type: "context", content: "shared 19", old_num: 19, new_num: 19 },
+            { type: "context", content: "shared 77", old_num: 77, new_num: 77 },
+            { type: "delete", content: "old late", old_num: 78 },
+            { type: "add", content: "new late", new_num: 78 },
+            { type: "context", content: "shared 79", old_num: 79, new_num: 79 },
           ],
         },
       ],
@@ -601,6 +601,7 @@ describe("DiffFile", () => {
     await waitFor(() => {
       const text = document.querySelector(".pierre-diff")?.shadowRoot?.textContent ?? "";
       expect(text).toContain("shared 10");
+      expect(text).toContain("@@ -77,3 +77,3 @@ lateContext");
     });
     expect(loadFilePreview).toHaveBeenCalledWith(
       expect.any(String),

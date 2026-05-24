@@ -73,6 +73,9 @@
     themeType,
     expansionLineCount: 40,
     tokenizeMaxLineLength: 2_000,
+    onPostRender: () => {
+      applyHunkHeaderLabels();
+    },
     unsafeCSS: `
       :host {
         display: block;
@@ -213,6 +216,7 @@
     const context = await loadFullContext();
     renderFullContext(context);
     pierreDiff?.expandHunk(hunkIndex, direction, expansionLineCount);
+    applyHunkHeaderLabels();
   }
 
   function renderFullContext(context: { oldFile: FileContents; newFile: FileContents }): void {
@@ -274,19 +278,37 @@
     const labels = root.querySelectorAll<HTMLElement>(
       "[data-separator='line-info'] [data-unmodified-lines]",
     );
+    let nextSeparatorHunkIndex = 0;
     for (const label of labels) {
       const separator = label.closest("[data-separator][data-expand-index]");
-      const hunkIndex = Number(separator?.getAttribute("data-expand-index"));
+      let hunkIndex = Number(separator?.getAttribute("data-expand-index"));
+      if (!Number.isFinite(hunkIndex)) {
+        hunkIndex = nextRenderedSeparatorHunkIndex(pierreFile, nextSeparatorHunkIndex);
+      }
+      nextSeparatorHunkIndex = Math.max(nextSeparatorHunkIndex, hunkIndex + 1);
       const hunkHeader = Number.isFinite(hunkIndex)
         ? pierreFile.hunks[hunkIndex]?.hunkSpecs?.trim()
         : undefined;
       if (!hunkHeader) continue;
 
       const lineInfo = label.textContent?.trim() ?? "";
+      if (lineInfo.startsWith(`${hunkHeader} - `)) continue;
       label.textContent = lineInfo && lineInfo !== hunkHeader
         ? `${hunkHeader} - ${lineInfo}`
         : hunkHeader;
     }
+  }
+
+  function nextRenderedSeparatorHunkIndex(
+    fileDiff: FileDiffMetadata,
+    startIndex: number,
+  ): number {
+    let hunkIndex = startIndex;
+    while (hunkIndex < fileDiff.hunks.length) {
+      if ((fileDiff.hunks[hunkIndex]?.collapsedBefore ?? 0) > 0) return hunkIndex;
+      hunkIndex += 1;
+    }
+    return Number.NaN;
   }
 </script>
 

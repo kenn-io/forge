@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -53,7 +54,41 @@ func (m *Manager) DiffFiles(
 		}
 	}
 	m.markGenerated(ctx, host, clonePath, headSHA, files)
+	SortDiffFiles(files)
 	return files, nil
+}
+
+// SortDiffFiles orders files the same way Git path lists and the Pierre file
+// tree displays them: folders before files at each level, then bytewise path
+// segment order, with old_path as a stable tie-breaker.
+func SortDiffFiles(files []DiffFile) {
+	slices.SortFunc(files, func(a, b DiffFile) int {
+		if cmp := compareDiffFilePaths(a.Path, b.Path); cmp != 0 {
+			return cmp
+		}
+		return compareDiffFilePaths(a.OldPath, b.OldPath)
+	})
+}
+
+func compareDiffFilePaths(left string, right string) int {
+	leftParts := strings.Split(left, "/")
+	rightParts := strings.Split(right, "/")
+	partCount := min(len(leftParts), len(rightParts))
+	for i := range partCount {
+		if leftParts[i] == rightParts[i] {
+			continue
+		}
+		leftIsDir := len(leftParts) > i+1
+		rightIsDir := len(rightParts) > i+1
+		if leftIsDir && !rightIsDir {
+			return -1
+		}
+		if !leftIsDir && rightIsDir {
+			return 1
+		}
+		return strings.Compare(leftParts[i], rightParts[i])
+	}
+	return len(leftParts) - len(rightParts)
 }
 
 type numstatCount struct {
@@ -176,6 +211,7 @@ func (m *Manager) Diff(
 		}
 	}
 	m.markGenerated(ctx, host, clonePath, headSHA, files)
+	SortDiffFiles(files)
 
 	return &DiffResult{
 		WhitespaceOnlyCount: wsCount,

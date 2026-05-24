@@ -156,6 +156,30 @@ function makeLargeDiff(): DiffResult {
   return withServerDiffData({ stale: false, whitespace_only_count: 0, files });
 }
 
+function makeSingleLineFixtureFile(path: string): DiffFixtureFile {
+  return {
+    path,
+    old_path: path,
+    status: "modified",
+    is_binary: false,
+    is_whitespace_only: false,
+    additions: 1,
+    deletions: 0,
+    hunks: [
+      {
+        old_start: 1,
+        old_count: 1,
+        new_start: 1,
+        new_count: 2,
+        lines: [
+          { type: "context", content: "package server", old_num: 1, new_num: 1 },
+          { type: "add", content: "// changed", new_num: 2 },
+        ],
+      },
+    ],
+  };
+}
+
 const largeDiff = makeLargeDiff();
 
 // Stale fixture reuses small diff with stale flag.
@@ -442,7 +466,7 @@ function filesFromDiff(fixture: DiffResult): FilesResult {
   const diff = withServerDiffData(fixture as DiffFixture);
   return {
     stale: diff.stale,
-    files: diff.files.map((f) => ({
+    files: backendOrderedFiles(diff.files).map((f) => ({
       ...f,
       additions: 0,
       deletions: 0,
@@ -451,8 +475,41 @@ function filesFromDiff(fixture: DiffResult): FilesResult {
   };
 }
 
+function backendOrderedFiles<T extends { path: string; old_path?: string }>(
+  files: readonly T[],
+): T[] {
+  return [...files].sort((left, right) => {
+    const pathOrder = compareBackendDiffPaths(left.path, right.path);
+    if (pathOrder !== 0) return pathOrder;
+    return compareBackendDiffPaths(left.old_path ?? "", right.old_path ?? "");
+  });
+}
+
+function compareBackendDiffPaths(left: string, right: string): number {
+  const leftParts = left.split("/");
+  const rightParts = right.split("/");
+  const partCount = Math.min(leftParts.length, rightParts.length);
+  for (let i = 0; i < partCount; i++) {
+    if (leftParts[i] === rightParts[i]) continue;
+    const leftIsDir = leftParts.length > i + 1;
+    const rightIsDir = rightParts.length > i + 1;
+    if (leftIsDir && !rightIsDir) return -1;
+    if (!leftIsDir && rightIsDir) return 1;
+    return leftParts[i]! < rightParts[i]! ? -1 : 1;
+  }
+  return leftParts.length - rightParts.length;
+}
+
+function diffResponseFromFixture(fixture: DiffResult | DiffFixture): DiffResult {
+  const response = withServerDiffData(fixture as DiffFixture);
+  return {
+    ...response,
+    files: backendOrderedFiles(response.files),
+  };
+}
+
 async function mockDiffApi(page: Page, fixture: typeof smallDiff): Promise<void> {
-  const responseFixture = withServerDiffData(fixture as DiffFixture);
+  const responseFixture = diffResponseFromFixture(fixture);
   await page.route("**/api/v1/pulls/github/acme/widgets/1/files", async (route) => {
     await route.fulfill({
       status: 200,
@@ -795,6 +852,29 @@ test.describe("diff view", () => {
     await expect(content).toBeVisible();
   });
 
+  test("more menu collapses and expands all visible diffs", async ({ page }) => {
+    await mockDiffApi(page, smallDiff);
+    await navigateToDiff(page);
+    await waitForDiffLoaded(page);
+
+    await expect(page.locator(".diff-file .file-content")).toHaveCount(4);
+
+    await openDiffFilterMenu(page);
+    await page.getByRole("button", { name: "Collapse all diffs" }).click();
+
+    await expect(page.locator(".diff-file .file-content")).toHaveCount(0);
+    await expect(page.locator(".diff-file .file-header[title='Expand file']"))
+      .toHaveCount(4);
+    await expect(page.getByRole("button", { name: "Expand all diffs" }))
+      .toBeVisible();
+
+    await page.getByRole("button", { name: "Expand all diffs" }).click();
+
+    await expect(page.locator(".diff-file .file-content")).toHaveCount(4);
+    await expect(page.locator(".diff-file .file-header[title='Collapse file']"))
+      .toHaveCount(4);
+  });
+
   test("toolbar keeps file filters inline and moves display settings into the menu", async ({ page }) => {
     await mockDiffApi(page, smallDiff);
     await navigateToDiff(page);
@@ -914,7 +994,7 @@ test.describe("diff view", () => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify(withServerDiffData(smallDiff as DiffFixture)),
+        body: JSON.stringify(diffResponseFromFixture(smallDiff as DiffFixture)),
       });
     });
     await page.route("**/api/v1/pulls/github/acme/widgets/1/file-preview**", async (route) => {
@@ -1011,7 +1091,7 @@ test.describe("diff view", () => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify(withServerDiffData(fixture as DiffFixture)),
+        body: JSON.stringify(diffResponseFromFixture(fixture as DiffFixture)),
       });
     });
 
@@ -1059,6 +1139,32 @@ test.describe("diff view", () => {
     await page.keyboard.press("k");
     await expect(treeFileItem(page, "frontend/src/lib/utils/format.ts"))
       .toHaveAttribute("aria-selected", "true", { timeout: 2_000 });
+  });
+
+  test("rendered diff order matches backend file order and the tree", async ({ page }) => {
+    const orderedDiff: DiffResult = withServerDiffData({
+      stale: false,
+      whitespace_only_count: 0,
+      files: [
+        makeSingleLineFixtureFile("internal/server/config_reload_test.go"),
+        makeSingleLineFixtureFile("internal/server/e2etest/settings_test.go"),
+        makeSingleLineFixtureFile("internal/server/config_reload.go"),
+        makeSingleLineFixtureFile("internal/server/api_types.go"),
+      ],
+    });
+    await mockDiffApi(page, orderedDiff);
+    await navigateToDiff(page);
+    await waitForDiffLoaded(page);
+    await waitForSidebarFilesLoaded(page);
+
+    const expectedFileOrder = [
+      "internal/server/e2etest/settings_test.go",
+      "internal/server/api_types.go",
+      "internal/server/config_reload.go",
+      "internal/server/config_reload_test.go",
+    ];
+    await expect.poll(() => treeFileItemPaths(page)).toEqual(expectedFileOrder);
+    await expect.poll(() => renderedDiffFilePaths(page)).toEqual(expectedFileOrder);
   });
 
   test("stale diff banner is shown when diff is stale", async ({ page }) => {
@@ -1229,7 +1335,7 @@ test.describe("diff view", () => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify(withServerDiffData(largeDiff as DiffFixture)),
+        body: JSON.stringify(diffResponseFromFixture(largeDiff as DiffFixture)),
       });
     });
 
@@ -1267,7 +1373,7 @@ test.describe("diff view", () => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify(withServerDiffData(smallDiff as DiffFixture)),
+        body: JSON.stringify(diffResponseFromFixture(smallDiff as DiffFixture)),
       });
     });
 
@@ -1326,7 +1432,7 @@ test.describe("diff view", () => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify(withServerDiffData(smallDiff as DiffFixture)),
+        body: JSON.stringify(diffResponseFromFixture(smallDiff as DiffFixture)),
       });
     });
     await page.route("**/api/v1/pulls/github/acme/widgets/*/commits", async (route) => {
@@ -1414,7 +1520,7 @@ test.describe("diff view", () => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify(withServerDiffData(fixtureFor(url) as DiffFixture)),
+        body: JSON.stringify(diffResponseFromFixture(fixtureFor(url) as DiffFixture)),
       });
     });
     await page.route("**/api/v1/pulls/github/acme/widgets/1/commits", async (route) => {
@@ -1571,7 +1677,7 @@ test.describe("diff view performance", () => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify(withServerDiffData(fixture as DiffFixture)),
+        body: JSON.stringify(diffResponseFromFixture(fixture as DiffFixture)),
       });
     });
 

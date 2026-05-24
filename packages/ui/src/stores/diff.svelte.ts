@@ -72,30 +72,6 @@ function withVisibleFiles<T extends DiffResult | FilesResult>(
   };
 }
 
-const pathCollator = new Intl.Collator(undefined, {
-  numeric: true,
-  sensitivity: "base",
-});
-
-function compareFilePaths(
-  left: { path: string },
-  right: { path: string },
-): number {
-  const leftParts = left.path.split("/");
-  const rightParts = right.path.split("/");
-  const partCount = Math.min(leftParts.length, rightParts.length);
-  for (let i = 0; i < partCount; i++) {
-    const cmp = pathCollator.compare(leftParts[i]!, rightParts[i]!);
-    if (cmp !== 0) return cmp;
-  }
-  return leftParts.length - rightParts.length
-    || pathCollator.compare(left.path, right.path);
-}
-
-function orderFilesForDisplay<T extends { path: string }>(files: readonly T[]): T[] {
-  return [...files].sort(compareFilePaths);
-}
-
 function apiBaseURL(basePath: string): string {
   const path = `${basePath.replace(/\/$/, "")}/api/v1`;
   if (typeof window !== "undefined") {
@@ -271,12 +247,12 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     if (!list) return null;
     return withVisibleFiles(
       list,
-      orderFilesForDisplay(filterDiffFilesByCategory(list.files, fileCategoryFilter)),
+      filterDiffFilesByCategory(list.files, fileCategoryFilter),
     );
   }
   function getVisibleDiffFiles(): DiffResult["files"] {
     if (!diff) return [];
-    return orderFilesForDisplay(filterDiffFilesByCategory(diff.files ?? [], fileCategoryFilter));
+    return filterDiffFilesByCategory(diff.files ?? [], fileCategoryFilter);
   }
   function getFileCategoryCounts(): DiffFileCategoryCounts {
     return countDiffFilesByCategory(getFileList()?.files ?? []);
@@ -319,6 +295,28 @@ export function createDiffStore(opts?: DiffStoreOptions) {
   ): boolean {
     const key = `${owner}/${name}#${number}`;
     return (collapsedFiles[key] ?? []).includes(filePath);
+  }
+
+  function visibleCollapsibleFilePaths(): string[] {
+    const visibleDiffFiles = getVisibleDiffFiles();
+    const visibleFiles = visibleDiffFiles.length > 0
+      ? visibleDiffFiles
+      : getVisibleFileList()?.files ?? [];
+    return visibleFiles.map((file) => file.path);
+  }
+
+  function currentCollapseKey(): string | null {
+    if (!currentOwner || !currentName || !currentNumber) return null;
+    return `${currentOwner}/${currentName}#${currentNumber}`;
+  }
+
+  function areAllVisibleFilesCollapsed(): boolean {
+    const key = currentCollapseKey();
+    if (!key) return false;
+    const paths = visibleCollapsibleFilePaths();
+    if (paths.length === 0) return false;
+    const current = collapsedFiles[key] ?? [];
+    return paths.every((path) => current.includes(path));
   }
 
   // --- writes ---
@@ -468,6 +466,29 @@ export function createDiffStore(opts?: DiffStoreOptions) {
         [key]: [...current, filePath],
       };
     }
+    saveCollapsedFiles(collapsedFiles);
+  }
+
+  function setAllVisibleFilesCollapsed(nextCollapsed: boolean): void {
+    const key = currentCollapseKey();
+    if (!key) return;
+    const paths = visibleCollapsibleFilePaths();
+    if (paths.length === 0) return;
+
+    let next = collapsedFiles[key] ?? [];
+    if (nextCollapsed) {
+      next = [
+        ...next,
+        ...paths.filter((path) => !next.includes(path)),
+      ];
+    } else {
+      next = next.filter((path) => !paths.includes(path));
+    }
+
+    collapsedFiles = {
+      ...collapsedFiles,
+      [key]: next,
+    };
     saveCollapsedFiles(collapsedFiles);
   }
 
@@ -1071,7 +1092,9 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     setRichPreview,
     setHideWhitespace,
     isFileCollapsed,
+    areAllVisibleFilesCollapsed,
     toggleFileCollapsed,
+    setAllVisibleFilesCollapsed,
     loadDiff,
     loadCommitDiff,
     loadFilePreview,

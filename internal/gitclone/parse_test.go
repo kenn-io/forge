@@ -120,6 +120,34 @@ index abc..def 100644
 	assert.Contains(files[0].Patch, "\\ No newline at end of file\n")
 }
 
+func TestSortDiffFilesUsesBytewisePathOrder(t *testing.T) {
+	assert := assert.New(t)
+
+	files := []DiffFile{
+		{Path: "internal/server/config_reload_test.go"},
+		{Path: "internal/server/e2etest/settings_test.go"},
+		{Path: "internal/server/config_reload.go"},
+		{Path: "internal/server/api_types.go"},
+	}
+
+	SortDiffFiles(files)
+
+	assert.Equal([]string{
+		"internal/server/e2etest/settings_test.go",
+		"internal/server/api_types.go",
+		"internal/server/config_reload.go",
+		"internal/server/config_reload_test.go",
+	}, diffFilePaths(files))
+}
+
+func diffFilePaths(files []DiffFile) []string {
+	paths := make([]string, 0, len(files))
+	for _, file := range files {
+		paths = append(paths, file.Path)
+	}
+	return paths
+}
+
 func TestBuildPatchQuotesControlPaths(t *testing.T) {
 	assert := assert.New(t)
 

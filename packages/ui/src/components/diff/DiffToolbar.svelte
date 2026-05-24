@@ -38,6 +38,10 @@
     diff.getVisibleFileList()?.files.length ?? diff.getVisibleDiffFiles().length,
   );
   const shouldShowFileJump = $derived(showFileJump || visibleFileCount >= 10);
+  const allVisibleFilesCollapsed = $derived(diff.areAllVisibleFilesCollapsed());
+  const collapseAllLabel = $derived(
+    allVisibleFilesCollapsed ? "Expand all diffs" : "Collapse all diffs",
+  );
   let menuOpen = $state(false);
   let compactMenuRef = $state<HTMLDivElement>();
 
@@ -81,6 +85,15 @@
       </div>
     </div>
   {/if}
+  <div class="compact-menu-section">
+    <button
+      class="compact-menu-action"
+      type="button"
+      onclick={() => diff.setAllVisibleFilesCollapsed(!allVisibleFilesCollapsed)}
+    >
+      {collapseAllLabel}
+    </button>
+  </div>
   <div class="compact-menu-section">
     <div class="compact-menu-title">Tab width</div>
     <div class="compact-menu-grid" role="group" aria-label="Tab width">
@@ -354,6 +367,7 @@
   }
 
   .compact-menu-item,
+  .compact-menu-action,
   .compact-switch-row {
     display: flex;
     align-items: center;
@@ -374,6 +388,7 @@
   }
 
   .compact-menu-item:hover,
+  .compact-menu-action:hover,
   .compact-switch-row:hover {
     background: var(--bg-surface-hover);
     color: var(--text-primary);

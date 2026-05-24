@@ -319,16 +319,18 @@ test.describe("workspace tab persistence", () => {
       await expect(alphaDiffFile).toBeVisible();
       await expect(betaDiffFile).toHaveCount(1);
       const rightDiffHost = page.locator(".right-sidebar .pierre-diff").first();
-      const firstDiffLineGutterCount = await rightDiffHost.evaluate((host) => {
-        return host.shadowRoot?.querySelectorAll("[data-gutter] [data-line-type]")
-          .length ?? 0;
-      });
-      expect(firstDiffLineGutterCount).toBeGreaterThan(0);
-      const lineGutterWidth = await rightDiffHost.evaluate((host) => {
-        return host.shadowRoot?.querySelector("[data-gutter]")
-          ?.getBoundingClientRect().width ?? 0;
-      });
-      expect(lineGutterWidth).toBeLessThanOrEqual(56);
+      await expect.poll(async () => {
+        return await rightDiffHost.evaluate((host) => {
+          return host.shadowRoot?.querySelectorAll("[data-gutter] [data-line-type]")
+            .length ?? 0;
+        });
+      }).toBeGreaterThan(0);
+      await expect.poll(async () => {
+        return await rightDiffHost.evaluate((host) => {
+          return host.shadowRoot?.querySelector("[data-gutter]")
+            ?.getBoundingClientRect().width ?? 0;
+        });
+      }).toBeLessThanOrEqual(56);
       const diffToolbar = page.locator(".right-sidebar .diff-toolbar");
       await expect(diffToolbar.locator(".compact-more-btn")).toBeVisible();
       await expect(

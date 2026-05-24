@@ -301,132 +301,121 @@ async function expectPierreDiffFirstText(
 async function expectPierreDarkBackgroundMatchesAppSurface(
   file: ReturnType<Page["locator"]>,
 ) {
-  const colors = await file.locator(".pierre-diff").evaluate((host) => {
-    const sample = document.createElement("div");
-    sample.style.cssText = [
-      "position: fixed",
-      "left: -9999px",
-      "top: -9999px",
-      "width: 1px",
-      "height: 1px",
-      "background: var(--bg-surface)",
-    ].join(";");
-    document.body.append(sample);
-    const appSurface = getComputedStyle(sample).backgroundColor;
-    sample.remove();
+  await expect.poll(async () => {
+    return await file.locator(".pierre-diff").evaluate((host) => {
+      const sample = document.createElement("div");
+      sample.style.cssText = [
+        "position: fixed",
+        "left: -9999px",
+        "top: -9999px",
+        "width: 1px",
+        "height: 1px",
+        "background: var(--bg-surface)",
+      ].join(";");
+      document.body.append(sample);
+      const appSurface = getComputedStyle(sample).backgroundColor;
+      sample.remove();
 
-    const root = host.shadowRoot;
-    const pre = root?.querySelector("pre");
-    const contextLine = root?.querySelector("[data-content] [data-line-type='context']");
-    return {
-      appSurface,
-      hostBackground: getComputedStyle(host).backgroundColor,
-      preBackground: pre instanceof HTMLElement ? getComputedStyle(pre).backgroundColor : "",
-      contextLineBackground: contextLine instanceof HTMLElement
-        ? getComputedStyle(contextLine).backgroundColor
-        : "",
-    };
-  });
-
-  expect(colors.hostBackground).toBe(colors.appSurface);
-  expect(colors.preBackground).toBe(colors.appSurface);
-  expect(colors.contextLineBackground).toBe(colors.appSurface);
+      const root = host.shadowRoot;
+      const pre = root?.querySelector("pre");
+      const contextLine = root?.querySelector("[data-content] [data-line-type='context']");
+      return {
+        host: getComputedStyle(host).backgroundColor === appSurface,
+        pre: pre instanceof HTMLElement && getComputedStyle(pre).backgroundColor === appSurface,
+        context: contextLine instanceof HTMLElement
+          && getComputedStyle(contextLine).backgroundColor === appSurface,
+      };
+    });
+  }).toEqual({ host: true, pre: true, context: true });
 }
 
 async function expectPierreChangeColorsMatchAppTokens(
   file: ReturnType<Page["locator"]>,
   themeType: "dark" | "light",
 ) {
-  const colors = await file.locator(".pierre-diff").evaluate((host, themeType) => {
-    const sample = document.createElement("div");
-    sample.style.cssText = [
-      "position: fixed",
-      "left: -9999px",
-      "top: -9999px",
-      "width: 1px",
-      "height: 1px",
-      "color: var(--accent-green)",
-    ].join(";");
-    document.body.append(sample);
-    const appGreen = getComputedStyle(sample).color;
-    sample.style.background = themeType === "dark"
-      ? "color-mix(in srgb, transparent 76%,"
-        + " color-mix(in srgb, var(--accent-green) 42%, black))"
-      : "color-mix(in srgb, var(--accent-green) 22%, transparent)";
-    const appGreenEmphasis = getComputedStyle(sample).backgroundColor;
-    sample.style.background = "color-mix(in srgb, var(--accent-green) 55%, black)";
-    const oldLightModeDarkGreenLine = getComputedStyle(sample).backgroundColor;
-    sample.style.color = "var(--accent-red)";
-    const appRed = getComputedStyle(sample).color;
-    sample.style.background = themeType === "dark"
-      ? "color-mix(in srgb, transparent 76%,"
-        + " color-mix(in srgb, var(--accent-red) 58%, black))"
-      : "color-mix(in srgb, var(--accent-red) 24%, transparent)";
-    const appRedEmphasis = getComputedStyle(sample).backgroundColor;
-    sample.style.background = "color-mix(in srgb, var(--accent-red) 69%, black)";
-    const oldLightModeDarkRedLine = getComputedStyle(sample).backgroundColor;
-    sample.remove();
+  await expect.poll(async () => {
+    return await file.locator(".pierre-diff").evaluate((host, themeType) => {
+      const sample = document.createElement("div");
+      sample.style.cssText = [
+        "position: fixed",
+        "left: -9999px",
+        "top: -9999px",
+        "width: 1px",
+        "height: 1px",
+        "color: var(--accent-green)",
+      ].join(";");
+      document.body.append(sample);
+      const appGreen = getComputedStyle(sample).color;
+      sample.style.background = themeType === "dark"
+        ? "color-mix(in srgb, transparent 76%,"
+          + " color-mix(in srgb, var(--accent-green) 42%, black))"
+        : "color-mix(in srgb, var(--accent-green) 22%, transparent)";
+      const appGreenEmphasis = getComputedStyle(sample).backgroundColor;
+      sample.style.background = "color-mix(in srgb, var(--accent-green) 55%, black)";
+      const oldLightModeDarkGreenLine = getComputedStyle(sample).backgroundColor;
+      sample.style.color = "var(--accent-red)";
+      const appRed = getComputedStyle(sample).color;
+      sample.style.background = themeType === "dark"
+        ? "color-mix(in srgb, transparent 76%,"
+          + " color-mix(in srgb, var(--accent-red) 58%, black))"
+        : "color-mix(in srgb, var(--accent-red) 24%, transparent)";
+      const appRedEmphasis = getComputedStyle(sample).backgroundColor;
+      sample.style.background = "color-mix(in srgb, var(--accent-red) 69%, black)";
+      const oldLightModeDarkRedLine = getComputedStyle(sample).backgroundColor;
+      sample.remove();
 
-    const root = host.shadowRoot;
-    const additionLine = root?.querySelector(
-      "[data-content] [data-line-type='change-addition']",
-    );
-    const additionNumber = root?.querySelector(
-      "[data-column-number][data-line-type='change-addition']",
-    );
-    const additionSpan = root?.querySelector(
-      "[data-line-type='change-addition'] [data-diff-span]",
-    );
-    const deletionLine = root?.querySelector(
-      "[data-content] [data-line-type='change-deletion']",
-    );
-    const deletionNumber = root?.querySelector(
-      "[data-column-number][data-line-type='change-deletion']",
-    );
-    const deletionSpan = root?.querySelector(
-      "[data-line-type='change-deletion'] [data-diff-span]",
-    );
+      const root = host.shadowRoot;
+      const additionLine = root?.querySelector(
+        "[data-content] [data-line-type='change-addition']",
+      );
+      const additionNumber = root?.querySelector(
+        "[data-column-number][data-line-type='change-addition']",
+      );
+      const additionSpan = root?.querySelector(
+        "[data-line-type='change-addition'] [data-diff-span]",
+      );
+      const deletionLine = root?.querySelector(
+        "[data-content] [data-line-type='change-deletion']",
+      );
+      const deletionNumber = root?.querySelector(
+        "[data-column-number][data-line-type='change-deletion']",
+      );
+      const deletionSpan = root?.querySelector(
+        "[data-line-type='change-deletion'] [data-diff-span]",
+      );
 
-    return {
-      appGreen,
-      appGreenEmphasis,
-      oldLightModeDarkGreenLine,
-      appRed,
-      appRedEmphasis,
-      oldLightModeDarkRedLine,
-      additionLineBackground: additionLine instanceof HTMLElement
+      const additionLineBackground = additionLine instanceof HTMLElement
         ? getComputedStyle(additionLine).backgroundColor
-        : "",
-      additionNumberColor: additionNumber instanceof HTMLElement
-        ? getComputedStyle(additionNumber).color
-        : "",
-      additionBarColor: additionNumber instanceof HTMLElement
-        ? getComputedStyle(additionNumber, "::before").backgroundColor
-        : "",
-      additionSpanBackground: additionSpan instanceof HTMLElement
-        ? getComputedStyle(additionSpan).backgroundColor
-        : "",
-      deletionNumberColor: deletionNumber instanceof HTMLElement
-        ? getComputedStyle(deletionNumber).color
-        : "",
-      deletionLineBackground: deletionLine instanceof HTMLElement
+        : "";
+      const deletionLineBackground = deletionLine instanceof HTMLElement
         ? getComputedStyle(deletionLine).backgroundColor
-        : "",
-      deletionSpanBackground: deletionSpan instanceof HTMLElement
-        ? getComputedStyle(deletionSpan).backgroundColor
-        : "",
-    };
-  }, themeType);
-
-  expect(colors.additionNumberColor).toBe(colors.appGreen);
-  expect(colors.additionBarColor).toBe(colors.appGreen);
-  expect(colors.additionSpanBackground).toBe(colors.appGreenEmphasis);
-  expect(colors.deletionNumberColor).toBe(colors.appRed);
-  expect(colors.deletionSpanBackground).toBe(colors.appRedEmphasis);
-  if (themeType === "light") {
-    expect(colors.additionLineBackground).not.toBe(colors.oldLightModeDarkGreenLine);
-    expect(colors.deletionLineBackground).not.toBe(colors.oldLightModeDarkRedLine);
-  }
+        : "";
+      return {
+        additionNumber: additionNumber instanceof HTMLElement
+          && getComputedStyle(additionNumber).color === appGreen,
+        additionBar: additionNumber instanceof HTMLElement
+          && getComputedStyle(additionNumber, "::before").backgroundColor === appGreen,
+        additionSpan: additionSpan instanceof HTMLElement
+          && getComputedStyle(additionSpan).backgroundColor === appGreenEmphasis,
+        deletionNumber: deletionNumber instanceof HTMLElement
+          && getComputedStyle(deletionNumber).color === appRed,
+        deletionSpan: deletionSpan instanceof HTMLElement
+          && getComputedStyle(deletionSpan).backgroundColor === appRedEmphasis,
+        lightAdditionLineSafe: themeType === "dark"
+          || (additionLineBackground !== "" && additionLineBackground !== oldLightModeDarkGreenLine),
+        lightDeletionLineSafe: themeType === "dark"
+          || (deletionLineBackground !== "" && deletionLineBackground !== oldLightModeDarkRedLine),
+      };
+    }, themeType);
+  }).toEqual({
+    additionNumber: true,
+    additionBar: true,
+    additionSpan: true,
+    deletionNumber: true,
+    deletionSpan: true,
+    lightAdditionLineSafe: true,
+    lightDeletionLineSafe: true,
+  });
 }
 
 function patchLinePrefix(line: DiffLine): string {

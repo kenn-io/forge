@@ -7,7 +7,7 @@
   type TreeGitStatus = NonNullable<FileTreeOptions["gitStatus"]>[number];
 
   interface Props {
-    files: readonly DiffFile[];
+    files: readonly DiffFile[] | null | undefined;
     selectedPath?: string | null;
     ariaLabel?: string;
     onSelect?: (path: string) => void;
@@ -25,9 +25,10 @@
   let renderedTreeKey = "";
   let syncingSelection = false;
 
-  const treePaths = $derived(files.map((file) => file.path));
+  const safeFiles = $derived(files ?? []);
+  const treePaths = $derived(safeFiles.map((file) => file.path));
   const treeGitStatus = $derived(
-    files.map((file): TreeGitStatus => ({
+    safeFiles.map((file): TreeGitStatus => ({
       path: file.path,
       status: file.status === "copied" ? "renamed" : file.status,
     })),

@@ -890,17 +890,24 @@ test.describe("activity split view and detail drawers", () => {
   });
 
   test("PR tab handoff preserves selected Activity PR files tab", async ({ page }) => {
+    const pageErrors: string[] = [];
+    page.on("pageerror", (error) => {
+      pageErrors.push(error.message);
+    });
     await mockDiffForAllPRs(page, tinyDiff);
     await page.goto(
       "/?selected=pr:1&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&selected_tab=files",
     );
     await expect(page.locator(".activity-detail .diff-view")).toBeVisible();
+    await expect(page.locator(".activity-detail .diff-file")).toHaveCount(1);
 
     await page.locator(".view-tab", { hasText: "PRs" }).click();
 
     await expect(page).toHaveURL(
       /\/pulls\/github\/acme\/widgets\/1\/files$/,
     );
+    await expect(page.locator(".diff-file")).toHaveCount(1);
+    expect(pageErrors).toEqual([]);
   });
 
   test("Issues tab handoff preserves selected Activity issue platform host", async ({ page }) => {

@@ -205,6 +205,18 @@ function treeFileItems(pageOrLocator: Page | ReturnType<Page["locator"]>) {
   return pageOrLocator.locator(".diff-file-tree [data-item-type=\"file\"]");
 }
 
+async function treeFileItemPaths(pageOrLocator: Page | ReturnType<Page["locator"]>) {
+  return await treeFileItems(pageOrLocator).evaluateAll((items) =>
+    items.map((item) => item.getAttribute("data-item-path") ?? ""),
+  );
+}
+
+async function renderedDiffFilePaths(pageOrLocator: Page | ReturnType<Page["locator"]>) {
+  return await pageOrLocator.locator(".diff-file").evaluateAll((files) =>
+    files.map((file) => file.getAttribute("data-file-path") ?? ""),
+  );
+}
+
 function treeFileItem(pageOrLocator: Page | ReturnType<Page["locator"]>, path: string) {
   return pageOrLocator.locator(`.diff-file-tree [data-item-path="${cssString(path)}"]`);
 }
@@ -1021,8 +1033,16 @@ test.describe("diff view", () => {
     await waitForDiffLoaded(page);
     await waitForSidebarFilesLoaded(page);
 
-    // The active file follows diff navigation order, not the sorted tree order.
-    await expect(treeFileItem(page, "internal/server/handler.go"))
+    const expectedFileOrder = [
+      "assets/logo.png",
+      "frontend/src/lib/utils/format.ts",
+      "internal/legacy/old_handler.go",
+      "internal/server/handler.go",
+    ];
+    await expect.poll(() => treeFileItemPaths(page)).toEqual(expectedFileOrder);
+    await expect.poll(() => renderedDiffFilePaths(page)).toEqual(expectedFileOrder);
+
+    await expect(treeFileItem(page, "assets/logo.png"))
       .toHaveAttribute("aria-selected", "true");
 
     // Press j to move to next file.
@@ -1086,8 +1106,7 @@ test.describe("diff view", () => {
     await navigateToDiff(page);
     await waitForDiffLoaded(page);
 
-    // Binary file is the 4th file (logo.png).
-    const binaryFile = page.locator(".diff-file").nth(3);
+    const binaryFile = page.locator('[data-file-path="assets/logo.png"]');
     await expect(binaryFile.locator(".binary-notice")).toHaveText("Binary file changed");
   });
 

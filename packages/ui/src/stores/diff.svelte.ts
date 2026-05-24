@@ -72,6 +72,30 @@ function withVisibleFiles<T extends DiffResult | FilesResult>(
   };
 }
 
+const pathCollator = new Intl.Collator(undefined, {
+  numeric: true,
+  sensitivity: "base",
+});
+
+function compareFilePaths(
+  left: { path: string },
+  right: { path: string },
+): number {
+  const leftParts = left.path.split("/");
+  const rightParts = right.path.split("/");
+  const partCount = Math.min(leftParts.length, rightParts.length);
+  for (let i = 0; i < partCount; i++) {
+    const cmp = pathCollator.compare(leftParts[i]!, rightParts[i]!);
+    if (cmp !== 0) return cmp;
+  }
+  return leftParts.length - rightParts.length
+    || pathCollator.compare(left.path, right.path);
+}
+
+function orderFilesForDisplay<T extends { path: string }>(files: readonly T[]): T[] {
+  return [...files].sort(compareFilePaths);
+}
+
 function apiBaseURL(basePath: string): string {
   const path = `${basePath.replace(/\/$/, "")}/api/v1`;
   if (typeof window !== "undefined") {
@@ -247,12 +271,12 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     if (!list) return null;
     return withVisibleFiles(
       list,
-      filterDiffFilesByCategory(list.files, fileCategoryFilter),
+      orderFilesForDisplay(filterDiffFilesByCategory(list.files, fileCategoryFilter)),
     );
   }
   function getVisibleDiffFiles(): DiffResult["files"] {
     if (!diff) return [];
-    return filterDiffFilesByCategory(diff.files ?? [], fileCategoryFilter);
+    return orderFilesForDisplay(filterDiffFilesByCategory(diff.files ?? [], fileCategoryFilter));
   }
   function getFileCategoryCounts(): DiffFileCategoryCounts {
     return countDiffFilesByCategory(getFileList()?.files ?? []);

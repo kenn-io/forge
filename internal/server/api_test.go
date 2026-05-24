@@ -12958,6 +12958,30 @@ func TestAPIGetRepoCommitDiff(t *testing.T) {
 	assert.Equal("content 3", body.Files[0].Hunks[0].Lines[0].Content)
 }
 
+func TestAPIGetRepoCommitDiffRejectsOptionLikeSHA(t *testing.T) {
+	require := require.New(t)
+
+	_, _, _, _, _, srv := setupTestServerWithClonesAndServer(t)
+	clonePath, err := srv.clones.ClonePath("github.com", "acme", "widget")
+	require.NoError(err)
+	configPath := filepath.Join(clonePath, "config")
+	before, err := os.ReadFile(configPath)
+	require.NoError(err)
+
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/api/v1/repo/gh/acme/widget/commits/--output=config/diff",
+		nil,
+	)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	require.Equal(http.StatusBadRequest, rr.Code)
+	after, err := os.ReadFile(configPath)
+	require.NoError(err)
+	require.Equal(before, after)
+}
+
 func TestAPIGetFilePreview_ReturnsHeadContent(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)

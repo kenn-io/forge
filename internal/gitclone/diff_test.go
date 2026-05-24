@@ -184,6 +184,19 @@ func TestDiffFilesEmpty(t *testing.T) {
 	assert.Empty(result.Files)
 }
 
+func TestDiffArgumentBuildersTerminateOptionsBeforeRevisions(t *testing.T) {
+	assert := assert.New(t)
+
+	assert.Contains(
+		strings.Join(diffRawArgs("base", "head", false), " "),
+		"--end-of-options base head",
+	)
+	assert.Contains(
+		strings.Join(diffRawNoRenameArgs("base", "head", false), " "),
+		"--end-of-options base head",
+	)
+}
+
 func getSHA(t *testing.T, dir, ref string) string {
 	t.Helper()
 	cmd := procutil.Command("git", "-C", dir, "rev-parse", ref)

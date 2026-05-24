@@ -210,7 +210,7 @@ func (m *Manager) ParentOf(
 		return "", err
 	}
 	out, err := m.git(ctx, host, dir,
-		"rev-list", "--parents", "-n", "1", sha,
+		"rev-list", "--parents", "-n", "1", "--end-of-options", sha,
 	)
 	if err != nil {
 		return "", fmt.Errorf("parent of %s: %w", sha, err)

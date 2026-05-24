@@ -106,6 +106,22 @@ func TestListCommits_EmptyRange(t *testing.T) {
 	assert.Empty(t, commits)
 }
 
+func TestParentOfRejectsOptionLikeSHA(t *testing.T) {
+	require := require.New(t)
+
+	bare, _, _ := setupCommitTestRepo(t)
+	mgr := New(filepath.Dir(bare), nil)
+	before, err := os.ReadFile(filepath.Join(bare, "config"))
+	require.NoError(err)
+
+	_, err = mgr.ParentOf(t.Context(), "", "", "remote", "--output=config")
+	require.Error(err)
+
+	after, err := os.ReadFile(filepath.Join(bare, "config"))
+	require.NoError(err)
+	require.Equal(before, after)
+}
+
 func TestCommitTimelineSinceTag(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

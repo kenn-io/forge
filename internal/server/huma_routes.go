@@ -930,22 +930,35 @@ func (s *Server) getRepoCommitDiff(
 	}
 
 	host := repoProviderHost(*repo)
-	parent, err := s.clones.ParentOf(ctx, host, repo.Owner, repo.Name, input.SHA)
+	if !isFullGitObjectID(input.SHA) {
+		return nil, problemValidation("path.sha", "commit SHA must be a full object ID")
+	}
+
+	sha, err := s.clones.ResolveCommit(ctx, host, repo.Owner, repo.Name, input.SHA)
 	if err != nil {
 		if errors.Is(err, gitclone.ErrNotFound) {
 			return nil, problemNotFound(CodeNotFound, "diff not available: referenced commit not found", nil)
 		}
-		slog.Error("failed to resolve commit parent", "owner", input.Owner, "name", input.Name, "sha", input.SHA, "err", err)
+		slog.Error("failed to resolve repo commit", "owner", input.Owner, "name", input.Name, "sha", input.SHA, "err", err)
+		return nil, problemUpstream("failed to compute diff", "", "")
+	}
+
+	parent, err := s.clones.ParentOf(ctx, host, repo.Owner, repo.Name, sha)
+	if err != nil {
+		if errors.Is(err, gitclone.ErrNotFound) {
+			return nil, problemNotFound(CodeNotFound, "diff not available: referenced commit not found", nil)
+		}
+		slog.Error("failed to resolve commit parent", "owner", input.Owner, "name", input.Name, "sha", sha, "err", err)
 		return nil, problemUpstream("failed to compute diff", "", "")
 	}
 
 	hideWhitespace := input.Whitespace == "hide"
-	result, err := s.clones.Diff(ctx, host, repo.Owner, repo.Name, parent, input.SHA, hideWhitespace)
+	result, err := s.clones.Diff(ctx, host, repo.Owner, repo.Name, parent, sha, hideWhitespace)
 	if err != nil {
 		if errors.Is(err, gitclone.ErrNotFound) {
 			return nil, problemNotFound(CodeNotFound, "diff not available: referenced commit not found", nil)
 		}
-		slog.Error("failed to compute repo commit diff", "owner", input.Owner, "name", input.Name, "sha", input.SHA, "err", err)
+		slog.Error("failed to compute repo commit diff", "owner", input.Owner, "name", input.Name, "sha", sha, "err", err)
 		return nil, problemUpstream("failed to compute diff", "", "")
 	}
 
@@ -969,6 +982,27 @@ func (s *Server) getRepoCommitDiffOnHost(
 		Whitespace:   input.Whitespace,
 	}
 	return s.getRepoCommitDiff(ctx, &next)
+}
+
+func isFullGitObjectID(value string) bool {
+	switch len(value) {
+	case 40, 64:
+	default:
+		return false
+	}
+	for _, c := range value {
+		if c >= '0' && c <= '9' {
+			continue
+		}
+		if c >= 'a' && c <= 'f' {
+			continue
+		}
+		if c >= 'A' && c <= 'F' {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func (s *Server) buildPullDetailResponse(

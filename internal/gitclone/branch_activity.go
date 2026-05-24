@@ -76,6 +76,19 @@ func (m *Manager) ResolveRef(
 	return m.resolveRefInDir(ctx, host, dir, refName)
 }
 
+// ResolveCommit resolves objectID directly to a commit SHA without branch
+// fallback.
+func (m *Manager) ResolveCommit(
+	ctx context.Context,
+	host, owner, name, objectID string,
+) (string, error) {
+	dir, err := m.ClonePath(host, owner, name)
+	if err != nil {
+		return "", err
+	}
+	return m.resolveRefInDir(ctx, host, dir, objectID)
+}
+
 // IsAncestor reports whether ancestor is reachable from descendant.
 func (m *Manager) IsAncestor(
 	ctx context.Context,

@@ -407,14 +407,14 @@ func TestListActivity(t *testing.T) {
 		assert.Equal([]string{"new branch commit", "new-before -> new-after"}, activityBodies(items))
 	})
 
-	t.Run("caps legacy default branch commit metadata in activity projection", func(t *testing.T) {
+	t.Run("caps oversized default branch commit metadata in activity projection", func(t *testing.T) {
 		assert := Assert.New(t)
 		require := require.New(t)
 		d := openTestDB(t)
 		ctx := t.Context()
 		base := baseTime()
 		repoID := insertTestRepo(t, d, "alice", "alpha")
-		require.NoError(insertLegacyOversizedBranchCommit(ctx, d, repoID, base))
+		require.NoError(insertOversizedBranchCommitRow(ctx, d, repoID, base))
 
 		items, err := d.ListActivity(ctx, ListActivityOpts{Limit: 50})
 		require.NoError(err)
@@ -538,7 +538,7 @@ func TestListActivity(t *testing.T) {
 	_ = prID2
 }
 
-func insertLegacyOversizedBranchCommit(
+func insertOversizedBranchCommitRow(
 	ctx context.Context,
 	d *DB,
 	repoID int64,
@@ -553,7 +553,7 @@ func insertLegacyOversizedBranchCommit(
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		repoID,
 		"main",
-		"legacy-oversized-sha",
+		"oversized-branch-sha",
 		strings.Repeat("a", branchCommitIdentityMaxBytes+20),
 		strings.Repeat("e", branchCommitIdentityMaxBytes+20),
 		committedAt.Add(-time.Minute),

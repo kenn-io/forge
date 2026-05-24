@@ -532,6 +532,12 @@
 
   @container pull-detail (max-width: 640px) {
     .stack-row {
+      grid-template-columns: 38px 18px minmax(0, 1fr) max-content;
+    }
+  }
+
+  @container pull-detail (max-width: 440px) {
+    .stack-row {
       grid-template-columns: 38px 18px minmax(0, 1fr);
     }
 

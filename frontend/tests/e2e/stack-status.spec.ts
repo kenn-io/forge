@@ -337,6 +337,7 @@ async function mockStackedPR(
 }
 
 test("stack status shares the PR detail expandable slot with CI", async ({ page }) => {
+  await page.setViewportSize({ width: 892, height: 998 });
   await mockStackedPR(page);
 
   await page.goto("/pulls/github/acme/widgets/102");
@@ -349,6 +350,13 @@ test("stack status shares the PR detail expandable slot with CI", async ({ page 
   await expect(page.getByText("frontend / svelte-check")).toBeHidden();
   await expect(page.getByText("7 PRs · current 2/7 · downstack CI failure")).toBeVisible();
   await expect(page.getByText("blocked by #101")).toBeVisible();
+
+  const currentRow = page.locator(".stack-row--current");
+  const currentBadgesBox = await currentRow.locator(".stack-badges").boundingBox();
+  const currentMetaBox = await currentRow.locator(".stack-member-meta").boundingBox();
+  expect(currentBadgesBox).not.toBeNull();
+  expect(currentMetaBox).not.toBeNull();
+  expect(currentBadgesBox!.y).toBeLessThan(currentMetaBox!.y);
 
   const stackRows = page.locator(".stack-member-link");
   await expect(stackRows).toHaveText([

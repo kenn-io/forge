@@ -262,6 +262,41 @@ async function expectPierreDiffFirstText(
   }).toContain(text);
 }
 
+async function expectPierreDarkBackgroundMatchesAppSurface(
+  file: ReturnType<Page["locator"]>,
+) {
+  const colors = await file.locator(".pierre-diff").evaluate((host) => {
+    const sample = document.createElement("div");
+    sample.style.cssText = [
+      "position: fixed",
+      "left: -9999px",
+      "top: -9999px",
+      "width: 1px",
+      "height: 1px",
+      "background: var(--bg-surface)",
+    ].join(";");
+    document.body.append(sample);
+    const appSurface = getComputedStyle(sample).backgroundColor;
+    sample.remove();
+
+    const root = host.shadowRoot;
+    const pre = root?.querySelector("pre");
+    const contextLine = root?.querySelector("[data-content] [data-line-type='context']");
+    return {
+      appSurface,
+      hostBackground: getComputedStyle(host).backgroundColor,
+      preBackground: pre instanceof HTMLElement ? getComputedStyle(pre).backgroundColor : "",
+      contextLineBackground: contextLine instanceof HTMLElement
+        ? getComputedStyle(contextLine).backgroundColor
+        : "",
+    };
+  });
+
+  expect(colors.hostBackground).toBe(colors.appSurface);
+  expect(colors.preBackground).toBe(colors.appSurface);
+  expect(colors.contextLineBackground).toBe(colors.appSurface);
+}
+
 function patchLinePrefix(line: DiffLine): string {
   switch (line.type) {
     case "add":
@@ -993,6 +1028,19 @@ test.describe("diff view", () => {
     });
     expect(layout?.codeDisplay).toBe("grid");
     expect(Math.round(layout!.gutterRight)).toBe(Math.round(layout!.contentLeft));
+  });
+
+  test("Pierre dark diff background follows the app surface token", async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem("middleman-theme", "dark");
+    });
+    await mockDiffApi(page, smallDiff);
+    await navigateToDiff(page);
+    await waitForDiffLoaded(page);
+
+    const firstFile = page.locator('[data-file-path="internal/server/handler.go"]');
+    await firstFile.scrollIntoViewIfNeeded();
+    await expectPierreDarkBackgroundMatchesAppSurface(firstFile);
   });
 
   test("fallback file list renders when selected PR is filtered out of sidebar", async ({ page }) => {

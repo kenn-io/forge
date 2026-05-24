@@ -334,6 +334,9 @@ async function mockInlineReviewAPI(
       side: body.range.side,
       line: body.range.line,
       new_line: body.range.new_line,
+      old_line: body.range.old_line,
+      start_line: body.range.start_line,
+      start_side: body.range.start_side,
       line_type: body.range.line_type,
       diff_head_sha: body.range.diff_head_sha,
       created_at: "2026-03-30T14:01:00Z",
@@ -365,7 +368,7 @@ test("adds and publishes an inline draft review comment", async ({ page }) => {
   await page.getByRole("button", { name: "Add comment" }).click();
 
   await expect(page.getByText("1 draft comment")).toBeVisible();
-  await expect(page.getByText("Please cover this line.")).toBeVisible();
+  await expect(page.locator(".inline-draft-comment")).toContainText("Please cover this line.");
   await page.getByRole("button", { name: "Publish review" }).click();
   await expect(page.getByText("1 draft comment")).toBeHidden();
 });
@@ -395,6 +398,26 @@ test("keeps inline composer inside the visible diff pane on long lines", async (
   expect(composerBox!.x + composerBox!.width).toBeLessThanOrEqual(
     scrollBox!.x + scrollBox!.width + 1,
   );
+});
+
+test("shows saved draft comments inline and jumps from the tray", async ({ page }) => {
+  await mockInlineReviewAPI(page);
+
+  await page.goto("/pulls/github/acme/widgets/42/files");
+  await page.getByRole("button", { name: "Comment on new line 1" }).click();
+  await page.getByRole("button", { name: "Comment on new line 2" }).click({
+    modifiers: ["Shift"],
+  });
+  await page.getByPlaceholder("Leave a comment").fill("Please cover both lines.");
+  await page.getByRole("button", { name: "Add comment" }).click();
+
+  const inlineDraft = page.locator(".inline-draft-comment");
+  await expect(inlineDraft).toBeVisible();
+  await expect(inlineDraft).toContainText("Please cover both lines.");
+  await expect(page.locator(".gutter-new.gutter--selected")).toHaveCount(2);
+
+  await page.getByRole("button", { name: "src/main.ts:1-2" }).click();
+  await expect(inlineDraft).toBeFocused();
 });
 
 test("keeps remaining GitLab draft state visible after a partial publish", async ({ page }) => {
@@ -434,7 +457,7 @@ test("keeps remaining GitLab draft state visible after a partial publish", async
   await expect(summary).toHaveValue("");
   await expect(page.locator(".review-warning")).toContainText("Review was partially published");
   await expect(page.getByText("1 draft comment")).toBeVisible();
-  await expect(page.getByText("Still needs follow-up.")).toBeVisible();
+  await expect(page.locator(".inline-draft-comment")).toContainText("Still needs follow-up.");
 });
 
 test("hides inline review controls when provider draft review is unsupported", async ({ page }) => {

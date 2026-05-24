@@ -3,9 +3,15 @@
   import TrashIcon from "@lucide/svelte/icons/trash-2";
   import XIcon from "@lucide/svelte/icons/x";
   import { getStores } from "../../context.js";
+  import type { DiffReviewDraftComment } from "../../stores/diff-review-draft.svelte.js";
   import ActionButton from "../shared/ActionButton.svelte";
   import SelectDropdown from "../shared/SelectDropdown.svelte";
 
+  interface Props {
+    onjump?: ((comment: DiffReviewDraftComment) => void) | undefined;
+  }
+
+  const { onjump }: Props = $props();
   const { diffReviewDraft } = getStores();
 
   let body = $state("");
@@ -39,6 +45,13 @@
     if (option === "approve") return "Approve";
     return "Comment";
   }
+
+  function commentLocation(comment: DiffReviewDraftComment): string {
+    if (comment.start_line != null && comment.start_line !== comment.line) {
+      return `${comment.path}:${comment.start_line}-${comment.line}`;
+    }
+    return `${comment.path}:${comment.line}`;
+  }
 </script>
 
 {#if comments.length > 0}
@@ -60,7 +73,13 @@
       {#each comments as comment (comment.id)}
         <div class="draft-item">
           <div class="draft-meta">
-            <span>{comment.path}:{comment.line}</span>
+            <button
+              class="draft-jump"
+              type="button"
+              onclick={() => onjump?.(comment)}
+            >
+              {commentLocation(comment)}
+            </button>
           </div>
           <p>{comment.body}</p>
           <ActionButton
@@ -162,9 +181,29 @@
   }
 
   .draft-meta {
+    min-width: 0;
     color: var(--text-muted);
     font-family: var(--font-mono);
     font-size: var(--font-size-xs);
+  }
+
+  .draft-jump {
+    max-width: 28ch;
+    padding: 0;
+    border: 0;
+    overflow: hidden;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+
+  .draft-jump:hover {
+    color: var(--accent-blue);
+    text-decoration: underline;
   }
 
   textarea {

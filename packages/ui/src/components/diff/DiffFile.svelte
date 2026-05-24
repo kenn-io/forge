@@ -3,11 +3,17 @@
   import type { DiffFile as DiffFileType, DiffHunk } from "../../api/types.js";
   import { getStores } from "../../context.js";
 
-  const { diff: diffStore } = getStores();
+  const stores = getStores();
+  const diffStore = stores.diff;
+  const diffReviewDraft = stores.diffReviewDraft;
   import { tokenizeLineDual, langFromPath, type DualToken } from "../../utils/highlight.js";
-  import type { DiffReviewLineRange } from "../../stores/diff-review-draft.svelte.js";
+  import type {
+    DiffReviewDraftComment,
+    DiffReviewLineRange,
+  } from "../../stores/diff-review-draft.svelte.js";
   import DiffLineComponent from "./DiffLine.svelte";
   import DiffInlineCommentComposer from "./DiffInlineCommentComposer.svelte";
+  import DiffReviewDraftInlineComment from "./DiffReviewDraftInlineComment.svelte";
   import CollapsedRegion from "./CollapsedRegion.svelte";
   import DiffRichPreview from "./DiffRichPreview.svelte";
   import DiffStats from "../shared/DiffStats.svelte";
@@ -48,6 +54,9 @@
     richPreviewEnabled && richPreview && supportsRichPreview(file.path),
   );
   const richPreviewKey = $derived(`${file.path}:${filePreviewGeneration}`);
+  const fileDraftComments = $derived(
+    diffReviewDraft.getComments().filter((comment) => comment.path === file.path),
+  );
 
   // Track viewport visibility so off-screen files skip expensive tokenization
   // on whitespace toggles and theme switches. Starts false so the initial
@@ -257,6 +266,10 @@
   let selectionAnchor = $state<ReviewLineRef | null>(null);
   let selectedRange = $state<{ start: ReviewLineRef; end: ReviewLineRef } | null>(null);
   let composerRange = $state<DiffReviewLineRange | null>(null);
+  const selectableLineRefs = $derived.by(() => ({
+    left: selectableLines("left"),
+    right: selectableLines("right"),
+  }));
 
   function lineRef(
     line: DiffFileType["hunks"][number]["lines"][number],
@@ -326,7 +339,7 @@
       anchor?.side === side &&
       anchor.hunkIndex === current.hunkIndex
     ) {
-      const refs = selectableLines(side);
+      const refs = selectableLineRefs[side];
       const anchorIndex = refs.findIndex((ref) => ref.order === anchor.order);
       const currentIndex = refs.findIndex((ref) => ref.order === current.order);
       if (anchorIndex !== -1 && currentIndex !== -1) {
@@ -368,6 +381,52 @@
     if (!composerRange || !selectedRange) return false;
     const max = Math.max(selectedRange.start.order, selectedRange.end.order);
     return order === max && lineRef(line, selectedRange.end.side, order, hunkIndex) !== null;
+  }
+
+  function commentSide(comment: DiffReviewDraftComment): ReviewSide {
+    return comment.side.toLowerCase() === "left" ? "left" : "right";
+  }
+
+  function commentStartSide(comment: DiffReviewDraftComment): ReviewSide {
+    return comment.start_side?.toLowerCase() === "left"
+      ? "left"
+      : commentSide(comment);
+  }
+
+  function draftCommentsAfter(
+    line: DiffFileType["hunks"][number]["lines"][number],
+    order: number,
+    hunkIndex: number,
+  ): DiffReviewDraftComment[] {
+    return fileDraftComments.filter((comment) => {
+      const side = commentSide(comment);
+      const ref = lineRef(line, side, order, hunkIndex);
+      return ref?.line === comment.line;
+    });
+  }
+
+  function isInDraftRange(
+    line: DiffFileType["hunks"][number]["lines"][number],
+    side: ReviewSide,
+    order: number,
+    hunkIndex: number,
+  ): boolean {
+    const current = lineRef(line, side, order, hunkIndex);
+    if (!current) return false;
+    return fileDraftComments.some((comment) => {
+      const endSide = commentSide(comment);
+      const startSide = commentStartSide(comment);
+      if (current.side !== endSide || startSide !== endSide) return false;
+      const endRefs = selectableLineRefs[endSide];
+      const endRef = endRefs.find((ref) => ref.line === comment.line);
+      if (!endRef || current.hunkIndex !== endRef.hunkIndex) return false;
+      const startLine = comment.start_line ?? comment.line;
+      const startRef = selectableLineRefs[startSide].find((ref) => ref.line === startLine);
+      if (!startRef || startRef.hunkIndex !== endRef.hunkIndex) return false;
+      const min = Math.min(startRef.order, endRef.order);
+      const max = Math.max(startRef.order, endRef.order);
+      return current.order >= min && current.order <= max;
+    });
   }
 
   function closeComposer(): void {
@@ -449,10 +508,15 @@
                 {...(line.no_newline ? { noNewline: line.no_newline } : {})}
                 tokens={getTokens(hunkIdx, lineIdx)}
                 {reviewEnabled}
-                oldSelected={isSelected(line, "left", order, hunkIdx)}
-                newSelected={isSelected(line, "right", order, hunkIdx)}
+                oldSelected={isSelected(line, "left", order, hunkIdx) || isInDraftRange(line, "left", order, hunkIdx)}
+                newSelected={isSelected(line, "right", order, hunkIdx) || isInDraftRange(line, "right", order, hunkIdx)}
                 onselectside={(side, event) => handleLineSelect(line, side, order, hunkIdx, event)}
               />
+              {#if reviewEnabled}
+                {#each draftCommentsAfter(line, order, hunkIdx) as comment (comment.id)}
+                  <DiffReviewDraftInlineComment {comment} />
+                {/each}
+              {/if}
               {#if reviewEnabled && composerRange && composerAfter(line, order, hunkIdx)}
                 <DiffInlineCommentComposer
                   range={composerRange}

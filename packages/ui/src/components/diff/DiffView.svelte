@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, untrack } from "svelte";
   import { getStores } from "../../context.js";
+  import type { DiffReviewDraftComment } from "../../stores/diff-review-draft.svelte.js";
 
   const stores = getStores();
   const diffStore = stores.diff;
@@ -114,6 +115,22 @@
     // scroll event resumes active file tracking.
     scrollRaf = requestAnimationFrame(() => diffStore.clearScrolling());
     return true;
+  }
+
+  function jumpToDraftComment(comment: DiffReviewDraftComment): void {
+    if (!diffArea) return;
+    const el = diffArea.querySelector(
+      `[data-draft-comment-id="${CSS.escape(comment.id)}"]`,
+    ) as HTMLElement | null;
+    if (!el) {
+      void scrollToFile(comment.path);
+      return;
+    }
+    const areaRect = diffArea.getBoundingClientRect();
+    const elRect = el.getBoundingClientRect();
+    diffArea.scrollTop += elRect.top - areaRect.top - 72;
+    el.focus({ preventScroll: true });
+    scrollRaf = requestAnimationFrame(() => diffStore.clearScrolling());
   }
 
   // Watch for scroll requests from the sidebar file list (via the store).
@@ -242,7 +259,7 @@
             {#if reviewWarning}
               <div class="review-warning">{reviewWarning}</div>
             {/if}
-            <DiffReviewDraftTray />
+            <DiffReviewDraftTray onjump={jumpToDraftComment} />
           {/if}
         </div>
       </div>

@@ -58,6 +58,7 @@ afterAll(() => {
 import DiffFile from "./DiffFile.svelte";
 import type { DiffFile as DiffFileType } from "../../api/types.js";
 import { STORES_KEY } from "../../context.js";
+import type { DiffReviewDraftComment } from "../../stores/diff-review-draft.svelte.js";
 import { createDiffStore } from "../../stores/diff.svelte.js";
 
 function makeFile(overrides: Partial<DiffFileType> = {}): DiffFileType {
@@ -99,14 +100,17 @@ function renderDiffFile(
     diffHeadSHA?: string;
     nativeMultilineRanges?: boolean;
     owner?: string;
+    draftComments?: DiffReviewDraftComment[];
   } = {},
 ) {
   const diff = createDiffStore();
   if (options.richPreview) diff.setRichPreview(true);
   const diffReviewDraft = {
+    getComments: () => options.draftComments ?? [],
     isSubmitting: () => false,
     getError: () => null,
     createComment: () => Promise.resolve(true),
+    deleteComment: () => Promise.resolve(true),
   };
   return render(DiffFile, {
     props: {
@@ -242,6 +246,30 @@ describe("DiffFile", () => {
     const selected = Array.from(document.querySelectorAll(".gutter-new.gutter--selected"));
     expect(selected).toHaveLength(1);
     expect(selected[0]?.textContent?.trim()).toBe("20");
+  });
+
+  it("renders saved draft comments inline at their selected range", () => {
+    renderDiffFile(makeFile(), {
+      reviewEnabled: true,
+      diffHeadSHA: "diff-head",
+      draftComments: [{
+        id: "draft-1",
+        body: "Follow up here",
+        path: "src/foo.ts",
+        side: "right",
+        start_side: "right",
+        start_line: 1,
+        line: 2,
+        new_line: 2,
+        line_type: "add",
+        diff_head_sha: "diff-head",
+        created_at: "2026-03-30T14:01:00Z",
+        updated_at: "2026-03-30T14:01:00Z",
+      }],
+    });
+
+    expect(screen.getByText("Follow up here")).toBeTruthy();
+    expect(document.querySelectorAll(".gutter-new.gutter--selected")).toHaveLength(2);
   });
 
   it("clears an open inline composer when review context changes", async () => {

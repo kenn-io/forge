@@ -134,6 +134,7 @@
         forceRender: true,
         lineAnnotations,
       });
+      applyHunkHeaderLabels();
       installDemandContextHandler();
     }
     pierreDiff.setSelectedLines(selectedRange);
@@ -224,6 +225,7 @@
       lineAnnotations,
     });
     pierreDiff.setSelectedLines(selectedRange);
+    applyHunkHeaderLabels();
   }
 
   async function loadFullContext(): Promise<{ oldFile: FileContents; newFile: FileContents }> {
@@ -263,6 +265,28 @@
       previousOldEnd = hunk.old_start + hunk.old_count;
     }
     return false;
+  }
+
+  function applyHunkHeaderLabels(): void {
+    const root = host?.shadowRoot;
+    if (!root || !pierreFile) return;
+
+    const labels = root.querySelectorAll<HTMLElement>(
+      "[data-separator='line-info'] [data-unmodified-lines]",
+    );
+    for (const label of labels) {
+      const separator = label.closest("[data-separator][data-expand-index]");
+      const hunkIndex = Number(separator?.getAttribute("data-expand-index"));
+      const hunkHeader = Number.isFinite(hunkIndex)
+        ? pierreFile.hunks[hunkIndex]?.hunkSpecs?.trim()
+        : undefined;
+      if (!hunkHeader) continue;
+
+      const lineInfo = label.textContent?.trim() ?? "";
+      label.textContent = lineInfo && lineInfo !== hunkHeader
+        ? `${hunkHeader} - ${lineInfo}`
+        : hunkHeader;
+    }
   }
 </script>
 

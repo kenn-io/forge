@@ -617,4 +617,55 @@ describe("DiffFile", () => {
       "new",
     );
   });
+
+  it("keeps raw hunk headers on Pierre context separators", async () => {
+    const file = makeFile({
+      path: "src/context.ts",
+      old_path: "src/context.ts",
+      patch: `diff --git a/src/context.ts b/src/context.ts
+--- a/src/context.ts
++++ b/src/context.ts
+@@ -1,3 +1,3 @@
+ shared 1
+-old early
++new early
+ shared 3
+@@ -17,3 +17,3 @@ usefulContext
+ shared 17
+-old late
++new late
+ shared 19
+`,
+      hunks: [
+        {
+          old_start: 1,
+          old_count: 3,
+          new_start: 1,
+          new_count: 3,
+          lines: [
+            { type: "context", content: "shared 1", old_num: 1, new_num: 1 },
+            { type: "delete", content: "old early", old_num: 2 },
+            { type: "add", content: "new early", new_num: 2 },
+            { type: "context", content: "shared 3", old_num: 3, new_num: 3 },
+          ],
+        },
+        {
+          old_start: 17,
+          old_count: 3,
+          new_start: 17,
+          new_count: 3,
+          lines: [
+            { type: "context", content: "shared 17", old_num: 17, new_num: 17 },
+            { type: "delete", content: "old late", old_num: 18 },
+            { type: "add", content: "new late", new_num: 18 },
+            { type: "context", content: "shared 19", old_num: 19, new_num: 19 },
+          ],
+        },
+      ],
+    });
+
+    renderDiffFile(file);
+
+    await expectPierreDiffText(/@@ -17,3 \+17,3 @@ usefulContext/);
+  });
 });

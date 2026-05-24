@@ -233,6 +233,44 @@ const multiHunkDiffResponse = {
   ],
 };
 
+const longLineDiffResponse = {
+  stale: false,
+  whitespace_only_count: 0,
+  files: [
+    {
+      path: "internal/github/client.go",
+      old_path: "internal/github/client.go",
+      status: "modified",
+      additions: 1,
+      deletions: 0,
+      is_binary: false,
+      hunks: [
+        {
+          old_start: 1140,
+          old_count: 1,
+          new_start: 1140,
+          new_count: 2,
+          section: "",
+          lines: [
+            {
+              type: "context",
+              old_num: 1140,
+              new_num: 1140,
+              content: "func (c *liveClient) CreateReviewWithComments(ctx context.Context, owner, repo string, number int, event string, body string) (*gh.PullRequestReview, error) {",
+            },
+            {
+              type: "add",
+              old_num: null,
+              new_num: 1141,
+              content: "\treturn c.CreateReviewWithComments(ctx, owner, repo, number, event, body, comments, pullRequestReviewOptions, requestOptions, validationOptions)",
+            },
+          ],
+        },
+      ],
+    },
+  ],
+};
+
 type MockInlineReviewOptions = {
   publishStatus?: "published" | "partially_published";
   remainingDraftComments?: Array<Record<string, unknown>>;
@@ -330,6 +368,33 @@ test("adds and publishes an inline draft review comment", async ({ page }) => {
   await expect(page.getByText("Please cover this line.")).toBeVisible();
   await page.getByRole("button", { name: "Publish review" }).click();
   await expect(page.getByText("1 draft comment")).toBeHidden();
+});
+
+test("keeps inline composer inside the visible diff pane on long lines", async ({ page }) => {
+  await page.setViewportSize({ width: 900, height: 720 });
+  await mockInlineReviewAPI(
+    page,
+    baseCapabilities,
+    "github",
+    "github.com",
+    longLineDiffResponse,
+  );
+
+  await page.goto("/pulls/github/acme/widgets/42/files");
+  await page.getByRole("button", { name: "Comment on new line 1141" }).click();
+
+  const scrollPane = page.locator(".file-content").first();
+  const composer = page.locator(".inline-composer");
+  await expect(composer).toBeVisible();
+
+  const scrollBox = await scrollPane.boundingBox();
+  const composerBox = await composer.boundingBox();
+  expect(scrollBox).not.toBeNull();
+  expect(composerBox).not.toBeNull();
+  expect(composerBox!.x).toBeGreaterThanOrEqual(scrollBox!.x);
+  expect(composerBox!.x + composerBox!.width).toBeLessThanOrEqual(
+    scrollBox!.x + scrollBox!.width + 1,
+  );
 });
 
 test("keeps remaining GitLab draft state visible after a partial publish", async ({ page }) => {

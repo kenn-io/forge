@@ -526,6 +526,7 @@
 
   .file-content {
     overflow-x: auto;
+    container-type: inline-size;
   }
 
   :global(.diff-area--word-wrap) .file-content {

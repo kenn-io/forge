@@ -64,16 +64,37 @@
 
 <style>
   .inline-composer {
+    box-sizing: border-box;
     margin: 6px 12px 8px 116px;
     padding: 8px;
     border: 1px solid var(--border-default);
     border-radius: 6px;
     background: var(--bg-surface);
-    max-width: min(720px, calc(100% - 128px));
+    width: min(720px, calc(100% - 128px));
+    max-width: calc(100% - 128px);
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  @supports (width: 100cqw) {
+    .inline-composer {
+      width: min(720px, calc(100cqw - 128px));
+      max-width: calc(100cqw - 128px);
+    }
+  }
+
+  @container (max-width: 520px) {
+    .inline-composer {
+      margin: 6px 8px 8px;
+      width: calc(100cqw - 16px);
+      max-width: calc(100cqw - 16px);
+    }
   }
 
   textarea {
+    box-sizing: border-box;
     width: 100%;
+    max-width: 100%;
     min-height: 72px;
     resize: vertical;
     padding: 8px;
@@ -94,6 +115,7 @@
   .composer-actions {
     display: flex;
     justify-content: flex-end;
+    flex-wrap: wrap;
     gap: 6px;
     margin-top: 8px;
   }

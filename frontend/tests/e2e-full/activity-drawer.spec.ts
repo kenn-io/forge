@@ -479,9 +479,9 @@ async function expectDiffFileVisibleInScrollArea(
 ): Promise<void> {
   await expect.poll(async () => {
     return await diffArea.evaluate((container, path) => {
-      const file = container.querySelector<HTMLElement>(
-        `[data-file-path="${CSS.escape(path)}"]`,
-      );
+      const file = Array.from(
+        container.querySelectorAll<HTMLElement>("[data-file-path]"),
+      ).find((el) => el.dataset.filePath === path);
       if (!file) {
         return false;
       }

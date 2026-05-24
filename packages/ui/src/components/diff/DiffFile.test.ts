@@ -169,13 +169,15 @@ function renderDiffFile(
     createComment: () => Promise.resolve(true),
     deleteComment: () => Promise.resolve(true),
   };
+  const owner = options.owner ?? uniqueOwner();
   const result = render(DiffFile, {
     props: {
       file,
       provider: "github",
-      owner: options.owner ?? uniqueOwner(),
+      platformHost: "github.com",
+      owner,
       name: "n",
-      repoPath: "o/n",
+      repoPath: `${owner}/n`,
       number: 1,
       ...(options.richPreviewEnabled !== undefined && {
         richPreviewEnabled: options.richPreviewEnabled,

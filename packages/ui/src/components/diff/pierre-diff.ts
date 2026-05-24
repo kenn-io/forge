@@ -19,13 +19,12 @@ export function parsePierreFileDiff(
   if (options.enableDemandContextExpansion) {
     const contents = sparsePatchContents(file);
     return processFile(file.patch, {
-      cacheKey: `middleman:${file.path}`,
       oldFile: contents.oldFile,
       newFile: contents.newFile,
       throwOnError: true,
     });
   }
-  return parsePatchFiles(file.patch, `middleman:${file.path}`, true)[0]?.files[0];
+  return parsePatchFiles(file.patch, undefined, true)[0]?.files[0];
 }
 
 function sparsePatchContents(file: DiffFile): { oldFile: FileContents; newFile: FileContents } {
@@ -42,17 +41,17 @@ function sparsePatchContents(file: DiffFile): { oldFile: FileContents; newFile: 
       }
     }
   }
+  const oldContents = joinSparseLines(oldLines);
+  const newContents = joinSparseLines(newLines);
 
   return {
     oldFile: {
       name: file.old_path || file.path,
-      contents: joinSparseLines(oldLines),
-      cacheKey: `middleman:${file.path}:old:patch`,
+      contents: oldContents,
     },
     newFile: {
       name: file.path,
-      contents: joinSparseLines(newLines),
-      cacheKey: `middleman:${file.path}:new:patch`,
+      contents: newContents,
     },
   };
 }

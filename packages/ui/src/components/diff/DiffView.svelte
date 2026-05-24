@@ -48,7 +48,10 @@
   }: Props = $props();
 
   let diffArea: HTMLDivElement | undefined = $state();
-  let scrollRaf = 0;
+  let scrollClearRaf = 0;
+  let scrollTargetRaf = 0;
+  let scrollTargetRun = 0;
+  let scrollingToTarget: DiffScrollTarget | null = null;
 
   onMount(() => {
     if (loadOnMount) {
@@ -62,7 +65,9 @@
     }
 
     return () => {
-      cancelAnimationFrame(scrollRaf);
+      scrollTargetRun += 1;
+      cancelAnimationFrame(scrollClearRaf);
+      cancelAnimationFrame(scrollTargetRaf);
       diffStore.clearDiff();
       diffReviewDraft?.clear();
     };
@@ -112,18 +117,43 @@
     diffArea.scrollTop += elRect.top - areaRect.top - offset;
   }
 
+  function diffFileElement(path: string): HTMLElement | null {
+    if (!diffArea) return null;
+    for (const el of diffArea.querySelectorAll<HTMLElement>("[data-file-path]")) {
+      if (el.dataset.filePath === path) return el;
+    }
+    return null;
+  }
+
+  function isFileVisible(path: string): boolean {
+    if (!diffArea) return false;
+    const el = diffFileElement(path);
+    if (!el) return false;
+    const areaRect = diffArea.getBoundingClientRect();
+    const elRect = el.getBoundingClientRect();
+    return elRect.bottom > areaRect.top && elRect.top < areaRect.bottom;
+  }
+
   function scrollToFile(path: string): boolean {
     if (!diffArea) return false;
-    const el = diffArea.querySelector(`[data-file-path="${CSS.escape(path)}"]`);
+    const el = diffFileElement(path);
     if (el) {
-      scrollWithinDiffArea(el);
+      const areaRect = diffArea.getBoundingClientRect();
+      const elRect = el.getBoundingClientRect();
+      if (areaRect.height <= 0 || elRect.height <= 0) {
+        return false;
+      }
+      diffArea.scrollTop += elRect.top - areaRect.top;
     } else {
       return false;
     }
+    return isFileVisible(path);
+  }
+
+  function finishProgrammaticScroll(): void {
     // Clear the scrolling flag after the instant scroll so the next user-initiated
     // scroll event resumes active file tracking.
-    scrollRaf = requestAnimationFrame(() => diffStore.clearScrolling());
-    return true;
+    scrollClearRaf = requestAnimationFrame(() => diffStore.clearScrolling());
   }
 
   function scrollToTarget(target: DiffScrollTarget): boolean {
@@ -138,7 +168,6 @@
 
     scrollWithinDiffArea(lineEl, 72);
     lineEl.focus({ preventScroll: true });
-    scrollRaf = requestAnimationFrame(() => diffStore.clearScrolling());
     return true;
   }
 
@@ -155,7 +184,7 @@
     const elRect = el.getBoundingClientRect();
     diffArea.scrollTop += elRect.top - areaRect.top - 72;
     el.focus({ preventScroll: true });
-    scrollRaf = requestAnimationFrame(() => diffStore.clearScrolling());
+    finishProgrammaticScroll();
   }
 
   // Watch for scroll requests from the sidebar file list (via the store).
@@ -163,17 +192,60 @@
   // so the request is not lost if the user clicks a file before diff renders.
   $effect(() => {
     const target = diffStore.getScrollTarget();
+    if (!target) {
+      scrollingToTarget = null;
+      return;
+    }
     if (target && diffArea && diff) {
-      void scrollToTargetAfterDom(target);
+      if (scrollingToTarget && sameScrollTarget(scrollingToTarget, target)) return;
+      scrollingToTarget = target;
+      const run = scrollTargetRun + 1;
+      scrollTargetRun = run;
+      void scrollToTargetAfterDom(target, run);
     }
   });
 
-  async function scrollToTargetAfterDom(target: DiffScrollTarget): Promise<void> {
+  async function scrollToTargetAfterDom(
+    target: DiffScrollTarget,
+    run: number,
+  ): Promise<void> {
     await tick();
-    if (!sameScrollTarget(diffStore.getScrollTarget(), target)) return;
-    if (scrollToTarget(target)) {
-      diffStore.consumeScrollTarget();
+    if (
+      scrollTargetRun !== run ||
+      !sameScrollTarget(diffStore.getScrollTarget(), target)
+    ) return;
+
+    let visibleFrames = 0;
+    for (let attempt = 0; attempt < 240; attempt += 1) {
+      await nextAnimationFrame();
+      if (
+        scrollTargetRun !== run ||
+        !sameScrollTarget(diffStore.getScrollTarget(), target)
+      ) return;
+      if (scrollToTarget(target)) {
+        visibleFrames += 1;
+      } else {
+        visibleFrames = 0;
+      }
+      if (visibleFrames >= 45) {
+        diffStore.consumeScrollTarget();
+        scrollingToTarget = null;
+        finishProgrammaticScroll();
+        return;
+      }
     }
+    if (scrollTargetRun === run) {
+      scrollingToTarget = null;
+    }
+  }
+
+  function nextAnimationFrame(): Promise<void> {
+    return new Promise((resolve) => {
+      scrollTargetRaf = requestAnimationFrame(() => {
+        scrollTargetRaf = 0;
+        resolve();
+      });
+    });
   }
 
   function sameScrollTarget(
@@ -196,7 +268,7 @@
 
     let current: string | null = null;
     for (const file of visibleFiles) {
-      const el = diffArea.querySelector(`[data-file-path="${CSS.escape(file.path)}"]`);
+      const el = diffFileElement(file.path);
       if (!el) continue;
       const elRect = el.getBoundingClientRect();
       if (elRect.top <= threshold) {

@@ -82,8 +82,11 @@ function makeDiffStore(
 function renderDiffView(diff: DiffStore) {
   return render(DiffView, {
     props: {
+      provider: "github",
+      platformHost: "github.com",
       owner: "acme",
       name: "widgets",
+      repoPath: "acme/widgets",
       number: 1,
       loadOnMount: false,
     },
@@ -143,15 +146,17 @@ describe("DiffView", () => {
         this instanceof HTMLElement &&
         this.dataset.filePath === "b.ts"
       ) {
+        const diffArea = document.querySelector(".diff-area") as HTMLDivElement;
+        const top = 460 - diffArea.scrollTop;
         return {
-          top: 460,
-          bottom: 500,
+          top,
+          bottom: top + 40,
           left: 0,
           right: 500,
           width: 500,
           height: 40,
           x: 0,
-          y: 460,
+          y: top,
           toJSON: () => ({}),
         } as DOMRect;
       }
@@ -182,6 +187,87 @@ describe("DiffView", () => {
       });
     } finally {
       Element.prototype.scrollIntoView = originalScrollIntoView;
+      Element.prototype.getBoundingClientRect = originalGetBoundingClientRect;
+    }
+  });
+
+  it("keeps a scroll target pending until the file has layout", async () => {
+    const consumeScrollTarget = vi.fn();
+    const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
+    let targetMeasurements = 0;
+
+    Element.prototype.getBoundingClientRect = function () {
+      if (this instanceof HTMLElement && this.classList.contains("diff-area")) {
+        return {
+          top: 100,
+          bottom: 500,
+          left: 0,
+          right: 500,
+          width: 500,
+          height: 400,
+          x: 0,
+          y: 100,
+          toJSON: () => ({}),
+        } as DOMRect;
+      }
+      if (
+        this instanceof HTMLElement &&
+        this.dataset.filePath === "b.ts"
+      ) {
+        targetMeasurements += 1;
+        if (targetMeasurements === 1) {
+          return {
+            top: 0,
+            bottom: 0,
+            left: 0,
+            right: 0,
+            width: 0,
+            height: 0,
+            x: 0,
+            y: 0,
+            toJSON: () => ({}),
+          } as DOMRect;
+        }
+        const diffArea = document.querySelector(".diff-area") as HTMLDivElement;
+        const top = 460 - diffArea.scrollTop;
+        return {
+          top,
+          bottom: top + 40,
+          left: 0,
+          right: 500,
+          width: 500,
+          height: 40,
+          x: 0,
+          y: top,
+          toJSON: () => ({}),
+        } as DOMRect;
+      }
+      return originalGetBoundingClientRect.call(this);
+    };
+
+    try {
+      const files = [makeFile("a.ts"), makeFile("b.ts")];
+      const result: DiffResult = {
+        stale: false,
+        whitespace_only_count: 0,
+        files,
+      };
+      const diff = makeDiffStore({
+        getDiff: () => result,
+        getVisibleDiffFiles: () => files,
+        getScrollTarget: () => "b.ts",
+        consumeScrollTarget,
+      });
+
+      const { container } = renderDiffView(diff);
+
+      const diffArea = container.querySelector(".diff-area") as HTMLDivElement;
+      await waitFor(() => {
+        expect(diffArea.scrollTop).toBe(360);
+        expect(consumeScrollTarget).toHaveBeenCalled();
+        expect(targetMeasurements).toBeGreaterThan(1);
+      });
+    } finally {
       Element.prototype.getBoundingClientRect = originalGetBoundingClientRect;
     }
   });

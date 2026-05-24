@@ -320,12 +320,10 @@
       oldFile: {
         name: file.old_path || file.path,
         contents: oldContents,
-        cacheKey: `middleman:${file.path}:old`,
       },
       newFile: {
         name: file.path,
         contents: newContents,
-        cacheKey: `middleman:${file.path}:new`,
       },
     };
   }

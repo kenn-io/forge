@@ -136,9 +136,10 @@
     if (typeof IntersectionObserver === "undefined") {
       inViewport = true;
     } else if (fileEl) {
+      const root = fileEl.closest(".diff-area");
       observer = new IntersectionObserver(
         (entries) => { inViewport = entries[0]!.isIntersecting; },
-        { rootMargin: "200px 0px" },
+        { root, rootMargin: "600px 0px" },
       );
       observer.observe(fileEl);
     }

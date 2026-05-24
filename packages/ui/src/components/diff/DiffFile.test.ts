@@ -250,28 +250,6 @@ describe("DiffFile", () => {
     }
   });
 
-  it("eventually renders when viewport observation never reports visibility", async () => {
-    const visibleObserver = (globalThis as GlobalWithIO).IntersectionObserver;
-    class PendingIntersectionObserverStub {
-      root: Element | null = null;
-      rootMargin = "";
-      thresholds: readonly number[] = [];
-      observe(): void {}
-      unobserve(): void {}
-      disconnect(): void {}
-      takeRecords(): IntersectionObserverEntry[] { return []; }
-    }
-    (globalThis as GlobalWithIO).IntersectionObserver = PendingIntersectionObserverStub;
-
-    try {
-      renderDiffFile(makeFile());
-
-      await expectPierreDiffText(/old linenew line/);
-    } finally {
-      (globalThis as GlobalWithIO).IntersectionObserver = visibleObserver;
-    }
-  });
-
   it("shows unified diff content when rich preview is disabled", async () => {
     renderDiffFile(makeFile({ path: "README.md", old_path: "README.md" }), {
       richPreview: true,

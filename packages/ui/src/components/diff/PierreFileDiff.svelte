@@ -47,7 +47,6 @@
   let rendered = $state(false);
   let renderedFileKey = "";
   let renderAttemptKey = "";
-  let allowBackgroundRender = $state(false);
 
   const fileKey = $derived(`${file.path}\0${file.old_path}\0${file.patch}`);
   const pierreFile = $derived.by<FileDiffMetadata | undefined>(() => {
@@ -127,9 +126,6 @@
 
   onMount(() => {
     let themeObserver: MutationObserver | undefined;
-    const backgroundRenderTimer = window.setTimeout(() => {
-      allowBackgroundRender = true;
-    }, 250);
     if (typeof MutationObserver !== "undefined") {
       themeObserver = new MutationObserver(() => {
         themeType = appThemeType();
@@ -140,7 +136,6 @@
     }
 
     return () => {
-      window.clearTimeout(backgroundRenderTimer);
       themeObserver?.disconnect();
       removeDemandContextHandler();
       contextLoadPromise = undefined;
@@ -161,7 +156,7 @@
   });
 
   $effect(() => {
-    if (!host || !(active || allowBackgroundRender) || !pierreFile) return;
+    if (!host || !active || !pierreFile) return;
     pierreDiff ??= new FileDiff<unknown>(pierreOptions);
     pierreDiff.setOptions(pierreOptions);
     const nextRenderAttemptKey = [

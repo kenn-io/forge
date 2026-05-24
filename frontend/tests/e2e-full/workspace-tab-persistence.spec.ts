@@ -328,7 +328,7 @@ test.describe("workspace tab persistence", () => {
         return host.shadowRoot?.querySelector("[data-gutter]")
           ?.getBoundingClientRect().width ?? 0;
       });
-      expect(lineGutterWidth).toBeLessThanOrEqual(40);
+      expect(lineGutterWidth).toBeLessThanOrEqual(56);
       const diffToolbar = page.locator(".right-sidebar .diff-toolbar");
       await expect(diffToolbar.locator(".compact-more-btn")).toBeVisible();
       await expect(

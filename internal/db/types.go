@@ -130,6 +130,7 @@ type BranchCommit struct {
 	CommitterEmail string
 	CommittedAt    time.Time
 	Subject        string
+	ObservedOrder  int64
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
 }

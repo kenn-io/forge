@@ -200,6 +200,10 @@ func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
 	s.cfg.Agents = cloneConfigAgents(newCfg.Agents)
 
 	s.syncer.SetRepos(resolved)
+	s.syncer.SetBranchActivityLimits(
+		newCfg.BranchActivityRetention(),
+		newCfg.Activity.DefaultBranchMaxCommits,
+	)
 
 	s.refreshRuntimeTargetsLocked()
 

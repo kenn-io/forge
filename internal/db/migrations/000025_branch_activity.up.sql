@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS middleman_branch_commits (
     committer_email TEXT NOT NULL DEFAULT '',
     committed_at    DATETIME NOT NULL,
     subject         TEXT NOT NULL DEFAULT '',
+    observed_order  INTEGER NOT NULL DEFAULT 0,
     created_at      DATETIME NOT NULL DEFAULT (datetime('now')),
     updated_at      DATETIME NOT NULL DEFAULT (datetime('now'))
 );
@@ -17,9 +18,9 @@ CREATE TABLE IF NOT EXISTS middleman_branch_commits (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_branch_commits_repo_branch_sha
     ON middleman_branch_commits(repo_id, branch_name, commit_sha);
 CREATE INDEX IF NOT EXISTS idx_branch_commits_repo_committed
-    ON middleman_branch_commits(repo_id, committed_at DESC);
+    ON middleman_branch_commits(repo_id, committed_at DESC, observed_order DESC);
 CREATE INDEX IF NOT EXISTS idx_branch_commits_committed
-    ON middleman_branch_commits(committed_at DESC);
+    ON middleman_branch_commits(committed_at DESC, observed_order DESC);
 
 CREATE TABLE IF NOT EXISTS middleman_branch_tips (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,

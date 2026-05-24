@@ -211,6 +211,21 @@ view_mode = "flat"
 time_range = "30d"
 `
 
+const validReloadConfigChangedBranchActivityLimits = `
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "widget"
+
+[activity]
+default_branch_retention_days = 14
+default_branch_max_commits = 2
+`
+
 const validReloadConfigRestartRequired = `
 sync_interval = "10m"
 github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
@@ -255,6 +270,28 @@ func TestConfigReload_WatcherFiresOnInPlaceEdit(t *testing.T) {
 	srv.cfgMu.Unlock()
 	assert.Equal("flat", gotActivity.ViewMode)
 	assert.Equal("30d", gotActivity.TimeRange)
+}
+
+func TestConfigReload_UpdatesBranchActivityLimits(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	srv, _, cfgPath := setupTestServerWithConfigContent(
+		t, validReloadConfig, &mockGH{},
+	)
+	waitForConfigWatcher(t, srv, 2*time.Second)
+	stream := streamConfigEvents(t, srv)
+	defer stream.Close()
+
+	writeConfigToml(t, cfgPath, validReloadConfigChangedBranchActivityLimits)
+
+	ev := waitForConfigEvent(t, stream, 2*time.Second)
+	require.True(ev.Valid)
+	assert.False(ev.RestartRequired)
+
+	retention, maxCommits := srv.syncer.BranchActivityLimits()
+	assert.Equal(14*24*time.Hour, retention)
+	assert.Equal(2, maxCommits)
 }
 
 func TestConfigReload_WatcherFiresOnAtomicRename(t *testing.T) {

@@ -13250,6 +13250,100 @@ func TestAPIListActivityReturnsDefaultBranchActivity(t *testing.T) {
 	assert.Zero(commit["item_number"])
 }
 
+func TestAPIListActivityReflectsConfiguredDefaultBranchCommitCap(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	dir := t.TempDir()
+	remote := filepath.Join(dir, "remote.git")
+	work := filepath.Join(dir, "work")
+	runGit(t, dir, "init", "--bare", "--initial-branch=main", remote)
+	runGit(t, dir, "clone", remote, work)
+	runGit(t, work, "config", "user.email", "alice@example.com")
+	runGit(t, work, "config", "user.name", "Alice")
+
+	shas := map[string]string{}
+	for _, subject := range []string{"oldest", "third", "second", "newest"} {
+		require.NoError(os.WriteFile(
+			filepath.Join(work, subject+".txt"),
+			[]byte(subject+"\n"),
+			0o644,
+		))
+		runGit(t, work, "add", ".")
+		runGit(t, work, "commit", "-m", subject)
+		shas[subject] = testGitSHA(t, work, "HEAD")
+	}
+	runGit(t, work, "push", "origin", "main")
+
+	database := dbtest.Open(t)
+	clones := gitclone.New(filepath.Join(dir, "clones"), nil)
+	repoRef := platform.RepoRef{
+		Platform:           platform.KindGitLab,
+		Host:               "gitlab.example.com",
+		Owner:              "group",
+		Name:               "project",
+		RepoPath:           "group/project",
+		PlatformExternalID: "gid://gitlab/Project/branch-activity-cap",
+		CloneURL:           remote,
+		DefaultBranch:      "main",
+	}
+	provider := &apiTestGitLabProvider{ref: repoRef}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	tracked := []ghclient.RepoRef{{
+		Platform:           platform.KindGitLab,
+		PlatformHost:       repoRef.Host,
+		Owner:              repoRef.Owner,
+		Name:               repoRef.Name,
+		RepoPath:           repoRef.RepoPath,
+		PlatformExternalID: repoRef.PlatformExternalID,
+		CloneURL:           repoRef.CloneURL,
+		DefaultBranch:      repoRef.DefaultBranch,
+	}}
+	syncer := ghclient.NewSyncerWithRegistry(
+		registry, database, clones, tracked, time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	cfg := &config.Config{Activity: config.Activity{
+		DefaultBranchRetentionDays: 90,
+		DefaultBranchMaxCommits:    2,
+	}}
+	syncer.SetBranchActivityLimits(
+		cfg.BranchActivityRetention(),
+		cfg.Activity.DefaultBranchMaxCommits,
+	)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{Clones: clones})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	client := setupTestClient(t, srv)
+
+	syncer.RunOnce(ctx)
+
+	types := []string{"default_branch_commit"}
+	dbItems, err := database.ListActivity(ctx, db.ListActivityOpts{
+		Limit: 10,
+		Types: types,
+	})
+	require.NoError(err)
+	require.Len(dbItems, 2)
+	gotPersisted := []string{dbItems[0].CommitSHA, dbItems[1].CommitSHA}
+	assert.ElementsMatch([]string{shas["newest"], shas["second"]}, gotPersisted)
+
+	since := time.Now().UTC().Add(-24 * time.Hour).Format(time.RFC3339)
+	resp, err := client.HTTP.ListActivityWithResponse(
+		ctx, &generated.ListActivityParams{Since: &since, Types: &types},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.NotNil(resp.JSON200.Items)
+	require.Len(*resp.JSON200.Items, 2)
+	gotAPI := []string{
+		*(*resp.JSON200.Items)[0].CommitSha,
+		*(*resp.JSON200.Items)[1].CommitSha,
+	}
+	assert.ElementsMatch([]string{shas["newest"], shas["second"]}, gotAPI)
+}
+
 func TestAPIListActivityReturnsProviderCompareURLsForDefaultBranchForcePushes(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

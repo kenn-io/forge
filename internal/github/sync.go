@@ -1200,6 +1200,12 @@ func (s *Syncer) branchActivityLimits() (time.Duration, int) {
 	return retention, maxCommits
 }
 
+// BranchActivityLimits reports the configured default-branch activity
+// retention and per-branch commit cap.
+func (s *Syncer) BranchActivityLimits() (time.Duration, int) {
+	return s.branchActivityLimits()
+}
+
 // SetOnStatusChange registers a callback invoked whenever the
 // sync status transitions (start, per-repo progress, rate-limit
 // wait, completion). Used by the server to broadcast live sync

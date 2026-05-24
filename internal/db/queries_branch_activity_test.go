@@ -314,6 +314,41 @@ func TestBranchActivityPersistence(t *testing.T) {
 		assert.Contains(secondRows, "main/second-main-sha-3")
 		assert.Contains(secondRows, "main/second-main-sha-2")
 	})
+
+	t.Run("cap preserves git log order for same timestamp commits", func(t *testing.T) {
+		assert := Assert.New(t)
+		require := require.New(t)
+		d := openTestDB(t)
+		ctx := t.Context()
+		base := baseTime()
+		repoID := insertTestRepo(t, d, "alice", "alpha")
+
+		var commits []BranchCommit
+		for _, sha := range []string{"newest", "second", "third", "oldest"} {
+			commits = append(commits, BranchCommit{
+				RepoID:         repoID,
+				BranchName:     "main",
+				CommitSHA:      sha,
+				AuthorName:     "Alice",
+				AuthorEmail:    "alice@example.com",
+				AuthoredAt:     base,
+				CommitterName:  "Alice",
+				CommitterEmail: "alice@example.com",
+				CommittedAt:    base,
+				Subject:        sha,
+			})
+		}
+		require.NoError(d.UpsertBranchCommits(ctx, commits))
+
+		require.NoError(d.PruneBranchActivity(ctx, base.Add(-24*time.Hour), 2))
+
+		rows := loadTestBranchCommits(t, d, repoID)
+		require.Len(rows, 2)
+		assert.Contains(rows, "newest")
+		assert.Contains(rows, "second")
+		assert.NotContains(rows, "third")
+		assert.NotContains(rows, "oldest")
+	})
 }
 
 func loadTestBranchCommits(

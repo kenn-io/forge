@@ -829,7 +829,7 @@ func TestOpenInitializesBranchActivitySchema(t *testing.T) {
 	t.Cleanup(func() { require.NoError(d.Close()) })
 
 	for table, columns := range map[string][]string{
-		"middleman_branch_commits":      {"created_at", "updated_at"},
+		"middleman_branch_commits":      {"observed_order", "created_at", "updated_at"},
 		"middleman_branch_tips":         {"created_at", "updated_at"},
 		"middleman_branch_force_pushes": {"before_observed_at", "created_at"},
 	} {

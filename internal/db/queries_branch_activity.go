@@ -16,13 +16,14 @@ func (d *DB) UpsertBranchCommits(
 		return nil
 	}
 	return d.Tx(ctx, func(tx *sql.Tx) error {
+		observedBase := time.Now().UTC().UnixNano()
 		stmt, err := tx.PrepareContext(ctx, `
 			INSERT INTO middleman_branch_commits (
 			    repo_id, branch_name, commit_sha, author_name, author_email,
 			    authored_at, committer_name, committer_email, committed_at,
-			    subject
+			    subject, observed_order
 			)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(repo_id, branch_name, commit_sha) DO UPDATE SET
 			    author_name     = excluded.author_name,
 			    author_email    = excluded.author_email,
@@ -31,6 +32,7 @@ func (d *DB) UpsertBranchCommits(
 			    committer_email = excluded.committer_email,
 			    committed_at    = excluded.committed_at,
 			    subject         = excluded.subject,
+			    observed_order  = excluded.observed_order,
 			    updated_at      = datetime('now')`)
 		if err != nil {
 			return fmt.Errorf("prepare upsert branch commits: %w", err)
@@ -40,6 +42,9 @@ func (d *DB) UpsertBranchCommits(
 		for i := range commits {
 			commit := &commits[i]
 			canonicalizeBranchCommitTimestamps(commit)
+			if commit.ObservedOrder == 0 {
+				commit.ObservedOrder = observedBase - int64(i)
+			}
 			if _, err := stmt.ExecContext(ctx,
 				commit.RepoID,
 				commit.BranchName,
@@ -51,6 +56,7 @@ func (d *DB) UpsertBranchCommits(
 				commit.CommitterEmail,
 				commit.CommittedAt,
 				commit.Subject,
+				commit.ObservedOrder,
 			); err != nil {
 				return fmt.Errorf(
 					"upsert branch commit (repo_id=%d sha=%s): %w",
@@ -202,7 +208,7 @@ func (d *DB) PruneBranchActivity(
 				        SELECT id,
 				               ROW_NUMBER() OVER (
 				                   PARTITION BY repo_id, branch_name
-				                   ORDER BY committed_at DESC, id DESC
+				                   ORDER BY committed_at DESC, observed_order DESC, id DESC
 				               ) AS rn
 				        FROM middleman_branch_commits
 				    )

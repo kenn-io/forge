@@ -202,6 +202,43 @@ const hunklessTextDiff: DiffResult = withServerDiffData({
   ],
 });
 
+const oversizedSparseDiff: DiffResult = withServerDiffData({
+  stale: false,
+  whitespace_only_count: 0,
+  files: [
+    {
+      path: "src/huge-context.ts",
+      old_path: "src/huge-context.ts",
+      status: "modified",
+      is_binary: false,
+      is_whitespace_only: false,
+      additions: 1,
+      deletions: 0,
+      hunks: [
+        {
+          old_start: 1_000_000,
+          old_count: 1,
+          new_start: 1_000_000,
+          new_count: 2,
+          lines: [
+            {
+              type: "context",
+              content: "export const distant = true;",
+              old_num: 1_000_000,
+              new_num: 1_000_000,
+            },
+            {
+              type: "add",
+              content: "export const changedFarAway = true;",
+              new_num: 1_000_001,
+            },
+          ],
+        },
+      ],
+    },
+  ],
+});
+
 const previewDiff: DiffResult = withServerDiffData({
   stale: smallDiff.stale,
   whitespace_only_count: smallDiff.whitespace_only_count,
@@ -1265,6 +1302,29 @@ test.describe("diff view", () => {
     const file = page.locator('[data-file-path="internal/server/config.go"]');
     await expect(file.getByText("No textual changes")).toBeVisible();
     await expect(file.getByRole("status")).toHaveCount(0);
+  });
+
+  test("oversized sparse hunks render without demand context expansion", async ({ page }) => {
+    let previewRequests = 0;
+    await mockDiffApi(page, oversizedSparseDiff);
+    await page.route("**/api/v1/pulls/github/acme/widgets/1/file-preview**", async (route) => {
+      previewRequests++;
+      await route.fulfill({
+        status: 500,
+        contentType: "application/json",
+        body: JSON.stringify({ detail: "unexpected preview request" }),
+      });
+    });
+
+    await navigateToDiff(page);
+    await waitForDiffLoaded(page);
+
+    const file = page.locator('[data-file-path="src/huge-context.ts"]');
+    await expect(file).toBeVisible();
+    await expectPierreDiffCount(file, diffAdditionsSelector, 1);
+    await expectPierreDiffFirstText(file, diffHunkSeparatorsSelector, "999999 unmodified lines");
+    await expectPierreDiffCount(file, "[data-expand-button]", 0);
+    await expect.poll(() => previewRequests).toBe(0);
   });
 
   test("deleted file path has strikethrough styling in diff header", async ({ page }) => {

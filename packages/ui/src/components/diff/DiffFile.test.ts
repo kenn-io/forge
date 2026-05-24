@@ -535,7 +535,7 @@ describe("DiffFile", () => {
     expect(selectedPierreLines()).toHaveLength(0);
   });
 
-  it("loads full file contents on demand before expanding hidden context", async () => {
+  it("loads and expands hidden context from a single Pierre expander click", async () => {
     const oldText = Array.from({ length: 20 }, (_, index) => `shared ${index + 1}`);
     const newText = [...oldText];
     oldText[1] = "old early";
@@ -593,9 +593,6 @@ describe("DiffFile", () => {
         return textPreview(path, side === "old" ? oldText.join("\n") : newText.join("\n"));
       });
 
-    const loader = screen.getByRole("button", { name: "Load more context" });
-    await fireEvent.click(loader);
-
     const expandButton = await waitFor(() => {
       const button = document
         .querySelector(".pierre-diff")
@@ -605,7 +602,7 @@ describe("DiffFile", () => {
       return button!;
     });
 
-    expandButton.click();
+    await fireEvent.click(expandButton);
 
     await waitFor(() => {
       const text = document.querySelector(".pierre-diff")?.shadowRoot?.textContent ?? "";

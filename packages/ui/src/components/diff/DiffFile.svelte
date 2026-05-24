@@ -106,12 +106,14 @@
   let themeType = $state<ThemeTypes>(appThemeType());
   let selectedRange = $state<SelectedLineRange | null>(null);
   let composerRange = $state<DiffReviewLineRange | null>(null);
-  const canLoadMoreContext = $derived(
-    !file.is_binary && !showRichPreview && !fullContext && hasCollapsedContext(file),
-  );
   const pierreFile = $derived.by<FileDiffMetadata | undefined>(() => {
     if (file.is_binary || showRichPreview) return undefined;
-    return parsePierreFileDiff(file);
+    return parsePierreFileDiff(file, {
+      // Pierre marks patch-only diffs as partial and hides expansion controls.
+      // Give it sparse line arrays so the controls render; the first click is
+      // intercepted, full contents are fetched, and the same expansion replays.
+      enableDemandContextExpansion: hasCollapsedContext(file),
+    });
   });
   const selectableLineRefs = $derived.by(() => ({
     left: selectableLines("left"),
@@ -273,19 +275,18 @@
 
   function handleDemandContextClick(event: Event): void {
     if (fullContext) return;
-    const button = closestFromEvent(event, "[data-expand-button]");
-    if (!button) return;
-    const separator = button.closest("[data-separator][data-expand-index]");
+    const target = closestFromEvent(event, "[data-expand-button], [data-unmodified-lines]");
+    if (!target) return;
+    const separator = target.closest("[data-separator][data-expand-index]");
     const hunkIndex = Number(separator?.getAttribute("data-expand-index"));
     if (!Number.isFinite(hunkIndex)) return;
 
     event.preventDefault();
     event.stopImmediatePropagation();
-    const direction = expansionDirection(button);
-    void loadFullContext()
-      .then(() => {
-        pierreDiff?.expandHunk(hunkIndex, direction);
-      })
+    const expandAll = isExpandAllClick(target, event);
+    const direction = expandAll ? "both" : expansionDirection(target);
+    const expansionLineCount = expandAll ? Number.POSITIVE_INFINITY : undefined;
+    void loadFullContextAndExpand(hunkIndex, direction, expansionLineCount)
       .catch((err: unknown) => {
         contextError = err instanceof Error ? err.message : String(err);
       });
@@ -305,6 +306,33 @@
     if (button.hasAttribute("data-expand-up")) return "up";
     if (button.hasAttribute("data-expand-down")) return "down";
     return "both";
+  }
+
+  function isExpandAllClick(target: Element, event: Event): boolean {
+    return target.hasAttribute("data-expand-all-button")
+      || (event instanceof MouseEvent && event.shiftKey);
+  }
+
+  async function loadFullContextAndExpand(
+    hunkIndex: number,
+    direction: ExpansionDirections,
+    expansionLineCount: number | undefined,
+  ): Promise<void> {
+    const context = await loadFullContext();
+    renderFullContext(context);
+    pierreDiff?.expandHunk(hunkIndex, direction, expansionLineCount);
+  }
+
+  function renderFullContext(context: { oldFile: FileContents; newFile: FileContents }): void {
+    if (!pierreDiff || !pierreDiffEl) return;
+    pierreDiff.render({
+      fileContainer: pierreDiffEl,
+      oldFile: context.oldFile,
+      newFile: context.newFile,
+      forceRender: true,
+      lineAnnotations,
+    });
+    pierreDiff.setSelectedLines(selectedRange);
   }
 
   async function loadFullContext(): Promise<{ oldFile: FileContents; newFile: FileContents }> {
@@ -622,11 +650,6 @@
       {:else if file.is_binary}
         <div class="binary-notice">Binary file changed</div>
       {:else}
-        {#if canLoadMoreContext}
-          <button class="context-loader" onclick={() => { void loadFullContext(); }}>
-            Load more context
-          </button>
-        {/if}
         <diffs-container class="pierre-diff" bind:this={pierreDiffEl}></diffs-container>
         {#if contextError}
           <div class="context-error">Could not load more context: {contextError}</div>
@@ -706,22 +729,6 @@
   .pierre-diff {
     min-width: 100%;
     width: 100%;
-  }
-
-  .context-loader {
-    width: 100%;
-    padding: 5px 12px;
-    color: var(--text-secondary);
-    background: var(--diff-header-bg);
-    border-bottom: 1px solid var(--diff-border);
-    font-size: var(--font-size-xs);
-    text-align: left;
-    cursor: pointer;
-  }
-
-  .context-loader:hover {
-    color: var(--text-primary);
-    background: var(--bg-surface-hover);
   }
 
   .context-error {

@@ -353,10 +353,14 @@ test("stack status shares the PR detail expandable slot with CI", async ({ page 
 
   const currentRow = page.locator(".stack-row--current");
   const currentBadgesBox = await currentRow.locator(".stack-badges").boundingBox();
-  const currentMetaBox = await currentRow.locator(".stack-member-meta").boundingBox();
+  const currentLinkBox = await currentRow.locator(".stack-member-link").boundingBox();
   expect(currentBadgesBox).not.toBeNull();
-  expect(currentMetaBox).not.toBeNull();
-  expect(currentBadgesBox!.y).toBeLessThan(currentMetaBox!.y);
+  expect(currentLinkBox).not.toBeNull();
+  const badgeCenterY = currentBadgesBox!.y + currentBadgesBox!.height / 2;
+  const linkCenterY = currentLinkBox!.y + currentLinkBox!.height / 2;
+  expect(Math.abs(badgeCenterY - linkCenterY)).toBeLessThanOrEqual(4);
+  await expect(page.locator(".stack-member-meta")).toHaveCount(0);
+  await expect(page.locator(".stack-base-name")).toHaveText("main");
 
   const stackRows = page.locator(".stack-member-link");
   await expect(stackRows).toHaveText([
@@ -373,7 +377,7 @@ test("stack status shares the PR detail expandable slot with CI", async ({ page 
 
   await expect(page).toHaveURL(/\/pulls\/github\/acme\/widgets\/101$/);
   await expect(page.getByText("7 PRs · current 1/7")).toBeVisible();
-  await expect(page.getByText("Root")).toBeVisible();
+  await expect(page.locator(".stack-base-name")).toHaveText("main");
 });
 
 test("stack status stays rendered while navigating to a stack member", async ({ page }) => {

@@ -375,6 +375,7 @@ describe("PullDetail approvals", () => {
       "#2 session storage",
       "#1 base schema",
     ]);
+    expect(document.querySelector(".stack-base-name")?.textContent?.trim()).toBe("main");
   });
 
   it("closes the label picker when the labels action is clicked twice", async () => {

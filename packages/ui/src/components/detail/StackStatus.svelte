@@ -76,6 +76,9 @@
   const displayMembers = $derived(
     [...members].sort((a, b) => b.position - a.position),
   );
+  const stackBaseBranch = $derived(
+    members.find((member) => member.position === 1)?.base_branch || "base",
+  );
   const downstackFailures = $derived(
     members.filter((member) =>
       member.position < (data?.position ?? 0) &&
@@ -204,13 +207,6 @@
     return "stack-dot stack-dot--outline";
   }
 
-  function positionLabel(member: StackMember): string {
-    if (!data) return "";
-    if (member.position === data.size) return "Tip";
-    if (member.position === 1) return "Root";
-    return "";
-  }
-
   function navigateToMember(memberNumber: number): void {
     onmembernavigate?.();
     navigate(buildPullRequestRoute({
@@ -263,19 +259,14 @@
               {@const isCurrent = member.number === number}
               {@const ci = statusLabel(member)}
               {@const review = reviewLabel(member)}
-              {@const label = positionLabel(member)}
               <div
                 class="stack-row"
                 class:stack-row--current={isCurrent}
                 class:stack-row--blocked={member.blocked_by != null && !isCurrent}
               >
-                <span class="stack-position">{label}</span>
                 <span
-                  class={[
-                    "stack-rail",
-                    i === 0 && "stack-rail--first",
-                    i === displayMembers.length - 1 && "stack-rail--last",
-                  ].filter(Boolean).join(" ")}
+                  class={["stack-rail", i === 0 && "stack-rail--first"]
+                    .filter(Boolean).join(" ")}
                   aria-hidden="true"
                 >
                   <span class="stack-line"></span>
@@ -288,7 +279,6 @@
                   >
                     #{member.number} {member.title}
                   </button>
-                  <span class="stack-member-meta">{member.base_branch || "base"}</span>
                 </span>
                 <span class="stack-badges">
                   {#if ci}<span class={["stack-status-label", ci.className]}>{ci.text}</span>{/if}
@@ -299,6 +289,13 @@
                 </span>
               </div>
             {/each}
+            <div class="stack-row stack-row--base">
+              <span class="stack-rail stack-rail--last" aria-hidden="true">
+                <span class="stack-line"></span>
+                <span class="stack-dot stack-dot--outline"></span>
+              </span>
+              <span class="stack-base-name">{stackBaseBranch}</span>
+            </div>
           </div>
         </div>
       </div>
@@ -383,11 +380,11 @@
 
   .stack-row {
     display: grid;
-    grid-template-columns: 46px 18px minmax(0, 1fr) auto;
+    grid-template-columns: 18px minmax(0, 1fr) auto;
     align-items: stretch;
     gap: 8px;
-    min-height: 42px;
-    padding: 6px 12px;
+    min-height: 38px;
+    padding: 5px 12px;
     font-size: var(--font-size-sm);
     color: var(--text-primary);
   }
@@ -402,13 +399,9 @@
     opacity: 0.68;
   }
 
-  .stack-position {
-    align-self: center;
+  .stack-row--base {
+    min-height: 30px;
     color: var(--text-muted);
-    font-size: var(--font-size-2xs);
-    font-weight: 600;
-    line-height: 1;
-    text-transform: uppercase;
   }
 
   .stack-rail {
@@ -457,8 +450,8 @@
 
   .stack-line {
     position: absolute;
-    top: -6px;
-    bottom: -6px;
+    top: -5px;
+    bottom: -5px;
     width: 2px;
     background: var(--stack-rail-color);
   }
@@ -497,7 +490,8 @@
     text-decoration: underline;
   }
 
-  .stack-member-meta {
+  .stack-base-name {
+    align-self: center;
     min-width: 0;
     color: var(--text-muted);
     font-size: var(--font-size-2xs);
@@ -548,22 +542,25 @@
 
   @container pull-detail (max-width: 640px) {
     .stack-row {
-      grid-template-columns: 38px 18px minmax(0, 1fr) max-content;
+      grid-template-columns: 18px minmax(0, 1fr) max-content;
     }
   }
 
   @container pull-detail (max-width: 440px) {
     .stack-row {
-      grid-template-columns: 38px 18px minmax(0, 1fr);
+      grid-template-columns: 18px minmax(0, 1fr);
     }
 
-    .stack-position,
     .stack-rail {
       grid-row: 1 / 3;
     }
 
+    .stack-row--base .stack-rail {
+      grid-row: 1;
+    }
+
     .stack-badges {
-      grid-column: 3;
+      grid-column: 2;
       grid-row: 2;
       justify-content: flex-start;
       flex-wrap: wrap;

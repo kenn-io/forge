@@ -1,23 +1,10 @@
 <script lang="ts">
-  import { FileDiff } from "@pierre/diffs";
-  import type {
-    DiffLineAnnotation,
-    ExpansionDirections,
-    FileContents,
-    FileDiffMetadata,
-    FileDiffOptions,
-    SelectedLineRange,
-    ThemeTypes,
-  } from "@pierre/diffs";
+  import type { DiffLineAnnotation, SelectedLineRange } from "@pierre/diffs";
   import { mount, onMount, unmount } from "svelte";
   import type { DiffFile as DiffFileType } from "../../api/types.js";
   import type { DiffReviewDraftComment } from "../../stores/diff-review-draft.svelte.js";
   import type { DiffReviewLineRange } from "../../stores/diff-review-draft.svelte.js";
   import { STORES_KEY, getStores } from "../../context.js";
-
-  const stores = getStores();
-  const diffStore = stores.diff;
-  const diffReviewDraft = stores.diffReviewDraft;
   import DiffInlineCommentComposer from "./DiffInlineCommentComposer.svelte";
   import DiffReviewDraftInlineComment from "./DiffReviewDraftInlineComment.svelte";
   import DiffReviewThreadInlineComment from "./DiffReviewThreadInlineComment.svelte";
@@ -28,7 +15,11 @@
     reviewThreadTargetSide,
     type ReviewThread,
   } from "./review-thread-context.js";
-  import { appThemeType, parsePierreFileDiff } from "./pierre-diff.js";
+  import PierreFileDiff from "./PierreFileDiff.svelte";
+
+  const stores = getStores();
+  const diffStore = stores.diff;
+  const diffReviewDraft = stores.diffReviewDraft;
 
   interface Props {
     file: DiffFileType;
@@ -62,6 +53,7 @@
 
   const collapsed = $derived(diffStore.isFileCollapsed(owner, name, number, file.path));
   const richPreview = $derived(diffStore.getRichPreview());
+  const wordWrap = $derived(diffStore.getWordWrap());
   const filePreviewGeneration = $derived(diffStore.getFilePreviewGeneration());
   const showRichPreview = $derived(
     richPreviewEnabled && richPreview && supportsRichPreview(file.path),
@@ -80,7 +72,6 @@
   // IntersectionObserver reports visibility — the first observer callback
   // fires synchronously for on-screen files.
   let fileEl: HTMLDivElement | undefined = $state();
-  let pierreDiffEl: HTMLDivElement | undefined = $state();
   let inViewport = $state(false);
   type ReviewSide = "left" | "right";
   type PierreSide = "deletions" | "additions";
@@ -98,23 +89,8 @@
     | { kind: "thread"; id: string; thread: ReviewThread }
     | { kind: "composer"; id: string; range: DiffReviewLineRange };
 
-  let pierreDiff: FileDiff<DiffAnnotation> | undefined;
-  let demandContextHandlerRoot: ShadowRoot | undefined;
-  let fullContext: { oldFile: FileContents; newFile: FileContents } | undefined = $state();
-  let contextLoadPromise: Promise<{ oldFile: FileContents; newFile: FileContents }> | undefined;
-  let contextError: string | null = $state(null);
-  let themeType = $state<ThemeTypes>(appThemeType());
   let selectedRange = $state<SelectedLineRange | null>(null);
   let composerRange = $state<DiffReviewLineRange | null>(null);
-  const pierreFile = $derived.by<FileDiffMetadata | undefined>(() => {
-    if (file.is_binary || showRichPreview) return undefined;
-    return parsePierreFileDiff(file, {
-      // Pierre marks patch-only diffs as partial and hides expansion controls.
-      // Give it sparse line arrays so the controls render; the first click is
-      // intercepted, full contents are fetched, and the same expansion replays.
-      enableDemandContextExpansion: hasCollapsedContext(file),
-    });
-  });
   const selectableLineRefs = $derived.by(() => ({
     left: selectableLines("left"),
     right: selectableLines("right"),
@@ -151,10 +127,10 @@
     }
     return annotations;
   });
+  const pierreLineAnnotations = $derived(lineAnnotations as DiffLineAnnotation<unknown>[]);
 
   onMount(() => {
     let observer: IntersectionObserver | undefined;
-    let themeObserver: MutationObserver | undefined;
     // Guard for jsdom / SSR-ish test environments where IntersectionObserver
     // is not provided — treat the file as visible so rendering still runs.
     if (typeof IntersectionObserver === "undefined") {
@@ -167,199 +143,13 @@
       observer.observe(fileEl);
     }
 
-    if (typeof MutationObserver !== "undefined") {
-      themeObserver = new MutationObserver(() => {
-        themeType = appThemeType();
-      });
-      themeObserver.observe(document.documentElement, {
-        attributeFilter: ["class"],
-      });
-    }
-
     return () => {
       observer?.disconnect();
-      themeObserver?.disconnect();
-      demandContextHandlerRoot?.removeEventListener("click", handleDemandContextClick, {
-        capture: true,
-      });
-      demandContextHandlerRoot = undefined;
-      contextLoadPromise = undefined;
-      pierreDiff?.cleanUp();
-      pierreDiff = undefined;
     };
-  });
-
-  const pierreOptions = $derived<FileDiffOptions<DiffAnnotation>>({
-    diffStyle: "unified",
-    diffIndicators: "bars",
-    disableFileHeader: true,
-    enableGutterUtility: reviewEnabled && !!diffHeadSHA,
-    enableLineSelection: reviewEnabled && !!diffHeadSHA,
-    hunkSeparators: "line-info",
-    lineDiffType: "word",
-    lineHoverHighlight: reviewEnabled ? "both" : "disabled",
-    onGutterUtilityClick: handlePierreSelection,
-    onLineSelected: handlePierreSelection,
-    renderAnnotation,
-    overflow: diffStore.getWordWrap() ? "wrap" : "scroll",
-    theme: { dark: "pierre-dark", light: "pierre-light" },
-    themeType,
-    expansionLineCount: 40,
-    tokenizeMaxLineLength: 2_000,
-    unsafeCSS: `
-      :host {
-        display: block;
-        font-family: var(--font-mono);
-        --diffs-font-family: var(--font-mono);
-      }
-      pre {
-        margin: 0;
-        border-radius: 0;
-      }
-      [data-separator='line-info'] {
-        color: var(--diff-text-muted);
-      }
-      [data-expand-button] {
-        cursor: pointer;
-      }
-    `,
-  });
-
-  $effect(() => {
-    if (!pierreDiffEl || collapsed || !inViewport || !pierreFile) return;
-    pierreDiff ??= new FileDiff<DiffAnnotation>(pierreOptions);
-    pierreDiff.setOptions(pierreOptions);
-    if (fullContext) {
-      pierreDiff.render({
-        fileContainer: pierreDiffEl,
-        oldFile: fullContext.oldFile,
-        newFile: fullContext.newFile,
-        forceRender: true,
-        lineAnnotations,
-      });
-    } else {
-      pierreDiff.render({
-        fileContainer: pierreDiffEl,
-        fileDiff: pierreFile,
-        forceRender: true,
-        lineAnnotations,
-      });
-      installDemandContextHandler();
-    }
-    pierreDiff.setSelectedLines(selectedRange);
-  });
-
-  $effect(() => {
-    if (!collapsed && pierreDiff && pierreFile) {
-      pierreDiff.setThemeType(themeType);
-    }
-  });
-
-  $effect(() => {
-    pierreDiff?.setSelectedLines(selectedRange);
   });
 
   function toggle(): void {
     diffStore.toggleFileCollapsed(owner, name, number, file.path);
-  }
-
-  function installDemandContextHandler(): void {
-    const root = pierreDiffEl?.shadowRoot;
-    if (!root || root === demandContextHandlerRoot) return;
-    demandContextHandlerRoot?.removeEventListener("click", handleDemandContextClick, {
-      capture: true,
-    });
-    demandContextHandlerRoot = root;
-    root.addEventListener("click", handleDemandContextClick, { capture: true });
-  }
-
-  function handleDemandContextClick(event: Event): void {
-    if (fullContext) return;
-    const target = closestFromEvent(event, "[data-expand-button], [data-unmodified-lines]");
-    if (!target) return;
-    const separator = target.closest("[data-separator][data-expand-index]");
-    const hunkIndex = Number(separator?.getAttribute("data-expand-index"));
-    if (!Number.isFinite(hunkIndex)) return;
-
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    const expandAll = isExpandAllClick(target, event);
-    const direction = expandAll ? "both" : expansionDirection(target);
-    const expansionLineCount = expandAll ? Number.POSITIVE_INFINITY : undefined;
-    void loadFullContextAndExpand(hunkIndex, direction, expansionLineCount)
-      .catch((err: unknown) => {
-        contextError = err instanceof Error ? err.message : String(err);
-      });
-  }
-
-  function closestFromEvent(event: Event, selector: string): Element | null {
-    for (const target of event.composedPath()) {
-      if (target instanceof Element) {
-        const match = target.closest(selector);
-        if (match) return match;
-      }
-    }
-    return null;
-  }
-
-  function expansionDirection(button: Element): ExpansionDirections {
-    if (button.hasAttribute("data-expand-up")) return "up";
-    if (button.hasAttribute("data-expand-down")) return "down";
-    return "both";
-  }
-
-  function isExpandAllClick(target: Element, event: Event): boolean {
-    return target.hasAttribute("data-expand-all-button")
-      || (event instanceof MouseEvent && event.shiftKey);
-  }
-
-  async function loadFullContextAndExpand(
-    hunkIndex: number,
-    direction: ExpansionDirections,
-    expansionLineCount: number | undefined,
-  ): Promise<void> {
-    const context = await loadFullContext();
-    renderFullContext(context);
-    pierreDiff?.expandHunk(hunkIndex, direction, expansionLineCount);
-  }
-
-  function renderFullContext(context: { oldFile: FileContents; newFile: FileContents }): void {
-    if (!pierreDiff || !pierreDiffEl) return;
-    pierreDiff.render({
-      fileContainer: pierreDiffEl,
-      oldFile: context.oldFile,
-      newFile: context.newFile,
-      forceRender: true,
-      lineAnnotations,
-    });
-    pierreDiff.setSelectedLines(selectedRange);
-  }
-
-  async function loadFullContext(): Promise<{ oldFile: FileContents; newFile: FileContents }> {
-    if (fullContext) return fullContext;
-    contextLoadPromise ??= fetchFullContext();
-    fullContext = await contextLoadPromise;
-    return fullContext;
-  }
-
-  async function fetchFullContext(): Promise<{ oldFile: FileContents; newFile: FileContents }> {
-    contextError = null;
-    const [oldContents, newContents] = await Promise.all([
-      file.status === "added" ? Promise.resolve("") : loadDiffText("old"),
-      file.status === "deleted" ? Promise.resolve("") : loadDiffText("new"),
-    ]);
-    return {
-      oldFile: {
-        name: file.old_path || file.path,
-        contents: oldContents,
-        cacheKey: `middleman:${file.path}:old`,
-      },
-      newFile: {
-        name: file.path,
-        contents: newContents,
-        cacheKey: `middleman:${file.path}:new`,
-      },
-    };
   }
 
   async function loadDiffText(side: "old" | "new"): Promise<string> {
@@ -576,6 +366,10 @@
     return target;
   }
 
+  function renderUnknownAnnotation(annotation: DiffLineAnnotation<unknown>): HTMLElement {
+    return renderAnnotation(annotation as DiffLineAnnotation<DiffAnnotation>);
+  }
+
   function observeUnmount(target: HTMLElement, component: object): void {
     if (typeof MutationObserver === "undefined") return;
     const observer = new MutationObserver(() => {
@@ -603,14 +397,6 @@
     }
   });
 
-  function hasCollapsedContext(f: DiffFileType): boolean {
-    let previousOldEnd = 1;
-    for (const hunk of f.hunks) {
-      if (hunk.old_start > previousOldEnd) return true;
-      previousOldEnd = hunk.old_start + hunk.old_count;
-    }
-    return false;
-  }
 </script>
 
 <div class="diff-file" data-file-path={file.path} bind:this={fileEl}>
@@ -650,10 +436,17 @@
       {:else if file.is_binary}
         <div class="binary-notice">Binary file changed</div>
       {:else}
-        <diffs-container class="pierre-diff" bind:this={pierreDiffEl}></diffs-container>
-        {#if contextError}
-          <div class="context-error">Could not load more context: {contextError}</div>
-        {/if}
+        <PierreFileDiff
+          {file}
+          active={inViewport}
+          {wordWrap}
+          loadFileText={loadDiffText}
+          lineAnnotations={pierreLineAnnotations}
+          selectedRange={selectedRange}
+          enableLineSelection={reviewEnabled && !!diffHeadSHA}
+          onLineSelected={handlePierreSelection}
+          renderAnnotation={renderUnknownAnnotation}
+        />
       {/if}
     </div>
   {/if}
@@ -726,18 +519,6 @@
     overflow-x: hidden;
   }
 
-  .pierre-diff {
-    min-width: 100%;
-    width: 100%;
-  }
-
-  .context-error {
-    padding: 6px 12px;
-    color: var(--danger);
-    border-top: 1px solid var(--diff-border);
-    font-size: var(--font-size-xs);
-  }
-
   .binary-notice {
     padding: 20px;
     text-align: center;
@@ -746,7 +527,4 @@
     font-style: italic;
   }
 
-  .pierre-diff:empty {
-    min-height: 48px;
-  }
 </style>

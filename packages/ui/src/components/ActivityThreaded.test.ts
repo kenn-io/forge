@@ -205,6 +205,27 @@ describe("ActivityThreaded collapse", () => {
     open.mockRestore();
   });
 
+  it("highlights the selected default branch commit row", () => {
+    const { container } = render(ActivityThreaded, {
+      props: {
+        items: [branchActivityItem("c1")],
+        onSelectItem: undefined,
+        selectedBranchCommit: {
+          provider: "github",
+          platformHost: "github.com",
+          repoPath: "acme/widgets",
+          owner: "acme",
+          name: "widgets",
+          commitSha: "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+        },
+      },
+    });
+
+    expect(
+      container.querySelector(".branch-activity-row.selected"),
+    ).not.toBeNull();
+  });
+
   it("keeps force-push rows as provider compare links", async () => {
     const onSelectBranchCommit = vi.fn();
     const open = vi

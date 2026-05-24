@@ -329,6 +329,7 @@ test.describe("default branch activity", () => {
 
     await commitRow.click();
     await expect(page.locator(".activity-detail")).toBeVisible();
+    await expect(commitRow).toHaveClass(/selected/);
     await expect(page.locator(".activity-detail-header")).toContainText(
       "Commit acme/widgets main Ship direct main commit 2",
     );

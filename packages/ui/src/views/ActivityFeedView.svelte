@@ -221,6 +221,7 @@
       <ActivityFeed
         compact={phone || hasActiveDetail}
         selectedItem={activeDrawer}
+        selectedBranchCommit={commitDrawer}
         onSelectItem={handleSelect}
         onSelectBranchCommit={handleSelectBranchCommit}
       />

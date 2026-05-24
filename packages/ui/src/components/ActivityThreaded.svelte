@@ -31,6 +31,7 @@
     onSelectBranchCommit?: ((item: ActivityItem) => void) | undefined;
     compact?: boolean;
     selectedItem?: SelectedActivityRef | null;
+    selectedBranchCommit?: SelectedBranchCommitRef | null;
   }
 
   type SelectedActivityRef = {
@@ -43,12 +44,22 @@
     repoPath?: string | undefined;
   };
 
+  type SelectedBranchCommitRef = {
+    owner: string;
+    name: string;
+    commitSha: string;
+    provider?: string | undefined;
+    platformHost?: string | undefined;
+    repoPath?: string | undefined;
+  };
+
   let {
     items,
     onSelectItem,
     onSelectBranchCommit,
     compact = false,
     selectedItem = null,
+    selectedBranchCommit = null,
   }: Props = $props();
 
   interface ItemGroup {
@@ -392,6 +403,22 @@
         || group.platformHost === selectedItem.platformHost);
   }
 
+  function isSelectedBranchRow(row: ActivityRow): boolean {
+    const selected = selectedBranchCommit;
+    if (!selected) return false;
+    const item = branchRowRepresentative(row);
+    if (!isDefaultBranchCommitActivity(item)) return false;
+    return selected.commitSha === item.commit_sha
+      && selected.owner === item.repo_owner
+      && selected.name === item.repo_name
+      && (!selected.provider
+        || selected.provider === item.repo?.provider)
+      && (!selected.repoPath
+        || selected.repoPath === item.repo?.repo_path)
+      && (!selected.platformHost
+        || selected.platformHost === item.platform_host);
+  }
+
   function eventAuthor(event: ActivityItem): string {
     return event.author_name || event.author;
   }
@@ -438,6 +465,7 @@
           <!-- svelte-ignore a11y_no_static_element_interactions -->
           <div
             class="item-row branch-activity-row"
+            class:selected={isSelectedBranchRow(row)}
             onclick={() => handleBranchRowClick(row)}
           >
             <span class="thread-caret-spacer" aria-hidden="true"></span>

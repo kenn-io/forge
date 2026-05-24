@@ -36,6 +36,7 @@
     onSelectBranchCommit?: (item: ActivityItem) => void;
     compact?: boolean;
     selectedItem?: SelectedActivityRef | null;
+    selectedBranchCommit?: SelectedBranchCommitRef | null;
   }
 
   type SelectedActivityRef = {
@@ -48,11 +49,21 @@
     repoPath?: string | undefined;
   };
 
+  type SelectedBranchCommitRef = {
+    owner: string;
+    name: string;
+    commitSha: string;
+    provider?: string | undefined;
+    platformHost?: string | undefined;
+    repoPath?: string | undefined;
+  };
+
   let {
     onSelectItem,
     onSelectBranchCommit,
     compact = false,
     selectedItem = null,
+    selectedBranchCommit = null,
   }: Props = $props();
 
   let searchInput = $state("");
@@ -406,7 +417,20 @@
   }
 
   function isSelectedActivityItem(item: ActivityItem): boolean {
-    if (isDefaultBranchActivity(item)) return false;
+    if (isDefaultBranchActivity(item)) {
+      if (!isDefaultBranchCommitActivity(item)) return false;
+      const selected = selectedBranchCommit;
+      if (!selected) return false;
+      return selected.commitSha === item.commit_sha
+        && selected.owner === item.repo_owner
+        && selected.name === item.repo_name
+        && (!selected.provider
+          || selected.provider === item.repo?.provider)
+        && (!selected.repoPath
+          || selected.repoPath === item.repo?.repo_path)
+        && (!selected.platformHost
+          || selected.platformHost === item.platform_host);
+    }
     return selectedItem?.itemType === item.item_type
       && selectedItem.owner === item.repo_owner
       && selectedItem.name === item.repo_name
@@ -506,6 +530,7 @@
         {onSelectBranchCommit}
         {compact}
         {selectedItem}
+        {selectedBranchCommit}
       />
     {/if}
   {:else}

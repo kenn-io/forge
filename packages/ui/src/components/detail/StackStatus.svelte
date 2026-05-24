@@ -208,7 +208,6 @@
     if (!data) return "";
     if (member.position === data.size) return "Tip";
     if (member.position === 1) return "Root";
-    if (member.number === number) return "Current";
     return "";
   }
 

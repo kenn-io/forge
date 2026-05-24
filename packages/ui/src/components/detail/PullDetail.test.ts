@@ -364,7 +364,7 @@ describe("PullDetail approvals", () => {
 
     expect(screen.queryByText("frontend / svelte-check")).toBeNull();
     expect(screen.getByText("3 PRs · current 2/3 · downstack CI failure")).toBeTruthy();
-    expect(screen.getByText("Current")).toBeTruthy();
+    expect(document.querySelector(".stack-row--current .stack-dot--current")).toBeTruthy();
     expect(screen.getByText("blocked by #1")).toBeTruthy();
 
     const stackLinks = Array.from(

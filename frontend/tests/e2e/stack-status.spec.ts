@@ -194,7 +194,10 @@ async function fulfillJson(route: Route, body: unknown, status = 200): Promise<v
   });
 }
 
-async function mockStackedPR(page: Page): Promise<void> {
+async function mockStackedPR(
+  page: Page,
+  options: { stackResponseDelays?: Map<number, Promise<void>> } = {},
+): Promise<void> {
   await page.route("**/api/v1/**", async (route) => {
     const url = new URL(route.request().url());
     const { pathname } = url;
@@ -242,6 +245,7 @@ async function mockStackedPR(page: Page): Promise<void> {
     if (method === "GET" && stackMatch) {
       const number = Number(stackMatch[1]!);
       const member = stackMembers.find((candidate) => candidate.number === number);
+      await options.stackResponseDelays?.get(number);
       await fulfillJson(route, {
         stack_id: 1,
         stack_name: "session-recovery",
@@ -362,4 +366,26 @@ test("stack status shares the PR detail expandable slot with CI", async ({ page 
   await expect(page).toHaveURL(/\/pulls\/github\/acme\/widgets\/101$/);
   await expect(page.getByText("7 PRs · current 1/7")).toBeVisible();
   await expect(page.getByText("Root")).toBeVisible();
+});
+
+test("stack status stays rendered while navigating to a stack member", async ({ page }) => {
+  let releaseStackResponse: () => void = () => {};
+  const delayedStackResponse = new Promise<void>((resolve) => {
+    releaseStackResponse = resolve;
+  });
+  await mockStackedPR(page, {
+    stackResponseDelays: new Map([[101, delayedStackResponse]]),
+  });
+
+  await page.goto("/pulls/github/acme/widgets/102");
+  await page.getByTestId("stack-chip").click();
+  await expect(page.getByText("7 PRs · current 2/7 · downstack CI failure")).toBeVisible();
+
+  await page.getByRole("button", { name: "#101 base schema" }).click();
+
+  await expect(page).toHaveURL(/\/pulls\/github\/acme\/widgets\/101$/);
+  await expect(page.getByTestId("stack-chip")).toBeVisible();
+  await expect(page.getByText("7 PRs · current 1/7")).toBeVisible();
+  releaseStackResponse();
+  await expect(page.getByText("7 PRs · current 1/7")).toBeVisible();
 });

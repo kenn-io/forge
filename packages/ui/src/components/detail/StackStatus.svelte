@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy } from "svelte";
+  import { onDestroy, untrack } from "svelte";
   import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
   import Layers2Icon from "@lucide/svelte/icons/layers-2";
   import XIcon from "@lucide/svelte/icons/x";
@@ -62,8 +62,16 @@
 
   let data = $state<StackContext | null>(null);
   let visible = $state(false);
+  let dataRefKey = $state("");
   let requestSeq = 0;
 
+  const currentRefKey = $derived(JSON.stringify([
+    provider,
+    platformHost ?? "",
+    owner,
+    name,
+    repoPath,
+  ]));
   const members = $derived(data?.members ?? []);
   const displayMembers = $derived(
     [...members].sort((a, b) => b.position - a.position),
@@ -83,7 +91,14 @@
     return `${data.size} PRs · current ${data.position}/${data.size}${failureText}`;
   });
 
-  function fetchStack(o: string, n: string, num: number): void {
+  function stackWithPosition(stack: StackContext, num: number): StackContext | null {
+    const member = stack.members?.find((candidate) => candidate.number === num);
+    if (!member) return null;
+    if (stack.position === member.position) return stack;
+    return { ...stack, position: member.position };
+  }
+
+  function fetchStack(o: string, n: string, num: number, refKey = currentRefKey): void {
     const ref = { provider, platformHost, owner: o, name: n, repoPath };
     const seq = ++requestSeq;
     client.GET(providerItemPath("pulls", ref, "/stack"), {
@@ -93,20 +108,24 @@
       if (error || !resp) {
         visible = false;
         data = null;
+        dataRefKey = "";
         return;
       }
       const stack = resp as StackContext;
       if (!stack.members || stack.members.length <= 1) {
         visible = false;
         data = null;
+        dataRefKey = refKey;
         return;
       }
       data = stack;
+      dataRefKey = refKey;
       visible = true;
     }).catch(() => {
       if (seq !== requestSeq) return;
       visible = false;
       data = null;
+      dataRefKey = "";
     });
   }
 
@@ -114,9 +133,18 @@
     const o = owner;
     const n = name;
     const num = number;
-    visible = false;
-    data = null;
-    fetchStack(o, n, num);
+    const refKey = currentRefKey;
+    const cachedStack = untrack(() =>
+      dataRefKey === refKey && data ? stackWithPosition(data, num) : null
+    );
+    if (cachedStack) {
+      data = cachedStack;
+      visible = true;
+    } else {
+      visible = false;
+      data = null;
+    }
+    fetchStack(o, n, num, refKey);
   });
 
   const unsubSync = syncStore?.subscribeSyncComplete?.(() =>

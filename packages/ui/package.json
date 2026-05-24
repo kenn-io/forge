@@ -16,7 +16,6 @@
     "./utils/time": { "default": "./src/utils/time.ts" },
     "./utils/markdown": { "default": "./src/utils/markdown.ts" },
     "./utils/clipboard": { "default": "./src/utils/clipboard.ts" },
-    "./utils/highlight": { "default": "./src/utils/highlight.ts" },
     "./utils/repo-color": { "default": "./src/utils/repo-color.ts" },
     "./routes": { "default": "./src/routes.ts" },
     "./stores/pulls": { "svelte": "./src/stores/pulls.svelte.ts", "default": "./src/stores/pulls.svelte.ts" },
@@ -57,7 +56,6 @@
     "marked": "17.0.5",
     "openapi-fetch": "^0.17.0",
     "prosemirror-state": "^1.4.4",
-    "shiki": "^4.0.2",
     "svelte-tiptap": "3.0.1"
   },
   "peerDependencies": {

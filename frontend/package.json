@@ -29,7 +29,6 @@
     "js-toml": "^1.0.3",
     "marked": "17.0.5",
     "openapi-fetch": "^0.17.0",
-    "shiki": "^4.0.2",
     "simple-icons": "^16.19.0"
   },
   "devDependencies": {

@@ -1,15 +1,9 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
-// Mock highlight utils to avoid loading Shiki in tests.
-vi.mock("../../utils/highlight.js", () => ({
-  tokenizeLineDual: () => Promise.resolve([]),
-  langFromPath: () => "text",
-}));
-
 // jsdom does not ship IntersectionObserver; install a stub that reports the
-// observed element as visible immediately so the tokenization effect actually
-// runs under test. The original global (if any) is saved and restored after
+// observed element as visible immediately so the viewport-gated render effect
+// actually runs under test. The original global (if any) is saved and restored after
 // the suite so it does not leak into sibling test files.
 type GlobalWithIO = { IntersectionObserver?: unknown };
 type GlobalWithResizeObserver = { ResizeObserver?: unknown };

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, untrack } from "svelte";
   import { getStores } from "../../context.js";
+  import type { DiffScrollTarget } from "../../stores/diff.svelte.js";
   import type { DiffReviewDraftComment } from "../../stores/diff-review-draft.svelte.js";
 
   const stores = getStores();
@@ -101,18 +102,39 @@
     });
   });
 
+  function scrollWithinDiffArea(el: Element, offset = 0): void {
+    if (!diffArea) return;
+    const areaRect = diffArea.getBoundingClientRect();
+    const elRect = el.getBoundingClientRect();
+    diffArea.scrollTop += elRect.top - areaRect.top - offset;
+  }
+
   function scrollToFile(path: string): boolean {
     if (!diffArea) return false;
     const el = diffArea.querySelector(`[data-file-path="${CSS.escape(path)}"]`);
     if (el) {
-      const areaRect = diffArea.getBoundingClientRect();
-      const elRect = el.getBoundingClientRect();
-      diffArea.scrollTop += elRect.top - areaRect.top;
+      scrollWithinDiffArea(el);
     } else {
       return false;
     }
     // Clear the scrolling flag after the instant scroll so the next user-initiated
     // scroll event resumes active file tracking.
+    scrollRaf = requestAnimationFrame(() => diffStore.clearScrolling());
+    return true;
+  }
+
+  function scrollToTarget(target: DiffScrollTarget): boolean {
+    if (!diffArea) return false;
+    if (target.line == null) return scrollToFile(target.path);
+
+    const attr = target.side === "left" ? "data-diff-old-line" : "data-diff-new-line";
+    const lineEl = diffArea.querySelector(
+      `[data-diff-path="${CSS.escape(target.path)}"][${attr}="${CSS.escape(String(target.line))}"]`,
+    ) as HTMLElement | null;
+    if (!lineEl) return scrollToFile(target.path);
+
+    scrollWithinDiffArea(lineEl, 72);
+    lineEl.focus({ preventScroll: true });
     scrollRaf = requestAnimationFrame(() => diffStore.clearScrolling());
     return true;
   }
@@ -139,7 +161,7 @@
   $effect(() => {
     const target = diffStore.getScrollTarget();
     if (target && diffArea && diff) {
-      if (scrollToFile(target)) {
+      if (scrollToTarget(target)) {
         diffStore.consumeScrollTarget();
       }
     }

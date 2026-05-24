@@ -494,9 +494,21 @@ test("resolves a published inline review thread from the timeline", async ({ pag
   await mockInlineReviewAPI(page);
 
   await page.goto("/pulls/github/acme/widgets/42");
-  await expect(page.getByText("Existing inline comment")).toBeVisible();
+  await expect(page.getByText("src/main.ts:2")).toBeVisible();
   await page.getByRole("button", { name: "Resolve" }).click();
   await expect(page.getByText("Resolved")).toBeVisible();
+});
+
+test("shows published inline review context in conversation and jumps to the diff line", async ({ page }) => {
+  await mockInlineReviewAPI(page);
+
+  await page.goto("/pulls/github/acme/widgets/42");
+
+  await expect(page.getByLabel("Commented diff context")).toContainText("const b = 2;");
+  await page.getByRole("button", { name: "Jump to diff" }).click();
+
+  await expect(page.getByRole("button", { name: /Files changed/ })).toHaveClass(/detail-tab--active/);
+  await expect(page.locator('[data-diff-path="src/main.ts"][data-diff-new-line="2"]')).toBeFocused();
 });
 
 test("enables inline review on public Forgejo and Gitea files routes", async ({ page }) => {

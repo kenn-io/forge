@@ -14,6 +14,7 @@
     getUIConfig, getNavigate,
   } from "../../context.js";
   import { renderMarkdown } from "../../utils/markdown.js";
+  import { buildPullRequestFilesRoute } from "../../routes.js";
   import { moveTaskListItem, toggleTaskListItem } from "../../utils/task-list.js";
   import { timeAgo } from "../../utils/time.js";
   import { copyToClipboard } from "../../utils/clipboard.js";
@@ -50,6 +51,11 @@
   import { nextCatalogLabelNames } from "./labelSelection.js";
   import { floatingPopoverStyle } from "../shared/floatingPosition.js";
   import DiffFilesLayout from "../diff/DiffFilesLayout.svelte";
+  import {
+    reviewThreadTargetLine,
+    reviewThreadTargetSide,
+    type ReviewThread,
+  } from "../diff/review-thread-context.js";
   import CIStatus from "./CIStatus.svelte";
   import StackStatus from "./StackStatus.svelte";
   import DiffSummaryChip from "./DiffSummaryChip.svelte";
@@ -73,7 +79,7 @@
 
   const CLEAR_LABELS_PENDING = "__clear-label-selection__";
 
-  const { detail: detailStore, pulls, activity } = getStores();
+  const { detail: detailStore, pulls, activity, diff: diffStore } = getStores();
   const client = getClient();
   const actions = getActions();
   const uiConfig = getUIConfig();
@@ -232,6 +238,19 @@
   function updateTimelineFilter(next: PRTimelineFilterState): void {
     timelineFilter = next;
     savePRTimelineFilter(next);
+  }
+
+  function jumpToReviewThread(thread: ReviewThread): void {
+    diffStore.requestScrollToLine(
+      thread.path,
+      reviewThreadTargetLine(thread),
+      reviewThreadTargetSide(thread),
+    );
+    if (hideTabs) {
+      navigate(buildPullRequestFilesRoute({ ...routeRef, number }));
+      return;
+    }
+    activeTab = "files";
   }
 
   // Mutating actions (close/reopen, kanban state, star, save title/body,
@@ -1911,6 +1930,7 @@
             onEditComment={capabilities.comment_mutation && !stalePR
               ? editTimelineComment
               : undefined}
+            {jumpToReviewThread}
           />
         {:else if detailStore.isDetailSyncing()}
           <div class="loading-placeholder">

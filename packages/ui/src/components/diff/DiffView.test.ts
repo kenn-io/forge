@@ -107,7 +107,7 @@ describe("DiffView", () => {
   it("keeps a scroll target pending until the file is rendered", async () => {
     const consumeScrollTarget = vi.fn();
     const diff = makeDiffStore({
-      getScrollTarget: () => "b.ts",
+      getScrollTarget: () => ({ path: "b.ts" }),
       consumeScrollTarget,
     });
 
@@ -166,7 +166,7 @@ describe("DiffView", () => {
       const diff = makeDiffStore({
         getDiff: () => result,
         getVisibleDiffFiles: () => files,
-        getScrollTarget: () => "b.ts",
+        getScrollTarget: () => ({ path: "b.ts" }),
         consumeScrollTarget,
       });
 

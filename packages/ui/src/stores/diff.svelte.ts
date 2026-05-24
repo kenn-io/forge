@@ -27,6 +27,12 @@ export type DiffScope =
 
 export type WorkspaceDiffBase = "head" | "pushed" | "merge-target";
 
+export type DiffScrollTarget = {
+  path: string;
+  line?: number | undefined;
+  side?: "left" | "right" | undefined;
+};
+
 export interface DiffStoreOptions {
   client?: MiddlemanClient;
   getBasePath?: () => string;
@@ -155,7 +161,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     loadCollapsedFiles(),
   );
   let activeFile = $state<string | null>(null);
-  let scrollTarget = $state<string | null>(null);
+  let scrollTarget = $state<DiffScrollTarget | null>(null);
   let scrolling = $state(false);
   let fileCategoryFilter = $state<DiffFileCategoryFilter>("all");
   let commits = $state<CommitInfo[] | null>(null);
@@ -176,9 +182,16 @@ export function createDiffStore(opts?: DiffStoreOptions) {
   let currentPlatformHost = $state<string | undefined>(undefined);
   let currentRepoPath = $state("");
 
-  function getCurrentPR(): { owner: string; name: string; number: number } | null {
+  function getCurrentPR(): (ProviderRouteRef & { number: number }) | null {
     if (!currentOwner) return null;
-    return { owner: currentOwner, name: currentName, number: currentNumber };
+    return {
+      provider: currentProvider,
+      platformHost: currentPlatformHost,
+      owner: currentOwner,
+      name: currentName,
+      repoPath: currentRepoPath,
+      number: currentNumber,
+    };
   }
 
   function currentRouteRef(): ProviderRouteRef {
@@ -287,10 +300,20 @@ export function createDiffStore(opts?: DiffStoreOptions) {
   function requestScrollToFile(path: string): void {
     activeFile = path;
     scrolling = true;
-    scrollTarget = path;
+    scrollTarget = { path };
   }
 
-  function getScrollTarget(): string | null {
+  function requestScrollToLine(
+    path: string,
+    line: number,
+    side: "left" | "right" = "right",
+  ): void {
+    activeFile = path;
+    scrolling = true;
+    scrollTarget = { path, line, side };
+  }
+
+  function getScrollTarget(): DiffScrollTarget | null {
     return scrollTarget;
   }
 
@@ -998,6 +1021,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     isScrolling,
     clearScrolling,
     requestScrollToFile,
+    requestScrollToLine,
     getScrollTarget,
     consumeScrollTarget,
     setTabWidth,

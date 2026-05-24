@@ -500,18 +500,26 @@
             </div>
             {#each hunk.lines as line, lineIdx (`${hunkIdx}:${line.old_num ?? ""}:${line.new_num ?? ""}:${lineIdx}`)}
               {@const order = renderedFile.hunks.slice(0, hunkIdx).reduce((sum, item) => sum + item.lines.length, 0) + lineIdx}
-              <DiffLineComponent
-                type={line.type}
-                content={line.content}
-                {...(line.old_num != null ? { oldNum: line.old_num } : {})}
-                {...(line.new_num != null ? { newNum: line.new_num } : {})}
-                {...(line.no_newline ? { noNewline: line.no_newline } : {})}
-                tokens={getTokens(hunkIdx, lineIdx)}
-                {reviewEnabled}
-                oldSelected={isSelected(line, "left", order, hunkIdx) || isInDraftRange(line, "left", order, hunkIdx)}
-                newSelected={isSelected(line, "right", order, hunkIdx) || isInDraftRange(line, "right", order, hunkIdx)}
-                onselectside={(side, event) => handleLineSelect(line, side, order, hunkIdx, event)}
-              />
+              <div
+                class="diff-line-anchor"
+                tabindex="-1"
+                data-diff-path={file.path}
+                {...(line.old_num != null ? { "data-diff-old-line": String(line.old_num) } : {})}
+                {...(line.new_num != null ? { "data-diff-new-line": String(line.new_num) } : {})}
+              >
+                <DiffLineComponent
+                  type={line.type}
+                  content={line.content}
+                  {...(line.old_num != null ? { oldNum: line.old_num } : {})}
+                  {...(line.new_num != null ? { newNum: line.new_num } : {})}
+                  {...(line.no_newline ? { noNewline: line.no_newline } : {})}
+                  tokens={getTokens(hunkIdx, lineIdx)}
+                  {reviewEnabled}
+                  oldSelected={isSelected(line, "left", order, hunkIdx) || isInDraftRange(line, "left", order, hunkIdx)}
+                  newSelected={isSelected(line, "right", order, hunkIdx) || isInDraftRange(line, "right", order, hunkIdx)}
+                  onselectside={(side, event) => handleLineSelect(line, side, order, hunkIdx, event)}
+                />
+              </div>
               {#if reviewEnabled}
                 {#each draftCommentsAfter(line, order, hunkIdx) as comment (comment.id)}
                   <DiffReviewDraftInlineComment {comment} />
@@ -534,6 +542,11 @@
 <style>
   .diff-file {
     border-top: 2px solid var(--diff-border);
+  }
+
+  .diff-line-anchor:focus {
+    outline: 2px solid var(--accent-blue);
+    outline-offset: -2px;
   }
 
   .file-header {

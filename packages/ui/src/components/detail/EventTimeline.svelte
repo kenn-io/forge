@@ -8,7 +8,6 @@
   import { untrack } from "svelte";
   import { slide } from "svelte/transition";
   import type { IssueEvent, PREvent } from "../../api/types.js";
-  import type { components } from "../../api/generated/schema.js";
   import type { StoreInstances } from "../../types.js";
   import { renderMarkdown } from "../../utils/markdown.js";
   import { timeAgo } from "../../utils/time.js";
@@ -20,6 +19,10 @@
   } from "../../utils/item-reference.js";
   import CommentEditor from "./CommentEditor.svelte";
   import DiffReviewThreadSnippet from "../diff/DiffReviewThreadSnippet.svelte";
+  import {
+    reviewThreadContext,
+    type ReviewThread,
+  } from "../diff/review-thread-context.js";
 
   interface Props {
     events: Array<PREvent | IssueEvent>;
@@ -33,6 +36,7 @@
     filtered?: boolean;
     showCommitDetails?: boolean;
     onEditComment?: ((event: PREvent | IssueEvent, body: string) => Promise<boolean>) | undefined;
+    jumpToReviewThread?: ((thread: ReviewThread) => void) | undefined;
   }
 
   const {
@@ -47,11 +51,13 @@
     filtered = false,
     showCommitDetails = true,
     onEditComment,
+    jumpToReviewThread,
   }: Props = $props();
   const stores = getStores() as StoreInstances | undefined;
   const detailStore = stores?.detail;
+  const diffStore = stores?.diff;
   const diffReviewDraft = stores?.diffReviewDraft;
-  type ReviewThread = components["schemas"]["DiffReviewThreadResponse"];
+  const diff = $derived(diffStore?.getDiff() ?? null);
 
   $effect(() => {
     if (!provider || !repoOwner || !repoName || !repoPath || number == null) return;
@@ -59,6 +65,33 @@
     const nextNumber = number;
     untrack(() => {
       diffReviewDraft?.setRouteContext(nextRef, nextNumber);
+    });
+  });
+
+  $effect(() => {
+    if (!diffStore || !provider || !repoOwner || !repoName || !repoPath || number == null) return;
+    if (!events.some((event) => reviewThreadFor(event) !== null)) return;
+    if (diffStore.isDiffLoading()) return;
+    const current = diffStore.getCurrentPR();
+    if (
+      diffStore.getDiff() !== null &&
+      current?.provider === provider &&
+      current.platformHost === platformHost &&
+      current?.owner === repoOwner &&
+      current.name === repoName &&
+      current.repoPath === repoPath &&
+      current.number === number
+    ) {
+      return;
+    }
+    untrack(() => {
+      void diffStore.loadDiff(repoOwner, repoName, number, {
+        provider,
+        platformHost,
+        owner: repoOwner,
+        name: repoName,
+        repoPath,
+      });
     });
   });
 
@@ -380,8 +413,12 @@
       {#if !nested && reviewThread}
         <DiffReviewThreadSnippet
           thread={reviewThread}
+          context={diff ? reviewThreadContext(diff, reviewThread) : null}
           canResolve={reviewThread.can_resolve && canResolveReviewThreads && diffReviewDraft != null}
           onchanged={refreshAfterThreadChange}
+          jumpToDiff={jumpToReviewThread
+            ? () => jumpToReviewThread(reviewThread)
+            : undefined}
         />
       {/if}
       <div class="event-actions">

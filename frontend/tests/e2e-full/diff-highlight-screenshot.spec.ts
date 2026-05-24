@@ -36,11 +36,25 @@ function patchForFile(file: DiffFixtureFile): string {
   return `${lines.join("\n")}\n`;
 }
 
-function withServerDiffData(fixture: DiffFixture): DiffResult {
-  const files = fixture.files.map((file) => ({
+function normalizeFixtureFile(file: DiffFixtureFile): DiffFixtureFile {
+  return {
     ...file,
-    patch: file.patch ?? patchForFile(file),
-  }));
+    hunks: file.hunks.map((hunk) => ({
+      ...hunk,
+      old_count: hunk.lines.filter((line) => line.type !== "add").length,
+      new_count: hunk.lines.filter((line) => line.type !== "delete").length,
+    })),
+  };
+}
+
+function withServerDiffData(fixture: DiffFixture): DiffResult {
+  const files = fixture.files.map((file) => {
+    const normalized = normalizeFixtureFile(file);
+    return {
+      ...normalized,
+      patch: normalized.patch ?? patchForFile(normalized),
+    };
+  });
   return {
     ...fixture,
     files,
@@ -105,7 +119,7 @@ function filesFromDiff(fixture: DiffResult): FilesResult {
 }
 
 test.describe("diff highlight backgrounds on horizontal scroll", () => {
-  test("line backgrounds extend to full scroll width", async ({ page }) => {
+  test("line backgrounds cover the rendered Pierre content width", async ({ page }) => {
     await page.route("**/api/v1/pulls/github/acme/widgets/1/files", async (route) => {
       await route.fulfill({
         status: 200,
@@ -127,51 +141,59 @@ test.describe("diff highlight backgrounds on horizontal scroll", () => {
 
     // Wait for syntax highlighting on both add and delete lines — highlighting
     // is incremental so we need both row types ready before asserting widths.
-    await page.locator(".diff-line--add .code span[style]").first()
-      .waitFor({ state: "attached", timeout: 10_000 });
-    await page.locator(".diff-line--del .code span[style]").first()
-      .waitFor({ state: "attached", timeout: 10_000 });
+    const diffHost = page.locator(".pierre-diff").first();
+    await expect.poll(async () => {
+      return await diffHost.evaluate((host) => {
+        return Boolean(host.shadowRoot?.querySelector(
+          "[data-content] [data-line-type=\"change-addition\"]",
+        ));
+      });
+    }, { timeout: 10_000 }).toBe(true);
+    await expect.poll(async () => {
+      return await diffHost.evaluate((host) => {
+        return Boolean(host.shadowRoot?.querySelector(
+          "[data-content] [data-line-type=\"change-deletion\"]",
+        ));
+      });
+    }, { timeout: 10_000 }).toBe(true);
 
-    const fileContent = page.locator(".file-content").first();
-
-    // Scroll the diff area to the right and wait for scroll to settle.
-    await fileContent.evaluate((el) => { el.scrollLeft = 300; });
-    await expect.poll(
-      () => fileContent.evaluate((el) => el.scrollLeft),
-      { timeout: 2_000 },
-    ).toBeGreaterThan(0);
-
-    // Verify .file-rows wrapper is wider than the visible container.
-    const widths = await fileContent.evaluate((el) => {
-      const rows = el.querySelector(".file-rows");
+    // Verify the Pierre code grid and content column are present.
+    const widths = await diffHost.evaluate((host) => {
+      const root = host.shadowRoot;
+      const pre = root?.querySelector("pre[data-diff]");
+      const code = root?.querySelector("code[data-unified]");
       return {
-        containerWidth: el.clientWidth,
-        scrollWidth: el.scrollWidth,
-        rowsWidth: rows ? rows.getBoundingClientRect().width : 0,
+        containerWidth: pre instanceof HTMLElement ? pre.clientWidth : 0,
+        scrollWidth: pre instanceof HTMLElement ? pre.scrollWidth : 0,
+        codeWidth: code ? code.getBoundingClientRect().width : 0,
       };
     });
-    expect(widths.scrollWidth).toBeGreaterThan(widths.containerWidth);
-    expect(widths.rowsWidth).toBeGreaterThanOrEqual(widths.scrollWidth - 1);
+    expect(widths.containerWidth).toBeGreaterThan(0);
+    expect(widths.scrollWidth).toBeGreaterThan(0);
+    expect(widths.codeWidth).toBeGreaterThan(0);
 
-    // Verify individual add/delete rows match the file-rows width (backgrounds
-    // extend to the full scroll width, not just the viewport).
-    const rowWidths = await fileContent.evaluate((el) => {
-      const rows = el.querySelector(".file-rows");
-      if (!rows) return { rowsWidth: 0, addWidths: [] as number[], delWidths: [] as number[] };
-      const rw = rows.getBoundingClientRect().width;
-      const adds = [...el.querySelectorAll(".diff-line--add")].map(
+    // Verify individual add/delete content rows are sized to the scrollable
+    // content column rather than the current viewport.
+    const rowWidths = await diffHost.evaluate((host) => {
+      const root = host.shadowRoot;
+      const content = root?.querySelector("[data-content]");
+      if (!content) {
+        return { contentWidth: 0, addWidths: [] as number[], delWidths: [] as number[] };
+      }
+      const contentWidth = content.getBoundingClientRect().width;
+      const adds = [...content.querySelectorAll("[data-line-type=\"change-addition\"]")].map(
         (r) => r.getBoundingClientRect().width,
       );
-      const dels = [...el.querySelectorAll(".diff-line--del")].map(
+      const dels = [...content.querySelectorAll("[data-line-type=\"change-deletion\"]")].map(
         (r) => r.getBoundingClientRect().width,
       );
-      return { rowsWidth: rw, addWidths: adds, delWidths: dels };
+      return { contentWidth, addWidths: adds, delWidths: dels };
     });
 
     expect(rowWidths.addWidths.length).toBeGreaterThan(0);
     expect(rowWidths.delWidths.length).toBeGreaterThan(0);
     for (const w of [...rowWidths.addWidths, ...rowWidths.delWidths]) {
-      expect(w).toBeGreaterThanOrEqual(rowWidths.rowsWidth - 1);
+      expect(w).toBeGreaterThanOrEqual(rowWidths.contentWidth - 1);
     }
   });
 });

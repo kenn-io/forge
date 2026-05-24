@@ -586,6 +586,7 @@ func worktreeUntrackedFilesFromPaths(
 			file.Hunks = []gitclone.Hunk{
 				untrackedFileHunk(content),
 			}
+			file.Patch = gitclone.BuildPatch(file)
 		}
 		files = append(files, file)
 	}

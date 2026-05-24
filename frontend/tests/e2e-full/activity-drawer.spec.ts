@@ -36,15 +36,37 @@ function patchForFile(file: DiffFixtureFile): string {
   return `${lines.join("\n")}\n`;
 }
 
-function withServerDiffData(fixture: DiffFixture): DiffResult {
-  const files = fixture.files.map((file) => ({
+function normalizeFixtureFile(file: DiffFixtureFile): DiffFixtureFile {
+  return {
     ...file,
-    patch: file.patch ?? patchForFile(file),
-  }));
+    hunks: file.hunks.map((hunk) => ({
+      ...hunk,
+      old_count: hunk.lines.filter((line) => line.type !== "add").length,
+      new_count: hunk.lines.filter((line) => line.type !== "delete").length,
+    })),
+  };
+}
+
+function withServerDiffData(fixture: DiffFixture): DiffResult {
+  const files = fixture.files.map((file) => {
+    const normalized = normalizeFixtureFile(file);
+    return {
+      ...normalized,
+      patch: normalized.patch ?? patchForFile(normalized),
+    };
+  });
   return {
     ...fixture,
     files,
   };
+}
+
+function treeFileItems(root: Locator) {
+  return root.locator(".diff-file-tree [data-item-type=\"file\"]");
+}
+
+function treeFileItem(root: Locator, path: string) {
+  return root.locator(`.diff-file-tree [data-item-path="${path}"]`);
 }
 
 // Minimal diff fixture: one modified file.
@@ -950,9 +972,8 @@ test.describe("activity split view and detail drawers", () => {
     const fileSidebar = detail.locator(".files-layout > .files-sidebar");
     await expect(fileSidebar).toBeVisible();
     await expect(detail.locator(".diff-scope-picker")).toBeVisible();
-    await expect(fileSidebar.locator(".diff-file-row")).toHaveCount(1);
-    await expect(fileSidebar.locator(".diff-file-row .diff-file-name"))
-      .toHaveText("handler.go");
+    await expect(treeFileItems(fileSidebar)).toHaveCount(1);
+    await expect(treeFileItem(fileSidebar, "src/handler.go")).toBeVisible();
     await expect(detail.locator(".stack-sidebar")).toHaveCount(0);
     await expect(detail.locator(".list-layout > .sidebar")).toHaveCount(0);
     await expect(detail.locator(".list-layout > .resize-handle")).toHaveCount(0);
@@ -979,9 +1000,8 @@ test.describe("activity split view and detail drawers", () => {
     await expect(drawer.locator(".files-layout > .files-main .diff-view")).toBeVisible();
 
     await expect(drawer.locator(".diff-scope-picker")).toBeVisible();
-    await expect(sidebar.locator(".diff-file-row")).toHaveCount(1);
-    await expect(sidebar.locator(".diff-file-row .diff-file-name"))
-      .toHaveText("handler.go");
+    await expect(treeFileItems(sidebar)).toHaveCount(1);
+    await expect(treeFileItem(sidebar, "src/handler.go")).toBeVisible();
   });
 
   test("activity split view Files tab renders every diff file", async ({ page }) => {
@@ -1041,13 +1061,13 @@ test.describe("activity split view and detail drawers", () => {
     const diffArea = drawer.locator(".files-layout > .files-main .diff-area");
 
     await expect(diffArea).toBeVisible();
-    await expect(sidebar.locator(".diff-file-row")).toHaveCount(20);
+    await expect(treeFileItems(sidebar)).toHaveCount(20);
 
     // Click the 12th file (file_11.go) and verify navigation.
-    await sidebar.locator(".diff-file-row", { hasText: "file_11.go" }).click();
+    await treeFileItem(sidebar, "src/file_11.go").click();
     await expect(
-      sidebar.locator(".diff-file-row.diff-file-row--active .diff-file-name"),
-    ).toHaveText("file_11.go");
+      treeFileItem(sidebar, "src/file_11.go"),
+    ).toHaveAttribute("aria-selected", "true");
     await expectDiffFileVisibleInScrollArea(diffArea, "src/file_11.go");
   });
 

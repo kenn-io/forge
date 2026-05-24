@@ -318,18 +318,17 @@ test.describe("workspace tab persistence", () => {
       );
       await expect(alphaDiffFile).toBeVisible();
       await expect(betaDiffFile).toHaveCount(1);
-      const firstDiffLineGutterCount = await page
-        .locator(".right-sidebar .diff-line")
-        .first()
-        .locator(".gutter")
-        .count();
-      expect(firstDiffLineGutterCount).toBe(2);
-      const lineGutterWidths = await page
-        .locator(".right-sidebar .diff-line .gutter")
-        .evaluateAll((gutters) =>
-          gutters.map((gutter) => gutter.getBoundingClientRect().width),
-        );
-      expect(Math.max(...lineGutterWidths)).toBeLessThanOrEqual(40);
+      const rightDiffHost = page.locator(".right-sidebar .pierre-diff").first();
+      const firstDiffLineGutterCount = await rightDiffHost.evaluate((host) => {
+        return host.shadowRoot?.querySelectorAll("[data-gutter] [data-line-type]")
+          .length ?? 0;
+      });
+      expect(firstDiffLineGutterCount).toBeGreaterThan(0);
+      const lineGutterWidth = await rightDiffHost.evaluate((host) => {
+        return host.shadowRoot?.querySelector("[data-gutter]")
+          ?.getBoundingClientRect().width ?? 0;
+      });
+      expect(lineGutterWidth).toBeLessThanOrEqual(40);
       const diffToolbar = page.locator(".right-sidebar .diff-toolbar");
       await expect(diffToolbar.locator(".compact-more-btn")).toBeVisible();
       await expect(

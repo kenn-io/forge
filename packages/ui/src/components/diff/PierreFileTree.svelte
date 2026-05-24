@@ -38,6 +38,8 @@
   const treeOptions = $derived<FileTreeOptions>({
     paths: treePaths,
     initialExpansion: "open",
+    initialVisibleRowCount: Math.max(100, treePaths.length * 4),
+    overscan: Math.max(100, treePaths.length * 4),
     flattenEmptyDirectories: true,
     density: "compact",
     icons: { set: "complete", colored: false },

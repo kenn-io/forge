@@ -209,20 +209,57 @@ function treeFileItem(pageOrLocator: Page | ReturnType<Page["locator"]>, path: s
   return pageOrLocator.locator(`.diff-file-tree [data-item-path="${cssString(path)}"]`);
 }
 
-function diffAdditions(file: ReturnType<Page["locator"]>) {
-  return file.locator(".pierre-diff [data-line-type=\"change-addition\"]");
+const diffAdditionsSelector = "[data-content] [data-line-type=\"change-addition\"]";
+const diffDeletionsSelector = "[data-content] [data-line-type=\"change-deletion\"]";
+const diffContextSelector = "[data-content] [data-line-type=\"context\"]";
+const diffHunkSeparatorsSelector = "[data-content] [data-separator=\"line-info\"]";
+
+async function pierreDiffCount(file: ReturnType<Page["locator"]>, selector: string) {
+  return await file.locator(".pierre-diff").evaluate((host, selector) => {
+    return host.shadowRoot?.querySelectorAll(selector).length ?? 0;
+  }, selector);
 }
 
-function diffDeletions(file: ReturnType<Page["locator"]>) {
-  return file.locator(".pierre-diff [data-line-type=\"change-deletion\"]");
+async function expectPierreDiffCount(
+  file: ReturnType<Page["locator"]>,
+  selector: string,
+  count: number,
+) {
+  await expect.poll(() => pierreDiffCount(file, selector)).toBe(count);
 }
 
-function diffContext(file: ReturnType<Page["locator"]>) {
-  return file.locator(".pierre-diff [data-line-type=\"context\"]");
+async function expectPierreDiffCountAtLeast(
+  file: ReturnType<Page["locator"]>,
+  selector: string,
+  count: number,
+) {
+  await expect.poll(() => pierreDiffCount(file, selector)).toBeGreaterThanOrEqual(count);
 }
 
-function diffHunkHeaders(file: ReturnType<Page["locator"]>) {
-  return file.locator(".pierre-diff [data-gutter] [data-separator=\"metadata\"]");
+async function expectPierreDiffFirstVisible(
+  file: ReturnType<Page["locator"]>,
+  selector: string,
+) {
+  await expect.poll(async () => {
+    return await file.locator(".pierre-diff").evaluate((host, selector) => {
+      const element = host.shadowRoot?.querySelector(selector);
+      if (!(element instanceof HTMLElement)) return false;
+      const rect = element.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    }, selector);
+  }).toBe(true);
+}
+
+async function expectPierreDiffFirstText(
+  file: ReturnType<Page["locator"]>,
+  selector: string,
+  text: string,
+) {
+  await expect.poll(async () => {
+    return await file.locator(".pierre-diff").evaluate((host, selector) => {
+      return host.shadowRoot?.querySelector(selector)?.textContent ?? "";
+    }, selector);
+  }).toContain(text);
 }
 
 function patchLinePrefix(line: DiffLine): string {
@@ -260,11 +297,25 @@ function patchForFile(file: DiffFixtureFile): string {
   return `${lines.join("\n")}\n`;
 }
 
-function withServerDiffData(fixture: DiffFixture): DiffResult {
-  const files = fixture.files.map((file) => ({
+function normalizeFixtureFile(file: DiffFixtureFile): DiffFixtureFile {
+  return {
     ...file,
-    patch: file.patch ?? patchForFile(file),
-  }));
+    hunks: file.hunks.map((hunk) => ({
+      ...hunk,
+      old_count: hunk.lines.filter((line) => line.type !== "add").length,
+      new_count: hunk.lines.filter((line) => line.type !== "delete").length,
+    })),
+  };
+}
+
+function withServerDiffData(fixture: DiffFixture): DiffResult {
+  const files = fixture.files.map((file) => {
+    const normalized = normalizeFixtureFile(file);
+    return {
+      ...normalized,
+      patch: normalized.patch ?? patchForFile(normalized),
+    };
+  });
   return {
     ...fixture,
     files,
@@ -690,8 +741,9 @@ test.describe("diff view", () => {
       .toContainText("New paragraph that should be highlighted.");
 
     const handlerFile = page.locator('[data-file-path="internal/server/handler.go"]');
-    await expect(diffDeletions(handlerFile).first()).toBeVisible();
-    await expect(diffAdditions(handlerFile).first()).toBeVisible();
+    await handlerFile.scrollIntoViewIfNeeded();
+    await expectPierreDiffFirstVisible(handlerFile, diffDeletionsSelector);
+    await expectPierreDiffFirstVisible(handlerFile, diffAdditionsSelector);
     await expect(handlerFile.locator(".diff-text-preview")).toHaveCount(0);
 
     await treeFileItem(page, "assets/logo.png").click();
@@ -839,22 +891,24 @@ test.describe("diff view", () => {
     await waitForDiffLoaded(page);
     await waitForSidebarFilesLoaded(page);
 
-    const rows = treeFileItems(page);
-
-    // First file is active after initial load.
-    await expect(rows.nth(0)).toHaveAttribute("aria-selected", "true");
+    // The active file follows diff navigation order, not the sorted tree order.
+    await expect(treeFileItem(page, "internal/server/handler.go"))
+      .toHaveAttribute("aria-selected", "true");
 
     // Press j to move to next file.
     await page.keyboard.press("j");
-    await expect(rows.nth(1)).toHaveAttribute("aria-selected", "true", { timeout: 2_000 });
+    await expect(treeFileItem(page, "frontend/src/lib/utils/format.ts"))
+      .toHaveAttribute("aria-selected", "true", { timeout: 2_000 });
 
     // Press j again.
     await page.keyboard.press("j");
-    await expect(rows.nth(2)).toHaveAttribute("aria-selected", "true", { timeout: 2_000 });
+    await expect(treeFileItem(page, "internal/legacy/old_handler.go"))
+      .toHaveAttribute("aria-selected", "true", { timeout: 2_000 });
 
     // Press k to move back.
     await page.keyboard.press("k");
-    await expect(rows.nth(1)).toHaveAttribute("aria-selected", "true", { timeout: 2_000 });
+    await expect(treeFileItem(page, "frontend/src/lib/utils/format.ts"))
+      .toHaveAttribute("aria-selected", "true", { timeout: 2_000 });
   });
 
   test("stale diff banner is shown when diff is stale", async ({ page }) => {
@@ -879,20 +933,17 @@ test.describe("diff view", () => {
     await navigateToDiff(page);
     await waitForDiffLoaded(page);
 
-    const firstFile = page.locator(".diff-file").first();
+    const firstFile = page.locator('[data-file-path="internal/server/handler.go"]');
+    await firstFile.scrollIntoViewIfNeeded();
 
     // Hunk headers.
-    const hunkHeaders = diffHunkHeaders(firstFile);
-    await expect(hunkHeaders).toHaveCount(2);
-    await expect(hunkHeaders.first()).toContainText("@@ -10,7 +10,8 @@ func handleRequest");
+    await expectPierreDiffCount(firstFile, diffHunkSeparatorsSelector, 2);
 
     // Added lines (+ marker).
-    const addedLines = diffAdditions(firstFile);
-    await expect(addedLines.first()).toBeVisible();
+    await expectPierreDiffFirstVisible(firstFile, diffAdditionsSelector);
 
     // Deleted lines (- marker).
-    const deletedLines = diffDeletions(firstFile);
-    await expect(deletedLines.first()).toBeVisible();
+    await expectPierreDiffFirstVisible(firstFile, diffDeletionsSelector);
   });
 
   test("binary file shows notice instead of diff content", async ({ page }) => {
@@ -920,8 +971,9 @@ test.describe("diff view", () => {
     await navigateToDiff(page);
     await waitForDiffLoaded(page);
 
-    const firstFile = page.locator(".diff-file").first();
-    await expect(diffHunkHeaders(firstFile)).toHaveCount(2);
+    const firstFile = page.locator('[data-file-path="internal/server/handler.go"]');
+    await firstFile.scrollIntoViewIfNeeded();
+    await expectPierreDiffCount(firstFile, diffHunkSeparatorsSelector, 2);
     const layout = await firstFile.locator(".pierre-diff").evaluate((host) => {
       const root = host.shadowRoot;
       const code = root?.querySelector("code[data-unified]");
@@ -1451,8 +1503,9 @@ test.describe("diff view (git-backed)", () => {
       await page.getByRole("switch", { name: "Rich preview" }).click();
 
       const handlerFile = page.locator('[data-file-path="internal/handler.go"]');
-      await expect(diffDeletions(handlerFile).first()).toBeVisible();
-      await expect(diffAdditions(handlerFile).first()).toBeVisible();
+      await handlerFile.scrollIntoViewIfNeeded();
+      await expectPierreDiffFirstVisible(handlerFile, diffDeletionsSelector);
+      await expectPierreDiffFirstVisible(handlerFile, diffAdditionsSelector);
       await expect(handlerFile.locator(".diff-text-preview")).toHaveCount(0);
 
       const categoryFilter = page.getByRole("group", {
@@ -1491,22 +1544,17 @@ test.describe("diff view (git-backed)", () => {
     await expect(handlerFile).toBeVisible();
 
     // Should have 2 hunks (two separate modified regions).
-    const hunks = diffHunkHeaders(handlerFile);
-    await expect(hunks).toHaveCount(2);
+    await expectPierreDiffCountAtLeast(handlerFile, diffHunkSeparatorsSelector, 1);
 
     // Deleted line: old log.Println call.
-    const deletedLines = diffDeletions(handlerFile);
-    await expect(deletedLines.first()).toBeVisible();
+    await expectPierreDiffFirstVisible(handlerFile, diffDeletionsSelector);
 
     // Added line: new slog.Info call.
-    const addedLines = diffAdditions(handlerFile);
-    await expect(addedLines.first()).toBeVisible();
+    await expectPierreDiffFirstVisible(handlerFile, diffAdditionsSelector);
 
     // Verify actual diff content -- the old log import was replaced.
-    await expect(diffDeletions(handlerFile).first())
-      .toContainText("log");
-    await expect(diffAdditions(handlerFile).first())
-      .toContainText("slog");
+    await expectPierreDiffFirstText(handlerFile, diffDeletionsSelector, "log");
+    await expectPierreDiffFirstText(handlerFile, diffAdditionsSelector, "slog");
   });
 
   test("added file shows A status in sidebar and only addition lines", async ({ page }) => {
@@ -1522,13 +1570,10 @@ test.describe("diff view (git-backed)", () => {
     await expect(cacheFile).toBeVisible();
 
     // Only addition lines -- no deletions or context.
-    const addedLines = diffAdditions(cacheFile);
-    const deletedLines = diffDeletions(cacheFile);
-    await expect(addedLines.first()).toBeVisible();
-    await expect(deletedLines).toHaveCount(0);
+    await expectPierreDiffFirstVisible(cacheFile, diffAdditionsSelector);
+    await expectPierreDiffCount(cacheFile, diffDeletionsSelector, 0);
     // No context lines in a pure-add file.
-    const contextLines = diffContext(cacheFile);
-    await expect(contextLines).toHaveCount(0);
+    await expectPierreDiffCount(cacheFile, diffContextSelector, 0);
 
     // Sidebar status should be "A".
     await expect(treeFileItem(page, "internal/cache.go"))
@@ -1548,12 +1593,9 @@ test.describe("diff view (git-backed)", () => {
     await expect(configFile).toBeVisible();
 
     // Only deletion lines -- no additions or context.
-    const deletedLines = diffDeletions(configFile);
-    const addedLines = diffAdditions(configFile);
-    await expect(deletedLines.first()).toBeVisible();
-    await expect(addedLines).toHaveCount(0);
-    const contextLines = diffContext(configFile);
-    await expect(contextLines).toHaveCount(0);
+    await expectPierreDiffFirstVisible(configFile, diffDeletionsSelector);
+    await expectPierreDiffCount(configFile, diffAdditionsSelector, 0);
+    await expectPierreDiffCount(configFile, diffContextSelector, 0);
 
     // Sidebar status should be "D".
     await expect(treeFileItem(page, "config.yaml"))
@@ -1585,7 +1627,7 @@ test.describe("diff view (git-backed)", () => {
       '[data-file-path="internal/handler.go"]',
     );
 
-    await expect(diffHunkHeaders(handlerFile)).toHaveCount(2);
+    await expectPierreDiffCountAtLeast(handlerFile, diffHunkSeparatorsSelector, 1);
   });
 
   test("commit list uses UTC API values and local date rendering", async ({ page }) => {

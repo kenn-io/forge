@@ -145,6 +145,41 @@ func TestWorktreeFileDiffAgainstHeadScopesPatchToOnePath(t *testing.T) {
 	assert.NotEmpty(file.Hunks[0].Lines)
 }
 
+func TestWorktreeFileDiffAgainstHeadBuildsPatchForUntrackedPath(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	work := setupDivergenceWorktree(t)
+
+	require.NoError(os.WriteFile(
+		filepath.Join(work, "first.go"), []byte("package first\n"), 0o644,
+	))
+	require.NoError(os.WriteFile(
+		filepath.Join(work, "second.go"), []byte("package second\n"), 0o644,
+	))
+
+	diff, ok, err := WorktreeFileDiff(
+		t.Context(), work, WorktreeDiffBaseHead, false, "first.go",
+	)
+	require.NoError(err)
+	require.True(ok)
+	require.NotNil(diff)
+	require.Len(diff.Files, 1)
+
+	file := diff.Files[0]
+	assert.Equal("first.go", file.Path)
+	assert.Equal("added", file.Status)
+	assert.Contains(file.Patch, "diff --git a/first.go b/first.go\n")
+	assert.Contains(file.Patch, "new file mode 100644\n")
+	assert.Contains(file.Patch, "@@ -0,0 +1 @@\n")
+	assert.Contains(file.Patch, "+package first\n")
+	require.Len(file.Hunks, 1)
+	paths := make([]string, 0, len(diff.Files))
+	for _, file := range diff.Files {
+		paths = append(paths, file.Path)
+	}
+	assert.NotContains(paths, "second.go")
+}
+
 func TestWorktreeDiffAgainstPushedBranchIncludesLocalCommitsAndDirtyChanges(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)

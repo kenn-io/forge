@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-func buildPatch(file DiffFile) string {
+func BuildPatch(file DiffFile) string {
 	if file.IsBinary || len(file.Hunks) == 0 {
 		return ""
 	}
@@ -43,6 +43,10 @@ func buildPatch(file DiffFile) string {
 		}
 	}
 	return strings.Join(lines, "\n") + "\n"
+}
+
+func buildPatch(file DiffFile) string {
+	return BuildPatch(file)
 }
 
 func fileModeHeaders(file DiffFile) []string {

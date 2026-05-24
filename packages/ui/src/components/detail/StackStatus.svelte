@@ -355,6 +355,8 @@
   }
 
   .stack-panel {
+    --stack-rail-color: color-mix(in srgb, var(--text-muted) 58%, var(--border-default));
+
     display: flex;
     flex-direction: column;
     width: 100%;
@@ -451,7 +453,7 @@
 
   .stack-dot--outline {
     background: var(--bg-inset);
-    border-color: var(--border-default);
+    border-color: var(--stack-rail-color);
   }
 
   .stack-line {
@@ -459,7 +461,7 @@
     top: -6px;
     bottom: -6px;
     width: 2px;
-    background: var(--border-default);
+    background: var(--stack-rail-color);
   }
 
   .stack-rail--first .stack-line {

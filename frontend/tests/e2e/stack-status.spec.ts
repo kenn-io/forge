@@ -421,4 +421,15 @@ test("stack rail spans wrapped CI badges at narrow widths", async ({ page }) => 
   expect(currentLineBox!.y + currentLineBox!.height).toBeGreaterThanOrEqual(
     currentBadgesBox!.y + currentBadgesBox!.height - 1,
   );
+  const railColors = await currentRow.evaluate((row) => {
+    const line = row.querySelector(".stack-line");
+    const panel = row.closest(".stack-panel");
+    if (!line || !panel) return null;
+    return {
+      line: getComputedStyle(line).backgroundColor,
+      panel: getComputedStyle(panel).backgroundColor,
+    };
+  });
+  expect(railColors).not.toBeNull();
+  expect(railColors!.line).not.toEqual(railColors!.panel);
 });

@@ -85,6 +85,30 @@
         --diffs-font-family: var(--font-mono);
         --diffs-light-bg: var(--bg-surface, #fff);
         --diffs-dark-bg: var(--bg-surface, #16161e);
+        --diffs-addition-color-override: var(--accent-green);
+        --diffs-deletion-color-override: var(--accent-red);
+        --diffs-bg-addition-override: light-dark(
+          color-mix(in srgb, var(--accent-green) 55%, black),
+          color-mix(in srgb, var(--accent-green) 38%, black)
+        );
+        --diffs-bg-deletion-override: light-dark(
+          color-mix(in srgb, var(--accent-red) 69%, black),
+          color-mix(in srgb, var(--accent-red) 54%, black)
+        );
+        --diffs-fg-number-addition-override: var(--accent-green);
+        --diffs-bg-addition-number-override: var(--accent-green);
+        --diffs-fg-number-deletion-override: var(--accent-red);
+        --diffs-bg-deletion-number-override: var(--accent-red);
+        --diffs-bg-addition-emphasis-override: color-mix(
+          in srgb,
+          transparent 76%,
+          color-mix(in srgb, var(--accent-green) 42%, black)
+        );
+        --diffs-bg-deletion-emphasis-override: color-mix(
+          in srgb,
+          transparent 76%,
+          color-mix(in srgb, var(--accent-red) 58%, black)
+        );
       }
       pre {
         margin: 0;

@@ -297,6 +297,75 @@ async function expectPierreDarkBackgroundMatchesAppSurface(
   expect(colors.contextLineBackground).toBe(colors.appSurface);
 }
 
+async function expectPierreChangeColorsMatchAppTokens(
+  file: ReturnType<Page["locator"]>,
+) {
+  const colors = await file.locator(".pierre-diff").evaluate((host) => {
+    const sample = document.createElement("div");
+    sample.style.cssText = [
+      "position: fixed",
+      "left: -9999px",
+      "top: -9999px",
+      "width: 1px",
+      "height: 1px",
+      "color: var(--accent-green)",
+      "background: color-mix(in srgb, transparent 76%,"
+        + " color-mix(in srgb, var(--accent-green) 42%, black))",
+    ].join(";");
+    document.body.append(sample);
+    const appGreen = getComputedStyle(sample).color;
+    const appGreenEmphasis = getComputedStyle(sample).backgroundColor;
+    sample.style.color = "var(--accent-red)";
+    sample.style.background = "color-mix(in srgb, transparent 76%,"
+      + " color-mix(in srgb, var(--accent-red) 58%, black))";
+    const appRed = getComputedStyle(sample).color;
+    const appRedEmphasis = getComputedStyle(sample).backgroundColor;
+    sample.remove();
+
+    const root = host.shadowRoot;
+    const additionNumber = root?.querySelector(
+      "[data-column-number][data-line-type='change-addition']",
+    );
+    const additionSpan = root?.querySelector(
+      "[data-line-type='change-addition'] [data-diff-span]",
+    );
+    const deletionNumber = root?.querySelector(
+      "[data-column-number][data-line-type='change-deletion']",
+    );
+    const deletionSpan = root?.querySelector(
+      "[data-line-type='change-deletion'] [data-diff-span]",
+    );
+
+    return {
+      appGreen,
+      appGreenEmphasis,
+      appRed,
+      appRedEmphasis,
+      additionNumberColor: additionNumber instanceof HTMLElement
+        ? getComputedStyle(additionNumber).color
+        : "",
+      additionBarColor: additionNumber instanceof HTMLElement
+        ? getComputedStyle(additionNumber, "::before").backgroundColor
+        : "",
+      additionSpanBackground: additionSpan instanceof HTMLElement
+        ? getComputedStyle(additionSpan).backgroundColor
+        : "",
+      deletionNumberColor: deletionNumber instanceof HTMLElement
+        ? getComputedStyle(deletionNumber).color
+        : "",
+      deletionSpanBackground: deletionSpan instanceof HTMLElement
+        ? getComputedStyle(deletionSpan).backgroundColor
+        : "",
+    };
+  });
+
+  expect(colors.additionNumberColor).toBe(colors.appGreen);
+  expect(colors.additionBarColor).toBe(colors.appGreen);
+  expect(colors.additionSpanBackground).toBe(colors.appGreenEmphasis);
+  expect(colors.deletionNumberColor).toBe(colors.appRed);
+  expect(colors.deletionSpanBackground).toBe(colors.appRedEmphasis);
+}
+
 function patchLinePrefix(line: DiffLine): string {
   switch (line.type) {
     case "add":
@@ -1041,6 +1110,7 @@ test.describe("diff view", () => {
     const firstFile = page.locator('[data-file-path="internal/server/handler.go"]');
     await firstFile.scrollIntoViewIfNeeded();
     await expectPierreDarkBackgroundMatchesAppSurface(firstFile);
+    await expectPierreChangeColorsMatchAppTokens(firstFile);
   });
 
   test("fallback file list renders when selected PR is filtered out of sidebar", async ({ page }) => {

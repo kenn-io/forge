@@ -1700,6 +1700,10 @@ export interface components {
         };
         Activity: {
             collapse_threads: boolean;
+            /** Format: int64 */
+            default_branch_max_commits: number;
+            /** Format: int64 */
+            default_branch_retention_days: number;
             hide_bots: boolean;
             hide_closed: boolean;
             time_range: string;

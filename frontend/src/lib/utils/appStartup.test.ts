@@ -42,6 +42,8 @@ function makeSettings(): Settings {
       hide_closed: false,
       hide_bots: false,
       collapse_threads: false,
+      default_branch_retention_days: 90,
+      default_branch_max_commits: 5000,
     },
     terminal: {
       font_family: '"Fira Code", monospace',

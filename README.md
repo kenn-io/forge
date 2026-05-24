@@ -130,6 +130,8 @@ All fields are optional. Repos can be added in the config file or through the Se
 | `activity.time_range` | `"7d"` | `"24h"`, `"7d"`, `"30d"`, or `"90d"` |
 | `activity.hide_closed` | `false` | Hide closed/merged items in the feed |
 | `activity.hide_bots` | `false` | Hide bot activity |
+| `activity.default_branch_retention_days` | `90` | Days of default-branch commits to keep for Activity |
+| `activity.default_branch_max_commits` | `5000` | Maximum default-branch commit rows kept per repo branch |
 
 ### Provider Hosts
 

@@ -391,6 +391,10 @@ func run(configPath string) error {
 		startup.registry, database, cloneMgr, repos,
 		cfg.SyncDuration(), startup.rateTrackers, startup.budgets,
 	)
+	syncer.SetBranchActivityLimits(
+		cfg.BranchActivityRetention(),
+		cfg.Activity.DefaultBranchMaxCommits,
+	)
 	syncer.SetFetchers(startup.fetchers)
 
 	assets, err := web.Assets()

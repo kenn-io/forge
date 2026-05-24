@@ -47,7 +47,7 @@ func TestBranchActivityWalksDefaultBranchFirstParent(t *testing.T) {
 	require.NoError(mgr.EnsureClone(t.Context(), "github.com", "acme", "widgets", remote))
 
 	commits, err := mgr.ListBranchCommitsSince(
-		t.Context(), "github.com", "acme", "widgets", "main", time.Unix(0, 0).UTC(), "",
+		t.Context(), "github.com", "acme", "widgets", "main", time.Unix(0, 0).UTC(), "", 0,
 	)
 	require.NoError(err)
 
@@ -161,7 +161,7 @@ func TestListBranchCommitsSinceAfterSHATakesPrecedence(t *testing.T) {
 	require.NoError(mgr.EnsureClone(t.Context(), "github.com", "acme", "widgets", remote))
 
 	commits, err := mgr.ListBranchCommitsSince(
-		t.Context(), "github.com", "acme", "widgets", "main", time.Now().Add(24*time.Hour).UTC(), afterSHA,
+		t.Context(), "github.com", "acme", "widgets", "main", time.Now().Add(24*time.Hour).UTC(), afterSHA, 0,
 	)
 	require.NoError(err)
 
@@ -170,6 +170,41 @@ func TestListBranchCommitsSinceAfterSHATakesPrecedence(t *testing.T) {
 		subjects = append(subjects, commit.Message)
 	}
 	assert.Equal([]string{"main 2", "main 1"}, subjects)
+}
+
+func TestListBranchCommitsSinceHonorsMaxCount(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	dir := t.TempDir()
+	remote := filepath.Join(dir, "remote.git")
+	commitTestRun(t, dir, "git", "init", "--bare", "--initial-branch=main", remote)
+
+	work := filepath.Join(dir, "work")
+	commitTestRun(t, dir, "git", "clone", remote, work)
+	commitTestRun(t, work, "git", "config", "user.email", "alice@example.com")
+	commitTestRun(t, work, "git", "config", "user.name", "Alice")
+
+	for _, subject := range []string{"main 1", "main 2", "main 3"} {
+		require.NoError(os.WriteFile(filepath.Join(work, subject+".txt"), []byte(subject+"\n"), 0o644))
+		commitTestRun(t, work, "git", "add", ".")
+		commitTestRun(t, work, "git", "commit", "-m", subject)
+	}
+	commitTestRun(t, work, "git", "push", "origin", "main")
+
+	mgr := New(filepath.Join(dir, "clones"), nil)
+	require.NoError(mgr.EnsureClone(t.Context(), "github.com", "acme", "widgets", remote))
+
+	commits, err := mgr.ListBranchCommitsSince(
+		t.Context(), "github.com", "acme", "widgets", "main", time.Unix(0, 0).UTC(), "", 2,
+	)
+	require.NoError(err)
+
+	var subjects []string
+	for _, commit := range commits {
+		subjects = append(subjects, commit.Message)
+	}
+	assert.Equal([]string{"main 3", "main 2"}, subjects)
 }
 
 func TestResolveDefaultBranchFallsBackToOriginHEAD(t *testing.T) {

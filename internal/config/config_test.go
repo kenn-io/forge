@@ -1824,6 +1824,79 @@ name = "b"
 	})
 }
 
+func TestActivityDefaultBranchBounds(t *testing.T) {
+	t.Run("defaults retention and max commits when unset", func(t *testing.T) {
+		assert := Assert.New(t)
+		path := writeConfig(t, `
+[[repos]]
+owner = "a"
+name = "b"
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+
+		assert.Equal(90, cfg.Activity.DefaultBranchRetentionDays)
+		assert.Equal(5000, cfg.Activity.DefaultBranchMaxCommits)
+		assert.Equal(90*24*time.Hour, cfg.BranchActivityRetention())
+	})
+
+	t.Run("configured values are preserved", func(t *testing.T) {
+		assert := Assert.New(t)
+		path := writeConfig(t, `
+[[repos]]
+owner = "a"
+name = "b"
+
+[activity]
+default_branch_retention_days = 14
+default_branch_max_commits = 250
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+
+		assert.Equal(14, cfg.Activity.DefaultBranchRetentionDays)
+		assert.Equal(250, cfg.Activity.DefaultBranchMaxCommits)
+		assert.Equal(14*24*time.Hour, cfg.BranchActivityRetention())
+	})
+
+	t.Run("rejects negative values", func(t *testing.T) {
+		path := writeConfig(t, `
+[[repos]]
+owner = "a"
+name = "b"
+
+[activity]
+default_branch_retention_days = -1
+`)
+		_, err := Load(path)
+		require.Error(t, err)
+		Assert.Contains(t, err.Error(), "default_branch_retention_days")
+	})
+
+	t.Run("round-trips through Save", func(t *testing.T) {
+		require := require.New(t)
+		path := writeConfig(t, `
+[[repos]]
+owner = "a"
+name = "b"
+
+[activity]
+default_branch_retention_days = 30
+default_branch_max_commits = 1000
+`)
+		cfg, err := Load(path)
+		require.NoError(err)
+
+		savePath := filepath.Join(t.TempDir(), "saved.toml")
+		require.NoError(cfg.Save(savePath))
+
+		cfg2, err := Load(savePath)
+		require.NoError(err)
+		Assert.Equal(t, 30, cfg2.Activity.DefaultBranchRetentionDays)
+		Assert.Equal(t, 1000, cfg2.Activity.DefaultBranchMaxCommits)
+	})
+}
+
 func TestSSEBufferSize(t *testing.T) {
 	t.Run("default is 256 when unset", func(t *testing.T) {
 		path := writeConfig(t, `

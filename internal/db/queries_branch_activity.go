@@ -172,7 +172,11 @@ func (d *DB) InsertBranchForcePush(
 	return nil
 }
 
-func (d *DB) PruneBranchActivity(ctx context.Context, before time.Time) error {
+func (d *DB) PruneBranchActivity(
+	ctx context.Context,
+	before time.Time,
+	maxCommitsPerBranch int,
+) error {
 	before = canonicalUTCTime(before)
 	return d.Tx(ctx, func(tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx, `
@@ -188,6 +192,26 @@ func (d *DB) PruneBranchActivity(ctx context.Context, before time.Time) error {
 			before,
 		); err != nil {
 			return fmt.Errorf("prune branch force pushes: %w", err)
+		}
+		if maxCommitsPerBranch > 0 {
+			if _, err := tx.ExecContext(ctx, `
+				DELETE FROM middleman_branch_commits
+				WHERE id IN (
+				    SELECT id
+				    FROM (
+				        SELECT id,
+				               ROW_NUMBER() OVER (
+				                   PARTITION BY repo_id, branch_name
+				                   ORDER BY committed_at DESC, id DESC
+				               ) AS rn
+				        FROM middleman_branch_commits
+				    )
+				    WHERE rn > ?
+				)`,
+				maxCommitsPerBranch,
+			); err != nil {
+				return fmt.Errorf("cap branch commits: %w", err)
+			}
 		}
 		return nil
 	})

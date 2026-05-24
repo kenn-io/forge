@@ -23,21 +23,23 @@ import (
 )
 
 const (
-	defaultGitHubTokenEnv    = "MIDDLEMAN_GITHUB_TOKEN"
-	defaultForgejoTokenEnv   = "MIDDLEMAN_FORGEJO_TOKEN"
-	defaultGiteaTokenEnv     = "MIDDLEMAN_GITEA_TOKEN"
-	defaultSyncInterval      = "5m"
-	defaultHost              = "127.0.0.1"
-	defaultPort              = 8091
-	defaultViewMode          = "threaded"
-	defaultTimeRange         = "7d"
-	defaultBasePath          = "/"
-	defaultSyncBudgetPerHour = 500
-	defaultPlatform          = "github"
-	defaultPlatformHost      = platformpkg.DefaultGitHubHost
-	defaultSSEBufferSize     = 256
-	minSSEBufferSize         = 16
-	maxSSEBufferSize         = 16384
+	defaultGitHubTokenEnv              = "MIDDLEMAN_GITHUB_TOKEN"
+	defaultForgejoTokenEnv             = "MIDDLEMAN_FORGEJO_TOKEN"
+	defaultGiteaTokenEnv               = "MIDDLEMAN_GITEA_TOKEN"
+	defaultSyncInterval                = "5m"
+	defaultHost                        = "127.0.0.1"
+	defaultPort                        = 8091
+	defaultViewMode                    = "threaded"
+	defaultTimeRange                   = "7d"
+	defaultBasePath                    = "/"
+	defaultSyncBudgetPerHour           = 500
+	defaultBranchActivityRetentionDays = 90
+	defaultBranchActivityMaxCommits    = 5000
+	defaultPlatform                    = "github"
+	defaultPlatformHost                = platformpkg.DefaultGitHubHost
+	defaultSSEBufferSize               = 256
+	minSSEBufferSize                   = 16
+	maxSSEBufferSize                   = 16384
 )
 
 const (
@@ -473,11 +475,13 @@ func cleanPath(path string) string {
 }
 
 type Activity struct {
-	ViewMode        string `toml:"view_mode" json:"view_mode"`
-	TimeRange       string `toml:"time_range" json:"time_range"`
-	HideClosed      bool   `toml:"hide_closed" json:"hide_closed"`
-	HideBots        bool   `toml:"hide_bots" json:"hide_bots"`
-	CollapseThreads bool   `toml:"collapse_threads" json:"collapse_threads"`
+	ViewMode                   string `toml:"view_mode" json:"view_mode"`
+	TimeRange                  string `toml:"time_range" json:"time_range"`
+	HideClosed                 bool   `toml:"hide_closed" json:"hide_closed"`
+	HideBots                   bool   `toml:"hide_bots" json:"hide_bots"`
+	CollapseThreads            bool   `toml:"collapse_threads" json:"collapse_threads"`
+	DefaultBranchRetentionDays int    `toml:"default_branch_retention_days" json:"default_branch_retention_days"`
+	DefaultBranchMaxCommits    int    `toml:"default_branch_max_commits" json:"default_branch_max_commits"`
 }
 
 const (
@@ -636,6 +640,8 @@ port = 8091
 view_mode = "threaded"
 time_range = "7d"
 collapse_threads = true
+default_branch_retention_days = 90
+default_branch_max_commits = 5000
 
 [terminal]
 renderer = "xterm"
@@ -735,6 +741,12 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.Activity.TimeRange == "" {
 		cfg.Activity.TimeRange = defaultTimeRange
+	}
+	if cfg.Activity.DefaultBranchRetentionDays == 0 {
+		cfg.Activity.DefaultBranchRetentionDays = defaultBranchActivityRetentionDays
+	}
+	if cfg.Activity.DefaultBranchMaxCommits == 0 {
+		cfg.Activity.DefaultBranchMaxCommits = defaultBranchActivityMaxCommits
 	}
 
 	if cfg.SyncBudgetPerHour == 0 {
@@ -889,6 +901,24 @@ func (c *Config) Validate() error {
 		return fmt.Errorf(
 			"config: invalid activity time_range %q",
 			c.Activity.TimeRange,
+		)
+	}
+	if c.Activity.DefaultBranchRetentionDays == 0 {
+		c.Activity.DefaultBranchRetentionDays = defaultBranchActivityRetentionDays
+	}
+	if c.Activity.DefaultBranchRetentionDays < 0 {
+		return fmt.Errorf(
+			"config: activity.default_branch_retention_days must be positive or omitted, got %d",
+			c.Activity.DefaultBranchRetentionDays,
+		)
+	}
+	if c.Activity.DefaultBranchMaxCommits == 0 {
+		c.Activity.DefaultBranchMaxCommits = defaultBranchActivityMaxCommits
+	}
+	if c.Activity.DefaultBranchMaxCommits < 0 {
+		return fmt.Errorf(
+			"config: activity.default_branch_max_commits must be positive or omitted, got %d",
+			c.Activity.DefaultBranchMaxCommits,
 		)
 	}
 
@@ -1082,6 +1112,13 @@ var (
 func (c *Config) SyncDuration() time.Duration {
 	d, _ := time.ParseDuration(c.SyncInterval)
 	return d
+}
+
+func (c *Config) BranchActivityRetention() time.Duration {
+	if c == nil || c.Activity.DefaultBranchRetentionDays <= 0 {
+		return time.Duration(defaultBranchActivityRetentionDays) * 24 * time.Hour
+	}
+	return time.Duration(c.Activity.DefaultBranchRetentionDays) * 24 * time.Hour
 }
 
 func (c *Config) GitHubToken() string {

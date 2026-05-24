@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os/exec"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -118,6 +119,7 @@ func (m *Manager) ListBranchCommitsSince(
 	host, owner, name, ref string,
 	since time.Time,
 	afterSHA string,
+	maxCount int,
 ) ([]Commit, error) {
 	dir, err := m.ClonePath(host, owner, name)
 	if err != nil {
@@ -129,6 +131,9 @@ func (m *Manager) ListBranchCommitsSince(
 	}
 
 	args := []string{"log", "--first-parent", "--format=" + commitLogFormat}
+	if maxCount > 0 {
+		args = append(args, "--max-count="+strconv.Itoa(maxCount))
+	}
 	if afterSHA != "" {
 		args = append(args, afterSHA+".."+refName)
 	} else {

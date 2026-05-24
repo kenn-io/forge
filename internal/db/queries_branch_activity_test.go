@@ -68,7 +68,7 @@ func TestBranchActivityPersistence(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		err = d.PruneBranchActivity(ctx, base.Add(-24*time.Hour))
+		err = d.PruneBranchActivity(ctx, base.Add(-24*time.Hour), 0)
 		require.NoError(t, err)
 
 		rows := loadTestBranchCommits(t, d, repoID)
@@ -240,11 +240,79 @@ func TestBranchActivityPersistence(t *testing.T) {
 			DetectedAt: base,
 		}))
 
-		err := d.PruneBranchActivity(ctx, base.Add(-24*time.Hour))
+		err := d.PruneBranchActivity(ctx, base.Add(-24*time.Hour), 0)
 		require.NoError(t, err)
 
 		assert.Equal(1, countTestBranchForcePushes(t, d, repoID))
 		assert.Equal("recent-after", loadOnlyTestBranchForcePushAfterSHA(t, d, repoID))
+	})
+
+	t.Run("caps commits per repo branch", func(t *testing.T) {
+		assert := Assert.New(t)
+		require := require.New(t)
+		d := openTestDB(t)
+		ctx := t.Context()
+		base := baseTime()
+		firstRepo := insertTestRepo(t, d, "alice", "alpha")
+		secondRepo := insertTestRepo(t, d, "bob", "beta")
+
+		var commits []BranchCommit
+		for i := range 4 {
+			suffix := string(rune('0' + i))
+			timestamp := base.Add(time.Duration(i) * time.Minute)
+			commits = append(commits, BranchCommit{
+				RepoID:         firstRepo,
+				BranchName:     "main",
+				CommitSHA:      "main-sha-" + suffix,
+				AuthorName:     "Alice",
+				AuthorEmail:    "alice@example.com",
+				AuthoredAt:     timestamp,
+				CommitterName:  "Alice",
+				CommitterEmail: "alice@example.com",
+				CommittedAt:    timestamp,
+				Subject:        "main subject",
+			})
+			commits = append(commits, BranchCommit{
+				RepoID:         firstRepo,
+				BranchName:     "release",
+				CommitSHA:      "release-sha-" + suffix,
+				AuthorName:     "Alice",
+				AuthorEmail:    "alice@example.com",
+				AuthoredAt:     timestamp,
+				CommitterName:  "Alice",
+				CommitterEmail: "alice@example.com",
+				CommittedAt:    timestamp,
+				Subject:        "release subject",
+			})
+			commits = append(commits, BranchCommit{
+				RepoID:         secondRepo,
+				BranchName:     "main",
+				CommitSHA:      "second-main-sha-" + suffix,
+				AuthorName:     "Bob",
+				AuthorEmail:    "bob@example.com",
+				AuthoredAt:     timestamp,
+				CommitterName:  "Bob",
+				CommitterEmail: "bob@example.com",
+				CommittedAt:    timestamp,
+				Subject:        "second subject",
+			})
+		}
+		require.NoError(d.UpsertBranchCommits(ctx, commits))
+
+		require.NoError(d.PruneBranchActivity(ctx, base.Add(-24*time.Hour), 2))
+
+		firstRows := loadTestBranchCommitsByBranch(t, d, firstRepo)
+		secondRows := loadTestBranchCommitsByBranch(t, d, secondRepo)
+		require.Len(firstRows, 4)
+		require.Len(secondRows, 2)
+		assert.Contains(firstRows, "main/main-sha-3")
+		assert.Contains(firstRows, "main/main-sha-2")
+		assert.NotContains(firstRows, "main/main-sha-1")
+		assert.NotContains(firstRows, "main/main-sha-0")
+		assert.Contains(firstRows, "release/release-sha-3")
+		assert.Contains(firstRows, "release/release-sha-2")
+		assert.Contains(secondRows, "main/second-main-sha-3")
+		assert.Contains(secondRows, "main/second-main-sha-2")
 	})
 }
 

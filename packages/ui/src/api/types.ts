@@ -67,6 +67,8 @@ export interface ActivitySettings {
   hide_closed: boolean;
   hide_bots: boolean;
   collapse_threads: boolean;
+  default_branch_retention_days: number;
+  default_branch_max_commits: number;
 }
 
 export type TerminalRenderer = "xterm" | "ghostty-web";

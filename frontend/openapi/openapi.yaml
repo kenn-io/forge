@@ -23,6 +23,12 @@ components:
       properties:
         collapse_threads:
           type: boolean
+        default_branch_max_commits:
+          format: int64
+          type: integer
+        default_branch_retention_days:
+          format: int64
+          type: integer
         hide_bots:
           type: boolean
         hide_closed:
@@ -37,6 +43,8 @@ components:
         - hide_closed
         - hide_bots
         - collapse_threads
+        - default_branch_retention_days
+        - default_branch_max_commits
       type: object
     ActivityItemResponse:
       additionalProperties: false

@@ -223,6 +223,36 @@ func TestSyncRepoRecordsDefaultBranchCommits(t *testing.T) {
 	assert.Empty(syncActivityForcePushes(t, fixture.DB))
 }
 
+func TestSyncRepoCapsDefaultBranchCommits(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	fixture := setupSyncBranchActivityFixture(t, "main")
+	fixture.Syncer.SetBranchActivityLimits(90*24*time.Hour, 2)
+
+	var shas []string
+	for i := range 4 {
+		suffix := string(rune('0' + i))
+		shas = append(shas, syncActivityCommit(
+			t,
+			fixture.Work,
+			"direct-"+suffix+".txt",
+			"direct "+suffix+"\n",
+			"direct work "+suffix,
+		))
+	}
+	syncActivityGitRun(t, fixture.Work, "push", "origin", "HEAD:main")
+
+	require.NoError(fixture.Syncer.syncRepo(t.Context(), fixture.Repo))
+
+	commits := syncActivityBranchCommits(t, fixture.DB)
+	require.Len(commits, 2)
+	var got []string
+	for _, item := range commits {
+		got = append(got, item.CommitSHA)
+	}
+	assert.ElementsMatch([]string{shas[3], shas[2]}, got)
+}
+
 func TestSyncRepoRecordsDefaultBranchForcePushBeforeUpdatingTip(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

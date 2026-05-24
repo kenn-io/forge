@@ -386,6 +386,12 @@ func (s *Server) updateSettings(
 		s.cfgMu.Unlock()
 		return nil, problemInternal("save config: " + err.Error())
 	}
+	if s.syncer != nil {
+		s.syncer.SetBranchActivityLimits(
+			s.cfg.BranchActivityRetention(),
+			s.cfg.Activity.DefaultBranchMaxCommits,
+		)
+	}
 	s.refreshRuntimeTargetsLocked()
 	s.cfgMu.Unlock()
 

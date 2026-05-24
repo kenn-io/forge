@@ -228,6 +228,10 @@
           hide_closed: data.activity.hide_closed,
           hide_bots: data.activity.hide_bots,
           collapse_threads: data.activity.collapse_threads,
+          default_branch_retention_days:
+            data.activity.default_branch_retention_days,
+          default_branch_max_commits:
+            data.activity.default_branch_max_commits,
         },
         data.terminal,
       );

@@ -148,7 +148,10 @@ const (
 
 const syncProgressLogInterval = 100
 const largeRepoBulkGraphQLThreshold = syncProgressLogInterval
-const branchActivityRetention = 90 * 24 * time.Hour
+const (
+	defaultBranchActivityRetention  = 90 * 24 * time.Hour
+	defaultBranchActivityMaxCommits = 5000
+)
 
 type itemSyncProgressLogger struct {
 	repo   RepoRef
@@ -276,24 +279,27 @@ func (p *listFetchProgressLogger) log(message string) {
 
 // Syncer periodically pulls PR data from GitHub into SQLite.
 type Syncer struct {
-	clients       *platform.Registry
-	db            *db.DB
-	clones        *gitclone.Manager
-	rateTrackers  map[string]*RateTracker    // provider/host bucket -> tracker
-	budgets       map[string]*SyncBudget     // provider/host bucket -> budget
-	fetchers      map[string]*GraphQLFetcher // host -> GraphQL fetcher
-	repos         []RepoRef
-	reposMu       sync.Mutex
-	interval      time.Duration
-	watchInterval time.Duration
-	watchedMRs    []WatchedMR
-	watchMu       sync.Mutex
-	parallelism   atomic.Int32
-	running       atomic.Bool
-	status        atomic.Value // stores *SyncStatus
-	stopCh        chan struct{}
-	stopOnce      sync.Once
-	wg            sync.WaitGroup
+	clients                  *platform.Registry
+	db                       *db.DB
+	clones                   *gitclone.Manager
+	rateTrackers             map[string]*RateTracker    // provider/host bucket -> tracker
+	budgets                  map[string]*SyncBudget     // provider/host bucket -> budget
+	fetchers                 map[string]*GraphQLFetcher // host -> GraphQL fetcher
+	repos                    []RepoRef
+	reposMu                  sync.Mutex
+	interval                 time.Duration
+	watchInterval            time.Duration
+	watchedMRs               []WatchedMR
+	watchMu                  sync.Mutex
+	branchActivityMu         sync.RWMutex
+	branchActivityRetention  time.Duration
+	branchActivityMaxCommits int
+	parallelism              atomic.Int32
+	running                  atomic.Bool
+	status                   atomic.Value // stores *SyncStatus
+	stopCh                   chan struct{}
+	stopOnce                 sync.Once
+	wg                       sync.WaitGroup
 	// lifecycleMu serializes TriggerRun registration with Stop so
 	// no wg.Add can happen after Stop begins wg.Wait.
 	lifecycleMu        sync.Mutex
@@ -520,16 +526,18 @@ func NewSyncerWithRegistry(
 	}
 
 	s := &Syncer{
-		clients:            registry,
-		db:                 database,
-		clones:             clones,
-		rateTrackers:       rateTrackers,
-		budgets:            budgets,
-		repos:              repos,
-		interval:           interval,
-		nextSyncAfter:      make(map[string]time.Time),
-		nextWatchSyncAfter: make(map[string]time.Time),
-		stopCh:             make(chan struct{}),
+		clients:                  registry,
+		db:                       database,
+		clones:                   clones,
+		rateTrackers:             rateTrackers,
+		budgets:                  budgets,
+		repos:                    repos,
+		interval:                 interval,
+		branchActivityRetention:  defaultBranchActivityRetention,
+		branchActivityMaxCommits: defaultBranchActivityMaxCommits,
+		nextSyncAfter:            make(map[string]time.Time),
+		nextWatchSyncAfter:       make(map[string]time.Time),
+		stopCh:                   make(chan struct{}),
 		displayNames: newDisplayNameCache(
 			displayNameCacheSize,
 			displayNameSuccessTTL,
@@ -1158,6 +1166,38 @@ func (s *Syncer) SetParallelism(n int) {
 		n = 1
 	}
 	s.parallelism.Store(int32(n))
+}
+
+// SetBranchActivityLimits configures how much default-branch commit
+// activity the syncer persists.
+func (s *Syncer) SetBranchActivityLimits(
+	retention time.Duration,
+	maxCommits int,
+) {
+	if retention <= 0 {
+		retention = defaultBranchActivityRetention
+	}
+	if maxCommits <= 0 {
+		maxCommits = defaultBranchActivityMaxCommits
+	}
+	s.branchActivityMu.Lock()
+	s.branchActivityRetention = retention
+	s.branchActivityMaxCommits = maxCommits
+	s.branchActivityMu.Unlock()
+}
+
+func (s *Syncer) branchActivityLimits() (time.Duration, int) {
+	s.branchActivityMu.RLock()
+	retention := s.branchActivityRetention
+	maxCommits := s.branchActivityMaxCommits
+	s.branchActivityMu.RUnlock()
+	if retention <= 0 {
+		retention = defaultBranchActivityRetention
+	}
+	if maxCommits <= 0 {
+		maxCommits = defaultBranchActivityMaxCommits
+	}
+	return retention, maxCommits
 }
 
 // SetOnStatusChange registers a callback invoked whenever the
@@ -2340,7 +2380,8 @@ func (s *Syncer) syncDefaultBranchActivity(
 	}
 
 	now := time.Now().UTC()
-	retentionStart := now.Add(-branchActivityRetention)
+	retention, maxCommits := s.branchActivityLimits()
+	retentionStart := now.Add(-retention)
 	afterSHA := ""
 	var beforeObservedAt time.Time
 	forcePush := false
@@ -2376,6 +2417,7 @@ func (s *Syncer) syncDefaultBranchActivity(
 		branch,
 		retentionStart,
 		afterSHA,
+		maxCommits,
 	)
 	if err != nil {
 		slog.Warn("list default branch commits failed",
@@ -2426,7 +2468,7 @@ func (s *Syncer) syncDefaultBranchActivity(
 		)
 		return
 	}
-	if err := s.db.PruneBranchActivity(ctx, retentionStart); err != nil {
+	if err := s.db.PruneBranchActivity(ctx, retentionStart, maxCommits); err != nil {
 		slog.Warn("prune default branch activity failed",
 			"repo", repo.Owner+"/"+repo.Name,
 			"branch", branch,

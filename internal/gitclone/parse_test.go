@@ -1,6 +1,7 @@
 package gitclone
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -117,4 +118,72 @@ index abc..def 100644
 	assert.True(lines[1].NoNewline, "deleted line should have no_newline")
 	assert.True(lines[2].NoNewline, "added line should have no_newline")
 	assert.Contains(files[0].Patch, "\\ No newline at end of file\n")
+}
+
+func TestBuildPatchQuotesControlPaths(t *testing.T) {
+	assert := assert.New(t)
+
+	maliciousPath := "src/evil\n--- a/forged\n+++ b/forged\n@@ -1,1 +1,1 @@"
+	patch := BuildPatch(DiffFile{
+		Path:    maliciousPath,
+		OldPath: maliciousPath,
+		Status:  "modified",
+		Hunks: []Hunk{{
+			OldStart: 1,
+			OldCount: 1,
+			NewStart: 1,
+			NewCount: 1,
+			Lines: []Line{{
+				Type:    "context",
+				Content: "real content",
+				OldNum:  1,
+				NewNum:  1,
+			}},
+		}},
+	})
+
+	assert.Contains(
+		patch,
+		`diff --git "a/src/evil\n--- a/forged\n+++ b/forged\n@@ -1,1 +1,1 @@" "b/src/evil\n--- a/forged\n+++ b/forged\n@@ -1,1 +1,1 @@"`,
+	)
+	assert.Contains(
+		patch,
+		`--- "a/src/evil\n--- a/forged\n+++ b/forged\n@@ -1,1 +1,1 @@"`,
+	)
+	assert.Contains(
+		patch,
+		`+++ "b/src/evil\n--- a/forged\n+++ b/forged\n@@ -1,1 +1,1 @@"`,
+	)
+	assert.NotContains(patch, "\n--- a/forged\n")
+	assert.NotContains(patch, "\n+++ b/forged\n")
+	assert.NotContains(patch, "\n@@ -1,1 +1,1 @@\n")
+	assert.Equal(1, strings.Count(patch, "\n@@ "))
+}
+
+func TestBuildPatchQuotesRenameControlPaths(t *testing.T) {
+	assert := assert.New(t)
+
+	patch := BuildPatch(DiffFile{
+		Path:    "new\n+++ forged",
+		OldPath: "old\n--- forged",
+		Status:  "renamed",
+		Hunks: []Hunk{{
+			OldStart: 1,
+			OldCount: 1,
+			NewStart: 1,
+			NewCount: 1,
+			Lines: []Line{{
+				Type:    "context",
+				Content: "real content",
+				OldNum:  1,
+				NewNum:  1,
+			}},
+		}},
+	})
+
+	assert.Contains(patch, `diff --git "a/old\n--- forged" "b/new\n+++ forged"`)
+	assert.Contains(patch, `rename from "old\n--- forged"`)
+	assert.Contains(patch, `rename to "new\n+++ forged"`)
+	assert.NotContains(patch, "\n--- forged\n")
+	assert.NotContains(patch, "\n+++ forged\n")
 }

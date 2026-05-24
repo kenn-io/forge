@@ -24,9 +24,9 @@ func BuildPatch(file DiffFile) string {
 	}
 
 	var lines []string
-	lines = append(lines, "diff --git a/"+oldPath+" b/"+file.Path)
+	lines = append(lines, "diff --git "+patchPath("a/"+oldPath)+" "+patchPath("b/"+file.Path))
 	lines = append(lines, fileModeHeaders(file)...)
-	lines = append(lines, "--- "+oldHeaderPath, "+++ "+newHeaderPath)
+	lines = append(lines, "--- "+patchPath(oldHeaderPath), "+++ "+patchPath(newHeaderPath))
 	for _, hunk := range file.Hunks {
 		oldRange := formatPatchRange(hunk.OldStart, hunk.OldCount)
 		newRange := formatPatchRange(hunk.NewStart, hunk.NewCount)
@@ -57,10 +57,31 @@ func fileModeHeaders(file DiffFile) []string {
 		return []string{"deleted file mode 100644"}
 	case "renamed":
 		if file.OldPath != "" && file.OldPath != file.Path {
-			return []string{"rename from " + file.OldPath, "rename to " + file.Path}
+			return []string{"rename from " + patchPath(file.OldPath), "rename to " + patchPath(file.Path)}
 		}
 	}
 	return nil
+}
+
+func patchPath(path string) string {
+	if path == "/dev/null" || !needsPatchPathQuote(path) {
+		return path
+	}
+	return strconv.Quote(path)
+}
+
+func needsPatchPathQuote(path string) bool {
+	for i := 0; i < len(path); i++ {
+		switch b := path[i]; b {
+		case '"', '\\':
+			return true
+		default:
+			if b < 0x20 || b == 0x7f {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func formatPatchRange(start, count int) string {

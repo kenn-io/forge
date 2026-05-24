@@ -130,6 +130,24 @@ const activityItems = [
   ),
 ];
 
+function sparseCommitPatch(): string {
+  return [
+    "diff --git a/src/direct-main.ts b/src/direct-main.ts",
+    "index 2f1a001..6b3d002 100644",
+    "--- a/src/direct-main.ts",
+    "+++ b/src/direct-main.ts",
+    "@@ -1,2 +1,3 @@",
+    " export const existing = true;",
+    "+export const directMain = true;",
+    " export const keep = true;",
+    "@@ -80,2 +81,3 @@",
+    " export const later = true;",
+    "+export const laterDirectMain = true;",
+    " export const tail = true;",
+    "",
+  ].join("\n");
+}
+
 async function mockDefaultBranchActivity(page: Page): Promise<void> {
   await page.addInitScript(() => {
     Object.defineProperty(window, "__middlemanOpenedURL", {
@@ -207,14 +225,15 @@ async function mockDefaultBranchActivity(page: Page): Promise<void> {
               status: "modified",
               is_binary: false,
               is_whitespace_only: false,
-              additions: 1,
+              additions: 2,
               deletions: 0,
+              patch: sparseCommitPatch(),
               hunks: [
                 {
                   old_start: 1,
-                  old_count: 1,
+                  old_count: 2,
                   new_start: 1,
-                  new_count: 2,
+                  new_count: 3,
                   lines: [
                     {
                       type: "context",
@@ -227,6 +246,37 @@ async function mockDefaultBranchActivity(page: Page): Promise<void> {
                       content: "export const directMain = true;",
                       new_num: 2,
                     },
+                    {
+                      type: "context",
+                      content: "export const keep = true;",
+                      old_num: 2,
+                      new_num: 3,
+                    },
+                  ],
+                },
+                {
+                  old_start: 80,
+                  old_count: 2,
+                  new_start: 81,
+                  new_count: 3,
+                  lines: [
+                    {
+                      type: "context",
+                      content: "export const later = true;",
+                      old_num: 80,
+                      new_num: 81,
+                    },
+                    {
+                      type: "add",
+                      content: "export const laterDirectMain = true;",
+                      new_num: 82,
+                    },
+                    {
+                      type: "context",
+                      content: "export const tail = true;",
+                      old_num: 81,
+                      new_num: 83,
+                    },
                   ],
                 },
               ],
@@ -236,6 +286,15 @@ async function mockDefaultBranchActivity(page: Page): Promise<void> {
       });
     },
   );
+}
+
+async function pierreDiffCount(
+  file: ReturnType<Page["locator"]>,
+  selector: string,
+): Promise<number> {
+  return await file.locator(".pierre-diff").evaluate((host, selector) => {
+    return host.shadowRoot?.querySelectorAll(selector).length ?? 0;
+  }, selector);
 }
 
 async function selectActivityFilterItem(
@@ -320,6 +379,15 @@ test.describe("default branch activity", () => {
 
   test("commit rows open an in-app diff", async ({ page }) => {
     await mockDefaultBranchActivity(page);
+    let filePreviewRequests = 0;
+    await page.route("**/api/v1/pulls/github/acme/widgets/0/file-preview**", async (route) => {
+      filePreviewRequests += 1;
+      await route.fulfill({
+        status: 500,
+        contentType: "application/json",
+        body: JSON.stringify({ title: "unexpected file preview request" }),
+      });
+    });
     await page.goto("/?view=threaded");
 
     const commitRow = page.locator(".branch-activity-row", {
@@ -333,15 +401,22 @@ test.describe("default branch activity", () => {
     await expect(page.locator(".activity-detail-header")).toContainText(
       "Commit acme/widgets main Ship direct main commit 2",
     );
-    await expect(page.locator(".files-sidebar")).toContainText(
-      "direct-main.ts",
-    );
-    await expect(page.locator(".file-header")).toContainText(
-      "src/direct-main.ts",
-    );
-    await expect(page.locator(".diff-line", {
-      hasText: "export const directMain = true;",
-    })).toBeVisible();
+    await expect(page.locator(
+      '.files-sidebar .diff-file-tree [data-item-path="src/direct-main.ts"]',
+    )).toHaveCount(1);
+    const diffFile = page.locator('.diff-file[data-file-path="src/direct-main.ts"]');
+    await expect(diffFile.locator(".file-header")).toContainText("src/direct-main.ts");
+    await expect(diffFile.locator(".pierre-diff-loading")).toBeHidden();
+    await expect.poll(() =>
+      pierreDiffCount(diffFile, "[data-content] [data-line-type=\"change-addition\"]"),
+    ).toBe(2);
+    await expect.poll(() =>
+      pierreDiffCount(diffFile, "[data-separator=\"line-info\"]"),
+    ).toBeGreaterThanOrEqual(1);
+    await expect.poll(() =>
+      pierreDiffCount(diffFile, "[data-expand-button]"),
+    ).toBe(0);
+    await expect.poll(() => filePreviewRequests).toBe(0);
     await expect
       .poll(() =>
         page.evaluate(() => window.__middlemanOpenedURL),

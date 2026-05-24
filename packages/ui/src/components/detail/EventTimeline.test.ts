@@ -204,7 +204,7 @@ describe("EventTimeline", () => {
             ID: 1,
             EventType: "comment_deleted",
             Author: "maintainer",
-            Summary: "comment by reviewer",
+            Summary: "deleted a comment from reviewer",
             MetadataJSON: JSON.stringify({
               deleted_comment_author: "reviewer",
             }),
@@ -244,7 +244,7 @@ describe("EventTimeline", () => {
     });
 
     expect(screen.getByText("Comment deleted")).toBeTruthy();
-    expect(screen.getByText("comment by reviewer")).toBeTruthy();
+    expect(screen.getByText("deleted a comment from reviewer")).toBeTruthy();
     expect(screen.getByText("Title changed")).toBeTruthy();
     expect(screen.getByText("Base changed")).toBeTruthy();
     expect(screen.getByText("Referenced")).toBeTruthy();

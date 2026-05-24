@@ -1267,7 +1267,7 @@ func TestAPIGetPullIncludesDeletedCommentTimelineEvent(t *testing.T) {
 		MergeRequestID: mrID,
 		EventType:      "comment_deleted",
 		Author:         "maintainer",
-		Summary:        "comment by reviewer",
+		Summary:        "deleted a comment from reviewer",
 		MetadataJSON:   `{"deleted_comment_author":"reviewer"}`,
 		CreatedAt:      createdAt,
 		DedupeKey:      "timeline-CDE_1",
@@ -1285,7 +1285,7 @@ func TestAPIGetPullIncludesDeletedCommentTimelineEvent(t *testing.T) {
 	event := (*resp.JSON200.Events)[0]
 	assert.Equal("comment_deleted", event.EventType)
 	assert.Equal("maintainer", event.Author)
-	assert.Equal("comment by reviewer", event.Summary)
+	assert.Equal("deleted a comment from reviewer", event.Summary)
 	assert.JSONEq(`{"deleted_comment_author":"reviewer"}`, event.MetadataJSON)
 	assert.Equal(createdAt, event.CreatedAt)
 }

@@ -304,7 +304,7 @@ func TestNormalizeTimelineEventCommentDeleted(t *testing.T) {
 	assert.Equal(int64(17), event.MergeRequestID)
 	assert.Equal("comment_deleted", event.EventType)
 	assert.Equal("maintainer", event.Author)
-	assert.Equal("comment by reviewer", event.Summary)
+	assert.Equal("deleted a comment from reviewer", event.Summary)
 	assert.Equal(createdAt, event.CreatedAt)
 	assert.Equal("timeline-CDE_1", event.DedupeKey)
 	assert.Contains(event.MetadataJSON, `"deleted_comment_author":"reviewer"`)

@@ -491,9 +491,9 @@ func normalizeIssueCommentBase(repo platform.RepoRef, c *gh.IssueComment) platfo
 
 func deletedCommentSummary(author string) string {
 	if author == "" {
-		return "comment"
+		return "deleted a comment"
 	}
-	return "comment by " + author
+	return "deleted a comment from " + author
 }
 
 func timelineDedupeKey(event PullRequestTimelineEvent) string {

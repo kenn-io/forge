@@ -1436,7 +1436,7 @@ func TestSyncStoresPullRequestTimelineEvents(t *testing.T) {
 	assert.Contains(byType["cross_referenced"].MetadataJSON, `"source_title":"Related bug"`)
 	assert.Equal("main -> release", byType["base_ref_changed"].Summary)
 	assert.Equal(`"Old" -> "New"`, byType["renamed_title"].Summary)
-	assert.Equal("comment by reviewer", byType["comment_deleted"].Summary)
+	assert.Equal("deleted a comment from reviewer", byType["comment_deleted"].Summary)
 }
 
 func TestSyncIgnoresPullRequestTimelineFetchFailures(t *testing.T) {
@@ -7793,7 +7793,7 @@ func TestSyncOpenMRFromBulkStoresTimelineEvents(t *testing.T) {
 	require.NoError(err)
 	require.Len(events, 2)
 	assert.Equal("comment_deleted", events[0].EventType)
-	assert.Equal("comment by reviewer", events[0].Summary)
+	assert.Equal("deleted a comment from reviewer", events[0].Summary)
 	assert.Equal("base_ref_changed", events[1].EventType)
 	assert.Equal("main -> release", events[1].Summary)
 }

@@ -466,12 +466,10 @@ type DiffFile struct {
 // DiffResponse defines model for DiffResponse.
 type DiffResponse struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema              *string       `json:"$schema,omitempty"`
-	Files               *[]DiffFile   `json:"files"`
-	Stale               bool          `json:"stale"`
-	TreeGitStatus       *[]TreeStatus `json:"tree_git_status"`
-	TreePaths           *[]string     `json:"tree_paths"`
-	WhitespaceOnlyCount int64         `json:"whitespace_only_count"`
+	Schema              *string     `json:"$schema,omitempty"`
+	Files               *[]DiffFile `json:"files"`
+	Stale               bool        `json:"stale"`
+	WhitespaceOnlyCount int64       `json:"whitespace_only_count"`
 }
 
 // DiffReviewDraftComment defines model for DiffReviewDraftComment.
@@ -645,12 +643,10 @@ type FilePreviewResponse struct {
 // FilesResponse defines model for FilesResponse.
 type FilesResponse struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema              *string       `json:"$schema,omitempty"`
-	Files               *[]DiffFile   `json:"files"`
-	Stale               bool          `json:"stale"`
-	TreeGitStatus       *[]TreeStatus `json:"tree_git_status"`
-	TreePaths           *[]string     `json:"tree_paths"`
-	WhitespaceOnlyCount int64         `json:"whitespace_only_count"`
+	Schema              *string     `json:"$schema,omitempty"`
+	Files               *[]DiffFile `json:"files"`
+	Stale               bool        `json:"stale"`
+	WhitespaceOnlyCount int64       `json:"whitespace_only_count"`
 }
 
 // GithubStateHostInputBody defines model for GithubStateHostInputBody.
@@ -1513,12 +1509,6 @@ type Terminal struct {
 	LineHeight    float64 `json:"line_height"`
 	Renderer      string  `json:"renderer"`
 	Scrollback    int64   `json:"scrollback"`
-}
-
-// TreeStatus defines model for TreeStatus.
-type TreeStatus struct {
-	Path   string `json:"path"`
-	Status string `json:"status"`
 }
 
 // UpdateSettingsRequest defines model for UpdateSettingsRequest.

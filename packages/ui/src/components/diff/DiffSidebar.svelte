@@ -22,6 +22,7 @@
   let tree: FileTree | undefined;
   let renderedTreeKey = "";
   let syncingSelection = false;
+  type TreeGitStatus = NonNullable<FileTreeOptions["gitStatus"]>[number];
 
   function handleTreeSelection(paths: readonly string[]): void {
     if (syncingSelection) return;
@@ -53,17 +54,19 @@
     const q = fileFilterText.trim().toLowerCase();
     if (!q) return list;
     const files = list.files.filter((f) => f.path.toLowerCase().includes(q));
-    const paths = new Set(files.map((file) => file.path));
     return {
       ...list,
       files,
-      tree_paths: list.tree_paths.filter((path) => paths.has(path)),
-      tree_git_status: list.tree_git_status.filter((item) => paths.has(item.path)),
     };
   });
   const filteredDiffFiles = $derived(filteredFileList?.files ?? null);
-  const treePaths = $derived(filteredFileList?.tree_paths ?? []);
-  const treeGitStatus = $derived(filteredFileList?.tree_git_status ?? []);
+  const treePaths = $derived(filteredDiffFiles?.map((file) => file.path) ?? []);
+  const treeGitStatus = $derived(
+    filteredDiffFiles?.map((file): TreeGitStatus => ({
+      path: file.path,
+      status: file.status === "copied" ? "renamed" : file.status,
+    })) ?? [],
+  );
   const treeKey = $derived(
     `${treePaths.join("\0")}\n${treeGitStatus.map((item) => `${item.path}:${item.status}`).join("\0")}`,
   );

@@ -549,18 +549,6 @@ components:
             - "null"
         stale:
           type: boolean
-        tree_git_status:
-          items:
-            $ref: "#/components/schemas/TreeStatus"
-          type:
-            - array
-            - "null"
-        tree_paths:
-          items:
-            type: string
-          type:
-            - array
-            - "null"
         whitespace_only_count:
           format: int64
           type: integer
@@ -568,8 +556,6 @@ components:
         - stale
         - whitespace_only_count
         - files
-        - tree_paths
-        - tree_git_status
       type: object
     DiffReviewDraftComment:
       additionalProperties: false
@@ -962,18 +948,6 @@ components:
             - "null"
         stale:
           type: boolean
-        tree_git_status:
-          items:
-            $ref: "#/components/schemas/TreeStatus"
-          type:
-            - array
-            - "null"
-        tree_paths:
-          items:
-            type: string
-          type:
-            - array
-            - "null"
         whitespace_only_count:
           format: int64
           type: integer
@@ -981,8 +955,6 @@ components:
         - stale
         - whitespace_only_count
         - files
-        - tree_paths
-        - tree_git_status
       type: object
     GithubStateHostInputBody:
       additionalProperties: false
@@ -3305,17 +3277,6 @@ components:
         - cursor_blink
         - font_ligatures
         - renderer
-      type: object
-    TreeStatus:
-      additionalProperties: false
-      properties:
-        path:
-          type: string
-        status:
-          type: string
-      required:
-        - path
-        - status
       type: object
     UpdateSettingsRequest:
       additionalProperties: false

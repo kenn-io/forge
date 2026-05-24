@@ -5,36 +5,6 @@ import (
 	"strings"
 )
 
-// TreePaths returns the changed paths in the order expected by the tree UI.
-func TreePaths(files []DiffFile) []string {
-	paths := make([]string, 0, len(files))
-	for _, file := range files {
-		paths = append(paths, file.Path)
-	}
-	return paths
-}
-
-// TreeGitStatus returns per-path statuses using the tree UI status vocabulary.
-func TreeGitStatus(files []DiffFile) []TreeStatus {
-	statuses := make([]TreeStatus, 0, len(files))
-	for _, file := range files {
-		statuses = append(statuses, TreeStatus{
-			Path:   file.Path,
-			Status: treeStatus(file.Status),
-		})
-	}
-	return statuses
-}
-
-func treeStatus(status string) string {
-	switch status {
-	case "copied":
-		return "renamed"
-	default:
-		return status
-	}
-}
-
 func buildPatch(file DiffFile) string {
 	if file.IsBinary || len(file.Hunks) == 0 {
 		return ""

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDiffStore } from "@middleman/ui/stores/diff";
 import type { DiffStoreOptions } from "@middleman/ui/stores/diff";
-import type { DiffFile, DiffResult, FilesResult, TreeGitStatus } from "@middleman/ui/api/types";
+import type { DiffFile, DiffResult, FilesResult } from "@middleman/ui/api/types";
 
 const ownerRepoRef = { provider: "github", platformHost: "github.com", owner: "owner", name: "repo", repoPath: "owner/repo" };
 
@@ -21,8 +21,6 @@ function makeDiffResult(files: string[]): DiffResult {
     stale: false,
     whitespace_only_count: 0,
     files: diffFiles,
-    tree_paths: diffFiles.map((file) => file.path),
-    tree_git_status: diffFiles.map(treeStatusForFile),
   };
 }
 
@@ -34,8 +32,6 @@ function makeFilesResult(
   return {
     stale: false,
     files: diffFiles,
-    tree_paths: diffFiles.map((file) => file.path),
-    tree_git_status: diffFiles.map(treeStatusForFile),
     ...overrides,
   };
 }
@@ -51,13 +47,6 @@ function makeDiffFile(path: string, additions: number, deletions: number): DiffF
     deletions,
     hunks: [],
     patch: "",
-  };
-}
-
-function treeStatusForFile(file: DiffFile): TreeGitStatus {
-  return {
-    path: file.path,
-    status: file.status === "copied" ? "renamed" : file.status,
   };
 }
 
@@ -1016,15 +1005,13 @@ describe("createDiffStore loadDiff", () => {
 
         if (url.includes("/files")) {
           // API returns files: null (Go nil slice serialization).
-          return Response.json({ stale: false, files: null, tree_paths: null, tree_git_status: null });
+          return Response.json({ stale: false, files: null });
         }
         if (url.includes("/diff")) {
           return Response.json({
             stale: false,
             whitespace_only_count: 0,
             files: null,
-            tree_paths: null,
-            tree_git_status: null,
           });
         }
         return Response.json({}, { status: 404 });

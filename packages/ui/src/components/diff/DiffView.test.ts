@@ -45,17 +45,10 @@ function makeDiffStore(
     stale: false,
     whitespace_only_count: 0,
     files: [makeFile(activeFile)],
-    tree_paths: [activeFile],
-    tree_git_status: [{ path: activeFile, status: "modified" }],
   };
   const fileList: FilesResult = {
     stale: false,
     files: [makeFile("a.ts"), makeFile("b.ts")],
-    tree_paths: ["a.ts", "b.ts"],
-    tree_git_status: [
-      { path: "a.ts", status: "modified" },
-      { path: "b.ts", status: "modified" },
-    ],
   };
 
   return {
@@ -170,11 +163,6 @@ describe("DiffView", () => {
         stale: false,
         whitespace_only_count: 0,
         files,
-        tree_paths: ["a.ts", "b.ts"],
-        tree_git_status: [
-          { path: "a.ts", status: "modified" },
-          { path: "b.ts", status: "modified" },
-        ],
       };
       const diff = makeDiffStore({
         getDiff: () => result,

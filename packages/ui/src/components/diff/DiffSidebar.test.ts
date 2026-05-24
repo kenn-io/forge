@@ -34,11 +34,6 @@ function makeFilesResult(files: DiffFile[]): FilesResult {
   return {
     stale: false,
     files,
-    tree_paths: files.map((file) => file.path),
-    tree_git_status: files.map((file) => ({
-      path: file.path,
-      status: file.status === "copied" ? "renamed" : file.status,
-    })),
   };
 }
 
@@ -87,7 +82,7 @@ describe("DiffSidebar", () => {
     vi.restoreAllMocks();
   });
 
-  it("renders the Pierre file tree from API-provided tree data", async () => {
+  it("renders the Pierre file tree from diff files", async () => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
     const files = [
       makeFile("src/app.ts", "modified"),

@@ -3638,8 +3638,6 @@ func (s *Server) getDiff(ctx context.Context, input *getDiffInput) (*getDiffOutp
 		Stale:               result.Stale,
 		WhitespaceOnlyCount: result.WhitespaceOnlyCount,
 		Files:               result.Files,
-		TreePaths:           gitclone.TreePaths(result.Files),
-		TreeGitStatus:       gitclone.TreeGitStatus(result.Files),
 	}}, nil
 }
 
@@ -3834,10 +3832,8 @@ func (s *Server) getFiles(ctx context.Context, input *getFilesInput) (*getFilesO
 	}
 
 	return &getFilesOutput{Body: filesResponse{
-		Stale:         shas.Stale(),
-		Files:         files,
-		TreePaths:     gitclone.TreePaths(files),
-		TreeGitStatus: gitclone.TreeGitStatus(files),
+		Stale: shas.Stale(),
+		Files: files,
 	}}, nil
 }
 
@@ -4358,8 +4354,6 @@ func (s *Server) getWorkspaceFiles(
 		Stale:               false,
 		WhitespaceOnlyCount: whitespaceOnlyCount,
 		Files:               files,
-		TreePaths:           gitclone.TreePaths(files),
-		TreeGitStatus:       gitclone.TreeGitStatus(files),
 	}}, nil
 }
 
@@ -4396,8 +4390,6 @@ func (s *Server) getWorkspaceDiff(
 		Stale:               false,
 		WhitespaceOnlyCount: result.WhitespaceOnlyCount,
 		Files:               result.Files,
-		TreePaths:           gitclone.TreePaths(result.Files),
-		TreeGitStatus:       gitclone.TreeGitStatus(result.Files),
 	}}, nil
 }
 

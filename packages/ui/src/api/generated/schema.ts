@@ -2224,8 +2224,6 @@ export interface components {
             readonly $schema?: string;
             files: components["schemas"]["DiffFile"][] | null;
             stale: boolean;
-            tree_git_status: components["schemas"]["TreeStatus"][] | null;
-            tree_paths: string[] | null;
             /** Format: int64 */
             whitespace_only_count: number;
         };
@@ -2437,8 +2435,6 @@ export interface components {
             readonly $schema?: string;
             files: components["schemas"]["DiffFile"][] | null;
             stale: boolean;
-            tree_git_status: components["schemas"]["TreeStatus"][] | null;
-            tree_paths: string[] | null;
             /** Format: int64 */
             whitespace_only_count: number;
         };
@@ -3464,10 +3460,6 @@ export interface components {
             renderer: string;
             /** Format: int64 */
             scrollback: number;
-        };
-        TreeStatus: {
-            path: string;
-            status: string;
         };
         UpdateSettingsRequest: {
             /**

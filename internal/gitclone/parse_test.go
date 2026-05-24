@@ -118,20 +118,3 @@ index abc..def 100644
 	assert.True(lines[2].NoNewline, "added line should have no_newline")
 	assert.Contains(files[0].Patch, "\\ No newline at end of file\n")
 }
-
-func TestTreeData(t *testing.T) {
-	assert := assert.New(t)
-
-	files := []DiffFile{
-		{Path: "src/changed.go", Status: "modified"},
-		{Path: "src/new.go", Status: "added"},
-		{Path: "src/copy.go", Status: "copied"},
-	}
-
-	assert.Equal([]string{"src/changed.go", "src/new.go", "src/copy.go"}, TreePaths(files))
-	assert.Equal([]TreeStatus{
-		{Path: "src/changed.go", Status: "modified"},
-		{Path: "src/new.go", Status: "added"},
-		{Path: "src/copy.go", Status: "renamed"},
-	}, TreeGitStatus(files))
-}

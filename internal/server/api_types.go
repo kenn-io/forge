@@ -213,19 +213,15 @@ type resolveItemResponse struct {
 }
 
 type diffResponse struct {
-	Stale               bool                  `json:"stale"`
-	WhitespaceOnlyCount int                   `json:"whitespace_only_count"`
-	Files               []gitclone.DiffFile   `json:"files"`
-	TreePaths           []string              `json:"tree_paths"`
-	TreeGitStatus       []gitclone.TreeStatus `json:"tree_git_status"`
+	Stale               bool                `json:"stale"`
+	WhitespaceOnlyCount int                 `json:"whitespace_only_count"`
+	Files               []gitclone.DiffFile `json:"files"`
 }
 
 type filesResponse struct {
-	Stale               bool                  `json:"stale"`
-	WhitespaceOnlyCount int                   `json:"whitespace_only_count"`
-	Files               []gitclone.DiffFile   `json:"files"`
-	TreePaths           []string              `json:"tree_paths"`
-	TreeGitStatus       []gitclone.TreeStatus `json:"tree_git_status"`
+	Stale               bool                `json:"stale"`
+	WhitespaceOnlyCount int                 `json:"whitespace_only_count"`
+	Files               []gitclone.DiffFile `json:"files"`
 }
 
 type diffReviewLineRange struct {

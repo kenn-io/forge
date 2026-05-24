@@ -148,21 +148,12 @@ export interface DiffResult {
   stale: boolean;
   whitespace_only_count: number;
   files: DiffFile[];
-  tree_paths: string[];
-  tree_git_status: TreeGitStatus[];
 }
 
 export interface FilesResult {
   stale: boolean;
   whitespace_only_count?: number;
   files: DiffFile[];
-  tree_paths: string[];
-  tree_git_status: TreeGitStatus[];
-}
-
-export interface TreeGitStatus {
-  path: string;
-  status: "added" | "deleted" | "ignored" | "modified" | "renamed" | "untracked";
 }
 
 export type FilePreview = components["schemas"]["FilePreviewResponse"];

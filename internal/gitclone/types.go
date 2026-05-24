@@ -7,12 +7,6 @@ type DiffResult struct {
 	Files               []DiffFile `json:"files"`
 }
 
-// TreeStatus is the file status shape consumed by the file tree UI.
-type TreeStatus struct {
-	Path   string `json:"path"`
-	Status string `json:"status"`
-}
-
 // FileContent is the raw content for one file at a git revision.
 type FileContent struct {
 	Path string

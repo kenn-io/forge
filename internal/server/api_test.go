@@ -18665,7 +18665,6 @@ func TestWorkspaceDiffEndpointsReportHeadAndPushedE2E(t *testing.T) {
 			"z-empty.txt",
 		},
 	)
-	assertWorkspaceTreeData(t, *headFiles.Files, headFiles.TreePaths, headFiles.TreeGitStatus)
 
 	headFilesHideWhitespace := requestWorkspaceFiles(
 		t, srv, ws.Id, "head", "hide",
@@ -18686,7 +18685,6 @@ func TestWorkspaceDiffEndpointsReportHeadAndPushedE2E(t *testing.T) {
 		*headDiffHideWhitespace.Files,
 		[]string{".workspace-state.json", "dirty.go", "z-empty.txt"},
 	)
-	assertWorkspaceTreeData(t, *headDiffHideWhitespace.Files, headDiffHideWhitespace.TreePaths, headDiffHideWhitespace.TreeGitStatus)
 
 	pushedDiff := requestWorkspaceDiff(t, srv, ws.Id, "pushed")
 	require.NotNil(pushedDiff.Files)
@@ -18702,7 +18700,6 @@ func TestWorkspaceDiffEndpointsReportHeadAndPushedE2E(t *testing.T) {
 			"z-empty.txt",
 		},
 	)
-	assertWorkspaceTreeData(t, *pushedDiff.Files, pushedDiff.TreePaths, pushedDiff.TreeGitStatus)
 	assert.Equal(int64(1), pushedDiff.WhitespaceOnlyCount)
 }
 
@@ -19006,10 +19003,6 @@ func TestWorkspaceDiffEndpointScopesPatchByPathE2E(t *testing.T) {
 	assert.Equal("added", file.Status)
 	assert.Contains(file.Patch, "diff --git a/first.go b/first.go\n")
 	assert.Contains(file.Patch, "new file mode 100644\n")
-	require.NotNil(diff.TreePaths)
-	assert.Equal([]string{"first.go"}, *diff.TreePaths)
-	require.NotNil(diff.TreeGitStatus)
-	assert.Equal([]generated.TreeStatus{{Path: "first.go", Status: "added"}}, *diff.TreeGitStatus)
 	require.NotNil(file.Hunks)
 	require.Len(*file.Hunks, 1)
 	assert.NotContains(workspaceDiffPaths(*diff.Files), "second.go")
@@ -19193,32 +19186,6 @@ func assertWorkspaceDiffPaths(
 	t.Helper()
 
 	Assert.Equal(t, want, workspaceDiffPaths(files))
-}
-
-func assertWorkspaceTreeData(
-	t *testing.T,
-	files []generated.DiffFile,
-	treePaths *[]string,
-	treeGitStatus *[]generated.TreeStatus,
-) {
-	t.Helper()
-
-	require.NotNil(t, treePaths)
-	require.NotNil(t, treeGitStatus)
-	paths := workspaceDiffPaths(files)
-	Assert.Equal(t, paths, *treePaths)
-	statuses := make([]generated.TreeStatus, 0, len(files))
-	for _, file := range files {
-		status := file.Status
-		if status == "copied" {
-			status = "renamed"
-		}
-		statuses = append(statuses, generated.TreeStatus{
-			Path:   file.Path,
-			Status: status,
-		})
-	}
-	Assert.Equal(t, statuses, *treeGitStatus)
 }
 
 func workspaceDiffPaths(files []generated.DiffFile) []string {

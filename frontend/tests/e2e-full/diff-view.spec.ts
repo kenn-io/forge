@@ -4,7 +4,7 @@ import { acquireExclusiveLock } from "./support/exclusiveLock";
 import { startIsolatedE2EServer } from "./support/e2eServer";
 
 type DiffFixtureFile = Omit<DiffFile, "patch"> & { patch?: string };
-type DiffFixture = Omit<DiffResult, "files" | "tree_paths" | "tree_git_status"> & {
+type DiffFixture = Omit<DiffResult, "files"> & {
   files: DiffFixtureFile[];
 };
 
@@ -268,11 +268,6 @@ function withServerDiffData(fixture: DiffFixture): DiffResult {
   return {
     ...fixture,
     files,
-    tree_paths: files.map((file) => file.path),
-    tree_git_status: files.map((file) => ({
-      path: file.path,
-      status: file.status === "copied" ? "renamed" : file.status,
-    })),
   };
 }
 
@@ -286,8 +281,6 @@ function filesFromDiff(fixture: DiffResult): FilesResult {
       deletions: 0,
       hunks: [],
     })),
-    tree_paths: diff.tree_paths,
-    tree_git_status: diff.tree_git_status,
   };
 }
 

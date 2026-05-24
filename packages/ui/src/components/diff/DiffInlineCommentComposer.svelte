@@ -64,28 +64,31 @@
 
 <style>
   .inline-composer {
+    position: sticky;
+    left: 12px;
     box-sizing: border-box;
-    margin: 6px 12px 8px 116px;
+    margin: 6px 0 8px;
     padding: 8px;
     border: 1px solid var(--border-default);
     border-radius: 6px;
     background: var(--bg-surface);
-    width: min(720px, calc(100% - 128px));
-    max-width: calc(100% - 128px);
+    width: calc(100% - 24px);
+    max-width: calc(100% - 24px);
     min-width: 0;
     overflow: hidden;
   }
 
   @supports (width: 100cqw) {
     .inline-composer {
-      width: min(720px, calc(100cqw - 128px));
-      max-width: calc(100cqw - 128px);
+      width: calc(100cqw - 24px);
+      max-width: calc(100cqw - 24px);
     }
   }
 
   @container (max-width: 520px) {
     .inline-composer {
-      margin: 6px 8px 8px;
+      left: 8px;
+      margin: 6px 0 8px;
       width: calc(100cqw - 16px);
       max-width: calc(100cqw - 16px);
     }

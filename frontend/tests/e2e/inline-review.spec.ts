@@ -375,6 +375,9 @@ test("adds and publishes an inline draft review comment", async ({ page }) => {
 
 test("keeps inline composer inside the visible diff pane on long lines", async ({ page }) => {
   await page.setViewportSize({ width: 900, height: 720 });
+  await page.addInitScript(() => {
+    localStorage.setItem("diff-word-wrap", "true");
+  });
   await mockInlineReviewAPI(
     page,
     baseCapabilities,
@@ -398,9 +401,13 @@ test("keeps inline composer inside the visible diff pane on long lines", async (
   expect(composerBox!.x + composerBox!.width).toBeLessThanOrEqual(
     scrollBox!.x + scrollBox!.width + 1,
   );
+  expect(composerBox!.width).toBeGreaterThan(scrollBox!.width * 0.9);
 });
 
 test("shows saved draft comments inline and jumps from the tray", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("diff-word-wrap", "true");
+  });
   await mockInlineReviewAPI(page);
 
   await page.goto("/pulls/github/acme/widgets/42/files");
@@ -412,9 +419,20 @@ test("shows saved draft comments inline and jumps from the tray", async ({ page 
   await page.getByRole("button", { name: "Add comment" }).click();
 
   const inlineDraft = page.locator(".inline-draft-comment");
+  const scrollPane = page.locator(".file-content").first();
   await expect(inlineDraft).toBeVisible();
   await expect(inlineDraft).toContainText("Please cover both lines.");
   await expect(page.locator(".gutter-new.gutter--selected")).toHaveCount(2);
+
+  const scrollBox = await scrollPane.boundingBox();
+  const inlineBox = await inlineDraft.boundingBox();
+  expect(scrollBox).not.toBeNull();
+  expect(inlineBox).not.toBeNull();
+  expect(inlineBox!.x).toBeGreaterThanOrEqual(scrollBox!.x);
+  expect(inlineBox!.x + inlineBox!.width).toBeLessThanOrEqual(
+    scrollBox!.x + scrollBox!.width + 1,
+  );
+  expect(inlineBox!.width).toBeGreaterThan(scrollBox!.width * 0.9);
 
   await page.getByRole("button", { name: "src/main.ts:1-2" }).click();
   await expect(inlineDraft).toBeFocused();

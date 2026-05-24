@@ -18,6 +18,7 @@
     loadOnMount?: boolean;
     keyboardActive?: boolean;
     richPreviewEnabled?: boolean;
+    contextExpansionEnabled?: boolean;
     provider: string;
     platformHost?: string | undefined;
     repoPath: string;
@@ -36,6 +37,7 @@
     loadOnMount = true,
     keyboardActive = true,
     richPreviewEnabled = true,
+    contextExpansionEnabled = true,
     provider,
     platformHost,
     repoPath,
@@ -363,6 +365,7 @@
               {repoPath}
               {number}
               {richPreviewEnabled}
+              {contextExpansionEnabled}
               {reviewEnabled}
               {diffHeadSHA}
               {nativeMultilineRanges}

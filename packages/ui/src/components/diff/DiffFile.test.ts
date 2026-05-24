@@ -152,6 +152,7 @@ function renderDiffFile(
   options: {
     richPreview?: boolean;
     richPreviewEnabled?: boolean;
+    contextExpansionEnabled?: boolean;
     reviewEnabled?: boolean;
     diffHeadSHA?: string;
     nativeMultilineRanges?: boolean;
@@ -181,6 +182,9 @@ function renderDiffFile(
       number: 1,
       ...(options.richPreviewEnabled !== undefined && {
         richPreviewEnabled: options.richPreviewEnabled,
+      }),
+      ...(options.contextExpansionEnabled !== undefined && {
+        contextExpansionEnabled: options.contextExpansionEnabled,
       }),
       ...(options.reviewEnabled !== undefined && {
         reviewEnabled: options.reviewEnabled,
@@ -656,6 +660,62 @@ describe("DiffFile", () => {
       "src/context.ts",
       "new",
     );
+  });
+
+  it("hides Pierre context expansion when file text loading is disabled", async () => {
+    const file = makeFile({
+      path: "src/context.ts",
+      old_path: "src/context.ts",
+      patch: `diff --git a/src/context.ts b/src/context.ts
+--- a/src/context.ts
++++ b/src/context.ts
+@@ -1,3 +1,3 @@
+ shared 1
+-old early
++new early
+ shared 3
+@@ -77,3 +77,3 @@ lateContext
+ shared 77
+-old late
++new late
+ shared 79
+`,
+      hunks: [
+        {
+          old_start: 1,
+          old_count: 3,
+          new_start: 1,
+          new_count: 3,
+          lines: [
+            { type: "context", content: "shared 1", old_num: 1, new_num: 1 },
+            { type: "delete", content: "old early", old_num: 2 },
+            { type: "add", content: "new early", new_num: 2 },
+            { type: "context", content: "shared 3", old_num: 3, new_num: 3 },
+          ],
+        },
+        {
+          old_start: 77,
+          old_count: 3,
+          new_start: 77,
+          new_count: 3,
+          lines: [
+            { type: "context", content: "shared 77", old_num: 77, new_num: 77 },
+            { type: "delete", content: "old late", old_num: 78 },
+            { type: "add", content: "new late", new_num: 78 },
+            { type: "context", content: "shared 79", old_num: 79, new_num: 79 },
+          ],
+        },
+      ],
+    });
+    const { diff } = renderDiffFile(file, { contextExpansionEnabled: false });
+    const loadFilePreview = vi.spyOn(diff, "loadFilePreview");
+
+    await waitFor(() => {
+      const root = document.querySelector(".pierre-diff")?.shadowRoot;
+      expect(root?.textContent).toContain("@@ -77,3 +77,3 @@ lateContext");
+      expect(root?.querySelector("[data-expand-button]")).toBeNull();
+    });
+    expect(loadFilePreview).not.toHaveBeenCalled();
   });
 
   it("keeps raw hunk headers on Pierre context separators", async () => {

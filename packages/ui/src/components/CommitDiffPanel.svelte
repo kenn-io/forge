@@ -51,6 +51,7 @@
         number={0}
         loadOnMount={false}
         richPreviewEnabled={false}
+        contextExpansionEnabled={false}
       />
     </div>
   </div>

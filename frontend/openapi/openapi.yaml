@@ -4683,6 +4683,16 @@ paths:
           schema:
             description: Changed file path to preview
             type: string
+        - description: Optional diff side to read for context expansion
+          explode: false
+          in: query
+          name: side
+          schema:
+            description: Optional diff side to read for context expansion
+            enum:
+              - old
+              - new
+            type: string
         - description: Scope to a single commit SHA
           explode: false
           in: query

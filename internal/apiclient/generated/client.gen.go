@@ -179,6 +179,24 @@ func (e ProblemErrorCode) Valid() bool {
 	}
 }
 
+// Defines values for GetPullFilePreviewOnHostParamsSide.
+const (
+	GetPullFilePreviewOnHostParamsSideNew GetPullFilePreviewOnHostParamsSide = "new"
+	GetPullFilePreviewOnHostParamsSideOld GetPullFilePreviewOnHostParamsSide = "old"
+)
+
+// Valid indicates whether the value is a known member of the GetPullFilePreviewOnHostParamsSide enum.
+func (e GetPullFilePreviewOnHostParamsSide) Valid() bool {
+	switch e {
+	case GetPullFilePreviewOnHostParamsSideNew:
+		return true
+	case GetPullFilePreviewOnHostParamsSideOld:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ResolveRepoItemOnHostParamsItemType.
 const (
 	ResolveRepoItemOnHostParamsItemTypeIssue ResolveRepoItemOnHostParamsItemType = "issue"
@@ -199,16 +217,16 @@ func (e ResolveRepoItemOnHostParamsItemType) Valid() bool {
 
 // Defines values for GetPullFilePreviewParamsSide.
 const (
-	New GetPullFilePreviewParamsSide = "new"
-	Old GetPullFilePreviewParamsSide = "old"
+	GetPullFilePreviewParamsSideNew GetPullFilePreviewParamsSide = "new"
+	GetPullFilePreviewParamsSideOld GetPullFilePreviewParamsSide = "old"
 )
 
 // Valid indicates whether the value is a known member of the GetPullFilePreviewParamsSide enum.
 func (e GetPullFilePreviewParamsSide) Valid() bool {
 	switch e {
-	case New:
+	case GetPullFilePreviewParamsSideNew:
 		return true
-	case Old:
+	case GetPullFilePreviewParamsSideOld:
 		return true
 	default:
 		return false
@@ -1629,6 +1647,9 @@ type GetPullFilePreviewOnHostParams struct {
 	// Path Changed file path to preview
 	Path *string `form:"path,omitempty" json:"path,omitempty"`
 
+	// Side Optional diff side to read for context expansion
+	Side *GetPullFilePreviewOnHostParamsSide `form:"side,omitempty" json:"side,omitempty"`
+
 	// Commit Scope to a single commit SHA
 	Commit *string `form:"commit,omitempty" json:"commit,omitempty"`
 
@@ -1638,6 +1659,9 @@ type GetPullFilePreviewOnHostParams struct {
 	// To End SHA for range diff (inclusive)
 	To *string `form:"to,omitempty" json:"to,omitempty"`
 }
+
+// GetPullFilePreviewOnHostParamsSide defines parameters for GetPullFilePreviewOnHost.
+type GetPullFilePreviewOnHostParamsSide string
 
 // GetCommentAutocompleteOnHostParams defines parameters for GetCommentAutocompleteOnHost.
 type GetCommentAutocompleteOnHostParams struct {
@@ -6437,6 +6461,22 @@ func NewGetPullFilePreviewOnHostRequest(server string, platformHost string, prov
 		if params.Path != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "path", *params.Path, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Side != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "side", *params.Side, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
 				return nil, err
 			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
 				return nil, err

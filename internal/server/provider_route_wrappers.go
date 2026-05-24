@@ -280,6 +280,7 @@ type getFilePreviewHostInput struct {
 	Name         string `path:"name"`
 	Number       int    `path:"number"`
 	Path         string `query:"path" doc:"Changed file path to preview"`
+	Side         string `query:"side" enum:"old,new" doc:"Optional diff side to read for context expansion"`
 	Commit       string `query:"commit" doc:"Scope to a single commit SHA"`
 	From         string `query:"from"   doc:"Start SHA for range diff (inclusive)"`
 	To           string `query:"to"     doc:"End SHA for range diff (inclusive)"`
@@ -737,6 +738,7 @@ func (s *Server) getFilePreviewOnHost(ctx context.Context, input *getFilePreview
 		Name:         input.Name,
 		Number:       input.Number,
 		Path:         input.Path,
+		Side:         input.Side,
 		Commit:       input.Commit,
 		From:         input.From,
 		To:           input.To,

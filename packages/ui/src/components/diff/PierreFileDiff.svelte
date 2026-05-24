@@ -18,7 +18,7 @@
     file: DiffFile;
     active?: boolean;
     wordWrap?: boolean;
-    loadFileText?: (side: "old" | "new") => Promise<string>;
+    loadFileText?: ((side: "old" | "new") => Promise<string>) | undefined;
     lineAnnotations?: DiffLineAnnotation<unknown>[];
     selectedRange?: SelectedLineRange | null;
     enableLineSelection?: boolean;
@@ -56,7 +56,7 @@
       // Pierre marks patch-only diffs as partial and hides expansion controls.
       // Give it sparse line arrays so the controls render; the first click is
       // intercepted, full contents are fetched, and the same expansion replays.
-      enableDemandContextExpansion: hasCollapsedContext(file),
+      enableDemandContextExpansion: Boolean(loadFileText) && hasCollapsedContext(file),
     });
   });
 

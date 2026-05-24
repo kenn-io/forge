@@ -15335,7 +15335,7 @@ func TestAPIGetFilePreview_ReturnsRequestedDiffSideContent(t *testing.T) {
 	client := setupTestClient(t, srv)
 
 	path := "internal/handler.go"
-	oldSide := generated.Old
+	oldSide := generated.GetPullFilePreviewParamsSideOld
 	oldResp, err := client.HTTP.GetPullFilePreviewWithResponse(
 		ctx, "gh", "acme", "widgets", 1,
 		&generated.GetPullFilePreviewParams{Path: &path, Side: &oldSide},
@@ -15346,10 +15346,66 @@ func TestAPIGetFilePreview_ReturnsRequestedDiffSideContent(t *testing.T) {
 	oldDecoded, err := base64.StdEncoding.DecodeString(oldResp.JSON200.Content)
 	require.NoError(err)
 
-	newSide := generated.New
+	newSide := generated.GetPullFilePreviewParamsSideNew
 	newResp, err := client.HTTP.GetPullFilePreviewWithResponse(
 		ctx, "gh", "acme", "widgets", 1,
 		&generated.GetPullFilePreviewParams{Path: &path, Side: &newSide},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, newResp.StatusCode())
+	require.NotNil(newResp.JSON200)
+	newDecoded, err := base64.StdEncoding.DecodeString(newResp.JSON200.Content)
+	require.NoError(err)
+
+	assert.Contains(string(oldDecoded), `log.Println("handling request")`)
+	assert.NotContains(string(oldDecoded), "slog.Info")
+	assert.Contains(string(newDecoded), `slog.Info("handling request"`)
+	assert.NotContains(string(newDecoded), "log.Println")
+}
+
+func TestAPIGetFilePreviewOnHost_ReturnsRequestedDiffSideContent(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := t.Context()
+
+	dir := t.TempDir()
+	database := dbtest.Open(t)
+
+	seedPR(t, database, "acme", "widgets", 1)
+	diffRepo, err := testutil.SetupDiffRepo(ctx, dir, database)
+	require.NoError(err)
+
+	mock := &mockGH{}
+	repos := []ghclient.RepoRef{{
+		Owner: "acme", Name: "widgets", PlatformHost: "github.com",
+	}}
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": mock},
+		database, nil, repos, time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{
+		Clones: diffRepo.Manager,
+	})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	client := setupTestClient(t, srv)
+
+	path := "internal/handler.go"
+	oldSide := generated.GetPullFilePreviewOnHostParamsSideOld
+	oldResp, err := client.HTTP.GetPullFilePreviewOnHostWithResponse(
+		ctx, "github.com", "gh", "acme", "widgets", 1,
+		&generated.GetPullFilePreviewOnHostParams{Path: &path, Side: &oldSide},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, oldResp.StatusCode())
+	require.NotNil(oldResp.JSON200)
+	oldDecoded, err := base64.StdEncoding.DecodeString(oldResp.JSON200.Content)
+	require.NoError(err)
+
+	newSide := generated.GetPullFilePreviewOnHostParamsSideNew
+	newResp, err := client.HTTP.GetPullFilePreviewOnHostWithResponse(
+		ctx, "github.com", "gh", "acme", "widgets", 1,
+		&generated.GetPullFilePreviewOnHostParams{Path: &path, Side: &newSide},
 	)
 	require.NoError(err)
 	require.Equal(http.StatusOK, newResp.StatusCode())

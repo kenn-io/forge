@@ -30,6 +30,7 @@
     repoPath: string;
     number: number;
     richPreviewEnabled?: boolean;
+    contextExpansionEnabled?: boolean;
     reviewEnabled?: boolean;
     diffHeadSHA?: string | undefined;
     nativeMultilineRanges?: boolean;
@@ -45,6 +46,7 @@
     repoPath,
     number,
     richPreviewEnabled = true,
+    contextExpansionEnabled = true,
     reviewEnabled = false,
     diffHeadSHA = undefined,
     nativeMultilineRanges = false,
@@ -441,7 +443,7 @@
           {file}
           active={inViewport}
           {wordWrap}
-          loadFileText={loadDiffText}
+          loadFileText={contextExpansionEnabled ? loadDiffText : undefined}
           lineAnnotations={pierreLineAnnotations}
           selectedRange={selectedRange}
           enableLineSelection={reviewEnabled && !!diffHeadSHA}

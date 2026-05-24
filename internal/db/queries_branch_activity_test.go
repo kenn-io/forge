@@ -1,6 +1,7 @@
 package db
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -129,6 +130,37 @@ func TestBranchActivityPersistence(t *testing.T) {
 		require.Len(t, rows, 2)
 		assert.Equal("master subject", rows["master/shared-sha"].Subject)
 		assert.Equal("main subject", rows["main/shared-sha"].Subject)
+	})
+
+	t.Run("caps stored commit metadata", func(t *testing.T) {
+		assert := Assert.New(t)
+		require := require.New(t)
+		d := openTestDB(t)
+		ctx := t.Context()
+		base := baseTime()
+		repoID := insertTestRepo(t, d, "alice", "alpha")
+
+		require.NoError(d.UpsertBranchCommits(ctx, []BranchCommit{{
+			RepoID:         repoID,
+			BranchName:     "main",
+			CommitSHA:      "long-metadata-sha",
+			AuthorName:     strings.Repeat("a", branchCommitIdentityMaxBytes+20),
+			AuthorEmail:    strings.Repeat("e", branchCommitIdentityMaxBytes+20),
+			AuthoredAt:     base,
+			CommitterName:  strings.Repeat("c", branchCommitIdentityMaxBytes+20),
+			CommitterEmail: strings.Repeat("m", branchCommitIdentityMaxBytes+20),
+			CommittedAt:    base,
+			Subject:        strings.Repeat("s", branchCommitSubjectMaxBytes+20),
+		}}))
+
+		rows := loadTestBranchCommits(t, d, repoID)
+		require.Len(rows, 1)
+		commit := rows["long-metadata-sha"]
+		assert.Len(commit.AuthorName, branchCommitIdentityMaxBytes)
+		assert.Len(commit.AuthorEmail, branchCommitIdentityMaxBytes)
+		assert.Len(commit.CommitterName, branchCommitIdentityMaxBytes)
+		assert.Len(commit.CommitterEmail, branchCommitIdentityMaxBytes)
+		assert.Len(commit.Subject, branchCommitSubjectMaxBytes)
 	})
 
 	t.Run("records force pushes idempotently and tracks tips", func(t *testing.T) {

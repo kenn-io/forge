@@ -2,6 +2,7 @@ package db
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -403,6 +404,30 @@ func TestListActivity(t *testing.T) {
 		require.Len(items, 2)
 		assert.Equal([]string{"default_branch_commit", "default_branch_force_push"}, activityTypes(items))
 		assert.Equal([]string{"new branch commit", "new-before -> new-after"}, activityBodies(items))
+	})
+
+	t.Run("default branch commit preview is capped", func(t *testing.T) {
+		assert := Assert.New(t)
+		require := require.New(t)
+		d := openTestDB(t)
+		ctx := t.Context()
+		base := baseTime()
+		repoID := insertTestRepo(t, d, "alice", "alpha")
+		require.NoError(d.UpsertBranchCommits(ctx, []BranchCommit{
+			testBranchCommit(
+				repoID,
+				"main",
+				"branch-sha",
+				strings.Repeat("s", 240),
+				base,
+			),
+		}))
+
+		items, err := d.ListActivity(ctx, ListActivityOpts{Limit: 50})
+		require.NoError(err)
+		require.Len(items, 1)
+		assert.Equal("default_branch_commit", items[0].ActivityType)
+		assert.Len(items[0].BodyPreview, 200)
 	})
 
 	t.Run("search matches branch commit metadata and sha prefixes", func(t *testing.T) {

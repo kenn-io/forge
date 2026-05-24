@@ -13250,6 +13250,47 @@ func TestAPIListActivityReturnsDefaultBranchActivity(t *testing.T) {
 	assert.Zero(commit["item_number"])
 }
 
+func TestAPIListActivityCapsDefaultBranchCommitMetadata(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	ctx := t.Context()
+	base := time.Now().UTC().Add(-time.Hour).Truncate(time.Second)
+	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+
+	committedAt := base.Add(10 * time.Minute)
+	require.NoError(database.UpsertBranchCommits(ctx, []db.BranchCommit{{
+		RepoID:         repoID,
+		BranchName:     "main",
+		CommitSHA:      "abc123def456abc123def456abc123def456abcd",
+		AuthorName:     strings.Repeat("a", 300),
+		AuthorEmail:    strings.Repeat("e", 300),
+		AuthoredAt:     committedAt.Add(-time.Minute),
+		CommitterName:  strings.Repeat("c", 300),
+		CommitterEmail: strings.Repeat("m", 300),
+		CommittedAt:    committedAt,
+		Subject:        strings.Repeat("s", 700),
+	}}))
+
+	since := url.QueryEscape(base.Format(time.RFC3339))
+	rr := doJSON(t, srv, http.MethodGet, "/api/v1/activity?since="+since, nil)
+	require.Equal(http.StatusOK, rr.Code)
+	var body struct {
+		Items []map[string]any `json:"items"`
+	}
+	require.NoError(json.NewDecoder(rr.Body).Decode(&body))
+	require.Len(body.Items, 1)
+
+	commit := body.Items[0]
+	assert.Equal("default_branch_commit", commit["activity_type"])
+	assert.Len(commit["body_preview"], 200)
+	assert.Len(commit["author_name"], 256)
+	assert.Len(commit["author_email"], 256)
+	assert.Len(commit["committer_name"], 256)
+	assert.Len(commit["committer_email"], 256)
+}
+
 func TestAPIListActivityReflectsConfiguredDefaultBranchCommitCap(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

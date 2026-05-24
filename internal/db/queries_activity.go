@@ -177,7 +177,7 @@ func (d *DB) ListActivity(
 			       '', 0, '',
 			       '', '',
 			       bc.author_name, bc.committed_at,
-			       bc.subject,
+			       substr(bc.subject, 1, 200),
 			       bc.branch_name, bc.commit_sha, '', '',
 			       bc.author_name, bc.author_email,
 			       bc.committer_name, bc.committer_email,

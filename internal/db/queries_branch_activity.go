@@ -5,7 +5,14 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
+	"unicode/utf8"
+)
+
+const (
+	branchCommitIdentityMaxBytes = 256
+	branchCommitSubjectMaxBytes  = 512
 )
 
 func (d *DB) UpsertBranchCommits(
@@ -42,6 +49,7 @@ func (d *DB) UpsertBranchCommits(
 		for i := range commits {
 			commit := &commits[i]
 			canonicalizeBranchCommitTimestamps(commit)
+			canonicalizeBranchCommitMetadata(commit)
 			if commit.ObservedOrder == 0 {
 				commit.ObservedOrder = observedBase - int64(i)
 			}
@@ -229,6 +237,32 @@ func canonicalizeBranchCommitTimestamps(commit *BranchCommit) {
 	}
 	commit.AuthoredAt = canonicalUTCTime(commit.AuthoredAt)
 	commit.CommittedAt = canonicalUTCTime(commit.CommittedAt)
+}
+
+func canonicalizeBranchCommitMetadata(commit *BranchCommit) {
+	if commit == nil {
+		return
+	}
+	commit.AuthorName = truncateUTF8Bytes(commit.AuthorName, branchCommitIdentityMaxBytes)
+	commit.AuthorEmail = truncateUTF8Bytes(commit.AuthorEmail, branchCommitIdentityMaxBytes)
+	commit.CommitterName = truncateUTF8Bytes(commit.CommitterName, branchCommitIdentityMaxBytes)
+	commit.CommitterEmail = truncateUTF8Bytes(commit.CommitterEmail, branchCommitIdentityMaxBytes)
+	commit.Subject = truncateUTF8Bytes(commit.Subject, branchCommitSubjectMaxBytes)
+}
+
+func truncateUTF8Bytes(s string, maxBytes int) string {
+	if maxBytes <= 0 {
+		return ""
+	}
+	s = strings.ToValidUTF8(s, "")
+	if len(s) <= maxBytes {
+		return s
+	}
+	truncated := s[:maxBytes]
+	for !utf8.ValidString(truncated) {
+		truncated = truncated[:len(truncated)-1]
+	}
+	return truncated
 }
 
 func canonicalizeBranchTipTimestamps(tip *BranchTip) {

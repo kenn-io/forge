@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // emptyTreeSHA is git's well-known SHA for an empty tree object.
@@ -58,7 +59,11 @@ func (m *Manager) ListCommits(
 	return parseCommitLog(out)
 }
 
-const commitLogFormat = "%H%x00%an%x00%ae%x00%aI%x00%cn%x00%ce%x00%cI%x00%s"
+const (
+	commitIdentityMaxBytes = 256
+	commitMessageMaxBytes  = 512
+	commitLogFormat        = "%H%x00%an%x00%ae%x00%aI%x00%cn%x00%ce%x00%cI%x00%s"
+)
 
 func parseCommitLog(out []byte) ([]Commit, error) {
 	var commits []Commit
@@ -83,16 +88,31 @@ func parseCommitLog(out []byte) ([]Commit, error) {
 		}
 		commits = append(commits, Commit{
 			SHA:            parts[0],
-			AuthorName:     parts[1],
-			AuthorEmail:    parts[2],
+			AuthorName:     truncateCommitText(parts[1], commitIdentityMaxBytes),
+			AuthorEmail:    truncateCommitText(parts[2], commitIdentityMaxBytes),
 			AuthoredAt:     authoredAt,
-			CommitterName:  parts[4],
-			CommitterEmail: parts[5],
+			CommitterName:  truncateCommitText(parts[4], commitIdentityMaxBytes),
+			CommitterEmail: truncateCommitText(parts[5], commitIdentityMaxBytes),
 			CommittedAt:    committedAt,
-			Message:        parts[7],
+			Message:        truncateCommitText(parts[7], commitMessageMaxBytes),
 		})
 	}
 	return commits, scanner.Err()
+}
+
+func truncateCommitText(s string, maxBytes int) string {
+	if maxBytes <= 0 {
+		return ""
+	}
+	s = strings.ToValidUTF8(s, "")
+	if len(s) <= maxBytes {
+		return s
+	}
+	truncated := s[:maxBytes]
+	for !utf8.ValidString(truncated) {
+		truncated = truncated[:len(truncated)-1]
+	}
+	return truncated
 }
 
 // CommitTimelineSinceTag returns first-parent commits on the default branch
@@ -157,7 +177,7 @@ func (m *Manager) CommitTimelineSinceTag(
 		points = append(points, CommitTimelinePoint{
 			SHA:         parts[0],
 			CommittedAt: t,
-			Message:     parts[2],
+			Message:     truncateCommitText(parts[2], commitMessageMaxBytes),
 		})
 	}
 	if err := scanner.Err(); err != nil {

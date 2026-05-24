@@ -97,6 +97,32 @@ func TestListCommits(t *testing.T) {
 	}
 }
 
+func TestParseCommitLogCapsMetadata(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	line := strings.Join([]string{
+		strings.Repeat("a", 40),
+		strings.Repeat("n", commitIdentityMaxBytes+20),
+		strings.Repeat("e", commitIdentityMaxBytes+20),
+		"2024-01-15T12:00:00Z",
+		strings.Repeat("c", commitIdentityMaxBytes+20),
+		strings.Repeat("m", commitIdentityMaxBytes+20),
+		"2024-01-15T12:01:00Z",
+		strings.Repeat("s", commitMessageMaxBytes+20),
+	}, "\x00")
+
+	commits, err := parseCommitLog([]byte(line + "\n"))
+	require.NoError(err)
+	require.Len(commits, 1)
+	commit := commits[0]
+	assert.Len(commit.AuthorName, commitIdentityMaxBytes)
+	assert.Len(commit.AuthorEmail, commitIdentityMaxBytes)
+	assert.Len(commit.CommitterName, commitIdentityMaxBytes)
+	assert.Len(commit.CommitterEmail, commitIdentityMaxBytes)
+	assert.Len(commit.Message, commitMessageMaxBytes)
+}
+
 func TestListCommits_EmptyRange(t *testing.T) {
 	bare, mergeBase, _ := setupCommitTestRepo(t)
 	mgr := New(filepath.Dir(bare), nil)

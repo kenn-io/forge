@@ -2,6 +2,7 @@ import {
   cleanup,
   fireEvent,
   render,
+  waitFor,
 } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -172,12 +173,13 @@ describe("DiffView", () => {
       });
 
       const { container } = renderDiffView(diff);
-      await Promise.resolve();
 
       const diffArea = container.querySelector(".diff-area") as HTMLDivElement;
-      expect(diffArea.scrollTop).toBe(360);
-      expect(scrollIntoView).not.toHaveBeenCalled();
-      expect(consumeScrollTarget).toHaveBeenCalled();
+      await waitFor(() => {
+        expect(diffArea.scrollTop).toBe(360);
+        expect(scrollIntoView).not.toHaveBeenCalled();
+        expect(consumeScrollTarget).toHaveBeenCalled();
+      });
     } finally {
       Element.prototype.scrollIntoView = originalScrollIntoView;
       Element.prototype.getBoundingClientRect = originalGetBoundingClientRect;

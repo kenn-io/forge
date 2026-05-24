@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, untrack } from "svelte";
+  import { onMount, tick, untrack } from "svelte";
   import { getStores } from "../../context.js";
   import type { DiffScrollTarget } from "../../stores/diff.svelte.js";
   import type { DiffReviewDraftComment } from "../../stores/diff-review-draft.svelte.js";
@@ -164,11 +164,27 @@
   $effect(() => {
     const target = diffStore.getScrollTarget();
     if (target && diffArea && diff) {
-      if (scrollToTarget(target)) {
-        diffStore.consumeScrollTarget();
-      }
+      void scrollToTargetAfterDom(target);
     }
   });
+
+  async function scrollToTargetAfterDom(target: DiffScrollTarget): Promise<void> {
+    await tick();
+    if (!sameScrollTarget(diffStore.getScrollTarget(), target)) return;
+    if (scrollToTarget(target)) {
+      diffStore.consumeScrollTarget();
+    }
+  }
+
+  function sameScrollTarget(
+    left: DiffScrollTarget | null,
+    right: DiffScrollTarget,
+  ): boolean {
+    return !!left &&
+      left.path === right.path &&
+      left.line === right.line &&
+      left.side === right.side;
+  }
 
   // Scroll-based active file tracking.
   // Skipped for one frame after programmatic scroll to avoid re-setting activeFile.

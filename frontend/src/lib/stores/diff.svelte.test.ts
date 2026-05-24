@@ -102,6 +102,73 @@ afterEach(() => {
 });
 
 describe("createDiffStore loadDiff", () => {
+  it("loads default branch commit diffs through the repo route", async () => {
+    const calls: string[] = [];
+    const diff = makeDiffResult(["internal/cache.go"]);
+
+    vi.spyOn(globalThis, "fetch").mockImplementation(
+      async (input: RequestInfo | URL) => {
+        const url =
+          typeof input === "string"
+            ? input
+            : input instanceof URL
+              ? input.href
+              : input.url;
+        calls.push(url);
+        if (url.includes("/repo/github/owner/repo/commits/abc123/diff")) {
+          return Response.json(diff);
+        }
+        return Response.json({}, { status: 404 });
+      },
+    );
+
+    const store = createDiffStore({ client: testClient() });
+
+    await store.loadCommitDiff(ownerRepoRef, "abc123");
+
+    expect(calls).toEqual([
+      "/api/v1/repo/github/owner/repo/commits/abc123/diff",
+    ]);
+    expect(store.getDiff()?.files[0]?.path).toBe("internal/cache.go");
+  });
+
+  it("refetches default branch commit diffs when toggling whitespace hiding", async () => {
+    const calls: string[] = [];
+    const diffAll = makeDiffResult(["a.ts", "b.ts"]);
+    const diffHidden = makeDiffResult(["a.ts"]);
+
+    vi.spyOn(globalThis, "fetch").mockImplementation(
+      async (input: RequestInfo | URL) => {
+        const url =
+          typeof input === "string"
+            ? input
+            : input instanceof URL
+              ? input.href
+              : input.url;
+        calls.push(url);
+        if (url.includes("whitespace=hide")) {
+          return Response.json(diffHidden);
+        }
+        if (url.includes("/repo/github/owner/repo/commits/abc123/diff")) {
+          return Response.json(diffAll);
+        }
+        return Response.json({}, { status: 404 });
+      },
+    );
+
+    const store = createDiffStore({ client: testClient() });
+
+    await store.loadCommitDiff(ownerRepoRef, "abc123");
+    store.setHideWhitespace(true);
+
+    await vi.waitFor(() => {
+      expect(store.getDiff()?.files).toHaveLength(1);
+    });
+    expect(calls).toContain(
+      "/api/v1/repo/github/owner/repo/commits/abc123/diff?whitespace=hide",
+    );
+  });
+
   it("loads workspace files and the full workspace diff", async () => {
     const calls: string[] = [];
     const files = makeFilesResult([

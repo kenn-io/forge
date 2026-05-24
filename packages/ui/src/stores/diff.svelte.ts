@@ -7,6 +7,7 @@ import type {
 import { createAPIClient } from "../api/generated/client.js";
 import {
   providerItemPath,
+  providerRepoPath,
   providerRouteParams,
   type ProviderRouteRef,
 } from "../api/provider-routes.js";
@@ -170,6 +171,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
   let currentWorkspaceID = $state("");
   let currentWorkspaceBase = $state<WorkspaceDiffBase>("head");
   let currentWorkspaceStacked = $state(false);
+  let currentCommitSHA = $state("");
   let currentProvider = $state("");
   let currentPlatformHost = $state<string | undefined>(undefined);
   let currentRepoPath = $state("");
@@ -316,6 +318,8 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     safeSetItem("diff-hide-whitespace", String(v));
     if (currentOwner && currentName && currentNumber) {
       void reloadDiffOnly();
+    } else if (currentOwner && currentName && currentCommitSHA) {
+      void reloadCommitDiffOnly();
     } else if (currentWorkspaceID) {
       void reloadWorkspaceDiffOnly();
     }
@@ -376,6 +380,10 @@ export function createDiffStore(opts?: DiffStoreOptions) {
       currentWorkspaceBase,
       currentWorkspaceStacked,
     );
+  }
+
+  async function reloadCommitDiffOnly(): Promise<void> {
+    await loadCommitDiff(currentRouteRef(), currentCommitSHA);
   }
 
   function toggleFileCollapsed(
@@ -582,6 +590,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     currentNumber = number;
     clearFilePreviewCache();
     currentWorkspaceID = "";
+    currentCommitSHA = "";
     currentProvider = identity.provider;
     currentPlatformHost = identity.platformHost;
     currentRepoPath = identity.repoPath;
@@ -654,6 +663,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     currentOwner = "";
     currentName = "";
     currentNumber = 0;
+    currentCommitSHA = "";
     if (workspaceScopeChanged) {
       resetDiffScopeState();
     }
@@ -707,6 +717,70 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     }
   }
 
+  async function loadCommitDiff(
+    identity: ProviderRouteRef,
+    sha: string,
+  ): Promise<void> {
+    const commitChanged =
+      identity.owner !== currentOwner ||
+      identity.name !== currentName ||
+      sha !== currentCommitSHA;
+    currentOwner = identity.owner;
+    currentName = identity.name;
+    currentNumber = 0;
+    currentWorkspaceID = "";
+    currentCommitSHA = sha;
+    currentProvider = identity.provider;
+    currentPlatformHost = identity.platformHost;
+    currentRepoPath = identity.repoPath;
+    if (commitChanged) {
+      resetDiffScopeState();
+    }
+    clearFilePreviewCache();
+
+    abortController?.abort();
+    fileListAbortController?.abort();
+    fileListAbortController = null;
+    fileListLoading = false;
+    const diffAc = new AbortController();
+    abortController = diffAc;
+    diff = null;
+    fileList = null;
+    loading = true;
+    storeError = null;
+
+    const ref = currentRouteRef();
+    try {
+      const { data, error, response } = await apiClient.GET(
+        providerRepoPath(ref, "/commits/{sha}/diff"),
+        {
+          params: {
+            path: {
+              ...providerRouteParams(ref),
+              sha,
+            },
+            query: {
+              ...(hideWhitespace && { whitespace: "hide" }),
+            },
+          },
+          signal: diffAc.signal,
+        },
+      );
+      if (!diffLoadIsCurrent(diffAc)) return;
+      if (!data) {
+        throw new Error(apiErrorMessage(error, `HTTP ${response.status}`));
+      }
+      applyDiffResult(data);
+    } catch (err) {
+      if (diffAc.signal.aborted || !diffLoadIsCurrent(diffAc)) return;
+      storeError = err instanceof Error ? err.message : String(err);
+      diff = null;
+      fileList = null;
+    } finally {
+      finishDiffLoad(diffAc);
+    }
+  }
+
   function clearDiff(): void {
     abortController?.abort();
     abortController = null;
@@ -732,6 +806,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     currentWorkspaceID = "";
     currentWorkspaceBase = "head";
     currentWorkspaceStacked = false;
+    currentCommitSHA = "";
     currentProvider = "";
     currentPlatformHost = undefined;
     currentRepoPath = "";
@@ -932,6 +1007,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     isFileCollapsed,
     toggleFileCollapsed,
     loadDiff,
+    loadCommitDiff,
     loadFilePreview,
     loadWorkspaceDiff,
     clearDiff,

@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { ActivityItem } from "../api/types.js";
   import ActivityFeed from "../components/ActivityFeed.svelte";
+  import CommitDiffPanel from "../components/CommitDiffPanel.svelte";
   import LeftSidebarToggle from "../components/shared/LeftSidebarToggle.svelte";
   import SplitResizeHandle from "../components/shared/SplitResizeHandle.svelte";
   import type { SplitResizeEvent } from "../components/shared/split-resize.js";
@@ -16,6 +17,17 @@
     name: string;
     number: number;
     detailTab?: "conversation" | "files";
+  };
+
+  type CommitDrawerItem = {
+    provider: string;
+    platformHost?: string | undefined;
+    repoPath: string;
+    owner: string;
+    name: string;
+    branchName: string;
+    commitSha: string;
+    title: string;
   };
 
   interface Props {
@@ -39,6 +51,7 @@
   // Internal state used when no controlled props are
   // provided (standalone usage).
   let internalDrawer = $state<DrawerItem | null>(null);
+  let commitDrawer = $state<CommitDrawerItem | null>(null);
   let internalDetailTab = $state<"conversation" | "files">(
     "conversation",
   );
@@ -55,6 +68,9 @@
   const activeDrawer = $derived(
     controlled ? (controlledDrawer ?? null) : internalDrawer,
   );
+  const hasActiveDetail = $derived(
+    activeDrawer !== null || commitDrawer !== null,
+  );
   const effectiveDetailTab = $derived(
     controlled ? detailTab : internalDetailTab,
   );
@@ -70,6 +86,7 @@
   }
 
   function handleSelect(item: ActivityItem): void {
+    commitDrawer = null;
     if (!item.repo) {
       throw new Error("activity item missing provider repo identity");
     }
@@ -92,8 +109,32 @@
     onSelectItem?.(item);
   }
 
+  function handleSelectBranchCommit(item: ActivityItem): void {
+    if (!item.repo) {
+      throw new Error("branch activity item missing provider repo identity");
+    }
+    if (!item.commit_sha) return;
+
+    commitDrawer = {
+      provider: item.repo.provider,
+      platformHost: item.repo.platform_host,
+      repoPath: item.repo.repo_path,
+      owner: item.repo.owner,
+      name: item.repo.name,
+      branchName: item.branch_name || "default branch",
+      commitSha: item.commit_sha,
+      title: item.body_preview || item.commit_sha.slice(0, 12),
+    };
+    if (!controlled) {
+      internalDrawer = null;
+    } else if (activeDrawer !== null) {
+      onCloseDrawer?.();
+    }
+  }
+
   function handleClose(): void {
     activityPaneCollapsed = false;
+    commitDrawer = null;
     if (!controlled) {
       internalDrawer = null;
     }
@@ -130,7 +171,7 @@
   // Escape closes the active drawer when one is open. Mirrors the
   // behavior of the previous DetailDrawer the split view replaced.
   $effect(() => {
-    if (activeDrawer === null) return;
+    if (!hasActiveDetail) return;
     function onKey(event: KeyboardEvent): void {
       if (event.key !== "Escape") return;
       if (event.defaultPrevented) return;
@@ -147,16 +188,16 @@
 
 <div
   class="activity-shell"
-  class:activity-shell--split={activeDrawer !== null}
-  class:activity-shell--full={activeDrawer === null}
+  class:activity-shell--split={hasActiveDetail}
+  class:activity-shell--full={!hasActiveDetail}
   class:activity-shell--phone={phone}
 >
   <section
     class="activity-pane"
-    class:activity-pane--collapsed={activeDrawer !== null && activityPaneCollapsed}
+    class:activity-pane--collapsed={hasActiveDetail && activityPaneCollapsed}
     style:--activity-pane-width={`${activityPaneWidth}px`}
   >
-    {#if activeDrawer && activityPaneCollapsed}
+    {#if hasActiveDetail && activityPaneCollapsed}
       <div class="activity-collapsed-strip">
         <LeftSidebarToggle
           state="collapsed"
@@ -165,7 +206,7 @@
           class="left-sidebar-toggle--compact"
         />
       </div>
-    {:else if activeDrawer}
+    {:else if hasActiveDetail}
       <div class="activity-rail-header">
         <span>Activity</span>
         <LeftSidebarToggle
@@ -178,14 +219,15 @@
     {/if}
     <div class="activity-feed-wrap">
       <ActivityFeed
-        compact={phone || activeDrawer !== null}
+        compact={phone || hasActiveDetail}
         selectedItem={activeDrawer}
         onSelectItem={handleSelect}
+        onSelectBranchCommit={handleSelectBranchCommit}
       />
     </div>
   </section>
 
-  {#if activeDrawer && !activityPaneCollapsed}
+  {#if hasActiveDetail && !activityPaneCollapsed}
     <SplitResizeHandle
       class="activity-split-resize-handle"
       ariaLabel="Resize Activity rail"
@@ -194,11 +236,15 @@
     />
   {/if}
 
-  {#if activeDrawer}
+  {#if activeDrawer || commitDrawer}
     <section class="activity-detail">
       <div class="activity-detail-header">
         <span>
-          {activeDrawer.owner}/{activeDrawer.name}#{activeDrawer.number}
+          {#if commitDrawer}
+            Commit {commitDrawer.repoPath} {commitDrawer.branchName} {commitDrawer.title}
+          {:else if activeDrawer}
+            {activeDrawer.owner}/{activeDrawer.name}#{activeDrawer.number}
+          {/if}
         </span>
         <button
           class="activity-rail-close"
@@ -210,7 +256,18 @@
         </button>
       </div>
 
-      {#if activeDrawer.itemType === "pr"}
+      {#if commitDrawer}
+        {#key commitDrawer.commitSha}
+          <CommitDiffPanel
+            provider={commitDrawer.provider}
+            platformHost={commitDrawer.platformHost}
+            owner={commitDrawer.owner}
+            name={commitDrawer.name}
+            repoPath={commitDrawer.repoPath}
+            commitSha={commitDrawer.commitSha}
+          />
+        {/key}
+      {:else if activeDrawer?.itemType === "pr"}
         <PRListView
           selectedPR={{
             owner: activeDrawer.owner,
@@ -229,7 +286,7 @@
           workflowApprovalSync={false}
           onDetailTabChange={handleDetailTabChange}
         />
-      {:else}
+      {:else if activeDrawer}
         <IssueListView
           selectedIssue={{
             owner: activeDrawer.owner,

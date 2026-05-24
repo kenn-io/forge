@@ -33,6 +33,7 @@
 
   interface Props {
     onSelectItem?: (item: ActivityItem) => void;
+    onSelectBranchCommit?: (item: ActivityItem) => void;
     compact?: boolean;
     selectedItem?: SelectedActivityRef | null;
   }
@@ -49,6 +50,7 @@
 
   let {
     onSelectItem,
+    onSelectBranchCommit,
     compact = false,
     selectedItem = null,
   }: Props = $props();
@@ -392,6 +394,10 @@
 
   function handleRowClick(item: ActivityItem): void {
     if (isDefaultBranchActivity(item)) {
+      if (isDefaultBranchCommitActivity(item)) {
+        onSelectBranchCommit?.(item);
+        return;
+      }
       const url = activityLink(item);
       if (url) window.open(url, "_blank", "noopener");
       return;
@@ -497,6 +503,7 @@
       <ActivityThreaded
         items={displayItems}
         {onSelectItem}
+        {onSelectBranchCommit}
         {compact}
         {selectedItem}
       />

@@ -7,6 +7,7 @@
     activityItemKey,
     activityRepoKey,
     isDefaultBranchActivity,
+    isDefaultBranchCommitActivity,
     isDefaultBranchForcePushActivity,
     shortSha,
     type ActivityRow,
@@ -27,6 +28,7 @@
   interface Props {
     items: ActivityItem[];
     onSelectItem: ((item: ActivityItem) => void) | undefined;
+    onSelectBranchCommit?: ((item: ActivityItem) => void) | undefined;
     compact?: boolean;
     selectedItem?: SelectedActivityRef | null;
   }
@@ -44,6 +46,7 @@
   let {
     items,
     onSelectItem,
+    onSelectBranchCommit,
     compact = false,
     selectedItem = null,
   }: Props = $props();
@@ -356,12 +359,21 @@
   }
 
   function handleBranchRowClick(row: ActivityRow): void {
-    handleEventClick(branchRowRepresentative(row));
+    const item = branchRowRepresentative(row);
+    if (isDefaultBranchCommitActivity(item)) {
+      onSelectBranchCommit?.(item);
+      return;
+    }
+    handleEventClick(item);
   }
 
   function handleEventClick(event: ActivityItem): void {
     if (isDefaultBranchActivity(event)) {
-      if (event.activity_url) window.open(event.activity_url, "_blank", "noopener");
+      if (isDefaultBranchCommitActivity(event)) {
+        onSelectBranchCommit?.(event);
+      } else if (event.activity_url) {
+        window.open(event.activity_url, "_blank", "noopener");
+      }
       return;
     }
     onSelectItem?.(event);
@@ -391,8 +403,7 @@
       const after = shortSha(event.after_sha);
       return before && after ? `${before} -> ${after}` : event.body_preview;
     }
-    const sha = shortSha(event.commit_sha);
-    return [sha, event.body_preview].filter(Boolean).join(" ");
+    return event.body_preview || shortSha(event.commit_sha);
   }
 
   function branchName(item: ActivityItem): string {
@@ -405,8 +416,7 @@
 
   function branchRowTitle(row: ActivityRow): string {
     if (isCollapsedActivityRow(row)) return `${row.count} commits`;
-    const summary = eventSummary(row);
-    return [eventLabel(row.activity_type), summary].filter(Boolean).join(" ");
+    return eventSummary(row) || eventLabel(row.activity_type);
   }
 </script>
 
@@ -431,7 +441,9 @@
             onclick={() => handleBranchRowClick(row)}
           >
             <span class="thread-caret-spacer" aria-hidden="true"></span>
-            <Chip size="xs" uppercase={false} class="branch-chip chip--muted">Branch</Chip>
+            <span class="branch-event-type {eventClass(item.activity_type)}">
+              {isDefaultBranchCommitActivity(item) ? "Commit" : eventLabel(item.activity_type)}
+            </span>
             {#if !grouping.getGroupByRepo()}
               <Chip
                 size="xs"
@@ -443,9 +455,6 @@
               </Chip>
             {/if}
             <span class="item-ref">{branchName(item)}</span>
-            <span class="branch-event-type {eventClass(item.activity_type)}">
-              {isCollapsedActivityRow(row) ? `${row.count} commits` : eventLabel(item.activity_type)}
-            </span>
             <span class="item-title">{branchRowTitle(row)}</span>
             <span class="item-time">{relativeTime(entry.latestTime)}</span>
           </div>
@@ -691,10 +700,6 @@
     font-size: var(--font-size-xs);
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-
-  :global(.branch-chip) {
-    flex-shrink: 0;
   }
 
   .event-time {

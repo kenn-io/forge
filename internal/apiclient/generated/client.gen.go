@@ -1468,6 +1468,11 @@ type GetCommentAutocompleteOnHostParams struct {
 	Limit   *int64  `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
+// GetRepoCommitDiffOnHostParams defines parameters for GetRepoCommitDiffOnHost.
+type GetRepoCommitDiffOnHostParams struct {
+	Whitespace *string `form:"whitespace,omitempty" json:"whitespace,omitempty"`
+}
+
 // ResolveRepoItemOnHostParams defines parameters for ResolveRepoItemOnHost.
 type ResolveRepoItemOnHostParams struct {
 	// ItemType Optional item type hint for providers whose issues and merge requests have separate number spaces.
@@ -1532,6 +1537,11 @@ type GetCommentAutocompleteParams struct {
 	Trigger *string `form:"trigger,omitempty" json:"trigger,omitempty"`
 	Q       *string `form:"q,omitempty" json:"q,omitempty"`
 	Limit   *int64  `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// GetRepoCommitDiffParams defines parameters for GetRepoCommitDiff.
+type GetRepoCommitDiffParams struct {
+	Whitespace *string `form:"whitespace,omitempty" json:"whitespace,omitempty"`
 }
 
 // ResolveRepoItemParams defines parameters for ResolveRepoItem.
@@ -1920,6 +1930,9 @@ type ClientInterface interface {
 	// GetCommentAutocompleteOnHost request
 	GetCommentAutocompleteOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, params *GetCommentAutocompleteOnHostParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetRepoCommitDiffOnHost request
+	GetRepoCommitDiffOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, sha string, params *GetRepoCommitDiffOnHostParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ListRepoLabelsOnHost request
 	ListRepoLabelsOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -2088,6 +2101,9 @@ type ClientInterface interface {
 
 	// GetCommentAutocomplete request
 	GetCommentAutocomplete(ctx context.Context, provider string, owner string, name string, params *GetCommentAutocompleteParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetRepoCommitDiff request
+	GetRepoCommitDiff(ctx context.Context, provider string, owner string, name string, sha string, params *GetRepoCommitDiffParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListRepoLabels request
 	ListRepoLabels(ctx context.Context, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -2783,6 +2799,18 @@ func (c *Client) GetRepoOnHost(ctx context.Context, platformHost string, provide
 
 func (c *Client) GetCommentAutocompleteOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, params *GetCommentAutocompleteOnHostParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetCommentAutocompleteOnHostRequest(c.Server, platformHost, provider, owner, name, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetRepoCommitDiffOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, sha string, params *GetRepoCommitDiffOnHostParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetRepoCommitDiffOnHostRequest(c.Server, platformHost, provider, owner, name, sha, params)
 	if err != nil {
 		return nil, err
 	}
@@ -3527,6 +3555,18 @@ func (c *Client) GetRepo(ctx context.Context, provider string, owner string, nam
 
 func (c *Client) GetCommentAutocomplete(ctx context.Context, provider string, owner string, name string, params *GetCommentAutocompleteParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetCommentAutocompleteRequest(c.Server, provider, owner, name, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetRepoCommitDiff(ctx context.Context, provider string, owner string, name string, sha string, params *GetRepoCommitDiffParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetRepoCommitDiffRequest(c.Server, provider, owner, name, sha, params)
 	if err != nil {
 		return nil, err
 	}
@@ -6542,6 +6582,90 @@ func NewGetCommentAutocompleteOnHostRequest(server string, platformHost string, 
 	return req, nil
 }
 
+// NewGetRepoCommitDiffOnHostRequest generates requests for GetRepoCommitDiffOnHost
+func NewGetRepoCommitDiffOnHostRequest(server string, platformHost string, provider string, owner string, name string, sha string, params *GetRepoCommitDiffOnHostParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "sha", sha, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/repo/%s/%s/%s/commits/%s/diff", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Whitespace != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "whitespace", *params.Whitespace, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewListRepoLabelsOnHostRequest generates requests for ListRepoLabelsOnHost
 func NewListRepoLabelsOnHostRequest(server string, platformHost string, provider string, owner string, name string) (*http.Request, error) {
 	var err error
@@ -9443,6 +9567,83 @@ func NewGetCommentAutocompleteRequest(server string, provider string, owner stri
 	return req, nil
 }
 
+// NewGetRepoCommitDiffRequest generates requests for GetRepoCommitDiff
+func NewGetRepoCommitDiffRequest(server string, provider string, owner string, name string, sha string, params *GetRepoCommitDiffParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "sha", sha, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/repo/%s/%s/%s/commits/%s/diff", pathParam0, pathParam1, pathParam2, pathParam3)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Whitespace != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "whitespace", *params.Whitespace, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewListRepoLabelsRequest generates requests for ListRepoLabels
 func NewListRepoLabelsRequest(server string, provider string, owner string, name string) (*http.Request, error) {
 	var err error
@@ -10906,6 +11107,9 @@ type ClientWithResponsesInterface interface {
 	// GetCommentAutocompleteOnHostWithResponse request
 	GetCommentAutocompleteOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, params *GetCommentAutocompleteOnHostParams, reqEditors ...RequestEditorFn) (*GetCommentAutocompleteOnHostResponse, error)
 
+	// GetRepoCommitDiffOnHostWithResponse request
+	GetRepoCommitDiffOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, sha string, params *GetRepoCommitDiffOnHostParams, reqEditors ...RequestEditorFn) (*GetRepoCommitDiffOnHostResponse, error)
+
 	// ListRepoLabelsOnHostWithResponse request
 	ListRepoLabelsOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*ListRepoLabelsOnHostResponse, error)
 
@@ -11074,6 +11278,9 @@ type ClientWithResponsesInterface interface {
 
 	// GetCommentAutocompleteWithResponse request
 	GetCommentAutocompleteWithResponse(ctx context.Context, provider string, owner string, name string, params *GetCommentAutocompleteParams, reqEditors ...RequestEditorFn) (*GetCommentAutocompleteResponse, error)
+
+	// GetRepoCommitDiffWithResponse request
+	GetRepoCommitDiffWithResponse(ctx context.Context, provider string, owner string, name string, sha string, params *GetRepoCommitDiffParams, reqEditors ...RequestEditorFn) (*GetRepoCommitDiffResponse, error)
 
 	// ListRepoLabelsWithResponse request
 	ListRepoLabelsWithResponse(ctx context.Context, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*ListRepoLabelsResponse, error)
@@ -11951,6 +12158,29 @@ func (r GetCommentAutocompleteOnHostResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r GetCommentAutocompleteOnHostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetRepoCommitDiffOnHostResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *DiffResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetRepoCommitDiffOnHostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetRepoCommitDiffOnHostResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -12982,6 +13212,29 @@ func (r GetCommentAutocompleteResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r GetCommentAutocompleteResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetRepoCommitDiffResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *DiffResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetRepoCommitDiffResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetRepoCommitDiffResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -14076,6 +14329,15 @@ func (c *ClientWithResponses) GetCommentAutocompleteOnHostWithResponse(ctx conte
 	return ParseGetCommentAutocompleteOnHostResponse(rsp)
 }
 
+// GetRepoCommitDiffOnHostWithResponse request returning *GetRepoCommitDiffOnHostResponse
+func (c *ClientWithResponses) GetRepoCommitDiffOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, sha string, params *GetRepoCommitDiffOnHostParams, reqEditors ...RequestEditorFn) (*GetRepoCommitDiffOnHostResponse, error) {
+	rsp, err := c.GetRepoCommitDiffOnHost(ctx, platformHost, provider, owner, name, sha, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetRepoCommitDiffOnHostResponse(rsp)
+}
+
 // ListRepoLabelsOnHostWithResponse request returning *ListRepoLabelsOnHostResponse
 func (c *ClientWithResponses) ListRepoLabelsOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, reqEditors ...RequestEditorFn) (*ListRepoLabelsOnHostResponse, error) {
 	rsp, err := c.ListRepoLabelsOnHost(ctx, platformHost, provider, owner, name, reqEditors...)
@@ -14615,6 +14877,15 @@ func (c *ClientWithResponses) GetCommentAutocompleteWithResponse(ctx context.Con
 		return nil, err
 	}
 	return ParseGetCommentAutocompleteResponse(rsp)
+}
+
+// GetRepoCommitDiffWithResponse request returning *GetRepoCommitDiffResponse
+func (c *ClientWithResponses) GetRepoCommitDiffWithResponse(ctx context.Context, provider string, owner string, name string, sha string, params *GetRepoCommitDiffParams, reqEditors ...RequestEditorFn) (*GetRepoCommitDiffResponse, error) {
+	rsp, err := c.GetRepoCommitDiff(ctx, provider, owner, name, sha, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetRepoCommitDiffResponse(rsp)
 }
 
 // ListRepoLabelsWithResponse request returning *ListRepoLabelsResponse
@@ -16019,6 +16290,39 @@ func ParseGetCommentAutocompleteOnHostResponse(rsp *http.Response) (*GetCommentA
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest CommentAutocompleteResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetRepoCommitDiffOnHostResponse parses an HTTP response from a GetRepoCommitDiffOnHostWithResponse call
+func ParseGetRepoCommitDiffOnHostResponse(rsp *http.Response) (*GetRepoCommitDiffOnHostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetRepoCommitDiffOnHostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest DiffResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -17476,6 +17780,39 @@ func ParseGetCommentAutocompleteResponse(rsp *http.Response) (*GetCommentAutocom
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest CommentAutocompleteResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetRepoCommitDiffResponse parses an HTTP response from a GetRepoCommitDiffWithResponse call
+func ParseGetRepoCommitDiffResponse(rsp *http.Response) (*GetRepoCommitDiffResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetRepoCommitDiffResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest DiffResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

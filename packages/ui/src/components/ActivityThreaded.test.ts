@@ -156,8 +156,28 @@ describe("ActivityThreaded collapse", () => {
     ).toBeNull();
   });
 
-  it("opens branch activity rows externally without selecting a PR or issue", async () => {
+  it("labels commit rows without the branch type or duplicated commit text", () => {
+    const { container } = render(ActivityThreaded, {
+      props: {
+        items: [branchActivityItem("c1")],
+        onSelectItem: undefined,
+      },
+    });
+
+    const row = container.querySelector(".branch-activity-row");
+    expect(row).not.toBeNull();
+    expect(row?.textContent).toContain("Commit");
+    expect(row?.textContent).toContain("acme/widgets");
+    expect(row?.textContent).toContain("main");
+    expect(row?.textContent).toContain("Refresh cache warmer");
+    expect(row?.textContent).not.toContain("Branch");
+    expect(row?.textContent).not.toContain("Commit Commit");
+    expect(row?.textContent).not.toContain("a1b2c3d");
+  });
+
+  it("selects default branch commit rows for an in-app diff", async () => {
     const onSelectItem = vi.fn();
+    const onSelectBranchCommit = vi.fn();
     const open = vi
       .spyOn(window, "open")
       .mockImplementation(() => null);
@@ -166,6 +186,7 @@ describe("ActivityThreaded collapse", () => {
       props: {
         items: [branchActivityItem("c1")],
         onSelectItem,
+        onSelectBranchCommit,
       },
     });
 
@@ -174,8 +195,48 @@ describe("ActivityThreaded collapse", () => {
     await fireEvent.click(row!);
 
     expect(onSelectItem).not.toHaveBeenCalled();
+    expect(onSelectBranchCommit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        activity_type: "default_branch_commit",
+        commit_sha: "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+      }),
+    );
+    expect(open).not.toHaveBeenCalled();
+    open.mockRestore();
+  });
+
+  it("keeps force-push rows as provider compare links", async () => {
+    const onSelectBranchCommit = vi.fn();
+    const open = vi
+      .spyOn(window, "open")
+      .mockImplementation(() => null);
+
+    const { container } = render(ActivityThreaded, {
+      props: {
+        items: [
+          branchActivityItem("force-1", {
+            activity_type: "default_branch_force_push",
+            activity_url:
+              "https://github.com/acme/widgets/compare/aaaaaaaa...bbbbbbbb",
+            before_sha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            after_sha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            body_preview:
+              "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa -> bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            commit_sha: "",
+          }),
+        ],
+        onSelectItem: undefined,
+        onSelectBranchCommit,
+      },
+    });
+
+    const row = container.querySelector(".branch-activity-row");
+    expect(row).not.toBeNull();
+    await fireEvent.click(row!);
+
+    expect(onSelectBranchCommit).not.toHaveBeenCalled();
     expect(open).toHaveBeenCalledWith(
-      "https://github.com/acme/widgets/commit/a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+      "https://github.com/acme/widgets/compare/aaaaaaaa...bbbbbbbb",
       "_blank",
       "noopener",
     );

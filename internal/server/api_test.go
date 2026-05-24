@@ -12931,6 +12931,33 @@ func TestAPIGetDiff_SingleCommit(t *testing.T) {
 	require.Len(*resp.JSON200.Files, 1)
 }
 
+func TestAPIGetRepoCommitDiff(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	_, _, _, _, commitSHAs, srv := setupTestServerWithClonesAndServer(t)
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/api/v1/repo/gh/acme/widget/commits/"+commitSHAs[2]+"/diff",
+		nil,
+	)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+	resp := rr.Result()
+	defer resp.Body.Close()
+
+	require.Equal(http.StatusOK, resp.StatusCode)
+	var body diffResponse
+	require.NoError(json.NewDecoder(resp.Body).Decode(&body))
+	require.Len(body.Files, 1)
+	assert.False(body.Stale)
+	assert.Equal("file3.txt", body.Files[0].Path)
+	assert.Equal("added", body.Files[0].Status)
+	require.NotEmpty(body.Files[0].Hunks)
+	require.NotEmpty(body.Files[0].Hunks[0].Lines)
+	assert.Equal("content 3", body.Files[0].Hunks[0].Lines[0].Content)
+}
+
 func TestAPIGetFilePreview_ReturnsHeadContent(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)

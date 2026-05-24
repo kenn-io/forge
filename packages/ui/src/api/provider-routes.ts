@@ -111,7 +111,13 @@ export function providerItemPath(
   return `/${kind}/{provider}/{owner}/{name}/{number}${suffix}`;
 }
 
-type RepoSuffix = "" | "/comment-autocomplete" | "/labels" | "/refresh" | "/resolve/{number}";
+type RepoSuffix =
+  | ""
+  | "/comment-autocomplete"
+  | "/commits/{sha}/diff"
+  | "/labels"
+  | "/refresh"
+  | "/resolve/{number}";
 
 type RepoPath<S extends RepoSuffix> =
   | `/repo/{provider}/{owner}/{name}${S}`

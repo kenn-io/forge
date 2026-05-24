@@ -191,6 +191,51 @@ async function mockDefaultBranchActivity(page: Page): Promise<void> {
       }),
     });
   });
+  await page.route(
+    "**/api/v1/repo/github/acme/widgets/commits/*/diff**",
+    async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          stale: false,
+          whitespace_only_count: 0,
+          files: [
+            {
+              path: "src/direct-main.ts",
+              old_path: "src/direct-main.ts",
+              status: "modified",
+              is_binary: false,
+              is_whitespace_only: false,
+              additions: 1,
+              deletions: 0,
+              hunks: [
+                {
+                  old_start: 1,
+                  old_count: 1,
+                  new_start: 1,
+                  new_count: 2,
+                  lines: [
+                    {
+                      type: "context",
+                      content: "export const existing = true;",
+                      old_num: 1,
+                      new_num: 1,
+                    },
+                    {
+                      type: "add",
+                      content: "export const directMain = true;",
+                      new_num: 2,
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        }),
+      });
+    },
+  );
 }
 
 async function selectActivityFilterItem(
@@ -273,7 +318,7 @@ test.describe("default branch activity", () => {
       .toContain("github.com/acme/widgets/compare");
   });
 
-  test("branch rows open externally without selecting an item", async ({ page }) => {
+  test("commit rows open an in-app diff", async ({ page }) => {
     await mockDefaultBranchActivity(page);
     await page.goto("/?view=threaded");
 
@@ -283,12 +328,21 @@ test.describe("default branch activity", () => {
     await expect(commitRow).toBeVisible();
 
     await commitRow.click();
-    await expect(page.locator(".activity-detail")).toHaveCount(0);
+    await expect(page.locator(".activity-detail")).toBeVisible();
+    await expect(page.locator(".activity-detail-header")).toContainText(
+      "Commit acme/widgets main Ship direct main commit 2",
+    );
+    await expect(page.locator(".file-header")).toContainText(
+      "src/direct-main.ts",
+    );
+    await expect(page.locator(".diff-line", {
+      hasText: "export const directMain = true;",
+    })).toBeVisible();
     await expect
       .poll(() =>
         page.evaluate(() => window.__middlemanOpenedURL),
       )
-      .toContain("github.com/acme/widgets/commit/2222222");
+      .toBe("");
   });
 });
 

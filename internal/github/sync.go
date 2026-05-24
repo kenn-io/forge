@@ -2342,8 +2342,11 @@ func (s *Syncer) syncDefaultBranchActivity(
 	now := time.Now().UTC()
 	retentionStart := now.Add(-branchActivityRetention)
 	afterSHA := ""
+	var beforeObservedAt time.Time
 	forcePush := false
 	if previousTip != nil && previousTip.TipSHA != "" {
+		afterSHA = previousTip.TipSHA
+		beforeObservedAt = previousTip.ObservedAt
 		if previousTip.TipSHA != currentTip {
 			ancestor, err := s.clones.IsAncestor(
 				ctx,
@@ -2363,7 +2366,6 @@ func (s *Syncer) syncDefaultBranchActivity(
 			}
 			forcePush = !ancestor
 		}
-		afterSHA = previousTip.TipSHA
 	}
 
 	gitCommits, err := s.clones.ListBranchCommitsSince(
@@ -2398,9 +2400,9 @@ func (s *Syncer) syncDefaultBranchActivity(
 		if err := s.db.InsertBranchForcePush(ctx, db.BranchForcePush{
 			RepoID:           repoID,
 			BranchName:       branch,
-			BeforeSHA:        previousTip.TipSHA,
+			BeforeSHA:        afterSHA,
 			AfterSHA:         currentTip,
-			BeforeObservedAt: previousTip.ObservedAt,
+			BeforeObservedAt: beforeObservedAt,
 			DetectedAt:       now,
 		}); err != nil {
 			slog.Warn("insert default branch force push failed",

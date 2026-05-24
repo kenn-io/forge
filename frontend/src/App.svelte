@@ -16,6 +16,7 @@
     buildFocusPullRequestFilesRoute,
     buildFocusPullRequestRoute,
     buildRoutedItemRoute,
+    type PullRequestRouteRef,
     type RoutedItemRef,
   } from "@middleman/ui/routes";
   import { client } from "./lib/api/runtime.js";
@@ -433,6 +434,23 @@
     updateDrawerURL(drawerItem);
   }
 
+  function handleActivityDrawerItemChange(
+    item: DrawerItem,
+  ): void {
+    drawerItem = item;
+    updateDrawerURL(drawerItem);
+  }
+
+  function handleResponsiveStackMemberNavigate(
+    ref: PullRequestRouteRef,
+  ): boolean | void {
+    if (shouldUseResponsiveFocusPresentation()) {
+      navigate(buildFocusPullRequestRoute(ref));
+      return true;
+    }
+    return undefined;
+  }
+
   function closeDrawer(): void {
     drawerItem = null;
     updateDrawerURL(null);
@@ -631,6 +649,7 @@
           onDetailTabChange={(tab) => navigateFocusPRDetailTab(selectedPR, tab)}
           isSidebarCollapsed={true}
           hideSidebar={true}
+          routeFamily="focus"
         />
       {:else if r.page === "focus"}
         <IssueListView
@@ -651,6 +670,7 @@
           detailTab={r.tab === "files" ? "files" : "conversation"}
           isSidebarCollapsed={true}
           hideSidebar={true}
+          onStackMemberNavigate={handleResponsiveStackMemberNavigate}
         />
       {:else if r.page === "pulls"}
         <FocusListView
@@ -768,6 +788,7 @@
           onCloseDrawer={closeDrawer}
           detailTab={drawerItem?.detailTab ?? "conversation"}
           onDetailTabChange={handleActivityDetailTabChange}
+          onDrawerItemChange={handleActivityDrawerItemChange}
         />
       {:else if getPage() === "repos"}
         <RepoSummaryPage />

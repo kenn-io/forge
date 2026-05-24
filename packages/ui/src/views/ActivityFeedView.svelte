@@ -5,8 +5,16 @@
   import LeftSidebarToggle from "../components/shared/LeftSidebarToggle.svelte";
   import SplitResizeHandle from "../components/shared/SplitResizeHandle.svelte";
   import type { SplitResizeEvent } from "../components/shared/split-resize.js";
+  import type { PullRequestRouteRef } from "../routes.js";
   import PRListView from "./PRListView.svelte";
   import IssueListView from "./IssueListView.svelte";
+
+  type ActivityDetailTab = "conversation" | "files";
+
+  type DrawerPRItem = PullRequestRouteRef & {
+    itemType: "pr";
+    detailTab: ActivityDetailTab;
+  };
 
   type DrawerItem = {
     itemType: "pr" | "issue";
@@ -16,7 +24,7 @@
     owner: string;
     name: string;
     number: number;
-    detailTab?: "conversation" | "files";
+    detailTab?: ActivityDetailTab;
   };
 
   type CommitDrawerItem = {
@@ -32,10 +40,11 @@
 
   interface Props {
     drawerItem?: DrawerItem | null;
-    detailTab?: "conversation" | "files";
+    detailTab?: ActivityDetailTab;
     onSelectItem?: (item: ActivityItem) => void;
     onCloseDrawer?: () => void;
-    onDetailTabChange?: (tab: "conversation" | "files") => void;
+    onDetailTabChange?: (tab: ActivityDetailTab) => void;
+    onDrawerItemChange?: (item: DrawerPRItem) => void;
     phone?: boolean;
   }
 
@@ -45,6 +54,7 @@
     onSelectItem,
     onCloseDrawer,
     onDetailTabChange,
+    onDrawerItemChange,
     phone = false,
   }: Props = $props();
 
@@ -52,7 +62,7 @@
   // provided (standalone usage).
   let internalDrawer = $state<DrawerItem | null>(null);
   let commitDrawer = $state<CommitDrawerItem | null>(null);
-  let internalDetailTab = $state<"conversation" | "files">(
+  let internalDetailTab = $state<ActivityDetailTab>(
     "conversation",
   );
   let activityPaneWidth = $state(360);
@@ -76,13 +86,26 @@
   );
 
   function handleDetailTabChange(
-    tab: "conversation" | "files",
+    tab: ActivityDetailTab,
   ): void {
     if (controlled) {
       onDetailTabChange?.(tab);
       return;
     }
     internalDetailTab = tab;
+  }
+
+  function handleStackMemberNavigate(ref: PullRequestRouteRef): boolean {
+    const nextDrawer: DrawerPRItem = {
+      ...ref,
+      itemType: "pr",
+      detailTab: effectiveDetailTab,
+    };
+    if (!controlled) {
+      internalDrawer = nextDrawer;
+    }
+    onDrawerItemChange?.(nextDrawer);
+    return true;
   }
 
   function handleSelect(item: ActivityItem): void {
@@ -285,6 +308,7 @@
           hideStaleDetailWhileLoading={true}
           workflowApprovalSync={false}
           onDetailTabChange={handleDetailTabChange}
+          onStackMemberNavigate={handleStackMemberNavigate}
         />
       {:else if activeDrawer}
         <IssueListView

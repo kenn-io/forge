@@ -23,3 +23,16 @@ test("stack status renders a passive base row from the full-stack API", async ({
   await expect(baseRow.locator(".stack-member-link")).toHaveCount(0);
   await expect(page).toHaveURL(/\/pulls\/github\/acme\/tools\/11$/);
 });
+
+test("stack member navigation preserves the focus route with full-stack data", async ({ page }) => {
+  await page.goto("/focus/pulls/github/acme/tools/11");
+
+  const detail = page.locator(".pull-detail");
+  await expect(detail).toBeVisible();
+
+  await detail.getByTestId("stack-chip").click();
+  await detail.getByRole("button", { name: "#10 Auth: extract token refresh helper" }).click();
+
+  await expect(page).toHaveURL(/\/focus\/pulls\/github\/acme\/tools\/10$/);
+  await expect(detail.locator(".stack-panel")).toContainText("3 PRs · current 1/3");
+});

@@ -9,10 +9,13 @@
   import DiffFilesLayout from "../components/diff/DiffFilesLayout.svelte";
   import type { DetailSyncMode } from "../stores/detail.svelte.js";
   import {
+    buildFocusPullRequestRoute,
     buildPullRequestFilesRoute,
     buildPullRequestRoute,
     type PullRequestRouteRef,
   } from "../routes.js";
+
+  type StackMemberNavigate = (ref: PullRequestRouteRef) => boolean | void;
 
   const { isSidebarToggleEnabled, toggleSidebar } = getSidebar();
   const navigate = getNavigate();
@@ -26,8 +29,10 @@
     autoSyncDetail?: DetailSyncMode;
     hideStaleDetailWhileLoading?: boolean;
     workflowApprovalSync?: boolean;
+    routeFamily?: "canonical" | "focus";
     onSidebarResize?: (width: number) => void;
     onDetailTabChange?: (tab: "conversation" | "files") => void;
+    onStackMemberNavigate?: StackMemberNavigate;
   }
 
   let {
@@ -39,8 +44,10 @@
     autoSyncDetail = "background",
     hideStaleDetailWhileLoading = false,
     workflowApprovalSync = true,
+    routeFamily = "canonical",
     onSidebarResize,
     onDetailTabChange,
+    onStackMemberNavigate,
   }: Props = $props();
 
   function selectDetailTab(tab: "conversation" | "files"): void {
@@ -54,6 +61,13 @@
         ? buildPullRequestFilesRoute(selectedPR)
         : buildPullRequestRoute(selectedPR),
     );
+  }
+
+  function handleStackMemberNavigate(ref: PullRequestRouteRef): boolean | void {
+    if (onStackMemberNavigate) return onStackMemberNavigate(ref);
+    if (routeFamily !== "focus") return undefined;
+    navigate(buildFocusPullRequestRoute(ref));
+    return true;
   }
 </script>
 
@@ -114,6 +128,7 @@
         {workflowApprovalSync}
         hideTabs={true}
         hideStaleWhileLoading={hideStaleDetailWhileLoading}
+        onStackMemberNavigate={handleStackMemberNavigate}
       />
     {/if}
   {:else}

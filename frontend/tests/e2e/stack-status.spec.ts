@@ -403,6 +403,32 @@ test("stack status stays rendered while navigating to a stack member", async ({ 
   await expect(page.getByText("7 PRs · current 1/7")).toBeVisible();
 });
 
+test("stack member navigation preserves focus routes", async ({ page }) => {
+  await mockStackedPR(page);
+
+  await page.goto("/focus/pulls/github/acme/widgets/102");
+  await page.getByTestId("stack-chip").click();
+  await page.getByRole("button", { name: "#101 base schema" }).click();
+
+  await expect(page).toHaveURL(/\/focus\/pulls\/github\/acme\/widgets\/101$/);
+  await expect(page.getByText("7 PRs · current 1/7")).toBeVisible();
+});
+
+test("stack member navigation updates the activity drawer selection", async ({ page }) => {
+  await mockStackedPR(page);
+
+  await page.goto(
+    "/?selected=pr:102&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets",
+  );
+  await page.locator(".activity-detail").getByTestId("stack-chip").click();
+  await page.getByRole("button", { name: "#101 base schema" }).click();
+
+  await expect(page).toHaveURL(/selected=pr%3A101/);
+  await expect(page).toHaveURL(/repo_path=acme%2Fwidgets/);
+  await expect(page.locator(".activity-detail")).toContainText("acme/widgets#101");
+  await expect(page.getByText("7 PRs · current 1/7")).toBeVisible();
+});
+
 test("stack rail spans wrapped CI badges at narrow widths", async ({ page }) => {
   await page.setViewportSize({ width: 319, height: 998 });
   await mockStackedPR(page);

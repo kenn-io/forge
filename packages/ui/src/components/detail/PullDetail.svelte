@@ -69,6 +69,7 @@
     savePRTimelineFilter,
     type PRTimelineFilterState,
   } from "./prTimelineFilter.js";
+  import type { PullRequestRouteRef } from "../../routes.js";
 
   const CLEAR_LABELS_PENDING = "__clear-label-selection__";
 
@@ -114,6 +115,7 @@
     hideStaleWhileLoading?: boolean;
     autoSync?: DetailSyncMode;
     workflowApprovalSync?: boolean;
+    onStackMemberNavigate?: (ref: PullRequestRouteRef) => boolean | void;
   }
 
   const {
@@ -129,6 +131,7 @@
     hideStaleWhileLoading = false,
     autoSync = "background",
     workflowApprovalSync = true,
+    onStackMemberNavigate,
   }: Props = $props();
 
   const routeRef = $derived({
@@ -1355,9 +1358,10 @@
           {repoPath}
           expanded={expandedPanel === "stack"}
           ontoggle={(next) => { expandedPanel = next ? "stack" : null; }}
-          onmembernavigate={() => {
+          onmembernavigate={(ref) => {
             keepStackExpandedOnRouteChange = true;
             expandedPanel = "stack";
+            return onStackMemberNavigate?.(ref);
           }}
         />
         {#if pr.ReviewDecision}

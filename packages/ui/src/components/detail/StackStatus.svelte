@@ -22,7 +22,7 @@
     showButton?: boolean;
     showPanel?: boolean;
     ontoggle?: ((expanded: boolean) => void) | undefined;
-    onmembernavigate?: (() => void) | undefined;
+    onmembernavigate?: ((ref: PullRequestRouteRef) => boolean | void) | undefined;
   };
 
   let {
@@ -208,15 +208,16 @@
   }
 
   function navigateToMember(memberNumber: number): void {
-    onmembernavigate?.();
-    navigate(buildPullRequestRoute({
+    const ref = {
       provider,
       platformHost,
       owner,
       name,
       repoPath,
       number: memberNumber,
-    }));
+    };
+    if (onmembernavigate?.(ref) === true) return;
+    navigate(buildPullRequestRoute(ref));
   }
 </script>
 

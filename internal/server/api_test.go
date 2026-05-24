@@ -19077,7 +19077,7 @@ func TestWorkspaceDiffEndpointScopesPatchByPathE2E(t *testing.T) {
 	assert.NotContains(workspaceDiffPaths(*diff.Files), "second.go")
 }
 
-func TestWorkspaceDiffEndpointQuotesControlPathsE2E(t *testing.T) {
+func TestWorkspaceDiffEndpointQuotesDangerousPathsE2E(t *testing.T) {
 	t.Parallel()
 
 	require := require.New(t)
@@ -19101,6 +19101,12 @@ func TestWorkspaceDiffEndpointQuotesControlPathsE2E(t *testing.T) {
 	require.NoError(os.WriteFile(
 		filepath.Join(worktreePath, maliciousPath),
 		[]byte("real content\n"),
+		0o644,
+	))
+	unicodeSeparatorPath := "src/unicode\u2028separator\u2029file.go"
+	require.NoError(os.WriteFile(
+		filepath.Join(worktreePath, unicodeSeparatorPath),
+		[]byte("unicode separator content\n"),
 		0o644,
 	))
 
@@ -19145,6 +19151,22 @@ func TestWorkspaceDiffEndpointQuotesControlPathsE2E(t *testing.T) {
 	assert.NotContains(file.Patch, "\n+++ forged\n")
 	assert.NotContains(file.Patch, "\n@@ -1,1 +1,1 @@\n")
 	assert.Equal(1, strings.Count(file.Patch, "\n@@ "))
+
+	unicodeFile := requireWorkspaceDiffFile(
+		t,
+		*diff.Files,
+		filepath.ToSlash(unicodeSeparatorPath),
+	)
+	assert.Contains(
+		unicodeFile.Patch,
+		`diff --git "a/src/unicode\u2028separator\u2029file.go" "b/src/unicode\u2028separator\u2029file.go"`,
+	)
+	assert.Contains(
+		unicodeFile.Patch,
+		`+++ "b/src/unicode\u2028separator\u2029file.go"`,
+	)
+	assert.NotContains(unicodeFile.Patch, "\u2028")
+	assert.NotContains(unicodeFile.Patch, "\u2029")
 }
 
 func requestWorkspaceFiles(

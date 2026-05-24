@@ -215,3 +215,32 @@ func TestBuildPatchQuotesRenameControlPaths(t *testing.T) {
 	assert.NotContains(patch, "\n--- forged\n")
 	assert.NotContains(patch, "\n+++ forged\n")
 }
+
+func TestBuildPatchQuotesUnicodeSeparatorPaths(t *testing.T) {
+	assert := assert.New(t)
+
+	path := "src/line\u2028separator\u2029file.go"
+	patch := BuildPatch(DiffFile{
+		Path:    path,
+		OldPath: path,
+		Status:  "modified",
+		Hunks: []Hunk{{
+			OldStart: 1,
+			OldCount: 1,
+			NewStart: 1,
+			NewCount: 1,
+			Lines: []Line{{
+				Type:    "context",
+				Content: "real content",
+				OldNum:  1,
+				NewNum:  1,
+			}},
+		}},
+	})
+
+	assert.Contains(patch, `diff --git "a/src/line\u2028separator\u2029file.go" "b/src/line\u2028separator\u2029file.go"`)
+	assert.Contains(patch, `--- "a/src/line\u2028separator\u2029file.go"`)
+	assert.Contains(patch, `+++ "b/src/line\u2028separator\u2029file.go"`)
+	assert.NotContains(patch, "\u2028")
+	assert.NotContains(patch, "\u2029")
+}

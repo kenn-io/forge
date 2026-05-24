@@ -3,6 +3,7 @@ package gitclone
 import (
 	"strconv"
 	"strings"
+	"unicode"
 )
 
 func BuildPatch(file DiffFile) string {
@@ -79,6 +80,11 @@ func needsPatchPathQuote(path string) bool {
 			if b < 0x20 || b == 0x7f {
 				return true
 			}
+		}
+	}
+	for _, r := range path {
+		if r >= 0x80 && (unicode.IsControl(r) || unicode.In(r, unicode.Zl, unicode.Zp)) {
+			return true
 		}
 	}
 	return false

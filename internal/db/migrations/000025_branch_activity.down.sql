@@ -8,5 +8,6 @@ DROP TABLE IF EXISTS middleman_branch_tips;
 
 DROP INDEX IF EXISTS idx_branch_commits_committed;
 DROP INDEX IF EXISTS idx_branch_commits_repo_committed;
+DROP INDEX IF EXISTS idx_branch_commits_repo_branch_sha;
 DROP INDEX IF EXISTS idx_branch_commits_repo_sha;
 DROP TABLE IF EXISTS middleman_branch_commits;

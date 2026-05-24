@@ -14,8 +14,8 @@ CREATE TABLE IF NOT EXISTS middleman_branch_commits (
     updated_at      DATETIME NOT NULL DEFAULT (datetime('now'))
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_branch_commits_repo_sha
-    ON middleman_branch_commits(repo_id, commit_sha);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_branch_commits_repo_branch_sha
+    ON middleman_branch_commits(repo_id, branch_name, commit_sha);
 CREATE INDEX IF NOT EXISTS idx_branch_commits_repo_committed
     ON middleman_branch_commits(repo_id, committed_at DESC);
 CREATE INDEX IF NOT EXISTS idx_branch_commits_committed
@@ -40,12 +40,13 @@ CREATE TABLE IF NOT EXISTS middleman_branch_force_pushes (
     branch_name TEXT NOT NULL,
     before_sha  TEXT NOT NULL,
     after_sha   TEXT NOT NULL,
+    before_observed_at DATETIME NOT NULL,
     detected_at DATETIME NOT NULL,
     created_at  DATETIME NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_branch_force_pushes_dedupe
-    ON middleman_branch_force_pushes(repo_id, branch_name, before_sha, after_sha);
+    ON middleman_branch_force_pushes(repo_id, branch_name, before_sha, after_sha, before_observed_at);
 CREATE INDEX IF NOT EXISTS idx_branch_force_pushes_repo_detected
     ON middleman_branch_force_pushes(repo_id, detected_at DESC);
 CREATE INDEX IF NOT EXISTS idx_branch_force_pushes_detected

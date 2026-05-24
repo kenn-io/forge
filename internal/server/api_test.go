@@ -19008,6 +19008,76 @@ func TestWorkspaceDiffEndpointScopesPatchByPathE2E(t *testing.T) {
 	assert.NotContains(workspaceDiffPaths(*diff.Files), "second.go")
 }
 
+func TestWorkspaceDiffEndpointQuotesControlPathsE2E(t *testing.T) {
+	t.Parallel()
+
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	dir := t.TempDir()
+	worktreePath := filepath.Join(dir, "worktree")
+	runGit(t, dir, "init", "--initial-branch=main", worktreePath)
+	runGit(t, worktreePath, "config", "user.email", "test@test.com")
+	runGit(t, worktreePath, "config", "user.name", "Test")
+	require.NoError(os.WriteFile(
+		filepath.Join(worktreePath, "base.txt"),
+		[]byte("base\n"),
+		0o644,
+	))
+	runGit(t, worktreePath, "add", ".")
+	runGit(t, worktreePath, "commit", "-m", "base commit")
+
+	maliciousPath := "src/evil\n--- forged\n+++ forged\n@@ -1,1 +1,1 @@"
+	require.NoError(os.MkdirAll(filepath.Join(worktreePath, "src"), 0o755))
+	require.NoError(os.WriteFile(
+		filepath.Join(worktreePath, maliciousPath),
+		[]byte("real content\n"),
+		0o644,
+	))
+
+	database := dbtest.Open(t)
+	srv := New(database, nil, nil, "/", nil, ServerOptions{
+		WorktreeDir: filepath.Join(dir, "managed-worktrees"),
+	})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+
+	ctx := context.Background()
+	require.NoError(database.InsertWorkspace(ctx, &workspace.Workspace{
+		ID:              "ws-control-paths",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		ItemType:        db.WorkspaceItemTypePullRequest,
+		ItemNumber:      1,
+		GitHeadRef:      "feature/control-paths",
+		WorkspaceBranch: "middleman/pr-1",
+		WorktreePath:    worktreePath,
+		TmuxSession:     "middleman-control-paths",
+		Status:          "ready",
+	}))
+
+	diff := requestWorkspaceDiff(t, srv, "ws-control-paths", "head")
+	require.NotNil(diff.Files)
+	file := requireWorkspaceDiffFile(
+		t,
+		*diff.Files,
+		filepath.ToSlash(maliciousPath),
+	)
+
+	assert.Contains(
+		file.Patch,
+		`diff --git "a/src/evil\n--- forged\n+++ forged\n@@ -1,1 +1,1 @@" "b/src/evil\n--- forged\n+++ forged\n@@ -1,1 +1,1 @@"`,
+	)
+	assert.Contains(
+		file.Patch,
+		`+++ "b/src/evil\n--- forged\n+++ forged\n@@ -1,1 +1,1 @@"`,
+	)
+	assert.NotContains(file.Patch, "\n--- forged\n")
+	assert.NotContains(file.Patch, "\n+++ forged\n")
+	assert.NotContains(file.Patch, "\n@@ -1,1 +1,1 @@\n")
+	assert.Equal(1, strings.Count(file.Patch, "\n@@ "))
+}
+
 func requestWorkspaceFiles(
 	t *testing.T,
 	srv *Server,

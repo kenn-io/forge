@@ -176,6 +176,32 @@ async function mockDiffForAllPRs(
   });
 }
 
+async function mockDiffForAllPRsWithDelayedDiff(
+  page: Page,
+  fixture: DiffResult,
+): Promise<() => void> {
+  let releaseDiff!: () => void;
+  const diffGate = new Promise<void>((resolve) => {
+    releaseDiff = resolve;
+  });
+  await page.route("**/api/v1/pulls/github/*/*/*/files", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(filesFromDiff(fixture)),
+    });
+  });
+  await page.route("**/api/v1/pulls/github/*/*/*/diff*", async (route) => {
+    await diffGate;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(fixture),
+    });
+  });
+  return releaseDiff;
+}
+
 function issueDetailFixture(
   platformHost: string,
   issueNumber = 10,
@@ -1075,6 +1101,40 @@ test.describe("activity split view and detail drawers", () => {
     await expect(
       treeFileItem(sidebar, "src/file_11.go"),
     ).toHaveAttribute("aria-selected", "true");
+    await expectDiffFileVisibleInScrollArea(diffArea, "src/file_11.go");
+  });
+
+  test("kanban drawer sidebar click waits for delayed diff file DOM", async ({ page }) => {
+    const releaseDiff = await mockDiffForAllPRsWithDelayedDiff(page, multiFileDiff);
+
+    await page.goto("/pulls/board");
+    await page.locator(".kanban-card").first()
+      .waitFor({ state: "visible", timeout: 10_000 });
+
+    const card = page.locator(".kanban-card")
+      .filter({ hasText: "Add widget caching layer" })
+      .first();
+    await card.click();
+
+    const drawer = page.locator(".drawer-panel");
+    await expect(drawer).toBeVisible();
+    await drawer.locator(".detail-tab", { hasText: "Files changed" }).click();
+
+    const sidebar = drawer.locator(".files-layout > .files-sidebar");
+    const filesMain = drawer.locator(".files-layout > .files-main");
+
+    await expect(filesMain).toBeVisible();
+    await expect(treeFileItems(sidebar)).toHaveCount(20);
+
+    await treeFileItem(sidebar, "src/file_11.go").click();
+    await expect(
+      treeFileItem(sidebar, "src/file_11.go"),
+    ).toHaveAttribute("aria-selected", "true");
+
+    releaseDiff();
+    const diffArea = filesMain.locator(".diff-area");
+    await expect(diffArea).toBeVisible();
+    await expect(drawer.locator(".diff-file")).toHaveCount(20);
     await expectDiffFileVisibleInScrollArea(diffArea, "src/file_11.go");
   });
 

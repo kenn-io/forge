@@ -361,6 +361,7 @@ test("stack status shares the PR detail expandable slot with CI", async ({ page 
   expect(Math.abs(badgeCenterY - linkCenterY)).toBeLessThanOrEqual(4);
   await expect(page.locator(".stack-member-meta")).toHaveCount(0);
   await expect(page.locator(".stack-base-name")).toHaveText("main");
+  await expect(page.locator(".stack-row--base .stack-member-link")).toHaveCount(0);
 
   const stackRows = page.locator(".stack-member-link");
   await expect(stackRows).toHaveText([

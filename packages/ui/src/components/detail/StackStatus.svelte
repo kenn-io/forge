@@ -289,7 +289,7 @@
                 </span>
               </div>
             {/each}
-            <div class="stack-row stack-row--base">
+            <div class="stack-row stack-row--base" aria-label={`Stack base ${stackBaseBranch}`}>
               <span class="stack-rail stack-rail--last" aria-hidden="true">
                 <span class="stack-line"></span>
                 <span class="stack-dot stack-dot--outline"></span>
@@ -402,6 +402,8 @@
   .stack-row--base {
     min-height: 30px;
     color: var(--text-muted);
+    cursor: default;
+    user-select: text;
   }
 
   .stack-rail {

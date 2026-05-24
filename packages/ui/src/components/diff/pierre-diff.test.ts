@@ -34,6 +34,47 @@ ${patchBody}
   };
 }
 
+function makeLargeLineFile(): DiffFile {
+  const path = "src/large.ts";
+  const patch = `diff --git a/${path} b/${path}
+--- a/${path}
++++ b/${path}
+@@ -1000000,1 +1000000,2 @@
+ far line
++new far line
+`;
+
+  return {
+    path,
+    old_path: path,
+    status: "modified",
+    is_binary: false,
+    is_whitespace_only: false,
+    additions: 1,
+    deletions: 0,
+    patch,
+    hunks: [{
+      old_start: 1_000_000,
+      old_count: 1,
+      new_start: 1_000_000,
+      new_count: 2,
+      lines: [
+        {
+          type: "context",
+          content: "far line",
+          old_num: 1_000_000,
+          new_num: 1_000_000,
+        },
+        {
+          type: "add",
+          content: "new far line",
+          new_num: 1_000_001,
+        },
+      ],
+    }],
+  };
+}
+
 describe("Pierre diff parsing", () => {
   it("does not assign reusable cache keys to untrusted patch input", () => {
     const first = parsePierreFileDiff(makeFile("src/foo.ts", "-old line\n+new line"));
@@ -52,5 +93,14 @@ describe("Pierre diff parsing", () => {
 
     expect(parsed).toBeDefined();
     expect((parsed as { cacheKey?: string } | undefined)?.cacheKey).toBeUndefined();
+  });
+
+  it("falls back to patch-only parsing for huge sparse line ranges", () => {
+    const parsed = parsePierreFileDiff(makeLargeLineFile(), {
+      enableDemandContextExpansion: true,
+    });
+
+    expect(parsed).toBeDefined();
+    expect((parsed as { isPartial?: boolean } | undefined)?.isPartial).toBe(true);
   });
 });

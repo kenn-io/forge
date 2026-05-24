@@ -1473,6 +1473,52 @@ test.describe("diff view performance", () => {
     });
   });
 
+  test("fast scrolling large diffs keeps the UI interactive", async ({ page }) => {
+    const pageErrors: string[] = [];
+    page.on("pageerror", (error) => {
+      pageErrors.push(error.message);
+    });
+    await page.addInitScript(() => {
+      const nativeWorker = window.Worker;
+      (window as typeof window & { __middlemanWorkerUrls?: string[] })
+        .__middlemanWorkerUrls = [];
+      window.Worker = class extends nativeWorker {
+        constructor(scriptURL: string | URL, options?: WorkerOptions) {
+          (window as typeof window & { __middlemanWorkerUrls: string[] })
+            .__middlemanWorkerUrls.push(String(scriptURL));
+          super(scriptURL, options);
+        }
+      } as typeof Worker;
+    });
+
+    await mockDiffApi(page, largeDiff);
+    await navigateToDiff(page);
+    await waitForDiffLoaded(page);
+
+    await page.locator(".diff-area").evaluate((area) => {
+      for (let i = 0; i < 16; i++) {
+        area.scrollTop = area.scrollHeight * ((i + 1) / 16);
+        area.dispatchEvent(new Event("scroll", { bubbles: true }));
+      }
+      area.scrollTop = area.scrollHeight;
+      area.dispatchEvent(new Event("scroll", { bubbles: true }));
+    });
+
+    await expect.poll(() => visiblePierreLoadingCount(page), {
+      timeout: 10_000,
+    }).toBe(0);
+    await expect.poll(async () => {
+      return await page.evaluate(() =>
+        (window as typeof window & { __middlemanWorkerUrls?: string[] })
+          .__middlemanWorkerUrls?.length ?? 0,
+      );
+    }).toBeGreaterThan(0);
+
+    await page.getByRole("button", { name: "Jump to file" }).click();
+    await expect(page.locator(".file-jump-menu")).toBeVisible();
+    expect(pageErrors).toEqual([]);
+  });
+
   test("large diff (50 files) renders all file headers within timeout", async ({ page }) => {
     await mockDiffApi(page, largeDiff);
     await navigateToDiff(page);

@@ -12,6 +12,7 @@
   import { onMount } from "svelte";
   import type { DiffFile } from "../../api/types.js";
   import { appThemeType, parsePierreFileDiff } from "./pierre-diff.js";
+  import { getPierreDiffWorkerPool } from "./pierre-worker-pool.js";
 
   interface Props {
     file: DiffFile;
@@ -157,7 +158,7 @@
 
   $effect(() => {
     if (!host || !active || !pierreFile) return;
-    pierreDiff ??= new FileDiff<unknown>(pierreOptions);
+    pierreDiff ??= new FileDiff<unknown>(pierreOptions, getPierreDiffWorkerPool());
     pierreDiff.setOptions(pierreOptions);
     const nextRenderAttemptKey = [
       fileKey,

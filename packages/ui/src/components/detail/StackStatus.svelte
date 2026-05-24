@@ -271,11 +271,16 @@
                 class:stack-row--blocked={member.blocked_by != null && !isCurrent}
               >
                 <span class="stack-position">{label}</span>
-                <span class="stack-rail" aria-hidden="true">
+                <span
+                  class={[
+                    "stack-rail",
+                    i === 0 && "stack-rail--first",
+                    i === displayMembers.length - 1 && "stack-rail--last",
+                  ].filter(Boolean).join(" ")}
+                  aria-hidden="true"
+                >
+                  <span class="stack-line"></span>
                   <span class={dotClass(member, isCurrent)}></span>
-                  {#if i < displayMembers.length - 1}
-                    <span class="stack-line"></span>
-                  {/if}
                 </span>
                 <span class="stack-row-body">
                   <button
@@ -406,13 +411,15 @@
   }
 
   .stack-rail {
+    position: relative;
     display: flex;
-    flex-direction: column;
     align-items: center;
-    padding-top: 6px;
+    justify-content: center;
   }
 
   .stack-dot {
+    position: relative;
+    z-index: 1;
     width: 8px;
     height: 8px;
     border-radius: 50%;
@@ -443,16 +450,24 @@
   }
 
   .stack-dot--outline {
-    background: transparent;
+    background: var(--bg-inset);
     border-color: var(--border-default);
   }
 
   .stack-line {
+    position: absolute;
+    top: -6px;
+    bottom: -6px;
     width: 2px;
-    flex: 1;
-    min-height: 18px;
     background: var(--border-default);
-    margin-top: 2px;
+  }
+
+  .stack-rail--first .stack-line {
+    top: 50%;
+  }
+
+  .stack-rail--last .stack-line {
+    bottom: 50%;
   }
 
   .stack-row-body {
@@ -541,8 +556,14 @@
       grid-template-columns: 38px 18px minmax(0, 1fr);
     }
 
+    .stack-position,
+    .stack-rail {
+      grid-row: 1 / 3;
+    }
+
     .stack-badges {
       grid-column: 3;
+      grid-row: 2;
       justify-content: flex-start;
       flex-wrap: wrap;
       white-space: normal;

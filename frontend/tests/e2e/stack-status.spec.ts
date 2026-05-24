@@ -397,3 +397,28 @@ test("stack status stays rendered while navigating to a stack member", async ({ 
   releaseStackResponse();
   await expect(page.getByText("7 PRs · current 1/7")).toBeVisible();
 });
+
+test("stack rail spans wrapped CI badges at narrow widths", async ({ page }) => {
+  await page.setViewportSize({ width: 319, height: 998 });
+  await mockStackedPR(page);
+
+  await page.goto("/pulls/github/acme/widgets/102");
+  await page.getByTestId("stack-chip").click();
+
+  const currentRow = page.locator(".stack-row--current");
+  const currentRowBox = await currentRow.boundingBox();
+  const currentDotBox = await currentRow.locator(".stack-dot--current").boundingBox();
+  const currentLineBox = await currentRow.locator(".stack-line").boundingBox();
+  const currentBadgesBox = await currentRow.locator(".stack-badges").boundingBox();
+  expect(currentRowBox).not.toBeNull();
+  expect(currentDotBox).not.toBeNull();
+  expect(currentLineBox).not.toBeNull();
+  expect(currentBadgesBox).not.toBeNull();
+  const dotCenterY = currentDotBox!.y + currentDotBox!.height / 2;
+  const rowCenterY = currentRowBox!.y + currentRowBox!.height / 2;
+  expect(Math.abs(dotCenterY - rowCenterY)).toBeLessThanOrEqual(4);
+  expect(currentLineBox!.y).toBeLessThanOrEqual(currentRowBox!.y + 1);
+  expect(currentLineBox!.y + currentLineBox!.height).toBeGreaterThanOrEqual(
+    currentBadgesBox!.y + currentBadgesBox!.height - 1,
+  );
+});

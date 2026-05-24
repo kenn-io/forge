@@ -19,23 +19,24 @@ type ForcePushEvent struct {
 }
 
 type PullRequestTimelineEvent struct {
-	NodeID            string
-	EventType         string
-	Actor             string
-	CreatedAt         time.Time
-	BeforeSHA         string
-	AfterSHA          string
-	Ref               string
-	PreviousTitle     string
-	CurrentTitle      string
-	PreviousRefName   string
-	CurrentRefName    string
-	SourceType        string
-	SourceOwner       string
-	SourceRepo        string
-	SourceNumber      int
-	SourceTitle       string
-	SourceURL         string
-	IsCrossRepository bool
-	WillCloseTarget   bool
+	NodeID               string
+	EventType            string
+	Actor                string
+	CreatedAt            time.Time
+	DeletedCommentAuthor string
+	BeforeSHA            string
+	AfterSHA             string
+	Ref                  string
+	PreviousTitle        string
+	CurrentTitle         string
+	PreviousRefName      string
+	CurrentRefName       string
+	SourceType           string
+	SourceOwner          string
+	SourceRepo           string
+	SourceNumber         int
+	SourceTitle          string
+	SourceURL            string
+	IsCrossRepository    bool
+	WillCloseTarget      bool
 }

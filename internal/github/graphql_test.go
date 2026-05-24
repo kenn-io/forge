@@ -321,6 +321,12 @@ func TestGraphQLFetcherFetchRepoPRsIncludesTimelineEvents(t *testing.T) {
 				"createdAt":"` + now + `",
 				"previousRefName":"main",
 				"currentRefName":"release"
+			},{
+				"__typename":"CommentDeletedEvent",
+				"id":"CDE_1",
+				"actor":{"login":"maintainer"},
+				"createdAt":"` + now + `",
+				"deletedCommentAuthor":{"login":"reviewer"}
 			}],"pageInfo":{"hasNextPage":false,"endCursor":""}}
 		}],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`))
 	}))
@@ -335,7 +341,7 @@ func TestGraphQLFetcherFetchRepoPRsIncludesTimelineEvents(t *testing.T) {
 	require.NotNil(result)
 	require.Len(result.PullRequests, 1)
 	require.True(sawTimelineItems)
-	require.Len(result.PullRequests[0].TimelineEvents, 1)
+	require.Len(result.PullRequests[0].TimelineEvents, 2)
 
 	event := result.PullRequests[0].TimelineEvents[0]
 	assert.Equal("base_ref_changed", event.EventType)
@@ -343,6 +349,11 @@ func TestGraphQLFetcherFetchRepoPRsIncludesTimelineEvents(t *testing.T) {
 	assert.Equal("bob", event.Actor)
 	assert.Equal("main", event.PreviousRefName)
 	assert.Equal("release", event.CurrentRefName)
+	deleted := result.PullRequests[0].TimelineEvents[1]
+	assert.Equal("comment_deleted", deleted.EventType)
+	assert.Equal("CDE_1", deleted.NodeID)
+	assert.Equal("maintainer", deleted.Actor)
+	assert.Equal("reviewer", deleted.DeletedCommentAuthor)
 	assert.True(result.PullRequests[0].TimelineComplete)
 }
 

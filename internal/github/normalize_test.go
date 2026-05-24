@@ -287,6 +287,29 @@ func TestNormalizeTimelineEventCrossReferenced(t *testing.T) {
 	assert.Contains(event.MetadataJSON, `"is_cross_repository":true`)
 }
 
+func TestNormalizeTimelineEventCommentDeleted(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	createdAt := time.Date(2024, 6, 1, 12, 18, 0, 0, time.UTC)
+
+	event := NormalizeTimelineEvent(17, PullRequestTimelineEvent{
+		NodeID:               "CDE_1",
+		EventType:            "comment_deleted",
+		Actor:                "maintainer",
+		DeletedCommentAuthor: "reviewer",
+		CreatedAt:            createdAt,
+	})
+
+	require.NotNil(event)
+	assert.Equal(int64(17), event.MergeRequestID)
+	assert.Equal("comment_deleted", event.EventType)
+	assert.Equal("maintainer", event.Author)
+	assert.Equal("comment by reviewer", event.Summary)
+	assert.Equal(createdAt, event.CreatedAt)
+	assert.Equal("timeline-CDE_1", event.DedupeKey)
+	assert.Contains(event.MetadataJSON, `"deleted_comment_author":"reviewer"`)
+}
+
 func TestNormalizeTimelineEventRenamedTitle(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)

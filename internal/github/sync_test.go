@@ -1405,6 +1405,13 @@ func TestSyncStoresPullRequestTimelineEvents(t *testing.T) {
 				PreviousTitle: "Old",
 				CurrentTitle:  "New",
 			},
+			{
+				NodeID:               "CDE_1",
+				EventType:            "comment_deleted",
+				Actor:                "maintainer",
+				DeletedCommentAuthor: "reviewer",
+				CreatedAt:            now.Add(-30 * time.Second),
+			},
 		},
 	}
 
@@ -1425,9 +1432,11 @@ func TestSyncStoresPullRequestTimelineEvents(t *testing.T) {
 	assert.Contains(byType, "cross_referenced")
 	assert.Contains(byType, "base_ref_changed")
 	assert.Contains(byType, "renamed_title")
+	assert.Contains(byType, "comment_deleted")
 	assert.Contains(byType["cross_referenced"].MetadataJSON, `"source_title":"Related bug"`)
 	assert.Equal("main -> release", byType["base_ref_changed"].Summary)
 	assert.Equal(`"Old" -> "New"`, byType["renamed_title"].Summary)
+	assert.Equal("comment by reviewer", byType["comment_deleted"].Summary)
 }
 
 func TestSyncIgnoresPullRequestTimelineFetchFailures(t *testing.T) {
@@ -7759,6 +7768,12 @@ func TestSyncOpenMRFromBulkStoresTimelineEvents(t *testing.T) {
 			PreviousRefName: "main",
 			CurrentRefName:  "release",
 			CreatedAt:       timelineAt,
+		}, {
+			NodeID:               "CDE_1",
+			EventType:            "comment_deleted",
+			Actor:                "maintainer",
+			DeletedCommentAuthor: "reviewer",
+			CreatedAt:            timelineAt.Add(time.Minute),
 		}},
 		CommentsComplete: true,
 		ReviewsComplete:  true,
@@ -7776,9 +7791,11 @@ func TestSyncOpenMRFromBulkStoresTimelineEvents(t *testing.T) {
 
 	events, err := d.ListMREvents(ctx, mr.ID)
 	require.NoError(err)
-	require.Len(events, 1)
-	assert.Equal("base_ref_changed", events[0].EventType)
-	assert.Equal("main -> release", events[0].Summary)
+	require.Len(events, 2)
+	assert.Equal("comment_deleted", events[0].EventType)
+	assert.Equal("comment by reviewer", events[0].Summary)
+	assert.Equal("base_ref_changed", events[1].EventType)
+	assert.Equal("main -> release", events[1].Summary)
 }
 
 // buildOpenPRWithSHA mirrors buildOpenPR but lets the caller set the

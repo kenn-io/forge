@@ -40,6 +40,7 @@
 
   const typeLabels: Record<string, string> = {
     issue_comment: "Comment",
+    comment_deleted: "Comment deleted",
     review: "Review",
     commit: "Commit",
     force_push: "Force-pushed",
@@ -48,6 +49,7 @@
 
   const typeColors: Record<string, string> = {
     issue_comment: "var(--accent-blue)",
+    comment_deleted: "var(--text-muted)",
     review: "var(--accent-purple)",
     review_comment: "var(--accent-purple)",
     commit: "var(--accent-green)",
@@ -61,6 +63,7 @@
   function isCompactEvent(eventType: string): boolean {
     return (
       eventType === "commit" ||
+      eventType === "comment_deleted" ||
       eventType === "force_push" ||
       eventType === "cross_referenced" ||
       eventType === "renamed_title" ||
@@ -84,6 +87,8 @@
     switch (eventType) {
       case "cross_referenced":
         return "Referenced";
+      case "comment_deleted":
+        return "Comment deleted";
       case "renamed_title":
         return "Title changed";
       case "base_ref_changed":

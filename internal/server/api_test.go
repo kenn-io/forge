@@ -1257,6 +1257,39 @@ func TestAPIGetPullIsDBOnly(t *testing.T) {
 	assert.False(resp.JSON200.WorkflowApproval.Checked)
 }
 
+func TestAPIGetPullIncludesDeletedCommentTimelineEvent(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	srv, database := setupTestServer(t)
+	mrID := seedPRWithHeadSHA(t, database, "acme", "widget", 1, "deadbeef")
+	createdAt := time.Date(2024, 6, 1, 12, 18, 0, 0, time.UTC)
+	require.NoError(database.UpsertMREvents(t.Context(), []db.MREvent{{
+		MergeRequestID: mrID,
+		EventType:      "comment_deleted",
+		Author:         "maintainer",
+		Summary:        "comment by reviewer",
+		MetadataJSON:   `{"deleted_comment_author":"reviewer"}`,
+		CreatedAt:      createdAt,
+		DedupeKey:      "timeline-CDE_1",
+	}}))
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.GetPullWithResponse(
+		t.Context(), "gh", "acme", "widget", 1,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.NotNil(resp.JSON200.Events)
+	require.Len(*resp.JSON200.Events, 1)
+	event := (*resp.JSON200.Events)[0]
+	assert.Equal("comment_deleted", event.EventType)
+	assert.Equal("maintainer", event.Author)
+	assert.Equal("comment by reviewer", event.Summary)
+	assert.JSONEq(`{"deleted_comment_author":"reviewer"}`, event.MetadataJSON)
+	assert.Equal(createdAt, event.CreatedAt)
+}
+
 func TestAPISyncPRIncludesWorkflowApproval(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)

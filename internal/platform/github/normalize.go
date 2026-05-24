@@ -195,6 +195,20 @@ func NormalizeTimelineEvent(
 	event PullRequestTimelineEvent,
 ) *platform.MergeRequestEvent {
 	switch event.EventType {
+	case "comment_deleted":
+		metadata, _ := json.Marshal(commentDeletedMetadata{
+			DeletedCommentAuthor: event.DeletedCommentAuthor,
+		})
+		return &platform.MergeRequestEvent{
+			Repo:               repo,
+			MergeRequestNumber: mrNumber,
+			EventType:          "comment_deleted",
+			Author:             event.Actor,
+			Summary:            deletedCommentSummary(event.DeletedCommentAuthor),
+			MetadataJSON:       string(metadata),
+			CreatedAt:          event.CreatedAt,
+			DedupeKey:          timelineDedupeKey(event),
+		}
 	case "force_push":
 		normalized := NormalizeForcePushEvent(repo, mrNumber, ForcePushEvent{
 			Actor:     event.Actor,
@@ -319,6 +333,10 @@ type forcePushMetadata struct {
 	BeforeSHA string `json:"before_sha"`
 	AfterSHA  string `json:"after_sha"`
 	Ref       string `json:"ref"`
+}
+
+type commentDeletedMetadata struct {
+	DeletedCommentAuthor string `json:"deleted_comment_author"`
 }
 
 type crossReferenceMetadata struct {
@@ -471,6 +489,13 @@ func normalizeIssueCommentBase(repo platform.RepoRef, c *gh.IssueComment) platfo
 	return event
 }
 
+func deletedCommentSummary(author string) string {
+	if author == "" {
+		return "comment"
+	}
+	return "comment by " + author
+}
+
 func timelineDedupeKey(event PullRequestTimelineEvent) string {
 	if event.NodeID != "" {
 		return "timeline-" + event.NodeID
@@ -479,6 +504,7 @@ func timelineDedupeKey(event PullRequestTimelineEvent) string {
 		event.EventType,
 		event.CreatedAt.UTC().Format(time.RFC3339Nano),
 		event.Actor,
+		event.DeletedCommentAuthor,
 		event.BeforeSHA,
 		event.AfterSHA,
 		event.Ref,

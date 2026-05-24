@@ -89,7 +89,7 @@ type gqlPR struct {
 	TimelineItems struct {
 		Nodes    []gqlPullRequestTimelineItem
 		PageInfo pageInfo
-	} `graphql:"timelineItems(itemTypes: [HEAD_REF_FORCE_PUSHED_EVENT, CROSS_REFERENCED_EVENT, RENAMED_TITLE_EVENT, BASE_REF_CHANGED_EVENT], first: 100)"`
+	} `graphql:"timelineItems(itemTypes: [HEAD_REF_FORCE_PUSHED_EVENT, COMMENT_DELETED_EVENT, CROSS_REFERENCED_EVENT, RENAMED_TITLE_EVENT, BASE_REF_CHANGED_EVENT], first: 100)"`
 }
 
 type gqlComment struct {
@@ -126,6 +126,7 @@ type gqlPullRequestTimelineItem struct {
 	Typename                string                     `graphql:"__typename"`
 	Node                    gqlNodeFragment            `graphql:"... on Node"`
 	HeadRefForcePushedEvent gqlHeadRefForcePushedEvent `graphql:"... on HeadRefForcePushedEvent"`
+	CommentDeletedEvent     gqlCommentDeletedEvent     `graphql:"... on CommentDeletedEvent"`
 	CrossReferencedEvent    gqlCrossReferencedEvent    `graphql:"... on CrossReferencedEvent"`
 	RenamedTitleEvent       gqlRenamedTitleEvent       `graphql:"... on RenamedTitleEvent"`
 	BaseRefChangedEvent     gqlBaseRefChangedEvent     `graphql:"... on BaseRefChangedEvent"`
@@ -151,6 +152,12 @@ type gqlHeadRefForcePushedEvent struct {
 	Ref       *struct {
 		Name string
 	}
+}
+
+type gqlCommentDeletedEvent struct {
+	Actor                *gqlActorRef
+	CreatedAt            time.Time
+	DeletedCommentAuthor *gqlActorRef
 }
 
 type gqlCrossReferencedEvent struct {
@@ -824,6 +831,16 @@ func adaptPullRequestTimelineEvent(gql *gqlPullRequestTimelineItem) (PullRequest
 		}
 		if src.Ref != nil {
 			event.Ref = src.Ref.Name
+		}
+	case "CommentDeletedEvent":
+		src := gql.CommentDeletedEvent
+		event.EventType = "comment_deleted"
+		event.CreatedAt = src.CreatedAt
+		if src.Actor != nil {
+			event.Actor = src.Actor.Login
+		}
+		if src.DeletedCommentAuthor != nil {
+			event.DeletedCommentAuthor = src.DeletedCommentAuthor.Login
 		}
 	case "CrossReferencedEvent":
 		src := gql.CrossReferencedEvent

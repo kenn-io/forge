@@ -201,6 +201,15 @@ describe("EventTimeline", () => {
       props: {
         events: [
           makeEvent({
+            ID: 1,
+            EventType: "comment_deleted",
+            Author: "maintainer",
+            Summary: "comment by reviewer",
+            MetadataJSON: JSON.stringify({
+              deleted_comment_author: "reviewer",
+            }),
+          }),
+          makeEvent({
             ID: 2,
             EventType: "renamed_title",
             Summary: `"Old" -> "New"`,
@@ -234,11 +243,13 @@ describe("EventTimeline", () => {
       },
     });
 
+    expect(screen.getByText("Comment deleted")).toBeTruthy();
+    expect(screen.getByText("comment by reviewer")).toBeTruthy();
     expect(screen.getByText("Title changed")).toBeTruthy();
     expect(screen.getByText("Base changed")).toBeTruthy();
     expect(screen.getByText("Referenced")).toBeTruthy();
     expect(screen.getByText("Related bug")).toBeTruthy();
-    expect(document.querySelectorAll(".event--compact").length).toBe(3);
+    expect(document.querySelectorAll(".event--compact").length).toBe(4);
   });
 
   it("renders cross-repository events as internal item references when metadata identifies the source item", () => {

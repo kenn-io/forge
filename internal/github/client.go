@@ -24,25 +24,26 @@ type ForcePushEvent struct {
 }
 
 type PullRequestTimelineEvent struct {
-	NodeID            string
-	EventType         string
-	Actor             string
-	CreatedAt         time.Time
-	BeforeSHA         string
-	AfterSHA          string
-	Ref               string
-	PreviousTitle     string
-	CurrentTitle      string
-	PreviousRefName   string
-	CurrentRefName    string
-	SourceType        string
-	SourceOwner       string
-	SourceRepo        string
-	SourceNumber      int
-	SourceTitle       string
-	SourceURL         string
-	IsCrossRepository bool
-	WillCloseTarget   bool
+	NodeID               string
+	EventType            string
+	Actor                string
+	CreatedAt            time.Time
+	DeletedCommentAuthor string
+	BeforeSHA            string
+	AfterSHA             string
+	Ref                  string
+	PreviousTitle        string
+	CurrentTitle         string
+	PreviousRefName      string
+	CurrentRefName       string
+	SourceType           string
+	SourceOwner          string
+	SourceRepo           string
+	SourceNumber         int
+	SourceTitle          string
+	SourceURL            string
+	IsCrossRepository    bool
+	WillCloseTarget      bool
 }
 
 // EditPullRequestOpts holds optional fields for editing a pull request.
@@ -274,7 +275,7 @@ const pullRequestTimelineEventsQuery = `
 query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $number) {
-      timelineItems(itemTypes: [HEAD_REF_FORCE_PUSHED_EVENT, CROSS_REFERENCED_EVENT, RENAMED_TITLE_EVENT, BASE_REF_CHANGED_EVENT], first: 100, after: $cursor) {
+      timelineItems(itemTypes: [HEAD_REF_FORCE_PUSHED_EVENT, COMMENT_DELETED_EVENT, CROSS_REFERENCED_EVENT, RENAMED_TITLE_EVENT, BASE_REF_CHANGED_EVENT], first: 100, after: $cursor) {
         nodes {
           __typename
           ... on Node {
@@ -286,6 +287,11 @@ query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
             afterCommit { oid }
             createdAt
             ref { name }
+          }
+          ... on CommentDeletedEvent {
+            actor { login }
+            createdAt
+            deletedCommentAuthor { login }
           }
           ... on CrossReferencedEvent {
             actor { login }
@@ -809,12 +815,15 @@ func (c *liveClient) ListPullRequestTimelineEvents(
 							AfterCommit *struct {
 								OID string `json:"oid"`
 							} `json:"afterCommit"`
-							CreatedAt       time.Time              `json:"createdAt"`
-							Ref             *struct{ Name string } `json:"ref"`
-							PreviousTitle   string                 `json:"previousTitle"`
-							CurrentTitle    string                 `json:"currentTitle"`
-							PreviousRefName string                 `json:"previousRefName"`
-							CurrentRefName  string                 `json:"currentRefName"`
+							CreatedAt            time.Time              `json:"createdAt"`
+							Ref                  *struct{ Name string } `json:"ref"`
+							DeletedCommentAuthor *struct {
+								Login string `json:"login"`
+							} `json:"deletedCommentAuthor"`
+							PreviousTitle   string `json:"previousTitle"`
+							CurrentTitle    string `json:"currentTitle"`
+							PreviousRefName string `json:"previousRefName"`
+							CurrentRefName  string `json:"currentRefName"`
 							Source          *struct {
 								TypeName   string `json:"__typename"`
 								Number     int    `json:"number"`
@@ -928,6 +937,8 @@ func (c *liveClient) ListPullRequestTimelineEvents(
 			switch node.TypeName {
 			case "HeadRefForcePushedEvent":
 				event.EventType = "force_push"
+			case "CommentDeletedEvent":
+				event.EventType = "comment_deleted"
 			case "CrossReferencedEvent":
 				event.EventType = "cross_referenced"
 			case "RenamedTitleEvent":
@@ -948,6 +959,9 @@ func (c *liveClient) ListPullRequestTimelineEvents(
 			}
 			if node.Ref != nil {
 				event.Ref = node.Ref.Name
+			}
+			if node.DeletedCommentAuthor != nil {
+				event.DeletedCommentAuthor = node.DeletedCommentAuthor.Login
 			}
 			if node.Source != nil {
 				event.SourceType = node.Source.TypeName

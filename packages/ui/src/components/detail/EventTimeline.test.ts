@@ -243,8 +243,16 @@ describe("EventTimeline", () => {
       },
     });
 
-    expect(screen.getByText("Comment deleted")).toBeTruthy();
+    expect(screen.queryByText("Comment deleted")).toBeNull();
+    expect(screen.getByText("maintainer")).toBeTruthy();
     expect(screen.getByText("deleted a comment from reviewer")).toBeTruthy();
+    const deletedHeader = document.querySelector(".event-header--compact");
+    const deletedChildren = Array.from(deletedHeader?.children ?? []);
+    expect(deletedChildren).toHaveLength(3);
+    expect(deletedChildren[0]?.classList.contains("event-author")).toBe(true);
+    expect(deletedChildren[1]?.classList.contains("system-event-summary")).toBe(true);
+    expect(deletedChildren[1]?.classList.contains("system-event-summary--sentence")).toBe(true);
+    expect(deletedChildren[2]?.classList.contains("event-time")).toBe(true);
     expect(screen.getByText("Title changed")).toBeTruthy();
     expect(screen.getByText("Base changed")).toBeTruthy();
     expect(screen.getByText("Referenced")).toBeTruthy();

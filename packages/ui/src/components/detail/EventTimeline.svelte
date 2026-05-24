@@ -250,22 +250,33 @@
           {@const commitDetails = event.EventType === "commit" ? commitDetailsBody(event.Body) : ""}
           <div class="event-card event-card--compact">
             <div class="event-header event-header--compact">
-              <span
-                class="event-type"
-                style="color: {typeColors[event.EventType] ?? 'var(--text-muted)'}"
-              >
-                {systemEventLabel(event.EventType)}
-              </span>
-              {#if event.Author}
-                <span class="event-author">{event.Author}</span>
+              {#if event.EventType !== "comment_deleted"}
+                <span
+                  class="event-type"
+                  style="color: {typeColors[event.EventType] ?? 'var(--text-muted)'}"
+                >
+                  {systemEventLabel(event.EventType)}
+                </span>
               {/if}
               {#if event.EventType === "commit"}
+                {#if event.Author}
+                  <span class="event-author">{event.Author}</span>
+                {/if}
                 <span class="commit-sha">{shortCommit(event.Summary)}</span>
                 {#if !showCommitDetails}
                   <span class="commit-title">{commitTitle(event.Body)}</span>
                 {/if}
                 <span class="event-time">{timeAgo(event.CreatedAt)}</span>
+              {:else if event.EventType === "comment_deleted"}
+                {#if event.Author}
+                  <span class="event-author">{event.Author}</span>
+                {/if}
+                <span class="system-event-summary system-event-summary--sentence">{event.Summary}</span>
+                <span class="event-time">{timeAgo(event.CreatedAt)}</span>
               {:else if event.EventType === "cross_referenced"}
+                {#if event.Author}
+                  <span class="event-author">{event.Author}</span>
+                {/if}
                 {@const sourceUrl = metadataString(metadata, "source_url")}
                 {@const sourceTitle = metadataString(metadata, "source_title") ?? event.Summary}
                 {@const sourceLink = crossReferenceLink(metadata, sourceUrl)}
@@ -284,6 +295,9 @@
                   <span class="system-event-summary">{sourceTitle}</span>
                 {/if}
               {:else}
+                {#if event.Author}
+                  <span class="event-author">{event.Author}</span>
+                {/if}
                 <span class="event-time">{timeAgo(event.CreatedAt)}</span>
                 <span class="system-event-summary">{event.Summary}</span>
               {/if}
@@ -594,6 +608,10 @@
 
   .system-event-summary {
     color: var(--text-secondary);
+  }
+
+  .system-event-summary--sentence {
+    flex: 0 1 auto;
   }
 
   .system-event-link {

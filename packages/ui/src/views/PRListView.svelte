@@ -7,8 +7,6 @@
   import PullDetail
     from "../components/detail/PullDetail.svelte";
   import DiffFilesLayout from "../components/diff/DiffFilesLayout.svelte";
-  import StackSidebar
-    from "../components/detail/StackSidebar.svelte";
   import type { DetailSyncMode } from "../stores/detail.svelte.js";
   import {
     buildPullRequestFilesRoute,
@@ -25,7 +23,6 @@
     isSidebarCollapsed?: boolean;
     hideSidebar?: boolean;
     sidebarWidth?: number;
-    showStackSidebar?: boolean;
     autoSyncDetail?: DetailSyncMode;
     hideStaleDetailWhileLoading?: boolean;
     workflowApprovalSync?: boolean;
@@ -39,7 +36,6 @@
     isSidebarCollapsed = false,
     hideSidebar = false,
     sidebarWidth = 340,
-    showStackSidebar = true,
     autoSyncDetail = "background",
     hideStaleDetailWhileLoading = false,
     workflowApprovalSync = true,
@@ -128,19 +124,6 @@
       </p>
     </div>
   {/if}
-
-  {#snippet trailing()}
-    {#if showStackSidebar && selectedPR !== null}
-      <StackSidebar
-        owner={selectedPR.owner}
-        name={selectedPR.name}
-        number={selectedPR.number}
-        provider={selectedPR.provider}
-        platformHost={selectedPR.platformHost}
-        repoPath={selectedPR.repoPath}
-      />
-    {/if}
-  {/snippet}
 </CollapsibleResizableSidebar>
 
 <style>

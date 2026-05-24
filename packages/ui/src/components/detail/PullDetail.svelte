@@ -51,6 +51,7 @@
   import { floatingPopoverStyle } from "../shared/floatingPosition.js";
   import DiffFilesLayout from "../diff/DiffFilesLayout.svelte";
   import CIStatus from "./CIStatus.svelte";
+  import StackStatus from "./StackStatus.svelte";
   import DiffSummaryChip from "./DiffSummaryChip.svelte";
   import CopyItemNumber from "./CopyItemNumber.svelte";
   import { DiffSummaryFilesResult } from "./diff-summary.js";
@@ -148,7 +149,8 @@
   });
 
   let activeTab = $state<"conversation" | "files">("conversation");
-  let ciExpanded = $state(false);
+  let expandedPanel = $state<"ci" | "stack" | null>(null);
+  let keepStackExpandedOnRouteChange = false;
   let timelineFilter = $state<PRTimelineFilterState>(
     loadPRTimelineFilter(),
   );
@@ -245,7 +247,7 @@
   const shouldAutoRefreshCI = $derived.by(() => {
     const pr = currentPR();
     return Boolean(
-      ciExpanded &&
+      expandedPanel === "ci" &&
       !stalePR &&
       pr?.State === "open" &&
       ciChecksHavePending(pr.CIChecksJSON),
@@ -315,7 +317,11 @@
     void owner;
     void name;
     void number;
+    const keepStackExpanded = keepStackExpandedOnRouteChange &&
+      expandedPanel === "stack";
+    keepStackExpandedOnRouteChange = false;
     showMergeModal = false;
+    expandedPanel = keepStackExpanded ? "stack" : null;
     editingTitle = false;
     editingBody = false;
     titleDraft = "";
@@ -1333,8 +1339,23 @@
           name={name}
           number={pr.Number}
           prKey={pr.PlatformExternalID}
-          bind:expanded={ciExpanded}
+          expanded={expandedPanel === "ci"}
+          ontoggle={(next) => { expandedPanel = next ? "ci" : null; }}
           showPanel={false}
+        />
+        <StackStatus
+          {owner}
+          {name}
+          {number}
+          {provider}
+          {platformHost}
+          {repoPath}
+          expanded={expandedPanel === "stack"}
+          ontoggle={(next) => { expandedPanel = next ? "stack" : null; }}
+          onmembernavigate={() => {
+            keepStackExpandedOnRouteChange = true;
+            expandedPanel = "stack";
+          }}
         />
         {#if pr.ReviewDecision}
           <ReviewDecisionChip
@@ -1388,7 +1409,7 @@
           name={name}
           number={pr.Number}
           prKey={pr.PlatformExternalID}
-          bind:expanded={ciExpanded}
+          expanded={expandedPanel === "ci"}
           showButton={false}
         />
       </div>

@@ -281,7 +281,6 @@
           detailTab={effectiveDetailTab}
           isSidebarCollapsed={true}
           hideSidebar={true}
-          showStackSidebar={false}
           autoSyncDetail="background"
           hideStaleDetailWhileLoading={true}
           workflowApprovalSync={false}

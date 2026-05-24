@@ -37,6 +37,7 @@
     expanded?: boolean;
     showButton?: boolean;
     showPanel?: boolean;
+    ontoggle?: ((expanded: boolean) => void) | undefined;
   }
 
   let {
@@ -51,6 +52,7 @@
     expanded = $bindable(false),
     showButton = true,
     showPanel = true,
+    ontoggle,
   }: Props = $props();
 
   const instanceId = ++_ciStatusInstanceCounter.value;
@@ -124,6 +126,15 @@
     const hours = Math.floor(minutes / 60);
     const remainingMinutes = minutes % 60;
     return remainingMinutes === 0 ? `${hours}h` : `${hours}h ${remainingMinutes}m`;
+  }
+
+  function toggleExpanded(): void {
+    const next = !expanded;
+    if (ontoggle) {
+      ontoggle(next);
+      return;
+    }
+    expanded = next;
   }
 </script>
 
@@ -224,7 +235,7 @@
           tone="neutral"
           ariaLabel={composeAriaLabel(bucketed)}
           dataTestid="ci-chip"
-          onclick={() => { expanded = !expanded; }}
+          onclick={toggleExpanded}
           title={expanded ? "Collapse CI checks" : "Expand CI checks"}
           {expanded}
         >

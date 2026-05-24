@@ -133,6 +133,11 @@ function renderPullDetail(
     AllowRebaseMerge: false,
     ViewerCanMerge: true,
   },
+  apiClient = {
+    GET: vi.fn(async () => ({
+      data: repoSettings,
+    })),
+  },
 ) {
   const detailStore = {
     loadDetail: vi.fn(async () => undefined),
@@ -155,7 +160,7 @@ function renderPullDetail(
     props: {
       owner: "acme",
       name: "widget",
-      number: 1,
+      number: detail.merge_request.Number,
       provider: "github",
       platformHost: "github.com",
       repoPath: "acme/widget",
@@ -164,11 +169,7 @@ function renderPullDetail(
     context: new Map<symbol, unknown>([
       [
         API_CLIENT_KEY,
-        {
-          GET: vi.fn(async () => ({
-            data: repoSettings,
-          })),
-        },
+        apiClient,
       ],
       [
         STORES_KEY,
@@ -267,6 +268,113 @@ describe("PullDetail approvals", () => {
         workflowApprovalSync: true,
       },
     );
+  });
+
+  it("uses one shared expanded slot for CI and stack status", async () => {
+    const detail = pullDetail();
+    detail.merge_request.Number = 2;
+    detail.merge_request.CIStatus = "pending";
+    detail.merge_request.CIChecksJSON = JSON.stringify([
+      {
+        name: "frontend / svelte-check",
+        status: "completed",
+        conclusion: "failure",
+        url: "https://example.com/frontend",
+        app: "GitHub Actions",
+      },
+      {
+        name: "e2e / chromium",
+        status: "in_progress",
+        conclusion: "",
+        url: "https://example.com/e2e",
+        app: "GitHub Actions",
+      },
+    ]);
+
+    const apiClient = {
+      GET: vi.fn(async (path: string) => {
+        if (path.endsWith("/stack")) {
+          return {
+            data: {
+              stack_id: 1,
+              stack_name: "session-recovery",
+              position: 2,
+              size: 3,
+              health: "blocked",
+              members: [
+                {
+                  number: 1,
+                  title: "base schema",
+                  state: "open",
+                  ci_status: "failure",
+                  review_decision: "APPROVED",
+                  position: 1,
+                  is_draft: false,
+                  base_branch: "main",
+                  blocked_by: null,
+                },
+                {
+                  number: 2,
+                  title: "session storage",
+                  state: "open",
+                  ci_status: "pending",
+                  review_decision: "APPROVED",
+                  position: 2,
+                  is_draft: false,
+                  base_branch: "feat/base-schema",
+                  blocked_by: 1,
+                },
+                {
+                  number: 3,
+                  title: "UI polish",
+                  state: "open",
+                  ci_status: "success",
+                  review_decision: "",
+                  position: 3,
+                  is_draft: false,
+                  base_branch: "feat/session-storage",
+                  blocked_by: 1,
+                },
+              ],
+            },
+          };
+        }
+        return {
+          data: {
+            AllowSquashMerge: false,
+            AllowMergeCommit: false,
+            AllowRebaseMerge: false,
+            ViewerCanMerge: true,
+          },
+        };
+      }),
+    };
+
+    renderPullDetail(detail, undefined, apiClient);
+
+    await fireEvent.click(
+      screen.getByRole("button", { name: /CI:\s*1 failed check,\s*1 pending check/i }),
+    );
+
+    expect(screen.getByText("frontend / svelte-check")).toBeTruthy();
+
+    await fireEvent.click(
+      await screen.findByRole("button", { name: /Stacked: 2\/3, 1 downstack CI failure/i }),
+    );
+
+    expect(screen.queryByText("frontend / svelte-check")).toBeNull();
+    expect(screen.getByText("3 PRs · current 2/3 · downstack CI failure")).toBeTruthy();
+    expect(screen.getByText("Current")).toBeTruthy();
+    expect(screen.getByText("blocked by #1")).toBeTruthy();
+
+    const stackLinks = Array.from(
+      document.querySelectorAll<HTMLButtonElement>(".stack-member-link"),
+    ).map((button) => button.textContent?.trim());
+    expect(stackLinks).toEqual([
+      "#3 UI polish",
+      "#2 session storage",
+      "#1 base schema",
+    ]);
   });
 
   it("closes the label picker when the labels action is clicked twice", async () => {

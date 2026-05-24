@@ -631,7 +631,6 @@
           onDetailTabChange={(tab) => navigateFocusPRDetailTab(selectedPR, tab)}
           isSidebarCollapsed={true}
           hideSidebar={true}
-          showStackSidebar={false}
         />
       {:else if r.page === "focus"}
         <IssueListView
@@ -652,7 +651,6 @@
           detailTab={r.tab === "files" ? "files" : "conversation"}
           isSidebarCollapsed={true}
           hideSidebar={true}
-          showStackSidebar={false}
         />
       {:else if r.page === "pulls"}
         <FocusListView
@@ -788,7 +786,6 @@
             {detailTab}
             isSidebarCollapsed={isSidebarCollapsed()}
             sidebarWidth={getSidebarWidth()}
-            showStackSidebar={!isPhoneLikeViewport() && !shouldForceMobileRoutes()}
             onSidebarResize={handleSidebarResize}
           />
         {/if}
@@ -995,10 +992,6 @@
 
   .focus-layout--phone :global(.main-area) {
     overflow-y: auto;
-  }
-
-  .focus-layout--phone :global(.stack-sidebar) {
-    display: none;
   }
 
   .focus-layout--phone :global(.pull-detail),

@@ -281,8 +281,8 @@
                   </button>
                 </span>
                 <span class="stack-badges">
-                  {#if ci}<span class={["stack-status-label", ci.className]}>{ci.text}</span>{/if}
-                  {#if review}<span class={["stack-status-label", review.className]}>{review.text}</span>{/if}
+                  {#if ci}<span class={`stack-status-label ${ci.className}`}>{ci.text}</span>{/if}
+                  {#if review}<span class={`stack-status-label ${review.className}`}>{review.text}</span>{/if}
                   {#if member.blocked_by != null && isCurrent}
                     <span class="stack-blocked-label">blocked by #{member.blocked_by}</span>
                   {/if}

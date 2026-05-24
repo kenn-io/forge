@@ -317,9 +317,12 @@
     void owner;
     void name;
     void number;
-    const keepStackExpanded = keepStackExpandedOnRouteChange &&
-      expandedPanel === "stack";
-    keepStackExpandedOnRouteChange = false;
+    const keepStackExpanded = untrack(() => {
+      const keepExpanded = keepStackExpandedOnRouteChange &&
+        expandedPanel === "stack";
+      keepStackExpandedOnRouteChange = false;
+      return keepExpanded;
+    });
     showMergeModal = false;
     expandedPanel = keepStackExpanded ? "stack" : null;
     editingTitle = false;

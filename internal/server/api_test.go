@@ -1015,9 +1015,9 @@ func TestAPIMergePRForwardsGitHubErrorDetailsAndLogsError(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
 
-	var logBuf bytes.Buffer
+	logBuf := &lockedBuffer{}
 	origLogger := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{
+	slog.SetDefault(slog.New(slog.NewTextHandler(logBuf, &slog.HandlerOptions{
 		Level: slog.LevelDebug,
 	})))
 	t.Cleanup(func() { slog.SetDefault(origLogger) })

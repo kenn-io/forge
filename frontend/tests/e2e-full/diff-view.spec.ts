@@ -335,8 +335,9 @@ async function expectPierreDarkBackgroundMatchesAppSurface(
 
 async function expectPierreChangeColorsMatchAppTokens(
   file: ReturnType<Page["locator"]>,
+  themeType: "dark" | "light",
 ) {
-  const colors = await file.locator(".pierre-diff").evaluate((host) => {
+  const colors = await file.locator(".pierre-diff").evaluate((host, themeType) => {
     const sample = document.createElement("div");
     sample.style.cssText = [
       "position: fixed",
@@ -345,25 +346,39 @@ async function expectPierreChangeColorsMatchAppTokens(
       "width: 1px",
       "height: 1px",
       "color: var(--accent-green)",
-      "background: color-mix(in srgb, transparent 76%,"
-        + " color-mix(in srgb, var(--accent-green) 42%, black))",
     ].join(";");
     document.body.append(sample);
     const appGreen = getComputedStyle(sample).color;
+    sample.style.background = themeType === "dark"
+      ? "color-mix(in srgb, transparent 76%,"
+        + " color-mix(in srgb, var(--accent-green) 42%, black))"
+      : "color-mix(in srgb, var(--accent-green) 22%, transparent)";
     const appGreenEmphasis = getComputedStyle(sample).backgroundColor;
+    sample.style.background = "color-mix(in srgb, var(--accent-green) 55%, black)";
+    const oldLightModeDarkGreenLine = getComputedStyle(sample).backgroundColor;
     sample.style.color = "var(--accent-red)";
-    sample.style.background = "color-mix(in srgb, transparent 76%,"
-      + " color-mix(in srgb, var(--accent-red) 58%, black))";
     const appRed = getComputedStyle(sample).color;
+    sample.style.background = themeType === "dark"
+      ? "color-mix(in srgb, transparent 76%,"
+        + " color-mix(in srgb, var(--accent-red) 58%, black))"
+      : "color-mix(in srgb, var(--accent-red) 24%, transparent)";
     const appRedEmphasis = getComputedStyle(sample).backgroundColor;
+    sample.style.background = "color-mix(in srgb, var(--accent-red) 69%, black)";
+    const oldLightModeDarkRedLine = getComputedStyle(sample).backgroundColor;
     sample.remove();
 
     const root = host.shadowRoot;
+    const additionLine = root?.querySelector(
+      "[data-content] [data-line-type='change-addition']",
+    );
     const additionNumber = root?.querySelector(
       "[data-column-number][data-line-type='change-addition']",
     );
     const additionSpan = root?.querySelector(
       "[data-line-type='change-addition'] [data-diff-span]",
+    );
+    const deletionLine = root?.querySelector(
+      "[data-content] [data-line-type='change-deletion']",
     );
     const deletionNumber = root?.querySelector(
       "[data-column-number][data-line-type='change-deletion']",
@@ -375,8 +390,13 @@ async function expectPierreChangeColorsMatchAppTokens(
     return {
       appGreen,
       appGreenEmphasis,
+      oldLightModeDarkGreenLine,
       appRed,
       appRedEmphasis,
+      oldLightModeDarkRedLine,
+      additionLineBackground: additionLine instanceof HTMLElement
+        ? getComputedStyle(additionLine).backgroundColor
+        : "",
       additionNumberColor: additionNumber instanceof HTMLElement
         ? getComputedStyle(additionNumber).color
         : "",
@@ -389,17 +409,24 @@ async function expectPierreChangeColorsMatchAppTokens(
       deletionNumberColor: deletionNumber instanceof HTMLElement
         ? getComputedStyle(deletionNumber).color
         : "",
+      deletionLineBackground: deletionLine instanceof HTMLElement
+        ? getComputedStyle(deletionLine).backgroundColor
+        : "",
       deletionSpanBackground: deletionSpan instanceof HTMLElement
         ? getComputedStyle(deletionSpan).backgroundColor
         : "",
     };
-  });
+  }, themeType);
 
   expect(colors.additionNumberColor).toBe(colors.appGreen);
   expect(colors.additionBarColor).toBe(colors.appGreen);
   expect(colors.additionSpanBackground).toBe(colors.appGreenEmphasis);
   expect(colors.deletionNumberColor).toBe(colors.appRed);
   expect(colors.deletionSpanBackground).toBe(colors.appRedEmphasis);
+  if (themeType === "light") {
+    expect(colors.additionLineBackground).not.toBe(colors.oldLightModeDarkGreenLine);
+    expect(colors.deletionLineBackground).not.toBe(colors.oldLightModeDarkRedLine);
+  }
 }
 
 function patchLinePrefix(line: DiffLine): string {
@@ -602,6 +629,14 @@ async function visiblePierreLoadingCount(page: Page): Promise<number> {
       return rect.bottom > 0
         && rect.top < window.innerHeight
         && file.querySelector(".pierre-diff-loading");
+    }).length;
+  });
+}
+
+async function renderedPierreDiffCount(page: Page): Promise<number> {
+  return await page.locator(".diff-file .pierre-diff").evaluateAll((hosts) => {
+    return hosts.filter((host) => {
+      return host.shadowRoot?.querySelector("[data-content]") !== null;
     }).length;
   });
 }
@@ -1261,7 +1296,20 @@ test.describe("diff view", () => {
     const firstFile = page.locator('[data-file-path="internal/server/handler.go"]');
     await firstFile.scrollIntoViewIfNeeded();
     await expectPierreDarkBackgroundMatchesAppSurface(firstFile);
-    await expectPierreChangeColorsMatchAppTokens(firstFile);
+    await expectPierreChangeColorsMatchAppTokens(firstFile, "dark");
+  });
+
+  test("Pierre light diff change backgrounds stay light", async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem("middleman-theme", "light");
+    });
+    await mockDiffApi(page, smallDiff);
+    await navigateToDiff(page);
+    await waitForDiffLoaded(page);
+
+    const firstFile = page.locator('[data-file-path="internal/server/handler.go"]');
+    await firstFile.scrollIntoViewIfNeeded();
+    await expectPierreChangeColorsMatchAppTokens(firstFile, "light");
   });
 
   test("fallback file list renders when selected PR is filtered out of sidebar", async ({ page }) => {
@@ -1623,6 +1671,28 @@ test.describe("diff view performance", () => {
     await page.getByRole("button", { name: "Jump to file" }).click();
     await expect(page.locator(".file-jump-menu")).toBeVisible();
     expect(pageErrors).toEqual([]);
+  });
+
+  test("large diffs do not eagerly render every offscreen file", async ({ page }) => {
+    await mockDiffApi(page, largeDiff);
+    await navigateToDiff(page);
+    await waitForDiffLoaded(page);
+
+    await expect.poll(() => renderedPierreDiffCount(page), {
+      timeout: 5_000,
+    }).toBeGreaterThan(0);
+    await page.waitForTimeout(500);
+    expect(await renderedPierreDiffCount(page)).toBeLessThan(largeDiff.files.length);
+
+    await page.locator(".diff-area").evaluate((area) => {
+      area.scrollTop = area.scrollHeight;
+      area.dispatchEvent(new Event("scroll", { bubbles: true }));
+    });
+
+    await expect.poll(() => visiblePierreLoadingCount(page), {
+      timeout: 10_000,
+    }).toBe(0);
+    expect(await renderedPierreDiffCount(page)).toBeLessThan(largeDiff.files.length);
   });
 
   test("large diff (50 files) renders all file headers within timeout", async ({ page }) => {

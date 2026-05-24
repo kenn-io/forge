@@ -293,7 +293,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     number: number,
     filePath: string,
   ): boolean {
-    const key = `${owner}/${name}#${number}`;
+    const key = collapseKeyFor(owner, name, number);
     return (collapsedFiles[key] ?? []).includes(filePath);
   }
 
@@ -306,8 +306,18 @@ export function createDiffStore(opts?: DiffStoreOptions) {
   }
 
   function currentCollapseKey(): string | null {
+    if (currentWorkspaceID) {
+      return `workspace:${currentWorkspaceID}:${currentWorkspaceBase}`;
+    }
     if (!currentOwner || !currentName || !currentNumber) return null;
-    return `${currentOwner}/${currentName}#${currentNumber}`;
+    return collapseKeyFor(currentOwner, currentName, currentNumber);
+  }
+
+  function collapseKeyFor(owner: string, name: string, number: number): string {
+    if (currentWorkspaceID) {
+      return `workspace:${currentWorkspaceID}:${currentWorkspaceBase}`;
+    }
+    return `${owner}/${name}#${number}`;
   }
 
   function areAllVisibleFilesCollapsed(): boolean {
@@ -453,7 +463,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     number: number,
     filePath: string,
   ): void {
-    const key = `${owner}/${name}#${number}`;
+    const key = collapseKeyFor(owner, name, number);
     const current = collapsedFiles[key] ?? [];
     if (current.includes(filePath)) {
       collapsedFiles = {

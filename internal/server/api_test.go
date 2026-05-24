@@ -18703,6 +18703,75 @@ func TestWorkspaceDiffEndpointsReportHeadAndPushedE2E(t *testing.T) {
 	assert.Equal(int64(1), pushedDiff.WhitespaceOnlyCount)
 }
 
+func TestWorkspaceDiffEndpointsReturnPierreTreeOrderE2E(t *testing.T) {
+	t.Parallel()
+
+	require := require.New(t)
+
+	dir := t.TempDir()
+	worktreePath := filepath.Join(dir, "worktree")
+	runGit(t, dir, "init", "--initial-branch=main", worktreePath)
+	runGit(t, worktreePath, "config", "user.email", "test@test.com")
+	runGit(t, worktreePath, "config", "user.name", "Test")
+	require.NoError(os.WriteFile(
+		filepath.Join(worktreePath, "base.txt"),
+		[]byte("base\n"),
+		0o644,
+	))
+	runGit(t, worktreePath, "add", ".")
+	runGit(t, worktreePath, "commit", "-m", "base commit")
+
+	database := dbtest.Open(t)
+	srv := New(database, nil, nil, "/", nil, ServerOptions{
+		WorktreeDir: filepath.Join(dir, "managed-worktrees"),
+	})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+
+	ctx := context.Background()
+	require.NoError(database.InsertWorkspace(ctx, &workspace.Workspace{
+		ID:              "ws-file-order",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		ItemType:        db.WorkspaceItemTypePullRequest,
+		ItemNumber:      1,
+		GitHeadRef:      "feature/file-order",
+		WorkspaceBranch: "middleman/pr-1",
+		WorktreePath:    worktreePath,
+		TmuxSession:     "middleman-file-order",
+		Status:          "ready",
+	}))
+
+	serverDir := filepath.Join(worktreePath, "internal", "server")
+	require.NoError(os.MkdirAll(
+		filepath.Join(serverDir, "e2etest"),
+		0o755,
+	))
+	for _, path := range []string{
+		filepath.Join(serverDir, "config_reload_test.go"),
+		filepath.Join(serverDir, "e2etest", "settings_test.go"),
+		filepath.Join(serverDir, "config_reload.go"),
+		filepath.Join(serverDir, "api_types.go"),
+	} {
+		require.NoError(os.WriteFile(path, []byte("package server\n"), 0o644))
+	}
+
+	want := []string{
+		"internal/server/e2etest/settings_test.go",
+		"internal/server/api_types.go",
+		"internal/server/config_reload.go",
+		"internal/server/config_reload_test.go",
+	}
+
+	files := requestWorkspaceFiles(t, srv, "ws-file-order", "head")
+	require.NotNil(files.Files)
+	assertWorkspaceDiffPaths(t, *files.Files, want)
+
+	diff := requestWorkspaceDiff(t, srv, "ws-file-order", "head")
+	require.NotNil(diff.Files)
+	assertWorkspaceDiffPaths(t, *diff.Files, want)
+}
+
 func TestWorkspaceCommitsEndpointListsBranchCommitsE2E(t *testing.T) {
 	t.Parallel()
 

@@ -256,6 +256,56 @@ describe("createDiffStore loadDiff", () => {
     );
   });
 
+  it("collapses and expands all visible files in workspace diffs", async () => {
+    const files = makeFilesResult([
+      "src/app.go",
+      "src/app_test.go",
+      "docs/plan.md",
+    ]);
+    const diff = makeDiffResult([
+      "src/app.go",
+      "src/app_test.go",
+      "docs/plan.md",
+    ]);
+
+    vi.spyOn(globalThis, "fetch").mockImplementation(
+      async (input: RequestInfo | URL) => {
+        const url =
+          typeof input === "string"
+            ? input
+            : input instanceof URL
+              ? input.href
+              : input.url;
+        if (url.includes("/workspaces/ws-1/files")) {
+          return Response.json(files);
+        }
+        if (url.includes("/workspaces/ws-1/diff")) {
+          return Response.json(diff);
+        }
+        return Response.json({}, { status: 404 });
+      },
+    );
+
+    const store = createDiffStore({ client: testClient() });
+    await store.loadWorkspaceDiff("ws-1", "head");
+
+    expect(store.areAllVisibleFilesCollapsed()).toBe(false);
+
+    store.setAllVisibleFilesCollapsed(true);
+
+    expect(store.areAllVisibleFilesCollapsed()).toBe(true);
+    expect(store.isFileCollapsed("owner", "repo", 1, "src/app.go")).toBe(true);
+    expect(store.isFileCollapsed("owner", "repo", 1, "src/app_test.go")).toBe(true);
+    expect(store.isFileCollapsed("owner", "repo", 1, "docs/plan.md")).toBe(true);
+
+    store.setFileCategoryFilter("tests");
+    store.setAllVisibleFilesCollapsed(false);
+
+    expect(store.isFileCollapsed("owner", "repo", 1, "src/app.go")).toBe(true);
+    expect(store.isFileCollapsed("owner", "repo", 1, "src/app_test.go")).toBe(false);
+    expect(store.isFileCollapsed("owner", "repo", 1, "docs/plan.md")).toBe(true);
+  });
+
   it("loads commits for the active workspace diff", async () => {
     const calls: string[] = [];
     const files = makeFilesResult(["src/app.go"]);

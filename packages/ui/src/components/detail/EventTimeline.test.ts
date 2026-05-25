@@ -110,6 +110,69 @@ describe("EventTimeline", () => {
     expect(bodyStyle.getPropertyValue("border-radius")).toBe("");
   });
 
+  it("groups discussion comments with the root comment first and reverse-chronological replies", () => {
+    const { container } = render(EventTimeline, {
+      props: {
+        events: [
+          makeEvent({
+            ID: 4,
+            EventType: "issue_comment",
+            Author: "root",
+            Body: "Newest threaded reply",
+            DiscussionID: "disc-1",
+            CreatedAt: "2024-06-01T12:03:00Z",
+          }),
+          makeEvent({
+            ID: 3,
+            EventType: "issue_comment",
+            Author: "root",
+            Body: "Middle threaded reply",
+            DiscussionID: "disc-1",
+            CreatedAt: "2024-06-01T12:02:00Z",
+          }),
+          makeEvent({
+            ID: 2,
+            EventType: "issue_comment",
+            Author: "root",
+            Body: "Oldest threaded reply",
+            DiscussionID: "disc-1",
+            CreatedAt: "2024-06-01T12:01:00Z",
+          }),
+          makeEvent({
+            ID: 1,
+            EventType: "issue_comment",
+            Author: "root",
+            Body: "Main threaded comment",
+            DiscussionID: "disc-1",
+            CreatedAt: "2024-06-01T12:00:00Z",
+          }),
+          makeEvent({
+            ID: 5,
+            EventType: "commit",
+            Summary: "abcdef1234567890",
+            Body: "Add fixture",
+            CreatedAt: "2024-06-01T11:59:00Z",
+          }),
+        ],
+      },
+    });
+
+    expect(container.querySelectorAll(".event")).toHaveLength(2);
+    expect(container.querySelectorAll(".thread-reply")).toHaveLength(3);
+    expect(screen.getByRole("list", { name: "Threaded replies" })).toBeTruthy();
+
+    const threadText = container.querySelector(".event-card")?.textContent ?? "";
+    expect(threadText.indexOf("Main threaded comment")).toBeLessThan(
+      threadText.indexOf("Newest threaded reply"),
+    );
+    expect(threadText.indexOf("Newest threaded reply")).toBeLessThan(
+      threadText.indexOf("Middle threaded reply"),
+    );
+    expect(threadText.indexOf("Middle threaded reply")).toBeLessThan(
+      threadText.indexOf("Oldest threaded reply"),
+    );
+  });
+
   it("renders commit events as expanded commit detail rows", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2024-06-01T16:00:00Z"));

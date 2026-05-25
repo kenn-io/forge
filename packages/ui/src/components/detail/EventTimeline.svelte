@@ -58,6 +58,83 @@
     return eventType === "issue_comment" || eventType === "review" || eventType === "review_comment";
   }
 
+  type TimelineEntry = {
+    key: string;
+    event: PREvent | IssueEvent;
+    discussionID?: string;
+    replies: Array<PREvent | IssueEvent>;
+  };
+
+  function discussionID(event: PREvent | IssueEvent): string | null {
+    return typeof event.DiscussionID === "string" && event.DiscussionID.length > 0
+      ? event.DiscussionID
+      : null;
+  }
+
+  function isThreadedComment(event: PREvent | IssueEvent): boolean {
+    return shouldRenderMarkdown(event.EventType) && discussionID(event) !== null;
+  }
+
+  function eventSortValue(event: PREvent | IssueEvent): number {
+    const timestamp = Date.parse(event.CreatedAt);
+    return Number.isFinite(timestamp) ? timestamp : 0;
+  }
+
+  function compareEventsAscending(a: PREvent | IssueEvent, b: PREvent | IssueEvent): number {
+    return eventSortValue(a) - eventSortValue(b) || a.ID - b.ID;
+  }
+
+  function compareEventsDescending(a: PREvent | IssueEvent, b: PREvent | IssueEvent): number {
+    return eventSortValue(b) - eventSortValue(a) || b.ID - a.ID;
+  }
+
+  function buildTimelineEntries(sourceEvents: Array<PREvent | IssueEvent>): TimelineEntry[] {
+    const discussions: Array<{ id: string; events: Array<PREvent | IssueEvent> }> = [];
+
+    for (const event of sourceEvents) {
+      const id = discussionID(event);
+      if (!id || !isThreadedComment(event)) continue;
+      const discussion = discussions.find((item) => item.id === id);
+      if (discussion) {
+        discussion.events = [...discussion.events, event];
+      } else {
+        discussions.push({ id, events: [event] });
+      }
+    }
+
+    const emittedDiscussions: string[] = [];
+    const entries: TimelineEntry[] = [];
+
+    for (const event of sourceEvents) {
+      const id = discussionID(event);
+      if (!id || !isThreadedComment(event)) {
+        entries.push({ key: `event-${event.ID}`, event, replies: [] });
+        continue;
+      }
+
+      if (emittedDiscussions.includes(id)) continue;
+      emittedDiscussions.push(id);
+
+      const discussionEvents = [...(discussions.find((item) => item.id === id)?.events ?? [event])];
+      if (discussionEvents.length === 1) {
+        entries.push({ key: `event-${event.ID}`, event, replies: [] });
+        continue;
+      }
+
+      const [root, ...replies] = discussionEvents.sort(compareEventsAscending);
+      entries.push({
+        key: `discussion-${id}`,
+        event: root ?? event,
+        discussionID: id,
+        replies: replies.sort(compareEventsDescending),
+      });
+    }
+
+    return entries;
+  }
+
+  const timelineEntries = $derived(buildTimelineEntries(events));
+
   function isCompactEvent(eventType: string): boolean {
     return (
       eventType === "commit" ||
@@ -227,11 +304,146 @@
   }
 </script>
 
+{#snippet eventBody(event: PREvent | IssueEvent, nested = false)}
+  {#if event.Body}
+    <div class={nested ? "event-body-wrap event-body-wrap--nested" : "event-body-wrap"}>
+      <div class="event-actions">
+        {#if canEditComment(event)}
+          <button
+            class="event-action-btn"
+            onclick={() => startEdit(event)}
+            title="Edit comment"
+            aria-label="Edit comment"
+            disabled={savingEditId !== null}
+          >
+            <PencilIcon size={14} />
+          </button>
+        {/if}
+        <button
+          class="event-action-btn"
+          class:copied={copiedId === String(event.ID)}
+          onclick={() => copyText(String(event.ID), event.Body)}
+          title={copiedId === String(event.ID) ? "Copied!" : "Copy to clipboard"}
+          aria-label={copiedId === String(event.ID) ? "Copied" : "Copy comment"}
+        >
+          {#if copiedId === String(event.ID)}
+            <CheckIcon size={14} />
+          {:else}
+            <CopyIcon size={14} />
+          {/if}
+        </button>
+      </div>
+      {#if editingId === event.ID && provider && repoOwner && repoName && repoPath}
+        <div class="edit-panel">
+          <CommentEditor
+            {provider}
+            {platformHost}
+            owner={repoOwner}
+            name={repoName}
+            {repoPath}
+            value={editDraft}
+            disabled={savingEditId === event.ID}
+            oninput={(nextBody) => {
+              editDraft = nextBody;
+            }}
+            onsubmit={() => {
+              void saveEdit(event);
+            }}
+          />
+          {#if editError}
+            <p class="edit-error">{editError}</p>
+          {/if}
+          <div class="edit-actions">
+            <button
+              class="edit-action edit-action--primary"
+              onclick={() => void saveEdit(event)}
+              disabled={savingEditId === event.ID}
+            >
+              <CheckIcon size={14} />
+              {savingEditId === event.ID ? "Saving..." : "Save"}
+            </button>
+            <button
+              class="edit-action"
+              onclick={cancelEdit}
+              disabled={savingEditId === event.ID}
+            >
+              <XIcon size={14} />
+              Cancel
+            </button>
+          </div>
+        </div>
+      {:else}
+        <div class={["event-body", { "markdown-body": shouldRenderMarkdown(event.EventType), "event-body--nested": nested }]}>
+          {#if shouldRenderMarkdown(event.EventType)}
+            {@html renderMarkdown(event.Body, provider && repoOwner && repoName && repoPath ? { provider, platformHost, owner: repoOwner, name: repoName, repoPath } : undefined)}
+          {:else}
+            {event.Body}
+          {/if}
+        </div>
+      {/if}
+    </div>
+  {:else if canEditComment(event)}
+    <div class={nested ? "event-body-wrap event-body-wrap--nested" : "event-body-wrap"}>
+      {#if editingId === event.ID && provider && repoOwner && repoName && repoPath}
+        <div class="edit-panel">
+          <CommentEditor
+            {provider}
+            {platformHost}
+            owner={repoOwner}
+            name={repoName}
+            {repoPath}
+            value={editDraft}
+            disabled={savingEditId === event.ID}
+            oninput={(nextBody) => {
+              editDraft = nextBody;
+            }}
+            onsubmit={() => {
+              void saveEdit(event);
+            }}
+          />
+          {#if editError}
+            <p class="edit-error">{editError}</p>
+          {/if}
+          <div class="edit-actions">
+            <button
+              class="edit-action edit-action--primary"
+              onclick={() => void saveEdit(event)}
+              disabled={savingEditId === event.ID}
+            >
+              <CheckIcon size={14} />
+              {savingEditId === event.ID ? "Saving..." : "Save"}
+            </button>
+            <button
+              class="edit-action"
+              onclick={cancelEdit}
+              disabled={savingEditId === event.ID}
+            >
+              <XIcon size={14} />
+              Cancel
+            </button>
+          </div>
+        </div>
+      {:else}
+        <button
+          class="event-action-btn empty-edit-btn"
+          onclick={() => startEdit(event)}
+          title="Edit comment"
+          aria-label="Edit comment"
+          disabled={savingEditId !== null}
+        >
+          <PencilIcon size={14} />
+        </button>
+      {/if}
+    </div>
+  {/if}
+{/snippet}
+
 {#if events.length === 0}
   <p class="empty">{filtered ? "No activity matches the current filters" : "No activity yet"}</p>
 {:else}
   <ol class="timeline">
-    {#each events as event (event.ID)}
+    {#each timelineEntries as entry (entry.key)}
+      {@const event = entry.event}
       <li class={isCompactEvent(event.EventType) ? "event event--compact" : "event"}>
         <div class="event-rail">
           <span
@@ -309,136 +521,27 @@
             {#if event.Summary && (event.EventType === "commit" || event.EventType === "force_push")}
               <p class="event-summary">{event.Summary}</p>
             {/if}
-            {#if event.Body}
-              <div class="event-body-wrap">
-                <div class="event-actions">
-                  {#if canEditComment(event)}
-                    <button
-                      class="event-action-btn"
-                      onclick={() => startEdit(event)}
-                      title="Edit comment"
-                      aria-label="Edit comment"
-                      disabled={savingEditId !== null}
-                    >
-                      <PencilIcon size={14} />
-                    </button>
-                  {/if}
-                  <button
-                    class="event-action-btn"
-                    class:copied={copiedId === String(event.ID)}
-                    onclick={() => copyText(String(event.ID), event.Body)}
-                    title={copiedId === String(event.ID) ? "Copied!" : "Copy to clipboard"}
-                    aria-label={copiedId === String(event.ID) ? "Copied" : "Copy comment"}
-                  >
-                    {#if copiedId === String(event.ID)}
-                      <CheckIcon size={14} />
-                    {:else}
-                      <CopyIcon size={14} />
-                    {/if}
-                  </button>
-                </div>
-                {#if editingId === event.ID && provider && repoOwner && repoName && repoPath}
-                  <div class="edit-panel">
-                    <CommentEditor
-                      {provider}
-                      {platformHost}
-                      owner={repoOwner}
-                      name={repoName}
-                      {repoPath}
-                      value={editDraft}
-                      disabled={savingEditId === event.ID}
-                      oninput={(nextBody) => {
-                        editDraft = nextBody;
-                      }}
-                      onsubmit={() => {
-                        void saveEdit(event);
-                      }}
-                    />
-                    {#if editError}
-                      <p class="edit-error">{editError}</p>
-                    {/if}
-                    <div class="edit-actions">
-                      <button
-                        class="edit-action edit-action--primary"
-                        onclick={() => void saveEdit(event)}
-                        disabled={savingEditId === event.ID}
-                      >
-                        <CheckIcon size={14} />
-                        {savingEditId === event.ID ? "Saving..." : "Save"}
-                      </button>
-                      <button
-                        class="edit-action"
-                        onclick={cancelEdit}
-                        disabled={savingEditId === event.ID}
-                      >
-                        <XIcon size={14} />
-                        Cancel
-                      </button>
+            {@render eventBody(event)}
+            {#if entry.replies.length > 0}
+              <ol class="thread-replies" aria-label="Threaded replies">
+                {#each entry.replies as reply (reply.ID)}
+                  <li class="thread-reply">
+                    <div class="thread-reply-rail" aria-hidden="true">
+                      <span class="thread-reply-elbow"></span>
                     </div>
-                  </div>
-                {:else}
-                  <div class="event-body {shouldRenderMarkdown(event.EventType) ? 'markdown-body' : ''}">
-                    {#if shouldRenderMarkdown(event.EventType)}
-                      {@html renderMarkdown(event.Body, provider && repoOwner && repoName && repoPath ? { provider, platformHost, owner: repoOwner, name: repoName, repoPath } : undefined)}
-                    {:else}
-                      {event.Body}
-                    {/if}
-                  </div>
-                {/if}
-              </div>
-            {:else if canEditComment(event)}
-              <div class="event-body-wrap">
-                {#if editingId === event.ID && provider && repoOwner && repoName && repoPath}
-                  <div class="edit-panel">
-                    <CommentEditor
-                      {provider}
-                      {platformHost}
-                      owner={repoOwner}
-                      name={repoName}
-                      {repoPath}
-                      value={editDraft}
-                      disabled={savingEditId === event.ID}
-                      oninput={(nextBody) => {
-                        editDraft = nextBody;
-                      }}
-                      onsubmit={() => {
-                        void saveEdit(event);
-                      }}
-                    />
-                    {#if editError}
-                      <p class="edit-error">{editError}</p>
-                    {/if}
-                    <div class="edit-actions">
-                      <button
-                        class="edit-action edit-action--primary"
-                        onclick={() => void saveEdit(event)}
-                        disabled={savingEditId === event.ID}
-                      >
-                        <CheckIcon size={14} />
-                        {savingEditId === event.ID ? "Saving..." : "Save"}
-                      </button>
-                      <button
-                        class="edit-action"
-                        onclick={cancelEdit}
-                        disabled={savingEditId === event.ID}
-                      >
-                        <XIcon size={14} />
-                        Cancel
-                      </button>
+                    <div class="thread-reply-content">
+                      <div class="event-header thread-reply-header">
+                        <span class="event-type">Reply</span>
+                        {#if reply.Author}
+                          <span class="event-author">{reply.Author}</span>
+                        {/if}
+                        <span class="event-time">{timeAgo(reply.CreatedAt)}</span>
+                      </div>
+                      {@render eventBody(reply, true)}
                     </div>
-                  </div>
-                {:else}
-                  <button
-                    class="event-action-btn empty-edit-btn"
-                    onclick={() => startEdit(event)}
-                    title="Edit comment"
-                    aria-label="Edit comment"
-                    disabled={savingEditId !== null}
-                  >
-                    <PencilIcon size={14} />
-                  </button>
-                {/if}
-              </div>
+                  </li>
+                {/each}
+              </ol>
             {/if}
           </div>
         {/if}
@@ -606,6 +709,52 @@
     margin-top: var(--focus-detail-space-sm, 0.62rem);
   }
 
+  .event-body-wrap--nested {
+    margin-top: var(--focus-detail-space-xs, 0.31rem);
+  }
+
+  .thread-replies {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: var(--focus-detail-space-sm, 0.62rem);
+    margin-top: var(--focus-detail-space-md, 1rem);
+    padding-left: var(--focus-detail-space-md, 1.15rem);
+    border-left: 2px solid var(--border-default);
+  }
+
+  .thread-reply {
+    display: grid;
+    grid-template-columns: 1rem minmax(0, 1fr);
+    column-gap: var(--focus-detail-space-xs, 0.46rem);
+    min-width: 0;
+  }
+
+  .thread-reply-rail {
+    position: relative;
+    min-height: 1.5rem;
+  }
+
+  .thread-reply-elbow {
+    position: absolute;
+    top: 0.85rem;
+    left: -1.15rem;
+    width: 1.5rem;
+    height: 0.75rem;
+    border-left: 2px solid var(--border-default);
+    border-bottom: 2px solid var(--border-default);
+    border-bottom-left-radius: var(--radius-sm);
+  }
+
+  .thread-reply-content {
+    min-width: 0;
+    padding: var(--focus-detail-space-xs, 0.46rem) 0;
+  }
+
+  .thread-reply-header {
+    min-width: 0;
+  }
+
   .event-actions {
     position: absolute;
     top: var(--focus-detail-space-xs, 0.46rem);
@@ -669,6 +818,10 @@
 
   .event-body.markdown-body {
     white-space: normal;
+  }
+
+  .event-body--nested {
+    padding-left: 0;
   }
 
   .edit-panel {

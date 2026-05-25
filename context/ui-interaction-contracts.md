@@ -91,6 +91,22 @@ Not every visibility control means "remove this entity entirely."
 - Empty states should make it clear when filters, not missing data, are hiding
   results.
 
+## Threaded Comments
+
+Threaded comment rendering must preserve both timeline recency and reply
+context.
+
+- In reverse-chronological timelines, a thread is positioned where its newest
+  visible event would have appeared.
+- Inside that thread, render the main/root comment first, then threaded replies
+  underneath in reverse-chronological order: newest reply, then the reply before
+  that, and so on.
+- Do not flatten same-`discussion_id` comments into separate top-level timeline
+  items when the surrounding UI is meant to show comment conversations.
+- This contract should also guide future diff-comment UI: inline diff threads
+  can anchor to a file/line position, but their compact timeline summaries
+  should still use root-comment context plus newest-first replies.
+
 ## Optional Metadata Controls
 
 Optional metadata must not reserve empty rows or placeholders when absent. Put

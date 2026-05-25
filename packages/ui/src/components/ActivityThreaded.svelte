@@ -463,6 +463,7 @@
   class="threaded-view"
   class:threaded-view--compact={compact}
   class:threaded-view--grouped={grouping.getGroupByRepo()}
+  class:threaded-view--hide-org={grouping.getHideOrgName()}
 >
   {#each grouped as repoGroup (repoGroup.key)}
     <div class="repo-section">
@@ -602,9 +603,13 @@
     flex: 1;
     overflow-y: auto;
     padding: 0 16px;
-    --threaded-col-type: 84px;
-    --threaded-col-repo: 180px;
-    --threaded-col-author: 110px;
+    --threaded-col-type: 76px;
+    --threaded-col-repo: 168px;
+    --threaded-col-author: 88px;
+  }
+
+  .threaded-view--hide-org {
+    --threaded-col-repo: 116px;
   }
 
   .threaded-view--grouped {
@@ -612,9 +617,13 @@
   }
 
   .threaded-view--compact {
-    --threaded-col-type: 76px;
-    --threaded-col-repo: 110px;
-    --threaded-col-author: 88px;
+    --threaded-col-type: 70px;
+    --threaded-col-repo: 112px;
+    --threaded-col-author: 72px;
+  }
+
+  .threaded-view--compact.threaded-view--hide-org {
+    --threaded-col-repo: 80px;
   }
 
   .threaded-view--compact.threaded-view--grouped {
@@ -658,7 +667,7 @@
       minmax(0, 1fr)
       auto;
     align-items: center;
-    column-gap: 8px;
+    column-gap: 6px;
     padding: 5px 0 5px 6px;
     cursor: pointer;
     border-bottom: 1px solid var(--border-muted);

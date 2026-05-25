@@ -1426,15 +1426,12 @@ func (s *Server) replyToDiscussion(ctx context.Context, input *replyToDiscussion
 
 	// Verify the MR exists locally before calling the provider to avoid
 	// creating upstream replies for untracked or non-existent PRs.
-	ref := repoNumberPathRef{
-		owner:        repo.Owner,
-		name:         repo.Name,
-		number:       input.Number,
-		platformHost: repo.PlatformHost,
-	}
-	mrID, err := s.lookupMRID(ctx, ref)
+	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
-		return nil, problemNotFound(CodePullNotFound, err.Error(), nil)
+		return nil, problemInternal("get pull request failed")
+	}
+	if mr == nil {
+		return nil, problemNotFound(CodePullNotFound, "pull request not found", nil)
 	}
 
 	provider, err := s.syncer.Registry().Provider(repoProviderKind(*repo), repoProviderHost(*repo))
@@ -1462,10 +1459,10 @@ func (s *Server) replyToDiscussion(ctx context.Context, input *replyToDiscussion
 		)
 	}
 
-	event := platform.DBMREvent(mrID, platformEvent)
+	event := platform.DBMREvent(mr.ID, platformEvent)
 	if err := s.db.UpsertMREvents(ctx, []db.MREvent{event}); err != nil {
 		slog.ErrorContext(ctx, "failed to persist discussion reply event",
-			"mr_id", mrID, "discussion_id", input.DiscussionID, "error", err)
+			"mr_id", mr.ID, "discussion_id", input.DiscussionID, "error", err)
 		return nil, problemInternal("failed to persist reply event")
 	}
 
@@ -1491,15 +1488,12 @@ func (s *Server) resolveDiscussion(ctx context.Context, input *resolveDiscussion
 
 	// Verify the MR exists locally before calling the provider to avoid
 	// resolving discussions on untracked or non-existent PRs.
-	ref := repoNumberPathRef{
-		owner:        repo.Owner,
-		name:         repo.Name,
-		number:       input.Number,
-		platformHost: repo.PlatformHost,
-	}
-	mrID, err := s.lookupMRID(ctx, ref)
+	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
-		return nil, problemNotFound(CodePullNotFound, err.Error(), nil)
+		return nil, problemInternal("get pull request failed")
+	}
+	if mr == nil {
+		return nil, problemNotFound(CodePullNotFound, "pull request not found", nil)
 	}
 
 	provider, err := s.syncer.Registry().Provider(repoProviderKind(*repo), repoProviderHost(*repo))
@@ -1527,9 +1521,9 @@ func (s *Server) resolveDiscussion(ctx context.Context, input *resolveDiscussion
 	}
 
 	// Update local discussion events' resolved state to keep dashboard in sync.
-	if err := s.db.UpdateThreadResolved(ctx, mrID, input.DiscussionID, input.Body.Resolved); err != nil {
+	if err := s.db.UpdateThreadResolved(ctx, mr.ID, input.DiscussionID, input.Body.Resolved); err != nil {
 		slog.ErrorContext(ctx, "failed to update local discussion resolved state",
-			"mr_id", mrID, "discussion_id", input.DiscussionID, "error", err)
+			"mr_id", mr.ID, "discussion_id", input.DiscussionID, "error", err)
 		// Don't fail the request since the upstream mutation succeeded;
 		// the state will be corrected on the next sync.
 	}

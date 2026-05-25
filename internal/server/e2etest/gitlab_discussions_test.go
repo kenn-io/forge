@@ -528,7 +528,30 @@ func TestReplyToDiscussionE2E(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(dbRepo)
 
-	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
+	collidingRepoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
+		Platform:     "github",
+		PlatformHost: "gitlab.com",
+		Owner:        "acme",
+		Name:         "widget",
+		RepoPath:     "acme/widget",
+	})
+	require.NoError(err)
+
+	collidingMRID, err := database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:         collidingRepoID,
+		PlatformID:     9001,
+		Number:         7,
+		URL:            "https://gitlab.com/acme/widget/pull/7",
+		Title:          "Colliding PR",
+		Author:         "author",
+		State:          "open",
+		CreatedAt:      time.Now().UTC(),
+		UpdatedAt:      time.Now().UTC(),
+		LastActivityAt: time.Now().UTC(),
+	})
+	require.NoError(err)
+
+	mrID, err := database.UpsertMergeRequest(ctx, &db.MergeRequest{
 		RepoID:         dbRepo.ID,
 		PlatformID:     1001,
 		Number:         7,
@@ -577,6 +600,15 @@ func TestReplyToDiscussionE2E(t *testing.T) {
 	assert.Equal("This is my reply", result.Body)
 	require.NotNil(result.ThreadID)
 	assert.Equal(threadID, *result.ThreadID)
+
+	gitlabEvents, err := database.ListMREvents(ctx, mrID)
+	require.NoError(err)
+	require.Len(gitlabEvents, 1)
+	assert.Equal("This is my reply", gitlabEvents[0].Body)
+
+	collidingEvents, err := database.ListMREvents(ctx, collidingMRID)
+	require.NoError(err)
+	require.Empty(collidingEvents)
 }
 
 func TestReplyToDiscussionRejectsInvalidThreadID(t *testing.T) {
@@ -966,6 +998,29 @@ func TestResolveDiscussionUpdatesLocalState(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(dbRepo)
 
+	collidingRepoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
+		Platform:     "github",
+		PlatformHost: "gitlab.com",
+		Owner:        "acme",
+		Name:         "widget",
+		RepoPath:     "acme/widget",
+	})
+	require.NoError(err)
+
+	collidingMRID, err := database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:         collidingRepoID,
+		PlatformID:     9001,
+		Number:         7,
+		URL:            "https://gitlab.com/acme/widget/pull/7",
+		Title:          "Colliding PR",
+		Author:         "author",
+		State:          "open",
+		CreatedAt:      time.Now().UTC(),
+		UpdatedAt:      time.Now().UTC(),
+		LastActivityAt: time.Now().UTC(),
+	})
+	require.NoError(err)
+
 	mrID, err := database.UpsertMergeRequest(ctx, &db.MergeRequest{
 		RepoID:         dbRepo.ID,
 		PlatformID:     1001,
@@ -1002,6 +1057,20 @@ func TestResolveDiscussionUpdatesLocalState(t *testing.T) {
 	require.Len(events, 1)
 	assert.False(events[0].Resolved)
 
+	collidingPlatformID := int64(901)
+	require.NoError(database.UpsertMREvents(ctx, []db.MREvent{{
+		MergeRequestID: collidingMRID,
+		PlatformID:     &collidingPlatformID,
+		EventType:      "issue_comment",
+		Author:         "reviewer",
+		Body:           "same thread id in colliding repo",
+		CreatedAt:      time.Now().UTC(),
+		DedupeKey:      "colliding-note-901",
+		ThreadID:       &threadID,
+		Resolvable:     true,
+		Resolved:       false,
+	}}))
+
 	// Resolve the discussion
 	body := `{"resolved":true}`
 	req := httptest.NewRequest(
@@ -1020,6 +1089,11 @@ func TestResolveDiscussionUpdatesLocalState(t *testing.T) {
 	require.NoError(err)
 	require.Len(events, 1)
 	assert.True(events[0].Resolved, "local event should be marked as resolved")
+
+	collidingEvents, err := database.ListMREvents(ctx, collidingMRID)
+	require.NoError(err)
+	require.Len(collidingEvents, 1)
+	assert.False(collidingEvents[0].Resolved, "colliding provider event should not be updated")
 
 	// Now unresolve it
 	body = `{"resolved":false}`

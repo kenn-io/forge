@@ -649,8 +649,15 @@
     --threaded-col-author-max: 96px;
   }
 
+  /* Sections are subgrids of the view so all sections share one column
+   * track set (so the column headers' widths line up with every section),
+   * and each section is a real box so its sticky repo header is bounded
+   * by section contents instead of competing with other sections' sticky
+   * headers for the same top: 26px slot. */
   .repo-section {
-    display: contents;
+    display: grid;
+    grid-template-columns: subgrid;
+    grid-column: 1 / -1;
   }
 
   .repo-header {
@@ -862,6 +869,7 @@
   }
 
   .empty-state {
+    grid-column: 1 / -1;
     padding: 40px;
     text-align: center;
     color: var(--text-muted);

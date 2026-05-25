@@ -463,7 +463,6 @@
   class="threaded-view"
   class:threaded-view--compact={compact}
   class:threaded-view--grouped={grouping.getGroupByRepo()}
-  class:threaded-view--hide-org={grouping.getHideOrgName()}
 >
   {#each grouped as repoGroup (repoGroup.key)}
     <div class="repo-section">
@@ -603,38 +602,46 @@
     flex: 1;
     overflow-y: auto;
     padding: 0 16px;
-    --threaded-col-type: 76px;
-    --threaded-col-repo: 168px;
-    --threaded-col-author: 88px;
-  }
-
-  .threaded-view--hide-org {
-    --threaded-col-repo: 116px;
-  }
-
-  .threaded-view--grouped {
-    --threaded-col-repo: 0px;
+    --threaded-col-repo-max: 220px;
+    --threaded-col-author-max: 140px;
   }
 
   .threaded-view--compact {
-    --threaded-col-type: 70px;
-    --threaded-col-repo: 112px;
-    --threaded-col-author: 72px;
+    --threaded-col-repo-max: 140px;
+    --threaded-col-author-max: 96px;
   }
 
-  .threaded-view--compact.threaded-view--hide-org {
-    --threaded-col-repo: 80px;
-  }
-
-  .threaded-view--compact.threaded-view--grouped {
-    --threaded-col-repo: 0px;
-  }
-
+  /* The section is the grid container so every `.item-row` inside shares
+   * column widths. Each non-fixed column uses `fit-content(...)` so it
+   * sizes to its widest cell content, capped to a sensible maximum. Long
+   * repo names expand the project column up to its cap; hiding the org
+   * name shrinks the column automatically because the cell content is
+   * shorter. */
   .repo-section {
+    display: grid;
+    grid-template-columns:
+      18px
+      fit-content(120px)
+      fit-content(var(--threaded-col-repo-max))
+      fit-content(var(--threaded-col-author-max))
+      minmax(0, 1fr)
+      auto;
+    column-gap: 6px;
     margin-bottom: 4px;
   }
 
+  .threaded-view--grouped .repo-section {
+    grid-template-columns:
+      18px
+      fit-content(120px)
+      fit-content(var(--threaded-col-author-max))
+      minmax(0, 1fr)
+      auto;
+    padding-left: 18px;
+  }
+
   .repo-header {
+    grid-column: 1 / -1;
     display: flex;
     align-items: center;
     gap: 8px;
@@ -659,29 +666,13 @@
 
   .item-row {
     display: grid;
-    grid-template-columns:
-      18px
-      var(--threaded-col-type)
-      minmax(0, var(--threaded-col-repo))
-      minmax(0, var(--threaded-col-author))
-      minmax(0, 1fr)
-      auto;
+    grid-template-columns: subgrid;
+    grid-column: 1 / -1;
     align-items: center;
-    column-gap: 6px;
-    padding: 5px 0 5px 6px;
+    padding: 5px 0;
     cursor: pointer;
     border-bottom: 1px solid var(--border-muted);
     transition: background 0.1s;
-  }
-
-  .threaded-view--grouped .item-row {
-    grid-template-columns:
-      18px
-      var(--threaded-col-type)
-      minmax(0, var(--threaded-col-author))
-      minmax(0, 1fr)
-      auto;
-    padding-left: 24px;
   }
 
   .item-row:hover {
@@ -775,6 +766,7 @@
   }
 
   .event-row {
+    grid-column: 1 / -1;
     display: flex;
     align-items: center;
     gap: 8px;

@@ -261,6 +261,9 @@ describe("EventTimeline", () => {
   });
 
   it("renders cross-repository events as internal item references when metadata identifies the source item", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2024-06-01T16:00:00Z"));
+
     render(EventTimeline, {
       props: {
         events: [
@@ -268,6 +271,7 @@ describe("EventTimeline", () => {
             ID: 4,
             EventType: "cross_referenced",
             Summary: "Referenced from kenn-io/kit#1",
+            CreatedAt: "2024-06-01T14:00:00Z",
             MetadataJSON: JSON.stringify({
               source_type: "PullRequest",
               source_owner: "kenn-io",
@@ -301,6 +305,7 @@ describe("EventTimeline", () => {
     assert(link.getAttribute("data-repo-path")).toBe("kenn-io/kit");
     assert(link.getAttribute("data-number")).toBe("1");
     assert(link.getAttribute("data-external-url")).toBe("https://github.com/kenn-io/kit/pull/1");
+    assert(screen.getByText("2h ago")).toBeTruthy();
   });
 
   it("keeps external cross-reference links when item metadata is incomplete", () => {

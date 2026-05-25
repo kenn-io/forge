@@ -452,6 +452,52 @@ test("stack rail spans wrapped CI badges at narrow widths", async ({ page }) => 
   expect(currentLineBox!.y + currentLineBox!.height).toBeGreaterThanOrEqual(
     currentBadgesBox!.y + currentBadgesBox!.height - 1,
   );
+  const containerQueryEvidence = await page.evaluate(() => {
+    function collectRules(ruleList: CSSRuleList): string[] {
+      return Array.from(ruleList).flatMap((rule) => {
+        const nested = "cssRules" in rule
+          ? collectRules((rule as CSSGroupingRule).cssRules)
+          : [];
+        return [rule.cssText, ...nested];
+      });
+    }
+    const rules = Array.from(document.styleSheets).flatMap((sheet) => {
+      try {
+        return collectRules(sheet.cssRules);
+      } catch {
+        return [];
+      }
+    });
+    return {
+      hasExpectedContainerRule: rules.some((rule) =>
+        rule.includes("@container pull-detail")
+          && rule.includes("max-width: 440px")
+          && rule.includes(".stack-row")
+      ),
+      hasMalformedRule: rules.some((rule) =>
+        rule.includes("@frontend/src/lib/stores/container.svelte.ts")
+      ),
+    };
+  });
+  expect(containerQueryEvidence).toEqual({
+    hasExpectedContainerRule: true,
+    hasMalformedRule: false,
+  });
+  const narrowStyles = await currentRow.evaluate((row) => {
+    const badges = row.querySelector(".stack-badges");
+    if (!badges) return null;
+    const rowStyle = getComputedStyle(row);
+    const badgeStyle = getComputedStyle(badges);
+    return {
+      rowGridColumns: rowStyle.gridTemplateColumns,
+      badgesGridColumnStart: badgeStyle.gridColumnStart,
+      badgesGridRowStart: badgeStyle.gridRowStart,
+    };
+  });
+  expect(narrowStyles).not.toBeNull();
+  expect(narrowStyles!.rowGridColumns.trim().split(/\s+/)).toHaveLength(2);
+  expect(narrowStyles!.badgesGridColumnStart).toBe("2");
+  expect(narrowStyles!.badgesGridRowStart).toBe("2");
   const railColors = await currentRow.evaluate((row) => {
     const line = row.querySelector(".stack-line");
     const panel = row.closest(".stack-panel");

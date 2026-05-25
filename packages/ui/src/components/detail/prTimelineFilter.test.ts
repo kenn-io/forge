@@ -39,6 +39,7 @@ describe("prTimelineFilter", () => {
   it("persists valid filter state to localStorage", () => {
     savePRTimelineFilter({
       showMessages: false,
+      showReplies: true,
       showCommitDetails: true,
       showEvents: true,
       showForcePushes: false,
@@ -47,6 +48,7 @@ describe("prTimelineFilter", () => {
 
     expect(loadPRTimelineFilter()).toEqual({
       showMessages: false,
+      showReplies: true,
       showCommitDetails: true,
       showEvents: true,
       showForcePushes: false,
@@ -65,6 +67,7 @@ describe("prTimelineFilter", () => {
       "middleman-pr-timeline-filter",
       JSON.stringify({
         showMessages: "false",
+        showReplies: false,
         showCommitDetails: false,
         showEvents: 0,
         showForcePushes: true,
@@ -74,6 +77,7 @@ describe("prTimelineFilter", () => {
 
     expect(loadPRTimelineFilter()).toEqual({
       showMessages: true,
+      showReplies: false,
       showCommitDetails: false,
       showEvents: true,
       showForcePushes: true,
@@ -155,6 +159,7 @@ describe("prTimelineFilter", () => {
     expect(
       filterPREvents(events, {
         showMessages: true,
+        showReplies: true,
         showCommitDetails: false,
         showEvents: true,
         showForcePushes: true,
@@ -175,6 +180,7 @@ describe("prTimelineFilter", () => {
     expect(
       filterPREvents(events, {
         showMessages: true,
+        showReplies: true,
         showCommitDetails: false,
         showEvents: true,
         showForcePushes: false,
@@ -183,17 +189,57 @@ describe("prTimelineFilter", () => {
     ).toEqual([1, 3, 5]);
   });
 
+  it("filters threaded replies while keeping the root comment", () => {
+    const events = [
+      event({
+        ID: 3,
+        EventType: "issue_comment",
+        Body: "new reply",
+        DiscussionID: "disc-1",
+      }),
+      event({
+        ID: 2,
+        EventType: "issue_comment",
+        Body: "old reply",
+        DiscussionID: "disc-1",
+      }),
+      event({
+        ID: 1,
+        EventType: "issue_comment",
+        Body: "root",
+        DiscussionID: "disc-1",
+      }),
+      event({
+        ID: 4,
+        EventType: "issue_comment",
+        Body: "standalone",
+      }),
+    ];
+
+    expect(
+      filterPREvents(events, {
+        showMessages: true,
+        showReplies: false,
+        showCommitDetails: true,
+        showEvents: true,
+        showForcePushes: true,
+        hideBots: false,
+      }).map((item) => item.ID),
+    ).toEqual([1, 4]);
+  });
+
   it("counts active timeline filters", () => {
     expect(activePRTimelineFilterCount(DEFAULT_PR_TIMELINE_FILTER)).toBe(0);
     expect(
       activePRTimelineFilterCount({
         showMessages: false,
+        showReplies: false,
         showCommitDetails: true,
         showEvents: false,
         showForcePushes: true,
         hideBots: true,
       }),
-    ).toBe(3);
+    ).toBe(4);
   });
 });
 
@@ -253,6 +299,7 @@ describe("PRTimelineFilter", () => {
     await fireEvent.click(screen.getByRole("button", { name: /filters/i }));
 
     expect(screen.getByRole("button", { name: /messages/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /replies/i })).toBeTruthy();
     expect(
       screen.getByRole("button", { name: /commit details/i }),
     ).toBeTruthy();

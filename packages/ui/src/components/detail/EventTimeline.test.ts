@@ -173,6 +173,40 @@ describe("EventTimeline", () => {
     );
   });
 
+  it("can collapse and expand threaded replies", async () => {
+    const { container } = render(EventTimeline, {
+      props: {
+        events: [
+          makeEvent({
+            ID: 2,
+            EventType: "issue_comment",
+            Author: "root",
+            Body: "Threaded reply",
+            DiscussionID: "disc-1",
+            CreatedAt: "2024-06-01T12:01:00Z",
+          }),
+          makeEvent({
+            ID: 1,
+            EventType: "issue_comment",
+            Author: "root",
+            Body: "Main threaded comment",
+            DiscussionID: "disc-1",
+            CreatedAt: "2024-06-01T12:00:00Z",
+          }),
+        ],
+      },
+    });
+
+    expect(container.querySelectorAll(".thread-reply")).toHaveLength(1);
+
+    await fireEvent.click(screen.getByRole("button", { name: /hide 1 reply/i }));
+    expect(container.querySelectorAll(".thread-reply")).toHaveLength(0);
+    expect(screen.getByRole("button", { name: /show 1 reply/i })).toBeTruthy();
+
+    await fireEvent.click(screen.getByRole("button", { name: /show 1 reply/i }));
+    expect(container.querySelectorAll(".thread-reply")).toHaveLength(1);
+  });
+
   it("renders commit events as expanded commit detail rows", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2024-06-01T16:00:00Z"));

@@ -2,6 +2,7 @@ import type { PREvent } from "../../api/types.js";
 
 export interface PRTimelineFilterState {
   showMessages: boolean;
+  showReplies: boolean;
   showCommitDetails: boolean;
   showEvents: boolean;
   showForcePushes: boolean;
@@ -18,6 +19,7 @@ export const PR_TIMELINE_FILTER_STORAGE_KEY = "middleman-pr-timeline-filter";
 
 export const DEFAULT_PR_TIMELINE_FILTER: PRTimelineFilterState = {
   showMessages: true,
+  showReplies: true,
   showCommitDetails: true,
   showEvents: true,
   showForcePushes: true,
@@ -29,6 +31,16 @@ const BOT_SUFFIXES = ["[bot]", "-bot", "bot"];
 export function isBotAuthor(author: string): boolean {
   const lower = author.toLowerCase();
   return BOT_SUFFIXES.some((suffix) => lower.endsWith(suffix));
+}
+
+function eventSortValue(event: PREvent): number {
+  const timestamp = Date.parse(event.CreatedAt);
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function isEarlierEvent(a: PREvent, b: PREvent): boolean {
+  return eventSortValue(a) < eventSortValue(b) ||
+    (eventSortValue(a) === eventSortValue(b) && a.ID < b.ID);
 }
 
 export function timelineEventBucket(event: PREvent): PRTimelineEventBucket {
@@ -64,6 +76,10 @@ function normalizeFilter(value: unknown): PRTimelineFilterState {
     showCommitDetails: booleanOrDefault(
       persisted.showCommitDetails,
       DEFAULT_PR_TIMELINE_FILTER.showCommitDetails,
+    ),
+    showReplies: booleanOrDefault(
+      persisted.showReplies,
+      DEFAULT_PR_TIMELINE_FILTER.showReplies,
     ),
     showEvents: booleanOrDefault(
       persisted.showEvents,
@@ -105,8 +121,29 @@ export function filterPREvents(
   events: PREvent[],
   filter: PRTimelineFilterState,
 ): PREvent[] {
+  const discussionRoots = new Map<string, PREvent>();
+  for (const event of events) {
+    if (
+      !event.DiscussionID ||
+      !["issue_comment", "review", "review_comment"].includes(event.EventType)
+    ) {
+      continue;
+    }
+    const currentRoot = discussionRoots.get(event.DiscussionID);
+    if (currentRoot === undefined || isEarlierEvent(event, currentRoot)) {
+      discussionRoots.set(event.DiscussionID, event);
+    }
+  }
+
   return events.filter((event) => {
     if (filter.hideBots && isBotAuthor(event.Author)) return false;
+    if (
+      !filter.showReplies &&
+      event.DiscussionID &&
+      discussionRoots.get(event.DiscussionID)?.ID !== event.ID
+    ) {
+      return false;
+    }
     switch (timelineEventBucket(event)) {
       case "messages":
         return filter.showMessages;
@@ -125,6 +162,7 @@ export function activePRTimelineFilterCount(
 ): number {
   return [
     !filter.showMessages,
+    !filter.showReplies,
     !filter.showCommitDetails,
     !filter.showEvents,
     !filter.showForcePushes,

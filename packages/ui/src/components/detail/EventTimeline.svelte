@@ -1,5 +1,7 @@
 <script lang="ts">
   import CheckIcon from "@lucide/svelte/icons/check";
+  import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
+  import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
   import CopyIcon from "@lucide/svelte/icons/copy";
   import PencilIcon from "@lucide/svelte/icons/pencil";
   import XIcon from "@lucide/svelte/icons/x";
@@ -242,6 +244,7 @@
   let editDraft = $state("");
   let savingEditId = $state<number | null>(null);
   let editError = $state<string | null>(null);
+  let collapsedDiscussions = $state<string[]>([]);
 
   function canEditComment(event: PREvent | IssueEvent): boolean {
     return (
@@ -263,6 +266,21 @@
     editingId = null;
     editDraft = "";
     editError = null;
+  }
+
+  function threadID(entry: TimelineEntry): string {
+    return entry.discussionID ?? String(entry.event.ID);
+  }
+
+  function isThreadCollapsed(entry: TimelineEntry): boolean {
+    return collapsedDiscussions.includes(threadID(entry));
+  }
+
+  function toggleThread(entry: TimelineEntry): void {
+    const id = threadID(entry);
+    collapsedDiscussions = collapsedDiscussions.includes(id)
+      ? collapsedDiscussions.filter((item) => item !== id)
+      : [...collapsedDiscussions, id];
   }
 
   async function saveEdit(event: PREvent | IssueEvent): Promise<void> {
@@ -523,25 +541,47 @@
             {/if}
             {@render eventBody(event)}
             {#if entry.replies.length > 0}
-              <ol class="thread-replies" aria-label="Threaded replies">
-                {#each entry.replies as reply (reply.ID)}
-                  <li class="thread-reply">
-                    <div class="thread-reply-rail" aria-hidden="true">
-                      <span class="thread-reply-elbow"></span>
-                    </div>
-                    <div class="thread-reply-content">
-                      <div class="event-header thread-reply-header">
-                        <span class="event-type">Reply</span>
-                        {#if reply.Author}
-                          <span class="event-author">{reply.Author}</span>
-                        {/if}
-                        <span class="event-time">{timeAgo(reply.CreatedAt)}</span>
+              <div class="thread-controls">
+                <button
+                  class="thread-toggle"
+                  type="button"
+                  onclick={() => toggleThread(entry)}
+                  aria-expanded={!isThreadCollapsed(entry)}
+                >
+                  {#if isThreadCollapsed(entry)}
+                    <ChevronRightIcon size={14} />
+                    Show {entry.replies.length} {entry.replies.length === 1 ? "reply" : "replies"}
+                  {:else}
+                    <ChevronDownIcon size={14} />
+                    Hide {entry.replies.length} {entry.replies.length === 1 ? "reply" : "replies"}
+                  {/if}
+                </button>
+              </div>
+              {#if !isThreadCollapsed(entry)}
+                <ol class="thread-replies" aria-label="Threaded replies">
+                  {#each entry.replies as reply, index (reply.ID)}
+                    <li
+                      class="thread-reply"
+                      class:thread-reply--first={index === 0}
+                      class:thread-reply--last={index === entry.replies.length - 1}
+                    >
+                      <div class="thread-reply-rail" aria-hidden="true">
+                        <span class="thread-reply-tick"></span>
                       </div>
-                      {@render eventBody(reply, true)}
-                    </div>
-                  </li>
-                {/each}
-              </ol>
+                      <div class="thread-reply-content">
+                        <div class="event-header thread-reply-header">
+                          <span class="event-type">Reply</span>
+                          {#if reply.Author}
+                            <span class="event-author">{reply.Author}</span>
+                          {/if}
+                          <span class="event-time">{timeAgo(reply.CreatedAt)}</span>
+                        </div>
+                        {@render eventBody(reply, true)}
+                      </div>
+                    </li>
+                  {/each}
+                </ol>
+              {/if}
             {/if}
           </div>
         {/if}
@@ -713,14 +753,34 @@
     margin-top: 0.15rem;
   }
 
+  .thread-controls {
+    margin-top: var(--focus-detail-space-sm, 0.62rem);
+  }
+
+  .thread-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    min-height: 1.75rem;
+    padding: 0.18rem 0.45rem 0.18rem 0.25rem;
+    border-radius: var(--radius-sm);
+    color: var(--accent-blue);
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+  }
+
+  .thread-toggle:hover {
+    background: var(--bg-surface-hover);
+    color: var(--text-primary);
+  }
+
   .thread-replies {
     list-style: none;
     display: flex;
     flex-direction: column;
     gap: 0.18rem;
-    margin-top: var(--focus-detail-space-sm, 0.62rem);
+    margin-top: 0.2rem;
     padding-left: 0;
-    border-left: 2px solid var(--border-default);
   }
 
   .thread-reply {
@@ -735,7 +795,28 @@
     min-height: 1.5rem;
   }
 
-  .thread-reply-elbow {
+  .thread-reply-rail::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    border-left: 2px solid var(--border-default);
+  }
+
+  .thread-reply--first .thread-reply-rail::before {
+    top: 0.74rem;
+  }
+
+  .thread-reply--last .thread-reply-rail::before {
+    bottom: calc(100% - 0.74rem);
+  }
+
+  .thread-reply--first.thread-reply--last .thread-reply-rail::before {
+    display: none;
+  }
+
+  .thread-reply-tick {
     position: absolute;
     top: 0.74rem;
     left: 0;
@@ -751,6 +832,14 @@
 
   .thread-reply-header {
     min-width: 0;
+  }
+
+  .thread-reply-header .event-type {
+    color: var(--accent-blue);
+  }
+
+  .thread-reply-header .event-author {
+    color: var(--text-secondary);
   }
 
   .event-actions {

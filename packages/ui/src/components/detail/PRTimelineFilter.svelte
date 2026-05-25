@@ -31,6 +31,13 @@
           onSelect: () => update({ showMessages: !filter.showMessages }),
         },
         {
+          id: "replies",
+          label: "Replies",
+          active: filter.showReplies,
+          color: "var(--accent-purple)",
+          onSelect: () => update({ showReplies: !filter.showReplies }),
+        },
+        {
           id: "commit-details",
           label: "Commit details",
           active: filter.showCommitDetails,

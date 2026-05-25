@@ -778,7 +778,7 @@
     list-style: none;
     display: flex;
     flex-direction: column;
-    gap: 0.18rem;
+    gap: 0;
     margin-top: 0.2rem;
     padding-left: 0;
   }
@@ -793,8 +793,9 @@
   .thread-reply-rail {
     position: relative;
     min-height: 1.5rem;
-    --thread-dot-center-y: 0.74rem;
+    --thread-dot-top: 0.2rem;
     --thread-dot-size: 0.5rem;
+    --thread-dot-center-y: calc(var(--thread-dot-top) + var(--thread-dot-size) / 2);
   }
 
   .thread-reply-rail::before {
@@ -820,7 +821,7 @@
 
   .thread-reply-dot {
     position: absolute;
-    top: calc(var(--thread-dot-center-y) - var(--thread-dot-size) / 2);
+    top: var(--thread-dot-top);
     left: 0;
     width: var(--thread-dot-size);
     height: var(--thread-dot-size);

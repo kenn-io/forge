@@ -788,14 +788,15 @@
     grid-template-columns: 1.35rem minmax(0, 1fr);
     column-gap: 0;
     min-width: 0;
+    --thread-reply-header-padding-block: 0.18rem;
+    --thread-reply-header-line-height: 1.15rem;
   }
 
   .thread-reply-rail {
     position: relative;
     min-height: 1.5rem;
-    --thread-dot-top: 0.2rem;
     --thread-dot-size: 0.5rem;
-    --thread-dot-center-y: calc(var(--thread-dot-top) + var(--thread-dot-size) / 2);
+    --thread-dot-center-y: calc(var(--thread-reply-header-padding-block) + 0.575rem);
   }
 
   .thread-reply-rail::before {
@@ -823,7 +824,7 @@
 
   .thread-reply-dot {
     position: absolute;
-    top: var(--thread-dot-top);
+    top: calc(var(--thread-dot-center-y) - var(--thread-dot-size) / 2);
     left: 0;
     width: var(--thread-dot-size);
     height: var(--thread-dot-size);
@@ -835,11 +836,13 @@
 
   .thread-reply-content {
     min-width: 0;
-    padding: 0.18rem 0;
+    padding: var(--thread-reply-header-padding-block) 0;
   }
 
   .thread-reply-header {
     min-width: 0;
+    min-height: var(--thread-reply-header-line-height);
+    align-items: center;
   }
 
   .thread-reply-header .event-type {

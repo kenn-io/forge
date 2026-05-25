@@ -710,23 +710,23 @@
   }
 
   .event-body-wrap--nested {
-    margin-top: var(--focus-detail-space-xs, 0.31rem);
+    margin-top: 0.15rem;
   }
 
   .thread-replies {
     list-style: none;
     display: flex;
     flex-direction: column;
-    gap: var(--focus-detail-space-sm, 0.62rem);
-    margin-top: var(--focus-detail-space-md, 1rem);
-    padding-left: var(--focus-detail-space-md, 1.15rem);
+    gap: 0.18rem;
+    margin-top: var(--focus-detail-space-sm, 0.62rem);
+    padding-left: 0;
     border-left: 2px solid var(--border-default);
   }
 
   .thread-reply {
     display: grid;
-    grid-template-columns: 1rem minmax(0, 1fr);
-    column-gap: var(--focus-detail-space-xs, 0.46rem);
+    grid-template-columns: 1.7rem minmax(0, 1fr);
+    column-gap: 0;
     min-width: 0;
   }
 
@@ -737,18 +737,16 @@
 
   .thread-reply-elbow {
     position: absolute;
-    top: 0.85rem;
-    left: -1.15rem;
-    width: 1.5rem;
-    height: 0.75rem;
-    border-left: 2px solid var(--border-default);
-    border-bottom: 2px solid var(--border-default);
-    border-bottom-left-radius: var(--radius-sm);
+    top: 0.74rem;
+    left: 0;
+    width: 1.35rem;
+    height: 0;
+    border-top: 2px solid var(--border-default);
   }
 
   .thread-reply-content {
     min-width: 0;
-    padding: var(--focus-detail-space-xs, 0.46rem) 0;
+    padding: 0.18rem 0;
   }
 
   .thread-reply-header {
@@ -821,7 +819,8 @@
   }
 
   .event-body--nested {
-    padding-left: 0;
+    padding: 0.12rem calc(var(--focus-detail-hit-target, 2rem) + var(--focus-detail-space-sm, 0.62rem)) 0.15rem 0;
+    line-height: 1.25;
   }
 
   .edit-panel {

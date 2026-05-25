@@ -525,6 +525,32 @@ test.describe("activity split view and detail drawers", () => {
     await page.unrouteAll({ behavior: "ignoreErrors" });
   });
 
+  test("compact flat activity rows respect hide org name", async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.removeItem("middleman:hideOrgName");
+    });
+    await page.goto("/?view=flat");
+    await waitForActivityTable(page);
+
+    await openActivityPRSplit(page);
+
+    const row = page.locator(".activity-compact-row", {
+      has: page.locator(".compact-title", { hasText: "Add widget caching layer" }),
+    }).first();
+    await expect(row).toBeVisible();
+
+    const repoLabel = row.locator(".compact-meta > span").first();
+    await expect(repoLabel).toHaveText("acme/widgets");
+
+    await page.locator(".activity-feed .filter-btn", { hasText: "View" }).click();
+    await page.locator(".activity-feed .filter-dropdown .filter-item", {
+      hasText: "Hide org name",
+    }).click();
+
+    await expect(repoLabel).toHaveText("widgets");
+    await expect(repoLabel).not.toHaveText("acme/widgets");
+  });
+
   test("Activity PR switching uses background sync without foreground fanout", async ({ page }) => {
     const detailBodies = new Map<string, string>();
     const detailGets = new Map<string, number>();

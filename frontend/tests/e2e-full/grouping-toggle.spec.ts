@@ -182,6 +182,23 @@ test.describe("grouping toggle", () => {
       .toBeVisible();
   });
 
+  test("activity flat table rows respect hide org name", async ({ page }) => {
+    await page.goto("/?view=flat");
+
+    const row = page.locator(".activity-table tbody .activity-row", {
+      has: page.locator(".item-title", { hasText: "Add widget caching layer" }),
+    }).first();
+    await expect(row).toBeVisible({ timeout: 10_000 });
+
+    const repoLabel = row.locator(".col-repo");
+    await expect(repoLabel).toHaveText("acme/widgets");
+
+    await selectActivityViewItem(page, "Hide org name");
+
+    await expect(repoLabel).toHaveText("widgets");
+    await expect(repoLabel).not.toHaveText("acme/widgets");
+  });
+
   test("activity threaded grouped headers respect hide org name", async ({ page }) => {
     await page.goto("/");
 

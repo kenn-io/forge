@@ -40,6 +40,10 @@ function branchActivityItem(
 
 const items = vi.hoisted(() => ({ value: [] as ActivityItem[] }));
 const onSelectItem = vi.hoisted(() => vi.fn());
+const hideOrgName = vi.hoisted(() => ({ value: false }));
+const setHideOrgName = vi.hoisted(() => vi.fn((value: boolean) => {
+  hideOrgName.value = value;
+}));
 
 vi.mock("../context.js", () => ({
   getStores: () => ({
@@ -76,13 +80,19 @@ vi.mock("../context.js", () => ({
     sync: {
       subscribeSyncComplete: vi.fn(() => () => undefined),
     },
+    grouping: {
+      getHideOrgName: () => hideOrgName.value,
+      setHideOrgName,
+    },
   }),
 }));
 
 describe("MobileActivityView branch activity", () => {
   beforeEach(() => {
     items.value = [branchActivityItem("branch-commit")];
+    hideOrgName.value = false;
     onSelectItem.mockClear();
+    setHideOrgName.mockClear();
   });
 
   afterEach(() => {
@@ -101,6 +111,44 @@ describe("MobileActivityView branch activity", () => {
     expect(card?.textContent).not.toContain("#0");
     expect(card?.querySelector(".chip--kind-pr")).toBeNull();
     expect(card?.querySelector(".chip--kind-issue")).toBeNull();
+  });
+
+  it("uses the full hosted repo path by default", () => {
+    const { container } = render(MobileActivityView, {
+      props: { onSelectItem },
+    });
+
+    const repoLabel = container.querySelector(
+      ".mobile-activity-card__meta span",
+    );
+    expect(repoLabel?.textContent).toBe("github.com/acme/widgets");
+  });
+
+  it("respects hide org name in mobile activity cards", () => {
+    hideOrgName.value = true;
+
+    const { container } = render(MobileActivityView, {
+      props: { onSelectItem },
+    });
+
+    const repoLabel = container.querySelector(
+      ".mobile-activity-card__meta span",
+    );
+    expect(repoLabel?.textContent).toBe("widgets");
+    expect(container.textContent).not.toContain("github.com/acme/widgets");
+  });
+
+  it("exposes a mobile hide org toggle", async () => {
+    const { getByRole } = render(MobileActivityView, {
+      props: { onSelectItem },
+    });
+
+    const button = getByRole("button", { name: "Hide org" });
+    expect(button.getAttribute("aria-pressed")).toBe("false");
+
+    await fireEvent.click(button);
+
+    expect(setHideOrgName).toHaveBeenCalledWith(true);
   });
 
   it("does not select a PR or issue when tapping a branch event", async () => {

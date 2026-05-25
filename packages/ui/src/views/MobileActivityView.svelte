@@ -23,7 +23,7 @@
     buildMobileActivityRepoOptions,
   } from "./mobileActivityRepoOptions.js";
 
-  const { activity, settings, sync } = getStores();
+  const { activity, settings, sync, grouping } = getStores();
 
   interface Props {
     selectedRepo?: string | undefined;
@@ -215,6 +215,10 @@
     applyFilters();
   }
 
+  function toggleHideOrgName(): void {
+    grouping.setHideOrgName(!grouping.getHideOrgName());
+  }
+
   function handleSearchInput(event: Event): void {
     const value = (event.target as HTMLInputElement).value;
     searchInput = value;
@@ -294,6 +298,7 @@
   }
 
   function repoLabel(item: ActivityItem): string {
+    if (grouping.getHideOrgName()) return item.repo.name;
     return `${item.repo.platform_host}/${item.repo.repo_path}`;
   }
 
@@ -388,6 +393,14 @@
         aria-pressed={activity.getHideDefaultBranchActivity()}
         onclick={toggleHideDefaultBranchActivity}
       >Hide branch</button>
+
+      <button
+        type="button"
+        class="mobile-filter-toggle"
+        class:active={grouping.getHideOrgName()}
+        aria-pressed={grouping.getHideOrgName()}
+        onclick={toggleHideOrgName}
+      >Hide org</button>
     </div>
 
 

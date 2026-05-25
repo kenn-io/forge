@@ -340,6 +340,43 @@ test.describe("phone routes", () => {
     await activityForRepo;
   });
 
+  test("mobile activity hide-org toggle updates card repo labels and persists", async ({ page }) => {
+    await page.addInitScript(() => {
+      if (sessionStorage.getItem("middleman:test:mobile-hide-org:init") === "1") {
+        return;
+      }
+      localStorage.removeItem("middleman:hideOrgName");
+      sessionStorage.setItem("middleman:test:mobile-hide-org:init", "1");
+    });
+
+    await page.goto("/m?range=30d&view=threaded");
+    await expect(page.locator(".mobile-activity-inbox")).toBeVisible();
+
+    const card = page.locator(".mobile-activity-card", {
+      has: page.locator(".mobile-activity-card__title", {
+        hasText: "Add widget caching layer",
+      }),
+    }).first();
+    await expect(card).toBeVisible({ timeout: 10_000 });
+
+    const repoLabel = card.locator(".mobile-activity-card__meta span").first();
+    const hideOrgToggle = page.getByRole("button", { name: "Hide org" });
+    await expect(hideOrgToggle).toHaveAttribute("aria-pressed", "false");
+    await expect(repoLabel).toHaveText("github.com/acme/widgets");
+
+    await hideOrgToggle.click();
+
+    await expect(hideOrgToggle).toHaveAttribute("aria-pressed", "true");
+    await expect(repoLabel).toHaveText("widgets");
+    await expect(repoLabel).not.toHaveText("github.com/acme/widgets");
+
+    await page.reload();
+
+    await expect(card).toBeVisible({ timeout: 10_000 });
+    await expect(hideOrgToggle).toHaveAttribute("aria-pressed", "true");
+    await expect(repoLabel).toHaveText("widgets");
+  });
+
   test("mobile activity card routes to a focused thread detail", async ({ page }) => {
     await page.goto("/m?range=30d&view=threaded");
     await expect(page.getByRole("button", { name: "Open thread" })).toHaveCount(0);

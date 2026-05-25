@@ -416,7 +416,7 @@ func TestUpsertMREventsUpdatesExistingReviewState(t *testing.T) {
 	assert.Equal(base.Add(time.Hour), events[0].CreatedAt)
 }
 
-func TestUpsertMREventsWithDiscussionID(t *testing.T) {
+func TestUpsertMREventsWithThreadID(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -426,7 +426,7 @@ func TestUpsertMREventsWithDiscussionID(t *testing.T) {
 	repoID := insertTestRepo(t, d, "acme", "widget")
 	mrID := insertTestMR(t, d, repoID, 1, "discussion test", base)
 	platformID := int64(101)
-	discussionID := "abc123def"
+	threadID := "abc123def"
 
 	require.NoError(d.UpsertMREvents(ctx, []MREvent{{
 		MergeRequestID: mrID,
@@ -436,7 +436,7 @@ func TestUpsertMREventsWithDiscussionID(t *testing.T) {
 		Body:           "needs fix",
 		CreatedAt:      base,
 		DedupeKey:      "note-101",
-		DiscussionID:   &discussionID,
+		ThreadID:       &threadID,
 		PositionJSON:   `{"new_path":"main.go","new_line":42}`,
 		Resolvable:     true,
 		Resolved:       false,
@@ -445,8 +445,8 @@ func TestUpsertMREventsWithDiscussionID(t *testing.T) {
 	events, err := d.ListMREvents(ctx, mrID)
 	require.NoError(err)
 	require.Len(events, 1)
-	assert.NotNil(events[0].DiscussionID)
-	assert.Equal("abc123def", *events[0].DiscussionID)
+	assert.NotNil(events[0].ThreadID)
+	assert.Equal("abc123def", *events[0].ThreadID)
 	assert.JSONEq(`{"new_path":"main.go","new_line":42}`, events[0].PositionJSON)
 	assert.True(events[0].Resolvable)
 	assert.False(events[0].Resolved)
@@ -549,7 +549,7 @@ func TestIssueEventsDedupeIsScopedToIssue(t *testing.T) {
 	assert.Equal("gid://gitlab/Note/5002", secondEvents[0].PlatformExternalID)
 }
 
-func TestUpsertIssueEventsWithDiscussionID(t *testing.T) {
+func TestUpsertIssueEventsWithThreadID(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -572,24 +572,24 @@ func TestUpsertIssueEventsWithDiscussionID(t *testing.T) {
 	require.NoError(err)
 
 	platformID := int64(501)
-	discussionID := "issue-disc-xyz"
+	threadID := "issue-disc-xyz"
 
 	require.NoError(d.UpsertIssueEvents(ctx, []IssueEvent{{
-		IssueID:      issueID,
-		PlatformID:   &platformID,
-		EventType:    "issue_comment",
-		Author:       "commenter",
-		Body:         "issue comment",
-		CreatedAt:    base,
-		DedupeKey:    "issue-note-501",
-		DiscussionID: &discussionID,
+		IssueID:    issueID,
+		PlatformID: &platformID,
+		EventType:  "issue_comment",
+		Author:     "commenter",
+		Body:       "issue comment",
+		CreatedAt:  base,
+		DedupeKey:  "issue-note-501",
+		ThreadID:   &threadID,
 	}}))
 
 	events, err := d.ListIssueEvents(ctx, issueID)
 	require.NoError(err)
 	require.Len(events, 1)
-	assert.NotNil(events[0].DiscussionID)
-	assert.Equal("issue-disc-xyz", *events[0].DiscussionID)
+	assert.NotNil(events[0].ThreadID)
+	assert.Equal("issue-disc-xyz", *events[0].ThreadID)
 }
 
 func TestItemsPersistPlatformExternalID(t *testing.T) {

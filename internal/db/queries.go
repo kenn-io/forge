@@ -2430,7 +2430,7 @@ func (d *DB) UpsertMREvents(ctx context.Context, events []MREvent) error {
 		stmt, err := tx.PrepareContext(ctx, `
 			INSERT INTO middleman_mr_events
 			    (merge_request_id, platform_id, platform_external_id, event_type, author, summary, body,
-			     metadata_json, created_at, dedupe_key, discussion_id, position_json, resolvable, resolved)
+			     metadata_json, created_at, dedupe_key, thread_id, position_json, resolvable, resolved)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(merge_request_id, dedupe_key) DO UPDATE SET
 			    platform_id   = excluded.platform_id,
@@ -2441,7 +2441,7 @@ func (d *DB) UpsertMREvents(ctx context.Context, events []MREvent) error {
 			    body          = excluded.body,
 			    metadata_json = excluded.metadata_json,
 			    created_at    = excluded.created_at,
-			    discussion_id = excluded.discussion_id,
+			    thread_id = excluded.thread_id,
 			    position_json = excluded.position_json,
 			    resolvable    = excluded.resolvable,
 			    resolved      = excluded.resolved`)
@@ -2455,7 +2455,7 @@ func (d *DB) UpsertMREvents(ctx context.Context, events []MREvent) error {
 			canonicalizeMREventTimestamps(e)
 			if _, err := stmt.ExecContext(ctx,
 				e.MergeRequestID, e.PlatformID, e.PlatformExternalID, e.EventType, e.Author, e.Summary, e.Body,
-				e.MetadataJSON, e.CreatedAt, e.DedupeKey, e.DiscussionID, e.PositionJSON, e.Resolvable, e.Resolved,
+				e.MetadataJSON, e.CreatedAt, e.DedupeKey, e.ThreadID, e.PositionJSON, e.Resolvable, e.Resolved,
 			); err != nil {
 				return fmt.Errorf("insert mr event (dedupe_key=%s): %w", e.DedupeKey, err)
 			}
@@ -2538,7 +2538,7 @@ func (d *DB) GetMRLatestNonCommentEventTime(ctx context.Context, mrID int64) (ti
 func (d *DB) ListMREvents(ctx context.Context, mrID int64) ([]MREvent, error) {
 	rows, err := d.ro.QueryContext(ctx, `
 		SELECT id, merge_request_id, platform_id, platform_external_id, event_type, author, summary, body,
-		       metadata_json, created_at, dedupe_key, discussion_id, position_json, resolvable, resolved
+		       metadata_json, created_at, dedupe_key, thread_id, position_json, resolvable, resolved
 		FROM middleman_mr_events
 		WHERE merge_request_id = ?
 		ORDER BY created_at DESC`, mrID,
@@ -2554,7 +2554,7 @@ func (d *DB) ListMREvents(ctx context.Context, mrID int64) ([]MREvent, error) {
 		var createdAtStr string
 		if err := rows.Scan(
 			&e.ID, &e.MergeRequestID, &e.PlatformID, &e.PlatformExternalID, &e.EventType, &e.Author, &e.Summary,
-			&e.Body, &e.MetadataJSON, &createdAtStr, &e.DedupeKey, &e.DiscussionID, &e.PositionJSON, &e.Resolvable, &e.Resolved,
+			&e.Body, &e.MetadataJSON, &createdAtStr, &e.DedupeKey, &e.ThreadID, &e.PositionJSON, &e.Resolvable, &e.Resolved,
 		); err != nil {
 			return nil, fmt.Errorf("scan mr event: %w", err)
 		}
@@ -2570,17 +2570,17 @@ func (d *DB) ListMREvents(ctx context.Context, mrID int64) ([]MREvent, error) {
 	return events, rows.Err()
 }
 
-// UpdateDiscussionResolved updates the resolved state for all events matching
-// the given merge request and discussion ID.
-func (d *DB) UpdateDiscussionResolved(ctx context.Context, mrID int64, discussionID string, resolved bool) error {
+// UpdateThreadResolved updates the resolved state for all events matching the
+// given merge request and thread ID.
+func (d *DB) UpdateThreadResolved(ctx context.Context, mrID int64, threadID string, resolved bool) error {
 	_, err := d.rw.ExecContext(ctx, `
 		UPDATE middleman_mr_events
 		SET resolved = ?
-		WHERE merge_request_id = ? AND discussion_id = ?`,
-		resolved, mrID, discussionID,
+		WHERE merge_request_id = ? AND thread_id = ?`,
+		resolved, mrID, threadID,
 	)
 	if err != nil {
-		return fmt.Errorf("update discussion resolved: %w", err)
+		return fmt.Errorf("update thread resolved: %w", err)
 	}
 	return nil
 }
@@ -3610,7 +3610,7 @@ func (d *DB) UpsertIssueEvents(ctx context.Context, events []IssueEvent) error {
 		stmt, err := tx.PrepareContext(ctx, `
 			INSERT INTO middleman_issue_events
 			    (issue_id, platform_id, platform_external_id, event_type, author, summary, body,
-			     metadata_json, created_at, dedupe_key, discussion_id)
+			     metadata_json, created_at, dedupe_key, thread_id)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(issue_id, dedupe_key) DO UPDATE SET
 			    issue_id       = excluded.issue_id,
@@ -3622,7 +3622,7 @@ func (d *DB) UpsertIssueEvents(ctx context.Context, events []IssueEvent) error {
 			    body           = excluded.body,
 			    metadata_json  = excluded.metadata_json,
 			    created_at     = excluded.created_at,
-			    discussion_id  = excluded.discussion_id`)
+			    thread_id  = excluded.thread_id`)
 		if err != nil {
 			return fmt.Errorf("prepare upsert issue events: %w", err)
 		}
@@ -3634,7 +3634,7 @@ func (d *DB) UpsertIssueEvents(ctx context.Context, events []IssueEvent) error {
 			if _, err := stmt.ExecContext(ctx,
 				e.IssueID, e.PlatformID, e.PlatformExternalID, e.EventType, e.Author,
 				e.Summary, e.Body, e.MetadataJSON, e.CreatedAt,
-				e.DedupeKey, e.DiscussionID,
+				e.DedupeKey, e.ThreadID,
 			); err != nil {
 				return fmt.Errorf("insert issue event (dedupe_key=%s): %w", e.DedupeKey, err)
 			}
@@ -3692,7 +3692,7 @@ func (d *DB) DeleteMissingIssueCommentEvents(
 func (d *DB) ListIssueEvents(ctx context.Context, issueID int64) ([]IssueEvent, error) {
 	rows, err := d.ro.QueryContext(ctx, `
 		SELECT id, issue_id, platform_id, platform_external_id, event_type, author, summary, body,
-		       metadata_json, created_at, dedupe_key, discussion_id
+		       metadata_json, created_at, dedupe_key, thread_id
 		FROM middleman_issue_events
 		WHERE issue_id = ?
 		ORDER BY created_at DESC`, issueID,
@@ -3708,7 +3708,7 @@ func (d *DB) ListIssueEvents(ctx context.Context, issueID int64) ([]IssueEvent, 
 		var createdAtStr string
 		if err := rows.Scan(
 			&e.ID, &e.IssueID, &e.PlatformID, &e.PlatformExternalID, &e.EventType, &e.Author,
-			&e.Summary, &e.Body, &e.MetadataJSON, &createdAtStr, &e.DedupeKey, &e.DiscussionID,
+			&e.Summary, &e.Body, &e.MetadataJSON, &createdAtStr, &e.DedupeKey, &e.ThreadID,
 		); err != nil {
 			return nil, fmt.Errorf("scan issue event: %w", err)
 		}

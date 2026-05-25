@@ -195,19 +195,19 @@ describe("prTimelineFilter", () => {
         ID: 3,
         EventType: "issue_comment",
         Body: "new reply",
-        DiscussionID: "disc-1",
+        ThreadID: "disc-1",
       }),
       event({
         ID: 2,
         EventType: "issue_comment",
         Body: "old reply",
-        DiscussionID: "disc-1",
+        ThreadID: "disc-1",
       }),
       event({
         ID: 1,
         EventType: "issue_comment",
         Body: "root",
-        DiscussionID: "disc-1",
+        ThreadID: "disc-1",
       }),
       event({
         ID: 4,

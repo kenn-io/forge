@@ -63,18 +63,18 @@
   type TimelineEntry = {
     key: string;
     event: PREvent | IssueEvent;
-    discussionID?: string;
+    threadID?: string;
     replies: Array<PREvent | IssueEvent>;
   };
 
-  function discussionID(event: PREvent | IssueEvent): string | null {
-    return typeof event.DiscussionID === "string" && event.DiscussionID.length > 0
-      ? event.DiscussionID
+  function threadID(event: PREvent | IssueEvent): string | null {
+    return typeof event.ThreadID === "string" && event.ThreadID.length > 0
+      ? event.ThreadID
       : null;
   }
 
   function isThreadedComment(event: PREvent | IssueEvent): boolean {
-    return shouldRenderMarkdown(event.EventType) && discussionID(event) !== null;
+    return shouldRenderMarkdown(event.EventType) && threadID(event) !== null;
   }
 
   function eventSortValue(event: PREvent | IssueEvent): number {
@@ -91,43 +91,43 @@
   }
 
   function buildTimelineEntries(sourceEvents: Array<PREvent | IssueEvent>): TimelineEntry[] {
-    const discussions: Array<{ id: string; events: Array<PREvent | IssueEvent> }> = [];
+    const threads: Array<{ id: string; events: Array<PREvent | IssueEvent> }> = [];
 
     for (const event of sourceEvents) {
-      const id = discussionID(event);
+      const id = threadID(event);
       if (!id || !isThreadedComment(event)) continue;
-      const discussion = discussions.find((item) => item.id === id);
-      if (discussion) {
-        discussion.events = [...discussion.events, event];
+      const thread = threads.find((item) => item.id === id);
+      if (thread) {
+        thread.events = [...thread.events, event];
       } else {
-        discussions.push({ id, events: [event] });
+        threads.push({ id, events: [event] });
       }
     }
 
-    const emittedDiscussions: string[] = [];
+    const emittedThreads: string[] = [];
     const entries: TimelineEntry[] = [];
 
     for (const event of sourceEvents) {
-      const id = discussionID(event);
+      const id = threadID(event);
       if (!id || !isThreadedComment(event)) {
         entries.push({ key: `event-${event.ID}`, event, replies: [] });
         continue;
       }
 
-      if (emittedDiscussions.includes(id)) continue;
-      emittedDiscussions.push(id);
+      if (emittedThreads.includes(id)) continue;
+      emittedThreads.push(id);
 
-      const discussionEvents = [...(discussions.find((item) => item.id === id)?.events ?? [event])];
-      if (discussionEvents.length === 1) {
+      const threadEvents = [...(threads.find((item) => item.id === id)?.events ?? [event])];
+      if (threadEvents.length === 1) {
         entries.push({ key: `event-${event.ID}`, event, replies: [] });
         continue;
       }
 
-      const [root, ...replies] = discussionEvents.sort(compareEventsAscending);
+      const [root, ...replies] = threadEvents.sort(compareEventsAscending);
       entries.push({
-        key: `discussion-${id}`,
+        key: `thread-${id}`,
         event: root ?? event,
-        discussionID: id,
+        threadID: id,
         replies: replies.sort(compareEventsDescending),
       });
     }
@@ -244,7 +244,7 @@
   let editDraft = $state("");
   let savingEditId = $state<number | null>(null);
   let editError = $state<string | null>(null);
-  let collapsedDiscussions = $state<string[]>([]);
+  let collapsedThreads = $state<string[]>([]);
 
   function canEditComment(event: PREvent | IssueEvent): boolean {
     return (
@@ -268,19 +268,19 @@
     editError = null;
   }
 
-  function threadID(entry: TimelineEntry): string {
-    return entry.discussionID ?? String(entry.event.ID);
+  function entryThreadID(entry: TimelineEntry): string {
+    return entry.threadID ?? String(entry.event.ID);
   }
 
   function isThreadCollapsed(entry: TimelineEntry): boolean {
-    return collapsedDiscussions.includes(threadID(entry));
+    return collapsedThreads.includes(entryThreadID(entry));
   }
 
   function toggleThread(entry: TimelineEntry): void {
-    const id = threadID(entry);
-    collapsedDiscussions = collapsedDiscussions.includes(id)
-      ? collapsedDiscussions.filter((item) => item !== id)
-      : [...collapsedDiscussions, id];
+    const id = entryThreadID(entry);
+    collapsedThreads = collapsedThreads.includes(id)
+      ? collapsedThreads.filter((item) => item !== id)
+      : [...collapsedThreads, id];
   }
 
   async function saveEdit(event: PREvent | IssueEvent): Promise<void> {

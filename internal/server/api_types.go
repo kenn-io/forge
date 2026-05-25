@@ -30,8 +30,8 @@ type providerCapabilitiesResponse struct {
 	ReadyForReview    bool `json:"ready_for_review"`
 	IssueMutation     bool `json:"issue_mutation"`
 	LabelMutation     bool `json:"label_mutation"`
-	DiscussionReply   bool `json:"discussion_reply"`
-	DiscussionResolve bool `json:"discussion_resolve"`
+	ThreadReply       bool `json:"thread_reply"`
+	ThreadResolve     bool `json:"thread_resolve"`
 }
 
 type repoResponse struct {

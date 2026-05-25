@@ -119,7 +119,7 @@ describe("EventTimeline", () => {
             EventType: "issue_comment",
             Author: "root",
             Body: "Newest threaded reply",
-            DiscussionID: "disc-1",
+            ThreadID: "disc-1",
             CreatedAt: "2024-06-01T12:03:00Z",
           }),
           makeEvent({
@@ -127,7 +127,7 @@ describe("EventTimeline", () => {
             EventType: "issue_comment",
             Author: "root",
             Body: "Middle threaded reply",
-            DiscussionID: "disc-1",
+            ThreadID: "disc-1",
             CreatedAt: "2024-06-01T12:02:00Z",
           }),
           makeEvent({
@@ -135,7 +135,7 @@ describe("EventTimeline", () => {
             EventType: "issue_comment",
             Author: "root",
             Body: "Oldest threaded reply",
-            DiscussionID: "disc-1",
+            ThreadID: "disc-1",
             CreatedAt: "2024-06-01T12:01:00Z",
           }),
           makeEvent({
@@ -143,7 +143,7 @@ describe("EventTimeline", () => {
             EventType: "issue_comment",
             Author: "root",
             Body: "Main threaded comment",
-            DiscussionID: "disc-1",
+            ThreadID: "disc-1",
             CreatedAt: "2024-06-01T12:00:00Z",
           }),
           makeEvent({
@@ -182,7 +182,7 @@ describe("EventTimeline", () => {
             EventType: "issue_comment",
             Author: "root",
             Body: "Threaded reply",
-            DiscussionID: "disc-1",
+            ThreadID: "disc-1",
             CreatedAt: "2024-06-01T12:01:00Z",
           }),
           makeEvent({
@@ -190,7 +190,7 @@ describe("EventTimeline", () => {
             EventType: "issue_comment",
             Author: "root",
             Body: "Main threaded comment",
-            DiscussionID: "disc-1",
+            ThreadID: "disc-1",
             CreatedAt: "2024-06-01T12:00:00Z",
           }),
         ],

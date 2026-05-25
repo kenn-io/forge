@@ -459,7 +459,7 @@ func TestNormalizeMergeRequestDiscussions(t *testing.T) {
 	assert.Len(events, 3)
 
 	// First note from first discussion
-	assert.Equal("disc-abc123", events[0].DiscussionID)
+	assert.Equal("disc-abc123", events[0].ThreadID)
 	assert.Equal("reviewer", events[0].Author)
 	assert.Equal("needs fix on this line", events[0].Body)
 	assert.True(events[0].Resolvable)
@@ -468,12 +468,12 @@ func TestNormalizeMergeRequestDiscussions(t *testing.T) {
 	assert.Contains(events[0].PositionJSON, "42")
 
 	// Second note from first discussion
-	assert.Equal("disc-abc123", events[1].DiscussionID)
+	assert.Equal("disc-abc123", events[1].ThreadID)
 	assert.Equal("author", events[1].Author)
 	assert.True(events[1].Resolved)
 
 	// Note from second discussion (system note skipped)
-	assert.Equal("disc-def456", events[2].DiscussionID)
+	assert.Equal("disc-def456", events[2].ThreadID)
 	assert.Equal("commenter", events[2].Author)
 	assert.False(events[2].Resolvable)
 }
@@ -506,7 +506,7 @@ func TestNormalizeIssueDiscussions(t *testing.T) {
 	events := NormalizeIssueDiscussions(repo, 10, discussions)
 
 	assert.Len(events, 1)
-	assert.Equal("issue-disc-111", events[0].DiscussionID)
+	assert.Equal("issue-disc-111", events[0].ThreadID)
 	assert.Equal("reporter", events[0].Author)
 	assert.Equal(10, events[0].IssueNumber)
 }

@@ -100,8 +100,8 @@ func DBMREvent(mrID int64, event MergeRequestEvent) db.MREvent {
 		platformID := event.PlatformID
 		out.PlatformID = &platformID
 	}
-	if event.DiscussionID != "" {
-		out.DiscussionID = &event.DiscussionID
+	if event.ThreadID != "" {
+		out.ThreadID = &event.ThreadID
 	}
 	return out
 }
@@ -122,8 +122,8 @@ func DBIssueEvent(issueID int64, event IssueEvent) db.IssueEvent {
 		platformID := event.PlatformID
 		out.PlatformID = &platformID
 	}
-	if event.DiscussionID != "" {
-		out.DiscussionID = &event.DiscussionID
+	if event.ThreadID != "" {
+		out.ThreadID = &event.ThreadID
 	}
 	return out
 }

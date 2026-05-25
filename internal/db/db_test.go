@@ -1310,12 +1310,12 @@ func removeWorkflowApprovalColumnsForTest(raw *sql.DB) error {
 
 func removeDiscussionColumnsForTest(raw *sql.DB) error {
 	_, err := raw.Exec(`
-		DROP INDEX IF EXISTS idx_mr_events_discussion;
-		ALTER TABLE middleman_mr_events DROP COLUMN discussion_id;
+		DROP INDEX IF EXISTS idx_mr_events_thread;
+		ALTER TABLE middleman_mr_events DROP COLUMN thread_id;
 		ALTER TABLE middleman_mr_events DROP COLUMN position_json;
 		ALTER TABLE middleman_mr_events DROP COLUMN resolvable;
 		ALTER TABLE middleman_mr_events DROP COLUMN resolved;
-		ALTER TABLE middleman_issue_events DROP COLUMN discussion_id;
+		ALTER TABLE middleman_issue_events DROP COLUMN thread_id;
 	`)
 	return err
 }

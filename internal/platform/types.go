@@ -138,10 +138,12 @@ type MergeRequestEvent struct {
 	MetadataJSON       string
 	CreatedAt          time.Time
 	DedupeKey          string
-	DiscussionID       string
-	PositionJSON       string
-	Resolvable         bool
-	Resolved           bool
+	// ThreadID groups root comments and replies that belong to the same
+	// provider conversation. GitLab calls this a discussion ID.
+	ThreadID     string
+	PositionJSON string
+	Resolvable   bool
+	Resolved     bool
 }
 
 type IssueEvent struct {
@@ -156,7 +158,9 @@ type IssueEvent struct {
 	MetadataJSON       string
 	CreatedAt          time.Time
 	DedupeKey          string
-	DiscussionID       string
+	// ThreadID groups root comments and replies that belong to the same
+	// provider conversation. GitLab calls this a discussion ID.
+	ThreadID string
 }
 
 type Release struct {
@@ -216,8 +220,8 @@ type Capabilities struct {
 	ReadyForReview    bool
 	IssueMutation     bool
 	LabelMutation     bool
-	DiscussionReply   bool
-	DiscussionResolve bool
+	ThreadReply       bool
+	ThreadResolve     bool
 }
 
 type RepositoryListOptions struct {

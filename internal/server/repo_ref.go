@@ -168,8 +168,8 @@ func providerCapabilitiesFromPlatform(caps platform.Capabilities) providerCapabi
 		ReadyForReview:    caps.ReadyForReview,
 		IssueMutation:     caps.IssueMutation,
 		LabelMutation:     caps.LabelMutation,
-		DiscussionReply:   caps.DiscussionReply,
-		DiscussionResolve: caps.DiscussionResolve,
+		ThreadReply:       caps.ThreadReply,
+		ThreadResolve:     caps.ThreadResolve,
 	}
 }
 

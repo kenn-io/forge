@@ -2157,7 +2157,7 @@ export interface components {
             /** Format: date-time */
             CreatedAt: string;
             DedupeKey: string;
-            DiscussionID: string | null;
+            ThreadID: string | null;
             EventType: string;
             /** Format: int64 */
             ID: number;
@@ -2299,7 +2299,7 @@ export interface components {
             /** Format: date-time */
             CreatedAt: string;
             DedupeKey: string;
-            DiscussionID: string | null;
+            ThreadID: string | null;
             EventType: string;
             /** Format: int64 */
             ID: number;
@@ -2609,8 +2609,8 @@ export interface components {
         };
         ProviderCapabilitiesResponse: {
             comment_mutation: boolean;
-            discussion_reply: boolean;
-            discussion_resolve: boolean;
+            thread_reply: boolean;
+            thread_resolve: boolean;
             issue_mutation: boolean;
             label_mutation: boolean;
             merge_mutation: boolean;

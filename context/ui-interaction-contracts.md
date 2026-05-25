@@ -101,7 +101,7 @@ context.
 - Inside that thread, render the main/root comment first, then threaded replies
   underneath in reverse-chronological order: newest reply, then the reply before
   that, and so on.
-- Do not flatten same-`discussion_id` comments into separate top-level timeline
+- Do not flatten same-`thread_id` comments into separate top-level timeline
   items when the surrounding UI is meant to show comment conversations.
 - This contract should also guide future diff-comment UI: inline diff threads
   can anchor to a file/line position, but their compact timeline summaries

@@ -885,10 +885,6 @@ components:
           type: string
         DedupeKey:
           type: string
-        DiscussionID:
-          type:
-            - string
-            - "null"
         EventType:
           type: string
         ID:
@@ -908,6 +904,10 @@ components:
             - "null"
         Summary:
           type: string
+        ThreadID:
+          type:
+            - string
+            - "null"
       required:
         - ID
         - IssueID
@@ -920,7 +920,7 @@ components:
         - MetadataJSON
         - CreatedAt
         - DedupeKey
-        - DiscussionID
+        - ThreadID
       type: object
     IssueResponse:
       additionalProperties: false
@@ -1208,10 +1208,6 @@ components:
           type: string
         DedupeKey:
           type: string
-        DiscussionID:
-          type:
-            - string
-            - "null"
         EventType:
           type: string
         ID:
@@ -1237,6 +1233,10 @@ components:
           type: boolean
         Summary:
           type: string
+        ThreadID:
+          type:
+            - string
+            - "null"
       required:
         - ID
         - MergeRequestID
@@ -1249,7 +1249,7 @@ components:
         - MetadataJSON
         - CreatedAt
         - DedupeKey
-        - DiscussionID
+        - ThreadID
         - PositionJSON
         - Resolvable
         - Resolved
@@ -1918,10 +1918,6 @@ components:
       properties:
         comment_mutation:
           type: boolean
-        discussion_reply:
-          type: boolean
-        discussion_resolve:
-          type: boolean
         issue_mutation:
           type: boolean
         label_mutation:
@@ -1948,6 +1944,10 @@ components:
           type: boolean
         state_mutation:
           type: boolean
+        thread_reply:
+          type: boolean
+        thread_resolve:
+          type: boolean
         workflow_approval:
           type: boolean
       required:
@@ -1966,8 +1966,8 @@ components:
         - ready_for_review
         - issue_mutation
         - label_mutation
-        - discussion_reply
-        - discussion_resolve
+        - thread_reply
+        - thread_resolve
       type: object
     RateLimitHostStatus:
       additionalProperties: false

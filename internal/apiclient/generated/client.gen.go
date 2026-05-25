@@ -592,7 +592,6 @@ type IssueEvent struct {
 	Body               string    `json:"Body"`
 	CreatedAt          time.Time `json:"CreatedAt"`
 	DedupeKey          string    `json:"DedupeKey"`
-	DiscussionID       *string   `json:"DiscussionID"`
 	EventType          string    `json:"EventType"`
 	ID                 int64     `json:"ID"`
 	IssueID            int64     `json:"IssueID"`
@@ -600,6 +599,7 @@ type IssueEvent struct {
 	PlatformExternalID string    `json:"PlatformExternalID"`
 	PlatformID         *int64    `json:"PlatformID"`
 	Summary            string    `json:"Summary"`
+	ThreadID           *string   `json:"ThreadID"`
 }
 
 // IssueResponse defines model for IssueResponse.
@@ -709,7 +709,6 @@ type MREvent struct {
 	Body               string    `json:"Body"`
 	CreatedAt          time.Time `json:"CreatedAt"`
 	DedupeKey          string    `json:"DedupeKey"`
-	DiscussionID       *string   `json:"DiscussionID"`
 	EventType          string    `json:"EventType"`
 	ID                 int64     `json:"ID"`
 	MergeRequestID     int64     `json:"MergeRequestID"`
@@ -720,6 +719,7 @@ type MREvent struct {
 	Resolvable         bool      `json:"Resolvable"`
 	Resolved           bool      `json:"Resolved"`
 	Summary            string    `json:"Summary"`
+	ThreadID           *string   `json:"ThreadID"`
 }
 
 // MergePRBody defines model for MergePRBody.
@@ -970,8 +970,6 @@ type ProjectResponse struct {
 // ProviderCapabilitiesResponse defines model for ProviderCapabilitiesResponse.
 type ProviderCapabilitiesResponse struct {
 	CommentMutation   bool `json:"comment_mutation"`
-	DiscussionReply   bool `json:"discussion_reply"`
-	DiscussionResolve bool `json:"discussion_resolve"`
 	IssueMutation     bool `json:"issue_mutation"`
 	LabelMutation     bool `json:"label_mutation"`
 	MergeMutation     bool `json:"merge_mutation"`
@@ -985,6 +983,8 @@ type ProviderCapabilitiesResponse struct {
 	ReadyForReview    bool `json:"ready_for_review"`
 	ReviewMutation    bool `json:"review_mutation"`
 	StateMutation     bool `json:"state_mutation"`
+	ThreadReply       bool `json:"thread_reply"`
+	ThreadResolve     bool `json:"thread_resolve"`
 	WorkflowApproval  bool `json:"workflow_approval"`
 }
 

@@ -93,8 +93,8 @@
     ready_for_review: true,
     issue_mutation: true,
     label_mutation: false,
-    discussion_reply: false,
-    discussion_resolve: false,
+    thread_reply: false,
+    thread_resolve: false,
   };
 
   function currentCapabilities(): ProviderCapabilities {

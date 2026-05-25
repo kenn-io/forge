@@ -18,7 +18,7 @@ import (
 	"go.kenn.io/middleman/internal/testutil/dbtest"
 )
 
-func TestGetPRDetailIncludesDiscussionID(t *testing.T) {
+func TestGetPRDetailIncludesThreadID(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -48,7 +48,7 @@ func TestGetPRDetailIncludesDiscussionID(t *testing.T) {
 	})
 	require.NoError(err)
 
-	discussionID := "disc-abc123"
+	threadID := "disc-abc123"
 	platformID := int64(101)
 	require.NoError(database.UpsertMREvents(ctx, []db.MREvent{{
 		MergeRequestID: mrID,
@@ -58,7 +58,7 @@ func TestGetPRDetailIncludesDiscussionID(t *testing.T) {
 		Body:           "needs fix",
 		CreatedAt:      time.Now().UTC(),
 		DedupeKey:      "note-101",
-		DiscussionID:   &discussionID,
+		ThreadID:       &threadID,
 		PositionJSON:   `{"new_path":"main.go","new_line":42}`,
 		Resolvable:     true,
 		Resolved:       false,
@@ -72,7 +72,7 @@ func TestGetPRDetailIncludesDiscussionID(t *testing.T) {
 
 	var result struct {
 		Events []struct {
-			DiscussionID *string `json:"DiscussionID"`
+			ThreadID     *string `json:"ThreadID"`
 			PositionJSON string  `json:"PositionJSON"`
 			Resolvable   bool    `json:"Resolvable"`
 			Resolved     bool    `json:"Resolved"`
@@ -82,8 +82,8 @@ func TestGetPRDetailIncludesDiscussionID(t *testing.T) {
 	require.NoError(err)
 
 	require.Len(result.Events, 1)
-	assert.NotNil(result.Events[0].DiscussionID)
-	assert.Equal("disc-abc123", *result.Events[0].DiscussionID)
+	assert.NotNil(result.Events[0].ThreadID)
+	assert.Equal("disc-abc123", *result.Events[0].ThreadID)
 	assert.JSONEq(`{"new_path":"main.go","new_line":42}`, result.Events[0].PositionJSON)
 	assert.True(result.Events[0].Resolvable)
 	assert.False(result.Events[0].Resolved)
@@ -110,8 +110,8 @@ func TestGitLabDiscussionMetadataSyncsToDetailAPI(t *testing.T) {
 		DefaultBranch:      "main",
 	}
 
-	mrDiscussionID := "disc-mr-abc123"
-	issueDiscussionID := "disc-issue-def456"
+	mrThreadID := "disc-mr-abc123"
+	issueThreadID := "disc-issue-def456"
 	provider := &gitLabDiscussionProvider{
 		ref: ref,
 		mergeRequests: map[int]platform.MergeRequest{
@@ -140,7 +140,7 @@ func TestGitLabDiscussionMetadataSyncsToDetailAPI(t *testing.T) {
 				Body:               "Please fix this line.",
 				CreatedAt:          now,
 				DedupeKey:          "gitlab-note-2001",
-				DiscussionID:       mrDiscussionID,
+				ThreadID:           mrThreadID,
 				PositionJSON:       `{"new_path":"main.go","new_line":42}`,
 				Resolvable:         true,
 				Resolved:           false,
@@ -172,7 +172,7 @@ func TestGitLabDiscussionMetadataSyncsToDetailAPI(t *testing.T) {
 				Body:               "Issue discussion reply.",
 				CreatedAt:          now,
 				DedupeKey:          "gitlab-issue-note-4001",
-				DiscussionID:       issueDiscussionID,
+				ThreadID:           issueThreadID,
 			}},
 		},
 	}
@@ -209,7 +209,7 @@ func TestGitLabDiscussionMetadataSyncsToDetailAPI(t *testing.T) {
 	require.Equal(http.StatusOK, prRR.Code, "response: %s", prRR.Body.String())
 	var prResult struct {
 		Events []struct {
-			DiscussionID *string `json:"DiscussionID"`
+			ThreadID     *string `json:"ThreadID"`
 			PositionJSON string  `json:"PositionJSON"`
 			Resolvable   bool    `json:"Resolvable"`
 			Resolved     bool    `json:"Resolved"`
@@ -218,8 +218,8 @@ func TestGitLabDiscussionMetadataSyncsToDetailAPI(t *testing.T) {
 	err = json.NewDecoder(prRR.Body).Decode(&prResult)
 	require.NoError(err)
 	require.Len(prResult.Events, 1)
-	require.NotNil(prResult.Events[0].DiscussionID)
-	assert.Equal(mrDiscussionID, *prResult.Events[0].DiscussionID)
+	require.NotNil(prResult.Events[0].ThreadID)
+	assert.Equal(mrThreadID, *prResult.Events[0].ThreadID)
 	assert.JSONEq(`{"new_path":"main.go","new_line":42}`, prResult.Events[0].PositionJSON)
 	assert.True(prResult.Events[0].Resolvable)
 	assert.False(prResult.Events[0].Resolved)
@@ -231,14 +231,14 @@ func TestGitLabDiscussionMetadataSyncsToDetailAPI(t *testing.T) {
 	require.Equal(http.StatusOK, issueRR.Code, "response: %s", issueRR.Body.String())
 	var issueResult struct {
 		Events []struct {
-			DiscussionID *string `json:"DiscussionID"`
+			ThreadID *string `json:"ThreadID"`
 		} `json:"events"`
 	}
 	err = json.NewDecoder(issueRR.Body).Decode(&issueResult)
 	require.NoError(err)
 	require.Len(issueResult.Events, 1)
-	require.NotNil(issueResult.Events[0].DiscussionID)
-	assert.Equal(issueDiscussionID, *issueResult.Events[0].DiscussionID)
+	require.NotNil(issueResult.Events[0].ThreadID)
+	assert.Equal(issueThreadID, *issueResult.Events[0].ThreadID)
 }
 
 type gitLabDiscussionProvider struct {
@@ -255,17 +255,17 @@ type gitLabDiscussionProvider struct {
 }
 
 type replyToDiscussionCall struct {
-	Ref          platform.RepoRef
-	Number       int
-	DiscussionID string
-	Body         string
+	Ref      platform.RepoRef
+	Number   int
+	ThreadID string
+	Body     string
 }
 
 type resolveDiscussionCall struct {
-	Ref          platform.RepoRef
-	Number       int
-	DiscussionID string
-	Resolved     bool
+	Ref      platform.RepoRef
+	Number   int
+	ThreadID string
+	Resolved bool
 }
 
 func (p *gitLabDiscussionProvider) Platform() platform.Kind {
@@ -281,8 +281,8 @@ func (p *gitLabDiscussionProvider) Capabilities() platform.Capabilities {
 		ReadRepositories:  true,
 		ReadMergeRequests: true,
 		ReadIssues:        true,
-		DiscussionReply:   true,
-		DiscussionResolve: true,
+		ThreadReply:       true,
+		ThreadResolve:     true,
 	}
 }
 
@@ -365,18 +365,18 @@ func (p *gitLabDiscussionProvider) ListCIChecks(context.Context, platform.RepoRe
 	return nil, nil
 }
 
-func (p *gitLabDiscussionProvider) ReplyToDiscussion(
+func (p *gitLabDiscussionProvider) ReplyToThread(
 	_ context.Context,
 	ref platform.RepoRef,
 	number int,
-	discussionID string,
+	threadID string,
 	body string,
 ) (platform.MergeRequestEvent, error) {
 	p.replyToDiscussionCalls = append(p.replyToDiscussionCalls, replyToDiscussionCall{
-		Ref:          ref,
-		Number:       number,
-		DiscussionID: discussionID,
-		Body:         body,
+		Ref:      ref,
+		Number:   number,
+		ThreadID: threadID,
+		Body:     body,
 	})
 	return platform.MergeRequestEvent{
 		Repo:               ref,
@@ -387,23 +387,23 @@ func (p *gitLabDiscussionProvider) ReplyToDiscussion(
 		Author:             "test-user",
 		Body:               body,
 		CreatedAt:          time.Now().UTC(),
-		DedupeKey:          "reply-" + discussionID,
-		DiscussionID:       discussionID,
+		DedupeKey:          "reply-" + threadID,
+		ThreadID:           threadID,
 	}, nil
 }
 
-func (p *gitLabDiscussionProvider) ResolveDiscussion(
+func (p *gitLabDiscussionProvider) ResolveThread(
 	_ context.Context,
 	ref platform.RepoRef,
 	number int,
-	discussionID string,
+	threadID string,
 	resolved bool,
 ) error {
 	p.resolveDiscussionCalls = append(p.resolveDiscussionCalls, resolveDiscussionCall{
-		Ref:          ref,
-		Number:       number,
-		DiscussionID: discussionID,
-		Resolved:     resolved,
+		Ref:      ref,
+		Number:   number,
+		ThreadID: threadID,
+		Resolved: resolved,
 	})
 	return nil
 }
@@ -461,15 +461,15 @@ func TestGitLabRepoCapabilitiesIncludeDiscussions(t *testing.T) {
 
 	var result struct {
 		Capabilities struct {
-			DiscussionReply   bool `json:"discussion_reply"`
-			DiscussionResolve bool `json:"discussion_resolve"`
+			ThreadReply   bool `json:"thread_reply"`
+			ThreadResolve bool `json:"thread_resolve"`
 		} `json:"capabilities"`
 	}
 	err = json.NewDecoder(rr.Body).Decode(&result)
 	require.NoError(err)
 
-	assert.True(result.Capabilities.DiscussionReply)
-	assert.True(result.Capabilities.DiscussionResolve)
+	assert.True(result.Capabilities.ThreadReply)
+	assert.True(result.Capabilities.ThreadResolve)
 }
 
 func TestReplyToDiscussionE2E(t *testing.T) {
@@ -542,12 +542,12 @@ func TestReplyToDiscussionE2E(t *testing.T) {
 	})
 	require.NoError(err)
 
-	// Valid 40-char hex discussion ID
-	discussionID := "abc123def456789012345678901234567890abcd"
+	// Valid 40-char hex thread ID
+	threadID := "abc123def456789012345678901234567890abcd"
 	body := `{"body":"This is my reply"}`
 	req := httptest.NewRequest(
 		http.MethodPost,
-		"/api/v1/pulls/gitlab/acme/widget/7/discussions/"+discussionID+"/reply",
+		"/api/v1/pulls/gitlab/acme/widget/7/discussions/"+threadID+"/reply",
 		strings.NewReader(body),
 	)
 	req.Header.Set("Content-Type", "application/json")
@@ -560,26 +560,26 @@ func TestReplyToDiscussionE2E(t *testing.T) {
 	require.Len(provider.replyToDiscussionCalls, 1)
 	call := provider.replyToDiscussionCalls[0]
 	assert.Equal(7, call.Number)
-	assert.Equal(discussionID, call.DiscussionID)
+	assert.Equal(threadID, call.ThreadID)
 	assert.Equal("This is my reply", call.Body)
 	assert.Equal("acme", call.Ref.Owner)
 	assert.Equal("widget", call.Ref.Name)
 
 	// Verify the reply event was persisted
 	var result struct {
-		Author       string  `json:"Author"`
-		Body         string  `json:"Body"`
-		DiscussionID *string `json:"DiscussionID"`
+		Author   string  `json:"Author"`
+		Body     string  `json:"Body"`
+		ThreadID *string `json:"ThreadID"`
 	}
 	err = json.NewDecoder(rr.Body).Decode(&result)
 	require.NoError(err)
 	assert.Equal("test-user", result.Author)
 	assert.Equal("This is my reply", result.Body)
-	require.NotNil(result.DiscussionID)
-	assert.Equal(discussionID, *result.DiscussionID)
+	require.NotNil(result.ThreadID)
+	assert.Equal(threadID, *result.ThreadID)
 }
 
-func TestReplyToDiscussionRejectsInvalidDiscussionID(t *testing.T) {
+func TestReplyToDiscussionRejectsInvalidThreadID(t *testing.T) {
 	require := require.New(t)
 	ctx := t.Context()
 
@@ -647,7 +647,7 @@ func TestReplyToDiscussionRejectsInvalidDiscussionID(t *testing.T) {
 	})
 	require.NoError(err)
 
-	// Test various invalid discussion IDs (URL-safe but invalid for GitLab)
+	// Test various invalid thread IDs (URL-safe but invalid for GitLab)
 	invalidIDs := []string{
 		"..-..-..-..-etc-passwd---------",          // path traversal attempt (40 chars)
 		"abc-2F-123--------------------------",     // would-be encoded slash (40 chars)
@@ -669,7 +669,7 @@ func TestReplyToDiscussionRejectsInvalidDiscussionID(t *testing.T) {
 		srv.ServeHTTP(rr, req)
 
 		// Should not succeed - either 400 (validation) or 500 (internal error from invalid format)
-		require.NotEqual(http.StatusCreated, rr.Code, "should reject invalid discussion ID: %s", invalidID)
+		require.NotEqual(http.StatusCreated, rr.Code, "should reject invalid thread ID: %s", invalidID)
 	}
 
 	// Verify provider was never called with invalid IDs
@@ -745,12 +745,12 @@ func TestResolveDiscussionE2E(t *testing.T) {
 	})
 	require.NoError(err)
 
-	// Valid 40-char hex discussion ID
-	discussionID := "abc123def456789012345678901234567890abcd"
+	// Valid 40-char hex thread ID
+	threadID := "abc123def456789012345678901234567890abcd"
 	body := `{"resolved":true}`
 	req := httptest.NewRequest(
 		http.MethodPost,
-		"/api/v1/pulls/gitlab/acme/widget/7/discussions/"+discussionID+"/resolve",
+		"/api/v1/pulls/gitlab/acme/widget/7/discussions/"+threadID+"/resolve",
 		strings.NewReader(body),
 	)
 	req.Header.Set("Content-Type", "application/json")
@@ -763,7 +763,7 @@ func TestResolveDiscussionE2E(t *testing.T) {
 	require.Len(provider.resolveDiscussionCalls, 1)
 	call := provider.resolveDiscussionCalls[0]
 	assert.Equal(7, call.Number)
-	assert.Equal(discussionID, call.DiscussionID)
+	assert.Equal(threadID, call.ThreadID)
 	assert.True(call.Resolved)
 	assert.Equal("acme", call.Ref.Owner)
 	assert.Equal("widget", call.Ref.Name)
@@ -799,13 +799,13 @@ func TestDiscussionEndpointsRequireCapability(t *testing.T) {
 	})
 	require.NoError(err)
 
-	discussionID := "abc123def456789012345678901234567890abcd"
+	threadID := "abc123def456789012345678901234567890abcd"
 
 	// Reply should fail for GitHub (no discussion capability)
 	body := `{"body":"test"}`
 	req := httptest.NewRequest(
 		http.MethodPost,
-		"/api/v1/pulls/github/acme/widget/7/discussions/"+discussionID+"/reply",
+		"/api/v1/pulls/github/acme/widget/7/discussions/"+threadID+"/reply",
 		strings.NewReader(body),
 	)
 	req.Header.Set("Content-Type", "application/json")
@@ -825,7 +825,7 @@ func TestDiscussionEndpointsRequireCapability(t *testing.T) {
 	body = `{"resolved":true}`
 	req = httptest.NewRequest(
 		http.MethodPost,
-		"/api/v1/pulls/github/acme/widget/7/discussions/"+discussionID+"/resolve",
+		"/api/v1/pulls/github/acme/widget/7/discussions/"+threadID+"/resolve",
 		strings.NewReader(body),
 	)
 	req.Header.Set("Content-Type", "application/json")
@@ -880,13 +880,13 @@ func TestDiscussionEndpointsRejectNonExistentMR(t *testing.T) {
 	syncer.RunOnce(ctx)
 
 	// Note: We do NOT create an MR in the database, so MR #999 does not exist locally.
-	discussionID := "abc123def456789012345678901234567890abcd"
+	threadID := "abc123def456789012345678901234567890abcd"
 
 	// Reply should fail with 404 before calling provider
 	body := `{"body":"test reply"}`
 	req := httptest.NewRequest(
 		http.MethodPost,
-		"/api/v1/pulls/gitlab/acme/widget/999/discussions/"+discussionID+"/reply",
+		"/api/v1/pulls/gitlab/acme/widget/999/discussions/"+threadID+"/reply",
 		strings.NewReader(body),
 	)
 	req.Header.Set("Content-Type", "application/json")
@@ -900,7 +900,7 @@ func TestDiscussionEndpointsRejectNonExistentMR(t *testing.T) {
 	body = `{"resolved":true}`
 	req = httptest.NewRequest(
 		http.MethodPost,
-		"/api/v1/pulls/gitlab/acme/widget/999/discussions/"+discussionID+"/resolve",
+		"/api/v1/pulls/gitlab/acme/widget/999/discussions/"+threadID+"/resolve",
 		strings.NewReader(body),
 	)
 	req.Header.Set("Content-Type", "application/json")
@@ -981,7 +981,7 @@ func TestResolveDiscussionUpdatesLocalState(t *testing.T) {
 	require.NoError(err)
 
 	// Create a discussion event that is NOT resolved
-	discussionID := "abc123def456789012345678901234567890abcd"
+	threadID := "abc123def456789012345678901234567890abcd"
 	platformID := int64(101)
 	require.NoError(database.UpsertMREvents(ctx, []db.MREvent{{
 		MergeRequestID: mrID,
@@ -991,7 +991,7 @@ func TestResolveDiscussionUpdatesLocalState(t *testing.T) {
 		Body:           "needs fix",
 		CreatedAt:      time.Now().UTC(),
 		DedupeKey:      "note-101",
-		DiscussionID:   &discussionID,
+		ThreadID:       &threadID,
 		Resolvable:     true,
 		Resolved:       false,
 	}}))
@@ -1006,7 +1006,7 @@ func TestResolveDiscussionUpdatesLocalState(t *testing.T) {
 	body := `{"resolved":true}`
 	req := httptest.NewRequest(
 		http.MethodPost,
-		"/api/v1/pulls/gitlab/acme/widget/7/discussions/"+discussionID+"/resolve",
+		"/api/v1/pulls/gitlab/acme/widget/7/discussions/"+threadID+"/resolve",
 		strings.NewReader(body),
 	)
 	req.Header.Set("Content-Type", "application/json")
@@ -1025,7 +1025,7 @@ func TestResolveDiscussionUpdatesLocalState(t *testing.T) {
 	body = `{"resolved":false}`
 	req = httptest.NewRequest(
 		http.MethodPost,
-		"/api/v1/pulls/gitlab/acme/widget/7/discussions/"+discussionID+"/resolve",
+		"/api/v1/pulls/gitlab/acme/widget/7/discussions/"+threadID+"/resolve",
 		strings.NewReader(body),
 	)
 	req.Header.Set("Content-Type", "application/json")

@@ -1415,12 +1415,12 @@ func (s *Server) replyToDiscussion(ctx context.Context, input *replyToDiscussion
 	repo, err := s.requireRepoRouteCapability(
 		ctx,
 		input.Provider, input.PlatformHost, input.Owner, input.Name,
-		capabilityDiscussionReply,
+		capabilityThreadReply,
 	)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.requireSyncerCapability(*repo, capabilityDiscussionReply); err != nil {
+	if err := s.requireSyncerCapability(*repo, capabilityThreadReply); err != nil {
 		return nil, err
 	}
 
@@ -1442,16 +1442,16 @@ func (s *Server) replyToDiscussion(ctx context.Context, input *replyToDiscussion
 		return nil, problemInternal("provider lookup failed")
 	}
 
-	replier, ok := provider.(platform.DiscussionReplier)
+	replier, ok := provider.(platform.ThreadReplier)
 	if !ok {
 		caps := provider.Capabilities()
-		if !caps.DiscussionReply {
-			return nil, unsupportedCapabilityProblem(*repo, "discussion_reply")
+		if !caps.ThreadReply {
+			return nil, unsupportedCapabilityProblem(*repo, capabilityThreadReply)
 		}
-		return nil, problemInternal("provider does not implement DiscussionReplier")
+		return nil, problemInternal("provider does not implement ThreadReplier")
 	}
 
-	platformEvent, err := replier.ReplyToDiscussion(
+	platformEvent, err := replier.ReplyToThread(
 		ctx, platformRepoRefFromDB(*repo), input.Number, input.DiscussionID, input.Body.Body,
 	)
 	if err != nil {
@@ -1480,12 +1480,12 @@ func (s *Server) resolveDiscussion(ctx context.Context, input *resolveDiscussion
 	repo, err := s.requireRepoRouteCapability(
 		ctx,
 		input.Provider, input.PlatformHost, input.Owner, input.Name,
-		capabilityDiscussionResolve,
+		capabilityThreadResolve,
 	)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.requireSyncerCapability(*repo, capabilityDiscussionResolve); err != nil {
+	if err := s.requireSyncerCapability(*repo, capabilityThreadResolve); err != nil {
 		return nil, err
 	}
 
@@ -1507,16 +1507,16 @@ func (s *Server) resolveDiscussion(ctx context.Context, input *resolveDiscussion
 		return nil, problemInternal("provider lookup failed")
 	}
 
-	resolver, ok := provider.(platform.DiscussionResolver)
+	resolver, ok := provider.(platform.ThreadResolver)
 	if !ok {
 		caps := provider.Capabilities()
-		if !caps.DiscussionResolve {
-			return nil, unsupportedCapabilityProblem(*repo, "discussion_resolve")
+		if !caps.ThreadResolve {
+			return nil, unsupportedCapabilityProblem(*repo, capabilityThreadResolve)
 		}
-		return nil, problemInternal("provider does not implement DiscussionResolver")
+		return nil, problemInternal("provider does not implement ThreadResolver")
 	}
 
-	if err := resolver.ResolveDiscussion(
+	if err := resolver.ResolveThread(
 		ctx, platformRepoRefFromDB(*repo), input.Number, input.DiscussionID, input.Body.Resolved,
 	); err != nil {
 		return nil, providerCallProblemWithDetail(
@@ -1527,7 +1527,7 @@ func (s *Server) resolveDiscussion(ctx context.Context, input *resolveDiscussion
 	}
 
 	// Update local discussion events' resolved state to keep dashboard in sync.
-	if err := s.db.UpdateDiscussionResolved(ctx, mrID, input.DiscussionID, input.Body.Resolved); err != nil {
+	if err := s.db.UpdateThreadResolved(ctx, mrID, input.DiscussionID, input.Body.Resolved); err != nil {
 		slog.ErrorContext(ctx, "failed to update local discussion resolved state",
 			"mr_id", mrID, "discussion_id", input.DiscussionID, "error", err)
 		// Don't fail the request since the upstream mutation succeeded;

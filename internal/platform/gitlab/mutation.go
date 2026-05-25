@@ -20,7 +20,7 @@ func validateDiscussionID(discussionID string) error {
 	return nil
 }
 
-func (c *Client) ReplyToDiscussion(
+func (c *Client) ReplyToThread(
 	ctx context.Context,
 	ref platform.RepoRef,
 	number int,
@@ -57,14 +57,14 @@ func (c *Client) ReplyToDiscussion(
 		Body:               note.Body,
 		CreatedAt:          timeValue(note.CreatedAt),
 		DedupeKey:          noteDedupeKey(normalizedRef, "mr", number, "note", strconv.FormatInt(note.ID, 10)),
-		DiscussionID:       discussionID,
+		ThreadID:           discussionID,
 		PositionJSON:       serializeNotePosition(note.Position),
 		Resolvable:         note.Resolvable,
 		Resolved:           note.Resolved,
 	}, nil
 }
 
-func (c *Client) ResolveDiscussion(
+func (c *Client) ResolveThread(
 	ctx context.Context,
 	ref platform.RepoRef,
 	number int,

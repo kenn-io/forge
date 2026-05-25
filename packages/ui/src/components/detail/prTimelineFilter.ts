@@ -121,17 +121,17 @@ export function filterPREvents(
   events: PREvent[],
   filter: PRTimelineFilterState,
 ): PREvent[] {
-  const discussionRoots = new Map<string, PREvent>();
+  const threadRoots = new Map<string, PREvent>();
   for (const event of events) {
     if (
-      !event.DiscussionID ||
+      !event.ThreadID ||
       !["issue_comment", "review", "review_comment"].includes(event.EventType)
     ) {
       continue;
     }
-    const currentRoot = discussionRoots.get(event.DiscussionID);
+    const currentRoot = threadRoots.get(event.ThreadID);
     if (currentRoot === undefined || isEarlierEvent(event, currentRoot)) {
-      discussionRoots.set(event.DiscussionID, event);
+      threadRoots.set(event.ThreadID, event);
     }
   }
 
@@ -139,8 +139,8 @@ export function filterPREvents(
     if (filter.hideBots && isBotAuthor(event.Author)) return false;
     if (
       !filter.showReplies &&
-      event.DiscussionID &&
-      discussionRoots.get(event.DiscussionID)?.ID !== event.ID
+      event.ThreadID &&
+      threadRoots.get(event.ThreadID)?.ID !== event.ID
     ) {
       return false;
     }

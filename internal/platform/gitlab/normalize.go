@@ -305,7 +305,7 @@ func NormalizeMergeRequestDiscussions(
 				Body:               note.Body,
 				CreatedAt:          timeValue(note.CreatedAt),
 				DedupeKey:          noteDedupeKey(repo, "mr", mrNumber, "note", strconv.FormatInt(note.ID, 10)),
-				DiscussionID:       discussion.ID,
+				ThreadID:           discussion.ID,
 				PositionJSON:       serializeNotePosition(note.Position),
 				Resolvable:         note.Resolvable,
 				Resolved:           note.Resolved,
@@ -382,7 +382,7 @@ func NormalizeIssueDiscussions(
 				Body:               note.Body,
 				CreatedAt:          timeValue(note.CreatedAt),
 				DedupeKey:          noteDedupeKey(repo, "issue", issueNumber, "note", strconv.FormatInt(note.ID, 10)),
-				DiscussionID:       discussion.ID,
+				ThreadID:           discussion.ID,
 			})
 		}
 	}

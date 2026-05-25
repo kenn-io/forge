@@ -1,6 +1,7 @@
 export type GroupingMode = "flat" | "byRepo" | "byWorkflow";
 
 const STORAGE_KEY = "middleman:groupingMode";
+const HIDE_ORG_KEY = "middleman:hideOrgName";
 
 // Legacy key for backward-compat reads.
 const LEGACY_KEY = "middleman:groupByRepo";
@@ -24,8 +25,17 @@ function readFromStorage(): GroupingMode {
   }
 }
 
+function readHideOrgNameFromStorage(): boolean {
+  try {
+    return localStorage.getItem(HIDE_ORG_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
 export function createGroupingStore() {
   let mode = $state<GroupingMode>(readFromStorage());
+  let hideOrgName = $state<boolean>(readHideOrgNameFromStorage());
 
   function getGroupingMode(): GroupingMode {
     return mode;
@@ -50,11 +60,26 @@ export function createGroupingStore() {
     setGroupingMode(value ? "byRepo" : "flat");
   }
 
+  function getHideOrgName(): boolean {
+    return hideOrgName;
+  }
+
+  function setHideOrgName(value: boolean): void {
+    hideOrgName = value;
+    try {
+      localStorage.setItem(HIDE_ORG_KEY, value ? "1" : "0");
+    } catch {
+      // localStorage unavailable.
+    }
+  }
+
   return {
     getGroupingMode,
     setGroupingMode,
     getGroupByRepo,
     setGroupByRepo,
+    getHideOrgName,
+    setHideOrgName,
   };
 }
 

@@ -57,11 +57,16 @@ function branchActivityItem(
 }
 
 const expanded = vi.hoisted(() => ({ value: true }));
+const groupByRepo = vi.hoisted(() => ({ value: false }));
+const hideOrgName = vi.hoisted(() => ({ value: false }));
 const toggleThreadItem = vi.hoisted(() => vi.fn());
 
 vi.mock("../context.js", () => ({
   getStores: () => ({
-    grouping: { getGroupByRepo: () => false },
+    grouping: {
+      getGroupByRepo: () => groupByRepo.value,
+      getHideOrgName: () => hideOrgName.value,
+    },
     activity: {
       isThreadItemExpanded: () => expanded.value,
       toggleThreadItem,
@@ -73,6 +78,8 @@ describe("ActivityThreaded collapse", () => {
   afterEach(() => {
     cleanup();
     expanded.value = true;
+    groupByRepo.value = false;
+    hideOrgName.value = false;
     toggleThreadItem.mockClear();
   });
 
@@ -224,6 +231,55 @@ describe("ActivityThreaded collapse", () => {
     expect(
       container.querySelector(".branch-activity-row.selected"),
     ).not.toBeNull();
+  });
+
+  it("shows the latest event author on the item row", () => {
+    const { container } = render(ActivityThreaded, {
+      props: {
+        items: [
+          activityItem("c-late", {
+            created_at: "2026-04-27T13:00:00Z",
+            author: "bob",
+            author_name: "Bob Example",
+          }),
+          activityItem("c-early", {
+            created_at: "2026-04-27T12:00:00Z",
+            author: "alice",
+            author_name: "Alice Example",
+          }),
+        ],
+        onSelectItem: undefined,
+      },
+    });
+
+    const row = container.querySelector(".item-row:not(.branch-activity-row)");
+    expect(row).not.toBeNull();
+    const authorCell = row?.querySelector(".cell--author");
+    expect(authorCell?.textContent?.trim()).toBe("Bob Example");
+  });
+
+  it("shows the commit author on branch rows", () => {
+    const { container } = render(ActivityThreaded, {
+      props: {
+        items: [branchActivityItem("c1")],
+        onSelectItem: undefined,
+      },
+    });
+
+    const row = container.querySelector(".branch-activity-row");
+    const authorCell = row?.querySelector(".cell--author");
+    expect(authorCell?.textContent?.trim()).toBe("Alice Example");
+  });
+
+  it("shows just the repo name when hideOrgName is on", () => {
+    hideOrgName.value = true;
+    const { container } = render(ActivityThreaded, {
+      props: { items: [activityItem("c1")], onSelectItem: undefined },
+    });
+    const label = container.querySelector(
+      ".repo-chip.repo-tag .repo-chip__label",
+    );
+    expect(label?.textContent).toBe("widgets");
   });
 
   it("keeps force-push rows as provider compare links", async () => {

@@ -97,7 +97,8 @@
     (EVENT_TYPES.length - activity.getEnabledEvents().size)
     + (activity.getHideClosedMerged() ? 1 : 0)
     + (activity.getHideBots() ? 1 : 0)
-    + (activity.getHideDefaultBranchActivity() ? 1 : 0),
+    + (activity.getHideDefaultBranchActivity() ? 1 : 0)
+    + (grouping.getHideOrgName() ? 1 : 0),
   );
 
   let unsubSync: (() => void) | undefined;
@@ -254,6 +255,7 @@
     activity.setHideClosedMerged(false);
     activity.setHideBots(false);
     activity.setHideDefaultBranchActivity(false);
+    grouping.setHideOrgName(false);
     applyFilters();
   }
 
@@ -301,6 +303,15 @@
           color: "var(--accent-purple)",
           onSelect: () => {
             activity.setHideBots(!activity.getHideBots());
+          },
+        },
+        {
+          id: "hide-org-name",
+          label: "Hide org name",
+          active: grouping.getHideOrgName(),
+          color: "var(--accent-blue)",
+          onSelect: () => {
+            grouping.setHideOrgName(!grouping.getHideOrgName());
           },
         },
       ],

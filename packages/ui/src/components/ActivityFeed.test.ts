@@ -113,6 +113,8 @@ vi.mock("../context.js", () => ({
     grouping: {
       getGroupByRepo: () => true,
       setGroupByRepo: vi.fn(),
+      getHideOrgName: () => false,
+      setHideOrgName: vi.fn(),
     },
   }),
 }));

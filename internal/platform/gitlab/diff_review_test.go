@@ -696,24 +696,29 @@ func TestGitLabResolveDiffReviewThreadUpdatesDiscussion(t *testing.T) {
 	discussionID := "0123456789abcdef0123456789abcdef01234567"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		if r.Method == http.MethodGet && r.URL.EscapedPath() == "/api/v4/projects/group%2Fproject" {
-			writeJSON(w, `{"id": 42, "path_with_namespace": "group/project", "path": "project"}`)
-			return
+		switch r.URL.EscapedPath() {
+		case "/api/v4/projects/group%2Fproject":
+			assert.Equal(http.MethodGet, r.Method)
+			writeJSON(w, `{
+				"id": 42,
+				"path": "project",
+				"path_with_namespace": "group/project",
+				"name": "Project"
+			}`)
+		case "/api/v4/projects/42/merge_requests/7/discussions/" + discussionID:
+			assert.Equal(http.MethodPut, r.Method)
+			var body struct {
+				Resolved bool `json:"resolved"`
+			}
+			if !assert.NoError(json.NewDecoder(r.Body).Decode(&body)) {
+				http.Error(w, "invalid request body", http.StatusBadRequest)
+				return
+			}
+			assert.True(body.Resolved)
+			writeJSON(w, `{"id": "`+discussionID+`", "notes": []}`)
+		default:
+			http.NotFound(w, r)
 		}
-		assert.Equal(http.MethodPut, r.Method)
-		assert.Equal(
-			"/api/v4/projects/42/merge_requests/7/discussions/"+discussionID,
-			r.URL.EscapedPath(),
-		)
-		var body struct {
-			Resolved bool `json:"resolved"`
-		}
-		if !assert.NoError(json.NewDecoder(r.Body).Decode(&body)) {
-			http.Error(w, "invalid request body", http.StatusBadRequest)
-			return
-		}
-		assert.True(body.Resolved)
-		writeJSON(w, `{"id": "`+discussionID+`", "notes": []}`)
 	}))
 	defer server.Close()
 

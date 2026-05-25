@@ -89,8 +89,165 @@ func TestGetPRDetailIncludesDiscussionID(t *testing.T) {
 	assert.False(result.Events[0].Resolved)
 }
 
+func TestGitLabDiscussionMetadataSyncsToDetailAPI(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := t.Context()
+	now := time.Now().UTC()
+
+	database := dbtest.Open(t)
+
+	ref := platform.RepoRef{
+		Platform:           platform.KindGitLab,
+		Host:               "gitlab.com",
+		Owner:              "acme",
+		Name:               "widget",
+		RepoPath:           "acme/widget",
+		PlatformID:         1234,
+		PlatformExternalID: "gid://gitlab/Project/1234",
+		WebURL:             "https://gitlab.com/acme/widget",
+		CloneURL:           "https://gitlab.com/acme/widget.git",
+		DefaultBranch:      "main",
+	}
+
+	mrDiscussionID := "disc-mr-abc123"
+	issueDiscussionID := "disc-issue-def456"
+	provider := &gitLabDiscussionProvider{
+		ref: ref,
+		mergeRequests: map[int]platform.MergeRequest{
+			7: {
+				Repo:               ref,
+				PlatformID:         1001,
+				PlatformExternalID: "gid://gitlab/MergeRequest/1001",
+				Number:             7,
+				URL:                "https://gitlab.com/acme/widget/-/merge_requests/7",
+				Title:              "Discussion sync test",
+				Author:             "author",
+				State:              "open",
+				CreatedAt:          now,
+				UpdatedAt:          now,
+				LastActivityAt:     now,
+			},
+		},
+		mergeRequestEvents: map[int][]platform.MergeRequestEvent{
+			7: {{
+				Repo:               ref,
+				PlatformID:         2001,
+				PlatformExternalID: "gid://gitlab/Note/2001",
+				MergeRequestNumber: 7,
+				EventType:          "issue_comment",
+				Author:             "reviewer",
+				Body:               "Please fix this line.",
+				CreatedAt:          now,
+				DedupeKey:          "gitlab-note-2001",
+				DiscussionID:       mrDiscussionID,
+				PositionJSON:       `{"new_path":"main.go","new_line":42}`,
+				Resolvable:         true,
+				Resolved:           false,
+			}},
+		},
+		issues: map[int]platform.Issue{
+			11: {
+				Repo:               ref,
+				PlatformID:         3001,
+				PlatformExternalID: "gid://gitlab/Issue/3001",
+				Number:             11,
+				URL:                "https://gitlab.com/acme/widget/-/issues/11",
+				Title:              "Issue discussion sync test",
+				Author:             "author",
+				State:              "open",
+				CreatedAt:          now,
+				UpdatedAt:          now,
+				LastActivityAt:     now,
+			},
+		},
+		issueEvents: map[int][]platform.IssueEvent{
+			11: {{
+				Repo:               ref,
+				PlatformID:         4001,
+				PlatformExternalID: "gid://gitlab/Note/4001",
+				IssueNumber:        11,
+				EventType:          "issue_comment",
+				Author:             "triager",
+				Body:               "Issue discussion reply.",
+				CreatedAt:          now,
+				DedupeKey:          "gitlab-issue-note-4001",
+				DiscussionID:       issueDiscussionID,
+			}},
+		},
+	}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+
+	repo := ghclient.RepoRef{
+		Platform:           platform.KindGitLab,
+		Owner:              "acme",
+		Name:               "widget",
+		PlatformHost:       "gitlab.com",
+		RepoPath:           "acme/widget",
+		PlatformRepoID:     1234,
+		PlatformExternalID: "gid://gitlab/Project/1234",
+		WebURL:             "https://gitlab.com/acme/widget",
+		CloneURL:           "https://gitlab.com/acme/widget.git",
+		DefaultBranch:      "main",
+	}
+
+	syncer := ghclient.NewSyncerWithRegistry(
+		registry, database, nil, []ghclient.RepoRef{repo}, time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+
+	require.NoError(syncer.SyncMROnProvider(ctx, platform.KindGitLab, "gitlab.com", "acme", "widget", 7))
+	require.NoError(syncer.SyncIssueOnProvider(ctx, platform.KindGitLab, "gitlab.com", "acme", "widget", 11))
+
+	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
+
+	prReq := httptest.NewRequest(http.MethodGet, "/api/v1/pulls/gitlab/acme/widget/7", nil)
+	prRR := httptest.NewRecorder()
+	srv.ServeHTTP(prRR, prReq)
+
+	require.Equal(http.StatusOK, prRR.Code, "response: %s", prRR.Body.String())
+	var prResult struct {
+		Events []struct {
+			DiscussionID *string `json:"DiscussionID"`
+			PositionJSON string  `json:"PositionJSON"`
+			Resolvable   bool    `json:"Resolvable"`
+			Resolved     bool    `json:"Resolved"`
+		} `json:"events"`
+	}
+	err = json.NewDecoder(prRR.Body).Decode(&prResult)
+	require.NoError(err)
+	require.Len(prResult.Events, 1)
+	require.NotNil(prResult.Events[0].DiscussionID)
+	assert.Equal(mrDiscussionID, *prResult.Events[0].DiscussionID)
+	assert.JSONEq(`{"new_path":"main.go","new_line":42}`, prResult.Events[0].PositionJSON)
+	assert.True(prResult.Events[0].Resolvable)
+	assert.False(prResult.Events[0].Resolved)
+
+	issueReq := httptest.NewRequest(http.MethodGet, "/api/v1/issues/gitlab/acme/widget/11", nil)
+	issueRR := httptest.NewRecorder()
+	srv.ServeHTTP(issueRR, issueReq)
+
+	require.Equal(http.StatusOK, issueRR.Code, "response: %s", issueRR.Body.String())
+	var issueResult struct {
+		Events []struct {
+			DiscussionID *string `json:"DiscussionID"`
+		} `json:"events"`
+	}
+	err = json.NewDecoder(issueRR.Body).Decode(&issueResult)
+	require.NoError(err)
+	require.Len(issueResult.Events, 1)
+	require.NotNil(issueResult.Events[0].DiscussionID)
+	assert.Equal(issueDiscussionID, *issueResult.Events[0].DiscussionID)
+}
+
 type gitLabDiscussionProvider struct {
 	ref platform.RepoRef
+
+	mergeRequests      map[int]platform.MergeRequest
+	mergeRequestEvents map[int][]platform.MergeRequestEvent
+	issues             map[int]platform.Issue
+	issueEvents        map[int][]platform.IssueEvent
 
 	// Track mutation calls for test assertions
 	replyToDiscussionCalls []replyToDiscussionCall
@@ -148,11 +305,25 @@ func (p *gitLabDiscussionProvider) ListOpenMergeRequests(context.Context, platfo
 	return nil, nil
 }
 
-func (p *gitLabDiscussionProvider) GetMergeRequest(context.Context, platform.RepoRef, int) (platform.MergeRequest, error) {
+func (p *gitLabDiscussionProvider) GetMergeRequest(
+	_ context.Context,
+	_ platform.RepoRef,
+	number int,
+) (platform.MergeRequest, error) {
+	if p.mergeRequests != nil {
+		return p.mergeRequests[number], nil
+	}
 	return platform.MergeRequest{}, nil
 }
 
-func (p *gitLabDiscussionProvider) ListMergeRequestEvents(context.Context, platform.RepoRef, int) ([]platform.MergeRequestEvent, error) {
+func (p *gitLabDiscussionProvider) ListMergeRequestEvents(
+	_ context.Context,
+	_ platform.RepoRef,
+	number int,
+) ([]platform.MergeRequestEvent, error) {
+	if p.mergeRequestEvents != nil {
+		return p.mergeRequestEvents[number], nil
+	}
 	return nil, nil
 }
 
@@ -160,11 +331,25 @@ func (p *gitLabDiscussionProvider) ListOpenIssues(context.Context, platform.Repo
 	return nil, nil
 }
 
-func (p *gitLabDiscussionProvider) GetIssue(context.Context, platform.RepoRef, int) (platform.Issue, error) {
+func (p *gitLabDiscussionProvider) GetIssue(
+	_ context.Context,
+	_ platform.RepoRef,
+	number int,
+) (platform.Issue, error) {
+	if p.issues != nil {
+		return p.issues[number], nil
+	}
 	return platform.Issue{}, nil
 }
 
-func (p *gitLabDiscussionProvider) ListIssueEvents(context.Context, platform.RepoRef, int) ([]platform.IssueEvent, error) {
+func (p *gitLabDiscussionProvider) ListIssueEvents(
+	_ context.Context,
+	_ platform.RepoRef,
+	number int,
+) ([]platform.IssueEvent, error) {
+	if p.issueEvents != nil {
+		return p.issueEvents[number], nil
+	}
 	return nil, nil
 }
 

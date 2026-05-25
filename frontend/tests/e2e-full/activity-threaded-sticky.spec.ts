@@ -57,18 +57,26 @@ test.describe("threaded activity sticky headers", () => {
     expect(Math.abs(afterBox!.y - beforeTop)).toBeLessThan(4);
 
     // The first column header cell ("Type") must line up with the type
-    // chips in the later section's rows. After scrolling, find a PR/Issue
-    // chip inside an .item-row that's in the viewport and compare x-edges.
+    // chips in a LATER section's rows. Scope to the second .repo-section
+    // explicitly (seed has acme/widgets + acme/tools) and additionally
+    // verify the chip is in the viewport below the sticky header — using
+    // .first() on the whole view could pick a section-1 chip that no
+    // longer matches the scrolled layout, hiding a real regression.
     const typeHeader = columnHeaders.locator(".cell--type");
-    const headerX = (await typeHeader.boundingBox())!.x;
-    const firstVisibleItemChip = page
-      .locator(".threaded-view .item-row .cell--type :is(.chip--kind-pr, .chip--kind-issue)")
+    const headerBox = (await typeHeader.boundingBox())!;
+    const secondSection = page.locator(".threaded-view .repo-section").nth(1);
+    await expect(secondSection).toBeVisible();
+    const laterSectionChip = secondSection
+      .locator(".item-row .cell--type :is(.chip--kind-pr, .chip--kind-issue)")
       .first();
-    await expect(firstVisibleItemChip).toBeVisible();
-    const chipX = (await firstVisibleItemChip.boundingBox())!.x;
-    // Allow ~2px sub-pixel slack; large mismatches would mean each section
-    // has its own column tracks again (the regression we are guarding against).
-    expect(Math.abs(chipX - headerX)).toBeLessThan(4);
+    await expect(laterSectionChip).toBeVisible();
+    const chipBox = (await laterSectionChip.boundingBox())!;
+    // The chip we picked must actually be below the sticky header in the
+    // viewport so we are comparing alignment against post-scroll layout.
+    expect(chipBox.y).toBeGreaterThan(headerBox.y + headerBox.height);
+    // Allow ~2px sub-pixel slack; large mismatches would mean the second
+    // section regressed to its own column tracks (the bug we guard against).
+    expect(Math.abs(chipBox.x - headerBox.x)).toBeLessThan(4);
   });
 
   test("each repo header is bounded to its own section instead of stacking", async ({

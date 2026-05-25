@@ -611,9 +611,10 @@
 
 <style>
   /* The threaded view is one grid so every row — column headers, item
-   * rows, and event rows alike — shares the same column widths. Sections
-   * are display: contents wrappers that exist only to keep Svelte's
-   * keyed each block stable across re-renders. fit-content keeps each
+   * rows, and event rows alike — shares the same column widths. Each
+   * .repo-section is a subgrid that spans 1 / -1 (see its rule below),
+   * so its rows inherit the view's tracks while the section's box
+   * still bounds its sticky repo header. fit-content keeps each
    * non-fixed column sized to its widest cell content, capped to a
    * sensible maximum; the cap means hiding the org name automatically
    * shrinks the repo column because cell content is shorter. */

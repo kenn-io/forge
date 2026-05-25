@@ -61,6 +61,7 @@ const collapseThreads = vi.hoisted(() => ({ value: false }));
 const collapseAllThreads = vi.hoisted(() => vi.fn());
 const expandAllThreads = vi.hoisted(() => vi.fn());
 const hideDefaultBranchActivity = vi.hoisted(() => ({ value: false }));
+const hideOrgName = vi.hoisted(() => ({ value: false }));
 const setActivityFilterTypes = vi.hoisted(() => vi.fn());
 
 vi.mock("../context.js", () => ({
@@ -113,8 +114,10 @@ vi.mock("../context.js", () => ({
     grouping: {
       getGroupByRepo: () => true,
       setGroupByRepo: vi.fn(),
-      getHideOrgName: () => false,
-      setHideOrgName: vi.fn(),
+      getHideOrgName: () => hideOrgName.value,
+      setHideOrgName: vi.fn((value: boolean) => {
+        hideOrgName.value = value;
+      }),
     },
   }),
 }));
@@ -124,6 +127,7 @@ describe("ActivityFeed compact mode", () => {
     viewMode.value = "flat";
     collapseThreads.value = false;
     hideDefaultBranchActivity.value = false;
+    hideOrgName.value = false;
     setActivityFilterTypes.mockClear();
     items.value = [
       activityItem("selected"),
@@ -156,6 +160,34 @@ describe("ActivityFeed compact mode", () => {
     expect(container.querySelector(".activity-table")).toBeNull();
     expect(container.querySelectorAll(".activity-compact-row")).toHaveLength(2);
     expect(screen.getByText("Add widget caching layer")).toBeTruthy();
+  });
+
+  it("respects hide org name in compact flat rows", () => {
+    hideOrgName.value = true;
+
+    const { container } = render(ActivityFeed, {
+      props: { compact: true },
+    });
+
+    const repoLabels = Array.from(
+      container.querySelectorAll(".compact-meta > span:first-child"),
+    ).map((el) => el.textContent?.trim());
+    expect(repoLabels).toEqual(["widgets", "widgets"]);
+    expect(container.textContent).not.toContain("acme/widgets");
+  });
+
+  it("respects hide org name in table flat rows", () => {
+    hideOrgName.value = true;
+
+    const { container } = render(ActivityFeed, {
+      props: { compact: false },
+    });
+
+    const repoCells = Array.from(
+      container.querySelectorAll(".activity-row .col-repo"),
+    ).map((el) => el.textContent?.trim());
+    expect(repoCells).toEqual(["widgets", "widgets"]);
+    expect(container.textContent).not.toContain("acme/widgets");
   });
 
   it("highlights all compact rows for the selected item", () => {

@@ -227,6 +227,10 @@
     return item.activity_url || item.item_url;
   }
 
+  function repoLabel(owner: string, name: string): string {
+    return grouping.getHideOrgName() ? name : `${owner}/${name}`;
+  }
+
   const displayItems = $derived.by(() => {
     let result = activity.getActivityItems();
     const filter = activity.getItemFilter();
@@ -574,7 +578,7 @@
                   {/if}
                 </span>
                 <span class="compact-meta">
-                  <span>{row.representative.repo_owner}/{row.representative.repo_name}</span>
+                  <span>{repoLabel(row.representative.repo_owner, row.representative.repo_name)}</span>
                   <Chip
                     size="sm"
                     uppercase={false}
@@ -607,7 +611,7 @@
                   {isDefaultBranchActivity(row) ? branchActivityTitle(row) : row.item_title}
                 </span>
                 <span class="compact-meta">
-                  <span>{row.repo_owner}/{row.repo_name}</span>
+                  <span>{repoLabel(row.repo_owner, row.repo_name)}</span>
                   {#if isDefaultBranchActivity(row) && branchActivityDetail(row)}
                     <span class="sha">{branchActivityDetail(row)}</span>
                   {/if}
@@ -653,7 +657,7 @@
                       class="evt-label evt-commit chip--teal"
                     >{row.count} commits</Chip>
                   </td>
-                  <td class="col-repo">{row.representative.repo_owner}/{row.representative.repo_name}</td>
+                  <td class="col-repo">{repoLabel(row.representative.repo_owner, row.representative.repo_name)}</td>
                   <td class="col-item">
                     {#if isDefaultBranchActivity(row.representative)}
                       <span class="branch-name">{branchName(row.representative)}</span>
@@ -693,7 +697,7 @@
                       class={eventChipClass(row.activity_type)}
                     >{eventLabel(row)}</Chip>
                   </td>
-                  <td class="col-repo">{row.repo_owner}/{row.repo_name}</td>
+                  <td class="col-repo">{repoLabel(row.repo_owner, row.repo_name)}</td>
                   <td class="col-item">
                     {#if isDefaultBranchActivity(row)}
                       <span class="branch-name">{branchName(row)}</span>

@@ -23,6 +23,10 @@ function event(overrides: Partial<PREvent>): PREvent {
     MetadataJSON: "",
     CreatedAt: "2024-06-01T12:00:00Z",
     DedupeKey: "event-1",
+    ThreadID: null,
+    PositionJSON: "",
+    Resolvable: false,
+    Resolved: false,
     ...overrides,
   } as PREvent;
 }
@@ -236,6 +240,36 @@ describe("prTimelineFilter", () => {
         hideBots: false,
       }).map((item) => item.ID),
     ).toEqual([1, 4]);
+  });
+
+  it("filters review-thread replies using the neutral thread id", () => {
+    const events = [
+      event({
+        ID: 2,
+        EventType: "review_comment",
+        Body: "reply",
+        CreatedAt: "2024-06-01T12:01:00Z",
+        review_thread: { id: "review-thread-1" },
+      } as Partial<PREvent>),
+      event({
+        ID: 1,
+        EventType: "review_comment",
+        Body: "root",
+        CreatedAt: "2024-06-01T12:00:00Z",
+        review_thread: { id: "review-thread-1" },
+      } as Partial<PREvent>),
+    ];
+
+    expect(
+      filterPREvents(events, {
+        showMessages: true,
+        showReplies: false,
+        showCommitDetails: true,
+        showEvents: true,
+        showForcePushes: true,
+        hideBots: false,
+      }).map((item) => item.ID),
+    ).toEqual([1]);
   });
 
   it("counts active timeline filters", () => {

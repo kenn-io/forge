@@ -27,6 +27,10 @@ function makeEvent(overrides: Partial<PREvent> = {}): PREvent {
     }),
     DedupeKey: "force-push-1",
     CreatedAt: "2024-06-01T12:00:00Z",
+    ThreadID: null,
+    PositionJSON: "",
+    Resolvable: false,
+    Resolved: false,
     ...overrides,
   } as PREvent;
 }
@@ -233,6 +237,72 @@ describe("EventTimeline", () => {
     );
     expect(threadText.indexOf("Middle threaded reply")).toBeLessThan(
       threadText.indexOf("Oldest threaded reply"),
+    );
+  });
+
+  it("renders positioned discussion threads with the same root and reply ordering", () => {
+    const { container } = render(EventTimeline, {
+      props: {
+        events: [
+          makeEvent({
+            ID: 12,
+            EventType: "issue_comment",
+            Author: "author",
+            Body: "Pushed an update",
+            ThreadID: "disc-positioned",
+            CreatedAt: "2024-06-01T12:02:00Z",
+          }),
+          makeEvent({
+            ID: 10,
+            EventType: "issue_comment",
+            Author: "reviewer",
+            Body: "This needs a named helper",
+            ThreadID: "disc-positioned",
+            PositionJSON: JSON.stringify({
+              old_path: "src/review.ts",
+              new_path: "src/review.ts",
+              new_line: 11,
+              head_sha: "head-sha",
+            }),
+            CreatedAt: "2024-06-01T12:00:00Z",
+          }),
+          makeEvent({
+            ID: 11,
+            EventType: "issue_comment",
+            Author: "reviewer",
+            Body: "The wrapper should stay close to the call site",
+            ThreadID: "disc-positioned",
+            CreatedAt: "2024-06-01T12:01:00Z",
+          }),
+        ],
+        provider: "gitlab",
+        platformHost: "gitlab.com",
+        repoOwner: "acme",
+        repoName: "widget",
+        repoPath: "acme/widget",
+        number: 7,
+      },
+      context: new Map([
+        [STORES_KEY, {
+          diff: makeDiffStore(),
+          diffReviewDraft: {
+            setRouteContext: vi.fn(),
+            isSubmitting: () => false,
+          },
+        }],
+      ]),
+    });
+
+    expect(screen.getByText("src/review.ts:11")).toBeTruthy();
+    expect(screen.getByText("client.publishThreads();")).toBeTruthy();
+    expect(container.querySelectorAll(".thread-reply")).toHaveLength(2);
+
+    const threadText = container.querySelector(".event-card")?.textContent ?? "";
+    expect(threadText.indexOf("This needs a named helper")).toBeLessThan(
+      threadText.indexOf("Pushed an update"),
+    );
+    expect(threadText.indexOf("Pushed an update")).toBeLessThan(
+      threadText.indexOf("The wrapper should stay close to the call site"),
     );
   });
 

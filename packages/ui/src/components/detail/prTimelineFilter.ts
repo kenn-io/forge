@@ -43,6 +43,18 @@ function isEarlierEvent(a: PREvent, b: PREvent): boolean {
     (eventSortValue(a) === eventSortValue(b) && a.ID < b.ID);
 }
 
+function reviewThreadID(event: PREvent): string | null {
+  if (!("review_thread" in event)) return null;
+  const thread = event.review_thread as { id?: unknown } | undefined;
+  return typeof thread?.id === "string" && thread.id.length > 0
+    ? thread.id
+    : null;
+}
+
+function timelineThreadID(event: PREvent): string | null {
+  return event.ThreadID || reviewThreadID(event);
+}
+
 export function timelineEventBucket(event: PREvent): PRTimelineEventBucket {
   switch (event.EventType) {
     case "issue_comment":
@@ -123,24 +135,26 @@ export function filterPREvents(
 ): PREvent[] {
   const threadRoots = new Map<string, PREvent>();
   for (const event of events) {
+    const threadID = timelineThreadID(event);
     if (
-      !event.ThreadID ||
+      !threadID ||
       !["issue_comment", "review", "review_comment"].includes(event.EventType)
     ) {
       continue;
     }
-    const currentRoot = threadRoots.get(event.ThreadID);
+    const currentRoot = threadRoots.get(threadID);
     if (currentRoot === undefined || isEarlierEvent(event, currentRoot)) {
-      threadRoots.set(event.ThreadID, event);
+      threadRoots.set(threadID, event);
     }
   }
 
   return events.filter((event) => {
+    const threadID = timelineThreadID(event);
     if (filter.hideBots && isBotAuthor(event.Author)) return false;
     if (
       !filter.showReplies &&
-      event.ThreadID &&
-      threadRoots.get(event.ThreadID)?.ID !== event.ID
+      threadID &&
+      threadRoots.get(threadID)?.ID !== event.ID
     ) {
       return false;
     }

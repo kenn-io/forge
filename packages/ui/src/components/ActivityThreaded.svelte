@@ -463,26 +463,25 @@
   class="threaded-view"
   class:threaded-view--compact={compact}
   class:threaded-view--grouped={grouping.getGroupByRepo()}
+  aria-label="Activity items"
 >
-  {#each grouped as repoGroup, sectionIdx (repoGroup.key)}
+  <div class="activity-column-headers">
+    <span class="cell cell--caret" aria-hidden="true"></span>
+    <span class="cell cell--type">Type</span>
+    {#if !grouping.getGroupByRepo()}
+      <span class="cell cell--repo">Repo</span>
+    {/if}
+    <span class="cell cell--author">Author</span>
+    <span class="cell cell--title">Item</span>
+    <span class="cell cell--time">When</span>
+  </div>
+
+  {#each grouped as repoGroup (repoGroup.key)}
     <div class="repo-section">
       {#if grouping.getGroupByRepo()}
         <div class="repo-header">
           <span class="repo-name">{repoGroup.repo}</span>
           <span class="repo-stats">{repoGroup.itemCount} items, {repoGroup.eventCount} events</span>
-        </div>
-      {/if}
-
-      {#if sectionIdx === 0}
-        <div class="activity-column-headers" aria-hidden="true">
-          <span class="cell cell--caret"></span>
-          <span class="cell cell--type">Type</span>
-          {#if !grouping.getGroupByRepo()}
-            <span class="cell cell--repo">Repo</span>
-          {/if}
-          <span class="cell cell--author">Author</span>
-          <span class="cell cell--title">Item</span>
-          <span class="cell cell--time">When</span>
         </div>
       {/if}
 
@@ -611,26 +610,19 @@
 </div>
 
 <style>
+  /* The threaded view is one grid so every row — column headers, item
+   * rows, and event rows alike — shares the same column widths. Sections
+   * are display: contents wrappers that exist only to keep Svelte's
+   * keyed each block stable across re-renders. fit-content keeps each
+   * non-fixed column sized to its widest cell content, capped to a
+   * sensible maximum; the cap means hiding the org name automatically
+   * shrinks the repo column because cell content is shorter. */
   .threaded-view {
     flex: 1;
     overflow-y: auto;
     padding: 0 16px;
     --threaded-col-repo-max: 220px;
     --threaded-col-author-max: 140px;
-  }
-
-  .threaded-view--compact {
-    --threaded-col-repo-max: 140px;
-    --threaded-col-author-max: 96px;
-  }
-
-  /* The section is the grid container so every `.item-row` inside shares
-   * column widths. Each non-fixed column uses `fit-content(...)` so it
-   * sizes to its widest cell content, capped to a sensible maximum. Long
-   * repo names expand the project column up to its cap; hiding the org
-   * name shrinks the column automatically because the cell content is
-   * shorter. */
-  .repo-section {
     display: grid;
     grid-template-columns:
       18px
@@ -640,17 +632,25 @@
       minmax(0, 1fr)
       auto;
     column-gap: 6px;
-    margin-bottom: 4px;
+    align-content: start;
   }
 
-  .threaded-view--grouped .repo-section {
+  .threaded-view--grouped {
     grid-template-columns:
       18px
       fit-content(120px)
       fit-content(var(--threaded-col-author-max))
       minmax(0, 1fr)
       auto;
-    padding-left: 18px;
+  }
+
+  .threaded-view--compact {
+    --threaded-col-repo-max: 140px;
+    --threaded-col-author-max: 96px;
+  }
+
+  .repo-section {
+    display: contents;
   }
 
   .repo-header {
@@ -659,10 +659,11 @@
     align-items: center;
     gap: 8px;
     padding: 8px 0 4px;
+    margin-top: 4px;
     position: sticky;
-    top: 0;
+    top: 26px;
     background: var(--bg-primary);
-    z-index: 2;
+    z-index: 1;
     border-bottom: 1px solid var(--border-default);
   }
 
@@ -703,14 +704,7 @@
     position: sticky;
     top: 0;
     background: var(--bg-primary);
-    z-index: 1;
-  }
-
-  .threaded-view--grouped .activity-column-headers {
-    /* Sit below the repo header (which is also sticky at top: 0) so both
-     * stay readable when the user scrolls long sections. */
-    top: 28px;
-    z-index: 1;
+    z-index: 2;
   }
 
   .item-row:hover {

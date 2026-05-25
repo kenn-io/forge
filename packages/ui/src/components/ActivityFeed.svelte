@@ -624,9 +624,9 @@
           {/each}
         </div>
       {:else}
-        <div class="activity-table">
-          <div class="activity-column-headers" aria-hidden="true">
-            <span class="cell cell--caret-spacer"></span>
+        <div class="activity-table" aria-label="Activity events">
+          <div class="activity-column-headers">
+            <span class="cell cell--caret-spacer" aria-hidden="true"></span>
             <span class="cell cell--type">Type</span>
             <span class="cell cell--repo col-repo">Repo</span>
             <span class="cell cell--author col-author">Author</span>

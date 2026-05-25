@@ -804,7 +804,9 @@
     top: 0;
     bottom: 0;
     left: calc(var(--thread-dot-size) / 2);
-    border-left: 2px solid var(--border-default);
+    width: 2px;
+    background: var(--border-default);
+    transform: translateX(-50%);
   }
 
   .thread-reply--first .thread-reply-rail::before {

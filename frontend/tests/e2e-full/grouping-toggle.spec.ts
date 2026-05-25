@@ -209,6 +209,29 @@ test.describe("grouping toggle", () => {
     ).toHaveCount(0);
   });
 
+  test("activity threaded ungrouped rows show latest author and hide org repo chips", async ({ page }) => {
+    await page.goto("/");
+
+    await selectActivityViewItem(page, "Threaded");
+    await page.locator(".threaded-view .item-row").first()
+      .waitFor({ state: "visible", timeout: 10_000 });
+    await selectActivityViewItem(page, "All");
+
+    const row = page.locator(".threaded-view .item-row", {
+      has: page.locator(".item-title", { hasText: "Add widget caching layer" }),
+    }).first();
+    await expect(row).toBeVisible();
+    await expect(row.locator(".cell--author")).toHaveText("bob");
+
+    const repoLabel = row.locator(".repo-chip__label");
+    await expect(repoLabel).toHaveText("acme/widgets");
+
+    await selectActivityViewItem(page, "Hide org name");
+
+    await expect(repoLabel).toHaveText("widgets");
+    await expect(repoLabel).not.toHaveText("acme/widgets");
+  });
+
   test("threaded ungrouped empty state shows message", async ({ page }) => {
     await page.goto("/");
 

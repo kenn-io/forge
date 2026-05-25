@@ -58,6 +58,7 @@ test.describe("grouping toggle", () => {
       }
       localStorage.removeItem("middleman:groupingMode");
       localStorage.removeItem("middleman:groupByRepo");
+      localStorage.removeItem("middleman:hideOrgName");
       sessionStorage.setItem("middleman:test:grouping:init", "1");
     });
     await page.goto("/pulls");
@@ -179,6 +180,33 @@ test.describe("grouping toggle", () => {
     dropdown = await openActivityViewDropdown(page);
     await expect(dropdown.locator(".filter-item", { hasText: /By repo/i }))
       .toBeVisible();
+  });
+
+  test("activity threaded grouped headers respect hide org name", async ({ page }) => {
+    await page.goto("/");
+
+    await selectActivityViewItem(page, "Threaded");
+    await page.locator(".threaded-view .repo-header").first()
+      .waitFor({ state: "visible", timeout: 10_000 });
+
+    await expect(
+      page.locator(".threaded-view .repo-header .repo-name", {
+        hasText: "acme/widgets",
+      }),
+    ).toBeVisible();
+
+    await selectActivityViewItem(page, "Hide org name");
+
+    await expect(
+      page.locator(".threaded-view .repo-header .repo-name", {
+        hasText: /^widgets$/,
+      }),
+    ).toBeVisible();
+    await expect(
+      page.locator(".threaded-view .repo-header .repo-name", {
+        hasText: "acme/widgets",
+      }),
+    ).toHaveCount(0);
   });
 
   test("threaded ungrouped empty state shows message", async ({ page }) => {

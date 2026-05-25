@@ -208,7 +208,7 @@
         owner: entryRepoOwner(entry),
         name: entryRepoName(entry),
       });
-      repoLabels.set(repoKey, `${entryRepoOwner(entry)}/${entryRepoName(entry)}`);
+      repoLabels.set(repoKey, repoLabel(entryRepoOwner(entry), entryRepoName(entry)));
       let bucket = repoMap.get(repoKey);
       if (!bucket) {
         bucket = [];

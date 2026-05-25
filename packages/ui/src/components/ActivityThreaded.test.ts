@@ -282,6 +282,19 @@ describe("ActivityThreaded collapse", () => {
     expect(label?.textContent).toBe("widgets");
   });
 
+  it("shows just the repo name in grouped headers when hideOrgName is on", () => {
+    groupByRepo.value = true;
+    hideOrgName.value = true;
+
+    const { container } = render(ActivityThreaded, {
+      props: { items: [activityItem("c1")], onSelectItem: undefined },
+    });
+
+    const repoName = container.querySelector(".repo-header .repo-name");
+    expect(repoName?.textContent).toBe("widgets");
+    expect(container.textContent).not.toContain("acme/widgets");
+  });
+
   it("keeps force-push rows as provider compare links", async () => {
     const onSelectBranchCommit = vi.fn();
     const open = vi

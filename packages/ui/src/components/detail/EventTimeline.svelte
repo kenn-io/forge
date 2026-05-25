@@ -566,7 +566,7 @@
                       class:thread-reply--last={index === entry.replies.length - 1}
                     >
                       <div class="thread-reply-rail" aria-hidden="true">
-                        <span class="thread-reply-tick"></span>
+                        <span class="thread-reply-dot"></span>
                       </div>
                       <div class="thread-reply-content">
                         <div class="event-header thread-reply-header">
@@ -785,7 +785,7 @@
 
   .thread-reply {
     display: grid;
-    grid-template-columns: 1.7rem minmax(0, 1fr);
+    grid-template-columns: 1.35rem minmax(0, 1fr);
     column-gap: 0;
     min-width: 0;
   }
@@ -793,6 +793,8 @@
   .thread-reply-rail {
     position: relative;
     min-height: 1.5rem;
+    --thread-dot-center-y: 0.74rem;
+    --thread-dot-size: 0.5rem;
   }
 
   .thread-reply-rail::before {
@@ -800,29 +802,32 @@
     position: absolute;
     top: 0;
     bottom: 0;
-    left: 0;
+    left: calc(var(--thread-dot-size) / 2);
     border-left: 2px solid var(--border-default);
   }
 
   .thread-reply--first .thread-reply-rail::before {
-    top: 0.74rem;
+    top: var(--thread-dot-center-y);
   }
 
   .thread-reply--last .thread-reply-rail::before {
-    bottom: calc(100% - 0.74rem);
+    bottom: calc(100% - var(--thread-dot-center-y));
   }
 
   .thread-reply--first.thread-reply--last .thread-reply-rail::before {
     display: none;
   }
 
-  .thread-reply-tick {
+  .thread-reply-dot {
     position: absolute;
-    top: 0.74rem;
+    top: calc(var(--thread-dot-center-y) - var(--thread-dot-size) / 2);
     left: 0;
-    width: 1.35rem;
-    height: 0;
-    border-top: 2px solid var(--border-default);
+    width: var(--thread-dot-size);
+    height: var(--thread-dot-size);
+    border-radius: 50%;
+    background: var(--accent-blue);
+    box-shadow: 0 0 0 0.18rem var(--bg-surface);
+    z-index: 1;
   }
 
   .thread-reply-content {

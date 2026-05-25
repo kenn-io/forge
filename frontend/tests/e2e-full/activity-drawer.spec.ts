@@ -347,7 +347,7 @@ function isGheIssueRoute(url: URL, suffix = ""): boolean {
 }
 
 async function waitForActivityTable(page: Page): Promise<void> {
-  await page.locator(".activity-table tbody .activity-row").first()
+  await page.locator(".activity-table .activity-row").first()
     .waitFor({ state: "visible", timeout: 10_000 });
 }
 

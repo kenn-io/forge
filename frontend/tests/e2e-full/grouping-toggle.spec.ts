@@ -185,7 +185,7 @@ test.describe("grouping toggle", () => {
   test("activity flat table rows respect hide org name", async ({ page }) => {
     await page.goto("/?view=flat");
 
-    const row = page.locator(".activity-table tbody .activity-row", {
+    const row = page.locator(".activity-table .activity-row", {
       has: page.locator(".item-title", { hasText: "Add widget caching layer" }),
     }).first();
     await expect(row).toBeVisible({ timeout: 10_000 });

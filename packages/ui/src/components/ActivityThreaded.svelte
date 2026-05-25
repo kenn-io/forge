@@ -464,12 +464,25 @@
   class:threaded-view--compact={compact}
   class:threaded-view--grouped={grouping.getGroupByRepo()}
 >
-  {#each grouped as repoGroup (repoGroup.key)}
+  {#each grouped as repoGroup, sectionIdx (repoGroup.key)}
     <div class="repo-section">
       {#if grouping.getGroupByRepo()}
         <div class="repo-header">
           <span class="repo-name">{repoGroup.repo}</span>
           <span class="repo-stats">{repoGroup.itemCount} items, {repoGroup.eventCount} events</span>
+        </div>
+      {/if}
+
+      {#if sectionIdx === 0}
+        <div class="activity-column-headers" aria-hidden="true">
+          <span class="cell cell--caret"></span>
+          <span class="cell cell--type">Type</span>
+          {#if !grouping.getGroupByRepo()}
+            <span class="cell cell--repo">Repo</span>
+          {/if}
+          <span class="cell cell--author">Author</span>
+          <span class="cell cell--title">Item</span>
+          <span class="cell cell--time">When</span>
         </div>
       {/if}
 
@@ -673,6 +686,31 @@
     cursor: pointer;
     border-bottom: 1px solid var(--border-muted);
     transition: background 0.1s;
+  }
+
+  .activity-column-headers {
+    display: grid;
+    grid-template-columns: subgrid;
+    grid-column: 1 / -1;
+    align-items: center;
+    padding: 6px 0 4px;
+    font-size: var(--font-size-2xs);
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border-default);
+    position: sticky;
+    top: 0;
+    background: var(--bg-primary);
+    z-index: 1;
+  }
+
+  .threaded-view--grouped .activity-column-headers {
+    /* Sit below the repo header (which is also sticky at top: 0) so both
+     * stay readable when the user scrolls long sections. */
+    top: 28px;
+    z-index: 1;
   }
 
   .item-row:hover {

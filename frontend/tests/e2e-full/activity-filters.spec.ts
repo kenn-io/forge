@@ -11,7 +11,7 @@ import { startIsolatedE2EServer, type IsolatedE2EServer } from "./support/e2eSer
 //   bot authors: 2 (dependabot[bot] on PR#7 and issue#13)
 
 async function waitForTable(page: Page): Promise<void> {
-  await page.locator(".activity-table tbody .activity-row").first()
+  await page.locator(".activity-table .activity-row").first()
     .waitFor({ state: "visible", timeout: 10_000 });
 }
 

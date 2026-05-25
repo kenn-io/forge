@@ -25,7 +25,7 @@ async function selectActivityViewItem(
 
 async function gotoThreadedActivity(page: Page): Promise<void> {
   await page.goto("/");
-  await page.locator(".activity-table tbody .activity-row").first()
+  await page.locator(".activity-table .activity-row").first()
     .waitFor({ state: "visible", timeout: 10_000 });
   await selectActivityViewItem(page, "Threaded");
   await page.locator(".threaded-view .item-row").first()

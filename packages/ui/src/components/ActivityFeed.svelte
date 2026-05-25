@@ -25,6 +25,7 @@
   import Chip from "./shared/Chip.svelte";
   import ItemKindChip from "./shared/ItemKindChip.svelte";
   import ItemStateChip from "./shared/ItemStateChip.svelte";
+  import ArrowUpRightIcon from "@lucide/svelte/icons/arrow-up-right";
   import ChevronsDownUpIcon from "@lucide/svelte/icons/chevrons-down-up";
   import ChevronsUpDownIcon from "@lucide/svelte/icons/chevrons-up-down";
 
@@ -230,6 +231,11 @@
 
   function repoLabel(owner: string, name: string): string {
     return grouping.getHideOrgName() ? name : `${owner}/${name}`;
+  }
+
+  function handleLinkClick(e: Event, url: string): void {
+    e.stopPropagation();
+    if (url) window.open(url, "_blank", "noopener");
   }
 
   const displayItems = $derived.by(() => {
@@ -632,6 +638,7 @@
             <span class="cell cell--author col-author">Author</span>
             <span class="cell cell--title">Item</span>
             <span class="cell cell--time col-when">When</span>
+            <span class="cell cell--link" aria-hidden="true"></span>
           </div>
           {#each flatRows as row (row.id)}
             {@const rep = isCollapsedActivityRow(row) ? row.representative : row}
@@ -684,6 +691,19 @@
                 </span>
                 <span class="cell cell--time col-when"
                   >{relativeTime(row.earliest)} – {relativeTime(row.latest)}</span>
+                <span class="cell cell--link">
+                  {#if activityLink(row.representative)}
+                    <button
+                      class="link-btn"
+                      type="button"
+                      aria-label="Open activity in provider"
+                      title="Open activity"
+                      onclick={(e) => handleLinkClick(e, activityLink(row.representative))}
+                    >
+                      <ArrowUpRightIcon size="14" strokeWidth="2" aria-hidden="true" />
+                    </button>
+                  {/if}
+                </span>
               {:else}
                 <span class="cell cell--type">
                   {#if isDefaultBranchActivity(row)}
@@ -725,6 +745,19 @@
                   {/if}
                 </span>
                 <span class="cell cell--time col-when">{relativeTime(row.created_at)}</span>
+                <span class="cell cell--link">
+                  {#if activityLink(row)}
+                    <button
+                      class="link-btn"
+                      type="button"
+                      aria-label="Open activity in provider"
+                      title="Open activity"
+                      onclick={(e) => handleLinkClick(e, activityLink(row))}
+                    >
+                      <ArrowUpRightIcon size="14" strokeWidth="2" aria-hidden="true" />
+                    </button>
+                  {/if}
+                </span>
               {/if}
             </div>
           {/each}
@@ -961,7 +994,8 @@
       fit-content(var(--threaded-col-repo-max, 220px))
       fit-content(var(--threaded-col-author-max, 140px))
       minmax(0, 1fr)
-      auto;
+      auto
+      24px;
     column-gap: 6px;
   }
 
@@ -1071,7 +1105,36 @@
     font-size: var(--font-size-xs);
     color: var(--text-muted);
     text-align: right;
-    padding-right: 4px;
+  }
+
+  .cell--link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    overflow: visible;
+  }
+
+  .link-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    background: none;
+    border: 0;
+    padding: 2px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: color 0.1s, background 0.1s;
+  }
+
+  .link-btn:hover {
+    color: var(--accent-blue);
+    background: var(--bg-surface-hover);
+  }
+
+  .link-btn:focus-visible {
+    outline: 2px solid var(--accent-blue);
+    outline-offset: 1px;
   }
 
   :global(.evt-label) {

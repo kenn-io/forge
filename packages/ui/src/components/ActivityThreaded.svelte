@@ -22,6 +22,7 @@
 
   const { grouping, activity } = getStores();
   import { repoColor } from "../utils/repo-color.js";
+  import ArrowUpRightIcon from "@lucide/svelte/icons/arrow-up-right";
   import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
   import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
 
@@ -457,6 +458,15 @@
     if (isCollapsedActivityRow(row)) return `${row.count} commits`;
     return eventSummary(row) || eventLabel(row.activity_type);
   }
+
+  function rowLinkUrl(item: ActivityItem): string {
+    return item.activity_url || item.item_url;
+  }
+
+  function handleLinkClick(e: Event, url: string): void {
+    e.stopPropagation();
+    if (url) window.open(url, "_blank", "noopener");
+  }
 </script>
 
 <div
@@ -474,6 +484,7 @@
     <span class="cell cell--author">Author</span>
     <span class="cell cell--title">Item</span>
     <span class="cell cell--time">When</span>
+    <span class="cell cell--link" aria-hidden="true"></span>
   </div>
 
   {#each grouped as repoGroup (repoGroup.key)}
@@ -518,6 +529,19 @@
               <span class="item-title">{branchRowTitle(row)}</span>
             </span>
             <span class="cell cell--time">{relativeTime(entry.latestTime)}</span>
+            <span class="cell cell--link">
+              {#if rowLinkUrl(item)}
+                <button
+                  class="link-btn"
+                  type="button"
+                  aria-label="Open activity in provider"
+                  title="Open activity"
+                  onclick={(e) => handleLinkClick(e, rowLinkUrl(item))}
+                >
+                  <ArrowUpRightIcon size="14" strokeWidth="2" aria-hidden="true" />
+                </button>
+              {/if}
+            </span>
           </div>
         {:else}
           {@const itemGroup = entry.group}
@@ -575,6 +599,19 @@
             <span class="item-title">{itemGroup.itemTitle}</span>
           </span>
           <span class="cell cell--time">{relativeTime(itemGroup.latestTime)}</span>
+          <span class="cell cell--link">
+            {#if itemGroup.itemUrl}
+              <button
+                class="link-btn"
+                type="button"
+                aria-label="Open item in provider"
+                title="Open item"
+                onclick={(e) => handleLinkClick(e, itemGroup.itemUrl)}
+              >
+                <ArrowUpRightIcon size="14" strokeWidth="2" aria-hidden="true" />
+              </button>
+            {/if}
+          </span>
         </div>
 
         {#if activity.isThreadItemExpanded(key)}
@@ -631,7 +668,8 @@
       fit-content(var(--threaded-col-repo-max))
       fit-content(var(--threaded-col-author-max))
       minmax(0, 1fr)
-      auto;
+      auto
+      24px;
     column-gap: 6px;
     align-content: start;
   }
@@ -642,7 +680,8 @@
       fit-content(120px)
       fit-content(var(--threaded-col-author-max))
       minmax(0, 1fr)
-      auto;
+      auto
+      24px;
   }
 
   .threaded-view--compact {
@@ -803,6 +842,36 @@
     font-size: var(--font-size-xs);
     color: var(--text-muted);
     text-align: right;
+  }
+
+  .cell--link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    overflow: visible;
+  }
+
+  .link-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    background: none;
+    border: 0;
+    padding: 2px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: color 0.1s, background 0.1s;
+  }
+
+  .link-btn:hover {
+    color: var(--accent-blue);
+    background: var(--bg-surface-hover);
+  }
+
+  .link-btn:focus-visible {
+    outline: 2px solid var(--accent-blue);
+    outline-offset: 1px;
   }
 
   .event-row {

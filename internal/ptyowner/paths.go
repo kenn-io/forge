@@ -37,7 +37,7 @@ func NewSessionPaths(root, session string) (SessionPaths, error) {
 	socket := filepath.Join(root, "sock-"+sessionSocketHash(session))
 	socketDir := ""
 	if len(socket) > maxUnixSocketPathLen {
-		socketDir = filepath.Join(os.TempDir(), "middleman-pty-"+sessionSocketHash(root+"-"+session))
+		socketDir = fallbackSocketDir(root, session, os.TempDir())
 		socket = filepath.Join(socketDir, "sock")
 	}
 	return SessionPaths{
@@ -51,6 +51,16 @@ func NewSessionPaths(root, session string) (SessionPaths, error) {
 }
 
 const maxUnixSocketPathLen = 100
+
+func fallbackSocketDir(root, session, primaryTempDir string) string {
+	for _, base := range []string{primaryTempDir, "/private/tmp", "/tmp"} {
+		candidate := filepath.Join(base, "middleman-pty-"+sessionSocketHash(root+"-"+session))
+		if len(filepath.Join(candidate, "sock")) <= maxUnixSocketPathLen {
+			return candidate
+		}
+	}
+	return filepath.Join("/tmp", "middleman-pty-"+sessionSocketHash(root+"-"+session))
+}
 
 func sessionDirName(session string) string {
 	if strings.ContainsAny(session, `<>:"|?*`) {

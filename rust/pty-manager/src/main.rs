@@ -1070,10 +1070,7 @@ fn session_paths(root: &Path, session: &str) -> Result<SessionPaths> {
     let mut socket = root.join(format!("sock-{}", socket_hash(session)));
     let mut socket_dir = None;
     if socket.to_string_lossy().len() > MAX_UNIX_SOCKET_PATH_LEN {
-        let fallback_dir = env::temp_dir().join(format!(
-            "middleman-pty-{}",
-            socket_hash(&format!("{}-{session}", root.display()))
-        ));
+        let fallback_dir = fallback_socket_dir(root, session, &env::temp_dir());
         socket = fallback_dir.join("sock");
         socket_dir = Some(fallback_dir);
     }
@@ -1084,6 +1081,24 @@ fn session_paths(root: &Path, session: &str) -> Result<SessionPaths> {
         socket,
         socket_dir,
     })
+}
+
+fn fallback_socket_dir(root: &Path, session: &str, primary_temp_dir: &Path) -> PathBuf {
+    let dir_name = format!(
+        "middleman-pty-{}",
+        socket_hash(&format!("{}-{session}", root.display()))
+    );
+    for base in [
+        primary_temp_dir,
+        Path::new("/private/tmp"),
+        Path::new("/tmp"),
+    ] {
+        let candidate = base.join(&dir_name);
+        if candidate.join("sock").to_string_lossy().len() <= MAX_UNIX_SOCKET_PATH_LEN {
+            return candidate;
+        }
+    }
+    Path::new("/tmp").join(dir_name)
 }
 
 fn session_dir_name(session: &str) -> String {
@@ -1286,7 +1301,15 @@ mod tests {
 
         assert_eq!(paths.dir, root.join("middleman-abc123"));
         let socket_dir = paths.socket_dir.as_ref().unwrap();
-        assert!(socket_dir.starts_with(env::temp_dir()));
+        let temp_socket = env::temp_dir()
+            .join(format!(
+                "middleman-pty-{}",
+                socket_hash(&format!("{}-middleman-abc123", root.display()))
+            ))
+            .join("sock");
+        if temp_socket.to_string_lossy().len() <= MAX_UNIX_SOCKET_PATH_LEN {
+            assert!(socket_dir.starts_with(env::temp_dir()));
+        }
         let expected_file_name = format!(
             "middleman-pty-{}",
             socket_hash(&format!("{}-middleman-abc123", root.display()))
@@ -1297,6 +1320,23 @@ mod tests {
         );
         assert_eq!(paths.socket, socket_dir.join("sock"));
         assert!(paths.socket.to_string_lossy().len() <= MAX_UNIX_SOCKET_PATH_LEN);
+    }
+
+    #[test]
+    fn fallback_socket_dir_uses_private_tmp_when_temp_dir_is_too_long() {
+        let root = PathBuf::from("/tmp").join("x".repeat(MAX_UNIX_SOCKET_PATH_LEN));
+        let long_temp_dir = PathBuf::from("/tmp").join("long-temp-root-".repeat(8));
+
+        let socket_dir = fallback_socket_dir(&root, "middleman-abc123", &long_temp_dir);
+
+        assert_eq!(
+            socket_dir,
+            Path::new("/private/tmp").join(format!(
+                "middleman-pty-{}",
+                socket_hash(&format!("{}-middleman-abc123", root.display()))
+            ))
+        );
+        assert!(socket_dir.join("sock").to_string_lossy().len() <= MAX_UNIX_SOCKET_PATH_LEN);
     }
 
     #[cfg(windows)]

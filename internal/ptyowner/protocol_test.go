@@ -60,7 +60,26 @@ func TestSessionPathsUsePrivateSocketDirForLongRoots(t *testing.T) {
 	require.NoError(err)
 	require.NotEmpty(paths.SocketDir)
 	assert.Equal(filepath.Join(paths.SocketDir, "sock"), paths.Socket)
-	assert.Contains(paths.SocketDir, filepath.Join(os.TempDir(), "middleman-pty-"))
+	assert.Equal(fallbackSocketDir(root, "middleman-abc123", os.TempDir()), paths.SocketDir)
+	assert.LessOrEqual(len(paths.Socket), maxUnixSocketPathLen)
+}
+
+func TestSessionPathsUseShortPrivateTmpWhenTempDirIsTooLong(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	root := filepath.Join(t.TempDir(), strings.Repeat("x", maxUnixSocketPathLen))
+	longTempDir := filepath.Join(t.TempDir(), strings.Repeat("long-temp-root-", 8))
+	t.Setenv("TMPDIR", longTempDir)
+
+	paths, err := NewSessionPaths(root, "middleman-abc123")
+
+	require.NoError(err)
+	expectedDir := filepath.Join(
+		"/private/tmp",
+		"middleman-pty-"+sessionSocketHash(root+"-middleman-abc123"),
+	)
+	assert.Equal(expectedDir, paths.SocketDir)
+	assert.Equal(filepath.Join(expectedDir, "sock"), paths.Socket)
 	assert.LessOrEqual(len(paths.Socket), maxUnixSocketPathLen)
 }
 

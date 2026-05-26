@@ -590,7 +590,7 @@ func TestExternalManagerAttachmentWritesUseAttachConnection(t *testing.T) {
 	require.NoError(err)
 	require.NoError(createPrivateDir(paths.Dir))
 	if paths.SocketDir != "" {
-		require.NoError(createPrivateDir(paths.SocketDir))
+		require.NoError(createPrivateSocketDir(paths.SocketDir))
 	}
 
 	listener, err := net.Listen("unix", paths.Socket)

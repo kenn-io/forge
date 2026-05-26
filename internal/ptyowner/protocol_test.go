@@ -117,6 +117,37 @@ func TestFallbackSocketDirUsesPrivateTmpOnDarwin(t *testing.T) {
 	assert.LessOrEqual(len(filepath.Join(socketDir, "sock")), maxUnixSocketPathLen)
 }
 
+func TestCreatePrivateSocketDirRejectsSymlink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink fallback socket hardening is Unix-specific")
+	}
+	require := require.New(t)
+	parent := t.TempDir()
+	target := filepath.Join(parent, "target")
+	socketDir := filepath.Join(parent, "middleman-pty-symlink")
+	require.NoError(os.Mkdir(target, 0o700))
+	require.NoError(os.Symlink(target, socketDir))
+
+	err := createPrivateSocketDir(socketDir)
+
+	require.Error(err)
+	require.ErrorContains(err, "refusing fallback socket dir symlink")
+}
+
+func TestCreatePrivateSocketDirRejectsSharedExistingDir(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix mode fallback socket hardening is Unix-specific")
+	}
+	require := require.New(t)
+	socketDir := filepath.Join(t.TempDir(), "middleman-pty-shared")
+	require.NoError(os.Mkdir(socketDir, 0o755))
+
+	err := createPrivateSocketDir(socketDir)
+
+	require.Error(err)
+	require.ErrorContains(err, "expected private directory")
+}
+
 func TestProtocolRequestRoundTrip(t *testing.T) {
 	assert := Assert.New(t)
 	want := Request{

@@ -14730,13 +14730,15 @@ func TestWorkspaceCreatesRustPtyManagerSessionE2E(t *testing.T) {
 	if runtime.GOOS != "windows" {
 		requirePTYAvailable(t)
 	}
-	runParallelPTYE2E(t)
+	releasePTYSlot := acquirePTYE2ESlot(t)
+	t.Cleanup(releasePTYSlot)
 
 	require := require.New(t)
 	assert := Assert.New(t)
 
 	managerPath := buildRustPtyManagerForTest(t)
 	ptyOwnerDir := longRustPtyOwnerDirForTest(t)
+	setLongUnixTempDirForTest(t)
 	cfg := &config.Config{
 		Tmux: config.Tmux{
 			Command: []string{filepath.Join(t.TempDir(), "missing-tmux")},
@@ -14798,13 +14800,15 @@ func TestWorkspaceRuntimeLaunchesRustPtyManagerSessionE2E(t *testing.T) {
 	if runtime.GOOS != "windows" {
 		requirePTYAvailable(t)
 	}
-	runParallelPTYE2E(t)
+	releasePTYSlot := acquirePTYE2ESlot(t)
+	t.Cleanup(releasePTYSlot)
 
 	require := require.New(t)
 	assert := Assert.New(t)
 
 	managerPath := buildRustPtyManagerForTest(t)
 	ptyOwnerDir := longRustPtyOwnerDirForTest(t)
+	setLongUnixTempDirForTest(t)
 	disableTmuxAgentSessions := false
 	cfg := &config.Config{
 		Agents: []config.Agent{{
@@ -15112,6 +15116,16 @@ func longRustPtyOwnerDirForTest(t *testing.T) string {
 	dir := filepath.Join(t.TempDir(), strings.Repeat("long-owner-root-", 8))
 	require.NoError(t, os.MkdirAll(dir, 0o755))
 	return dir
+}
+
+func setLongUnixTempDirForTest(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		return
+	}
+	dir := filepath.Join(t.TempDir(), strings.Repeat("long-temp-root-", 8))
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	t.Setenv("TMPDIR", dir)
 }
 
 func cleanupPtyOwnerWorkspace(

@@ -15,7 +15,7 @@ use std::io::{self, BufRead, BufReader, Write};
 #[cfg(windows)]
 use std::net::{TcpListener, TcpStream};
 #[cfg(unix)]
-use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt};
 #[cfg(unix)]
 use std::os::unix::net::{UnixListener, UnixStream};
 #[cfg(windows)]
@@ -216,7 +216,7 @@ fn run_owner(args: Args) -> Result<()> {
     create_private_dir(&args.root).context("create pty manager root dir")?;
     create_private_dir(&paths.dir).context("create session state dir")?;
     if let Some(socket_dir) = &paths.socket_dir {
-        create_private_dir(socket_dir).context("create fallback socket dir")?;
+        create_private_socket_dir(socket_dir).context("create fallback socket dir")?;
     }
     let mut cleanup = OwnerCleanup::new(paths.clone());
 
@@ -870,6 +870,60 @@ fn create_private_dir(path: &Path) -> Result<()> {
     Ok(())
 }
 
+#[cfg(unix)]
+fn create_private_socket_dir(path: &Path) -> Result<()> {
+    let mut builder = fs::DirBuilder::new();
+    builder.mode(0o700);
+    match builder.create(path) {
+        Ok(()) => return Ok(()),
+        Err(err) if err.kind() == io::ErrorKind::AlreadyExists => {}
+        Err(err) => return Err(err).with_context(|| format!("create {}", path.display())),
+    }
+
+    let metadata =
+        fs::symlink_metadata(path).with_context(|| format!("inspect {}", path.display()))?;
+    if metadata.file_type().is_symlink() {
+        bail!("refusing fallback socket dir symlink {}", path.display());
+    }
+    if !metadata.is_dir() {
+        bail!(
+            "fallback socket path is not a directory: {}",
+            path.display()
+        );
+    }
+    let current_uid = current_uid();
+    if metadata.uid() != current_uid {
+        bail!(
+            "fallback socket dir {} is owned by uid {}, not current uid {}",
+            path.display(),
+            metadata.uid(),
+            current_uid
+        );
+    }
+    if metadata.mode() & 0o077 != 0 {
+        bail!(
+            "fallback socket dir {} has permissions {:o}; expected private directory",
+            path.display(),
+            metadata.mode() & 0o777
+        );
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+fn create_private_socket_dir(path: &Path) -> Result<()> {
+    create_private_dir(path)
+}
+
+#[cfg(unix)]
+fn current_uid() -> u32 {
+    unsafe extern "C" {
+        fn geteuid() -> u32;
+    }
+    // SAFETY: geteuid has no preconditions and does not dereference pointers.
+    unsafe { geteuid() }
+}
+
 #[cfg(windows)]
 fn restrict_windows_acl(path: &Path, directory: bool) -> Result<()> {
     let current_user_sid = current_user_sid_string()?;
@@ -1366,6 +1420,37 @@ mod tests {
             ))
         );
         assert!(socket_dir.join("sock").to_string_lossy().len() <= MAX_UNIX_SOCKET_PATH_LEN);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn create_private_socket_dir_rejects_symlink() {
+        let parent = env::temp_dir().join(format!("mm-pty-symlink-test-{}", new_token()));
+        let target = parent.join("target");
+        let socket_dir = parent.join("middleman-pty-symlink");
+        fs::create_dir_all(&target).unwrap();
+        std::os::unix::fs::symlink(&target, &socket_dir).unwrap();
+
+        let err = create_private_socket_dir(&socket_dir).unwrap_err();
+
+        assert!(
+            err.to_string()
+                .contains("refusing fallback socket dir symlink")
+        );
+        let _ = fs::remove_dir_all(&parent);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn create_private_socket_dir_rejects_shared_existing_dir() {
+        let socket_dir = env::temp_dir().join(format!("mm-pty-shared-test-{}", new_token()));
+        fs::create_dir(&socket_dir).unwrap();
+        fs::set_permissions(&socket_dir, fs::Permissions::from_mode(0o755)).unwrap();
+
+        let err = create_private_socket_dir(&socket_dir).unwrap_err();
+
+        assert!(err.to_string().contains("expected private directory"));
+        let _ = fs::remove_dir_all(&socket_dir);
     }
 
     #[cfg(windows)]

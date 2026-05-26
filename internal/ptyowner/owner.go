@@ -90,7 +90,7 @@ func RunOwner(ctx context.Context, opts Options) error {
 		return err
 	}
 	if paths.SocketDir != "" {
-		if err := createPrivateDir(paths.SocketDir); err != nil {
+		if err := createPrivateSocketDir(paths.SocketDir); err != nil {
 			killOwnerProcess(cmd.Process)
 			_ = p.Close()
 			return err

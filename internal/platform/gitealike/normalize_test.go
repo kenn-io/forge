@@ -207,25 +207,41 @@ func TestNormalizeMergeRequestIssueEventsAndArtifacts(t *testing.T) {
 		platform.KindGitea,
 		repo,
 		7,
-		[]TimelineEventDTO{{ID: 401, User: UserDTO{UserName: "grace"}, Type: "assigned", Assignee: UserDTO{UserName: "grace"}, Created: base}},
+		[]TimelineEventDTO{
+			{ID: 401, User: UserDTO{UserName: "grace"}, Type: "assigned", Assignee: UserDTO{UserName: "grace"}, Created: base},
+			{ID: 403, User: UserDTO{UserName: "ivy"}, Type: "change_title", PreviousTitle: "Old tea", CurrentTitle: "New tea", Created: base.Add(time.Minute)},
+		},
 	)
-	require.Len(mrTimelineEvents, 1)
+	require.Len(mrTimelineEvents, 2)
 	assert.Equal("assigned", mrTimelineEvents[0].EventType)
 	assert.Equal("grace", mrTimelineEvents[0].Author)
 	assert.Equal("self-assigned this", mrTimelineEvents[0].Summary)
 	assert.Equal("gitea/gitea.com/gitea/tea/mr/7/assigned/401", mrTimelineEvents[0].DedupeKey)
+	assert.Equal("renamed_title", mrTimelineEvents[1].EventType)
+	assert.Equal("ivy", mrTimelineEvents[1].Author)
+	assert.Equal(`"Old tea" -> "New tea"`, mrTimelineEvents[1].Summary)
+	assert.JSONEq(`{"previous_title":"Old tea","current_title":"New tea"}`, mrTimelineEvents[1].MetadataJSON)
+	assert.Equal("gitea/gitea.com/gitea/tea/mr/7/renamed_title/403", mrTimelineEvents[1].DedupeKey)
 
 	issueTimelineEvents := NormalizeIssueTimelineEvents(
 		platform.KindGitea,
 		repo,
 		9,
-		[]TimelineEventDTO{{ID: 402, User: UserDTO{UserName: "hank"}, Type: "unassigned", Created: base}},
+		[]TimelineEventDTO{
+			{ID: 402, User: UserDTO{UserName: "hank"}, Type: "unassigned", Created: base},
+			{ID: 404, User: UserDTO{UserName: "jane"}, Type: "change_title", PreviousTitle: "Old issue", CurrentTitle: "New issue", Created: base.Add(time.Minute)},
+		},
 	)
-	require.Len(issueTimelineEvents, 1)
+	require.Len(issueTimelineEvents, 2)
 	assert.Equal("unassigned", issueTimelineEvents[0].EventType)
 	assert.Equal("hank", issueTimelineEvents[0].Author)
 	assert.Equal("removed an assignment", issueTimelineEvents[0].Summary)
 	assert.Equal("gitea/gitea.com/gitea/tea/issue/9/unassigned/402", issueTimelineEvents[0].DedupeKey)
+	assert.Equal("renamed_title", issueTimelineEvents[1].EventType)
+	assert.Equal("jane", issueTimelineEvents[1].Author)
+	assert.Equal(`"Old issue" -> "New issue"`, issueTimelineEvents[1].Summary)
+	assert.JSONEq(`{"previous_title":"Old issue","current_title":"New issue"}`, issueTimelineEvents[1].MetadataJSON)
+	assert.Equal("gitea/gitea.com/gitea/tea/issue/9/renamed_title/404", issueTimelineEvents[1].DedupeKey)
 
 	release := NormalizeRelease(repo, ReleaseDTO{
 		ID:          500,

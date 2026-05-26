@@ -142,13 +142,15 @@ type CommentDTO struct {
 }
 
 type TimelineEventDTO struct {
-	ID       int64
-	User     UserDTO
-	Type     string
-	Body     string
-	Assignee UserDTO
-	Created  time.Time
-	Updated  time.Time
+	ID            int64
+	User          UserDTO
+	Type          string
+	Body          string
+	Assignee      UserDTO
+	PreviousTitle string
+	CurrentTitle  string
+	Created       time.Time
+	Updated       time.Time
 }
 
 type ReviewDTO struct {

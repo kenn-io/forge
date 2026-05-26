@@ -328,7 +328,7 @@ func TestClientReadsOpenPullRequestsIssuesAndCIChecks(t *testing.T) {
 	assert.Len(checks, 2)
 }
 
-func TestClientReadsTimelineAssignmentEvents(t *testing.T) {
+func TestClientReadsTimelineAssignmentAndTitleEvents(t *testing.T) {
 	assert := Assert.New(t)
 	require := Require.New(t)
 
@@ -346,10 +346,17 @@ func TestClientReadsTimelineAssignmentEvents(t *testing.T) {
 		case "/api/v1/repos/owner/repo/pulls/3/commits":
 			assert.NoError(json.NewEncoder(w).Encode([]map[string]any{}))
 		case "/api/v1/repos/owner/repo/issues/3/timeline":
-			assert.NoError(json.NewEncoder(w).Encode([]map[string]any{{
-				"id": 11, "type": "assigned", "user": map[string]any{"login": "bob"},
-				"created_at": "2026-05-01T10:01:00Z",
-			}}))
+			assert.NoError(json.NewEncoder(w).Encode([]map[string]any{
+				{
+					"id": 11, "type": "assigned", "user": map[string]any{"login": "bob"},
+					"created_at": "2026-05-01T10:01:00Z",
+				},
+				{
+					"id": 12, "type": "change_title", "user": map[string]any{"login": "carol"},
+					"old_title": "Old title", "new_title": "New title",
+					"created_at": "2026-05-01T10:02:00Z",
+				},
+			}))
 		default:
 			http.NotFound(w, r)
 		}
@@ -362,19 +369,27 @@ func TestClientReadsTimelineAssignmentEvents(t *testing.T) {
 
 	mrEvents, err := client.ListMergeRequestEvents(context.Background(), ref, 3)
 	require.NoError(err)
-	require.Len(mrEvents, 2)
+	require.Len(mrEvents, 3)
 	assert.Equal("issue_comment", mrEvents[0].EventType)
 	assert.Equal("assigned", mrEvents[1].EventType)
 	assert.Equal("bob", mrEvents[1].Author)
 	assert.Equal("assigned someone", mrEvents[1].Summary)
+	assert.Equal("renamed_title", mrEvents[2].EventType)
+	assert.Equal("carol", mrEvents[2].Author)
+	assert.Equal(`"Old title" -> "New title"`, mrEvents[2].Summary)
+	assert.JSONEq(`{"previous_title":"Old title","current_title":"New title"}`, mrEvents[2].MetadataJSON)
 
 	issueEvents, err := client.ListIssueEvents(context.Background(), ref, 3)
 	require.NoError(err)
-	require.Len(issueEvents, 2)
+	require.Len(issueEvents, 3)
 	assert.Equal("issue_comment", issueEvents[0].EventType)
 	assert.Equal("assigned", issueEvents[1].EventType)
 	assert.Equal("bob", issueEvents[1].Author)
 	assert.Equal("assigned someone", issueEvents[1].Summary)
+	assert.Equal("renamed_title", issueEvents[2].EventType)
+	assert.Equal("carol", issueEvents[2].Author)
+	assert.Equal(`"Old title" -> "New title"`, issueEvents[2].Summary)
+	assert.JSONEq(`{"previous_title":"Old title","current_title":"New title"}`, issueEvents[2].MetadataJSON)
 }
 
 func TestClientFallsBackToStatusesWhenActionsRequireNewerGitea(t *testing.T) {

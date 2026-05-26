@@ -105,12 +105,14 @@ func convertTimelineEvent(comment *giteasdk.TimelineComment) gitealike.TimelineE
 		return gitealike.TimelineEventDTO{}
 	}
 	return gitealike.TimelineEventDTO{
-		ID:      comment.ID,
-		User:    convertUser(comment.Poster),
-		Type:    comment.Type,
-		Body:    comment.Body,
-		Created: comment.Created,
-		Updated: comment.Updated,
+		ID:            comment.ID,
+		User:          convertUser(comment.Poster),
+		Type:          comment.Type,
+		Body:          comment.Body,
+		PreviousTitle: comment.OldTitle,
+		CurrentTitle:  comment.NewTitle,
+		Created:       comment.Created,
+		Updated:       comment.Updated,
 	}
 }
 

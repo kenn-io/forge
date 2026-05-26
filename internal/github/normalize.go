@@ -344,10 +344,16 @@ func dbMREvent(mrID int64, event platform.MergeRequestEvent) db.MREvent {
 		MetadataJSON:       event.MetadataJSON,
 		CreatedAt:          event.CreatedAt,
 		DedupeKey:          event.DedupeKey,
+		PositionJSON:       event.PositionJSON,
+		Resolvable:         event.Resolvable,
+		Resolved:           event.Resolved,
 	}
 	if event.PlatformID != 0 || event.EventType == "issue_comment" || event.EventType == "review" {
 		platformID := event.PlatformID
 		dbEvent.PlatformID = &platformID
+	}
+	if event.ThreadID != "" {
+		dbEvent.ThreadID = &event.ThreadID
 	}
 	return dbEvent
 }

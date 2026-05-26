@@ -2,7 +2,6 @@ package procutil
 
 import (
 	"context"
-	"errors"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -90,8 +89,8 @@ func TestLimiterAcquireTimeoutIsResourceExhausted(t *testing.T) {
 
 	require.Error(got.err)
 	require.Nil(got.release)
-	assert.ErrorIs(got.err, ErrProcessLimitReached)
-	assert.True(errors.Is(got.err, context.DeadlineExceeded))
+	require.ErrorIs(got.err, ErrProcessLimitReached)
+	require.ErrorIs(got.err, context.DeadlineExceeded)
 	assert.True(IsResourceExhausted(got.err))
 	assert.Contains(got.err.Error(), "second subprocess")
 }
@@ -111,8 +110,8 @@ func TestLimiterAcquirePreservesCallerCancellation(t *testing.T) {
 	release, err := limiter.TryAcquire(ctx, "second subprocess")
 	require.Error(err)
 	require.Nil(release)
-	assert.ErrorIs(err, ErrProcessLimitReached)
-	assert.True(errors.Is(err, context.Canceled))
+	require.ErrorIs(err, ErrProcessLimitReached)
+	require.ErrorIs(err, context.Canceled)
 	assert.True(IsResourceExhausted(err))
 }
 
@@ -127,8 +126,8 @@ func TestLimiterAcquireCanceledContextWithCapacityIsNotResourceExhausted(t *test
 	release, err := limiter.TryAcquire(ctx, "available subprocess")
 	require.Error(err)
 	require.Nil(release)
-	assert.True(errors.Is(err, context.Canceled))
-	assert.False(errors.Is(err, ErrProcessLimitReached))
+	require.ErrorIs(err, context.Canceled)
+	require.NotErrorIs(err, ErrProcessLimitReached)
 	assert.False(IsResourceExhausted(err))
 
 	release, err = limiter.TryAcquire(context.Background(), "subsequent subprocess")

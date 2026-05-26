@@ -277,6 +277,55 @@ func NormalizeTimelineEvent(
 	}
 }
 
+// ReviewThread represents a GitHub pull request review thread.
+type ReviewThread struct {
+	ID         string
+	IsResolved bool
+	Path       string
+	Line       *int
+	StartLine  *int
+	Comments   []ReviewComment
+}
+
+// ReviewComment represents a comment within a review thread.
+type ReviewComment struct {
+	DatabaseID int64
+	Author     string
+	Body       string
+	CreatedAt  time.Time
+	DiffHunk   string
+}
+
+// NormalizeReviewThreads converts GitHub review threads to MergeRequestEvents.
+// Each comment in a thread becomes a separate event, all sharing the same ThreadID.
+func NormalizeReviewThreads(
+	repo platform.RepoRef,
+	mrNumber int,
+	threads []ReviewThread,
+) []platform.MergeRequestEvent {
+	var events []platform.MergeRequestEvent
+	for _, thread := range threads {
+		for _, comment := range thread.Comments {
+			events = append(events, platform.MergeRequestEvent{
+				Repo:               repo,
+				PlatformID:         comment.DatabaseID,
+				PlatformExternalID: fmt.Sprintf("%d", comment.DatabaseID),
+				MergeRequestNumber: mrNumber,
+				EventType:          "review_comment",
+				Author:             comment.Author,
+				Body:               comment.Body,
+				CreatedAt:          comment.CreatedAt,
+				DedupeKey:          fmt.Sprintf("review-comment-%d", comment.DatabaseID),
+				ThreadID:           thread.ID,
+				PositionJSON:       serializeReviewCommentPosition(thread.Path, thread.Line, thread.StartLine),
+				Resolvable:         true,
+				Resolved:           thread.IsResolved,
+			})
+		}
+	}
+	return events
+}
+
 func NormalizeIssueCommentEvent(
 	repo platform.RepoRef,
 	issueNumber int,
@@ -358,6 +407,28 @@ type renamedTitleMetadata struct {
 type baseRefChangedMetadata struct {
 	PreviousRefName string `json:"previous_ref_name"`
 	CurrentRefName  string `json:"current_ref_name"`
+}
+
+type reviewCommentPositionMetadata struct {
+	Path      string `json:"path"`
+	Line      *int   `json:"line,omitempty"`
+	StartLine *int   `json:"start_line,omitempty"`
+}
+
+func serializeReviewCommentPosition(path string, line, startLine *int) string {
+	if path == "" {
+		return ""
+	}
+	pos := reviewCommentPositionMetadata{
+		Path:      path,
+		Line:      line,
+		StartLine: startLine,
+	}
+	data, err := json.Marshal(pos)
+	if err != nil {
+		return ""
+	}
+	return string(data)
 }
 
 type ciCheckCandidate struct {

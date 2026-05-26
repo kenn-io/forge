@@ -118,6 +118,39 @@ func NormalizeReviewEvent(mrID int64, r *gh.PullRequestReview) db.MREvent {
 	return dbMREvent(mrID, event)
 }
 
+// NormalizeReviewThreadEvents converts GitHub review threads to db.MREvents.
+func NormalizeReviewThreadEvents(mrID int64, threads []ReviewThread) []db.MREvent {
+	// Convert internal/github.ReviewThread to internal/platform/github.ReviewThread
+	platformThreads := make([]platformgithub.ReviewThread, 0, len(threads))
+	for _, thread := range threads {
+		platformComments := make([]platformgithub.ReviewComment, 0, len(thread.Comments))
+		for _, comment := range thread.Comments {
+			platformComments = append(platformComments, platformgithub.ReviewComment{
+				DatabaseID: comment.DatabaseID,
+				Author:     comment.Author,
+				Body:       comment.Body,
+				CreatedAt:  comment.CreatedAt,
+				DiffHunk:   comment.DiffHunk,
+			})
+		}
+		platformThreads = append(platformThreads, platformgithub.ReviewThread{
+			ID:         thread.ID,
+			IsResolved: thread.IsResolved,
+			Path:       thread.Path,
+			Line:       thread.Line,
+			StartLine:  thread.StartLine,
+			Comments:   platformComments,
+		})
+	}
+
+	events := platformgithub.NormalizeReviewThreads(platform.RepoRef{}, 0, platformThreads)
+	result := make([]db.MREvent, 0, len(events))
+	for _, e := range events {
+		result = append(result, dbMREvent(mrID, e))
+	}
+	return result
+}
+
 // NormalizeCommitEvent converts a GitHub RepositoryCommit to a db.MREvent.
 // Author is taken from the GitHub user login if available, falling back to
 // the git commit author name.

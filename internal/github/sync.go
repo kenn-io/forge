@@ -4057,6 +4057,7 @@ func (s *Syncer) syncOpenMRFromBulk(
 	for _, r := range bulk.Reviews {
 		events = append(events, NormalizeReviewEvent(mrID, r))
 	}
+	events = append(events, NormalizeReviewThreadEvents(mrID, bulk.ReviewThreads)...)
 	for _, c := range bulk.Commits {
 		events = append(events, NormalizeCommitEvent(mrID, c))
 	}

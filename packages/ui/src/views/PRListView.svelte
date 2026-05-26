@@ -42,8 +42,6 @@
     workflow_approval: true,
     ready_for_review: true,
     issue_mutation: true,
-    thread_reply: false,
-    thread_resolve: false,
     review_draft_mutation: false,
     review_thread_resolution: false,
     read_review_threads: false,

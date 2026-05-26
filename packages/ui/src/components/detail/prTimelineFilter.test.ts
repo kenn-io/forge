@@ -24,7 +24,6 @@ function event(overrides: Partial<PREvent>): PREvent {
     CreatedAt: "2024-06-01T12:00:00Z",
     DedupeKey: "event-1",
     ThreadID: null,
-    PositionJSON: "",
     Resolvable: false,
     Resolved: false,
     ...overrides,
@@ -249,14 +248,14 @@ describe("prTimelineFilter", () => {
         EventType: "review_comment",
         Body: "reply",
         CreatedAt: "2024-06-01T12:01:00Z",
-        review_thread: { id: "review-thread-1" },
+        diff_thread: { id: "review-thread-1" },
       } as Partial<PREvent>),
       event({
         ID: 1,
         EventType: "review_comment",
         Body: "root",
         CreatedAt: "2024-06-01T12:00:00Z",
-        review_thread: { id: "review-thread-1" },
+        diff_thread: { id: "review-thread-1" },
       } as Partial<PREvent>),
     ];
 

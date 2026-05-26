@@ -44,8 +44,8 @@ function isEarlierEvent(a: PREvent, b: PREvent): boolean {
 }
 
 function reviewThreadID(event: PREvent): string | null {
-  if (!("review_thread" in event)) return null;
-  const thread = event.review_thread as { id?: unknown } | undefined;
+  if (!("diff_thread" in event)) return null;
+  const thread = event.diff_thread as { id?: unknown } | undefined;
   return typeof thread?.id === "string" && thread.id.length > 0
     ? thread.id
     : null;

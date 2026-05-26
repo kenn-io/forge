@@ -19780,8 +19780,13 @@ func TestWorkspaceIssueMonitorAssociatesPRAndKeepsIssueOwnership(t *testing.T) {
 
 	fixture, created := prepareIssueWorkspaceAssociationFixture(t)
 
-	updates, err := fixture.server.workspacePRMonitor.RunOnce(ctx)
-	require.NoError(err)
+	var updates []workspace.PRAssociationUpdate
+	require.Eventually(func() bool {
+		var runErr error
+		updates, runErr = fixture.server.workspacePRMonitor.RunOnce(ctx)
+		require.NoError(runErr)
+		return len(updates) == 1
+	}, 5*time.Second, 25*time.Millisecond)
 	require.Len(updates, 1)
 	assert.Equal(created.ID, updates[0].WorkspaceID)
 	assert.Equal(42, updates[0].PRNumber)

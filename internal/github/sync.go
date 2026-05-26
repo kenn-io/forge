@@ -624,6 +624,7 @@ func (p gitHubClientProvider) Capabilities() platform.Capabilities {
 		ReadyForReview:    true,
 		IssueMutation:     true,
 		LabelMutation:     labels,
+		ThreadResolve:     true,
 	}
 }
 

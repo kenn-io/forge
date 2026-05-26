@@ -2206,7 +2206,6 @@ export interface components {
             /** Format: date-time */
             CreatedAt: string;
             DedupeKey: string;
-            ThreadID: string | null;
             EventType: string;
             /** Format: int64 */
             ID: number;
@@ -2217,6 +2216,7 @@ export interface components {
             /** Format: int64 */
             PlatformID: number | null;
             Summary: string;
+            ThreadID: string | null;
         };
         IssueResponse: {
             /**
@@ -2348,7 +2348,6 @@ export interface components {
             /** Format: date-time */
             CreatedAt: string;
             DedupeKey: string;
-            ThreadID: string | null;
             EventType: string;
             /** Format: int64 */
             ID: number;
@@ -2362,6 +2361,7 @@ export interface components {
             Resolvable: boolean;
             Resolved: boolean;
             Summary: string;
+            ThreadID: string | null;
         };
         MergePRBody: {
             /**
@@ -2658,8 +2658,6 @@ export interface components {
         };
         ProviderCapabilitiesResponse: {
             comment_mutation: boolean;
-            thread_reply: boolean;
-            thread_resolve: boolean;
             issue_mutation: boolean;
             label_mutation: boolean;
             merge_mutation: boolean;
@@ -2673,6 +2671,8 @@ export interface components {
             ready_for_review: boolean;
             review_mutation: boolean;
             state_mutation: boolean;
+            thread_reply: boolean;
+            thread_resolve: boolean;
             workflow_approval: boolean;
         };
         RateLimitHostStatus: {

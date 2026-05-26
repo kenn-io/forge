@@ -70,6 +70,10 @@ type gqlPR struct {
 		Nodes    []gqlReview
 		PageInfo pageInfo
 	} `graphql:"reviews(first: 100)"`
+	ReviewThreads struct {
+		Nodes    []gqlReviewThread
+		PageInfo pageInfo
+	} `graphql:"reviewThreads(first: 100)"`
 	AllCommits struct {
 		Nodes    []gqlCommitNode
 		PageInfo pageInfo

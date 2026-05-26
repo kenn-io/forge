@@ -64,15 +64,16 @@ type versionOutputBody struct {
 type versionOutput = bodyOutput[versionOutputBody]
 
 type ServerOptions struct {
-	EmbedConfig         *EmbedConfig
-	Clones              *gitclone.Manager // optional clone manager for diff view
-	WorktreeDir         string            // base dir for workspace worktrees
-	PtyOwnerDir         string
-	PtyOwnerExePath     string
-	PtyOwnerExeArgs     []string
-	PtyOwnerManagerPath string
-	PtyOwnerCommand     []string
-	PtyOwnerInProcess   bool
+	EmbedConfig                        *EmbedConfig
+	Clones                             *gitclone.Manager // optional clone manager for diff view
+	WorktreeDir                        string            // base dir for workspace worktrees
+	DisableWorkspaceBackgroundMonitors bool
+	PtyOwnerDir                        string
+	PtyOwnerExePath                    string
+	PtyOwnerExeArgs                    []string
+	PtyOwnerManagerPath                string
+	PtyOwnerCommand                    []string
+	PtyOwnerInProcess                  bool
 }
 
 type shutdownDeadline struct {
@@ -587,7 +588,7 @@ func newServer(
 		}
 	}
 
-	if s.workspaces != nil {
+	if s.workspaces != nil && !options.DisableWorkspaceBackgroundMonitors {
 		s.runBackground(s.runWorkspacePRMonitorLoop)
 		s.runBackground(s.runWorkspacePushedHeadObserverLoop)
 	}

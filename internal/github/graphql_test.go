@@ -368,6 +368,64 @@ func TestGraphQLFetcherFetchRepoPRsIncludesTimelineEvents(t *testing.T) {
 	assert.True(result.PullRequests[0].TimelineComplete)
 }
 
+func TestGraphQLFetcherFetchRepoIssuesUsesIssueTimelineFragments(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	now := time.Date(2024, 6, 3, 15, 0, 0, 0, time.UTC).Format(time.RFC3339)
+
+	var requestBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		requestBody = body
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":{"repository":{"issues":{"nodes":[{
+			"databaseId":2001,
+			"number":2,
+			"title":"Timeline issue",
+			"state":"OPEN",
+			"body":"",
+			"url":"https://github.com/owner/repo/issues/2",
+			"author":{"login":"alice"},
+			"createdAt":"` + now + `",
+			"updatedAt":"` + now + `",
+			"closedAt":null,
+			"labels":{"nodes":[]},
+			"comments":{"totalCount":0,"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}},
+			"timelineItems":{"nodes":[{
+				"__typename":"AssignedEvent",
+				"id":"AE_issue_1",
+				"actor":{"login":"alice"},
+				"assignee":{"__typename":"User","login":"bob"},
+				"createdAt":"` + now + `"
+			}],"pageInfo":{"hasNextPage":false,"endCursor":""}}
+		}],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`))
+	}))
+	defer srv.Close()
+
+	fetcher := NewGraphQLFetcherWithClient(
+		githubv4.NewEnterpriseClient(srv.URL, srv.Client()), nil,
+	)
+
+	result, err := fetcher.FetchRepoIssues(t.Context(), "owner", "repo")
+	require.NoError(err)
+	require.NotNil(result)
+	require.Len(result.Issues, 1)
+	require.Len(result.Issues[0].TimelineEvents, 1)
+	assert.Equal("assigned", result.Issues[0].TimelineEvents[0].EventType)
+	assert.Equal("bob", result.Issues[0].TimelineEvents[0].Assignee)
+
+	assert.Contains(string(requestBody), "AssignedEvent")
+	assert.NotContains(string(requestBody), "HeadRefForcePushedEvent")
+	assert.NotContains(string(requestBody), "CommentDeletedEvent")
+	assert.NotContains(string(requestBody), "BaseRefChangedEvent")
+}
+
 func TestGraphQLFetcherFetchRepoIssuesLogsFetchProgressForPaginatedIssueSet(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
@@ -728,7 +786,7 @@ func TestConvertGQLIssue(t *testing.T) {
 	assert.Equal("hello", bulk.Comments[0].GetBody())
 
 	gql.Comments.PageInfo.HasNextPage = false
-	gql.TimelineItems.Nodes = []gqlPullRequestTimelineItem{{
+	gql.TimelineItems.Nodes = []gqlIssueTimelineItem{{
 		Typename: "AssignedEvent",
 		Node:     gqlNodeFragment{ID: "AE_1"},
 		AssignedEvent: gqlAssignedEvent{

@@ -134,6 +134,13 @@ type gqlPullRequestTimelineItem struct {
 	UnassignedEvent         gqlAssignedEvent           `graphql:"... on UnassignedEvent"`
 }
 
+type gqlIssueTimelineItem struct {
+	Typename        string           `graphql:"__typename"`
+	Node            gqlNodeFragment  `graphql:"... on Node"`
+	AssignedEvent   gqlAssignedEvent `graphql:"... on AssignedEvent"`
+	UnassignedEvent gqlAssignedEvent `graphql:"... on UnassignedEvent"`
+}
+
 type gqlNodeFragment struct {
 	ID string
 }
@@ -265,7 +272,7 @@ type gqlIssue struct {
 		PageInfo   pageInfo
 	} `graphql:"comments(first: 100)"`
 	TimelineItems struct {
-		Nodes    []gqlPullRequestTimelineItem
+		Nodes    []gqlIssueTimelineItem
 		PageInfo pageInfo
 	} `graphql:"timelineItems(itemTypes: [ASSIGNED_EVENT, UNASSIGNED_EVENT], first: 100)"`
 }
@@ -568,7 +575,7 @@ func convertGQLIssue(gql *gqlIssue) BulkIssue {
 		bulk.Comments = append(bulk.Comments, adaptComment(&gql.Comments.Nodes[i]))
 	}
 	for i := range gql.TimelineItems.Nodes {
-		event, ok := adaptPullRequestTimelineEvent(&gql.TimelineItems.Nodes[i])
+		event, ok := adaptIssueTimelineEvent(&gql.TimelineItems.Nodes[i])
 		if ok {
 			bulk.TimelineEvents = append(bulk.TimelineEvents, event)
 		}
@@ -858,6 +865,22 @@ func convertGQLPR(gql *gqlPR) BulkPR {
 	return bulk
 }
 
+func adaptIssueTimelineEvent(gql *gqlIssueTimelineItem) (PullRequestTimelineEvent, bool) {
+	if gql == nil {
+		return PullRequestTimelineEvent{}, false
+	}
+	event := PullRequestTimelineEvent{NodeID: gql.Node.ID}
+	switch gql.Typename {
+	case "AssignedEvent":
+		copyAssignmentEvent(&event, "assigned", gql.AssignedEvent)
+	case "UnassignedEvent":
+		copyAssignmentEvent(&event, "unassigned", gql.UnassignedEvent)
+	default:
+		return PullRequestTimelineEvent{}, false
+	}
+	return event, true
+}
+
 func adaptPullRequestTimelineEvent(gql *gqlPullRequestTimelineItem) (PullRequestTimelineEvent, bool) {
 	if gql == nil {
 		return PullRequestTimelineEvent{}, false
@@ -925,25 +948,22 @@ func adaptPullRequestTimelineEvent(gql *gqlPullRequestTimelineItem) (PullRequest
 			event.Actor = src.Actor.Login
 		}
 	case "AssignedEvent":
-		src := gql.AssignedEvent
-		event.EventType = "assigned"
-		event.Assignee = src.Assignee.Login()
-		event.CreatedAt = src.CreatedAt
-		if src.Actor != nil {
-			event.Actor = src.Actor.Login
-		}
+		copyAssignmentEvent(&event, "assigned", gql.AssignedEvent)
 	case "UnassignedEvent":
-		src := gql.UnassignedEvent
-		event.EventType = "unassigned"
-		event.Assignee = src.Assignee.Login()
-		event.CreatedAt = src.CreatedAt
-		if src.Actor != nil {
-			event.Actor = src.Actor.Login
-		}
+		copyAssignmentEvent(&event, "unassigned", gql.UnassignedEvent)
 	default:
 		return PullRequestTimelineEvent{}, false
 	}
 	return event, true
+}
+
+func copyAssignmentEvent(event *PullRequestTimelineEvent, eventType string, src gqlAssignedEvent) {
+	event.EventType = eventType
+	event.Assignee = src.Assignee.Login()
+	event.CreatedAt = src.CreatedAt
+	if src.Actor != nil {
+		event.Actor = src.Actor.Login
+	}
 }
 
 func copyReferencedSubject(event *PullRequestTimelineEvent, source gqlReferencedIssueOrPR) {

@@ -7977,6 +7977,7 @@ func TestSyncOpenIssueFromBulkRemovesDeletedCommentsWhenCommentsAreComplete(t *t
 			UpdatedAt: &commentTime,
 		}},
 		CommentsComplete: true,
+		TimelineComplete: true,
 	})
 	require.NoError(err)
 
@@ -8005,6 +8006,7 @@ func TestSyncOpenIssueFromBulkRemovesDeletedCommentsWhenCommentsAreComplete(t *t
 		},
 		Comments:         []*gh.IssueComment{},
 		CommentsComplete: true,
+		TimelineComplete: true,
 	})
 	require.NoError(err)
 
@@ -8122,6 +8124,7 @@ func TestSyncRepoGraphQLIssues(t *testing.T) {
 					},
 				},
 				CommentsComplete: true,
+				TimelineComplete: true,
 			},
 		},
 	}

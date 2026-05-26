@@ -272,8 +272,47 @@ func NormalizeTimelineEvent(
 			CreatedAt:          event.CreatedAt,
 			DedupeKey:          timelineDedupeKey(event),
 		}
+	case "assigned", "unassigned":
+		metadata, _ := json.Marshal(assignmentMetadata{
+			Assignee: event.Assignee,
+		})
+		return &platform.MergeRequestEvent{
+			Repo:               repo,
+			MergeRequestNumber: mrNumber,
+			EventType:          event.EventType,
+			Author:             event.Actor,
+			Summary:            assignmentSummary(event.EventType, event.Actor, event.Assignee),
+			MetadataJSON:       string(metadata),
+			CreatedAt:          event.CreatedAt,
+			DedupeKey:          timelineDedupeKey(event),
+		}
 	default:
 		return nil
+	}
+}
+
+func NormalizeIssueTimelineEvent(
+	repo platform.RepoRef,
+	issueNumber int,
+	event PullRequestTimelineEvent,
+) *platform.IssueEvent {
+	switch event.EventType {
+	case "assigned", "unassigned":
+	default:
+		return nil
+	}
+	metadata, _ := json.Marshal(assignmentMetadata{
+		Assignee: event.Assignee,
+	})
+	return &platform.IssueEvent{
+		Repo:         repo,
+		IssueNumber:  issueNumber,
+		EventType:    event.EventType,
+		Author:       event.Actor,
+		Summary:      assignmentSummary(event.EventType, event.Actor, event.Assignee),
+		MetadataJSON: string(metadata),
+		CreatedAt:    event.CreatedAt,
+		DedupeKey:    timelineDedupeKey(event),
 	}
 }
 
@@ -358,6 +397,33 @@ type renamedTitleMetadata struct {
 type baseRefChangedMetadata struct {
 	PreviousRefName string `json:"previous_ref_name"`
 	CurrentRefName  string `json:"current_ref_name"`
+}
+
+type assignmentMetadata struct {
+	Assignee string `json:"assignee"`
+}
+
+func assignmentSummary(eventType, actor, assignee string) string {
+	switch eventType {
+	case "assigned":
+		if actor != "" && actor == assignee {
+			return "self-assigned this"
+		}
+		if assignee != "" {
+			return "assigned " + assignee
+		}
+		return "assigned someone"
+	case "unassigned":
+		if actor != "" && actor == assignee {
+			return "unassigned themselves"
+		}
+		if assignee != "" {
+			return "unassigned " + assignee
+		}
+		return "removed an assignment"
+	default:
+		return ""
+	}
 }
 
 type ciCheckCandidate struct {
@@ -504,6 +570,7 @@ func timelineDedupeKey(event PullRequestTimelineEvent) string {
 		event.EventType,
 		event.CreatedAt.UTC().Format(time.RFC3339Nano),
 		event.Actor,
+		event.Assignee,
 		event.DeletedCommentAuthor,
 		event.BeforeSHA,
 		event.AfterSHA,

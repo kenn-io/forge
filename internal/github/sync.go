@@ -771,11 +771,71 @@ func (p gitHubClientProvider) GetGitHubPullRequest(
 }
 
 func (p gitHubClientProvider) ListMergeRequestEvents(
-	context.Context,
-	platform.RepoRef,
-	int,
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
 ) ([]platform.MergeRequestEvent, error) {
-	return nil, platform.UnsupportedCapability(platform.KindGitHub, p.host, "read_merge_request_events")
+	comments, err := p.client.ListIssueComments(ctx, ref.Owner, ref.Name, number)
+	if err != nil {
+		return nil, err
+	}
+	reviews, err := p.client.ListReviews(ctx, ref.Owner, ref.Name, number)
+	if err != nil {
+		return nil, err
+	}
+	commits, err := p.client.ListCommits(ctx, ref.Owner, ref.Name, number)
+	if err != nil {
+		return nil, err
+	}
+	timelineEvents, err := p.client.ListPullRequestTimelineEvents(ctx, ref.Owner, ref.Name, number)
+	if err != nil {
+		slog.Warn("github provider timeline event fetch failed",
+			"repo", ref.DisplayName(),
+			"number", number,
+			"err", err,
+		)
+		timelineEvents = nil
+	}
+
+	out := make([]platform.MergeRequestEvent, 0, len(comments)+len(reviews)+len(commits)+len(timelineEvents))
+	for _, comment := range comments {
+		out = append(out, platformgithub.NormalizeCommentEvent(ref, number, comment))
+	}
+	for _, review := range reviews {
+		out = append(out, platformgithub.NormalizeReviewEvent(ref, number, review))
+	}
+	for _, commit := range commits {
+		out = append(out, platformgithub.NormalizeCommitEvent(ref, number, commit))
+	}
+	for _, timelineEvent := range timelineEvents {
+		event := platformgithub.NormalizeTimelineEvent(ref, number, platformgithub.PullRequestTimelineEvent{
+			NodeID:               timelineEvent.NodeID,
+			EventType:            timelineEvent.EventType,
+			Actor:                timelineEvent.Actor,
+			Assignee:             timelineEvent.Assignee,
+			CreatedAt:            timelineEvent.CreatedAt,
+			DeletedCommentAuthor: timelineEvent.DeletedCommentAuthor,
+			BeforeSHA:            timelineEvent.BeforeSHA,
+			AfterSHA:             timelineEvent.AfterSHA,
+			Ref:                  timelineEvent.Ref,
+			PreviousTitle:        timelineEvent.PreviousTitle,
+			CurrentTitle:         timelineEvent.CurrentTitle,
+			PreviousRefName:      timelineEvent.PreviousRefName,
+			CurrentRefName:       timelineEvent.CurrentRefName,
+			SourceType:           timelineEvent.SourceType,
+			SourceOwner:          timelineEvent.SourceOwner,
+			SourceRepo:           timelineEvent.SourceRepo,
+			SourceNumber:         timelineEvent.SourceNumber,
+			SourceTitle:          timelineEvent.SourceTitle,
+			SourceURL:            timelineEvent.SourceURL,
+			IsCrossRepository:    timelineEvent.IsCrossRepository,
+			WillCloseTarget:      timelineEvent.WillCloseTarget,
+		})
+		if event != nil {
+			out = append(out, *event)
+		}
+	}
+	return out, nil
 }
 
 func (p gitHubClientProvider) ListOpenIssues(
@@ -840,11 +900,44 @@ func (p gitHubClientProvider) GetGitHubIssue(
 }
 
 func (p gitHubClientProvider) ListIssueEvents(
-	context.Context,
-	platform.RepoRef,
-	int,
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
 ) ([]platform.IssueEvent, error) {
-	return nil, platform.UnsupportedCapability(platform.KindGitHub, p.host, "read_issue_events")
+	comments, err := p.client.ListIssueComments(ctx, ref.Owner, ref.Name, number)
+	if err != nil {
+		return nil, err
+	}
+	var timelineEvents []PullRequestTimelineEvent
+	if timelineClient, ok := p.client.(issueTimelineLister); ok {
+		timelineEvents, err = timelineClient.ListIssueTimelineEvents(ctx, ref.Owner, ref.Name, number)
+		if err != nil {
+			slog.Warn("github provider issue timeline event fetch failed",
+				"repo", ref.DisplayName(),
+				"number", number,
+				"err", err,
+			)
+			timelineEvents = nil
+		}
+	}
+
+	out := make([]platform.IssueEvent, 0, len(comments)+len(timelineEvents))
+	for _, comment := range comments {
+		out = append(out, platformgithub.NormalizeIssueCommentEvent(ref, number, comment))
+	}
+	for _, timelineEvent := range timelineEvents {
+		event := platformgithub.NormalizeIssueTimelineEvent(ref, number, platformgithub.PullRequestTimelineEvent{
+			NodeID:    timelineEvent.NodeID,
+			EventType: timelineEvent.EventType,
+			Actor:     timelineEvent.Actor,
+			Assignee:  timelineEvent.Assignee,
+			CreatedAt: timelineEvent.CreatedAt,
+		})
+		if event != nil {
+			out = append(out, *event)
+		}
+	}
+	return out, nil
 }
 
 func (p gitHubClientProvider) CreateMergeRequestComment(
@@ -3830,10 +3923,10 @@ func (s *Syncer) syncOpenIssueFromBulk(
 		)
 	}
 	if existing != nil {
-		// Only preserve DetailFetchedAt when comments are complete.
+		// Only preserve DetailFetchedAt when timeline data is complete.
 		// When incomplete, clear it so the detail drain re-queues
 		// this issue if the REST fallback fails.
-		if bulk.CommentsComplete {
+		if bulk.CommentsComplete && bulk.TimelineComplete {
 			normalized.DetailFetchedAt = existing.DetailFetchedAt
 		}
 		// CommentCount comes from GraphQL Comments.TotalCount via
@@ -3849,7 +3942,7 @@ func (s *Syncer) syncOpenIssueFromBulk(
 	// so passing nil doesn't clear it. When comments are incomplete,
 	// explicitly clear it so the detail drain re-queues this issue
 	// if the REST fallback fails.
-	if !bulk.CommentsComplete {
+	if !bulk.CommentsComplete || !bulk.TimelineComplete {
 		_, err = s.db.WriteDB().ExecContext(ctx,
 			`UPDATE middleman_issues SET detail_fetched_at = NULL WHERE id = ?`,
 			issueID,
@@ -3869,10 +3962,15 @@ func (s *Syncer) syncOpenIssueFromBulk(
 		)
 	}
 
-	if bulk.CommentsComplete {
+	if bulk.CommentsComplete && bulk.TimelineComplete {
 		if err := s.replaceIssueCommentEvents(ctx, issueID, bulk.Comments); err != nil {
 			return fmt.Errorf(
 				"replace issue comment events for #%d: %w", number, err,
+			)
+		}
+		if err := s.upsertIssueTimelineEvents(ctx, issueID, bulk.TimelineEvents); err != nil {
+			return fmt.Errorf(
+				"upsert issue timeline events for #%d: %w", number, err,
 			)
 		}
 		if err := s.db.UpdateIssueDerivedFields(
@@ -3897,7 +3995,7 @@ func (s *Syncer) syncOpenIssueFromBulk(
 			)
 		}
 	} else {
-		// Comments truncated — fall back to REST.
+		// Timeline data truncated — fall back to detail fetch.
 		if err := s.refreshIssueTimeline(
 			ctx, repo, issueID, bulk.Issue,
 		); err != nil {
@@ -5590,6 +5688,23 @@ func (s *Syncer) refreshIssueTimeline(
 		)
 	}
 
+	if timelineClient, ok := client.(issueTimelineLister); ok {
+		timelineEvents, err := timelineClient.ListIssueTimelineEvents(
+			ctx, repo.Owner, repo.Name, number,
+		)
+		if err != nil {
+			slog.Warn("issue timeline event fetch failed during timeline refresh",
+				"repo", repo.Owner+"/"+repo.Name,
+				"number", number,
+				"err", err,
+			)
+		} else if err := s.upsertIssueTimelineEvents(ctx, issueID, timelineEvents); err != nil {
+			return fmt.Errorf(
+				"upsert issue timeline events for #%d: %w", number, err,
+			)
+		}
+	}
+
 	lastActivity := computeIssueCommentLastActivity(ghIssue, comments)
 
 	_, err = s.db.WriteDB().ExecContext(ctx,
@@ -5598,6 +5713,25 @@ func (s *Syncer) refreshIssueTimeline(
 		len(comments), lastActivity, issueID,
 	)
 	return err
+}
+
+func (s *Syncer) upsertIssueTimelineEvents(
+	ctx context.Context,
+	issueID int64,
+	timelineEvents []PullRequestTimelineEvent,
+) error {
+	events := make([]db.IssueEvent, 0, len(timelineEvents))
+	for _, timelineEvent := range timelineEvents {
+		event := NormalizeIssueTimelineEvent(issueID, timelineEvent)
+		if event == nil {
+			continue
+		}
+		events = append(events, *event)
+	}
+	if err := s.db.UpsertIssueEvents(ctx, events); err != nil {
+		return fmt.Errorf("upsert issue timeline events: %w", err)
+	}
+	return nil
 }
 
 func (s *Syncer) refreshRepoPRComments(

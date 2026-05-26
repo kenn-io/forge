@@ -47,6 +47,8 @@
     commit: "Commit",
     force_push: "Force-pushed",
     review_comment: "Review Comment",
+    assigned: "Assigned",
+    unassigned: "Unassigned",
   };
 
   const typeColors: Record<string, string> = {
@@ -56,6 +58,8 @@
     review_comment: "var(--accent-purple)",
     commit: "var(--accent-green)",
     force_push: "var(--accent-red)",
+    assigned: "var(--accent-blue)",
+    unassigned: "var(--text-muted)",
   };
 
   function shouldRenderMarkdown(eventType: string): boolean {
@@ -146,7 +150,9 @@
       eventType === "force_push" ||
       eventType === "cross_referenced" ||
       eventType === "renamed_title" ||
-      eventType === "base_ref_changed"
+      eventType === "base_ref_changed" ||
+      eventType === "assigned" ||
+      eventType === "unassigned"
     );
   }
 
@@ -172,6 +178,10 @@
         return "Title changed";
       case "base_ref_changed":
         return "Base changed";
+      case "assigned":
+        return "Assigned";
+      case "unassigned":
+        return "Unassigned";
       case "force_push":
         return "Force-pushed";
       default:
@@ -480,7 +490,7 @@
           {@const commitDetails = event.EventType === "commit" ? commitDetailsBody(event.Body) : ""}
           <div class="event-card event-card--compact">
             <div class="event-header event-header--compact">
-              {#if event.EventType !== "comment_deleted"}
+              {#if event.EventType !== "comment_deleted" && event.EventType !== "assigned" && event.EventType !== "unassigned"}
                 <span
                   class="event-type"
                   style="color: {typeColors[event.EventType] ?? 'var(--text-muted)'}"
@@ -498,6 +508,12 @@
                 {/if}
                 <span class="event-time">{timeAgo(event.CreatedAt)}</span>
               {:else if event.EventType === "comment_deleted"}
+                {#if event.Author}
+                  <span class="event-author">{event.Author}</span>
+                {/if}
+                <span class="system-event-summary system-event-summary--sentence">{event.Summary}</span>
+                <span class="event-time">{timeAgo(event.CreatedAt)}</span>
+              {:else if event.EventType === "assigned" || event.EventType === "unassigned"}
                 {#if event.Author}
                   <span class="event-author">{event.Author}</span>
                 {/if}

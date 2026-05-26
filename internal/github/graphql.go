@@ -89,7 +89,7 @@ type gqlPR struct {
 	TimelineItems struct {
 		Nodes    []gqlPullRequestTimelineItem
 		PageInfo pageInfo
-	} `graphql:"timelineItems(itemTypes: [HEAD_REF_FORCE_PUSHED_EVENT, COMMENT_DELETED_EVENT, CROSS_REFERENCED_EVENT, RENAMED_TITLE_EVENT, BASE_REF_CHANGED_EVENT], first: 100)"`
+	} `graphql:"timelineItems(itemTypes: [HEAD_REF_FORCE_PUSHED_EVENT, COMMENT_DELETED_EVENT, CROSS_REFERENCED_EVENT, RENAMED_TITLE_EVENT, BASE_REF_CHANGED_EVENT, ASSIGNED_EVENT, UNASSIGNED_EVENT], first: 100)"`
 }
 
 type gqlComment struct {
@@ -130,6 +130,8 @@ type gqlPullRequestTimelineItem struct {
 	CrossReferencedEvent    gqlCrossReferencedEvent    `graphql:"... on CrossReferencedEvent"`
 	RenamedTitleEvent       gqlRenamedTitleEvent       `graphql:"... on RenamedTitleEvent"`
 	BaseRefChangedEvent     gqlBaseRefChangedEvent     `graphql:"... on BaseRefChangedEvent"`
+	AssignedEvent           gqlAssignedEvent           `graphql:"... on AssignedEvent"`
+	UnassignedEvent         gqlAssignedEvent           `graphql:"... on UnassignedEvent"`
 }
 
 type gqlNodeFragment struct {
@@ -200,6 +202,39 @@ type gqlBaseRefChangedEvent struct {
 	CurrentRefName  string
 }
 
+type gqlAssignedEvent struct {
+	Actor     *gqlActorRef
+	Assignee  gqlAssignee
+	CreatedAt time.Time
+}
+
+type gqlAssignee struct {
+	Typename     string        `graphql:"__typename"`
+	Bot          gqlAssigneeID `graphql:"... on Bot"`
+	Mannequin    gqlAssigneeID `graphql:"... on Mannequin"`
+	Organization gqlAssigneeID `graphql:"... on Organization"`
+	User         gqlAssigneeID `graphql:"... on User"`
+}
+
+type gqlAssigneeID struct {
+	Login string
+}
+
+func (a gqlAssignee) Login() string {
+	switch a.Typename {
+	case "Bot":
+		return a.Bot.Login
+	case "Mannequin":
+		return a.Mannequin.Login
+	case "Organization":
+		return a.Organization.Login
+	case "User":
+		return a.User.Login
+	default:
+		return ""
+	}
+}
+
 type gqlIssueQuery struct {
 	Repository struct {
 		Issues struct {
@@ -229,6 +264,10 @@ type gqlIssue struct {
 		Nodes      []gqlComment
 		PageInfo   pageInfo
 	} `graphql:"comments(first: 100)"`
+	TimelineItems struct {
+		Nodes    []gqlPullRequestTimelineItem
+		PageInfo pageInfo
+	} `graphql:"timelineItems(itemTypes: [ASSIGNED_EVENT, UNASSIGNED_EVENT], first: 100)"`
 }
 
 type gqlLabel struct {
@@ -494,7 +533,9 @@ type RepoBulkResult struct {
 type BulkIssue struct {
 	Issue            *gh.Issue
 	Comments         []*gh.IssueComment
+	TimelineEvents   []PullRequestTimelineEvent
 	CommentsComplete bool
+	TimelineComplete bool
 }
 
 // BulkPR holds a PR and its nested data from a single GraphQL query.
@@ -520,10 +561,17 @@ func convertGQLIssue(gql *gqlIssue) BulkIssue {
 	bulk := BulkIssue{
 		Issue:            adaptIssue(gql),
 		CommentsComplete: !gql.Comments.PageInfo.HasNextPage,
+		TimelineComplete: !gql.TimelineItems.PageInfo.HasNextPage,
 	}
 
 	for i := range gql.Comments.Nodes {
 		bulk.Comments = append(bulk.Comments, adaptComment(&gql.Comments.Nodes[i]))
+	}
+	for i := range gql.TimelineItems.Nodes {
+		event, ok := adaptPullRequestTimelineEvent(&gql.TimelineItems.Nodes[i])
+		if ok {
+			bulk.TimelineEvents = append(bulk.TimelineEvents, event)
+		}
 	}
 
 	return bulk
@@ -873,6 +921,22 @@ func adaptPullRequestTimelineEvent(gql *gqlPullRequestTimelineItem) (PullRequest
 		event.CreatedAt = src.CreatedAt
 		event.PreviousRefName = src.PreviousRefName
 		event.CurrentRefName = src.CurrentRefName
+		if src.Actor != nil {
+			event.Actor = src.Actor.Login
+		}
+	case "AssignedEvent":
+		src := gql.AssignedEvent
+		event.EventType = "assigned"
+		event.Assignee = src.Assignee.Login()
+		event.CreatedAt = src.CreatedAt
+		if src.Actor != nil {
+			event.Actor = src.Actor.Login
+		}
+	case "UnassignedEvent":
+		src := gql.UnassignedEvent
+		event.EventType = "unassigned"
+		event.Assignee = src.Assignee.Login()
+		event.CreatedAt = src.CreatedAt
 		if src.Actor != nil {
 			event.Actor = src.Actor.Login
 		}

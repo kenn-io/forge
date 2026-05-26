@@ -22,6 +22,7 @@ type PullRequestTimelineEvent struct {
 	NodeID               string
 	EventType            string
 	Actor                string
+	Assignee             string
 	CreatedAt            time.Time
 	DeletedCommentAuthor string
 	BeforeSHA            string

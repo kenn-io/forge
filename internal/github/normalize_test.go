@@ -354,6 +354,49 @@ func TestNormalizeTimelineEventBaseRefChanged(t *testing.T) {
 	assert.Contains(event.MetadataJSON, `"current_ref_name":"release"`)
 }
 
+func TestNormalizeTimelineEventAssigned(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	createdAt := time.Date(2024, 6, 1, 12, 22, 0, 0, time.UTC)
+
+	event := NormalizeTimelineEvent(17, PullRequestTimelineEvent{
+		NodeID:    "AE_1",
+		EventType: "assigned",
+		Actor:     "wesm",
+		Assignee:  "wesm",
+		CreatedAt: createdAt,
+	})
+
+	require.NotNil(event)
+	assert.Equal("assigned", event.EventType)
+	assert.Equal("wesm", event.Author)
+	assert.Equal("self-assigned this", event.Summary)
+	assert.Equal("timeline-AE_1", event.DedupeKey)
+	assert.Contains(event.MetadataJSON, `"assignee":"wesm"`)
+}
+
+func TestNormalizeIssueTimelineEventAssigned(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	createdAt := time.Date(2024, 6, 1, 12, 22, 0, 0, time.UTC)
+
+	event := NormalizeIssueTimelineEvent(23, PullRequestTimelineEvent{
+		NodeID:    "AE_1",
+		EventType: "assigned",
+		Actor:     "alice",
+		Assignee:  "bob",
+		CreatedAt: createdAt,
+	})
+
+	require.NotNil(event)
+	assert.Equal(int64(23), event.IssueID)
+	assert.Equal("assigned", event.EventType)
+	assert.Equal("alice", event.Author)
+	assert.Equal("assigned bob", event.Summary)
+	assert.Equal("timeline-AE_1", event.DedupeKey)
+	assert.Contains(event.MetadataJSON, `"assignee":"bob"`)
+}
+
 func TestNormalizeTimelineEventForcePush(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)

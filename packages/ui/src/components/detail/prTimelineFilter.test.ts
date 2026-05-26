@@ -151,6 +151,12 @@ describe("prTimelineFilter", () => {
     expect(timelineEventBucket(event({ EventType: "base_ref_changed" }))).toBe(
       "events",
     );
+    expect(timelineEventBucket(event({ EventType: "assigned" }))).toBe(
+      "events",
+    );
+    expect(timelineEventBucket(event({ EventType: "unassigned" }))).toBe(
+      "events",
+    );
   });
 
   it("keeps commit title rows when commit details are disabled", () => {
@@ -178,6 +184,7 @@ describe("prTimelineFilter", () => {
       event({ ID: 3, EventType: "commit", Author: "alice" }),
       event({ ID: 4, EventType: "force_push", Author: "alice" }),
       event({ ID: 5, EventType: "base_ref_changed", Author: "alice" }),
+      event({ ID: 6, EventType: "assigned", Author: "alice" }),
     ];
 
     expect(
@@ -189,7 +196,7 @@ describe("prTimelineFilter", () => {
         showForcePushes: false,
         hideBots: true,
       }).map((item) => item.ID),
-    ).toEqual([1, 3, 5]);
+    ).toEqual([1, 3, 5, 6]);
   });
 
   it("filters threaded replies while keeping the root comment", () => {

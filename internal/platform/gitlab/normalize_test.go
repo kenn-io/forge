@@ -260,26 +260,33 @@ func TestNormalizeIssueMapsGitLabStates(t *testing.T) {
 	}
 }
 
-func TestNormalizeNotesDropsSystemNotes(t *testing.T) {
+func TestNormalizeNotesKeepsAssignmentSystemNotes(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	createdAt := time.Date(2026, 4, 4, 10, 0, 0, 0, time.UTC)
 	notes := []*gitlab.Note{
 		{ID: 1, Body: "visible", System: false, Author: gitlab.NoteAuthor{Username: "alice"}, CreatedAt: &createdAt},
-		{ID: 2, Body: "assigned", System: true, Author: gitlab.NoteAuthor{Username: "root"}, CreatedAt: &createdAt},
+		{ID: 2, Body: "assigned to @bob", System: true, Author: gitlab.NoteAuthor{Username: "root"}, CreatedAt: &createdAt},
+		{ID: 3, Body: "changed milestone", System: true, Author: gitlab.NoteAuthor{Username: "root"}, CreatedAt: &createdAt},
 	}
 
 	mrEvents := NormalizeMergeRequestNotes(testGitLabRepoRef(), 7, notes)
-	require.Len(mrEvents, 1)
+	require.Len(mrEvents, 2)
 	assert.Equal("issue_comment", mrEvents[0].EventType)
 	assert.Equal("visible", mrEvents[0].Body)
 	assert.Equal("gitlab:gitlab.example.com:group/project:mr:7:note:1", mrEvents[0].DedupeKey)
+	assert.Equal("assigned", mrEvents[1].EventType)
+	assert.Equal("assigned to @bob", mrEvents[1].Summary)
+	assert.Equal("gitlab:gitlab.example.com:group/project:mr:7:system_note:2", mrEvents[1].DedupeKey)
 
 	issueEvents := NormalizeIssueNotes(testGitLabRepoRef(), 5, notes)
-	require.Len(issueEvents, 1)
+	require.Len(issueEvents, 2)
 	assert.Equal("issue_comment", issueEvents[0].EventType)
 	assert.Equal("visible", issueEvents[0].Body)
 	assert.Equal("gitlab:gitlab.example.com:group/project:issue:5:note:1", issueEvents[0].DedupeKey)
+	assert.Equal("assigned", issueEvents[1].EventType)
+	assert.Equal("assigned to @bob", issueEvents[1].Summary)
+	assert.Equal("gitlab:gitlab.example.com:group/project:issue:5:system_note:2", issueEvents[1].DedupeKey)
 }
 
 func TestNormalizeNotesDedupeKeyIncludesRepositoryAndParent(t *testing.T) {

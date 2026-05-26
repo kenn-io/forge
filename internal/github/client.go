@@ -27,6 +27,7 @@ type PullRequestTimelineEvent struct {
 	NodeID               string
 	EventType            string
 	Actor                string
+	Assignee             string
 	CreatedAt            time.Time
 	DeletedCommentAuthor string
 	BeforeSHA            string
@@ -112,6 +113,14 @@ type conditionalIssueGetter interface {
 		number int,
 		etag string,
 	) (*gh.Issue, string, bool, error)
+}
+
+type issueTimelineLister interface {
+	ListIssueTimelineEvents(
+		ctx context.Context,
+		owner, repo string,
+		number int,
+	) ([]PullRequestTimelineEvent, error)
 }
 
 func graphQLEndpointForHost(platformHost string) string {
@@ -275,7 +284,7 @@ const pullRequestTimelineEventsQuery = `
 query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $number) {
-      timelineItems(itemTypes: [HEAD_REF_FORCE_PUSHED_EVENT, COMMENT_DELETED_EVENT, CROSS_REFERENCED_EVENT, RENAMED_TITLE_EVENT, BASE_REF_CHANGED_EVENT], first: 100, after: $cursor) {
+      timelineItems(itemTypes: [HEAD_REF_FORCE_PUSHED_EVENT, COMMENT_DELETED_EVENT, CROSS_REFERENCED_EVENT, RENAMED_TITLE_EVENT, BASE_REF_CHANGED_EVENT, ASSIGNED_EVENT, UNASSIGNED_EVENT], first: 100, after: $cursor) {
         nodes {
           __typename
           ... on Node {
@@ -331,6 +340,70 @@ query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
             createdAt
             previousRefName
             currentRefName
+          }
+          ... on AssignedEvent {
+            actor { login }
+            assignee {
+              __typename
+              ... on Bot { login }
+              ... on Mannequin { login }
+              ... on Organization { login }
+              ... on User { login }
+            }
+            createdAt
+          }
+          ... on UnassignedEvent {
+            actor { login }
+            assignee {
+              __typename
+              ... on Bot { login }
+              ... on Mannequin { login }
+              ... on Organization { login }
+              ... on User { login }
+            }
+            createdAt
+          }
+        }
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
+      }
+    }
+  }
+}`
+
+const issueTimelineEventsQuery = `
+query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
+  repository(owner: $owner, name: $repo) {
+    issue(number: $number) {
+      timelineItems(itemTypes: [ASSIGNED_EVENT, UNASSIGNED_EVENT], first: 100, after: $cursor) {
+        nodes {
+          __typename
+          ... on Node {
+            id
+          }
+          ... on AssignedEvent {
+            actor { login }
+            assignee {
+              __typename
+              ... on Bot { login }
+              ... on Mannequin { login }
+              ... on Organization { login }
+              ... on User { login }
+            }
+            createdAt
+          }
+          ... on UnassignedEvent {
+            actor { login }
+            assignee {
+              __typename
+              ... on Bot { login }
+              ... on Mannequin { login }
+              ... on Organization { login }
+              ... on User { login }
+            }
+            createdAt
           }
         }
         pageInfo {
@@ -809,6 +882,10 @@ func (c *liveClient) ListPullRequestTimelineEvents(
 							Actor    *struct {
 								Login string `json:"login"`
 							} `json:"actor"`
+							Assignee *struct {
+								TypeName string `json:"__typename"`
+								Login    string `json:"login"`
+							} `json:"assignee"`
 							BeforeCommit *struct {
 								OID string `json:"oid"`
 							} `json:"beforeCommit"`
@@ -945,11 +1022,18 @@ func (c *liveClient) ListPullRequestTimelineEvents(
 				event.EventType = "renamed_title"
 			case "BaseRefChangedEvent":
 				event.EventType = "base_ref_changed"
+			case "AssignedEvent":
+				event.EventType = "assigned"
+			case "UnassignedEvent":
+				event.EventType = "unassigned"
 			default:
 				continue
 			}
 			if node.Actor != nil {
 				event.Actor = node.Actor.Login
+			}
+			if node.Assignee != nil {
+				event.Assignee = node.Assignee.Login
 			}
 			if node.BeforeCommit != nil {
 				event.BeforeSHA = node.BeforeCommit.OID
@@ -979,6 +1063,142 @@ func (c *liveClient) ListPullRequestTimelineEvents(
 		}
 
 		pageInfo := decoded.Data.Repository.PullRequest.TimelineItems.PageInfo
+		if !pageInfo.HasNextPage {
+			break
+		}
+		cursor = pageInfo.EndCursor
+	}
+
+	return events, nil
+}
+
+func (c *liveClient) ListIssueTimelineEvents(
+	ctx context.Context, owner, repo string, number int,
+) ([]PullRequestTimelineEvent, error) {
+	type graphQLResponse struct {
+		Errors []graphQLError `json:"errors"`
+		Data   struct {
+			Repository *struct {
+				Issue *struct {
+					TimelineItems struct {
+						Nodes []struct {
+							TypeName string `json:"__typename"`
+							ID       string `json:"id"`
+							Actor    *struct {
+								Login string `json:"login"`
+							} `json:"actor"`
+							Assignee *struct {
+								TypeName string `json:"__typename"`
+								Login    string `json:"login"`
+							} `json:"assignee"`
+							CreatedAt time.Time `json:"createdAt"`
+						} `json:"nodes"`
+						PageInfo struct {
+							HasNextPage bool    `json:"hasNextPage"`
+							EndCursor   *string `json:"endCursor"`
+						} `json:"pageInfo"`
+					} `json:"timelineItems"`
+				} `json:"issue"`
+			} `json:"repository"`
+		} `json:"data"`
+	}
+
+	var events []PullRequestTimelineEvent
+	var cursor *string
+	for {
+		payload, err := json.Marshal(graphQLRequest{
+			Query: issueTimelineEventsQuery,
+			Variables: map[string]any{
+				"owner":  owner,
+				"repo":   repo,
+				"number": number,
+				"cursor": cursor,
+			},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("marshal issue timeline query: %w", err)
+		}
+
+		req, err := http.NewRequestWithContext(
+			ctx,
+			http.MethodPost,
+			c.graphQLEndpoint,
+			bytes.NewReader(payload),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("create issue timeline request: %w", err)
+		}
+		req.Header.Set("Accept", "application/vnd.github+json")
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"list issue timeline events for %s/%s#%d: %w",
+				owner, repo, number, err,
+			)
+		}
+		c.trackRateHeaders(resp)
+		if resp.StatusCode != http.StatusOK {
+			_ = resp.Body.Close()
+			return nil, fmt.Errorf(
+				"list issue timeline events for %s/%s#%d: graphql status %s",
+				owner, repo, number, resp.Status,
+			)
+		}
+
+		var decoded graphQLResponse
+		if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
+			_ = resp.Body.Close()
+			return nil, fmt.Errorf(
+				"decode issue timeline events for %s/%s#%d: %w",
+				owner, repo, number, err,
+			)
+		}
+		_ = resp.Body.Close()
+
+		if len(decoded.Errors) > 0 {
+			return nil, fmt.Errorf(
+				"list issue timeline events for %s/%s#%d: graphql errors: %s",
+				owner, repo, number, joinGraphQLErrorMessages(decoded.Errors),
+			)
+		}
+		if decoded.Data.Repository == nil {
+			return nil, fmt.Errorf(
+				"list issue timeline events for %s/%s#%d: missing repository in graphql response",
+				owner, repo, number,
+			)
+		}
+		if decoded.Data.Repository.Issue == nil {
+			return nil, fmt.Errorf(
+				"list issue timeline events for %s/%s#%d: missing issue in graphql response",
+				owner, repo, number,
+			)
+		}
+
+		for _, node := range decoded.Data.Repository.Issue.TimelineItems.Nodes {
+			event := PullRequestTimelineEvent{
+				NodeID:    node.ID,
+				CreatedAt: node.CreatedAt,
+			}
+			switch node.TypeName {
+			case "AssignedEvent":
+				event.EventType = "assigned"
+			case "UnassignedEvent":
+				event.EventType = "unassigned"
+			default:
+				continue
+			}
+			if node.Actor != nil {
+				event.Actor = node.Actor.Login
+			}
+			if node.Assignee != nil {
+				event.Assignee = node.Assignee.Login
+			}
+			events = append(events, event)
+		}
+
+		pageInfo := decoded.Data.Repository.Issue.TimelineItems.PageInfo
 		if !pageInfo.HasNextPage {
 			break
 		}

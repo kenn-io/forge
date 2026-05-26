@@ -464,7 +464,7 @@ func TestListPullRequestTimelineEvents(t *testing.T) {
 			_, _ = w.Write([]byte(`{"data":{"repository":{"pullRequest":{"timelineItems":{"nodes":[{"__typename":"HeadRefForcePushedEvent","id":"HFP_1","actor":{"login":"alice"},"beforeCommit":{"oid":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"afterCommit":{"oid":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},"createdAt":"2024-06-01T12:00:00Z","ref":{"name":"feature"}},{"__typename":"RenamedTitleEvent","id":"RTE_1","actor":{"login":"bob"},"createdAt":"2024-06-01T12:05:00Z","previousTitle":"Old title","currentTitle":"New title"}],"pageInfo":{"hasNextPage":true,"endCursor":"cursor-1"}}}}}}`))
 			return
 		}
-		_, _ = w.Write([]byte(`{"data":{"repository":{"pullRequest":{"timelineItems":{"nodes":[{"__typename":"BaseRefChangedEvent","id":"BRC_1","actor":{"login":"carol"},"createdAt":"2024-06-01T12:10:00Z","previousRefName":"main","currentRefName":"release"},{"__typename":"CommentDeletedEvent","id":"CDE_1","actor":{"login":"maintainer"},"createdAt":"2024-06-01T12:12:00Z","deletedCommentAuthor":{"login":"reviewer"}},{"__typename":"CrossReferencedEvent","id":"CRE_1","actor":{"login":"dave"},"createdAt":"2024-06-01T12:15:00Z","isCrossRepository":true,"willCloseTarget":false,"source":{"__typename":"Issue","number":77,"title":"Related bug","url":"https://github.com/other/repo/issues/77","repository":{"owner":{"login":"other"},"name":"repo"}}}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}`))
+		_, _ = w.Write([]byte(`{"data":{"repository":{"pullRequest":{"timelineItems":{"nodes":[{"__typename":"BaseRefChangedEvent","id":"BRC_1","actor":{"login":"carol"},"createdAt":"2024-06-01T12:10:00Z","previousRefName":"main","currentRefName":"release"},{"__typename":"CommentDeletedEvent","id":"CDE_1","actor":{"login":"maintainer"},"createdAt":"2024-06-01T12:12:00Z","deletedCommentAuthor":{"login":"reviewer"}},{"__typename":"CrossReferencedEvent","id":"CRE_1","actor":{"login":"dave"},"createdAt":"2024-06-01T12:15:00Z","isCrossRepository":true,"willCloseTarget":false,"source":{"__typename":"Issue","number":77,"title":"Related bug","url":"https://github.com/other/repo/issues/77","repository":{"owner":{"login":"other"},"name":"repo"}}},{"__typename":"AssignedEvent","id":"AE_1","actor":{"login":"wesm"},"assignee":{"__typename":"User","login":"wesm"},"createdAt":"2024-06-01T12:20:00Z"},{"__typename":"UnassignedEvent","id":"UE_1","actor":{"login":"alice"},"assignee":{"__typename":"User","login":"bob"},"createdAt":"2024-06-01T12:25:00Z"}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}`))
 	})
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
@@ -476,7 +476,7 @@ func TestListPullRequestTimelineEvents(t *testing.T) {
 
 	events, err := c.ListPullRequestTimelineEvents(t.Context(), "owner", "repo", 42)
 	require.NoError(err)
-	require.Len(events, 5)
+	require.Len(events, 7)
 	require.Equal("force_push", events[0].EventType)
 	require.Equal("HFP_1", events[0].NodeID)
 	require.Equal("alice", events[0].Actor)
@@ -500,6 +500,12 @@ func TestListPullRequestTimelineEvents(t *testing.T) {
 	require.Equal("Related bug", events[4].SourceTitle)
 	require.True(events[4].IsCrossRepository)
 	require.False(events[4].WillCloseTarget)
+	require.Equal("assigned", events[5].EventType)
+	require.Equal("wesm", events[5].Actor)
+	require.Equal("wesm", events[5].Assignee)
+	require.Equal("unassigned", events[6].EventType)
+	require.Equal("alice", events[6].Actor)
+	require.Equal("bob", events[6].Assignee)
 	require.Equal(2, calls)
 	require.Equal([]string{http.MethodPost, http.MethodPost}, methods)
 	require.Equal([]string{"application/json", "application/json"}, contentTypes)
@@ -521,6 +527,41 @@ func TestListPullRequestTimelineEventsReturnsGraphQLErrors(t *testing.T) {
 	events, err := c.ListPullRequestTimelineEvents(t.Context(), "owner", "repo", 42)
 	require.Nil(events)
 	require.ErrorContains(err, "permission denied")
+}
+
+func TestListIssueTimelineEvents(t *testing.T) {
+	require := require.New(t)
+	var calls int
+	mux := http.NewServeMux()
+	mux.HandleFunc("/graphql", func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.Header().Set("Content-Type", "application/json")
+		if calls == 1 {
+			_, _ = w.Write([]byte(`{"data":{"repository":{"issue":{"timelineItems":{"nodes":[{"__typename":"AssignedEvent","id":"AE_1","actor":{"login":"wesm"},"assignee":{"__typename":"User","login":"wesm"},"createdAt":"2024-06-01T12:20:00Z"}],"pageInfo":{"hasNextPage":true,"endCursor":"cursor-1"}}}}}}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"data":{"repository":{"issue":{"timelineItems":{"nodes":[{"__typename":"UnassignedEvent","id":"UE_1","actor":{"login":"alice"},"assignee":{"__typename":"Mannequin","login":"bob"},"createdAt":"2024-06-01T12:25:00Z"}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}`))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	c := &liveClient{
+		httpClient:      srv.Client(),
+		graphQLEndpoint: srv.URL + "/graphql",
+	}
+
+	events, err := c.ListIssueTimelineEvents(t.Context(), "owner", "repo", 42)
+	require.NoError(err)
+	require.Len(events, 2)
+	require.Equal("assigned", events[0].EventType)
+	require.Equal("AE_1", events[0].NodeID)
+	require.Equal("wesm", events[0].Actor)
+	require.Equal("wesm", events[0].Assignee)
+	require.Equal("unassigned", events[1].EventType)
+	require.Equal("UE_1", events[1].NodeID)
+	require.Equal("alice", events[1].Actor)
+	require.Equal("bob", events[1].Assignee)
+	require.Equal(2, calls)
 }
 
 func TestListPullRequestTimelineEventsRejectsNullGraphQLNodes(t *testing.T) {

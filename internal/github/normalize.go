@@ -145,6 +145,7 @@ func NormalizeTimelineEvent(mrID int64, event PullRequestTimelineEvent) *db.MREv
 			NodeID:               event.NodeID,
 			EventType:            event.EventType,
 			Actor:                event.Actor,
+			Assignee:             event.Assignee,
 			CreatedAt:            event.CreatedAt,
 			DeletedCommentAuthor: event.DeletedCommentAuthor,
 			BeforeSHA:            event.BeforeSHA,
@@ -168,6 +169,25 @@ func NormalizeTimelineEvent(mrID int64, event PullRequestTimelineEvent) *db.MREv
 		return nil
 	}
 	eventDB := dbMREvent(mrID, *normalized)
+	return &eventDB
+}
+
+func NormalizeIssueTimelineEvent(issueID int64, event PullRequestTimelineEvent) *db.IssueEvent {
+	normalized := platformgithub.NormalizeIssueTimelineEvent(
+		platform.RepoRef{},
+		0,
+		platformgithub.PullRequestTimelineEvent{
+			NodeID:    event.NodeID,
+			EventType: event.EventType,
+			Actor:     event.Actor,
+			Assignee:  event.Assignee,
+			CreatedAt: event.CreatedAt,
+		},
+	)
+	if normalized == nil {
+		return nil
+	}
+	eventDB := dbIssueEvent(issueID, *normalized)
 	return &eventDB
 }
 

@@ -336,6 +336,15 @@ describe("EventTimeline", () => {
               source_url: "https://github.com/other/repo/issues/77",
             }),
           }),
+          makeEvent({
+            ID: 5,
+            EventType: "assigned",
+            Author: "wesm",
+            Summary: "self-assigned this",
+            MetadataJSON: JSON.stringify({
+              assignee: "wesm",
+            }),
+          }),
         ],
       },
     });
@@ -354,7 +363,9 @@ describe("EventTimeline", () => {
     expect(screen.getByText("Base changed")).toBeTruthy();
     expect(screen.getByText("Referenced")).toBeTruthy();
     expect(screen.getByText("Related bug")).toBeTruthy();
-    expect(document.querySelectorAll(".event--compact").length).toBe(4);
+    expect(screen.queryByText("Assigned")).toBeNull();
+    expect(screen.getByText("self-assigned this")).toBeTruthy();
+    expect(document.querySelectorAll(".event--compact").length).toBe(5);
   });
 
   it("renders cross-repository events as internal item references when metadata identifies the source item", () => {

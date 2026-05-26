@@ -263,7 +263,14 @@ func NormalizeMergeRequestNotes(
 ) []platform.MergeRequestEvent {
 	events := make([]platform.MergeRequestEvent, 0, len(notes))
 	for _, note := range notes {
-		if note == nil || note.System {
+		if note == nil {
+			continue
+		}
+		if note.System {
+			event, ok := normalizeMergeRequestSystemNote(repo, mrNumber, note)
+			if ok {
+				events = append(events, event)
+			}
 			continue
 		}
 		events = append(events, platform.MergeRequestEvent{
@@ -340,7 +347,14 @@ func NormalizeIssueNotes(
 ) []platform.IssueEvent {
 	events := make([]platform.IssueEvent, 0, len(notes))
 	for _, note := range notes {
-		if note == nil || note.System {
+		if note == nil {
+			continue
+		}
+		if note.System {
+			event, ok := normalizeIssueSystemNote(repo, issueNumber, note)
+			if ok {
+				events = append(events, event)
+			}
 			continue
 		}
 		events = append(events, platform.IssueEvent{
@@ -387,6 +401,63 @@ func NormalizeIssueDiscussions(
 		}
 	}
 	return events
+}
+
+func normalizeMergeRequestSystemNote(
+	repo platform.RepoRef,
+	mrNumber int,
+	note *gitlab.Note,
+) (platform.MergeRequestEvent, bool) {
+	eventType, ok := gitLabAssignmentEventType(note.Body)
+	if !ok {
+		return platform.MergeRequestEvent{}, false
+	}
+	externalID := strconv.FormatInt(note.ID, 10)
+	return platform.MergeRequestEvent{
+		Repo:               repo,
+		PlatformID:         note.ID,
+		PlatformExternalID: externalID,
+		MergeRequestNumber: mrNumber,
+		EventType:          eventType,
+		Author:             note.Author.Username,
+		Summary:            strings.TrimSpace(note.Body),
+		CreatedAt:          timeValue(note.CreatedAt),
+		DedupeKey:          noteDedupeKey(repo, "mr", mrNumber, "system_note", externalID),
+	}, true
+}
+
+func normalizeIssueSystemNote(
+	repo platform.RepoRef,
+	issueNumber int, note *gitlab.Note,
+) (platform.IssueEvent, bool) {
+	eventType, ok := gitLabAssignmentEventType(note.Body)
+	if !ok {
+		return platform.IssueEvent{}, false
+	}
+	externalID := strconv.FormatInt(note.ID, 10)
+	return platform.IssueEvent{
+		Repo:               repo,
+		PlatformID:         note.ID,
+		PlatformExternalID: externalID,
+		IssueNumber:        issueNumber,
+		EventType:          eventType,
+		Author:             note.Author.Username,
+		Summary:            strings.TrimSpace(note.Body),
+		CreatedAt:          timeValue(note.CreatedAt),
+		DedupeKey:          noteDedupeKey(repo, "issue", issueNumber, "system_note", externalID),
+	}, true
+}
+
+func gitLabAssignmentEventType(body string) (string, bool) {
+	normalized := strings.ToLower(strings.TrimSpace(body))
+	switch {
+	case strings.HasPrefix(normalized, "assigned"):
+		return "assigned", true
+	case strings.HasPrefix(normalized, "unassigned"):
+		return "unassigned", true
+	default:
+		return "", false
+	}
 }
 
 func noteDedupeKey(

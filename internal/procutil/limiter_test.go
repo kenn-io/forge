@@ -115,3 +115,24 @@ func TestLimiterAcquirePreservesCallerCancellation(t *testing.T) {
 	assert.True(errors.Is(err, context.Canceled))
 	assert.True(IsResourceExhausted(err))
 }
+
+func TestLimiterAcquireCanceledContextWithCapacityIsNotResourceExhausted(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	limiter := NewLimiterWithAcquireTimeout(1, time.Second)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	release, err := limiter.TryAcquire(ctx, "available subprocess")
+	require.Error(err)
+	require.Nil(release)
+	assert.True(errors.Is(err, context.Canceled))
+	assert.False(errors.Is(err, ErrProcessLimitReached))
+	assert.False(IsResourceExhausted(err))
+
+	release, err = limiter.TryAcquire(context.Background(), "subsequent subprocess")
+	require.NoError(err)
+	require.NotNil(release)
+	release()
+}

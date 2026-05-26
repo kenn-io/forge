@@ -50,6 +50,14 @@ func (l *Limiter) TryAcquire(
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	if l.sem.TryAcquire(1) {
+		if err := ctx.Err(); err != nil {
+			l.sem.Release(1)
+			return nil, err
+		}
+		return releaseOnce(l.sem), nil
+	}
+
 	acquireCtx := ctx
 	cancel := func() {}
 	if l.acquireTimeout > 0 {
@@ -66,12 +74,16 @@ func (l *Limiter) TryAcquire(
 		}
 		return nil, fmt.Errorf("%w: %w", ErrProcessLimitReached, err)
 	}
+	return releaseOnce(l.sem), nil
+}
+
+func releaseOnce(sem *semaphore.Weighted) func() {
 	var once sync.Once
 	return func() {
 		once.Do(func() {
-			l.sem.Release(1)
+			sem.Release(1)
 		})
-	}, nil
+	}
 }
 
 var (

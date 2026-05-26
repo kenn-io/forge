@@ -15,6 +15,7 @@ import (
 	"time"
 
 	gh "github.com/google/go-github/v84/github"
+	"github.com/shurcooL/githubv4"
 	"go.kenn.io/middleman/internal/config"
 	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/gitclone"
@@ -496,7 +497,7 @@ func NewSyncer(
 	budgets map[string]*SyncBudget,
 ) *Syncer {
 	return NewSyncerWithRegistry(
-		registryFromGitHubClients(clients),
+		registryFromGitHubClients(clients, nil),
 		database,
 		clones,
 		repos,
@@ -558,8 +559,9 @@ func NewSyncerWithRegistry(
 }
 
 type gitHubClientProvider struct {
-	host   string
-	client Client
+	host      string
+	client    Client
+	gqlClient *githubv4.Client
 }
 
 type githubLabelClient interface {
@@ -567,7 +569,7 @@ type githubLabelClient interface {
 	ReplaceIssueLabels(ctx context.Context, owner, repo string, number int, names []string) ([]*gh.Label, error)
 }
 
-func registryFromGitHubClients(clients map[string]Client) *platform.Registry {
+func registryFromGitHubClients(clients map[string]Client, gqlClients map[string]*githubv4.Client) *platform.Registry {
 	registry, err := platform.NewRegistry()
 	if err != nil {
 		panic(fmt.Sprintf("create empty provider registry: %v", err))
@@ -577,8 +579,9 @@ func registryFromGitHubClients(clients map[string]Client) *platform.Registry {
 			continue
 		}
 		provider := gitHubClientProvider{
-			host:   canonicalRepoHost(host),
-			client: client,
+			host:      canonicalRepoHost(host),
+			client:    client,
+			gqlClient: gqlClients[host],
 		}
 		_ = registry.Register(provider)
 	}
@@ -587,9 +590,10 @@ func registryFromGitHubClients(clients map[string]Client) *platform.Registry {
 
 func NewProviderRegistry(
 	clients map[string]Client,
+	gqlClients map[string]*githubv4.Client,
 	providers ...platform.Provider,
 ) (*platform.Registry, error) {
-	registry := registryFromGitHubClients(clients)
+	registry := registryFromGitHubClients(clients, gqlClients)
 	for _, provider := range providers {
 		if err := registry.Register(provider); err != nil {
 			return nil, err

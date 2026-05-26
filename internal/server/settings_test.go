@@ -91,7 +91,7 @@ func setupTestServerWithConfigProviders(
 	require.NoError(t, err)
 
 	clients := map[string]ghclient.Client{"github.com": mock}
-	registry, err := ghclient.NewProviderRegistry(clients, providers...)
+	registry, err := ghclient.NewProviderRegistry(clients, nil, providers...)
 	require.NoError(t, err)
 	resolved := ghclient.ResolveConfiguredReposWithRegistry(
 		t.Context(), registry, cfg.Repos,

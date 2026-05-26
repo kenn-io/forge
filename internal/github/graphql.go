@@ -591,6 +591,14 @@ func (f *GraphQLFetcher) RateTracker() *RateTracker {
 	return f.rateTracker
 }
 
+// Client returns the underlying githubv4.Client, or nil if called on a nil receiver.
+func (f *GraphQLFetcher) Client() *githubv4.Client {
+	if f == nil {
+		return nil
+	}
+	return f.client
+}
+
 // NewGraphQLFetcher creates a fetcher for the given host. budget may be nil.
 func NewGraphQLFetcher(
 	token string,

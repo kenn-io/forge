@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 
+	"github.com/shurcooL/githubv4"
 	"go.kenn.io/middleman/internal/config"
 	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/github"
@@ -187,11 +188,6 @@ func buildProviderStartup(
 			startup.cloneTokens[host] = token
 		}
 	}
-	registry, err := github.NewProviderRegistry(clients, providers...)
-	if err != nil {
-		return providerStartup{}, fmt.Errorf("create provider registry: %w", err)
-	}
-	startup.registry = registry
 	for host, token := range githubTokens {
 		rateKey := github.RateBucketKey(string(platform.KindGitHub), host)
 		gqlRT := github.NewPlatformRateTracker(database, string(platform.KindGitHub), host, "graphql")
@@ -199,6 +195,15 @@ func buildProviderStartup(
 			token, host, gqlRT, startup.budgets[rateKey],
 		)
 	}
+	gqlClients := make(map[string]*githubv4.Client, len(startup.fetchers))
+	for host, fetcher := range startup.fetchers {
+		gqlClients[host] = fetcher.Client()
+	}
+	registry, err := github.NewProviderRegistry(clients, gqlClients, providers...)
+	if err != nil {
+		return providerStartup{}, fmt.Errorf("create provider registry: %w", err)
+	}
+	startup.registry = registry
 	return startup, nil
 }
 

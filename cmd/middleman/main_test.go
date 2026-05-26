@@ -353,7 +353,7 @@ func mustProviderRegistry(
 	providers ...platform.Provider,
 ) *platform.Registry {
 	t.Helper()
-	registry, err := ghclient.NewProviderRegistry(clients, providers...)
+	registry, err := ghclient.NewProviderRegistry(clients, nil, providers...)
 	require.NoError(t, err)
 	return registry
 }

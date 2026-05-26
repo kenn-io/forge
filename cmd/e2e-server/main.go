@@ -740,6 +740,7 @@ func run(
 	giteaUpdated := time.Date(2026, 4, 26, 10, 0, 0, 0, time.UTC)
 	registry, err := ghclient.NewProviderRegistry(
 		fixtureClients,
+		nil,
 		e2eStaticProvider{
 			kind:        platform.KindGitLab,
 			host:        "gitlab.example.com",

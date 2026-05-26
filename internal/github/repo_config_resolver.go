@@ -138,7 +138,7 @@ func ResolveConfiguredRepos(
 	clients map[string]Client,
 	repos []config.Repo,
 ) ResolveConfiguredReposResult {
-	return resolveConfiguredRepos(ctx, registryFromGitHubClients(clients), repos)
+	return resolveConfiguredRepos(ctx, registryFromGitHubClients(clients, nil), repos)
 }
 
 func ResolveConfiguredReposWithRegistry(
@@ -181,7 +181,7 @@ func ResolveConfiguredRepo(
 	clients map[string]Client,
 	repo config.Repo,
 ) (ConfiguredRepoStatus, []RepoRef, error) {
-	return resolveConfiguredRepo(ctx, registryFromGitHubClients(clients), repo)
+	return resolveConfiguredRepo(ctx, registryFromGitHubClients(clients, nil), repo)
 }
 
 func ResolveConfiguredRepoWithRegistry(

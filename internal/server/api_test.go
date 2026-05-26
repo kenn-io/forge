@@ -11630,12 +11630,12 @@ func TestAPIGitLabSyncKeepsCanonicalReviewThreadWhenProviderReturnsReplies(t *te
 	var detail mergeRequestDetailResponse
 	require.NoError(json.NewDecoder(detailRR.Body).Decode(&detail))
 	require.Len(detail.Events, 1)
-	require.NotNil(detail.Events[0].ReviewThread)
+	require.NotNil(detail.Events[0].DiffThread)
 	assert.Equal("review_comment", detail.Events[0].EventType)
-	assert.Equal("original inline note", detail.Events[0].ReviewThread.Body)
-	assert.Equal("reviewer", detail.Events[0].ReviewThread.AuthorLogin)
-	assert.Equal("101", detail.Events[0].ReviewThread.ProviderCommentID)
-	assert.Equal(originalLine, detail.Events[0].ReviewThread.Line)
+	assert.Equal("original inline note", detail.Events[0].DiffThread.Body)
+	assert.Equal("reviewer", detail.Events[0].DiffThread.AuthorLogin)
+	assert.Equal("101", detail.Events[0].DiffThread.ProviderCommentID)
+	assert.Equal(originalLine, detail.Events[0].DiffThread.Line)
 }
 
 func TestAPIGitLabSyncPrunesMissingReviewThreadTimelineEvents(t *testing.T) {
@@ -11764,8 +11764,8 @@ func TestAPIGitLabSyncPrunesLegacyPositionedNoteCommentEvents(t *testing.T) {
 	require.NoError(json.NewDecoder(detailRR.Body).Decode(&detail))
 	require.Len(detail.Events, 1)
 	assert.Equal("review_comment", detail.Events[0].EventType)
-	require.NotNil(detail.Events[0].ReviewThread)
-	assert.Equal("canonical inline diff note", detail.Events[0].ReviewThread.Body)
+	require.NotNil(detail.Events[0].DiffThread)
+	assert.Equal("canonical inline diff note", detail.Events[0].DiffThread.Body)
 
 	events, err := database.ListMREvents(ctx, mr.ID)
 	require.NoError(err)

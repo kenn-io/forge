@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	Assert "github.com/stretchr/testify/assert"
@@ -13,57 +14,104 @@ import (
 func TestLimiterWaitsForReleaseWhenAtCapacity(t *testing.T) {
 	require := require.New(t)
 
-	limiter := NewLimiter(1)
-	firstRelease, err := limiter.TryAcquire(context.Background(), "first subprocess")
-	require.NoError(err)
-	defer firstRelease()
-
 	type acquireResult struct {
 		release func()
 		err     error
 	}
-	acquired := make(chan acquireResult, 1)
-	go func() {
-		release, acquireErr := limiter.TryAcquire(t.Context(), "second subprocess")
-		acquired <- acquireResult{release: release, err: acquireErr}
-	}()
 
-	select {
-	case got := <-acquired:
-		require.NoError(got.err, "second acquire should wait for capacity instead of erroring")
-		require.Fail("second acquire returned before capacity was released")
-	case <-time.After(25 * time.Millisecond):
-	}
+	synctest.Test(t, func(t *testing.T) {
+		limiter := NewLimiter(1)
+		firstRelease, err := limiter.TryAcquire(context.Background(), "first subprocess")
+		require.NoError(err)
+		defer firstRelease()
 
-	firstRelease()
+		acquired := make(chan acquireResult, 1)
+		go func() {
+			release, acquireErr := limiter.TryAcquire(
+				context.Background(), "second subprocess",
+			)
+			acquired <- acquireResult{release: release, err: acquireErr}
+		}()
 
-	select {
-	case got := <-acquired:
-		require.NoError(got.err)
-		require.NotNil(got.release)
-		got.release()
-	case <-time.After(time.Second):
-		require.Fail("second acquire did not complete after capacity was released")
-	}
+		synctest.Wait()
+		select {
+		case got := <-acquired:
+			require.NoError(got.err, "second acquire should wait for capacity instead of erroring")
+			require.Fail("second acquire returned before capacity was released")
+		default:
+		}
+
+		firstRelease()
+		synctest.Wait()
+
+		select {
+		case got := <-acquired:
+			require.NoError(got.err)
+			require.NotNil(got.release)
+			got.release()
+		default:
+			require.Fail("second acquire did not complete after capacity was released")
+		}
+	})
 }
 
 func TestLimiterAcquireTimeoutIsResourceExhausted(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 
-	limiter := NewLimiter(1)
+	type acquireResult struct {
+		release func()
+		err     error
+	}
+
+	var got acquireResult
+	synctest.Test(t, func(t *testing.T) {
+		limiter := NewLimiterWithAcquireTimeout(1, 10*time.Second)
+		firstRelease, err := limiter.TryAcquire(context.Background(), "first subprocess")
+		require.NoError(err)
+		defer firstRelease()
+
+		acquired := make(chan acquireResult, 1)
+		go func() {
+			release, acquireErr := limiter.TryAcquire(
+				context.Background(), "second subprocess",
+			)
+			acquired <- acquireResult{release: release, err: acquireErr}
+		}()
+
+		time.Sleep(10 * time.Second)
+		synctest.Wait()
+		select {
+		case got = <-acquired:
+		default:
+			require.Fail("second acquire did not time out")
+		}
+	})
+
+	require.Error(got.err)
+	require.Nil(got.release)
+	assert.ErrorIs(got.err, ErrProcessLimitReached)
+	assert.True(errors.Is(got.err, context.DeadlineExceeded))
+	assert.True(IsResourceExhausted(got.err))
+	assert.Contains(got.err.Error(), "second subprocess")
+}
+
+func TestLimiterAcquirePreservesCallerCancellation(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	limiter := NewLimiterWithAcquireTimeout(1, time.Second)
 	firstRelease, err := limiter.TryAcquire(context.Background(), "first subprocess")
 	require.NoError(err)
 	defer firstRelease()
 
-	ctx, cancel := context.WithTimeout(t.Context(), time.Nanosecond)
-	defer cancel()
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
 
 	release, err := limiter.TryAcquire(ctx, "second subprocess")
 	require.Error(err)
 	require.Nil(release)
 	assert.ErrorIs(err, ErrProcessLimitReached)
-	assert.True(errors.Is(err, context.DeadlineExceeded))
+	assert.True(errors.Is(err, context.Canceled))
 	assert.True(IsResourceExhausted(err))
-	assert.Contains(err.Error(), "second subprocess")
 }

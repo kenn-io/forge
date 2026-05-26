@@ -30,6 +30,7 @@ import (
 	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/gitclone"
 	ghclient "go.kenn.io/middleman/internal/github"
+	"go.kenn.io/middleman/internal/procutil"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
 )
 
@@ -1745,6 +1746,133 @@ func TestWorkspaceSetupResourceExhaustionGetsHelpfulErrorViaAPI(t *testing.T) {
 	require.NotNil(failed)
 	require.NotNil(failed.ErrorMessage)
 	assert.Contains(*failed.ErrorMessage, "host process limit reached")
+}
+
+func TestWorkspaceListWaitsForSubprocessCapacityThenCompletesViaAPI(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	restoreLimiter := procutil.SetDefaultLimiterForTest(
+		procutil.NewLimiterWithAcquireTimeout(1, 500*time.Millisecond),
+	)
+	t.Cleanup(restoreLimiter)
+
+	client, _, _ := setupWrapperServer(t)
+	ctx := context.Background()
+
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			PlatformHost: "github.com",
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     1,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.NotNil(createResp.JSON202)
+	waitForWorkspaceReady(t, ctx, client, createResp.JSON202.Id)
+
+	releaseHeld, err := procutil.TryAcquire(
+		context.Background(), "test-held subprocess capacity",
+	)
+	require.NoError(err)
+	defer releaseHeld()
+
+	type listResult struct {
+		resp *http.Response
+		err  error
+	}
+	listDone := make(chan listResult, 1)
+	go func() {
+		resp, listErr := client.HTTP.ListWorkspaces(ctx)
+		listDone <- listResult{resp: resp, err: listErr}
+	}()
+
+	select {
+	case got := <-listDone:
+		if got.resp != nil && got.resp.Body != nil {
+			got.resp.Body.Close()
+		}
+		require.Fail("workspace list returned before subprocess capacity was released")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	releaseHeld()
+
+	select {
+	case got := <-listDone:
+		require.NoError(got.err)
+		defer got.resp.Body.Close()
+		require.Equal(http.StatusOK, got.resp.StatusCode)
+
+		var listed struct {
+			Workspaces []struct {
+				ID string `json:"id"`
+			} `json:"workspaces"`
+		}
+		require.NoError(json.NewDecoder(got.resp.Body).Decode(&listed))
+		require.Len(listed.Workspaces, 1)
+		assert.Equal(createResp.JSON202.Id, listed.Workspaces[0].ID)
+	case <-time.After(time.Second):
+		require.Fail("workspace list did not complete after subprocess capacity was released")
+	}
+}
+
+func TestWorkspaceSetupLimiterTimeoutSurfacesResourceExhaustionViaAPI(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	restoreLimiter := procutil.SetDefaultLimiterForTest(
+		procutil.NewLimiterWithAcquireTimeout(1, 25*time.Millisecond),
+	)
+	t.Cleanup(restoreLimiter)
+
+	client, _, _ := setupWrapperServer(t)
+	ctx := context.Background()
+
+	releaseHeld, err := procutil.TryAcquire(
+		context.Background(), "test-held subprocess capacity",
+	)
+	require.NoError(err)
+	defer releaseHeld()
+
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			PlatformHost: "github.com",
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     1,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.NotNil(createResp.JSON202)
+
+	var failed *generated.WorkspaceResponse
+	require.Eventually(
+		func() bool {
+			getResp, getErr := client.HTTP.GetWorkspaceWithResponse(
+				ctx, createResp.JSON202.Id,
+			)
+			require.NoError(getErr)
+			if getResp.StatusCode() != http.StatusOK || getResp.JSON200 == nil {
+				return false
+			}
+			if getResp.JSON200.Status != "error" {
+				return false
+			}
+			failed = getResp.JSON200
+			return true
+		},
+		5*time.Second, 25*time.Millisecond,
+	)
+	require.NotNil(failed)
+	require.NotNil(failed.ErrorMessage)
+	assert.Contains(*failed.ErrorMessage, "host process limit reached")
+	assert.Contains(*failed.ErrorMessage, "subprocess capacity")
 }
 
 // TestReadTmuxRecordPreservesEmptyArgs pins down the parser's

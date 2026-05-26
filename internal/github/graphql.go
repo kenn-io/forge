@@ -506,18 +506,20 @@ type BulkIssue struct {
 // fully paginated. When false, the data is partial and the detail
 // drain should fill in via REST.
 type BulkPR struct {
-	PR               *gh.PullRequest
-	Comments         []*gh.IssueComment
-	Reviews          []*gh.PullRequestReview
-	Commits          []*gh.RepositoryCommit
-	TimelineEvents   []PullRequestTimelineEvent
-	CheckRuns        []*gh.CheckRun
-	Statuses         []*gh.RepoStatus
-	CommentsComplete bool
-	ReviewsComplete  bool
-	CommitsComplete  bool
-	TimelineComplete bool
-	CIComplete       bool
+	PR                    *gh.PullRequest
+	Comments              []*gh.IssueComment
+	Reviews               []*gh.PullRequestReview
+	ReviewThreads         []ReviewThread
+	Commits               []*gh.RepositoryCommit
+	TimelineEvents        []PullRequestTimelineEvent
+	CheckRuns             []*gh.CheckRun
+	Statuses              []*gh.RepoStatus
+	CommentsComplete      bool
+	ReviewsComplete       bool
+	ReviewThreadsComplete bool
+	CommitsComplete       bool
+	TimelineComplete      bool
+	CIComplete            bool
 }
 
 func convertGQLIssue(gql *gqlIssue) BulkIssue {
@@ -777,11 +779,12 @@ func cursorVar(cursor *string) *githubv4.String {
 
 func convertGQLPR(gql *gqlPR) BulkPR {
 	bulk := BulkPR{
-		PR:               adaptPR(gql),
-		CommentsComplete: !gql.Comments.PageInfo.HasNextPage,
-		ReviewsComplete:  !gql.Reviews.PageInfo.HasNextPage,
-		CommitsComplete:  !gql.AllCommits.PageInfo.HasNextPage,
-		TimelineComplete: !gql.TimelineItems.PageInfo.HasNextPage,
+		PR:                    adaptPR(gql),
+		CommentsComplete:      !gql.Comments.PageInfo.HasNextPage,
+		ReviewsComplete:       !gql.Reviews.PageInfo.HasNextPage,
+		ReviewThreadsComplete: !gql.ReviewThreads.PageInfo.HasNextPage,
+		CommitsComplete:       !gql.AllCommits.PageInfo.HasNextPage,
+		TimelineComplete:      !gql.TimelineItems.PageInfo.HasNextPage,
 	}
 
 	for i := range gql.Comments.Nodes {
@@ -789,6 +792,9 @@ func convertGQLPR(gql *gqlPR) BulkPR {
 	}
 	for i := range gql.Reviews.Nodes {
 		bulk.Reviews = append(bulk.Reviews, adaptReview(&gql.Reviews.Nodes[i]))
+	}
+	for i := range gql.ReviewThreads.Nodes {
+		bulk.ReviewThreads = append(bulk.ReviewThreads, adaptReviewThread(&gql.ReviewThreads.Nodes[i]))
 	}
 	for i := range gql.AllCommits.Nodes {
 		bulk.Commits = append(bulk.Commits, adaptCommit(&gql.AllCommits.Nodes[i]))

@@ -2,9 +2,11 @@ package procutil
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
+	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -43,4 +45,25 @@ func TestLimiterWaitsForReleaseWhenAtCapacity(t *testing.T) {
 	case <-time.After(time.Second):
 		require.Fail("second acquire did not complete after capacity was released")
 	}
+}
+
+func TestLimiterAcquireTimeoutIsResourceExhausted(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	limiter := NewLimiter(1)
+	firstRelease, err := limiter.TryAcquire(context.Background(), "first subprocess")
+	require.NoError(err)
+	defer firstRelease()
+
+	ctx, cancel := context.WithTimeout(t.Context(), time.Nanosecond)
+	defer cancel()
+
+	release, err := limiter.TryAcquire(ctx, "second subprocess")
+	require.Error(err)
+	require.Nil(release)
+	assert.ErrorIs(err, ErrProcessLimitReached)
+	assert.True(errors.Is(err, context.DeadlineExceeded))
+	assert.True(IsResourceExhausted(err))
+	assert.Contains(err.Error(), "second subprocess")
 }

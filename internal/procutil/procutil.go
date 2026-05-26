@@ -40,10 +40,11 @@ func (l *Limiter) TryAcquire(
 	if err := l.sem.Acquire(ctx, 1); err != nil {
 		if reason != "" {
 			return nil, fmt.Errorf(
-				"wait for subprocess capacity %s: %w", reason, err,
+				"%w: wait for subprocess capacity %s: %w",
+				ErrProcessLimitReached, reason, err,
 			)
 		}
-		return nil, err
+		return nil, fmt.Errorf("%w: %w", ErrProcessLimitReached, err)
 	}
 	var once sync.Once
 	return func() {

@@ -328,6 +328,55 @@ func TestClientReadsOpenPullRequestsIssuesAndCIChecks(t *testing.T) {
 	assert.Len(checks, 2)
 }
 
+func TestClientReadsTimelineAssignmentEvents(t *testing.T) {
+	assert := Assert.New(t)
+	require := Require.New(t)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal("token gitea-token", r.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/repos/owner/repo/issues/3/comments":
+			assert.NoError(json.NewEncoder(w).Encode([]map[string]any{{
+				"id": 10, "body": "comment", "user": map[string]any{"login": "alice"},
+				"created_at": "2026-05-01T10:00:00Z",
+			}}))
+		case "/api/v1/repos/owner/repo/pulls/3/reviews":
+			assert.NoError(json.NewEncoder(w).Encode([]map[string]any{}))
+		case "/api/v1/repos/owner/repo/pulls/3/commits":
+			assert.NoError(json.NewEncoder(w).Encode([]map[string]any{}))
+		case "/api/v1/repos/owner/repo/issues/3/timeline":
+			assert.NoError(json.NewEncoder(w).Encode([]map[string]any{{
+				"id": 11, "type": "assigned", "user": map[string]any{"login": "bob"},
+				"created_at": "2026-05-01T10:01:00Z",
+			}}))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client, err := NewClient("gitea.test", "gitea-token", WithBaseURLForTesting(server.URL))
+	require.NoError(err)
+	ref := platform.RepoRef{Owner: "owner", Name: "repo", RepoPath: "owner/repo"}
+
+	mrEvents, err := client.ListMergeRequestEvents(context.Background(), ref, 3)
+	require.NoError(err)
+	require.Len(mrEvents, 2)
+	assert.Equal("issue_comment", mrEvents[0].EventType)
+	assert.Equal("assigned", mrEvents[1].EventType)
+	assert.Equal("bob", mrEvents[1].Author)
+	assert.Equal("assigned someone", mrEvents[1].Summary)
+
+	issueEvents, err := client.ListIssueEvents(context.Background(), ref, 3)
+	require.NoError(err)
+	require.Len(issueEvents, 2)
+	assert.Equal("issue_comment", issueEvents[0].EventType)
+	assert.Equal("assigned", issueEvents[1].EventType)
+	assert.Equal("bob", issueEvents[1].Author)
+	assert.Equal("assigned someone", issueEvents[1].Summary)
+}
+
 func TestClientFallsBackToStatusesWhenActionsRequireNewerGitea(t *testing.T) {
 	assert := Assert.New(t)
 	require := Require.New(t)

@@ -63,6 +63,7 @@ func TestNormalizeRepositoryMapsSharedDTO(t *testing.T) {
 
 func TestNormalizeMergeRequestIssueEventsAndArtifacts(t *testing.T) {
 	assert := Assert.New(t)
+	require := Require.New(t)
 	base := time.Date(2026, 5, 1, 2, 3, 4, 0, time.UTC)
 	closed := base.Add(2 * time.Hour)
 	mergeable := true
@@ -201,6 +202,30 @@ func TestNormalizeMergeRequestIssueEventsAndArtifacts(t *testing.T) {
 	assert.Len(issueEvents, 1)
 	assert.Equal("issue_comment", issueEvents[0].EventType)
 	assert.Equal("frank", issueEvents[0].Author)
+
+	mrTimelineEvents := NormalizeMergeRequestTimelineEvents(
+		platform.KindGitea,
+		repo,
+		7,
+		[]TimelineEventDTO{{ID: 401, User: UserDTO{UserName: "grace"}, Type: "assigned", Assignee: UserDTO{UserName: "grace"}, Created: base}},
+	)
+	require.Len(mrTimelineEvents, 1)
+	assert.Equal("assigned", mrTimelineEvents[0].EventType)
+	assert.Equal("grace", mrTimelineEvents[0].Author)
+	assert.Equal("self-assigned this", mrTimelineEvents[0].Summary)
+	assert.Equal("gitea/gitea.com/gitea/tea/mr/7/assigned/401", mrTimelineEvents[0].DedupeKey)
+
+	issueTimelineEvents := NormalizeIssueTimelineEvents(
+		platform.KindGitea,
+		repo,
+		9,
+		[]TimelineEventDTO{{ID: 402, User: UserDTO{UserName: "hank"}, Type: "unassigned", Created: base}},
+	)
+	require.Len(issueTimelineEvents, 1)
+	assert.Equal("unassigned", issueTimelineEvents[0].EventType)
+	assert.Equal("hank", issueTimelineEvents[0].Author)
+	assert.Equal("removed an assignment", issueTimelineEvents[0].Summary)
+	assert.Equal("gitea/gitea.com/gitea/tea/issue/9/unassigned/402", issueTimelineEvents[0].DedupeKey)
 
 	release := NormalizeRelease(repo, ReleaseDTO{
 		ID:          500,

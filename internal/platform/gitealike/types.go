@@ -28,6 +28,10 @@ type Transport interface {
 	ListStatuses(ctx context.Context, ref platform.RepoRef, sha string, opts PageOptions) ([]StatusDTO, Page, error)
 }
 
+type TimelineTransport interface {
+	ListIssueTimeline(ctx context.Context, ref platform.RepoRef, number int, opts PageOptions) ([]TimelineEventDTO, Page, error)
+}
+
 type MutationTransport interface {
 	CreateIssueComment(ctx context.Context, ref platform.RepoRef, number int, body string) (CommentDTO, error)
 	EditIssueComment(ctx context.Context, ref platform.RepoRef, commentID int64, body string) (CommentDTO, error)
@@ -135,6 +139,16 @@ type CommentDTO struct {
 	Body    string
 	Created time.Time
 	Updated time.Time
+}
+
+type TimelineEventDTO struct {
+	ID       int64
+	User     UserDTO
+	Type     string
+	Body     string
+	Assignee UserDTO
+	Created  time.Time
+	Updated  time.Time
 }
 
 type ReviewDTO struct {

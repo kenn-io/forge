@@ -164,7 +164,13 @@ func (p *Provider) ListMergeRequestEvents(
 	if err != nil {
 		return nil, p.mapError(err)
 	}
-	return NormalizeMergeRequestEvents(p.kind, ref, number, comments, reviews, commits), nil
+	events := NormalizeMergeRequestEvents(p.kind, ref, number, comments, reviews, commits)
+	timeline, err := p.listTimelineEvents(ctx, ref, number)
+	if err != nil {
+		return nil, err
+	}
+	events = append(events, NormalizeMergeRequestTimelineEvents(p.kind, ref, number, timeline)...)
+	return events, nil
 }
 
 func (p *Provider) ListOpenIssues(
@@ -210,7 +216,35 @@ func (p *Provider) ListIssueEvents(
 	if err != nil {
 		return nil, p.mapError(err)
 	}
-	return NormalizeIssueComments(p.kind, ref, number, comments), nil
+	events := NormalizeIssueComments(p.kind, ref, number, comments)
+	timeline, err := p.listTimelineEvents(ctx, ref, number)
+	if err != nil {
+		return nil, err
+	}
+	events = append(events, NormalizeIssueTimelineEvents(p.kind, ref, number, timeline)...)
+	return events, nil
+}
+
+func (p *Provider) listTimelineEvents(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+) ([]TimelineEventDTO, error) {
+	timelineTransport, ok := p.transport.(TimelineTransport)
+	if !ok {
+		return nil, nil
+	}
+	timeline, err := collectPages(ctx, func(opts PageOptions) ([]TimelineEventDTO, Page, error) {
+		return timelineTransport.ListIssueTimeline(ctx, ref, number, opts)
+	})
+	if err != nil {
+		err = p.mapError(err)
+		if errors.Is(err, platform.ErrNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return timeline, nil
 }
 
 func (p *Provider) ListReleases(

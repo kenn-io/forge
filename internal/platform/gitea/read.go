@@ -317,6 +317,28 @@ func (t *transport) ListIssueComments(
 	return t.ListPullRequestComments(ctx, ref, number, opts)
 }
 
+func (t *transport) ListIssueTimeline(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	opts gitealike.PageOptions,
+) ([]gitealike.TimelineEventDTO, gitealike.Page, error) {
+	t.spendSyncBudget(ctx)
+	var comments []*giteasdk.TimelineComment
+	var resp *giteasdk.Response
+	err := t.withRequestContext(ctx, func() error {
+		var err error
+		comments, resp, err = t.api.ListIssueTimeline(ref.Owner, ref.Name, int64(number), giteasdk.ListIssueCommentOptions{
+			ListOptions: giteaListOptions(opts),
+		})
+		return err
+	})
+	if err != nil {
+		return nil, gitealike.Page{}, giteaHTTPError(resp, err)
+	}
+	return convertTimelineEvents(comments), giteaPage(resp), nil
+}
+
 func (t *transport) ListReleases(
 	ctx context.Context,
 	ref platform.RepoRef,

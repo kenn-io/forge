@@ -10867,10 +10867,10 @@ func TestAPIForgejoPublishReviewDraftIngestsTimelineThread(t *testing.T) {
 	var detail mergeRequestDetailResponse
 	require.NoError(json.NewDecoder(detailRR.Body).Decode(&detail))
 	require.Len(detail.Events, 1)
-	require.NotNil(detail.Events[0].ReviewThread)
-	assert.Equal("Forgejo inline note", detail.Events[0].ReviewThread.Body)
-	assert.Equal("src/main.go", detail.Events[0].ReviewThread.Path)
-	assert.Equal(7, detail.Events[0].ReviewThread.Line)
+	require.NotNil(detail.Events[0].DiffThread)
+	assert.Equal("Forgejo inline note", detail.Events[0].DiffThread.Body)
+	assert.Equal("src/main.go", detail.Events[0].DiffThread.Path)
+	assert.Equal(7, detail.Events[0].DiffThread.Line)
 }
 
 func TestAPIForgejoSyncRecoversReviewThreadTimelineMetadata(t *testing.T) {
@@ -10931,10 +10931,10 @@ func TestAPIForgejoSyncRecoversReviewThreadTimelineMetadata(t *testing.T) {
 	var detail mergeRequestDetailResponse
 	require.NoError(json.NewDecoder(detailRR.Body).Decode(&detail))
 	require.Len(detail.Events, 1)
-	require.NotNil(detail.Events[0].ReviewThread)
+	require.NotNil(detail.Events[0].DiffThread)
 	assert.Equal("review_comment", detail.Events[0].EventType)
-	assert.Equal("Recovered inline note", detail.Events[0].ReviewThread.Body)
-	assert.Equal("src/recovered.go", detail.Events[0].ReviewThread.Path)
+	assert.Equal("Recovered inline note", detail.Events[0].DiffThread.Body)
+	assert.Equal("src/recovered.go", detail.Events[0].DiffThread.Path)
 }
 
 func TestAPIPublishReviewDraftDeletesDraftBeforeReviewThreadIngest(t *testing.T) {

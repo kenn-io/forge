@@ -32,15 +32,18 @@ func NewLimiter(max int) *Limiter {
 }
 
 func (l *Limiter) TryAcquire(
-	_ context.Context, reason string,
+	ctx context.Context, reason string,
 ) (func(), error) {
-	if !l.sem.TryAcquire(1) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := l.sem.Acquire(ctx, 1); err != nil {
 		if reason != "" {
 			return nil, fmt.Errorf(
-				"%w: %s", ErrProcessLimitReached, reason,
+				"wait for subprocess capacity %s: %w", reason, err,
 			)
 		}
-		return nil, ErrProcessLimitReached
+		return nil, err
 	}
 	var once sync.Once
 	return func() {

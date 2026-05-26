@@ -587,7 +587,7 @@ describe("createDiffStore loadDiff", () => {
     store.requestScrollToFile("b.ts");
 
     expect(store.getActiveFile()).toBe("b.ts");
-    expect(store.getScrollTarget()).toBe("b.ts");
+    expect(store.getScrollTarget()).toEqual({ path: "b.ts" });
     expect(calls.filter((url) =>
       url.includes("/api/v1/workspaces/ws-1/diff"),
     )).toEqual(["/api/v1/workspaces/ws-1/diff?base=head"]);

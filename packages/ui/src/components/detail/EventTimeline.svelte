@@ -92,6 +92,10 @@
     return eventSortValue(b) - eventSortValue(a) || b.ID - a.ID;
   }
 
+  function isEmptyReview(event: PREvent | IssueEvent): boolean {
+    return event.EventType === "review" && !event.Body?.trim();
+  }
+
   function buildTimelineEntries(sourceEvents: Array<PREvent | IssueEvent>): TimelineEntry[] {
     const threads: Array<{ id: string; events: Array<PREvent | IssueEvent> }> = [];
 
@@ -110,6 +114,9 @@
     const entries: TimelineEntry[] = [];
 
     for (const event of sourceEvents) {
+      // Skip empty-body reviews - these are redundant when review_comment events exist
+      if (isEmptyReview(event)) continue;
+
       const id = threadID(event);
       if (!id || !isThreadedComment(event)) {
         entries.push({ key: `event-${event.ID}`, event, replies: [] });

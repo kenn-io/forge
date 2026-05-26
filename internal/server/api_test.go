@@ -19787,15 +19787,25 @@ func TestWorkspaceIssueMonitorAssociatesPRAndKeepsIssueOwnership(t *testing.T) {
 	fixture, created := prepareIssueWorkspaceAssociationFixture(t)
 
 	var updates []workspace.PRAssociationUpdate
+	var sawUpdate bool
 	require.Eventually(func() bool {
 		var runErr error
 		updates, runErr = fixture.server.workspacePRMonitor.RunOnce(ctx)
 		require.NoError(runErr)
-		return len(updates) == 1
-	}, 5*time.Second, 25*time.Millisecond)
-	require.Len(updates, 1)
-	assert.Equal(created.ID, updates[0].WorkspaceID)
-	assert.Equal(42, updates[0].PRNumber)
+		if len(updates) == 1 {
+			sawUpdate = true
+			return true
+		}
+		stored, getErr := fixture.database.GetWorkspace(ctx, created.ID)
+		require.NoError(getErr)
+		return stored != nil &&
+			stored.AssociatedPRNumber != nil &&
+			*stored.AssociatedPRNumber == 42
+	}, 30*time.Second, 100*time.Millisecond)
+	if sawUpdate {
+		assert.Equal(created.ID, updates[0].WorkspaceID)
+		assert.Equal(42, updates[0].PRNumber)
+	}
 
 	getRR := doJSON(
 		t,

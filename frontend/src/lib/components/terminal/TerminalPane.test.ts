@@ -208,6 +208,7 @@ describe("TerminalPane", () => {
 
     expect(xtermTerminalCtor).toHaveBeenCalledWith(
       expect.objectContaining({
+        allowProposedApi: true,
         allowTransparency: false,
         customGlyphs: true,
         cursorBlink: true,

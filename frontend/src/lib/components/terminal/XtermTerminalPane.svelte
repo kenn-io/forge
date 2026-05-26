@@ -420,6 +420,10 @@
           foreground: "#c9d1d9",
           cursor: "#58a6ff",
         },
+        // The ligatures addon registers a character joiner, which xterm
+        // exposes as proposed API. This is constructor-only and must be on
+        // before a user enables ligatures at runtime.
+        allowProposedApi: true,
         allowTransparency: false,
         customGlyphs: true,
         cursorBlink: terminalCursorBlink,

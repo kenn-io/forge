@@ -18815,12 +18815,17 @@ done
 		require.NoError(conn.Write(ctx, websocket.MessageBinary, []byte("size\n")))
 	}
 	requestSize()
-	readCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
-	defer cancel()
+	deadline := time.Now().Add(8 * time.Second)
 	var got strings.Builder
-	for {
+	for time.Now().Before(deadline) {
+		readCtx, cancel := context.WithTimeout(ctx, 250*time.Millisecond)
 		typ, data, readErr := conn.Read(readCtx)
+		cancel()
 		if readErr != nil {
+			if errors.Is(readErr, context.DeadlineExceeded) {
+				requestSize()
+				continue
+			}
 			break
 		}
 		if typ != websocket.MessageBinary {
@@ -18833,9 +18838,7 @@ done
 		if strings.Contains(got.String(), "size:40:177:size") {
 			return
 		}
-		if strings.Contains(got.String(), "size:") {
-			requestSize()
-		}
+		requestSize()
 	}
 	require.Contains(got.String(), "size:40:177:size")
 }

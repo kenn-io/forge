@@ -907,3 +907,43 @@ func copyReferencedSubject(event *PullRequestTimelineEvent, source gqlReferenced
 	event.SourceOwner = source.Repository.Owner.Login
 	event.SourceRepo = source.Repository.Name
 }
+
+// gqlSinglePRReviewThreadsQuery is a focused query for fetching only review
+// threads for a single PR. Used by the single-PR sync path where the full
+// bulk query is overkill.
+type gqlSinglePRReviewThreadsQuery struct {
+	Repository struct {
+		PullRequest struct {
+			ReviewThreads struct {
+				Nodes    []gqlReviewThread
+				PageInfo pageInfo
+			} `graphql:"reviewThreads(first: 100)"`
+		} `graphql:"pullRequest(number: $number)"`
+	} `graphql:"repository(owner: $owner, name: $name)"`
+}
+
+// FetchPRReviewThreads fetches review threads for a single PR via GraphQL.
+// Returns an empty slice if no threads exist. Used by refreshTimeline when
+// syncing a single PR's detail.
+func (g *GraphQLFetcher) FetchPRReviewThreads(
+	ctx context.Context,
+	owner, name string,
+	number int,
+) ([]ReviewThread, error) {
+	var q gqlSinglePRReviewThreadsQuery
+	vars := map[string]any{
+		"owner":  githubv4.String(owner),
+		"name":   githubv4.String(name),
+		"number": githubv4.Int(number),
+	}
+
+	if err := g.client.Query(ctx, &q, vars); err != nil {
+		return nil, err
+	}
+
+	threads := make([]ReviewThread, 0, len(q.Repository.PullRequest.ReviewThreads.Nodes))
+	for i := range q.Repository.PullRequest.ReviewThreads.Nodes {
+		threads = append(threads, adaptReviewThread(&q.Repository.PullRequest.ReviewThreads.Nodes[i]))
+	}
+	return threads, nil
+}

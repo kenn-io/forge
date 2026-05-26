@@ -4883,6 +4883,22 @@ func (s *Syncer) refreshTimeline(
 		timelineEvents = nil
 	}
 
+	// Fetch review threads via GraphQL (REST API doesn't expose them).
+	// Non-fatal: if GraphQL fetch fails, we still have the other timeline data.
+	var reviewThreads []ReviewThread
+	if fetcher := s.fetcherFor(repo); fetcher != nil {
+		threads, threadErr := fetcher.FetchPRReviewThreads(ctx, repo.Owner, repo.Name, number)
+		if threadErr != nil {
+			slog.Warn("review thread fetch failed during timeline refresh",
+				"repo", repo.Owner+"/"+repo.Name,
+				"number", number,
+				"err", threadErr,
+			)
+		} else {
+			reviewThreads = threads
+		}
+	}
+
 	var events []db.MREvent
 	for _, c := range comments {
 		events = append(events, NormalizeCommentEvent(mrID, c))
@@ -4900,6 +4916,7 @@ func (s *Syncer) refreshTimeline(
 		}
 		events = append(events, *event)
 	}
+	events = append(events, NormalizeReviewThreadEvents(mrID, reviewThreads)...)
 
 	if err := s.replacePRCommentEvents(ctx, mrID, comments); err != nil {
 		return fmt.Errorf("replace comment events for MR #%d: %w", number, err)

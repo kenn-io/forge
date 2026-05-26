@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -53,7 +54,16 @@ func NewSessionPaths(root, session string) (SessionPaths, error) {
 const maxUnixSocketPathLen = 100
 
 func fallbackSocketDir(root, session, primaryTempDir string) string {
-	for _, base := range []string{primaryTempDir, "/private/tmp", "/tmp"} {
+	return fallbackSocketDirForOS(root, session, primaryTempDir, runtime.GOOS)
+}
+
+func fallbackSocketDirForOS(root, session, primaryTempDir, goos string) string {
+	bases := []string{primaryTempDir}
+	if goos == "darwin" {
+		bases = append(bases, "/private/tmp")
+	}
+	bases = append(bases, "/tmp")
+	for _, base := range bases {
 		candidate := filepath.Join(base, "middleman-pty-"+sessionSocketHash(root+"-"+session))
 		if len(filepath.Join(candidate, "sock")) <= maxUnixSocketPathLen {
 			return candidate

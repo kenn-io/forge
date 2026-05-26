@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -65,6 +66,9 @@ func TestSessionPathsUsePrivateSocketDirForLongRoots(t *testing.T) {
 }
 
 func TestSessionPathsUseShortPrivateTmpWhenTempDirIsTooLong(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("/private/tmp is a macOS-specific socket fallback")
+	}
 	assert := Assert.New(t)
 	require := require.New(t)
 	root := filepath.Join(t.TempDir(), strings.Repeat("x", maxUnixSocketPathLen))
@@ -81,6 +85,36 @@ func TestSessionPathsUseShortPrivateTmpWhenTempDirIsTooLong(t *testing.T) {
 	assert.Equal(expectedDir, paths.SocketDir)
 	assert.Equal(filepath.Join(expectedDir, "sock"), paths.Socket)
 	assert.LessOrEqual(len(paths.Socket), maxUnixSocketPathLen)
+}
+
+func TestFallbackSocketDirSkipsPrivateTmpOffDarwin(t *testing.T) {
+	assert := Assert.New(t)
+	root := filepath.Join(t.TempDir(), strings.Repeat("x", maxUnixSocketPathLen))
+	longTempDir := filepath.Join(t.TempDir(), strings.Repeat("long-temp-root-", 8))
+
+	socketDir := fallbackSocketDirForOS(root, "middleman-abc123", longTempDir, "linux")
+
+	expectedDir := filepath.Join(
+		"/tmp",
+		"middleman-pty-"+sessionSocketHash(root+"-middleman-abc123"),
+	)
+	assert.Equal(expectedDir, socketDir)
+	assert.LessOrEqual(len(filepath.Join(socketDir, "sock")), maxUnixSocketPathLen)
+}
+
+func TestFallbackSocketDirUsesPrivateTmpOnDarwin(t *testing.T) {
+	assert := Assert.New(t)
+	root := filepath.Join(t.TempDir(), strings.Repeat("x", maxUnixSocketPathLen))
+	longTempDir := filepath.Join(t.TempDir(), strings.Repeat("long-temp-root-", 8))
+
+	socketDir := fallbackSocketDirForOS(root, "middleman-abc123", longTempDir, "darwin")
+
+	expectedDir := filepath.Join(
+		"/private/tmp",
+		"middleman-pty-"+sessionSocketHash(root+"-middleman-abc123"),
+	)
+	assert.Equal(expectedDir, socketDir)
+	assert.LessOrEqual(len(filepath.Join(socketDir, "sock")), maxUnixSocketPathLen)
 }
 
 func TestProtocolRequestRoundTrip(t *testing.T) {

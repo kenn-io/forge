@@ -1084,15 +1084,25 @@ fn session_paths(root: &Path, session: &str) -> Result<SessionPaths> {
 }
 
 fn fallback_socket_dir(root: &Path, session: &str, primary_temp_dir: &Path) -> PathBuf {
+    fallback_socket_dir_for_platform(root, session, primary_temp_dir, cfg!(target_os = "macos"))
+}
+
+fn fallback_socket_dir_for_platform(
+    root: &Path,
+    session: &str,
+    primary_temp_dir: &Path,
+    include_darwin_private_tmp: bool,
+) -> PathBuf {
     let dir_name = format!(
         "middleman-pty-{}",
         socket_hash(&format!("{}-{session}", root.display()))
     );
-    for base in [
-        primary_temp_dir,
-        Path::new("/private/tmp"),
-        Path::new("/tmp"),
-    ] {
+    let mut bases = vec![primary_temp_dir];
+    if include_darwin_private_tmp {
+        bases.push(Path::new("/private/tmp"));
+    }
+    bases.push(Path::new("/tmp"));
+    for base in bases {
         let candidate = base.join(&dir_name);
         if candidate.join("sock").to_string_lossy().len() <= MAX_UNIX_SOCKET_PATH_LEN {
             return candidate;
@@ -1327,11 +1337,30 @@ mod tests {
         let root = PathBuf::from("/tmp").join("x".repeat(MAX_UNIX_SOCKET_PATH_LEN));
         let long_temp_dir = PathBuf::from("/tmp").join("long-temp-root-".repeat(8));
 
-        let socket_dir = fallback_socket_dir(&root, "middleman-abc123", &long_temp_dir);
+        let socket_dir =
+            fallback_socket_dir_for_platform(&root, "middleman-abc123", &long_temp_dir, true);
 
         assert_eq!(
             socket_dir,
             Path::new("/private/tmp").join(format!(
+                "middleman-pty-{}",
+                socket_hash(&format!("{}-middleman-abc123", root.display()))
+            ))
+        );
+        assert!(socket_dir.join("sock").to_string_lossy().len() <= MAX_UNIX_SOCKET_PATH_LEN);
+    }
+
+    #[test]
+    fn fallback_socket_dir_skips_private_tmp_off_macos() {
+        let root = PathBuf::from("/tmp").join("x".repeat(MAX_UNIX_SOCKET_PATH_LEN));
+        let long_temp_dir = PathBuf::from("/tmp").join("long-temp-root-".repeat(8));
+
+        let socket_dir =
+            fallback_socket_dir_for_platform(&root, "middleman-abc123", &long_temp_dir, false);
+
+        assert_eq!(
+            socket_dir,
+            Path::new("/tmp").join(format!(
                 "middleman-pty-{}",
                 socket_hash(&format!("{}-middleman-abc123", root.display()))
             ))

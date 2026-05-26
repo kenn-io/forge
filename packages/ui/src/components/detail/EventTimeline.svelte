@@ -264,8 +264,8 @@
   }
 
   function reviewThreadFor(event: PREvent | IssueEvent): ReviewThread | null {
-    if (!("review_thread" in event)) return null;
-    return (event.review_thread as ReviewThread | undefined) ?? null;
+    if (!("diff_thread" in event)) return null;
+    return (event.diff_thread as ReviewThread | undefined) ?? null;
   }
 
   async function refreshAfterThreadChange(): Promise<void> {
@@ -363,11 +363,12 @@
 
 {#snippet eventBody(event: PREvent | IssueEvent, nested = false)}
   {#if event.Body}
+    {@const reviewThread = reviewThreadFor(event)}
     <div class={nested ? "event-body-wrap event-body-wrap--nested" : "event-body-wrap"}>
-      {#if !nested && reviewThreadFor(event)}
+      {#if !nested && reviewThread}
         <DiffReviewThreadSnippet
-          thread={reviewThreadFor(event)!}
-          canResolve={canResolveReviewThreads && diffReviewDraft != null}
+          thread={reviewThread}
+          canResolve={reviewThread.can_resolve && canResolveReviewThreads && diffReviewDraft != null}
           onchanged={refreshAfterThreadChange}
         />
       {/if}

@@ -89,7 +89,7 @@ type postCommentInput struct {
 	}
 }
 
-type postCommentOutput = createdOutput[db.MREvent]
+type postCommentOutput = createdOutput[mergeRequestEventResponse]
 
 type editCommentInput struct {
 	Provider     string `path:"provider"`
@@ -103,7 +103,7 @@ type editCommentInput struct {
 	}
 }
 
-type editCommentOutput = bodyOutput[db.MREvent]
+type editCommentOutput = bodyOutput[mergeRequestEventResponse]
 
 type getDiffReviewDraftOutput = bodyOutput[diffReviewDraftResponse]
 
@@ -237,7 +237,7 @@ type replyToDiscussionInput struct {
 	}
 }
 
-type replyToDiscussionOutput = createdOutput[db.MREvent]
+type replyToDiscussionOutput = createdOutput[mergeRequestEventResponse]
 
 type resolveDiscussionInput struct {
 	Provider     string `path:"provider"`
@@ -1539,7 +1539,7 @@ func (s *Server) postComment(ctx context.Context, input *postCommentInput) (*pos
 		_ = err
 	}
 
-	return &postCommentOutput{Status: http.StatusCreated, Body: event}, nil
+	return &postCommentOutput{Status: http.StatusCreated, Body: mergeRequestEventResponseFromDB(event)}, nil
 }
 
 func (s *Server) editComment(ctx context.Context, input *editCommentInput) (*editCommentOutput, error) {
@@ -1602,7 +1602,7 @@ func (s *Server) editComment(ctx context.Context, input *editCommentInput) (*edi
 		return nil, problemInternal("persist edited comment failed")
 	}
 
-	return &editCommentOutput{Body: event}, nil
+	return &editCommentOutput{Body: mergeRequestEventResponseFromDB(event)}, nil
 }
 
 func (s *Server) replyToDiscussion(ctx context.Context, input *replyToDiscussionInput) (*replyToDiscussionOutput, error) {
@@ -1667,7 +1667,7 @@ func (s *Server) replyToDiscussion(ctx context.Context, input *replyToDiscussion
 		return nil, problemInternal("failed to persist reply event")
 	}
 
-	return &replyToDiscussionOutput{Status: http.StatusCreated, Body: event}, nil
+	return &replyToDiscussionOutput{Status: http.StatusCreated, Body: mergeRequestEventResponseFromDB(event)}, nil
 }
 
 func (s *Server) resolveDiscussion(ctx context.Context, input *resolveDiscussionInput) (*resolveDiscussionOutput, error) {

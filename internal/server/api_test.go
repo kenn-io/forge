@@ -9586,7 +9586,7 @@ func TestOpenAPIDocumentsCustomStatusCodes(t *testing.T) {
 			strings.Contains(spec, `"operationId":"post-pr-comment","requestBody"`),
 		"expected post-pr-comment operation to be present",
 	)
-	require.Contains(spec, `"responses":{"201":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/MREvent"}}},"description":"Created"}`)
+	require.Contains(spec, `"responses":{"201":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/MergeRequestEventResponse"}}},"description":"Created"}`)
 	require.Contains(spec, `"operationId":"post-issue-comment"`)
 	require.Contains(spec, `"responses":{"201":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/IssueEvent"}}},"description":"Created"}`)
 	for _, operationID := range []string{
@@ -10886,12 +10886,12 @@ func TestAPIPullDetailAttachesReviewThreadMetadata(t *testing.T) {
 	require.NoError(json.NewDecoder(rawDetail.Body).Decode(&detail))
 	events := detail["events"].([]any)
 	require.NotEmpty(events)
-	reviewThread := events[0].(map[string]any)["review_thread"].(map[string]any)
-	assert.Equal("src/lib.rs", reviewThread["path"])
-	assert.Equal("right", reviewThread["side"])
-	assert.InDelta(12, reviewThread["line"], 0)
-	assert.Equal(false, reviewThread["resolved"])
-	assert.NotContains(reviewThread, "provider_thread_id")
+	diffThread := events[0].(map[string]any)["diff_thread"].(map[string]any)
+	assert.Equal("src/lib.rs", diffThread["path"])
+	assert.Equal("right", diffThread["side"])
+	assert.InDelta(12, diffThread["line"], 0)
+	assert.Equal(false, diffThread["resolved"])
+	assert.NotContains(diffThread, "provider_thread_id")
 }
 
 func draftIDFromResponse(t *testing.T, draft map[string]any) int64 {

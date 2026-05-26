@@ -76,8 +76,21 @@ type mergeRequestResponse struct {
 }
 
 type mergeRequestEventResponse struct {
-	db.MREvent
-	ReviewThread *diffReviewThreadResponse `json:"review_thread,omitempty"`
+	ID                 int64
+	MergeRequestID     int64
+	PlatformID         *int64
+	PlatformExternalID string
+	EventType          string
+	Author             string
+	Summary            string
+	Body               string
+	MetadataJSON       string
+	CreatedAt          time.Time
+	DedupeKey          string
+	ThreadID           *string
+	Resolvable         bool
+	Resolved           bool
+	DiffThread         *diffReviewThreadResponse `json:"diff_thread,omitempty"`
 }
 
 type workflowApprovalResponse struct {
@@ -251,23 +264,25 @@ type diffReviewDraftResponse struct {
 }
 
 type diffReviewThreadResponse struct {
-	ID          string `json:"id"`
-	Path        string `json:"path"`
-	OldPath     string `json:"old_path,omitempty"`
-	Side        string `json:"side"`
-	StartSide   string `json:"start_side,omitempty"`
-	StartLine   *int   `json:"start_line,omitempty"`
-	Line        int    `json:"line"`
-	OldLine     *int   `json:"old_line,omitempty"`
-	NewLine     *int   `json:"new_line,omitempty"`
-	LineType    string `json:"line_type"`
-	DiffHeadSHA string `json:"diff_head_sha,omitempty"`
-	CommitSHA   string `json:"commit_sha,omitempty"`
-	Body        string `json:"body"`
-	AuthorLogin string `json:"author_login,omitempty"`
-	Resolved    bool   `json:"resolved"`
-	CreatedAt   string `json:"created_at"`
-	UpdatedAt   string `json:"updated_at"`
+	ID                string `json:"id"`
+	ProviderCommentID string `json:"provider_comment_id,omitempty"`
+	Path              string `json:"path"`
+	OldPath           string `json:"old_path,omitempty"`
+	Side              string `json:"side"`
+	StartSide         string `json:"start_side,omitempty"`
+	StartLine         *int   `json:"start_line,omitempty"`
+	Line              int    `json:"line"`
+	OldLine           *int   `json:"old_line,omitempty"`
+	NewLine           *int   `json:"new_line,omitempty"`
+	LineType          string `json:"line_type"`
+	DiffHeadSHA       string `json:"diff_head_sha,omitempty"`
+	CommitSHA         string `json:"commit_sha,omitempty"`
+	Body              string `json:"body"`
+	AuthorLogin       string `json:"author_login,omitempty"`
+	Resolved          bool   `json:"resolved"`
+	CanResolve        bool   `json:"can_resolve"`
+	CreatedAt         string `json:"created_at"`
+	UpdatedAt         string `json:"updated_at"`
 }
 
 type filePreviewResponse struct {

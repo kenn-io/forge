@@ -78,7 +78,10 @@ function pullDetail(
         MetadataJSON: "",
         CreatedAt: "2026-03-30T14:00:00Z",
         DedupeKey: "review-thread-1",
-        review_thread: {
+        ThreadID: null,
+        Resolvable: false,
+        Resolved: reviewThreadResolved,
+        diff_thread: {
           id: "1",
           path: "src/main.ts",
           side: "right",
@@ -89,6 +92,7 @@ function pullDetail(
           body: "Existing inline comment",
           author_login: "ada",
           resolved: reviewThreadResolved,
+          can_resolve: true,
           created_at: "2026-03-30T14:00:00Z",
           updated_at: "2026-03-30T14:00:00Z",
         },

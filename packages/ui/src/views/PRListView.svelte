@@ -33,6 +33,8 @@
     read_labels: true,
     read_ci: true,
     comment_mutation: true,
+    thread_reply: false,
+    thread_resolve: false,
     label_mutation: true,
     state_mutation: true,
     merge_mutation: true,

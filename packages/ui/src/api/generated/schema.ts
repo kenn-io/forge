@@ -2285,6 +2285,7 @@ export interface components {
         DiffReviewThreadResponse: {
             author_login?: string;
             body: string;
+            can_resolve: boolean;
             commit_sha?: string;
             created_at: string;
             diff_head_sha?: string;
@@ -2298,6 +2299,7 @@ export interface components {
             old_line?: number;
             old_path?: string;
             path: string;
+            provider_comment_id?: string;
             resolved: boolean;
             side: string;
             /** Format: int64 */
@@ -2533,7 +2535,6 @@ export interface components {
             /** Format: date-time */
             CreatedAt: string;
             DedupeKey: string;
-            ThreadID: string | null;
             EventType: string;
             /** Format: int64 */
             ID: number;
@@ -2544,6 +2545,7 @@ export interface components {
             /** Format: int64 */
             PlatformID: number | null;
             Summary: string;
+            ThreadID: string | null;
         };
         IssueResponse: {
             /**
@@ -2663,33 +2665,6 @@ export interface components {
             readonly $schema?: string;
             worktrees: components["schemas"]["WorktreeResponse"][] | null;
         };
-        MREvent: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example /api/v1/schemas/MREvent.json
-             */
-            readonly $schema?: string;
-            Author: string;
-            Body: string;
-            /** Format: date-time */
-            CreatedAt: string;
-            DedupeKey: string;
-            ThreadID: string | null;
-            EventType: string;
-            /** Format: int64 */
-            ID: number;
-            /** Format: int64 */
-            MergeRequestID: number;
-            MetadataJSON: string;
-            PlatformExternalID: string;
-            /** Format: int64 */
-            PlatformID: number | null;
-            PositionJSON: string;
-            Resolvable: boolean;
-            Resolved: boolean;
-            Summary: string;
-        };
         MergePRBody: {
             /**
              * Format: uri
@@ -2798,6 +2773,12 @@ export interface components {
             worktree_links: components["schemas"]["WorktreeLinkResponse"][] | null;
         };
         MergeRequestEventResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/MergeRequestEventResponse.json
+             */
+            readonly $schema?: string;
             Author: string;
             Body: string;
             /** Format: date-time */
@@ -2812,8 +2793,11 @@ export interface components {
             PlatformExternalID: string;
             /** Format: int64 */
             PlatformID: number | null;
+            Resolvable: boolean;
+            Resolved: boolean;
             Summary: string;
-            review_thread?: components["schemas"]["DiffReviewThreadResponse"];
+            ThreadID: string | null;
+            diff_thread?: components["schemas"]["DiffReviewThreadResponse"];
         };
         MergeRequestResponse: {
             /** Format: int64 */
@@ -3003,8 +2987,6 @@ export interface components {
         };
         ProviderCapabilitiesResponse: {
             comment_mutation: boolean;
-            thread_reply: boolean;
-            thread_resolve: boolean;
             issue_mutation: boolean;
             label_mutation: boolean;
             merge_mutation: boolean;
@@ -3023,6 +3005,8 @@ export interface components {
             review_thread_resolution: boolean;
             state_mutation: boolean;
             supported_review_actions: string[] | null;
+            thread_reply: boolean;
+            thread_resolve: boolean;
             workflow_approval: boolean;
         };
         PublishDiffReviewDraftHostInputBody: {
@@ -4236,7 +4220,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["MREvent"];
+                    "application/json": components["schemas"]["MergeRequestEventResponse"];
                 };
             };
             /** @description Error */
@@ -4276,7 +4260,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["MREvent"];
+                    "application/json": components["schemas"]["MergeRequestEventResponse"];
                 };
             };
             /** @description Error */
@@ -4394,7 +4378,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["MREvent"];
+                    "application/json": components["schemas"]["MergeRequestEventResponse"];
                 };
             };
             /** @description Error */
@@ -6218,7 +6202,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["MREvent"];
+                    "application/json": components["schemas"]["MergeRequestEventResponse"];
                 };
             };
             /** @description Error */
@@ -6257,7 +6241,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["MREvent"];
+                    "application/json": components["schemas"]["MergeRequestEventResponse"];
                 };
             };
             /** @description Error */
@@ -6372,7 +6356,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["MREvent"];
+                    "application/json": components["schemas"]["MergeRequestEventResponse"];
                 };
             };
             /** @description Error */

@@ -501,23 +501,25 @@ type DiffReviewLineRange struct {
 
 // DiffReviewThreadResponse defines model for DiffReviewThreadResponse.
 type DiffReviewThreadResponse struct {
-	AuthorLogin *string `json:"author_login,omitempty"`
-	Body        string  `json:"body"`
-	CommitSha   *string `json:"commit_sha,omitempty"`
-	CreatedAt   string  `json:"created_at"`
-	DiffHeadSha *string `json:"diff_head_sha,omitempty"`
-	Id          string  `json:"id"`
-	Line        int64   `json:"line"`
-	LineType    string  `json:"line_type"`
-	NewLine     *int64  `json:"new_line,omitempty"`
-	OldLine     *int64  `json:"old_line,omitempty"`
-	OldPath     *string `json:"old_path,omitempty"`
-	Path        string  `json:"path"`
-	Resolved    bool    `json:"resolved"`
-	Side        string  `json:"side"`
-	StartLine   *int64  `json:"start_line,omitempty"`
-	StartSide   *string `json:"start_side,omitempty"`
-	UpdatedAt   string  `json:"updated_at"`
+	AuthorLogin       *string `json:"author_login,omitempty"`
+	Body              string  `json:"body"`
+	CanResolve        bool    `json:"can_resolve"`
+	CommitSha         *string `json:"commit_sha,omitempty"`
+	CreatedAt         string  `json:"created_at"`
+	DiffHeadSha       *string `json:"diff_head_sha,omitempty"`
+	Id                string  `json:"id"`
+	Line              int64   `json:"line"`
+	LineType          string  `json:"line_type"`
+	NewLine           *int64  `json:"new_line,omitempty"`
+	OldLine           *int64  `json:"old_line,omitempty"`
+	OldPath           *string `json:"old_path,omitempty"`
+	Path              string  `json:"path"`
+	ProviderCommentId *string `json:"provider_comment_id,omitempty"`
+	Resolved          bool    `json:"resolved"`
+	Side              string  `json:"side"`
+	StartLine         *int64  `json:"start_line,omitempty"`
+	StartSide         *string `json:"start_side,omitempty"`
+	UpdatedAt         string  `json:"updated_at"`
 }
 
 // EditCommentHostInputBody defines model for EditCommentHostInputBody.
@@ -813,27 +815,6 @@ type ListWorktreesOutputBody struct {
 	Worktrees *[]WorktreeResponse `json:"worktrees"`
 }
 
-// MREvent defines model for MREvent.
-type MREvent struct {
-	// Schema A URL to the JSON Schema for this object.
-	Schema             *string   `json:"$schema,omitempty"`
-	Author             string    `json:"Author"`
-	Body               string    `json:"Body"`
-	CreatedAt          time.Time `json:"CreatedAt"`
-	DedupeKey          string    `json:"DedupeKey"`
-	EventType          string    `json:"EventType"`
-	ID                 int64     `json:"ID"`
-	MergeRequestID     int64     `json:"MergeRequestID"`
-	MetadataJSON       string    `json:"MetadataJSON"`
-	PlatformExternalID string    `json:"PlatformExternalID"`
-	PlatformID         *int64    `json:"PlatformID"`
-	PositionJSON       string    `json:"PositionJSON"`
-	Resolvable         bool      `json:"Resolvable"`
-	Resolved           bool      `json:"Resolved"`
-	Summary            string    `json:"Summary"`
-	ThreadID           *string   `json:"ThreadID"`
-}
-
 // MergePRBody defines model for MergePRBody.
 type MergePRBody struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -928,6 +909,8 @@ type MergeRequestDetailResponse struct {
 
 // MergeRequestEventResponse defines model for MergeRequestEventResponse.
 type MergeRequestEventResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema             *string                   `json:"$schema,omitempty"`
 	Author             string                    `json:"Author"`
 	Body               string                    `json:"Body"`
 	CreatedAt          time.Time                 `json:"CreatedAt"`
@@ -938,8 +921,11 @@ type MergeRequestEventResponse struct {
 	MetadataJSON       string                    `json:"MetadataJSON"`
 	PlatformExternalID string                    `json:"PlatformExternalID"`
 	PlatformID         *int64                    `json:"PlatformID"`
+	Resolvable         bool                      `json:"Resolvable"`
+	Resolved           bool                      `json:"Resolved"`
 	Summary            string                    `json:"Summary"`
-	ReviewThread       *DiffReviewThreadResponse `json:"review_thread,omitempty"`
+	ThreadID           *string                   `json:"ThreadID"`
+	DiffThread         *DiffReviewThreadResponse `json:"diff_thread,omitempty"`
 }
 
 // MergeRequestResponse defines model for MergeRequestResponse.
@@ -13863,7 +13849,7 @@ func (r RefreshPullCiOnHostResponse) StatusCode() int {
 type PostPrCommentOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	JSON201                       *MREvent
+	JSON201                       *MergeRequestEventResponse
 	ApplicationproblemJSONDefault *ProblemError
 }
 
@@ -13886,7 +13872,7 @@ func (r PostPrCommentOnHostResponse) StatusCode() int {
 type EditPrCommentOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	JSON200                       *MREvent
+	JSON200                       *MergeRequestEventResponse
 	ApplicationproblemJSONDefault *ProblemError
 }
 
@@ -13955,7 +13941,7 @@ func (r GetPullDiffOnHostResponse) StatusCode() int {
 type ReplyToDiscussionOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	JSON201                       *MREvent
+	JSON201                       *MergeRequestEventResponse
 	ApplicationproblemJSONDefault *ProblemError
 }
 
@@ -15119,7 +15105,7 @@ func (r RefreshPullCiResponse) StatusCode() int {
 type PostPrCommentResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	JSON201                       *MREvent
+	JSON201                       *MergeRequestEventResponse
 	ApplicationproblemJSONDefault *ProblemError
 }
 
@@ -15142,7 +15128,7 @@ func (r PostPrCommentResponse) StatusCode() int {
 type EditPrCommentResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	JSON200                       *MREvent
+	JSON200                       *MergeRequestEventResponse
 	ApplicationproblemJSONDefault *ProblemError
 }
 
@@ -15211,7 +15197,7 @@ func (r GetPullDiffResponse) StatusCode() int {
 type ReplyToDiscussionResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	JSON201                       *MREvent
+	JSON201                       *MergeRequestEventResponse
 	ApplicationproblemJSONDefault *ProblemError
 }
 
@@ -18566,7 +18552,7 @@ func ParsePostPrCommentOnHostResponse(rsp *http.Response) (*PostPrCommentOnHostR
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
-		var dest MREvent
+		var dest MergeRequestEventResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -18599,7 +18585,7 @@ func ParseEditPrCommentOnHostResponse(rsp *http.Response) (*EditPrCommentOnHostR
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest MREvent
+		var dest MergeRequestEventResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -18698,7 +18684,7 @@ func ParseReplyToDiscussionOnHostResponse(rsp *http.Response) (*ReplyToDiscussio
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
-		var dest MREvent
+		var dest MergeRequestEventResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -20318,7 +20304,7 @@ func ParsePostPrCommentResponse(rsp *http.Response) (*PostPrCommentResponse, err
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
-		var dest MREvent
+		var dest MergeRequestEventResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -20351,7 +20337,7 @@ func ParseEditPrCommentResponse(rsp *http.Response) (*EditPrCommentResponse, err
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest MREvent
+		var dest MergeRequestEventResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -20450,7 +20436,7 @@ func ParseReplyToDiscussionResponse(rsp *http.Response) (*ReplyToDiscussionRespo
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
-		var dest MREvent
+		var dest MergeRequestEventResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

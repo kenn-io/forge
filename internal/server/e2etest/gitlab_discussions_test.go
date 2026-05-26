@@ -72,10 +72,9 @@ func TestGetPRDetailIncludesThreadID(t *testing.T) {
 
 	var result struct {
 		Events []struct {
-			ThreadID     *string `json:"ThreadID"`
-			PositionJSON string  `json:"PositionJSON"`
-			Resolvable   bool    `json:"Resolvable"`
-			Resolved     bool    `json:"Resolved"`
+			ThreadID   *string `json:"ThreadID"`
+			Resolvable bool    `json:"Resolvable"`
+			Resolved   bool    `json:"Resolved"`
 		} `json:"events"`
 	}
 	err = json.NewDecoder(rr.Body).Decode(&result)
@@ -84,7 +83,6 @@ func TestGetPRDetailIncludesThreadID(t *testing.T) {
 	require.Len(result.Events, 1)
 	assert.NotNil(result.Events[0].ThreadID)
 	assert.Equal("disc-abc123", *result.Events[0].ThreadID)
-	assert.JSONEq(`{"new_path":"main.go","new_line":42}`, result.Events[0].PositionJSON)
 	assert.True(result.Events[0].Resolvable)
 	assert.False(result.Events[0].Resolved)
 }
@@ -209,10 +207,9 @@ func TestGitLabDiscussionMetadataSyncsToDetailAPI(t *testing.T) {
 	require.Equal(http.StatusOK, prRR.Code, "response: %s", prRR.Body.String())
 	var prResult struct {
 		Events []struct {
-			ThreadID     *string `json:"ThreadID"`
-			PositionJSON string  `json:"PositionJSON"`
-			Resolvable   bool    `json:"Resolvable"`
-			Resolved     bool    `json:"Resolved"`
+			ThreadID   *string `json:"ThreadID"`
+			Resolvable bool    `json:"Resolvable"`
+			Resolved   bool    `json:"Resolved"`
 		} `json:"events"`
 	}
 	err = json.NewDecoder(prRR.Body).Decode(&prResult)
@@ -220,7 +217,6 @@ func TestGitLabDiscussionMetadataSyncsToDetailAPI(t *testing.T) {
 	require.Len(prResult.Events, 1)
 	require.NotNil(prResult.Events[0].ThreadID)
 	assert.Equal(mrThreadID, *prResult.Events[0].ThreadID)
-	assert.JSONEq(`{"new_path":"main.go","new_line":42}`, prResult.Events[0].PositionJSON)
 	assert.True(prResult.Events[0].Resolvable)
 	assert.False(prResult.Events[0].Resolved)
 

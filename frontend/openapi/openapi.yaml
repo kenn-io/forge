@@ -681,6 +681,8 @@ components:
           type: string
         body:
           type: string
+        can_resolve:
+          type: boolean
         commit_sha:
           type: string
         created_at:
@@ -704,6 +706,8 @@ components:
           type: string
         path:
           type: string
+        provider_comment_id:
+          type: string
         resolved:
           type: boolean
         side:
@@ -723,6 +727,7 @@ components:
         - line_type
         - body
         - resolved
+        - can_resolve
         - created_at
         - updated_at
       type: object
@@ -1463,71 +1468,6 @@ components:
       required:
         - worktrees
       type: object
-    MREvent:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - /api/v1/schemas/MREvent.json
-          format: uri
-          readOnly: true
-          type: string
-        Author:
-          type: string
-        Body:
-          type: string
-        CreatedAt:
-          format: date-time
-          type: string
-        DedupeKey:
-          type: string
-        EventType:
-          type: string
-        ID:
-          format: int64
-          type: integer
-        MergeRequestID:
-          format: int64
-          type: integer
-        MetadataJSON:
-          type: string
-        PlatformExternalID:
-          type: string
-        PlatformID:
-          format: int64
-          type:
-            - integer
-            - "null"
-        PositionJSON:
-          type: string
-        Resolvable:
-          type: boolean
-        Resolved:
-          type: boolean
-        Summary:
-          type: string
-        ThreadID:
-          type:
-            - string
-            - "null"
-      required:
-        - ID
-        - MergeRequestID
-        - PlatformID
-        - PlatformExternalID
-        - EventType
-        - Author
-        - Summary
-        - Body
-        - MetadataJSON
-        - CreatedAt
-        - DedupeKey
-        - ThreadID
-        - PositionJSON
-        - Resolvable
-        - Resolved
-      type: object
     MergePRBody:
       additionalProperties: false
       properties:
@@ -1798,6 +1738,13 @@ components:
     MergeRequestEventResponse:
       additionalProperties: false
       properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/MergeRequestEventResponse.json
+          format: uri
+          readOnly: true
+          type: string
         Author:
           type: string
         Body:
@@ -1824,9 +1771,17 @@ components:
           type:
             - integer
             - "null"
+        Resolvable:
+          type: boolean
+        Resolved:
+          type: boolean
         Summary:
           type: string
-        review_thread:
+        ThreadID:
+          type:
+            - string
+            - "null"
+        diff_thread:
           $ref: "#/components/schemas/DiffReviewThreadResponse"
       required:
         - ID
@@ -1840,6 +1795,9 @@ components:
         - MetadataJSON
         - CreatedAt
         - DedupeKey
+        - ThreadID
+        - Resolvable
+        - Resolved
       type: object
     MergeRequestResponse:
       additionalProperties: false
@@ -2272,16 +2230,16 @@ components:
           type: boolean
         state_mutation:
           type: boolean
-        thread_reply:
-          type: boolean
-        thread_resolve:
-          type: boolean
         supported_review_actions:
           items:
             type: string
           type:
             - array
             - "null"
+        thread_reply:
+          type: boolean
+        thread_resolve:
+          type: boolean
         workflow_approval:
           type: boolean
       required:
@@ -4388,7 +4346,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/MREvent"
+                $ref: "#/components/schemas/MergeRequestEventResponse"
           description: Created
         default:
           content:
@@ -4446,7 +4404,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/MREvent"
+                $ref: "#/components/schemas/MergeRequestEventResponse"
           description: OK
         default:
           content:
@@ -4621,7 +4579,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/MREvent"
+                $ref: "#/components/schemas/MergeRequestEventResponse"
           description: Created
         default:
           content:
@@ -6904,7 +6862,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/MREvent"
+                $ref: "#/components/schemas/MergeRequestEventResponse"
           description: Created
         default:
           content:
@@ -6957,7 +6915,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/MREvent"
+                $ref: "#/components/schemas/MergeRequestEventResponse"
           description: OK
         default:
           content:
@@ -7117,7 +7075,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/MREvent"
+                $ref: "#/components/schemas/MergeRequestEventResponse"
           description: Created
         default:
           content:

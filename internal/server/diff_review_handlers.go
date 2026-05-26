@@ -464,23 +464,44 @@ func diffReviewDraftCommentResponse(comment db.MRReviewDraftComment) diffReviewD
 func diffReviewThreadResponseFromDB(thread db.MRReviewThread) diffReviewThreadResponse {
 	lineRange := thread.Range
 	return diffReviewThreadResponse{
-		ID:          strconv.FormatInt(thread.ID, 10),
-		Path:        lineRange.Path,
-		OldPath:     lineRange.OldPath,
-		Side:        lineRange.Side,
-		StartSide:   lineRange.StartSide,
-		StartLine:   lineRange.StartLine,
-		Line:        lineRange.Line,
-		OldLine:     lineRange.OldLine,
-		NewLine:     lineRange.NewLine,
-		LineType:    lineRange.LineType,
-		DiffHeadSHA: lineRange.DiffHeadSHA,
-		CommitSHA:   lineRange.CommitSHA,
-		Body:        thread.Body,
-		AuthorLogin: thread.AuthorLogin,
-		Resolved:    thread.Resolved,
-		CreatedAt:   formatUTCRFC3339(thread.CreatedAt),
-		UpdatedAt:   formatUTCRFC3339(thread.UpdatedAt),
+		ID:                strconv.FormatInt(thread.ID, 10),
+		ProviderCommentID: thread.ProviderCommentID,
+		Path:              lineRange.Path,
+		OldPath:           lineRange.OldPath,
+		Side:              lineRange.Side,
+		StartSide:         lineRange.StartSide,
+		StartLine:         lineRange.StartLine,
+		Line:              lineRange.Line,
+		OldLine:           lineRange.OldLine,
+		NewLine:           lineRange.NewLine,
+		LineType:          lineRange.LineType,
+		DiffHeadSHA:       lineRange.DiffHeadSHA,
+		CommitSHA:         lineRange.CommitSHA,
+		Body:              thread.Body,
+		AuthorLogin:       thread.AuthorLogin,
+		Resolved:          thread.Resolved,
+		CanResolve:        true,
+		CreatedAt:         formatUTCRFC3339(thread.CreatedAt),
+		UpdatedAt:         formatUTCRFC3339(thread.UpdatedAt),
+	}
+}
+
+func mergeRequestEventResponseFromDB(event db.MREvent) mergeRequestEventResponse {
+	return mergeRequestEventResponse{
+		ID:                 event.ID,
+		MergeRequestID:     event.MergeRequestID,
+		PlatformID:         event.PlatformID,
+		PlatformExternalID: event.PlatformExternalID,
+		EventType:          event.EventType,
+		Author:             event.Author,
+		Summary:            event.Summary,
+		Body:               event.Body,
+		MetadataJSON:       event.MetadataJSON,
+		CreatedAt:          event.CreatedAt,
+		DedupeKey:          event.DedupeKey,
+		ThreadID:           event.ThreadID,
+		Resolvable:         event.Resolvable,
+		Resolved:           event.Resolved,
 	}
 }
 
@@ -505,10 +526,10 @@ func (s *Server) mergeRequestEventResponses(
 	}
 	out := make([]mergeRequestEventResponse, 0, len(events))
 	for _, event := range events {
-		resp := mergeRequestEventResponse{MREvent: event}
+		resp := mergeRequestEventResponseFromDB(event)
 		if event.EventType == "review_comment" && event.PlatformExternalID != "" {
 			if thread, ok := threadsByProviderID[event.PlatformExternalID]; ok {
-				resp.ReviewThread = &thread
+				resp.DiffThread = &thread
 			}
 		}
 		out = append(out, resp)

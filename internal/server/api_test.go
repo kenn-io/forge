@@ -18755,13 +18755,17 @@ func TestWorkspaceRuntimeSessionTerminalTmuxBackedWebSocketE2E(
 	dir := t.TempDir()
 	agentPath := filepath.Join(dir, "size-agent")
 	require.NoError(os.WriteFile(agentPath, []byte(`#!/bin/sh
-while IFS= read -r line; do
+attempt=0
+while [ "$attempt" -lt 80 ]; do
 	set -- $(stty size 2>/dev/null || printf '0 0')
-	printf 'size:%s:%s:%s\n' "$1" "$2" "$line"
-	if [ "$1:$2:$line" = "40:177:size" ]; then
+	printf 'size:%s:%s:probe\n' "$1" "$2"
+	if [ "$1:$2" = "40:177" ]; then
 		exit 0
 	fi
+	attempt=$((attempt + 1))
+	sleep 0.1
 done
+exit 1
 `), 0o755))
 	cfg := &config.Config{
 		Agents: []config.Agent{{
@@ -18803,7 +18807,7 @@ done
 	require.NoError(err)
 	defer conn.Close(websocket.StatusNormalClosure, "done")
 
-	requestSize := func() {
+	requestResize := func() {
 		t.Helper()
 		resize, err := json.Marshal(map[string]any{
 			"type": "resize",
@@ -18812,9 +18816,8 @@ done
 		})
 		require.NoError(err)
 		require.NoError(conn.Write(ctx, websocket.MessageText, resize))
-		require.NoError(conn.Write(ctx, websocket.MessageBinary, []byte("size\n")))
 	}
-	requestSize()
+	requestResize()
 	deadline := time.Now().Add(8 * time.Second)
 	var got strings.Builder
 	for time.Now().Before(deadline) {
@@ -18823,7 +18826,7 @@ done
 		cancel()
 		if readErr != nil {
 			if errors.Is(readErr, context.DeadlineExceeded) {
-				requestSize()
+				requestResize()
 				continue
 			}
 			break
@@ -18835,12 +18838,12 @@ done
 		// tmux keeps one row for its status line by default, so the
 		// pane sees one fewer row than the attached terminal while
 		// preserving the requested column count.
-		if strings.Contains(got.String(), "size:40:177:size") {
+		if strings.Contains(got.String(), "size:40:177:probe") {
 			return
 		}
-		requestSize()
+		requestResize()
 	}
-	require.Contains(got.String(), "size:40:177:size")
+	require.Contains(got.String(), "size:40:177:probe")
 }
 
 func createReadyWorkspace(

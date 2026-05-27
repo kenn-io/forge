@@ -131,6 +131,7 @@ type mockGH struct {
 	listOpenPRsErr             error
 	listOpenIssuesFn           func(context.Context, string, string) ([]*gh.Issue, error)
 	listIssueCommentsFn        func(context.Context, string, string, int) ([]*gh.IssueComment, error)
+	listReviewThreadsFn        func(context.Context, string, string, int) ([]ghclient.PullRequestReviewThread, error)
 	listIssueCommentsErr       error
 }
 
@@ -274,6 +275,18 @@ func (m *mockGH) ListIssueCommentsIfChanged(
 func (m *mockGH) ListReviews(
 	_ context.Context, _, _ string, _ int,
 ) ([]*gh.PullRequestReview, error) {
+	return nil, nil
+}
+
+func (m *mockGH) ListPullRequestReviewThreads(
+	ctx context.Context,
+	owner string,
+	repo string,
+	number int,
+) ([]ghclient.PullRequestReviewThread, error) {
+	if m.listReviewThreadsFn != nil {
+		return m.listReviewThreadsFn(ctx, owner, repo, number)
+	}
 	return nil, nil
 }
 
@@ -1242,6 +1255,91 @@ func TestAPIListPullsKeepsCachedCIDecorationsAfterIndexSync(t *testing.T) {
 	pull := (*resp.JSON200)[0]
 	assert.Equal("failure", pull.CIStatus)
 	assert.JSONEq(checksJSON, pull.CIChecksJSON)
+}
+
+func TestAPIGitHubSyncPersistsReviewThreadsThroughPullDetail(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	now := time.Date(2026, 5, 27, 16, 1, 31, 0, time.UTC)
+	prNumber := 42
+	line := 1
+	headSHA := "head-sha"
+	baseSHA := "base-sha"
+	mock := &mockGH{
+		getPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+			require.Equal(prNumber, number)
+			prID := int64(9001)
+			prNodeID := "PR_kwDO123"
+			title := "inline review"
+			state := "open"
+			url := "https://github.com/acme/widget/pull/42"
+			author := "ada"
+			headRef := "feature"
+			baseRef := "main"
+			return &gh.PullRequest{
+				ID:        &prID,
+				NodeID:    &prNodeID,
+				Number:    &number,
+				HTMLURL:   &url,
+				Title:     &title,
+				State:     &state,
+				User:      &gh.User{Login: &author},
+				CreatedAt: &gh.Timestamp{Time: now},
+				UpdatedAt: &gh.Timestamp{Time: now},
+				Head: &gh.PullRequestBranch{
+					Ref: &headRef,
+					SHA: &headSHA,
+				},
+				Base: &gh.PullRequestBranch{
+					Ref: &baseRef,
+					SHA: &baseSHA,
+				},
+			}, nil
+		},
+		listIssueCommentsFn: func(context.Context, string, string, int) ([]*gh.IssueComment, error) {
+			return nil, nil
+		},
+		listReviewThreadsFn: func(context.Context, string, string, int) ([]ghclient.PullRequestReviewThread, error) {
+			return []ghclient.PullRequestReviewThread{{
+				NodeID: "PRRT_1",
+				Path:   ".golangci.yml",
+				Side:   "RIGHT",
+				Line:   line,
+				Comments: []ghclient.PullRequestReviewThreadComment{{
+					NodeID:           "PRRC_1",
+					DatabaseID:       3312100450,
+					ReviewDatabaseID: 4373946198,
+					Body:             "inline note",
+					AuthorLogin:      "reviewer",
+					CommitID:         headSHA,
+					CreatedAt:        now,
+					UpdatedAt:        now,
+				}},
+			}}, nil
+		},
+	}
+	srv, _ := setupTestServerWithMock(t, mock)
+	client := setupTestClient(t, srv)
+
+	require.NoError(srv.syncer.SyncMR(ctx, "acme", "widget", prNumber))
+
+	resp, err := client.HTTP.GetPullWithResponse(ctx, "gh", "acme", "widget", int64(prNumber))
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.NotNil(resp.JSON200.Events)
+	require.Len(*resp.JSON200.Events, 1)
+	event := (*resp.JSON200.Events)[0]
+	assert.Equal("review_comment", event.EventType)
+	assert.Equal("PRRT_1", event.PlatformExternalID)
+	require.NotNil(event.DiffThread)
+	assert.Equal(".golangci.yml", event.DiffThread.Path)
+	assert.Equal("right", event.DiffThread.Side)
+	assert.Equal(int64(line), event.DiffThread.Line)
+	assert.Equal("inline note", event.DiffThread.Body)
+	require.NotNil(event.DiffThread.ProviderCommentId)
+	assert.Equal("3312100450", *event.DiffThread.ProviderCommentId)
 }
 
 func TestAPIRepoFilterAcceptsMultipleRepos(t *testing.T) {

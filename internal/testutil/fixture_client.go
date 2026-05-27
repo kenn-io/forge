@@ -35,6 +35,7 @@ type FixtureClient struct {
 	Issues                    map[string][]*gh.Issue
 	Comments                  map[string][]*gh.IssueComment
 	Reviews                   map[string][]*gh.PullRequestReview
+	ReviewThreads             map[string][]ghclient.PullRequestReviewThread
 	ReposByOwner              map[string][]*gh.Repository
 	Releases                  map[string][]*gh.RepositoryRelease
 	Tags                      map[string][]*gh.RepositoryTag
@@ -57,6 +58,7 @@ func NewFixtureClient() ghclient.Client {
 		Issues:           make(map[string][]*gh.Issue),
 		Comments:         make(map[string][]*gh.IssueComment),
 		Reviews:          make(map[string][]*gh.PullRequestReview),
+		ReviewThreads:    make(map[string][]ghclient.PullRequestReviewThread),
 		ReposByOwner:     make(map[string][]*gh.Repository),
 		Releases:         make(map[string][]*gh.RepositoryRelease),
 		Tags:             make(map[string][]*gh.RepositoryTag),
@@ -367,6 +369,21 @@ func (c *FixtureClient) ListReviews(
 		return nil, nil
 	}
 	return slices.Clone(reviews), nil
+}
+
+func (c *FixtureClient) ListPullRequestReviewThreads(
+	_ context.Context,
+	owner string,
+	repo string,
+	number int,
+) ([]ghclient.PullRequestReviewThread, error) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	threads := c.ReviewThreads[issueKey(owner, repo, number)]
+	if len(threads) == 0 {
+		return nil, nil
+	}
+	return slices.Clone(threads), nil
 }
 
 // ListCommits returns nil (read-only stub).

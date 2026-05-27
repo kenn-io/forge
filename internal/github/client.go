@@ -47,6 +47,36 @@ type PullRequestTimelineEvent struct {
 	WillCloseTarget      bool
 }
 
+type PullRequestReviewThread struct {
+	NodeID            string
+	IsResolved        bool
+	IsOutdated        bool
+	Path              string
+	Side              string
+	StartLine         *int
+	OriginalStartLine *int
+	Line              int
+	OriginalLine      int
+	Comments          []PullRequestReviewThreadComment
+}
+
+type PullRequestReviewThreadComment struct {
+	NodeID           string
+	DatabaseID       int64
+	ReviewDatabaseID int64
+	Body             string
+	AuthorLogin      string
+	Path             string
+	Line             int
+	OriginalLine     int
+	DiffHunk         string
+	URL              string
+	CommitID         string
+	OriginalCommitID string
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+}
+
 // EditPullRequestOpts holds optional fields for editing a pull request.
 // Nil pointer fields are omitted from the GitHub API call.
 type EditPullRequestOpts struct {
@@ -69,6 +99,7 @@ type Client interface {
 	ListIssueComments(ctx context.Context, owner, repo string, number int) ([]*gh.IssueComment, error)
 	ListIssueCommentsIfChanged(ctx context.Context, owner, repo string, number int) ([]*gh.IssueComment, error)
 	ListReviews(ctx context.Context, owner, repo string, number int) ([]*gh.PullRequestReview, error)
+	ListPullRequestReviewThreads(ctx context.Context, owner, repo string, number int) ([]PullRequestReviewThread, error)
 	ListCommits(ctx context.Context, owner, repo string, number int) ([]*gh.RepositoryCommit, error)
 	ListPullRequestTimelineEvents(ctx context.Context, owner, repo string, number int) ([]PullRequestTimelineEvent, error)
 	ListForcePushEvents(ctx context.Context, owner, repo string, number int) ([]ForcePushEvent, error)
@@ -475,6 +506,49 @@ mutation($pullRequestId: ID!) {
   }
 }`
 
+const pullRequestReviewThreadsQuery = `
+query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $number) {
+      reviewThreads(first: 100, after: $cursor) {
+        nodes {
+          id
+          isResolved
+          isOutdated
+          path
+          line
+          originalLine
+          startLine
+          originalStartLine
+          diffSide
+          comments(first: 1) {
+            nodes {
+              id
+              databaseId
+              body
+              path
+              line
+              originalLine
+              diffHunk
+              url
+              author { login }
+              commit { oid }
+              originalCommit { oid }
+              pullRequestReview { databaseId }
+              createdAt
+              updatedAt
+            }
+          }
+        }
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
+      }
+    }
+  }
+}`
+
 type graphQLRequest struct {
 	Query     string         `json:"query"`
 	Variables map[string]any `json:"variables"`
@@ -858,6 +932,191 @@ func (c *liveClient) ListReviews(
 		return nil, err
 	}
 	return all, nil
+}
+
+func (c *liveClient) ListPullRequestReviewThreads(
+	ctx context.Context,
+	owner string,
+	repo string,
+	number int,
+) ([]PullRequestReviewThread, error) {
+	type graphQLComment struct {
+		NodeID       string `json:"id"`
+		DatabaseID   int64  `json:"databaseId"`
+		Body         string `json:"body"`
+		Path         string `json:"path"`
+		Line         int    `json:"line"`
+		OriginalLine int    `json:"originalLine"`
+		DiffHunk     string `json:"diffHunk"`
+		URL          string `json:"url"`
+		Author       *struct {
+			Login string `json:"login"`
+		} `json:"author"`
+		Commit *struct {
+			OID string `json:"oid"`
+		} `json:"commit"`
+		OriginalCommit *struct {
+			OID string `json:"oid"`
+		} `json:"originalCommit"`
+		PullRequestReview *struct {
+			DatabaseID int64 `json:"databaseId"`
+		} `json:"pullRequestReview"`
+		CreatedAt time.Time `json:"createdAt"`
+		UpdatedAt time.Time `json:"updatedAt"`
+	}
+	type graphQLResponse struct {
+		Errors []graphQLError `json:"errors"`
+		Data   struct {
+			Repository *struct {
+				PullRequest *struct {
+					ReviewThreads struct {
+						Nodes []struct {
+							NodeID            string `json:"id"`
+							IsResolved        bool   `json:"isResolved"`
+							IsOutdated        bool   `json:"isOutdated"`
+							Path              string `json:"path"`
+							Line              int    `json:"line"`
+							OriginalLine      int    `json:"originalLine"`
+							StartLine         *int   `json:"startLine"`
+							OriginalStartLine *int   `json:"originalStartLine"`
+							Side              string `json:"diffSide"`
+							Comments          struct {
+								Nodes []graphQLComment `json:"nodes"`
+							} `json:"comments"`
+						} `json:"nodes"`
+						PageInfo struct {
+							HasNextPage bool    `json:"hasNextPage"`
+							EndCursor   *string `json:"endCursor"`
+						} `json:"pageInfo"`
+					} `json:"reviewThreads"`
+				} `json:"pullRequest"`
+			} `json:"repository"`
+		} `json:"data"`
+	}
+
+	var threads []PullRequestReviewThread
+	var cursor *string
+	for {
+		payload, err := json.Marshal(graphQLRequest{
+			Query: pullRequestReviewThreadsQuery,
+			Variables: map[string]any{
+				"owner":  owner,
+				"repo":   repo,
+				"number": number,
+				"cursor": cursor,
+			},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("marshal pull request review threads query: %w", err)
+		}
+
+		req, err := http.NewRequestWithContext(
+			ctx,
+			http.MethodPost,
+			c.graphQLEndpoint,
+			bytes.NewReader(payload),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("create pull request review threads request: %w", err)
+		}
+		req.Header.Set("Accept", "application/vnd.github+json")
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"list pull request review threads for %s/%s#%d: %w",
+				owner, repo, number, err,
+			)
+		}
+		c.trackRateHeaders(resp)
+		if resp.StatusCode != http.StatusOK {
+			_ = resp.Body.Close()
+			return nil, fmt.Errorf(
+				"list pull request review threads for %s/%s#%d: graphql status %s",
+				owner, repo, number, resp.Status,
+			)
+		}
+
+		var decoded graphQLResponse
+		if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
+			_ = resp.Body.Close()
+			return nil, fmt.Errorf(
+				"decode pull request review threads for %s/%s#%d: %w",
+				owner, repo, number, err,
+			)
+		}
+		_ = resp.Body.Close()
+
+		if len(decoded.Errors) > 0 {
+			return nil, fmt.Errorf(
+				"list pull request review threads for %s/%s#%d: graphql errors: %s",
+				owner, repo, number, joinGraphQLErrorMessages(decoded.Errors),
+			)
+		}
+		if decoded.Data.Repository == nil {
+			return nil, fmt.Errorf(
+				"list pull request review threads for %s/%s#%d: missing repository in graphql response",
+				owner, repo, number,
+			)
+		}
+		if decoded.Data.Repository.PullRequest == nil {
+			return nil, fmt.Errorf(
+				"list pull request review threads for %s/%s#%d: missing pull request in graphql response",
+				owner, repo, number,
+			)
+		}
+
+		for _, node := range decoded.Data.Repository.PullRequest.ReviewThreads.Nodes {
+			thread := PullRequestReviewThread{
+				NodeID:            node.NodeID,
+				IsResolved:        node.IsResolved,
+				IsOutdated:        node.IsOutdated,
+				Path:              node.Path,
+				Side:              node.Side,
+				StartLine:         node.StartLine,
+				OriginalStartLine: node.OriginalStartLine,
+				Line:              node.Line,
+				OriginalLine:      node.OriginalLine,
+				Comments:          make([]PullRequestReviewThreadComment, 0, len(node.Comments.Nodes)),
+			}
+			for _, comment := range node.Comments.Nodes {
+				next := PullRequestReviewThreadComment{
+					NodeID:       comment.NodeID,
+					DatabaseID:   comment.DatabaseID,
+					Body:         comment.Body,
+					Path:         comment.Path,
+					Line:         comment.Line,
+					OriginalLine: comment.OriginalLine,
+					DiffHunk:     comment.DiffHunk,
+					URL:          comment.URL,
+					CreatedAt:    comment.CreatedAt,
+					UpdatedAt:    comment.UpdatedAt,
+				}
+				if comment.Author != nil {
+					next.AuthorLogin = comment.Author.Login
+				}
+				if comment.Commit != nil {
+					next.CommitID = comment.Commit.OID
+				}
+				if comment.OriginalCommit != nil {
+					next.OriginalCommitID = comment.OriginalCommit.OID
+				}
+				if comment.PullRequestReview != nil {
+					next.ReviewDatabaseID = comment.PullRequestReview.DatabaseID
+				}
+				thread.Comments = append(thread.Comments, next)
+			}
+			threads = append(threads, thread)
+		}
+
+		pageInfo := decoded.Data.Repository.PullRequest.ReviewThreads.PageInfo
+		if !pageInfo.HasNextPage || pageInfo.EndCursor == nil {
+			break
+		}
+		cursor = pageInfo.EndCursor
+	}
+	return threads, nil
 }
 
 func (c *liveClient) ListCommits(

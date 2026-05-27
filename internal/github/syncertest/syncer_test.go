@@ -90,6 +90,9 @@ func (m *mockClient) ListIssueCommentsIfChanged(context.Context, string, string,
 func (m *mockClient) ListReviews(context.Context, string, string, int) ([]*gh.PullRequestReview, error) {
 	return nil, nil
 }
+func (m *mockClient) ListPullRequestReviewThreads(context.Context, string, string, int) ([]ghclient.PullRequestReviewThread, error) {
+	return nil, nil
+}
 func (m *mockClient) ListCommits(context.Context, string, string, int) ([]*gh.RepositoryCommit, error) {
 	return nil, nil
 }

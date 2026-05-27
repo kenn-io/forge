@@ -625,6 +625,7 @@ func (p gitHubClientProvider) Capabilities() platform.Capabilities {
 		IssueMutation:         true,
 		LabelMutation:         labels,
 		ReviewDraftMutation:   true,
+		ReadReviewThreads:     true,
 		NativeMultilineRanges: true,
 		SupportedReviewActions: []platform.ReviewAction{
 			platform.ReviewActionComment,
@@ -1163,6 +1164,120 @@ func (p gitHubClientProvider) ApproveMergeRequest(
 		return platform.MergeRequestEvent{}, fmt.Errorf("provider returned no review")
 	}
 	return platformgithub.NormalizeReviewEvent(ref, number, review), nil
+}
+
+func (p gitHubClientProvider) ListMergeRequestReviewThreads(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+) ([]platform.MergeRequestReviewThread, error) {
+	threads, err := p.client.ListPullRequestReviewThreads(ctx, ref.Owner, ref.Name, number)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]platform.MergeRequestReviewThread, 0, len(threads))
+	for _, thread := range threads {
+		if len(thread.Comments) == 0 {
+			continue
+		}
+		normalized := githubReviewThread(thread)
+		if normalized.ProviderThreadID == "" {
+			continue
+		}
+		out = append(out, normalized)
+	}
+	return out, nil
+}
+
+func githubReviewThread(thread PullRequestReviewThread) platform.MergeRequestReviewThread {
+	var comment PullRequestReviewThreadComment
+	if len(thread.Comments) > 0 {
+		comment = thread.Comments[0]
+	}
+	createdAt := comment.CreatedAt.UTC()
+	updatedAt := comment.UpdatedAt.UTC()
+	if updatedAt.IsZero() {
+		updatedAt = createdAt
+	}
+	return platform.MergeRequestReviewThread{
+		ProviderThreadID:  thread.NodeID,
+		ProviderReviewID:  githubInt64ID(comment.ReviewDatabaseID),
+		ProviderCommentID: firstNonEmpty(githubInt64ID(comment.DatabaseID), comment.NodeID),
+		Body:              comment.Body,
+		AuthorLogin:       comment.AuthorLogin,
+		Range:             githubReviewLineRange(thread, comment),
+		Resolved:          thread.IsResolved,
+		CreatedAt:         createdAt,
+		UpdatedAt:         updatedAt,
+	}
+}
+
+func githubReviewLineRange(
+	thread PullRequestReviewThread,
+	comment PullRequestReviewThreadComment,
+) platform.DiffReviewLineRange {
+	side := strings.ToLower(thread.Side)
+	if side != "left" {
+		side = "right"
+	}
+	line := firstPositive(thread.Line, thread.OriginalLine, comment.Line, comment.OriginalLine)
+	startLine := thread.StartLine
+	if startLine == nil {
+		startLine = thread.OriginalStartLine
+	}
+	lineType := "add"
+	var oldLine *int
+	var newLine *int
+	if side == "left" {
+		lineType = "delete"
+		oldLine = &line
+	} else {
+		newLine = &line
+	}
+	return platform.DiffReviewLineRange{
+		Path:        firstNonEmpty(thread.Path, comment.Path),
+		Side:        side,
+		StartSide:   githubReviewStartSide(side, startLine),
+		StartLine:   startLine,
+		Line:        line,
+		OldLine:     oldLine,
+		NewLine:     newLine,
+		LineType:    lineType,
+		DiffHeadSHA: firstNonEmpty(comment.CommitID, comment.OriginalCommitID),
+		CommitSHA:   firstNonEmpty(comment.CommitID, comment.OriginalCommitID),
+	}
+}
+
+func githubReviewStartSide(side string, startLine *int) string {
+	if startLine == nil {
+		return ""
+	}
+	return side
+}
+
+func githubInt64ID(id int64) string {
+	if id == 0 {
+		return ""
+	}
+	return strconv.FormatInt(id, 10)
+}
+
+func firstPositive(values ...int) int {
+	for _, value := range values {
+		if value > 0 {
+			return value
+		}
+	}
+	return 0
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func (p gitHubClientProvider) PublishDiffReviewDraft(

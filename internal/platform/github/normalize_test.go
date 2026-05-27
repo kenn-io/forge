@@ -12,19 +12,17 @@ import (
 func TestNormalizeIssue_ExtractsAssignees(t *testing.T) {
 	require := require.New(t)
 
-	assignee1Login := "alice"
-	assignee2Login := "bob"
 	ghIssue := &gh.Issue{
-		ID:      gh.Ptr(int64(123)),
-		Number:  gh.Ptr(42),
-		Title:   gh.Ptr("Test issue"),
-		State:   gh.Ptr("open"),
-		HTMLURL: gh.Ptr("https://github.com/owner/repo/issues/42"),
-		Body:    gh.Ptr("Issue body"),
-		User:    &gh.User{Login: gh.Ptr("author")},
+		ID:      new(int64(123)),
+		Number:  new(42),
+		Title:   new("Test issue"),
+		State:   new("open"),
+		HTMLURL: new("https://github.com/owner/repo/issues/42"),
+		Body:    new("Issue body"),
+		User:    &gh.User{Login: new("author")},
 		Assignees: []*gh.User{
-			{Login: &assignee1Login},
-			{Login: &assignee2Login},
+			{Login: new("alice")},
+			{Login: new("bob")},
 		},
 		CreatedAt: &gh.Timestamp{Time: time.Now()},
 		UpdatedAt: &gh.Timestamp{Time: time.Now()},
@@ -39,13 +37,13 @@ func TestNormalizeIssue_EmptyAssignees(t *testing.T) {
 	require := require.New(t)
 
 	ghIssue := &gh.Issue{
-		ID:        gh.Ptr(int64(123)),
-		Number:    gh.Ptr(42),
-		Title:     gh.Ptr("Test issue"),
-		State:     gh.Ptr("open"),
-		HTMLURL:   gh.Ptr("https://github.com/owner/repo/issues/42"),
-		Body:      gh.Ptr("Issue body"),
-		User:      &gh.User{Login: gh.Ptr("author")},
+		ID:        new(int64(123)),
+		Number:    new(42),
+		Title:     new("Test issue"),
+		State:     new("open"),
+		HTMLURL:   new("https://github.com/owner/repo/issues/42"),
+		Body:      new("Issue body"),
+		User:      &gh.User{Login: new("author")},
 		CreatedAt: &gh.Timestamp{Time: time.Now()},
 		UpdatedAt: &gh.Timestamp{Time: time.Now()},
 	}
@@ -58,18 +56,17 @@ func TestNormalizeIssue_EmptyAssignees(t *testing.T) {
 func TestNormalizeIssue_NilAssigneeInList(t *testing.T) {
 	require := require.New(t)
 
-	assigneeLogin := "alice"
 	ghIssue := &gh.Issue{
-		ID:      gh.Ptr(int64(123)),
-		Number:  gh.Ptr(42),
-		Title:   gh.Ptr("Test issue"),
-		State:   gh.Ptr("open"),
-		HTMLURL: gh.Ptr("https://github.com/owner/repo/issues/42"),
-		Body:    gh.Ptr("Issue body"),
-		User:    &gh.User{Login: gh.Ptr("author")},
+		ID:      new(int64(123)),
+		Number:  new(42),
+		Title:   new("Test issue"),
+		State:   new("open"),
+		HTMLURL: new("https://github.com/owner/repo/issues/42"),
+		Body:    new("Issue body"),
+		User:    &gh.User{Login: new("author")},
 		Assignees: []*gh.User{
 			nil,
-			{Login: &assigneeLogin},
+			{Login: new("alice")},
 			{Login: nil},
 		},
 		CreatedAt: &gh.Timestamp{Time: time.Now()},

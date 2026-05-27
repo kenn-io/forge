@@ -4628,3 +4628,38 @@ func TestHTTPEtagPersistence(t *testing.T) {
 	assert.NoError(err)
 	assert.Equal(`"etag-v2"`, etag)
 }
+
+func TestUpsertIssue_StoresAssignees(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := baseTime()
+	repoID := insertTestRepo(t, d, "owner", "repo")
+
+	issue := &Issue{
+		RepoID:         repoID,
+		PlatformID:     123,
+		Number:         42,
+		URL:            "https://github.com/owner/repo/issues/42",
+		Title:          "Test issue",
+		Author:         "author",
+		State:          "open",
+		AssigneesJSON:  `["alice","bob"]`,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		LastActivityAt: now,
+	}
+
+	_, err := d.UpsertIssue(ctx, issue)
+	require.NoError(err)
+
+	// Verify stored value
+	var stored string
+	err = d.ReadDB().QueryRowContext(ctx,
+		`SELECT assignees_json FROM middleman_issues WHERE repo_id = ? AND number = ?`,
+		repoID, 42,
+	).Scan(&stored)
+	require.NoError(err)
+	assert.JSONEq(`["alice","bob"]`, stored)
+}

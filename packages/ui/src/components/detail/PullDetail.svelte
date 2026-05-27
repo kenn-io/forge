@@ -1927,6 +1927,7 @@
             {repoPath}
             {number}
             canResolveReviewThreads={capabilities.review_thread_resolution}
+            canReplyToThreads={capabilities.thread_reply && !stalePR}
             filtered={hasActiveTimelineFilters}
             showCommitDetails={timelineFilter.showCommitDetails}
             onEditComment={capabilities.comment_mutation && !stalePR

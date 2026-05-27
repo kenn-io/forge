@@ -881,6 +881,13 @@ func (m *mockClient) EditIssueComment(
 	return nil, nil
 }
 
+func (m *mockClient) CreatePullRequestReviewCommentReply(
+	_ context.Context, _, _ string, _ int, _ string, _ int64,
+) (*gh.PullRequestComment, error) {
+	m.trackCall()
+	return nil, nil
+}
+
 func (m *mockClient) GetRepository(
 	ctx context.Context, owner, repo string,
 ) (*gh.Repository, error) {

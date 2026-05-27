@@ -705,6 +705,39 @@ describe("EventTimeline", () => {
     );
   });
 
+  it("shows a reply composer for review threads when thread replies are available", async () => {
+    render(EventTimeline, {
+      props: {
+        events: [makeReviewThreadEvent()],
+        provider: "github",
+        platformHost: "github.com",
+        repoOwner: "acme",
+        repoName: "widget",
+        repoPath: "acme/widget",
+        number: 7,
+        canReplyToThreads: true,
+      },
+      context: new Map([
+        [STORES_KEY, {
+          detail: {
+            replyToDiscussion: vi.fn().mockResolvedValue(true),
+            getDetailError: vi.fn(),
+          },
+          diff: makeDiffStore(),
+          diffReviewDraft: {
+            setRouteContext: vi.fn(),
+            isSubmitting: () => false,
+          },
+        }],
+      ]),
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Reply" }));
+
+    expect(screen.getByRole("button", { name: /cancel/i })).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: "Reply" })).toHaveLength(2);
+  });
+
   it("marks review thread context outdated when the line is absent from the loaded diff", () => {
     const diff = makeDiffStore({
       getDiff: () => ({

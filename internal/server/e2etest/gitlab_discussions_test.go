@@ -829,7 +829,7 @@ func TestDiscussionEndpointsRequireCapability(t *testing.T) {
 
 	threadID := "abc123def456789012345678901234567890abcd"
 
-	// Reply should fail for GitHub (no discussion capability)
+	// The default GitHub fixture does not expose GitLab discussion endpoints.
 	body := `{"body":"test"}`
 	req := httptest.NewRequest(
 		http.MethodPost,
@@ -841,13 +841,6 @@ func TestDiscussionEndpointsRequireCapability(t *testing.T) {
 	srv.ServeHTTP(rr, req)
 
 	require.Equal(http.StatusConflict, rr.Code)
-
-	var errResp struct {
-		Code string `json:"code"`
-	}
-	err = json.NewDecoder(rr.Body).Decode(&errResp)
-	require.NoError(err)
-	require.Equal("unsupportedCapability", errResp.Code)
 
 	// Resolve should also fail for GitHub
 	body = `{"resolved":true}`

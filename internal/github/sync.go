@@ -624,6 +624,7 @@ func (p gitHubClientProvider) Capabilities() platform.Capabilities {
 		ReadyForReview:        true,
 		IssueMutation:         true,
 		LabelMutation:         labels,
+		ThreadReply:           true,
 		ReviewDraftMutation:   true,
 		ReadReviewThreads:     true,
 		NativeMultilineRanges: true,
@@ -979,6 +980,29 @@ func (p gitHubClientProvider) EditMergeRequestComment(
 		return platform.MergeRequestEvent{}, fmt.Errorf("provider returned no comment")
 	}
 	return platformgithub.NormalizeCommentEvent(ref, number, comment), nil
+}
+
+func (p gitHubClientProvider) ReplyToThread(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	threadID string,
+	body string,
+) (platform.MergeRequestEvent, error) {
+	commentID, err := strconv.ParseInt(strings.TrimSpace(threadID), 10, 64)
+	if err != nil || commentID <= 0 {
+		return platform.MergeRequestEvent{}, fmt.Errorf("invalid review comment ID")
+	}
+	comment, err := p.client.CreatePullRequestReviewCommentReply(
+		ctx, ref.Owner, ref.Name, number, body, commentID,
+	)
+	if err != nil {
+		return platform.MergeRequestEvent{}, err
+	}
+	if comment == nil {
+		return platform.MergeRequestEvent{}, fmt.Errorf("provider returned no review comment")
+	}
+	return platformgithub.NormalizeReviewCommentEvent(ref, number, comment), nil
 }
 
 func (p gitHubClientProvider) CreateIssueComment(

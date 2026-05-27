@@ -133,6 +133,27 @@ func NormalizeReviewEvent(
 	return event
 }
 
+func NormalizeReviewCommentEvent(
+	repo platform.RepoRef,
+	mrNumber int,
+	c *gh.PullRequestComment,
+) platform.MergeRequestEvent {
+	event := platform.MergeRequestEvent{
+		Repo:               repo,
+		PlatformID:         c.GetID(),
+		PlatformExternalID: fmt.Sprintf("%d", c.GetID()),
+		MergeRequestNumber: mrNumber,
+		EventType:          "review_comment",
+		DedupeKey:          fmt.Sprintf("review-comment-%d", c.GetID()),
+		Author:             loginOrEmpty(c.GetUser()),
+		Body:               c.GetBody(),
+	}
+	if c.CreatedAt != nil {
+		event.CreatedAt = c.CreatedAt.Time
+	}
+	return event
+}
+
 func NormalizeCommitEvent(
 	repo platform.RepoRef,
 	mrNumber int,

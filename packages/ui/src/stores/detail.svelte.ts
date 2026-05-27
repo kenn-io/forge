@@ -1199,6 +1199,44 @@ export function createDetailStore(
     return true;
   }
 
+  async function replyToDiscussion(
+    owner: string,
+    name: string,
+    number: number,
+    discussionID: string,
+    body: string,
+  ): Promise<boolean> {
+    const ref = currentDetailRef(owner, name, number);
+    storeError = null;
+    try {
+      const { error: requestError } = await apiClient.POST(
+        providerItemPath("pulls", ref, "/discussions/{discussion_id}/reply"),
+        {
+          params: {
+            path: {
+              ...providerRouteParams(ref),
+              number,
+              discussion_id: discussionID,
+            },
+          },
+          body: { body },
+        },
+      );
+      if (requestError) {
+        throw new Error(
+          requestError.detail ??
+            requestError.title ??
+            "failed to reply to thread",
+        );
+      }
+    } catch (err) {
+      storeError = err instanceof Error ? err.message : String(err);
+      return false;
+    }
+    await refreshDetail(owner, name, number, syncGeneration, currentDetailRef(owner, name, number));
+    return true;
+  }
+
   return {
     getDetail,
     isDetailLoading,
@@ -1221,6 +1259,7 @@ export function createDetailStore(
     toggleDetailPRStar,
     submitComment,
     editComment,
+    replyToDiscussion,
   };
 }
 

@@ -110,6 +110,7 @@ type Client interface {
 	ApproveWorkflowRun(ctx context.Context, owner, repo string, runID int64) error
 	CreateIssueComment(ctx context.Context, owner, repo string, number int, body string) (*gh.IssueComment, error)
 	EditIssueComment(ctx context.Context, owner, repo string, commentID int64, body string) (*gh.IssueComment, error)
+	CreatePullRequestReviewCommentReply(ctx context.Context, owner, repo string, number int, body string, commentID int64) (*gh.PullRequestComment, error)
 	GetRepository(ctx context.Context, owner, repo string) (*gh.Repository, error)
 	CreateReview(ctx context.Context, owner, repo string, number int, event string, body string) (*gh.PullRequestReview, error)
 	CreateReviewWithComments(
@@ -1616,6 +1617,22 @@ func (c *liveClient) EditIssueComment(
 	if err != nil {
 		return nil, fmt.Errorf(
 			"editing comment %d on %s/%s: %w", commentID, owner, repo, err,
+		)
+	}
+	return comment, nil
+}
+
+func (c *liveClient) CreatePullRequestReviewCommentReply(
+	ctx context.Context, owner, repo string, number int, body string, commentID int64,
+) (*gh.PullRequestComment, error) {
+	comment, resp, err := c.gh.PullRequests.CreateCommentInReplyTo(
+		ctx, owner, repo, number, body, commentID,
+	)
+	c.trackRate(resp)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"replying to review comment %d on %s/%s#%d: %w",
+			commentID, owner, repo, number, err,
 		)
 	}
 	return comment, nil

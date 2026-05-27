@@ -1609,9 +1609,6 @@ func (s *Server) replyToDiscussion(ctx context.Context, input *replyToDiscussion
 	if strings.TrimSpace(input.Body.Body) == "" {
 		return nil, problemValidation("body.body", "reply body must not be empty")
 	}
-	if err := validateDiscussionID(input.DiscussionID); err != nil {
-		return nil, err
-	}
 
 	repo, err := s.requireRepoRouteCapability(
 		ctx,
@@ -1649,8 +1646,34 @@ func (s *Server) replyToDiscussion(ctx context.Context, input *replyToDiscussion
 		return nil, problemInternal("provider does not implement ThreadReplier")
 	}
 
+	providerDiscussionID := input.DiscussionID
+	localThreadID := ""
+	switch repoProviderKind(*repo) {
+	case platform.KindGitHub:
+		threadID, err := parseReviewLocalID(input.DiscussionID, "review thread")
+		if err != nil {
+			return nil, err
+		}
+		thread, err := s.db.GetMRReviewThread(ctx, mr.ID, threadID)
+		if err != nil {
+			return nil, problemInternal("get review thread failed")
+		}
+		if thread == nil {
+			return nil, problemNotFound(CodeNotFound, "review thread not found", nil)
+		}
+		if strings.TrimSpace(thread.ProviderCommentID) == "" {
+			return nil, problemInternal("review thread is missing provider comment id")
+		}
+		providerDiscussionID = thread.ProviderCommentID
+		localThreadID = input.DiscussionID
+	default:
+		if err := validateDiscussionID(input.DiscussionID); err != nil {
+			return nil, err
+		}
+	}
+
 	platformEvent, err := replier.ReplyToThread(
-		ctx, platformRepoRefFromDB(*repo), input.Number, input.DiscussionID, input.Body.Body,
+		ctx, platformRepoRefFromDB(*repo), input.Number, providerDiscussionID, input.Body.Body,
 	)
 	if err != nil {
 		return nil, providerCallProblemWithDetail(
@@ -1658,6 +1681,9 @@ func (s *Server) replyToDiscussion(ctx context.Context, input *replyToDiscussion
 			string(repoProviderKind(*repo)), repoProviderHost(*repo),
 			"reply to discussion on provider failed",
 		)
+	}
+	if localThreadID != "" {
+		platformEvent.ThreadID = localThreadID
 	}
 
 	event := platform.DBMREvent(mr.ID, platformEvent)

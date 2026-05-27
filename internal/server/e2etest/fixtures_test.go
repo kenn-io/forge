@@ -203,6 +203,11 @@ func (m *mockGH) CreateIssueComment(context.Context, string, string, int, string
 func (m *mockGH) EditIssueComment(context.Context, string, string, int64, string) (*gh.IssueComment, error) {
 	return nil, nil
 }
+func (m *mockGH) CreatePullRequestReviewCommentReply(
+	context.Context, string, string, int, string, int64,
+) (*gh.PullRequestComment, error) {
+	return nil, nil
+}
 func (m *mockGH) GetRepository(
 	ctx context.Context, owner, repo string,
 ) (*gh.Repository, error) {

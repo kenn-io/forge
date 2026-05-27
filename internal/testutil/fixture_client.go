@@ -701,6 +701,28 @@ func (c *FixtureClient) EditIssueComment(
 	return nil, fmt.Errorf("%w: comment %d", errFixtureNotFound, commentID)
 }
 
+func (c *FixtureClient) CreatePullRequestReviewCommentReply(
+	_ context.Context, owner, repo string, number int, body string, commentID int64,
+) (*gh.PullRequestComment, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	login := "fixture-bot"
+	now := time.Now().UTC()
+	id := c.nextID
+	c.nextID++
+	htmlURL := fmt.Sprintf("https://github.com/%s/%s/pull/%d#discussion_r%d", owner, repo, number, id)
+	return &gh.PullRequestComment{
+		ID:        &id,
+		Body:      &body,
+		CreatedAt: &gh.Timestamp{Time: now},
+		UpdatedAt: &gh.Timestamp{Time: now},
+		User:      &gh.User{Login: &login},
+		HTMLURL:   &htmlURL,
+		InReplyTo: &commentID,
+	}, nil
+}
+
 // CreateReview records an approving review so full-stack e2e tests can verify
 // review mutations through the HTTP API and persisted timeline state.
 func (c *FixtureClient) CreateReview(

@@ -120,6 +120,11 @@ func (m *mockClient) CreateIssueComment(context.Context, string, string, int, st
 func (m *mockClient) EditIssueComment(context.Context, string, string, int64, string) (*gh.IssueComment, error) {
 	return nil, nil
 }
+func (m *mockClient) CreatePullRequestReviewCommentReply(
+	context.Context, string, string, int, string, int64,
+) (*gh.PullRequestComment, error) {
+	return nil, nil
+}
 func (m *mockClient) CreateReview(context.Context, string, string, int, string, string) (*gh.PullRequestReview, error) {
 	return nil, nil
 }

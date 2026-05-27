@@ -3102,7 +3102,9 @@ func (d *DB) GetIssue(
 	if err != nil {
 		return nil, fmt.Errorf("get issue: %w", err)
 	}
-	// Parse assignees from JSON
+	// Parse assignees from JSON. Best-effort: malformed JSON yields an empty
+	// Assignees slice rather than failing the whole read. Writes go through
+	// json.Marshal in UpsertIssue, so corruption is unexpected in practice.
 	if issue.AssigneesJSON != "" && issue.AssigneesJSON != "[]" {
 		_ = json.Unmarshal([]byte(issue.AssigneesJSON), &issue.Assignees)
 	}
@@ -3142,7 +3144,9 @@ func (d *DB) GetIssueByRepoIDAndNumber(ctx context.Context, repoID int64, number
 	if err != nil {
 		return nil, fmt.Errorf("get issue by repo id: %w", err)
 	}
-	// Parse assignees from JSON
+	// Parse assignees from JSON. Best-effort: malformed JSON yields an empty
+	// Assignees slice rather than failing the whole read. Writes go through
+	// json.Marshal in UpsertIssue, so corruption is unexpected in practice.
 	if issue.AssigneesJSON != "" && issue.AssigneesJSON != "[]" {
 		_ = json.Unmarshal([]byte(issue.AssigneesJSON), &issue.Assignees)
 	}
@@ -3247,7 +3251,9 @@ func (d *DB) ListIssues(
 		); err != nil {
 			return nil, fmt.Errorf("scan issue: %w", err)
 		}
-		// Parse assignees from JSON
+		// Parse assignees from JSON. Best-effort: malformed JSON yields an empty
+		// Assignees slice rather than failing the whole read. Writes go through
+		// json.Marshal in UpsertIssue, so corruption is unexpected in practice.
 		if issue.AssigneesJSON != "" && issue.AssigneesJSON != "[]" {
 			_ = json.Unmarshal([]byte(issue.AssigneesJSON), &issue.Assignees)
 		}

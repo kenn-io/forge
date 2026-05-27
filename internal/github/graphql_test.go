@@ -751,6 +751,31 @@ func TestAdaptIssueNilFields(t *testing.T) {
 	assert.Empty(issue.Labels)
 }
 
+// TestAdaptIssueAssignees verifies the GraphQL bulk path populates
+// gh.Issue.Assignees from gqlIssue.Assignees.Nodes. Without this, large
+// repos using bulk GraphQL sync would persist assignees as [] and overwrite
+// any values set by a prior REST detail fetch (roborev finding on 2b9ca4d).
+func TestAdaptIssueAssignees(t *testing.T) {
+	assert := Assert.New(t)
+
+	gql := gqlIssue{
+		Number:    2,
+		Title:     "Assigned issue",
+		State:     "OPEN",
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	gql.Assignees.Nodes = []gqlAssigneeID{
+		{Login: "alice"},
+		{Login: "bob"},
+	}
+
+	issue := adaptIssue(&gql)
+	require.Len(t, issue.Assignees, 2)
+	assert.Equal("alice", issue.Assignees[0].GetLogin())
+	assert.Equal("bob", issue.Assignees[1].GetLogin())
+}
+
 func TestConvertGQLIssue(t *testing.T) {
 	assert := Assert.New(t)
 

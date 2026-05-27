@@ -3033,7 +3033,7 @@ func (d *DB) UpsertIssue(ctx context.Context, issue *Issue) (int64, error) {
 		    (repo_id, platform_id, platform_external_id, number, url, title, author, state,
 		     body, comment_count, labels_json, assignees_json, detail_fetched_at,
 		     created_at, updated_at, last_activity_at, closed_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(NULLIF(?, ''), '[]'), ?, ?, ?, ?, ?)
 		ON CONFLICT(repo_id, number) DO UPDATE SET
 		    platform_id       = excluded.platform_id,
 		    platform_external_id = COALESCE(NULLIF(excluded.platform_external_id, ''), middleman_issues.platform_external_id),
@@ -3044,7 +3044,7 @@ func (d *DB) UpsertIssue(ctx context.Context, issue *Issue) (int64, error) {
 		    body              = excluded.body,
 		    comment_count     = excluded.comment_count,
 		    labels_json       = excluded.labels_json,
-		    assignees_json    = excluded.assignees_json,
+		    assignees_json    = COALESCE(NULLIF(excluded.assignees_json, ''), '[]'),
 		    detail_fetched_at = COALESCE(middleman_issues.detail_fetched_at, excluded.detail_fetched_at),
 		    updated_at        = excluded.updated_at,
 		    last_activity_at  = excluded.last_activity_at,
@@ -3207,8 +3207,11 @@ func (d *DB) ListIssues(
 		args = append(args, condArgs...)
 	}
 	if opts.Assignee != "" {
-		// Query JSON array structurally to avoid LIKE wildcard injection
-		conds = append(conds, `EXISTS (SELECT 1 FROM json_each(i.assignees_json) WHERE value = ?)`)
+		// Query JSON array structurally to avoid LIKE wildcard injection.
+		// COALESCE/NULLIF guards against legacy rows where assignees_json
+		// may be an empty string, which would otherwise make json_each
+		// raise "malformed JSON" and fail the whole query.
+		conds = append(conds, `EXISTS (SELECT 1 FROM json_each(COALESCE(NULLIF(i.assignees_json, ''), '[]')) WHERE value = ?)`)
 		args = append(args, opts.Assignee)
 	}
 

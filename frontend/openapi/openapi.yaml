@@ -5936,6 +5936,11 @@ paths:
             type: string
         - explode: false
           in: query
+          name: assignee
+          schema:
+            type: string
+        - explode: false
+          in: query
           name: limit
           schema:
             format: int64

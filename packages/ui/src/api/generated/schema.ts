@@ -5380,6 +5380,7 @@ export interface operations {
                 state?: string;
                 starred?: boolean;
                 q?: string;
+                assignee?: string;
                 limit?: number;
                 offset?: number;
             };

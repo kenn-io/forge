@@ -299,6 +299,7 @@ describe("DiffFile", () => {
   it("renders published review threads under their matching diff line", () => {
     renderDiffFile(makeFile(), {
       reviewEnabled: true,
+      diffHeadSHA: "diff-head",
       reviewThreads: [makeReviewThread()],
     });
 
@@ -306,6 +307,23 @@ describe("DiffFile", () => {
     const comment = document.querySelector("[data-review-thread-id='thread-1']");
     const previous = comment?.previousElementSibling;
     expect(previous?.querySelector("[aria-label='Comment on new line 2']")).toBeTruthy();
+  });
+
+  it("does not render stale-head review threads under a matching current line", () => {
+    renderDiffFile(makeFile(), {
+      reviewEnabled: true,
+      diffHeadSHA: "current-head",
+      reviewThreads: [makeReviewThread({
+        diff_head_sha: "stale-head",
+      })],
+    });
+
+    expect(screen.getByText("Published review note")).toBeTruthy();
+    expect(screen.getByText("File")).toBeTruthy();
+    const comment = document.querySelector("[data-review-thread-id='thread-1']");
+    expect(comment?.parentElement?.classList.contains("file-content")).toBe(true);
+    const previous = comment?.previousElementSibling;
+    expect(previous?.querySelector("[aria-label='Comment on new line 2']")).toBeFalsy();
   });
 
   it("does not match added-file threads only because old paths are empty", () => {

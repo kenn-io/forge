@@ -269,10 +269,15 @@
       (!!thread.old_path && !!file.old_path && thread.old_path === file.old_path);
   }
 
+  function threadMatchesCurrentDiff(thread: ReviewThread): boolean {
+    return !thread.diff_head_sha || !diffHeadSHA || thread.diff_head_sha === diffHeadSHA;
+  }
+
   function lineMatchesReviewThread(
     line: DiffFileType["hunks"][number]["lines"][number],
     thread: ReviewThread,
   ): boolean {
+    if (!threadMatchesCurrentDiff(thread)) return false;
     if (thread.line_type === "file") return false;
     const lineNumber = reviewThreadTargetSide(thread) === "left"
       ? line.old_num

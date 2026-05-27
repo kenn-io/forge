@@ -3193,6 +3193,11 @@ func (d *DB) ListIssues(
 		conds = append(conds, cond)
 		args = append(args, condArgs...)
 	}
+	if opts.Assignee != "" {
+		// JSON array contains the username (exact match within array)
+		conds = append(conds, `i.assignees_json LIKE '%"' || ? || '"%'`)
+		args = append(args, opts.Assignee)
+	}
 
 	where := ""
 	if len(conds) > 0 {

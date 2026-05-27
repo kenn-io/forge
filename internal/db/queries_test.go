@@ -4663,3 +4663,74 @@ func TestUpsertIssue_StoresAssignees(t *testing.T) {
 	require.NoError(err)
 	assert.JSONEq(`["alice","bob"]`, stored)
 }
+
+func TestListIssues_FilterByAssignee(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := baseTime()
+	repoID := insertTestRepo(t, d, "owner", "repo")
+
+	// Issue assigned to alice
+	_, err := d.UpsertIssue(ctx, &Issue{
+		RepoID:         repoID,
+		PlatformID:     1,
+		Number:         1,
+		URL:            "https://github.com/owner/repo/issues/1",
+		Title:          "Issue 1",
+		Author:         "author",
+		State:          "open",
+		AssigneesJSON:  `["alice"]`,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		LastActivityAt: now,
+	})
+	require.NoError(err)
+
+	// Issue assigned to bob
+	_, err = d.UpsertIssue(ctx, &Issue{
+		RepoID:         repoID,
+		PlatformID:     2,
+		Number:         2,
+		URL:            "https://github.com/owner/repo/issues/2",
+		Title:          "Issue 2",
+		Author:         "author",
+		State:          "open",
+		AssigneesJSON:  `["bob"]`,
+		CreatedAt:      now,
+		UpdatedAt:      now.Add(time.Minute),
+		LastActivityAt: now.Add(time.Minute),
+	})
+	require.NoError(err)
+
+	// Issue assigned to both
+	_, err = d.UpsertIssue(ctx, &Issue{
+		RepoID:         repoID,
+		PlatformID:     3,
+		Number:         3,
+		URL:            "https://github.com/owner/repo/issues/3",
+		Title:          "Issue 3",
+		Author:         "author",
+		State:          "open",
+		AssigneesJSON:  `["alice","bob"]`,
+		CreatedAt:      now,
+		UpdatedAt:      now.Add(2 * time.Minute),
+		LastActivityAt: now.Add(2 * time.Minute),
+	})
+	require.NoError(err)
+
+	// Filter by alice
+	issues, err := d.ListIssues(ctx, ListIssuesOpts{Assignee: "alice", State: "all"})
+	require.NoError(err)
+	assert.Len(issues, 2)
+	numbers := []int{issues[0].Number, issues[1].Number}
+	assert.ElementsMatch([]int{1, 3}, numbers)
+
+	// Filter by bob
+	issues, err = d.ListIssues(ctx, ListIssuesOpts{Assignee: "bob", State: "all"})
+	require.NoError(err)
+	assert.Len(issues, 2)
+	numbers = []int{issues[0].Number, issues[1].Number}
+	assert.ElementsMatch([]int{2, 3}, numbers)
+}

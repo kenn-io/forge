@@ -417,6 +417,7 @@ type ListIssuesOpts struct {
 	State        string
 	Starred      bool
 	Search       string
+	Assignee     string
 	Limit        int
 	Offset       int
 }

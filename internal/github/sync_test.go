@@ -1043,6 +1043,46 @@ func TestGitHubProviderListMergeRequestReviewThreadsMapsGraphQLThreads(t *testin
 	assert.Equal("head-sha", thread.Range.CommitSHA)
 }
 
+func TestGitHubProviderListMergeRequestReviewThreadsMapsFileSubject(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	createdAt := time.Date(2026, 5, 27, 16, 1, 31, 0, time.UTC)
+	mock := &mockClient{
+		reviewThreads: []PullRequestReviewThread{{
+			NodeID:       "PRRT_file",
+			Path:         ".golangci.yml",
+			Side:         "RIGHT",
+			Line:         1,
+			OriginalLine: 1,
+			Comments: []PullRequestReviewThreadComment{{
+				NodeID:      "PRRC_file",
+				DatabaseID:  101,
+				SubjectType: "FILE",
+				Body:        "file note",
+				AuthorLogin: "reviewer",
+				CommitID:    "head-sha",
+				CreatedAt:   createdAt,
+				UpdatedAt:   createdAt,
+			}},
+		}},
+	}
+	provider := gitHubClientProvider{client: mock, host: "github.com"}
+
+	threads, err := provider.ListMergeRequestReviewThreads(t.Context(), platform.RepoRef{
+		Owner: "acme",
+		Name:  "widget",
+	}, 7)
+
+	require.NoError(err)
+	require.Len(threads, 1)
+	thread := threads[0]
+	assert.Equal(".golangci.yml", thread.Range.Path)
+	assert.Equal(1, thread.Range.Line)
+	assert.Equal("file", thread.Range.LineType)
+	assert.Nil(thread.Range.NewLine)
+	assert.Nil(thread.Range.OldLine)
+}
+
 func TestGitHubProviderPublishDiffReviewDraftHandlesMissingSubmittedAt(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

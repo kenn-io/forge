@@ -64,6 +64,7 @@ type PullRequestReviewThreadComment struct {
 	NodeID           string
 	DatabaseID       int64
 	ReviewDatabaseID int64
+	SubjectType      string
 	Body             string
 	AuthorLogin      string
 	Path             string
@@ -529,6 +530,7 @@ query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
               path
               line
               originalLine
+              subjectType
               diffHunk
               url
               author { login }
@@ -947,6 +949,7 @@ func (c *liveClient) ListPullRequestReviewThreads(
 		Path         string `json:"path"`
 		Line         int    `json:"line"`
 		OriginalLine int    `json:"originalLine"`
+		SubjectType  string `json:"subjectType"`
 		DiffHunk     string `json:"diffHunk"`
 		URL          string `json:"url"`
 		Author       *struct {
@@ -1084,6 +1087,7 @@ func (c *liveClient) ListPullRequestReviewThreads(
 				next := PullRequestReviewThreadComment{
 					NodeID:       comment.NodeID,
 					DatabaseID:   comment.DatabaseID,
+					SubjectType:  comment.SubjectType,
 					Body:         comment.Body,
 					Path:         comment.Path,
 					Line:         comment.Line,

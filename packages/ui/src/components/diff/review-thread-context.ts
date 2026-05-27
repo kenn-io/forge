@@ -1,5 +1,5 @@
 import type { components } from "../../api/generated/schema.js";
-import type { DiffLine, DiffResult } from "../../api/types.js";
+import type { DiffLine, DiffResult, PREvent } from "../../api/types.js";
 
 export type ReviewThread = components["schemas"]["DiffReviewThreadResponse"];
 
@@ -18,6 +18,21 @@ export type ReviewThreadContext = {
   lines: ReviewThreadContextLine[];
   outdated: boolean;
 };
+
+export function reviewThreadsFromEvents(events: PREvent[] | null | undefined): ReviewThread[] {
+  const threads: ReviewThread[] = [];
+  const seen = new Set<string>();
+
+  for (const event of events ?? []) {
+    if (!("diff_thread" in event)) continue;
+    const thread = event.diff_thread as ReviewThread | undefined;
+    if (!thread || seen.has(thread.id)) continue;
+    seen.add(thread.id);
+    threads.push(thread);
+  }
+
+  return threads;
+}
 
 export function reviewThreadTargetSide(thread: ReviewThread): "left" | "right" {
   return thread.side.toLowerCase() === "left" ? "left" : "right";

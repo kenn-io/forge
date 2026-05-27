@@ -1228,7 +1228,9 @@ func githubReviewLineRange(
 	lineType := "add"
 	var oldLine *int
 	var newLine *int
-	if side == "left" {
+	if strings.EqualFold(comment.SubjectType, "FILE") {
+		lineType = "file"
+	} else if side == "left" {
 		lineType = "delete"
 		oldLine = &line
 	} else {

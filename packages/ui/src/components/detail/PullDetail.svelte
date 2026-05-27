@@ -51,6 +51,7 @@
   import { nextCatalogLabelNames } from "./labelSelection.js";
   import { floatingPopoverStyle } from "../shared/floatingPosition.js";
   import DiffFilesLayout from "../diff/DiffFilesLayout.svelte";
+  import { reviewThreadsFromEvents } from "../diff/review-thread-context.js";
   import {
     reviewThreadTargetLine,
     reviewThreadTargetSide,
@@ -1215,6 +1216,7 @@
           {number}
           diffHeadSHA={detail.diff_head_sha}
           {capabilities}
+          reviewThreads={reviewThreadsFromEvents(detail.events)}
         />
       {:else}
         <div class="pull-detail">

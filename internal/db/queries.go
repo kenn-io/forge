@@ -3030,9 +3030,9 @@ func (d *DB) UpsertIssue(ctx context.Context, issue *Issue) (int64, error) {
 	_, err := d.rw.ExecContext(ctx, `
 		INSERT INTO middleman_issues
 		    (repo_id, platform_id, platform_external_id, number, url, title, author, state,
-		     body, comment_count, labels_json, detail_fetched_at,
+		     body, comment_count, labels_json, assignees_json, detail_fetched_at,
 		     created_at, updated_at, last_activity_at, closed_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(repo_id, number) DO UPDATE SET
 		    platform_id       = excluded.platform_id,
 		    platform_external_id = COALESCE(NULLIF(excluded.platform_external_id, ''), middleman_issues.platform_external_id),
@@ -3043,6 +3043,7 @@ func (d *DB) UpsertIssue(ctx context.Context, issue *Issue) (int64, error) {
 		    body              = excluded.body,
 		    comment_count     = excluded.comment_count,
 		    labels_json       = excluded.labels_json,
+		    assignees_json    = excluded.assignees_json,
 		    detail_fetched_at = COALESCE(middleman_issues.detail_fetched_at, excluded.detail_fetched_at),
 		    updated_at        = excluded.updated_at,
 		    last_activity_at  = excluded.last_activity_at,
@@ -3050,7 +3051,7 @@ func (d *DB) UpsertIssue(ctx context.Context, issue *Issue) (int64, error) {
 		WHERE excluded.updated_at >= middleman_issues.updated_at`,
 		issue.RepoID, issue.PlatformID, issue.PlatformExternalID, issue.Number, issue.URL,
 		issue.Title, issue.Author, issue.State,
-		issue.Body, issue.CommentCount, issue.LabelsJSON,
+		issue.Body, issue.CommentCount, issue.LabelsJSON, issue.AssigneesJSON,
 		issue.DetailFetchedAt,
 		issue.CreatedAt, issue.UpdatedAt, issue.LastActivityAt, issue.ClosedAt,
 	)

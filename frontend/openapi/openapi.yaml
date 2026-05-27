@@ -1089,6 +1089,12 @@ components:
         UpdatedAt:
           format: date-time
           type: string
+        assignees:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
         labels:
           items:
             $ref: "#/components/schemas/Label"
@@ -1264,6 +1270,12 @@ components:
         UpdatedAt:
           format: date-time
           type: string
+        assignees:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
         detail_fetched_at:
           type: string
         detail_loaded:

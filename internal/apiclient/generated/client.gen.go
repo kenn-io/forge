@@ -785,6 +785,7 @@ type Issue struct {
 	Title              string     `json:"Title"`
 	URL                string     `json:"URL"`
 	UpdatedAt          time.Time  `json:"UpdatedAt"`
+	Assignees          *[]string  `json:"assignees,omitempty"`
 	Labels             *[]Label   `json:"labels,omitempty"`
 }
 
@@ -841,6 +842,7 @@ type IssueResponse struct {
 	Title              string          `json:"Title"`
 	URL                string          `json:"URL"`
 	UpdatedAt          time.Time       `json:"UpdatedAt"`
+	Assignees          *[]string       `json:"assignees,omitempty"`
 	DetailFetchedAt    *string         `json:"detail_fetched_at,omitempty"`
 	DetailLoaded       bool            `json:"detail_loaded"`
 	Labels             *[]Label        `json:"labels,omitempty"`

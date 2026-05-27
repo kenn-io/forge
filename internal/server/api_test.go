@@ -15375,6 +15375,7 @@ func TestAPIActivityStartupRepairsLegacyTimestampStorage(t *testing.T) {
 			ALTER TABLE middleman_mr_events DROP COLUMN resolvable;
 			ALTER TABLE middleman_mr_events DROP COLUMN resolved;
 			ALTER TABLE middleman_issue_events DROP COLUMN thread_id;
+			ALTER TABLE middleman_issues DROP COLUMN assignees_json;
 		`)
 	require.NoError(err)
 	_, err = raw.ExecContext(ctx,

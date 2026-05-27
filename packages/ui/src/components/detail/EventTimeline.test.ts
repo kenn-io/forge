@@ -673,7 +673,7 @@ describe("EventTimeline", () => {
     const jumpToReviewThread = vi.fn();
     const diff = makeDiffStore();
 
-    render(EventTimeline, {
+    const { container } = render(EventTimeline, {
       props: {
         events: [makeReviewThreadEvent()],
         provider: "github",
@@ -697,6 +697,10 @@ describe("EventTimeline", () => {
 
     expect(screen.getByText("src/review.ts:10-11")).toBeTruthy();
     expect(screen.getByText("client.publishThreads();")).toBeTruthy();
+    expect(container.querySelector(".event-body-wrap--with-thread .event-actions")).toBeTruthy();
+
+    const threadedActions = findCompiledStyleRule(".event-body-wrap--with-thread");
+    expect(threadedActions.getPropertyValue("position")).toBe("static");
 
     await fireEvent.click(screen.getByRole("button", { name: "Jump to diff" }));
 

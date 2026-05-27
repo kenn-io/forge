@@ -501,7 +501,13 @@
   reviewThread: TimelineReviewThread | undefined = undefined,
 )}
   {#if event.Body}
-    <div class={nested ? "event-body-wrap event-body-wrap--nested" : "event-body-wrap"}>
+    <div
+      class={[
+        "event-body-wrap",
+        nested && "event-body-wrap--nested",
+        !nested && reviewThread && "event-body-wrap--with-thread",
+      ]}
+    >
       {#if !nested && reviewThread}
         <DiffReviewThreadSnippet
           thread={reviewThread.thread}
@@ -1145,6 +1151,13 @@
     display: flex;
     gap: 0.15rem;
     z-index: 1;
+  }
+
+  .event-body-wrap--with-thread .event-actions {
+    position: static;
+    justify-content: flex-end;
+    margin-top: calc(var(--focus-detail-space-xs, 0.46rem) * -1);
+    margin-bottom: var(--focus-detail-space-xs, 0.46rem);
   }
 
   .event-action-btn {

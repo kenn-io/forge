@@ -414,6 +414,7 @@ func (s *Server) ingestDiffReviewThreads(
 	dbThreads := make([]db.MRReviewThread, 0, len(threads))
 	events := make([]db.MREvent, 0, len(threads))
 	providerThreadIDs := make([]string, 0, len(threads))
+	reviewCommentDedupeKeys := make([]string, 0, len(threads))
 	seenProviderThreadIDs := make(map[string]struct{}, len(threads))
 	for _, thread := range threads {
 		providerThreadID := thread.ProviderThreadID
@@ -423,31 +424,33 @@ func (s *Server) ingestDiffReviewThreads(
 		if providerThreadID == "" {
 			continue
 		}
-		if _, ok := seenProviderThreadIDs[providerThreadID]; ok {
-			continue
+		if _, ok := seenProviderThreadIDs[providerThreadID]; !ok {
+			seenProviderThreadIDs[providerThreadID] = struct{}{}
+			providerThreadIDs = append(providerThreadIDs, providerThreadID)
+			dbThread := db.MRReviewThread{
+				ProviderThreadID:  providerThreadID,
+				ProviderReviewID:  thread.ProviderReviewID,
+				ProviderCommentID: thread.ProviderCommentID,
+				Body:              thread.Body,
+				AuthorLogin:       thread.AuthorLogin,
+				Range:             dbReviewLineRangeFromPlatform(thread.Range),
+				Resolved:          thread.Resolved,
+				CreatedAt:         thread.CreatedAt,
+				UpdatedAt:         thread.UpdatedAt,
+				ResolvedAt:        thread.ResolvedAt,
+				MetadataJSON:      thread.MetadataJSON,
+			}
+			dbThreads = append(dbThreads, dbThread)
 		}
-		seenProviderThreadIDs[providerThreadID] = struct{}{}
-		providerThreadIDs = append(providerThreadIDs, providerThreadID)
-		dbThread := db.MRReviewThread{
-			ProviderThreadID:  providerThreadID,
-			ProviderReviewID:  thread.ProviderReviewID,
-			ProviderCommentID: thread.ProviderCommentID,
-			Body:              thread.Body,
-			AuthorLogin:       thread.AuthorLogin,
-			Range:             dbReviewLineRangeFromPlatform(thread.Range),
-			Resolved:          thread.Resolved,
-			CreatedAt:         thread.CreatedAt,
-			UpdatedAt:         thread.UpdatedAt,
-			ResolvedAt:        thread.ResolvedAt,
-			MetadataJSON:      thread.MetadataJSON,
-		}
-		dbThreads = append(dbThreads, dbThread)
-		eventExternalID := providerThreadID
+		eventExternalID := firstReviewThreadNonEmpty(thread.ProviderCommentID, providerThreadID)
 		if eventExternalID != "" {
 			createdAt := thread.CreatedAt
 			if createdAt.IsZero() {
 				createdAt = s.now().UTC()
 			}
+			dedupeKey := "review_comment:" + eventExternalID
+			reviewCommentDedupeKeys = append(reviewCommentDedupeKeys, dedupeKey)
+			threadID := providerThreadID
 			events = append(events, db.MREvent{
 				MergeRequestID:     mr.ID,
 				PlatformExternalID: eventExternalID,
@@ -455,11 +458,12 @@ func (s *Server) ingestDiffReviewThreads(
 				Author:             thread.AuthorLogin,
 				Body:               thread.Body,
 				CreatedAt:          createdAt,
-				DedupeKey:          "review_comment:" + eventExternalID,
+				DedupeKey:          dedupeKey,
+				ThreadID:           &threadID,
 			})
 		}
 	}
-	if err := s.db.DeleteMissingMRReviewThreads(ctx, mr.ID, providerThreadIDs); err != nil {
+	if err := s.db.DeleteMissingMRReviewThreads(ctx, mr.ID, providerThreadIDs, reviewCommentDedupeKeys); err != nil {
 		return huma.Error500InternalServerError("delete missing review threads failed")
 	}
 	if err := s.db.UpsertMRReviewThreads(ctx, mr.ID, dbThreads); err != nil {
@@ -540,6 +544,15 @@ func diffReviewThreadResponseFromDB(thread db.MRReviewThread) diffReviewThreadRe
 	}
 }
 
+func firstReviewThreadNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
 func mergeRequestEventResponseFromDB(event db.MREvent) mergeRequestEventResponse {
 	return mergeRequestEventResponse{
 		ID:                 event.ID,
@@ -581,9 +594,13 @@ func (s *Server) mergeRequestEventResponses(
 	out := make([]mergeRequestEventResponse, 0, len(events))
 	for _, event := range events {
 		resp := mergeRequestEventResponseFromDB(event)
-		if event.EventType == "review_comment" && event.PlatformExternalID != "" {
-			if thread, ok := threadsByProviderID[event.PlatformExternalID]; ok {
+		if event.EventType == "review_comment" {
+			if thread, ok := threadsByProviderID[event.PlatformExternalID]; event.PlatformExternalID != "" && ok {
 				resp.DiffThread = &thread
+			} else if event.ThreadID != nil {
+				if thread, ok := threadsByProviderID[*event.ThreadID]; ok {
+					resp.DiffThread = &thread
+				}
 			}
 		}
 		out = append(out, resp)

@@ -1015,6 +1015,16 @@ func TestGitHubProviderListMergeRequestReviewThreadsMapsGraphQLThreads(t *testin
 				OriginalCommitID: "original-sha",
 				CreatedAt:        createdAt,
 				UpdatedAt:        updatedAt,
+			}, {
+				NodeID:           "PRRC_2",
+				DatabaseID:       102,
+				ReviewDatabaseID: 201,
+				Body:             "reply note",
+				AuthorLogin:      "maintainer",
+				CommitID:         "head-sha",
+				OriginalCommitID: "original-sha",
+				CreatedAt:        createdAt.Add(time.Minute),
+				UpdatedAt:        updatedAt.Add(time.Minute),
 			}},
 		}},
 	}
@@ -1026,7 +1036,7 @@ func TestGitHubProviderListMergeRequestReviewThreadsMapsGraphQLThreads(t *testin
 	}, 7)
 
 	require.NoError(err)
-	require.Len(threads, 1)
+	require.Len(threads, 2)
 	thread := threads[0]
 	assert.Equal("PRRT_1", thread.ProviderThreadID)
 	assert.Equal("201", thread.ProviderReviewID)
@@ -1048,6 +1058,10 @@ func TestGitHubProviderListMergeRequestReviewThreadsMapsGraphQLThreads(t *testin
 	assert.Equal("add", thread.Range.LineType)
 	assert.Equal("head-sha", thread.Range.DiffHeadSHA)
 	assert.Equal("head-sha", thread.Range.CommitSHA)
+	assert.Equal("PRRT_1", threads[1].ProviderThreadID)
+	assert.Equal("102", threads[1].ProviderCommentID)
+	assert.Equal("reply note", threads[1].Body)
+	assert.Equal("maintainer", threads[1].AuthorLogin)
 }
 
 func TestGitHubProviderListMergeRequestReviewThreadsMapsFileSubject(t *testing.T) {
@@ -3846,7 +3860,9 @@ func TestFetchProviderMRDetailSyncsReviewThreads(t *testing.T) {
 	require.NoError(err)
 	require.Len(events, 1)
 	assert.Equal("review_comment", events[0].EventType)
-	assert.Equal("thread-42", events[0].PlatformExternalID)
+	assert.Equal("comment-42", events[0].PlatformExternalID)
+	require.NotNil(events[0].ThreadID)
+	assert.Equal("thread-42", *events[0].ThreadID)
 
 	provider.reviewThreads = nil
 	calls, err = syncer.fetchProviderMRDetail(ctx, provider, repo, repoID, 42)
@@ -3932,6 +3948,15 @@ func TestFetchGitHubMRDetailSyncsReviewThreads(t *testing.T) {
 				CommitID:         headSHA,
 				CreatedAt:        now,
 				UpdatedAt:        now,
+			}, {
+				NodeID:           "PRRC_2",
+				DatabaseID:       commentID + 1,
+				ReviewDatabaseID: reviewID,
+				Body:             "reply note",
+				AuthorLogin:      "maintainer",
+				CommitID:         headSHA,
+				CreatedAt:        now.Add(time.Minute),
+				UpdatedAt:        now.Add(time.Minute),
 			}},
 		}},
 	}
@@ -3960,10 +3985,17 @@ func TestFetchGitHubMRDetailSyncsReviewThreads(t *testing.T) {
 
 	events, err := d.ListMREvents(ctx, mr.ID)
 	require.NoError(err)
-	require.Len(events, 1)
+	require.Len(events, 2)
 	assert.Equal("review_comment", events[0].EventType)
-	assert.Equal("PRRT_1", events[0].PlatformExternalID)
-	assert.Equal("inline note", events[0].Body)
+	assert.Equal("102", events[0].PlatformExternalID)
+	assert.Equal("reply note", events[0].Body)
+	require.NotNil(events[0].ThreadID)
+	assert.Equal("PRRT_1", *events[0].ThreadID)
+	assert.Equal("review_comment", events[1].EventType)
+	assert.Equal("101", events[1].PlatformExternalID)
+	assert.Equal("inline note", events[1].Body)
+	require.NotNil(events[1].ThreadID)
+	assert.Equal("PRRT_1", *events[1].ThreadID)
 }
 
 func TestSyncOpenIssueReadsExistingByRepoID(t *testing.T) {

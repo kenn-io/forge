@@ -1440,7 +1440,9 @@ func TestAPIGitHubSyncPersistsReviewThreadsThroughPullDetail(t *testing.T) {
 	require.Len(*resp.JSON200.Events, 1)
 	event := (*resp.JSON200.Events)[0]
 	assert.Equal("review_comment", event.EventType)
-	assert.Equal("PRRT_1", event.PlatformExternalID)
+	assert.Equal("3312100450", event.PlatformExternalID)
+	require.NotNil(event.ThreadID)
+	assert.Equal("PRRT_1", *event.ThreadID)
 	require.NotNil(event.DiffThread)
 	assert.Equal(".golangci.yml", event.DiffThread.Path)
 	assert.Equal("right", event.DiffThread.Side)
@@ -11717,9 +11719,17 @@ func TestAPIPublishReviewDraftPersistsProviderReviewThreads(t *testing.T) {
 	events, err := database.ListMREvents(ctx, mr.ID)
 	require.NoError(err)
 	require.NotEmpty(events)
-	require.Len(events, 1)
+	require.Len(events, 2)
 	assert.Equal("review_comment", events[0].EventType)
-	assert.Equal("thread-7", events[0].PlatformExternalID)
+	assert.Equal("comment-reply", events[0].PlatformExternalID)
+	assert.Equal("Reply should not replace original", events[0].Body)
+	require.NotNil(events[0].ThreadID)
+	assert.Equal("thread-7", *events[0].ThreadID)
+	assert.Equal("review_comment", events[1].EventType)
+	assert.Equal("comment-7", events[1].PlatformExternalID)
+	assert.Equal("Published inline comment", events[1].Body)
+	require.NotNil(events[1].ThreadID)
+	assert.Equal("thread-7", *events[1].ThreadID)
 }
 
 func TestAPIForgejoPublishReviewDraftIngestsTimelineThread(t *testing.T) {
@@ -11943,13 +11953,21 @@ func TestAPIGitLabSyncKeepsCanonicalReviewThreadWhenProviderReturnsReplies(t *te
 	require.Equal(http.StatusOK, detailRR.Code, detailRR.Body.String())
 	var detail mergeRequestDetailResponse
 	require.NoError(json.NewDecoder(detailRR.Body).Decode(&detail))
-	require.Len(detail.Events, 1)
+	require.Len(detail.Events, 2)
 	require.NotNil(detail.Events[0].DiffThread)
 	assert.Equal("review_comment", detail.Events[0].EventType)
-	assert.Equal("original inline note", detail.Events[0].DiffThread.Body)
-	assert.Equal("reviewer", detail.Events[0].DiffThread.AuthorLogin)
-	assert.Equal("101", detail.Events[0].DiffThread.ProviderCommentID)
-	assert.Equal(originalLine, detail.Events[0].DiffThread.Line)
+	assert.Equal("reply should not replace original", detail.Events[0].Body)
+	require.NotNil(detail.Events[0].ThreadID)
+	assert.Equal("discussion-1", *detail.Events[0].ThreadID)
+	require.NotNil(detail.Events[1].DiffThread)
+	assert.Equal("review_comment", detail.Events[1].EventType)
+	assert.Equal("original inline note", detail.Events[1].Body)
+	require.NotNil(detail.Events[1].ThreadID)
+	assert.Equal("discussion-1", *detail.Events[1].ThreadID)
+	assert.Equal("original inline note", detail.Events[1].DiffThread.Body)
+	assert.Equal("reviewer", detail.Events[1].DiffThread.AuthorLogin)
+	assert.Equal("101", detail.Events[1].DiffThread.ProviderCommentID)
+	assert.Equal(originalLine, detail.Events[1].DiffThread.Line)
 }
 
 func TestAPIGitLabSyncPrunesMissingReviewThreadTimelineEvents(t *testing.T) {

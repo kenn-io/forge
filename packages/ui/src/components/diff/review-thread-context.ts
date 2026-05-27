@@ -65,7 +65,9 @@ function lineNumberForSide(line: DiffLine, side: "left" | "right"): number | und
 }
 
 function pathMatches(thread: ReviewThread, filePath: string, oldPath: string): boolean {
-  return thread.path === filePath || thread.path === oldPath || thread.old_path === oldPath;
+  return thread.path === filePath ||
+    thread.path === oldPath ||
+    (!!thread.old_path && !!oldPath && thread.old_path === oldPath);
 }
 
 export function reviewThreadContext(

@@ -1204,20 +1204,21 @@ func (p gitHubClientProvider) ListMergeRequestReviewThreads(
 		if len(thread.Comments) == 0 {
 			continue
 		}
-		normalized := githubReviewThread(thread)
-		if normalized.ProviderThreadID == "" {
-			continue
+		for _, comment := range thread.Comments {
+			normalized := githubReviewThreadComment(thread, comment)
+			if normalized.ProviderThreadID == "" || normalized.ProviderCommentID == "" {
+				continue
+			}
+			out = append(out, normalized)
 		}
-		out = append(out, normalized)
 	}
 	return out, nil
 }
 
-func githubReviewThread(thread PullRequestReviewThread) platform.MergeRequestReviewThread {
-	var comment PullRequestReviewThreadComment
-	if len(thread.Comments) > 0 {
-		comment = thread.Comments[0]
-	}
+func githubReviewThreadComment(
+	thread PullRequestReviewThread,
+	comment PullRequestReviewThreadComment,
+) platform.MergeRequestReviewThread {
 	createdAt := comment.CreatedAt.UTC()
 	updatedAt := comment.UpdatedAt.UTC()
 	if updatedAt.IsZero() {
@@ -5026,6 +5027,7 @@ func (s *Syncer) syncProviderMRReviewThreads(
 	dbThreads := make([]db.MRReviewThread, 0, len(threads))
 	events := make([]db.MREvent, 0, len(threads))
 	providerThreadIDs := make([]string, 0, len(threads))
+	reviewCommentDedupeKeys := make([]string, 0, len(threads))
 	seenProviderThreadIDs := make(map[string]struct{}, len(threads))
 	for _, thread := range threads {
 		providerThreadID := thread.ProviderThreadID
@@ -5035,39 +5037,46 @@ func (s *Syncer) syncProviderMRReviewThreads(
 		if providerThreadID == "" {
 			continue
 		}
-		if _, ok := seenProviderThreadIDs[providerThreadID]; ok {
+		if _, ok := seenProviderThreadIDs[providerThreadID]; !ok {
+			seenProviderThreadIDs[providerThreadID] = struct{}{}
+			providerThreadIDs = append(providerThreadIDs, providerThreadID)
+			dbThreads = append(dbThreads, db.MRReviewThread{
+				ProviderThreadID:  providerThreadID,
+				ProviderReviewID:  thread.ProviderReviewID,
+				ProviderCommentID: thread.ProviderCommentID,
+				Body:              thread.Body,
+				AuthorLogin:       thread.AuthorLogin,
+				Range:             dbReviewLineRangeFromPlatform(thread.Range),
+				Resolved:          thread.Resolved,
+				CreatedAt:         thread.CreatedAt,
+				UpdatedAt:         thread.UpdatedAt,
+				ResolvedAt:        thread.ResolvedAt,
+				MetadataJSON:      thread.MetadataJSON,
+			})
+		}
+		eventExternalID := firstNonEmpty(thread.ProviderCommentID, providerThreadID)
+		if eventExternalID == "" {
 			continue
 		}
-		seenProviderThreadIDs[providerThreadID] = struct{}{}
-		providerThreadIDs = append(providerThreadIDs, providerThreadID)
-		dbThreads = append(dbThreads, db.MRReviewThread{
-			ProviderThreadID:  providerThreadID,
-			ProviderReviewID:  thread.ProviderReviewID,
-			ProviderCommentID: thread.ProviderCommentID,
-			Body:              thread.Body,
-			AuthorLogin:       thread.AuthorLogin,
-			Range:             dbReviewLineRangeFromPlatform(thread.Range),
-			Resolved:          thread.Resolved,
-			CreatedAt:         thread.CreatedAt,
-			UpdatedAt:         thread.UpdatedAt,
-			ResolvedAt:        thread.ResolvedAt,
-			MetadataJSON:      thread.MetadataJSON,
-		})
 		createdAt := thread.CreatedAt
 		if createdAt.IsZero() {
 			createdAt = time.Now().UTC()
 		}
+		dedupeKey := "review_comment:" + eventExternalID
+		reviewCommentDedupeKeys = append(reviewCommentDedupeKeys, dedupeKey)
+		threadID := providerThreadID
 		events = append(events, db.MREvent{
 			MergeRequestID:     mrID,
-			PlatformExternalID: providerThreadID,
+			PlatformExternalID: eventExternalID,
 			EventType:          "review_comment",
 			Author:             thread.AuthorLogin,
 			Body:               thread.Body,
 			CreatedAt:          createdAt,
-			DedupeKey:          "review_comment:" + providerThreadID,
+			DedupeKey:          dedupeKey,
+			ThreadID:           &threadID,
 		})
 	}
-	if err := s.db.DeleteMissingMRReviewThreads(ctx, mrID, providerThreadIDs); err != nil {
+	if err := s.db.DeleteMissingMRReviewThreads(ctx, mrID, providerThreadIDs, reviewCommentDedupeKeys); err != nil {
 		return calls, err
 	}
 	if err := s.db.UpsertMRReviewThreads(ctx, mrID, dbThreads); err != nil {

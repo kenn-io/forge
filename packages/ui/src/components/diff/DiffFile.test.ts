@@ -308,6 +308,24 @@ describe("DiffFile", () => {
     expect(previous?.querySelector("[aria-label='Comment on new line 2']")).toBeTruthy();
   });
 
+  it("does not match added-file threads only because old paths are empty", () => {
+    renderDiffFile(makeFile({
+      path: "src/new.ts",
+      old_path: "",
+      status: "added",
+    }), {
+      reviewEnabled: true,
+      reviewThreads: [makeReviewThread({
+        id: "thread-other-added-file",
+        path: "src/other-new.ts",
+        old_path: "",
+        body: "Wrong added file note",
+      })],
+    });
+
+    expect(screen.queryByText("Wrong added file note")).toBeNull();
+  });
+
   it("renders unmatched review threads at the file header", () => {
     renderDiffFile(makeFile({
       hunks: [{

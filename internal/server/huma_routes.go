@@ -1648,25 +1648,35 @@ func (s *Server) replyToDiscussion(ctx context.Context, input *replyToDiscussion
 
 	providerDiscussionID := input.DiscussionID
 	localThreadID := ""
-	switch repoProviderKind(*repo) {
-	case platform.KindGitHub:
-		threadID, err := parseReviewLocalID(input.DiscussionID, "review thread")
-		if err != nil {
-			return nil, err
-		}
+	if threadID, parseErr := strconv.ParseInt(input.DiscussionID, 10, 64); parseErr == nil && threadID > 0 {
 		thread, err := s.db.GetMRReviewThread(ctx, mr.ID, threadID)
 		if err != nil {
 			return nil, problemInternal("get review thread failed")
 		}
 		if thread == nil {
-			return nil, problemNotFound(CodeNotFound, "review thread not found", nil)
+			if repoProviderKind(*repo) == platform.KindGitHub {
+				return nil, problemNotFound(CodeNotFound, "review thread not found", nil)
+			}
+			if err := validateDiscussionID(input.DiscussionID); err != nil {
+				return nil, err
+			}
+		} else if repoProviderKind(*repo) == platform.KindGitHub {
+			if strings.TrimSpace(thread.ProviderCommentID) == "" {
+				return nil, problemInternal("review thread is missing provider comment id")
+			}
+			providerDiscussionID = thread.ProviderCommentID
+			localThreadID = input.DiscussionID
+		} else {
+			if strings.TrimSpace(thread.ProviderThreadID) == "" {
+				return nil, problemInternal("review thread is missing provider thread id")
+			}
+			providerDiscussionID = thread.ProviderThreadID
 		}
-		if strings.TrimSpace(thread.ProviderCommentID) == "" {
-			return nil, problemInternal("review thread is missing provider comment id")
+	} else if repoProviderKind(*repo) == platform.KindGitHub {
+		if _, err := parseReviewLocalID(input.DiscussionID, "review thread"); err != nil {
+			return nil, err
 		}
-		providerDiscussionID = thread.ProviderCommentID
-		localThreadID = input.DiscussionID
-	default:
+	} else {
 		if err := validateDiscussionID(input.DiscussionID); err != nil {
 			return nil, err
 		}

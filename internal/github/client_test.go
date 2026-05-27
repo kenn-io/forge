@@ -529,10 +529,14 @@ func TestListPullRequestReviewThreads(t *testing.T) {
 		contentTypes = append(contentTypes, r.Header.Get("Content-Type"))
 		w.Header().Set("Content-Type", "application/json")
 		if calls == 1 {
-			_, _ = w.Write([]byte(`{"data":{"repository":{"pullRequest":{"reviewThreads":{"nodes":[{"id":"PRRT_1","isResolved":false,"isOutdated":false,"path":"src/main.go","line":12,"originalLine":12,"startLine":10,"originalStartLine":10,"diffSide":"RIGHT","comments":{"nodes":[{"id":"PRRC_1","databaseId":101,"body":"inline note","path":"src/main.go","line":12,"originalLine":12,"subjectType":"LINE","diffHunk":"@@","url":"https://github.example/pr#discussion_r101","author":{"login":"reviewer"},"commit":{"oid":"head-sha"},"originalCommit":{"oid":"original-sha"},"pullRequestReview":{"databaseId":201},"createdAt":"2026-05-27T16:01:31Z","updatedAt":"2026-05-27T16:02:31Z"}]}}],"pageInfo":{"hasNextPage":true,"endCursor":"cursor-1"}}}}}}`))
+			_, _ = w.Write([]byte(`{"data":{"repository":{"pullRequest":{"reviewThreads":{"nodes":[{"id":"PRRT_1","isResolved":false,"isOutdated":false,"path":"src/main.go","line":12,"originalLine":12,"startLine":10,"originalStartLine":10,"diffSide":"RIGHT","comments":{"nodes":[{"id":"PRRC_1","databaseId":101,"body":"inline note","path":"src/main.go","line":12,"originalLine":12,"subjectType":"LINE","diffHunk":"@@","url":"https://github.example/pr#discussion_r101","author":{"login":"reviewer"},"commit":{"oid":"head-sha"},"originalCommit":{"oid":"original-sha"},"pullRequestReview":{"databaseId":201},"createdAt":"2026-05-27T16:01:31Z","updatedAt":"2026-05-27T16:02:31Z"}],"pageInfo":{"hasNextPage":true,"endCursor":"comment-cursor-1"}}}],"pageInfo":{"hasNextPage":true,"endCursor":"cursor-1"}}}}}}`))
 			return
 		}
-		_, _ = w.Write([]byte(`{"data":{"repository":{"pullRequest":{"reviewThreads":{"nodes":[{"id":"PRRT_2","isResolved":true,"isOutdated":true,"path":"README.md","line":3,"originalLine":3,"startLine":null,"originalStartLine":null,"diffSide":"LEFT","comments":{"nodes":[{"id":"PRRC_2","databaseId":102,"body":"old note","path":"README.md","line":3,"originalLine":3,"subjectType":"FILE","diffHunk":"","url":"https://github.example/pr#discussion_r102","author":{"login":"maintainer"},"commit":{"oid":"new-head"},"originalCommit":{"oid":"old-head"},"pullRequestReview":{"databaseId":202},"createdAt":"2026-05-27T17:01:31Z","updatedAt":"2026-05-27T17:02:31Z"}]}}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}`))
+		if calls == 2 {
+			_, _ = w.Write([]byte(`{"data":{"node":{"comments":{"nodes":[{"id":"PRRC_1_REPLY","databaseId":103,"body":"reply note","path":"src/main.go","line":12,"originalLine":12,"subjectType":"LINE","diffHunk":"@@","url":"https://github.example/pr#discussion_r103","author":{"login":"maintainer"},"commit":{"oid":"head-sha"},"originalCommit":{"oid":"original-sha"},"pullRequestReview":{"databaseId":201},"createdAt":"2026-05-27T16:03:31Z","updatedAt":"2026-05-27T16:04:31Z"}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"data":{"repository":{"pullRequest":{"reviewThreads":{"nodes":[{"id":"PRRT_2","isResolved":true,"isOutdated":true,"path":"README.md","line":3,"originalLine":3,"startLine":null,"originalStartLine":null,"diffSide":"LEFT","comments":{"nodes":[{"id":"PRRC_2","databaseId":102,"body":"old note","path":"README.md","line":3,"originalLine":3,"subjectType":"FILE","diffHunk":"","url":"https://github.example/pr#discussion_r102","author":{"login":"maintainer"},"commit":{"oid":"new-head"},"originalCommit":{"oid":"old-head"},"pullRequestReview":{"databaseId":202},"createdAt":"2026-05-27T17:01:31Z","updatedAt":"2026-05-27T17:02:31Z"}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}`))
 	})
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
@@ -553,7 +557,7 @@ func TestListPullRequestReviewThreads(t *testing.T) {
 	require.NotNil(threads[0].StartLine)
 	assert.Equal(10, *threads[0].StartLine)
 	assert.Equal(12, threads[0].Line)
-	require.Len(threads[0].Comments, 1)
+	require.Len(threads[0].Comments, 2)
 	assert.Equal(int64(101), threads[0].Comments[0].DatabaseID)
 	assert.Equal(int64(201), threads[0].Comments[0].ReviewDatabaseID)
 	assert.Equal("inline note", threads[0].Comments[0].Body)
@@ -561,13 +565,16 @@ func TestListPullRequestReviewThreads(t *testing.T) {
 	assert.Equal("reviewer", threads[0].Comments[0].AuthorLogin)
 	assert.Equal("head-sha", threads[0].Comments[0].CommitID)
 	assert.Equal("original-sha", threads[0].Comments[0].OriginalCommitID)
+	assert.Equal(int64(103), threads[0].Comments[1].DatabaseID)
+	assert.Equal("reply note", threads[0].Comments[1].Body)
+	assert.Equal("maintainer", threads[0].Comments[1].AuthorLogin)
 	assert.True(threads[1].IsResolved)
 	assert.True(threads[1].IsOutdated)
 	assert.Equal("LEFT", threads[1].Side)
 	assert.Equal("FILE", threads[1].Comments[0].SubjectType)
-	assert.Equal(2, calls)
-	assert.Equal([]string{http.MethodPost, http.MethodPost}, methods)
-	assert.Equal([]string{"application/json", "application/json"}, contentTypes)
+	assert.Equal(3, calls)
+	assert.Equal([]string{http.MethodPost, http.MethodPost, http.MethodPost}, methods)
+	assert.Equal([]string{"application/json", "application/json", "application/json"}, contentTypes)
 }
 
 func TestListPullRequestTimelineEventsReturnsGraphQLErrors(t *testing.T) {

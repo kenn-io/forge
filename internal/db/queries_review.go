@@ -330,9 +330,14 @@ func (d *DB) UpsertMRReviewThreads(ctx context.Context, mrID int64, threads []MR
 	})
 }
 
-// DeleteMissingMRReviewThreads removes review-thread metadata and generated
+// DeleteMissingMRReviewThreads removes review-thread metadata and synced
 // review_comment timeline rows that are absent from the latest provider read.
-func (d *DB) DeleteMissingMRReviewThreads(ctx context.Context, mrID int64, providerThreadIDs []string) error {
+func (d *DB) DeleteMissingMRReviewThreads(
+	ctx context.Context,
+	mrID int64,
+	providerThreadIDs []string,
+	reviewCommentDedupeKeys []string,
+) error {
 	return d.Tx(ctx, func(tx *sql.Tx) error {
 		threadQuery := `DELETE FROM middleman_mr_review_threads WHERE merge_request_id = ?`
 		threadArgs := []any{mrID}
@@ -340,10 +345,14 @@ func (d *DB) DeleteMissingMRReviewThreads(ctx context.Context, mrID int64, provi
 		eventArgs := []any{mrID}
 		if len(providerThreadIDs) > 0 {
 			threadQuery += ` AND provider_thread_id NOT IN (` + sqlPlaceholders(len(providerThreadIDs)) + `)`
-			eventQuery += ` AND dedupe_key NOT IN (` + sqlPlaceholders(len(providerThreadIDs)) + `)`
 			for _, providerThreadID := range providerThreadIDs {
 				threadArgs = append(threadArgs, providerThreadID)
-				eventArgs = append(eventArgs, "review_comment:"+providerThreadID)
+			}
+		}
+		if len(reviewCommentDedupeKeys) > 0 {
+			eventQuery += ` AND dedupe_key NOT IN (` + sqlPlaceholders(len(reviewCommentDedupeKeys)) + `)`
+			for _, dedupeKey := range reviewCommentDedupeKeys {
+				eventArgs = append(eventArgs, dedupeKey)
 			}
 		}
 		if _, err := tx.ExecContext(ctx, threadQuery, threadArgs...); err != nil {

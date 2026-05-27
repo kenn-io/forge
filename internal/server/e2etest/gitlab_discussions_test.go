@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -601,6 +602,54 @@ func TestReplyToDiscussionE2E(t *testing.T) {
 	require.NoError(err)
 	require.Len(gitlabEvents, 1)
 	assert.Equal("This is my reply", gitlabEvents[0].Body)
+
+	line := 12
+	require.NoError(database.UpsertMRReviewThreads(ctx, mrID, []db.MRReviewThread{{
+		ProviderThreadID:  threadID,
+		ProviderCommentID: "note-101",
+		Body:              "Root inline comment",
+		AuthorLogin:       "reviewer",
+		Range: db.ReviewLineRange{
+			Path:     "main.go",
+			Side:     "right",
+			Line:     line,
+			NewLine:  &line,
+			LineType: "add",
+		},
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+	}}))
+	threads, err := database.ListMRReviewThreads(ctx, mrID)
+	require.NoError(err)
+	require.Len(threads, 1)
+	localThreadID := strconv.FormatInt(threads[0].ID, 10)
+
+	body = `{"body":"Local thread id reply"}`
+	req = httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/pulls/gitlab/acme/widget/7/discussions/"+localThreadID+"/reply",
+		strings.NewReader(body),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	rr = httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	require.Equal(http.StatusCreated, rr.Code, "response: %s", rr.Body.String())
+	require.Len(provider.replyToDiscussionCalls, 2)
+	localCall := provider.replyToDiscussionCalls[1]
+	assert.Equal(threadID, localCall.ThreadID)
+	assert.Equal("Local thread id reply", localCall.Body)
+
+	err = json.NewDecoder(rr.Body).Decode(&result)
+	require.NoError(err)
+	assert.Equal("Local thread id reply", result.Body)
+	require.NotNil(result.ThreadID)
+	assert.Equal(threadID, *result.ThreadID)
+
+	gitlabEvents, err = database.ListMREvents(ctx, mrID)
+	require.NoError(err)
+	require.Len(gitlabEvents, 1)
+	assert.Equal("Local thread id reply", gitlabEvents[0].Body)
 
 	collidingEvents, err := database.ListMREvents(ctx, collidingMRID)
 	require.NoError(err)

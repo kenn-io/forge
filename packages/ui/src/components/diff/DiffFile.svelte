@@ -266,7 +266,7 @@
   function threadMatchesFile(thread: ReviewThread): boolean {
     return thread.path === file.path ||
       thread.path === file.old_path ||
-      thread.old_path === file.old_path;
+      (!!thread.old_path && !!file.old_path && thread.old_path === file.old_path);
   }
 
   function lineMatchesReviewThread(

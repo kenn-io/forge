@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -3077,7 +3078,7 @@ func (d *DB) GetIssue(
 	var issue Issue
 	err := d.ro.QueryRowContext(ctx, `
 		SELECT i.id, i.repo_id, i.platform_id, i.platform_external_id, i.number, i.url, i.title,
-		       i.author, i.state, i.body, i.comment_count, i.labels_json,
+		       i.author, i.state, i.body, i.comment_count, i.labels_json, i.assignees_json,
 		       i.detail_fetched_at,
 		       i.created_at, i.updated_at, i.last_activity_at, i.closed_at,
 		       (s.number IS NOT NULL) AS starred
@@ -3090,7 +3091,7 @@ func (d *DB) GetIssue(
 	).Scan(
 		&issue.ID, &issue.RepoID, &issue.PlatformID, &issue.PlatformExternalID, &issue.Number,
 		&issue.URL, &issue.Title, &issue.Author, &issue.State,
-		&issue.Body, &issue.CommentCount, &issue.LabelsJSON,
+		&issue.Body, &issue.CommentCount, &issue.LabelsJSON, &issue.AssigneesJSON,
 		&issue.DetailFetchedAt,
 		&issue.CreatedAt, &issue.UpdatedAt, &issue.LastActivityAt,
 		&issue.ClosedAt, &issue.Starred,
@@ -3100,6 +3101,10 @@ func (d *DB) GetIssue(
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get issue: %w", err)
+	}
+	// Parse assignees from JSON
+	if issue.AssigneesJSON != "" && issue.AssigneesJSON != "[]" {
+		_ = json.Unmarshal([]byte(issue.AssigneesJSON), &issue.Assignees)
 	}
 	labelsByIssue, err := d.loadLabelsForIssues(ctx, []int64{issue.ID})
 	if err != nil {
@@ -3114,7 +3119,7 @@ func (d *DB) GetIssueByRepoIDAndNumber(ctx context.Context, repoID int64, number
 	var issue Issue
 	err := d.ro.QueryRowContext(ctx, `
 		SELECT i.id, i.repo_id, i.platform_id, i.platform_external_id, i.number, i.url, i.title,
-		       i.author, i.state, i.body, i.comment_count, i.labels_json,
+		       i.author, i.state, i.body, i.comment_count, i.labels_json, i.assignees_json,
 		       i.detail_fetched_at,
 		       i.created_at, i.updated_at, i.last_activity_at, i.closed_at,
 		       (s.number IS NOT NULL) AS starred
@@ -3126,7 +3131,7 @@ func (d *DB) GetIssueByRepoIDAndNumber(ctx context.Context, repoID int64, number
 	).Scan(
 		&issue.ID, &issue.RepoID, &issue.PlatformID, &issue.PlatformExternalID, &issue.Number,
 		&issue.URL, &issue.Title, &issue.Author, &issue.State,
-		&issue.Body, &issue.CommentCount, &issue.LabelsJSON,
+		&issue.Body, &issue.CommentCount, &issue.LabelsJSON, &issue.AssigneesJSON,
 		&issue.DetailFetchedAt,
 		&issue.CreatedAt, &issue.UpdatedAt, &issue.LastActivityAt,
 		&issue.ClosedAt, &issue.Starred,
@@ -3136,6 +3141,10 @@ func (d *DB) GetIssueByRepoIDAndNumber(ctx context.Context, repoID int64, number
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get issue by repo id: %w", err)
+	}
+	// Parse assignees from JSON
+	if issue.AssigneesJSON != "" && issue.AssigneesJSON != "[]" {
+		_ = json.Unmarshal([]byte(issue.AssigneesJSON), &issue.Assignees)
 	}
 	labelsByIssue, err := d.loadLabelsForIssues(ctx, []int64{issue.ID})
 	if err != nil {
@@ -3206,7 +3215,7 @@ func (d *DB) ListIssues(
 
 	query := fmt.Sprintf(`
 		SELECT i.id, i.repo_id, i.platform_id, i.platform_external_id, i.number, i.url, i.title,
-		       i.author, i.state, i.body, i.comment_count, i.labels_json,
+		       i.author, i.state, i.body, i.comment_count, i.labels_json, i.assignees_json,
 		       i.detail_fetched_at,
 		       i.created_at, i.updated_at, i.last_activity_at, i.closed_at,
 		       (s.number IS NOT NULL) AS starred
@@ -3231,12 +3240,16 @@ func (d *DB) ListIssues(
 		if err := rows.Scan(
 			&issue.ID, &issue.RepoID, &issue.PlatformID, &issue.PlatformExternalID, &issue.Number,
 			&issue.URL, &issue.Title, &issue.Author, &issue.State,
-			&issue.Body, &issue.CommentCount, &issue.LabelsJSON,
+			&issue.Body, &issue.CommentCount, &issue.LabelsJSON, &issue.AssigneesJSON,
 			&issue.DetailFetchedAt,
 			&issue.CreatedAt, &issue.UpdatedAt, &issue.LastActivityAt,
 			&issue.ClosedAt, &issue.Starred,
 		); err != nil {
 			return nil, fmt.Errorf("scan issue: %w", err)
+		}
+		// Parse assignees from JSON
+		if issue.AssigneesJSON != "" && issue.AssigneesJSON != "[]" {
+			_ = json.Unmarshal([]byte(issue.AssigneesJSON), &issue.Assignees)
 		}
 		issues = append(issues, issue)
 		issueIDs = append(issueIDs, issue.ID)

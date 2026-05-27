@@ -1647,7 +1647,7 @@ func (s *Server) replyToDiscussion(ctx context.Context, input *replyToDiscussion
 	}
 
 	providerDiscussionID := input.DiscussionID
-	localThreadID := ""
+	eventThreadID := ""
 	if threadID, parseErr := strconv.ParseInt(input.DiscussionID, 10, 64); parseErr == nil && threadID > 0 {
 		thread, err := s.db.GetMRReviewThread(ctx, mr.ID, threadID)
 		if err != nil {
@@ -1664,8 +1664,11 @@ func (s *Server) replyToDiscussion(ctx context.Context, input *replyToDiscussion
 			if strings.TrimSpace(thread.ProviderCommentID) == "" {
 				return nil, problemInternal("review thread is missing provider comment id")
 			}
+			if strings.TrimSpace(thread.ProviderThreadID) == "" {
+				return nil, problemInternal("review thread is missing provider thread id")
+			}
 			providerDiscussionID = thread.ProviderCommentID
-			localThreadID = input.DiscussionID
+			eventThreadID = thread.ProviderThreadID
 		} else {
 			if strings.TrimSpace(thread.ProviderThreadID) == "" {
 				return nil, problemInternal("review thread is missing provider thread id")
@@ -1692,8 +1695,8 @@ func (s *Server) replyToDiscussion(ctx context.Context, input *replyToDiscussion
 			"reply to discussion on provider failed",
 		)
 	}
-	if localThreadID != "" {
-		platformEvent.ThreadID = localThreadID
+	if eventThreadID != "" {
+		platformEvent.ThreadID = eventThreadID
 	}
 
 	event := platform.DBMREvent(mr.ID, platformEvent)

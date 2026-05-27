@@ -1018,15 +1018,16 @@ func TestAPIReplyToGitHubReviewThreadUsesProviderCommentID(t *testing.T) {
 	assert.Equal("fixture-bot", result.Author)
 	assert.Equal("Reply from middleman", result.Body)
 	require.NotNil(result.ThreadID)
-	assert.Equal(localThreadID, *result.ThreadID)
+	assert.Equal("101", *result.ThreadID)
 
 	events, err := database.ListMREvents(ctx, mrID)
 	require.NoError(err)
 	require.Len(events, 1)
 	assert.Equal("review_comment", events[0].EventType)
 	assert.Equal("222", events[0].PlatformExternalID)
+	assert.Equal("review_comment:222", events[0].DedupeKey)
 	require.NotNil(events[0].ThreadID)
-	assert.Equal(localThreadID, *events[0].ThreadID)
+	assert.Equal("101", *events[0].ThreadID)
 }
 
 func TestAPIMergePR405ReturnsGitHubMessage(t *testing.T) {

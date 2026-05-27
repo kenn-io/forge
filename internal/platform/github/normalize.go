@@ -144,7 +144,7 @@ func NormalizeReviewCommentEvent(
 		PlatformExternalID: fmt.Sprintf("%d", c.GetID()),
 		MergeRequestNumber: mrNumber,
 		EventType:          "review_comment",
-		DedupeKey:          fmt.Sprintf("review-comment-%d", c.GetID()),
+		DedupeKey:          fmt.Sprintf("review_comment:%d", c.GetID()),
 		Author:             loginOrEmpty(c.GetUser()),
 		Body:               c.GetBody(),
 	}

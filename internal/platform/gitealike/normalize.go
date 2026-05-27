@@ -110,6 +110,13 @@ func normalizeMergeable(mergeable *bool) string {
 }
 
 func NormalizeIssue(repo platform.RepoRef, issue IssueDTO) platform.Issue {
+	var assignees []string
+	for _, a := range issue.Assignees {
+		if a.UserName != "" {
+			assignees = append(assignees, a.UserName)
+		}
+	}
+
 	return platform.Issue{
 		Repo:               repo,
 		PlatformID:         issue.ID,
@@ -126,6 +133,7 @@ func NormalizeIssue(repo platform.RepoRef, issue IssueDTO) platform.Issue {
 		LastActivityAt:     issue.Updated.UTC(),
 		ClosedAt:           timePtrUTC(issue.Closed),
 		Labels:             NormalizeLabels(repo, issue.Labels),
+		Assignees:          assignees,
 	}
 }
 

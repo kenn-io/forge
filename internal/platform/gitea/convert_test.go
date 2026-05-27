@@ -98,6 +98,7 @@ func TestConvertGiteaSDKRecords(t *testing.T) {
 		Comments:    9,
 		HTMLURL:     "https://gitea.com/gitea/tea/issues/8",
 		Labels:      []*giteasdk.Label{{ID: 10, Name: "bug"}},
+		Assignees:   []*giteasdk.User{{ID: 20, UserName: "alice"}, nil, {ID: 21, UserName: "carol"}},
 		Created:     created,
 		Updated:     updated,
 		Closed:      &closed,
@@ -107,6 +108,9 @@ func TestConvertGiteaSDKRecords(t *testing.T) {
 	assert.Equal("bob", issue.User.UserName)
 	assert.True(issue.IsPullRequest)
 	assert.Equal("bug", issue.Labels[0].Name)
+	require.Len(issue.Assignees, 2)
+	assert.Equal("alice", issue.Assignees[0].UserName)
+	assert.Equal("carol", issue.Assignees[1].UserName)
 
 	comment := convertComment(&giteasdk.Comment{ID: 11, Poster: &giteasdk.User{UserName: "carol"}, Body: "comment", Created: created, Updated: updated})
 	assert.Equal("carol", comment.User.UserName)

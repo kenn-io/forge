@@ -271,6 +271,9 @@ type gqlIssue struct {
 		Nodes      []gqlComment
 		PageInfo   pageInfo
 	} `graphql:"comments(first: 100)"`
+	Assignees struct {
+		Nodes []gqlAssigneeID
+	} `graphql:"assignees(first: 100)"`
 	TimelineItems struct {
 		Nodes    []gqlIssueTimelineItem
 		PageInfo pageInfo
@@ -390,8 +393,18 @@ func adaptIssue(gql *gqlIssue) *gh.Issue {
 		issue.ClosedAt = &t
 	}
 	issue.Labels = adaptLabels(gql.Labels.Nodes)
+	issue.Assignees = adaptAssignees(gql.Assignees.Nodes)
 
 	return issue
+}
+
+func adaptAssignees(nodes []gqlAssigneeID) []*gh.User {
+	out := make([]*gh.User, 0, len(nodes))
+	for _, n := range nodes {
+		login := n.Login
+		out = append(out, &gh.User{Login: &login})
+	}
+	return out
 }
 
 func adaptLabels(labels []gqlLabel) []*gh.Label {

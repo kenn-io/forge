@@ -108,6 +108,7 @@ func TestConvertForgejoSDKRecords(t *testing.T) {
 		Comments:    9,
 		HTMLURL:     "https://codeberg.org/forgejo/forgejo/issues/8",
 		Labels:      []*forgejosdk.Label{{ID: 10, Name: "bug"}},
+		Assignees:   []*forgejosdk.User{{ID: 20, UserName: "alice"}, nil, {ID: 21, UserName: "carol"}},
 		Created:     created,
 		Updated:     updated,
 		Closed:      &closed,
@@ -117,6 +118,9 @@ func TestConvertForgejoSDKRecords(t *testing.T) {
 	assert.Equal("bob", issue.User.UserName)
 	assert.True(issue.IsPullRequest)
 	assert.Equal("bug", issue.Labels[0].Name)
+	require.Len(issue.Assignees, 2)
+	assert.Equal("alice", issue.Assignees[0].UserName)
+	assert.Equal("carol", issue.Assignees[1].UserName)
 
 	comment := convertComment(&forgejosdk.Comment{ID: 11, Poster: &forgejosdk.User{UserName: "carol"}, Body: "comment", Created: created, Updated: updated})
 	assert.Equal("carol", comment.User.UserName)

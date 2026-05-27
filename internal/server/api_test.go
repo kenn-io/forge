@@ -1374,6 +1374,7 @@ func TestAPIGitHubSyncPersistsReviewThreadsThroughPullDetail(t *testing.T) {
 	prNumber := 42
 	line := 1
 	headSHA := "head-sha"
+	commentCommitSHA := "comment-sha"
 	baseSHA := "base-sha"
 	mock := &mockGH{
 		getPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
@@ -1411,17 +1412,18 @@ func TestAPIGitHubSyncPersistsReviewThreadsThroughPullDetail(t *testing.T) {
 		},
 		listReviewThreadsFn: func(context.Context, string, string, int) ([]ghclient.PullRequestReviewThread, error) {
 			return []ghclient.PullRequestReviewThread{{
-				NodeID: "PRRT_1",
-				Path:   ".golangci.yml",
-				Side:   "RIGHT",
-				Line:   line,
+				NodeID:     "PRRT_1",
+				IsOutdated: false,
+				Path:       ".golangci.yml",
+				Side:       "RIGHT",
+				Line:       line,
 				Comments: []ghclient.PullRequestReviewThreadComment{{
 					NodeID:           "PRRC_1",
 					DatabaseID:       3312100450,
 					ReviewDatabaseID: 4373946198,
 					Body:             "inline note",
 					AuthorLogin:      "reviewer",
-					CommitID:         headSHA,
+					CommitID:         commentCommitSHA,
 					CreatedAt:        now,
 					UpdatedAt:        now,
 				}},
@@ -1449,6 +1451,9 @@ func TestAPIGitHubSyncPersistsReviewThreadsThroughPullDetail(t *testing.T) {
 	assert.Equal("right", event.DiffThread.Side)
 	assert.Equal(int64(line), event.DiffThread.Line)
 	assert.Equal("inline note", event.DiffThread.Body)
+	assert.Nil(event.DiffThread.DiffHeadSha)
+	require.NotNil(event.DiffThread.CommitSha)
+	assert.Equal(commentCommitSHA, *event.DiffThread.CommitSha)
 	require.NotNil(event.DiffThread.ProviderCommentId)
 	assert.Equal("3312100450", *event.DiffThread.ProviderCommentId)
 }

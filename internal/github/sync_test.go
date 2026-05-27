@@ -1001,6 +1001,7 @@ func TestGitHubProviderListMergeRequestReviewThreadsMapsGraphQLThreads(t *testin
 		reviewThreads: []PullRequestReviewThread{{
 			NodeID:     "PRRT_1",
 			IsResolved: true,
+			IsOutdated: false,
 			Path:       "src/main.go",
 			Side:       "RIGHT",
 			StartLine:  &startLine,
@@ -1056,7 +1057,7 @@ func TestGitHubProviderListMergeRequestReviewThreadsMapsGraphQLThreads(t *testin
 	assert.Equal(12, *thread.Range.NewLine)
 	assert.Nil(thread.Range.OldLine)
 	assert.Equal("add", thread.Range.LineType)
-	assert.Equal("head-sha", thread.Range.DiffHeadSHA)
+	assert.Empty(thread.Range.DiffHeadSHA)
 	assert.Equal("head-sha", thread.Range.CommitSHA)
 	assert.Equal("PRRT_1", threads[1].ProviderThreadID)
 	assert.Equal("102", threads[1].ProviderCommentID)

@@ -1261,6 +1261,11 @@ func githubReviewLineRange(
 	} else {
 		newLine = &line
 	}
+	commitSHA := firstNonEmpty(comment.CommitID, comment.OriginalCommitID)
+	diffHeadSHA := ""
+	if thread.IsOutdated {
+		diffHeadSHA = commitSHA
+	}
 	return platform.DiffReviewLineRange{
 		Path:        firstNonEmpty(thread.Path, comment.Path),
 		Side:        side,
@@ -1270,8 +1275,8 @@ func githubReviewLineRange(
 		OldLine:     oldLine,
 		NewLine:     newLine,
 		LineType:    lineType,
-		DiffHeadSHA: firstNonEmpty(comment.CommitID, comment.OriginalCommitID),
-		CommitSHA:   firstNonEmpty(comment.CommitID, comment.OriginalCommitID),
+		DiffHeadSHA: diffHeadSHA,
+		CommitSHA:   commitSHA,
 	}
 }
 

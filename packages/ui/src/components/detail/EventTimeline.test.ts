@@ -742,6 +742,40 @@ describe("EventTimeline", () => {
     expect(screen.getAllByRole("button", { name: "Reply" })).toHaveLength(2);
   });
 
+  it("does not expose replies when a timeline item lacks a local review thread", () => {
+    render(EventTimeline, {
+      props: {
+        events: [makeEvent({
+          EventType: "review_comment",
+          Body: "Provider thread without local diff metadata",
+          ThreadID: "PRRT_provider_thread",
+        })],
+        provider: "github",
+        platformHost: "github.com",
+        repoOwner: "acme",
+        repoName: "widget",
+        repoPath: "acme/widget",
+        number: 7,
+        canReplyToThreads: true,
+      },
+      context: new Map([
+        [STORES_KEY, {
+          detail: {
+            replyToDiscussion: vi.fn().mockResolvedValue(true),
+            getDetailError: vi.fn(),
+          },
+          diff: makeDiffStore(),
+          diffReviewDraft: {
+            setRouteContext: vi.fn(),
+            isSubmitting: () => false,
+          },
+        }],
+      ]),
+    });
+
+    expect(screen.queryByRole("button", { name: "Reply" })).toBeNull();
+  });
+
   it("marks review thread context outdated when the line is absent from the loaded diff", () => {
     const diff = makeDiffStore({
       getDiff: () => ({

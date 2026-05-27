@@ -393,7 +393,7 @@
   }
 
   function replyTargetID(entry: TimelineEntry): string | null {
-    return entry.reviewThread?.thread.id ?? entry.threadID ?? timelineThreadID(entry.event);
+    return entry.reviewThread?.thread.id ?? null;
   }
 
   function canReplyToThread(entry: TimelineEntry): boolean {

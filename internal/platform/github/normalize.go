@@ -73,6 +73,14 @@ func NormalizeIssue(repo platform.RepoRef, ghIssue *gh.Issue) (platform.Issue, e
 	if ghIssue == nil {
 		return platform.Issue{}, ErrNilIssue
 	}
+
+	var assignees []string
+	for _, a := range ghIssue.Assignees {
+		if a != nil && a.Login != nil {
+			assignees = append(assignees, *a.Login)
+		}
+	}
+
 	issue := platform.Issue{
 		Repo:               repo,
 		PlatformID:         ghIssue.GetID(),
@@ -84,6 +92,7 @@ func NormalizeIssue(repo platform.RepoRef, ghIssue *gh.Issue) (platform.Issue, e
 		State:              ghIssue.GetState(),
 		Body:               ghIssue.GetBody(),
 		CommentCount:       ghIssue.GetComments(),
+		Assignees:          assignees,
 	}
 	if ghIssue.CreatedAt != nil {
 		issue.CreatedAt = ghIssue.CreatedAt.Time

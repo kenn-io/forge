@@ -209,6 +209,12 @@ func NormalizeIssue(repo platform.RepoRef, issue *gitlab.Issue) platform.Issue {
 	if issue == nil {
 		return platform.Issue{}
 	}
+	var assignees []string
+	for _, a := range issue.Assignees {
+		if a != nil && a.Username != "" {
+			assignees = append(assignees, a.Username)
+		}
+	}
 	out := platform.Issue{
 		Repo:               repo,
 		PlatformID:         issue.ID,
@@ -224,6 +230,7 @@ func NormalizeIssue(repo platform.RepoRef, issue *gitlab.Issue) platform.Issue {
 		UpdatedAt:          timeValue(issue.UpdatedAt),
 		LastActivityAt:     timeValue(issue.UpdatedAt),
 		Labels:             normalizeLabelNames(repo, issue.Labels),
+		Assignees:          assignees,
 	}
 	if issue.ClosedAt != nil {
 		t := issue.ClosedAt.UTC()

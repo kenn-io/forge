@@ -4734,3 +4734,31 @@ func TestListIssues_FilterByAssignee(t *testing.T) {
 	numbers = []int{issues[0].Number, issues[1].Number}
 	assert.ElementsMatch([]int{2, 3}, numbers)
 }
+
+func TestListIssues_PopulatesAssignees(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := baseTime()
+	repoID := insertTestRepo(t, d, "owner", "repo")
+
+	_, err := d.UpsertIssue(ctx, &Issue{
+		RepoID:         repoID,
+		PlatformID:     1,
+		Number:         1,
+		URL:            "https://github.com/owner/repo/issues/1",
+		Title:          "Issue 1",
+		Author:         "author",
+		State:          "open",
+		AssigneesJSON:  `["alice","bob"]`,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		LastActivityAt: now,
+	})
+	require.NoError(err)
+
+	issues, err := d.ListIssues(ctx, ListIssuesOpts{State: "all"})
+	require.NoError(err)
+	require.Len(issues, 1)
+	require.Equal([]string{"alice", "bob"}, issues[0].Assignees)
+}

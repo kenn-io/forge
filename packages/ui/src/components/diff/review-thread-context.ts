@@ -24,8 +24,8 @@ export function reviewThreadsFromEvents(events: PREvent[] | null | undefined): R
   const seen = new Set<string>();
 
   for (const event of events ?? []) {
-    if (!("diff_thread" in event)) continue;
-    const thread = event.diff_thread as ReviewThread | undefined;
+    const thread = event.diff_thread ??
+      (event as PREvent & { DiffThread?: ReviewThread }).DiffThread;
     if (!thread || seen.has(thread.id)) continue;
     seen.add(thread.id);
     threads.push(thread);

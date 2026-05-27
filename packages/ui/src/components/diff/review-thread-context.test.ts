@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import type { DiffResult } from "../../api/types.js";
-import { reviewThreadContext, type ReviewThread } from "./review-thread-context.js";
+import type { DiffResult, PREvent } from "../../api/types.js";
+import {
+  reviewThreadContext,
+  reviewThreadsFromEvents,
+  type ReviewThread,
+} from "./review-thread-context.js";
 
 function makeThread(overrides: Partial<ReviewThread> = {}): ReviewThread {
   return {
@@ -47,6 +51,13 @@ function makeDiff(): DiffResult {
 }
 
 describe("reviewThreadContext", () => {
+  it("extracts review threads from generated client event casing", () => {
+    const thread = makeThread({ id: "thread-pascal" });
+    const event = { DiffThread: thread } as unknown as PREvent;
+
+    expect(reviewThreadsFromEvents([event])).toEqual([thread]);
+  });
+
   it("does not match added files only because old paths are empty", () => {
     const context = reviewThreadContext(makeDiff(), makeThread());
 

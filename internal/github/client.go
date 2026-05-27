@@ -527,6 +527,7 @@ query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
             nodes {
               id
               databaseId
+              fullDatabaseId
               body
               path
               line
@@ -564,6 +565,7 @@ query($threadID: ID!, $cursor: String) {
         nodes {
           id
           databaseId
+          fullDatabaseId
           body
           path
           line
@@ -598,16 +600,17 @@ type graphQLError struct {
 }
 
 type graphQLReviewThreadComment struct {
-	NodeID       string `json:"id"`
-	DatabaseID   int64  `json:"databaseId"`
-	Body         string `json:"body"`
-	Path         string `json:"path"`
-	Line         int    `json:"line"`
-	OriginalLine int    `json:"originalLine"`
-	SubjectType  string `json:"subjectType"`
-	DiffHunk     string `json:"diffHunk"`
-	URL          string `json:"url"`
-	Author       *struct {
+	NodeID         string `json:"id"`
+	DatabaseID     int64  `json:"databaseId"`
+	FullDatabaseID int64  `json:"fullDatabaseId"`
+	Body           string `json:"body"`
+	Path           string `json:"path"`
+	Line           int    `json:"line"`
+	OriginalLine   int    `json:"originalLine"`
+	SubjectType    string `json:"subjectType"`
+	DiffHunk       string `json:"diffHunk"`
+	URL            string `json:"url"`
+	Author         *struct {
 		Login string `json:"login"`
 	} `json:"author"`
 	Commit *struct {
@@ -1247,7 +1250,7 @@ func githubReviewThreadCommentFromGraphQL(
 ) PullRequestReviewThreadComment {
 	next := PullRequestReviewThreadComment{
 		NodeID:       comment.NodeID,
-		DatabaseID:   comment.DatabaseID,
+		DatabaseID:   firstPositiveInt64(comment.FullDatabaseID, comment.DatabaseID),
 		SubjectType:  comment.SubjectType,
 		Body:         comment.Body,
 		Path:         comment.Path,
@@ -1271,6 +1274,15 @@ func githubReviewThreadCommentFromGraphQL(
 		next.ReviewDatabaseID = comment.PullRequestReview.DatabaseID
 	}
 	return next
+}
+
+func firstPositiveInt64(values ...int64) int64 {
+	for _, value := range values {
+		if value > 0 {
+			return value
+		}
+	}
+	return 0
 }
 
 func (c *liveClient) ListCommits(

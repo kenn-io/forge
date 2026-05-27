@@ -972,7 +972,7 @@ func TestAPIReplyToGitHubReviewThreadUsesProviderCommentID(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	newLine := 11
 	require.NoError(database.UpsertMRReviewThreads(ctx, mrID, []db.MRReviewThread{{
-		ProviderThreadID:  "101",
+		ProviderThreadID:  "PRRT_1",
 		ProviderCommentID: "101",
 		Body:              "Please keep this explicit.",
 		AuthorLogin:       "reviewer",
@@ -1018,7 +1018,7 @@ func TestAPIReplyToGitHubReviewThreadUsesProviderCommentID(t *testing.T) {
 	assert.Equal("fixture-bot", result.Author)
 	assert.Equal("Reply from middleman", result.Body)
 	require.NotNil(result.ThreadID)
-	assert.Equal("101", *result.ThreadID)
+	assert.Equal("PRRT_1", *result.ThreadID)
 
 	events, err := database.ListMREvents(ctx, mrID)
 	require.NoError(err)
@@ -1027,7 +1027,7 @@ func TestAPIReplyToGitHubReviewThreadUsesProviderCommentID(t *testing.T) {
 	assert.Equal("222", events[0].PlatformExternalID)
 	assert.Equal("review_comment:222", events[0].DedupeKey)
 	require.NotNil(events[0].ThreadID)
-	assert.Equal("101", *events[0].ThreadID)
+	assert.Equal("PRRT_1", *events[0].ThreadID)
 }
 
 func TestAPIMergePR405ReturnsGitHubMessage(t *testing.T) {

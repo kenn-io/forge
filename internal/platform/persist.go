@@ -84,7 +84,6 @@ func DBIssue(repoID int64, issue Issue) *db.Issue {
 		LastActivityAt:     issue.LastActivityAt,
 		ClosedAt:           issue.ClosedAt,
 		AssigneesJSON:      assigneesJSON,
-		Assignees:          issue.Assignees,
 	}
 	out.Labels = DBLabels(issue.Labels, itemLabelUpdatedAt(issue.UpdatedAt, issue.CreatedAt))
 	return out

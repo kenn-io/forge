@@ -214,3 +214,25 @@ func seedIssueWithLabels(t *testing.T, database *db.DB, owner, name string, numb
 	require.NoError(t, database.ReplaceIssueLabels(ctx, repo.ID, issueID, labels))
 	return issueID
 }
+
+func seedIssueWithAssignees(t *testing.T, database *db.DB, owner, name string, number int, state string, assigneesJSON string) int64 {
+	t.Helper()
+	ctx := t.Context()
+	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", owner, name))
+	require.NoError(t, err)
+
+	now := time.Now().UTC().Truncate(time.Second)
+	issue := &db.Issue{
+		RepoID: repoID, PlatformID: int64(number) * 1000, Number: number,
+		URL:   "https://github.com/" + owner + "/" + name + "/issues/" + strconv.Itoa(number),
+		Title: "Test Issue", Author: "testuser", State: state,
+		AssigneesJSON: assigneesJSON,
+		CreatedAt:     now, UpdatedAt: now, LastActivityAt: now,
+	}
+	if state == "closed" {
+		issue.ClosedAt = &now
+	}
+	issueID, err := database.UpsertIssue(ctx, issue)
+	require.NoError(t, err)
+	return issueID
+}

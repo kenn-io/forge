@@ -21685,3 +21685,73 @@ func TestAPIEditIssueMissing404(t *testing.T) {
 		map[string]string{"body": "anything"})
 	require.Equal(http.StatusNotFound, rr.Code)
 }
+
+func TestAPIListIssues_FilterByAssignee(t *testing.T) {
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	ctx := t.Context()
+	now := time.Now().UTC()
+
+	repoID, err := database.UpsertRepo(
+		ctx,
+		db.GitHubRepoIdentity("github.com", "owner", "repo"),
+	)
+	require.NoError(err)
+
+	// Insert issues with different assignees
+	_, err = database.UpsertIssue(ctx, &db.Issue{
+		RepoID: repoID, PlatformID: 1, Number: 1,
+		URL: "https://github.com/owner/repo/issues/1",
+		Title: "Issue 1", Author: "author", State: "open",
+		AssigneesJSON: `["alice"]`,
+		CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+	})
+	require.NoError(err)
+
+	_, err = database.UpsertIssue(ctx, &db.Issue{
+		RepoID: repoID, PlatformID: 2, Number: 2,
+		URL: "https://github.com/owner/repo/issues/2",
+		Title: "Issue 2", Author: "author", State: "open",
+		AssigneesJSON: `["bob"]`,
+		CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+	})
+	require.NoError(err)
+
+	// Filter by alice
+	resp := doJSON(t, srv, http.MethodGet, "/api/v1/issues?assignee=alice&state=all", nil)
+	require.Equal(http.StatusOK, resp.Code)
+
+	var issues []issueResponse
+	require.NoError(json.Unmarshal(resp.Body.Bytes(), &issues))
+	require.Len(issues, 1)
+	require.Equal(1, issues[0].Number)
+}
+
+func TestAPIListIssues_ResponseIncludesAssignees(t *testing.T) {
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	ctx := t.Context()
+	now := time.Now().UTC()
+
+	repoID, err := database.UpsertRepo(
+		ctx,
+		db.GitHubRepoIdentity("github.com", "owner", "repo"),
+	)
+	require.NoError(err)
+
+	_, err = database.UpsertIssue(ctx, &db.Issue{
+		RepoID: repoID, PlatformID: 1, Number: 1,
+		URL: "https://github.com/owner/repo/issues/1",
+		Title: "Issue 1", Author: "author", State: "open",
+		AssigneesJSON: `["alice","bob"]`,
+		CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+	})
+	require.NoError(err)
+
+	resp := doJSON(t, srv, http.MethodGet, "/api/v1/issues?state=all", nil)
+	require.Equal(http.StatusOK, resp.Code)
+
+	// Check raw JSON contains assignees
+	body := resp.Body.String()
+	require.Contains(body, `"assignees":["alice","bob"]`)
+}

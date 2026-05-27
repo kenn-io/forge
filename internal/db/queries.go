@@ -3203,8 +3203,8 @@ func (d *DB) ListIssues(
 		args = append(args, condArgs...)
 	}
 	if opts.Assignee != "" {
-		// JSON array contains the username (exact match within array)
-		conds = append(conds, `i.assignees_json LIKE '%"' || ? || '"%'`)
+		// Query JSON array structurally to avoid LIKE wildcard injection
+		conds = append(conds, `EXISTS (SELECT 1 FROM json_each(i.assignees_json) WHERE value = ?)`)
 		args = append(args, opts.Assignee)
 	}
 

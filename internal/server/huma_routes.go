@@ -170,12 +170,13 @@ type resolveDiffReviewThreadInput struct {
 }
 
 type listIssuesInput struct {
-	Repo    string `query:"repo"`
-	State   string `query:"state"`
-	Starred bool   `query:"starred"`
-	Q       string `query:"q"`
-	Limit   int    `query:"limit"`
-	Offset  int    `query:"offset"`
+	Repo     string `query:"repo"`
+	State    string `query:"state"`
+	Starred  bool   `query:"starred"`
+	Q        string `query:"q"`
+	Assignee string `query:"assignee"`
+	Limit    int    `query:"limit"`
+	Offset   int    `query:"offset"`
 }
 
 type listIssuesOutput = bodyOutput[[]issueResponse]
@@ -1839,6 +1840,7 @@ func (s *Server) listIssues(ctx context.Context, input *listIssuesInput) (*listI
 		State:       input.State,
 		Search:      input.Q,
 		Starred:     input.Starred,
+		Assignee:    input.Assignee,
 		Limit:       input.Limit,
 		Offset:      input.Offset,
 		RepoFilters: parseRepoFilters(input.Repo),

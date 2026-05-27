@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ActivityItem } from "../api/types.js";
 import {
-  collapseActivityCommitRuns,
+  collapseActivityRuns,
   isCollapsedActivityRow,
 } from "./activityRows.js";
 import {
@@ -57,9 +57,9 @@ function branchItem(
   } as ActivityItem;
 }
 
-describe("collapseActivityCommitRuns", () => {
+describe("collapseActivityRuns", () => {
   it("collapses three consecutive commits from the same author", () => {
-    const rows = collapseActivityCommitRuns([
+    const rows = collapseActivityRuns([
       item("7", "commit", "alice"),
       item("6", "commit", "alice"),
       item("5", "commit", "alice"),
@@ -69,8 +69,68 @@ describe("collapseActivityCommitRuns", () => {
     expect(isCollapsedActivityRow(rows[0]!)).toBe(true);
   });
 
+  it("collapses consecutive comments from the same author", () => {
+    const rows = collapseActivityRuns([
+      item("7", "comment", "alice"),
+      item("6", "comment", "alice"),
+      item("5", "comment", "alice"),
+    ]);
+
+    expect(rows).toHaveLength(1);
+    expect(isCollapsedActivityRow(rows[0]!)).toBe(true);
+    expect(
+      isCollapsedActivityRow(rows[0]!)
+        ? rows[0].representative.activity_type
+        : undefined,
+    ).toBe("comment");
+  });
+
+  it("collapses consecutive reviews from the same author", () => {
+    const rows = collapseActivityRuns([
+      item("7", "review", "alice"),
+      item("6", "review", "alice"),
+      item("5", "review", "alice"),
+    ]);
+
+    expect(rows).toHaveLength(1);
+    expect(isCollapsedActivityRow(rows[0]!)).toBe(true);
+    expect(
+      isCollapsedActivityRow(rows[0]!)
+        ? rows[0].representative.activity_type
+        : undefined,
+    ).toBe("review");
+  });
+
+  it("does not merge runs of different event types", () => {
+    const rows = collapseActivityRuns([
+      item("9", "review", "alice"),
+      item("8", "review", "alice"),
+      item("7", "review", "alice"),
+      item("6", "comment", "alice"),
+      item("5", "comment", "alice"),
+      item("4", "comment", "alice"),
+    ]);
+
+    expect(rows).toHaveLength(2);
+    expect(isCollapsedActivityRow(rows[0]!)).toBe(true);
+    expect(isCollapsedActivityRow(rows[1]!)).toBe(true);
+  });
+
+  it("does not collapse runs of fewer than three events", () => {
+    const rows = collapseActivityRuns([
+      item("3", "comment", "alice"),
+      item("2", "review", "alice"),
+      item("1", "comment", "alice"),
+    ]);
+
+    expect(rows).toHaveLength(3);
+    expect(isCollapsedActivityRow(rows[0]!)).toBe(false);
+    expect(isCollapsedActivityRow(rows[1]!)).toBe(false);
+    expect(isCollapsedActivityRow(rows[2]!)).toBe(false);
+  });
+
   it("does not collapse across a force-push boundary", () => {
-    const rows = collapseActivityCommitRuns([
+    const rows = collapseActivityRuns([
       item("9", "commit", "alice"),
       item("8", "commit", "alice"),
       item("7", "commit", "alice"),
@@ -90,7 +150,7 @@ describe("collapseActivityCommitRuns", () => {
   });
 
   it("rolls up branch commit runs by repo branch and author", () => {
-    const rows = collapseActivityCommitRuns([
+    const rows = collapseActivityRuns([
       branchItem("9", "default_branch_commit", "alice"),
       branchItem("8", "default_branch_commit", "alice"),
       branchItem("7", "default_branch_commit", "alice"),
@@ -106,7 +166,7 @@ describe("collapseActivityCommitRuns", () => {
   });
 
   it("does not collapse branch commits across branches", () => {
-    const rows = collapseActivityCommitRuns([
+    const rows = collapseActivityRuns([
       branchItem("9", "default_branch_commit", "alice", "main"),
       branchItem("8", "default_branch_commit", "alice", "main"),
       branchItem("7", "default_branch_commit", "alice", "main"),

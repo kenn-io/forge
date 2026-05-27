@@ -1,6 +1,6 @@
 import type { ActivityItem } from "../api/types.js";
 
-export interface CollapsedActivityCommits {
+export interface CollapsedActivityRun {
   kind: "collapsed";
   id: string;
   author: string;
@@ -12,11 +12,11 @@ export interface CollapsedActivityCommits {
 
 export type ActivityRow =
   | ActivityItem
-  | CollapsedActivityCommits;
+  | CollapsedActivityRun;
 
 export function isCollapsedActivityRow(
   row: ActivityRow,
-): row is CollapsedActivityCommits {
+): row is CollapsedActivityRun {
   return "kind" in row && row.kind === "collapsed";
 }
 
@@ -52,15 +52,20 @@ function repoKeyForItem(item: ActivityItem): string {
   });
 }
 
-function commitRunAuthor(item: ActivityItem): string {
+function activityRunAuthor(item: ActivityItem): string {
   return item.author_name || item.author;
 }
 
-function commitRunGroupKey(item: ActivityItem): string | null {
-  const author = commitRunAuthor(item);
-  if (item.activity_type === "commit") {
+function activityRunGroupKey(item: ActivityItem): string | null {
+  const author = activityRunAuthor(item);
+  if (
+    item.activity_type === "commit"
+    || item.activity_type === "comment"
+    || item.activity_type === "review"
+  ) {
     return [
       "item",
+      item.activity_type,
       repoKeyForItem(item),
       item.item_type,
       item.item_number,
@@ -80,7 +85,7 @@ function commitRunGroupKey(item: ActivityItem): string | null {
   return null;
 }
 
-export function collapseActivityCommitRuns(
+export function collapseActivityRuns(
   items: ActivityItem[],
 ): ActivityRow[] {
   const result: ActivityRow[] = [];
@@ -88,7 +93,7 @@ export function collapseActivityCommitRuns(
 
   while (i < items.length) {
     const item = items[i]!;
-    const groupKey = commitRunGroupKey(item);
+    const groupKey = activityRunGroupKey(item);
     if (groupKey === null) {
       result.push(item);
       i++;
@@ -98,7 +103,7 @@ export function collapseActivityCommitRuns(
     let j = i + 1;
     while (j < items.length) {
       const next = items[j]!;
-      if (commitRunGroupKey(next) !== groupKey) break;
+      if (activityRunGroupKey(next) !== groupKey) break;
       j++;
     }
 
@@ -113,7 +118,7 @@ export function collapseActivityCommitRuns(
       result.push({
         kind: "collapsed",
         id: `collapsed-${latest.id}-${count}`,
-        author: commitRunAuthor(item),
+        author: activityRunAuthor(item),
         count,
         earliest: earliest.created_at,
         latest: latest.created_at,

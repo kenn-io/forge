@@ -2,7 +2,7 @@
   import type { ActivityItem } from "../api/types.js";
   import { getStores } from "../context.js";
   import {
-    collapseActivityCommitRuns,
+    collapseActivityRuns,
     isCollapsedActivityRow,
     activityItemKey,
     activityRepoKey,
@@ -80,7 +80,7 @@
     latestAuthor: string;
     events: ActivityItem[];
     displayEvents: ReturnType<
-      typeof collapseActivityCommitRuns
+      typeof collapseActivityRuns
     >;
   }
 
@@ -173,7 +173,7 @@
           latestTime: first.created_at,
           latestAuthor: eventAuthor(first),
           events,
-          displayEvents: collapseActivityCommitRuns(events),
+          displayEvents: collapseActivityRuns(events),
         },
       });
     }
@@ -275,7 +275,7 @@
         branchItems.push(branchRowRepresentative(branchEntry.row));
         j++;
       }
-      for (const row of collapseActivityCommitRuns(branchItems)) {
+      for (const row of collapseActivityRuns(branchItems)) {
         result.push(branchEntryFromRow(row));
       }
       i = j;
@@ -455,8 +455,27 @@
   }
 
   function branchRowTitle(row: ActivityRow): string {
-    if (isCollapsedActivityRow(row)) return `${row.count} commits`;
+    if (isCollapsedActivityRow(row)) return collapsedRunLabel(row);
     return eventSummary(row) || eventLabel(row.activity_type);
+  }
+
+  function collapsedRunLabel(row: {
+    count: number;
+    representative: ActivityItem;
+  }): string {
+    const noun = collapsedRunNoun(row.representative.activity_type);
+    return `${row.count} ${noun}`;
+  }
+
+  function collapsedRunNoun(type: string): string {
+    switch (type) {
+      case "commit":
+      case "default_branch_commit":
+        return "commits";
+      case "comment": return "comments";
+      case "review": return "reviews";
+      default: return type;
+    }
   }
 
   function rowLinkUrl(item: ActivityItem): string {
@@ -620,7 +639,7 @@
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             {#if isCollapsedActivityRow(row)}
               <div class="event-row collapsed-event" onclick={() => handleEventClick(row.representative)}>
-                <span class="event-type evt-commit">{row.count} commits</span>
+                <span class="event-type {eventClass(row.representative.activity_type)}">{collapsedRunLabel(row)}</span>
                 <span class="event-author">{row.author}</span>
                 <span class="event-time">{relativeTime(row.earliest)} - {relativeTime(row.latest)}</span>
               </div>

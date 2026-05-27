@@ -600,16 +600,16 @@ type graphQLError struct {
 }
 
 type graphQLReviewThreadComment struct {
-	NodeID         string `json:"id"`
-	DatabaseID     int64  `json:"databaseId"`
-	FullDatabaseID int64  `json:"fullDatabaseId"`
-	Body           string `json:"body"`
-	Path           string `json:"path"`
-	Line           int    `json:"line"`
-	OriginalLine   int    `json:"originalLine"`
-	SubjectType    string `json:"subjectType"`
-	DiffHunk       string `json:"diffHunk"`
-	URL            string `json:"url"`
+	NodeID         string       `json:"id"`
+	DatabaseID     graphQLInt64 `json:"databaseId"`
+	FullDatabaseID graphQLInt64 `json:"fullDatabaseId"`
+	Body           string       `json:"body"`
+	Path           string       `json:"path"`
+	Line           int          `json:"line"`
+	OriginalLine   int          `json:"originalLine"`
+	SubjectType    string       `json:"subjectType"`
+	DiffHunk       string       `json:"diffHunk"`
+	URL            string       `json:"url"`
 	Author         *struct {
 		Login string `json:"login"`
 	} `json:"author"`
@@ -624,6 +624,33 @@ type graphQLReviewThreadComment struct {
 	} `json:"pullRequestReview"`
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+type graphQLInt64 int64
+
+func (value *graphQLInt64) UnmarshalJSON(data []byte) error {
+	text := strings.TrimSpace(string(data))
+	if text == "" || text == "null" {
+		*value = 0
+		return nil
+	}
+	if strings.HasPrefix(text, `"`) {
+		unquoted, err := strconv.Unquote(text)
+		if err != nil {
+			return fmt.Errorf("decode GraphQL int64: %w", err)
+		}
+		text = unquoted
+		if text == "" {
+			*value = 0
+			return nil
+		}
+	}
+	parsed, err := strconv.ParseInt(text, 10, 64)
+	if err != nil {
+		return fmt.Errorf("decode GraphQL int64 %q: %w", text, err)
+	}
+	*value = graphQLInt64(parsed)
+	return nil
 }
 
 type graphQLReviewThreadCommentConnection struct {
@@ -1250,7 +1277,7 @@ func githubReviewThreadCommentFromGraphQL(
 ) PullRequestReviewThreadComment {
 	next := PullRequestReviewThreadComment{
 		NodeID:       comment.NodeID,
-		DatabaseID:   firstPositiveInt64(comment.FullDatabaseID, comment.DatabaseID),
+		DatabaseID:   firstPositiveInt64(int64(comment.FullDatabaseID), int64(comment.DatabaseID)),
 		SubjectType:  comment.SubjectType,
 		Body:         comment.Body,
 		Path:         comment.Path,

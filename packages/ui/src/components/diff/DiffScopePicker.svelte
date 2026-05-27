@@ -135,6 +135,7 @@
   .diff-scope-picker__control {
     display: inline-flex;
     align-items: center;
+    box-sizing: border-box;
     gap: 6px;
     height: 26px;
     padding: 2px 6px;
@@ -159,6 +160,7 @@
     background: transparent;
     color: inherit;
     font: inherit;
+    line-height: 1;
   }
 
   .diff-scope-picker--compact .diff-scope-picker__control {
@@ -176,8 +178,11 @@
   }
 
   .diff-scope-picker__label {
+    display: inline-flex;
+    align-items: center;
     font-size: var(--font-size-xs);
     font-weight: 600;
+    line-height: 1;
     white-space: nowrap;
   }
 

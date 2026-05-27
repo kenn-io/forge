@@ -18,12 +18,15 @@
 
 <style>
   .diff-scope-label {
+    display: inline-flex;
+    align-items: center;
     min-width: 0;
     overflow: hidden;
     color: var(--text-secondary);
     font-family: var(--font-mono);
     font-size: var(--font-size-2xs);
     font-weight: 600;
+    line-height: 1;
     text-overflow: ellipsis;
     white-space: nowrap;
   }

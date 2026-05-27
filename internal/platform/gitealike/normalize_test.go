@@ -338,6 +338,88 @@ func TestNormalizeStatusesKeepsQueuedActionRerunAsLatest(t *testing.T) {
 	assert.Equal("https://gitea/actions/11", checks[0].URL)
 }
 
+func TestNormalizeIssue_ExtractsAssignees(t *testing.T) {
+	require := Require.New(t)
+	base := time.Date(2026, 5, 1, 2, 3, 4, 0, time.UTC)
+	repo := platform.RepoRef{
+		Platform: platform.KindGitea,
+		Host:     "gitea.com",
+		Owner:    "owner",
+		Name:     "repo",
+		RepoPath: "owner/repo",
+	}
+
+	issue := NormalizeIssue(repo, IssueDTO{
+		ID:      100,
+		Index:   42,
+		HTMLURL: "https://gitea.com/owner/repo/issues/42",
+		Title:   "Test issue",
+		User:    UserDTO{UserName: "author"},
+		State:   "open",
+		Body:    "issue body",
+		Assignees: []UserDTO{
+			{UserName: "alice"},
+			{UserName: "bob"},
+		},
+		Created: base,
+		Updated: base,
+	})
+	require.Equal([]string{"alice", "bob"}, issue.Assignees)
+}
+
+func TestNormalizeIssue_EmptyAssignees(t *testing.T) {
+	require := Require.New(t)
+	base := time.Date(2026, 5, 1, 2, 3, 4, 0, time.UTC)
+	repo := platform.RepoRef{
+		Platform: platform.KindGitea,
+		Host:     "gitea.com",
+		Owner:    "owner",
+		Name:     "repo",
+		RepoPath: "owner/repo",
+	}
+
+	issue := NormalizeIssue(repo, IssueDTO{
+		ID:      100,
+		Index:   42,
+		HTMLURL: "https://gitea.com/owner/repo/issues/42",
+		Title:   "Test issue",
+		User:    UserDTO{UserName: "author"},
+		State:   "open",
+		Created: base,
+		Updated: base,
+	})
+	require.Empty(issue.Assignees)
+}
+
+func TestNormalizeIssue_SkipsEmptyUsernames(t *testing.T) {
+	require := Require.New(t)
+	base := time.Date(2026, 5, 1, 2, 3, 4, 0, time.UTC)
+	repo := platform.RepoRef{
+		Platform: platform.KindGitea,
+		Host:     "gitea.com",
+		Owner:    "owner",
+		Name:     "repo",
+		RepoPath: "owner/repo",
+	}
+
+	issue := NormalizeIssue(repo, IssueDTO{
+		ID:      100,
+		Index:   42,
+		HTMLURL: "https://gitea.com/owner/repo/issues/42",
+		Title:   "Test issue",
+		User:    UserDTO{UserName: "author"},
+		State:   "open",
+		Assignees: []UserDTO{
+			{UserName: ""},
+			{UserName: "alice"},
+			{UserName: ""},
+		},
+		Created: base,
+		Updated: base,
+	})
+	require.Equal([]string{"alice"}, issue.Assignees)
+}
+
 func TestSharedHelpersNormalizeStateDedupeAndPagination(t *testing.T) {
 	assert := Assert.New(t)
 

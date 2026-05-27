@@ -127,6 +127,7 @@ type IssueDTO struct {
 	Body          string
 	Comments      int
 	Labels        []LabelDTO
+	Assignees     []UserDTO
 	Created       time.Time
 	Updated       time.Time
 	Closed        *time.Time

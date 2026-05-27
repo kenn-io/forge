@@ -261,6 +261,22 @@ func TestAPIListIssuesResponseIncludesAssignees(t *testing.T) {
 	require.Equal([]string{"alice", "bob"}, *(*resp.JSON200)[0].Assignees)
 }
 
+func TestAPIGetIssueIncludesAssignees(t *testing.T) {
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	seedIssueWithAssignees(t, database, "acme", "widget", 7, "open", `["alice","bob"]`)
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.GetIssueWithResponse(
+		t.Context(), "gh", "acme", "widget", 7,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.NotNil(resp.JSON200.Issue.Assignees)
+	require.Equal([]string{"alice", "bob"}, *resp.JSON200.Issue.Assignees)
+}
+
 func TestAPIGetIssueIncludesLabels(t *testing.T) {
 	require := require.New(t)
 	srv, database := setupTestServer(t)

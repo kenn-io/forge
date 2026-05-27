@@ -173,6 +173,9 @@ func (m *mockGH) ListIssueCommentsIfChanged(context.Context, string, string, int
 func (m *mockGH) ListReviews(context.Context, string, string, int) ([]*gh.PullRequestReview, error) {
 	return nil, nil
 }
+func (m *mockGH) ListPullRequestReviewThreads(context.Context, string, string, int) ([]ghclient.PullRequestReviewThread, error) {
+	return nil, nil
+}
 func (m *mockGH) ListCommits(context.Context, string, string, int) ([]*gh.RepositoryCommit, error) {
 	return nil, nil
 }
@@ -198,6 +201,11 @@ func (m *mockGH) CreateIssueComment(context.Context, string, string, int, string
 	return nil, nil
 }
 func (m *mockGH) EditIssueComment(context.Context, string, string, int64, string) (*gh.IssueComment, error) {
+	return nil, nil
+}
+func (m *mockGH) CreatePullRequestReviewCommentReply(
+	context.Context, string, string, int, string, int64,
+) (*gh.PullRequestComment, error) {
 	return nil, nil
 }
 func (m *mockGH) GetRepository(

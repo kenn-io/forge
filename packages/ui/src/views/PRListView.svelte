@@ -10,6 +10,7 @@
   import DiffFilesLayout from "../components/diff/DiffFilesLayout.svelte";
   import type { ProviderCapabilities, PullDetail as PullDetailResponse } from "../api/types.js";
   import type { DetailSyncMode } from "../stores/detail.svelte.js";
+  import { reviewThreadsFromEvents } from "../components/diff/review-thread-context.js";
   import {
     buildFocusPullRequestRoute,
     buildPullRequestFilesRoute,
@@ -182,6 +183,7 @@
           repoPath={selectedPR.repoPath}
           diffHeadSHA={selectedDetail?.diff_head_sha}
           capabilities={selectedDetail?.repo?.capabilities ?? defaultProviderCapabilities}
+          reviewThreads={reviewThreadsFromEvents(selectedDetail?.events)}
         />
       {/key}
     {:else}

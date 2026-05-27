@@ -673,7 +673,7 @@ describe("EventTimeline", () => {
     const jumpToReviewThread = vi.fn();
     const diff = makeDiffStore();
 
-    render(EventTimeline, {
+    const { container } = render(EventTimeline, {
       props: {
         events: [makeReviewThreadEvent()],
         provider: "github",
@@ -697,12 +697,83 @@ describe("EventTimeline", () => {
 
     expect(screen.getByText("src/review.ts:10-11")).toBeTruthy();
     expect(screen.getByText("client.publishThreads();")).toBeTruthy();
+    expect(container.querySelector(".event-body-wrap--with-thread .event-actions")).toBeTruthy();
+
+    const threadedActions = findCompiledStyleRule(".event-body-wrap--with-thread");
+    expect(threadedActions.getPropertyValue("position")).toBe("static");
 
     await fireEvent.click(screen.getByRole("button", { name: "Jump to diff" }));
 
     expect(jumpToReviewThread).toHaveBeenCalledWith(
       expect.objectContaining({ id: "thread-1", path: "src/review.ts" }),
     );
+  });
+
+  it("shows a reply composer for review threads when thread replies are available", async () => {
+    render(EventTimeline, {
+      props: {
+        events: [makeReviewThreadEvent()],
+        provider: "github",
+        platformHost: "github.com",
+        repoOwner: "acme",
+        repoName: "widget",
+        repoPath: "acme/widget",
+        number: 7,
+        canReplyToThreads: true,
+      },
+      context: new Map([
+        [STORES_KEY, {
+          detail: {
+            replyToDiscussion: vi.fn().mockResolvedValue(true),
+            getDetailError: vi.fn(),
+          },
+          diff: makeDiffStore(),
+          diffReviewDraft: {
+            setRouteContext: vi.fn(),
+            isSubmitting: () => false,
+          },
+        }],
+      ]),
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Reply" }));
+
+    expect(screen.getByRole("button", { name: /cancel/i })).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: "Reply" })).toHaveLength(2);
+  });
+
+  it("does not expose replies when a timeline item lacks a local review thread", () => {
+    render(EventTimeline, {
+      props: {
+        events: [makeEvent({
+          EventType: "review_comment",
+          Body: "Provider thread without local diff metadata",
+          ThreadID: "PRRT_provider_thread",
+        })],
+        provider: "github",
+        platformHost: "github.com",
+        repoOwner: "acme",
+        repoName: "widget",
+        repoPath: "acme/widget",
+        number: 7,
+        canReplyToThreads: true,
+      },
+      context: new Map([
+        [STORES_KEY, {
+          detail: {
+            replyToDiscussion: vi.fn().mockResolvedValue(true),
+            getDetailError: vi.fn(),
+          },
+          diff: makeDiffStore(),
+          diffReviewDraft: {
+            setRouteContext: vi.fn(),
+            isSubmitting: () => false,
+          },
+        }],
+      ]),
+    });
+
+    expect(screen.queryByRole("button", { name: "Reply" })).toBeNull();
   });
 
   it("marks review thread context outdated when the line is absent from the loaded diff", () => {

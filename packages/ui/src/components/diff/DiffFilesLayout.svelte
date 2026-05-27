@@ -5,6 +5,7 @@
   import DiffSidebar from "./DiffSidebar.svelte";
   import DiffToolbar from "./DiffToolbar.svelte";
   import DiffView from "./DiffView.svelte";
+  import type { ReviewThread } from "./review-thread-context.js";
 
   interface Props {
     provider: string;
@@ -15,6 +16,7 @@
     number: number;
     diffHeadSHA?: string | undefined;
     capabilities?: ProviderCapabilities | undefined;
+    reviewThreads?: ReviewThread[];
   }
 
   const {
@@ -26,6 +28,7 @@
     number,
     diffHeadSHA = undefined,
     capabilities = undefined,
+    reviewThreads = [],
   }: Props = $props();
 
   const storageKey = "diff-file-tree-width";
@@ -164,6 +167,7 @@
         {repoPath}
         {number}
         {diffHeadSHA}
+        {reviewThreads}
         reviewDraftMutation={capabilities?.review_draft_mutation ?? false}
         supportedReviewActions={capabilities?.supported_review_actions ?? []}
         nativeMultilineRanges={capabilities?.native_multiline_ranges ?? false}

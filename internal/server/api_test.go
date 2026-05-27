@@ -115,6 +115,7 @@ type mockGH struct {
 	editIssueContentFn         func(context.Context, string, string, int, *string, *string) (*gh.Issue, error)
 	createIssueCommentFn       func(context.Context, string, string, int, string) (*gh.IssueComment, error)
 	editIssueCommentFn         func(context.Context, string, string, int64, string) (*gh.IssueComment, error)
+	createReviewCommentReplyFn func(context.Context, string, string, int, string, int64) (*gh.PullRequestComment, error)
 	createReviewFn             func(context.Context, string, string, int, string, string) (*gh.PullRequestReview, error)
 	createReviewWithCommentsFn func(context.Context, string, string, int, string, string, string, []*gh.DraftReviewComment) (*gh.PullRequestReview, error)
 	mergePullRequestFn         func(context.Context, string, string, int, string, string, string) (*gh.PullRequestMergeResult, error)
@@ -131,6 +132,7 @@ type mockGH struct {
 	listOpenPRsErr             error
 	listOpenIssuesFn           func(context.Context, string, string) ([]*gh.Issue, error)
 	listIssueCommentsFn        func(context.Context, string, string, int) ([]*gh.IssueComment, error)
+	listReviewThreadsFn        func(context.Context, string, string, int) ([]ghclient.PullRequestReviewThread, error)
 	listIssueCommentsErr       error
 }
 
@@ -277,6 +279,18 @@ func (m *mockGH) ListReviews(
 	return nil, nil
 }
 
+func (m *mockGH) ListPullRequestReviewThreads(
+	ctx context.Context,
+	owner string,
+	repo string,
+	number int,
+) ([]ghclient.PullRequestReviewThread, error) {
+	if m.listReviewThreadsFn != nil {
+		return m.listReviewThreadsFn(ctx, owner, repo, number)
+	}
+	return nil, nil
+}
+
 func (m *mockGH) ListCommits(
 	_ context.Context, _, _ string, _ int,
 ) ([]*gh.RepositoryCommit, error) {
@@ -358,6 +372,23 @@ func (m *mockGH) EditIssueComment(
 		User:      &gh.User{Login: &login},
 		CreatedAt: &now,
 		UpdatedAt: &now,
+	}, nil
+}
+
+func (m *mockGH) CreatePullRequestReviewCommentReply(
+	ctx context.Context, owner, repo string, number int, body string, commentID int64,
+) (*gh.PullRequestComment, error) {
+	if m.createReviewCommentReplyFn != nil {
+		return m.createReviewCommentReplyFn(ctx, owner, repo, number, body, commentID)
+	}
+	id := commentID + 1
+	login := "fixture-bot"
+	now := gh.Timestamp{Time: time.Now().UTC()}
+	return &gh.PullRequestComment{
+		ID:        &id,
+		Body:      &body,
+		User:      &gh.User{Login: &login},
+		CreatedAt: &now,
 	}, nil
 }
 
@@ -908,6 +939,97 @@ func seedPRWithHeadSHA(t *testing.T, database *db.DB, owner, name string, number
 	return seedPR(t, database, owner, name, number, withSeedPRHeadSHA(headSHA))
 }
 
+func TestAPIReplyToGitHubReviewThreadUsesProviderCommentID(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := t.Context()
+
+	var gotCommentID int64
+	var gotBody string
+	mock := &mockGH{
+		createReviewCommentReplyFn: func(
+			_ context.Context, owner, repo string, number int, body string, commentID int64,
+		) (*gh.PullRequestComment, error) {
+			assert.Equal("acme", owner)
+			assert.Equal("widget", repo)
+			assert.Equal(7, number)
+			gotCommentID = commentID
+			gotBody = body
+			id := int64(222)
+			login := "fixture-bot"
+			now := gh.Timestamp{Time: time.Now().UTC().Truncate(time.Second)}
+			return &gh.PullRequestComment{
+				ID:        &id,
+				Body:      &body,
+				User:      &gh.User{Login: &login},
+				CreatedAt: &now,
+			}, nil
+		},
+	}
+	srv, database := setupTestServerWithMock(t, mock)
+	mrID := seedPR(t, database, "acme", "widget", 7)
+
+	now := time.Now().UTC().Truncate(time.Second)
+	newLine := 11
+	require.NoError(database.UpsertMRReviewThreads(ctx, mrID, []db.MRReviewThread{{
+		ProviderThreadID:  "PRRT_1",
+		ProviderCommentID: "101",
+		Body:              "Please keep this explicit.",
+		AuthorLogin:       "reviewer",
+		Range: db.ReviewLineRange{
+			Path:        "src/review.ts",
+			Side:        "right",
+			Line:        11,
+			NewLine:     &newLine,
+			LineType:    "add",
+			DiffHeadSHA: "head-sha",
+		},
+		CreatedAt: now,
+		UpdatedAt: now,
+	}}))
+	threads, err := database.ListMRReviewThreads(ctx, mrID)
+	require.NoError(err)
+	require.Len(threads, 1)
+
+	localThreadID := strconv.FormatInt(threads[0].ID, 10)
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/pulls/github/acme/widget/7/discussions/"+localThreadID+"/reply",
+		strings.NewReader(`{"body":"Reply from middleman"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	require.Equal(http.StatusCreated, rr.Code, "response: %s", rr.Body.String())
+	assert.Equal(int64(101), gotCommentID)
+	assert.Equal("Reply from middleman", gotBody)
+
+	var result struct {
+		PlatformExternalID string  `json:"PlatformExternalID"`
+		EventType          string  `json:"EventType"`
+		Author             string  `json:"Author"`
+		Body               string  `json:"Body"`
+		ThreadID           *string `json:"ThreadID"`
+	}
+	require.NoError(json.NewDecoder(rr.Body).Decode(&result))
+	assert.Equal("222", result.PlatformExternalID)
+	assert.Equal("review_comment", result.EventType)
+	assert.Equal("fixture-bot", result.Author)
+	assert.Equal("Reply from middleman", result.Body)
+	require.NotNil(result.ThreadID)
+	assert.Equal("PRRT_1", *result.ThreadID)
+
+	events, err := database.ListMREvents(ctx, mrID)
+	require.NoError(err)
+	require.Len(events, 1)
+	assert.Equal("review_comment", events[0].EventType)
+	assert.Equal("222", events[0].PlatformExternalID)
+	assert.Equal("review_comment:222", events[0].DedupeKey)
+	require.NotNil(events[0].ThreadID)
+	assert.Equal("PRRT_1", *events[0].ThreadID)
+}
+
 func TestAPIMergePR405ReturnsGitHubMessage(t *testing.T) {
 	require := require.New(t)
 
@@ -1242,6 +1364,98 @@ func TestAPIListPullsKeepsCachedCIDecorationsAfterIndexSync(t *testing.T) {
 	pull := (*resp.JSON200)[0]
 	assert.Equal("failure", pull.CIStatus)
 	assert.JSONEq(checksJSON, pull.CIChecksJSON)
+}
+
+func TestAPIGitHubSyncPersistsReviewThreadsThroughPullDetail(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	now := time.Date(2026, 5, 27, 16, 1, 31, 0, time.UTC)
+	prNumber := 42
+	line := 1
+	headSHA := "head-sha"
+	commentCommitSHA := "comment-sha"
+	baseSHA := "base-sha"
+	mock := &mockGH{
+		getPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+			require.Equal(prNumber, number)
+			prID := int64(9001)
+			prNodeID := "PR_kwDO123"
+			title := "inline review"
+			state := "open"
+			url := "https://github.com/acme/widget/pull/42"
+			author := "ada"
+			headRef := "feature"
+			baseRef := "main"
+			return &gh.PullRequest{
+				ID:        &prID,
+				NodeID:    &prNodeID,
+				Number:    &number,
+				HTMLURL:   &url,
+				Title:     &title,
+				State:     &state,
+				User:      &gh.User{Login: &author},
+				CreatedAt: &gh.Timestamp{Time: now},
+				UpdatedAt: &gh.Timestamp{Time: now},
+				Head: &gh.PullRequestBranch{
+					Ref: &headRef,
+					SHA: &headSHA,
+				},
+				Base: &gh.PullRequestBranch{
+					Ref: &baseRef,
+					SHA: &baseSHA,
+				},
+			}, nil
+		},
+		listIssueCommentsFn: func(context.Context, string, string, int) ([]*gh.IssueComment, error) {
+			return nil, nil
+		},
+		listReviewThreadsFn: func(context.Context, string, string, int) ([]ghclient.PullRequestReviewThread, error) {
+			return []ghclient.PullRequestReviewThread{{
+				NodeID:     "PRRT_1",
+				IsOutdated: false,
+				Path:       ".golangci.yml",
+				Side:       "RIGHT",
+				Line:       line,
+				Comments: []ghclient.PullRequestReviewThreadComment{{
+					NodeID:           "PRRC_1",
+					DatabaseID:       3312100450,
+					ReviewDatabaseID: 4373946198,
+					Body:             "inline note",
+					AuthorLogin:      "reviewer",
+					CommitID:         commentCommitSHA,
+					CreatedAt:        now,
+					UpdatedAt:        now,
+				}},
+			}}, nil
+		},
+	}
+	srv, _ := setupTestServerWithMock(t, mock)
+	client := setupTestClient(t, srv)
+
+	require.NoError(srv.syncer.SyncMR(ctx, "acme", "widget", prNumber))
+
+	resp, err := client.HTTP.GetPullWithResponse(ctx, "gh", "acme", "widget", int64(prNumber))
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.NotNil(resp.JSON200.Events)
+	require.Len(*resp.JSON200.Events, 1)
+	event := (*resp.JSON200.Events)[0]
+	assert.Equal("review_comment", event.EventType)
+	assert.Equal("3312100450", event.PlatformExternalID)
+	require.NotNil(event.ThreadID)
+	assert.Equal("PRRT_1", *event.ThreadID)
+	require.NotNil(event.DiffThread)
+	assert.Equal(".golangci.yml", event.DiffThread.Path)
+	assert.Equal("right", event.DiffThread.Side)
+	assert.Equal(int64(line), event.DiffThread.Line)
+	assert.Equal("inline note", event.DiffThread.Body)
+	assert.Nil(event.DiffThread.DiffHeadSha)
+	require.NotNil(event.DiffThread.CommitSha)
+	assert.Equal(commentCommitSHA, *event.DiffThread.CommitSha)
+	require.NotNil(event.DiffThread.ProviderCommentId)
+	assert.Equal("3312100450", *event.DiffThread.ProviderCommentId)
 }
 
 func TestAPIRepoFilterAcceptsMultipleRepos(t *testing.T) {
@@ -11511,9 +11725,17 @@ func TestAPIPublishReviewDraftPersistsProviderReviewThreads(t *testing.T) {
 	events, err := database.ListMREvents(ctx, mr.ID)
 	require.NoError(err)
 	require.NotEmpty(events)
-	require.Len(events, 1)
+	require.Len(events, 2)
 	assert.Equal("review_comment", events[0].EventType)
-	assert.Equal("thread-7", events[0].PlatformExternalID)
+	assert.Equal("comment-reply", events[0].PlatformExternalID)
+	assert.Equal("Reply should not replace original", events[0].Body)
+	require.NotNil(events[0].ThreadID)
+	assert.Equal("thread-7", *events[0].ThreadID)
+	assert.Equal("review_comment", events[1].EventType)
+	assert.Equal("comment-7", events[1].PlatformExternalID)
+	assert.Equal("Published inline comment", events[1].Body)
+	require.NotNil(events[1].ThreadID)
+	assert.Equal("thread-7", *events[1].ThreadID)
 }
 
 func TestAPIForgejoPublishReviewDraftIngestsTimelineThread(t *testing.T) {
@@ -11737,13 +11959,21 @@ func TestAPIGitLabSyncKeepsCanonicalReviewThreadWhenProviderReturnsReplies(t *te
 	require.Equal(http.StatusOK, detailRR.Code, detailRR.Body.String())
 	var detail mergeRequestDetailResponse
 	require.NoError(json.NewDecoder(detailRR.Body).Decode(&detail))
-	require.Len(detail.Events, 1)
+	require.Len(detail.Events, 2)
 	require.NotNil(detail.Events[0].DiffThread)
 	assert.Equal("review_comment", detail.Events[0].EventType)
-	assert.Equal("original inline note", detail.Events[0].DiffThread.Body)
-	assert.Equal("reviewer", detail.Events[0].DiffThread.AuthorLogin)
-	assert.Equal("101", detail.Events[0].DiffThread.ProviderCommentID)
-	assert.Equal(originalLine, detail.Events[0].DiffThread.Line)
+	assert.Equal("reply should not replace original", detail.Events[0].Body)
+	require.NotNil(detail.Events[0].ThreadID)
+	assert.Equal("discussion-1", *detail.Events[0].ThreadID)
+	require.NotNil(detail.Events[1].DiffThread)
+	assert.Equal("review_comment", detail.Events[1].EventType)
+	assert.Equal("original inline note", detail.Events[1].Body)
+	require.NotNil(detail.Events[1].ThreadID)
+	assert.Equal("discussion-1", *detail.Events[1].ThreadID)
+	assert.Equal("original inline note", detail.Events[1].DiffThread.Body)
+	assert.Equal("reviewer", detail.Events[1].DiffThread.AuthorLogin)
+	assert.Equal("101", detail.Events[1].DiffThread.ProviderCommentID)
+	assert.Equal(originalLine, detail.Events[1].DiffThread.Line)
 }
 
 func TestAPIGitLabSyncPrunesMissingReviewThreadTimelineEvents(t *testing.T) {

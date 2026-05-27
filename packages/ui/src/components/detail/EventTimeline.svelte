@@ -3,6 +3,7 @@
   import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
   import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
   import CopyIcon from "@lucide/svelte/icons/copy";
+  import MessageSquareReplyIcon from "@lucide/svelte/icons/message-square-reply";
   import PencilIcon from "@lucide/svelte/icons/pencil";
   import XIcon from "@lucide/svelte/icons/x";
   import { untrack } from "svelte";
@@ -33,6 +34,7 @@
     repoPath?: string | undefined;
     number?: number | undefined;
     canResolveReviewThreads?: boolean;
+    canReplyToThreads?: boolean;
     filtered?: boolean;
     showCommitDetails?: boolean;
     onEditComment?: ((event: PREvent | IssueEvent, body: string) => Promise<boolean>) | undefined;
@@ -48,6 +50,7 @@
     repoPath,
     number = undefined,
     canResolveReviewThreads = false,
+    canReplyToThreads = false,
     filtered = false,
     showCommitDetails = true,
     onEditComment,
@@ -358,6 +361,10 @@
   let savingEditId = $state<number | null>(null);
   let editError = $state<string | null>(null);
   let collapsedThreads = $state<string[]>([]);
+  let replyingThreadID = $state<string | null>(null);
+  let replyDraft = $state("");
+  let savingReplyThreadID = $state<string | null>(null);
+  let replyError = $state<string | null>(null);
 
   function canEditComment(event: PREvent | IssueEvent): boolean {
     return (
@@ -385,6 +392,23 @@
     return entry.threadID ?? String(entry.event.ID);
   }
 
+  function replyTargetID(entry: TimelineEntry): string | null {
+    return entry.reviewThread?.thread.id ?? null;
+  }
+
+  function canReplyToThread(entry: TimelineEntry): boolean {
+    return (
+      canReplyToThreads &&
+      detailStore !== undefined &&
+      provider !== undefined &&
+      repoOwner !== undefined &&
+      repoName !== undefined &&
+      repoPath !== undefined &&
+      number !== undefined &&
+      replyTargetID(entry) !== null
+    );
+  }
+
   function isThreadCollapsed(entry: TimelineEntry): boolean {
     return collapsedThreads.includes(entryThreadID(entry));
   }
@@ -394,6 +418,42 @@
     collapsedThreads = collapsedThreads.includes(id)
       ? collapsedThreads.filter((item) => item !== id)
       : [...collapsedThreads, id];
+  }
+
+  function startReply(entry: TimelineEntry): void {
+    const targetID = replyTargetID(entry);
+    if (!targetID) return;
+    replyingThreadID = targetID;
+    replyDraft = "";
+    replyError = null;
+  }
+
+  function cancelReply(): void {
+    replyingThreadID = null;
+    replyDraft = "";
+    replyError = null;
+  }
+
+  async function submitReply(entry: TimelineEntry): Promise<void> {
+    const targetID = replyTargetID(entry);
+    const body = replyDraft.trim();
+    if (!targetID || !provider || !repoOwner || !repoName || !repoPath || number === undefined) return;
+    if (body === "") {
+      replyError = "Reply body must not be empty";
+      return;
+    }
+    savingReplyThreadID = targetID;
+    replyError = null;
+    try {
+      const ok = await detailStore?.replyToDiscussion(repoOwner, repoName, number, targetID, body);
+      if (ok) {
+        cancelReply();
+      } else {
+        replyError = detailStore?.getDetailError() ?? "Could not reply to thread";
+      }
+    } finally {
+      savingReplyThreadID = null;
+    }
   }
 
   async function saveEdit(event: PREvent | IssueEvent): Promise<void> {
@@ -441,7 +501,13 @@
   reviewThread: TimelineReviewThread | undefined = undefined,
 )}
   {#if event.Body}
-    <div class={nested ? "event-body-wrap event-body-wrap--nested" : "event-body-wrap"}>
+    <div
+      class={[
+        "event-body-wrap",
+        nested && "event-body-wrap--nested",
+        !nested && reviewThread && "event-body-wrap--with-thread",
+      ]}
+    >
       {#if !nested && reviewThread}
         <DiffReviewThreadSnippet
           thread={reviewThread.thread}
@@ -590,6 +656,7 @@
   <ol class="timeline">
     {#each timelineEntries as entry (entry.key)}
       {@const event = entry.event}
+      {@const targetID = replyTargetID(entry)}
       <li class={isCompactEvent(event.EventType) ? "event event--compact" : "event"}>
         <div class="event-rail">
           <span
@@ -688,23 +755,78 @@
               <p class="event-summary">{event.Summary}</p>
             {/if}
             {@render eventBody(event, false, entry.reviewThread)}
-            {#if entry.replies.length > 0}
+            {#if entry.replies.length > 0 || canReplyToThread(entry)}
               <div class="thread-controls">
-                <button
-                  class="thread-toggle"
-                  type="button"
-                  onclick={() => toggleThread(entry)}
-                  aria-expanded={!isThreadCollapsed(entry)}
-                >
-                  {#if isThreadCollapsed(entry)}
-                    <ChevronRightIcon size={14} />
-                    Show {entry.replies.length} {entry.replies.length === 1 ? "reply" : "replies"}
-                  {:else}
-                    <ChevronDownIcon size={14} />
-                    Hide {entry.replies.length} {entry.replies.length === 1 ? "reply" : "replies"}
-                  {/if}
-                </button>
+                {#if entry.replies.length > 0}
+                  <button
+                    class="thread-toggle"
+                    type="button"
+                    onclick={() => toggleThread(entry)}
+                    aria-expanded={!isThreadCollapsed(entry)}
+                  >
+                    {#if isThreadCollapsed(entry)}
+                      <ChevronRightIcon size={14} />
+                      Show {entry.replies.length} {entry.replies.length === 1 ? "reply" : "replies"}
+                    {:else}
+                      <ChevronDownIcon size={14} />
+                      Hide {entry.replies.length} {entry.replies.length === 1 ? "reply" : "replies"}
+                    {/if}
+                  </button>
+                {/if}
+                {#if canReplyToThread(entry)}
+                  <button
+                    class="thread-toggle thread-reply-action"
+                    type="button"
+                    onclick={() => startReply(entry)}
+                    aria-expanded={targetID !== null && replyingThreadID === targetID}
+                    disabled={savingReplyThreadID !== null}
+                  >
+                    <MessageSquareReplyIcon size={14} />
+                    Reply
+                  </button>
+                {/if}
               </div>
+              {#if targetID !== null && replyingThreadID === targetID && provider && repoOwner && repoName && repoPath}
+                <div class="thread-reply-panel">
+                  <CommentEditor
+                    {provider}
+                    {platformHost}
+                    owner={repoOwner}
+                    name={repoName}
+                    {repoPath}
+                    value={replyDraft}
+                    placeholder="Reply to thread... (Cmd+Enter to submit)"
+                    disabled={savingReplyThreadID === targetID}
+                    oninput={(nextBody) => {
+                      replyDraft = nextBody;
+                    }}
+                    onsubmit={() => {
+                      void submitReply(entry);
+                    }}
+                  />
+                  {#if replyError}
+                    <p class="edit-error">{replyError}</p>
+                  {/if}
+                  <div class="edit-actions">
+                    <button
+                      class="edit-action edit-action--primary"
+                      onclick={() => void submitReply(entry)}
+                      disabled={savingReplyThreadID === targetID}
+                    >
+                      <CheckIcon size={14} />
+                      {savingReplyThreadID === targetID ? "Replying..." : "Reply"}
+                    </button>
+                    <button
+                      class="edit-action"
+                      onclick={cancelReply}
+                      disabled={savingReplyThreadID === targetID}
+                    >
+                      <XIcon size={14} />
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              {/if}
               {#if !isThreadCollapsed(entry)}
                 <ol class="thread-replies" aria-label="Threaded replies">
                   {#each entry.replies as reply, index (reply.ID)}
@@ -906,6 +1028,10 @@
   }
 
   .thread-controls {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--focus-detail-space-xs, 0.46rem);
     margin-top: var(--focus-detail-space-sm, 0.62rem);
   }
 
@@ -924,6 +1050,19 @@
   .thread-toggle:hover {
     background: var(--bg-surface-hover);
     color: var(--text-primary);
+  }
+
+  .thread-toggle:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  .thread-reply-action {
+    color: var(--text-secondary);
+  }
+
+  .thread-reply-panel {
+    padding: var(--focus-detail-space-sm, 0.62rem) 0 0.15rem 1.35rem;
   }
 
   .thread-replies {
@@ -1012,6 +1151,13 @@
     display: flex;
     gap: 0.15rem;
     z-index: 1;
+  }
+
+  .event-body-wrap--with-thread .event-actions {
+    position: static;
+    justify-content: flex-end;
+    margin-top: calc(var(--focus-detail-space-xs, 0.46rem) * -1);
+    margin-bottom: var(--focus-detail-space-xs, 0.46rem);
   }
 
   .event-action-btn {

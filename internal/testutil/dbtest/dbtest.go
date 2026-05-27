@@ -12,6 +12,7 @@ import (
 )
 
 var templateCache = &templateState{}
+var templateRoot = os.TempDir()
 
 type templateState struct {
 	once       sync.Once
@@ -68,7 +69,7 @@ func templatePath(t testing.TB) string {
 
 	templateCache.once.Do(func() {
 		templateCache.buildCount.Add(1)
-		dir, err := os.MkdirTemp("", "middleman-test-db-template-*")
+		dir, err := os.MkdirTemp(templateRoot, "middleman-test-db-template-*")
 		if err != nil {
 			templateCache.initErr = err
 			return

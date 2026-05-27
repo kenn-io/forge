@@ -624,7 +624,9 @@ func (p gitHubClientProvider) Capabilities() platform.Capabilities {
 		ReadyForReview:        true,
 		IssueMutation:         true,
 		LabelMutation:         labels,
+		ThreadReply:           true,
 		ReviewDraftMutation:   true,
+		ReadReviewThreads:     true,
 		NativeMultilineRanges: true,
 		SupportedReviewActions: []platform.ReviewAction{
 			platform.ReviewActionComment,
@@ -980,6 +982,29 @@ func (p gitHubClientProvider) EditMergeRequestComment(
 	return platformgithub.NormalizeCommentEvent(ref, number, comment), nil
 }
 
+func (p gitHubClientProvider) ReplyToThread(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	threadID string,
+	body string,
+) (platform.MergeRequestEvent, error) {
+	commentID, err := strconv.ParseInt(strings.TrimSpace(threadID), 10, 64)
+	if err != nil || commentID <= 0 {
+		return platform.MergeRequestEvent{}, fmt.Errorf("invalid review comment ID")
+	}
+	comment, err := p.client.CreatePullRequestReviewCommentReply(
+		ctx, ref.Owner, ref.Name, number, body, commentID,
+	)
+	if err != nil {
+		return platform.MergeRequestEvent{}, err
+	}
+	if comment == nil {
+		return platform.MergeRequestEvent{}, fmt.Errorf("provider returned no review comment")
+	}
+	return platformgithub.NormalizeReviewCommentEvent(ref, number, comment), nil
+}
+
 func (p gitHubClientProvider) CreateIssueComment(
 	ctx context.Context,
 	ref platform.RepoRef,
@@ -1163,6 +1188,128 @@ func (p gitHubClientProvider) ApproveMergeRequest(
 		return platform.MergeRequestEvent{}, fmt.Errorf("provider returned no review")
 	}
 	return platformgithub.NormalizeReviewEvent(ref, number, review), nil
+}
+
+func (p gitHubClientProvider) ListMergeRequestReviewThreads(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+) ([]platform.MergeRequestReviewThread, error) {
+	threads, err := p.client.ListPullRequestReviewThreads(ctx, ref.Owner, ref.Name, number)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]platform.MergeRequestReviewThread, 0, len(threads))
+	for _, thread := range threads {
+		if len(thread.Comments) == 0 {
+			continue
+		}
+		for _, comment := range thread.Comments {
+			normalized := githubReviewThreadComment(thread, comment)
+			if normalized.ProviderThreadID == "" || normalized.ProviderCommentID == "" {
+				continue
+			}
+			out = append(out, normalized)
+		}
+	}
+	return out, nil
+}
+
+func githubReviewThreadComment(
+	thread PullRequestReviewThread,
+	comment PullRequestReviewThreadComment,
+) platform.MergeRequestReviewThread {
+	createdAt := comment.CreatedAt.UTC()
+	updatedAt := comment.UpdatedAt.UTC()
+	if updatedAt.IsZero() {
+		updatedAt = createdAt
+	}
+	return platform.MergeRequestReviewThread{
+		ProviderThreadID:  thread.NodeID,
+		ProviderReviewID:  githubInt64ID(comment.ReviewDatabaseID),
+		ProviderCommentID: firstNonEmpty(githubInt64ID(comment.DatabaseID), comment.NodeID),
+		Body:              comment.Body,
+		AuthorLogin:       comment.AuthorLogin,
+		Range:             githubReviewLineRange(thread, comment),
+		Resolved:          thread.IsResolved,
+		CreatedAt:         createdAt,
+		UpdatedAt:         updatedAt,
+	}
+}
+
+func githubReviewLineRange(
+	thread PullRequestReviewThread,
+	comment PullRequestReviewThreadComment,
+) platform.DiffReviewLineRange {
+	side := strings.ToLower(thread.Side)
+	if side != "left" {
+		side = "right"
+	}
+	line := firstPositive(thread.Line, thread.OriginalLine, comment.Line, comment.OriginalLine)
+	startLine := thread.StartLine
+	if startLine == nil {
+		startLine = thread.OriginalStartLine
+	}
+	lineType := "add"
+	var oldLine *int
+	var newLine *int
+	if strings.EqualFold(comment.SubjectType, "FILE") {
+		lineType = "file"
+	} else if side == "left" {
+		lineType = "delete"
+		oldLine = &line
+	} else {
+		newLine = &line
+	}
+	commitSHA := firstNonEmpty(comment.CommitID, comment.OriginalCommitID)
+	diffHeadSHA := ""
+	if thread.IsOutdated {
+		diffHeadSHA = commitSHA
+	}
+	return platform.DiffReviewLineRange{
+		Path:        firstNonEmpty(thread.Path, comment.Path),
+		Side:        side,
+		StartSide:   githubReviewStartSide(side, startLine),
+		StartLine:   startLine,
+		Line:        line,
+		OldLine:     oldLine,
+		NewLine:     newLine,
+		LineType:    lineType,
+		DiffHeadSHA: diffHeadSHA,
+		CommitSHA:   commitSHA,
+	}
+}
+
+func githubReviewStartSide(side string, startLine *int) string {
+	if startLine == nil {
+		return ""
+	}
+	return side
+}
+
+func githubInt64ID(id int64) string {
+	if id == 0 {
+		return ""
+	}
+	return strconv.FormatInt(id, 10)
+}
+
+func firstPositive(values ...int) int {
+	for _, value := range values {
+		if value > 0 {
+			return value
+		}
+	}
+	return 0
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func (p gitHubClientProvider) PublishDiffReviewDraft(
@@ -4885,6 +5032,7 @@ func (s *Syncer) syncProviderMRReviewThreads(
 	dbThreads := make([]db.MRReviewThread, 0, len(threads))
 	events := make([]db.MREvent, 0, len(threads))
 	providerThreadIDs := make([]string, 0, len(threads))
+	reviewCommentDedupeKeys := make([]string, 0, len(threads))
 	seenProviderThreadIDs := make(map[string]struct{}, len(threads))
 	for _, thread := range threads {
 		providerThreadID := thread.ProviderThreadID
@@ -4894,39 +5042,46 @@ func (s *Syncer) syncProviderMRReviewThreads(
 		if providerThreadID == "" {
 			continue
 		}
-		if _, ok := seenProviderThreadIDs[providerThreadID]; ok {
+		if _, ok := seenProviderThreadIDs[providerThreadID]; !ok {
+			seenProviderThreadIDs[providerThreadID] = struct{}{}
+			providerThreadIDs = append(providerThreadIDs, providerThreadID)
+			dbThreads = append(dbThreads, db.MRReviewThread{
+				ProviderThreadID:  providerThreadID,
+				ProviderReviewID:  thread.ProviderReviewID,
+				ProviderCommentID: thread.ProviderCommentID,
+				Body:              thread.Body,
+				AuthorLogin:       thread.AuthorLogin,
+				Range:             dbReviewLineRangeFromPlatform(thread.Range),
+				Resolved:          thread.Resolved,
+				CreatedAt:         thread.CreatedAt,
+				UpdatedAt:         thread.UpdatedAt,
+				ResolvedAt:        thread.ResolvedAt,
+				MetadataJSON:      thread.MetadataJSON,
+			})
+		}
+		eventExternalID := firstNonEmpty(thread.ProviderCommentID, providerThreadID)
+		if eventExternalID == "" {
 			continue
 		}
-		seenProviderThreadIDs[providerThreadID] = struct{}{}
-		providerThreadIDs = append(providerThreadIDs, providerThreadID)
-		dbThreads = append(dbThreads, db.MRReviewThread{
-			ProviderThreadID:  providerThreadID,
-			ProviderReviewID:  thread.ProviderReviewID,
-			ProviderCommentID: thread.ProviderCommentID,
-			Body:              thread.Body,
-			AuthorLogin:       thread.AuthorLogin,
-			Range:             dbReviewLineRangeFromPlatform(thread.Range),
-			Resolved:          thread.Resolved,
-			CreatedAt:         thread.CreatedAt,
-			UpdatedAt:         thread.UpdatedAt,
-			ResolvedAt:        thread.ResolvedAt,
-			MetadataJSON:      thread.MetadataJSON,
-		})
 		createdAt := thread.CreatedAt
 		if createdAt.IsZero() {
 			createdAt = time.Now().UTC()
 		}
+		dedupeKey := "review_comment:" + eventExternalID
+		reviewCommentDedupeKeys = append(reviewCommentDedupeKeys, dedupeKey)
+		threadID := providerThreadID
 		events = append(events, db.MREvent{
 			MergeRequestID:     mrID,
-			PlatformExternalID: providerThreadID,
+			PlatformExternalID: eventExternalID,
 			EventType:          "review_comment",
 			Author:             thread.AuthorLogin,
 			Body:               thread.Body,
 			CreatedAt:          createdAt,
-			DedupeKey:          "review_comment:" + providerThreadID,
+			DedupeKey:          dedupeKey,
+			ThreadID:           &threadID,
 		})
 	}
-	if err := s.db.DeleteMissingMRReviewThreads(ctx, mrID, providerThreadIDs); err != nil {
+	if err := s.db.DeleteMissingMRReviewThreads(ctx, mrID, providerThreadIDs, reviewCommentDedupeKeys); err != nil {
 		return calls, err
 	}
 	if err := s.db.UpsertMRReviewThreads(ctx, mrID, dbThreads); err != nil {

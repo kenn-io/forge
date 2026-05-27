@@ -1,5 +1,5 @@
 import type { components } from "../../api/generated/schema.js";
-import type { DiffLine, DiffResult } from "../../api/types.js";
+import type { DiffLine, DiffResult, PREvent } from "../../api/types.js";
 
 export type ReviewThread = components["schemas"]["DiffReviewThreadResponse"];
 
@@ -18,6 +18,21 @@ export type ReviewThreadContext = {
   lines: ReviewThreadContextLine[];
   outdated: boolean;
 };
+
+export function reviewThreadsFromEvents(events: PREvent[] | null | undefined): ReviewThread[] {
+  const threads: ReviewThread[] = [];
+  const seen = new Set<string>();
+
+  for (const event of events ?? []) {
+    const thread = event.diff_thread ??
+      (event as PREvent & { DiffThread?: ReviewThread }).DiffThread;
+    if (!thread || seen.has(thread.id)) continue;
+    seen.add(thread.id);
+    threads.push(thread);
+  }
+
+  return threads;
+}
 
 export function reviewThreadTargetSide(thread: ReviewThread): "left" | "right" {
   return thread.side.toLowerCase() === "left" ? "left" : "right";
@@ -50,7 +65,9 @@ function lineNumberForSide(line: DiffLine, side: "left" | "right"): number | und
 }
 
 function pathMatches(thread: ReviewThread, filePath: string, oldPath: string): boolean {
-  return thread.path === filePath || thread.path === oldPath || thread.old_path === oldPath;
+  return thread.path === filePath ||
+    thread.path === oldPath ||
+    (!!thread.old_path && !!oldPath && thread.old_path === oldPath);
 }
 
 export function reviewThreadContext(

@@ -14,9 +14,15 @@
   import DiffLineComponent from "./DiffLine.svelte";
   import DiffInlineCommentComposer from "./DiffInlineCommentComposer.svelte";
   import DiffReviewDraftInlineComment from "./DiffReviewDraftInlineComment.svelte";
+  import DiffReviewThreadInlineComment from "./DiffReviewThreadInlineComment.svelte";
   import CollapsedRegion from "./CollapsedRegion.svelte";
   import DiffRichPreview from "./DiffRichPreview.svelte";
   import DiffStats from "../shared/DiffStats.svelte";
+  import {
+    reviewThreadTargetLine,
+    reviewThreadTargetSide,
+    type ReviewThread,
+  } from "./review-thread-context.js";
 
   interface Props {
     file: DiffFileType;
@@ -30,6 +36,7 @@
     reviewEnabled?: boolean;
     diffHeadSHA?: string | undefined;
     nativeMultilineRanges?: boolean;
+    reviewThreads?: ReviewThread[];
   }
 
   const {
@@ -44,6 +51,7 @@
     reviewEnabled = false,
     diffHeadSHA = undefined,
     nativeMultilineRanges = false,
+    reviewThreads = [],
   }: Props = $props();
 
   const collapsed = $derived(diffStore.isFileCollapsed(owner, name, number, file.path));
@@ -56,6 +64,9 @@
   const richPreviewKey = $derived(`${file.path}:${filePreviewGeneration}`);
   const fileDraftComments = $derived(
     diffReviewDraft.getComments().filter((comment) => comment.path === file.path),
+  );
+  const fileReviewThreads = $derived(
+    reviewThreads.filter((thread) => threadMatchesFile(thread)),
   );
 
   // Track viewport visibility so off-screen files skip expensive tokenization
@@ -251,6 +262,45 @@
       ".webp",
     ].includes(ext);
   }
+
+  function threadMatchesFile(thread: ReviewThread): boolean {
+    return thread.path === file.path ||
+      thread.path === file.old_path ||
+      (!!thread.old_path && !!file.old_path && thread.old_path === file.old_path);
+  }
+
+  function threadMatchesCurrentDiff(thread: ReviewThread): boolean {
+    return !thread.diff_head_sha || !diffHeadSHA || thread.diff_head_sha === diffHeadSHA;
+  }
+
+  function lineMatchesReviewThread(
+    line: DiffFileType["hunks"][number]["lines"][number],
+    thread: ReviewThread,
+  ): boolean {
+    if (!threadMatchesCurrentDiff(thread)) return false;
+    if (thread.line_type === "file") return false;
+    const lineNumber = reviewThreadTargetSide(thread) === "left"
+      ? line.old_num
+      : line.new_num;
+    return lineNumber != null && lineNumber === reviewThreadTargetLine(thread);
+  }
+
+  function reviewThreadsAfter(
+    line: DiffFileType["hunks"][number]["lines"][number],
+  ): ReviewThread[] {
+    return fileReviewThreads.filter((thread) => lineMatchesReviewThread(line, thread));
+  }
+
+  function hasRenderedReviewThread(thread: ReviewThread): boolean {
+    if (renderedFile.is_binary) return false;
+    return renderedFile.hunks.some((hunk) =>
+      hunk.lines.some((line) => lineMatchesReviewThread(line, thread)),
+    );
+  }
+
+  const fileLevelReviewThreads = $derived(
+    fileReviewThreads.filter((thread) => !hasRenderedReviewThread(thread)),
+  );
 
   type ReviewSide = "left" | "right";
   type ReviewLineRef = {
@@ -467,6 +517,9 @@
   </button>
   {#if !collapsed}
     <div class="file-content">
+      {#each fileLevelReviewThreads as thread (thread.id)}
+        <DiffReviewThreadInlineComment {thread} fileLevel={true} />
+      {/each}
       {#if showRichPreview}
         {#key richPreviewKey}
           <DiffRichPreview
@@ -525,6 +578,9 @@
                   <DiffReviewDraftInlineComment {comment} />
                 {/each}
               {/if}
+              {#each reviewThreadsAfter(line) as thread (thread.id)}
+                <DiffReviewThreadInlineComment {thread} />
+              {/each}
               {#if reviewEnabled && composerRange && composerAfter(line, order, hunkIdx)}
                 <DiffInlineCommentComposer
                   range={composerRange}

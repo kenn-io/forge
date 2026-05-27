@@ -3,6 +3,7 @@
   import { getStores } from "../../context.js";
   import type { DiffScrollTarget } from "../../stores/diff.svelte.js";
   import type { DiffReviewDraftComment } from "../../stores/diff-review-draft.svelte.js";
+  import type { ReviewThread } from "./review-thread-context.js";
 
   const stores = getStores();
   const diffStore = stores.diff;
@@ -25,6 +26,7 @@
     reviewDraftMutation?: boolean;
     supportedReviewActions?: string[];
     nativeMultilineRanges?: boolean;
+    reviewThreads?: ReviewThread[];
   }
 
   const {
@@ -42,6 +44,7 @@
     reviewDraftMutation = false,
     supportedReviewActions = [],
     nativeMultilineRanges = false,
+    reviewThreads = [],
   }: Props = $props();
 
   let diffArea: HTMLDivElement | undefined = $state();
@@ -275,6 +278,7 @@
               {reviewEnabled}
               {diffHeadSHA}
               {nativeMultilineRanges}
+              {reviewThreads}
             />
           {/each}
           {#if reviewEnabled && diffReviewDraft}

@@ -5,6 +5,7 @@ import (
 	"time"
 
 	gh "github.com/google/go-github/v84/github"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/platform"
 )
@@ -76,4 +77,16 @@ func TestNormalizeIssue_NilAssigneeInList(t *testing.T) {
 	issue, err := NormalizeIssue(platform.RepoRef{}, ghIssue)
 	require.NoError(err)
 	require.Equal([]string{"alice"}, issue.Assignees)
+}
+
+func TestNormalizeReviewCommentEventUsesReviewThreadDedupeKey(t *testing.T) {
+	id := int64(222)
+	comment := &gh.PullRequestComment{ID: &id}
+
+	event := NormalizeReviewCommentEvent(platform.RepoRef{
+		Owner: "acme",
+		Name:  "widget",
+	}, 7, comment)
+
+	assert.Equal(t, "review_comment:222", event.DedupeKey)
 }

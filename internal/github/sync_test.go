@@ -406,6 +406,7 @@ type mockClient struct {
 	listIssuesPageFn                func(context.Context, string, string, string, int) ([]*gh.Issue, bool, error)
 	comments                        []*gh.IssueComment
 	reviews                         []*gh.PullRequestReview
+	reviewThreads                   []PullRequestReviewThread
 	commits                         []*gh.RepositoryCommit
 	timelineEvents                  []PullRequestTimelineEvent
 	timelineEventsErr               error
@@ -812,6 +813,16 @@ func (m *mockClient) ListReviews(_ context.Context, _, _ string, _ int) ([]*gh.P
 	return m.reviews, nil
 }
 
+func (m *mockClient) ListPullRequestReviewThreads(
+	_ context.Context,
+	_ string,
+	_ string,
+	_ int,
+) ([]PullRequestReviewThread, error) {
+	m.trackCall()
+	return m.reviewThreads, nil
+}
+
 func (m *mockClient) ListCommits(_ context.Context, _, _ string, _ int) ([]*gh.RepositoryCommit, error) {
 	m.trackCall()
 	return m.commits, nil
@@ -866,6 +877,13 @@ func (m *mockClient) CreateIssueComment(
 func (m *mockClient) EditIssueComment(
 	_ context.Context, _, _ string, _ int64, _ string,
 ) (*gh.IssueComment, error) {
+	m.trackCall()
+	return nil, nil
+}
+
+func (m *mockClient) CreatePullRequestReviewCommentReply(
+	_ context.Context, _, _ string, _ int, _ string, _ int64,
+) (*gh.PullRequestComment, error) {
 	m.trackCall()
 	return nil, nil
 }
@@ -961,6 +979,130 @@ func TestGitHubProviderPublishDiffReviewDraftMapsReviewComments(t *testing.T) {
 	require.NotNil(comment.StartLine)
 	assert.Equal(10, *comment.StartLine)
 	assert.Equal(12, comment.GetLine())
+}
+
+func TestGitHubProviderCapabilitiesExposeReviewThreadReads(t *testing.T) {
+	provider := gitHubClientProvider{client: &mockClient{}, host: "github.com"}
+
+	caps := provider.Capabilities()
+
+	require.True(t, caps.ReadReviewThreads)
+	require.True(t, caps.ReviewDraftMutation)
+	require.False(t, caps.ReviewThreadResolution)
+}
+
+func TestGitHubProviderListMergeRequestReviewThreadsMapsGraphQLThreads(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	startLine := 10
+	createdAt := time.Date(2026, 5, 27, 16, 1, 31, 0, time.UTC)
+	updatedAt := createdAt.Add(time.Minute)
+	mock := &mockClient{
+		reviewThreads: []PullRequestReviewThread{{
+			NodeID:     "PRRT_1",
+			IsResolved: true,
+			IsOutdated: false,
+			Path:       "src/main.go",
+			Side:       "RIGHT",
+			StartLine:  &startLine,
+			Line:       12,
+			Comments: []PullRequestReviewThreadComment{{
+				NodeID:           "PRRC_1",
+				DatabaseID:       101,
+				ReviewDatabaseID: 201,
+				Body:             "inline note",
+				AuthorLogin:      "reviewer",
+				CommitID:         "head-sha",
+				OriginalCommitID: "original-sha",
+				CreatedAt:        createdAt,
+				UpdatedAt:        updatedAt,
+			}, {
+				NodeID:           "PRRC_2",
+				DatabaseID:       102,
+				ReviewDatabaseID: 201,
+				Body:             "reply note",
+				AuthorLogin:      "maintainer",
+				CommitID:         "head-sha",
+				OriginalCommitID: "original-sha",
+				CreatedAt:        createdAt.Add(time.Minute),
+				UpdatedAt:        updatedAt.Add(time.Minute),
+			}},
+		}},
+	}
+	provider := gitHubClientProvider{client: mock, host: "github.com"}
+
+	threads, err := provider.ListMergeRequestReviewThreads(t.Context(), platform.RepoRef{
+		Owner: "acme",
+		Name:  "widget",
+	}, 7)
+
+	require.NoError(err)
+	require.Len(threads, 2)
+	thread := threads[0]
+	assert.Equal("PRRT_1", thread.ProviderThreadID)
+	assert.Equal("201", thread.ProviderReviewID)
+	assert.Equal("101", thread.ProviderCommentID)
+	assert.Equal("inline note", thread.Body)
+	assert.Equal("reviewer", thread.AuthorLogin)
+	assert.True(thread.Resolved)
+	assert.Equal(createdAt, thread.CreatedAt)
+	assert.Equal(updatedAt, thread.UpdatedAt)
+	assert.Equal("src/main.go", thread.Range.Path)
+	assert.Equal("right", thread.Range.Side)
+	assert.Equal("right", thread.Range.StartSide)
+	require.NotNil(thread.Range.StartLine)
+	assert.Equal(startLine, *thread.Range.StartLine)
+	assert.Equal(12, thread.Range.Line)
+	require.NotNil(thread.Range.NewLine)
+	assert.Equal(12, *thread.Range.NewLine)
+	assert.Nil(thread.Range.OldLine)
+	assert.Equal("add", thread.Range.LineType)
+	assert.Empty(thread.Range.DiffHeadSHA)
+	assert.Equal("head-sha", thread.Range.CommitSHA)
+	assert.Equal("PRRT_1", threads[1].ProviderThreadID)
+	assert.Equal("102", threads[1].ProviderCommentID)
+	assert.Equal("reply note", threads[1].Body)
+	assert.Equal("maintainer", threads[1].AuthorLogin)
+}
+
+func TestGitHubProviderListMergeRequestReviewThreadsMapsFileSubject(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	createdAt := time.Date(2026, 5, 27, 16, 1, 31, 0, time.UTC)
+	mock := &mockClient{
+		reviewThreads: []PullRequestReviewThread{{
+			NodeID:       "PRRT_file",
+			Path:         ".golangci.yml",
+			Side:         "RIGHT",
+			Line:         1,
+			OriginalLine: 1,
+			Comments: []PullRequestReviewThreadComment{{
+				NodeID:      "PRRC_file",
+				DatabaseID:  101,
+				SubjectType: "FILE",
+				Body:        "file note",
+				AuthorLogin: "reviewer",
+				CommitID:    "head-sha",
+				CreatedAt:   createdAt,
+				UpdatedAt:   createdAt,
+			}},
+		}},
+	}
+	provider := gitHubClientProvider{client: mock, host: "github.com"}
+
+	threads, err := provider.ListMergeRequestReviewThreads(t.Context(), platform.RepoRef{
+		Owner: "acme",
+		Name:  "widget",
+	}, 7)
+
+	require.NoError(err)
+	require.Len(threads, 1)
+	thread := threads[0]
+	assert.Equal(".golangci.yml", thread.Range.Path)
+	assert.Equal(1, thread.Range.Line)
+	assert.Equal("file", thread.Range.LineType)
+	assert.Nil(thread.Range.NewLine)
+	assert.Nil(thread.Range.OldLine)
 }
 
 func TestGitHubProviderPublishDiffReviewDraftHandlesMissingSubmittedAt(t *testing.T) {
@@ -3719,7 +3861,9 @@ func TestFetchProviderMRDetailSyncsReviewThreads(t *testing.T) {
 	require.NoError(err)
 	require.Len(events, 1)
 	assert.Equal("review_comment", events[0].EventType)
-	assert.Equal("thread-42", events[0].PlatformExternalID)
+	assert.Equal("comment-42", events[0].PlatformExternalID)
+	require.NotNil(events[0].ThreadID)
+	assert.Equal("thread-42", *events[0].ThreadID)
 
 	provider.reviewThreads = nil
 	calls, err = syncer.fetchProviderMRDetail(ctx, provider, repo, repoID, 42)
@@ -3732,6 +3876,127 @@ func TestFetchProviderMRDetailSyncsReviewThreads(t *testing.T) {
 	events, err = d.ListMREvents(ctx, mr.ID)
 	require.NoError(err)
 	assert.Empty(events)
+}
+
+func TestFetchGitHubMRDetailSyncsReviewThreads(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := time.Date(2026, 5, 27, 16, 1, 31, 0, time.UTC)
+	repo := RepoRef{
+		Platform:     platform.KindGitHub,
+		PlatformHost: platform.DefaultGitHubHost,
+		Owner:        "acme",
+		Name:         "widgets",
+		RepoPath:     "acme/widgets",
+	}
+	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widgets"))
+	require.NoError(err)
+
+	prID := int64(9001)
+	prNodeID := "PR_kwDO123"
+	number := 42
+	title := "inline review"
+	state := "open"
+	author := "ada"
+	headRef := "feature"
+	baseRef := "main"
+	headSHA := "head-sha"
+	baseSHA := "base-sha"
+	url := "https://github.com/acme/widgets/pull/42"
+	line := 12
+	commentID := int64(101)
+	reviewID := int64(201)
+	mock := &mockClient{
+		singlePR: &gh.PullRequest{
+			ID:      &prID,
+			NodeID:  &prNodeID,
+			Number:  &number,
+			HTMLURL: &url,
+			Title:   &title,
+			State:   &state,
+			User:    &gh.User{Login: &author},
+			Head: &gh.PullRequestBranch{
+				Ref: &headRef,
+				SHA: &headSHA,
+				Repo: &gh.Repository{
+					CloneURL: new("https://github.com/acme/widgets.git"),
+				},
+			},
+			Base: &gh.PullRequestBranch{
+				Ref: &baseRef,
+				SHA: &baseSHA,
+			},
+			CreatedAt: &gh.Timestamp{Time: now},
+			UpdatedAt: &gh.Timestamp{Time: now},
+		},
+		comments: []*gh.IssueComment{},
+		reviews:  []*gh.PullRequestReview{},
+		commits:  []*gh.RepositoryCommit{},
+		ciStatus: &gh.CombinedStatus{State: new("success")},
+		reviewThreads: []PullRequestReviewThread{{
+			NodeID: "PRRT_1",
+			Path:   ".golangci.yml",
+			Side:   "RIGHT",
+			Line:   line,
+			Comments: []PullRequestReviewThreadComment{{
+				NodeID:           "PRRC_1",
+				DatabaseID:       commentID,
+				ReviewDatabaseID: reviewID,
+				Body:             "inline note",
+				AuthorLogin:      "reviewer",
+				CommitID:         headSHA,
+				CreatedAt:        now,
+				UpdatedAt:        now,
+			}, {
+				NodeID:           "PRRC_2",
+				DatabaseID:       commentID + 1,
+				ReviewDatabaseID: reviewID,
+				Body:             "reply note",
+				AuthorLogin:      "maintainer",
+				CommitID:         headSHA,
+				CreatedAt:        now.Add(time.Minute),
+				UpdatedAt:        now.Add(time.Minute),
+			}},
+		}},
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": mock},
+		d, nil,
+		[]RepoRef{repo},
+		time.Minute,
+		nil,
+		nil,
+	)
+
+	_, err = syncer.fetchMRDetail(ctx, repo, repoID, number, true)
+	require.NoError(err)
+
+	mr, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, number)
+	require.NoError(err)
+	require.NotNil(mr)
+	threads, err := d.ListMRReviewThreads(ctx, mr.ID)
+	require.NoError(err)
+	require.Len(threads, 1)
+	assert.Equal("PRRT_1", threads[0].ProviderThreadID)
+	assert.Equal("101", threads[0].ProviderCommentID)
+	assert.Equal(".golangci.yml", threads[0].Range.Path)
+	assert.Equal(line, threads[0].Range.Line)
+
+	events, err := d.ListMREvents(ctx, mr.ID)
+	require.NoError(err)
+	require.Len(events, 2)
+	assert.Equal("review_comment", events[0].EventType)
+	assert.Equal("102", events[0].PlatformExternalID)
+	assert.Equal("reply note", events[0].Body)
+	require.NotNil(events[0].ThreadID)
+	assert.Equal("PRRT_1", *events[0].ThreadID)
+	assert.Equal("review_comment", events[1].EventType)
+	assert.Equal("101", events[1].PlatformExternalID)
+	assert.Equal("inline note", events[1].Body)
+	require.NotNil(events[1].ThreadID)
+	assert.Equal("PRRT_1", *events[1].ThreadID)
 }
 
 func TestSyncOpenIssueReadsExistingByRepoID(t *testing.T) {

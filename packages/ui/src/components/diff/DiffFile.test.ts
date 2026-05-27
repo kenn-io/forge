@@ -60,6 +60,7 @@ import type { DiffFile as DiffFileType } from "../../api/types.js";
 import { STORES_KEY } from "../../context.js";
 import type { DiffReviewDraftComment } from "../../stores/diff-review-draft.svelte.js";
 import { createDiffStore } from "../../stores/diff.svelte.js";
+import type { ReviewThread } from "./review-thread-context.js";
 
 function makeFile(overrides: Partial<DiffFileType> = {}): DiffFileType {
   return {
@@ -85,6 +86,25 @@ function makeFile(overrides: Partial<DiffFileType> = {}): DiffFileType {
   };
 }
 
+function makeReviewThread(overrides: Partial<ReviewThread> = {}): ReviewThread {
+  return {
+    id: "thread-1",
+    provider_comment_id: "comment-1",
+    path: "src/foo.ts",
+    side: "right",
+    line: 2,
+    new_line: 2,
+    line_type: "add",
+    body: "Published review note",
+    author_login: "reviewer",
+    resolved: false,
+    can_resolve: false,
+    created_at: "2026-03-30T14:01:00Z",
+    updated_at: "2026-03-30T14:01:00Z",
+    ...overrides,
+  };
+}
+
 // Use unique owner per test so module-level collapsed state doesn't leak.
 let testCounter = 0;
 function uniqueOwner(): string {
@@ -101,6 +121,7 @@ function renderDiffFile(
     nativeMultilineRanges?: boolean;
     owner?: string;
     draftComments?: DiffReviewDraftComment[];
+    reviewThreads?: ReviewThread[];
   } = {},
 ) {
   const diff = createDiffStore();
@@ -129,6 +150,9 @@ function renderDiffFile(
       }),
       ...(options.nativeMultilineRanges !== undefined && {
         nativeMultilineRanges: options.nativeMultilineRanges,
+      }),
+      ...(options.reviewThreads !== undefined && {
+        reviewThreads: options.reviewThreads,
       }),
     },
     context: new Map([[STORES_KEY, { diff, diffReviewDraft }]]),
@@ -270,6 +294,81 @@ describe("DiffFile", () => {
 
     expect(screen.getByText("Follow up here")).toBeTruthy();
     expect(document.querySelectorAll(".gutter-new.gutter--selected")).toHaveLength(2);
+  });
+
+  it("renders published review threads under their matching diff line", () => {
+    renderDiffFile(makeFile(), {
+      reviewEnabled: true,
+      diffHeadSHA: "diff-head",
+      reviewThreads: [makeReviewThread()],
+    });
+
+    expect(screen.getByText("Published review note")).toBeTruthy();
+    const comment = document.querySelector("[data-review-thread-id='thread-1']");
+    const previous = comment?.previousElementSibling;
+    expect(previous?.querySelector("[aria-label='Comment on new line 2']")).toBeTruthy();
+  });
+
+  it("does not render stale-head review threads under a matching current line", () => {
+    renderDiffFile(makeFile(), {
+      reviewEnabled: true,
+      diffHeadSHA: "current-head",
+      reviewThreads: [makeReviewThread({
+        diff_head_sha: "stale-head",
+      })],
+    });
+
+    expect(screen.getByText("Published review note")).toBeTruthy();
+    expect(screen.getByText("File")).toBeTruthy();
+    const comment = document.querySelector("[data-review-thread-id='thread-1']");
+    expect(comment?.parentElement?.classList.contains("file-content")).toBe(true);
+    const previous = comment?.previousElementSibling;
+    expect(previous?.querySelector("[aria-label='Comment on new line 2']")).toBeFalsy();
+  });
+
+  it("does not match added-file threads only because old paths are empty", () => {
+    renderDiffFile(makeFile({
+      path: "src/new.ts",
+      old_path: "",
+      status: "added",
+    }), {
+      reviewEnabled: true,
+      reviewThreads: [makeReviewThread({
+        id: "thread-other-added-file",
+        path: "src/other-new.ts",
+        old_path: "",
+        body: "Wrong added file note",
+      })],
+    });
+
+    expect(screen.queryByText("Wrong added file note")).toBeNull();
+  });
+
+  it("renders unmatched review threads at the file header", () => {
+    renderDiffFile(makeFile({
+      hunks: [{
+        old_start: 60,
+        old_count: 1,
+        new_start: 60,
+        new_count: 1,
+        lines: [
+          { type: "context", content: "visible context", old_num: 60, new_num: 60 },
+        ],
+      }],
+    }), {
+      reviewThreads: [makeReviewThread({
+        id: "thread-file",
+        line: 1,
+        new_line: 1,
+        line_type: "file",
+        body: "File-level note",
+      })],
+    });
+
+    expect(screen.getByText("File-level note")).toBeTruthy();
+    expect(screen.getByText("File")).toBeTruthy();
+    const comment = document.querySelector("[data-review-thread-id='thread-file']");
+    expect(comment?.parentElement?.classList.contains("file-content")).toBe(true);
   });
 
   it("clears an open inline composer when review context changes", async () => {

@@ -1610,9 +1610,6 @@ func (s *Server) replyToDiscussion(ctx context.Context, input *replyToDiscussion
 	if strings.TrimSpace(input.Body.Body) == "" {
 		return nil, problemValidation("body.body", "reply body must not be empty")
 	}
-	if err := validateDiscussionID(input.DiscussionID); err != nil {
-		return nil, err
-	}
 
 	repo, err := s.requireRepoRouteCapability(
 		ctx,
@@ -1650,8 +1647,47 @@ func (s *Server) replyToDiscussion(ctx context.Context, input *replyToDiscussion
 		return nil, problemInternal("provider does not implement ThreadReplier")
 	}
 
+	providerDiscussionID := input.DiscussionID
+	eventThreadID := ""
+	if threadID, parseErr := strconv.ParseInt(input.DiscussionID, 10, 64); parseErr == nil && threadID > 0 {
+		thread, err := s.db.GetMRReviewThread(ctx, mr.ID, threadID)
+		if err != nil {
+			return nil, problemInternal("get review thread failed")
+		}
+		if thread == nil {
+			if repoProviderKind(*repo) == platform.KindGitHub {
+				return nil, problemNotFound(CodeNotFound, "review thread not found", nil)
+			}
+			if err := validateDiscussionID(input.DiscussionID); err != nil {
+				return nil, err
+			}
+		} else if repoProviderKind(*repo) == platform.KindGitHub {
+			if strings.TrimSpace(thread.ProviderCommentID) == "" {
+				return nil, problemInternal("review thread is missing provider comment id")
+			}
+			if strings.TrimSpace(thread.ProviderThreadID) == "" {
+				return nil, problemInternal("review thread is missing provider thread id")
+			}
+			providerDiscussionID = thread.ProviderCommentID
+			eventThreadID = thread.ProviderThreadID
+		} else {
+			if strings.TrimSpace(thread.ProviderThreadID) == "" {
+				return nil, problemInternal("review thread is missing provider thread id")
+			}
+			providerDiscussionID = thread.ProviderThreadID
+		}
+	} else if repoProviderKind(*repo) == platform.KindGitHub {
+		if _, err := parseReviewLocalID(input.DiscussionID, "review thread"); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := validateDiscussionID(input.DiscussionID); err != nil {
+			return nil, err
+		}
+	}
+
 	platformEvent, err := replier.ReplyToThread(
-		ctx, platformRepoRefFromDB(*repo), input.Number, input.DiscussionID, input.Body.Body,
+		ctx, platformRepoRefFromDB(*repo), input.Number, providerDiscussionID, input.Body.Body,
 	)
 	if err != nil {
 		return nil, providerCallProblemWithDetail(
@@ -1659,6 +1695,9 @@ func (s *Server) replyToDiscussion(ctx context.Context, input *replyToDiscussion
 			string(repoProviderKind(*repo)), repoProviderHost(*repo),
 			"reply to discussion on provider failed",
 		)
+	}
+	if eventThreadID != "" {
+		platformEvent.ThreadID = eventThreadID
 	}
 
 	event := platform.DBMREvent(mr.ID, platformEvent)

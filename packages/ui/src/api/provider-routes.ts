@@ -63,6 +63,7 @@ type PullSuffix =
   | "/labels"
   | "/merge"
   | "/ready-for-review"
+  | "/discussions/{discussion_id}/reply"
   | "/review-draft"
   | "/review-draft/comments"
   | "/review-draft/comments/{draft_comment_id}"

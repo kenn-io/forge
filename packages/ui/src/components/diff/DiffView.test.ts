@@ -355,7 +355,7 @@ describe("DiffView", () => {
     }
   });
 
-  it("stops refocusing a line target once it is visible", async () => {
+  it("refocuses a line target after it is visible before consuming it", async () => {
     const consumeScrollTarget = vi.fn();
     const focus = vi.fn();
     const originalFocus = HTMLElement.prototype.focus;
@@ -415,7 +415,7 @@ describe("DiffView", () => {
 
       await waitFor(() => {
         expect(consumeScrollTarget).toHaveBeenCalled();
-        expect(focus).toHaveBeenCalledTimes(1);
+        expect(focus).toHaveBeenCalledTimes(2);
       });
     } finally {
       HTMLElement.prototype.focus = originalFocus;

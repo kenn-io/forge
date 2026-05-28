@@ -146,12 +146,13 @@ function findCompiledStyleRule(
   const style = document.createElement("style");
   style.textContent = compiledCss;
   document.head.appendChild(style);
+  const selectorParts = selector.split(/\s+/).filter(Boolean);
 
   for (const rule of Array.from(style.sheet?.cssRules ?? [])) {
     if (!("selectorText" in rule) || !("style" in rule)) continue;
     const selectorText = String(rule.selectorText);
     if (
-      selectorText.includes(selector)
+      selectorParts.every((part) => selectorText.includes(part))
       && exclude.every((part) => !selectorText.includes(part))
     ) {
       return rule.style as CSSStyleDeclaration;
@@ -750,7 +751,11 @@ describe("EventTimeline", () => {
     expect(container.querySelector(".event-body-wrap--with-thread .event-actions")).toBeTruthy();
 
     const threadedActions = findCompiledStyleRule(".event-body-wrap--with-thread");
-    expect(threadedActions.getPropertyValue("position")).toBe("static");
+    expect(threadedActions.getPropertyValue("display")).toBe("flow-root");
+
+    const threadedActionButtons = findCompiledStyleRule(".event-body-wrap--with-thread .event-actions");
+    expect(threadedActionButtons.getPropertyValue("position")).toBe("static");
+    expect(threadedActionButtons.getPropertyValue("float")).toBe("right");
 
     await fireEvent.click(screen.getByRole("button", { name: "Jump to diff" }));
 
@@ -829,7 +834,7 @@ describe("EventTimeline", () => {
   });
 
   it("shows a reply composer for review threads when thread replies are available", async () => {
-    render(EventTimeline, {
+    const { container } = render(EventTimeline, {
       props: {
         events: [makeReviewThreadEvent()],
         provider: "github",
@@ -854,6 +859,15 @@ describe("EventTimeline", () => {
         }],
       ]),
     });
+
+    expect(container.querySelector(".event-card--reply-inline")).toBeTruthy();
+    expect(container.querySelector(".thread-controls--reply-only")).toBeTruthy();
+
+    const inlineReplyCard = findCompiledStyleRule(".event-card--reply-inline");
+    expect(inlineReplyCard.getPropertyValue("display")).toBe("flow-root");
+
+    const replyOnlyControls = findCompiledStyleRule(".thread-controls--reply-only");
+    expect(replyOnlyControls.getPropertyValue("float")).toBe("right");
 
     await fireEvent.click(screen.getByRole("button", { name: "Reply" }));
 

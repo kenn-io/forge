@@ -657,6 +657,7 @@
     {#each timelineEntries as entry (entry.key)}
       {@const event = entry.event}
       {@const targetID = replyTargetID(entry)}
+      {@const hasReplyOnlyAction = entry.replies.length === 0 && canReplyToThread(entry)}
       <li class={isCompactEvent(event.EventType) ? "event event--compact" : "event"}>
         <div class="event-rail">
           <span
@@ -738,7 +739,7 @@
             {/if}
           </div>
         {:else}
-          <div class="event-card">
+          <div class={["event-card", hasReplyOnlyAction && "event-card--reply-inline"]}>
             <div class="event-header">
               <span
                 class="event-type"
@@ -756,7 +757,7 @@
             {/if}
             {@render eventBody(event, false, entry.reviewThread)}
             {#if entry.replies.length > 0 || canReplyToThread(entry)}
-              <div class="thread-controls">
+              <div class={["thread-controls", hasReplyOnlyAction && "thread-controls--reply-only"]}>
                 {#if entry.replies.length > 0}
                   <button
                     class="thread-toggle"
@@ -1027,12 +1028,29 @@
     margin-top: 0.15rem;
   }
 
+  .event-body-wrap--with-thread {
+    display: flow-root;
+  }
+
+  .event-body-wrap--with-thread :global(.thread-snippet) {
+    margin-bottom: var(--focus-detail-space-xs, 0.46rem);
+  }
+
   .thread-controls {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
     gap: var(--focus-detail-space-xs, 0.46rem);
     margin-top: var(--focus-detail-space-sm, 0.62rem);
+  }
+
+  .event-card--reply-inline {
+    display: flow-root;
+  }
+
+  .thread-controls--reply-only {
+    float: right;
+    margin: 0.15rem 0 0.15rem var(--focus-detail-space-sm, 0.77rem);
   }
 
   .thread-toggle {
@@ -1155,9 +1173,8 @@
 
   .event-body-wrap--with-thread .event-actions {
     position: static;
-    justify-content: flex-end;
-    margin-top: calc(var(--focus-detail-space-xs, 0.46rem) * -1);
-    margin-bottom: var(--focus-detail-space-xs, 0.46rem);
+    float: right;
+    margin: 0 0 var(--focus-detail-space-xs, 0.46rem) var(--focus-detail-space-xs, 0.46rem);
   }
 
   .event-action-btn {
@@ -1210,6 +1227,15 @@
     white-space: pre-wrap;
     word-break: break-word;
     line-height: 1.6;
+  }
+
+  .event-body-wrap--with-thread .event-body {
+    padding-top: 0.18rem;
+    padding-right: var(--focus-detail-space-xs, 0.46rem);
+  }
+
+  .event-card--reply-inline .event-body {
+    padding-bottom: 0;
   }
 
   .event-body.markdown-body {

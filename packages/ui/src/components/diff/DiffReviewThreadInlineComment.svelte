@@ -116,6 +116,7 @@
 <div
   class="inline-review-thread"
   class:inline-review-thread--file-level={fileLevel}
+  class:inline-review-thread--idle-reply={canReply && !thread.resolved && !replying}
   data-review-thread-id={thread.id}
   bind:this={threadEl}
   style:--inline-review-thread-width={panelWidth}
@@ -134,7 +135,12 @@
   {#if thread.author_login}
     <div class="review-thread-author">{thread.author_login}</div>
   {/if}
-  <p class="review-thread-body">{thread.body}</p>
+  <p
+    class="review-thread-body"
+    class:review-thread-body--with-idle-reply={canReply && !thread.resolved && !replying}
+  >
+    {thread.body}
+  </p>
   {#if canReply && !thread.resolved}
     {#if replying}
       <div class="review-thread-reply">
@@ -172,7 +178,7 @@
         </div>
       </div>
     {:else}
-      <div class="review-thread-actions">
+      <div class="review-thread-actions review-thread-actions--idle">
         <ActionButton
           class="review-thread-btn"
           size="sm"
@@ -202,6 +208,10 @@
     max-width: var(--inline-review-thread-width, calc(100% - 24px));
     min-width: 0;
     scroll-margin-block: 96px;
+  }
+
+  .inline-review-thread--idle-reply {
+    min-height: 78px;
   }
 
   .inline-review-thread--file-level {
@@ -276,6 +286,10 @@
     overflow-wrap: anywhere;
   }
 
+  .review-thread-body--with-idle-reply {
+    padding-right: 118px;
+  }
+
   .review-thread-reply {
     margin-top: 8px;
   }
@@ -306,6 +320,24 @@
     flex-wrap: wrap;
     gap: 6px;
     margin-top: 8px;
+  }
+
+  .review-thread-actions--idle {
+    position: absolute;
+    right: 12px;
+    bottom: 14px;
+    margin-top: 0;
+  }
+
+  @container (max-width: 420px) {
+    .review-thread-actions--idle {
+      position: static;
+      margin-top: 8px;
+    }
+
+    .review-thread-body--with-idle-reply {
+      padding-right: 0;
+    }
   }
 
   :global(.review-thread-btn.action-button) {

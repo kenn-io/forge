@@ -211,7 +211,7 @@
   // Only consume the target once diffArea is mounted and diff data is available,
   // so the request is not lost if the user clicks a file before diff renders.
   $effect(() => {
-    const target = diffStore.getScrollTarget();
+    const target = normalizeScrollTarget(diffStore.getScrollTarget());
     if (!target) {
       scrollingToTarget = null;
       return;
@@ -232,7 +232,7 @@
     await tick();
     if (
       scrollTargetRun !== run ||
-      !sameScrollTarget(diffStore.getScrollTarget(), target)
+      !sameScrollTarget(normalizeScrollTarget(diffStore.getScrollTarget()), target)
     ) return;
 
     const requiredVisibleFrames = 2;
@@ -242,7 +242,7 @@
       await nextAnimationFrame();
       if (
         scrollTargetRun !== run ||
-        !sameScrollTarget(diffStore.getScrollTarget(), target)
+        !sameScrollTarget(normalizeScrollTarget(diffStore.getScrollTarget()), target)
       ) return;
       if (!targetReached) {
         targetReached = scrollToTarget(target);
@@ -286,6 +286,13 @@
       left.path === right.path &&
       left.line === right.line &&
       left.side === right.side;
+  }
+
+  function normalizeScrollTarget(
+    target: DiffScrollTarget | string | null,
+  ): DiffScrollTarget | null {
+    if (typeof target === "string") return { path: target };
+    return target;
   }
 
   // Scroll-based active file tracking.

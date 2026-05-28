@@ -49,8 +49,8 @@
       "version": "0.0.1",
       "dependencies": {
         "@lucide/svelte": "1.3.0",
-        "@pierre/diffs": "^1.1.22",
-        "@pierre/trees": "^1.0.0-beta.3",
+        "@pierre/diffs": "1.1.22",
+        "@pierre/trees": "1.0.0-beta.3",
         "@tiptap/core": "3.22.3",
         "@tiptap/extension-document": "3.22.3",
         "@tiptap/extension-hard-break": "3.22.3",

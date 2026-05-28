@@ -233,6 +233,20 @@ describe("DiffFile", () => {
     await expectPierreDiffText(/old linenew line/);
   });
 
+  it("exposes stable line targets inside the Pierre shadow root", async () => {
+    renderDiffFile(makeFile());
+
+    await waitFor(() => {
+      const root = document.querySelector(".pierre-diff")?.shadowRoot;
+      expect(
+        root?.querySelector('[data-diff-path="src/foo.ts"][data-diff-old-line="2"]'),
+      ).toBeTruthy();
+      expect(
+        root?.querySelector('[data-diff-path="src/foo.ts"][data-diff-new-line="2"]'),
+      ).toBeTruthy();
+    });
+  });
+
   it("shows a loading state before viewport-gated Pierre rendering starts", async () => {
     const visibleObserver = (globalThis as GlobalWithIO).IntersectionObserver;
     class PendingIntersectionObserverStub {

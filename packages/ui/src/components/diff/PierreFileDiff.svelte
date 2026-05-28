@@ -88,6 +88,7 @@
     expansionLineCount: 40,
     tokenizeMaxLineLength: 2_000,
     onPostRender: () => {
+      applyLineTargetAttributes();
       applyHunkHeaderLabels();
       rendered = true;
       if (!fullContext) {
@@ -220,6 +221,7 @@
         lineAnnotations,
       });
       if (didRender) {
+        applyLineTargetAttributes();
         applyHunkHeaderLabels();
         rendered = true;
         placeholderHeight = 0;
@@ -471,6 +473,7 @@
     });
     pierreDiff.setSelectedLines(selectedRange);
     if (didRender) {
+      applyLineTargetAttributes();
       applyHunkHeaderLabels();
       rendered = true;
       placeholderHeight = 0;
@@ -524,6 +527,72 @@
     ).join("|");
   }
 
+  function applyLineTargetAttributes(): void {
+    const root = host?.shadowRoot;
+    const pre = root?.querySelector("pre");
+    if (!root || !pre || !pierreDiff) return;
+    for (const line of root.querySelectorAll<HTMLElement>("[data-diff-path]")) {
+      line.removeAttribute("data-diff-path");
+      line.removeAttribute("data-diff-old-line");
+      line.removeAttribute("data-diff-new-line");
+    }
+
+    const split = pre.getAttribute("data-diff-type") === "split";
+    const diff = pierreDiff as unknown as {
+      getLineIndex?: (lineNumber: number, side?: PierreSide) => [number, number] | undefined;
+    };
+    for (const hunk of file.hunks) {
+      for (const line of hunk.lines) {
+        if (line.old_num != null) {
+          markLineTarget(pre, diff.getLineIndex?.(line.old_num, "deletions"), split, {
+            "data-diff-old-line": String(line.old_num),
+          });
+        }
+        if (line.new_num != null) {
+          markLineTarget(pre, diff.getLineIndex?.(line.new_num, "additions"), split, {
+            "data-diff-new-line": String(line.new_num),
+          });
+        }
+      }
+    }
+  }
+
+  function markLineTarget(
+    pre: HTMLPreElement,
+    indexes: [number, number] | undefined,
+    split: boolean,
+    attributes: Record<string, string>,
+  ): void {
+    if (!indexes) return;
+    const lineIndex = split ? indexes[1] : indexes[0];
+    if (!Number.isFinite(lineIndex)) return;
+    const row = renderedLineRow(pre, lineIndex, split);
+    if (!row) return;
+    row.setAttribute("data-diff-path", file.path);
+    row.tabIndex = -1;
+    for (const [name, value] of Object.entries(attributes)) {
+      row.setAttribute(name, value);
+    }
+  }
+
+  function renderedLineRow(
+    pre: HTMLPreElement,
+    targetIndex: number,
+    split: boolean,
+  ): HTMLElement | undefined {
+    for (const code of Array.from(pre.children)) {
+      const [, content] = Array.from(code.children);
+      if (!content) continue;
+      for (const contentElement of Array.from(content.children)) {
+        if (!(contentElement instanceof HTMLElement)) continue;
+        const lineIndex = parseRenderedLineIndex(contentElement, split);
+        if (lineIndex === targetIndex) return contentElement;
+        if ((lineIndex ?? 0) > targetIndex) return undefined;
+      }
+    }
+    return undefined;
+  }
+
   function hasCollapsedContext(f: DiffFile): boolean {
     let previousOldEnd = 1;
     for (const hunk of f.hunks) {
@@ -547,7 +616,9 @@
       if (!Number.isFinite(hunkIndex)) {
         hunkIndex = nextRenderedSeparatorHunkIndex(pierreFile, nextSeparatorHunkIndex);
       }
-      nextSeparatorHunkIndex = Math.max(nextSeparatorHunkIndex, hunkIndex + 1);
+      if (Number.isFinite(hunkIndex)) {
+        nextSeparatorHunkIndex = Math.max(nextSeparatorHunkIndex, hunkIndex + 1);
+      }
       const hunkHeader = Number.isFinite(hunkIndex)
         ? pierreFile.hunks[hunkIndex]?.hunkSpecs?.trim()
         : undefined;

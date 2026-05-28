@@ -422,4 +422,154 @@ describe("DiffView", () => {
       Element.prototype.getBoundingClientRect = originalGetBoundingClientRect;
     }
   });
+
+  it("finds line targets rendered inside Pierre shadow roots", async () => {
+    const consumeScrollTarget = vi.fn();
+    const focus = vi.fn();
+    const originalFocus = HTMLElement.prototype.focus;
+    const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
+    HTMLElement.prototype.focus = focus;
+    Element.prototype.getBoundingClientRect = function () {
+      if (this instanceof HTMLElement && this.classList.contains("diff-area")) {
+        return {
+          top: 100,
+          bottom: 500,
+          left: 0,
+          right: 500,
+          width: 500,
+          height: 400,
+          x: 0,
+          y: 100,
+          toJSON: () => ({}),
+        } as DOMRect;
+      }
+      if (
+        this instanceof HTMLElement &&
+        this.dataset.diffPath === "b.ts" &&
+        this.dataset.diffNewLine === "42"
+      ) {
+        const diffArea = document.querySelector(".diff-area") as HTMLDivElement;
+        const top = 460 - diffArea.scrollTop;
+        return {
+          top,
+          bottom: top + 24,
+          left: 0,
+          right: 500,
+          width: 500,
+          height: 24,
+          x: 0,
+          y: top,
+          toJSON: () => ({}),
+        } as DOMRect;
+      }
+      if (
+        this instanceof HTMLElement &&
+        this.dataset.filePath === "b.ts"
+      ) {
+        return {
+          top: 460,
+          bottom: 520,
+          left: 0,
+          right: 500,
+          width: 500,
+          height: 60,
+          x: 0,
+          y: 460,
+          toJSON: () => ({}),
+        } as DOMRect;
+      }
+      return originalGetBoundingClientRect.call(this);
+    };
+
+    try {
+      const files = [makeFile("a.ts"), makeFile("b.ts")];
+      const result: DiffResult = {
+        stale: false,
+        whitespace_only_count: 0,
+        files,
+      };
+      const diff = makeDiffStore({
+        getDiff: () => result,
+        getVisibleDiffFiles: () => files,
+        getScrollTarget: () => ({ path: "b.ts", line: 42, side: "right" }),
+        consumeScrollTarget,
+      });
+
+      const { container } = renderDiffView(diff);
+      const file = container.querySelector<HTMLElement>('[data-file-path="b.ts"]');
+      const host = document.createElement("div");
+      const shadowTarget = document.createElement("button");
+      shadowTarget.dataset.diffPath = "b.ts";
+      shadowTarget.dataset.diffNewLine = "42";
+      file?.append(host);
+      host.attachShadow({ mode: "open" }).append(shadowTarget);
+
+      await waitFor(() => {
+        expect(consumeScrollTarget).toHaveBeenCalled();
+        expect(focus).toHaveBeenCalledWith({ preventScroll: true });
+      });
+    } finally {
+      HTMLElement.prototype.focus = originalFocus;
+      Element.prototype.getBoundingClientRect = originalGetBoundingClientRect;
+    }
+  });
+
+  it("keeps a line scroll target pending until that line renders", async () => {
+    const consumeScrollTarget = vi.fn();
+    const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
+    Element.prototype.getBoundingClientRect = function () {
+      if (this instanceof HTMLElement && this.classList.contains("diff-area")) {
+        return {
+          top: 100,
+          bottom: 500,
+          left: 0,
+          right: 500,
+          width: 500,
+          height: 400,
+          x: 0,
+          y: 100,
+          toJSON: () => ({}),
+        } as DOMRect;
+      }
+      if (
+        this instanceof HTMLElement &&
+        this.dataset.filePath === "b.ts"
+      ) {
+        return {
+          top: 120,
+          bottom: 180,
+          left: 0,
+          right: 500,
+          width: 500,
+          height: 60,
+          x: 0,
+          y: 120,
+          toJSON: () => ({}),
+        } as DOMRect;
+      }
+      return originalGetBoundingClientRect.call(this);
+    };
+
+    try {
+      const files = [makeFile("a.ts"), makeFile("b.ts")];
+      const result: DiffResult = {
+        stale: false,
+        whitespace_only_count: 0,
+        files,
+      };
+      const diff = makeDiffStore({
+        getDiff: () => result,
+        getVisibleDiffFiles: () => files,
+        getScrollTarget: () => ({ path: "b.ts", line: 42, side: "right" }),
+        consumeScrollTarget,
+      });
+
+      renderDiffView(diff);
+      await Promise.resolve();
+
+      expect(consumeScrollTarget).not.toHaveBeenCalled();
+    } finally {
+      Element.prototype.getBoundingClientRect = originalGetBoundingClientRect;
+    }
+  });
 });

@@ -158,15 +158,29 @@
     scrollClearRaf = requestAnimationFrame(() => diffStore.clearScrolling());
   }
 
+  function queryDiffElement(selector: string): HTMLElement | null {
+    if (!diffArea) return null;
+    const lightMatch = diffArea.querySelector<HTMLElement>(selector);
+    if (lightMatch) return lightMatch;
+    for (const host of diffArea.querySelectorAll<HTMLElement>("*")) {
+      const match = host.shadowRoot?.querySelector<HTMLElement>(selector);
+      if (match) return match;
+    }
+    return null;
+  }
+
   function scrollToTarget(target: DiffScrollTarget): boolean {
     if (!diffArea) return false;
     if (target.line == null) return scrollToFile(target.path);
 
     const attr = target.side === "left" ? "data-diff-old-line" : "data-diff-new-line";
-    const lineEl = diffArea.querySelector(
+    const lineEl = queryDiffElement(
       `[data-diff-path="${CSS.escape(target.path)}"][${attr}="${CSS.escape(String(target.line))}"]`,
-    ) as HTMLElement | null;
-    if (!lineEl) return scrollToFile(target.path);
+    );
+    if (!lineEl) {
+      void scrollToFile(target.path);
+      return false;
+    }
 
     scrollWithinDiffArea(lineEl, 72);
     lineEl.focus({ preventScroll: true });
@@ -178,10 +192,10 @@
     if (target.line == null) return isFileVisible(target.path);
 
     const attr = target.side === "left" ? "data-diff-old-line" : "data-diff-new-line";
-    const lineEl = diffArea.querySelector(
+    const lineEl = queryDiffElement(
       `[data-diff-path="${CSS.escape(target.path)}"][${attr}="${CSS.escape(String(target.line))}"]`,
-    ) as HTMLElement | null;
-    if (!lineEl) return isFileVisible(target.path);
+    );
+    if (!lineEl) return false;
 
     const areaRect = diffArea.getBoundingClientRect();
     const elRect = lineEl.getBoundingClientRect();
@@ -193,9 +207,9 @@
 
   function jumpToDraftComment(comment: DiffReviewDraftComment): void {
     if (!diffArea) return;
-    const el = diffArea.querySelector(
+    const el = queryDiffElement(
       `[data-draft-comment-id="${CSS.escape(comment.id)}"]`,
-    ) as HTMLElement | null;
+    );
     if (!el) {
       void scrollToFile(comment.path);
       return;

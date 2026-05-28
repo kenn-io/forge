@@ -243,8 +243,10 @@
   });
 
   $effect(() => {
-    selectedRanges;
-    scheduleSelectedRangesApplication();
+    const rangeKey = selectedRangesKey(selectedRanges);
+    if (rangeKey || selectedRanges.length === 0) {
+      scheduleSelectedRangesApplication();
+    }
   });
 
   function installDemandContextHandler(): void {
@@ -514,6 +516,12 @@
       const metadata = annotation.metadata as { id?: unknown } | undefined;
       return `${annotation.side}:${annotation.lineNumber}:${String(metadata?.id ?? "")}`;
     }).join("|");
+  }
+
+  function selectedRangesKey(ranges: SelectedLineRange[]): string {
+    return ranges.map((range) =>
+      `${range.side}:${range.start}:${range.endSide ?? range.side}:${range.end}`
+    ).join("|");
   }
 
   function hasCollapsedContext(f: DiffFile): boolean {

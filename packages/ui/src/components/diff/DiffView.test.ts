@@ -255,7 +255,7 @@ describe("DiffView", () => {
       const diff = makeDiffStore({
         getDiff: () => result,
         getVisibleDiffFiles: () => files,
-        getScrollTarget: () => "b.ts",
+        getScrollTarget: () => ({ path: "b.ts" }),
         consumeScrollTarget,
       });
 

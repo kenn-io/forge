@@ -118,7 +118,7 @@
     }
     if (reviewEnabled && composerRange) {
       annotations.push({
-        side: pierreSide(composerRange.side),
+        side: pierreSide(reviewSideFromValue(composerRange.side)),
         lineNumber: composerRange.line,
         metadata: {
           kind: "composer",
@@ -340,7 +340,11 @@
   }
 
   function commentSide(comment: DiffReviewDraftComment): ReviewSide {
-    return comment.side.toLowerCase() === "left" ? "left" : "right";
+    return reviewSideFromValue(comment.side);
+  }
+
+  function reviewSideFromValue(side: string): ReviewSide {
+    return side.toLowerCase() === "left" ? "left" : "right";
   }
 
   function renderAnnotation(annotation: DiffLineAnnotation<DiffAnnotation>): HTMLElement {

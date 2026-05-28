@@ -60,7 +60,7 @@
     });
   });
 
-  const pierreOptions = $derived<FileDiffOptions<unknown>>({
+  const pierreOptions = $derived.by<FileDiffOptions<unknown>>(() => ({
     diffStyle: "unified",
     diffIndicators: "bars",
     disableFileHeader: true,
@@ -69,9 +69,11 @@
     hunkSeparators: "line-info",
     lineDiffType: "word",
     lineHoverHighlight: enableLineSelection ? "both" : "disabled",
-    onGutterUtilityClick: onLineSelected,
-    onLineSelected,
-    renderAnnotation,
+    ...(onLineSelected && {
+      onGutterUtilityClick: onLineSelected,
+      onLineSelected,
+    }),
+    ...(renderAnnotation && { renderAnnotation }),
     overflow: wordWrap ? "wrap" : "scroll",
     theme: { dark: "pierre-dark", light: "pierre-light" },
     themeType,
@@ -130,7 +132,7 @@
         cursor: pointer;
       }
     `,
-  });
+  }));
 
   onMount(() => {
     let themeObserver: MutationObserver | undefined;

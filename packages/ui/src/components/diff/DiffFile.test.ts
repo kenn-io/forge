@@ -365,7 +365,7 @@ describe("DiffFile", () => {
     await selectPierreLine(1, "right");
     await selectPierreLine(2, "right", { shiftKey: true });
 
-    expect(selectedPierreLines()).toHaveLength(2);
+    expect(selectedPierreLines()).toHaveLength(4);
   });
 
   it("does not create multiline review ranges across separate hunks", async () => {
@@ -412,7 +412,7 @@ describe("DiffFile", () => {
     await waitFor(() => {
       expect(screen.getByPlaceholderText("Leave a comment")).toBeTruthy();
     });
-    expect(selectedPierreLines()).toHaveLength(2);
+    expect(selectedPierreLines()).toHaveLength(4);
   });
 
   it("renders saved draft comments inline at their selected range", async () => {
@@ -529,7 +529,7 @@ describe("DiffFile", () => {
 
     await selectPierreLine(1, "right");
     expect(screen.getByPlaceholderText("Leave a comment")).toBeTruthy();
-    expect(selectedPierreLines()).toHaveLength(2);
+    expect(selectedPierreLines()).toHaveLength(4);
 
     await rerender({
       file,

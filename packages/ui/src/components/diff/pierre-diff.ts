@@ -103,10 +103,12 @@ function synthesizePatch(file: DiffFile): string {
   if (!file.hunks?.length) return "";
   const oldName = file.old_path || file.path;
   const newName = file.path;
+  const oldPath = patchPath(`a/${oldName}`);
+  const newPath = patchPath(`b/${newName}`);
   return [
-    `diff --git a/${oldName} b/${newName}`,
-    file.status === "added" ? "--- /dev/null" : `--- a/${oldName}`,
-    file.status === "deleted" ? "+++ /dev/null" : `+++ b/${newName}`,
+    `diff --git ${oldPath} ${newPath}`,
+    `--- ${file.status === "added" ? "/dev/null" : oldPath}`,
+    `+++ ${file.status === "deleted" ? "/dev/null" : newPath}`,
     ...file.hunks.flatMap((hunk) => [
       `@@ -${hunk.old_start},${hunk.old_count} +${hunk.new_start},${hunk.new_count} @@${hunk.section ? ` ${hunk.section}` : ""}`,
       ...hunk.lines.map(patchLine),
@@ -118,6 +120,33 @@ function synthesizePatch(file: DiffFile): string {
 function patchLine(line: { type: "context" | "add" | "delete"; content: string }): string {
   const prefix = line.type === "add" ? "+" : line.type === "delete" ? "-" : " ";
   return `${prefix}${line.content}`;
+}
+
+export function patchPath(path: string): string {
+  if (path === "/dev/null" || !needsPatchPathQuote(path)) return path;
+  return JSON.stringify(path)
+    .replace(/[\u007f-\u009f]/gu, (char) =>
+      `\\u${char.charCodeAt(0).toString(16).padStart(4, "0")}`
+    )
+    .replace(/\u2028/g, "\\u2028")
+    .replace(/\u2029/g, "\\u2029");
+}
+
+function needsPatchPathQuote(path: string): boolean {
+  for (let index = 0; index < path.length; index += 1) {
+    const code = path.charCodeAt(index);
+    if (
+      code === 0x22 ||
+      code === 0x5c ||
+      code < 0x20 ||
+      (code >= 0x7f && code <= 0x9f) ||
+      code === 0x2028 ||
+      code === 0x2029
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function safePierreFileName(file: DiffFile, side: "old" | "new"): string {

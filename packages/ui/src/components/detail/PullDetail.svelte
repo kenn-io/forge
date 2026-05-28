@@ -250,6 +250,7 @@
   function pullDetailScrollKey(): string {
     return [
       provider,
+      platformHost,
       repoPath,
       number,
       "conversation",

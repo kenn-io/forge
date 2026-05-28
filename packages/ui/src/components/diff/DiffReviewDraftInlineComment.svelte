@@ -50,8 +50,8 @@
     border: 1px solid color-mix(in srgb, var(--accent-blue) 46%, var(--border-muted));
     border-radius: 6px;
     background: color-mix(in srgb, var(--accent-blue) 10%, var(--bg-surface));
-    width: calc(100% - 24px);
-    max-width: calc(100% - 24px);
+    width: calc(100% - 36px);
+    max-width: calc(100% - 36px);
     min-width: 0;
     scroll-margin-block: 96px;
   }
@@ -63,8 +63,8 @@
 
   @supports (width: 100cqw) {
     .inline-draft-comment {
-      width: calc(100cqw - 24px);
-      max-width: calc(100cqw - 24px);
+      width: calc(100cqw - 36px);
+      max-width: calc(100cqw - 36px);
     }
   }
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DiffFile } from "../../api/types.js";
-import { diffFileWithPatch, parsePierreFileDiff } from "./pierre-diff.js";
+import { diffFileWithPatch, parsePierreFileDiff, patchPath } from "./pierre-diff.js";
 
 function makeFile(path: string, patchBody: string): DiffFile {
   const patch = `diff --git a/${path} b/${path}
@@ -163,6 +163,28 @@ describe("Pierre diff parsing", () => {
     expect(parsed).toBeDefined();
     expect(parsed?.deletionLines).toContain("old line\n");
     expect(parsed?.additionLines).toContain("new line\n");
+  });
+
+  it("quotes synthetic patch paths that can be parsed as patch control text", () => {
+    expect(patchPath("a/src/normal.ts")).toBe("a/src/normal.ts");
+    expect(patchPath("a/src/evil\n--- a/forged")).toBe("\"a/src/evil\\n--- a/forged\"");
+    expect(patchPath("a/src/a\"b.ts")).toBe("\"a/src/a\\\"b.ts\"");
+    expect(patchPath("a/src/ctl\u007f.ts")).toBe("\"a/src/ctl\\u007f.ts\"");
+    expect(patchPath("/dev/null")).toBe("/dev/null");
+  });
+
+  it("quotes generated hunk-only patch paths", () => {
+    const file = {
+      ...makeFile("src/evil\n--- a/forged.ts", "-old line\n+new line"),
+      patch: "",
+    };
+
+    const patched = diffFileWithPatch(file);
+
+    expect(patched.patch).toContain(
+      "diff --git \"a/src/evil\\n--- a/forged.ts\" \"b/src/evil\\n--- a/forged.ts\"",
+    );
+    expect(patched.patch).not.toContain("\n--- a/forged.ts");
   });
 
   it("falls back to safe Pierre headers for quoted synthetic paths", () => {

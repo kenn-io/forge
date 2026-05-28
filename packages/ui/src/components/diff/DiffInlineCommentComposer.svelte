@@ -18,6 +18,7 @@
   let composerEl: HTMLDivElement | undefined = $state();
   let textareaEl: HTMLTextAreaElement | undefined = $state();
   let composerWidth = $state<string | undefined>();
+  let composerOffset = $state<string | undefined>();
   const submitting = $derived(diffReviewDraft.isSubmitting());
   const error = $derived(diffReviewDraft.getError());
 
@@ -73,8 +74,12 @@
     }
     const containerRect = container.getBoundingClientRect();
     const composerRect = composerEl.getBoundingClientRect();
-    const available = Math.floor(containerRect.right - composerRect.left - 12);
+    const currentOffset = Number.parseFloat(composerOffset ?? "0") || 0;
+    const naturalLeft = composerRect.left - currentOffset;
+    const available = Math.floor(containerRect.width - 24);
+    const offset = Math.round(containerRect.left + 12 - naturalLeft);
     composerWidth = available > 0 ? `${available}px` : undefined;
+    composerOffset = offset === 0 ? undefined : `${offset}px`;
   }
 
   function layoutContainer(element: HTMLElement): HTMLElement | null {
@@ -90,6 +95,7 @@
   class="inline-composer"
   bind:this={composerEl}
   style:--inline-composer-width={composerWidth}
+  style:--inline-composer-offset={composerOffset}
 >
   <textarea
     bind:this={textareaEl}
@@ -139,6 +145,7 @@
     max-width: var(--inline-composer-width, calc(100% - 24px));
     min-width: 0;
     overflow: hidden;
+    transform: translateX(var(--inline-composer-offset, 0));
   }
 
   @container (max-width: 520px) {

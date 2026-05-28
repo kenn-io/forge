@@ -759,6 +759,75 @@ describe("EventTimeline", () => {
     );
   });
 
+  it("quotes review thread snippet paths before building synthetic patch text", async () => {
+    const path = "src/review.ts\n--- a/forged.ts\n+++ b/forged.ts";
+    const diff = makeDiffStore({
+      getDiff: () => ({
+        stale: false,
+        whitespace_only_count: 0,
+        files: [{
+          path,
+          old_path: path,
+          status: "modified",
+          is_binary: false,
+          is_whitespace_only: false,
+          additions: 1,
+          deletions: 0,
+          hunks: [{
+            old_start: 9,
+            old_count: 1,
+            new_start: 9,
+            new_count: 2,
+            lines: [
+              { type: "context", old_num: 9, new_num: 9, content: "const client = setup();" },
+              { type: "add", new_num: 10, content: "client.publishThreads();" },
+            ],
+          }],
+        }],
+      }),
+    });
+
+    render(EventTimeline, {
+      props: {
+        events: [makeReviewThreadEvent({
+          diff_thread: {
+            id: "thread-1",
+            path,
+            side: "right",
+            start_side: "right",
+            start_line: 10,
+            line: 10,
+            new_line: 10,
+            line_type: "add",
+            body: "Please keep this setup explicit.",
+            author_login: "alice",
+            resolved: false,
+            can_resolve: true,
+            created_at: "2024-06-01T12:00:00Z",
+            updated_at: "2024-06-01T12:00:00Z",
+          },
+        })],
+        provider: "github",
+        platformHost: "github.com",
+        repoOwner: "acme",
+        repoName: "widget",
+        repoPath: "acme/widget",
+        number: 7,
+      },
+      context: new Map([
+        [STORES_KEY, {
+          diff,
+          diffReviewDraft: {
+            setRouteContext: vi.fn(),
+            isSubmitting: () => false,
+          },
+        }],
+      ]),
+    });
+
+    await expectPierreTimelineText(/client\.publishThreads\(\);/);
+  });
+
   it("shows a reply composer for review threads when thread replies are available", async () => {
     render(EventTimeline, {
       props: {

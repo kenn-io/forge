@@ -91,13 +91,11 @@
     diffStyle: "unified",
     diffIndicators: "bars",
     disableFileHeader: true,
-    enableGutterUtility: enableLineSelection,
     enableLineSelection,
     hunkSeparators: "line-info",
     lineDiffType: "word",
     lineHoverHighlight: enableLineSelection ? "both" : "disabled",
     ...(onLineSelected && {
-      onGutterUtilityClick: onLineSelected,
       onLineSelected,
     }),
     ...(renderAnnotation && { renderAnnotation }),
@@ -109,6 +107,7 @@
     onPostRender: () => {
       applyLineTargetAttributes();
       applyHunkHeaderLabels();
+      applyLineCommentButtons();
       rendered = true;
       if (!fullContext) {
         installDemandContextHandler();
@@ -163,6 +162,39 @@
       }
       [data-expand-button] {
         cursor: pointer;
+      }
+      [data-middleman-line-comment-cell] {
+        position: relative;
+      }
+      [data-middleman-line-comment-cell] > [data-line-number-content] {
+        pointer-events: none;
+      }
+      [data-middleman-line-comment-button] {
+        position: absolute;
+        top: 50%;
+        right: 2px;
+        z-index: 1;
+        display: grid;
+        place-items: center;
+        width: 18px;
+        height: 18px;
+        padding: 0;
+        transform: translateY(-50%);
+        border: 1px solid var(--border-muted);
+        border-radius: 4px;
+        background: var(--bg-surface);
+        color: var(--text-secondary);
+        cursor: pointer;
+        font: inherit;
+        line-height: 1;
+        opacity: 0;
+      }
+      [data-line-type]:hover > [data-middleman-line-comment-button],
+      [data-middleman-line-comment-button]:focus-visible {
+        opacity: 1;
+      }
+      [data-middleman-line-comment-button]::before {
+        content: "+";
       }
     `,
   }));
@@ -266,6 +298,7 @@
         renderRetryCount = 0;
         applyLineTargetAttributes();
         applyHunkHeaderLabels();
+        applyLineCommentButtons();
         rendered = true;
         placeholderHeight = 0;
         installDemandContextHandler();
@@ -356,14 +389,16 @@
     for (const element of root.querySelectorAll<HTMLElement>("[data-review-range-line]")) {
       element.removeAttribute("data-review-range-line");
       element.removeAttribute("data-selected-line");
+      element.classList.remove("gutter--selected", "gutter-new", "gutter-old");
     }
-    if (!selectedRanges.length || !pierreDiff) return;
+    const ranges = selectedRange ? [selectedRange, ...selectedRanges] : selectedRanges;
+    if (!ranges.length || !pierreDiff) return;
 
     const split = pre.getAttribute("data-diff-type") === "split";
     const diff = pierreDiff as unknown as {
       getLineIndex?: (lineNumber: number, side?: PierreSide) => [number, number] | undefined;
     };
-    for (const range of selectedRanges) {
+    for (const range of ranges) {
       const startIndexes = diff.getLineIndex?.(range.start, range.side as PierreSide);
       const endIndexes = diff.getLineIndex?.(
         range.end,
@@ -377,6 +412,7 @@
         Math.min(startIndex, endIndex),
         Math.max(startIndex, endIndex),
         split,
+        range.side as PierreSide,
       );
     }
   }
@@ -386,6 +422,7 @@
     first: number,
     last: number,
     split: boolean,
+    side: PierreSide,
   ): void {
     const isSingle = first === last;
     for (const code of Array.from(pre.children)) {
@@ -404,7 +441,7 @@
         if (lineIndex == null || lineIndex < first) continue;
         let value = isSingle ? "single" : lineIndex === first ? "first" : lineIndex === last ? "last" : "";
         markSelectedRangeElement(contentElement, value);
-        markSelectedRangeElement(gutterElement, value);
+        markSelectedRangeElement(gutterElement, value, side);
         if (
           contentElement.nextSibling instanceof HTMLElement &&
           gutterElement.nextSibling instanceof HTMLElement &&
@@ -417,15 +454,22 @@
             value = "";
           }
           markSelectedRangeElement(contentElement.nextSibling, value);
-          markSelectedRangeElement(gutterElement.nextSibling, value);
+          markSelectedRangeElement(gutterElement.nextSibling, value, side);
         }
       }
     }
   }
 
-  function markSelectedRangeElement(element: HTMLElement, value: string): void {
+  function markSelectedRangeElement(
+    element: HTMLElement,
+    value: string,
+    side?: PierreSide,
+  ): void {
     element.setAttribute("data-review-range-line", "");
     element.setAttribute("data-selected-line", value);
+    if (side && element.hasAttribute("data-column-number")) {
+      element.classList.add("gutter--selected", side === "deletions" ? "gutter-old" : "gutter-new");
+    }
   }
 
   function parseRenderedLineIndex(element: HTMLElement, split: boolean): number | undefined {
@@ -522,7 +566,9 @@
     renderFullContext(context);
     if (fileKey !== requestFileKey) return;
     pierreDiff?.expandHunk(hunkIndex, direction, expansionLineCount);
+    applyLineTargetAttributes();
     applyHunkHeaderLabels();
+    applyLineCommentButtons();
   }
 
   function renderFullContext(context: { oldFile: FileContents; newFile: FileContents }): boolean {
@@ -539,6 +585,7 @@
     if (didRender) {
       applyLineTargetAttributes();
       applyHunkHeaderLabels();
+      applyLineCommentButtons();
       rendered = true;
       placeholderHeight = 0;
       scheduleSelectedRangesApplication();
@@ -589,8 +636,29 @@
   function annotationKey(annotations: DiffLineAnnotation<unknown>[]): string {
     return annotations.map((annotation) => {
       const metadata = annotation.metadata as { id?: unknown } | undefined;
-      return `${annotation.side}:${annotation.lineNumber}:${String(metadata?.id ?? "")}`;
+      return [
+        annotation.side,
+        annotation.lineNumber,
+        String(metadata?.id ?? ""),
+        stableAnnotationKey(metadata),
+      ].join(":");
     }).join("|");
+  }
+
+  function stableAnnotationKey(value: unknown): string {
+    const seen = new WeakSet<object>();
+    return JSON.stringify(value, (_key, current: unknown) => {
+      if (!current || typeof current !== "object") return current;
+      if (seen.has(current)) return "[Circular]";
+      seen.add(current);
+      if (Array.isArray(current)) return current;
+      return Object.keys(current)
+        .sort()
+        .reduce<Record<string, unknown>>((sorted, key) => {
+          sorted[key] = (current as Record<string, unknown>)[key];
+          return sorted;
+        }, {});
+    }) ?? "";
   }
 
   function selectedRangesKey(ranges: SelectedLineRange[]): string {
@@ -627,6 +695,87 @@
         }
       }
     }
+  }
+
+  function applyLineCommentButtons(): void {
+    const root = host?.shadowRoot;
+    const pre = root?.querySelector("pre");
+    if (!root || !pre) return;
+    for (const button of root.querySelectorAll("[data-middleman-line-comment-button]")) {
+      button.remove();
+    }
+    for (const cell of root.querySelectorAll("[data-middleman-line-comment-cell]")) {
+      cell.removeAttribute("data-middleman-line-comment-cell");
+    }
+    if (!enableLineSelection || !onLineSelected) return;
+
+    for (const code of Array.from(pre.children)) {
+      const [gutter, content] = Array.from(code.children);
+      if (!gutter || !content) continue;
+      const contentRows = Array.from(content.children);
+      const gutterRows = Array.from(gutter.children);
+      for (let index = 0; index < contentRows.length; index += 1) {
+        const contentElement = contentRows[index];
+        const gutterElement = gutterRows[index];
+        if (!(contentElement instanceof HTMLElement) || !(gutterElement instanceof HTMLElement)) {
+          continue;
+        }
+        const target = lineCommentTarget(contentElement);
+        if (!target) continue;
+        gutterElement.setAttribute("data-middleman-line-comment-cell", "");
+        gutterElement.appendChild(lineCommentButton(target));
+      }
+    }
+  }
+
+  function lineCommentTarget(
+    element: HTMLElement,
+  ): { lineNumber: number; side: PierreSide } | undefined {
+    const newLine = parseLineAttribute(element, "data-diff-new-line");
+    if (newLine != null) return { lineNumber: newLine, side: "additions" };
+    const oldLine = parseLineAttribute(element, "data-diff-old-line");
+    if (oldLine != null) return { lineNumber: oldLine, side: "deletions" };
+    return undefined;
+  }
+
+  function parseLineAttribute(element: HTMLElement, name: string): number | undefined {
+    const value = Number.parseInt(element.getAttribute(name) ?? "", 10);
+    return Number.isFinite(value) ? value : undefined;
+  }
+
+  function lineCommentButton(target: { lineNumber: number; side: PierreSide }): HTMLButtonElement {
+    const button = document.createElement("button");
+    const sideLabel = target.side === "additions" ? "new" : "old";
+    const label = `Comment on ${sideLabel} line ${target.lineNumber}`;
+    button.type = "button";
+    button.title = label;
+    button.setAttribute("aria-label", label);
+    button.setAttribute("data-middleman-line-comment-button", "");
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      onLineSelected?.(lineCommentSelection(target, event));
+    });
+    return button;
+  }
+
+  function lineCommentSelection(
+    target: { lineNumber: number; side: PierreSide },
+    event: MouseEvent,
+  ): SelectedLineRange {
+    if (event.shiftKey && selectedRange) {
+      return {
+        start: selectedRange.start,
+        side: selectedRange.side ?? target.side,
+        end: target.lineNumber,
+        endSide: target.side,
+      };
+    }
+    return {
+      start: target.lineNumber,
+      side: target.side,
+      end: target.lineNumber,
+    };
   }
 
   function markLineTarget(

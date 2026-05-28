@@ -4,6 +4,7 @@ import {
   waitFor,
 } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { DiffLineAnnotation } from "@pierre/diffs";
 import type { DiffFile } from "../../api/types.js";
 
 const pierre = (() => {
@@ -149,6 +150,35 @@ describe("PierreFileDiff", () => {
     render(PierreFileDiff, {
       props: { active: true, file: makeFile() },
     });
+
+    await waitFor(() => {
+      expect(pierre.renderCount()).toBe(2);
+    });
+  });
+
+  it("rerenders when annotation metadata changes without moving lines", async () => {
+    const { default: PierreFileDiff } = await import("./PierreFileDiff.svelte");
+    const file = makeFile();
+    const firstAnnotations: DiffLineAnnotation<unknown>[] = [{
+      side: "additions",
+      lineNumber: 2,
+      metadata: { id: "thread-1", body: "old body", canReply: false },
+    }];
+    const nextAnnotations: DiffLineAnnotation<unknown>[] = [{
+      side: "additions",
+      lineNumber: 2,
+      metadata: { id: "thread-1", body: "new body", canReply: true },
+    }];
+
+    const { rerender } = render(PierreFileDiff, {
+      props: { active: true, file, lineAnnotations: firstAnnotations },
+    });
+
+    await waitFor(() => {
+      expect(pierre.renderCount()).toBe(1);
+    });
+
+    await rerender({ active: true, file, lineAnnotations: nextAnnotations });
 
     await waitFor(() => {
       expect(pierre.renderCount()).toBe(2);

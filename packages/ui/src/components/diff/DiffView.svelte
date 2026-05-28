@@ -298,6 +298,7 @@
         visibleFrames = 0;
       }
       if (visibleFrames >= requiredVisibleFrames) {
+        scrollToTarget(target);
         diffStore.consumeScrollTarget();
         scrollingToTarget = null;
         finishProgrammaticScroll();

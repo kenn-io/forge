@@ -90,6 +90,7 @@
     if (selectedPR === null) return null;
     return [
       selectedPR.provider,
+      selectedPR.platformHost ?? "",
       selectedPR.repoPath,
       selectedPR.number,
     ].join("\0");

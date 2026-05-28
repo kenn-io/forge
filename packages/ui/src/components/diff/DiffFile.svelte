@@ -97,7 +97,7 @@
   };
   type DiffAnnotation =
     | { kind: "draft"; id: string; comment: DiffReviewDraftComment }
-    | { kind: "thread"; id: string; thread: ReviewThread }
+    | { kind: "thread"; id: string; thread: ReviewThread; canReply: boolean }
     | { kind: "composer"; id: string; range: DiffReviewLineRange };
   const mountedAnnotations = new Set<MountedAnnotation>();
 
@@ -123,7 +123,7 @@
       annotations.push({
         side: pierreSide(reviewThreadTargetSide(thread)),
         lineNumber: reviewThreadTargetLine(thread),
-        metadata: { kind: "thread", id: thread.id, thread },
+        metadata: { kind: "thread", id: thread.id, thread, canReply: canReplyToThreads },
       });
     }
     if (reviewEnabled && composerRange) {
@@ -411,7 +411,7 @@
           target,
           props: {
             thread: metadata.thread,
-            canReply: canReplyToThreads,
+            canReply: metadata.canReply,
             onreply: replyToThread,
           },
           context,

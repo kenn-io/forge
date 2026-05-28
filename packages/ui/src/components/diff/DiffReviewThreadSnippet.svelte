@@ -17,6 +17,7 @@
     reviewThreadTargetLine,
     reviewThreadTargetSide,
   } from "./review-thread-context.js";
+  import { patchPath } from "./pierre-diff.js";
 
   interface Props {
     thread: ReviewThread;
@@ -70,10 +71,12 @@
       Math.max(1, (firstLineNumber(context.lines, "newNum") ?? 1) - 1);
     const newStart = firstLineNumber(context.lines, "newNum") ??
       Math.max(1, (firstLineNumber(context.lines, "oldNum") ?? 1) - 1);
+    const oldPath = patchPath(`a/${context.path}`);
+    const newPath = patchPath(`b/${context.path}`);
     const patch = [
-      `diff --git a/${context.path} b/${context.path}`,
-      `--- a/${context.path}`,
-      `+++ b/${context.path}`,
+      `diff --git ${oldPath} ${newPath}`,
+      `--- ${oldPath}`,
+      `+++ ${newPath}`,
       `@@ -${oldStart},${oldLineCount} +${newStart},${newLineCount} @@`,
       ...context.lines.map(patchLine),
       "",

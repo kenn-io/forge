@@ -85,6 +85,9 @@
     onPostRender: () => {
       applyHunkHeaderLabels();
       rendered = true;
+      if (!fullContext) {
+        installDemandContextHandler();
+      }
     },
     unsafeCSS: `
       :host {

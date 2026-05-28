@@ -352,6 +352,14 @@ async function expectPierreDiffFirstText(
   }).toContain(text);
 }
 
+async function clickPierreContextExpander(file: ReturnType<Page["locator"]>): Promise<void> {
+  const expander = file
+    .locator(".pierre-diff [data-separator][data-expand-index] [data-expand-button]")
+    .first();
+  await expect(expander).toBeVisible();
+  await expander.click({ modifiers: ["Shift"] });
+}
+
 async function expectPierreDarkBackgroundMatchesAppSurface(
   file: ReturnType<Page["locator"]>,
 ) {
@@ -2011,6 +2019,45 @@ test.describe("diff view (git-backed)", () => {
       const previewBody = await previewResponse.json();
       expect(previewBody.media_type).toContain("text/");
       expect(previewBody.content.length).toBeGreaterThan(0);
+    } finally {
+      await server.stop();
+    }
+  });
+
+  test("context expansion fetches both sides from the real file preview API", async ({ page }) => {
+    const server = await startIsolatedE2EServer();
+    const previewSides: string[] = [];
+    try {
+      await page.route("**/file-preview**", async (route) => {
+        const url = new URL(route.request().url());
+        if (
+          url.pathname.endsWith("/pulls/github/acme/widgets/1/file-preview") &&
+          url.searchParams.get("path") === "internal/handler.go"
+        ) {
+          previewSides.push(url.searchParams.get("side") ?? "");
+        }
+        await route.continue();
+      });
+
+      await page.goto(`${server.info.base_url}/pulls/github/acme/widgets/1/files`);
+      await waitForDiffLoaded(page);
+      await waitForSidebarFilesLoaded(page);
+
+      const handlerFile = page.locator('[data-file-path="internal/handler.go"]');
+      await handlerFile.scrollIntoViewIfNeeded();
+      await expectPierreDiffCountAtLeast(handlerFile, "[data-expand-button]", 1);
+      const expandedContextRowsBefore = await pierreDiffCount(
+        handlerFile,
+        "[data-line-type='context-expanded']",
+      );
+
+      await clickPierreContextExpander(handlerFile);
+
+      await expect.poll(() =>
+        pierreDiffCount(handlerFile, "[data-line-type='context-expanded']")
+      ).toBeGreaterThan(expandedContextRowsBefore);
+      await expect.poll(() => [...new Set(previewSides)].sort())
+        .toEqual(["new", "old"]);
     } finally {
       await server.stop();
     }

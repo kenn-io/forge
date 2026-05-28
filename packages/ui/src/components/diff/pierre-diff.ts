@@ -101,7 +101,7 @@ function safePierreFileName(file: DiffFile, side: "old" | "new"): string {
 }
 
 function canBuildSparsePatchContents(file: DiffFile): boolean {
-  for (const hunk of file.hunks) {
+  for (const hunk of file.hunks ?? []) {
     if (
       !lineRangeFits(hunk.old_start, hunk.old_count) ||
       !lineRangeFits(hunk.new_start, hunk.new_count)
@@ -137,7 +137,7 @@ function sparsePatchContents(file: DiffFile): { oldFile: FileContents; newFile: 
   const oldLines: string[] = [];
   const newLines: string[] = [];
 
-  for (const hunk of file.hunks) {
+  for (const hunk of file.hunks ?? []) {
     for (const line of hunk.lines) {
       if ((line.type === "context" || line.type === "delete") && line.old_num != null) {
         oldLines[line.old_num - 1] = line.content;

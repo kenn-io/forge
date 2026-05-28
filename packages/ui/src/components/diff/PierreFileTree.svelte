@@ -1,7 +1,7 @@
 <script lang="ts">
   import { FileTree } from "@pierre/trees";
   import type { FileTreeOptions } from "@pierre/trees";
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
   import type { DiffFile } from "../../api/types.js";
 
   type TreeGitStatus = NonNullable<FileTreeOptions["gitStatus"]>[number];
@@ -88,14 +88,14 @@
   $effect(() => {
     if (!host) return;
     if (tree && renderedTreeKey === treeKey) {
-      syncSelectedPath();
+      untrack(syncSelectedPath);
       return;
     }
     tree?.cleanUp();
     tree = new FileTree(treeOptions);
     tree.render({ fileTreeContainer: host });
     renderedTreeKey = treeKey;
-    syncSelectedPath();
+    untrack(syncSelectedPath);
   });
 
   $effect(() => {

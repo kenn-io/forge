@@ -137,6 +137,19 @@ describe("Pierre diff parsing", () => {
     expect((parsed as { isPartial?: boolean } | undefined)?.isPartial).toBe(true);
   });
 
+  it("handles nullable hunk payloads when sparse context expansion is enabled", () => {
+    const file = {
+      ...makeFile("src/foo.ts", "-old line\n+new line"),
+      hunks: null as unknown as DiffFile["hunks"],
+    };
+
+    const parsed = parsePierreFileDiff(file, {
+      enableDemandContextExpansion: true,
+    });
+
+    expect(parsed).toBeDefined();
+  });
+
   it("falls back to safe Pierre headers for quoted synthetic paths", () => {
     const parsed = parsePierreFileDiff(makeGitQuotedPathFile());
 

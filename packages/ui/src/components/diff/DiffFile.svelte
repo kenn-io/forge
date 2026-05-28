@@ -67,6 +67,7 @@
   const fileReviewThreads = $derived(
     reviewThreads.filter((thread) => threadMatchesFile(thread)),
   );
+  const fileHunks = $derived(file.hunks ?? []);
 
   // Track viewport visibility so off-screen files skip expensive tokenization
   // on whitespace toggles and theme switches. Starts false so the initial
@@ -128,7 +129,7 @@
         lineNumber: composerRange.line,
         metadata: {
           kind: "composer",
-          id: `composer:${composerRange.side}:${composerRange.line}`,
+          id: `composer:${rangeKey(composerRange)}`,
           range: composerRange,
         },
       });
@@ -235,7 +236,7 @@
 
   function hasRenderedReviewThread(thread: ReviewThread): boolean {
     if (file.is_binary) return false;
-    return file.hunks.some((hunk) =>
+    return fileHunks.some((hunk) =>
       hunk.lines.some((line) => lineMatchesReviewThread(line, thread)),
     );
   }
@@ -266,8 +267,8 @@
   function selectableLines(side: ReviewSide): ReviewLineRef[] {
     const refs: ReviewLineRef[] = [];
     let order = 0;
-    for (let hunkIndex = 0; hunkIndex < file.hunks.length; hunkIndex++) {
-      const hunk = file.hunks[hunkIndex]!;
+    for (let hunkIndex = 0; hunkIndex < fileHunks.length; hunkIndex++) {
+      const hunk = fileHunks[hunkIndex]!;
       for (const line of hunk.lines) {
         const ref = lineRef(line, side, order, hunkIndex);
         if (ref) refs.push(ref);
@@ -305,6 +306,15 @@
       ...(last.newLine != null && { new_line: last.newLine }),
       ...(diffHeadSHA && { diff_head_sha: diffHeadSHA }),
     };
+  }
+
+  function rangeKey(range: DiffReviewLineRange): string {
+    return [
+      range.start_side ?? range.side,
+      range.start_line ?? range.line,
+      range.side,
+      range.line,
+    ].join(":");
   }
 
   function selectedLinesFor(start: ReviewLineRef, end: ReviewLineRef): SelectedLineRange {

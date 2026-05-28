@@ -58,7 +58,8 @@
   const inactiveCleanupDelayMs = 10_000;
 
   const fileKey = $derived(`${file.path}\0${file.old_path}\0${file.patch}`);
-  const emptyTextualDiff = $derived(!file.patch.trim() || file.hunks.length === 0);
+  const fileHunks = $derived(file.hunks ?? []);
+  const emptyTextualDiff = $derived(!file.patch.trim() || fileHunks.length === 0);
   const pierreFile = $derived.by<FileDiffMetadata | undefined>(() => {
     return parsePierreFileDiff(file, {
       // Pierre marks patch-only diffs as partial and hides expansion controls.
@@ -455,8 +456,11 @@
     direction: ExpansionDirections,
     expansionLineCount: number | undefined,
   ): Promise<void> {
-    const context = await loadFullContext();
+    const requestFileKey = fileKey;
+    const context = await loadFullContext(requestFileKey);
+    if (!context || fileKey !== requestFileKey) return;
     renderFullContext(context);
+    if (fileKey !== requestFileKey) return;
     pierreDiff?.expandHunk(hunkIndex, direction, expansionLineCount);
     applyHunkHeaderLabels();
   }
@@ -481,13 +485,20 @@
     }
   }
 
-  async function loadFullContext(): Promise<{ oldFile: FileContents; newFile: FileContents }> {
+  async function loadFullContext(
+    requestFileKey: string,
+  ): Promise<{ oldFile: FileContents; newFile: FileContents } | undefined> {
     if (fullContext) return fullContext;
-    contextLoadPromise ??= fetchFullContext();
+    const promise = contextLoadPromise ??= fetchFullContext();
     try {
-      fullContext = await contextLoadPromise;
+      const context = await promise;
+      if (fileKey !== requestFileKey || contextLoadPromise !== promise) return undefined;
+      fullContext = context;
     } catch (err) {
-      contextLoadPromise = undefined;
+      if (contextLoadPromise === promise) {
+        contextLoadPromise = undefined;
+      }
+      if (fileKey !== requestFileKey) return undefined;
       throw err;
     }
     return fullContext;
@@ -541,7 +552,7 @@
     const diff = pierreDiff as unknown as {
       getLineIndex?: (lineNumber: number, side?: PierreSide) => [number, number] | undefined;
     };
-    for (const hunk of file.hunks) {
+    for (const hunk of fileHunks) {
       for (const line of hunk.lines) {
         if (line.old_num != null) {
           markLineTarget(pre, diff.getLineIndex?.(line.old_num, "deletions"), split, {
@@ -595,7 +606,7 @@
 
   function hasCollapsedContext(f: DiffFile): boolean {
     let previousOldEnd = 1;
-    for (const hunk of f.hunks) {
+    for (const hunk of f.hunks ?? []) {
       if (hunk.old_start > previousOldEnd) return true;
       previousOldEnd = hunk.old_start + hunk.old_count;
     }

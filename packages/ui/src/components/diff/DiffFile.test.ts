@@ -86,7 +86,10 @@ afterAll(() => {
 import DiffFile from "./DiffFile.svelte";
 import type { DiffFile as DiffFileType, FilePreview } from "../../api/types.js";
 import { STORES_KEY } from "../../context.js";
-import type { DiffReviewDraftComment } from "../../stores/diff-review-draft.svelte.js";
+import type {
+  DiffReviewDraftComment,
+  DiffReviewLineRange,
+} from "../../stores/diff-review-draft.svelte.js";
 import { createDiffStore } from "../../stores/diff.svelte.js";
 import type { ReviewThread } from "./review-thread-context.js";
 
@@ -159,6 +162,7 @@ function renderDiffFile(
     owner?: string;
     draftComments?: DiffReviewDraftComment[];
     reviewThreads?: ReviewThread[];
+    createComment?: (body: string, range: DiffReviewLineRange) => Promise<boolean>;
   } = {},
 ) {
   const diff = createDiffStore();
@@ -167,7 +171,7 @@ function renderDiffFile(
     getComments: () => options.draftComments ?? [],
     isSubmitting: () => false,
     getError: () => null,
-    createComment: () => Promise.resolve(true),
+    createComment: options.createComment ?? (() => Promise.resolve(true)),
     deleteComment: () => Promise.resolve(true),
   };
   const owner = options.owner ?? uniqueOwner();
@@ -276,6 +280,20 @@ describe("DiffFile", () => {
       deletions: 0,
       patch: "",
       hunks: [],
+    }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("status")).toBeNull();
+      expect(screen.getByText("No textual changes")).toBeTruthy();
+    });
+  });
+
+  it("treats nullable hunk payloads as hunkless diffs", async () => {
+    renderDiffFile(makeFile({
+      additions: 0,
+      deletions: 0,
+      patch: "",
+      hunks: null as unknown as DiffFileType["hunks"],
     }));
 
     await waitFor(() => {

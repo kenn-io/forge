@@ -75,15 +75,14 @@ function makeLargeLineFile(): DiffFile {
   };
 }
 
-function makeGitQuotedPathFile(): DiffFile {
+function makeGitQuotedPathFile(patchBody = "-old line\n+new line"): DiffFile {
   const path = "src/a\"b.go";
   const patch = `diff --git "a/src/a\\"b.go" "b/src/a\\"b.go"
 --- "a/src/a\\"b.go"
 +++ "b/src/a\\"b.go"
 @@ -1,2 +1,2 @@
  line 1
--old line
-+new line
+${patchBody}
 `;
 
   return {
@@ -155,5 +154,15 @@ describe("Pierre diff parsing", () => {
 
     expect(parsed).toBeDefined();
     expect((parsed as { isPartial?: boolean } | undefined)?.isPartial).toBe(false);
+  });
+
+  it("preserves hunk body lines that look like patch headers during fallback", () => {
+    const parsed = parsePierreFileDiff(
+      makeGitQuotedPathFile("--- body deletion\n+++ body addition"),
+    );
+
+    expect(parsed).toBeDefined();
+    expect(parsed?.deletionLines).toContain("-- body deletion\n");
+    expect(parsed?.additionLines).toContain("++ body addition\n");
   });
 });

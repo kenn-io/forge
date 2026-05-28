@@ -147,17 +147,15 @@
 
     return () => {
       themeObserver?.disconnect();
-      removeDemandContextHandler();
+      cleanUpPierreDiff();
       contextLoadPromise = undefined;
-      pierreDiff?.cleanUp();
-      pierreDiff = undefined;
     };
   });
 
   $effect(() => {
     if (renderedFileKey === fileKey) return;
     renderedFileKey = fileKey;
-    removeDemandContextHandler();
+    cleanUpPierreDiff();
     contextLoadPromise = undefined;
     contextError = null;
     fullContext = undefined;
@@ -168,9 +166,8 @@
   $effect(() => {
     if (!active) return;
     if (emptyTextualDiff) {
-      removeDemandContextHandler();
+      cleanUpPierreDiff();
       renderAttemptKey = "";
-      pierreDiff = undefined;
       rendered = true;
       return;
     }
@@ -232,6 +229,12 @@
       capture: true,
     });
     demandContextHandlerRoot = undefined;
+  }
+
+  function cleanUpPierreDiff(): void {
+    removeDemandContextHandler();
+    pierreDiff?.cleanUp();
+    pierreDiff = undefined;
   }
 
   function handleDemandContextClick(event: Event): void {

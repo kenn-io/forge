@@ -75,6 +75,11 @@
   // fires synchronously for on-screen files.
   let fileEl: HTMLDivElement | undefined = $state();
   let inViewport = $state(false);
+  type MountedAnnotation = {
+    component: object;
+    observer?: MutationObserver;
+    target: HTMLElement;
+  };
   type ReviewSide = "left" | "right";
   type PierreSide = "deletions" | "additions";
   type ReviewLineRef = {
@@ -90,6 +95,7 @@
     | { kind: "draft"; id: string; comment: DiffReviewDraftComment }
     | { kind: "thread"; id: string; thread: ReviewThread }
     | { kind: "composer"; id: string; range: DiffReviewLineRange };
+  const mountedAnnotations = new Set<MountedAnnotation>();
 
   let selectedRange = $state<SelectedLineRange | null>(null);
   let composerRange = $state<DiffReviewLineRange | null>(null);
@@ -148,6 +154,7 @@
 
     return () => {
       observer?.disconnect();
+      clearMountedAnnotations();
     };
   });
 
@@ -369,7 +376,7 @@
           props: { range: metadata.range, onclose: closeComposer },
           context,
         });
-    observeUnmount(target, component);
+    trackMountedAnnotation(target, component);
     return target;
   }
 
@@ -377,24 +384,38 @@
     return renderAnnotation(annotation as DiffLineAnnotation<DiffAnnotation>);
   }
 
-  function observeUnmount(target: HTMLElement, component: object): void {
-    if (typeof MutationObserver === "undefined") return;
-    const observer = new MutationObserver(() => {
-      if (target.isConnected) return;
-      observer.disconnect();
+  function trackMountedAnnotation(target: HTMLElement, component: object): void {
+    const mounted: MountedAnnotation = { component, target };
+    mountedAnnotations.add(mounted);
+    const cleanUp = () => {
+      if (!mountedAnnotations.delete(mounted)) return;
+      mounted.observer?.disconnect();
       void unmount(component);
+    };
+    if (typeof MutationObserver === "undefined") return;
+    mounted.observer = new MutationObserver(() => {
+      if (!target.isConnected) cleanUp();
     });
     queueMicrotask(() => {
+      if (!mountedAnnotations.has(mounted)) return;
       if (!target.isConnected) {
-        void unmount(component);
+        cleanUp();
         return;
       }
       const root = target.getRootNode();
       const observedRoot = root instanceof ShadowRoot || root instanceof Document
         ? root
         : document;
-      observer.observe(observedRoot, { childList: true, subtree: true });
+      mounted.observer?.observe(observedRoot, { childList: true, subtree: true });
     });
+  }
+
+  function clearMountedAnnotations(): void {
+    for (const mounted of mountedAnnotations) {
+      mountedAnnotations.delete(mounted);
+      mounted.observer?.disconnect();
+      void unmount(mounted.component);
+    }
   }
 
   function closeComposer(): void {

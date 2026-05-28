@@ -173,6 +173,24 @@
     return true;
   }
 
+  function isScrollTargetVisible(target: DiffScrollTarget): boolean {
+    if (!diffArea) return false;
+    if (target.line == null) return isFileVisible(target.path);
+
+    const attr = target.side === "left" ? "data-diff-old-line" : "data-diff-new-line";
+    const lineEl = diffArea.querySelector(
+      `[data-diff-path="${CSS.escape(target.path)}"][${attr}="${CSS.escape(String(target.line))}"]`,
+    ) as HTMLElement | null;
+    if (!lineEl) return isFileVisible(target.path);
+
+    const areaRect = diffArea.getBoundingClientRect();
+    const elRect = lineEl.getBoundingClientRect();
+    return areaRect.height > 0 &&
+      elRect.height > 0 &&
+      elRect.bottom > areaRect.top &&
+      elRect.top < areaRect.bottom;
+  }
+
   function jumpToDraftComment(comment: DiffReviewDraftComment): void {
     if (!diffArea) return;
     const el = diffArea.querySelector(
@@ -217,19 +235,29 @@
       !sameScrollTarget(diffStore.getScrollTarget(), target)
     ) return;
 
+    const requiredVisibleFrames = 2;
     let visibleFrames = 0;
-    for (let attempt = 0; attempt < 240; attempt += 1) {
+    let targetReached = false;
+    for (let attempt = 0; attempt < 60; attempt += 1) {
       await nextAnimationFrame();
       if (
         scrollTargetRun !== run ||
         !sameScrollTarget(diffStore.getScrollTarget(), target)
       ) return;
-      if (scrollToTarget(target)) {
+      if (!targetReached) {
+        targetReached = scrollToTarget(target);
+      }
+      if (!targetReached) {
+        visibleFrames = 0;
+        continue;
+      }
+      if (isScrollTargetVisible(target)) {
         visibleFrames += 1;
       } else {
+        targetReached = false;
         visibleFrames = 0;
       }
-      if (visibleFrames >= 45) {
+      if (visibleFrames >= requiredVisibleFrames) {
         diffStore.consumeScrollTarget();
         scrollingToTarget = null;
         finishProgrammaticScroll();

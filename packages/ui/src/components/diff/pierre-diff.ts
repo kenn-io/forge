@@ -75,7 +75,13 @@ function tryParsePatch(patch: string): FileDiffMetadata | undefined {
 function safePierrePatch(file: DiffFile): string {
   const oldName = safePierreFileName(file, "old");
   const newName = safePierreFileName(file, "new");
+  let inHeader = true;
   return file.patch.split("\n").map((line) => {
+    if (line.startsWith("@@ ")) {
+      inHeader = false;
+      return line;
+    }
+    if (!inHeader) return line;
     if (line.startsWith("diff --git ")) return `diff --git a/${oldName} b/${newName}`;
     if (line === "--- /dev/null") return line;
     if (line === "+++ /dev/null") return line;

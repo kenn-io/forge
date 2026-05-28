@@ -867,8 +867,12 @@ describe("EventTimeline", () => {
     const inlineReplyCard = findCompiledStyleRule(".event-card--reply-inline");
     expect(inlineReplyCard.getPropertyValue("display")).toBe("flow-root");
 
+    const inlineReplyBody = findCompiledStyleRule(".event-body--with-inline-reply");
+    expect(inlineReplyBody.getPropertyValue("display")).toBe("flex");
+    expect(inlineReplyBody.getPropertyValue("align-items")).toBe("flex-end");
+
     const inlineReplyAction = findCompiledStyleRule(".thread-reply-action--inline");
-    expect(inlineReplyAction.getPropertyValue("float")).toBe("right");
+    expect(inlineReplyAction.getPropertyValue("flex")).toBe("0 0 auto");
 
     await fireEvent.click(screen.getByRole("button", { name: "Reply" }));
 

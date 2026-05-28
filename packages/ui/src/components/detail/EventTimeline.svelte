@@ -586,12 +586,23 @@
           </div>
         </div>
       {:else}
-        <div class={["event-body", { "markdown-body": shouldRenderMarkdown(event.EventType), "event-body--nested": nested }]}>
-          {#if shouldRenderMarkdown(event.EventType)}
-            {@html renderMarkdown(event.Body, provider && repoOwner && repoName && repoPath ? { provider, platformHost, owner: repoOwner, name: repoName, repoPath } : undefined)}
-          {:else}
-            {event.Body}
-          {/if}
+        <div
+          class={[
+            "event-body",
+            {
+              "markdown-body": shouldRenderMarkdown(event.EventType),
+              "event-body--nested": nested,
+              "event-body--with-inline-reply": inlineReplyEntry,
+            },
+          ]}
+        >
+          <div class="event-body-content">
+            {#if shouldRenderMarkdown(event.EventType)}
+              {@html renderMarkdown(event.Body, provider && repoOwner && repoName && repoPath ? { provider, platformHost, owner: repoOwner, name: repoName, repoPath } : undefined)}
+            {:else}
+              {event.Body}
+            {/if}
+          </div>
           {#if inlineReplyEntry}
             {@const inlineTargetID = replyTargetID(inlineReplyEntry)}
             <button
@@ -1089,8 +1100,9 @@
   }
 
   .thread-reply-action--inline {
-    float: right;
-    margin: 0.12rem 0 0.12rem var(--focus-detail-space-sm, 0.77rem);
+    flex: 0 0 auto;
+    margin-left: 0;
+    vertical-align: text-bottom;
   }
 
   .thread-reply-panel {
@@ -1259,6 +1271,17 @@
   .event-body--nested {
     padding: 0.12rem calc(var(--focus-detail-hit-target, 2rem) + var(--focus-detail-space-sm, 0.62rem)) 0.15rem 0;
     line-height: 1.25;
+  }
+
+  .event-body--with-inline-reply {
+    display: flex;
+    align-items: flex-end;
+    gap: var(--focus-detail-space-sm, 0.77rem);
+  }
+
+  .event-body-content {
+    min-width: 0;
+    flex: 1 1 auto;
   }
 
   .edit-panel {

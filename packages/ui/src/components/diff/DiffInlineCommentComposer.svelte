@@ -1,6 +1,7 @@
 <script lang="ts">
   import SendIcon from "@lucide/svelte/icons/send";
   import XIcon from "@lucide/svelte/icons/x";
+  import { onMount, tick } from "svelte";
   import type { DiffReviewLineRange } from "../../stores/diff-review-draft.svelte.js";
   import { getStores } from "../../context.js";
   import ActionButton from "../shared/ActionButton.svelte";
@@ -14,8 +15,44 @@
   const { diffReviewDraft } = getStores();
 
   let body = $state("");
+  let composerEl: HTMLDivElement | undefined = $state();
+  let textareaEl: HTMLTextAreaElement | undefined = $state();
+  let composerWidth = $state<string | undefined>();
   const submitting = $derived(diffReviewDraft.isSubmitting());
   const error = $derived(diffReviewDraft.getError());
+
+  onMount(() => {
+    let animationFrame = 0;
+    const scheduleLayout = () => {
+      if (animationFrame) cancelAnimationFrame(animationFrame);
+      animationFrame = requestAnimationFrame(() => {
+        animationFrame = 0;
+        updateComposerWidth();
+      });
+    };
+    const container = composerEl ? layoutContainer(composerEl) : null;
+    const resizeObserver = typeof ResizeObserver !== "undefined"
+      ? new ResizeObserver(scheduleLayout)
+      : undefined;
+    if (container) {
+      container.addEventListener("scroll", scheduleLayout, { passive: true });
+      resizeObserver?.observe(container);
+    }
+    if (composerEl) resizeObserver?.observe(composerEl);
+    window.addEventListener("resize", scheduleLayout);
+
+    void tick().then(() => {
+      textareaEl?.focus({ preventScroll: true });
+      scheduleLayout();
+    });
+
+    return () => {
+      if (animationFrame) cancelAnimationFrame(animationFrame);
+      container?.removeEventListener("scroll", scheduleLayout);
+      window.removeEventListener("resize", scheduleLayout);
+      resizeObserver?.disconnect();
+    };
+  });
 
   async function submit(): Promise<void> {
     const nextBody = body.trim();
@@ -26,10 +63,36 @@
       onclose?.();
     }
   }
+
+  function updateComposerWidth(): void {
+    if (!composerEl) return;
+    const container = layoutContainer(composerEl);
+    if (!container) {
+      composerWidth = undefined;
+      return;
+    }
+    const containerRect = container.getBoundingClientRect();
+    const composerRect = composerEl.getBoundingClientRect();
+    const available = Math.floor(containerRect.right - composerRect.left - 12);
+    composerWidth = available > 0 ? `${available}px` : undefined;
+  }
+
+  function layoutContainer(element: HTMLElement): HTMLElement | null {
+    const root = element.getRootNode();
+    if (root instanceof ShadowRoot && root.host instanceof HTMLElement) {
+      return root.host.closest(".file-content") ?? root.host.closest(".diff-area");
+    }
+    return element.closest(".file-content") ?? element.closest(".diff-area");
+  }
 </script>
 
-<div class="inline-composer">
+<div
+  class="inline-composer"
+  bind:this={composerEl}
+  style:--inline-composer-width={composerWidth}
+>
   <textarea
+    bind:this={textareaEl}
     bind:value={body}
     placeholder="Leave a comment"
     disabled={submitting}
@@ -72,25 +135,16 @@
     border: 1px solid var(--border-default);
     border-radius: 6px;
     background: var(--bg-surface);
-    width: calc(100% - 24px);
-    max-width: calc(100% - 24px);
+    width: var(--inline-composer-width, calc(100% - 24px));
+    max-width: var(--inline-composer-width, calc(100% - 24px));
     min-width: 0;
     overflow: hidden;
-  }
-
-  @supports (width: 100cqw) {
-    .inline-composer {
-      width: calc(100cqw - 24px);
-      max-width: calc(100cqw - 24px);
-    }
   }
 
   @container (max-width: 520px) {
     .inline-composer {
       left: 8px;
       margin: 6px 0 8px;
-      width: calc(100cqw - 16px);
-      max-width: calc(100cqw - 16px);
     }
   }
 

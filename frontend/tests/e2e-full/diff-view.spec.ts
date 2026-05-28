@@ -352,6 +352,18 @@ async function expectPierreDiffFirstText(
   }).toContain(text);
 }
 
+async function expectPierreCodeTabSize(
+  file: ReturnType<Page["locator"]>,
+  tabSize: string,
+) {
+  await expect.poll(async () => {
+    return await file.locator(".pierre-diff").evaluate((host) => {
+      const code = host.shadowRoot?.querySelector("[data-code]");
+      return code instanceof HTMLElement ? getComputedStyle(code).tabSize : "";
+    });
+  }).toBe(tabSize);
+}
+
 async function clickPierreContextExpander(file: ReturnType<Page["locator"]>): Promise<void> {
   const expander = file
     .locator(".pierre-diff [data-separator][data-expand-index] [data-expand-button]")
@@ -994,6 +1006,8 @@ test.describe("diff view", () => {
     await openDiffFilterMenu(page);
 
     // Default tab width is 4.
+    const handlerFile = page.locator('[data-file-path="internal/server/handler.go"]');
+    await expectPierreCodeTabSize(handlerFile, "4");
     const tabWidth = page.getByRole("group", { name: "Tab width" });
     await expect(tabWidth.getByRole("button", { name: "4" }))
       .toHaveAttribute("aria-pressed", "true");
@@ -1004,6 +1018,7 @@ test.describe("diff view", () => {
       .toHaveAttribute("aria-pressed", "true");
     await expect(tabWidth.getByRole("button", { name: "4" }))
       .toHaveAttribute("aria-pressed", "false");
+    await expectPierreCodeTabSize(handlerFile, "2");
   });
 
   test("word wrap toggle changes diff line wrapping", async ({ page }) => {
@@ -2082,6 +2097,13 @@ test.describe("diff view (git-backed)", () => {
       await cacheFile.scrollIntoViewIfNeeded();
       await selectPierreReviewLine(cacheFile, 1, "right");
       await expect(page.getByPlaceholder("Leave a comment")).toBeVisible();
+      await expect(page.getByPlaceholder("Leave a comment")).toBeFocused();
+      const cacheContentBox = await cacheFile.locator(".file-content").boundingBox();
+      const composerBox = await cacheFile.locator(".inline-composer").boundingBox();
+      expect(cacheContentBox).not.toBeNull();
+      expect(composerBox).not.toBeNull();
+      expect(composerBox!.x + composerBox!.width)
+        .toBeLessThanOrEqual(cacheContentBox!.x + cacheContentBox!.width + 1);
       await page.getByPlaceholder("Leave a comment").fill("Right-side cache note");
       await page.getByRole("button", { name: "Add comment" }).click();
       await expect(page.locator(".inline-draft-comment", {

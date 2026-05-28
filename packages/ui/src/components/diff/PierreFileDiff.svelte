@@ -18,6 +18,7 @@
     file: DiffFile;
     active?: boolean;
     wordWrap?: boolean;
+    tabWidth?: number;
     loadFileText?: ((side: "old" | "new") => Promise<string>) | undefined;
     lineAnnotations?: DiffLineAnnotation<unknown>[];
     selectedRange?: SelectedLineRange | null;
@@ -33,6 +34,7 @@
     file,
     active = true,
     wordWrap = false,
+    tabWidth = 4,
     loadFileText,
     lineAnnotations = [],
     selectedRange = null,
@@ -102,6 +104,7 @@
         display: block;
         font-family: var(--font-mono);
         --diffs-font-family: var(--font-mono);
+        --diffs-tab-size: ${tabWidth};
         --diffs-light-bg: var(--bg-surface, #fff);
         --diffs-dark-bg: var(--bg-surface, #16161e);
         --diffs-addition-color-override: var(--accent-green);
@@ -201,6 +204,7 @@
     const nextRenderAttemptKey = [
       fileKey,
       wordWrap,
+      tabWidth,
       fullContext ? "full" : "patch",
       enableLineSelection,
       annotationKey(lineAnnotations),

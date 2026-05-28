@@ -169,6 +169,7 @@
         {diffHeadSHA}
         {reviewThreads}
         reviewDraftMutation={capabilities?.review_draft_mutation ?? false}
+        canReplyToThreads={capabilities?.thread_reply ?? false}
         supportedReviewActions={capabilities?.supported_review_actions ?? []}
         nativeMultilineRanges={capabilities?.native_multiline_ranges ?? false}
       />

@@ -1,22 +1,124 @@
 <script lang="ts">
+  import MessageSquareReplyIcon from "@lucide/svelte/icons/message-square-reply";
+  import SendIcon from "@lucide/svelte/icons/send";
+  import XIcon from "@lucide/svelte/icons/x";
+  import { onMount, tick } from "svelte";
   import type { ReviewThread } from "./review-thread-context.js";
   import { reviewThreadLineLabel } from "./review-thread-context.js";
+  import ActionButton from "../shared/ActionButton.svelte";
 
   interface Props {
     thread: ReviewThread;
     fileLevel?: boolean;
+    canReply?: boolean;
+    onreply?: ((thread: ReviewThread, body: string) => Promise<boolean>) | undefined;
   }
 
   const {
     thread,
     fileLevel = false,
+    canReply = false,
+    onreply,
   }: Props = $props();
+
+  let replying = $state(false);
+  let replyBody = $state("");
+  let submitting = $state(false);
+  let error = $state<string | null>(null);
+  let threadEl: HTMLDivElement | undefined = $state();
+  let textareaEl: HTMLTextAreaElement | undefined = $state();
+  let panelWidth = $state<string | undefined>();
+
+  onMount(() => {
+    let animationFrame = 0;
+    const scheduleLayout = () => {
+      if (animationFrame) cancelAnimationFrame(animationFrame);
+      animationFrame = requestAnimationFrame(() => {
+        animationFrame = 0;
+        updatePanelWidth();
+      });
+    };
+    const container = threadEl ? layoutContainer(threadEl) : null;
+    const resizeObserver = typeof ResizeObserver !== "undefined"
+      ? new ResizeObserver(scheduleLayout)
+      : undefined;
+    if (container) {
+      container.addEventListener("scroll", scheduleLayout, { passive: true });
+      resizeObserver?.observe(container);
+    }
+    if (threadEl) resizeObserver?.observe(threadEl);
+    window.addEventListener("resize", scheduleLayout);
+    scheduleLayout();
+
+    return () => {
+      if (animationFrame) cancelAnimationFrame(animationFrame);
+      container?.removeEventListener("scroll", scheduleLayout);
+      window.removeEventListener("resize", scheduleLayout);
+      resizeObserver?.disconnect();
+    };
+  });
+
+  function startReply(): void {
+    replying = true;
+    error = null;
+    void tick().then(() => textareaEl?.focus({ preventScroll: true }));
+  }
+
+  function cancelReply(): void {
+    replying = false;
+    replyBody = "";
+    error = null;
+  }
+
+  async function submitReply(): Promise<void> {
+    const body = replyBody.trim();
+    if (!body) {
+      error = "Reply body must not be empty";
+      return;
+    }
+    if (!onreply) return;
+    submitting = true;
+    error = null;
+    try {
+      const ok = await onreply(thread, body);
+      if (ok) {
+        cancelReply();
+      } else {
+        error = "Could not reply to thread";
+      }
+    } finally {
+      submitting = false;
+    }
+  }
+
+  function updatePanelWidth(): void {
+    if (!threadEl) return;
+    const container = layoutContainer(threadEl);
+    if (!container) {
+      panelWidth = undefined;
+      return;
+    }
+    const containerRect = container.getBoundingClientRect();
+    const threadRect = threadEl.getBoundingClientRect();
+    const available = Math.floor(containerRect.right - threadRect.left - 12);
+    panelWidth = available > 0 ? `${available}px` : undefined;
+  }
+
+  function layoutContainer(element: HTMLElement): HTMLElement | null {
+    const root = element.getRootNode();
+    if (root instanceof ShadowRoot && root.host instanceof HTMLElement) {
+      return root.host.closest(".file-content") ?? root.host.closest(".diff-area");
+    }
+    return element.closest(".file-content") ?? element.closest(".diff-area");
+  }
 </script>
 
 <div
   class="inline-review-thread"
   class:inline-review-thread--file-level={fileLevel}
   data-review-thread-id={thread.id}
+  bind:this={threadEl}
+  style:--inline-review-thread-width={panelWidth}
   tabindex="-1"
 >
   <div class="review-thread-header">
@@ -33,6 +135,57 @@
     <div class="review-thread-author">{thread.author_login}</div>
   {/if}
   <p class="review-thread-body">{thread.body}</p>
+  {#if canReply && !thread.resolved}
+    {#if replying}
+      <div class="review-thread-reply">
+        <textarea
+          bind:this={textareaEl}
+          bind:value={replyBody}
+          placeholder="Reply to thread"
+          disabled={submitting}
+          rows="3"
+        ></textarea>
+        {#if error}
+          <p class="review-thread-error">{error}</p>
+        {/if}
+        <div class="review-thread-actions">
+          <ActionButton
+            class="review-thread-btn"
+            size="sm"
+            onclick={cancelReply}
+            disabled={submitting}
+          >
+            <XIcon size={14} />
+            Cancel
+          </ActionButton>
+          <ActionButton
+            class="review-thread-btn review-thread-btn--primary"
+            tone="info"
+            surface="solid"
+            size="sm"
+            onclick={() => void submitReply()}
+            disabled={submitting || replyBody.trim() === ""}
+          >
+            <SendIcon size={14} />
+            {submitting ? "Replying..." : "Reply"}
+          </ActionButton>
+        </div>
+      </div>
+    {:else}
+      <div class="review-thread-actions">
+        <ActionButton
+          class="review-thread-btn"
+          size="sm"
+          surface="soft"
+          tone="neutral"
+          onclick={startReply}
+        >
+          <MessageSquareReplyIcon size={14} />
+          Reply
+        </ActionButton>
+      </div>
+    {/if}
+  {/if}
 </div>
 
 <style>
@@ -45,8 +198,8 @@
     border: 1px solid color-mix(in srgb, var(--accent-purple) 44%, var(--border-muted));
     border-radius: 6px;
     background: color-mix(in srgb, var(--accent-purple) 9%, var(--bg-surface));
-    width: calc(100% - 24px);
-    max-width: calc(100% - 24px);
+    width: var(--inline-review-thread-width, calc(100% - 24px));
+    max-width: var(--inline-review-thread-width, calc(100% - 24px));
     min-width: 0;
     scroll-margin-block: 96px;
   }
@@ -60,19 +213,10 @@
     outline-offset: 2px;
   }
 
-  @supports (width: 100cqw) {
-    .inline-review-thread {
-      width: calc(100cqw - 24px);
-      max-width: calc(100cqw - 24px);
-    }
-  }
-
   @container (max-width: 520px) {
     .inline-review-thread {
       left: 8px;
       margin: 6px 0 8px;
-      width: calc(100cqw - 16px);
-      max-width: calc(100cqw - 16px);
     }
   }
 
@@ -130,5 +274,47 @@
     font-size: var(--font-size-sm);
     white-space: pre-wrap;
     overflow-wrap: anywhere;
+  }
+
+  .review-thread-reply {
+    margin-top: 8px;
+  }
+
+  textarea {
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 72px;
+    resize: vertical;
+    padding: 8px;
+    border: 1px solid var(--border-muted);
+    border-radius: 4px;
+    background: var(--bg-inset);
+    color: var(--text-primary);
+    font: inherit;
+    font-size: var(--font-size-md);
+  }
+
+  .review-thread-error {
+    margin: 6px 0 0;
+    color: var(--accent-red);
+    font-size: var(--font-size-sm);
+  }
+
+  .review-thread-actions {
+    display: flex;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+  }
+
+  :global(.review-thread-btn.action-button) {
+    min-height: 28px;
+  }
+
+  :global(.review-thread-btn--primary.action-button) {
+    border-color: var(--accent-blue);
+    background: var(--accent-blue);
+    color: #fff;
   }
 </style>

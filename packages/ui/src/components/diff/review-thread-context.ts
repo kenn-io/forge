@@ -91,7 +91,7 @@ export function reviewThreadContext(
   const minLine = Math.min(startLine, endLine);
   const maxLine = Math.max(startLine, endLine);
 
-  for (const hunk of file.hunks) {
+  for (const hunk of file.hunks ?? []) {
     const targetIndexes: number[] = [];
     for (let index = 0; index < hunk.lines.length; index++) {
       const lineNumber = lineNumberForSide(hunk.lines[index]!, side);

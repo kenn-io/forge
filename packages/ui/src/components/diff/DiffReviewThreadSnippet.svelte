@@ -2,11 +2,20 @@
   import CheckCircleIcon from "@lucide/svelte/icons/check-circle";
   import CircleIcon from "@lucide/svelte/icons/circle";
   import ArrowRightIcon from "@lucide/svelte/icons/arrow-right";
+  import type { SelectedLineRange } from "@pierre/diffs";
+  import type { DiffFile } from "../../api/types.js";
   import { getStores } from "../../context.js";
+  import PierreFileDiff from "./PierreFileDiff.svelte";
   import type {
     ReviewThread,
     ReviewThreadContext,
     ReviewThreadContextLine,
+  } from "./review-thread-context.js";
+  import {
+    reviewThreadStartLine,
+    reviewThreadStartSide,
+    reviewThreadTargetLine,
+    reviewThreadTargetSide,
   } from "./review-thread-context.js";
 
   interface Props {
@@ -25,14 +34,19 @@
     jumpToDiff,
   }: Props = $props();
   const stores = getStores();
+  const diffStore = stores.diff;
   const diffReviewDraft = stores.diffReviewDraft;
   const submitting = $derived(diffReviewDraft?.isSubmitting() ?? false);
-
-  function lineClass(line: ReviewThreadContextLine): string {
-    if (line.type === "add") return "context-line context-line--add";
-    if (line.type === "delete") return "context-line context-line--del";
-    return "context-line";
-  }
+  const tabWidth = $derived(diffStore.getTabWidth());
+  const contextDiff = $derived(context?.lines.length ? diffFileForContext(context) : null);
+  const selectedRanges = $derived<SelectedLineRange[]>([{
+    start: reviewThreadStartLine(thread),
+    end: reviewThreadTargetLine(thread),
+    side: pierreSide(reviewThreadStartSide(thread)),
+    ...(reviewThreadStartSide(thread) !== reviewThreadTargetSide(thread) && {
+      endSide: pierreSide(reviewThreadTargetSide(thread)),
+    }),
+  }]);
 
   async function toggleResolved(): Promise<void> {
     if (!canResolve || !diffReviewDraft) return;
@@ -43,6 +57,61 @@
     if (ok) {
       await onchanged?.();
     }
+  }
+
+  function pierreSide(side: "left" | "right"): "deletions" | "additions" {
+    return side === "left" ? "deletions" : "additions";
+  }
+
+  function diffFileForContext(context: ReviewThreadContext): DiffFile {
+    const oldLineCount = context.lines.filter((line) => line.type !== "add").length;
+    const newLineCount = context.lines.filter((line) => line.type !== "delete").length;
+    const oldStart = firstLineNumber(context.lines, "oldNum") ??
+      Math.max(1, (firstLineNumber(context.lines, "newNum") ?? 1) - 1);
+    const newStart = firstLineNumber(context.lines, "newNum") ??
+      Math.max(1, (firstLineNumber(context.lines, "oldNum") ?? 1) - 1);
+    const patch = [
+      `diff --git a/${context.path} b/${context.path}`,
+      `--- a/${context.path}`,
+      `+++ b/${context.path}`,
+      `@@ -${oldStart},${oldLineCount} +${newStart},${newLineCount} @@`,
+      ...context.lines.map(patchLine),
+      "",
+    ].join("\n");
+    return {
+      path: context.path,
+      old_path: context.path,
+      status: "modified",
+      is_binary: false,
+      is_whitespace_only: false,
+      additions: context.lines.filter((line) => line.type === "add").length,
+      deletions: context.lines.filter((line) => line.type === "delete").length,
+      patch,
+      hunks: [{
+        old_start: oldStart,
+        old_count: oldLineCount,
+        new_start: newStart,
+        new_count: newLineCount,
+        lines: context.lines.map((line) => ({
+          type: line.type,
+          content: line.content,
+          ...(line.oldNum != null && { old_num: line.oldNum }),
+          ...(line.newNum != null && { new_num: line.newNum }),
+        })),
+      }],
+    };
+  }
+
+  function firstLineNumber(
+    lines: ReviewThreadContextLine[],
+    key: "oldNum" | "newNum",
+  ): number | undefined {
+    return lines.find((line) => line[key] != null)?.[key];
+  }
+
+  function patchLine(line: ReviewThreadContextLine): string {
+    const prefix = line.type === "add" ? "+" : line.type === "delete" ? "-" : " ";
+    return `${prefix}${line.content}`;
   }
 </script>
 
@@ -87,16 +156,15 @@
     </div>
   </div>
 
-  {#if context?.lines.length}
+  {#if contextDiff}
     <div class="thread-code" aria-label="Commented diff context">
-      {#each context.lines as line (line.key)}
-        <div class={lineClass(line)} class:context-line--target={line.target}>
-          <span class="context-num">{line.oldNum ?? ""}</span>
-          <span class="context-num">{line.newNum ?? ""}</span>
-          <span class="context-marker">{line.type === "add" ? "+" : line.type === "delete" ? "-" : " "}</span>
-          <code>{line.content}</code>
-        </div>
-      {/each}
+      <PierreFileDiff
+        file={contextDiff}
+        active
+        wordWrap
+        {tabWidth}
+        selectedRanges={selectedRanges}
+      />
     </div>
   {:else if context?.outdated}
     <p class="thread-outdated">Diff context is no longer present in the loaded diff.</p>
@@ -174,61 +242,11 @@
 
   .thread-code {
     margin-top: 6px;
-    overflow-x: auto;
+    overflow: hidden;
     border: 1px solid var(--border-muted);
     border-radius: 4px;
     background: var(--diff-bg);
-    font-family: var(--font-mono);
-    font-size: var(--font-size-xs);
-  }
-
-  .context-line {
-    display: grid;
-    grid-template-columns: minmax(2.5ch, auto) minmax(2.5ch, auto) 1.5ch minmax(0, 1fr);
-    min-width: max-content;
-    color: var(--diff-text);
-    line-height: 18px;
-  }
-
-  .context-line--add {
-    background: var(--diff-add-bg);
-  }
-
-  .context-line--del {
-    background: var(--diff-del-bg);
-  }
-
-  .context-line--target {
-    box-shadow: inset 3px 0 0 var(--accent-blue);
-  }
-
-  .context-num,
-  .context-marker {
-    color: var(--diff-line-num);
-    user-select: none;
-  }
-
-  .context-num {
-    padding: 0 6px;
-    text-align: right;
-    background: var(--diff-bg);
-  }
-
-  .context-line--add .context-num {
-    background: var(--diff-add-gutter);
-  }
-
-  .context-line--del .context-num {
-    background: var(--diff-del-gutter);
-  }
-
-  .context-marker {
-    text-align: center;
-  }
-
-  code {
-    padding: 0 8px 0 4px;
-    white-space: pre;
+    container-type: inline-size;
   }
 
   .thread-outdated {

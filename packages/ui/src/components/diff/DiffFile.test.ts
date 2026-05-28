@@ -163,6 +163,14 @@ function renderDiffFile(
     draftComments?: DiffReviewDraftComment[];
     reviewThreads?: ReviewThread[];
     createComment?: (body: string, range: DiffReviewLineRange) => Promise<boolean>;
+    canReplyToThreads?: boolean;
+    replyToDiscussion?: (
+      owner: string,
+      name: string,
+      number: number,
+      discussionID: string,
+      body: string,
+    ) => Promise<boolean>;
   } = {},
 ) {
   const diff = createDiffStore();
@@ -193,6 +201,9 @@ function renderDiffFile(
       ...(options.reviewEnabled !== undefined && {
         reviewEnabled: options.reviewEnabled,
       }),
+      ...(options.canReplyToThreads !== undefined && {
+        canReplyToThreads: options.canReplyToThreads,
+      }),
       ...(options.diffHeadSHA !== undefined && {
         diffHeadSHA: options.diffHeadSHA,
       }),
@@ -203,7 +214,16 @@ function renderDiffFile(
         reviewThreads: options.reviewThreads,
       }),
     },
-    context: new Map([[STORES_KEY, { diff, diffReviewDraft }]]),
+    context: new Map([[
+      STORES_KEY,
+      {
+        diff,
+        diffReviewDraft,
+        detail: {
+          replyToDiscussion: options.replyToDiscussion ?? (() => Promise.resolve(true)),
+        },
+      },
+    ]]),
   });
   return { ...result, diff };
 }
@@ -486,6 +506,34 @@ describe("DiffFile", () => {
     const host = document.querySelector("[data-review-thread-id='thread-1']")
       ?.closest("[slot='annotation-additions-2']");
     expect(host).toBeTruthy();
+  });
+
+  it("lets published inline review threads be replied to", async () => {
+    const replyToDiscussion = vi.fn().mockResolvedValue(true);
+    renderDiffFile(makeFile(), {
+      reviewEnabled: true,
+      diffHeadSHA: "diff-head",
+      canReplyToThreads: true,
+      reviewThreads: [makeReviewThread()],
+      replyToDiscussion,
+    });
+
+    await fireEvent.click(await screen.findByRole("button", { name: "Reply" }));
+    const textarea = screen.getByPlaceholderText("Reply to thread");
+    expect(textarea).toBe(document.activeElement);
+
+    await fireEvent.input(textarea, { target: { value: "Follow-up reply" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Reply" }));
+
+    await waitFor(() => {
+      expect(replyToDiscussion).toHaveBeenCalledWith(
+        expect.any(String),
+        "n",
+        1,
+        "thread-1",
+        "Follow-up reply",
+      );
+    });
   });
 
   it("does not render stale-head review threads under a matching current line", async () => {

@@ -32,6 +32,7 @@
     richPreviewEnabled?: boolean;
     contextExpansionEnabled?: boolean;
     reviewEnabled?: boolean;
+    canReplyToThreads?: boolean;
     diffHeadSHA?: string | undefined;
     nativeMultilineRanges?: boolean;
     reviewThreads?: ReviewThread[];
@@ -48,6 +49,7 @@
     richPreviewEnabled = true,
     contextExpansionEnabled = true,
     reviewEnabled = false,
+    canReplyToThreads = false,
     diffHeadSHA = undefined,
     nativeMultilineRanges = false,
     reviewThreads = [],
@@ -56,6 +58,7 @@
   const collapsed = $derived(diffStore.isFileCollapsed(owner, name, number, file.path));
   const richPreview = $derived(diffStore.getRichPreview());
   const wordWrap = $derived(diffStore.getWordWrap());
+  const tabWidth = $derived(diffStore.getTabWidth());
   const filePreviewGeneration = $derived(diffStore.getFilePreviewGeneration());
   const showRichPreview = $derived(
     richPreviewEnabled && richPreview && supportsRichPreview(file.path),
@@ -406,7 +409,11 @@
       : metadata.kind === "thread"
         ? mount(DiffReviewThreadInlineComment, {
           target,
-          props: { thread: metadata.thread },
+          props: {
+            thread: metadata.thread,
+            canReply: canReplyToThreads,
+            onreply: replyToThread,
+          },
           context,
         })
         : mount(DiffInlineCommentComposer, {
@@ -454,6 +461,10 @@
       mounted.observer?.disconnect();
       void unmount(mounted.component);
     }
+  }
+
+  async function replyToThread(thread: ReviewThread, body: string): Promise<boolean> {
+    return await stores.detail?.replyToDiscussion(owner, name, number, thread.id, body) ?? false;
   }
 
   function closeComposer(): void {
@@ -516,6 +527,7 @@
           {file}
           active={inViewport}
           {wordWrap}
+          {tabWidth}
           loadFileText={contextExpansionEnabled ? loadDiffText : undefined}
           lineAnnotations={pierreLineAnnotations}
           selectedRange={selectedRange}

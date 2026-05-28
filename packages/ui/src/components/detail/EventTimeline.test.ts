@@ -1,6 +1,6 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { compile } from "svelte/compiler";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import componentSource from "./EventTimeline.svelte?raw";
 import EventTimeline from "./EventTimeline.svelte";
 import { STORES_KEY } from "../../context.js";
@@ -11,6 +11,48 @@ const compiledCss = compile(
   componentSource,
   { filename: "EventTimeline.svelte" },
 ).css?.code ?? "";
+
+type GlobalWithResizeObserver = { ResizeObserver?: unknown };
+type GlobalWithCSSStyleSheet = {
+  CSSStyleSheet?: { prototype: CSSStyleSheet & { replaceSync?: (text: string) => void } };
+};
+let originalResizeObserver: unknown;
+let originalResizeObserverExisted = false;
+let originalReplaceSync: unknown;
+
+beforeAll(() => {
+  originalResizeObserverExisted = "ResizeObserver" in globalThis;
+  originalResizeObserver = (globalThis as GlobalWithResizeObserver).ResizeObserver;
+  class ResizeObserverStub {
+    observe(): void {}
+    unobserve(): void {}
+    disconnect(): void {}
+  }
+  (globalThis as GlobalWithResizeObserver).ResizeObserver = ResizeObserverStub;
+
+  originalReplaceSync = (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet
+    ?.prototype.replaceSync;
+  if ((globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet?.prototype) {
+    (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet.prototype.replaceSync
+      ??= function replaceSync(): void {};
+  }
+});
+
+afterAll(() => {
+  if (originalResizeObserverExisted) {
+    (globalThis as GlobalWithResizeObserver).ResizeObserver = originalResizeObserver;
+  } else {
+    delete (globalThis as GlobalWithResizeObserver).ResizeObserver;
+  }
+  if ((globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet?.prototype) {
+    if (originalReplaceSync) {
+      (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet.prototype.replaceSync =
+        originalReplaceSync as (text: string) => void;
+    } else {
+      delete (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet.prototype.replaceSync;
+    }
+  }
+});
 
 function makeEvent(overrides: Partial<PREvent> = {}): PREvent {
   return {
@@ -90,6 +132,7 @@ function makeDiffStore(overrides: Partial<DiffStore> = {}): DiffStore {
     getDiff: () => diff,
     isDiffLoading: () => false,
     getCurrentPR: () => ({ owner: "acme", name: "widget", number: 7 }),
+    getTabWidth: () => 4,
     loadDiff: vi.fn(),
     requestScrollToLine: vi.fn(),
     ...overrides,
@@ -115,6 +158,13 @@ function findCompiledStyleRule(
     }
   }
   throw new Error(`Could not find compiled style rule for ${selector}`);
+}
+
+async function expectPierreTimelineText(pattern: RegExp): Promise<void> {
+  await waitFor(() => {
+    const host = document.querySelector(".thread-code .pierre-diff");
+    expect(host?.shadowRoot?.textContent).toMatch(pattern);
+  });
 }
 
 describe("EventTimeline", () => {
@@ -240,7 +290,7 @@ describe("EventTimeline", () => {
     );
   });
 
-  it("renders positioned discussion threads with the same root and reply ordering", () => {
+  it("renders positioned discussion threads with the same root and reply ordering", async () => {
     const { container } = render(EventTimeline, {
       props: {
         events: [
@@ -306,7 +356,7 @@ describe("EventTimeline", () => {
     });
 
     expect(screen.getByText("src/review.ts:11")).toBeTruthy();
-    expect(screen.getByText("client.publishThreads();")).toBeTruthy();
+    await expectPierreTimelineText(/client\.publishThreads\(\);/);
     expect(container.querySelectorAll(".thread-reply")).toHaveLength(2);
 
     const threadText = container.querySelector(".event-card")?.textContent ?? "";
@@ -696,7 +746,7 @@ describe("EventTimeline", () => {
     });
 
     expect(screen.getByText("src/review.ts:10-11")).toBeTruthy();
-    expect(screen.getByText("client.publishThreads();")).toBeTruthy();
+    await expectPierreTimelineText(/client\.publishThreads\(\);/);
     expect(container.querySelector(".event-body-wrap--with-thread .event-actions")).toBeTruthy();
 
     const threadedActions = findCompiledStyleRule(".event-body-wrap--with-thread");

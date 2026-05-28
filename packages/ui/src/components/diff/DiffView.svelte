@@ -25,6 +25,7 @@
     reviewMode?: "enabled" | "disabled";
     diffHeadSHA?: string | undefined;
     reviewDraftMutation?: boolean;
+    canReplyToThreads?: boolean;
     supportedReviewActions?: string[];
     nativeMultilineRanges?: boolean;
     reviewThreads?: ReviewThread[];
@@ -44,6 +45,7 @@
     reviewMode = "enabled",
     diffHeadSHA = undefined,
     reviewDraftMutation = false,
+    canReplyToThreads = false,
     supportedReviewActions = [],
     nativeMultilineRanges = false,
     reviewThreads = [],
@@ -416,6 +418,7 @@
               {richPreviewEnabled}
               {contextExpansionEnabled}
               {reviewEnabled}
+              canReplyToThreads={canReplyToThreads && !diff?.stale}
               {diffHeadSHA}
               {nativeMultilineRanges}
               {reviewThreads}

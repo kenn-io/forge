@@ -437,6 +437,7 @@ describe("DiffFile", () => {
 
     await waitFor(() => {
       expect(screen.getByText("Follow up here")).toBeTruthy();
+      expect(selectedPierreLines()?.length).toBeGreaterThanOrEqual(4);
     });
   });
 

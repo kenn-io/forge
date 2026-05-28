@@ -136,6 +136,15 @@
     return annotations;
   });
   const pierreLineAnnotations = $derived(lineAnnotations as DiffLineAnnotation<unknown>[]);
+  const draftSelectedRanges = $derived.by<SelectedLineRange[]>(() => {
+    if (!reviewEnabled) return [];
+    const ranges: SelectedLineRange[] = [];
+    for (const comment of fileDraftComments) {
+      const range = selectedRangeForDraftComment(comment);
+      if (range) ranges.push(range);
+    }
+    return ranges;
+  });
 
   onMount(() => {
     let observer: IntersectionObserver | undefined;
@@ -350,6 +359,25 @@
     return reviewSideFromValue(comment.side);
   }
 
+  function selectedRangeForDraftComment(comment: DiffReviewDraftComment): SelectedLineRange | null {
+    if (comment.line_type === "file") return null;
+    if (!commentMatchesCurrentDiff(comment)) return null;
+    const endSide = commentSide(comment);
+    const end = refForSelection(comment.line, endSide);
+    if (!end) return null;
+    const startLine = comment.start_line ?? comment.line;
+    const startSide = comment.start_side ? reviewSideFromValue(comment.start_side) : endSide;
+    const start = refForSelection(startLine, startSide);
+    if (!start || start.hunkIndex !== end.hunkIndex || start.side !== end.side) {
+      return selectedLinesFor(end, end);
+    }
+    return selectedLinesFor(start, end);
+  }
+
+  function commentMatchesCurrentDiff(comment: DiffReviewDraftComment): boolean {
+    return !comment.diff_head_sha || !diffHeadSHA || comment.diff_head_sha === diffHeadSHA;
+  }
+
   function reviewSideFromValue(side: string): ReviewSide {
     return side.toLowerCase() === "left" ? "left" : "right";
   }
@@ -481,6 +509,7 @@
           loadFileText={contextExpansionEnabled ? loadDiffText : undefined}
           lineAnnotations={pierreLineAnnotations}
           selectedRange={selectedRange}
+          selectedRanges={draftSelectedRanges}
           enableLineSelection={reviewEnabled && !!diffHeadSHA}
           onLineSelected={handlePierreSelection}
           renderAnnotation={renderUnknownAnnotation}

@@ -21,10 +21,13 @@
     loadFileText?: ((side: "old" | "new") => Promise<string>) | undefined;
     lineAnnotations?: DiffLineAnnotation<unknown>[];
     selectedRange?: SelectedLineRange | null;
+    selectedRanges?: SelectedLineRange[];
     enableLineSelection?: boolean;
     onLineSelected?: (selection: SelectedLineRange | null) => void;
     renderAnnotation?: (annotation: DiffLineAnnotation<unknown>) => HTMLElement | undefined;
   }
+
+  type PierreSide = "deletions" | "additions";
 
   const {
     file,
@@ -33,6 +36,7 @@
     loadFileText,
     lineAnnotations = [],
     selectedRange = null,
+    selectedRanges = [],
     enableLineSelection = false,
     onLineSelected,
     renderAnnotation,
@@ -50,6 +54,7 @@
   let renderedFileKey = "";
   let renderAttemptKey = "";
   let inactiveCleanupTimer: ReturnType<typeof setTimeout> | undefined;
+  let reviewRangeFrame: number | undefined;
   const inactiveCleanupDelayMs = 10_000;
 
   const fileKey = $derived(`${file.path}\0${file.old_path}\0${file.patch}`);
@@ -88,6 +93,7 @@
       if (!fullContext) {
         installDemandContextHandler();
       }
+      scheduleSelectedRangesApplication();
     },
     unsafeCSS: `
       :host {
@@ -154,6 +160,7 @@
     return () => {
       themeObserver?.disconnect();
       cancelInactiveCleanup();
+      cancelSelectedRangesApplication();
       cleanUpPierreDiff();
       contextLoadPromise = undefined;
     };
@@ -198,6 +205,7 @@
     ].join("\0");
     if (renderAttemptKey === nextRenderAttemptKey) {
       pierreDiff.setSelectedLines(selectedRange);
+      scheduleSelectedRangesApplication();
       return;
     }
     renderAttemptKey = nextRenderAttemptKey;
@@ -216,9 +224,11 @@
         rendered = true;
         placeholderHeight = 0;
         installDemandContextHandler();
+        scheduleSelectedRangesApplication();
       }
     }
     pierreDiff.setSelectedLines(selectedRange);
+    scheduleSelectedRangesApplication();
   });
 
   $effect(() => {
@@ -229,6 +239,12 @@
 
   $effect(() => {
     pierreDiff?.setSelectedLines(selectedRange);
+    scheduleSelectedRangesApplication();
+  });
+
+  $effect(() => {
+    selectedRanges;
+    scheduleSelectedRangesApplication();
   });
 
   function installDemandContextHandler(): void {
@@ -248,8 +264,113 @@
 
   function cleanUpPierreDiff(): void {
     removeDemandContextHandler();
+    cancelSelectedRangesApplication();
     pierreDiff?.cleanUp();
     pierreDiff = undefined;
+  }
+
+  function cancelSelectedRangesApplication(): void {
+    if (reviewRangeFrame == null) return;
+    cancelAnimationFrame(reviewRangeFrame);
+    reviewRangeFrame = undefined;
+  }
+
+  function scheduleSelectedRangesApplication(): void {
+    if (!rendered || !host?.shadowRoot) return;
+    cancelSelectedRangesApplication();
+    reviewRangeFrame = requestAnimationFrame(() => {
+      reviewRangeFrame = undefined;
+      applySelectedRanges();
+    });
+  }
+
+  function applySelectedRanges(): void {
+    const root = host?.shadowRoot;
+    const pre = root?.querySelector("pre");
+    if (!root || !pre) return;
+    for (const element of root.querySelectorAll<HTMLElement>("[data-review-range-line]")) {
+      element.removeAttribute("data-review-range-line");
+      element.removeAttribute("data-selected-line");
+    }
+    if (!selectedRanges.length || !pierreDiff) return;
+
+    const split = pre.getAttribute("data-diff-type") === "split";
+    const diff = pierreDiff as unknown as {
+      getLineIndex?: (lineNumber: number, side?: PierreSide) => [number, number] | undefined;
+    };
+    for (const range of selectedRanges) {
+      const startIndexes = diff.getLineIndex?.(range.start, range.side as PierreSide);
+      const endIndexes = diff.getLineIndex?.(
+        range.end,
+        (range.endSide ?? range.side) as PierreSide,
+      );
+      if (!startIndexes || !endIndexes) continue;
+      const startIndex = split ? startIndexes[1] : startIndexes[0];
+      const endIndex = split ? endIndexes[1] : endIndexes[0];
+      markSelectedLineIndexes(
+        pre,
+        Math.min(startIndex, endIndex),
+        Math.max(startIndex, endIndex),
+        split,
+      );
+    }
+  }
+
+  function markSelectedLineIndexes(
+    pre: HTMLPreElement,
+    first: number,
+    last: number,
+    split: boolean,
+  ): void {
+    const isSingle = first === last;
+    for (const code of Array.from(pre.children)) {
+      const [gutter, content] = Array.from(code.children);
+      if (!gutter || !content) continue;
+      const contentRows = Array.from(content.children);
+      const gutterRows = Array.from(gutter.children);
+      for (let i = 0; i < contentRows.length; i++) {
+        const contentElement = contentRows[i];
+        const gutterElement = gutterRows[i];
+        if (!(contentElement instanceof HTMLElement) || !(gutterElement instanceof HTMLElement)) {
+          continue;
+        }
+        const lineIndex = parseRenderedLineIndex(contentElement, split);
+        if ((lineIndex ?? 0) > last) break;
+        if (lineIndex == null || lineIndex < first) continue;
+        let value = isSingle ? "single" : lineIndex === first ? "first" : lineIndex === last ? "last" : "";
+        markSelectedRangeElement(contentElement, value);
+        markSelectedRangeElement(gutterElement, value);
+        if (
+          contentElement.nextSibling instanceof HTMLElement &&
+          gutterElement.nextSibling instanceof HTMLElement &&
+          contentElement.nextSibling.hasAttribute("data-line-annotation")
+        ) {
+          if (isSingle) {
+            value = "last";
+            contentElement.setAttribute("data-selected-line", "first");
+          } else if (lineIndex === first || lineIndex === last) {
+            value = "";
+          }
+          markSelectedRangeElement(contentElement.nextSibling, value);
+          markSelectedRangeElement(gutterElement.nextSibling, value);
+        }
+      }
+    }
+  }
+
+  function markSelectedRangeElement(element: HTMLElement, value: string): void {
+    element.setAttribute("data-review-range-line", "");
+    element.setAttribute("data-selected-line", value);
+  }
+
+  function parseRenderedLineIndex(element: HTMLElement, split: boolean): number | undefined {
+    const indexes = (element.getAttribute("data-line-index") ?? "")
+      .split(",")
+      .map((value) => Number.parseInt(value, 10))
+      .filter((value) => !Number.isNaN(value));
+    if (split && indexes.length === 2) return indexes[1];
+    if (!split) return indexes[0];
+    return undefined;
   }
 
   function scheduleInactiveCleanup(): void {
@@ -351,6 +472,7 @@
       applyHunkHeaderLabels();
       rendered = true;
       placeholderHeight = 0;
+      scheduleSelectedRangesApplication();
     }
   }
 

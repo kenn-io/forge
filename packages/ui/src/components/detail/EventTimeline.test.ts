@@ -868,11 +868,16 @@ describe("EventTimeline", () => {
     expect(inlineReplyCard.getPropertyValue("display")).toBe("flow-root");
 
     const inlineReplyBody = findCompiledStyleRule(".event-body--with-inline-reply");
-    expect(inlineReplyBody.getPropertyValue("display")).toBe("flex");
-    expect(inlineReplyBody.getPropertyValue("align-items")).toBe("flex-end");
+    expect(inlineReplyBody.getPropertyValue("display")).toBe("block");
 
-    const inlineReplyAction = findCompiledStyleRule(".thread-reply-action--inline");
-    expect(inlineReplyAction.getPropertyValue("flex")).toBe("0 0 auto");
+    const inlineReplyFloat = findCompiledStyleRule(".event-body--with-inline-reply .thread-reply-inline-float");
+    expect(inlineReplyFloat.getPropertyValue("float")).toBe("right");
+    expect(inlineReplyFloat.getPropertyValue("clear")).toBe("right");
+    expect(inlineReplyFloat.getPropertyValue("margin-left")).toBe("var(--focus-detail-space-sm, 0.77rem)");
+
+    const inlineReplyAction = findCompiledStyleRule(".event-body--with-inline-reply .thread-reply-action--inline");
+    expect(inlineReplyAction.getPropertyValue("display")).toBe("inline-flex");
+    expect(inlineReplyAction.getPropertyValue("color")).toBe("var(--text-secondary)");
 
     await fireEvent.click(screen.getByRole("button", { name: "Reply" }));
 

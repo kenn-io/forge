@@ -493,6 +493,70 @@
       }, 1500);
     });
   }
+
+  function inlineReplyButtonHtml(entry: TimelineEntry): string {
+    const targetID = replyTargetID(entry);
+    const expanded = targetID !== null && replyingThreadID === targetID;
+    const disabled = savingReplyThreadID !== null;
+    return `
+      <span class="thread-reply-inline-float">
+        <button
+          class="thread-toggle thread-reply-action thread-reply-action--inline"
+          type="button"
+          data-thread-reply-inline="true"
+          aria-expanded="${expanded ? "true" : "false"}"
+          ${disabled ? "disabled" : ""}
+        >
+          <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="9 17 4 12 9 7"></polyline>
+            <path d="M20 18v-2a4 4 0 0 0-4-4H4"></path>
+          </svg>
+          Reply
+        </button>
+      </span>
+    `;
+  }
+
+  function withInlineReplyButton(html: string, entry: TimelineEntry): string {
+    const template = document.createElement("template");
+    template.innerHTML = html;
+    const button = inlineReplyButtonHtml(entry);
+    const targets = template.content.querySelectorAll("p, li, blockquote, h1, h2, h3, h4, h5, h6");
+    const target = targets[targets.length - 1];
+    if (target) {
+      target.insertAdjacentHTML("beforeend", button);
+    } else {
+      template.content.append(document.createElement("p"));
+      template.content.lastElementChild?.insertAdjacentHTML("beforeend", button);
+    }
+    return template.innerHTML;
+  }
+
+  function renderedBodyHtml(event: PREvent | IssueEvent, inlineReplyEntry?: TimelineEntry): string {
+    const html = renderMarkdown(
+      event.Body,
+      provider && repoOwner && repoName && repoPath
+        ? { provider, platformHost, owner: repoOwner, name: repoName, repoPath }
+        : undefined,
+    );
+    return inlineReplyEntry ? withInlineReplyButton(html, inlineReplyEntry) : html;
+  }
+
+  function handleInlineReplyBodyClick(event: MouseEvent, entry: TimelineEntry | undefined): void {
+    if (!entry) return;
+    if (!(event.target instanceof Element)) return;
+    if (!event.target.closest("[data-thread-reply-inline]")) return;
+    startReply(entry);
+  }
+
+  function handleInlineReplyBodyKeydown(event: KeyboardEvent, entry: TimelineEntry | undefined): void {
+    if (!entry) return;
+    if (!(event.target instanceof Element)) return;
+    if (!event.target.closest("[data-thread-reply-inline]")) return;
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    startReply(entry);
+  }
 </script>
 
 {#snippet eventBody(
@@ -520,32 +584,34 @@
             : undefined}
         />
       {/if}
-      <div class="event-actions">
-        {#if canEditComment(event)}
+      {#if !inlineReplyEntry}
+        <div class="event-actions">
+          {#if canEditComment(event)}
+            <button
+              class="event-action-btn"
+              onclick={() => startEdit(event)}
+              title="Edit comment"
+              aria-label="Edit comment"
+              disabled={savingEditId !== null}
+            >
+              <PencilIcon size={14} />
+            </button>
+          {/if}
           <button
             class="event-action-btn"
-            onclick={() => startEdit(event)}
-            title="Edit comment"
-            aria-label="Edit comment"
-            disabled={savingEditId !== null}
+            class:copied={copiedId === String(event.ID)}
+            onclick={() => copyText(String(event.ID), event.Body)}
+            title={copiedId === String(event.ID) ? "Copied!" : "Copy to clipboard"}
+            aria-label={copiedId === String(event.ID) ? "Copied" : "Copy comment"}
           >
-            <PencilIcon size={14} />
+            {#if copiedId === String(event.ID)}
+              <CheckIcon size={14} />
+            {:else}
+              <CopyIcon size={14} />
+            {/if}
           </button>
-        {/if}
-        <button
-          class="event-action-btn"
-          class:copied={copiedId === String(event.ID)}
-          onclick={() => copyText(String(event.ID), event.Body)}
-          title={copiedId === String(event.ID) ? "Copied!" : "Copy to clipboard"}
-          aria-label={copiedId === String(event.ID) ? "Copied" : "Copy comment"}
-        >
-          {#if copiedId === String(event.ID)}
-            <CheckIcon size={14} />
-          {:else}
-            <CopyIcon size={14} />
-          {/if}
-        </button>
-      </div>
+        </div>
+      {/if}
       {#if editingId === event.ID && provider && repoOwner && repoName && repoPath}
         <div class="edit-panel">
           <CommentEditor
@@ -595,26 +661,42 @@
               "event-body--with-inline-reply": inlineReplyEntry,
             },
           ]}
+          onclick={(clickEvent) => handleInlineReplyBodyClick(clickEvent, inlineReplyEntry)}
+          onkeydown={(keyEvent) => handleInlineReplyBodyKeydown(keyEvent, inlineReplyEntry)}
+          role="presentation"
         >
-          <div class="event-body-content">
-            {#if shouldRenderMarkdown(event.EventType)}
-              {@html renderMarkdown(event.Body, provider && repoOwner && repoName && repoPath ? { provider, platformHost, owner: repoOwner, name: repoName, repoPath } : undefined)}
-            {:else}
-              {event.Body}
-            {/if}
-          </div>
           {#if inlineReplyEntry}
-            {@const inlineTargetID = replyTargetID(inlineReplyEntry)}
-            <button
-              class="thread-toggle thread-reply-action thread-reply-action--inline"
-              type="button"
-              onclick={() => startReply(inlineReplyEntry)}
-              aria-expanded={inlineTargetID !== null && replyingThreadID === inlineTargetID}
-              disabled={savingReplyThreadID !== null}
-            >
-              <MessageSquareReplyIcon size={14} />
-              Reply
-            </button>
+            <div class="event-actions event-actions--inline-reply">
+              {#if canEditComment(event)}
+                <button
+                  class="event-action-btn"
+                  onclick={() => startEdit(event)}
+                  title="Edit comment"
+                  aria-label="Edit comment"
+                  disabled={savingEditId !== null}
+                >
+                  <PencilIcon size={14} />
+                </button>
+              {/if}
+              <button
+                class="event-action-btn"
+                class:copied={copiedId === String(event.ID)}
+                onclick={() => copyText(String(event.ID), event.Body)}
+                title={copiedId === String(event.ID) ? "Copied!" : "Copy to clipboard"}
+                aria-label={copiedId === String(event.ID) ? "Copied" : "Copy comment"}
+              >
+                {#if copiedId === String(event.ID)}
+                  <CheckIcon size={14} />
+                {:else}
+                  <CopyIcon size={14} />
+                {/if}
+              </button>
+            </div>
+          {/if}
+          {#if shouldRenderMarkdown(event.EventType)}
+            {@html renderedBodyHtml(event, inlineReplyEntry)}
+          {:else}
+            {event.Body}
           {/if}
         </div>
       {/if}
@@ -1099,12 +1181,6 @@
     color: var(--text-secondary);
   }
 
-  .thread-reply-action--inline {
-    flex: 0 0 auto;
-    margin-left: 0;
-    vertical-align: text-bottom;
-  }
-
   .thread-reply-panel {
     padding: var(--focus-detail-space-sm, 0.62rem) 0 0.15rem 1.35rem;
   }
@@ -1203,6 +1279,14 @@
     margin: 0 0 var(--focus-detail-space-xs, 0.46rem) var(--focus-detail-space-xs, 0.46rem);
   }
 
+  .event-card--reply-inline .event-body-wrap--with-thread .event-actions--inline-reply {
+    position: absolute;
+    top: var(--focus-detail-space-sm, 0.62rem);
+    right: 0;
+    float: none;
+    margin: 0;
+  }
+
   .event-action-btn {
     display: flex;
     align-items: center;
@@ -1274,14 +1358,65 @@
   }
 
   .event-body--with-inline-reply {
-    display: flex;
-    align-items: flex-end;
-    gap: var(--focus-detail-space-sm, 0.77rem);
+    position: relative;
+    display: block;
   }
 
-  .event-body-content {
-    min-width: 0;
-    flex: 1 1 auto;
+  .event-body--with-inline-reply::after {
+    content: "";
+    display: block;
+    clear: both;
+  }
+
+  .event-body--with-inline-reply :global(.thread-reply-inline-float) {
+    float: right;
+    clear: right;
+    display: inline-flex;
+    margin-left: var(--focus-detail-space-sm, 0.77rem);
+  }
+
+  .event-body--with-inline-reply :global(.thread-reply-action--inline) {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    min-height: 1.75rem;
+    padding: 0.18rem 0.45rem 0.18rem 0.25rem;
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    opacity: 0;
+    transition: opacity 0.15s, background 0.15s, color 0.15s;
+    vertical-align: text-bottom;
+  }
+
+  .event-card--reply-inline:hover .event-body--with-inline-reply :global(.thread-reply-action--inline),
+  .event-body--with-inline-reply :global(.thread-reply-action--inline:focus-visible),
+  .event-body--with-inline-reply :global(.thread-reply-action--inline[aria-expanded="true"]) {
+    opacity: 1;
+  }
+
+  .event-body--with-inline-reply :global(.thread-reply-action--inline:hover) {
+    background: var(--bg-surface-hover);
+    color: var(--text-primary);
+  }
+
+  .event-body--with-inline-reply :global(.thread-reply-action--inline:disabled) {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  @media (hover: none) {
+    .event-body--with-inline-reply :global(.thread-reply-action--inline) {
+      opacity: 1;
+    }
+  }
+
+  .event-body--with-inline-reply > :global(:is(p, h1, h2, h3, h4, h5, h6):first-of-type)::before {
+    content: "";
+    float: right;
+    width: calc(var(--focus-detail-hit-target, 2rem) + var(--focus-detail-space-sm, 0.62rem));
+    height: calc(var(--focus-detail-hit-target, 2rem) + var(--focus-detail-space-xs, 0.46rem));
   }
 
   .edit-panel {

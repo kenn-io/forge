@@ -861,13 +861,14 @@ describe("EventTimeline", () => {
     });
 
     expect(container.querySelector(".event-card--reply-inline")).toBeTruthy();
-    expect(container.querySelector(".thread-controls--reply-only")).toBeTruthy();
+    expect(container.querySelector(".thread-controls--reply-only")).toBeNull();
+    expect(container.querySelector(".thread-reply-action--inline")).toBeTruthy();
 
     const inlineReplyCard = findCompiledStyleRule(".event-card--reply-inline");
     expect(inlineReplyCard.getPropertyValue("display")).toBe("flow-root");
 
-    const replyOnlyControls = findCompiledStyleRule(".thread-controls--reply-only");
-    expect(replyOnlyControls.getPropertyValue("float")).toBe("right");
+    const inlineReplyAction = findCompiledStyleRule(".thread-reply-action--inline");
+    expect(inlineReplyAction.getPropertyValue("float")).toBe("right");
 
     await fireEvent.click(screen.getByRole("button", { name: "Reply" }));
 

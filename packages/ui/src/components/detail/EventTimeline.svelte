@@ -499,6 +499,7 @@
   event: PREvent | IssueEvent,
   nested = false,
   reviewThread: TimelineReviewThread | undefined = undefined,
+  inlineReplyEntry: TimelineEntry | undefined = undefined,
 )}
   {#if event.Body}
     <div
@@ -590,6 +591,19 @@
             {@html renderMarkdown(event.Body, provider && repoOwner && repoName && repoPath ? { provider, platformHost, owner: repoOwner, name: repoName, repoPath } : undefined)}
           {:else}
             {event.Body}
+          {/if}
+          {#if inlineReplyEntry}
+            {@const inlineTargetID = replyTargetID(inlineReplyEntry)}
+            <button
+              class="thread-toggle thread-reply-action thread-reply-action--inline"
+              type="button"
+              onclick={() => startReply(inlineReplyEntry)}
+              aria-expanded={inlineTargetID !== null && replyingThreadID === inlineTargetID}
+              disabled={savingReplyThreadID !== null}
+            >
+              <MessageSquareReplyIcon size={14} />
+              Reply
+            </button>
           {/if}
         </div>
       {/if}
@@ -755,9 +769,9 @@
             {#if event.Summary && (event.EventType === "commit" || event.EventType === "force_push")}
               <p class="event-summary">{event.Summary}</p>
             {/if}
-            {@render eventBody(event, false, entry.reviewThread)}
-            {#if entry.replies.length > 0 || canReplyToThread(entry)}
-              <div class={["thread-controls", hasReplyOnlyAction && "thread-controls--reply-only"]}>
+            {@render eventBody(event, false, entry.reviewThread, hasReplyOnlyAction ? entry : undefined)}
+            {#if entry.replies.length > 0 || (canReplyToThread(entry) && !hasReplyOnlyAction)}
+              <div class="thread-controls">
                 {#if entry.replies.length > 0}
                   <button
                     class="thread-toggle"
@@ -787,47 +801,6 @@
                   </button>
                 {/if}
               </div>
-              {#if targetID !== null && replyingThreadID === targetID && provider && repoOwner && repoName && repoPath}
-                <div class="thread-reply-panel">
-                  <CommentEditor
-                    {provider}
-                    {platformHost}
-                    owner={repoOwner}
-                    name={repoName}
-                    {repoPath}
-                    value={replyDraft}
-                    placeholder="Reply to thread... (Cmd+Enter to submit)"
-                    disabled={savingReplyThreadID === targetID}
-                    oninput={(nextBody) => {
-                      replyDraft = nextBody;
-                    }}
-                    onsubmit={() => {
-                      void submitReply(entry);
-                    }}
-                  />
-                  {#if replyError}
-                    <p class="edit-error">{replyError}</p>
-                  {/if}
-                  <div class="edit-actions">
-                    <button
-                      class="edit-action edit-action--primary"
-                      onclick={() => void submitReply(entry)}
-                      disabled={savingReplyThreadID === targetID}
-                    >
-                      <CheckIcon size={14} />
-                      {savingReplyThreadID === targetID ? "Replying..." : "Reply"}
-                    </button>
-                    <button
-                      class="edit-action"
-                      onclick={cancelReply}
-                      disabled={savingReplyThreadID === targetID}
-                    >
-                      <XIcon size={14} />
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              {/if}
               {#if !isThreadCollapsed(entry)}
                 <ol class="thread-replies" aria-label="Threaded replies">
                   {#each entry.replies as reply, index (reply.ID)}
@@ -853,6 +826,47 @@
                   {/each}
                 </ol>
               {/if}
+            {/if}
+            {#if targetID !== null && replyingThreadID === targetID && provider && repoOwner && repoName && repoPath}
+              <div class="thread-reply-panel">
+                <CommentEditor
+                  {provider}
+                  {platformHost}
+                  owner={repoOwner}
+                  name={repoName}
+                  {repoPath}
+                  value={replyDraft}
+                  placeholder="Reply to thread... (Cmd+Enter to submit)"
+                  disabled={savingReplyThreadID === targetID}
+                  oninput={(nextBody) => {
+                    replyDraft = nextBody;
+                  }}
+                  onsubmit={() => {
+                    void submitReply(entry);
+                  }}
+                />
+                {#if replyError}
+                  <p class="edit-error">{replyError}</p>
+                {/if}
+                <div class="edit-actions">
+                  <button
+                    class="edit-action edit-action--primary"
+                    onclick={() => void submitReply(entry)}
+                    disabled={savingReplyThreadID === targetID}
+                  >
+                    <CheckIcon size={14} />
+                    {savingReplyThreadID === targetID ? "Replying..." : "Reply"}
+                  </button>
+                  <button
+                    class="edit-action"
+                    onclick={cancelReply}
+                    disabled={savingReplyThreadID === targetID}
+                  >
+                    <XIcon size={14} />
+                    Cancel
+                  </button>
+                </div>
+              </div>
             {/if}
           </div>
         {/if}
@@ -1048,11 +1062,6 @@
     display: flow-root;
   }
 
-  .thread-controls--reply-only {
-    float: right;
-    margin: 0.15rem 0 0.15rem var(--focus-detail-space-sm, 0.77rem);
-  }
-
   .thread-toggle {
     display: inline-flex;
     align-items: center;
@@ -1077,6 +1086,11 @@
 
   .thread-reply-action {
     color: var(--text-secondary);
+  }
+
+  .thread-reply-action--inline {
+    float: right;
+    margin: 0.12rem 0 0.12rem var(--focus-detail-space-sm, 0.77rem);
   }
 
   .thread-reply-panel {

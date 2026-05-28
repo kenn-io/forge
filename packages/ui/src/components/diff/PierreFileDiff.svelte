@@ -354,7 +354,12 @@
   async function loadFullContext(): Promise<{ oldFile: FileContents; newFile: FileContents }> {
     if (fullContext) return fullContext;
     contextLoadPromise ??= fetchFullContext();
-    fullContext = await contextLoadPromise;
+    try {
+      fullContext = await contextLoadPromise;
+    } catch (err) {
+      contextLoadPromise = undefined;
+      throw err;
+    }
     return fullContext;
   }
 

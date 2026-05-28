@@ -14,7 +14,8 @@ import DiffSidebar from "./DiffSidebar.svelte";
 if (!globalThis.CSS) {
   globalThis.CSS = {} as typeof CSS;
 }
-globalThis.CSS.escape ??= (value: string) => value.replace(/"/g, '\\"');
+globalThis.CSS.escape ??= (value: string) =>
+  value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 
 function makeFile(path: string, status: DiffFile["status"] = "modified"): DiffFile {
   return {

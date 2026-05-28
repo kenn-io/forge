@@ -384,7 +384,17 @@
       observer.disconnect();
       void unmount(component);
     });
-    observer.observe(document, { childList: true, subtree: true });
+    queueMicrotask(() => {
+      if (!target.isConnected) {
+        void unmount(component);
+        return;
+      }
+      const root = target.getRootNode();
+      const observedRoot = root instanceof ShadowRoot || root instanceof Document
+        ? root
+        : document;
+      observer.observe(observedRoot, { childList: true, subtree: true });
+    });
   }
 
   function closeComposer(): void {

@@ -75,6 +75,40 @@ function makeLargeLineFile(): DiffFile {
   };
 }
 
+function makeGitQuotedPathFile(): DiffFile {
+  const path = "src/a\"b.go";
+  const patch = `diff --git "a/src/a\\"b.go" "b/src/a\\"b.go"
+--- "a/src/a\\"b.go"
++++ "b/src/a\\"b.go"
+@@ -1,2 +1,2 @@
+ line 1
+-old line
++new line
+`;
+
+  return {
+    path,
+    old_path: path,
+    status: "modified",
+    is_binary: false,
+    is_whitespace_only: false,
+    additions: 1,
+    deletions: 1,
+    patch,
+    hunks: [{
+      old_start: 1,
+      old_count: 2,
+      new_start: 1,
+      new_count: 2,
+      lines: [
+        { type: "context", content: "line 1", old_num: 1, new_num: 1 },
+        { type: "delete", content: "old line", old_num: 2 },
+        { type: "add", content: "new line", new_num: 2 },
+      ],
+    }],
+  };
+}
+
 describe("Pierre diff parsing", () => {
   it("does not assign reusable cache keys to untrusted patch input", () => {
     const first = parsePierreFileDiff(makeFile("src/foo.ts", "-old line\n+new line"));
@@ -102,5 +136,24 @@ describe("Pierre diff parsing", () => {
 
     expect(parsed).toBeDefined();
     expect((parsed as { isPartial?: boolean } | undefined)?.isPartial).toBe(true);
+  });
+
+  it("falls back to safe Pierre headers for quoted synthetic paths", () => {
+    const parsed = parsePierreFileDiff(makeGitQuotedPathFile());
+
+    expect(parsed).toBeDefined();
+    expect(parsed?.hunks).toHaveLength(1);
+    expect(parsed?.deletionLines).toContain("old line\n");
+    expect(parsed?.additionLines).toContain("new line\n");
+  });
+
+  it("falls back to safe Pierre headers when sparse context parsing sees quoted paths", () => {
+    const parsed = parsePierreFileDiff(
+      makeGitQuotedPathFile(),
+      { enableDemandContextExpansion: true },
+    );
+
+    expect(parsed).toBeDefined();
+    expect((parsed as { isPartial?: boolean } | undefined)?.isPartial).toBe(false);
   });
 });

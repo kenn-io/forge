@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import type { DiffFile, DiffLine, DiffResult, FilesResult } from "@middleman/ui/api/types";
 import { acquireExclusiveLock } from "./support/exclusiveLock";
 import { startIsolatedE2EServer } from "./support/e2eServer";
@@ -686,6 +686,24 @@ async function renderedPierreDiffCount(page: Page): Promise<number> {
 
 async function openDiffFilterMenu(page: Page): Promise<void> {
   await page.getByRole("button", { name: "More diff filters" }).click();
+}
+
+async function selectPierreReviewLine(
+  file: Locator,
+  line: number,
+  side: "left" | "right",
+): Promise<void> {
+  const type = side === "left" ? "change-deletion" : "change-addition";
+  const fallback = side === "left" ? ["context"] : ["context", "context-expanded"];
+  const selector = [
+    `[data-column-number="${line}"][data-line-type="${type}"]`,
+    ...fallback.map((lineType) =>
+      `[data-column-number="${line}"][data-line-type="${lineType}"]`
+    ),
+  ].join(",");
+  const target = file.locator(`.pierre-diff ${selector}`).first();
+  await expect(target).toBeVisible({ timeout: 10_000 });
+  await target.click();
 }
 
 // --- Functional tests ---
@@ -1993,6 +2011,73 @@ test.describe("diff view (git-backed)", () => {
       const previewBody = await previewResponse.json();
       expect(previewBody.media_type).toContain("text/");
       expect(previewBody.content.length).toBeGreaterThan(0);
+    } finally {
+      await server.stop();
+    }
+  });
+
+  test("inline review comments persist selected left and right diff targets", async ({ page }) => {
+    const server = await startIsolatedE2EServer();
+    try {
+      const baseURL = server.info.base_url;
+      const detailResponse = await page.request.get(
+        `${baseURL}/api/v1/pulls/github/acme/widgets/1`,
+      );
+      expect(detailResponse.ok()).toBe(true);
+      const detail = await detailResponse.json() as { diff_head_sha: string };
+      expect(detail.diff_head_sha).toBeTruthy();
+
+      await page.goto(`${baseURL}/pulls/github/acme/widgets/1/files`);
+      await waitForDiffLoaded(page);
+      await waitForSidebarFilesLoaded(page);
+
+      const cacheFile = page.locator('[data-file-path="internal/cache.go"]');
+      await cacheFile.scrollIntoViewIfNeeded();
+      await selectPierreReviewLine(cacheFile, 1, "right");
+      await expect(page.getByPlaceholder("Leave a comment")).toBeVisible();
+      await page.getByPlaceholder("Leave a comment").fill("Right-side cache note");
+      await page.getByRole("button", { name: "Add comment" }).click();
+      await expect(page.locator(".inline-draft-comment", {
+        hasText: "Right-side cache note",
+      })).toBeVisible();
+
+      const configFile = page.locator('[data-file-path="config.yaml"]');
+      await configFile.scrollIntoViewIfNeeded();
+      await selectPierreReviewLine(configFile, 1, "left");
+      await expect(page.getByPlaceholder("Leave a comment")).toBeVisible();
+      await page.getByPlaceholder("Leave a comment").fill("Left-side config note");
+      await page.getByRole("button", { name: "Add comment" }).click();
+      await expect(page.locator(".inline-draft-comment", {
+        hasText: "Left-side config note",
+      })).toBeVisible();
+
+      const draftResponse = await page.request.get(
+        `${baseURL}/api/v1/pulls/github/acme/widgets/1/review-draft`,
+      );
+      expect(draftResponse.ok()).toBe(true);
+      const draft = await draftResponse.json() as {
+        comments: Array<Record<string, unknown>>;
+      };
+      expect(draft.comments).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          body: "Right-side cache note",
+          path: "internal/cache.go",
+          side: "right",
+          line: 1,
+          new_line: 1,
+          line_type: "add",
+          diff_head_sha: detail.diff_head_sha,
+        }),
+        expect.objectContaining({
+          body: "Left-side config note",
+          path: "config.yaml",
+          side: "left",
+          line: 1,
+          old_line: 1,
+          line_type: "delete",
+          diff_head_sha: detail.diff_head_sha,
+        }),
+      ]));
     } finally {
       await server.stop();
     }

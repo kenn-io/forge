@@ -20,13 +20,78 @@ export function parsePierreFileDiff(
   if (!file.patch) return undefined;
   if (options.enableDemandContextExpansion && canBuildSparsePatchContents(file)) {
     const contents = sparsePatchContents(file);
-    return processFile(file.patch, {
+    return processPatchWithContext(file, contents);
+  }
+  return parsePatchOnly(file);
+}
+
+function processPatchWithContext(
+  file: DiffFile,
+  contents: { oldFile: FileContents; newFile: FileContents },
+): FileDiffMetadata | undefined {
+  const parsed = tryProcessPatch(file.patch, contents);
+  if (parsed) return parsed;
+
+  const safePatch = safePierrePatch(file);
+  if (safePatch === file.patch) return parsePatchOnly(file);
+  return tryProcessPatch(safePatch, {
+    oldFile: { ...contents.oldFile, name: safePierreFileName(file, "old") },
+    newFile: { ...contents.newFile, name: safePierreFileName(file, "new") },
+  }) ?? parsePatchOnly({ ...file, patch: safePatch });
+}
+
+function tryProcessPatch(
+  patch: string,
+  contents: { oldFile: FileContents; newFile: FileContents },
+): FileDiffMetadata | undefined {
+  try {
+    return processFile(patch, {
       oldFile: contents.oldFile,
       newFile: contents.newFile,
       throwOnError: true,
     });
+  } catch {
+    return undefined;
   }
-  return parsePatchFiles(file.patch, undefined, true)[0]?.files[0];
+}
+
+function parsePatchOnly(file: DiffFile): FileDiffMetadata | undefined {
+  const parsed = tryParsePatch(file.patch);
+  if (parsed) return parsed;
+
+  const safePatch = safePierrePatch(file);
+  if (safePatch === file.patch) return undefined;
+  return tryParsePatch(safePatch);
+}
+
+function tryParsePatch(patch: string): FileDiffMetadata | undefined {
+  try {
+    return parsePatchFiles(patch, undefined, true)[0]?.files[0];
+  } catch {
+    return undefined;
+  }
+}
+
+function safePierrePatch(file: DiffFile): string {
+  const oldName = safePierreFileName(file, "old");
+  const newName = safePierreFileName(file, "new");
+  return file.patch.split("\n").map((line) => {
+    if (line.startsWith("diff --git ")) return `diff --git a/${oldName} b/${newName}`;
+    if (line === "--- /dev/null") return line;
+    if (line === "+++ /dev/null") return line;
+    if (line.startsWith("--- ")) return `--- a/${oldName}`;
+    if (line.startsWith("+++ ")) return `+++ b/${newName}`;
+    if (line.startsWith("rename from ")) return `rename from ${oldName}`;
+    if (line.startsWith("rename to ")) return `rename to ${newName}`;
+    return line;
+  }).join("\n");
+}
+
+function safePierreFileName(file: DiffFile, side: "old" | "new"): string {
+  const source = side === "old" ? file.old_path || file.path : file.path;
+  const extensionIndex = source.lastIndexOf(".");
+  const extension = extensionIndex >= 0 ? source.slice(extensionIndex) : "";
+  return `middleman-diff${extension.replace(/[^A-Za-z0-9.]/g, "")}`;
 }
 
 function canBuildSparsePatchContents(file: DiffFile): boolean {

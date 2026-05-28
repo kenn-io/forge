@@ -11,12 +11,13 @@ const pierre = (() => {
     cleanUp: 0,
     render: 0,
   };
+  let renderResults: boolean[] = [];
   const cleanUp = () => {
     counts.cleanUp += 1;
   };
   const renderDiff = () => {
     counts.render += 1;
-    return true;
+    return renderResults.shift() ?? true;
   };
   const metadata = {
     additionLines: ["new line\n"],
@@ -46,6 +47,10 @@ const pierre = (() => {
     reset: () => {
       counts.cleanUp = 0;
       counts.render = 0;
+      renderResults = [];
+    },
+    setRenderResults: (results: boolean[]) => {
+      renderResults = [...results];
     },
   };
 })();
@@ -135,5 +140,18 @@ describe("PierreFileDiff", () => {
     } finally {
       Element.prototype.getBoundingClientRect = originalGetBoundingClientRect;
     }
+  });
+
+  it("retries when Pierre declines an initial render attempt", async () => {
+    const { default: PierreFileDiff } = await import("./PierreFileDiff.svelte");
+    pierre.setRenderResults([false, true]);
+
+    render(PierreFileDiff, {
+      props: { active: true, file: makeFile() },
+    });
+
+    await waitFor(() => {
+      expect(pierre.renderCount()).toBe(2);
+    });
   });
 });

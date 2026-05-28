@@ -17,12 +17,18 @@ export function parsePierreFileDiff(
   file: DiffFile,
   options: ParsePierreFileDiffOptions = {},
 ): FileDiffMetadata | undefined {
-  if (!file.patch) return undefined;
-  if (options.enableDemandContextExpansion && canBuildSparsePatchContents(file)) {
-    const contents = sparsePatchContents(file);
-    return processPatchWithContext(file, contents);
+  const patchedFile = diffFileWithPatch(file);
+  if (!patchedFile.patch) return undefined;
+  if (options.enableDemandContextExpansion && canBuildSparsePatchContents(patchedFile)) {
+    const contents = sparsePatchContents(patchedFile);
+    return processPatchWithContext(patchedFile, contents);
   }
-  return parsePatchOnly(file);
+  return parsePatchOnly(patchedFile);
+}
+
+export function diffFileWithPatch(file: DiffFile): DiffFile {
+  const patch = file.patch || synthesizePatch(file);
+  return patch === file.patch ? file : { ...file, patch };
 }
 
 function processPatchWithContext(
@@ -91,6 +97,27 @@ function safePierrePatch(file: DiffFile): string {
     if (line.startsWith("rename to ")) return `rename to ${newName}`;
     return line;
   }).join("\n");
+}
+
+function synthesizePatch(file: DiffFile): string {
+  if (!file.hunks?.length) return "";
+  const oldName = file.old_path || file.path;
+  const newName = file.path;
+  return [
+    `diff --git a/${oldName} b/${newName}`,
+    file.status === "added" ? "--- /dev/null" : `--- a/${oldName}`,
+    file.status === "deleted" ? "+++ /dev/null" : `+++ b/${newName}`,
+    ...file.hunks.flatMap((hunk) => [
+      `@@ -${hunk.old_start},${hunk.old_count} +${hunk.new_start},${hunk.new_count} @@${hunk.section ? ` ${hunk.section}` : ""}`,
+      ...hunk.lines.map(patchLine),
+    ]),
+    "",
+  ].join("\n");
+}
+
+function patchLine(line: { type: "context" | "add" | "delete"; content: string }): string {
+  const prefix = line.type === "add" ? "+" : line.type === "delete" ? "-" : " ";
+  return `${prefix}${line.content}`;
 }
 
 function safePierreFileName(file: DiffFile, side: "old" | "new"): string {

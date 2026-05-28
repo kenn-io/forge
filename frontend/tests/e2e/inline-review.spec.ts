@@ -511,6 +511,23 @@ test("shows published inline review context in conversation and jumps to the dif
   await expect(page.locator('[data-diff-path="src/main.ts"][data-diff-new-line="2"]')).toBeFocused();
 });
 
+test("keeps published inline review context loaded after switching back from files", async ({ page }) => {
+  await mockInlineReviewAPI(page);
+
+  await page.goto("/pulls/github/acme/widgets/42/files");
+  await expect(page.getByRole("button", { name: /Files changed/ }))
+    .toHaveClass(/detail-tab--active/);
+
+  await page.getByRole("button", { name: "Conversation" }).click();
+  await expect(page).toHaveURL(/\/pulls\/github\/acme\/widgets\/42$/);
+  await expect(page.getByLabel("Commented diff context")).toContainText("const b = 2;");
+  await expect(page.getByText("Loading diff")).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Files changed" }).click();
+  await expect(page.getByRole("button", { name: /Files changed/ }))
+    .toHaveClass(/detail-tab--active/);
+});
+
 test("enables inline review on public Forgejo and Gitea files routes", async ({ page }) => {
   await mockInlineReviewAPI(page, baseCapabilities, "forgejo", "codeberg.org");
   await page.goto("/pulls/forgejo/acme/widgets/42/files");

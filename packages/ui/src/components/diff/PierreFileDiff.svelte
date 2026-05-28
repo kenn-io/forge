@@ -11,11 +11,11 @@
   } from "@pierre/diffs";
   import { onMount } from "svelte";
   import type { DiffFile } from "../../api/types.js";
-  import { appThemeType, parsePierreFileDiff } from "./pierre-diff.js";
+  import { appThemeType, diffFileWithPatch, parsePierreFileDiff } from "./pierre-diff.js";
   import { getPierreDiffWorkerPool } from "./pierre-worker-pool.js";
 
   interface Props {
-    file: DiffFile;
+    file: DiffFile | null | undefined;
     active?: boolean;
     wordWrap?: boolean;
     tabWidth?: number;
@@ -29,6 +29,17 @@
   }
 
   type PierreSide = "deletions" | "additions";
+  const emptyFile: DiffFile = {
+    path: "",
+    old_path: "",
+    status: "modified",
+    is_binary: false,
+    is_whitespace_only: false,
+    additions: 0,
+    deletions: 0,
+    patch: "",
+    hunks: [],
+  };
 
   const {
     file,
@@ -57,17 +68,22 @@
   let renderAttemptKey = "";
   let inactiveCleanupTimer: ReturnType<typeof setTimeout> | undefined;
   let reviewRangeFrame: number | undefined;
+  let renderRetryFrame: number | undefined;
+  let renderRetryTick = $state(0);
+  let renderRetryCount = 0;
   const inactiveCleanupDelayMs = 10_000;
+  const maxImmediateRenderRetries = 5;
 
-  const fileKey = $derived(`${file.path}\0${file.old_path}\0${file.patch}`);
-  const fileHunks = $derived(file.hunks ?? []);
-  const emptyTextualDiff = $derived(!file.patch.trim() || fileHunks.length === 0);
+  const renderFile = $derived(file ? diffFileWithPatch(file) : emptyFile);
+  const fileKey = $derived(`${renderFile.path}\0${renderFile.old_path}\0${renderFile.patch}`);
+  const fileHunks = $derived(renderFile.hunks ?? []);
+  const emptyTextualDiff = $derived(!renderFile.patch.trim() || fileHunks.length === 0);
   const pierreFile = $derived.by<FileDiffMetadata | undefined>(() => {
-    return parsePierreFileDiff(file, {
+    return parsePierreFileDiff(renderFile, {
       // Pierre marks patch-only diffs as partial and hides expansion controls.
       // Give it sparse line arrays so the controls render; the first click is
       // intercepted, full contents are fetched, and the same expansion replays.
-      enableDemandContextExpansion: Boolean(loadFileText) && hasCollapsedContext(file),
+      enableDemandContextExpansion: Boolean(loadFileText) && hasCollapsedContext(renderFile),
     });
   });
 
@@ -166,6 +182,7 @@
       themeObserver?.disconnect();
       cancelInactiveCleanup();
       cancelSelectedRangesApplication();
+      cancelRenderRetry();
       cleanUpPierreDiff();
       contextLoadPromise = undefined;
     };
@@ -182,9 +199,24 @@
     rendered = false;
     placeholderHeight = 0;
     renderAttemptKey = "";
+    renderRetryCount = 0;
+    cancelRenderRetry();
   });
 
   $effect(() => {
+    if (!host || typeof ResizeObserver === "undefined") return;
+    const resizeObserver = new ResizeObserver(() => {
+      if (rendered || emptyTextualDiff) return;
+      renderRetryCount = 0;
+      renderRetryTick += 1;
+    });
+    resizeObserver.observe(host);
+    return () => resizeObserver.disconnect();
+  });
+
+  $effect(() => {
+    const currentRenderRetryTick = renderRetryTick;
+    if (currentRenderRetryTick < 0) return;
     if (!active && !isHostNearViewport()) {
       scheduleInactiveCleanup();
       return;
@@ -214,10 +246,14 @@
       scheduleSelectedRangesApplication();
       return;
     }
-    renderAttemptKey = nextRenderAttemptKey;
     rendered = false;
     if (fullContext) {
-      renderFullContext(fullContext);
+      if (renderFullContext(fullContext)) {
+        renderAttemptKey = nextRenderAttemptKey;
+        renderRetryCount = 0;
+      } else {
+        scheduleRenderRetry();
+      }
     } else {
       const didRender = pierreDiff.render({
         fileContainer: host,
@@ -226,12 +262,16 @@
         lineAnnotations,
       });
       if (didRender) {
+        renderAttemptKey = nextRenderAttemptKey;
+        renderRetryCount = 0;
         applyLineTargetAttributes();
         applyHunkHeaderLabels();
         rendered = true;
         placeholderHeight = 0;
         installDemandContextHandler();
         scheduleSelectedRangesApplication();
+      } else {
+        scheduleRenderRetry();
       }
     }
     pierreDiff.setSelectedLines(selectedRange);
@@ -274,8 +314,24 @@
   function cleanUpPierreDiff(): void {
     removeDemandContextHandler();
     cancelSelectedRangesApplication();
+    cancelRenderRetry();
     pierreDiff?.cleanUp();
     pierreDiff = undefined;
+  }
+
+  function cancelRenderRetry(): void {
+    if (renderRetryFrame == null) return;
+    cancelAnimationFrame(renderRetryFrame);
+    renderRetryFrame = undefined;
+  }
+
+  function scheduleRenderRetry(): void {
+    if (renderRetryFrame != null || renderRetryCount >= maxImmediateRenderRetries) return;
+    renderRetryCount += 1;
+    renderRetryFrame = requestAnimationFrame(() => {
+      renderRetryFrame = undefined;
+      renderRetryTick += 1;
+    });
   }
 
   function cancelSelectedRangesApplication(): void {
@@ -469,8 +525,8 @@
     applyHunkHeaderLabels();
   }
 
-  function renderFullContext(context: { oldFile: FileContents; newFile: FileContents }): void {
-    if (!pierreDiff || !host) return;
+  function renderFullContext(context: { oldFile: FileContents; newFile: FileContents }): boolean {
+    if (!pierreDiff || !host) return false;
     rendered = false;
     const didRender = pierreDiff.render({
       fileContainer: host,
@@ -487,6 +543,7 @@
       placeholderHeight = 0;
       scheduleSelectedRangesApplication();
     }
+    return didRender;
   }
 
   async function loadFullContext(
@@ -514,16 +571,16 @@
     }
     contextError = null;
     const [oldContents, newContents] = await Promise.all([
-      file.status === "added" ? Promise.resolve("") : loadFileText("old"),
-      file.status === "deleted" ? Promise.resolve("") : loadFileText("new"),
+      renderFile.status === "added" ? Promise.resolve("") : loadFileText("old"),
+      renderFile.status === "deleted" ? Promise.resolve("") : loadFileText("new"),
     ]);
     return {
       oldFile: {
-        name: file.old_path || file.path,
+        name: renderFile.old_path || renderFile.path,
         contents: oldContents,
       },
       newFile: {
-        name: file.path,
+        name: renderFile.path,
         contents: newContents,
       },
     };
@@ -583,7 +640,7 @@
     if (!Number.isFinite(lineIndex)) return;
     const row = renderedLineRow(pre, lineIndex, split);
     if (!row) return;
-    row.setAttribute("data-diff-path", file.path);
+    row.setAttribute("data-diff-path", renderFile.path);
     row.tabIndex = -1;
     for (const [name, value] of Object.entries(attributes)) {
       row.setAttribute(name, value);

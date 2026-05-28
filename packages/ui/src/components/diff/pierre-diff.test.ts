@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DiffFile } from "../../api/types.js";
-import { parsePierreFileDiff } from "./pierre-diff.js";
+import { diffFileWithPatch, parsePierreFileDiff } from "./pierre-diff.js";
 
 function makeFile(path: string, patchBody: string): DiffFile {
   const patch = `diff --git a/${path} b/${path}
@@ -148,6 +148,21 @@ describe("Pierre diff parsing", () => {
     });
 
     expect(parsed).toBeDefined();
+  });
+
+  it("synthesizes patch text from structured hunks", () => {
+    const file = {
+      ...makeFile("src/foo.ts", "-old line\n+new line"),
+      patch: "",
+    };
+
+    const patched = diffFileWithPatch(file);
+    const parsed = parsePierreFileDiff(file);
+
+    expect(patched.patch).toContain("@@ -1,2 +1,2 @@");
+    expect(parsed).toBeDefined();
+    expect(parsed?.deletionLines).toContain("old line\n");
+    expect(parsed?.additionLines).toContain("new line\n");
   });
 
   it("falls back to safe Pierre headers for quoted synthetic paths", () => {

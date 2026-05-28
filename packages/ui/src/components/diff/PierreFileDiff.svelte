@@ -46,8 +46,11 @@
   let contextError: string | null = $state(null);
   let themeType = $state<ThemeTypes>(appThemeType());
   let rendered = $state(false);
+  let placeholderHeight = $state(0);
   let renderedFileKey = "";
   let renderAttemptKey = "";
+  let inactiveCleanupTimer: ReturnType<typeof setTimeout> | undefined;
+  const inactiveCleanupDelayMs = 10_000;
 
   const fileKey = $derived(`${file.path}\0${file.old_path}\0${file.patch}`);
   const emptyTextualDiff = $derived(!file.patch.trim() || file.hunks.length === 0);
@@ -147,6 +150,7 @@
 
     return () => {
       themeObserver?.disconnect();
+      cancelInactiveCleanup();
       cleanUpPierreDiff();
       contextLoadPromise = undefined;
     };
@@ -155,20 +159,27 @@
   $effect(() => {
     if (renderedFileKey === fileKey) return;
     renderedFileKey = fileKey;
+    cancelInactiveCleanup();
     cleanUpPierreDiff();
     contextLoadPromise = undefined;
     contextError = null;
     fullContext = undefined;
     rendered = false;
+    placeholderHeight = 0;
     renderAttemptKey = "";
   });
 
   $effect(() => {
-    if (!active) return;
+    if (!active && !isHostNearViewport()) {
+      scheduleInactiveCleanup();
+      return;
+    }
+    cancelInactiveCleanup();
     if (emptyTextualDiff) {
       cleanUpPierreDiff();
       renderAttemptKey = "";
       rendered = true;
+      placeholderHeight = 0;
       return;
     }
     if (!host) return;
@@ -200,6 +211,7 @@
       if (didRender) {
         applyHunkHeaderLabels();
         rendered = true;
+        placeholderHeight = 0;
         installDemandContextHandler();
       }
     }
@@ -235,6 +247,39 @@
     removeDemandContextHandler();
     pierreDiff?.cleanUp();
     pierreDiff = undefined;
+  }
+
+  function scheduleInactiveCleanup(): void {
+    if (!pierreDiff || inactiveCleanupTimer) return;
+    inactiveCleanupTimer = setTimeout(() => {
+      inactiveCleanupTimer = undefined;
+      if (active || !pierreDiff) return;
+      placeholderHeight = measuredRenderedHeight();
+      cleanUpPierreDiff();
+      renderAttemptKey = "";
+      rendered = false;
+    }, inactiveCleanupDelayMs);
+  }
+
+  function cancelInactiveCleanup(): void {
+    if (!inactiveCleanupTimer) return;
+    clearTimeout(inactiveCleanupTimer);
+    inactiveCleanupTimer = undefined;
+  }
+
+  function isHostNearViewport(): boolean {
+    if (!host) return false;
+    const root = host.closest(".diff-area");
+    if (!(root instanceof HTMLElement)) return false;
+    const rootRect = root.getBoundingClientRect();
+    const hostRect = host.getBoundingClientRect();
+    return hostRect.bottom > rootRect.top - 600 &&
+      hostRect.top < rootRect.bottom + 600;
+  }
+
+  function measuredRenderedHeight(): number {
+    const height = host?.getBoundingClientRect().height ?? 0;
+    return Number.isFinite(height) && height > 0 ? Math.ceil(height) : placeholderHeight;
   }
 
   function handleDemandContextClick(event: Event): void {
@@ -302,6 +347,7 @@
     if (didRender) {
       applyHunkHeaderLabels();
       rendered = true;
+      placeholderHeight = 0;
     }
   }
 
@@ -390,7 +436,12 @@
   }
 </script>
 
-<div class="pierre-diff-shell" class:pierre-diff-shell--loading={!rendered} aria-busy={!rendered}>
+<div
+  class="pierre-diff-shell"
+  class:pierre-diff-shell--loading={!rendered}
+  style:min-height={placeholderHeight ? `${placeholderHeight}px` : undefined}
+  aria-busy={!rendered}
+>
   {#if !emptyTextualDiff}
     <diffs-container
       class="pierre-diff"

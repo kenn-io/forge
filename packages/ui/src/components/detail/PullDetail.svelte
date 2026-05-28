@@ -1,5 +1,9 @@
+<script module lang="ts">
+  const pullDetailScrollPositions: Record<string, number> = Object.create(null) as Record<string, number>;
+</script>
+
 <script lang="ts">
-  import { tick, untrack } from "svelte";
+  import { onDestroy, tick, untrack } from "svelte";
   import type {
     DiffFile,
     KanbanStatus,
@@ -167,6 +171,8 @@
 
   let activeTab = $state<"conversation" | "files">("conversation");
   let expandedPanel = $state<"ci" | "stack" | null>(null);
+  let pullDetailScroller: HTMLDivElement | undefined = $state();
+  let pullDetailScrollRestoreRaf = 0;
   let keepStackExpandedOnRouteChange = false;
   let timelineFilter = $state<PRTimelineFilterState>(
     loadPRTimelineFilter(),
@@ -239,6 +245,35 @@
   function updateTimelineFilter(next: PRTimelineFilterState): void {
     timelineFilter = next;
     savePRTimelineFilter(next);
+  }
+
+  function pullDetailScrollKey(): string {
+    return [
+      provider,
+      repoPath,
+      number,
+      "conversation",
+    ].join("\0");
+  }
+
+  function rememberPullDetailScroll(): void {
+    if (!pullDetailScroller) return;
+    pullDetailScrollPositions[pullDetailScrollKey()] = pullDetailScroller.scrollTop;
+  }
+
+  async function restorePullDetailScroll(): Promise<void> {
+    const restoreKey = pullDetailScrollKey();
+    await tick();
+    cancelAnimationFrame(pullDetailScrollRestoreRaf);
+    pullDetailScrollRestoreRaf = requestAnimationFrame(() => {
+      pullDetailScrollRestoreRaf = 0;
+      if (!pullDetailScroller) return;
+      pullDetailScroller.scrollTop = pullDetailScrollPositions[restoreKey] ?? 0;
+    });
+  }
+
+  function handlePullDetailScroll(): void {
+    rememberPullDetailScroll();
   }
 
   function jumpToReviewThread(thread: ReviewThread): void {
@@ -339,6 +374,18 @@
     const handler = (event: Event) => onOpenLabelPickerCommand(event);
     window.addEventListener(OPEN_LABEL_PICKER_EVENT, handler);
     return () => window.removeEventListener(OPEN_LABEL_PICKER_EVENT, handler);
+  });
+
+  $effect(() => {
+    void pullDetailScroller;
+    void activeTab;
+    void detailStore.getDetail()?.detail_fetched_at;
+    if (activeTab !== "conversation") return;
+    void restorePullDetailScroll();
+  });
+
+  onDestroy(() => {
+    cancelAnimationFrame(pullDetailScrollRestoreRaf);
   });
 
   // Clear modal/edit state on route change so PR A's open modal
@@ -1219,7 +1266,11 @@
           reviewThreads={reviewThreadsFromEvents(detail.events)}
         />
       {:else}
-        <div class="pull-detail">
+        <div
+          class="pull-detail"
+          bind:this={pullDetailScroller}
+          onscroll={handlePullDetailScroll}
+        >
           <div
             class="pull-detail-content"
             class:pull-detail-content--has-compact-actions={pr.State !== "merged" && !stalePR}

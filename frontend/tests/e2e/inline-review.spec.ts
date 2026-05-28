@@ -271,8 +271,42 @@ const longLineDiffResponse = {
   ],
 };
 
+function scrollingDiffResponse() {
+  return {
+    stale: false,
+    whitespace_only_count: 0,
+    files: Array.from({ length: 16 }, (_, fileIndex) => ({
+      path: `src/file-${fileIndex}.ts`,
+      old_path: `src/file-${fileIndex}.ts`,
+      status: "modified",
+      additions: 40,
+      deletions: 0,
+      is_binary: false,
+      hunks: [{
+        old_start: 1,
+        old_count: 1,
+        new_start: 1,
+        new_count: 41,
+        section: "",
+        lines: [
+          { type: "context", old_num: 1, new_num: 1, content: `const file${fileIndex} = true;` },
+          ...Array.from({ length: 40 }, (_, lineIndex) => ({
+            type: "add",
+            old_num: null,
+            new_num: lineIndex + 2,
+            content: `const value${fileIndex}_${lineIndex} = ${lineIndex};`,
+          })),
+        ],
+      }],
+    })),
+  };
+}
+
 type MockInlineReviewOptions = {
   publishStatus?: "published" | "partially_published";
+  detailBody?: string;
+  detailFetchedAtSequence?: string[];
+  initialDraftComments?: Array<Record<string, unknown>>;
   remainingDraftComments?: Array<Record<string, unknown>>;
 };
 
@@ -285,7 +319,10 @@ async function mockInlineReviewAPI(
   onCreateDraft?: (body: { body: string; range: Record<string, unknown> }) => void,
   options: MockInlineReviewOptions = {},
 ): Promise<void> {
-  let draftComments: Array<Record<string, unknown>> = [];
+  let draftComments: Array<Record<string, unknown>> = [
+    ...(options.initialDraftComments ?? []),
+  ];
+  let detailRequestCount = 0;
   let reviewThreadResolved = false;
   const path = `/api/v1/pulls/${provider}/acme/widgets/42`;
 
@@ -297,9 +334,21 @@ async function mockInlineReviewAPI(
       await route.fallback();
       return;
     }
+    const detail = pullDetail(reviewThreadResolved, capabilities, provider, platformHost);
+    if (options.detailBody !== undefined) {
+      detail.merge_request.Body = options.detailBody;
+    }
+    const fetchedAt = options.detailFetchedAtSequence?.[
+      Math.min(detailRequestCount, options.detailFetchedAtSequence.length - 1)
+    ];
+    detailRequestCount += 1;
+    if (fetchedAt !== undefined) {
+      detail.detail_fetched_at = fetchedAt;
+      detail.merge_request.DetailFetchedAt = fetchedAt;
+    }
     await fulfillJson(
       route,
-      pullDetail(reviewThreadResolved, capabilities, provider, platformHost),
+      detail,
     );
   });
   await page.route(`**${path}/files`, async (route) => {
@@ -526,6 +575,198 @@ test("keeps published inline review context loaded after switching back from fil
   await page.getByRole("button", { name: "Files changed" }).click();
   await expect(page.getByRole("button", { name: /Files changed/ }))
     .toHaveClass(/detail-tab--active/);
+});
+
+test("preserves PR detail scroll positions while switching tabs", async ({ page }) => {
+  await mockInlineReviewAPI(
+    page,
+    baseCapabilities,
+    "github",
+    "github.com",
+    scrollingDiffResponse(),
+    undefined,
+    {
+      detailBody: Array.from({ length: 120 }, (_, index) =>
+        `Conversation filler line ${index}`,
+      ).join("\n\n"),
+    },
+  );
+
+  await page.goto("/pulls/github/acme/widgets/42");
+  await page.addStyleTag({ content: ".pull-detail { min-height: 1800px; }" });
+  const conversationScroller = page.locator(".pull-detail");
+  await expect(conversationScroller).toBeVisible();
+  await conversationScroller.evaluate((element) => {
+    element.scrollTop = 420;
+    element.dispatchEvent(new Event("scroll", { bubbles: true }));
+  });
+  await expect.poll(
+    async () => conversationScroller.evaluate((element) => element.scrollTop),
+  ).toBeGreaterThan(350);
+
+  await page.getByRole("button", { name: /Files changed/ }).click();
+  const diffArea = page.locator(".diff-area");
+  await expect(diffArea).toBeVisible();
+  await diffArea.evaluate((element) => {
+    element.scrollTop = 560;
+    element.dispatchEvent(new Event("scroll", { bubbles: true }));
+  });
+
+  await page.getByRole("button", { name: "Conversation" }).click();
+  await expect.poll(
+    async () => conversationScroller.evaluate((element) => element.scrollTop),
+  ).toBeGreaterThan(350);
+
+  await page.getByRole("button", { name: /Files changed/ }).click();
+  await expect.poll(
+    async () => diffArea.evaluate((element) => element.scrollTop),
+  ).toBeGreaterThan(480);
+});
+
+test("preserves PR detail scroll position after pushed refresh events", async ({ page }) => {
+  await page.addInitScript(() => {
+    type Listener = (event: MessageEvent) => void;
+    class FakeEventSource {
+      static instances: FakeEventSource[] = [];
+      listeners = new Map<string, Listener[]>();
+      url: string;
+
+      constructor(url: string | URL) {
+        this.url = String(url);
+        FakeEventSource.instances.push(this);
+      }
+
+      addEventListener(type: string, listener: Listener): void {
+        this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener]);
+      }
+
+      removeEventListener(type: string, listener: Listener): void {
+        this.listeners.set(
+          type,
+          (this.listeners.get(type) ?? []).filter((candidate) => candidate !== listener),
+        );
+      }
+
+      close(): void {}
+
+      emit(type: string, payload: unknown): void {
+        const event = new MessageEvent(type, { data: JSON.stringify(payload) });
+        for (const listener of this.listeners.get(type) ?? []) {
+          listener(event);
+        }
+      }
+    }
+
+    (
+      window as typeof window & {
+        EventSource: typeof EventSource;
+        __emitPRDetailRefresh: () => void;
+      }
+    ).EventSource = FakeEventSource as unknown as typeof EventSource;
+    (
+      window as typeof window & {
+        __emitPRDetailRefresh: () => void;
+      }
+    ).__emitPRDetailRefresh = () => {
+      for (const source of FakeEventSource.instances) {
+        source.emit("pr_detail_refreshed", {
+          provider: "github",
+          platform_host: "github.com",
+          repo_path: "acme/widgets",
+          owner: "acme",
+          name: "widgets",
+          number: 42,
+          head_sha: "diff-head",
+          synced_at: "2026-03-30T14:05:00Z",
+          warnings: [],
+        });
+      }
+    };
+  });
+  await mockInlineReviewAPI(
+    page,
+    baseCapabilities,
+    "github",
+    "github.com",
+    scrollingDiffResponse(),
+    undefined,
+    {
+      detailBody: Array.from({ length: 120 }, (_, index) =>
+        `Conversation filler line ${index}`,
+      ).join("\n\n"),
+      detailFetchedAtSequence: [
+        "2026-03-30T14:00:00Z",
+        "2026-03-30T14:05:00Z",
+      ],
+    },
+  );
+
+  await page.goto("/pulls/github/acme/widgets/42");
+  await page.addStyleTag({ content: ".pull-detail { min-height: 1800px; }" });
+  const conversationScroller = page.locator(".pull-detail");
+  await expect(conversationScroller).toBeVisible();
+  await conversationScroller.evaluate((element) => {
+    element.scrollTop = 420;
+    element.dispatchEvent(new Event("scroll", { bubbles: true }));
+  });
+  await expect.poll(
+    async () => conversationScroller.evaluate((element) => element.scrollTop),
+  ).toBeGreaterThan(350);
+
+  const refreshResponse = page.waitForResponse((response) =>
+    response.url().endsWith("/api/v1/pulls/github/acme/widgets/42") &&
+    response.request().method() === "GET"
+  );
+  await page.evaluate(() => {
+    (
+      window as typeof window & {
+        __emitPRDetailRefresh: () => void;
+      }
+    ).__emitPRDetailRefresh();
+  });
+  await refreshResponse;
+
+  await expect.poll(
+    async () => conversationScroller.evaluate((element) => element.scrollTop),
+  ).toBeGreaterThan(350);
+});
+
+test("opens the sticky draft review action menu upward", async ({ page }) => {
+  await mockInlineReviewAPI(
+    page,
+    baseCapabilities,
+    "github",
+    "github.com",
+    scrollingDiffResponse(),
+    undefined,
+    {
+      initialDraftComments: [{
+        id: "draft-1",
+        body: "foo",
+        path: "src/file-12.ts",
+        side: "right",
+        line: 30,
+        new_line: 30,
+        line_type: "add",
+        diff_head_sha: "diff-head",
+        created_at: "2026-03-30T14:01:00Z",
+        updated_at: "2026-03-30T14:01:00Z",
+      }],
+    },
+  );
+
+  await page.goto("/pulls/github/acme/widgets/42/files");
+  await expect(page.getByText("1 draft comment")).toBeVisible();
+  await page.getByRole("combobox", { name: "Review action: Comment" }).click();
+
+  const triggerBox = await page.locator(".review-action-select .select-dropdown-trigger")
+    .boundingBox();
+  const listBox = await page.locator(".review-action-select .select-dropdown-list")
+    .boundingBox();
+
+  expect(triggerBox).not.toBeNull();
+  expect(listBox).not.toBeNull();
+  expect(listBox!.y + listBox!.height).toBeLessThanOrEqual(triggerBox!.y + 1);
 });
 
 test("enables inline review on public Forgejo and Gitea files routes", async ({ page }) => {

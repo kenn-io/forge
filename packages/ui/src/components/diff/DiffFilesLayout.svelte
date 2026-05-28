@@ -17,6 +17,8 @@
     diffHeadSHA?: string | undefined;
     capabilities?: ProviderCapabilities | undefined;
     reviewThreads?: ReviewThread[];
+    initialScrollTop?: number;
+    onScrollTopChange?: ((scrollTop: number) => void) | undefined;
   }
 
   const {
@@ -29,6 +31,8 @@
     diffHeadSHA = undefined,
     capabilities = undefined,
     reviewThreads = [],
+    initialScrollTop = 0,
+    onScrollTopChange,
   }: Props = $props();
 
   const storageKey = "diff-file-tree-width";
@@ -172,6 +176,8 @@
         canReplyToThreads={capabilities?.thread_reply ?? false}
         supportedReviewActions={capabilities?.supported_review_actions ?? []}
         nativeMultilineRanges={capabilities?.native_multiline_ranges ?? false}
+        {initialScrollTop}
+        {onScrollTopChange}
       />
     </div>
   </div>

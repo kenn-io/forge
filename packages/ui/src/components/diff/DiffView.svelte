@@ -29,6 +29,8 @@
     supportedReviewActions?: string[];
     nativeMultilineRanges?: boolean;
     reviewThreads?: ReviewThread[];
+    initialScrollTop?: number;
+    onScrollTopChange?: ((scrollTop: number) => void) | undefined;
   }
 
   const {
@@ -49,13 +51,17 @@
     supportedReviewActions = [],
     nativeMultilineRanges = false,
     reviewThreads = [],
+    initialScrollTop = 0,
+    onScrollTopChange,
   }: Props = $props();
 
   let diffArea: HTMLDivElement | undefined = $state();
   let scrollClearRaf = 0;
+  let scrollRestoreRaf = 0;
   let scrollTargetRaf = 0;
   let scrollTargetRun = 0;
   let scrollingToTarget: DiffScrollTarget | null = null;
+  let restoredScrollScope = "";
 
   onMount(() => {
     if (loadOnMount) {
@@ -71,6 +77,7 @@
     return () => {
       scrollTargetRun += 1;
       cancelAnimationFrame(scrollClearRaf);
+      cancelAnimationFrame(scrollRestoreRaf);
       cancelAnimationFrame(scrollTargetRaf);
       diffStore.clearDiff();
       diffReviewDraft?.clear();
@@ -98,6 +105,9 @@
       !!diffHeadSHA &&
       !diff?.stale,
   );
+  const diffScrollScopeKey = $derived(
+    `${provider}\0${platformHost ?? ""}\0${repoPath}\0${number}\0${diffHeadSHA ?? ""}`,
+  );
 
   $effect(() => {
     const nextRef = { provider, platformHost, owner, name, repoPath };
@@ -111,6 +121,20 @@
         nextReviewEnabled,
         nextDiffHeadSHA,
       );
+    });
+  });
+
+  $effect(() => {
+    const area = diffArea;
+    const restoreKey = diffScrollScopeKey;
+    const restoreTop = initialScrollTop;
+    if (!area || !diff || loading || restoredScrollScope === restoreKey) return;
+    restoredScrollScope = restoreKey;
+    cancelAnimationFrame(scrollRestoreRaf);
+    scrollRestoreRaf = requestAnimationFrame(() => {
+      scrollRestoreRaf = 0;
+      if (diffArea !== area) return;
+      area.scrollTop = Math.max(0, restoreTop);
     });
   });
 
@@ -314,6 +338,9 @@
   // Scroll-based active file tracking.
   // Skipped for one frame after programmatic scroll to avoid re-setting activeFile.
   function onDiffScroll(): void {
+    if (diffArea) {
+      onScrollTopChange?.(diffArea.scrollTop);
+    }
     if (!diffArea || !diff) return;
     if (diffStore.isScrolling()) return;
     const rect = diffArea.getBoundingClientRect();

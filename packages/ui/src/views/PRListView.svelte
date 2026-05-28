@@ -1,3 +1,9 @@
+<script module lang="ts">
+  type DetailTab = "conversation" | "files";
+
+  const filesScrollPositions: Record<string, number> = Object.create(null) as Record<string, number>;
+</script>
+
 <script lang="ts">
   import { untrack } from "svelte";
   import {
@@ -52,7 +58,7 @@
 
   interface Props {
     selectedPR?: PullRequestRouteRef | null;
-    detailTab?: "conversation" | "files";
+    detailTab?: DetailTab;
     isSidebarCollapsed?: boolean;
     hideSidebar?: boolean;
     sidebarWidth?: number;
@@ -61,7 +67,7 @@
     workflowApprovalSync?: boolean;
     routeFamily?: "canonical" | "focus";
     onSidebarResize?: (width: number) => void;
-    onDetailTabChange?: (tab: "conversation" | "files") => void;
+    onDetailTabChange?: (tab: DetailTab) => void;
     onStackMemberNavigate?: StackMemberNavigate;
   }
 
@@ -80,7 +86,27 @@
     onStackMemberNavigate,
   }: Props = $props();
 
-  function selectDetailTab(tab: "conversation" | "files"): void {
+  function filesScrollKey(): string | null {
+    if (selectedPR === null) return null;
+    return [
+      selectedPR.provider,
+      selectedPR.repoPath,
+      selectedPR.number,
+    ].join("\0");
+  }
+
+  function filesScrollTop(): number {
+    const key = filesScrollKey();
+    return key ? (filesScrollPositions[key] ?? 0) : 0;
+  }
+
+  function rememberFilesScroll(scrollTop: number): void {
+    const key = filesScrollKey();
+    if (!key) return;
+    filesScrollPositions[key] = scrollTop;
+  }
+
+  function selectDetailTab(tab: DetailTab): void {
     if (onDetailTabChange) {
       onDetailTabChange(tab);
       return;
@@ -184,6 +210,8 @@
           diffHeadSHA={selectedDetail?.diff_head_sha}
           capabilities={selectedDetail?.repo?.capabilities ?? defaultProviderCapabilities}
           reviewThreads={reviewThreadsFromEvents(selectedDetail?.events)}
+          initialScrollTop={filesScrollTop()}
+          onScrollTopChange={rememberFilesScroll}
         />
       {/key}
     {:else}

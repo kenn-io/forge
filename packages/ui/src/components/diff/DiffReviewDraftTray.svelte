@@ -227,6 +227,13 @@
     min-width: 150px;
   }
 
+  :global(.review-action-select .select-dropdown-list) {
+    top: auto;
+    bottom: 100%;
+    margin-top: 0;
+    margin-bottom: 4px;
+  }
+
   :global(.review-action-select .select-dropdown-trigger),
   :global(.publish-btn.action-button) {
     min-height: 28px;

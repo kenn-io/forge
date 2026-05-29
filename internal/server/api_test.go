@@ -5298,6 +5298,37 @@ func TestAPITriggerSyncBypassesNextSyncAfter(t *testing.T) {
 	}
 }
 
+func TestMatchPriorityRepoSupportsNestedBareRepoPaths(t *testing.T) {
+	assert := Assert.New(t)
+
+	tracked := []ghclient.RepoRef{
+		{
+			Platform:     platform.KindGitLab,
+			PlatformHost: "gitlab.com",
+			Owner:        "group/subgroup",
+			Name:         "project",
+			RepoPath:     "group/subgroup/project",
+		},
+		{
+			Platform:     platform.KindGitHub,
+			PlatformHost: "github.com",
+			Owner:        "acme",
+			Name:         "widget",
+			RepoPath:     "acme/widget",
+		},
+	}
+
+	repo, ok := matchPriorityRepo("group/subgroup/project", tracked)
+	assert.True(ok)
+	assert.Equal(platform.KindGitLab, repo.Platform)
+	assert.Equal("group/subgroup/project", repo.RepoPath)
+
+	repo, ok = matchPriorityRepo("github.com/acme/widget", tracked)
+	assert.True(ok)
+	assert.Equal(platform.KindGitHub, repo.Platform)
+	assert.Equal("acme/widget", repo.RepoPath)
+}
+
 func TestAPIReadyForReview(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)

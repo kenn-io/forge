@@ -2891,23 +2891,31 @@ func matchPriorityRepo(
 	filter string,
 	tracked []ghclient.RepoRef,
 ) (ghclient.RepoRef, bool) {
-	parts := strings.Split(filter, "/")
 	for _, repo := range tracked {
-		repoPath := repoPathForPriority(repo)
-		if len(parts) >= 3 {
-			host := parts[0]
-			path := strings.Join(parts[1:], "/")
-			if strings.EqualFold(repoHostForPriority(repo), host) &&
-				strings.EqualFold(repoPath, path) {
-				return repo, true
-			}
-			continue
+		if strings.EqualFold(repoPathForPriority(repo), filter) {
+			return repo, true
 		}
-		if strings.EqualFold(repoPath, filter) {
+	}
+
+	parts := strings.Split(filter, "/")
+	if len(parts) < 3 || !looksLikePlatformHost(parts[0]) {
+		return ghclient.RepoRef{}, false
+	}
+
+	host := parts[0]
+	path := strings.Join(parts[1:], "/")
+	for _, repo := range tracked {
+		if strings.EqualFold(repoHostForPriority(repo), host) &&
+			strings.EqualFold(repoPathForPriority(repo), path) {
 			return repo, true
 		}
 	}
 	return ghclient.RepoRef{}, false
+}
+
+func looksLikePlatformHost(value string) bool {
+	return strings.ContainsAny(value, ".:") ||
+		strings.EqualFold(value, "localhost")
 }
 
 func priorityRepoIdentity(repo ghclient.RepoRef) string {

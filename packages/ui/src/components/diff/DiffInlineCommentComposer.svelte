@@ -16,14 +16,19 @@
 
   let body = $state("");
   let textareaEl: HTMLTextAreaElement | undefined = $state();
+  let autosizeFrame = 0;
   const submitting = $derived(diffReviewDraft.isSubmitting());
   const error = $derived(diffReviewDraft.getError());
 
   onMount(() => {
     void tick().then(() => {
       textareaEl?.focus({ preventScroll: true });
-      autosizeTextarea();
+      scheduleAutosizeTextarea();
     });
+
+    return () => {
+      if (autosizeFrame) cancelAnimationFrame(autosizeFrame);
+    };
   });
 
   function autosizeTextarea(): void {
@@ -33,6 +38,15 @@
       Number.parseFloat(style.borderBottomWidth);
     textareaEl.style.height = "auto";
     textareaEl.style.height = `${textareaEl.scrollHeight + borderHeight}px`;
+  }
+
+  function scheduleAutosizeTextarea(): void {
+    autosizeTextarea();
+    if (autosizeFrame) cancelAnimationFrame(autosizeFrame);
+    autosizeFrame = requestAnimationFrame(() => {
+      autosizeFrame = 0;
+      autosizeTextarea();
+    });
   }
 
   async function submit(): Promise<void> {
@@ -54,7 +68,7 @@
     placeholder="Leave a comment"
     disabled={submitting}
     rows="3"
-    oninput={autosizeTextarea}
+    oninput={scheduleAutosizeTextarea}
   ></textarea>
   {#if error}
     <p class="composer-error">{error}</p>

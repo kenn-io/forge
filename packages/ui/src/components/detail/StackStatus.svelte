@@ -33,7 +33,7 @@
     provider,
     platformHost,
     repoPath,
-    initialStack = null,
+    initialStack,
     expanded = $bindable(false),
     showButton = true,
     showPanel = true,
@@ -137,21 +137,27 @@
   $effect(() => {
     const num = number;
     const refKey = currentRefKey;
-    const cachedStack = untrack(() =>
-      dataRefKey === refKey && data ? stackWithPosition(data, num) : null
-    );
     const seededStack = initialStack ? stackWithPosition(initialStack, num) : null;
-    if (cachedStack) {
-      data = cachedStack;
-      visible = true;
-    } else if (seededStack) {
+    if (seededStack) {
       data = seededStack;
       dataRefKey = refKey;
       visible = true;
-    } else {
+    } else if (initialStack !== undefined) {
       visible = false;
       data = null;
       dataRefKey = refKey;
+    } else {
+      const cachedStack = untrack(() =>
+        dataRefKey === refKey && data ? stackWithPosition(data, num) : null
+      );
+      if (cachedStack) {
+        data = cachedStack;
+        visible = true;
+      } else {
+        visible = false;
+        data = null;
+        dataRefKey = refKey;
+      }
     }
     requestSeq += 1;
   });

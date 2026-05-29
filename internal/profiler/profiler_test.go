@@ -182,6 +182,65 @@ func TestStartRejectsMismatchedOrigin(t *testing.T) {
 	assert.Equal(http.StatusForbidden, resp.StatusCode)
 }
 
+func TestStartRejectsBrowserRequestWithoutMetadata(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	srv, err := Start("127.0.0.1:0")
+	require.NoError(err)
+	require.NotNil(srv)
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		require.NoError(srv.Shutdown(ctx))
+	})
+
+	req, err := http.NewRequest(
+		http.MethodGet,
+		"http://"+srv.Addr().String()+"/debug/pprof/",
+		nil,
+	)
+	require.NoError(err)
+	req.Header.Set(
+		"User-Agent",
+		"Mozilla/5.0 AppleWebKit/537.36 Chrome/125.0.0.0 Safari/537.36",
+	)
+
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(err)
+	defer resp.Body.Close()
+
+	assert.Equal(http.StatusForbidden, resp.StatusCode)
+}
+
+func TestStartAllowsNonBrowserRequestWithoutMetadata(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	srv, err := Start("127.0.0.1:0")
+	require.NoError(err)
+	require.NotNil(srv)
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		require.NoError(srv.Shutdown(ctx))
+	})
+
+	req, err := http.NewRequest(
+		http.MethodGet,
+		"http://"+srv.Addr().String()+"/debug/pprof/",
+		nil,
+	)
+	require.NoError(err)
+	req.Header.Set("User-Agent", "curl/8.7.1")
+
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(err)
+	defer resp.Body.Close()
+
+	assert.Equal(http.StatusOK, resp.StatusCode)
+}
+
 func TestStartCapsExpensiveProfileSeconds(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

@@ -112,7 +112,10 @@ func allowBoundHostOnly(next http.Handler, addr net.Addr) http.Handler {
 
 func rejectCrossSiteBrowserRequests(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.Header.Get("Sec-Fetch-Site") {
+		fetchSite := r.Header.Get("Sec-Fetch-Site")
+		origin := r.Header.Get("Origin")
+
+		switch fetchSite {
 		case "", "none", "same-origin":
 		default:
 			http.Error(
@@ -123,7 +126,6 @@ func rejectCrossSiteBrowserRequests(next http.Handler) http.Handler {
 			return
 		}
 
-		origin := r.Header.Get("Origin")
 		if origin != "" {
 			originURL, err := url.Parse(origin)
 			if err != nil || originURL.Scheme != "http" || originURL.Host != r.Host {
@@ -136,8 +138,35 @@ func rejectCrossSiteBrowserRequests(next http.Handler) http.Handler {
 			}
 		}
 
+		if fetchSite == "" && origin == "" && isBrowserUserAgent(r.UserAgent()) {
+			http.Error(
+				w,
+				"profiler browser request metadata required",
+				http.StatusForbidden,
+			)
+			return
+		}
+
 		next.ServeHTTP(w, r)
 	})
+}
+
+func isBrowserUserAgent(userAgent string) bool {
+	userAgent = strings.ToLower(userAgent)
+	for _, marker := range []string{
+		"mozilla/",
+		"firefox/",
+		"chrome/",
+		"chromium/",
+		"safari/",
+		"edg/",
+		"opr/",
+	} {
+		if strings.Contains(userAgent, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func limitExpensiveProfiles(next http.Handler) http.Handler {

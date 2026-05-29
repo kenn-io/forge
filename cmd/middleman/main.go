@@ -25,6 +25,7 @@ import (
 	"go.kenn.io/middleman/internal/gitclone"
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/middleman/internal/profiler"
 	"go.kenn.io/middleman/internal/ptyowner"
 	"go.kenn.io/middleman/internal/runtimelock"
 	"go.kenn.io/middleman/internal/server"
@@ -320,7 +321,8 @@ func runStatusCLI(args []string, stdout io.Writer) error {
 	return runtimelock.FormatStatus(stdout, st, *asJSON)
 }
 
-func run(configPath string) error {
+func run(opts serve.Options) error {
+	configPath := opts.ConfigPath
 	if err := config.EnsureDefault(configPath); err != nil {
 		return fmt.Errorf("ensure config: %w", err)
 	}
@@ -449,6 +451,26 @@ func run(configPath string) error {
 	defer syncer.Stop()
 	defer stop()
 
+	profilerSrv, err := profiler.Start(opts.ProfilerAddr)
+	if err != nil {
+		return err
+	}
+	if profilerSrv != nil {
+		slog.Info(
+			"starting profiler listener",
+			"addr", profilerSrv.Addr().String(),
+		)
+		defer func() {
+			shutdownCtx, cancel := context.WithTimeout(
+				context.Background(), 5*time.Second,
+			)
+			defer cancel()
+			if err := profilerSrv.Shutdown(shutdownCtx); err != nil {
+				slog.Warn("profiler shutdown", "err", err)
+			}
+		}()
+	}
+
 	// srv.Shutdown MUST be the last-registered defer so LIFO runs
 	// it FIRST on return: close the HTTP listener (and SSE hub)
 	// before syncer.Stop blocks for up to 30 s, otherwise the
@@ -493,9 +515,18 @@ func run(configPath string) error {
 	case <-ctx.Done():
 		slog.Info("shutting down")
 		return nil
+	case err := <-profilerSrvDone(profilerSrv):
+		return fmt.Errorf("profiler: %w", err)
 	case err := <-errCh:
 		return fmt.Errorf("server: %w", err)
 	}
+}
+
+func profilerSrvDone(srv *profiler.Server) <-chan error {
+	if srv == nil {
+		return nil
+	}
+	return srv.Done()
 }
 
 // writeRuntimeMetadata snapshots the bound listener and process state

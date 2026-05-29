@@ -62,6 +62,34 @@ func newServer(basePath string) {
 	assert.Empty(diagnostics)
 }
 
+func TestCheckSourceAllowsProfilerMuxRoutes(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	src := `package profiler
+
+import "net/http"
+
+func NewHandler() {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/debug/pprof/", nil)
+	mux.HandleFunc("/debug/pprof/cmdline", nil)
+	mux.HandleFunc("/debug/pprof/profile", nil)
+	mux.HandleFunc("/debug/pprof/symbol", nil)
+	mux.HandleFunc("/debug/pprof/trace", nil)
+	mux.HandleFunc("/api/v1/pulls", nil)
+}
+`
+
+	diagnostics, err := checkSource(
+		"internal/profiler/profiler.go", src,
+	)
+
+	require.NoError(err)
+	require.Len(diagnostics, 1)
+	assert.Equal(12, diagnostics[0].Line)
+}
+
 func TestCheckSourceIgnoresTestsAndUntrackedHttptestMuxes(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

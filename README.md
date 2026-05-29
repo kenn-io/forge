@@ -107,6 +107,16 @@ owner = "your-org"
 name = "another-repo"
 ```
 
+To expose Go profiler endpoints for local diagnostics, start a separate listener:
+
+```sh
+MIDDLEMAN_PPROF_ADDR=127.0.0.1:6060 ./middleman
+# or
+./middleman serve -pprof-addr 127.0.0.1:6060
+```
+
+The listener is disabled when the address is empty and serves the standard `/debug/pprof/` endpoints.
+
 ### Install to PATH
 
 ```sh

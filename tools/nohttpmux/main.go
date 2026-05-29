@@ -245,10 +245,13 @@ func isHTTPDefaultServeMux(expr ast.Expr, httpImports map[string]struct{}) bool 
 }
 
 func allowedRegistration(path string, call *ast.CallExpr) bool {
-	if !pathHasSuffix(path, "internal/server/server.go") {
+	if len(call.Args) == 0 {
 		return false
 	}
-	if len(call.Args) == 0 {
+	if pathHasSuffix(path, "internal/profiler/profiler.go") {
+		return isProfilerRoute(routePattern(call.Args[0]))
+	}
+	if !pathHasSuffix(path, "internal/server/server.go") {
 		return false
 	}
 
@@ -256,6 +259,19 @@ func allowedRegistration(path string, call *ast.CallExpr) bool {
 	case "/", "/healthz", "/livez":
 		return true
 	case "basePath":
+		return true
+	default:
+		return false
+	}
+}
+
+func isProfilerRoute(pattern string) bool {
+	switch pattern {
+	case "/debug/pprof/",
+		"/debug/pprof/cmdline",
+		"/debug/pprof/profile",
+		"/debug/pprof/symbol",
+		"/debug/pprof/trace":
 		return true
 	default:
 		return false

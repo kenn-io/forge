@@ -14,6 +14,7 @@ import (
 	gh "github.com/google/go-github/v84/github"
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/middleman/internal/cli/serve"
 	"go.kenn.io/middleman/internal/config"
 	"go.kenn.io/middleman/internal/db"
 	ghclient "go.kenn.io/middleman/internal/github"
@@ -434,9 +435,9 @@ func TestRunCLIDefaultsToServe(t *testing.T) {
 	require := require.New(t)
 	original := runServer
 	t.Cleanup(func() { runServer = original })
-	var gotPath string
-	runServer = func(configPath string) error {
-		gotPath = configPath
+	var got serve.Options
+	runServer = func(opts serve.Options) error {
+		got = opts
 		return nil
 	}
 
@@ -444,7 +445,8 @@ func TestRunCLIDefaultsToServe(t *testing.T) {
 	err := runCLI(nil, &stdout)
 
 	require.NoError(err)
-	assert.Equal(config.DefaultConfigPath(), gotPath)
+	assert.Equal(config.DefaultConfigPath(), got.ConfigPath)
+	assert.Empty(got.ProfilerAddr)
 	assert.Empty(stdout.String())
 }
 
@@ -453,9 +455,9 @@ func TestRunCLIServeSubcommandUsesServerRunner(t *testing.T) {
 	require := require.New(t)
 	original := runServer
 	t.Cleanup(func() { runServer = original })
-	var gotPath string
-	runServer = func(configPath string) error {
-		gotPath = configPath
+	var got serve.Options
+	runServer = func(opts serve.Options) error {
+		got = opts
 		return nil
 	}
 
@@ -464,7 +466,55 @@ func TestRunCLIServeSubcommandUsesServerRunner(t *testing.T) {
 	err := runCLI([]string{"serve", "-config", cfgPath}, &stdout)
 
 	require.NoError(err)
-	assert.Equal(cfgPath, gotPath)
+	assert.Equal(cfgPath, got.ConfigPath)
+	assert.Empty(got.ProfilerAddr)
+	assert.Empty(stdout.String())
+}
+
+func TestRunCLIServePassesProfilerAddress(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	original := runServer
+	t.Cleanup(func() { runServer = original })
+	t.Setenv("MIDDLEMAN_PPROF_ADDR", "127.0.0.1:6060")
+	var got serve.Options
+	runServer = func(opts serve.Options) error {
+		got = opts
+		return nil
+	}
+
+	cfgPath := filepath.Join(t.TempDir(), "config.toml")
+	var stdout bytes.Buffer
+	err := runCLI([]string{
+		"serve",
+		"-config", cfgPath,
+		"-pprof-addr", "127.0.0.1:7070",
+	}, &stdout)
+
+	require.NoError(err)
+	assert.Equal(cfgPath, got.ConfigPath)
+	assert.Equal("127.0.0.1:7070", got.ProfilerAddr)
+	assert.Empty(stdout.String())
+}
+
+func TestRunCLIServeDefaultsProfilerAddressFromEnv(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	original := runServer
+	t.Cleanup(func() { runServer = original })
+	t.Setenv("MIDDLEMAN_PPROF_ADDR", "127.0.0.1:6060")
+	var got serve.Options
+	runServer = func(opts serve.Options) error {
+		got = opts
+		return nil
+	}
+
+	var stdout bytes.Buffer
+	err := runCLI([]string{"serve"}, &stdout)
+
+	require.NoError(err)
+	assert.Equal(config.DefaultConfigPath(), got.ConfigPath)
+	assert.Equal("127.0.0.1:6060", got.ProfilerAddr)
 	assert.Empty(stdout.String())
 }
 
@@ -473,7 +523,7 @@ func TestRunCLIControlCommandsDoNotStartServer(t *testing.T) {
 	require := require.New(t)
 	original := runServer
 	t.Cleanup(func() { runServer = original })
-	runServer = func(string) error {
+	runServer = func(serve.Options) error {
 		return errors.New("serve should not start")
 	}
 

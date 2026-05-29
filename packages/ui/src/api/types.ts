@@ -76,31 +76,6 @@ export const DEFAULT_TERMINAL_SETTINGS: TerminalSettings = {
   renderer: "xterm",
 };
 
-export type TerminalSettingsInput = Partial<
-  Omit<TerminalSettings, "cursor_blink" | "renderer">
-> & {
-  cursor_blink?: boolean | null;
-  renderer?: string | null;
-};
-
-export function normalizeTerminalSettings(
-  terminal: TerminalSettingsInput | null | undefined,
-): TerminalSettings {
-  return {
-    font_family: terminal?.font_family ?? DEFAULT_TERMINAL_SETTINGS.font_family,
-    font_size: terminal?.font_size ?? DEFAULT_TERMINAL_SETTINGS.font_size,
-    scrollback: terminal?.scrollback ?? DEFAULT_TERMINAL_SETTINGS.scrollback,
-    line_height: terminal?.line_height ?? DEFAULT_TERMINAL_SETTINGS.line_height,
-    letter_spacing:
-      terminal?.letter_spacing ?? DEFAULT_TERMINAL_SETTINGS.letter_spacing,
-    cursor_blink:
-      terminal?.cursor_blink ?? DEFAULT_TERMINAL_SETTINGS.cursor_blink,
-    font_ligatures:
-      terminal?.font_ligatures ?? DEFAULT_TERMINAL_SETTINGS.font_ligatures,
-    renderer: terminal?.renderer === "ghostty-web" ? "ghostty-web" : "xterm",
-  };
-}
-
 export type AgentSettings = components["schemas"]["Agent"];
 export type ConfigRepo = components["schemas"]["ConfiguredRepoStatus"];
 export type Settings = components["schemas"]["SettingsResponse"];

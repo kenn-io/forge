@@ -76,7 +76,7 @@
   import type {
     ActivitySettings,
     ConfigRepo,
-    TerminalSettingsInput,
+    TerminalSettings,
   } from "./api/types.js";
 
   interface Props {
@@ -214,7 +214,7 @@
     function hydrateSettings(
       repos: ConfigRepo[],
       activity: ActivitySettings,
-      terminal: TerminalSettingsInput,
+      terminal: TerminalSettings,
     ): void {
       settingsStore.setConfiguredRepos(repos);
       settingsStore.setTerminalSettings(terminal);
@@ -225,26 +225,8 @@
       const { data } = await cl.GET("/settings");
       if (!data) return;
       hydrateSettings(
-        data.repos ?? [],
-        {
-          view_mode: data.activity.view_mode === "threaded"
-            ? "threaded"
-            : "flat",
-          time_range: (
-            data.activity.time_range === "24h" ||
-            data.activity.time_range === "30d" ||
-            data.activity.time_range === "90d"
-          )
-            ? data.activity.time_range
-            : "7d",
-          hide_closed: data.activity.hide_closed,
-          hide_bots: data.activity.hide_bots,
-          collapse_threads: data.activity.collapse_threads,
-          default_branch_retention_days:
-            data.activity.default_branch_retention_days,
-          default_branch_max_commits:
-            data.activity.default_branch_max_commits,
-        },
+        data.repos,
+        data.activity,
         data.terminal,
       );
     }

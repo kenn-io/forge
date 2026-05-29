@@ -20,9 +20,9 @@ type TerminalSettings = {
 
 const {
   currentTerminal,
+  defaultTerminal,
   mockSetTerminalSettings,
   mockUpdateSettings,
-  normalizeTerminalSettings,
 } = vi.hoisted(() => {
   const defaults: TerminalSettings = {
     font_family: "",
@@ -34,29 +34,13 @@ const {
     font_ligatures: false,
     renderer: "xterm",
   };
-  const normalize = (
-    terminal: Partial<TerminalSettings> | null | undefined,
-  ): TerminalSettings => ({
-    font_family: terminal?.font_family ?? defaults.font_family,
-    font_size: terminal?.font_size ?? defaults.font_size,
-    scrollback: terminal?.scrollback ?? defaults.scrollback,
-    line_height: terminal?.line_height ?? defaults.line_height,
-    letter_spacing: terminal?.letter_spacing ?? defaults.letter_spacing,
-    cursor_blink: terminal?.cursor_blink ?? defaults.cursor_blink,
-    font_ligatures:
-      terminal?.font_ligatures ?? defaults.font_ligatures,
-    renderer:
-      terminal?.renderer === "ghostty-web" ? "ghostty-web" : "xterm",
-  });
   return {
     currentTerminal: { value: { ...defaults } },
-    mockSetTerminalSettings: vi.fn(
-      (settings: Partial<TerminalSettings> | null | undefined) => {
-        currentTerminal.value = normalize(settings);
-      },
-    ),
+    defaultTerminal: defaults,
+    mockSetTerminalSettings: vi.fn((settings: TerminalSettings) => {
+      currentTerminal.value = settings;
+    }),
     mockUpdateSettings: vi.fn(),
-    normalizeTerminalSettings: normalize,
   };
 });
 
@@ -77,7 +61,6 @@ vi.mock("@middleman/ui", () => ({
       setTerminalSettings: mockSetTerminalSettings,
     },
   }),
-  normalizeTerminalSettings,
 }));
 
 vi.mock("../../api/settings.js", () => ({
@@ -93,7 +76,7 @@ import TerminalOptionsMenu from "./TerminalOptionsMenu.svelte";
 describe("TerminalOptionsMenu", () => {
   afterEach(() => {
     cleanup();
-    currentTerminal.value = normalizeTerminalSettings(null);
+    currentTerminal.value = { ...defaultTerminal };
     mockSetTerminalSettings.mockClear();
     mockUpdateSettings.mockReset();
   });

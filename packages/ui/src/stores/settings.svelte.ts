@@ -1,9 +1,7 @@
 import {
   DEFAULT_TERMINAL_SETTINGS,
-  normalizeTerminalSettings,
   type ConfigRepo,
   type TerminalRenderer,
-  type TerminalSettingsInput,
   type TerminalSettings,
 } from "../api/types.js";
 
@@ -27,10 +25,8 @@ export function createSettingsStore() {
     return terminalSettings;
   }
 
-  function setTerminalSettings(
-    settings: TerminalSettingsInput | null | undefined,
-  ): void {
-    terminalSettings = normalizeTerminalSettings(settings);
+  function setTerminalSettings(settings: TerminalSettings): void {
+    terminalSettings = settings;
   }
 
   function getTerminalFontFamily(): string {

@@ -3,11 +3,9 @@
   import {
     DEFAULT_TERMINAL_SETTINGS,
     getStores,
-    normalizeTerminalSettings,
   } from "@middleman/ui";
   import XIcon from "@lucide/svelte/icons/x";
   import type { TerminalSettings as TerminalSettingsType } from "@middleman/ui/api/types";
-  import type { TerminalSettingsInput } from "@middleman/ui";
   import { updateSettings } from "../../api/settings.js";
   import { isEmbedded } from "../../stores/embed-config.svelte.js";
 
@@ -19,7 +17,7 @@
   }
 
   interface Props {
-    terminal: TerminalSettingsInput;
+    terminal: TerminalSettingsType;
     onUpdate: (terminal: TerminalSettingsType) => void;
     compact?: boolean;
     livePreview?: boolean;
@@ -135,53 +133,47 @@
       .test(name);
   }
 
-  function draftInput(): TerminalSettingsInput {
-    const draft: TerminalSettingsInput = {
+  function pendingTerminalSettings(): TerminalSettingsType {
+    return {
       font_family: normalizedFontFamilyDraft,
+      font_size: fontSizeDraft ?? DEFAULT_TERMINAL_SETTINGS.font_size,
+      scrollback: scrollbackDraft ?? DEFAULT_TERMINAL_SETTINGS.scrollback,
+      line_height: lineHeightDraft ?? DEFAULT_TERMINAL_SETTINGS.line_height,
+      letter_spacing:
+        letterSpacingDraft ?? DEFAULT_TERMINAL_SETTINGS.letter_spacing,
       cursor_blink: cursorBlinkDraft,
       font_ligatures: fontLigaturesDraft,
       renderer: rendererDraft,
     };
-    if (fontSizeDraft !== null) draft.font_size = fontSizeDraft;
-    if (scrollbackDraft !== null) draft.scrollback = scrollbackDraft;
-    if (lineHeightDraft !== null) draft.line_height = lineHeightDraft;
-    if (letterSpacingDraft !== null) {
-      draft.letter_spacing = letterSpacingDraft;
-    }
-    return draft;
   }
 
-  const currentTerminal = $derived(
-    normalizeTerminalSettings(terminal),
-  );
+  const currentTerminal = $derived(terminal);
   const normalizedFontFamilyDraft = $derived(
     normalizeFontFamily(fontFamilyDraft),
   );
-  const normalizedDraft = $derived.by(() =>
-    normalizeTerminalSettings(draftInput()),
-  );
+  const pendingTerminal = $derived.by(pendingTerminalSettings);
   const isDirty = $derived(
-    normalizedDraft.font_family !== currentTerminal.font_family ||
-      normalizedDraft.font_size !== currentTerminal.font_size ||
-      normalizedDraft.scrollback !== currentTerminal.scrollback ||
-      normalizedDraft.line_height !== currentTerminal.line_height ||
-      normalizedDraft.letter_spacing !== currentTerminal.letter_spacing ||
-      normalizedDraft.cursor_blink !== currentTerminal.cursor_blink ||
-      normalizedDraft.font_ligatures !== currentTerminal.font_ligatures ||
-      normalizedDraft.renderer !== currentTerminal.renderer,
+    pendingTerminal.font_family !== currentTerminal.font_family ||
+      pendingTerminal.font_size !== currentTerminal.font_size ||
+      pendingTerminal.scrollback !== currentTerminal.scrollback ||
+      pendingTerminal.line_height !== currentTerminal.line_height ||
+      pendingTerminal.letter_spacing !== currentTerminal.letter_spacing ||
+      pendingTerminal.cursor_blink !== currentTerminal.cursor_blink ||
+      pendingTerminal.font_ligatures !== currentTerminal.font_ligatures ||
+      pendingTerminal.renderer !== currentTerminal.renderer,
   );
   const isDefaultDraft = $derived(
-    normalizedDraft.font_family === DEFAULT_TERMINAL_SETTINGS.font_family &&
-      normalizedDraft.font_size === DEFAULT_TERMINAL_SETTINGS.font_size &&
-      normalizedDraft.scrollback === DEFAULT_TERMINAL_SETTINGS.scrollback &&
-      normalizedDraft.line_height === DEFAULT_TERMINAL_SETTINGS.line_height &&
-      normalizedDraft.letter_spacing ===
+    pendingTerminal.font_family === DEFAULT_TERMINAL_SETTINGS.font_family &&
+      pendingTerminal.font_size === DEFAULT_TERMINAL_SETTINGS.font_size &&
+      pendingTerminal.scrollback === DEFAULT_TERMINAL_SETTINGS.scrollback &&
+      pendingTerminal.line_height === DEFAULT_TERMINAL_SETTINGS.line_height &&
+      pendingTerminal.letter_spacing ===
         DEFAULT_TERMINAL_SETTINGS.letter_spacing &&
-      normalizedDraft.cursor_blink ===
+      pendingTerminal.cursor_blink ===
         DEFAULT_TERMINAL_SETTINGS.cursor_blink &&
-      normalizedDraft.font_ligatures ===
+      pendingTerminal.font_ligatures ===
         DEFAULT_TERMINAL_SETTINGS.font_ligatures &&
-      normalizedDraft.renderer === DEFAULT_TERMINAL_SETTINGS.renderer,
+      pendingTerminal.renderer === DEFAULT_TERMINAL_SETTINGS.renderer,
   );
   const xtermOnlyControlsEnabled = $derived(rendererDraft === "xterm");
   const canSave = $derived(!saving && isDirty);
@@ -204,34 +196,15 @@
       }).queryLocalFonts === "function",
   );
 
-  function syncDraftFromTerminal(value: TerminalSettingsInput): void {
-    const normalized = normalizeTerminalSettings(value);
-    fontFamilyDraft = normalized.font_family;
-    fontSizeDraft = normalized.font_size;
-    scrollbackDraft = normalized.scrollback;
-    lineHeightDraft = normalized.line_height;
-    letterSpacingDraft = normalized.letter_spacing;
-    cursorBlinkDraft = normalized.cursor_blink;
-    fontLigaturesDraft = normalized.font_ligatures;
-    rendererDraft = normalized.renderer;
-  }
-
-  function errorMessage(err: unknown): string {
-    return err instanceof Error ? err.message : String(err);
-  }
-
-  function isLegacyTerminalSettingsError(err: unknown): boolean {
-    const message = errorMessage(err).toLowerCase();
-    if (!message) return false;
-    const mentionsUnknownField =
-      /\b(unknown|unrecognized|unsupported|unexpected|additional)\b/.test(
-        message,
-      );
-    const mentionsTerminalSetting =
-      /\b(terminal|font_family|font_size|scrollback|line_height|letter_spacing|cursor_blink|font_ligatures|renderer)\b/.test(
-        message,
-      );
-    return mentionsUnknownField && mentionsTerminalSetting;
+  function syncDraftFromTerminal(value: TerminalSettingsType): void {
+    fontFamilyDraft = value.font_family;
+    fontSizeDraft = value.font_size;
+    scrollbackDraft = value.scrollback;
+    lineHeightDraft = value.line_height;
+    letterSpacingDraft = value.letter_spacing;
+    cursorBlinkDraft = value.cursor_blink;
+    fontLigaturesDraft = value.font_ligatures;
+    rendererDraft = value.renderer;
   }
 
   $effect(() => {
@@ -246,7 +219,7 @@
   $effect(() => {
     if (!draftReady) return;
     if (!livePreview) return;
-    settingsStore.setTerminalSettings(normalizedDraft);
+    settingsStore.setTerminalSettings(pendingTerminal);
   });
 
   onDestroy(() => {
@@ -286,42 +259,6 @@
     fontDialogOpen = false;
   }
 
-  function mergeSavedTerminal(
-    returned: TerminalSettingsInput,
-    fallback: TerminalSettingsType,
-  ): TerminalSettingsType {
-    return normalizeTerminalSettings({
-      font_family: returned.font_family ?? fallback.font_family,
-      font_size: returned.font_size ?? fallback.font_size,
-      scrollback: returned.scrollback ?? fallback.scrollback,
-      line_height: returned.line_height ?? fallback.line_height,
-      letter_spacing: returned.letter_spacing ?? fallback.letter_spacing,
-      cursor_blink: returned.cursor_blink ?? fallback.cursor_blink,
-      font_ligatures: returned.font_ligatures ?? fallback.font_ligatures,
-      renderer: returned.renderer ?? fallback.renderer,
-    });
-  }
-
-  async function persistTerminalSettings(
-    draft: TerminalSettingsType,
-  ): Promise<TerminalSettingsInput> {
-    try {
-      const settings = await updateSettings({ terminal: draft });
-      return settings.terminal;
-    } catch (err) {
-      if (!isLegacyTerminalSettingsError(err)) {
-        throw err;
-      }
-      const settings = await updateSettings({
-        terminal: ({
-          font_family: draft.font_family,
-          renderer: draft.renderer,
-        }) as TerminalSettingsType,
-      });
-      return settings.terminal;
-    }
-  }
-
   async function save(): Promise<void> {
     if (embedded) return;
     if (!isDirty) return;
@@ -329,8 +266,8 @@
     saving = true;
     onSavingChange?.(true);
     try {
-      const saved = await persistTerminalSettings(normalizedDraft);
-      const updated = mergeSavedTerminal(saved, normalizedDraft);
+      const settings = await updateSettings({ terminal: pendingTerminal });
+      const updated = settings.terminal;
       syncDraftFromTerminal(updated);
       if (livePreview) {
         livePreviewBaseline = updated;

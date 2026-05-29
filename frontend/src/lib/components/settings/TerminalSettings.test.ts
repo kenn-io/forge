@@ -28,25 +28,6 @@ vi.mock("@middleman/ui", () => ({
       setTerminalSettings: mockSetTerminalSettings,
     },
   }),
-  normalizeTerminalSettings: (terminal: {
-    font_family?: string;
-    font_size?: number | null;
-    scrollback?: number | null;
-    line_height?: number | null;
-    letter_spacing?: number | null;
-    cursor_blink?: boolean | null;
-    font_ligatures?: boolean | null;
-    renderer?: string | null;
-  }) => ({
-    font_family: terminal?.font_family ?? "",
-    font_size: terminal?.font_size ?? 14,
-    scrollback: terminal?.scrollback ?? 1000,
-    line_height: terminal?.line_height ?? 1,
-    letter_spacing: terminal?.letter_spacing ?? 0,
-    cursor_blink: terminal?.cursor_blink ?? true,
-    font_ligatures: terminal?.font_ligatures ?? false,
-    renderer: terminal?.renderer === "ghostty-web" ? "ghostty-web" : "xterm",
-  }),
 }));
 
 vi.mock("../../api/settings.js", () => ({
@@ -363,109 +344,7 @@ describe("TerminalSettings", () => {
     ).toBeTruthy();
   });
 
-  it("keeps saved draft values when an older backend omits new fields", async () => {
-    mockUpdateSettings.mockResolvedValue({
-      terminal: {
-        font_family: "",
-        renderer: "xterm",
-      },
-    });
-    const onUpdate = vi.fn();
-
-    render(TerminalSettings, {
-      props: {
-        terminal: {
-          font_family: "",
-          font_size: 14,
-          scrollback: 1000,
-          line_height: 1,
-          letter_spacing: 0,
-          cursor_blink: true,
-          font_ligatures: false,
-          renderer: "xterm",
-        },
-        onUpdate,
-      },
-    });
-
-    await fireEvent.input(screen.getByLabelText("Font size"), {
-      target: { value: "18" },
-    });
-    await fireEvent.input(screen.getByLabelText("Line height"), {
-      target: { value: "1.15" },
-    });
-    await fireEvent.click(screen.getByRole("button", { name: "Save" }));
-
-    await waitFor(() => {
-      expect(onUpdate).toHaveBeenCalledWith({
-        font_family: "",
-        font_size: 18,
-        scrollback: 1000,
-        line_height: 1.15,
-        letter_spacing: 0,
-        cursor_blink: true,
-        font_ligatures: false,
-        renderer: "xterm",
-      });
-    });
-  });
-
-  it("retries save with legacy terminal fields for older backends", async () => {
-    mockUpdateSettings
-      .mockRejectedValueOnce(
-        new Error("unknown field terminal.font_size"),
-      )
-      .mockResolvedValueOnce({
-        terminal: {
-          font_family: "",
-          renderer: "xterm",
-        },
-      });
-    const onUpdate = vi.fn();
-
-    render(TerminalSettings, {
-      props: {
-        terminal: {
-          font_family: "",
-          font_size: 14,
-          scrollback: 1000,
-          line_height: 1,
-          letter_spacing: 0,
-          cursor_blink: true,
-          font_ligatures: false,
-          renderer: "xterm",
-        },
-        onUpdate,
-      },
-    });
-
-    await fireEvent.input(screen.getByLabelText("Font size"), {
-      target: { value: "17" },
-    });
-    await fireEvent.click(screen.getByRole("button", { name: "Save" }));
-
-    await waitFor(() => {
-      expect(mockUpdateSettings).toHaveBeenCalledTimes(2);
-    });
-    expect(mockUpdateSettings).toHaveBeenNthCalledWith(2, {
-      terminal: {
-        font_family: "",
-        renderer: "xterm",
-      },
-    });
-    expect(onUpdate).toHaveBeenCalledWith({
-      font_family: "",
-      font_size: 17,
-      scrollback: 1000,
-      line_height: 1,
-      letter_spacing: 0,
-      cursor_blink: true,
-      font_ligatures: false,
-      renderer: "xterm",
-    });
-  });
-
-  it("does not retry validation failures with legacy terminal fields", async () => {
+  it("does not update when saving terminal settings fails", async () => {
     mockUpdateSettings.mockRejectedValueOnce(new Error("validation failed"));
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const onUpdate = vi.fn();

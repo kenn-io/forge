@@ -11,7 +11,10 @@ import type {
   FilesResult,
 } from "../../api/types.js";
 import { STORES_KEY } from "../../context.js";
-import type { DiffStore } from "../../stores/diff.svelte.js";
+import type {
+  DiffScrollTarget,
+  DiffStore,
+} from "../../stores/diff.svelte.js";
 
 vi.mock("./DiffFile.svelte", async () => ({
   default: (await import("./DiffViewTestFile.svelte")).default,
@@ -569,6 +572,87 @@ describe("DiffView", () => {
 
       expect(consumeScrollTarget).not.toHaveBeenCalled();
     } finally {
+      Element.prototype.getBoundingClientRect = originalGetBoundingClientRect;
+    }
+  });
+
+  it("consumes an unreachable line target after bounded retries", async () => {
+    const consumeScrollTarget = vi.fn();
+    const clearScrolling = vi.fn();
+    const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
+    let scrollTarget: DiffScrollTarget | null = {
+      path: "b.ts",
+      line: 42,
+      side: "right",
+    };
+    let rafId = 0;
+
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      const id = ++rafId;
+      queueMicrotask(() => callback(performance.now()));
+      return id;
+    });
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+
+    Element.prototype.getBoundingClientRect = function () {
+      if (this instanceof HTMLElement && this.classList.contains("diff-area")) {
+        return {
+          top: 100,
+          bottom: 500,
+          left: 0,
+          right: 500,
+          width: 500,
+          height: 400,
+          x: 0,
+          y: 100,
+          toJSON: () => ({}),
+        } as DOMRect;
+      }
+      if (
+        this instanceof HTMLElement &&
+        this.dataset.filePath === "b.ts"
+      ) {
+        return {
+          top: 120,
+          bottom: 180,
+          left: 0,
+          right: 500,
+          width: 500,
+          height: 60,
+          x: 0,
+          y: 120,
+          toJSON: () => ({}),
+        } as DOMRect;
+      }
+      return originalGetBoundingClientRect.call(this);
+    };
+
+    try {
+      const files = [makeFile("a.ts"), makeFile("b.ts")];
+      const result: DiffResult = {
+        stale: false,
+        whitespace_only_count: 0,
+        files,
+      };
+      const diff = makeDiffStore({
+        getDiff: () => result,
+        getVisibleDiffFiles: () => files,
+        getScrollTarget: () => scrollTarget,
+        consumeScrollTarget: () => {
+          scrollTarget = null;
+          consumeScrollTarget();
+        },
+        clearScrolling,
+      });
+
+      renderDiffView(diff);
+
+      await waitFor(() => {
+        expect(consumeScrollTarget).toHaveBeenCalledOnce();
+        expect(clearScrolling).toHaveBeenCalledOnce();
+      });
+    } finally {
+      vi.unstubAllGlobals();
       Element.prototype.getBoundingClientRect = originalGetBoundingClientRect;
     }
   });

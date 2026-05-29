@@ -305,8 +305,13 @@
         return;
       }
     }
-    if (scrollTargetRun === run) {
+    if (
+      scrollTargetRun === run &&
+      sameScrollTarget(normalizeScrollTarget(diffStore.getScrollTarget()), target)
+    ) {
+      diffStore.consumeScrollTarget();
       scrollingToTarget = null;
+      finishProgrammaticScroll();
     }
   }
 

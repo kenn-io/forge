@@ -78,6 +78,7 @@ frontend-deps:
 # Build frontend SPA and copy into embed directory
 frontend: frontend-deps
 	cd frontend && bun run build
+	bun scripts/check-asset-base-paths.mjs
 	rm -rf internal/web/dist
 	cp -r frontend/dist internal/web/dist
 	printf 'ok\n' > internal/web/dist/stub.html

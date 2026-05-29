@@ -169,6 +169,21 @@ function terminalWebSocketProxy(url: string): ProxyOptions {
 
 const config = {
   base: "/",
+  // The Go server serves this build under a configurable base_path (default
+  // "/", e.g. "/middleman/" behind a reverse proxy) by rewriting index.html's
+  // <script src>/<link href> at request time. That rewrite only reaches HTML,
+  // not URLs baked inside JS bundles. An asset URL emitted as an absolute root
+  // path -- new URL("/assets/x.js", import.meta.url) -- resolves against the
+  // origin and drops the base path prefix, so it 404s behind a subpath proxy
+  // (notably the Pierre diff web worker). Emitting JS-referenced asset URLs as
+  // relative makes them resolve against the entry chunk's own already-prefixed
+  // location instead. HTML keeps default absolute URLs so the server-side
+  // index.html rewrite still applies. Guarded by scripts/check-asset-base-paths.mjs.
+  experimental: {
+    renderBuiltUrl(_filename, { hostType }) {
+      return hostType === "js" ? { relative: true } : undefined;
+    },
+  },
   plugins: [
     healthcheckPlugin(),
     devApiUrlPlugin(apiUrl),

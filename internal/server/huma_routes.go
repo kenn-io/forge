@@ -541,7 +541,7 @@ type listActivityInput struct {
 }
 
 type triggerSyncInput struct {
-	PriorityRepos []string `query:"priority_repo"`
+	PriorityRepos []string `query:"priority_repo" doc:"Optional repository filters to sync first. Accepts repeated values or comma-separated values. Each value may be host-qualified as platform_host/owner/name or bare as owner/name; bare values match the first tracked repo with that repo path."`
 }
 
 type listActivityOutput = bodyOutput[activityResponse]

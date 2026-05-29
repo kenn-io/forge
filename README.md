@@ -4,11 +4,6 @@ A local-first GitHub dashboard for project maintainers. Syncs PRs and issues fro
 
 Middleman runs entirely on your machine -- no hosted service, no account to create. One binary, one config file, and you're up.
 
-## Telemetry
-
-Middleman sends limited anonymous telemetry to PostHog: `server_started` with repo count and `app_loaded` with view name, plus version, commit, OS/arch, and an anonymous install ID.
-It does not send repo names, PR/issue content, provider tokens, usernames, or IP geolocation; set `TELEMETRY_ENABLED=0` to disable it.
-
 ## Features
 
 ### Activity feed
@@ -233,6 +228,11 @@ Forgejo and Gitea preserve owner and repo casing as returned by the server.
 Unlike GitLab, nested owners are not supported for these providers; `repo_path`
 is normally the same as `owner/name` and is most useful when middleman parsed a
 repository URL or needs to preserve provider-canonical casing.
+
+## Telemetry
+
+Middleman sends limited anonymous telemetry to PostHog: `server_started` with repo count and `app_loaded` with view name, plus version, commit, OS/arch, and an anonymous install ID.
+It does not send repo names, PR/issue content, provider tokens, usernames, or IP geolocation; set `TELEMETRY_ENABLED=0` to disable it.
 
 ## Embedding
 

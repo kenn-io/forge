@@ -1229,6 +1229,48 @@ test.describe("activity split view and detail drawers", () => {
     expect(resizedRailBox!.width).toBeGreaterThan(railBox!.width + 40);
   });
 
+  test("activity split rail resizes past the old 560px cap on a wide viewport", async ({ page }) => {
+    // Regression guard: the rail used to be clamped near 560px. On a
+    // wide monitor it must now grow well past that, while still leaving
+    // the detail pane a usable width.
+    await page.setViewportSize({ width: 1920, height: 1000 });
+
+    await page.goto("/");
+    await waitForActivityTable(page);
+
+    await openActivityPRSplit(page);
+
+    const rail = page.locator(".activity-pane");
+    const detail = page.locator(".activity-detail");
+    const resizeHandle = page.locator(".activity-split-resize-handle");
+    await expect(resizeHandle).toBeVisible();
+
+    const handleBox = await resizeHandle.boundingBox();
+    expect(handleBox).not.toBeNull();
+
+    // Drag the splitter far to the right, past where the old fixed cap
+    // would have stopped it.
+    await page.mouse.move(
+      handleBox!.x + handleBox!.width / 2,
+      handleBox!.y + handleBox!.height / 2,
+    );
+    await page.mouse.down();
+    await page.mouse.move(
+      handleBox!.x + 760,
+      handleBox!.y + handleBox!.height / 2,
+    );
+    await page.mouse.up();
+
+    const railBox = await rail.boundingBox();
+    const detailBox = await detail.boundingBox();
+    expect(railBox).not.toBeNull();
+    expect(detailBox).not.toBeNull();
+    // Well past the previous ~560px ceiling.
+    expect(railBox!.width).toBeGreaterThan(600);
+    // The detail pane keeps a usable minimum and is never squeezed away.
+    expect(detailBox!.width).toBeGreaterThan(300);
+  });
+
   test("activity split view lets the View dropdown float past the rail splitter", async ({ page }) => {
     await page.goto("/");
     await waitForActivityTable(page);

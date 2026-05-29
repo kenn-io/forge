@@ -65,12 +65,42 @@
   let internalDetailTab = $state<ActivityDetailTab>(
     "conversation",
   );
-  let activityPaneWidth = $state(360);
+  // The width the user has dragged the rail to. The effective width
+  // below re-clamps it reactively so it survives viewport changes.
+  let requestedActivityPaneWidth = $state(360);
   let activityPaneCollapsed = $state(false);
+  // Measured width of the whole split shell so the rail's upper bound
+  // scales with the viewport rather than a fixed pixel cap.
+  let activityShellWidth = $state(0);
 
   const minActivityPaneWidth = 280;
-  const maxActivityPaneWidth = 560;
+  // Space always kept for the detail pane so the rail can never be
+  // dragged wide enough to squeeze it to nothing.
+  const minDetailPaneWidth = 360;
   let activityResizeStartWidth = 0;
+
+  // No fixed ceiling: on a wide monitor the rail grows until only
+  // minDetailPaneWidth remains for the detail pane. Before the shell is
+  // measured the bound is open so the initial width is never clamped.
+  const maxActivityPaneWidth = $derived(
+    activityShellWidth > 0
+      ? Math.max(minActivityPaneWidth, activityShellWidth - minDetailPaneWidth)
+      : Number.POSITIVE_INFINITY,
+  );
+
+  function clampActivityPaneWidth(width: number): number {
+    return Math.max(
+      minActivityPaneWidth,
+      Math.min(maxActivityPaneWidth, width),
+    );
+  }
+
+  // Effective rail width: the requested width re-clamped to the current
+  // maximum, so narrowing the viewport keeps the detail pane visible and
+  // widening it restores the rail toward the requested width.
+  const activityPaneWidth = $derived(
+    clampActivityPaneWidth(requestedActivityPaneWidth),
+  );
 
   const controlled = $derived(
     controlledDrawer !== undefined || onCloseDrawer !== undefined,
@@ -164,13 +194,6 @@
     onCloseDrawer?.();
   }
 
-  function clampActivityPaneWidth(width: number): number {
-    return Math.max(
-      minActivityPaneWidth,
-      Math.min(maxActivityPaneWidth, width),
-    );
-  }
-
   function handleActivityPaneResizeStart(): void {
     activityResizeStartWidth = activityPaneWidth;
   }
@@ -178,7 +201,7 @@
   function handleActivityPaneResize(
     event: SplitResizeEvent,
   ): void {
-    activityPaneWidth = clampActivityPaneWidth(
+    requestedActivityPaneWidth = clampActivityPaneWidth(
       activityResizeStartWidth + event.deltaX,
     );
   }
@@ -214,6 +237,7 @@
   class:activity-shell--split={hasActiveDetail}
   class:activity-shell--full={!hasActiveDetail}
   class:activity-shell--phone={phone}
+  bind:clientWidth={activityShellWidth}
 >
   <section
     class="activity-pane"

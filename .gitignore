@@ -38,3 +38,4 @@ __pycache__/
 # roborev snapshots
 /.roborev/
 .pi/superpowers-state.json
+.kata.local.toml

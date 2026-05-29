@@ -451,6 +451,12 @@ test("keeps inline composer inside the visible diff pane on long lines", async (
     scrollBox!.x + scrollBox!.width + 1,
   );
   expect(composerBox!.width).toBeGreaterThan(scrollBox!.width * 0.9);
+  const leftEdgeHitsTextarea = await composer.locator("textarea").evaluate((textarea) => {
+    const rect = textarea.getBoundingClientRect();
+    const target = document.elementFromPoint(rect.left + 8, rect.top + 16);
+    return target === textarea || textarea.contains(target);
+  });
+  expect(leftEdgeHitsTextarea).toBe(true);
 });
 
 test("shows saved draft comments inline and jumps from the tray", async ({ page }) => {

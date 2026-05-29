@@ -2898,7 +2898,7 @@ func matchPriorityRepo(
 	}
 
 	parts := strings.Split(filter, "/")
-	if len(parts) < 3 || !looksLikePlatformHost(parts[0]) {
+	if len(parts) < 3 {
 		return ghclient.RepoRef{}, false
 	}
 
@@ -2911,11 +2911,6 @@ func matchPriorityRepo(
 		}
 	}
 	return ghclient.RepoRef{}, false
-}
-
-func looksLikePlatformHost(value string) bool {
-	return strings.ContainsAny(value, ".:") ||
-		strings.EqualFold(value, "localhost")
 }
 
 func priorityRepoIdentity(repo ghclient.RepoRef) string {

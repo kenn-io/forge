@@ -16,6 +16,7 @@
     isPaletteOpen,
   } from "../../stores/keyboard/palette-state.svelte.js";
   import { buildContext } from "../../stores/keyboard/context.svelte.js";
+  import { handleCommandResult } from "../../stores/keyboard/dispatch.svelte.js";
   import { getAllActions } from "../../stores/keyboard/registry.svelte.js";
   import {
     groupResults,
@@ -223,14 +224,9 @@
         : ({} as ReturnType<typeof buildContext>);
       try {
         const out = untrack(() => action.handler(ctx));
-        // PR-detail palette commands (approve/ready/approveWorkflows) are
-        // async; their rejected promises would otherwise become unhandled.
-        // Match dispatch.svelte.ts/runHandler: thenables get a .catch.
-        if (out && typeof (out as { then?: unknown }).then === "function") {
-          (out as Promise<unknown>).catch((err) => {
-            console.error(`palette action ${action.id} failed`, err);
-          });
-        }
+        handleCommandResult(out, (err) => {
+          console.error(`palette action ${action.id} failed`, err);
+        });
       } catch (err) {
         // Mirror dispatch.svelte.ts/runHandler: log and keep the palette
         // host alive so a throwing handler doesn't crash the app.

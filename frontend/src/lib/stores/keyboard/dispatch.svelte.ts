@@ -69,15 +69,30 @@ interface RunnableAction {
 
 const inFlight = new Set<string>();
 
+export type CommandHandlerResult = void | Promise<void>;
+
+export function handleCommandResult(
+  result: CommandHandlerResult,
+  onRejected: (err: unknown) => void,
+  onSettled?: () => void,
+): boolean {
+  if (result === undefined) return false;
+  result.catch(onRejected).finally(onSettled);
+  return true;
+}
+
 function runHandler(action: RunnableAction, ctx: Context): void {
   if (inFlight.has(action.id)) return;
   try {
     const result = action.handler(ctx);
-    if (result && typeof (result as Promise<void>).then === "function") {
+    if (
+      handleCommandResult(
+        result,
+        (err) => surfaceError(action.id, err),
+        () => inFlight.delete(action.id),
+      )
+    ) {
       inFlight.add(action.id);
-      (result as Promise<void>)
-        .catch((err: unknown) => surfaceError(action.id, err))
-        .finally(() => inFlight.delete(action.id));
     }
   } catch (err) {
     surfaceError(action.id, err);

@@ -53,7 +53,8 @@
   });
 
   function handleKeydown(e: KeyboardEvent): void {
-    const tag = (e.target as HTMLElement).tagName;
+    if (!(e.target instanceof HTMLElement)) return;
+    const tag = e.target.tagName;
     if (
       tag === "INPUT" ||
       tag === "TEXTAREA" ||

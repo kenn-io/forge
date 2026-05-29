@@ -220,7 +220,9 @@
   }
 
   function handleSearchInput(event: Event): void {
-    const value = (event.target as HTMLInputElement).value;
+    const value = event.currentTarget instanceof HTMLInputElement
+      ? event.currentTarget.value
+      : "";
     searchInput = value;
     if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {

@@ -368,9 +368,10 @@
 
   // j/k keyboard navigation between files.
   function handleKeydown(e: KeyboardEvent): void {
-    const tag = (e.target as HTMLElement).tagName;
+    if (!(e.target instanceof HTMLElement)) return;
+    const tag = e.target.tagName;
     if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
-    if ((e.target as HTMLElement).isContentEditable) return;
+    if (e.target.isContentEditable) return;
 
     if (e.key === "j" || e.key === "k") {
       if (!diff || navigationFiles.length === 0) return;

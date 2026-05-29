@@ -192,7 +192,9 @@
   }
 
   function updateSearch(event: Event): void {
-    searchQuery = (event.currentTarget as HTMLInputElement).value;
+    searchQuery = event.currentTarget instanceof HTMLInputElement
+      ? event.currentTarget.value
+      : "";
     persistFilters();
   }
 

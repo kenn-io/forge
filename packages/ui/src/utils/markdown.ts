@@ -1,5 +1,9 @@
 import { Marked } from "marked";
-import type { TokenizerAndRendererExtension } from "marked";
+import type {
+  RendererObject,
+  TokenizerAndRendererExtension,
+  Tokens,
+} from "marked";
 import DOMPurify from "dompurify";
 import { canonicalProvider } from "../api/provider-routes.js";
 import { itemReferenceAnchorAttributes } from "./item-reference.js";
@@ -13,8 +17,8 @@ interface RepoContext {
   repoPath: string;
 }
 
-type ItemRefToken = {
-  type: string;
+type ItemRefToken = Tokens.Generic & {
+  type: "itemRef";
   raw: string;
   provider: string;
   platformHost?: string | undefined;
@@ -25,6 +29,28 @@ type ItemRefToken = {
   itemType?: ItemReferenceType | undefined;
   text: string;
 };
+
+function assertItemRefToken(token: Tokens.Generic): asserts token is ItemRefToken {
+  if (
+    token.type !== "itemRef"
+    || typeof token.raw !== "string"
+    || typeof token.provider !== "string"
+    || (token.platformHost !== undefined && typeof token.platformHost !== "string")
+    || typeof token.owner !== "string"
+    || typeof token.name !== "string"
+    || typeof token.repoPath !== "string"
+    || typeof token.number !== "number"
+    || (token.itemType !== undefined && token.itemType !== "pr" && token.itemType !== "issue")
+    || typeof token.text !== "string"
+  ) {
+    throw new Error("Unexpected itemRef token shape");
+  }
+}
+
+function renderItemRefToken(token: Tokens.Generic): string {
+  assertItemRefToken(token);
+  return `<a ${itemReferenceAnchorAttributes(token)}>${token.text}</a>`;
+}
 
 function itemRefExtension(repo?: RepoContext): TokenizerAndRendererExtension {
   const supportsBangMR = canonicalProvider(repo?.provider ?? "") === "gitlab";
@@ -110,8 +136,7 @@ function itemRefExtension(repo?: RepoContext): TokenizerAndRendererExtension {
       return undefined;
     },
     renderer(token): string {
-      const t = token as unknown as ItemRefToken;
-      return `<a ${itemReferenceAnchorAttributes(t)}>${t.text}</a>`;
+      return renderItemRefToken(token);
     },
   };
 }
@@ -167,6 +192,65 @@ const DRAG_HANDLE_SVG =
   + `<circle cx="9" cy="13" r="1.2"/>`
   + `</svg>`;
 
+const taskListRenderer: RendererObject = {
+  blockquote(token): string {
+    renderState.blockquoteDepth++;
+    const inner = this.parser.parse(token.tokens);
+    renderState.blockquoteDepth--;
+    return `<blockquote>\n${inner}</blockquote>\n`;
+  },
+  // The checkbox renderer is called during the recursive parse
+  // of a listitem's inner tokens. It allocates the next task
+  // index and writes it onto the top frame of itemStack so the
+  // enclosing listitem can pick up THIS item's index — even if
+  // nested children push and pop frames of their own first.
+  // Inside a blockquote, the source-side helpers can't see the
+  // task line (TASK_LINE doesn't match `> -` prefixes), so
+  // emit the default disabled checkbox to keep indices aligned.
+  checkbox({ checked }): string {
+    const inBlockquote = renderState.blockquoteDepth > 0;
+    const interactive = renderState.interactiveTasks
+      && !inBlockquote;
+    const checkedAttr = checked ? ' checked=""' : "";
+    if (interactive) {
+      const index = renderState.taskIndex++;
+      const stack = renderState.itemStack;
+      if (stack.length > 0) {
+        stack[stack.length - 1]!.checkboxIndex = index;
+      }
+      return `<input${checkedAttr} type="checkbox" data-task-index="${index}">`;
+    }
+    return `<input${checkedAttr} disabled="" type="checkbox">`;
+  },
+  listitem(token): string {
+    const frame: ListItemFrame = { checkboxIndex: -1 };
+    renderState.itemStack.push(frame);
+    const inner = this.parser.parse(token.tokens);
+    renderState.itemStack.pop();
+    if (!token.task) return `<li>${inner}</li>\n`;
+    const interactive = renderState.interactiveTasks
+      && renderState.blockquoteDepth === 0;
+    if (!interactive) {
+      return `<li class="task-list-item">${inner}</li>\n`;
+    }
+    const index = frame.checkboxIndex;
+    const handle =
+      `<span class="task-drag-handle" `
+      + `data-task-index="${index}" `
+      + `draggable="true" `
+      + `role="button" `
+      + `tabindex="-1" `
+      + `aria-label="Drag to reorder">`
+      + DRAG_HANDLE_SVG
+      + `</span>`;
+    return (
+      `<li class="task-list-item task-list-item--interactive" `
+      + `data-task-index="${index}">`
+      + `${handle}${inner}</li>\n`
+    );
+  },
+};
+
 function getMarked(repo?: RepoContext): Marked {
   const key = repo ? `${repo.provider}/${repo.platformHost ?? ""}/${repo.repoPath}` : "";
   let instance = markedCache.get(key);
@@ -174,79 +258,7 @@ function getMarked(repo?: RepoContext): Marked {
     instance = new Marked({ breaks: true, gfm: true });
     instance.use({ extensions: [itemRefExtension(repo)] });
     instance.use({
-      renderer: {
-        blockquote(token: { tokens?: unknown[] }): string {
-          const self = this as unknown as {
-            parser: { parse(toks: unknown[]): string };
-          };
-          renderState.blockquoteDepth++;
-          const inner = self.parser.parse(
-            (token.tokens ?? []) as unknown[],
-          );
-          renderState.blockquoteDepth--;
-          return `<blockquote>\n${inner}</blockquote>\n`;
-        },
-        // The checkbox renderer is called during the recursive parse
-        // of a listitem's inner tokens. It allocates the next task
-        // index and writes it onto the top frame of itemStack so the
-        // enclosing listitem can pick up THIS item's index — even if
-        // nested children push and pop frames of their own first.
-        // Inside a blockquote, the source-side helpers can't see the
-        // task line (TASK_LINE doesn't match `> -` prefixes), so
-        // emit the default disabled checkbox to keep indices aligned.
-        checkbox({ checked }: { checked: boolean }): string {
-          const inBlockquote = renderState.blockquoteDepth > 0;
-          const interactive = renderState.interactiveTasks
-            && !inBlockquote;
-          const checkedAttr = checked ? ' checked=""' : "";
-          if (interactive) {
-            const index = renderState.taskIndex++;
-            const stack = renderState.itemStack;
-            if (stack.length > 0) {
-              stack[stack.length - 1]!.checkboxIndex = index;
-            }
-            return `<input${checkedAttr} type="checkbox" data-task-index="${index}">`;
-          }
-          return `<input${checkedAttr} disabled="" type="checkbox">`;
-        },
-        listitem(token: {
-          task?: boolean;
-          loose?: boolean;
-          tokens?: unknown[];
-        }): string {
-          const self = this as unknown as {
-            parser: { parse(toks: unknown[], loose: boolean): string };
-          };
-          const frame: ListItemFrame = { checkboxIndex: -1 };
-          renderState.itemStack.push(frame);
-          const inner = self.parser.parse(
-            (token.tokens ?? []) as unknown[],
-            !!token.loose,
-          );
-          renderState.itemStack.pop();
-          if (!token.task) return `<li>${inner}</li>\n`;
-          const interactive = renderState.interactiveTasks
-            && renderState.blockquoteDepth === 0;
-          if (!interactive) {
-            return `<li class="task-list-item">${inner}</li>\n`;
-          }
-          const index = frame.checkboxIndex;
-          const handle =
-            `<span class="task-drag-handle" `
-            + `data-task-index="${index}" `
-            + `draggable="true" `
-            + `role="button" `
-            + `tabindex="-1" `
-            + `aria-label="Drag to reorder">`
-            + DRAG_HANDLE_SVG
-            + `</span>`;
-          return (
-            `<li class="task-list-item task-list-item--interactive" `
-            + `data-task-index="${index}">`
-            + `${handle}${inner}</li>\n`
-          );
-        },
-      },
+      renderer: taskListRenderer,
     });
     markedCache.set(key, instance);
   }

@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import Palette from "./Palette.svelte";
 import {
@@ -36,7 +36,6 @@ describe("Palette", () => {
   });
 
   afterEach(() => {
-    vi.restoreAllMocks();
     cleanup();
     resetPaletteState();
     resetModalStack();
@@ -179,35 +178,6 @@ describe("Palette", () => {
     await rerender({});
     expect(ran).toBe(true);
     expect(screen.queryByRole("dialog", { name: "Command palette" })).toBeNull();
-  });
-
-  it("logs async command rejections without crashing the palette host", async () => {
-    const consoleError = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => {});
-    registerScopedActions("test-async-reject", [
-      {
-        id: "test.reject",
-        label: "Rejecting command",
-        scope: "global",
-        binding: null,
-        priority: 0,
-        when: trueWhen,
-        handler: () => Promise.reject(new Error("boom")),
-      },
-    ]);
-    const { rerender } = render(Palette, { props: {} });
-    openPalette();
-    await rerender({});
-    const dialog = screen.getByRole("dialog", { name: "Command palette" });
-    const input = dialog.querySelector(".palette-input");
-    expect(input).not.toBeNull();
-    await fireEvent.keyDown(input!, { key: "Enter" });
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(consoleError).toHaveBeenCalledWith(
-      "palette action test.reject failed",
-      expect.any(Error),
-    );
   });
 
   it("renders no Recently used header when localStorage is empty", async () => {

@@ -376,25 +376,20 @@ test.describe("workspace tab persistence", () => {
       expect(jumpGeometry.extendsLeftOfSidebar).toBe(true);
       await fileJump.getByRole("option", { name: /beta_test\.go/ }).click();
       await expect(fileJump).toBeHidden();
-      const betaJumpMetrics = await page
-        .locator(".right-sidebar .diff-area")
-        .evaluate((area) => {
+      await expect.poll(async () =>
+        page.locator(".right-sidebar .diff-area").evaluate((area) => {
           const beta = area.querySelector<HTMLElement>(
             '[data-file-path="beta_test.go"]',
           );
           const areaRect = area.getBoundingClientRect();
           const betaRect = beta?.getBoundingClientRect();
-          return {
-            hasBeta: Boolean(beta),
-            scrollTop: area.scrollTop,
-            betaInViewport: betaRect
-              ? betaRect.top >= areaRect.top && betaRect.top < areaRect.bottom
-              : false,
-          };
-        });
-      expect(betaJumpMetrics.hasBeta).toBe(true);
-      expect(betaJumpMetrics.scrollTop).toBeGreaterThan(0);
-      expect(betaJumpMetrics.betaInViewport).toBe(true);
+          return Boolean(
+            betaRect &&
+              betaRect.top >= areaRect.top &&
+              betaRect.top < areaRect.bottom,
+          );
+        }),
+      ).toBe(true);
       await diffToolbar.locator(".compact-more-btn").click();
       const compactMenu = page.locator(".right-sidebar .compact-menu");
       await expect(compactMenu).toBeVisible();

@@ -602,6 +602,9 @@ func run(
 	}
 
 	cfg.Roborev.Endpoint = roborevEndpoint
+	if err := cfg.Validate(); err != nil {
+		return fmt.Errorf("validate e2e config: %w", err)
+	}
 	cfgPath := filepath.Join(tmpDir, "config.toml")
 	if err := cfg.Save(cfgPath); err != nil {
 		return fmt.Errorf("save e2e config: %w", err)

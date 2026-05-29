@@ -135,6 +135,72 @@ name = "third"
 	}, got)
 }
 
+func TestTriggerSyncE2EPrioritizesNonDefaultHostFilter(t *testing.T) {
+	require := require.New(t)
+
+	var mu sync.Mutex
+	var calls []string
+	done := make(chan struct{})
+	var doneClosed atomic.Bool
+	mock := &mockGH{
+		listOpenPullRequestsFn: func(
+			_ context.Context, owner, repo string,
+		) ([]*gh.PullRequest, error) {
+			mu.Lock()
+			calls = append(calls, owner+"/"+repo)
+			callCount := len(calls)
+			mu.Unlock()
+			if callCount == 3 && doneClosed.CompareAndSwap(false, true) {
+				close(done)
+			}
+			return nil, nil
+		},
+	}
+	baseURL, client, _, syncer := startSyncCooldownE2EServerWithSyncer(t, `
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "first"
+
+[[repos]]
+owner = "acme"
+name = "second"
+platform_host = "ghe.example.com"
+
+[[repos]]
+owner = "acme"
+name = "third"
+platform_host = "ghe.example.com"
+`, mock)
+	syncer.SetParallelism(1)
+
+	status, body := postJSON(
+		t, client,
+		baseURL+"/api/v1/sync?priority_repo=ghe.example.com/acme/second",
+		nil,
+	)
+	require.Equal(http.StatusAccepted, status, body)
+
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		require.Fail("explicit sync did not process all repos")
+	}
+
+	mu.Lock()
+	got := append([]string(nil), calls...)
+	mu.Unlock()
+	require.Equal([]string{
+		"acme/second",
+		"acme/first",
+		"acme/third",
+	}, got)
+}
+
 func TestAddRepoE2ETriggersImmediateSyncDuringCooldown(t *testing.T) {
 	require := require.New(t)
 
@@ -254,13 +320,17 @@ func startSyncCooldownE2EServerWithSyncer(
 	require.NoError(err)
 
 	clients := map[string]ghclient.Client{"github.com": mock}
+	for _, repo := range cfg.Repos {
+		clients[repo.PlatformHostOrDefault()] = mock
+	}
 	resolved := ghclient.ResolveConfiguredRepos(
 		t.Context(), clients, cfg.Repos,
 	)
-	trackers := map[string]*ghclient.RateTracker{
-		"github.com": ghclient.NewRateTracker(
-			database, "github.com", "rest",
-		),
+	trackers := make(map[string]*ghclient.RateTracker, len(clients))
+	for host := range clients {
+		trackers[host] = ghclient.NewRateTracker(
+			database, host, "rest",
+		)
 	}
 	syncer := ghclient.NewSyncer(
 		clients, database, nil, resolved.Expanded,

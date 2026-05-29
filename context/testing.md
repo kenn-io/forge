@@ -178,6 +178,13 @@ Defaults for new code:
   comment the fault. The two `TestSSE_Terminates...` deadline tests are the
   legitimate exception.
 
+For TypeScript/Svelte cleanup, add tests only when user-visible behavior,
+cross-module contracts, or an actual regression risk changes. Do not fabricate
+large fake browser boundaries, console-spy cases, or component tests merely to
+justify replacing assertions with better types. If the change is a local type
+contract improvement and existing interaction tests still cover the behavior,
+prefer focused typecheck/lint validation over new test scaffolding.
+
 Handler-internal helper unit tests (URL parsing, label diffs, capability
 resolution) stay as plain unit tests in `package server` and are out of
 scope.

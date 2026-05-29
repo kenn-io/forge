@@ -42,16 +42,14 @@
 
 <style>
   .inline-draft-comment {
-    position: sticky;
-    left: 12px;
     box-sizing: border-box;
-    margin: 6px 0 8px;
+    margin: 6px 12px 8px;
     padding: 8px;
     border: 1px solid color-mix(in srgb, var(--accent-blue) 46%, var(--border-muted));
     border-radius: 6px;
     background: color-mix(in srgb, var(--accent-blue) 10%, var(--bg-surface));
-    width: calc(100% - 36px);
-    max-width: calc(100% - 36px);
+    width: calc(100% - 24px);
+    max-width: calc(100% - 24px);
     min-width: 0;
     scroll-margin-block: 96px;
   }
@@ -61,19 +59,11 @@
     outline-offset: 2px;
   }
 
-  @supports (width: 100cqw) {
-    .inline-draft-comment {
-      width: calc(100cqw - 36px);
-      max-width: calc(100cqw - 36px);
-    }
-  }
-
   @container (max-width: 520px) {
     .inline-draft-comment {
-      left: 8px;
-      margin: 6px 0 8px;
-      width: calc(100cqw - 16px);
-      max-width: calc(100cqw - 16px);
+      margin: 6px 8px 8px;
+      width: calc(100% - 16px);
+      max-width: calc(100% - 16px);
     }
   }
 

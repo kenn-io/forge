@@ -196,10 +196,6 @@
       [data-middleman-line-comment-button]::before {
         content: "+";
       }
-      [data-line-annotation],
-      [data-annotation-content] {
-        z-index: 4;
-      }
     `,
   }));
 

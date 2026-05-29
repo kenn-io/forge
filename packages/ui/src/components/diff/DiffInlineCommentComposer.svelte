@@ -124,8 +124,9 @@
     width: 100%;
     max-width: 100%;
     min-height: 72px;
+    max-height: 75vh;
     resize: none;
-    overflow: hidden;
+    overflow-y: auto;
     padding: 8px;
     border: 1px solid var(--border-muted);
     border-radius: 4px;

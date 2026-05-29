@@ -32,6 +32,48 @@ func TestNewHandlerRegistersStandardProfilerEndpoints(t *testing.T) {
 	}
 }
 
+func TestStartRejectsNonLoopbackAddress(t *testing.T) {
+	tests := []string{
+		":6060",
+		"0.0.0.0:6060",
+		"[::]:6060",
+		"192.0.2.10:6060",
+		"example.com:6060",
+	}
+
+	for _, addr := range tests {
+		t.Run(addr, func(t *testing.T) {
+			srv, err := Start(addr)
+
+			require.Error(t, err)
+			Assert.Nil(t, srv)
+			Assert.Contains(t, err.Error(), "loopback")
+		})
+	}
+}
+
+func TestStartAcceptsLoopbackAddress(t *testing.T) {
+	tests := []string{
+		"127.0.0.1:0",
+		"localhost:0",
+	}
+
+	for _, addr := range tests {
+		t.Run(addr, func(t *testing.T) {
+			srv, err := Start(addr)
+			require.NoError(t, err)
+			require.NotNil(t, srv)
+			t.Cleanup(func() {
+				ctx, cancel := context.WithTimeout(
+					context.Background(), time.Second,
+				)
+				defer cancel()
+				require.NoError(t, srv.Shutdown(ctx))
+			})
+		})
+	}
+}
+
 func TestStartServesProfilerIndex(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

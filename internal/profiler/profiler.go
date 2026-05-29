@@ -35,6 +35,9 @@ func Start(addr string) (*Server, error) {
 	if addr == "" {
 		return nil, nil
 	}
+	if err := validateLoopbackAddress(addr); err != nil {
+		return nil, err
+	}
 
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -58,6 +61,24 @@ func Start(addr string) (*Server, error) {
 		srv.done <- err
 	}()
 	return srv, nil
+}
+
+func validateLoopbackAddress(addr string) error {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return fmt.Errorf("invalid profiler address %s: %w", addr, err)
+	}
+	if strings.EqualFold(host, "localhost") {
+		return nil
+	}
+	ip := net.ParseIP(host)
+	if ip == nil || !ip.IsLoopback() {
+		return fmt.Errorf(
+			"profiler address %s must bind to a loopback host",
+			addr,
+		)
+	}
+	return nil
 }
 
 // Addr returns the bound listener address.

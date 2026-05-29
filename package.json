@@ -3,6 +3,11 @@
   "workspaces": ["frontend", "packages/*"],
   "scripts": {
     "demo-workspace": "bun run --cwd frontend demo-workspace",
+    "fmt": "oxfmt frontend packages/ui --no-error-on-unmatched-pattern",
+    "fmt:check": "oxfmt --check frontend packages/ui --no-error-on-unmatched-pattern",
     "test:e2e": "bun run --cwd frontend test:e2e"
+  },
+  "devDependencies": {
+    "oxfmt": "^0.51.0"
   }
 }

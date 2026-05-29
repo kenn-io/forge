@@ -97,3 +97,31 @@ func TestStartServesProfilerIndex(t *testing.T) {
 	assert.Equal(http.StatusOK, resp.StatusCode)
 	assert.Contains(string(body), "Types of profiles available")
 }
+
+func TestStartRejectsNonBoundHostHeader(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	srv, err := Start("127.0.0.1:0")
+	require.NoError(err)
+	require.NotNil(srv)
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		require.NoError(srv.Shutdown(ctx))
+	})
+
+	req, err := http.NewRequest(
+		http.MethodGet,
+		"http://"+srv.Addr().String()+"/debug/pprof/",
+		nil,
+	)
+	require.NoError(err)
+	req.Host = "localhost" + srv.Addr().String()[len("127.0.0.1"):]
+
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(err)
+	defer resp.Body.Close()
+
+	assert.Equal(http.StatusForbidden, resp.StatusCode)
+}

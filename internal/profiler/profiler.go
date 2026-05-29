@@ -45,7 +45,7 @@ func Start(addr string) (*Server, error) {
 	}
 
 	httpSrv := &http.Server{
-		Handler:           NewHandler(),
+		Handler:           allowBoundHostOnly(NewHandler(), ln.Addr()),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	srv := &Server{
@@ -76,6 +76,31 @@ func validateLoopbackAddress(addr string) error {
 		)
 	}
 	return nil
+}
+
+func allowBoundHostOnly(next http.Handler, addr net.Addr) http.Handler {
+	tcpAddr, ok := addr.(*net.TCPAddr)
+	if !ok || tcpAddr.IP == nil {
+		return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			http.Error(w, "profiler host not allowed", http.StatusForbidden)
+		})
+	}
+	allowedIP := tcpAddr.IP
+	allowedPort := fmt.Sprint(tcpAddr.Port)
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		host, port, err := net.SplitHostPort(r.Host)
+		if err != nil {
+			http.Error(w, "profiler host not allowed", http.StatusForbidden)
+			return
+		}
+		ip := net.ParseIP(host)
+		if ip == nil || !ip.Equal(allowedIP) || port != allowedPort {
+			http.Error(w, "profiler host not allowed", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // Addr returns the bound listener address.

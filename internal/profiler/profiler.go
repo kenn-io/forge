@@ -68,13 +68,10 @@ func validateLoopbackAddress(addr string) error {
 	if err != nil {
 		return fmt.Errorf("invalid profiler address %s: %w", addr, err)
 	}
-	if strings.EqualFold(host, "localhost") {
-		return nil
-	}
 	ip := net.ParseIP(host)
 	if ip == nil || !ip.IsLoopback() {
 		return fmt.Errorf(
-			"profiler address %s must bind to a loopback host",
+			"profiler address %s must bind to a literal loopback IP",
 			addr,
 		)
 	}

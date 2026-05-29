@@ -39,6 +39,7 @@ func TestStartRejectsNonLoopbackAddress(t *testing.T) {
 		"[::]:6060",
 		"192.0.2.10:6060",
 		"example.com:6060",
+		"localhost:6060",
 	}
 
 	for _, addr := range tests {
@@ -55,7 +56,7 @@ func TestStartRejectsNonLoopbackAddress(t *testing.T) {
 func TestStartAcceptsLoopbackAddress(t *testing.T) {
 	tests := []string{
 		"127.0.0.1:0",
-		"localhost:0",
+		"[::1]:0",
 	}
 
 	for _, addr := range tests {

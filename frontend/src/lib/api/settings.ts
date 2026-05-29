@@ -1,4 +1,7 @@
-import type { Settings } from "@middleman/ui/api/types";
+import {
+  normalizeTerminalSettings,
+  type Settings,
+} from "@middleman/ui/api/types";
 import type { components } from "@middleman/ui/api/schema";
 import {
   providerRepoPath,
@@ -12,6 +15,11 @@ type RepoPreviewGeneratedResponse =
   components["schemas"]["RepoPreviewResponse"];
 type UpdateSettingsRequest =
   components["schemas"]["UpdateSettingsRequest"];
+type SettingsActivityResponse = SettingsResponse["activity"];
+type SettingsAgentResponse = NonNullable<SettingsResponse["agents"]>[number];
+type SettingsRepoResponse = NonNullable<SettingsResponse["repos"]>[number];
+type PreviewRepoResponse =
+  NonNullable<RepoPreviewGeneratedResponse["repos"]>[number];
 
 function requestErrorMessage(
   error: { detail?: string; title?: string } | undefined,
@@ -20,11 +28,73 @@ function requestErrorMessage(
   return apiErrorMessage(error, fallback);
 }
 
+function normalizeActivityViewMode(
+  viewMode: SettingsActivityResponse["view_mode"],
+): Settings["activity"]["view_mode"] {
+  return viewMode === "threaded" ? "threaded" : "flat";
+}
+
+function normalizeActivityTimeRange(
+  timeRange: SettingsActivityResponse["time_range"],
+): Settings["activity"]["time_range"] {
+  return timeRange === "24h" || timeRange === "30d" || timeRange === "90d"
+    ? timeRange
+    : "7d";
+}
+
+function normalizeActivity(
+  activity: SettingsActivityResponse,
+): Settings["activity"] {
+  return {
+    view_mode: normalizeActivityViewMode(activity.view_mode),
+    time_range: normalizeActivityTimeRange(activity.time_range),
+    hide_closed: activity.hide_closed,
+    hide_bots: activity.hide_bots,
+    collapse_threads: activity.collapse_threads,
+    default_branch_retention_days: activity.default_branch_retention_days,
+    default_branch_max_commits: activity.default_branch_max_commits,
+  };
+}
+
+function normalizeAgent(
+  agent: SettingsAgentResponse,
+): Settings["agents"][number] {
+  const normalized: Settings["agents"][number] = {
+    key: agent.key,
+    label: agent.label,
+  };
+
+  if (agent.enabled !== undefined) {
+    normalized.enabled = agent.enabled;
+  }
+  if (agent.command !== null) {
+    normalized.command = agent.command;
+  }
+
+  return normalized;
+}
+
+function normalizeConfiguredRepo(
+  repo: SettingsRepoResponse,
+): Settings["repos"][number] {
+  return {
+    provider: repo.provider,
+    platform_host: repo.platform_host,
+    owner: repo.owner,
+    name: repo.name,
+    repo_path: repo.repo_path,
+    is_glob: repo.is_glob,
+    matched_repo_count: repo.matched_repo_count,
+  };
+}
+
 function normalizeSettings(data: SettingsResponse): Settings {
   return {
-    ...data,
-    repos: data.repos ?? [],
-  } as Settings;
+    activity: normalizeActivity(data.activity),
+    terminal: normalizeTerminalSettings(data.terminal),
+    agents: (data.agents ?? []).map(normalizeAgent),
+    repos: (data.repos ?? []).map(normalizeConfiguredRepo),
+  };
 }
 
 export interface RepoPreviewRow {
@@ -63,9 +133,27 @@ function normalizePreviewResponse(
   data: RepoPreviewGeneratedResponse,
 ): RepoPreviewResponse {
   return {
-    ...data,
-    repos: data.repos ?? [],
-  } as RepoPreviewResponse;
+    provider: data.provider,
+    platform_host: data.platform_host,
+    owner: data.owner,
+    pattern: data.pattern,
+    repos: (data.repos ?? []).map(normalizePreviewRow),
+  };
+}
+
+function normalizePreviewRow(repo: PreviewRepoResponse): RepoPreviewRow {
+  return {
+    provider: repo.provider,
+    platform_host: repo.platform_host,
+    owner: repo.owner,
+    name: repo.name,
+    repo_path: repo.repo_path,
+    description: repo.description,
+    private: repo.private,
+    fork: repo.fork,
+    pushed_at: repo.pushed_at,
+    already_configured: repo.already_configured,
+  };
 }
 
 function normalizeUpdateRequest(

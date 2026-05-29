@@ -12,7 +12,33 @@ describe("settings api", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
-        Response.json({ repos: [], owner: "acme", pattern: "widget-*" }),
+        Response.json({
+          activity: {
+            view_mode: "flat",
+            time_range: "7d",
+            hide_closed: false,
+            hide_bots: false,
+            collapse_threads: false,
+            default_branch_retention_days: 30,
+            default_branch_max_commits: 250,
+          },
+          agents: [],
+          terminal: {
+            font_family: "",
+            font_size: 14,
+            scrollback: 1000,
+            line_height: 1,
+            letter_spacing: 0,
+            cursor_blink: true,
+            font_ligatures: false,
+            renderer: "xterm",
+          },
+          repos: [],
+          owner: "acme",
+          pattern: "widget-*",
+          platform_host: "github.com",
+          provider: "github",
+        }),
       ),
     );
   });

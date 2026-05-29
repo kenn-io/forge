@@ -469,6 +469,21 @@ test("keeps inline composer inside the visible diff pane on long lines", async (
     return target === textarea || textarea.contains(target);
   });
   expect(leftEdgeHitsTextarea).toBe(true);
+  const textarea = composer.locator("textarea");
+  const initialTextareaHeight = await textarea.evaluate((element) => element.clientHeight);
+  await textarea.fill([
+    "This comment has enough lines to grow.",
+    "It should expand the editor instead of adding an internal scrollbar.",
+    "That keeps the review text readable while the diff pane scrolls.",
+    "One more line makes the regression obvious.",
+    "And another line verifies the textarea keeps up.",
+  ].join("\n"));
+  const textareaMetrics = await textarea.evaluate((element) => ({
+    clientHeight: element.clientHeight,
+    scrollHeight: element.scrollHeight,
+  }));
+  expect(textareaMetrics.clientHeight).toBeGreaterThan(initialTextareaHeight);
+  expect(textareaMetrics.scrollHeight).toBeLessThanOrEqual(textareaMetrics.clientHeight + 1);
 });
 
 test("shows saved draft comments inline and jumps from the tray", async ({ page }) => {

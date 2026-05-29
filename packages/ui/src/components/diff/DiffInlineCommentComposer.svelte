@@ -22,8 +22,18 @@
   onMount(() => {
     void tick().then(() => {
       textareaEl?.focus({ preventScroll: true });
+      autosizeTextarea();
     });
   });
+
+  function autosizeTextarea(): void {
+    if (!textareaEl) return;
+    const style = getComputedStyle(textareaEl);
+    const borderHeight = Number.parseFloat(style.borderTopWidth) +
+      Number.parseFloat(style.borderBottomWidth);
+    textareaEl.style.height = "auto";
+    textareaEl.style.height = `${textareaEl.scrollHeight + borderHeight}px`;
+  }
 
   async function submit(): Promise<void> {
     const nextBody = body.trim();
@@ -44,6 +54,7 @@
     placeholder="Leave a comment"
     disabled={submitting}
     rows="3"
+    oninput={autosizeTextarea}
   ></textarea>
   {#if error}
     <p class="composer-error">{error}</p>
@@ -99,7 +110,8 @@
     width: 100%;
     max-width: 100%;
     min-height: 72px;
-    resize: vertical;
+    resize: none;
+    overflow: hidden;
     padding: 8px;
     border: 1px solid var(--border-muted);
     border-radius: 4px;

@@ -1229,6 +1229,59 @@ test.describe("activity split view and detail drawers", () => {
     expect(resizedRailBox!.width).toBeGreaterThan(railBox!.width + 40);
   });
 
+  test("activity split rail keeps its dragged width after a reload", async ({ page }) => {
+    // The drawer selection lives in the URL, so a reload restores the
+    // split view. The rail width must come back at the width the user
+    // dragged to rather than snapping back to the 360px default.
+    await page.goto("/");
+    await waitForActivityTable(page);
+
+    await openActivityPRSplit(page);
+
+    const rail = page.locator(".activity-pane");
+    const resizeHandle = page.locator(".activity-split-resize-handle");
+
+    const initialBox = await rail.boundingBox();
+    expect(initialBox).not.toBeNull();
+    expect(Math.abs(initialBox!.width - 360)).toBeLessThan(2);
+
+    await expect(resizeHandle).toBeVisible();
+    const handleBox = await resizeHandle.boundingBox();
+    expect(handleBox).not.toBeNull();
+    await page.mouse.move(
+      handleBox!.x + handleBox!.width / 2,
+      handleBox!.y + handleBox!.height / 2,
+    );
+    await page.mouse.down();
+    await page.mouse.move(
+      handleBox!.x + 140,
+      handleBox!.y + handleBox!.height / 2,
+      { steps: 10 },
+    );
+    await page.mouse.up();
+
+    const widenedBox = await rail.boundingBox();
+    expect(widenedBox).not.toBeNull();
+    expect(widenedBox!.width).toBeGreaterThan(initialBox!.width + 100);
+    const widenedWidth = widenedBox!.width;
+
+    await page.reload();
+    await expect(page.locator(".activity-shell.activity-shell--split"))
+      .toBeVisible();
+
+    // Before the fix the rail mounts at the hardcoded 360px default here.
+    await expect
+      .poll(async () => {
+        const box = await page.locator(".activity-pane").boundingBox();
+        return box ? Math.round(box.width) : 0;
+      })
+      .toBeGreaterThan(Math.round(initialBox!.width) + 100);
+
+    const reloadedBox = await page.locator(".activity-pane").boundingBox();
+    expect(reloadedBox).not.toBeNull();
+    expect(Math.abs(reloadedBox!.width - widenedWidth)).toBeLessThanOrEqual(2);
+  });
+
   test("activity split rail resizes past the old 560px cap on a wide viewport", async ({ page }) => {
     // Regression guard: the rail used to be clamped near 560px. On a
     // wide monitor it must now grow well past that, while still leaving

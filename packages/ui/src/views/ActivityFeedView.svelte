@@ -58,6 +58,32 @@
     phone = false,
   }: Props = $props();
 
+  const ACTIVITY_PANE_WIDTH_KEY = "middleman-activity-pane-width";
+  const DEFAULT_ACTIVITY_PANE_WIDTH = 360;
+
+  function loadActivityPaneWidth(): number {
+    try {
+      const raw = localStorage.getItem(ACTIVITY_PANE_WIDTH_KEY);
+      if (raw) {
+        const parsed = Number(raw);
+        if (Number.isFinite(parsed) && parsed > 0) {
+          return parsed;
+        }
+      }
+    } catch {
+      // Storage blocked (private mode / embedded host); use the default.
+    }
+    return DEFAULT_ACTIVITY_PANE_WIDTH;
+  }
+
+  function persistActivityPaneWidth(value: number): void {
+    try {
+      localStorage.setItem(ACTIVITY_PANE_WIDTH_KEY, String(Math.round(value)));
+    } catch {
+      // Storage blocked; the rail width just won't survive a reload.
+    }
+  }
+
   // Internal state used when no controlled props are
   // provided (standalone usage).
   let internalDrawer = $state<DrawerItem | null>(null);
@@ -65,9 +91,10 @@
   let internalDetailTab = $state<ActivityDetailTab>(
     "conversation",
   );
-  // The width the user has dragged the rail to. The effective width
-  // below re-clamps it reactively so it survives viewport changes.
-  let requestedActivityPaneWidth = $state(360);
+  // The width the user has dragged the rail to, restored from storage so it
+  // survives reloads. The effective width below re-clamps it reactively so it
+  // also survives viewport changes.
+  let requestedActivityPaneWidth = $state(loadActivityPaneWidth());
   let activityPaneCollapsed = $state(false);
   // Measured width of the whole split shell so the rail's upper bound
   // scales with the viewport rather than a fixed pixel cap.
@@ -204,6 +231,7 @@
     requestedActivityPaneWidth = clampActivityPaneWidth(
       activityResizeStartWidth + event.deltaX,
     );
+    persistActivityPaneWidth(requestedActivityPaneWidth);
   }
 
   function collapseActivityPane(): void {

@@ -475,8 +475,8 @@ func cleanPath(path string) string {
 }
 
 type Activity struct {
-	ViewMode                   string `toml:"view_mode" json:"view_mode"`
-	TimeRange                  string `toml:"time_range" json:"time_range"`
+	ViewMode                   string `toml:"view_mode" json:"view_mode" enum:"flat,threaded"`
+	TimeRange                  string `toml:"time_range" json:"time_range" enum:"24h,7d,30d,90d"`
 	HideClosed                 bool   `toml:"hide_closed" json:"hide_closed"`
 	HideBots                   bool   `toml:"hide_bots" json:"hide_bots"`
 	CollapseThreads            bool   `toml:"collapse_threads" json:"collapse_threads"`
@@ -502,15 +502,15 @@ type Terminal struct {
 	Scrollback    int     `toml:"scrollback,omitempty" json:"scrollback"`
 	LineHeight    float64 `toml:"line_height,omitempty" json:"line_height"`
 	LetterSpacing int     `toml:"letter_spacing,omitempty" json:"letter_spacing"`
-	CursorBlink   *bool   `toml:"cursor_blink,omitempty" json:"cursor_blink"`
+	CursorBlink   *bool   `toml:"cursor_blink,omitempty" json:"cursor_blink" nullable:"false"`
 	FontLigatures bool    `toml:"font_ligatures,omitempty" json:"font_ligatures"`
-	Renderer      string  `toml:"renderer,omitempty" json:"renderer"`
+	Renderer      string  `toml:"renderer,omitempty" json:"renderer" enum:"xterm,ghostty-web"`
 }
 
 type Agent struct {
 	Key     string   `toml:"key" json:"key"`
 	Label   string   `toml:"label,omitempty" json:"label"`
-	Command []string `toml:"command,omitempty" json:"command"`
+	Command []string `toml:"command,omitempty" json:"command,omitempty" nullable:"false"`
 	Enabled *bool    `toml:"enabled,omitempty" json:"enabled,omitempty"`
 }
 

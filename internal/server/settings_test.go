@@ -362,7 +362,9 @@ func TestHandleUpdateSettings(t *testing.T) {
 		FontSize:      16,
 		Scrollback:    5000,
 		LineHeight:    1.15,
+		CursorBlink:   new(true),
 		FontLigatures: true,
+		Renderer:      config.TerminalRendererXterm,
 	}
 	body := updateSettingsRequest{
 		Activity: &activity,
@@ -409,6 +411,8 @@ hide_bots = true
 		FontSize:      15,
 		Scrollback:    2000,
 		LetterSpacing: 1,
+		CursorBlink:   new(true),
+		Renderer:      config.TerminalRendererXterm,
 	}
 	body := updateSettingsRequest{
 		Terminal: &terminal,
@@ -541,7 +545,7 @@ func TestHandleUpdateSettingsInvalid(t *testing.T) {
 	rr := doJSON(
 		t, srv, http.MethodPut, "/api/v1/settings", body,
 	)
-	require.Equal(t, http.StatusBadRequest, rr.Code, rr.Body.String())
+	require.Equal(t, http.StatusUnprocessableEntity, rr.Code, rr.Body.String())
 
 	// Verify config was NOT modified (rollback).
 	cfg2, err := config.Load(cfgPath)

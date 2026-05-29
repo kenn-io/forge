@@ -17,6 +17,48 @@ import (
 	"github.com/oapi-codegen/runtime"
 )
 
+// Defines values for ActivityTimeRange.
+const (
+	N24h ActivityTimeRange = "24h"
+	N30d ActivityTimeRange = "30d"
+	N7d  ActivityTimeRange = "7d"
+	N90d ActivityTimeRange = "90d"
+)
+
+// Valid indicates whether the value is a known member of the ActivityTimeRange enum.
+func (e ActivityTimeRange) Valid() bool {
+	switch e {
+	case N24h:
+		return true
+	case N30d:
+		return true
+	case N7d:
+		return true
+	case N90d:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ActivityViewMode.
+const (
+	Flat     ActivityViewMode = "flat"
+	Threaded ActivityViewMode = "threaded"
+)
+
+// Valid indicates whether the value is a known member of the ActivityViewMode enum.
+func (e ActivityViewMode) Valid() bool {
+	switch e {
+	case Flat:
+		return true
+	case Threaded:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for MergeRequestKanbanStatus.
 const (
 	MergeRequestKanbanStatusAwaitingMerge MergeRequestKanbanStatus = "awaiting_merge"
@@ -179,6 +221,24 @@ func (e ProblemErrorCode) Valid() bool {
 	}
 }
 
+// Defines values for TerminalRenderer.
+const (
+	GhosttyWeb TerminalRenderer = "ghostty-web"
+	Xterm      TerminalRenderer = "xterm"
+)
+
+// Valid indicates whether the value is a known member of the TerminalRenderer enum.
+func (e TerminalRenderer) Valid() bool {
+	switch e {
+	case GhosttyWeb:
+		return true
+	case Xterm:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for GetPullFilePreviewOnHostParamsSide.
 const (
 	GetPullFilePreviewOnHostParamsSideNew GetPullFilePreviewOnHostParamsSide = "new"
@@ -261,14 +321,20 @@ type ActionStatusBody struct {
 
 // Activity defines model for Activity.
 type Activity struct {
-	CollapseThreads            bool   `json:"collapse_threads"`
-	DefaultBranchMaxCommits    int64  `json:"default_branch_max_commits"`
-	DefaultBranchRetentionDays int64  `json:"default_branch_retention_days"`
-	HideBots                   bool   `json:"hide_bots"`
-	HideClosed                 bool   `json:"hide_closed"`
-	TimeRange                  string `json:"time_range"`
-	ViewMode                   string `json:"view_mode"`
+	CollapseThreads            bool              `json:"collapse_threads"`
+	DefaultBranchMaxCommits    int64             `json:"default_branch_max_commits"`
+	DefaultBranchRetentionDays int64             `json:"default_branch_retention_days"`
+	HideBots                   bool              `json:"hide_bots"`
+	HideClosed                 bool              `json:"hide_closed"`
+	TimeRange                  ActivityTimeRange `json:"time_range"`
+	ViewMode                   ActivityViewMode  `json:"view_mode"`
 }
+
+// ActivityTimeRange defines model for Activity.TimeRange.
+type ActivityTimeRange string
+
+// ActivityViewMode defines model for Activity.ViewMode.
+type ActivityViewMode string
 
 // ActivityItemResponse defines model for ActivityItemResponse.
 type ActivityItemResponse struct {
@@ -321,7 +387,7 @@ type AddRepoInputBody struct {
 
 // Agent defines model for Agent.
 type Agent struct {
-	Command *[]string `json:"command"`
+	Command *[]string `json:"command,omitempty"`
 	Enabled *bool     `json:"enabled,omitempty"`
 	Key     string    `json:"key"`
 	Label   string    `json:"label"`
@@ -354,8 +420,8 @@ type BulkAddRepoRequest struct {
 // BulkAddReposRequest defines model for BulkAddReposRequest.
 type BulkAddReposRequest struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema *string               `json:"$schema,omitempty"`
-	Repos  *[]BulkAddRepoRequest `json:"repos"`
+	Schema *string              `json:"$schema,omitempty"`
+	Repos  []BulkAddRepoRequest `json:"repos"`
 }
 
 // CommentAutocompleteReference defines model for CommentAutocompleteReference.
@@ -1262,12 +1328,12 @@ type RepoPreviewRequest struct {
 // RepoPreviewResponse defines model for RepoPreviewResponse.
 type RepoPreviewResponse struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema       *string           `json:"$schema,omitempty"`
-	Owner        string            `json:"owner"`
-	Pattern      string            `json:"pattern"`
-	PlatformHost string            `json:"platform_host"`
-	Provider     string            `json:"provider"`
-	Repos        *[]RepoPreviewRow `json:"repos"`
+	Schema       *string          `json:"$schema,omitempty"`
+	Owner        string           `json:"owner"`
+	Pattern      string           `json:"pattern"`
+	PlatformHost string           `json:"platform_host"`
+	Provider     string           `json:"provider"`
+	Repos        []RepoPreviewRow `json:"repos"`
 }
 
 // RepoPreviewRow defines model for RepoPreviewRow.
@@ -1453,11 +1519,11 @@ type SetLabelsRequest struct {
 // SettingsResponse defines model for SettingsResponse.
 type SettingsResponse struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema   *string                 `json:"$schema,omitempty"`
-	Activity Activity                `json:"activity"`
-	Agents   *[]Agent                `json:"agents"`
-	Repos    *[]ConfiguredRepoStatus `json:"repos"`
-	Terminal Terminal                `json:"terminal"`
+	Schema   *string                `json:"$schema,omitempty"`
+	Activity Activity               `json:"activity"`
+	Agents   []Agent                `json:"agents"`
+	Repos    []ConfiguredRepoStatus `json:"repos"`
+	Terminal Terminal               `json:"terminal"`
 }
 
 // StackContextResponse defines model for StackContextResponse.
@@ -1534,15 +1600,18 @@ type TelemetryEventResponse struct {
 
 // Terminal defines model for Terminal.
 type Terminal struct {
-	CursorBlink   *bool   `json:"cursor_blink"`
-	FontFamily    string  `json:"font_family"`
-	FontLigatures bool    `json:"font_ligatures"`
-	FontSize      int64   `json:"font_size"`
-	LetterSpacing int64   `json:"letter_spacing"`
-	LineHeight    float64 `json:"line_height"`
-	Renderer      string  `json:"renderer"`
-	Scrollback    int64   `json:"scrollback"`
+	CursorBlink   bool             `json:"cursor_blink"`
+	FontFamily    string           `json:"font_family"`
+	FontLigatures bool             `json:"font_ligatures"`
+	FontSize      int64            `json:"font_size"`
+	LetterSpacing int64            `json:"letter_spacing"`
+	LineHeight    float64          `json:"line_height"`
+	Renderer      TerminalRenderer `json:"renderer"`
+	Scrollback    int64            `json:"scrollback"`
 }
+
+// TerminalRenderer defines model for Terminal.Renderer.
+type TerminalRenderer string
 
 // UpdateSettingsRequest defines model for UpdateSettingsRequest.
 type UpdateSettingsRequest struct {

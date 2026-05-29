@@ -34,8 +34,16 @@ components:
         hide_closed:
           type: boolean
         time_range:
+          enum:
+            - 24h
+            - 7d
+            - 30d
+            - 90d
           type: string
         view_mode:
+          enum:
+            - flat
+            - threaded
           type: string
       required:
         - view_mode
@@ -172,9 +180,7 @@ components:
         command:
           items:
             type: string
-          type:
-            - array
-            - "null"
+          type: array
         enabled:
           type: boolean
         key:
@@ -184,7 +190,6 @@ components:
       required:
         - key
         - label
-        - command
       type: object
     ApprovePRHostInputBody:
       additionalProperties: false
@@ -247,9 +252,7 @@ components:
         repos:
           items:
             $ref: "#/components/schemas/BulkAddRepoRequest"
-          type:
-            - array
-            - "null"
+          type: array
       required:
         - repos
       type: object
@@ -2574,9 +2577,7 @@ components:
         repos:
           items:
             $ref: "#/components/schemas/RepoPreviewRow"
-          type:
-            - array
-            - "null"
+          type: array
       required:
         - provider
         - platform_host
@@ -3073,15 +3074,11 @@ components:
         agents:
           items:
             $ref: "#/components/schemas/Agent"
-          type:
-            - array
-            - "null"
+          type: array
         repos:
           items:
             $ref: "#/components/schemas/ConfiguredRepoStatus"
-          type:
-            - array
-            - "null"
+          type: array
         terminal:
           $ref: "#/components/schemas/Terminal"
       required:
@@ -3280,9 +3277,7 @@ components:
       additionalProperties: false
       properties:
         cursor_blink:
-          type:
-            - boolean
-            - "null"
+          type: boolean
         font_family:
           type: string
         font_ligatures:
@@ -3297,6 +3292,9 @@ components:
           format: double
           type: number
         renderer:
+          enum:
+            - xterm
+            - ghostty-web
           type: string
         scrollback:
           format: int64

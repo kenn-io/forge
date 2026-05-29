@@ -36,7 +36,7 @@ type repoPreviewResponse struct {
 	PlatformHost string           `json:"platform_host"`
 	Owner        string           `json:"owner"`
 	Pattern      string           `json:"pattern"`
-	Repos        []repoPreviewRow `json:"repos"`
+	Repos        []repoPreviewRow `json:"repos" nullable:"false"`
 }
 
 type repoPreviewRow struct {
@@ -57,7 +57,7 @@ type bulkAddReposInput struct {
 }
 
 type bulkAddReposRequest struct {
-	Repos []bulkAddRepoRequest `json:"repos"`
+	Repos []bulkAddRepoRequest `json:"repos" nullable:"false"`
 }
 
 type bulkAddReposOutput = createdOutput[settingsResponse]

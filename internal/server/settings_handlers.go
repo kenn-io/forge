@@ -17,10 +17,10 @@ import (
 )
 
 type settingsResponse struct {
-	Repos    []ghclient.ConfiguredRepoStatus `json:"repos"`
+	Repos    []ghclient.ConfiguredRepoStatus `json:"repos" nullable:"false"`
 	Activity config.Activity                 `json:"activity"`
 	Terminal config.Terminal                 `json:"terminal"`
-	Agents   []config.Agent                  `json:"agents"`
+	Agents   []config.Agent                  `json:"agents" nullable:"false"`
 }
 
 type updateSettingsRequest struct {
@@ -53,7 +53,7 @@ func (s *Server) buildLocalSettingsResponse() settingsResponse {
 	s.cfgMu.Lock()
 	repos := slices.Clone(s.cfg.Repos)
 	activity := s.cfg.Activity
-	terminal := normalizeTerminalSettingsForResponse(s.cfg.Terminal)
+	terminal := s.cfg.Terminal
 	agents := cloneConfigAgents(s.cfg.Agents)
 	s.cfgMu.Unlock()
 
@@ -78,29 +78,6 @@ func (s *Server) buildLocalSettingsResponse() settingsResponse {
 		Terminal: terminal,
 		Agents:   agents,
 	}
-}
-
-func normalizeTerminalSettingsForResponse(
-	terminal config.Terminal,
-) config.Terminal {
-	if terminal.FontSize == 0 {
-		terminal.FontSize = config.DefaultTerminalFontSize
-	}
-	if terminal.Scrollback == 0 {
-		terminal.Scrollback = config.DefaultTerminalScrollback
-	}
-	if terminal.LineHeight == 0 {
-		terminal.LineHeight = config.DefaultTerminalLineHeight
-	}
-	if terminal.CursorBlink == nil {
-		cursorBlink := config.DefaultTerminalCursorBlink
-		terminal.CursorBlink = &cursorBlink
-	}
-	terminal.Renderer = strings.TrimSpace(terminal.Renderer)
-	if terminal.Renderer == "" {
-		terminal.Renderer = config.TerminalRendererXterm
-	}
-	return terminal
 }
 
 func matchedRepoCount(

@@ -1999,8 +1999,10 @@ export interface components {
             default_branch_retention_days: number;
             hide_bots: boolean;
             hide_closed: boolean;
-            time_range: string;
-            view_mode: string;
+            /** @enum {string} */
+            time_range: "24h" | "7d" | "30d" | "90d";
+            /** @enum {string} */
+            view_mode: "flat" | "threaded";
         };
         ActivityItemResponse: {
             activity_type: string;
@@ -2055,7 +2057,7 @@ export interface components {
             provider: string;
         };
         Agent: {
-            command: string[] | null;
+            command?: string[];
             enabled?: boolean;
             key: string;
             label: string;
@@ -2093,7 +2095,7 @@ export interface components {
              * @example /api/v1/schemas/BulkAddReposRequest.json
              */
             readonly $schema?: string;
-            repos: components["schemas"]["BulkAddRepoRequest"][] | null;
+            repos: components["schemas"]["BulkAddRepoRequest"][];
         };
         CommentAutocompleteReference: {
             kind: string;
@@ -3179,7 +3181,7 @@ export interface components {
             pattern: string;
             platform_host: string;
             provider: string;
-            repos: components["schemas"]["RepoPreviewRow"][] | null;
+            repos: components["schemas"]["RepoPreviewRow"][];
         };
         RepoPreviewRow: {
             already_configured: boolean;
@@ -3392,8 +3394,8 @@ export interface components {
              */
             readonly $schema?: string;
             activity: components["schemas"]["Activity"];
-            agents: components["schemas"]["Agent"][] | null;
-            repos: components["schemas"]["ConfiguredRepoStatus"][] | null;
+            agents: components["schemas"]["Agent"][];
+            repos: components["schemas"]["ConfiguredRepoStatus"][];
             terminal: components["schemas"]["Terminal"];
         };
         StackContextResponse: {
@@ -3486,7 +3488,7 @@ export interface components {
             status: string;
         };
         Terminal: {
-            cursor_blink: boolean | null;
+            cursor_blink: boolean;
             font_family: string;
             font_ligatures: boolean;
             /** Format: int64 */
@@ -3495,7 +3497,8 @@ export interface components {
             letter_spacing: number;
             /** Format: double */
             line_height: number;
-            renderer: string;
+            /** @enum {string} */
+            renderer: "xterm" | "ghostty-web";
             /** Format: int64 */
             scrollback: number;
         };
@@ -8265,8 +8268,11 @@ export const pathsHostPlatform_hostPullsProviderOwnerNameNumberFilePreviewGetPar
 export const pathsHostPlatform_hostRepoProviderOwnerNameResolveNumberPostParametersQueryItem_typeValues: ReadonlyArray<FlattenedDeepRequired<paths>["/host/{platform_host}/repo/{provider}/{owner}/{name}/resolve/{number}"]["post"]["parameters"]["query"]["item_type"]> = ["pr", "issue"];
 export const pathsPullsProviderOwnerNameNumberFilePreviewGetParametersQuerySideValues: ReadonlyArray<FlattenedDeepRequired<paths>["/pulls/{provider}/{owner}/{name}/{number}/file-preview"]["get"]["parameters"]["query"]["side"]> = ["old", "new"];
 export const pathsRepoProviderOwnerNameResolveNumberPostParametersQueryItem_typeValues: ReadonlyArray<FlattenedDeepRequired<paths>["/repo/{provider}/{owner}/{name}/resolve/{number}"]["post"]["parameters"]["query"]["item_type"]> = ["pr", "issue"];
+export const activityTime_rangeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Activity"]["time_range"]> = ["24h", "7d", "30d", "90d"];
+export const activityView_modeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Activity"]["view_mode"]> = ["flat", "threaded"];
 export const mergeRequestKanbanStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MergeRequest"]["KanbanStatus"]> = ["new", "reviewing", "waiting", "awaiting_merge"];
 export const mergeRequestStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MergeRequest"]["State"]> = ["open", "closed", "merged"];
 export const mergeRequestResponseKanbanStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MergeRequestResponse"]["KanbanStatus"]> = ["new", "reviewing", "waiting", "awaiting_merge"];
 export const mergeRequestResponseStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MergeRequestResponse"]["State"]> = ["open", "closed", "merged"];
 export const problemErrorCodeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ProblemError"]["code"]> = ["badRequest", "branchConflict", "commentNotFound", "conflict", "forbidden", "internalError", "issueNotFound", "notFound", "payloadTooLarge", "projectNotFound", "pullNotFound", "rateLimited", "repoNotFound", "serviceUnavailable", "settingsUnavailable", "unauthorized", "unsupportedCapability", "upstreamError", "validationError", "workspaceNotFound"];
+export const terminalRendererValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Terminal"]["renderer"]> = ["xterm", "ghostty-web"];

@@ -61,28 +61,9 @@ export interface CICheck {
   duration_seconds?: number;
 }
 
-export interface ActivitySettings {
-  view_mode: "flat" | "threaded";
-  time_range: "24h" | "7d" | "30d" | "90d";
-  hide_closed: boolean;
-  hide_bots: boolean;
-  collapse_threads: boolean;
-  default_branch_retention_days: number;
-  default_branch_max_commits: number;
-}
-
-export type TerminalRenderer = "xterm" | "ghostty-web";
-
-export interface TerminalSettings {
-  font_family: string;
-  font_size: number;
-  scrollback: number;
-  line_height: number;
-  letter_spacing: number;
-  cursor_blink: boolean;
-  font_ligatures: boolean;
-  renderer: TerminalRenderer;
-}
+export type ActivitySettings = components["schemas"]["Activity"];
+export type TerminalSettings = components["schemas"]["Terminal"];
+export type TerminalRenderer = TerminalSettings["renderer"];
 
 export const DEFAULT_TERMINAL_SETTINGS: TerminalSettings = {
   font_family: "",
@@ -120,29 +101,9 @@ export function normalizeTerminalSettings(
   };
 }
 
-export interface AgentSettings {
-  key: string;
-  label: string;
-  command?: string[];
-  enabled?: boolean;
-}
-
-export interface ConfigRepo {
-  provider: string;
-  platform_host: string;
-  owner: string;
-  name: string;
-  repo_path: string;
-  is_glob: boolean;
-  matched_repo_count: number;
-}
-
-export interface Settings {
-  repos: ConfigRepo[];
-  activity: ActivitySettings;
-  terminal: TerminalSettings;
-  agents: AgentSettings[];
-}
+export type AgentSettings = components["schemas"]["Agent"];
+export type ConfigRepo = components["schemas"]["ConfiguredRepoStatus"];
+export type Settings = components["schemas"]["SettingsResponse"];
 
 export interface DiffResult {
   stale: boolean;

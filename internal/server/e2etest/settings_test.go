@@ -58,10 +58,9 @@ func TestSettingsAPIE2EReadUpdateAndValidation(t *testing.T) {
 
 	var settings generated.SettingsResponse
 	require.NoError(json.NewDecoder(getResp.Body).Decode(&settings))
-	require.NotNil(settings.Repos)
-	require.Len(*settings.Repos, 1)
-	assert.Equal("acme", (*settings.Repos)[0].Owner)
-	assert.Equal("threaded", settings.Activity.ViewMode)
+	require.Len(settings.Repos, 1)
+	assert.Equal("acme", settings.Repos[0].Owner)
+	assert.Equal(generated.Threaded, settings.Activity.ViewMode)
 	assert.True(settings.Activity.CollapseThreads)
 
 	invalidResp := doServerJSON(
@@ -75,7 +74,7 @@ func TestSettingsAPIE2EReadUpdateAndValidation(t *testing.T) {
 		},
 	)
 	defer invalidResp.Body.Close()
-	require.Equal(http.StatusBadRequest, invalidResp.StatusCode)
+	require.Equal(http.StatusUnprocessableEntity, invalidResp.StatusCode)
 
 	cfgAfterInvalid, err := config.Load(cfgPath)
 	require.NoError(err)
@@ -97,7 +96,9 @@ func TestSettingsAPIE2EReadUpdateAndValidation(t *testing.T) {
 				FontSize:      18,
 				Scrollback:    5000,
 				LineHeight:    1.15,
+				CursorBlink:   true,
 				FontLigatures: true,
+				Renderer:      generated.Xterm,
 			},
 		},
 	)

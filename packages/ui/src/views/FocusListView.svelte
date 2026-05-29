@@ -80,9 +80,7 @@
   });
 
   function onSearchInput(e: Event): void {
-    const value = e.currentTarget instanceof HTMLInputElement
-      ? e.currentTarget.value
-      : "";
+    const value = (e.target as HTMLInputElement).value;
     searchInput = value;
 
     if (debounceHandle !== null) clearTimeout(debounceHandle);

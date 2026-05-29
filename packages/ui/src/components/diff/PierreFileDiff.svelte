@@ -6,6 +6,7 @@
     FileContents,
     FileDiffMetadata,
     FileDiffOptions,
+    GetLineIndexUtility,
     SelectedLineRange,
     ThemeTypes,
   } from "@pierre/diffs";
@@ -28,7 +29,7 @@
     renderAnnotation?: (annotation: DiffLineAnnotation<unknown>) => HTMLElement | undefined;
   }
 
-  type PierreSide = "deletions" | "additions";
+  type PierreSide = NonNullable<Parameters<GetLineIndexUtility>[1]>;
   const emptyFile: DiffFile = {
     path: "",
     old_path: "",
@@ -395,12 +396,10 @@
     if (!ranges.length || !pierreDiff) return;
 
     const split = pre.getAttribute("data-diff-type") === "split";
-    const diff = pierreDiff as unknown as {
-      getLineIndex?: (lineNumber: number, side?: PierreSide) => [number, number] | undefined;
-    };
+    const getLineIndex = getPierreLineIndex(pierreDiff);
     for (const range of ranges) {
-      const startIndexes = diff.getLineIndex?.(range.start, range.side as PierreSide);
-      const endIndexes = diff.getLineIndex?.(
+      const startIndexes = getLineIndex(range.start, range.side as PierreSide);
+      const endIndexes = getLineIndex(
         range.end,
         (range.endSide ?? range.side) as PierreSide,
       );
@@ -667,6 +666,10 @@
     ).join("|");
   }
 
+  function getPierreLineIndex(diff: FileDiff<unknown>): GetLineIndexUtility {
+    return diff.getLineIndex;
+  }
+
   function applyLineTargetAttributes(): void {
     const root = host?.shadowRoot;
     const pre = root?.querySelector("pre");
@@ -678,18 +681,16 @@
     }
 
     const split = pre.getAttribute("data-diff-type") === "split";
-    const diff = pierreDiff as unknown as {
-      getLineIndex?: (lineNumber: number, side?: PierreSide) => [number, number] | undefined;
-    };
+    const getLineIndex = getPierreLineIndex(pierreDiff);
     for (const hunk of fileHunks) {
       for (const line of hunk.lines) {
         if (line.old_num != null) {
-          markLineTarget(pre, diff.getLineIndex?.(line.old_num, "deletions"), split, {
+          markLineTarget(pre, getLineIndex(line.old_num, "deletions"), split, {
             "data-diff-old-line": String(line.old_num),
           });
         }
         if (line.new_num != null) {
-          markLineTarget(pre, diff.getLineIndex?.(line.new_num, "additions"), split, {
+          markLineTarget(pre, getLineIndex(line.new_num, "additions"), split, {
             "data-diff-new-line": String(line.new_num),
           });
         }

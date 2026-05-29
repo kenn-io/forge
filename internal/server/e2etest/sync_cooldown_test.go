@@ -169,18 +169,18 @@ name = "first"
 [[repos]]
 owner = "acme"
 name = "second"
-platform_host = "ghe.example.com"
+platform_host = "gitea"
 
 [[repos]]
 owner = "acme"
 name = "third"
-platform_host = "ghe.example.com"
+platform_host = "gitea"
 `, mock)
 	syncer.SetParallelism(1)
 
 	status, body := postJSON(
 		t, client,
-		baseURL+"/api/v1/sync?priority_repo=ghe.example.com/acme/second",
+		baseURL+"/api/v1/sync?priority_repo=gitea/acme/second",
 		nil,
 	)
 	require.Equal(http.StatusAccepted, status, body)

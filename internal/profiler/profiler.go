@@ -7,9 +7,13 @@ import (
 	"net"
 	"net/http"
 	"net/http/pprof"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
+
+const maxExpensiveProfileSeconds = 30
 
 // Server owns the optional diagnostics HTTP listener.
 type Server struct {
@@ -45,7 +49,10 @@ func Start(addr string) (*Server, error) {
 	}
 
 	httpSrv := &http.Server{
-		Handler:           allowBoundHostOnly(NewHandler(), ln.Addr()),
+		Handler: allowBoundHostOnly(
+			limitExpensiveProfiles(rejectCrossSiteBrowserRequests(NewHandler())),
+			ln.Addr(),
+		),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	srv := &Server{
@@ -99,6 +106,66 @@ func allowBoundHostOnly(next http.Handler, addr net.Addr) http.Handler {
 			http.Error(w, "profiler host not allowed", http.StatusForbidden)
 			return
 		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func rejectCrossSiteBrowserRequests(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Header.Get("Sec-Fetch-Site") {
+		case "", "none", "same-origin":
+		default:
+			http.Error(
+				w,
+				"profiler cross-site browser request not allowed",
+				http.StatusForbidden,
+			)
+			return
+		}
+
+		origin := r.Header.Get("Origin")
+		if origin != "" {
+			originURL, err := url.Parse(origin)
+			if err != nil || originURL.Scheme != "http" || originURL.Host != r.Host {
+				http.Error(
+					w,
+					"profiler origin not allowed",
+					http.StatusForbidden,
+				)
+				return
+			}
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+func limitExpensiveProfiles(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/debug/pprof/profile" &&
+			r.URL.Path != "/debug/pprof/trace" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		seconds := r.URL.Query().Get("seconds")
+		if seconds == "" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		value, err := strconv.Atoi(seconds)
+		if err == nil && value > maxExpensiveProfileSeconds {
+			http.Error(
+				w,
+				fmt.Sprintf(
+					"profiler seconds must be <= %d",
+					maxExpensiveProfileSeconds,
+				),
+				http.StatusBadRequest,
+			)
+			return
+		}
+
 		next.ServeHTTP(w, r)
 	})
 }

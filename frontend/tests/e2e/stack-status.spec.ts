@@ -196,8 +196,13 @@ async function fulfillJson(route: Route, body: unknown, status = 200): Promise<v
 
 async function mockStackedPR(
   page: Page,
-  options: { stackResponseDelays?: Map<number, Promise<void>> } = {},
+  options: {
+    includeStackInDetail?: boolean;
+    stackResponseDelays?: Map<number, Promise<void>>;
+  } = {},
 ): Promise<void> {
+  const includeStackInDetail = options.includeStackInDetail ?? true;
+
   await page.route("**/api/v1/**", async (route) => {
     const url = new URL(route.request().url());
     const { pathname } = url;
@@ -214,6 +219,7 @@ async function mockStackedPR(
     if (method === "GET" && detailMatch) {
       const number = Number(detailMatch[1]!);
       const detailPR = prForNumber(number);
+      const member = stackMembers.find((candidate) => candidate.number === number);
       await fulfillJson(route, {
         merge_request: detailPR,
         repo: repoRef(),
@@ -235,6 +241,16 @@ async function mockStackedPR(
           count: 0,
           runs: [],
         },
+        stack: includeStackInDetail && member
+          ? {
+              stack_id: 1,
+              stack_name: "session-recovery",
+              position: member.position,
+              size: 7,
+              health: "blocked",
+              members: stackMembers,
+            }
+          : undefined,
       });
       return;
     }
@@ -335,6 +351,22 @@ async function mockStackedPR(
     await fulfillJson(route, { error: `Unhandled ${method} ${pathname}` }, 404);
   });
 }
+
+test("unstacked pull detail does not request stack context", async ({ page }) => {
+  let stackRequests = 0;
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname.endsWith("/stack")) {
+      stackRequests += 1;
+    }
+  });
+  await mockStackedPR(page, { includeStackInDetail: false });
+
+  await page.goto("/pulls/github/acme/widgets/102");
+
+  await expect(page.getByTestId("ci-chip")).toBeVisible();
+  await expect(page.getByTestId("stack-chip")).toHaveCount(0);
+  expect(stackRequests).toBe(0);
+});
 
 test("stack status shares the PR detail expandable slot with CI", async ({ page }) => {
   await page.setViewportSize({ width: 892, height: 998 });

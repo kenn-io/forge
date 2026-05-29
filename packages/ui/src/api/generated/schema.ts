@@ -2785,6 +2785,7 @@ export interface components {
             repo: components["schemas"]["RepoRefResponse"];
             repo_name: string;
             repo_owner: string;
+            stack?: components["schemas"]["StackContextResponse"];
             warnings?: string[] | null;
             workflow_approval: components["schemas"]["WorkflowApprovalResponse"];
             workspace?: components["schemas"]["WorkspaceRef"];

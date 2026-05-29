@@ -116,6 +116,7 @@ type mergeRequestDetailResponse struct {
 	DetailLoaded     bool                        `json:"detail_loaded"`
 	DetailFetchedAt  string                      `json:"detail_fetched_at,omitempty"`
 	Workspace        *workspaceRef               `json:"workspace,omitempty"`
+	Stack            *stackContextResponse       `json:"stack,omitempty"`
 }
 
 var validKanbanStates = map[string]bool{

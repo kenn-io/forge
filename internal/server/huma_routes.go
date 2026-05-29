@@ -1182,6 +1182,15 @@ func (s *Server) buildPullDetailResponse(
 		resp.DetailFetchedAt = formatUTCRFC3339(*mr.DetailFetchedAt)
 	}
 
+	stack, members, err := s.db.GetStackForPRByRepoID(ctx, mr.RepoID, mr.Number)
+	if err != nil {
+		return mergeRequestDetailResponse{}, problemInternal("get stack for pr failed")
+	}
+	if stack != nil {
+		stackContext := stackContextForPR(mr.Number, stack, members)
+		resp.Stack = &stackContext
+	}
+
 	if s.workspaces != nil {
 		wsRef, wsErr := s.workspaces.GetByMR(
 			ctx, repo.PlatformHost, repo.Owner, repo.Name, mr.Number,
@@ -3903,6 +3912,25 @@ func (s *Server) listStacks(ctx context.Context, input *listStacksInput) (*listS
 	return &listStacksOutput{Body: out}, nil
 }
 
+func stackContextForPR(number int, stack *db.Stack, members []db.StackMemberWithPR) stackContextResponse {
+	var position int
+	for _, m := range members {
+		if m.Number == number {
+			position = m.Position
+			break
+		}
+	}
+
+	return stackContextResponse{
+		StackID:   stack.ID,
+		StackName: stack.Name,
+		Position:  position,
+		Size:      len(members),
+		Health:    computeStackHealth(members),
+		Members:   toStackMemberResponses(members),
+	}
+}
+
 func (s *Server) getStackForPR(ctx context.Context, input *repoNumberInput) (*getStackForPROutput, error) {
 	repo, err := s.lookupRepoByProviderRoute(
 		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
@@ -3918,23 +3946,8 @@ func (s *Server) getStackForPR(ctx context.Context, input *repoNumberInput) (*ge
 		return nil, problemNotFound(CodeNotFound, "PR is not part of a stack", nil)
 	}
 
-	var position int
-	for _, m := range members {
-		if m.Number == input.Number {
-			position = m.Position
-			break
-		}
-	}
-
 	return &getStackForPROutput{
-		Body: stackContextResponse{
-			StackID:   stack.ID,
-			StackName: stack.Name,
-			Position:  position,
-			Size:      len(members),
-			Health:    computeStackHealth(members),
-			Members:   toStackMemberResponses(members),
-		},
+		Body: stackContextForPR(input.Number, stack, members),
 	}, nil
 }
 

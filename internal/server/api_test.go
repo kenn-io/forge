@@ -16095,6 +16095,37 @@ func TestAPIGetStackForPR(t *testing.T) {
 	assert.Equal(http.StatusNotFound, resp2.StatusCode())
 }
 
+func TestAPIGetPullDetailIncludesStackContext(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	client := setupTestClient(t, srv)
+	ctx := t.Context()
+
+	seedStackedPR(t, database, "acme", "widget", 10, "feat/api-base", "main", db.MergeRequestStateOpen, "failure", "")
+	seedStackedPR(t, database, "acme", "widget", 11, "feat/api-retry", "feat/api-base", db.MergeRequestStateOpen, "success", "APPROVED")
+	runStackDetection(t, database, "acme", "widget")
+
+	resp, err := client.HTTP.GetPullWithResponse(ctx, "gh", "acme", "widget", 11)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.NotNil(resp.JSON200.Stack)
+	assert.Equal("api", resp.JSON200.Stack.StackName)
+	assert.Equal(int64(2), resp.JSON200.Stack.Position)
+	assert.Equal(int64(2), resp.JSON200.Stack.Size)
+	assert.Equal("blocked", resp.JSON200.Stack.Health)
+	require.NotNil(resp.JSON200.Stack.Members)
+	assert.Len(*resp.JSON200.Stack.Members, 2)
+
+	seedPR(t, database, "acme", "widget", 99)
+	unstacked, err := client.HTTP.GetPullWithResponse(ctx, "gh", "acme", "widget", 99)
+	require.NoError(err)
+	require.Equal(http.StatusOK, unstacked.StatusCode())
+	require.NotNil(unstacked.JSON200)
+	assert.Nil(unstacked.JSON200.Stack)
+}
+
 func TestAPIGetStackForPR_DraftNotBaseReady(t *testing.T) {
 	assert := Assert.New(t)
 	srv, database := setupTestServer(t)

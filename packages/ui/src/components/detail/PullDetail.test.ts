@@ -273,6 +273,48 @@ describe("PullDetail approvals", () => {
   it("uses one shared expanded slot for CI and stack status", async () => {
     const detail = pullDetail();
     detail.merge_request.Number = 2;
+    detail.stack = {
+      stack_id: 1,
+      stack_name: "session-recovery",
+      position: 2,
+      size: 3,
+      health: "blocked",
+      members: [
+        {
+          number: 1,
+          title: "base schema",
+          state: "open",
+          ci_status: "failure",
+          review_decision: "APPROVED",
+          position: 1,
+          is_draft: false,
+          base_branch: "main",
+          blocked_by: null,
+        },
+        {
+          number: 2,
+          title: "session storage",
+          state: "open",
+          ci_status: "pending",
+          review_decision: "APPROVED",
+          position: 2,
+          is_draft: false,
+          base_branch: "feat/base-schema",
+          blocked_by: 1,
+        },
+        {
+          number: 3,
+          title: "UI polish",
+          state: "open",
+          ci_status: "success",
+          review_decision: "",
+          position: 3,
+          is_draft: false,
+          base_branch: "feat/session-storage",
+          blocked_by: 1,
+        },
+      ],
+    };
     detail.merge_request.CIStatus = "pending";
     detail.merge_request.CIChecksJSON = JSON.stringify([
       {
@@ -292,53 +334,7 @@ describe("PullDetail approvals", () => {
     ]);
 
     const apiClient = {
-      GET: vi.fn(async (path: string) => {
-        if (path.endsWith("/stack")) {
-          return {
-            data: {
-              stack_id: 1,
-              stack_name: "session-recovery",
-              position: 2,
-              size: 3,
-              health: "blocked",
-              members: [
-                {
-                  number: 1,
-                  title: "base schema",
-                  state: "open",
-                  ci_status: "failure",
-                  review_decision: "APPROVED",
-                  position: 1,
-                  is_draft: false,
-                  base_branch: "main",
-                  blocked_by: null,
-                },
-                {
-                  number: 2,
-                  title: "session storage",
-                  state: "open",
-                  ci_status: "pending",
-                  review_decision: "APPROVED",
-                  position: 2,
-                  is_draft: false,
-                  base_branch: "feat/base-schema",
-                  blocked_by: 1,
-                },
-                {
-                  number: 3,
-                  title: "UI polish",
-                  state: "open",
-                  ci_status: "success",
-                  review_decision: "",
-                  position: 3,
-                  is_draft: false,
-                  base_branch: "feat/session-storage",
-                  blocked_by: 1,
-                },
-              ],
-            },
-          };
-        }
+      GET: vi.fn(async () => {
         return {
           data: {
             AllowSquashMerge: false,
@@ -376,6 +372,24 @@ describe("PullDetail approvals", () => {
       "#1 base schema",
     ]);
     expect(document.querySelector(".stack-base-name")?.textContent?.trim()).toBe("main");
+  });
+
+  it("does not probe stack context for unstacked pull details", () => {
+    const apiClient = {
+      GET: vi.fn(async () => ({
+        data: {
+          AllowSquashMerge: false,
+          AllowMergeCommit: false,
+          AllowRebaseMerge: false,
+          ViewerCanMerge: true,
+        },
+      })),
+    };
+
+    renderPullDetail(pullDetail(), undefined, apiClient);
+
+    const paths = apiClient.GET.mock.calls.map(([path]) => String(path));
+    expect(paths.some((path) => path.endsWith("/stack"))).toBe(false);
   });
 
   it("closes the label picker when the labels action is clicked twice", async () => {

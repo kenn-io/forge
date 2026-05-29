@@ -1781,6 +1781,11 @@ type ListStacksParams struct {
 	Repo *string `form:"repo,omitempty" json:"repo,omitempty"`
 }
 
+// TriggerSyncParams defines parameters for TriggerSync.
+type TriggerSyncParams struct {
+	PriorityRepo *[]string `form:"priority_repo,omitempty" json:"priority_repo,omitempty"`
+}
+
 // DeleteWorkspaceParams defines parameters for DeleteWorkspace.
 type DeleteWorkspaceParams struct {
 	Force *bool `form:"force,omitempty" json:"force,omitempty"`
@@ -2496,7 +2501,7 @@ type ClientInterface interface {
 	SetStarred(ctx context.Context, body SetStarredJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// TriggerSync request
-	TriggerSync(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+	TriggerSync(ctx context.Context, params *TriggerSyncParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetSyncStatus request
 	GetSyncStatus(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -4518,8 +4523,8 @@ func (c *Client) SetStarred(ctx context.Context, body SetStarredJSONRequestBody,
 	return c.Client.Do(req)
 }
 
-func (c *Client) TriggerSync(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewTriggerSyncRequest(c.Server)
+func (c *Client) TriggerSync(ctx context.Context, params *TriggerSyncParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewTriggerSyncRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -12356,7 +12361,7 @@ func NewSetStarredRequestWithBody(server string, contentType string, body io.Rea
 }
 
 // NewTriggerSyncRequest generates requests for TriggerSync
-func NewTriggerSyncRequest(server string) (*http.Request, error) {
+func NewTriggerSyncRequest(server string, params *TriggerSyncParams) (*http.Request, error) {
 	var err error
 
 	serverURL, err := url.Parse(server)
@@ -12372,6 +12377,28 @@ func NewTriggerSyncRequest(server string) (*http.Request, error) {
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.PriorityRepo != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "priority_repo", *params.PriorityRepo, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "array", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
 	}
 
 	req, err := http.NewRequest("POST", queryURL.String(), nil)
@@ -13598,7 +13625,7 @@ type ClientWithResponsesInterface interface {
 	SetStarredWithResponse(ctx context.Context, body SetStarredJSONRequestBody, reqEditors ...RequestEditorFn) (*SetStarredResponse, error)
 
 	// TriggerSyncWithResponse request
-	TriggerSyncWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*TriggerSyncResponse, error)
+	TriggerSyncWithResponse(ctx context.Context, params *TriggerSyncParams, reqEditors ...RequestEditorFn) (*TriggerSyncResponse, error)
 
 	// GetSyncStatusWithResponse request
 	GetSyncStatusWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetSyncStatusResponse, error)
@@ -18062,8 +18089,8 @@ func (c *ClientWithResponses) SetStarredWithResponse(ctx context.Context, body S
 }
 
 // TriggerSyncWithResponse request returning *TriggerSyncResponse
-func (c *ClientWithResponses) TriggerSyncWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*TriggerSyncResponse, error) {
-	rsp, err := c.TriggerSync(ctx, reqEditors...)
+func (c *ClientWithResponses) TriggerSyncWithResponse(ctx context.Context, params *TriggerSyncParams, reqEditors ...RequestEditorFn) (*TriggerSyncResponse, error) {
+	rsp, err := c.TriggerSync(ctx, params, reqEditors...)
 	if err != nil {
 		return nil, err
 	}

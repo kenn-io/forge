@@ -149,7 +149,10 @@
     }
     const pullsStore = createPullsStore(pullsOpts);
 
-    const syncStore = createSyncStore({ client: cl });
+    const syncStore = createSyncStore({
+      client: cl,
+      getPriorityRepos: hs.getGlobalRepo,
+    });
 
     const detailOpts: DetailStoreOptions = {
       client: cl,

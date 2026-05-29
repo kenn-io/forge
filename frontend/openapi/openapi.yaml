@@ -8589,6 +8589,16 @@ paths:
   /sync:
     post:
       operationId: trigger-sync
+      parameters:
+        - explode: false
+          in: query
+          name: priority_repo
+          schema:
+            items:
+              type: string
+            type:
+              - array
+              - "null"
       responses:
         "202":
           description: Accepted

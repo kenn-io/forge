@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -613,6 +614,82 @@ func TestSyncerTriggerRunRunsRunOnce(t *testing.T) {
 	s.Stop()
 	assert.True(mock.listOpenPRsCalled,
 		"TriggerRun should invoke ListOpenPullRequests")
+}
+
+func TestSyncerTriggerRunWithPrioritySyncsSelectedReposFirst(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	var mu sync.Mutex
+	var calls []string
+	mock := &mockClient{
+		openPRs: []*gh.PullRequest{},
+		listOpenPRsFn: func(
+			_ context.Context, owner, repo string,
+		) ([]*gh.PullRequest, error) {
+			mu.Lock()
+			defer mu.Unlock()
+			calls = append(calls, owner+"/"+repo)
+			return []*gh.PullRequest{}, nil
+		},
+		getRepositoryFn: func(
+			_ context.Context, owner, repo string,
+		) (*gh.Repository, error) {
+			ids := map[string]int64{
+				"first":  1,
+				"second": 2,
+				"third":  3,
+			}
+			id := ids[repo]
+			nodeID := "repo-" + owner + "-" + repo
+			return &gh.Repository{
+				ID:       &id,
+				NodeID:   &nodeID,
+				Name:     &repo,
+				Owner:    &gh.User{Login: &owner},
+				Archived: new(bool),
+			}, nil
+		},
+	}
+	d := openTestDB(t)
+	repos := []ghclient.RepoRef{
+		{Owner: "o", Name: "first", PlatformHost: "github.com"},
+		{Owner: "o", Name: "second", PlatformHost: "github.com"},
+		{Owner: "o", Name: "third", PlatformHost: "github.com"},
+	}
+	s := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": mock},
+		d, nil, repos, time.Hour, nil, nil,
+	)
+	s.SetParallelism(1)
+
+	done := make(chan struct{}, 1)
+	s.SetOnStatusChange(func(status *ghclient.SyncStatus) {
+		if !status.Running {
+			select {
+			case done <- struct{}{}:
+			default:
+			}
+		}
+	})
+
+	s.TriggerRunWithPriority(t.Context(), []ghclient.RepoRef{{
+		Owner:        "o",
+		Name:         "third",
+		PlatformHost: "github.com",
+	}})
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		require.FailNow("priority TriggerRun did not complete within 1s")
+	}
+	s.Stop()
+
+	mu.Lock()
+	got := slices.Clone(calls)
+	mu.Unlock()
+	assert.Equal([]string{"o/third", "o/first", "o/second"}, got)
 }
 
 type blockingCtxMockClient struct {

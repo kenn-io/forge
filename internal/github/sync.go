@@ -1570,6 +1570,15 @@ func (s *Syncer) fetcherFor(repo RepoRef) *GraphQLFetcher {
 // exit. The caller's ctx is honored too, so per-request deadlines
 // still apply.
 func (s *Syncer) TriggerRun(ctx context.Context) {
+	s.TriggerRunWithPriority(ctx, nil)
+}
+
+// TriggerRunWithPriority kicks off a non-blocking ad-hoc sync and dispatches
+// matching repos before the rest of the configured set.
+func (s *Syncer) TriggerRunWithPriority(
+	ctx context.Context,
+	priorityRepos []RepoRef,
+) {
 	s.lifecycleMu.Lock()
 	if s.stopped {
 		s.lifecycleMu.Unlock()
@@ -1582,7 +1591,7 @@ func (s *Syncer) TriggerRun(ctx context.Context) {
 	go func() {
 		defer s.wg.Done()
 		defer cancel()
-		s.runOnce(merged, true)
+		s.runOnce(merged, true, priorityRepos)
 	}()
 }
 
@@ -2419,12 +2428,13 @@ func (s *Syncer) publishMonotonicProgress(
 // per-host GitHub rate limit and abuse-detection thresholds happy
 // while still capturing most of the wall-clock win on network I/O.
 func (s *Syncer) RunOnce(ctx context.Context) {
-	s.runOnce(ctx, false)
+	s.runOnce(ctx, false, nil)
 }
 
 func (s *Syncer) runOnce(
 	ctx context.Context,
 	bypassNextSyncAfter bool,
+	priorityRepos []RepoRef,
 ) {
 	if !s.running.CompareAndSwap(false, true) {
 		return
@@ -2439,6 +2449,7 @@ func (s *Syncer) runOnce(
 	s.reposMu.Lock()
 	repos := slices.Clone(s.repos)
 	s.reposMu.Unlock()
+	repos = prioritizeRepos(repos, priorityRepos)
 
 	total := len(repos)
 	s.publishStatus(&SyncStatus{
@@ -2587,6 +2598,58 @@ dispatch:
 		LastRunAt: time.Now().UTC(),
 		LastError: lastErr,
 	})
+}
+
+func prioritizeRepos(repos, priorityRepos []RepoRef) []RepoRef {
+	if len(repos) == 0 || len(priorityRepos) == 0 {
+		return repos
+	}
+
+	priorityKeys := make(map[string]int, len(priorityRepos))
+	for i, repo := range priorityRepos {
+		key := repoPriorityKey(repo)
+		if key == "" {
+			continue
+		}
+		if _, exists := priorityKeys[key]; !exists {
+			priorityKeys[key] = i
+		}
+	}
+	if len(priorityKeys) == 0 {
+		return repos
+	}
+
+	out := slices.Clone(repos)
+	slices.SortStableFunc(out, func(a, b RepoRef) int {
+		ai, aOK := priorityKeys[repoPriorityKey(a)]
+		bi, bOK := priorityKeys[repoPriorityKey(b)]
+		switch {
+		case aOK && bOK:
+			return ai - bi
+		case aOK:
+			return -1
+		case bOK:
+			return 1
+		default:
+			return 0
+		}
+	})
+	return out
+}
+
+func repoPriorityKey(repo RepoRef) string {
+	repoPath := strings.Trim(strings.TrimSpace(repo.RepoPath), "/")
+	if repoPath == "" {
+		owner := strings.Trim(strings.TrimSpace(repo.Owner), "/")
+		name := strings.Trim(strings.TrimSpace(repo.Name), "/")
+		if owner == "" || name == "" {
+			return ""
+		}
+		repoPath = owner + "/" + name
+	}
+	return strings.ToLower(
+		string(repoPlatform(repo)) + "/" + repoHost(repo) + "/" + repoPath,
+	)
 }
 
 func (s *Syncer) syncRepoIdentity(ctx context.Context, repo RepoRef) (db.RepoIdentity, *platform.Repository, error) {

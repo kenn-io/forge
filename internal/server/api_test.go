@@ -5286,6 +5286,7 @@ func TestAPITriggerSyncBypassesNextSyncAfter(t *testing.T) {
 	client := setupTestClient(t, srv)
 	resp, err := client.HTTP.TriggerSyncWithResponse(
 		t.Context(),
+		nil,
 	)
 	require.NoError(err)
 	require.Equal(http.StatusAccepted, resp.StatusCode())
@@ -9810,7 +9811,9 @@ func TestOpenAPIDocumentsCustomStatusCodes(t *testing.T) {
 	require.Contains(spec, `"/sync":{"post":{"operationId":"trigger-sync"`)
 	require.Contains(spec, `"/starred":{"delete":{"operationId":"unset-starred"`)
 	require.Contains(spec, `"/pulls/{provider}/{owner}/{name}/{number}/comments":{"post":{"operationId":"post-pr-comment"`)
-	require.Contains(spec, `"trigger-sync","responses":{"202":{"description":"Accepted"}`)
+	require.Contains(spec, `"trigger-sync","parameters"`)
+	require.Contains(spec, `"name":"priority_repo"`)
+	require.Contains(spec, `"responses":{"202":{"description":"Accepted"}`)
 	require.Contains(spec, `"set-starred","requestBody"`)
 	require.Contains(spec, `"responses":{"200":{"description":"OK"}`)
 	require.True(

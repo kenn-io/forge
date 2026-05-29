@@ -6,10 +6,13 @@ import type { MiddlemanClient } from "../types.js";
 
 export interface SyncStoreOptions {
   client: MiddlemanClient;
+  getPriorityRepos?: (() => string | undefined) | undefined;
 }
 
 export function createSyncStore(opts: SyncStoreOptions) {
   const apiClient = opts.client;
+  const getPriorityRepos =
+    opts.getPriorityRepos ?? (() => undefined);
 
   // --- state ---
 
@@ -117,7 +120,11 @@ export function createSyncStore(opts: SyncStoreOptions) {
     adjustPollingSpeed(true);
 
     try {
-      const { error } = await apiClient.POST("/sync");
+      const priorityRepos = parsePriorityRepos(getPriorityRepos());
+      const syncOptions = priorityRepos.length > 0
+        ? { params: { query: { priority_repo: priorityRepos } } }
+        : {};
+      const { error } = await apiClient.POST("/sync", syncOptions);
       if (error) {
         throw new Error(
           error.detail ??
@@ -139,6 +146,13 @@ export function createSyncStore(opts: SyncStoreOptions) {
       adjustPollingSpeed(false);
       throw err;
     }
+  }
+
+  function parsePriorityRepos(value: string | undefined): string[] {
+    return (value ?? "")
+      .split(",")
+      .map((part) => part.trim())
+      .filter((part) => part !== "");
   }
 
   function adjustPollingSpeed(running: boolean): void {

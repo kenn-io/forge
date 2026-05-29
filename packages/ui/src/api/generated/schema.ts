@@ -7737,7 +7737,9 @@ export interface operations {
     };
     "trigger-sync": {
         parameters: {
-            query?: never;
+            query?: {
+                priority_repo?: string[] | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;

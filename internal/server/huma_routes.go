@@ -540,6 +540,10 @@ type listActivityInput struct {
 	Since  string   `query:"since"`
 }
 
+type triggerSyncInput struct {
+	PriorityRepos []string `query:"priority_repo"`
+}
+
 type listActivityOutput = bodyOutput[activityResponse]
 
 func apiConfig(basePath string) huma.Config {
@@ -2837,9 +2841,108 @@ func (s *Server) listRepoSummaries(
 	return &listRepoSummariesOutput{Body: out}, nil
 }
 
-func (s *Server) triggerSync(ctx context.Context, _ *struct{}) (*acceptedOutput, error) {
-	s.syncer.TriggerRun(context.WithoutCancel(ctx))
+func (s *Server) triggerSync(
+	ctx context.Context,
+	input *triggerSyncInput,
+) (*acceptedOutput, error) {
+	s.syncer.TriggerRunWithPriority(
+		context.WithoutCancel(ctx),
+		s.priorityReposFromFilter(input.PriorityRepos),
+	)
 	return &acceptedOutput{Status: http.StatusAccepted}, nil
+}
+
+func (s *Server) priorityReposFromFilter(filters []string) []ghclient.RepoRef {
+	values := splitRepoFilterValues(filters)
+	if len(values) == 0 {
+		return nil
+	}
+
+	tracked := s.syncer.TrackedRepos()
+	out := make([]ghclient.RepoRef, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		if repo, ok := matchPriorityRepo(value, tracked); ok {
+			key := priorityRepoIdentity(repo)
+			if _, exists := seen[key]; exists {
+				continue
+			}
+			seen[key] = struct{}{}
+			out = append(out, repo)
+		}
+	}
+	return out
+}
+
+func splitRepoFilterValues(filters []string) []string {
+	values := make([]string, 0, len(filters))
+	for _, filter := range filters {
+		for value := range strings.SplitSeq(filter, ",") {
+			value = strings.Trim(value, "/ ")
+			if value != "" {
+				values = append(values, value)
+			}
+		}
+	}
+	return values
+}
+
+func matchPriorityRepo(
+	filter string,
+	tracked []ghclient.RepoRef,
+) (ghclient.RepoRef, bool) {
+	parts := strings.Split(filter, "/")
+	for _, repo := range tracked {
+		repoPath := repoPathForPriority(repo)
+		if len(parts) >= 3 {
+			host := parts[0]
+			path := strings.Join(parts[1:], "/")
+			if strings.EqualFold(repoHostForPriority(repo), host) &&
+				strings.EqualFold(repoPath, path) {
+				return repo, true
+			}
+			continue
+		}
+		if strings.EqualFold(repoPath, filter) {
+			return repo, true
+		}
+	}
+	return ghclient.RepoRef{}, false
+}
+
+func priorityRepoIdentity(repo ghclient.RepoRef) string {
+	return strings.ToLower(
+		string(repoPlatformForPriority(repo)) + "/" +
+			repoHostForPriority(repo) + "/" +
+			repoPathForPriority(repo),
+	)
+}
+
+func repoPathForPriority(repo ghclient.RepoRef) string {
+	path := strings.Trim(repo.RepoPath, "/ ")
+	if path != "" {
+		return path
+	}
+	return strings.Trim(repo.Owner, "/ ") + "/" + strings.Trim(repo.Name, "/ ")
+}
+
+func repoHostForPriority(repo ghclient.RepoRef) string {
+	host := strings.TrimSpace(repo.PlatformHost)
+	if host != "" {
+		return strings.ToLower(host)
+	}
+	kind := repoPlatformForPriority(repo)
+	if defaultHost, ok := platform.DefaultHost(kind); ok {
+		return defaultHost
+	}
+	return platform.DefaultGitHubHost
+}
+
+func repoPlatformForPriority(repo ghclient.RepoRef) platform.Kind {
+	if repo.Platform != "" {
+		return repo.Platform
+	}
+	return platform.KindGitHub
 }
 
 func (s *Server) syncStatus(_ context.Context, _ *struct{}) (*syncStatusOutput, error) {

@@ -181,7 +181,7 @@ When TypeScript complains, prefer making the owning type more precise over addin
 
 Use assertions only at real boundaries: DOM event targets, `JSON.parse`, third-party libraries with incomplete types, test fixtures, and browser globals. Keep those assertions local and obvious. Do not turn a simple input handler into a defensive branch when the markup already owns the element type; likewise, do not add runtime validation around a generated API response unless the schema is wrong. If the schema is wrong, fix the Go/Huma/OpenAPI source and regenerate clients.
 
-For repeated async or event patterns, prefer a small typed helper over repeated structural checks. Do not probe for maybe-thenables when the handler contract can be `void | Promise<void>`. Do not duplicate browser API feature checks across components if a shared helper can express the actual browser boundary.
+For repeated async or event patterns, prefer a small typed helper over repeated structural checks. Never check promise shape with `typeof result.then === "function"`, `then?: unknown`, or similar maybe-thenable probes. If the value may be async, make the contract `void | Promise<void>` and use the promise methods through that type; if the value is a browser API promise such as `document.fonts.ready`, use the typed API directly. Do not duplicate browser API feature checks across components if a shared helper can express the actual browser boundary.
 
 Responsive layout work should separate presentation mode from sizing mode.
 

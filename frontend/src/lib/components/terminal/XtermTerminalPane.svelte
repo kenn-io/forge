@@ -498,8 +498,9 @@
     // in fallback-font cell metrics, so the WebGL atlas and the
     // measured cols/rows drift away from what gets painted — which
     // looks like cursor/prompt overlap in the running shell.
-    if (document.fonts && typeof document.fonts.ready?.then === "function") {
-      void document.fonts.ready.then(start);
+    const fontsReady = document.fonts?.ready;
+    if (fontsReady) {
+      void fontsReady.then(start);
     } else {
       start();
     }

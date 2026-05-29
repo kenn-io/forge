@@ -388,8 +388,9 @@
 
     // Custom fonts may still be loading when the pane mounts. Waiting
     // keeps terminal cell metrics aligned with what gets painted.
-    if (document.fonts && typeof document.fonts.ready?.then === "function") {
-      void document.fonts.ready.then(() => void start());
+    const fontsReady = document.fonts?.ready;
+    if (fontsReady) {
+      void fontsReady.then(() => void start());
     } else {
       void start();
     }

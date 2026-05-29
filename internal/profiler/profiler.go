@@ -171,8 +171,7 @@ func isBrowserUserAgent(userAgent string) bool {
 
 func limitExpensiveProfiles(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/debug/pprof/profile" &&
-			r.URL.Path != "/debug/pprof/trace" {
+		if !strings.HasPrefix(r.URL.Path, "/debug/pprof/") {
 			next.ServeHTTP(w, r)
 			return
 		}

@@ -262,3 +262,25 @@ func TestStartCapsExpensiveProfileSeconds(t *testing.T) {
 
 	assert.Equal(http.StatusBadRequest, resp.StatusCode)
 }
+
+func TestStartCapsRuntimeProfileSeconds(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	srv, err := Start("127.0.0.1:0")
+	require.NoError(err)
+	require.NotNil(srv)
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		require.NoError(srv.Shutdown(ctx))
+	})
+
+	resp, err := http.Get(
+		"http://" + srv.Addr().String() + "/debug/pprof/heap?seconds=31",
+	)
+	require.NoError(err)
+	defer resp.Body.Close()
+
+	assert.Equal(http.StatusBadRequest, resp.StatusCode)
+}

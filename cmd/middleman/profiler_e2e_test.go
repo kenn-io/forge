@@ -72,10 +72,91 @@ func TestServeStartsProfilerListenerE2E(t *testing.T) {
 
 	assert.Contains(healthBody, `"status":"ok"`)
 	assert.Contains(profilerBody, "Types of profiles available")
+	profilerURL := fmt.Sprintf("http://127.0.0.1:%d", profilerPort)
+	assert.Equal(
+		http.StatusForbidden,
+		profilerStatus(
+			t,
+			profilerURL+"/debug/pprof/",
+			"localhost:"+strconv.Itoa(profilerPort),
+			nil,
+		),
+	)
+	assert.Equal(
+		http.StatusForbidden,
+		profilerStatus(
+			t,
+			profilerURL+"/debug/pprof/",
+			"",
+			map[string]string{"Sec-Fetch-Site": "cross-site"},
+		),
+	)
+	assert.Equal(
+		http.StatusForbidden,
+		profilerStatus(
+			t,
+			profilerURL+"/debug/pprof/",
+			"",
+			map[string]string{"Origin": "http://example.com"},
+		),
+	)
+	assert.Equal(
+		http.StatusForbidden,
+		profilerStatus(
+			t,
+			profilerURL+"/debug/pprof/",
+			"",
+			map[string]string{
+				"User-Agent": "Mozilla/5.0 AppleWebKit/537.36 Chrome/125.0.0.0 Safari/537.36",
+			},
+		),
+	)
+	assert.Equal(
+		http.StatusBadRequest,
+		profilerStatus(
+			t,
+			profilerURL+"/debug/pprof/profile?seconds=31",
+			"",
+			nil,
+		),
+	)
+	assert.Equal(
+		http.StatusBadRequest,
+		profilerStatus(
+			t,
+			profilerURL+"/debug/pprof/heap?seconds=31",
+			"",
+			nil,
+		),
+	)
 
 	require.NoError(cmd.Process.Signal(syscall.SIGTERM))
 	require.NoError(cmd.Wait(), stderr.String())
 	stopped = true
+}
+
+func profilerStatus(
+	t *testing.T,
+	url string,
+	host string,
+	headers map[string]string,
+) int {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	require.NoError(t, err)
+	if host != "" {
+		req.Host = host
+	}
+	for key, value := range headers {
+		req.Header.Set(key, value)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	_, err = io.Copy(io.Discard, resp.Body)
+	require.NoError(t, err)
+	return resp.StatusCode
 }
 
 func waitForHTTPBody(

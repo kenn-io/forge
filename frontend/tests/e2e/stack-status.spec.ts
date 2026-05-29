@@ -197,12 +197,9 @@ async function fulfillJson(route: Route, body: unknown, status = 200): Promise<v
 async function mockStackedPR(
   page: Page,
   options: {
-    includeStackInDetail?: boolean;
     stackResponseDelays?: Map<number, Promise<void>>;
   } = {},
 ): Promise<void> {
-  const includeStackInDetail = options.includeStackInDetail ?? true;
-
   await page.route("**/api/v1/**", async (route) => {
     const url = new URL(route.request().url());
     const { pathname } = url;
@@ -241,7 +238,7 @@ async function mockStackedPR(
           count: 0,
           runs: [],
         },
-        stack: includeStackInDetail && member
+        stack: member
           ? {
               stack_id: 1,
               stack_name: "session-recovery",
@@ -262,10 +259,14 @@ async function mockStackedPR(
       const number = Number(stackMatch[1]!);
       const member = stackMembers.find((candidate) => candidate.number === number);
       await options.stackResponseDelays?.get(number);
+      if (!member) {
+        await fulfillJson(route, { error: "PR is not part of a stack" }, 404);
+        return;
+      }
       await fulfillJson(route, {
         stack_id: 1,
         stack_name: "session-recovery",
-        position: member?.position ?? 2,
+        position: member.position,
         size: 7,
         health: "blocked",
         members: stackMembers,
@@ -359,9 +360,9 @@ test("unstacked pull detail does not request stack context", async ({ page }) =>
       stackRequests += 1;
     }
   });
-  await mockStackedPR(page, { includeStackInDetail: false });
+  await mockStackedPR(page);
 
-  await page.goto("/pulls/github/acme/widgets/102");
+  await page.goto("/pulls/github/acme/widgets/108");
 
   await expect(page.getByTestId("ci-chip")).toBeVisible();
   await expect(page.getByTestId("stack-chip")).toHaveCount(0);

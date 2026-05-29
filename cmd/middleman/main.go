@@ -456,9 +456,13 @@ func run(opts serve.Options) error {
 		return err
 	}
 	if profilerSrv != nil {
+		profilerAddr := ""
+		if addr := profilerSrv.Addr(); addr != nil {
+			profilerAddr = addr.String()
+		}
 		slog.Info(
 			"starting profiler listener",
-			"addr", profilerSrv.Addr().String(),
+			"addr", profilerAddr,
 		)
 		defer func() {
 			shutdownCtx, cancel := context.WithTimeout(

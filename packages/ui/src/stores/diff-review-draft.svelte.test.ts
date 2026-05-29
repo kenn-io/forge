@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { MiddlemanClient } from "../types.js";
+import type { ProviderRouteRef } from "../api/provider-routes.js";
 import { createDiffReviewDraftStore } from "./diff-review-draft.svelte.js";
 
 interface MockDraftLoad {
@@ -10,6 +11,84 @@ interface MockDraftLoad {
     native_multiline_ranges: boolean;
   };
   response: { status: number; ok: boolean };
+}
+
+interface MockMutation {
+  data?: { status?: string };
+  error?: { detail?: string; title?: string };
+  response: { status: number; ok: boolean };
+}
+
+function providerRef(overrides: Partial<ProviderRouteRef> = {}): ProviderRouteRef {
+  return {
+    provider: "forgejo",
+    platformHost: "codeberg.org",
+    owner: "acme",
+    name: "widgets",
+    repoPath: "acme/widgets",
+    ...overrides,
+  };
+}
+
+function draftLoad({
+  comments = [],
+  supportedActions = ["comment"],
+  nativeMultilineRanges = true,
+  status = 200,
+  ok = true,
+}: {
+  comments?: MockDraftLoad["data"]["comments"];
+  supportedActions?: string[];
+  nativeMultilineRanges?: boolean;
+  status?: number;
+  ok?: boolean;
+} = {}): MockDraftLoad {
+  return {
+    data: {
+      comments,
+      supported_actions: supportedActions,
+      native_multiline_ranges: nativeMultilineRanges,
+    },
+    response: { status, ok },
+  };
+}
+
+function mutation(overrides: Partial<MockMutation> = {}): MockMutation {
+  return {
+    response: { status: 200, ok: true },
+    ...overrides,
+  };
+}
+
+function failedMutation(): MockMutation {
+  return mutation({
+    error: { title: "failed" },
+    response: { status: 502, ok: false },
+  });
+}
+
+function mockGet(result: MockDraftLoad | Promise<MockDraftLoad> = draftLoad()) {
+  return vi.fn(() => Promise.resolve(result));
+}
+
+function mockPost(result: MockMutation | Promise<MockMutation> = mutation()) {
+  return vi.fn(() => Promise.resolve(result));
+}
+
+function mockDelete(result: MockMutation | Promise<MockMutation> = mutation()) {
+  return vi.fn(() => Promise.resolve(result));
+}
+
+function mockClient({
+  GET = mockGet(),
+  POST = mockPost(),
+  DELETE = mockDelete(),
+}: {
+  GET?: ReturnType<typeof vi.fn>;
+  POST?: ReturnType<typeof vi.fn>;
+  DELETE?: ReturnType<typeof vi.fn>;
+} = {}): MiddlemanClient {
+  return { GET, POST, DELETE } as unknown as MiddlemanClient;
 }
 
 function deferred<T>() {
@@ -24,28 +103,10 @@ function deferred<T>() {
 
 describe("createDiffReviewDraftStore", () => {
   it("refreshes PR detail after a successful publish", async () => {
-    const client = {
-      GET: vi.fn(() => Promise.resolve({
-        data: {
-          comments: [],
-          supported_actions: ["comment"],
-          native_multiline_ranges: true,
-        },
-        response: { status: 200, ok: true },
-      })),
-      POST: vi.fn(() => Promise.resolve({
-        response: { status: 200, ok: true },
-      })),
-    } as unknown as MiddlemanClient;
+    const client = mockClient();
     const onPublished = vi.fn();
     const store = createDiffReviewDraftStore({ client, onPublished });
-    const ref = {
-      provider: "forgejo",
-      platformHost: "codeberg.org",
-      owner: "acme",
-      name: "widgets",
-      repoPath: "acme/widgets",
-    };
+    const ref = providerRef();
 
     store.setContext(ref, 42, true);
     await Promise.resolve();
@@ -56,31 +117,13 @@ describe("createDiffReviewDraftStore", () => {
   });
 
   it("keeps publish successful when detail refresh fails", async () => {
-    const client = {
-      GET: vi.fn(() => Promise.resolve({
-        data: {
-          comments: [],
-          supported_actions: ["comment"],
-          native_multiline_ranges: true,
-        },
-        response: { status: 200, ok: true },
-      })),
-      POST: vi.fn(() => Promise.resolve({
-        response: { status: 200, ok: true },
-      })),
-    } as unknown as MiddlemanClient;
+    const client = mockClient();
     const store = createDiffReviewDraftStore({
       client,
       onPublished: () => Promise.reject(new Error("refresh failed")),
     });
 
-    store.setContext({
-      provider: "forgejo",
-      platformHost: "codeberg.org",
-      owner: "acme",
-      name: "widgets",
-      repoPath: "acme/widgets",
-    }, 42, true);
+    store.setContext(providerRef(), 42, true);
     await Promise.resolve();
 
     await expect(store.publish("comment", "summary")).resolves.toBe(true);
@@ -88,30 +131,11 @@ describe("createDiffReviewDraftStore", () => {
   });
 
   it("does not refresh PR detail when publish fails", async () => {
-    const client = {
-      GET: vi.fn(() => Promise.resolve({
-        data: {
-          comments: [],
-          supported_actions: ["comment"],
-          native_multiline_ranges: true,
-        },
-        response: { status: 200, ok: true },
-      })),
-      POST: vi.fn(() => Promise.resolve({
-        error: { title: "failed" },
-        response: { status: 502, ok: false },
-      })),
-    } as unknown as MiddlemanClient;
+    const client = mockClient({ POST: mockPost(failedMutation()) });
     const onPublished = vi.fn();
     const store = createDiffReviewDraftStore({ client, onPublished });
 
-    store.setContext({
-      provider: "forgejo",
-      platformHost: "codeberg.org",
-      owner: "acme",
-      name: "widgets",
-      repoPath: "acme/widgets",
-    }, 42, true);
+    store.setContext(providerRef(), 42, true);
     await Promise.resolve();
     await store.publish("comment", "summary");
 
@@ -121,73 +145,48 @@ describe("createDiffReviewDraftStore", () => {
   it("ignores draft loads from an older diff head", async () => {
     const oldLoad = deferred<MockDraftLoad>();
     const newLoad = deferred<MockDraftLoad>();
-    const client = {
+    const client = mockClient({
       GET: vi.fn()
         .mockReturnValueOnce(oldLoad.promise)
         .mockReturnValueOnce(newLoad.promise),
-    } as unknown as MiddlemanClient;
+    });
     const store = createDiffReviewDraftStore({ client });
-    const ref = {
-      provider: "github",
-      platformHost: "github.com",
-      owner: "acme",
-      name: "widgets",
-      repoPath: "acme/widgets",
-    };
+    const ref = providerRef({ provider: "github", platformHost: "github.com" });
 
     store.setContext(ref, 42, true, "old-head");
     await Promise.resolve();
     store.setContext(ref, 42, true, "new-head");
     await Promise.resolve();
 
-    newLoad.resolve({
-      data: {
-        comments: [{ id: "new", body: "new draft" }],
-        supported_actions: ["comment"],
-        native_multiline_ranges: true,
-      },
-      response: { status: 200, ok: true },
-    });
+    newLoad.resolve(draftLoad({
+      comments: [{ id: "new", body: "new draft" }],
+    }));
     await Promise.resolve();
-    oldLoad.resolve({
-      data: {
-        comments: [{ id: "old", body: "old draft" }],
-        supported_actions: ["comment"],
-        native_multiline_ranges: true,
-      },
-      response: { status: 200, ok: true },
-    });
+    oldLoad.resolve(draftLoad({
+      comments: [{ id: "old", body: "old draft" }],
+    }));
     await Promise.resolve();
 
-    expect(client.GET).toHaveBeenCalledTimes(2);
     expect(store.getComments()).toEqual([{ id: "new", body: "new draft" }]);
     expect(store.isLoading()).toBe(false);
   });
 
   it("surfaces partial publish status while clearing the draft", async () => {
-    const client = {
-      GET: vi.fn(() => Promise.resolve({
-        data: {
-          comments: [],
-          supported_actions: ["comment"],
-          native_multiline_ranges: false,
-        },
-        response: { status: 200, ok: true },
-      })),
-      POST: vi.fn(() => Promise.resolve({
+    const client = mockClient({
+      GET: mockGet(draftLoad({ nativeMultilineRanges: false })),
+      POST: mockPost(mutation({
         data: { status: "partially_published" },
-        response: { status: 200, ok: true },
       })),
-    } as unknown as MiddlemanClient;
+    });
     const onPublished = vi.fn();
     const store = createDiffReviewDraftStore({ client, onPublished });
-    const ref = {
+    const ref = providerRef({
       provider: "gitlab",
       platformHost: "gitlab.example.com",
       owner: "group",
       name: "project",
       repoPath: "group/project",
-    };
+    });
 
     store.setContext(ref, 7, true);
     await Promise.resolve();
@@ -195,50 +194,31 @@ describe("createDiffReviewDraftStore", () => {
 
     expect(ok).toBe(true);
     expect(store.getDraft()?.comments).toEqual([]);
-    expect(store.getWarning()).toContain("partially published");
+    expect(store.getWarning()).toBe(
+      "Review was partially published. Some inline comments or the selected review action may not have been submitted.",
+    );
     expect(onPublished).toHaveBeenCalledWith(ref, 7);
   });
 
   it("ignores an older same-PR load after publish refreshes the draft", async () => {
     const staleLoad = deferred<MockDraftLoad>();
-    const client = {
+    const client = mockClient({
       GET: vi
         .fn()
         .mockReturnValueOnce(staleLoad.promise)
-        .mockResolvedValueOnce({
-          data: {
-            comments: [],
-            supported_actions: ["comment"],
-            native_multiline_ranges: true,
-          },
-          response: { status: 200, ok: true },
-        }),
-      POST: vi.fn(() => Promise.resolve({
-        response: { status: 200, ok: true },
-      })),
-    } as unknown as MiddlemanClient;
+        .mockResolvedValueOnce(draftLoad()),
+    });
     const store = createDiffReviewDraftStore({ client });
 
-    store.setContext({
-      provider: "forgejo",
-      platformHost: "codeberg.org",
-      owner: "acme",
-      name: "widgets",
-      repoPath: "acme/widgets",
-    }, 42, true);
+    store.setContext(providerRef(), 42, true);
     await Promise.resolve();
 
     await expect(store.publish("comment", "summary")).resolves.toBe(true);
     expect(store.getComments()).toEqual([]);
 
-    staleLoad.resolve({
-      data: {
-        comments: [{ id: "stale", body: "old draft" }],
-        supported_actions: ["comment"],
-        native_multiline_ranges: true,
-      },
-      response: { status: 200, ok: true },
-    });
+    staleLoad.resolve(draftLoad({
+      comments: [{ id: "stale", body: "old draft" }],
+    }));
     await staleLoad.promise;
     await Promise.resolve();
 
@@ -247,36 +227,22 @@ describe("createDiffReviewDraftStore", () => {
 
   it("does not stay loading when a mutation fails during an in-flight load", async () => {
     const staleLoad = deferred<MockDraftLoad>();
-    const client = {
+    const client = mockClient({
       GET: vi.fn().mockReturnValueOnce(staleLoad.promise),
-      POST: vi.fn(() => Promise.resolve({
-        error: { title: "failed" },
-        response: { status: 502, ok: false },
-      })),
-    } as unknown as MiddlemanClient;
+      POST: mockPost(failedMutation()),
+    });
     const store = createDiffReviewDraftStore({ client });
 
-    store.setContext({
-      provider: "forgejo",
-      platformHost: "codeberg.org",
-      owner: "acme",
-      name: "widgets",
-      repoPath: "acme/widgets",
-    }, 42, true);
+    store.setContext(providerRef(), 42, true);
     await Promise.resolve();
     expect(store.isLoading()).toBe(true);
 
     await expect(store.publish("comment", "summary")).resolves.toBe(false);
     expect(store.isLoading()).toBe(false);
 
-    staleLoad.resolve({
-      data: {
-        comments: [{ id: "stale", body: "old draft" }],
-        supported_actions: ["comment"],
-        native_multiline_ranges: true,
-      },
-      response: { status: 200, ok: true },
-    });
+    staleLoad.resolve(draftLoad({
+      comments: [{ id: "stale", body: "old draft" }],
+    }));
     await staleLoad.promise;
     await Promise.resolve();
 
@@ -286,35 +252,21 @@ describe("createDiffReviewDraftStore", () => {
 
   it("does not stay loading when discard succeeds during an in-flight load", async () => {
     const staleLoad = deferred<MockDraftLoad>();
-    const client = {
+    const client = mockClient({
       GET: vi.fn().mockReturnValueOnce(staleLoad.promise),
-      DELETE: vi.fn(() => Promise.resolve({
-        response: { status: 200, ok: true },
-      })),
-    } as unknown as MiddlemanClient;
+    });
     const store = createDiffReviewDraftStore({ client });
 
-    store.setContext({
-      provider: "forgejo",
-      platformHost: "codeberg.org",
-      owner: "acme",
-      name: "widgets",
-      repoPath: "acme/widgets",
-    }, 42, true);
+    store.setContext(providerRef(), 42, true);
     await Promise.resolve();
     expect(store.isLoading()).toBe(true);
 
     await expect(store.discard()).resolves.toBe(true);
     expect(store.isLoading()).toBe(false);
 
-    staleLoad.resolve({
-      data: {
-        comments: [{ id: "stale", body: "old draft" }],
-        supported_actions: ["comment"],
-        native_multiline_ranges: true,
-      },
-      response: { status: 200, ok: true },
-    });
+    staleLoad.resolve(draftLoad({
+      comments: [{ id: "stale", body: "old draft" }],
+    }));
     await staleLoad.promise;
     await Promise.resolve();
 

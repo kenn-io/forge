@@ -151,24 +151,14 @@ export function createEventsStore(opts: EventsStoreOptions = {}) {
       opts.onDataChanged?.();
     });
     source.addEventListener("sync_status", (ev) => {
-      try {
-        const status = JSON.parse(
-          (ev as MessageEvent).data,
-        ) as SyncStatus;
-        opts.onSyncStatus?.(status);
-      } catch {
-        // ignore malformed frames
-      }
+      const payload = decodeEventPayload(ev);
+      if (payload === undefined) return;
+      opts.onSyncStatus?.(payload as SyncStatus);
     });
     source.addEventListener("config.changed", (ev) => {
-      try {
-        const event = JSON.parse(
-          (ev as MessageEvent).data,
-        ) as ConfigChangedEvent;
-        opts.onConfigChanged?.(event);
-      } catch {
-        // ignore malformed frames
-      }
+      const payload = decodeEventPayload(ev);
+      if (payload === undefined) return;
+      opts.onConfigChanged?.(payload as ConfigChangedEvent);
     });
     source.addEventListener("reconnect.stale", () => {
       opts.onReconnectStale?.();
@@ -226,12 +216,19 @@ function addJSONListener<T>(
 ): void {
   source.addEventListener(eventName, (ev) => {
     if (!callback) return;
-    try {
-      callback(JSON.parse((ev as MessageEvent).data) as T);
-    } catch {
-      // ignore malformed frames
-    }
+    const payload = decodeEventPayload(ev);
+    if (payload === undefined) return;
+    callback(payload as T);
   });
+}
+
+function decodeEventPayload(ev: Event): unknown | undefined {
+  try {
+    return JSON.parse((ev as MessageEvent).data) as unknown;
+  } catch {
+    // ignore malformed frames
+    return undefined;
+  }
 }
 
 export type EventsStore = ReturnType<typeof createEventsStore>;

@@ -59,6 +59,10 @@ func withMRState(state MergeRequestState) testMROpt {
 	return func(mr *MergeRequest) { mr.State = state }
 }
 
+func withMRAuthor(author string) testMROpt {
+	return func(mr *MergeRequest) { mr.Author = author }
+}
+
 func insertTestMRWithOptions(t *testing.T, d *DB, mr *MergeRequest) int64 {
 	t.Helper()
 	id, err := d.UpsertMergeRequest(t.Context(), mr)
@@ -103,6 +107,10 @@ func withIssueActivity(activity time.Time) testIssueOpt {
 		issue.UpdatedAt = activity
 		issue.LastActivityAt = activity
 	}
+}
+
+func withIssueAuthor(author string) testIssueOpt {
+	return func(issue *Issue) { issue.Author = author }
 }
 
 func insertTestIssueWithOptions(t *testing.T, d *DB, issue *Issue) int64 {

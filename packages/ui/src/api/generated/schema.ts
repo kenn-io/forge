@@ -2020,6 +2020,7 @@ export interface components {
             created_at: string;
             cursor: string;
             id: string;
+            item_author?: string;
             /** Format: int64 */
             item_number: number;
             item_state: string;

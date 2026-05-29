@@ -19,6 +19,7 @@ function itemEvent(args: {
   authorName: string;
   createdAt: string;
   title: string;
+  itemAuthor?: string;
 }) {
   return {
     id: args.id,
@@ -26,6 +27,8 @@ function itemEvent(args: {
     activity_type: args.type,
     author: args.author,
     author_name: args.authorName,
+    // The backend carries the parent PR/issue author on every row.
+    item_author: args.itemAuthor ?? args.author,
     body_preview: "",
     created_at: args.createdAt,
     item_number: args.number,
@@ -124,13 +127,13 @@ async function mockActivity(page: Page, items: unknown[]): Promise<void> {
 }
 
 test.describe("threaded activity columns", () => {
-  test("item row author column shows the latest event author, not the earliest", async ({
+  test("item row author column shows the PR author, not the latest actor", async ({
     page,
   }) => {
     await mockSettings(page);
-    // Two events on the same PR: an older opening event by "alice" and a
-    // newer review by "bob". The threaded row should attribute the activity
-    // to the most recent contributor.
+    // Two events on the same PR opened by "alice": her opening event and a
+    // newer review by "bob". The threaded row attributes the item to its
+    // author (alice), not the most recent actor (bob).
     await mockActivity(page, [
       itemEvent({
         id: "evt-new",
@@ -138,6 +141,7 @@ test.describe("threaded activity columns", () => {
         type: "review",
         author: "bob",
         authorName: "Bob Reviewer",
+        itemAuthor: "alice",
         createdAt: "2026-04-27T13:00:00Z",
         title: "Add browser regression coverage",
       }),
@@ -147,6 +151,7 @@ test.describe("threaded activity columns", () => {
         type: "new_pr",
         author: "alice",
         authorName: "Alice Author",
+        itemAuthor: "alice",
         createdAt: "2026-04-27T12:00:00Z",
         title: "Add browser regression coverage",
       }),
@@ -158,7 +163,7 @@ test.describe("threaded activity columns", () => {
       .first();
     await expect(row).toBeVisible();
     const authorCell = row.locator(".cell--author");
-    await expect(authorCell).toHaveText("Bob Reviewer");
+    await expect(authorCell).toHaveText("alice");
   });
 
   test("branch commit row shows the commit author in the author column", async ({

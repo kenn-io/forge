@@ -77,7 +77,7 @@
     repoPath: string;
     platformHost: string;
     latestTime: string;
-    latestAuthor: string;
+    itemAuthor: string;
     events: ActivityItem[];
     displayEvents: ReturnType<
       typeof collapseActivityRuns
@@ -171,7 +171,7 @@
           repoPath: first.repo.repo_path,
           platformHost: first.repo.platform_host,
           latestTime: first.created_at,
-          latestAuthor: eventAuthor(first),
+          itemAuthor: itemAuthor(first),
           events,
           displayEvents: collapseActivityRuns(events),
         },
@@ -426,6 +426,13 @@
     return event.author_name || event.author;
   }
 
+  // The item row attributes the thread to the PR/issue author (carried on
+  // every row as item_author), not the latest actor. Falls back to the
+  // event actor only when item_author is absent (older cached rows).
+  function itemAuthor(event: ActivityItem): string {
+    return event.item_author || eventAuthor(event);
+  }
+
   function repoLabel(owner: string, name: string): string {
     return grouping.getHideOrgName() ? name : `${owner}/${name}`;
   }
@@ -607,7 +614,7 @@
               </Chip>
             </span>
           {/if}
-          <span class="cell cell--author">{itemGroup.latestAuthor}</span>
+          <span class="cell cell--author">{itemGroup.itemAuthor}</span>
           <span class="cell cell--title">
             {#if itemGroup.itemState === "merged"}
               <ItemStateChip state="merged" />

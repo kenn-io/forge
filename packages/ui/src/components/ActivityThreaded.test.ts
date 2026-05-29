@@ -233,7 +233,7 @@ describe("ActivityThreaded collapse", () => {
     ).not.toBeNull();
   });
 
-  it("shows the latest event author on the item row", () => {
+  it("shows the PR author on the item row, not the latest actor", () => {
     const { container } = render(ActivityThreaded, {
       props: {
         items: [
@@ -241,11 +241,13 @@ describe("ActivityThreaded collapse", () => {
             created_at: "2026-04-27T13:00:00Z",
             author: "bob",
             author_name: "Bob Example",
+            item_author: "prauthor",
           }),
           activityItem("c-early", {
             created_at: "2026-04-27T12:00:00Z",
             author: "alice",
             author_name: "Alice Example",
+            item_author: "prauthor",
           }),
         ],
         onSelectItem: undefined,
@@ -255,7 +257,13 @@ describe("ActivityThreaded collapse", () => {
     const row = container.querySelector(".item-row:not(.branch-activity-row)");
     expect(row).not.toBeNull();
     const authorCell = row?.querySelector(".cell--author");
-    expect(authorCell?.textContent?.trim()).toBe("Bob Example");
+    expect(authorCell?.textContent?.trim()).toBe("prauthor");
+
+    // Expanded event rows still attribute each event to its own actor.
+    const eventAuthors = Array.from(
+      container.querySelectorAll(".event-row .event-author"),
+    ).map((el) => el.textContent?.trim());
+    expect(eventAuthors).toEqual(["Bob Example", "Alice Example"]);
   });
 
   it("shows the commit author on branch rows", () => {

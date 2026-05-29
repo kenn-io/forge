@@ -3211,6 +3211,7 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 			ItemURL:      it.ItemURL,
 			ItemState:    it.ItemState,
 			Author:       it.Author,
+			ItemAuthor:   it.ItemAuthor,
 			CreatedAt:    formatUTCRFC3339(it.CreatedAt),
 			BodyPreview:  it.BodyPreview,
 		}

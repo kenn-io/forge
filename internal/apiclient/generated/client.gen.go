@@ -289,6 +289,7 @@ type ActivityItemResponse struct {
 	CreatedAt      string          `json:"created_at"`
 	Cursor         string          `json:"cursor"`
 	Id             string          `json:"id"`
+	ItemAuthor     *string         `json:"item_author,omitempty"`
 	ItemNumber     int64           `json:"item_number"`
 	ItemState      string          `json:"item_state"`
 	ItemTitle      string          `json:"item_title"`

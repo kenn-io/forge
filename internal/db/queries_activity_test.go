@@ -565,6 +565,77 @@ func insertOversizedBranchCommitRow(
 	return err
 }
 
+func TestListActivityItemAuthor(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	base := baseTime()
+
+	repoID := insertTestRepo(t, d, "alice", "alpha")
+	prID := insertTestMRWithOptions(t, d, testMR(repoID, 1,
+		withMRTitle("Fix bug"), withMRActivity(base),
+		withMRAuthor("pr-author")))
+	issueID := insertTestIssueWithOptions(t, d, testIssue(repoID, 10,
+		withIssueTitle("Crash on startup"),
+		withIssueActivity(base.Add(time.Minute)),
+		withIssueAuthor("issue-author")))
+
+	require.NoError(d.UpsertMREvents(ctx, []MREvent{{
+		MergeRequestID: prID,
+		EventType:      "issue_comment",
+		Author:         "pr-commenter",
+		Body:           "looks good",
+		CreatedAt:      base.Add(2 * time.Minute),
+		DedupeKey:      "pr-comment-1",
+	}}))
+	require.NoError(d.UpsertIssueEvents(ctx, []IssueEvent{{
+		IssueID:   issueID,
+		EventType: "issue_comment",
+		Author:    "issue-commenter",
+		Body:      "me too",
+		CreatedAt: base.Add(3 * time.Minute),
+		DedupeKey: "issue-comment-1",
+	}}))
+	require.NoError(d.UpsertBranchCommits(ctx, []BranchCommit{
+		testBranchCommit(repoID, "main",
+			"1111111111111111111111111111111111111111",
+			"branch commit", base.Add(4*time.Minute)),
+	}))
+
+	items, err := d.ListActivity(ctx, ListActivityOpts{Limit: 50})
+	require.NoError(err)
+
+	// Source uniquely identifies each seeded row: pr=new_pr, issue=new_issue,
+	// pre=PR event, ise=issue event, bc=branch commit.
+	bySource := make(map[string]ActivityItem, len(items))
+	for _, it := range items {
+		bySource[it.Source] = it
+	}
+
+	prComment := bySource["pre"]
+	assert.Equal("comment", prComment.ActivityType)
+	assert.Equal("pr-commenter", prComment.Author)
+	assert.Equal("pr-author", prComment.ItemAuthor)
+
+	newPR := bySource["pr"]
+	assert.Equal("new_pr", newPR.ActivityType)
+	assert.Equal("pr-author", newPR.ItemAuthor)
+
+	issueComment := bySource["ise"]
+	assert.Equal("comment", issueComment.ActivityType)
+	assert.Equal("issue-commenter", issueComment.Author)
+	assert.Equal("issue-author", issueComment.ItemAuthor)
+
+	newIssue := bySource["issue"]
+	assert.Equal("new_issue", newIssue.ActivityType)
+	assert.Equal("issue-author", newIssue.ItemAuthor)
+
+	branchCommit := bySource["bc"]
+	assert.Equal("default_branch_commit", branchCommit.ActivityType)
+	assert.Empty(branchCommit.ItemAuthor)
+}
+
 func testBranchCommit(
 	repoID int64,
 	branch string,

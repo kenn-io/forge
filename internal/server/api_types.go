@@ -472,6 +472,7 @@ type activityItemResponse struct {
 	ItemURL        string          `json:"item_url"`
 	ItemState      string          `json:"item_state"`
 	Author         string          `json:"author"`
+	ItemAuthor     string          `json:"item_author,omitempty"`
 	CreatedAt      string          `json:"created_at"`
 	BodyPreview    string          `json:"body_preview"`
 	BranchName     string          `json:"branch_name,omitempty"`

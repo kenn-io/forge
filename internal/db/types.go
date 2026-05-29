@@ -452,19 +452,24 @@ type RateLimit struct {
 
 // ActivityItem represents one row in the unified activity feed.
 type ActivityItem struct {
-	ActivityType   string // new_pr, new_issue, comment, review, commit, default_branch_*
-	Source         string // pr, issue, pre, ise, bc, bfp
-	SourceID       int64  // PK from the source table
-	Platform       string
-	PlatformHost   string
-	RepoOwner      string
-	RepoName       string
-	ItemType       string // pr, issue, or empty for repo-level activity
-	ItemNumber     int
-	ItemTitle      string
-	ItemURL        string
-	ItemState      string // open, merged, closed
-	Author         string
+	ActivityType string // new_pr, new_issue, comment, review, commit, default_branch_*
+	Source       string // pr, issue, pre, ise, bc, bfp
+	SourceID     int64  // PK from the source table
+	Platform     string
+	PlatformHost string
+	RepoOwner    string
+	RepoName     string
+	ItemType     string // pr, issue, or empty for repo-level activity
+	ItemNumber   int
+	ItemTitle    string
+	ItemURL      string
+	ItemState    string // open, merged, closed
+	Author       string
+	// ItemAuthor is the author of the parent PR/issue, carried on every
+	// PR/issue row (open, comment, review, commit, force_push) so the
+	// threaded feed can show the item's author rather than the latest
+	// actor. Empty for repo-level rows (branch commits/force pushes).
+	ItemAuthor     string
 	CreatedAt      time.Time
 	BodyPreview    string
 	BranchName     string

@@ -14840,6 +14840,50 @@ func TestAPIActivityReturnsUTCCreatedAt(t *testing.T) {
 	assert.Equal("comment", commentItem.ActivityType)
 }
 
+func TestAPIActivityCommentCarriesPRAuthor(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	srv, database := setupTestServer(t)
+	client := setupTestClient(t, srv)
+	prID := seedPR(t, database, "acme", "widget", 1)
+	ctx := t.Context()
+
+	commentedAt := time.Now().UTC().Add(-30 * time.Minute).Round(time.Second)
+	require.NoError(database.UpsertMREvents(ctx, []db.MREvent{{
+		MergeRequestID: prID,
+		EventType:      "issue_comment",
+		Author:         "pr-reviewer",
+		Body:           "looks good",
+		CreatedAt:      commentedAt,
+		DedupeKey:      "comment-item-author",
+	}}))
+
+	since := commentedAt.Add(-time.Hour).Format(time.RFC3339)
+	resp, err := client.HTTP.ListActivityWithResponse(
+		ctx, &generated.ListActivityParams{Since: &since},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.NotNil(resp.JSON200.Items)
+
+	var commentItem *generated.ActivityItemResponse
+	for i := range *resp.JSON200.Items {
+		item := &(*resp.JSON200.Items)[i]
+		if item.ActivityType == "comment" && item.Author == "pr-reviewer" {
+			commentItem = item
+			break
+		}
+	}
+	require.NotNil(commentItem)
+	// The comment row carries the PR author, not the commenter, so the
+	// threaded feed can attribute the item to its real author.
+	require.NotNil(commentItem.ItemAuthor)
+	assert.Equal("testuser", *commentItem.ItemAuthor)
+	assert.Equal("pr-reviewer", commentItem.Author)
+}
+
 func TestAPIActivityStartupRepairsLegacyTimestampStorage(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)

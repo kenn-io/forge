@@ -83,6 +83,8 @@ components:
           type: string
         id:
           type: string
+        item_author:
+          type: string
         item_number:
           format: int64
           type: integer

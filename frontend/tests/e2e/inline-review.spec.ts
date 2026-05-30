@@ -428,6 +428,7 @@ test("adds and publishes an inline draft review comment", async ({ page }) => {
 
   await expect(page.getByText("1 draft comment")).toBeVisible();
   await expect(page.locator(".inline-draft-comment")).toContainText("Please cover this line.");
+  await expect(page.getByRole("button", { name: "Show full comment" })).toHaveCount(0);
   await page.getByRole("button", { name: "Publish review" }).click();
   await expect(page.getByText("1 draft comment")).toBeHidden();
 });
@@ -467,6 +468,7 @@ test("keeps the draft review footer readable for long comments", async ({ page }
   const draftList = page.locator(".draft-list");
   const draftBody = page.locator(".draft-body").first();
   await expect(draftBody).toContainText("so i'd recommend");
+  await expect(page.getByRole("button", { name: "Show full comment" })).toBeVisible();
 
   await expect.poll(
     async () => draftList.evaluate((element) => element.scrollWidth <= element.clientWidth + 1),
@@ -477,6 +479,12 @@ test("keeps the draft review footer readable for long comments", async ({ page }
   const bodyBox = await draftBody.boundingBox();
   expect(bodyBox).not.toBeNull();
   expect(bodyBox!.height).toBeGreaterThan(24);
+
+  await page.getByRole("button", { name: "Show full comment" }).click();
+  await expect(page.getByRole("button", { name: "Show less" })).toBeVisible();
+  const expandedBodyBox = await draftBody.boundingBox();
+  expect(expandedBodyBox).not.toBeNull();
+  expect(expandedBodyBox!.height).toBeGreaterThan(bodyBox!.height);
 });
 
 test("keeps inline composer inside the visible diff pane on long lines", async ({ page }) => {

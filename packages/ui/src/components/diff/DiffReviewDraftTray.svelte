@@ -1,11 +1,11 @@
 <script lang="ts">
   import SendIcon from "@lucide/svelte/icons/send";
   import TrashIcon from "@lucide/svelte/icons/trash-2";
-  import XIcon from "@lucide/svelte/icons/x";
   import { getStores } from "../../context.js";
   import type { DiffReviewDraftComment } from "../../stores/diff-review-draft.svelte.js";
   import ActionButton from "../shared/ActionButton.svelte";
   import SelectDropdown from "../shared/SelectDropdown.svelte";
+  import DiffReviewDraftTrayItem from "./DiffReviewDraftTrayItem.svelte";
 
   interface Props {
     onjump?: ((comment: DiffReviewDraftComment) => void) | undefined;
@@ -71,28 +71,13 @@
     </div>
     <div class="draft-list">
       {#each comments as comment (comment.id)}
-        <div class="draft-item">
-          <div class="draft-content">
-            <button
-              class="draft-jump"
-              type="button"
-              onclick={() => onjump?.(comment)}
-            >
-              {commentLocation(comment)}
-            </button>
-            <p class="draft-body">{comment.body}</p>
-          </div>
-          <ActionButton
-            class="icon-btn"
-            title="Delete draft comment"
-            ariaLabel="Delete draft comment"
-            size="sm"
-            onclick={() => void diffReviewDraft.deleteComment(comment.id)}
-            disabled={submitting}
-          >
-            <XIcon size={13} />
-          </ActionButton>
-        </div>
+        <DiffReviewDraftTrayItem
+          {comment}
+          location={commentLocation(comment)}
+          disabled={submitting}
+          {onjump}
+          ondelete={(id) => void diffReviewDraft.deleteComment(id)}
+        />
       {/each}
     </div>
     <textarea
@@ -162,59 +147,6 @@
     padding-right: 2px;
   }
 
-  .draft-item {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 26px;
-    align-items: start;
-    gap: 10px;
-    min-width: 0;
-    padding: 8px 8px 8px 10px;
-    border: 1px solid var(--border-muted);
-    border-radius: var(--radius-md);
-    background: color-mix(in srgb, var(--bg-inset) 84%, var(--bg-surface));
-  }
-
-  .draft-content {
-    display: grid;
-    gap: 3px;
-    min-width: 0;
-  }
-
-  .draft-body {
-    display: -webkit-box;
-    margin: 0;
-    overflow: hidden;
-    color: var(--text-primary);
-    font-size: var(--font-size-sm);
-    line-height: 1.42;
-    overflow-wrap: anywhere;
-    line-clamp: 2;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-  }
-
-  .draft-jump {
-    display: block;
-    max-width: 100%;
-    padding: 0;
-    border: 0;
-    overflow: hidden;
-    background: transparent;
-    color: var(--text-muted);
-    font-family: var(--font-mono);
-    font-size: var(--font-size-xs);
-    line-height: 1.35;
-    text-align: left;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    cursor: pointer;
-  }
-
-  .draft-jump:hover {
-    color: var(--accent-blue);
-    text-decoration: underline;
-  }
-
   textarea {
     width: 100%;
     min-height: 64px;
@@ -254,13 +186,6 @@
     border-color: var(--accent-blue);
     background: var(--accent-blue);
     color: var(--bg-surface);
-  }
-
-  :global(.icon-btn.action-button) {
-    width: 26px;
-    height: 26px;
-    min-height: 26px;
-    padding: 0;
   }
 
   .tray-error {

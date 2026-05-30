@@ -260,6 +260,48 @@ func TestNormalizeIssueMapsGitLabStates(t *testing.T) {
 	}
 }
 
+func TestNormalizeIssueExtractsAssignees(t *testing.T) {
+	assert := assert.New(t)
+
+	issue := NormalizeIssue(testGitLabRepoRef(), &gitlab.Issue{
+		ID:    2001,
+		IID:   5,
+		Title: "Test issue",
+		State: "opened",
+		Assignees: []*gitlab.IssueAssignee{
+			{Username: "alice"},
+			{Username: "bob"},
+		},
+	})
+
+	assert.Equal([]string{"alice", "bob"}, issue.Assignees)
+}
+
+func TestNormalizeIssueHandlesNilAndEmptyAssignees(t *testing.T) {
+	assert := assert.New(t)
+
+	// Test nil assignee in list
+	issue := NormalizeIssue(testGitLabRepoRef(), &gitlab.Issue{
+		ID:    2001,
+		IID:   5,
+		State: "opened",
+		Assignees: []*gitlab.IssueAssignee{
+			nil,
+			{Username: "alice"},
+			{Username: ""},
+		},
+	})
+	assert.Equal([]string{"alice"}, issue.Assignees)
+
+	// Test empty assignees list
+	issue2 := NormalizeIssue(testGitLabRepoRef(), &gitlab.Issue{
+		ID:    2002,
+		IID:   6,
+		State: "opened",
+	})
+	assert.Empty(issue2.Assignees)
+}
+
 func TestNormalizeNotesKeepsAssignmentSystemNotes(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

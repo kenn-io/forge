@@ -717,6 +717,7 @@ type Issue struct {
 	Title              string     `json:"Title"`
 	URL                string     `json:"URL"`
 	UpdatedAt          time.Time  `json:"UpdatedAt"`
+	Assignees          *[]string  `json:"assignees,omitempty"`
 	Labels             *[]Label   `json:"labels,omitempty"`
 }
 
@@ -773,6 +774,7 @@ type IssueResponse struct {
 	Title              string          `json:"Title"`
 	URL                string          `json:"URL"`
 	UpdatedAt          time.Time       `json:"UpdatedAt"`
+	Assignees          *[]string       `json:"assignees,omitempty"`
 	DetailFetchedAt    *string         `json:"detail_fetched_at,omitempty"`
 	DetailLoaded       bool            `json:"detail_loaded"`
 	Labels             *[]Label        `json:"labels,omitempty"`
@@ -1701,12 +1703,13 @@ type ResolveRepoItemOnHostParamsItemType string
 
 // ListIssuesParams defines parameters for ListIssues.
 type ListIssuesParams struct {
-	Repo    *string `form:"repo,omitempty" json:"repo,omitempty"`
-	State   *string `form:"state,omitempty" json:"state,omitempty"`
-	Starred *bool   `form:"starred,omitempty" json:"starred,omitempty"`
-	Q       *string `form:"q,omitempty" json:"q,omitempty"`
-	Limit   *int64  `form:"limit,omitempty" json:"limit,omitempty"`
-	Offset  *int64  `form:"offset,omitempty" json:"offset,omitempty"`
+	Repo     *string `form:"repo,omitempty" json:"repo,omitempty"`
+	State    *string `form:"state,omitempty" json:"state,omitempty"`
+	Starred  *bool   `form:"starred,omitempty" json:"starred,omitempty"`
+	Q        *string `form:"q,omitempty" json:"q,omitempty"`
+	Assignee *string `form:"assignee,omitempty" json:"assignee,omitempty"`
+	Limit    *int64  `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset   *int64  `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
 // ListPullsParams defines parameters for ListPulls.
@@ -8401,6 +8404,22 @@ func NewListIssuesRequest(server string, params *ListIssuesParams) (*http.Reques
 		if params.Q != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "q", *params.Q, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Assignee != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "assignee", *params.Assignee, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
 				return nil, err
 			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
 				return nil, err

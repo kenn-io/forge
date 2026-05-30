@@ -373,13 +373,15 @@ type Issue struct {
 	Body               string
 	CommentCount       int
 	LabelsJSON         string `json:"-"`
+	AssigneesJSON      string `json:"-"` // JSON array of assignee usernames
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
 	LastActivityAt     time.Time
 	ClosedAt           *time.Time
 	DetailFetchedAt    *time.Time
 	Starred            bool
-	Labels             []Label `json:"labels,omitempty"`
+	Labels             []Label  `json:"labels,omitempty"`
+	Assignees          []string `json:"assignees,omitempty"` // Parsed assignees
 }
 
 type IssueEvent struct {
@@ -415,6 +417,7 @@ type ListIssuesOpts struct {
 	State        string
 	Starred      bool
 	Search       string
+	Assignee     string
 	Limit        int
 	Offset       int
 }

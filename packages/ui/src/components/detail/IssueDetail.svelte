@@ -858,6 +858,10 @@
         <CopyItemNumber kind="issue" number={issue.Number} url={issue.URL} />
         <span class="meta-sep">·</span>
         <span class="meta-item">{issue.Author}</span>
+        {#if issue.assignees && issue.assignees.length > 0}
+          <span class="meta-sep">·</span>
+          <span class="meta-item">Assigned: {issue.assignees.join(", ")}</span>
+        {/if}
         <span class="meta-sep">·</span>
         <span class="meta-item">{timeAgo(issue.CreatedAt)}</span>
         <span class="meta-sep">·</span>

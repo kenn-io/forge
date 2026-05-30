@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -3030,9 +3031,9 @@ func (d *DB) UpsertIssue(ctx context.Context, issue *Issue) (int64, error) {
 	_, err := d.rw.ExecContext(ctx, `
 		INSERT INTO middleman_issues
 		    (repo_id, platform_id, platform_external_id, number, url, title, author, state,
-		     body, comment_count, labels_json, detail_fetched_at,
+		     body, comment_count, labels_json, assignees_json, detail_fetched_at,
 		     created_at, updated_at, last_activity_at, closed_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(NULLIF(?, ''), '[]'), ?, ?, ?, ?, ?)
 		ON CONFLICT(repo_id, number) DO UPDATE SET
 		    platform_id       = excluded.platform_id,
 		    platform_external_id = COALESCE(NULLIF(excluded.platform_external_id, ''), middleman_issues.platform_external_id),
@@ -3043,6 +3044,7 @@ func (d *DB) UpsertIssue(ctx context.Context, issue *Issue) (int64, error) {
 		    body              = excluded.body,
 		    comment_count     = excluded.comment_count,
 		    labels_json       = excluded.labels_json,
+		    assignees_json    = COALESCE(NULLIF(excluded.assignees_json, ''), '[]'),
 		    detail_fetched_at = COALESCE(middleman_issues.detail_fetched_at, excluded.detail_fetched_at),
 		    updated_at        = excluded.updated_at,
 		    last_activity_at  = excluded.last_activity_at,
@@ -3050,7 +3052,7 @@ func (d *DB) UpsertIssue(ctx context.Context, issue *Issue) (int64, error) {
 		WHERE excluded.updated_at >= middleman_issues.updated_at`,
 		issue.RepoID, issue.PlatformID, issue.PlatformExternalID, issue.Number, issue.URL,
 		issue.Title, issue.Author, issue.State,
-		issue.Body, issue.CommentCount, issue.LabelsJSON,
+		issue.Body, issue.CommentCount, issue.LabelsJSON, issue.AssigneesJSON,
 		issue.DetailFetchedAt,
 		issue.CreatedAt, issue.UpdatedAt, issue.LastActivityAt, issue.ClosedAt,
 	)
@@ -3076,7 +3078,7 @@ func (d *DB) GetIssue(
 	var issue Issue
 	err := d.ro.QueryRowContext(ctx, `
 		SELECT i.id, i.repo_id, i.platform_id, i.platform_external_id, i.number, i.url, i.title,
-		       i.author, i.state, i.body, i.comment_count, i.labels_json,
+		       i.author, i.state, i.body, i.comment_count, i.labels_json, i.assignees_json,
 		       i.detail_fetched_at,
 		       i.created_at, i.updated_at, i.last_activity_at, i.closed_at,
 		       (s.number IS NOT NULL) AS starred
@@ -3089,7 +3091,7 @@ func (d *DB) GetIssue(
 	).Scan(
 		&issue.ID, &issue.RepoID, &issue.PlatformID, &issue.PlatformExternalID, &issue.Number,
 		&issue.URL, &issue.Title, &issue.Author, &issue.State,
-		&issue.Body, &issue.CommentCount, &issue.LabelsJSON,
+		&issue.Body, &issue.CommentCount, &issue.LabelsJSON, &issue.AssigneesJSON,
 		&issue.DetailFetchedAt,
 		&issue.CreatedAt, &issue.UpdatedAt, &issue.LastActivityAt,
 		&issue.ClosedAt, &issue.Starred,
@@ -3099,6 +3101,12 @@ func (d *DB) GetIssue(
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get issue: %w", err)
+	}
+	// Parse assignees from JSON. Best-effort: malformed JSON yields an empty
+	// Assignees slice rather than failing the whole read. Writes go through
+	// json.Marshal in UpsertIssue, so corruption is unexpected in practice.
+	if issue.AssigneesJSON != "" && issue.AssigneesJSON != "[]" {
+		_ = json.Unmarshal([]byte(issue.AssigneesJSON), &issue.Assignees)
 	}
 	labelsByIssue, err := d.loadLabelsForIssues(ctx, []int64{issue.ID})
 	if err != nil {
@@ -3113,7 +3121,7 @@ func (d *DB) GetIssueByRepoIDAndNumber(ctx context.Context, repoID int64, number
 	var issue Issue
 	err := d.ro.QueryRowContext(ctx, `
 		SELECT i.id, i.repo_id, i.platform_id, i.platform_external_id, i.number, i.url, i.title,
-		       i.author, i.state, i.body, i.comment_count, i.labels_json,
+		       i.author, i.state, i.body, i.comment_count, i.labels_json, i.assignees_json,
 		       i.detail_fetched_at,
 		       i.created_at, i.updated_at, i.last_activity_at, i.closed_at,
 		       (s.number IS NOT NULL) AS starred
@@ -3125,7 +3133,7 @@ func (d *DB) GetIssueByRepoIDAndNumber(ctx context.Context, repoID int64, number
 	).Scan(
 		&issue.ID, &issue.RepoID, &issue.PlatformID, &issue.PlatformExternalID, &issue.Number,
 		&issue.URL, &issue.Title, &issue.Author, &issue.State,
-		&issue.Body, &issue.CommentCount, &issue.LabelsJSON,
+		&issue.Body, &issue.CommentCount, &issue.LabelsJSON, &issue.AssigneesJSON,
 		&issue.DetailFetchedAt,
 		&issue.CreatedAt, &issue.UpdatedAt, &issue.LastActivityAt,
 		&issue.ClosedAt, &issue.Starred,
@@ -3135,6 +3143,12 @@ func (d *DB) GetIssueByRepoIDAndNumber(ctx context.Context, repoID int64, number
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get issue by repo id: %w", err)
+	}
+	// Parse assignees from JSON. Best-effort: malformed JSON yields an empty
+	// Assignees slice rather than failing the whole read. Writes go through
+	// json.Marshal in UpsertIssue, so corruption is unexpected in practice.
+	if issue.AssigneesJSON != "" && issue.AssigneesJSON != "[]" {
+		_ = json.Unmarshal([]byte(issue.AssigneesJSON), &issue.Assignees)
 	}
 	labelsByIssue, err := d.loadLabelsForIssues(ctx, []int64{issue.ID})
 	if err != nil {
@@ -3192,6 +3206,14 @@ func (d *DB) ListIssues(
 		conds = append(conds, cond)
 		args = append(args, condArgs...)
 	}
+	if opts.Assignee != "" {
+		// Query JSON array structurally to avoid LIKE wildcard injection.
+		// COALESCE/NULLIF guards against legacy rows where assignees_json
+		// may be an empty string, which would otherwise make json_each
+		// raise "malformed JSON" and fail the whole query.
+		conds = append(conds, `EXISTS (SELECT 1 FROM json_each(COALESCE(NULLIF(i.assignees_json, ''), '[]')) WHERE value = ?)`)
+		args = append(args, opts.Assignee)
+	}
 
 	where := ""
 	if len(conds) > 0 {
@@ -3200,7 +3222,7 @@ func (d *DB) ListIssues(
 
 	query := fmt.Sprintf(`
 		SELECT i.id, i.repo_id, i.platform_id, i.platform_external_id, i.number, i.url, i.title,
-		       i.author, i.state, i.body, i.comment_count, i.labels_json,
+		       i.author, i.state, i.body, i.comment_count, i.labels_json, i.assignees_json,
 		       i.detail_fetched_at,
 		       i.created_at, i.updated_at, i.last_activity_at, i.closed_at,
 		       (s.number IS NOT NULL) AS starred
@@ -3225,12 +3247,18 @@ func (d *DB) ListIssues(
 		if err := rows.Scan(
 			&issue.ID, &issue.RepoID, &issue.PlatformID, &issue.PlatformExternalID, &issue.Number,
 			&issue.URL, &issue.Title, &issue.Author, &issue.State,
-			&issue.Body, &issue.CommentCount, &issue.LabelsJSON,
+			&issue.Body, &issue.CommentCount, &issue.LabelsJSON, &issue.AssigneesJSON,
 			&issue.DetailFetchedAt,
 			&issue.CreatedAt, &issue.UpdatedAt, &issue.LastActivityAt,
 			&issue.ClosedAt, &issue.Starred,
 		); err != nil {
 			return nil, fmt.Errorf("scan issue: %w", err)
+		}
+		// Parse assignees from JSON. Best-effort: malformed JSON yields an empty
+		// Assignees slice rather than failing the whole read. Writes go through
+		// json.Marshal in UpsertIssue, so corruption is unexpected in practice.
+		if issue.AssigneesJSON != "" && issue.AssigneesJSON != "[]" {
+			_ = json.Unmarshal([]byte(issue.AssigneesJSON), &issue.Assignees)
 		}
 		issues = append(issues, issue)
 		issueIDs = append(issueIDs, issue.ID)

@@ -80,11 +80,23 @@ func convertIssue(issue *giteasdk.Issue) gitealike.IssueDTO {
 		Body:          issue.Body,
 		Comments:      issue.Comments,
 		Labels:        convertLabels(issue.Labels),
+		Assignees:     convertUsers(issue.Assignees),
 		Created:       issue.Created,
 		Updated:       issue.Updated,
 		Closed:        timePtrValue(issue.Closed),
 		IsPullRequest: issue.PullRequest != nil,
 	}
+}
+
+func convertUsers(users []*giteasdk.User) []gitealike.UserDTO {
+	out := make([]gitealike.UserDTO, 0, len(users))
+	for _, u := range users {
+		if u == nil {
+			continue
+		}
+		out = append(out, convertUser(u))
+	}
+	return out
 }
 
 func convertComment(comment *giteasdk.Comment) gitealike.CommentDTO {

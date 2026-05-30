@@ -217,6 +217,66 @@ func TestAPIListIssuesStateFilter(t *testing.T) {
 	require.Len(*resp.JSON200, 2)
 }
 
+func TestAPIListIssuesFilterByAssignee(t *testing.T) {
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	ctx := t.Context()
+
+	seedIssueWithAssignees(t, database, "acme", "widget", 1, "open", `["alice"]`)
+	seedIssueWithAssignees(t, database, "acme", "widget", 2, "open", `["bob"]`)
+
+	client := setupTestClient(t, srv)
+
+	assignee := "alice"
+	state := "all"
+	resp, err := client.HTTP.ListIssuesWithResponse(ctx, &generated.ListIssuesParams{
+		Assignee: &assignee,
+		State:    &state,
+	})
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.Len(*resp.JSON200, 1)
+	require.EqualValues(1, (*resp.JSON200)[0].Number)
+}
+
+func TestAPIListIssuesResponseIncludesAssignees(t *testing.T) {
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	ctx := t.Context()
+
+	seedIssueWithAssignees(t, database, "acme", "widget", 1, "open", `["alice","bob"]`)
+
+	client := setupTestClient(t, srv)
+
+	state := "all"
+	resp, err := client.HTTP.ListIssuesWithResponse(ctx, &generated.ListIssuesParams{
+		State: &state,
+	})
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.Len(*resp.JSON200, 1)
+	require.NotNil((*resp.JSON200)[0].Assignees)
+	require.Equal([]string{"alice", "bob"}, *(*resp.JSON200)[0].Assignees)
+}
+
+func TestAPIGetIssueIncludesAssignees(t *testing.T) {
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	seedIssueWithAssignees(t, database, "acme", "widget", 7, "open", `["alice","bob"]`)
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.GetIssueWithResponse(
+		t.Context(), "gh", "acme", "widget", 7,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.NotNil(resp.JSON200.Issue.Assignees)
+	require.Equal([]string{"alice", "bob"}, *resp.JSON200.Issue.Assignees)
+}
+
 func TestAPIGetIssueIncludesLabels(t *testing.T) {
 	require := require.New(t)
 	srv, database := setupTestServer(t)

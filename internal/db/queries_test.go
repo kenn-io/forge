@@ -4628,3 +4628,251 @@ func TestHTTPEtagPersistence(t *testing.T) {
 	assert.NoError(err)
 	assert.Equal(`"etag-v2"`, etag)
 }
+
+func TestUpsertIssue_StoresAssignees(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := baseTime()
+	repoID := insertTestRepo(t, d, "owner", "repo")
+
+	issue := &Issue{
+		RepoID:         repoID,
+		PlatformID:     123,
+		Number:         42,
+		URL:            "https://github.com/owner/repo/issues/42",
+		Title:          "Test issue",
+		Author:         "author",
+		State:          "open",
+		AssigneesJSON:  `["alice","bob"]`,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		LastActivityAt: now,
+	}
+
+	_, err := d.UpsertIssue(ctx, issue)
+	require.NoError(err)
+
+	// Verify stored value
+	var stored string
+	err = d.ReadDB().QueryRowContext(ctx,
+		`SELECT assignees_json FROM middleman_issues WHERE repo_id = ? AND number = ?`,
+		repoID, 42,
+	).Scan(&stored)
+	require.NoError(err)
+	assert.JSONEq(`["alice","bob"]`, stored)
+}
+
+func TestListIssues_FilterByAssignee(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := baseTime()
+	repoID := insertTestRepo(t, d, "owner", "repo")
+
+	// Issue assigned to alice
+	_, err := d.UpsertIssue(ctx, &Issue{
+		RepoID:         repoID,
+		PlatformID:     1,
+		Number:         1,
+		URL:            "https://github.com/owner/repo/issues/1",
+		Title:          "Issue 1",
+		Author:         "author",
+		State:          "open",
+		AssigneesJSON:  `["alice"]`,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		LastActivityAt: now,
+	})
+	require.NoError(err)
+
+	// Issue assigned to bob
+	_, err = d.UpsertIssue(ctx, &Issue{
+		RepoID:         repoID,
+		PlatformID:     2,
+		Number:         2,
+		URL:            "https://github.com/owner/repo/issues/2",
+		Title:          "Issue 2",
+		Author:         "author",
+		State:          "open",
+		AssigneesJSON:  `["bob"]`,
+		CreatedAt:      now,
+		UpdatedAt:      now.Add(time.Minute),
+		LastActivityAt: now.Add(time.Minute),
+	})
+	require.NoError(err)
+
+	// Issue assigned to both
+	_, err = d.UpsertIssue(ctx, &Issue{
+		RepoID:         repoID,
+		PlatformID:     3,
+		Number:         3,
+		URL:            "https://github.com/owner/repo/issues/3",
+		Title:          "Issue 3",
+		Author:         "author",
+		State:          "open",
+		AssigneesJSON:  `["alice","bob"]`,
+		CreatedAt:      now,
+		UpdatedAt:      now.Add(2 * time.Minute),
+		LastActivityAt: now.Add(2 * time.Minute),
+	})
+	require.NoError(err)
+
+	// Filter by alice
+	issues, err := d.ListIssues(ctx, ListIssuesOpts{Assignee: "alice", State: "all"})
+	require.NoError(err)
+	assert.Len(issues, 2)
+	numbers := []int{issues[0].Number, issues[1].Number}
+	assert.ElementsMatch([]int{1, 3}, numbers)
+
+	// Filter by bob
+	issues, err = d.ListIssues(ctx, ListIssuesOpts{Assignee: "bob", State: "all"})
+	require.NoError(err)
+	assert.Len(issues, 2)
+	numbers = []int{issues[0].Number, issues[1].Number}
+	assert.ElementsMatch([]int{2, 3}, numbers)
+}
+
+func TestListIssues_PopulatesAssignees(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := baseTime()
+	repoID := insertTestRepo(t, d, "owner", "repo")
+
+	_, err := d.UpsertIssue(ctx, &Issue{
+		RepoID:         repoID,
+		PlatformID:     1,
+		Number:         1,
+		URL:            "https://github.com/owner/repo/issues/1",
+		Title:          "Issue 1",
+		Author:         "author",
+		State:          "open",
+		AssigneesJSON:  `["alice","bob"]`,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		LastActivityAt: now,
+	})
+	require.NoError(err)
+
+	issues, err := d.ListIssues(ctx, ListIssuesOpts{State: "all"})
+	require.NoError(err)
+	require.Len(issues, 1)
+	require.Equal([]string{"alice", "bob"}, issues[0].Assignees)
+}
+
+// TestUpsertIssue_NormalizesEmptyAssigneesJSON verifies that an empty
+// AssigneesJSON (Go zero value) is stored as '[]' rather than '', so that
+// json_each-based filters (e.g. ListIssues with Assignee) don't choke on
+// malformed JSON. Repro for roborev finding on commit 2b9ca4d.
+func TestUpsertIssue_NormalizesEmptyAssigneesJSON(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := baseTime()
+	repoID := insertTestRepo(t, d, "owner", "repo")
+
+	// Insert with empty AssigneesJSON to simulate paths that don't set it.
+	_, err := d.UpsertIssue(ctx, &Issue{
+		RepoID:         repoID,
+		PlatformID:     1,
+		Number:         1,
+		URL:            "https://github.com/owner/repo/issues/1",
+		Title:          "Issue 1",
+		Author:         "author",
+		State:          "open",
+		AssigneesJSON:  "",
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		LastActivityAt: now,
+	})
+	require.NoError(err)
+
+	var stored string
+	err = d.ReadDB().QueryRowContext(ctx,
+		`SELECT assignees_json FROM middleman_issues WHERE repo_id = ? AND number = ?`,
+		repoID, 1,
+	).Scan(&stored)
+	require.NoError(err)
+	assert.Equal("[]", stored)
+
+	// Re-upsert with empty value should also remain valid JSON, not "".
+	_, err = d.UpsertIssue(ctx, &Issue{
+		RepoID:         repoID,
+		PlatformID:     1,
+		Number:         1,
+		URL:            "https://github.com/owner/repo/issues/1",
+		Title:          "Issue 1 updated",
+		Author:         "author",
+		State:          "open",
+		AssigneesJSON:  "",
+		CreatedAt:      now,
+		UpdatedAt:      now.Add(time.Minute),
+		LastActivityAt: now.Add(time.Minute),
+	})
+	require.NoError(err)
+	err = d.ReadDB().QueryRowContext(ctx,
+		`SELECT assignees_json FROM middleman_issues WHERE repo_id = ? AND number = ?`,
+		repoID, 1,
+	).Scan(&stored)
+	require.NoError(err)
+	assert.Equal("[]", stored)
+
+	// Filtering should still work and return no rows for any assignee
+	// without raising "malformed JSON".
+	issues, err := d.ListIssues(ctx, ListIssuesOpts{Assignee: "anyone", State: "all"})
+	require.NoError(err)
+	assert.Empty(issues)
+}
+
+// TestListIssues_FilterByAssigneeToleratesLegacyEmptyJSON simulates rows that
+// were written before the empty-string normalization was added (e.g. by a
+// downgrade-then-upgrade path). The filter must not 500 on json_each over an
+// empty string.
+func TestListIssues_FilterByAssigneeToleratesLegacyEmptyJSON(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := baseTime()
+	repoID := insertTestRepo(t, d, "owner", "repo")
+
+	// Bypass UpsertIssue and write a literal empty string directly.
+	_, err := d.WriteDB().ExecContext(ctx, `
+		INSERT INTO middleman_issues
+		    (repo_id, platform_id, platform_external_id, number, url, title, author, state,
+		     body, comment_count, labels_json, assignees_json,
+		     created_at, updated_at, last_activity_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		repoID, 1, "", 1,
+		"https://github.com/owner/repo/issues/1",
+		"Issue 1", "author", "open",
+		"", 0, "[]", "",
+		now, now, now,
+	)
+	require.NoError(err)
+
+	// The well-formed row alongside it.
+	_, err = d.UpsertIssue(ctx, &Issue{
+		RepoID:         repoID,
+		PlatformID:     2,
+		Number:         2,
+		URL:            "https://github.com/owner/repo/issues/2",
+		Title:          "Issue 2",
+		Author:         "author",
+		State:          "open",
+		AssigneesJSON:  `["alice"]`,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		LastActivityAt: now,
+	})
+	require.NoError(err)
+
+	issues, err := d.ListIssues(ctx, ListIssuesOpts{Assignee: "alice", State: "all"})
+	require.NoError(err)
+	require.Len(issues, 1)
+	assert.Equal(2, issues[0].Number)
+}

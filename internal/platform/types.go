@@ -114,6 +114,7 @@ type Issue struct {
 	LastActivityAt     time.Time
 	ClosedAt           *time.Time
 	Labels             []Label
+	Assignees          []string
 }
 
 type Label struct {

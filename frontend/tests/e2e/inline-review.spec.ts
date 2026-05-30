@@ -432,6 +432,53 @@ test("adds and publishes an inline draft review comment", async ({ page }) => {
   await expect(page.getByText("1 draft comment")).toBeHidden();
 });
 
+test("keeps the draft review footer readable for long comments", async ({ page }) => {
+  await page.setViewportSize({ width: 1000, height: 720 });
+  const longDraftBody = [
+    "so i'd recommend we use huma for this similar to what we do in middleman,",
+    "that generally means we can generate a nice typed client which makes more of the frontend safer",
+  ].join(" ");
+  await mockInlineReviewAPI(
+    page,
+    baseCapabilities,
+    "github",
+    "github.com",
+    diffResponse,
+    undefined,
+    {
+      initialDraftComments: [{
+        id: "draft-1",
+        body: longDraftBody,
+        path: "internal/server/server.go",
+        side: "right",
+        line: 1,
+        new_line: 1,
+        line_type: "add",
+        diff_head_sha: "diff-head",
+        created_at: "2026-03-30T14:01:00Z",
+        updated_at: "2026-03-30T14:01:00Z",
+      }],
+    },
+  );
+
+  await page.goto("/pulls/github/acme/widgets/42/files");
+  await expect(page.getByText("1 draft comment")).toBeVisible();
+
+  const draftList = page.locator(".draft-list");
+  const draftBody = page.locator(".draft-body").first();
+  await expect(draftBody).toContainText("so i'd recommend");
+
+  await expect.poll(
+    async () => draftList.evaluate((element) => element.scrollWidth <= element.clientWidth + 1),
+  ).toBe(true);
+  await expect.poll(
+    async () => draftBody.evaluate((element) => getComputedStyle(element).whiteSpace),
+  ).not.toBe("nowrap");
+  const bodyBox = await draftBody.boundingBox();
+  expect(bodyBox).not.toBeNull();
+  expect(bodyBox!.height).toBeGreaterThan(24);
+});
+
 test("keeps inline composer inside the visible diff pane on long lines", async ({ page }) => {
   await page.setViewportSize({ width: 900, height: 720 });
   await page.addInitScript(() => {

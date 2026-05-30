@@ -72,7 +72,7 @@
     <div class="draft-list">
       {#each comments as comment (comment.id)}
         <div class="draft-item">
-          <div class="draft-meta">
+          <div class="draft-content">
             <button
               class="draft-jump"
               type="button"
@@ -80,8 +80,8 @@
             >
               {commentLocation(comment)}
             </button>
+            <p class="draft-body">{comment.body}</p>
           </div>
-          <p>{comment.body}</p>
           <ActionButton
             class="icon-btn"
             title="Delete draft comment"
@@ -140,8 +140,7 @@
   }
 
   .tray-header,
-  .publish-row,
-  .draft-item {
+  .publish-row {
     display: flex;
     align-items: center;
     gap: 8px;
@@ -155,46 +154,56 @@
 
   .draft-list {
     display: grid;
-    gap: 6px;
-    max-height: 160px;
-    overflow: auto;
+    gap: 8px;
+    max-height: 188px;
+    overflow-x: hidden;
+    overflow-y: auto;
     margin-bottom: 8px;
+    padding-right: 2px;
   }
 
   .draft-item {
-    justify-content: space-between;
-    padding: 6px 8px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 26px;
+    align-items: start;
+    gap: 10px;
+    min-width: 0;
+    padding: 8px 8px 8px 10px;
     border: 1px solid var(--border-muted);
-    border-radius: 4px;
-    background: var(--bg-inset);
+    border-radius: var(--radius-md);
+    background: color-mix(in srgb, var(--bg-inset) 84%, var(--bg-surface));
   }
 
-  .draft-item p {
-    flex: 1;
+  .draft-content {
+    display: grid;
+    gap: 3px;
     min-width: 0;
+  }
+
+  .draft-body {
+    display: -webkit-box;
     margin: 0;
+    overflow: hidden;
     color: var(--text-primary);
     font-size: var(--font-size-sm);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .draft-meta {
-    min-width: 0;
-    color: var(--text-muted);
-    font-family: var(--font-mono);
-    font-size: var(--font-size-xs);
+    line-height: 1.42;
+    overflow-wrap: anywhere;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
   }
 
   .draft-jump {
-    max-width: 28ch;
+    display: block;
+    max-width: 100%;
     padding: 0;
     border: 0;
     overflow: hidden;
     background: transparent;
-    color: inherit;
-    font: inherit;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
+    line-height: 1.35;
     text-align: left;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -208,10 +217,11 @@
 
   textarea {
     width: 100%;
+    min-height: 64px;
     resize: vertical;
     padding: 7px 8px;
     border: 1px solid var(--border-muted);
-    border-radius: 4px;
+    border-radius: var(--radius-md);
     background: var(--bg-inset);
     color: var(--text-primary);
     font: inherit;
@@ -243,7 +253,7 @@
   :global(.publish-btn.action-button) {
     border-color: var(--accent-blue);
     background: var(--accent-blue);
-    color: #fff;
+    color: var(--bg-surface);
   }
 
   :global(.icon-btn.action-button) {
@@ -257,5 +267,20 @@
     margin-top: 6px;
     color: var(--accent-red);
     font-size: var(--font-size-sm);
+  }
+
+  @media (max-width: 680px) {
+    .publish-row {
+      align-items: stretch;
+      flex-wrap: wrap;
+    }
+
+    :global(.review-action-select) {
+      flex: 1 1 150px;
+    }
+
+    :global(.publish-btn.action-button) {
+      flex: 1 1 170px;
+    }
   }
 </style>

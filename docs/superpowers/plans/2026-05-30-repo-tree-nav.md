@@ -738,6 +738,12 @@ dumb presenter: all logic stays in the parent. The checkbox uses a native
 `<input type="checkbox">` with `indeterminate` set for the partial state (the
 deferred-styling note in the spec explicitly allows this technique).
 
+The label honors the spec's filter match-highlighting: when the parent passes
+`segments` (the output of the existing `highlightSegments` helper), the row renders
+`<mark>` runs; with no `segments` it renders the plain label. Keeping the highlight in
+the presenter is what lets Task 7 keep reusing `highlightSegments` instead of
+orphaning it.
+
 - [ ] **Step 1: Write the failing test**
 
 Create `frontend/src/lib/components/RepoTreeNode.test.ts`:
@@ -832,6 +838,29 @@ describe("RepoTreeNode", () => {
     await fireEvent.mouseDown(screen.getByRole("checkbox"));
     expect(onToggleSelect).toHaveBeenCalledOnce();
   });
+
+  it("renders highlighted match segments when given segments", () => {
+    render(RepoTreeNode, {
+      props: {
+        kind: "repo",
+        label: "web-ui",
+        ariaLabel: "github.com/acme/web-ui",
+        depth: 1,
+        hasChildren: false,
+        expanded: false,
+        selectionState: "unchecked",
+        highlighted: false,
+        segments: [
+          { text: "web", match: true },
+          { text: "-ui", match: false },
+        ],
+        onToggleExpand: vi.fn(),
+        onToggleSelect: vi.fn(),
+      },
+    });
+    const mark = document.querySelector("mark");
+    expect(mark?.textContent).toBe("web");
+  });
 });
 ```
 
@@ -849,6 +878,11 @@ Create `frontend/src/lib/components/RepoTreeNode.svelte`:
   import ProviderIcon from "./provider/ProviderIcon.svelte";
   import type { SelectionState } from "./repoTree.js";
 
+  interface LabelSegment {
+    text: string;
+    match: boolean;
+  }
+
   interface Props {
     kind: "host" | "owner" | "repo";
     label: string;
@@ -859,8 +893,10 @@ Create `frontend/src/lib/components/RepoTreeNode.svelte`:
     expanded: boolean;
     selectionState: SelectionState;
     highlighted: boolean;
+    segments?: LabelSegment[];
     onToggleExpand: () => void;
     onToggleSelect: () => void;
+    onHover?: () => void;
   }
 
   let {
@@ -873,8 +909,10 @@ Create `frontend/src/lib/components/RepoTreeNode.svelte`:
     expanded,
     selectionState,
     highlighted,
+    segments,
     onToggleExpand,
     onToggleSelect,
+    onHover,
   }: Props = $props();
 
   let checkboxEl = $state<HTMLInputElement>();
@@ -912,6 +950,7 @@ Create `frontend/src/lib/components/RepoTreeNode.svelte`:
   aria-expanded={hasChildren ? expanded : undefined}
   style:padding-left={`${6 + depth * 14}px`}
   onmousedown={rowMouseDown}
+  onmouseenter={() => onHover?.()}
 >
   {#if hasChildren}
     <button
@@ -948,7 +987,9 @@ Create `frontend/src/lib/components/RepoTreeNode.svelte`:
     <ProviderIcon {provider} size={14} class="repo-tree-logo" />
   {/if}
 
-  <span class="repo-tree-label">{label}</span>
+  <span class="repo-tree-label">
+    {#if segments}{#each segments as seg, segIndex (`${ariaLabel}-${segIndex}-${seg.text}-${seg.match}`)}{#if seg.match}<mark class="match">{seg.text}</mark>{:else}{seg.text}{/if}{/each}{:else}{label}{/if}
+  </span>
 </li>
 
 <style>
@@ -994,7 +1035,7 @@ Create `frontend/src/lib/components/RepoTreeNode.svelte`:
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `cd frontend && bun run test src/lib/components/RepoTreeNode.test.ts`
-Expected: PASS (4 tests).
+Expected: PASS (5 tests).
 
 - [ ] **Step 5: Commit**
 
@@ -1224,6 +1265,12 @@ Note: `row.node.id` for a leaf equals its `value`; `nodeSelectionState(row.node,
 gives the per-row tri-state. `selectedValues` / `selectedSet` / `serializeRepoFilterValue`
 already exist in the component.
 
+Leave the existing `handleKeydown`, `filtered`, and `toggleRepo` in place for now — the
+old `handleKeydown` still references `filtered`/`toggleRepo`, so removing them here would
+break this task's own typecheck. Task 8 replaces `handleKeydown` and removes the dead
+declarations together. After this task, `rows` and `filtered` both exist; that is
+expected and temporary.
+
 - [ ] **Step 4: Replace the flat list markup with tree rows**
 
 In the open-dropdown block, replace the `{#each filtered as option ...}` list (the
@@ -1250,24 +1297,23 @@ In the open-dropdown block, replace the `{#each filtered as option ...}` list (t
     <span>All repos</span>
   </li>
   {#each rows as row, i (row.node.id)}
-    <div
-      role="presentation"
-      onmouseenter={() => (highlightIndex = i + 1)}
-    >
-      <RepoTreeNode
-        kind={row.node.kind}
-        label={row.node.label}
-        ariaLabel={rowAriaLabel(row)}
-        provider={row.node.kind === "host" ? row.node.provider : undefined}
-        depth={row.depth}
-        hasChildren={row.hasChildren}
-        expanded={row.expanded}
-        selectionState={nodeSelectionState(row.node, selectedSet)}
-        highlighted={i + 1 === highlightIndex}
-        onToggleExpand={() => toggleRowExpand(row)}
-        onToggleSelect={() => toggleRowSelect(row)}
-      />
-    </div>
+    <RepoTreeNode
+      kind={row.node.kind}
+      label={row.node.label}
+      ariaLabel={rowAriaLabel(row)}
+      provider={row.node.kind === "host" ? row.node.provider : undefined}
+      depth={row.depth}
+      hasChildren={row.hasChildren}
+      expanded={row.expanded}
+      selectionState={nodeSelectionState(row.node, selectedSet)}
+      highlighted={i + 1 === highlightIndex}
+      segments={query !== "" && row.node.kind === "repo"
+        ? highlightSegments(row.node.label, query)
+        : undefined}
+      onToggleExpand={() => toggleRowExpand(row)}
+      onToggleSelect={() => toggleRowSelect(row)}
+      onHover={() => (highlightIndex = i + 1)}
+    />
   {:else}
     <li class="typeahead-empty">No matching repos</li>
   {/each}
@@ -1447,6 +1493,12 @@ function handleKeydown(e: KeyboardEvent) {
 }
 ```
 
+With this replacement, `filtered` and `toggleRepo` are no longer referenced anywhere.
+Delete both — the `filtered` `$derived.by(...)` block and the `toggleRepo` function —
+so `bun run typecheck` (`svelte-check --fail-on-warnings`) and `bun run lint` stay
+clean. Keep `highlightSegments` (now feeds the leaf `segments` prop from Task 7),
+`handleInput`, `query`, `selectedValues`, and `selectedSet`.
+
 - [ ] **Step 4: Add cheatsheet entries for the new bindings**
 
 In the `registerCheatsheetEntries("repo-typeahead", [...])` array (inside `onMount`),
@@ -1470,10 +1522,10 @@ add two entries after the existing `next`/`prev` entries:
 - [ ] **Step 5: Run the tests to verify they pass**
 
 Run: `cd frontend && bun run test src/lib/components/RepoTypeahead.test.ts`
-Expected: PASS (all RepoTypeahead tests, including the existing cheatsheet test in `RepoTypeahead.svelte.test.ts`).
+Expected: PASS (all RepoTypeahead behavior tests).
 
 Run: `cd frontend && bun run test src/lib/components/RepoTypeahead.svelte.test.ts`
-Expected: PASS.
+Expected: PASS (the separate cheatsheet-registration test file — the two new entries register without disturbing the existing `next`/`prev` assertions).
 
 - [ ] **Step 6: Typecheck**
 

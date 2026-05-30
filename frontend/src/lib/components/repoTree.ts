@@ -93,3 +93,79 @@ export function buildRepoTree(
   }
   return sorted;
 }
+
+export interface VisibleRow {
+  node: RepoTreeNodeData;
+  depth: number;
+  hasChildren: boolean;
+  expanded: boolean;
+}
+
+export interface VisibleRowsOptions {
+  isCollapsed: (id: string) => boolean;
+  query?: string;
+}
+
+export function visibleRows(
+  tree: readonly HostNode[],
+  { isCollapsed, query }: VisibleRowsOptions,
+): VisibleRow[] {
+  const q = query?.trim().toLowerCase() ?? "";
+  const filtering = q !== "";
+  const matches = (leaf: RepoLeaf) =>
+    !filtering || leaf.value.toLowerCase().includes(q);
+
+  // Prune to owners/hosts that still have a matching leaf.
+  const pruned = tree
+    .map((host) => ({
+      ...host,
+      children: host.children
+        .map((owner) => ({
+          ...owner,
+          children: owner.children.filter(matches),
+        }))
+        .filter((owner) => owner.children.length > 0),
+    }))
+    .filter((host) => host.children.length > 0);
+
+  const expandedOf = (id: string) => filtering || !isCollapsed(id);
+  const singleHost = pruned.length === 1;
+  const rows: VisibleRow[] = [];
+
+  for (const host of pruned) {
+    const ownerDepth = singleHost ? 0 : 1;
+    if (!singleHost) {
+      const hostExpanded = expandedOf(host.id);
+      rows.push({ node: host, depth: 0, hasChildren: true, expanded: hostExpanded });
+      if (!hostExpanded) continue;
+    }
+    for (const owner of host.children) {
+      if (owner.children.length === 1) {
+        rows.push({
+          node: owner.children[0]!,
+          depth: ownerDepth,
+          hasChildren: false,
+          expanded: false,
+        });
+        continue;
+      }
+      const ownerExpanded = expandedOf(owner.id);
+      rows.push({
+        node: owner,
+        depth: ownerDepth,
+        hasChildren: true,
+        expanded: ownerExpanded,
+      });
+      if (!ownerExpanded) continue;
+      for (const leaf of owner.children) {
+        rows.push({
+          node: leaf,
+          depth: ownerDepth + 1,
+          hasChildren: false,
+          expanded: false,
+        });
+      }
+    }
+  }
+  return rows;
+}

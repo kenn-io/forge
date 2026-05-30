@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { buildRepoTree, type RepoTreeOption } from "./repoTree.js";
+import { visibleRows, type VisibleRow } from "./repoTree.js";
 
 function opt(
   platformHost: string,
@@ -68,5 +69,98 @@ describe("buildRepoTree", () => {
       opt("ghe.example.com", "b/y", "gitlab"),
     ]);
     expect(tree[0]!.provider).toBe("github");
+  });
+});
+
+const neverCollapsed = () => false;
+
+function labelsAtDepth(rows: VisibleRow[]): Array<[string, number]> {
+  return rows.map((row) => [row.node.label, row.depth]);
+}
+
+describe("visibleRows", () => {
+  it("omits the host node when there is only one host", () => {
+    const tree = buildRepoTree([
+      opt("github.com", "acme/api"),
+      opt("github.com", "acme/web"),
+    ]);
+    const rows = visibleRows(tree, { isCollapsed: neverCollapsed });
+    // owner at depth 0 (host omitted), two leaves at depth 1
+    expect(labelsAtDepth(rows)).toEqual([
+      ["acme", 0],
+      ["api", 1],
+      ["web", 1],
+    ]);
+  });
+
+  it("shows host nodes at depth 0 when more than one host exists", () => {
+    const tree = buildRepoTree([
+      opt("github.com", "acme/api"),
+      opt("github.com", "acme/web"),
+      opt("gitlab.com", "g/x", "gitlab"),
+    ]);
+    const rows = visibleRows(tree, { isCollapsed: neverCollapsed });
+    expect(rows[0]!.node.kind).toBe("host");
+    expect(rows[0]!.depth).toBe(0);
+    expect(rows.find((r) => r.node.label === "acme")?.depth).toBe(1);
+  });
+
+  it("flattens a single-repo owner even when multiple hosts exist", () => {
+    const tree = buildRepoTree([
+      opt("github.com", "acme/api"),
+      opt("github.com", "acme/web"),
+      opt("gitlab.com", "solo/only", "gitlab"),
+    ]);
+    const rows = visibleRows(tree, { isCollapsed: neverCollapsed });
+    // gitlab.com host shows, its single-repo owner "solo" flattens to the "only"
+    // leaf at the owner's depth (1); no "solo" owner row.
+    const onlyRow = rows.find((r) => r.node.label === "only");
+    expect(onlyRow).toBeTruthy();
+    expect(onlyRow!.depth).toBe(1);
+    expect(onlyRow!.hasChildren).toBe(false);
+    expect(rows.some((r) => r.node.label === "solo")).toBe(false);
+  });
+
+  it("flattens a single-repo owner into one leaf row with no children", () => {
+    const tree = buildRepoTree([
+      opt("github.com", "acme/api"),
+      opt("github.com", "acme/web"),
+      opt("github.com", "solo/only"),
+    ]);
+    const rows = visibleRows(tree, { isCollapsed: neverCollapsed });
+    const soloRow = rows.find((r) => r.node.label === "only");
+    expect(soloRow).toBeTruthy();
+    expect(soloRow!.depth).toBe(0); // at the owner's depth (single host)
+    expect(soloRow!.hasChildren).toBe(false);
+    // the "solo" owner node itself is not rendered
+    expect(rows.some((r) => r.node.label === "solo")).toBe(false);
+  });
+
+  it("hides children of a collapsed node", () => {
+    const tree = buildRepoTree([
+      opt("github.com", "acme/api"),
+      opt("github.com", "acme/web"),
+    ]);
+    const collapsed = (id: string) => id === "github.com/acme";
+    const rows = visibleRows(tree, { isCollapsed: collapsed });
+    expect(labelsAtDepth(rows)).toEqual([["acme", 0]]);
+    expect(rows[0]!.expanded).toBe(false);
+  });
+
+  it("prunes non-matching repos and force-expands matches when filtering", () => {
+    const tree = buildRepoTree([
+      opt("github.com", "acme/api"),
+      opt("github.com", "acme/web"),
+      opt("github.com", "widgets/web-sdk"),
+    ]);
+    // collapse everything; filtering must override collapse
+    const rows = visibleRows(tree, {
+      isCollapsed: () => true,
+      query: "web",
+    });
+    const labels = rows.map((r) => r.node.label);
+    expect(labels).toContain("web");
+    expect(labels).toContain("web-sdk");
+    expect(labels).not.toContain("api");
   });
 });

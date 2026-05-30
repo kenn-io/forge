@@ -7,6 +7,18 @@ import (
 	"go.kenn.io/middleman/internal/db"
 )
 
+// MarshalAssigneesJSON converts a list of assignee usernames to a JSON array string.
+// Returns "[]" if the list is empty or if marshaling fails.
+func MarshalAssigneesJSON(assignees []string) string {
+	if len(assignees) == 0 {
+		return "[]"
+	}
+	if b, err := json.Marshal(assignees); err == nil {
+		return string(b)
+	}
+	return "[]"
+}
+
 func DBRepoIdentity(ref RepoRef) db.RepoIdentity {
 	return db.RepoIdentity{
 		Platform:       string(ref.Platform),
@@ -62,12 +74,6 @@ func DBMergeRequest(repoID int64, mr MergeRequest) *db.MergeRequest {
 }
 
 func DBIssue(repoID int64, issue Issue) *db.Issue {
-	assigneesJSON := "[]"
-	if len(issue.Assignees) > 0 {
-		if b, err := json.Marshal(issue.Assignees); err == nil {
-			assigneesJSON = string(b)
-		}
-	}
 	out := &db.Issue{
 		RepoID:             repoID,
 		PlatformID:         issue.PlatformID,
@@ -83,7 +89,7 @@ func DBIssue(repoID int64, issue Issue) *db.Issue {
 		UpdatedAt:          issue.UpdatedAt,
 		LastActivityAt:     issue.LastActivityAt,
 		ClosedAt:           issue.ClosedAt,
-		AssigneesJSON:      assigneesJSON,
+		AssigneesJSON:      MarshalAssigneesJSON(issue.Assignees),
 	}
 	out.Labels = DBLabels(issue.Labels, itemLabelUpdatedAt(issue.UpdatedAt, issue.CreatedAt))
 	return out

@@ -553,6 +553,70 @@ describe("EventTimeline", () => {
     );
   });
 
+  it("keeps later commits in chronological order after force-push generations", () => {
+    const oldHead = "cccccccccccccccccccccccccccccccccccccccc";
+    const newHead = "ffffffffffffffffffffffffffffffffffffffff";
+    const { container } = render(EventTimeline, {
+      props: {
+        events: [
+          makeEvent({
+            ID: 9,
+            EventType: "commit",
+            Summary: "9999999999999999999999999999999999999999",
+            Body: "follow-up after force push",
+            CreatedAt: "2024-06-01T14:00:00Z",
+          }),
+          makeEvent({
+            ID: 8,
+            EventType: "issue_comment",
+            Summary: "",
+            Body: "comment after force push",
+            CreatedAt: "2024-06-01T13:00:00Z",
+          }),
+          makeEvent({
+            ID: 7,
+            EventType: "force_push",
+            Author: "alice",
+            Summary: "ccccccc -> fffffff",
+            CreatedAt: "2024-06-01T12:00:00Z",
+            MetadataJSON: JSON.stringify({
+              before_sha: oldHead,
+              after_sha: newHead,
+            }),
+          }),
+          makeEvent({
+            ID: 6,
+            EventType: "commit",
+            Summary: newHead,
+            Body: "new head after rebase",
+            CreatedAt: "2024-06-01T10:00:00Z",
+          }),
+          makeEvent({
+            ID: 3,
+            EventType: "commit",
+            Summary: oldHead,
+            Body: "old head before rebase",
+            CreatedAt: "2024-06-01T10:00:00Z",
+          }),
+        ],
+      },
+    });
+
+    const text = container.textContent ?? "";
+    expect(text.indexOf("follow-up after force push")).toBeLessThan(
+      text.indexOf("comment after force push"),
+    );
+    expect(text.indexOf("comment after force push")).toBeLessThan(
+      text.indexOf("new head after rebase"),
+    );
+    expect(text.indexOf("new head after rebase")).toBeLessThan(
+      text.indexOf("ccccccc -> fffffff"),
+    );
+    expect(text.indexOf("ccccccc -> fffffff")).toBeLessThan(
+      text.indexOf("old head before rebase"),
+    );
+  });
+
   it("keeps consecutive force pushes between their commit generations", () => {
     const oldHead = "3333333333333333333333333333333333333333";
     const firstHead = "6666666666666666666666666666666666666666";

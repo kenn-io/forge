@@ -521,8 +521,15 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 
 	// --- PR Events ---
 
-	// widgets PR#1: 2 comments (bob, carol), 1 review (bob APPROVED), 4 commits (alice)
+	// widgets PR#1: 2 comments (bob, carol), 1 review (bob APPROVED), commits around a force-push
 	commitBase := now.Add(-9 * 24 * time.Hour)
+	w1Commit1 := "abc1111111111111111111111111111111111111"
+	w1Commit2 := "abc2222222222222222222222222222222222222"
+	w1Commit3 := "abc3333333333333333333333333333333333333"
+	w1OldHead := "abc4444444444444444444444444444444444444"
+	w1NewCommit := "def3333333333333333333333333333333333333"
+	w1NewHead := "def5555555555555555555555555555555555555"
+	w1FollowUp := "def6666666666666666666666666666666666666"
 	w1BobCommentUTC := time.Date(now.Year(), now.Month(), now.Day(), 1, 30, 0, 0, time.UTC).Add(-8 * 24 * time.Hour)
 	w1BobComment, err := time.Parse(
 		time.RFC3339,
@@ -561,7 +568,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 			MergeRequestID: w1ID,
 			EventType:      "commit",
 			Author:         "alice",
-			Summary:        "abc1111",
+			Summary:        w1Commit1,
 			Body:           "feat: add cache store\n\nCache entries now expire when pull request detail data is refreshed.",
 			CreatedAt:      commitBase,
 			DedupeKey:      "w1-commit-1",
@@ -570,7 +577,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 			MergeRequestID: w1ID,
 			EventType:      "commit",
 			Author:         "alice",
-			Summary:        "abc2222",
+			Summary:        w1Commit2,
 			Body:           "feat: wire cache into handler",
 			CreatedAt:      commitBase.Add(2 * time.Hour),
 			DedupeKey:      "w1-commit-2",
@@ -579,7 +586,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 			MergeRequestID: w1ID,
 			EventType:      "commit",
 			Author:         "alice",
-			Summary:        "abc3333",
+			Summary:        w1Commit3,
 			Body:           "test: add cache unit tests",
 			CreatedAt:      commitBase.Add(4 * time.Hour),
 			DedupeKey:      "w1-commit-3",
@@ -588,8 +595,8 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 			MergeRequestID: w1ID,
 			EventType:      "commit",
 			Author:         "alice",
-			Summary:        "abc4444",
-			Body:           "fix: handle nil cache gracefully",
+			Summary:        w1OldHead,
+			Body:           "fix: guard nil cache before rebase",
 			CreatedAt:      commitBase.Add(6 * time.Hour),
 			DedupeKey:      "w1-commit-4",
 		},
@@ -598,9 +605,27 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 			EventType:      "force_push",
 			Author:         "alice",
 			Summary:        "abc4444 -> def5555",
-			MetadataJSON:   `{"before_sha":"abc4444444444444444444444444444444444444","after_sha":"def5555555555555555555555555555555555555","ref":"feature/caching"}`,
+			MetadataJSON:   fmt.Sprintf(`{"before_sha":%q,"after_sha":%q,"ref":"feature/caching"}`, w1OldHead, w1NewHead),
 			CreatedAt:      commitBase.Add(8 * time.Hour),
 			DedupeKey:      "w1-force-push-1",
+		},
+		{
+			MergeRequestID: w1ID,
+			EventType:      "commit",
+			Author:         "alice",
+			Summary:        w1NewCommit,
+			Body:           "test: add cache unit tests after rebase",
+			CreatedAt:      commitBase.Add(4 * time.Hour),
+			DedupeKey:      "w1-commit-5",
+		},
+		{
+			MergeRequestID: w1ID,
+			EventType:      "commit",
+			Author:         "alice",
+			Summary:        w1NewHead,
+			Body:           "fix: guard nil cache after rebase",
+			CreatedAt:      commitBase.Add(6 * time.Hour),
+			DedupeKey:      "w1-commit-6",
 		},
 		{
 			MergeRequestID: w1ID,
@@ -637,6 +662,15 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 			MetadataJSON:   `{"previous_title":"Add widget cache","current_title":"Add widget caching layer"}`,
 			CreatedAt:      commitBase.Add(10 * time.Hour),
 			DedupeKey:      "w1-renamed-title-1",
+		},
+		{
+			MergeRequestID: w1ID,
+			EventType:      "commit",
+			Author:         "alice",
+			Summary:        w1FollowUp,
+			Body:           "chore: tune cache eviction metrics",
+			CreatedAt:      commitBase.Add(10*time.Hour + 30*time.Minute),
+			DedupeKey:      "w1-commit-7",
 		},
 		{
 			MergeRequestID: w1ID,

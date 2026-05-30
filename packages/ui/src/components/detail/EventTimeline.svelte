@@ -168,12 +168,69 @@
     pushedAt: number;
   };
 
-  function commitSHA(event: PREvent | IssueEvent): string | null {
-    return event.EventType === "commit" && event.Summary.length > 0 ? event.Summary : null;
+  type CommitSHAIndex = {
+    exact: Map<string, PREvent | IssueEvent>;
+    prefixes: Map<string, PREvent | IssueEvent | null>;
+  };
+
+  const minSHAPrefixLength = 7;
+  const maxSHALength = 64;
+
+  function normalizeSHA(value: string): string | null {
+    const sha = value.trim().toLowerCase();
+    if (sha.length < minSHAPrefixLength || sha.length > maxSHALength) return null;
+    return /^[0-9a-f]+$/.test(sha) ? sha : null;
   }
 
-  function shaMatches(commit: string, target: string): boolean {
-    return commit === target || commit.startsWith(target) || target.startsWith(commit);
+  function commitSHA(event: PREvent | IssueEvent): string | null {
+    return event.EventType === "commit" ? normalizeSHA(event.Summary) : null;
+  }
+
+  function addUniquePrefix(
+    prefixes: CommitSHAIndex["prefixes"],
+    prefix: string,
+    event: PREvent | IssueEvent,
+  ): void {
+    const existing = prefixes.get(prefix);
+    if (existing === undefined) {
+      prefixes.set(prefix, event);
+      return;
+    }
+    if (existing?.ID !== event.ID) prefixes.set(prefix, null);
+  }
+
+  function buildCommitSHAIndex(sourceEvents: Array<PREvent | IssueEvent>): CommitSHAIndex {
+    const index: CommitSHAIndex = {
+      exact: new Map(),
+      prefixes: new Map(),
+    };
+
+    for (const event of sourceEvents) {
+      const sha = commitSHA(event);
+      if (!sha) continue;
+      index.exact.set(sha, event);
+      for (
+        let length = minSHAPrefixLength;
+        length <= sha.length && length <= maxSHALength;
+        length += 1
+      ) {
+        addUniquePrefix(index.prefixes, sha.slice(0, length), event);
+      }
+    }
+
+    return index;
+  }
+
+  function lookupCommitBySHA(index: CommitSHAIndex, value: string): PREvent | IssueEvent | null {
+    const sha = normalizeSHA(value);
+    if (!sha) return null;
+    const exact = index.exact.get(sha);
+    if (exact) return exact;
+    for (let length = sha.length; length >= minSHAPrefixLength; length -= 1) {
+      const prefixMatch = index.prefixes.get(sha.slice(0, length));
+      if (prefixMatch !== undefined) return prefixMatch;
+    }
+    return null;
   }
 
   function forcePushBeforeSHA(event: PREvent | IssueEvent): string | null {
@@ -182,16 +239,13 @@
   }
 
   function buildForcePushBoundaries(sourceEvents: Array<PREvent | IssueEvent>): ForcePushBoundary[] {
-    const commitEvents = sourceEvents.filter((event) => event.EventType === "commit");
+    const commitIndex = buildCommitSHAIndex(sourceEvents);
     const boundaries: ForcePushBoundary[] = [];
 
     for (const event of sourceEvents) {
       const beforeSHA = forcePushBeforeSHA(event);
       if (!beforeSHA) continue;
-      const beforeCommit = commitEvents.find((commit) => {
-        const sha = commitSHA(commit);
-        return sha !== null && shaMatches(sha, beforeSHA);
-      });
+      const beforeCommit = lookupCommitBySHA(commitIndex, beforeSHA);
       if (!beforeCommit) continue;
       boundaries.push({
         beforeCommitID: beforeCommit.ID,
@@ -202,25 +256,32 @@
     return boundaries.sort((a, b) => a.beforeCommitID - b.beforeCommitID);
   }
 
-  function commitGenerationBoundary(
-    event: PREvent | IssueEvent,
+  function buildForcePushDisplayTimes(
+    sourceEvents: Array<PREvent | IssueEvent>,
     boundaries: ForcePushBoundary[],
-  ): ForcePushBoundary | null {
-    if (event.EventType !== "commit") return null;
-    for (let i = boundaries.length - 1; i >= 0; i -= 1) {
-      const boundary = boundaries[i];
-      if (boundary && event.ID > boundary.beforeCommitID) return boundary;
+  ): Record<number, number> {
+    const displayTimes: Record<number, number> = {};
+    for (const event of sourceEvents) {
+      displayTimes[event.ID] = eventSortValue(event);
     }
-    return null;
-  }
 
-  function forcePushDisplayTime(
-    event: PREvent | IssueEvent,
-    boundaries: ForcePushBoundary[],
-  ): number {
-    const generation = commitGenerationBoundary(event, boundaries);
-    if (generation) return generation.pushedAt + 1;
-    return eventSortValue(event);
+    const commitEvents = sourceEvents
+      .filter((event) => event.EventType === "commit")
+      .sort((a, b) => a.ID - b.ID);
+    let boundaryIndex = -1;
+
+    for (const event of commitEvents) {
+      let nextBoundary = boundaries[boundaryIndex + 1];
+      while (nextBoundary && nextBoundary.beforeCommitID < event.ID) {
+        boundaryIndex += 1;
+        nextBoundary = boundaries[boundaryIndex + 1];
+      }
+      const generation = boundaries[boundaryIndex];
+      if (!generation) continue;
+      displayTimes[event.ID] = Math.max(eventSortValue(event), generation.pushedAt + 1);
+    }
+
+    return displayTimes;
   }
 
   function orderEventsForForcePushBoundaries(
@@ -228,8 +289,9 @@
   ): Array<PREvent | IssueEvent> {
     const boundaries = buildForcePushBoundaries(sourceEvents);
     if (boundaries.length === 0) return sourceEvents;
+    const displayTimes = buildForcePushDisplayTimes(sourceEvents, boundaries);
     return [...sourceEvents].sort((a, b) => {
-      return forcePushDisplayTime(b, boundaries) - forcePushDisplayTime(a, boundaries) || b.ID - a.ID;
+      return (displayTimes[b.ID] ?? 0) - (displayTimes[a.ID] ?? 0) || b.ID - a.ID;
     });
   }
 

@@ -39,6 +39,22 @@ function cacheCommitRow(page: Page) {
   return page.locator(".event--compact", { hasText: "abc1111" }).first();
 }
 
+async function expectTimelineTextOrder(page: Page, labels: string[]): Promise<void> {
+  const timeline = page.locator(".timeline");
+  await expect(timeline).toBeVisible();
+  for (const label of labels) {
+    await expect(timeline).toContainText(label);
+  }
+
+  const positions = await timeline.evaluate((element, expectedLabels) => {
+    const text = element.textContent ?? "";
+    return expectedLabels.map((label) => text.indexOf(label));
+  }, labels);
+
+  expect(positions.every((position) => position >= 0)).toBe(true);
+  expect(positions).toEqual([...positions].sort((a, b) => a - b));
+}
+
 test.describe("PR timeline filters", () => {
   test.beforeEach(async ({ page }) => {
     await gotoWithWebKitRetry(page, "/");
@@ -62,6 +78,19 @@ test.describe("PR timeline filters", () => {
     )).toBeVisible();
     await expect(page.getByText("Base changed")).toBeVisible();
     await expect(page.getByText("develop -> main")).toBeVisible();
+  });
+
+  test("orders force-push commit generations through the seeded timeline", async ({ page }) => {
+    await openPRTimeline(page);
+
+    await expectTimelineTextOrder(page, [
+      "Base changed",
+      "chore: tune cache eviction metrics",
+      "Title changed",
+      "fix: guard nil cache after rebase",
+      "abc4444 -> def5555",
+      "fix: guard nil cache before rebase",
+    ]);
   });
 
   test("keeps commit rows while hiding and restoring system event buckets", async ({ page }) => {

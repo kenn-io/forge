@@ -489,6 +489,137 @@ describe("EventTimeline", () => {
     ).toBe(true);
   });
 
+  it("renders force pushes as boundaries between commit generations", () => {
+    const oldHead = "cccccccccccccccccccccccccccccccccccccccc";
+    const newHead = "ffffffffffffffffffffffffffffffffffffffff";
+    const { container } = render(EventTimeline, {
+      props: {
+        events: [
+          makeEvent({
+            ID: 7,
+            EventType: "force_push",
+            Author: "alice",
+            Summary: "ccccccc -> fffffff",
+            CreatedAt: "2024-06-01T12:00:00Z",
+            MetadataJSON: JSON.stringify({
+              before_sha: oldHead,
+              after_sha: newHead,
+            }),
+          }),
+          makeEvent({
+            ID: 6,
+            EventType: "commit",
+            Summary: newHead,
+            Body: "new C3 after rebase",
+            CreatedAt: "2024-06-01T10:03:00Z",
+          }),
+          makeEvent({
+            ID: 3,
+            EventType: "commit",
+            Summary: oldHead,
+            Body: "old C3 before rebase",
+            CreatedAt: "2024-06-01T10:03:00Z",
+          }),
+          makeEvent({
+            ID: 5,
+            EventType: "commit",
+            Summary: "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+            Body: "new C2 after rebase",
+            CreatedAt: "2024-06-01T10:02:00Z",
+          }),
+          makeEvent({
+            ID: 2,
+            EventType: "commit",
+            Summary: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            Body: "old C2 before rebase",
+            CreatedAt: "2024-06-01T10:02:00Z",
+          }),
+        ],
+      },
+    });
+
+    const text = container.textContent ?? "";
+    expect(text.indexOf("new C3 after rebase")).toBeLessThan(
+      text.indexOf("ccccccc -> fffffff"),
+    );
+    expect(text.indexOf("new C2 after rebase")).toBeLessThan(
+      text.indexOf("ccccccc -> fffffff"),
+    );
+    expect(text.indexOf("ccccccc -> fffffff")).toBeLessThan(
+      text.indexOf("old C3 before rebase"),
+    );
+    expect(text.indexOf("ccccccc -> fffffff")).toBeLessThan(
+      text.indexOf("old C2 before rebase"),
+    );
+  });
+
+  it("keeps consecutive force pushes between their commit generations", () => {
+    const oldHead = "3333333333333333333333333333333333333333";
+    const firstHead = "6666666666666666666666666666666666666666";
+    const secondHead = "9999999999999999999999999999999999999999";
+    const { container } = render(EventTimeline, {
+      props: {
+        events: [
+          makeEvent({
+            ID: 10,
+            EventType: "force_push",
+            Summary: "6666666 -> 9999999",
+            CreatedAt: "2024-06-01T13:00:00Z",
+            MetadataJSON: JSON.stringify({
+              before_sha: firstHead,
+              after_sha: secondHead,
+            }),
+          }),
+          makeEvent({
+            ID: 9,
+            EventType: "commit",
+            Summary: secondHead,
+            Body: "second generation head",
+            CreatedAt: "2024-06-01T10:03:00Z",
+          }),
+          makeEvent({
+            ID: 7,
+            EventType: "force_push",
+            Summary: "3333333 -> 6666666",
+            CreatedAt: "2024-06-01T12:00:00Z",
+            MetadataJSON: JSON.stringify({
+              before_sha: oldHead,
+              after_sha: firstHead,
+            }),
+          }),
+          makeEvent({
+            ID: 6,
+            EventType: "commit",
+            Summary: firstHead,
+            Body: "first generation head",
+            CreatedAt: "2024-06-01T10:03:00Z",
+          }),
+          makeEvent({
+            ID: 3,
+            EventType: "commit",
+            Summary: oldHead,
+            Body: "original generation head",
+            CreatedAt: "2024-06-01T10:03:00Z",
+          }),
+        ],
+      },
+    });
+
+    const text = container.textContent ?? "";
+    expect(text.indexOf("second generation head")).toBeLessThan(
+      text.indexOf("6666666 -> 9999999"),
+    );
+    expect(text.indexOf("6666666 -> 9999999")).toBeLessThan(
+      text.indexOf("first generation head"),
+    );
+    expect(text.indexOf("first generation head")).toBeLessThan(
+      text.indexOf("3333333 -> 6666666"),
+    );
+    expect(text.indexOf("3333333 -> 6666666")).toBeLessThan(
+      text.indexOf("original generation head"),
+    );
+  });
+
   it("renders system events as compact rows", () => {
     render(EventTimeline, {
       props: {

@@ -163,10 +163,81 @@
     return eventSortValue(b) - eventSortValue(a) || b.ID - a.ID;
   }
 
-  function buildTimelineEntries(sourceEvents: Array<PREvent | IssueEvent>): TimelineEntry[] {
-    const threads: Array<{ id: string; events: Array<PREvent | IssueEvent> }> = [];
+  type ForcePushBoundary = {
+    beforeCommitID: number;
+    pushedAt: number;
+  };
+
+  function commitSHA(event: PREvent | IssueEvent): string | null {
+    return event.EventType === "commit" && event.Summary.length > 0 ? event.Summary : null;
+  }
+
+  function shaMatches(commit: string, target: string): boolean {
+    return commit === target || commit.startsWith(target) || target.startsWith(commit);
+  }
+
+  function forcePushBeforeSHA(event: PREvent | IssueEvent): string | null {
+    if (event.EventType !== "force_push") return null;
+    return metadataString(parseMetadata(event), "before_sha");
+  }
+
+  function buildForcePushBoundaries(sourceEvents: Array<PREvent | IssueEvent>): ForcePushBoundary[] {
+    const commitEvents = sourceEvents.filter((event) => event.EventType === "commit");
+    const boundaries: ForcePushBoundary[] = [];
 
     for (const event of sourceEvents) {
+      const beforeSHA = forcePushBeforeSHA(event);
+      if (!beforeSHA) continue;
+      const beforeCommit = commitEvents.find((commit) => {
+        const sha = commitSHA(commit);
+        return sha !== null && shaMatches(sha, beforeSHA);
+      });
+      if (!beforeCommit) continue;
+      boundaries.push({
+        beforeCommitID: beforeCommit.ID,
+        pushedAt: eventSortValue(event),
+      });
+    }
+
+    return boundaries.sort((a, b) => a.beforeCommitID - b.beforeCommitID);
+  }
+
+  function commitGenerationBoundary(
+    event: PREvent | IssueEvent,
+    boundaries: ForcePushBoundary[],
+  ): ForcePushBoundary | null {
+    if (event.EventType !== "commit") return null;
+    for (let i = boundaries.length - 1; i >= 0; i -= 1) {
+      const boundary = boundaries[i];
+      if (boundary && event.ID > boundary.beforeCommitID) return boundary;
+    }
+    return null;
+  }
+
+  function forcePushDisplayTime(
+    event: PREvent | IssueEvent,
+    boundaries: ForcePushBoundary[],
+  ): number {
+    const generation = commitGenerationBoundary(event, boundaries);
+    if (generation) return generation.pushedAt + 1;
+    return eventSortValue(event);
+  }
+
+  function orderEventsForForcePushBoundaries(
+    sourceEvents: Array<PREvent | IssueEvent>,
+  ): Array<PREvent | IssueEvent> {
+    const boundaries = buildForcePushBoundaries(sourceEvents);
+    if (boundaries.length === 0) return sourceEvents;
+    return [...sourceEvents].sort((a, b) => {
+      return forcePushDisplayTime(b, boundaries) - forcePushDisplayTime(a, boundaries) || b.ID - a.ID;
+    });
+  }
+
+  function buildTimelineEntries(sourceEvents: Array<PREvent | IssueEvent>): TimelineEntry[] {
+    const orderedEvents = orderEventsForForcePushBoundaries(sourceEvents);
+    const threads: Array<{ id: string; events: Array<PREvent | IssueEvent> }> = [];
+
+    for (const event of orderedEvents) {
       const id = timelineThreadID(event);
       if (!id || !isThreadedComment(event)) continue;
       const thread = threads.find((item) => item.id === id);
@@ -180,7 +251,7 @@
     const emittedThreads: string[] = [];
     const entries: TimelineEntry[] = [];
 
-    for (const event of sourceEvents) {
+    for (const event of orderedEvents) {
       const id = timelineThreadID(event);
       if (!id || !isThreadedComment(event)) {
         entries.push({

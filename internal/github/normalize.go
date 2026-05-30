@@ -296,8 +296,9 @@ func NormalizeIssue(repoID int64, ghIssue *gh.Issue) (*db.Issue, error) {
 
 	assigneesJSON := "[]"
 	if len(platformIssue.Assignees) > 0 {
-		b, _ := json.Marshal(platformIssue.Assignees)
-		assigneesJSON = string(b)
+		if b, err := json.Marshal(platformIssue.Assignees); err == nil {
+			assigneesJSON = string(b)
+		}
 	}
 
 	issue := &db.Issue{

@@ -170,7 +170,7 @@ async function mockAssignedIssueDetail(page: Page): Promise<void> {
     });
   });
   await page.route(
-    /\/api\/v1\/repos\/acme\/widgets\/issues\/12(?:[/?]|$)/,
+    "**/api/v1/host/ghe.example.com/issues/github/acme/widgets/12",
     async (route) => {
       await route.fulfill({
         status: 200,

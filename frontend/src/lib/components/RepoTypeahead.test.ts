@@ -235,6 +235,8 @@ describe("RepoTypeahead", () => {
 
   it("clicking an owner row body expands/collapses without selecting", async () => {
     const onchange = vi.fn();
+    // Two repos under import-lab so it renders a collapsible owner row; a
+    // single-repo owner auto-flattens to one leaf and has no caret to toggle.
     settingsStore.setConfiguredRepos([
       {
         provider: "github", platform_host: "github.com", owner: "import-lab",
@@ -332,5 +334,94 @@ describe("RepoTypeahead", () => {
       expect(screen.queryByRole("option", { name: /roborev-dev\/middleman/i })).toBeNull();
       expect(onchange).toHaveBeenCalledWith(undefined);
     });
+  });
+
+  it("collapses and expands the focused owner with arrow keys", async () => {
+    // Two repos under import-lab so it renders a collapsible owner row; a
+    // single-repo owner auto-flattens to one leaf and has no caret to toggle.
+    settingsStore.setConfiguredRepos([
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "import-lab",
+        name: "api",
+        repo_path: "import-lab/api",
+        is_glob: false,
+        matched_repo_count: 1,
+      },
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "import-lab",
+        name: "web",
+        repo_path: "import-lab/web",
+        is_glob: false,
+        matched_repo_count: 1,
+      },
+    ]);
+
+    render(RepoTypeahead, { props: { selected: undefined, onchange: vi.fn() } });
+
+    await fireEvent.click(screen.getByRole("button", { name: /all repos/i }));
+    const input = screen.getByPlaceholderText("Filter repos...");
+
+    // leaves visible by default
+    expect(
+      screen.getByRole("option", { name: "github.com/import-lab/api" }),
+    ).toBeTruthy();
+
+    // move highlight onto the owner row (index 1) and collapse it
+    await fireEvent.keyDown(input, { key: "ArrowDown" });
+    await fireEvent.keyDown(input, { key: "ArrowLeft" });
+
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("option", { name: "github.com/import-lab/api" }),
+      ).toBeNull();
+    });
+
+    await fireEvent.keyDown(input, { key: "ArrowRight" });
+    await waitFor(() => {
+      expect(
+        screen.getByRole("option", { name: "github.com/import-lab/api" }),
+      ).toBeTruthy();
+    });
+  });
+
+  it("toggles selection of the focused row with space", async () => {
+    const onchange = vi.fn();
+    settingsStore.setConfiguredRepos([
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "import-lab",
+        name: "api",
+        repo_path: "import-lab/api",
+        is_glob: false,
+        matched_repo_count: 1,
+      },
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "import-lab",
+        name: "web",
+        repo_path: "import-lab/web",
+        is_glob: false,
+        matched_repo_count: 1,
+      },
+    ]);
+
+    render(RepoTypeahead, { props: { selected: undefined, onchange } });
+
+    await fireEvent.click(screen.getByRole("button", { name: /all repos/i }));
+    const input = screen.getByPlaceholderText("Filter repos...");
+
+    // highlight the owner row and select its subtree
+    await fireEvent.keyDown(input, { key: "ArrowDown" });
+    await fireEvent.keyDown(input, { key: " " });
+
+    expect(onchange).toHaveBeenLastCalledWith(
+      "github.com/import-lab/api,github.com/import-lab/web",
+    );
   });
 });

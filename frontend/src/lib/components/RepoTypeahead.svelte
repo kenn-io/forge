@@ -44,6 +44,18 @@
         binding: { key: "ArrowUp" },
         scope: "view-pulls",
       },
+      {
+        id: "repo-typeahead.expand",
+        label: "Expand / collapse group",
+        binding: { key: "ArrowRight" },
+        scope: "view-pulls",
+      },
+      {
+        id: "repo-typeahead.toggle-select",
+        label: "Select / deselect",
+        binding: { key: " " },
+        scope: "view-pulls",
+      },
     ]),
   );
 
@@ -135,14 +147,6 @@
     return fetchedRepos.map(optionFromRepo);
   });
 
-  const filtered = $derived.by(() => {
-    if (!query) return options;
-    const q = query.toLowerCase();
-    return options.filter(
-      (o) => o.value.toLowerCase().includes(q),
-    );
-  });
-
   const selectedValues = $derived(parseRepoFilterValue(selected));
   const selectedSet = $derived(new Set(selectedValues));
   const displayValue = $derived.by(() => {
@@ -196,36 +200,40 @@
     onchange(undefined);
   }
 
-  function toggleRepo(value: string) {
-    const next = selectedSet.has(value)
-      ? selectedValues.filter((repo) => repo !== value)
-      : [...selectedValues, value];
-    onchange(serializeRepoFilterValue(next));
-  }
-
   function handleKeydown(e: KeyboardEvent) {
-    const total = filtered.length + 1;
+    const total = rows.length + 1; // +1 for the "All repos" row at index 0
     if (e.key === "ArrowDown") {
       e.preventDefault();
       highlightIndex = Math.min(highlightIndex + 1, total - 1);
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       highlightIndex = Math.max(highlightIndex - 1, 0);
+    } else if (e.key === "ArrowRight") {
+      e.preventDefault();
+      const row = rows[highlightIndex - 1];
+      if (row?.hasChildren && !row.expanded) expansion.toggle(row.node.id);
+    } else if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      const row = rows[highlightIndex - 1];
+      if (row?.hasChildren && row.expanded) expansion.toggle(row.node.id);
     } else if (e.key === "Enter") {
       e.preventDefault();
       if (highlightIndex === 0) {
         clearSelection();
-      } else {
-        const item = filtered[highlightIndex - 1];
-        if (item) toggleRepo(item.value);
+        return;
       }
+      const row = rows[highlightIndex - 1];
+      if (!row) return;
+      if (row.hasChildren) expansion.toggle(row.node.id);
+      else toggleRowSelect(row);
     } else if (e.key === " ") {
       e.preventDefault();
-      if (highlightIndex === 0) clearSelection();
-      else {
-        const item = filtered[highlightIndex - 1];
-        if (item) toggleRepo(item.value);
+      if (highlightIndex === 0) {
+        clearSelection();
+        return;
       }
+      const row = rows[highlightIndex - 1];
+      if (row) toggleRowSelect(row);
     } else if (e.key === "Escape") {
       closeDropdown();
     }

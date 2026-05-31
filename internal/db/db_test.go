@@ -823,6 +823,65 @@ func TestOpenRepairsCurrentSchemaMissingWorkspaceTerminalBackend(t *testing.T) {
 	require.NoError(err)
 }
 
+func TestOpenRepairsCurrentSchemaMissingBranchCommitObservedOrder(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "broken-branch-commit-observed-order.db")
+
+	d, err := Open(path)
+	require.NoError(err)
+	repoID, err := d.UpsertRepo(ctx, GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	require.NoError(d.UpsertBranchCommits(ctx, []BranchCommit{{
+		RepoID:         repoID,
+		BranchName:     "main",
+		CommitSHA:      "before-repair",
+		AuthorName:     "Alice",
+		AuthorEmail:    "alice@example.com",
+		AuthoredAt:     time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC),
+		CommitterName:  "Alice",
+		CommitterEmail: "alice@example.com",
+		CommittedAt:    time.Date(2026, 5, 1, 12, 1, 0, 0, time.UTC),
+		Subject:        "before repair",
+	}}))
+	require.NoError(d.Close())
+
+	raw, err := sql.Open("sqlite", path)
+	require.NoError(err)
+	_, err = raw.Exec(`
+		DROP INDEX IF EXISTS idx_branch_commits_repo_committed;
+		DROP INDEX IF EXISTS idx_branch_commits_committed;
+		ALTER TABLE middleman_branch_commits DROP COLUMN observed_order
+	`)
+	require.NoError(err)
+	require.NoError(raw.Close())
+
+	reopened, err := Open(path)
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(reopened.Close()) })
+
+	hasObservedOrder, err := hasColumn(reopened.ReadDB(), "middleman_branch_commits", "observed_order")
+	require.NoError(err)
+	require.True(hasObservedOrder)
+	require.NoError(reopened.UpsertBranchCommits(ctx, []BranchCommit{{
+		RepoID:         repoID,
+		BranchName:     "main",
+		CommitSHA:      "after-repair",
+		AuthorName:     "Alice",
+		AuthorEmail:    "alice@example.com",
+		AuthoredAt:     time.Date(2026, 5, 1, 13, 0, 0, 0, time.UTC),
+		CommitterName:  "Alice",
+		CommitterEmail: "alice@example.com",
+		CommittedAt:    time.Date(2026, 5, 1, 13, 1, 0, 0, time.UTC),
+		Subject:        "after repair",
+	}}))
+
+	rows := loadTestBranchCommits(t, reopened, repoID)
+	require.Contains(rows, "before-repair")
+	require.Contains(rows, "after-repair")
+}
+
 func TestOpenInitializesBranchActivitySchema(t *testing.T) {
 	require := require.New(t)
 	ctx := t.Context()

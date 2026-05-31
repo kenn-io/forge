@@ -138,6 +138,11 @@ func runMigrations(rw *sql.DB) (int, error) {
 			fmt.Errorf("repair workspace terminal backend column: %w", err),
 		)
 	}
+	if err := reconcileBranchCommitObservedOrderColumn(rw); err != nil {
+		return migratedb.NilVersion, wrapMigrationError(
+			fmt.Errorf("repair branch commit observed order column: %w", err),
+		)
+	}
 
 	return startVersion, nil
 }
@@ -250,6 +255,36 @@ func reconcileWorkspaceTerminalBackendColumn(rw *sql.DB) error {
 	_, err = rw.Exec(`
 		ALTER TABLE middleman_workspaces
 		    ADD COLUMN terminal_backend TEXT NOT NULL DEFAULT ''
+	`)
+	return err
+}
+
+func reconcileBranchCommitObservedOrderColumn(rw *sql.DB) error {
+	if !hasTable(rw, "middleman_branch_commits") {
+		return nil
+	}
+	hasObservedOrder, err := hasColumn(
+		rw, "middleman_branch_commits", "observed_order",
+	)
+	if err != nil {
+		return err
+	}
+	if hasObservedOrder {
+		return nil
+	}
+	if _, err := rw.Exec(`
+		ALTER TABLE middleman_branch_commits
+		    ADD COLUMN observed_order INTEGER NOT NULL DEFAULT 0
+	`); err != nil {
+		return err
+	}
+	_, err = rw.Exec(`
+		DROP INDEX IF EXISTS idx_branch_commits_repo_committed;
+		DROP INDEX IF EXISTS idx_branch_commits_committed;
+		CREATE INDEX IF NOT EXISTS idx_branch_commits_repo_committed
+		    ON middleman_branch_commits(repo_id, committed_at DESC, observed_order DESC);
+		CREATE INDEX IF NOT EXISTS idx_branch_commits_committed
+		    ON middleman_branch_commits(committed_at DESC, observed_order DESC)
 	`)
 	return err
 }

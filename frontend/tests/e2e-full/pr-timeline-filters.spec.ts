@@ -30,6 +30,12 @@ async function openPRTimeline(page: Page): Promise<void> {
     .toBeVisible();
 }
 
+async function openPRTimelinePath(page: Page, path: string): Promise<void> {
+  await gotoWithWebKitRetry(page, path);
+  await page.locator(".pull-detail")
+    .waitFor({ state: "visible", timeout: 10_000 });
+}
+
 async function openTimelineFilters(page: Page): Promise<void> {
   await page.locator('button[title="Filter PR activity"]').click();
   await expect(page.locator(".filter-dropdown")).toBeVisible();
@@ -93,6 +99,16 @@ test.describe("PR timeline filters", () => {
     ]);
   });
 
+  test("orders fresh-import force-push commits without the old anchor commit", async ({ page }) => {
+    await openPRTimelinePath(page, "/pulls/github/acme/widgets/2");
+
+    await expectTimelineTextOrder(page, [
+      "fix: guard widget race after import",
+      "test: reproduce widget race after import",
+      "2222aaa -> 2222ccc",
+    ]);
+  });
+
   test("keeps commit rows while hiding and restoring system event buckets", async ({ page }) => {
     await openPRTimeline(page);
     await openTimelineFilters(page);
@@ -119,6 +135,10 @@ test.describe("PR timeline filters", () => {
 
     await page.getByRole("button", { name: "Force pushes" }).click();
     await expect(page.getByText("abc4444 -> def5555")).not.toBeVisible();
+    await expectTimelineTextOrder(page, [
+      "fix: guard nil cache after rebase",
+      "fix: guard nil cache before rebase",
+    ]);
     await page.getByRole("button", { name: "Force pushes" }).click();
     await expect(page.getByText("abc4444 -> def5555")).toBeVisible();
   });

@@ -27,6 +27,7 @@
 
   interface Props {
     events: Array<PREvent | IssueEvent>;
+    orderingEvents?: Array<PREvent | IssueEvent> | undefined;
     provider?: string | undefined;
     platformHost?: string | undefined;
     repoOwner?: string;
@@ -43,6 +44,7 @@
 
   const {
     events,
+    orderingEvents = events,
     provider,
     platformHost,
     repoOwner,
@@ -164,7 +166,8 @@
   }
 
   type ForcePushBoundary = {
-    beforeCommitID: number;
+    startAfterCommitID: number;
+    endAtCommitID?: number | undefined;
     pushedAt: number;
   };
 
@@ -238,22 +241,39 @@
     return metadataString(parseMetadata(event), "before_sha");
   }
 
+  function forcePushAfterSHA(event: PREvent | IssueEvent): string | null {
+    if (event.EventType !== "force_push") return null;
+    return metadataString(parseMetadata(event), "after_sha");
+  }
+
   function buildForcePushBoundaries(sourceEvents: Array<PREvent | IssueEvent>): ForcePushBoundary[] {
     const commitIndex = buildCommitSHAIndex(sourceEvents);
     const boundaries: ForcePushBoundary[] = [];
 
     for (const event of sourceEvents) {
       const beforeSHA = forcePushBeforeSHA(event);
-      if (!beforeSHA) continue;
-      const beforeCommit = lookupCommitBySHA(commitIndex, beforeSHA);
-      if (!beforeCommit) continue;
+      const beforeCommit = beforeSHA ? lookupCommitBySHA(commitIndex, beforeSHA) : null;
+      if (beforeCommit) {
+        boundaries.push({
+          startAfterCommitID: beforeCommit.ID,
+          pushedAt: eventSortValue(event),
+        });
+        continue;
+      }
+
+      const afterSHA = forcePushAfterSHA(event);
+      const afterCommit = afterSHA ? lookupCommitBySHA(commitIndex, afterSHA) : null;
+      if (!afterCommit) continue;
       boundaries.push({
-        beforeCommitID: beforeCommit.ID,
+        startAfterCommitID: 0,
+        endAtCommitID: afterCommit.ID,
         pushedAt: eventSortValue(event),
       });
     }
 
-    return boundaries.sort((a, b) => a.beforeCommitID - b.beforeCommitID);
+    return boundaries.sort((a, b) =>
+      a.startAfterCommitID - b.startAfterCommitID || a.pushedAt - b.pushedAt,
+    );
   }
 
   function buildForcePushDisplayTimes(
@@ -268,17 +288,32 @@
     const commitEvents = sourceEvents
       .filter((event) => event.EventType === "commit")
       .sort((a, b) => a.ID - b.ID);
-    let boundaryIndex = -1;
+    let commitIndex = 0;
 
-    for (const event of commitEvents) {
-      let nextBoundary = boundaries[boundaryIndex + 1];
-      while (nextBoundary && nextBoundary.beforeCommitID < event.ID) {
-        boundaryIndex += 1;
-        nextBoundary = boundaries[boundaryIndex + 1];
+    for (const [index, generation] of boundaries.entries()) {
+      const nextBoundary = boundaries[index + 1];
+      const generationEndID = Math.min(
+        generation.endAtCommitID ?? Number.POSITIVE_INFINITY,
+        nextBoundary?.startAfterCommitID ?? Number.POSITIVE_INFINITY,
+      );
+      while (
+        commitIndex < commitEvents.length &&
+        (commitEvents[commitIndex]?.ID ?? 0) <= generation.startAfterCommitID
+      ) {
+        commitIndex += 1;
       }
-      const generation = boundaries[boundaryIndex];
-      if (!generation) continue;
-      displayTimes[event.ID] = Math.max(eventSortValue(event), generation.pushedAt + 1);
+      while (
+        commitIndex < commitEvents.length &&
+        (commitEvents[commitIndex]?.ID ?? Number.POSITIVE_INFINITY) <= generationEndID
+      ) {
+        const event = commitEvents[commitIndex];
+        if (!event) break;
+        const lowerBounded = Math.max(eventSortValue(event), generation.pushedAt + 1);
+        displayTimes[event.ID] = nextBoundary
+          ? Math.min(lowerBounded, nextBoundary.pushedAt - 1)
+          : lowerBounded;
+        commitIndex += 1;
+      }
     }
 
     return displayTimes;
@@ -286,17 +321,22 @@
 
   function orderEventsForForcePushBoundaries(
     sourceEvents: Array<PREvent | IssueEvent>,
+    orderingSourceEvents: Array<PREvent | IssueEvent> = sourceEvents,
   ): Array<PREvent | IssueEvent> {
-    const boundaries = buildForcePushBoundaries(sourceEvents);
+    const boundaries = buildForcePushBoundaries(orderingSourceEvents);
     if (boundaries.length === 0) return sourceEvents;
-    const displayTimes = buildForcePushDisplayTimes(sourceEvents, boundaries);
+    const displayTimes = buildForcePushDisplayTimes(orderingSourceEvents, boundaries);
     return [...sourceEvents].sort((a, b) => {
-      return (displayTimes[b.ID] ?? 0) - (displayTimes[a.ID] ?? 0) || b.ID - a.ID;
+      return (displayTimes[b.ID] ?? eventSortValue(b)) - (displayTimes[a.ID] ?? eventSortValue(a)) ||
+        b.ID - a.ID;
     });
   }
 
-  function buildTimelineEntries(sourceEvents: Array<PREvent | IssueEvent>): TimelineEntry[] {
-    const orderedEvents = orderEventsForForcePushBoundaries(sourceEvents);
+  function buildTimelineEntries(
+    sourceEvents: Array<PREvent | IssueEvent>,
+    orderingSourceEvents: Array<PREvent | IssueEvent>,
+  ): TimelineEntry[] {
+    const orderedEvents = orderEventsForForcePushBoundaries(sourceEvents, orderingSourceEvents);
     const threads: Array<{ id: string; events: Array<PREvent | IssueEvent> }> = [];
 
     for (const event of orderedEvents) {
@@ -356,7 +396,7 @@
     return entries;
   }
 
-  const timelineEntries = $derived(buildTimelineEntries(events));
+  const timelineEntries = $derived(buildTimelineEntries(events, orderingEvents));
 
   function isCompactEvent(eventType: string): boolean {
     return (

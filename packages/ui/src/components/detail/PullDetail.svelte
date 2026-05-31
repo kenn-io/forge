@@ -177,8 +177,9 @@
   let timelineFilter = $state<PRTimelineFilterState>(
     loadPRTimelineFilter(),
   );
+  const timelineEvents = $derived(detailStore.getDetail()?.events ?? []);
   const filteredTimelineEvents = $derived.by(() =>
-    filterPREvents(detailStore.getDetail()?.events ?? [], timelineFilter),
+    filterPREvents(timelineEvents, timelineFilter),
   );
   const hasActiveTimelineFilters = $derived(
     activePRTimelineFilterCount(timelineFilter) > 0,
@@ -1972,6 +1973,7 @@
         {#if detailStore.getDetailLoaded()}
           <EventTimeline
             events={filteredTimelineEvents}
+            orderingEvents={timelineEvents}
             {provider}
             {platformHost}
             repoOwner={owner}

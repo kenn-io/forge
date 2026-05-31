@@ -656,7 +656,7 @@ describe("EventTimeline", () => {
             EventType: "commit",
             Summary: firstHead,
             Body: "first generation head",
-            CreatedAt: "2024-06-01T10:03:00Z",
+            CreatedAt: "2024-06-01T14:00:00Z",
           }),
           makeEvent({
             ID: 3,
@@ -681,6 +681,94 @@ describe("EventTimeline", () => {
     );
     expect(text.indexOf("3333333 -> 6666666")).toBeLessThan(
       text.indexOf("original generation head"),
+    );
+  });
+
+  it("uses hidden force-push events to order visible commit generations", () => {
+    const oldHead = "3333333333333333333333333333333333333333";
+    const newHead = "6666666666666666666666666666666666666666";
+    const visibleEvents = [
+      makeEvent({
+        ID: 3,
+        EventType: "commit",
+        Summary: oldHead,
+        Body: "visible old generation head",
+        CreatedAt: "2024-06-01T11:00:00Z",
+      }),
+      makeEvent({
+        ID: 6,
+        EventType: "commit",
+        Summary: newHead,
+        Body: "visible new generation head",
+        CreatedAt: "2024-06-01T10:00:00Z",
+      }),
+    ];
+    const { container } = render(EventTimeline, {
+      props: {
+        events: visibleEvents,
+        orderingEvents: [
+          ...visibleEvents,
+          makeEvent({
+            ID: 7,
+            EventType: "force_push",
+            Summary: "3333333 -> 6666666",
+            CreatedAt: "2024-06-01T12:00:00Z",
+            MetadataJSON: JSON.stringify({
+              before_sha: oldHead,
+              after_sha: newHead,
+            }),
+          }),
+        ],
+      },
+    });
+
+    const text = container.textContent ?? "";
+    expect(text.indexOf("visible new generation head")).toBeLessThan(
+      text.indexOf("visible old generation head"),
+    );
+    expect(screen.queryByText("3333333 -> 6666666")).toBeNull();
+  });
+
+  it("falls back to after-sha when the old force-push anchor was never imported", () => {
+    const missingOldHead = "3333333333333333333333333333333333333333";
+    const newHead = "6666666666666666666666666666666666666666";
+    const { container } = render(EventTimeline, {
+      props: {
+        events: [
+          makeEvent({
+            ID: 7,
+            EventType: "force_push",
+            Summary: "3333333 -> 6666666",
+            CreatedAt: "2024-06-01T12:00:00Z",
+            MetadataJSON: JSON.stringify({
+              before_sha: missingOldHead,
+              after_sha: newHead,
+            }),
+          }),
+          makeEvent({
+            ID: 6,
+            EventType: "commit",
+            Summary: newHead,
+            Body: "fresh import new head",
+            CreatedAt: "2024-06-01T10:02:00Z",
+          }),
+          makeEvent({
+            ID: 5,
+            EventType: "commit",
+            Summary: "5555555555555555555555555555555555555555",
+            Body: "fresh import earlier current commit",
+            CreatedAt: "2024-06-01T10:01:00Z",
+          }),
+        ],
+      },
+    });
+
+    const text = container.textContent ?? "";
+    expect(text.indexOf("fresh import new head")).toBeLessThan(
+      text.indexOf("3333333 -> 6666666"),
+    );
+    expect(text.indexOf("fresh import earlier current commit")).toBeLessThan(
+      text.indexOf("3333333 -> 6666666"),
     );
   });
 

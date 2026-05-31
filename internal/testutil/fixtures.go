@@ -686,8 +686,39 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 		return nil, fmt.Errorf("upsert widgets PR#1 events: %w", err)
 	}
 
-	// widgets PR#2: 1 comment (alice), 1 review (alice CHANGES_REQUESTED)
+	// widgets PR#2: imported after a force-push, so only the new commit generation is present
+	w2MissingOldHead := "2222aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	w2CurrentCommit := "2222bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	w2CurrentHead := "2222cccccccccccccccccccccccccccccccccccc"
+	w2CommitBase := now.Add(-6 * 24 * time.Hour)
 	err = d.UpsertMREvents(ctx, []db.MREvent{
+		{
+			MergeRequestID: w2ID,
+			EventType:      "commit",
+			Author:         "alice",
+			Summary:        w2CurrentCommit,
+			Body:           "test: reproduce widget race after import",
+			CreatedAt:      w2CommitBase,
+			DedupeKey:      "w2-commit-1",
+		},
+		{
+			MergeRequestID: w2ID,
+			EventType:      "commit",
+			Author:         "alice",
+			Summary:        w2CurrentHead,
+			Body:           "fix: guard widget race after import",
+			CreatedAt:      w2CommitBase.Add(1 * time.Hour),
+			DedupeKey:      "w2-commit-2",
+		},
+		{
+			MergeRequestID: w2ID,
+			EventType:      "force_push",
+			Author:         "alice",
+			Summary:        "2222aaa -> 2222ccc",
+			MetadataJSON:   fmt.Sprintf(`{"before_sha":%q,"after_sha":%q,"ref":"feature/race"}`, w2MissingOldHead, w2CurrentHead),
+			CreatedAt:      w2CommitBase.Add(2 * time.Hour),
+			DedupeKey:      "w2-force-push-1",
+		},
 		{
 			MergeRequestID: w2ID,
 			EventType:      "issue_comment",

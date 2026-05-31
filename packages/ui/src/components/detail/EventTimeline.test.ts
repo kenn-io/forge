@@ -825,6 +825,59 @@ describe("EventTimeline", () => {
     );
   });
 
+  it("keeps same-timestamp unrelated events outside force-push boundary buckets", () => {
+    const oldHead = "3333333333333333333333333333333333333333";
+    const newHead = "6666666666666666666666666666666666666666";
+    const { container } = render(EventTimeline, {
+      props: {
+        events: [
+          makeEvent({
+            ID: 15,
+            EventType: "issue_comment",
+            Summary: "",
+            Body: "same timestamp reviewer note between IDs",
+            CreatedAt: "2024-06-01T12:00:00Z",
+          }),
+          makeEvent({
+            ID: 10,
+            EventType: "commit",
+            Summary: newHead,
+            Body: "same timestamp generated commit below comment ID",
+            CreatedAt: "2024-06-01T10:03:00Z",
+          }),
+          makeEvent({
+            ID: 20,
+            EventType: "force_push",
+            Summary: "3333333 -> 6666666",
+            CreatedAt: "2024-06-01T12:00:00Z",
+            MetadataJSON: JSON.stringify({
+              before_sha: oldHead,
+              after_sha: newHead,
+            }),
+          }),
+          makeEvent({
+            ID: 5,
+            EventType: "commit",
+            Summary: oldHead,
+            Body: "same timestamp original generation",
+            CreatedAt: "2024-06-01T10:03:00Z",
+          }),
+        ],
+      },
+    });
+
+    const text = container.textContent ?? "";
+    expect(text.indexOf("same timestamp generated commit below comment ID")).toBeLessThan(
+      text.indexOf("3333333 -> 6666666"),
+    );
+    expect(text.indexOf("3333333 -> 6666666")).toBeLessThan(
+      text.indexOf("same timestamp reviewer note between IDs"),
+    );
+    expect(text.indexOf("same timestamp reviewer note between IDs")).toBeLessThan(
+      text.indexOf("same timestamp original generation"),
+    );
+  });
+
   it("uses hidden force-push events to order visible commit generations", () => {
     const oldHead = "3333333333333333333333333333333333333333";
     const newHead = "6666666666666666666666666666666666666666";

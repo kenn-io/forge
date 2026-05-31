@@ -640,6 +640,15 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 		},
 		{
 			MergeRequestID: w1ID,
+			EventType:      "review",
+			Author:         "bob",
+			Summary:        "COMMENTED",
+			Body:           "Same timestamp reviewer note between force-push IDs.",
+			CreatedAt:      commitBase.Add(8 * time.Hour),
+			DedupeKey:      "w1-review-force-push-same-timestamp",
+		},
+		{
+			MergeRequestID: w1ID,
 			EventType:      "force_push",
 			Author:         "alice",
 			Summary:        "abc9999 -> def7777",

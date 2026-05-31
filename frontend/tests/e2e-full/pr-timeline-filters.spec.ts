@@ -97,6 +97,7 @@ test.describe("PR timeline filters", () => {
       "Title changed",
       "fix: finish cache rebase after follow-up force push",
       "abc9999 -> def7777",
+      "Same timestamp reviewer note between force-push IDs.",
       "fix: guard nil cache after rebase",
       "abc4444 -> def5555",
       "fix: guard nil cache before rebase",

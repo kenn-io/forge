@@ -182,7 +182,9 @@
 
   type TimelineDisplaySortKey = {
     time: number;
-    generationOrder?: number | undefined;
+    bucketID: number;
+    generationOrder: number;
+    id: number;
   };
 
   type CommitSHAIndex = {
@@ -333,6 +335,9 @@
     for (const event of sourceEvents) {
       displaySortKeys[event.ID] = {
         time: eventSortValue(event),
+        bucketID: event.ID,
+        generationOrder: 0,
+        id: event.ID,
       };
     }
 
@@ -345,7 +350,9 @@
       const nextGeneration = generations[index + 1];
       displaySortKeys[generation.eventID] = {
         time: generation.pushedAt,
-        generationOrder: index * 2 + 2,
+        bucketID: generation.eventID,
+        generationOrder: 1,
+        id: generation.eventID,
       };
       while (
         commitIndex < commitEvents.length &&
@@ -365,7 +372,9 @@
           time: nextPushedAt !== undefined && nextPushedAt >= generation.pushedAt
             ? Math.min(lowerBounded, nextPushedAt)
             : lowerBounded,
-          generationOrder: index * 2 + 3,
+          bucketID: generation.eventID,
+          generationOrder: 2,
+          id: event.ID,
         };
         commitIndex += 1;
       }
@@ -382,13 +391,24 @@
     if (boundaries.length === 0) return sourceEvents;
     const displaySortKeys = buildForcePushDisplaySortKeys(orderingSourceEvents, boundaries);
     return [...sourceEvents].sort((a, b) => {
-      const aKey = displaySortKeys[a.ID] ?? { time: eventSortValue(a) };
-      const bKey = displaySortKeys[b.ID] ?? { time: eventSortValue(b) };
-      const generationOrder =
-        aKey.generationOrder !== undefined && bKey.generationOrder !== undefined
-          ? bKey.generationOrder - aKey.generationOrder
-          : 0;
-      return bKey.time - aKey.time || generationOrder || b.ID - a.ID;
+      const aKey = displaySortKeys[a.ID] ?? {
+        time: eventSortValue(a),
+        bucketID: a.ID,
+        generationOrder: 0,
+        id: a.ID,
+      };
+      const bKey = displaySortKeys[b.ID] ?? {
+        time: eventSortValue(b),
+        bucketID: b.ID,
+        generationOrder: 0,
+        id: b.ID,
+      };
+      return (
+        bKey.time - aKey.time ||
+        bKey.bucketID - aKey.bucketID ||
+        bKey.generationOrder - aKey.generationOrder ||
+        bKey.id - aKey.id
+      );
     });
   }
 

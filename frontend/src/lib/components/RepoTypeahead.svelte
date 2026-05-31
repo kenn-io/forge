@@ -3,6 +3,8 @@
   import { getStores } from "@middleman/ui";
   import { client } from "../api/runtime.js";
   import type { ConfigRepo, Repo } from "@middleman/ui/api/types";
+  import { canonicalProvider } from "@middleman/ui/api/provider-routes";
+  import type { RepoTreeOption } from "./repoTree.js";
   import { ChevronDownIcon } from "../icons.ts";
   import {
     parseRepoFilterValue,
@@ -46,7 +48,7 @@
   let repoFetchVersion = 0;
   let latestRepoFetchKey = "";
 
-  type RepoOption = { value: string; owner: string; name: string };
+  type RepoOption = RepoTreeOption;
 
   $effect(() => {
     const configuredRepoKey = configuredRepos
@@ -78,6 +80,8 @@
       value: `${repo.PlatformHost}/${repo.Owner}/${repo.Name}`,
       owner: repo.Owner,
       name: repo.Name,
+      provider: canonicalProvider(repo.Platform),
+      platformHost: repo.PlatformHost,
     };
   }
 
@@ -87,6 +91,8 @@
       value: `${repo.platform_host}/${path}`,
       owner: repo.owner,
       name: repo.name,
+      provider: canonicalProvider(repo.provider),
+      platformHost: repo.platform_host,
     };
   }
 

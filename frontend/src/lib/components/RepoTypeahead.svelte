@@ -5,6 +5,15 @@
   import type { ConfigRepo, Repo } from "@middleman/ui/api/types";
   import { canonicalProvider } from "@middleman/ui/api/provider-routes";
   import type { RepoTreeOption } from "./repoTree.js";
+  import RepoTreeNode from "./RepoTreeNode.svelte";
+  import {
+    buildRepoTree,
+    visibleRows,
+    nodeSelectionState,
+    toggleSubtree,
+    type VisibleRow,
+  } from "./repoTree.js";
+  import { createRepoTreeExpansionStore } from "../stores/repoTreeExpansion.svelte.js";
   import { ChevronDownIcon } from "../icons.ts";
   import {
     parseRepoFilterValue,
@@ -142,6 +151,26 @@
     return `${selectedValues.length} repos`;
   });
 
+  const expansion = createRepoTreeExpansionStore();
+
+  const tree = $derived(buildRepoTree(options));
+
+  const rows = $derived(
+    visibleRows(tree, { isCollapsed: expansion.isCollapsed, query }),
+  );
+
+  function rowAriaLabel(row: VisibleRow): string {
+    return row.node.kind === "host" ? row.node.platformHost : row.node.id;
+  }
+
+  function toggleRowSelect(row: VisibleRow) {
+    onchange(serializeRepoFilterValue(toggleSubtree(row.node, selectedValues)));
+  }
+
+  function toggleRowExpand(row: VisibleRow) {
+    if (row.hasChildren) expansion.toggle(row.node.id);
+  }
+
   $effect(() => {
     if (selectedValues.length === 0 || reposLoading) return;
     const validValues = new Set(options.map((option) => option.value));
@@ -269,27 +298,24 @@
         />
         <span>All repos</span>
       </li>
-      {#each filtered as option, i (option.value)}
-        <li
-          class="typeahead-option"
-          class:highlighted={i + 1 === highlightIndex}
-          class:selected={selectedSet.has(option.value)}
-          role="option"
-          aria-selected={selectedSet.has(option.value)}
-          onmousedown={() => toggleRepo(option.value)}
-          onmouseenter={() => (highlightIndex = i + 1)}
-        >
-          <input
-            class="typeahead-checkbox"
-            type="checkbox"
-            checked={selectedSet.has(option.value)}
-            tabindex="-1"
-            aria-hidden="true"
-          />
-          <span class="typeahead-option-label">
-            {#each highlightSegments(option.value, query) as seg, segIndex (`${option.value}-${segIndex}-${seg.text}-${seg.match}`)}{#if seg.match}<mark class="match">{seg.text}</mark>{:else}{seg.text}{/if}{/each}
-          </span>
-        </li>
+      {#each rows as row, i (row.node.id)}
+        <RepoTreeNode
+          kind={row.node.kind}
+          label={row.node.label}
+          ariaLabel={rowAriaLabel(row)}
+          provider={row.node.kind === "host" ? row.node.provider : undefined}
+          depth={row.depth}
+          hasChildren={row.hasChildren}
+          expanded={row.expanded}
+          selectionState={nodeSelectionState(row.node, selectedSet)}
+          highlighted={i + 1 === highlightIndex}
+          segments={query !== "" && row.node.kind === "repo"
+            ? highlightSegments(row.node.label, query)
+            : undefined}
+          onToggleExpand={() => toggleRowExpand(row)}
+          onToggleSelect={() => toggleRowSelect(row)}
+          onHover={() => (highlightIndex = i + 1)}
+        />
       {:else}
         <li class="typeahead-empty">No matching repos</li>
       {/each}
@@ -384,7 +410,11 @@
     padding: 2px;
   }
 
-  .typeahead-option {
+  /* RepoTreeNode renders rows as a child component, so the shared row, */
+  /* checkbox, and match-highlight rules are scoped to descendants of */
+  /* the RepoTypeahead-owned .typeahead-list rather than this component */
+  /* alone. The :global() escape keeps them off the rest of the app. */
+  .typeahead-list :global(.typeahead-option) {
     display: flex;
     align-items: center;
     gap: 6px;
@@ -398,32 +428,33 @@
     text-overflow: ellipsis;
   }
 
-  .typeahead-checkbox {
+  .typeahead-list :global(.typeahead-checkbox) {
     width: 12px;
     height: 12px;
     margin: 0;
     flex-shrink: 0;
     accent-color: var(--accent-blue);
+  }
+
+  /* The "All repos" row's checkbox is decorative (aria-hidden); its */
+  /* clicks are handled by the row. RepoTreeNode's checkboxes have a real */
+  /* onmousedown, so pointer-events must stay enabled for them. This rule */
+  /* is scoped (no :global) so it only matches RepoTypeahead's own row. */
+  .typeahead-option:not(.repo-tree-row) .typeahead-checkbox {
     pointer-events: none;
   }
 
-  .typeahead-option-label {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .typeahead-option.highlighted {
+  .typeahead-list :global(.typeahead-option.highlighted) {
     background: var(--bg-surface-hover);
     color: var(--text-primary);
   }
 
-  .typeahead-option.selected {
+  .typeahead-list :global(.typeahead-option.selected) {
     color: var(--accent-blue);
     font-weight: 600;
   }
 
-  .match {
+  .typeahead-list :global(.match) {
     background: color-mix(in srgb, var(--accent-blue) 40%, transparent);
     color: var(--accent-blue);
     font-weight: 600;

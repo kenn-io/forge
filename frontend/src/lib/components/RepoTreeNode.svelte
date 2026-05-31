@@ -11,13 +11,13 @@
     kind: "host" | "owner" | "repo";
     label: string;
     ariaLabel: string;
-    provider?: string;
+    provider?: string | undefined;
     depth: number;
     hasChildren: boolean;
     expanded: boolean;
     selectionState: SelectionState;
     highlighted: boolean;
-    segments?: LabelSegment[];
+    segments?: LabelSegment[] | undefined;
     onToggleExpand: () => void;
     onToggleSelect: () => void;
     onHover?: () => void;

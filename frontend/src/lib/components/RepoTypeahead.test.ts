@@ -24,6 +24,9 @@ const getRepos = client.GET as unknown as Mock<() => Promise<{ data: Repo[]; err
 
 describe("RepoTypeahead", () => {
   beforeEach(() => {
+    // The expansion store persists collapsed nodes to localStorage, so clear
+    // it between tests to keep each case from inheriting another's tree state.
+    localStorage.clear();
     settingsStore = createSettingsStore();
     settingsStore.setConfiguredRepos([]);
     getRepos.mockResolvedValue({ data: [], error: undefined });
@@ -151,6 +154,130 @@ describe("RepoTypeahead", () => {
     expect(onchange).toHaveBeenLastCalledWith(
       "github.com/import-lab/api,github.com/import-lab/web",
     );
+  });
+
+  it("selecting an owner row selects all repos beneath it", async () => {
+    const onchange = vi.fn();
+    settingsStore.setConfiguredRepos([
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "import-lab",
+        name: "api",
+        repo_path: "import-lab/api",
+        is_glob: false,
+        matched_repo_count: 1,
+      },
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "import-lab",
+        name: "web",
+        repo_path: "import-lab/web",
+        is_glob: false,
+        matched_repo_count: 1,
+      },
+    ]);
+
+    render(RepoTypeahead, { props: { selected: undefined, onchange } });
+
+    await fireEvent.click(screen.getByRole("button", { name: /all repos/i }));
+    const ownerCheckbox = screen
+      .getByRole("option", { name: "github.com/import-lab" })
+      .querySelector("input[type='checkbox']") as HTMLInputElement;
+    await fireEvent.mouseDown(ownerCheckbox);
+
+    expect(onchange).toHaveBeenLastCalledWith(
+      "github.com/import-lab/api,github.com/import-lab/web",
+    );
+  });
+
+  it("filters to matching leaves while keeping their owner visible", async () => {
+    settingsStore.setConfiguredRepos([
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "import-lab",
+        name: "api",
+        repo_path: "import-lab/api",
+        is_glob: false,
+        matched_repo_count: 1,
+      },
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "import-lab",
+        name: "web",
+        repo_path: "import-lab/web",
+        is_glob: false,
+        matched_repo_count: 1,
+      },
+    ]);
+
+    render(RepoTypeahead, {
+      props: { selected: undefined, onchange: vi.fn() },
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: /all repos/i }));
+    await fireEvent.input(screen.getByPlaceholderText("Filter repos..."), {
+      target: { value: "web" },
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("option", { name: "github.com/import-lab/web" }),
+      ).toBeTruthy();
+      expect(
+        screen.queryByRole("option", { name: "github.com/import-lab/api" }),
+      ).toBeNull();
+    });
+  });
+
+  it("clicking an owner row body expands/collapses without selecting", async () => {
+    const onchange = vi.fn();
+    settingsStore.setConfiguredRepos([
+      {
+        provider: "github", platform_host: "github.com", owner: "import-lab",
+        name: "api", repo_path: "import-lab/api", is_glob: false, matched_repo_count: 1,
+      },
+      {
+        provider: "github", platform_host: "github.com", owner: "import-lab",
+        name: "web", repo_path: "import-lab/web", is_glob: false, matched_repo_count: 1,
+      },
+    ]);
+    render(RepoTypeahead, { props: { selected: undefined, onchange } });
+    await fireEvent.click(screen.getByRole("button", { name: /all repos/i }));
+
+    // leaves visible initially
+    expect(screen.getByRole("option", { name: "github.com/import-lab/api" })).toBeTruthy();
+    // click the owner row body (its caret button has aria-label "Toggle import-lab";
+    // click the row <li> itself, not the caret) -> collapses, hides leaves, selects nothing
+    await fireEvent.mouseDown(screen.getByRole("option", { name: "github.com/import-lab" }));
+    // NOTE: owner row body mousedown should toggle EXPAND, not select. After collapse the leaves are gone.
+    await waitFor(() => {
+      expect(screen.queryByRole("option", { name: "github.com/import-lab/api" })).toBeNull();
+    });
+    expect(onchange).not.toHaveBeenCalled();
+  });
+
+  it("clicking a leaf checkbox selects only that leaf", async () => {
+    const onchange = vi.fn();
+    settingsStore.setConfiguredRepos([
+      {
+        provider: "github", platform_host: "github.com", owner: "import-lab",
+        name: "api", repo_path: "import-lab/api", is_glob: false, matched_repo_count: 1,
+      },
+      {
+        provider: "github", platform_host: "github.com", owner: "import-lab",
+        name: "web", repo_path: "import-lab/web", is_glob: false, matched_repo_count: 1,
+      },
+    ]);
+    render(RepoTypeahead, { props: { selected: undefined, onchange } });
+    await fireEvent.click(screen.getByRole("button", { name: /all repos/i }));
+    const leaf = screen.getByRole("option", { name: "github.com/import-lab/api" });
+    const checkbox = leaf.querySelector("input[type='checkbox']") as HTMLInputElement;
+    await fireEvent.mouseDown(checkbox);
+    expect(onchange).toHaveBeenLastCalledWith("github.com/import-lab/api");
   });
 
   it("drops removed repos after settings remove matching entries", async () => {

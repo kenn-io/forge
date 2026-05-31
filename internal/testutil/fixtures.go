@@ -529,6 +529,8 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 	w1OldHead := "abc4444444444444444444444444444444444444"
 	w1NewCommit := "def3333333333333333333333333333333333333"
 	w1NewHead := "def5555555555555555555555555555555555555"
+	w1SecondMissingBefore := "abc9999999999999999999999999999999999999"
+	w1SecondHead := "def7777777777777777777777777777777777777"
 	w1FollowUp := "def6666666666666666666666666666666666666"
 	w1BobCommentUTC := time.Date(now.Year(), now.Month(), now.Day(), 1, 30, 0, 0, time.UTC).Add(-8 * 24 * time.Hour)
 	w1BobComment, err := time.Parse(
@@ -626,6 +628,24 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 			Body:           "fix: guard nil cache after rebase",
 			CreatedAt:      commitBase.Add(6 * time.Hour),
 			DedupeKey:      "w1-commit-6",
+		},
+		{
+			MergeRequestID: w1ID,
+			EventType:      "commit",
+			Author:         "alice",
+			Summary:        w1SecondHead,
+			Body:           "fix: finish cache rebase after follow-up force push",
+			CreatedAt:      commitBase.Add(6 * time.Hour),
+			DedupeKey:      "w1-commit-8",
+		},
+		{
+			MergeRequestID: w1ID,
+			EventType:      "force_push",
+			Author:         "alice",
+			Summary:        "abc9999 -> def7777",
+			MetadataJSON:   fmt.Sprintf(`{"before_sha":%q,"after_sha":%q,"ref":"feature/caching"}`, w1SecondMissingBefore, w1SecondHead),
+			CreatedAt:      commitBase.Add(8*time.Hour + 30*time.Minute),
+			DedupeKey:      "w1-force-push-2",
 		},
 		{
 			MergeRequestID: w1ID,

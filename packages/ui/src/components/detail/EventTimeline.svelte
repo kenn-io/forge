@@ -166,9 +166,17 @@
   }
 
   type ForcePushBoundary = {
+    orderCommitID: number;
     startAfterCommitID: number;
+    afterCommitID?: number | undefined;
     endAtCommitID?: number | undefined;
     pushedAt: number;
+    usesAfterAnchor: boolean;
+  };
+
+  type ForcePushGeneration = ForcePushBoundary & {
+    effectiveStartAfterCommitID: number;
+    effectiveEndAtCommitID: number;
   };
 
   type CommitSHAIndex = {
@@ -254,9 +262,14 @@
       const beforeSHA = forcePushBeforeSHA(event);
       const beforeCommit = beforeSHA ? lookupCommitBySHA(commitIndex, beforeSHA) : null;
       if (beforeCommit) {
+        const afterSHA = forcePushAfterSHA(event);
+        const afterCommit = afterSHA ? lookupCommitBySHA(commitIndex, afterSHA) : null;
         boundaries.push({
+          orderCommitID: beforeCommit.ID,
           startAfterCommitID: beforeCommit.ID,
+          afterCommitID: afterCommit?.ID,
           pushedAt: eventSortValue(event),
+          usesAfterAnchor: false,
         });
         continue;
       }
@@ -265,21 +278,49 @@
       const afterCommit = afterSHA ? lookupCommitBySHA(commitIndex, afterSHA) : null;
       if (!afterCommit) continue;
       boundaries.push({
+        orderCommitID: afterCommit.ID,
         startAfterCommitID: 0,
+        afterCommitID: afterCommit.ID,
         endAtCommitID: afterCommit.ID,
         pushedAt: eventSortValue(event),
+        usesAfterAnchor: true,
       });
     }
 
     return boundaries.sort((a, b) =>
-      a.startAfterCommitID - b.startAfterCommitID || a.pushedAt - b.pushedAt,
+      a.orderCommitID - b.orderCommitID || a.pushedAt - b.pushedAt,
     );
+  }
+
+  function buildForcePushGenerations(boundaries: ForcePushBoundary[]): ForcePushGeneration[] {
+    const generations: Array<Omit<ForcePushGeneration, "effectiveEndAtCommitID">> = [];
+    for (const [index, boundary] of boundaries.entries()) {
+      const previous = boundaries[index - 1];
+      generations.push({
+        ...boundary,
+        effectiveStartAfterCommitID: boundary.usesAfterAnchor
+          ? previous?.afterCommitID ?? previous?.orderCommitID ?? 0
+          : boundary.startAfterCommitID,
+      });
+    }
+
+    return generations.map((generation, index) => {
+      const nextGeneration = generations[index + 1];
+      return {
+        ...generation,
+        effectiveEndAtCommitID: Math.min(
+          generation.endAtCommitID ?? Number.POSITIVE_INFINITY,
+          nextGeneration?.effectiveStartAfterCommitID ?? Number.POSITIVE_INFINITY,
+        ),
+      };
+    });
   }
 
   function buildForcePushDisplayTimes(
     sourceEvents: Array<PREvent | IssueEvent>,
     boundaries: ForcePushBoundary[],
   ): Record<number, number> {
+    const generations = buildForcePushGenerations(boundaries);
     const displayTimes: Record<number, number> = {};
     for (const event of sourceEvents) {
       displayTimes[event.ID] = eventSortValue(event);
@@ -290,27 +331,23 @@
       .sort((a, b) => a.ID - b.ID);
     let commitIndex = 0;
 
-    for (const [index, generation] of boundaries.entries()) {
-      const nextBoundary = boundaries[index + 1];
-      const generationEndID = Math.min(
-        generation.endAtCommitID ?? Number.POSITIVE_INFINITY,
-        nextBoundary?.startAfterCommitID ?? Number.POSITIVE_INFINITY,
-      );
+    for (const [index, generation] of generations.entries()) {
+      const nextGeneration = generations[index + 1];
       while (
         commitIndex < commitEvents.length &&
-        (commitEvents[commitIndex]?.ID ?? 0) <= generation.startAfterCommitID
+        (commitEvents[commitIndex]?.ID ?? 0) <= generation.effectiveStartAfterCommitID
       ) {
         commitIndex += 1;
       }
       while (
         commitIndex < commitEvents.length &&
-        (commitEvents[commitIndex]?.ID ?? Number.POSITIVE_INFINITY) <= generationEndID
+        (commitEvents[commitIndex]?.ID ?? Number.POSITIVE_INFINITY) <= generation.effectiveEndAtCommitID
       ) {
         const event = commitEvents[commitIndex];
         if (!event) break;
         const lowerBounded = Math.max(eventSortValue(event), generation.pushedAt + 1);
-        displayTimes[event.ID] = nextBoundary
-          ? Math.min(lowerBounded, nextBoundary.pushedAt - 1)
+        displayTimes[event.ID] = nextGeneration
+          ? Math.min(lowerBounded, nextGeneration.pushedAt - 1)
           : lowerBounded;
         commitIndex += 1;
       }

@@ -72,8 +72,10 @@ test.describe("PR timeline filters", () => {
   test("renders seeded commit and system timeline events", async ({ page }) => {
     await openPRTimeline(page);
 
-    await expect(page.getByText("Force-pushed")).toBeVisible();
+    await expect(page.locator(".event-type", { hasText: "Force-pushed" }))
+      .toHaveCount(2);
     await expect(page.getByText("abc4444 -> def5555")).toBeVisible();
+    await expect(page.getByText("abc9999 -> def7777")).toBeVisible();
     await expect(page.locator(".event-type", { hasText: "Referenced" }))
       .toHaveCount(3);
     await expect(page.getByText("Widget rendering broken on Safari"))
@@ -93,6 +95,8 @@ test.describe("PR timeline filters", () => {
       "Base changed",
       "chore: tune cache eviction metrics",
       "Title changed",
+      "fix: finish cache rebase after follow-up force push",
+      "abc9999 -> def7777",
       "fix: guard nil cache after rebase",
       "abc4444 -> def5555",
       "fix: guard nil cache before rebase",
@@ -135,7 +139,9 @@ test.describe("PR timeline filters", () => {
 
     await page.getByRole("button", { name: "Force pushes" }).click();
     await expect(page.getByText("abc4444 -> def5555")).not.toBeVisible();
+    await expect(page.getByText("abc9999 -> def7777")).not.toBeVisible();
     await expectTimelineTextOrder(page, [
+      "fix: finish cache rebase after follow-up force push",
       "fix: guard nil cache after rebase",
       "fix: guard nil cache before rebase",
     ]);

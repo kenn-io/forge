@@ -772,6 +772,74 @@ describe("EventTimeline", () => {
     );
   });
 
+  it("orders fallback force-push boundaries after earlier anchored boundaries", () => {
+    const originalHead = "3333333333333333333333333333333333333333";
+    const firstHead = "6666666666666666666666666666666666666666";
+    const missingSecondBefore = "8888888888888888888888888888888888888888";
+    const secondHead = "9999999999999999999999999999999999999999";
+    const { container } = render(EventTimeline, {
+      props: {
+        events: [
+          makeEvent({
+            ID: 10,
+            EventType: "force_push",
+            Summary: "8888888 -> 9999999",
+            CreatedAt: "2024-06-01T13:00:00Z",
+            MetadataJSON: JSON.stringify({
+              before_sha: missingSecondBefore,
+              after_sha: secondHead,
+            }),
+          }),
+          makeEvent({
+            ID: 9,
+            EventType: "commit",
+            Summary: secondHead,
+            Body: "fallback second generation head",
+            CreatedAt: "2024-06-01T10:03:00Z",
+          }),
+          makeEvent({
+            ID: 7,
+            EventType: "force_push",
+            Summary: "3333333 -> 6666666",
+            CreatedAt: "2024-06-01T12:00:00Z",
+            MetadataJSON: JSON.stringify({
+              before_sha: originalHead,
+              after_sha: firstHead,
+            }),
+          }),
+          makeEvent({
+            ID: 6,
+            EventType: "commit",
+            Summary: firstHead,
+            Body: "anchored first generation head",
+            CreatedAt: "2024-06-01T14:00:00Z",
+          }),
+          makeEvent({
+            ID: 3,
+            EventType: "commit",
+            Summary: originalHead,
+            Body: "anchored original generation head",
+            CreatedAt: "2024-06-01T10:03:00Z",
+          }),
+        ],
+      },
+    });
+
+    const text = container.textContent ?? "";
+    expect(text.indexOf("fallback second generation head")).toBeLessThan(
+      text.indexOf("8888888 -> 9999999"),
+    );
+    expect(text.indexOf("8888888 -> 9999999")).toBeLessThan(
+      text.indexOf("anchored first generation head"),
+    );
+    expect(text.indexOf("anchored first generation head")).toBeLessThan(
+      text.indexOf("3333333 -> 6666666"),
+    );
+    expect(text.indexOf("3333333 -> 6666666")).toBeLessThan(
+      text.indexOf("anchored original generation head"),
+    );
+  });
+
   it("renders system events as compact rows", () => {
     render(EventTimeline, {
       props: {

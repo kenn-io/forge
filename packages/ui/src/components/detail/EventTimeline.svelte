@@ -182,7 +182,7 @@
 
   type TimelineDisplaySortKey = {
     time: number;
-    generationOrder: number;
+    generationOrder?: number | undefined;
   };
 
   type CommitSHAIndex = {
@@ -333,7 +333,6 @@
     for (const event of sourceEvents) {
       displaySortKeys[event.ID] = {
         time: eventSortValue(event),
-        generationOrder: 0,
       };
     }
 
@@ -383,11 +382,13 @@
     if (boundaries.length === 0) return sourceEvents;
     const displaySortKeys = buildForcePushDisplaySortKeys(orderingSourceEvents, boundaries);
     return [...sourceEvents].sort((a, b) => {
-      const aKey = displaySortKeys[a.ID] ?? { time: eventSortValue(a), generationOrder: 0 };
-      const bKey = displaySortKeys[b.ID] ?? { time: eventSortValue(b), generationOrder: 0 };
-      return bKey.time - aKey.time ||
-        bKey.generationOrder - aKey.generationOrder ||
-        b.ID - a.ID;
+      const aKey = displaySortKeys[a.ID] ?? { time: eventSortValue(a) };
+      const bKey = displaySortKeys[b.ID] ?? { time: eventSortValue(b) };
+      const generationOrder =
+        aKey.generationOrder !== undefined && bKey.generationOrder !== undefined
+          ? bKey.generationOrder - aKey.generationOrder
+          : 0;
+      return bKey.time - aKey.time || generationOrder || b.ID - a.ID;
     });
   }
 

@@ -644,7 +644,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 			Author:         "alice",
 			Summary:        "abc9999 -> def7777",
 			MetadataJSON:   fmt.Sprintf(`{"before_sha":%q,"after_sha":%q,"ref":"feature/caching"}`, w1SecondMissingBefore, w1SecondHead),
-			CreatedAt:      commitBase.Add(8*time.Hour + 30*time.Minute),
+			CreatedAt:      commitBase.Add(8 * time.Hour),
 			DedupeKey:      "w1-force-push-2",
 		},
 		{

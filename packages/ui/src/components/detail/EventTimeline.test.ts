@@ -751,6 +751,80 @@ describe("EventTimeline", () => {
     );
   });
 
+  it("preserves natural same-timestamp ordering for unrelated timeline events", () => {
+    const oldHead = "3333333333333333333333333333333333333333";
+    const firstHead = "6666666666666666666666666666666666666666";
+    const secondHead = "9999999999999999999999999999999999999999";
+    const { container } = render(EventTimeline, {
+      props: {
+        events: [
+          makeEvent({
+            ID: 10,
+            EventType: "force_push",
+            Summary: "6666666 -> 9999999",
+            CreatedAt: "2024-06-01T12:00:00Z",
+            MetadataJSON: JSON.stringify({
+              before_sha: firstHead,
+              after_sha: secondHead,
+            }),
+          }),
+          makeEvent({
+            ID: 9,
+            EventType: "commit",
+            Summary: secondHead,
+            Body: "same timestamp natural second generation",
+            CreatedAt: "2024-06-01T10:03:00Z",
+          }),
+          makeEvent({
+            ID: 8,
+            EventType: "issue_comment",
+            Summary: "",
+            Body: "same timestamp reviewer note",
+            CreatedAt: "2024-06-01T12:00:00Z",
+          }),
+          makeEvent({
+            ID: 7,
+            EventType: "force_push",
+            Summary: "3333333 -> 6666666",
+            CreatedAt: "2024-06-01T12:00:00Z",
+            MetadataJSON: JSON.stringify({
+              before_sha: oldHead,
+              after_sha: firstHead,
+            }),
+          }),
+          makeEvent({
+            ID: 6,
+            EventType: "commit",
+            Summary: firstHead,
+            Body: "same timestamp natural first generation",
+            CreatedAt: "2024-06-01T14:00:00Z",
+          }),
+          makeEvent({
+            ID: 3,
+            EventType: "commit",
+            Summary: oldHead,
+            Body: "same timestamp natural original generation",
+            CreatedAt: "2024-06-01T10:03:00Z",
+          }),
+        ],
+      },
+    });
+
+    const text = container.textContent ?? "";
+    expect(text.indexOf("same timestamp natural second generation")).toBeLessThan(
+      text.indexOf("6666666 -> 9999999"),
+    );
+    expect(text.indexOf("6666666 -> 9999999")).toBeLessThan(
+      text.indexOf("same timestamp reviewer note"),
+    );
+    expect(text.indexOf("same timestamp reviewer note")).toBeLessThan(
+      text.indexOf("same timestamp natural first generation"),
+    );
+    expect(text.indexOf("same timestamp natural first generation")).toBeLessThan(
+      text.indexOf("3333333 -> 6666666"),
+    );
+  });
+
   it("uses hidden force-push events to order visible commit generations", () => {
     const oldHead = "3333333333333333333333333333333333333333";
     const newHead = "6666666666666666666666666666666666666666";

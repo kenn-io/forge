@@ -166,6 +166,7 @@
   }
 
   type ForcePushBoundary = {
+    eventID: number;
     orderCommitID: number;
     startAfterCommitID: number;
     afterCommitID?: number | undefined;
@@ -177,6 +178,11 @@
   type ForcePushGeneration = ForcePushBoundary & {
     effectiveStartAfterCommitID: number;
     effectiveEndAtCommitID: number;
+  };
+
+  type TimelineDisplaySortKey = {
+    time: number;
+    generationOrder: number;
   };
 
   type CommitSHAIndex = {
@@ -265,6 +271,7 @@
         const afterSHA = forcePushAfterSHA(event);
         const afterCommit = afterSHA ? lookupCommitBySHA(commitIndex, afterSHA) : null;
         boundaries.push({
+          eventID: event.ID,
           orderCommitID: beforeCommit.ID,
           startAfterCommitID: beforeCommit.ID,
           afterCommitID: afterCommit?.ID,
@@ -278,6 +285,7 @@
       const afterCommit = afterSHA ? lookupCommitBySHA(commitIndex, afterSHA) : null;
       if (!afterCommit) continue;
       boundaries.push({
+        eventID: event.ID,
         orderCommitID: afterCommit.ID,
         startAfterCommitID: 0,
         afterCommitID: afterCommit.ID,
@@ -316,14 +324,17 @@
     });
   }
 
-  function buildForcePushDisplayTimes(
+  function buildForcePushDisplaySortKeys(
     sourceEvents: Array<PREvent | IssueEvent>,
     boundaries: ForcePushBoundary[],
-  ): Record<number, number> {
+  ): Record<number, TimelineDisplaySortKey> {
     const generations = buildForcePushGenerations(boundaries);
-    const displayTimes: Record<number, number> = {};
+    const displaySortKeys: Record<number, TimelineDisplaySortKey> = {};
     for (const event of sourceEvents) {
-      displayTimes[event.ID] = eventSortValue(event);
+      displaySortKeys[event.ID] = {
+        time: eventSortValue(event),
+        generationOrder: 0,
+      };
     }
 
     const commitEvents = sourceEvents
@@ -333,6 +344,10 @@
 
     for (const [index, generation] of generations.entries()) {
       const nextGeneration = generations[index + 1];
+      displaySortKeys[generation.eventID] = {
+        time: generation.pushedAt,
+        generationOrder: index * 2 + 2,
+      };
       while (
         commitIndex < commitEvents.length &&
         (commitEvents[commitIndex]?.ID ?? 0) <= generation.effectiveStartAfterCommitID
@@ -345,15 +360,19 @@
       ) {
         const event = commitEvents[commitIndex];
         if (!event) break;
-        const lowerBounded = Math.max(eventSortValue(event), generation.pushedAt + 1);
-        displayTimes[event.ID] = nextGeneration
-          ? Math.min(lowerBounded, nextGeneration.pushedAt - 1)
-          : lowerBounded;
+        const lowerBounded = Math.max(eventSortValue(event), generation.pushedAt);
+        const nextPushedAt = nextGeneration?.pushedAt;
+        displaySortKeys[event.ID] = {
+          time: nextPushedAt !== undefined && nextPushedAt >= generation.pushedAt
+            ? Math.min(lowerBounded, nextPushedAt)
+            : lowerBounded,
+          generationOrder: index * 2 + 3,
+        };
         commitIndex += 1;
       }
     }
 
-    return displayTimes;
+    return displaySortKeys;
   }
 
   function orderEventsForForcePushBoundaries(
@@ -362,9 +381,12 @@
   ): Array<PREvent | IssueEvent> {
     const boundaries = buildForcePushBoundaries(orderingSourceEvents);
     if (boundaries.length === 0) return sourceEvents;
-    const displayTimes = buildForcePushDisplayTimes(orderingSourceEvents, boundaries);
+    const displaySortKeys = buildForcePushDisplaySortKeys(orderingSourceEvents, boundaries);
     return [...sourceEvents].sort((a, b) => {
-      return (displayTimes[b.ID] ?? eventSortValue(b)) - (displayTimes[a.ID] ?? eventSortValue(a)) ||
+      const aKey = displaySortKeys[a.ID] ?? { time: eventSortValue(a), generationOrder: 0 };
+      const bKey = displaySortKeys[b.ID] ?? { time: eventSortValue(b), generationOrder: 0 };
+      return bKey.time - aKey.time ||
+        bKey.generationOrder - aKey.generationOrder ||
         b.ID - a.ID;
     });
   }

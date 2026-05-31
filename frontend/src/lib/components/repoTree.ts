@@ -169,3 +169,40 @@ export function visibleRows(
   }
   return rows;
 }
+
+export type SelectionState = "checked" | "partial" | "unchecked";
+
+export function collectLeafValues(node: RepoTreeNodeData): string[] {
+  if (node.kind === "repo") return [node.value];
+  const values: string[] = [];
+  for (const child of node.children) values.push(...collectLeafValues(child));
+  return values;
+}
+
+export function nodeSelectionState(
+  node: RepoTreeNodeData,
+  active: ReadonlySet<string>,
+): SelectionState {
+  const leaves = collectLeafValues(node);
+  if (leaves.length === 0) return "unchecked";
+  let selected = 0;
+  for (const value of leaves) if (active.has(value)) selected += 1;
+  if (selected === 0) return "unchecked";
+  if (selected === leaves.length) return "checked";
+  return "partial";
+}
+
+export function toggleSubtree(
+  node: RepoTreeNodeData,
+  activeValues: readonly string[],
+): string[] {
+  const leaves = collectLeafValues(node);
+  if (nodeSelectionState(node, new Set(activeValues)) === "checked") {
+    const remove = new Set(leaves);
+    return activeValues.filter((value) => !remove.has(value));
+  }
+  const next = [...activeValues];
+  const present = new Set(activeValues);
+  for (const value of leaves) if (!present.has(value)) next.push(value);
+  return next;
+}

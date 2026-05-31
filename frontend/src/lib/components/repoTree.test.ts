@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { buildRepoTree, type RepoTreeOption } from "./repoTree.js";
-import { visibleRows, type VisibleRow } from "./repoTree.js";
+import {
+  buildRepoTree,
+  collectLeafValues,
+  nodeSelectionState,
+  toggleSubtree,
+  visibleRows,
+  type RepoTreeOption,
+  type VisibleRow,
+} from "./repoTree.js";
 
 function opt(
   platformHost: string,
@@ -69,6 +76,10 @@ describe("buildRepoTree", () => {
       opt("ghe.example.com", "b/y", "gitlab"),
     ]);
     expect(tree[0]!.provider).toBe("github");
+  });
+
+  it("returns an empty array for no options", () => {
+    expect(buildRepoTree([])).toEqual([]);
   });
 });
 
@@ -162,5 +173,105 @@ describe("visibleRows", () => {
     expect(labels).toContain("web");
     expect(labels).toContain("web-sdk");
     expect(labels).not.toContain("api");
+  });
+
+  it("omits a collapsed host's owners in multi-host mode", () => {
+    const tree = buildRepoTree([
+      opt("github.com", "acme/api"),
+      opt("github.com", "acme/web"),
+      opt("gitlab.com", "g/x", "gitlab"),
+    ]);
+    const collapsed = (id: string) => id === "github.com";
+    const rows = visibleRows(tree, { isCollapsed: collapsed });
+    // github.com host row present but collapsed -> its owners/leaves omitted
+    const githubHost = rows.find((r) => r.node.label === "github.com");
+    expect(githubHost?.expanded).toBe(false);
+    expect(rows.some((r) => r.node.label === "acme")).toBe(false);
+    // gitlab.com still shows
+    expect(rows.some((r) => r.node.label === "gitlab.com")).toBe(true);
+  });
+
+  it("drops an entire host when a filter matches nothing under it", () => {
+    const tree = buildRepoTree([
+      opt("github.com", "acme/web"),
+      opt("gitlab.com", "g/api", "gitlab"),
+    ]);
+    const rows = visibleRows(tree, { isCollapsed: () => false, query: "web" });
+    // only github.com/acme/web matches; gitlab.com host is dropped entirely,
+    // and with one host remaining it auto-flattens (host row omitted)
+    expect(rows.some((r) => r.node.label === "gitlab.com")).toBe(false);
+    expect(rows.some((r) => r.node.label === "web")).toBe(true);
+  });
+
+  it("treats a whitespace-only query as no filter", () => {
+    const tree = buildRepoTree([
+      opt("github.com", "acme/api"),
+      opt("github.com", "acme/web"),
+    ]);
+    const collapsed = (id: string) => id === "github.com/acme";
+    const rows = visibleRows(tree, { isCollapsed: collapsed, query: "   " });
+    // whitespace trims to empty -> not filtering -> collapse is honored, leaves hidden
+    expect(rows.some((r) => r.node.label === "api")).toBe(false);
+    expect(rows.find((r) => r.node.label === "acme")?.expanded).toBe(false);
+  });
+});
+
+describe("selection helpers", () => {
+  const tree = buildRepoTree([
+    opt("github.com", "acme/api"),
+    opt("github.com", "acme/web"),
+    opt("github.com", "acme/infra"),
+  ]);
+  const acme = tree[0]!.children[0]!;
+
+  it("collects all descendant leaf values", () => {
+    expect(collectLeafValues(acme).sort()).toEqual([
+      "github.com/acme/api",
+      "github.com/acme/infra",
+      "github.com/acme/web",
+    ]);
+    expect(collectLeafValues(acme.children[0]!)).toEqual([
+      "github.com/acme/api",
+    ]);
+  });
+
+  it("computes tri-state from the active set", () => {
+    expect(nodeSelectionState(acme, new Set())).toBe("unchecked");
+    expect(
+      nodeSelectionState(acme, new Set(["github.com/acme/api"])),
+    ).toBe("partial");
+    expect(
+      nodeSelectionState(
+        acme,
+        new Set([
+          "github.com/acme/api",
+          "github.com/acme/web",
+          "github.com/acme/infra",
+        ]),
+      ),
+    ).toBe("checked");
+  });
+
+  it("adds all subtree leaves when not fully checked", () => {
+    expect(toggleSubtree(acme, ["github.com/acme/api"]).sort()).toEqual([
+      "github.com/acme/api",
+      "github.com/acme/infra",
+      "github.com/acme/web",
+    ]);
+  });
+
+  it("removes all subtree leaves when fully checked", () => {
+    const all = [
+      "github.com/acme/api",
+      "github.com/acme/web",
+      "github.com/acme/infra",
+    ];
+    expect(toggleSubtree(acme, all)).toEqual([]);
+  });
+
+  it("toggles a single leaf without touching siblings", () => {
+    expect(
+      toggleSubtree(acme.children[0]!, ["github.com/acme/web"]).sort(),
+    ).toEqual(["github.com/acme/api", "github.com/acme/web"]);
   });
 });

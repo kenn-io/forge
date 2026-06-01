@@ -14,6 +14,7 @@ import (
 
 	gitcmd "go.kenn.io/kit/git/cmd"
 	gitremote "go.kenn.io/kit/git/remote"
+	"go.kenn.io/middleman/internal/procutil"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -334,6 +335,11 @@ func (m *Manager) gitWithInput(
 	if input != nil {
 		stdin = bytes.NewReader(input)
 	}
+	release, err := procutil.TryAcquire(ctx, "git subprocess capacity")
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	out, stderr, err := runner.Run(ctx, dir, stdin, args...)
 	if err != nil {
 		msg := string(stderr)
@@ -346,6 +352,10 @@ func (m *Manager) gitWithInput(
 }
 
 func (m *Manager) gitRunner(host string) gitcmd.Runner {
+	// Middleman relies on kit's automation defaults here: inherited GIT_*
+	// variables are stripped, global/system config is ignored, and terminal
+	// prompts are disabled. Clone/fetch still uses middleman's subprocess
+	// limiter above because it shares capacity with the rest of the app.
 	runner := gitcmd.New()
 	if token := m.tokens[host]; token != "" {
 		// GitHub's smart HTTP endpoint expects Basic auth credentials.

@@ -2167,6 +2167,10 @@ func localBranchExists(
 func workspaceGitCommand(
 	ctx context.Context, dir string, args ...string,
 ) *exec.Cmd {
+	// Keep git process construction centralized so workspace mutations share
+	// kit's automation defaults: no inherited GIT_* hook state, no global or
+	// system config, and no terminal prompts. Callers remain responsible for
+	// wrapping commands in procutil when they need the shared capacity guard.
 	return gitcmd.New().Command(ctx, dir, args...)
 }
 

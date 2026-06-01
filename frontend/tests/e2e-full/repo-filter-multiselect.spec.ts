@@ -42,6 +42,39 @@ test("repository selector filters dashboard lists by multiple selected repos", a
   ).resolves.toBe("github.com/acme/widgets,github.com/acme/tools");
 });
 
+test("keyboard navigation survives a real checkbox click", async ({ page }) => {
+  // A real click (not just mousedown) on a row checkbox must not steal focus
+  // from the filter input. The checkbox is a focusable native input and its
+  // mousedown stops propagation (skipping the list's preventBlur), so without
+  // preventDefault the click would blur the input and kill keyboard handling,
+  // which is bound only to that input.
+  await page.goto("/issues");
+  await waitForIssueList(page);
+
+  const selector = page.getByTitle("Select repository");
+  await selector.click();
+
+  const input = page.getByPlaceholder("Filter repos...");
+  await expect(input).toBeFocused();
+
+  // Real click on a leaf repo's checkbox.
+  await page
+    .getByRole("option", { name: "github.com/acme/widgets", exact: true })
+    .locator("input[type='checkbox']")
+    .click();
+  await expect(
+    page
+      .getByRole("option", { name: "github.com/acme/widgets", exact: true })
+      .locator("input[type='checkbox']"),
+  ).toBeChecked();
+
+  // Focus must still be on the input, and keyboard handling must still work:
+  // Escape closes the dropdown.
+  await expect(input).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".typeahead-list")).toHaveCount(0);
+});
+
 test("repository selector cascades an owner group to all its repos", async ({ page }) => {
   await page.goto("/issues");
   await waitForIssueList(page);

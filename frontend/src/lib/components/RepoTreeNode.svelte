@@ -47,8 +47,19 @@
   }
 
   function checkboxMouseDown(event: MouseEvent) {
+    // stopPropagation keeps the row from also toggling expand; preventDefault
+    // keeps focus on the filter input (the checkbox is a real focusable input,
+    // and stopping propagation skips the list's preventBlur handler). Without
+    // it a real click steals focus and breaks keyboard navigation.
     event.stopPropagation();
+    event.preventDefault();
     onToggleSelect();
+  }
+
+  function caretMouseDown(event: MouseEvent) {
+    // Same reasoning as the checkbox: keep focus on the filter input.
+    event.stopPropagation();
+    event.preventDefault();
   }
 
   function caretClick(event: MouseEvent) {
@@ -76,7 +87,7 @@
       class:expanded
       aria-label={`Toggle ${label}`}
       onclick={caretClick}
-      onmousedown={(event) => event.stopPropagation()}
+      onmousedown={caretMouseDown}
       type="button"
     >
       <svg viewBox="0 0 10 10" width="10" height="10" aria-hidden="true">

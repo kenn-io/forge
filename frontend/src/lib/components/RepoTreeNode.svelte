@@ -1,5 +1,6 @@
 <script lang="ts">
   import ProviderIcon from "./provider/ProviderIcon.svelte";
+  import TreeCheckbox from "./TreeCheckbox.svelte";
   import type { SelectionState } from "./repoTree.js";
 
   interface LabelSegment {
@@ -38,12 +39,6 @@
     onToggleSelect,
     onHover,
   }: Props = $props();
-
-  let checkboxEl = $state<HTMLInputElement>();
-
-  $effect(() => {
-    if (checkboxEl) checkboxEl.indeterminate = selectionState === "partial";
-  });
 
   function rowMouseDown() {
     // Name/body click expands interior rows, selects leaves.
@@ -97,14 +92,7 @@
     <span class="repo-tree-caret repo-tree-caret--leaf" aria-hidden="true"></span>
   {/if}
 
-  <input
-    bind:this={checkboxEl}
-    class="typeahead-checkbox"
-    type="checkbox"
-    checked={selectionState === "checked"}
-    tabindex="-1"
-    onmousedown={checkboxMouseDown}
-  />
+  <TreeCheckbox value={selectionState} onmousedown={checkboxMouseDown} />
 
   {#if kind === "host" && provider}
     <ProviderIcon {provider} size={14} />

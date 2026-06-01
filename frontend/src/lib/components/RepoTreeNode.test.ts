@@ -88,6 +88,35 @@ describe("RepoTreeNode", () => {
     expect(onToggleSelect).toHaveBeenCalledOnce();
   });
 
+  it("stays controlled when really clicked (native toggle suppressed)", async () => {
+    // A real browser click is mousedown + mouseup + click; a native checkbox's
+    // click default action toggles its own .checked, which desyncs it from the
+    // controlled `checked={selectionState}` binding (selectionState only changes
+    // via the parent's onToggleSelect). The component must cancel that default
+    // action so the box reflects selectionState alone. Earlier tests fired
+    // mousedown only, which skips the native toggle and hid this bug.
+    render(RepoTreeNode, {
+      props: {
+        kind: "repo",
+        label: "api",
+        ariaLabel: "github.com/acme/api",
+        depth: 1,
+        hasChildren: false,
+        expanded: false,
+        selectionState: "unchecked",
+        highlighted: false,
+        onToggleExpand: vi.fn(),
+        onToggleSelect: vi.fn(),
+      },
+    });
+    const box = screen.getByRole("checkbox") as HTMLInputElement;
+    expect(box.checked).toBe(false);
+    await fireEvent.click(box);
+    // selectionState is still "unchecked" (parent's onToggleSelect is a stub),
+    // so a correctly controlled box stays false. A native toggle would flip it.
+    expect(box.checked).toBe(false);
+  });
+
   it("renders highlighted match segments when given segments", () => {
     render(RepoTreeNode, {
       props: {

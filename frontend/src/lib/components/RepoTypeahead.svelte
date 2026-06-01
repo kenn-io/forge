@@ -6,6 +6,7 @@
   import { canonicalProvider } from "@middleman/ui/api/provider-routes";
   import type { RepoTreeOption } from "./repoTree.js";
   import RepoTreeNode from "./RepoTreeNode.svelte";
+  import TreeCheckbox from "./TreeCheckbox.svelte";
   import {
     buildRepoTree,
     visibleRows,
@@ -297,12 +298,9 @@
         onmousedown={clearSelection}
         onmouseenter={() => (highlightIndex = 0)}
       >
-        <input
-          class="typeahead-checkbox"
-          type="checkbox"
-          checked={selectedValues.length === 0}
-          tabindex="-1"
-          aria-hidden="true"
+        <TreeCheckbox
+          value={selectedValues.length === 0 ? "checked" : "unchecked"}
+          decorative
         />
         <span>All repos</span>
       </li>
@@ -434,22 +432,6 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-  }
-
-  .typeahead-list :global(.typeahead-checkbox) {
-    width: 12px;
-    height: 12px;
-    margin: 0;
-    flex-shrink: 0;
-    accent-color: var(--accent-blue);
-  }
-
-  /* The "All repos" row's checkbox is decorative (aria-hidden); its */
-  /* clicks are handled by the row. RepoTreeNode's checkboxes have a real */
-  /* onmousedown, so pointer-events must stay enabled for them. This rule */
-  /* is scoped (no :global) so it only matches RepoTypeahead's own row. */
-  .typeahead-option:not(.repo-tree-row) .typeahead-checkbox {
-    pointer-events: none;
   }
 
   .typeahead-list :global(.typeahead-option.highlighted) {

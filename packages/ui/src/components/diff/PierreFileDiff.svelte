@@ -333,7 +333,7 @@
   });
 
   $effect(() => {
-    if (!host || active || rendered) return;
+    if (!host || rendered) return;
     const root = host.closest(".diff-area");
     if (!(root instanceof HTMLElement)) return;
     root.addEventListener("scroll", scheduleViewportProbe, { passive: true });

@@ -759,10 +759,7 @@ func TestRollbackWorktreeDeletesBranchWhenContextCanceled(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
-	mgr.rollbackWorktree(ctx, workspaceGitSource{
-		dir:      cloneDir,
-		lockRoot: cloneDir,
-	}, ws, workspaceBranchUnknown)
+	mgr.rollbackWorktree(ctx, cloneDir, ws, workspaceBranchUnknown)
 
 	_, exists, err := gitRefSHA(
 		t.Context(), cloneDir, "refs/heads/"+branch,
@@ -3039,10 +3036,7 @@ func TestManagerAddWorktreeAcquiresRepoLock(t *testing.T) {
 	}
 	done := make(chan error, 1)
 	go func() {
-		_, err := mgr.addWorktree(t.Context(), workspaceGitSource{
-			dir:      cloneDir,
-			lockRoot: cloneDir,
-		}, ws)
+		_, err := mgr.addWorktree(t.Context(), cloneDir, ws)
 		done <- err
 	}()
 

@@ -55,11 +55,6 @@ type WorktreeBasePathResolver func(
 	ctx context.Context, platformHost, owner, name string,
 ) (path string, ok bool, err error)
 
-type workspaceGitSource struct {
-	dir      string
-	lockRoot string
-}
-
 // CreateIssueOptions controls how issue-backed workspaces choose their branch.
 //
 // The default path creates middleman's conventional issue branch. When a local
@@ -156,8 +151,8 @@ func (m *Manager) SetClones(clones *gitclone.Manager) {
 	m.clones = clones
 }
 
-// withRepoLock acquires a lock for the clone directory, executes the function,
-// and releases the lock. The lock is released even if the function panics.
+// withRepoLock acquires a repository-scoped lock, executes the function, and
+// releases the lock. The lock is released even if the function panics.
 func (m *Manager) withRepoLock(ctx context.Context, lockRoot string, fn func() error) error {
 	if err := os.MkdirAll(lockRoot, 0o755); err != nil {
 		return fmt.Errorf("prepare worktree lock for %q: %w", lockRoot, err)
@@ -173,6 +168,31 @@ func (m *Manager) withRepoLock(ctx context.Context, lockRoot string, fn func() e
 		}
 	}()
 	return fn()
+}
+
+func (m *Manager) withRepoLockForGitDir(
+	ctx context.Context, gitDir string, fn func() error,
+) error {
+	lockRoot, err := m.worktreeLockRoot(ctx, gitDir)
+	if err != nil {
+		return err
+	}
+	return m.withRepoLock(ctx, lockRoot, fn)
+}
+
+func (m *Manager) worktreeLockRoot(ctx context.Context, gitDir string) (string, error) {
+	bare, err := gitIsBareRepository(ctx, gitDir)
+	if err != nil {
+		return "", err
+	}
+	if bare {
+		return gitDir, nil
+	}
+	commonDir, err := worktreeCommonGitDir(ctx, gitDir)
+	if err != nil {
+		return "", err
+	}
+	return m.localWorktreeBaseLockRoot(commonDir), nil
 }
 
 // SetTmuxCommand sets the command + argv prefix for every tmux
@@ -310,72 +330,20 @@ func (m *Manager) CreateIssue(
 	}
 
 	workspaceBranch := gitHeadRef
-	if source, ok, sourceErr := m.localWorktreeBaseSource(
+	branchDir, ok, err := m.issueBranchInspectionDir(
 		ctx, platformHost, owner, name,
-	); sourceErr != nil {
-		return nil, sourceErr
-	} else if ok {
-		exists, err := localBranchExists(ctx, source.dir, gitHeadRef)
-		if err != nil {
-			return nil, fmt.Errorf("inspect local branch: %w", err)
-		}
-		if exists {
-			if opts.ReuseExistingBranch {
-				workspaceBranch = ""
-			} else {
-				suggested, err := nextAvailableBranchName(
-					ctx, source.dir, gitHeadRef,
-				)
-				if err != nil {
-					return nil, fmt.Errorf(
-						"suggest branch name: %w",
-						err,
-					)
-				}
-				return nil, &IssueWorkspaceBranchConflictError{
-					Branch:          gitHeadRef,
-					SuggestedBranch: suggested,
-				}
-			}
-		}
-	} else if m.clones != nil {
-		remoteURL := fmt.Sprintf(
-			"https://%s/%s/%s.git",
-			platformHost, owner, name,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if ok {
+		branch, err := issueWorkspaceBranchForExistingLocalBranch(
+			ctx, branchDir, gitHeadRef, opts.ReuseExistingBranch,
 		)
-		if err := m.clones.EnsureClone(
-			ctx, platformHost, owner, name, remoteURL,
-		); err != nil {
-			return nil, fmt.Errorf("ensure clone: %w", err)
-		}
-
-		cloneDir, err := m.clones.ClonePath(platformHost, owner, name)
 		if err != nil {
 			return nil, err
 		}
-		exists, err := localBranchExists(ctx, cloneDir, gitHeadRef)
-		if err != nil {
-			return nil, fmt.Errorf("inspect local branch: %w", err)
-		}
-		if exists {
-			if opts.ReuseExistingBranch {
-				workspaceBranch = ""
-			} else {
-				suggested, err := nextAvailableBranchName(
-					ctx, cloneDir, gitHeadRef,
-				)
-				if err != nil {
-					return nil, fmt.Errorf(
-						"suggest branch name: %w",
-						err,
-					)
-				}
-				return nil, &IssueWorkspaceBranchConflictError{
-					Branch:          gitHeadRef,
-					SuggestedBranch: suggested,
-				}
-			}
-		}
+		workspaceBranch = branch
 	}
 
 	id, err := newWorkspaceID()
@@ -415,6 +383,56 @@ func newWorkspaceID() (string, error) {
 	return hex.EncodeToString(idBytes), nil
 }
 
+func (m *Manager) issueBranchInspectionDir(
+	ctx context.Context, platformHost, owner, name string,
+) (string, bool, error) {
+	if baseDir, ok, err := m.localWorktreeBaseDir(ctx, platformHost, owner, name); err != nil || ok {
+		return baseDir, ok, err
+	}
+	if m.clones == nil {
+		return "", false, nil
+	}
+
+	remoteURL := fmt.Sprintf(
+		"https://%s/%s/%s.git",
+		platformHost, owner, name,
+	)
+	if err := m.clones.EnsureClone(
+		ctx, platformHost, owner, name, remoteURL,
+	); err != nil {
+		return "", false, fmt.Errorf("ensure clone: %w", err)
+	}
+
+	cloneDir, err := m.clones.ClonePath(platformHost, owner, name)
+	if err != nil {
+		return "", false, err
+	}
+	return cloneDir, true, nil
+}
+
+func issueWorkspaceBranchForExistingLocalBranch(
+	ctx context.Context, dir, branch string, reuse bool,
+) (string, error) {
+	exists, err := localBranchExists(ctx, dir, branch)
+	if err != nil {
+		return "", fmt.Errorf("inspect local branch: %w", err)
+	}
+	if !exists {
+		return branch, nil
+	}
+	if reuse {
+		return "", nil
+	}
+	suggested, err := nextAvailableBranchName(ctx, dir, branch)
+	if err != nil {
+		return "", fmt.Errorf("suggest branch name: %w", err)
+	}
+	return "", &IssueWorkspaceBranchConflictError{
+		Branch:          branch,
+		SuggestedBranch: suggested,
+	}
+}
+
 func workspaceHeadRepo(platformHost, owner, name, cloneURL string) *string {
 	if cloneURL == "" {
 		return nil
@@ -446,7 +464,7 @@ func (m *Manager) Setup(
 		ws.ID, workspaceSetupStageSetup, "started",
 		"starting workspace setup",
 	)
-	source, err := m.workspaceSetupSource(ctx, ws)
+	gitDir, err := m.workspaceSetupGitDir(ctx, ws)
 	if err != nil {
 		return m.failSetup(
 			ctx,
@@ -454,7 +472,7 @@ func (m *Manager) Setup(
 		)
 	}
 
-	branch, err := m.addWorktree(ctx, source, ws)
+	branch, err := m.addWorktree(ctx, gitDir, ws)
 	if err != nil {
 		return m.failSetup(
 			ctx,
@@ -465,7 +483,7 @@ func (m *Manager) Setup(
 	if err := m.updateWorkspaceBranch(
 		ctx, ws.ID, branch,
 	); err != nil {
-		m.rollbackWorktree(ctx, source, ws, branch)
+		m.rollbackWorktree(ctx, gitDir, ws, branch)
 		return m.failSetup(
 			ctx,
 			ws.ID, workspaceSetupStageWorktree, err,
@@ -474,7 +492,7 @@ func (m *Manager) Setup(
 
 	err = m.newTerminalSession(ctx, ws)
 	if err != nil {
-		m.rollbackWorktree(ctx, source, ws, branch)
+		m.rollbackWorktree(ctx, gitDir, ws, branch)
 		return m.failSetup(
 			ctx,
 			ws.ID, workspaceSetupStageTmuxSession, err,
@@ -508,17 +526,17 @@ func (m *Manager) Setup(
 	return nil
 }
 
-func (m *Manager) workspaceSetupSource(
+func (m *Manager) workspaceSetupGitDir(
 	ctx context.Context, ws *Workspace,
-) (workspaceGitSource, error) {
-	if source, ok, err := m.localWorktreeBaseSource(
+) (string, error) {
+	if baseDir, ok, err := m.localWorktreeBaseDir(
 		ctx, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
 	); err != nil || ok {
-		return source, err
+		return baseDir, err
 	}
 
 	if m.clones == nil {
-		return workspaceGitSource{}, fmt.Errorf("clone manager not set")
+		return "", fmt.Errorf("clone manager not set")
 	}
 
 	remoteURL := fmt.Sprintf(
@@ -529,40 +547,37 @@ func (m *Manager) workspaceSetupSource(
 		ctx, ws.PlatformHost, ws.RepoOwner,
 		ws.RepoName, remoteURL,
 	); err != nil {
-		return workspaceGitSource{}, err
+		return "", err
 	}
 
 	cloneDir, err := m.clones.ClonePath(
 		ws.PlatformHost, ws.RepoOwner, ws.RepoName,
 	)
 	if err != nil {
-		return workspaceGitSource{}, err
+		return "", err
 	}
-	return workspaceGitSource{dir: cloneDir, lockRoot: cloneDir}, nil
+	return cloneDir, nil
 }
 
-func (m *Manager) localWorktreeBaseSource(
+func (m *Manager) localWorktreeBaseDir(
 	ctx context.Context, platformHost, owner, name string,
-) (workspaceGitSource, bool, error) {
+) (string, bool, error) {
 	if m.worktreeBaseResolver == nil {
-		return workspaceGitSource{}, false, nil
+		return "", false, nil
 	}
 	raw, ok, err := m.worktreeBaseResolver(ctx, platformHost, owner, name)
 	if err != nil {
-		return workspaceGitSource{}, false, err
+		return "", false, err
 	}
 	raw = strings.TrimSpace(raw)
 	if !ok || raw == "" {
-		return workspaceGitSource{}, false, nil
+		return "", false, nil
 	}
 	abs, err := ValidateWorktreeBasePath(ctx, raw, platformHost, owner, name)
 	if err != nil {
-		return workspaceGitSource{}, false, err
+		return "", false, err
 	}
-	return workspaceGitSource{
-		dir:      abs,
-		lockRoot: m.localWorktreeBaseLockRoot(abs),
-	}, true, nil
+	return abs, true, nil
 }
 
 func (m *Manager) localWorktreeBaseLockRoot(path string) string {
@@ -613,12 +628,12 @@ func ValidateWorktreeBasePath(
 // per-repo lock. The lock prevents concurrent worktree mutations on
 // the same git repository from clobbering each other; see FileLockManager.
 func (m *Manager) addWorktree(
-	ctx context.Context, source workspaceGitSource, ws *Workspace,
+	ctx context.Context, cloneDir string, ws *Workspace,
 ) (string, error) {
 	var branch string
-	err := m.withRepoLock(ctx, source.lockRoot, func() error {
+	err := m.withRepoLockForGitDir(ctx, cloneDir, func() error {
 		var addErr error
-		branch, addErr = m.addWorktreeLocked(ctx, source.dir, ws)
+		branch, addErr = m.addWorktreeLocked(ctx, cloneDir, ws)
 		return addErr
 	})
 	return branch, err
@@ -1050,7 +1065,7 @@ func (m *Manager) cleanupWorkspaceArtifactsForRetry(
 		return err
 	}
 
-	source, ok, err := m.workspaceCleanupSource(ctx, ws)
+	gitDir, ok, err := m.workspaceCleanupGitDir(ctx, ws)
 	if err != nil {
 		return err
 	}
@@ -1058,26 +1073,26 @@ func (m *Manager) cleanupWorkspaceArtifactsForRetry(
 		return nil
 	}
 
-	return m.withRepoLock(ctx, source.lockRoot, func() error {
+	return m.withRepoLockForGitDir(ctx, gitDir, func() error {
 		if err := runGit(
-			ctx, source.dir,
+			ctx, gitDir,
 			"worktree", "remove", "--force", ws.WorktreePath,
 		); err != nil && !isGitWorktreeAbsent(err) {
 			return fmt.Errorf("remove git worktree: %w", err)
 		}
 		if ws.WorkspaceBranch == workspaceBranchUnknown {
 			if err := deleteWorkspaceBranchStrict(
-				ctx, cloneDir, workspaceBranchUnknown,
+				ctx, gitDir, workspaceBranchUnknown,
 			); err != nil {
 				return err
 			}
 		}
 		if err := m.deleteWorkspaceBranchesStrict(
-			ctx, source.dir, ws, ws.WorkspaceBranch,
+			ctx, gitDir, ws, ws.WorkspaceBranch,
 		); err != nil {
 			return err
 		}
-		if err := runGit(ctx, source.dir, "worktree", "prune"); err != nil {
+		if err := runGit(ctx, gitDir, "worktree", "prune"); err != nil {
 			return fmt.Errorf("prune git worktrees: %w", err)
 		}
 		return nil
@@ -1091,7 +1106,7 @@ func (m *Manager) cleanupWorkspaceArtifactsForDelete(
 		return err
 	}
 
-	source, ok, err := m.workspaceCleanupSource(ctx, ws)
+	gitDir, ok, err := m.workspaceCleanupGitDir(ctx, ws)
 	if err != nil {
 		return err
 	}
@@ -1099,24 +1114,24 @@ func (m *Manager) cleanupWorkspaceArtifactsForDelete(
 		return nil
 	}
 
-	return m.withRepoLock(ctx, source.lockRoot, func() error {
+	return m.withRepoLockForGitDir(ctx, gitDir, func() error {
 		_ = runGit(
-			ctx, source.dir,
+			ctx, gitDir,
 			"worktree", "remove", "--force", ws.WorktreePath,
 		)
-		m.deleteWorkspaceBranches(ctx, source.dir, ws, ws.WorkspaceBranch)
-		_ = runGit(ctx, source.dir, "worktree", "prune")
+		m.deleteWorkspaceBranches(ctx, gitDir, ws, ws.WorkspaceBranch)
+		_ = runGit(ctx, gitDir, "worktree", "prune")
 		return nil
 	})
 }
 
-func (m *Manager) workspaceCleanupSource(
+func (m *Manager) workspaceCleanupGitDir(
 	ctx context.Context, ws *Workspace,
-) (workspaceGitSource, bool, error) {
-	if source, ok, err := m.localWorktreeBaseSource(
+) (string, bool, error) {
+	if baseDir, ok, err := m.localWorktreeBaseDir(
 		ctx, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
 	); err != nil || ok {
-		return source, ok, err
+		return baseDir, ok, err
 	}
 
 	if m.clones != nil {
@@ -1124,25 +1139,22 @@ func (m *Manager) workspaceCleanupSource(
 			ws.PlatformHost, ws.RepoOwner, ws.RepoName,
 		)
 		if err != nil {
-			return workspaceGitSource{}, false, err
+			return "", false, err
 		}
 		ready, err := gitCloneDirReady(cloneDir)
 		if err != nil {
-			return workspaceGitSource{}, false, err
+			return "", false, err
 		}
 		if ready {
-			return workspaceGitSource{dir: cloneDir, lockRoot: cloneDir}, true, nil
+			return cloneDir, true, nil
 		}
 	}
 
 	commonDir, err := worktreeCommonGitDir(ctx, ws.WorktreePath)
 	if err != nil {
-		return workspaceGitSource{}, false, nil
+		return "", false, nil
 	}
-	return workspaceGitSource{
-		dir:      commonDir,
-		lockRoot: m.localWorktreeBaseLockRoot(commonDir),
-	}, true, nil
+	return commonDir, true, nil
 }
 
 func (m *Manager) cleanupTmuxSession(
@@ -2231,25 +2243,25 @@ func wrapWorkspaceSetupError(stage string, err error) error {
 // rollbackWorktree removes a partially created worktree and its
 // branch under the per-repo lock.
 func (m *Manager) rollbackWorktree(
-	ctx context.Context, source workspaceGitSource, ws *Workspace,
+	ctx context.Context, cloneDir string, ws *Workspace,
 	branch string,
 ) {
 	cleanupCtx, cancel := cleanupContext(ctx)
 	defer cancel()
-	err := m.withRepoLock(cleanupCtx, source.lockRoot, func() error {
+	err := m.withRepoLockForGitDir(cleanupCtx, cloneDir, func() error {
 		if err := runGit(
-			cleanupCtx, source.dir,
+			cleanupCtx, cloneDir,
 			"worktree", "remove", "--force", ws.WorktreePath,
 		); err != nil {
 			slog.Warn("rollback: worktree remove failed",
 				"path", ws.WorktreePath, "err", err)
 		}
-		m.deleteWorkspaceBranches(cleanupCtx, source.dir, ws, branch)
+		m.deleteWorkspaceBranches(cleanupCtx, cloneDir, ws, branch)
 		return nil
 	})
 	if err != nil {
 		slog.Warn("rollback: acquire worktree lock failed",
-			"path", source.lockRoot, "err", err)
+			"path", cloneDir, "err", err)
 	}
 }
 
@@ -2459,6 +2471,19 @@ func worktreeCommonGitDir(
 		)
 	}
 	return strings.TrimSpace(string(out)), nil
+}
+
+func gitIsBareRepository(ctx context.Context, dir string) (bool, error) {
+	cmd := workspaceGitCommand(ctx, dir, "rev-parse", "--is-bare-repository")
+	out, err := procutil.CombinedOutput(
+		ctx, cmd, "git subprocess capacity",
+	)
+	if err != nil {
+		return false, fmt.Errorf(
+			"%w: %s", err, strings.TrimSpace(string(out)),
+		)
+	}
+	return strings.TrimSpace(string(out)) == "true", nil
 }
 
 func localBranchExists(

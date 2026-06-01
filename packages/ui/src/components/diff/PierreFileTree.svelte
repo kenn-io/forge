@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { FileTree } from "@pierre/trees";
+  import { FileTree, preparePresortedFileTreeInput } from "@pierre/trees";
   import type { FileTreeOptions } from "@pierre/trees";
   import { onMount, untrack } from "svelte";
   import type { DiffFile } from "../../api/types.js";
@@ -27,6 +27,7 @@
 
   const safeFiles = $derived(files ?? []);
   const treePaths = $derived(safeFiles.map((file) => file.path));
+  const preparedTreeInput = $derived(preparePresortedFileTreeInput(treePaths));
   const treeGitStatus = $derived(
     safeFiles.map((file): TreeGitStatus => ({
       path: file.path,
@@ -37,7 +38,7 @@
     `${treePaths.join("\0")}\n${treeGitStatus.map((item) => `${item.path}:${item.status}`).join("\0")}`,
   );
   const treeOptions = $derived<FileTreeOptions>({
-    paths: treePaths,
+    preparedInput: preparedTreeInput,
     initialExpansion: "open",
     initialVisibleRowCount: Math.max(100, treePaths.length * 4),
     overscan: Math.max(100, treePaths.length * 4),

@@ -111,6 +111,29 @@ describe("DiffSidebar", () => {
     );
   });
 
+  it("preserves diff file order without folding case", async () => {
+    const files = [
+      makeFile("src/B.ts"),
+      makeFile("src/C.ts"),
+      makeFile("src/a.ts"),
+    ];
+    renderSidebar(makeDiffStore(files));
+
+    const wantedPaths = new Set(files.map((file) => file.path));
+    await waitFor(() => {
+      const renderedPaths = Array.from(
+        treeRoot()?.querySelectorAll<HTMLElement>("[data-item-path]") ?? [],
+      )
+        .map((item) => item.dataset.itemPath ?? "")
+        .filter((path) => wantedPaths.has(path));
+      expect(renderedPaths).toEqual([
+        "src/B.ts",
+        "src/C.ts",
+        "src/a.ts",
+      ]);
+    });
+  });
+
   it("filters both visible rows and tree status data without rebuilding in a loop", async () => {
     const files = Array.from({ length: 11 }, (_, i) =>
       makeFile(i === 10 ? "docs/readme.md" : `src/file-${i}.ts`),

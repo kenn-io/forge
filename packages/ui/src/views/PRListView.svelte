@@ -30,6 +30,9 @@
   const { isSidebarToggleEnabled, toggleSidebar } = getSidebar();
   const navigate = getNavigate();
   const { detail: detailStore } = getStores();
+  const splitViewStorageKey = "pr-detail-split-view";
+  const regularConversationPanelWidth = 800 + 24 + 24;
+  const minSplitViewWidth = regularConversationPanelWidth * 2;
 
   const defaultProviderCapabilities: ProviderCapabilities = {
     read_repositories: true,
@@ -85,6 +88,38 @@
     onDetailTabChange,
     onStackMemberNavigate,
   }: Props = $props();
+
+  let detailHost: HTMLDivElement | undefined = $state();
+  let detailHostWidth = $state(0);
+  let splitViewEnabled = $state(loadSplitViewPreference());
+
+  const splitViewAvailable = $derived(selectedPR !== null && detailHostWidth >= minSplitViewWidth);
+  const splitViewActive = $derived(splitViewAvailable && splitViewEnabled);
+
+  function safeGetItem(key: string): string | null {
+    try {
+      return localStorage.getItem(key);
+    } catch {
+      return null;
+    }
+  }
+
+  function safeSetItem(key: string, value: string): void {
+    try {
+      localStorage.setItem(key, value);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function loadSplitViewPreference(): boolean {
+    return safeGetItem(splitViewStorageKey) === "1";
+  }
+
+  function setSplitViewEnabled(enabled: boolean): void {
+    splitViewEnabled = enabled;
+    safeSetItem(splitViewStorageKey, enabled ? "1" : "0");
+  }
 
   function filesScrollKey(): string | null {
     if (selectedPR === null) return null;
@@ -146,7 +181,7 @@
   });
 
   $effect(() => {
-    if (selectedPR === null || detailTab !== "files") return;
+    if (selectedPR === null || (!splitViewActive && detailTab !== "files")) return;
     const ref = selectedPR;
     untrack(() => {
       if (detailMatchesSelected(detailStore.getDetail(), ref)) return;
@@ -162,6 +197,28 @@
         },
       );
     });
+  });
+
+  $effect(() => {
+    const host = detailHost;
+    if (!host) {
+      detailHostWidth = 0;
+      return;
+    }
+
+    detailHostWidth = Math.round(host.getBoundingClientRect().width);
+    if (typeof ResizeObserver === "undefined") return;
+
+    const observer = new ResizeObserver((entries) => {
+      detailHostWidth = Math.round(
+        entries[0]?.contentRect.width ?? host.getBoundingClientRect().width,
+      );
+    });
+    observer.observe(host);
+
+    return () => {
+      observer.disconnect();
+    };
   });
 </script>
 
@@ -183,53 +240,102 @@
   {/snippet}
 
   {#if selectedPR !== null}
-    <div class="detail-tabs">
-      <button
-        class="detail-tab"
-        class:detail-tab--active={detailTab === "conversation"}
-        onclick={() => selectDetailTab("conversation")}
-      >
-        Conversation
-      </button>
-      <button
-        class="detail-tab"
-        class:detail-tab--active={detailTab === "files"}
-        onclick={() => selectDetailTab("files")}
-      >
-        Files changed
-      </button>
-    </div>
-    {#if detailTab === "files"}
-      {#key `${selectedPR.provider}/${selectedPR.platformHost ?? ""}/${selectedPR.repoPath}/${selectedPR.number}`}
-        <DiffFilesLayout
+    <div class="detail-host" bind:this={detailHost}>
+      <div class="detail-tabs">
+        <button
+          class="detail-tab"
+          class:detail-tab--active={detailTab === "conversation"}
+          onclick={() => selectDetailTab("conversation")}
+        >
+          Conversation
+        </button>
+        <button
+          class="detail-tab"
+          class:detail-tab--active={detailTab === "files"}
+          onclick={() => selectDetailTab("files")}
+        >
+          Files changed
+        </button>
+        {#if splitViewAvailable}
+          <button
+            type="button"
+            class="detail-split-toggle"
+            class:detail-split-toggle--active={splitViewActive}
+            aria-pressed={splitViewActive}
+            onclick={() => setSplitViewEnabled(!splitViewEnabled)}
+          >
+            Split view
+          </button>
+        {/if}
+      </div>
+
+      {#if splitViewActive}
+        <div class="detail-split-layout">
+          <section class="detail-split-pane" aria-label="Conversation">
+            <PullDetail
+              owner={selectedPR.owner}
+              name={selectedPR.name}
+              number={selectedPR.number}
+              provider={selectedPR.provider}
+              platformHost={selectedPR.platformHost}
+              repoPath={selectedPR.repoPath}
+              autoSync={autoSyncDetail}
+              {workflowApprovalSync}
+              hideTabs={true}
+              hideStaleWhileLoading={hideStaleDetailWhileLoading}
+              onStackMemberNavigate={handleStackMemberNavigate}
+            />
+          </section>
+          <section class="detail-split-pane detail-split-pane--files" aria-label="Files changed">
+            {#key `${selectedPR.provider}/${selectedPR.platformHost ?? ""}/${selectedPR.repoPath}/${selectedPR.number}`}
+              <DiffFilesLayout
+                owner={selectedPR.owner}
+                name={selectedPR.name}
+                number={selectedPR.number}
+                provider={selectedPR.provider}
+                platformHost={selectedPR.platformHost}
+                repoPath={selectedPR.repoPath}
+                diffHeadSHA={selectedDetail?.diff_head_sha}
+                capabilities={selectedDetail?.repo?.capabilities ?? defaultProviderCapabilities}
+                reviewThreads={reviewThreadsFromEvents(selectedDetail?.events)}
+                initialScrollTop={filesScrollTop()}
+                onScrollTopChange={rememberFilesScroll}
+              />
+            {/key}
+          </section>
+        </div>
+      {:else if detailTab === "files"}
+        {#key `${selectedPR.provider}/${selectedPR.platformHost ?? ""}/${selectedPR.repoPath}/${selectedPR.number}`}
+          <DiffFilesLayout
+            owner={selectedPR.owner}
+            name={selectedPR.name}
+            number={selectedPR.number}
+            provider={selectedPR.provider}
+            platformHost={selectedPR.platformHost}
+            repoPath={selectedPR.repoPath}
+            diffHeadSHA={selectedDetail?.diff_head_sha}
+            capabilities={selectedDetail?.repo?.capabilities ?? defaultProviderCapabilities}
+            reviewThreads={reviewThreadsFromEvents(selectedDetail?.events)}
+            initialScrollTop={filesScrollTop()}
+            onScrollTopChange={rememberFilesScroll}
+          />
+        {/key}
+      {:else}
+        <PullDetail
           owner={selectedPR.owner}
           name={selectedPR.name}
           number={selectedPR.number}
           provider={selectedPR.provider}
           platformHost={selectedPR.platformHost}
           repoPath={selectedPR.repoPath}
-          diffHeadSHA={selectedDetail?.diff_head_sha}
-          capabilities={selectedDetail?.repo?.capabilities ?? defaultProviderCapabilities}
-          reviewThreads={reviewThreadsFromEvents(selectedDetail?.events)}
-          initialScrollTop={filesScrollTop()}
-          onScrollTopChange={rememberFilesScroll}
+          autoSync={autoSyncDetail}
+          {workflowApprovalSync}
+          hideTabs={true}
+          hideStaleWhileLoading={hideStaleDetailWhileLoading}
+          onStackMemberNavigate={handleStackMemberNavigate}
         />
-      {/key}
-    {:else}
-      <PullDetail
-        owner={selectedPR.owner}
-        name={selectedPR.name}
-        number={selectedPR.number}
-        provider={selectedPR.provider}
-        platformHost={selectedPR.platformHost}
-        repoPath={selectedPR.repoPath}
-        autoSync={autoSyncDetail}
-        {workflowApprovalSync}
-        hideTabs={true}
-        hideStaleWhileLoading={hideStaleDetailWhileLoading}
-        onStackMemberNavigate={handleStackMemberNavigate}
-      />
-    {/if}
+      {/if}
+    </div>
   {:else}
     <div class="placeholder-content">
       <p class="placeholder-text">Select a PR</p>
@@ -241,8 +347,18 @@
 </CollapsibleResizableSidebar>
 
 <style>
+  .detail-host {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+
   .detail-tabs {
     display: flex;
+    align-items: center;
     gap: 0;
     border-bottom: 1px solid var(--border-default);
     background: var(--bg-surface);
@@ -282,5 +398,58 @@
   .detail-tab--active {
     color: var(--text-primary);
     border-bottom-color: var(--accent-blue);
+  }
+
+  .detail-split-toggle {
+    margin-left: auto;
+    margin-right: 8px;
+    min-height: 28px;
+    padding: 4px 10px;
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    background: var(--bg-primary);
+    font-size: var(--font-size-xs);
+    font-weight: 600;
+    transition:
+      color 0.1s,
+      border-color 0.1s,
+      background 0.1s;
+  }
+
+  .detail-split-toggle:hover {
+    color: var(--text-primary);
+    border-color: var(--border-strong, var(--border-default));
+    background: var(--bg-surface-hover);
+  }
+
+  .detail-split-toggle--active {
+    color: var(--accent-blue);
+    border-color: var(--accent-blue);
+    background: var(--accent-blue-soft, var(--bg-primary));
+  }
+
+  .detail-split-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .detail-split-pane {
+    display: flex;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .detail-split-pane--files {
+    border-left: 1px solid var(--border-default);
+  }
+
+  .detail-split-pane :global(.pull-detail-content) {
+    max-width: 800px;
   }
 </style>

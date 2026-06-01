@@ -115,28 +115,19 @@ export function visibleRows(
   const matches = (leaf: RepoLeaf) =>
     !filtering || leaf.value.toLowerCase().includes(q);
 
-  // Single-repo-owner flattening keys on the owner's TRUE repo count, captured
-  // before filtering prunes children. Otherwise an owner with several repos but
-  // only one match would collapse into a lone leaf and lose its owner context.
-  const originalChildCount = new Map<string, number>();
-  for (const host of tree) {
-    for (const owner of host.children) {
-      originalChildCount.set(owner.id, owner.children.length);
-    }
-  }
-
-  // Prune to owners/hosts that still have a matching leaf.
+  // Prune to the owners/hosts that still have a matching leaf, but keep a
+  // reference to the ORIGINAL (unpruned) node alongside the matching leaves.
+  // Rendering uses `matchingLeaves` (visibility); selection and tri-state use
+  // the original node so a filtered parent still reflects and toggles its FULL
+  // subtree, and single-repo-owner flattening keys on the true repo count.
   const pruned = tree
     .map((host) => ({
-      ...host,
-      children: host.children
-        .map((owner) => ({
-          ...owner,
-          children: owner.children.filter(matches),
-        }))
-        .filter((owner) => owner.children.length > 0),
+      original: host,
+      owners: host.children
+        .map((owner) => ({ original: owner, matchingLeaves: owner.children.filter(matches) }))
+        .filter((owner) => owner.matchingLeaves.length > 0),
     }))
-    .filter((host) => host.children.length > 0);
+    .filter((host) => host.owners.length > 0);
 
   const expandedOf = (id: string) => filtering || !isCollapsed(id);
   const singleHost = pruned.length === 1;
@@ -145,33 +136,31 @@ export function visibleRows(
   for (const host of pruned) {
     const ownerDepth = singleHost ? 0 : 1;
     if (!singleHost) {
-      const hostExpanded = expandedOf(host.id);
-      rows.push({ node: host, depth: 0, hasChildren: true, expanded: hostExpanded });
+      const hostExpanded = expandedOf(host.original.id);
+      rows.push({ node: host.original, depth: 0, hasChildren: true, expanded: hostExpanded });
       if (!hostExpanded) continue;
     }
-    for (const owner of host.children) {
+    for (const owner of host.owners) {
       // Flatten only owners that genuinely have a single repo, not owners
       // narrowed to one match by the active filter.
-      const isSingleRepoOwner =
-        (originalChildCount.get(owner.id) ?? owner.children.length) === 1;
-      if (isSingleRepoOwner) {
+      if (owner.original.children.length === 1) {
         rows.push({
-          node: owner.children[0]!,
+          node: owner.original.children[0]!,
           depth: ownerDepth,
           hasChildren: false,
           expanded: false,
         });
         continue;
       }
-      const ownerExpanded = expandedOf(owner.id);
+      const ownerExpanded = expandedOf(owner.original.id);
       rows.push({
-        node: owner,
+        node: owner.original,
         depth: ownerDepth,
         hasChildren: true,
         expanded: ownerExpanded,
       });
       if (!ownerExpanded) continue;
-      for (const leaf of owner.children) {
+      for (const leaf of owner.matchingLeaves) {
         rows.push({
           node: leaf,
           depth: ownerDepth + 1,

@@ -195,6 +195,36 @@ describe("visibleRows", () => {
     expect(rows.some((r) => r.node.label === "web")).toBe(false);
   });
 
+  it("exposes the full subtree on a filtered owner row for selection", () => {
+    // While filtering, the owner row must carry its ORIGINAL node (full child
+    // set), not just the matching leaves, so tri-state and group-toggle apply
+    // to the whole owner rather than only the visible matches.
+    const tree = buildRepoTree([
+      opt("github.com", "acme/api"),
+      opt("github.com", "acme/web"),
+      opt("github.com", "acme/infra"),
+    ]);
+    const rows = visibleRows(tree, { isCollapsed: () => false, query: "api" });
+    const acme = rows.find((r) => r.node.label === "acme")!;
+    // selection logic sees all three repos, not just the matching "api"
+    expect(collectLeafValues(acme.node).sort()).toEqual([
+      "github.com/acme/api",
+      "github.com/acme/infra",
+      "github.com/acme/web",
+    ]);
+    // with only "api" selected, the owner is partial (not "checked"), proving
+    // tri-state reflects hidden siblings too
+    expect(nodeSelectionState(acme.node, new Set(["github.com/acme/api"]))).toBe(
+      "partial",
+    );
+    // toggling the owner cascades to the entire subtree, including hidden repos
+    expect(toggleSubtree(acme.node, ["github.com/acme/api"]).sort()).toEqual([
+      "github.com/acme/api",
+      "github.com/acme/infra",
+      "github.com/acme/web",
+    ]);
+  });
+
   it("still flattens a genuinely single-repo owner under a filter", () => {
     // solo really has one repo, so flattening it remains correct even mid-filter.
     const tree = buildRepoTree([

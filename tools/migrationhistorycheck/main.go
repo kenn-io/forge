@@ -13,6 +13,7 @@ import (
 	"syscall"
 
 	gitcmd "go.kenn.io/kit/git/cmd"
+	gitenv "go.kenn.io/kit/git/env"
 )
 
 const (
@@ -247,12 +248,40 @@ func getenvDefault(key, fallback string) string {
 
 func git(ctx context.Context, args ...string) (string, error) {
 	runner := gitcmd.New()
-	if gitEnv != nil {
-		runner.Env = gitEnv
-	}
+	runner.Env = gitHookEnv(os.Environ())
+	runner.StripEnv = false
 	output, err := runner.Output(ctx, "", args...)
 	if err != nil {
 		return "", err
 	}
 	return string(output), nil
+}
+
+func gitHookEnv(env []string) []string {
+	if gitEnv != nil {
+		env = gitEnv
+	}
+
+	cleaned := gitenv.StripAll(env)
+	for _, entry := range env {
+		key, _, _ := strings.Cut(entry, "=")
+		if isGitHookContextVar(key) {
+			cleaned = append(cleaned, entry)
+		}
+	}
+	return cleaned
+}
+
+func isGitHookContextVar(key string) bool {
+	switch key {
+	case "GIT_DIR",
+		"GIT_WORK_TREE",
+		"GIT_INDEX_FILE",
+		"GIT_COMMON_DIR",
+		"GIT_PREFIX",
+		"GIT_NAMESPACE":
+		return true
+	default:
+		return false
+	}
 }

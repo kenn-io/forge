@@ -79,6 +79,31 @@ func TestBlocksMainBranchMigrationRename(t *testing.T) {
 	assert.Contains(t, stderr.String(), "internal/db/migrations/000001_init.up.sql")
 }
 
+func TestUsesHookGitIndexFile(t *testing.T) {
+	isolateGitEnvironment(t)
+	repo := initRepoWithMainMigration(t)
+	t.Chdir(repo)
+	t.Setenv("MIDDLEMAN_MIGRATION_BASE_REF", "main")
+
+	alternateIndex := filepath.Join(t.TempDir(), "index")
+	hookEnv := append(cleanGitEnv(os.Environ()), "GIT_INDEX_FILE="+alternateIndex)
+	gitCommandInWithEnv(t, repo, hookEnv, "read-tree", "HEAD")
+
+	writeFile(t, repo, "internal/db/migrations/000001_init.up.sql", "changed in hook index\n")
+	gitCommandInWithEnv(t, repo, hookEnv, "add", "internal/db/migrations/000001_init.up.sql")
+
+	originalGitEnv := gitEnv
+	gitEnv = hookEnv
+	t.Cleanup(func() {
+		gitEnv = originalGitEnv
+	})
+
+	var stderr bytes.Buffer
+	assert.Equal(t, 1, run(t.Context(), &stderr))
+	assert.Contains(t, stderr.String(), "Refusing to commit staged migration history changes")
+	assert.Contains(t, stderr.String(), "internal/db/migrations/000001_init.up.sql")
+}
+
 func initRepoWithMainMigration(t *testing.T) string {
 	t.Helper()
 
@@ -112,9 +137,15 @@ func gitCommand(t *testing.T, args ...string) {
 
 func gitCommandIn(t *testing.T, dir string, args ...string) {
 	t.Helper()
+	gitCommandInWithEnv(t, dir, cleanGitEnv(os.Environ()), args...)
+}
+
+func gitCommandInWithEnv(t *testing.T, dir string, env []string, args ...string) {
+	t.Helper()
 
 	runner := gitcmd.New().WithConfig("core.hooksPath", os.DevNull)
-	runner.Env = cleanGitEnv(os.Environ())
+	runner.Env = env
+	runner.StripEnv = false
 	output, _, err := runner.Run(t.Context(), dir, nil, args...)
 	require.NoError(t, err, string(output))
 }

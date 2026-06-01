@@ -10,6 +10,7 @@ import argparse
 import errno
 import json
 import os
+import shlex
 import subprocess
 import sys
 import urllib.error
@@ -71,6 +72,17 @@ def parse_args() -> argparse.Namespace:
         choices=("all", "live", "degraded", "stale", "invalid"),
         default="all",
         help="Filter rows by classification.",
+    )
+    parser.add_argument(
+        "--exclude-worktree",
+        action="append",
+        default=[],
+        help="Worktree path to exclude from output; may be passed more than once.",
+    )
+    parser.add_argument(
+        "--emit-stop-commands",
+        action="store_true",
+        help="Print clean dev-ephemeral stop commands for matching non-invalid rows.",
     )
     return parser.parse_args()
 
@@ -303,14 +315,51 @@ def print_text(instances: list[Instance]) -> None:
         print()
 
 
+def print_stop_commands(instances: list[Instance]) -> None:
+    targets = [instance for instance in instances if instance.status != "invalid"]
+    if not targets:
+        print("No stoppable dev-ephemeral status files matched.")
+        return
+
+    print("STOP TARGETS")
+    for instance in targets:
+        print(f"- {instance.worktree}")
+        print(f"  run: {instance.run_dir}")
+        print(f"  status: {instance.status}")
+        print(f"  status_file: {instance.status_file}")
+        print(f"  backend: {instance.backend_url} ({instance.backend_http_check.detail})")
+        print(f"  frontend: {instance.frontend_url} ({instance.frontend_http_check.detail})")
+        if instance.reason:
+            print(f"  reason: {instance.reason}")
+
+    print()
+    print("STOP COMMANDS")
+    for instance in targets:
+        print(f"go run ./tools/devephemeral -stop -status {shlex.quote(instance.status_file)}")
+
+
+def filter_excluded_worktrees(instances: list[Instance], excluded: list[str]) -> list[Instance]:
+    if not excluded:
+        return instances
+    excluded_paths = {str(Path(path).expanduser().resolve()) for path in excluded}
+    return [
+        instance
+        for instance in instances
+        if str(Path(instance.worktree).expanduser().resolve()) not in excluded_paths
+    ]
+
+
 def main() -> int:
     args = parse_args()
     status_files = discover_status_files(Path(args.worktrees_root).expanduser())
     instances = [make_instance(path, args.timeout) for path in status_files]
+    instances = filter_excluded_worktrees(instances, args.exclude_worktree)
     if args.status != "all":
         instances = [instance for instance in instances if instance.status == args.status]
 
-    if args.format == "json":
+    if args.emit_stop_commands:
+        print_stop_commands(instances)
+    elif args.format == "json":
         print(json.dumps([instance_to_dict(instance) for instance in instances], indent=2))
     else:
         print_text(instances)

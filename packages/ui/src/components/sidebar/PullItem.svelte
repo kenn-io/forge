@@ -13,6 +13,7 @@
   import CircleAlertIcon from "@lucide/svelte/icons/circle-alert";
   import Chip from "../shared/Chip.svelte";
   import GitHubLabels from "../shared/GitHubLabels.svelte";
+  import WorkspaceIndicator from "../shared/WorkspaceIndicator.svelte";
 
   const { pulls } = getStores();
   const hostState = getHostState();
@@ -179,6 +180,9 @@
             <path d="M8 1a.75.75 0 01.75.75v6.19l1.72-1.72a.75.75 0 111.06 1.06l-3 3a.75.75 0 01-1.06 0l-3-3a.75.75 0 011.06-1.06l1.72 1.72V1.75A.75.75 0 018 1zM3.5 10a.75.75 0 01.75.75v1.5c0 .138.112.25.25.25h7a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 0111.5 14h-7A1.75 1.75 0 012.75 12.25v-1.5A.75.75 0 013.5 10z"/>
           </svg>
         </span>
+      {/if}
+      {#if pr.workspace}
+        <WorkspaceIndicator status={pr.workspace.status} />
       {/if}
       {#if hasWorktree && worktreeName}
         <span class="worktree-name" title="Linked to {worktreeName}">{worktreeName}</span>

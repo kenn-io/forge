@@ -71,6 +71,7 @@ type mergeRequestResponse struct {
 	RepoName        string                 `json:"repo_name"`
 	PlatformHost    string                 `json:"platform_host"`
 	WorktreeLinks   []worktreeLinkResponse `json:"worktree_links"`
+	Workspace       *workspaceRef          `json:"workspace,omitempty"`
 	DetailLoaded    bool                   `json:"detail_loaded"`
 	DetailFetchedAt string                 `json:"detail_fetched_at,omitempty"`
 }
@@ -131,6 +132,7 @@ type issueResponse struct {
 	PlatformHost    string          `json:"platform_host"`
 	RepoOwner       string          `json:"repo_owner"`
 	RepoName        string          `json:"repo_name"`
+	Workspace       *workspaceRef   `json:"workspace,omitempty"`
 	DetailLoaded    bool            `json:"detail_loaded"`
 	DetailFetchedAt string          `json:"detail_fetched_at,omitempty"`
 }
@@ -471,6 +473,7 @@ type activityItemResponse struct {
 	ItemTitle      string          `json:"item_title"`
 	ItemURL        string          `json:"item_url"`
 	ItemState      string          `json:"item_state"`
+	Workspace      *workspaceRef   `json:"workspace,omitempty"`
 	Author         string          `json:"author"`
 	ItemAuthor     string          `json:"item_author,omitempty"`
 	CreatedAt      string          `json:"created_at"`

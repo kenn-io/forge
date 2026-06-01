@@ -143,6 +143,15 @@ describe("PullItem kanban status", () => {
     cleanup();
   });
 
+  it("shows a workspace indicator when the PR has an attached workspace", () => {
+    renderItem(mkPR({
+      Title: "Cache widget details",
+      workspace: { id: "ws-pr-1", status: "ready" },
+    }));
+
+    expect(screen.getByLabelText("Workspace attached (ready)")).toBeTruthy();
+  });
+
   it("shows the kanban status for open PRs", () => {
     renderItem(mkPR({
       Title: "Cache widget details",

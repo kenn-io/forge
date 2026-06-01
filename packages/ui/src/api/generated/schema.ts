@@ -2033,6 +2033,7 @@ export interface components {
             repo: components["schemas"]["RepoRefResponse"];
             repo_name: string;
             repo_owner: string;
+            workspace?: components["schemas"]["WorkspaceRef"];
         };
         ActivityResponse: {
             /**
@@ -2607,6 +2608,7 @@ export interface components {
             repo: components["schemas"]["RepoRefResponse"];
             repo_name: string;
             repo_owner: string;
+            workspace?: components["schemas"]["WorkspaceRef"];
         };
         ItemLabelsResponse: {
             /**
@@ -2873,6 +2875,7 @@ export interface components {
             repo: components["schemas"]["RepoRefResponse"];
             repo_name: string;
             repo_owner: string;
+            workspace?: components["schemas"]["WorkspaceRef"];
             worktree_links: components["schemas"]["WorktreeLinkResponse"][] | null;
         };
         MrImportMetadataResponse: {

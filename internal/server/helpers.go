@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/middleman/internal/platform"
 )
 
 type repoNumberPathRef struct {
@@ -35,6 +36,92 @@ func buildRepoLookup(repos []db.Repo) map[int64]db.Repo {
 		lookup[repo.ID] = repo
 	}
 	return lookup
+}
+
+func workspaceLookupKey(
+	provider, host, owner, name, itemType string,
+	number int,
+) string {
+	if provider == "" {
+		provider = string(platform.KindGitHub)
+	}
+	if host == "" {
+		if defaultHost, ok := platform.DefaultHost(platform.Kind(provider)); ok {
+			host = defaultHost
+		}
+	}
+	return strings.ToLower(provider) + "\x00" +
+		strings.ToLower(host) + "\x00" +
+		strings.ToLower(owner) + "\x00" +
+		strings.ToLower(name) + "\x00" +
+		itemType + "\x00" +
+		fmt.Sprint(number)
+}
+
+func (s *Server) buildWorkspaceRefLookup(
+	ctx context.Context,
+) (map[string]workspaceRef, error) {
+	workspaces, err := s.db.ListWorkspaces(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list workspaces: %w", err)
+	}
+	lookup := make(map[string]workspaceRef, len(workspaces))
+	for _, ws := range workspaces {
+		key := workspaceLookupKey(
+			ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
+			ws.ItemType, ws.ItemNumber,
+		)
+		if _, exists := lookup[key]; exists {
+			continue
+		}
+		lookup[key] = workspaceRef{ID: ws.ID, Status: ws.Status}
+	}
+	return lookup, nil
+}
+
+func workspaceRefForRepoItem(
+	lookup map[string]workspaceRef,
+	repo db.Repo,
+	itemType string,
+	number int,
+) *workspaceRef {
+	ref, ok := lookup[workspaceLookupKey(
+		repo.Platform, repoProviderHost(repo), repo.Owner, repo.Name,
+		itemType, number,
+	)]
+	if !ok {
+		return nil
+	}
+	return &ref
+}
+
+func workspaceItemTypeFromActivity(itemType string) string {
+	switch itemType {
+	case "pr":
+		return db.WorkspaceItemTypePullRequest
+	case "issue":
+		return db.WorkspaceItemTypeIssue
+	default:
+		return ""
+	}
+}
+
+func workspaceRefForActivityItem(
+	lookup map[string]workspaceRef,
+	item db.ActivityItem,
+) *workspaceRef {
+	workspaceItemType := workspaceItemTypeFromActivity(item.ItemType)
+	if workspaceItemType == "" {
+		return nil
+	}
+	ref, ok := lookup[workspaceLookupKey(
+		item.Platform, item.PlatformHost, item.RepoOwner, item.RepoName,
+		workspaceItemType, item.ItemNumber,
+	)]
+	if !ok {
+		return nil
+	}
+	return &ref
 }
 
 // lookupRepoMap fetches repos and returns an ID-keyed map. When config is

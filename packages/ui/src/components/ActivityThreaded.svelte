@@ -19,6 +19,7 @@
   import Chip from "./shared/Chip.svelte";
   import ItemKindChip from "./shared/ItemKindChip.svelte";
   import ItemStateChip from "./shared/ItemStateChip.svelte";
+  import WorkspaceIndicator from "./shared/WorkspaceIndicator.svelte";
 
   const { grouping, activity } = getStores();
   import { repoColor } from "../utils/repo-color.js";
@@ -78,6 +79,7 @@
     platformHost: string;
     latestTime: string;
     itemAuthor: string;
+    workspace: ActivityItem["workspace"];
     events: ActivityItem[];
     displayEvents: ReturnType<
       typeof collapseActivityRuns
@@ -172,6 +174,7 @@
           platformHost: first.repo.platform_host,
           latestTime: first.created_at,
           itemAuthor: itemAuthor(first),
+          workspace: first.workspace,
           events,
           displayEvents: collapseActivityRuns(events),
         },
@@ -622,6 +625,9 @@
               <ItemStateChip state="closed" />
             {/if}
             <span class="item-ref">#{itemGroup.itemNumber}</span>
+            {#if itemGroup.workspace}
+              <WorkspaceIndicator status={itemGroup.workspace.status} size={12} />
+            {/if}
             <span class="item-title">{itemGroup.itemTitle}</span>
           </span>
           <span class="cell cell--time">{relativeTime(itemGroup.latestTime)}</span>

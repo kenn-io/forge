@@ -247,6 +247,28 @@ describe("ActivityFeed compact mode", () => {
     expect(row?.querySelector(".state-badge")).not.toBeNull();
   });
 
+  it("shows workspace indicators in flat activity rows", () => {
+    items.value = [
+      activityItem("pr-workspace", {
+        workspace: { id: "ws-pr-1", status: "ready" },
+      }),
+      activityItem("issue-workspace", {
+        item_number: 2,
+        item_title: "Track workspace setup",
+        item_type: "issue",
+        item_url: "https://github.com/acme/widgets/issues/2",
+        workspace: { id: "ws-issue-2", status: "creating" },
+      }),
+    ];
+
+    render(ActivityFeed, {
+      props: { compact: false },
+    });
+
+    expect(screen.getByLabelText("Workspace attached (ready)")).toBeTruthy();
+    expect(screen.getByLabelText("Workspace attached (creating)")).toBeTruthy();
+  });
+
   it("renders branch commits in compact rows without a fake item number", () => {
     items.value = [branchActivityItem("branch-commit")];
 

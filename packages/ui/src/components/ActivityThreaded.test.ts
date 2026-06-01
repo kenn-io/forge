@@ -266,6 +266,21 @@ describe("ActivityThreaded collapse", () => {
     expect(eventAuthors).toEqual(["Bob Example", "Alice Example"]);
   });
 
+  it("shows a workspace indicator on item threads with attached workspaces", () => {
+    const { getByLabelText } = render(ActivityThreaded, {
+      props: {
+        items: [
+          activityItem("c1", {
+            workspace: { id: "ws-pr-1", status: "ready" },
+          }),
+        ],
+        onSelectItem: undefined,
+      },
+    });
+
+    expect(getByLabelText("Workspace attached (ready)")).toBeTruthy();
+  });
+
   it("shows the commit author on branch rows", () => {
     const { container } = render(ActivityThreaded, {
       props: {

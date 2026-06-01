@@ -5,6 +5,7 @@
   import { repoColor } from "../../utils/repo-color.js";
   import Chip from "../shared/Chip.svelte";
   import GitHubLabels from "../shared/GitHubLabels.svelte";
+  import WorkspaceIndicator from "../shared/WorkspaceIndicator.svelte";
 
   const { issues } = getStores();
 
@@ -67,6 +68,9 @@
       #{issue.Number} · {issue.Author}
     </span>
     <span class="meta-right">
+      {#if issue.workspace}
+        <WorkspaceIndicator status={issue.workspace.status} />
+      {/if}
       <span
         class="star-btn"
         role="button"

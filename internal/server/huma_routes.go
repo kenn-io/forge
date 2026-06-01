@@ -996,6 +996,10 @@ func (s *Server) listPulls(ctx context.Context, input *listPullsInput) (*listPul
 		return nil, problemInternal("load worktree links failed")
 	}
 	linksByMR := indexWorktreeLinksByMR(links)
+	workspacesByItem, err := s.buildWorkspaceRefLookup(ctx)
+	if err != nil {
+		return nil, problemInternal("load workspace refs failed")
+	}
 
 	out := make([]mergeRequestResponse, 0, len(mrs))
 	for _, mr := range mrs {
@@ -1014,6 +1018,7 @@ func (s *Server) listPulls(ctx context.Context, input *listPullsInput) (*listPul
 			RepoName:      rp.Name,
 			PlatformHost:  rp.PlatformHost,
 			WorktreeLinks: wl,
+			Workspace:     workspaceRefForRepoItem(workspacesByItem, rp, db.WorkspaceItemTypePullRequest, mr.Number),
 			DetailLoaded:  mr.DetailFetchedAt != nil,
 		}
 		if mr.DetailFetchedAt != nil {
@@ -1825,6 +1830,10 @@ func (s *Server) listIssues(ctx context.Context, input *listIssuesInput) (*listI
 	if err != nil {
 		return nil, problemInternal("repo lookup failed")
 	}
+	workspacesByItem, err := s.buildWorkspaceRefLookup(ctx)
+	if err != nil {
+		return nil, problemInternal("load workspace refs failed")
+	}
 
 	out := make([]issueResponse, 0, len(issues))
 	for _, issue := range issues {
@@ -1838,6 +1847,7 @@ func (s *Server) listIssues(ctx context.Context, input *listIssuesInput) (*listI
 			PlatformHost: rp.PlatformHost,
 			RepoOwner:    rp.Owner,
 			RepoName:     rp.Name,
+			Workspace:    workspaceRefForRepoItem(workspacesByItem, rp, db.WorkspaceItemTypeIssue, issue.Number),
 			DetailLoaded: issue.DetailFetchedAt != nil,
 		}
 		if issue.DetailFetchedAt != nil {
@@ -3299,6 +3309,11 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 		items = items[:activitySafetyCap]
 	}
 
+	workspacesByItem, err := s.buildWorkspaceRefLookup(ctx)
+	if err != nil {
+		return nil, problemInternal("load workspace refs failed")
+	}
+
 	out := make([]activityItemResponse, len(items))
 	for i, it := range items {
 		item := activityItemResponse{
@@ -3316,6 +3331,7 @@ func (s *Server) listActivity(ctx context.Context, input *listActivityInput) (*l
 			ItemTitle:    it.ItemTitle,
 			ItemURL:      it.ItemURL,
 			ItemState:    it.ItemState,
+			Workspace:    workspaceRefForActivityItem(workspacesByItem, it),
 			Author:       it.Author,
 			ItemAuthor:   it.ItemAuthor,
 			CreatedAt:    formatUTCRFC3339(it.CreatedAt),

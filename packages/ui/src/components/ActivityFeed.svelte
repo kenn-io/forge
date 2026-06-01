@@ -25,6 +25,7 @@
   import Chip from "./shared/Chip.svelte";
   import ItemKindChip from "./shared/ItemKindChip.svelte";
   import ItemStateChip from "./shared/ItemStateChip.svelte";
+  import WorkspaceIndicator from "./shared/WorkspaceIndicator.svelte";
   import ArrowUpRightIcon from "@lucide/svelte/icons/arrow-up-right";
   import ChevronsDownUpIcon from "@lucide/svelte/icons/chevrons-down-up";
   import ChevronsUpDownIcon from "@lucide/svelte/icons/chevrons-up-down";
@@ -570,6 +571,12 @@
                   {:else}
                     <ItemKindChip kind={row.representative.item_type} />
                     <span class="item-number">#{row.representative.item_number}</span>
+                    {#if row.representative.workspace}
+                      <WorkspaceIndicator
+                        status={row.representative.workspace.status}
+                        size={12}
+                      />
+                    {/if}
                   {/if}
                   <span class="compact-time">{relativeTime(row.latest)}</span>
                 </span>
@@ -604,6 +611,9 @@
                   {:else}
                     <ItemKindChip kind={row.item_type} />
                     <span class="item-number">#{row.item_number}</span>
+                    {#if row.workspace}
+                      <WorkspaceIndicator status={row.workspace.status} size={12} />
+                    {/if}
                     {#if hasStateChip(row)}
                       <ItemStateChip state={row.item_state} />
                     {/if}
@@ -686,6 +696,12 @@
                     <span class="item-title">{row.count} commits</span>
                   {:else}
                     <span class="item-ref">#{row.representative.item_number}</span>
+                    {#if row.representative.workspace}
+                      <WorkspaceIndicator
+                        status={row.representative.workspace.status}
+                        size={12}
+                      />
+                    {/if}
                     <span class="item-title">{row.representative.item_title}</span>
                   {/if}
                 </span>
@@ -741,6 +757,9 @@
                       <ItemStateChip state={row.item_state} />
                     {/if}
                     <span class="item-ref">#{row.item_number}</span>
+                    {#if row.workspace}
+                      <WorkspaceIndicator status={row.workspace.status} size={12} />
+                    {/if}
                     <span class="item-title">{row.item_title}</span>
                   {/if}
                 </span>

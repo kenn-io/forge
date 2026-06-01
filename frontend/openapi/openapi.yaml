@@ -112,6 +112,8 @@ components:
           type: string
         repo_owner:
           type: string
+        workspace:
+          $ref: "#/components/schemas/WorkspaceRef"
       required:
         - id
         - cursor
@@ -1280,6 +1282,8 @@ components:
           type: string
         repo_owner:
           type: string
+        workspace:
+          $ref: "#/components/schemas/WorkspaceRef"
       required:
         - repo
         - platform_host
@@ -1915,6 +1919,8 @@ components:
           type: string
         repo_owner:
           type: string
+        workspace:
+          $ref: "#/components/schemas/WorkspaceRef"
         worktree_links:
           items:
             $ref: "#/components/schemas/WorktreeLinkResponse"

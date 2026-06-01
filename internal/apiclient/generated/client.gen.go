@@ -365,6 +365,7 @@ type ActivityItemResponse struct {
 	Repo           RepoRefResponse `json:"repo"`
 	RepoName       string          `json:"repo_name"`
 	RepoOwner      string          `json:"repo_owner"`
+	Workspace      *WorkspaceRef   `json:"workspace,omitempty"`
 }
 
 // ActivityResponse defines model for ActivityResponse.
@@ -847,6 +848,7 @@ type IssueResponse struct {
 	Repo               RepoRefResponse `json:"repo"`
 	RepoName           string          `json:"repo_name"`
 	RepoOwner          string          `json:"repo_owner"`
+	Workspace          *WorkspaceRef   `json:"workspace,omitempty"`
 }
 
 // ItemLabelsResponse defines model for ItemLabelsResponse.
@@ -1072,6 +1074,7 @@ type MergeRequestResponse struct {
 	Repo               RepoRefResponse                  `json:"repo"`
 	RepoName           string                           `json:"repo_name"`
 	RepoOwner          string                           `json:"repo_owner"`
+	Workspace          *WorkspaceRef                    `json:"workspace,omitempty"`
 	WorktreeLinks      *[]WorktreeLinkResponse          `json:"worktree_links"`
 }
 

@@ -13,6 +13,7 @@
   import ItemKindChip from "../components/shared/ItemKindChip.svelte";
   import ItemStateChip from "../components/shared/ItemStateChip.svelte";
   import SelectDropdown from "../components/shared/SelectDropdown.svelte";
+  import WorkspaceIndicator from "../components/shared/WorkspaceIndicator.svelte";
   import {
     activityBranchKey,
     isDefaultBranchActivity,
@@ -434,6 +435,9 @@
                   {:else}
                     <ItemKindChip kind={item.item_type === "issue" ? "issue" : "pr"} size="md" />
                     <span class="mobile-activity-number">#{item.item_number}</span>
+                    {#if item.workspace}
+                      <WorkspaceIndicator status={item.workspace.status} size={16} />
+                    {/if}
                     {#if item.item_state === "merged" || item.item_state === "closed"}
                       <ItemStateChip state={item.item_state} size="md" />
                     {/if}

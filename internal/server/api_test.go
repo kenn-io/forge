@@ -1316,6 +1316,62 @@ func TestAPIListPulls(t *testing.T) {
 	assert.Equal("acme/widget", body[0].Repo.RepoPath)
 }
 
+func TestAPIListItemsIncludeWorkspaceRefs(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	srv, database := setupTestServer(t)
+	ctx := t.Context()
+
+	seedPR(t, database, "acme", "widget", 1)
+	seedIssue(t, database, "acme", "widget", 2, "open")
+	seedWorkspace(
+		t, database, "ws-pr-1", "acme", "widget",
+		db.WorkspaceItemTypePullRequest, 1,
+	)
+	seedWorkspace(
+		t, database, "ws-issue-2", "acme", "widget",
+		db.WorkspaceItemTypeIssue, 2,
+	)
+	client := setupTestClient(t, srv)
+
+	pulls, err := client.HTTP.ListPullsWithResponse(ctx, nil)
+	require.NoError(err)
+	require.Equal(http.StatusOK, pulls.StatusCode())
+	require.NotNil(pulls.JSON200)
+	require.Len(*pulls.JSON200, 1)
+	require.NotNil((*pulls.JSON200)[0].Workspace)
+	assert.Equal("ws-pr-1", (*pulls.JSON200)[0].Workspace.Id)
+	assert.Equal("ready", (*pulls.JSON200)[0].Workspace.Status)
+
+	issues, err := client.HTTP.ListIssuesWithResponse(ctx, nil)
+	require.NoError(err)
+	require.Equal(http.StatusOK, issues.StatusCode())
+	require.NotNil(issues.JSON200)
+	require.Len(*issues.JSON200, 1)
+	require.NotNil((*issues.JSON200)[0].Workspace)
+	assert.Equal("ws-issue-2", (*issues.JSON200)[0].Workspace.Id)
+	assert.Equal("ready", (*issues.JSON200)[0].Workspace.Status)
+
+	since := time.Now().UTC().AddDate(0, 0, -7).Format(time.RFC3339)
+	activity, err := client.HTTP.ListActivityWithResponse(
+		ctx, &generated.ListActivityParams{Since: &since},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, activity.StatusCode())
+	require.NotNil(activity.JSON200)
+	require.NotNil(activity.JSON200.Items)
+
+	workspaceByItem := make(map[string]string)
+	for _, item := range *activity.JSON200.Items {
+		if item.Workspace == nil {
+			continue
+		}
+		workspaceByItem[item.ItemType+":"+strconv.FormatInt(item.ItemNumber, 10)] = item.Workspace.Id
+	}
+	assert.Equal("ws-pr-1", workspaceByItem["pr:1"])
+	assert.Equal("ws-issue-2", workspaceByItem["issue:2"])
+}
+
 func TestAPIListPullsKeepsCachedCIDecorationsAfterIndexSync(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
@@ -5516,6 +5572,29 @@ func seedIssue(t *testing.T, database *db.DB, owner, name string, number int, st
 	issueID, err := database.UpsertIssue(ctx, issue)
 	require.NoError(t, err)
 	return issueID
+}
+
+func seedWorkspace(
+	t *testing.T,
+	database *db.DB,
+	id, owner, name, itemType string,
+	number int,
+) {
+	t.Helper()
+	require.NoError(t, database.InsertWorkspace(t.Context(), &db.Workspace{
+		ID:              id,
+		Platform:        "github",
+		PlatformHost:    "github.com",
+		RepoOwner:       owner,
+		RepoName:        name,
+		ItemType:        itemType,
+		ItemNumber:      number,
+		GitHeadRef:      "feature/" + id,
+		WorkspaceBranch: "middleman/" + id,
+		WorktreePath:    filepath.Join(t.TempDir(), id),
+		TmuxSession:     id,
+		Status:          "ready",
+	}))
 }
 
 func seedIssueWithLabels(t *testing.T, database *db.DB, owner, name string, number int, state string, labels []db.Label) int64 {

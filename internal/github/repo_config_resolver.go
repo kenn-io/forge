@@ -66,6 +66,7 @@ type ConfiguredRepoStatus struct {
 	Owner            string `json:"owner"`
 	Name             string `json:"name"`
 	RepoPath         string `json:"repo_path"`
+	WorktreeBasePath string `json:"worktree_base_path,omitempty"`
 	IsGlob           bool   `json:"is_glob"`
 	MatchedRepoCount int    `json:"matched_repo_count"`
 }

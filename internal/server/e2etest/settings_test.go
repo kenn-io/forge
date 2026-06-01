@@ -9,11 +9,13 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
 	"testing"
 
 	gh "github.com/google/go-github/v84/github"
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	gitcmd "go.kenn.io/kit/git/cmd"
 	"go.kenn.io/middleman/internal/apiclient/generated"
 	"go.kenn.io/middleman/internal/config"
 )
@@ -321,6 +323,50 @@ func TestRepoConfigAPIE2EAddDeleteAndErrors(t *testing.T) {
 	assert.Equal("other-org", cfgAfterDelete.Repos[0].Owner)
 }
 
+func TestRepoConfigAPIE2EUpdatesWorktreeBasePath(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	srv, _, cfgPath := setupTestServerWithConfig(t)
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	localRepo := setupSettingsLocalGitRepo(t)
+
+	updateResp := doServerJSON(
+		t, ts.Client(), http.MethodPut,
+		ts.URL+"/api/v1/repo/github/acme/widget/worktree-base",
+		generated.RepoWorktreeBaseRequest{
+			WorktreeBasePath: localRepo,
+		},
+	)
+	defer updateResp.Body.Close()
+	require.Equal(http.StatusOK, updateResp.StatusCode)
+
+	var updated generated.SettingsResponse
+	require.NoError(json.NewDecoder(updateResp.Body).Decode(&updated))
+	require.Len(updated.Repos, 1)
+	require.NotNil(updated.Repos[0].WorktreeBasePath)
+	assert.Equal(localRepo, *updated.Repos[0].WorktreeBasePath)
+
+	cfgAfterUpdate, err := config.Load(cfgPath)
+	require.NoError(err)
+	require.Len(cfgAfterUpdate.Repos, 1)
+	assert.Equal(localRepo, cfgAfterUpdate.Repos[0].WorktreeBasePath)
+
+	clearResp := doServerJSON(
+		t, ts.Client(), http.MethodPut,
+		ts.URL+"/api/v1/repo/github/acme/widget/worktree-base",
+		generated.RepoWorktreeBaseRequest{},
+	)
+	defer clearResp.Body.Close()
+	require.Equal(http.StatusOK, clearResp.StatusCode)
+
+	cfgAfterClear, err := config.Load(cfgPath)
+	require.NoError(err)
+	require.Len(cfgAfterClear.Repos, 1)
+	assert.Empty(cfgAfterClear.Repos[0].WorktreeBasePath)
+}
+
 func TestRepoConfigAPIE2ERefreshGlobAndErrors(t *testing.T) {
 	assert := Assert.New(t)
 	mock := &mockGH{
@@ -372,4 +418,29 @@ name = "widget-*"
 	)
 	defer nonGlobResp.Body.Close()
 	require.Equal(t, http.StatusBadRequest, nonGlobResp.StatusCode)
+}
+
+func setupSettingsLocalGitRepo(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	repo := filepath.Join(root, "widget")
+	runSettingsGit(t, root, "init", "--initial-branch=main", repo)
+	runSettingsGit(t, repo, "config", "user.email", "test@example.com")
+	runSettingsGit(t, repo, "config", "user.name", "Test")
+	runSettingsGit(
+		t, repo, "remote", "add", "origin",
+		"https://github.com/acme/widget.git",
+	)
+	require.NoError(t, os.WriteFile(
+		filepath.Join(repo, "README.md"), []byte("test\n"), 0o644,
+	))
+	runSettingsGit(t, repo, "add", ".")
+	runSettingsGit(t, repo, "commit", "-m", "initial commit")
+	return repo
+}
+
+func runSettingsGit(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	out, stderr, err := gitcmd.New().Run(t.Context(), dir, nil, args...)
+	require.NoError(t, err, "git %v failed: %s%s", args, out, stderr)
 }

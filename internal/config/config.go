@@ -56,13 +56,14 @@ const (
 )
 
 type Repo struct {
-	Owner        string `toml:"owner" json:"owner"`
-	Name         string `toml:"name" json:"name"`
-	RepoPath     string `toml:"repo_path,omitempty" json:"repo_path,omitempty"`
-	Platform     string `toml:"platform,omitempty" json:"platform,omitempty"`
-	PlatformHost string `toml:"platform_host,omitempty" json:"platform_host,omitempty"`
-	TokenEnv     string `toml:"token_env,omitempty" json:"token_env,omitempty"`
-	TokenFile    string `toml:"token_file,omitempty" json:"token_file,omitempty"`
+	Owner            string `toml:"owner" json:"owner"`
+	Name             string `toml:"name" json:"name"`
+	RepoPath         string `toml:"repo_path,omitempty" json:"repo_path,omitempty"`
+	Platform         string `toml:"platform,omitempty" json:"platform,omitempty"`
+	PlatformHost     string `toml:"platform_host,omitempty" json:"platform_host,omitempty"`
+	TokenEnv         string `toml:"token_env,omitempty" json:"token_env,omitempty"`
+	TokenFile        string `toml:"token_file,omitempty" json:"token_file,omitempty"`
+	WorktreeBasePath string `toml:"worktree_base_path,omitempty" json:"worktree_base_path,omitempty"`
 }
 
 // DocFolder names a markdown folder registered for docs mode. Path
@@ -212,6 +213,10 @@ func (r *Repo) normalize(defaultGitHubHost string) error {
 	r.Name = strings.TrimSuffix(r.Name, ".git")
 	if r.Owner == "" || r.Name == "" {
 		return errors.New("must have owner and name")
+	}
+	r.WorktreeBasePath = strings.TrimSpace(r.WorktreeBasePath)
+	if r.WorktreeBasePath != "" && r.HasNameGlob() {
+		return errors.New("worktree_base_path is only supported for exact repositories")
 	}
 	if platformpkg.LowercaseRepoNames(platformpkg.Kind(r.Platform)) {
 		r.Owner = strings.ToLower(r.Owner)

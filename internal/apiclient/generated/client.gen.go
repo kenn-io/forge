@@ -612,13 +612,14 @@ type CommitsResponse struct {
 
 // ConfiguredRepoStatus defines model for ConfiguredRepoStatus.
 type ConfiguredRepoStatus struct {
-	IsGlob           bool   `json:"is_glob"`
-	MatchedRepoCount int64  `json:"matched_repo_count"`
-	Name             string `json:"name"`
-	Owner            string `json:"owner"`
-	PlatformHost     string `json:"platform_host"`
-	Provider         string `json:"provider"`
-	RepoPath         string `json:"repo_path"`
+	IsGlob           bool    `json:"is_glob"`
+	MatchedRepoCount int64   `json:"matched_repo_count"`
+	Name             string  `json:"name"`
+	Owner            string  `json:"owner"`
+	PlatformHost     string  `json:"platform_host"`
+	Provider         string  `json:"provider"`
+	RepoPath         string  `json:"repo_path"`
+	WorktreeBasePath *string `json:"worktree_base_path,omitempty"`
 }
 
 // CreateDiffReviewDraftCommentHostInputBody defines model for CreateDiffReviewDraftCommentHostInputBody.
@@ -2341,6 +2342,13 @@ type RepoSummaryResponse struct {
 	TimelineUpdatedAt    *string                           `json:"timeline_updated_at,omitempty"`
 }
 
+// RepoWorktreeBaseRequest defines model for RepoWorktreeBaseRequest.
+type RepoWorktreeBaseRequest struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema           *string `json:"$schema,omitempty"`
+	WorktreeBasePath string  `json:"worktree_base_path"`
+}
+
 // ResolveDiscussionHostInputBody defines model for ResolveDiscussionHostInputBody.
 type ResolveDiscussionHostInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -3342,6 +3350,9 @@ type SetPrReviewersOnHostJSONRequestBody = SetReviewersRequest
 // SetKanbanStateOnHostJSONRequestBody defines body for SetKanbanStateOnHost for application/json ContentType.
 type SetKanbanStateOnHostJSONRequestBody = SetKanbanStateHostInputBody
 
+// UpdateRepoWorktreeBaseOnHostJSONRequestBody defines body for UpdateRepoWorktreeBaseOnHost for application/json ContentType.
+type UpdateRepoWorktreeBaseOnHostJSONRequestBody = RepoWorktreeBaseRequest
+
 // CreateIssueJSONRequestBody defines body for CreateIssue for application/json ContentType.
 type CreateIssueJSONRequestBody = CreateIssueInputBody
 
@@ -3443,6 +3454,9 @@ type SetPrReviewersJSONRequestBody = SetReviewersRequest
 
 // SetKanbanStateJSONRequestBody defines body for SetKanbanState for application/json ContentType.
 type SetKanbanStateJSONRequestBody = SetKanbanStateInputBody
+
+// UpdateRepoWorktreeBaseJSONRequestBody defines body for UpdateRepoWorktreeBase for application/json ContentType.
+type UpdateRepoWorktreeBaseJSONRequestBody = RepoWorktreeBaseRequest
 
 // AddRepoJSONRequestBody defines body for AddRepo for application/json ContentType.
 type AddRepoJSONRequestBody = AddRepoInputBody
@@ -3960,6 +3974,11 @@ type ClientInterface interface {
 	// ResolveRepoItemOnHost request
 	ResolveRepoItemOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, params *ResolveRepoItemOnHostParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// UpdateRepoWorktreeBaseOnHostWithBody request with any body
+	UpdateRepoWorktreeBaseOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	UpdateRepoWorktreeBaseOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, body UpdateRepoWorktreeBaseOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ListIssues request
 	ListIssues(ctx context.Context, params *ListIssuesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -4288,6 +4307,11 @@ type ClientInterface interface {
 
 	// ResolveRepoItem request
 	ResolveRepoItem(ctx context.Context, provider string, owner string, name string, number int64, params *ResolveRepoItemParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateRepoWorktreeBaseWithBody request with any body
+	UpdateRepoWorktreeBaseWithBody(ctx context.Context, provider string, owner string, name string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	UpdateRepoWorktreeBase(ctx context.Context, provider string, owner string, name string, body UpdateRepoWorktreeBaseJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListRepos request
 	ListRepos(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -6220,6 +6244,30 @@ func (c *Client) ResolveRepoItemOnHost(ctx context.Context, platformHost string,
 	return c.Client.Do(req)
 }
 
+func (c *Client) UpdateRepoWorktreeBaseOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateRepoWorktreeBaseOnHostRequestWithBody(c.Server, platformHost, provider, owner, name, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UpdateRepoWorktreeBaseOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, body UpdateRepoWorktreeBaseOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateRepoWorktreeBaseOnHostRequest(c.Server, platformHost, provider, owner, name, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) ListIssues(ctx context.Context, params *ListIssuesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListIssuesRequest(c.Server, params)
 	if err != nil {
@@ -7662,6 +7710,30 @@ func (c *Client) RefreshRepo(ctx context.Context, provider string, owner string,
 
 func (c *Client) ResolveRepoItem(ctx context.Context, provider string, owner string, name string, number int64, params *ResolveRepoItemParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewResolveRepoItemRequest(c.Server, provider, owner, name, number, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UpdateRepoWorktreeBaseWithBody(ctx context.Context, provider string, owner string, name string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateRepoWorktreeBaseRequestWithBody(c.Server, provider, owner, name, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UpdateRepoWorktreeBase(ctx context.Context, provider string, owner string, name string, body UpdateRepoWorktreeBaseJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateRepoWorktreeBaseRequest(c.Server, provider, owner, name, body)
 	if err != nil {
 		return nil, err
 	}
@@ -14851,6 +14923,74 @@ func NewResolveRepoItemOnHostRequest(server string, platformHost string, provide
 	return req, nil
 }
 
+// NewUpdateRepoWorktreeBaseOnHostRequest calls the generic UpdateRepoWorktreeBaseOnHost builder with application/json body
+func NewUpdateRepoWorktreeBaseOnHostRequest(server string, platformHost string, provider string, owner string, name string, body UpdateRepoWorktreeBaseOnHostJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewUpdateRepoWorktreeBaseOnHostRequestWithBody(server, platformHost, provider, owner, name, "application/json", bodyReader)
+}
+
+// NewUpdateRepoWorktreeBaseOnHostRequestWithBody generates requests for UpdateRepoWorktreeBaseOnHost with any type of body
+func NewUpdateRepoWorktreeBaseOnHostRequestWithBody(server string, platformHost string, provider string, owner string, name string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/repo/%s/%s/%s/worktree-base", pathParam0, pathParam1, pathParam2, pathParam3)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("PUT", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewListIssuesRequest generates requests for ListIssues
 func NewListIssuesRequest(server string, params *ListIssuesParams) (*http.Request, error) {
 	var err error
@@ -20038,6 +20178,67 @@ func NewResolveRepoItemRequest(server string, provider string, owner string, nam
 	return req, nil
 }
 
+// NewUpdateRepoWorktreeBaseRequest calls the generic UpdateRepoWorktreeBase builder with application/json body
+func NewUpdateRepoWorktreeBaseRequest(server string, provider string, owner string, name string, body UpdateRepoWorktreeBaseJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewUpdateRepoWorktreeBaseRequestWithBody(server, provider, owner, name, "application/json", bodyReader)
+}
+
+// NewUpdateRepoWorktreeBaseRequestWithBody generates requests for UpdateRepoWorktreeBase with any type of body
+func NewUpdateRepoWorktreeBaseRequestWithBody(server string, provider string, owner string, name string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/repo/%s/%s/%s/worktree-base", pathParam0, pathParam1, pathParam2)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("PUT", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewListReposRequest generates requests for ListRepos
 func NewListReposRequest(server string) (*http.Request, error) {
 	var err error
@@ -22290,6 +22491,11 @@ type ClientWithResponsesInterface interface {
 	// ResolveRepoItemOnHostWithResponse request
 	ResolveRepoItemOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, params *ResolveRepoItemOnHostParams, reqEditors ...RequestEditorFn) (*ResolveRepoItemOnHostResponse, error)
 
+	// UpdateRepoWorktreeBaseOnHostWithBodyWithResponse request with any body
+	UpdateRepoWorktreeBaseOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateRepoWorktreeBaseOnHostResponse, error)
+
+	UpdateRepoWorktreeBaseOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, body UpdateRepoWorktreeBaseOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateRepoWorktreeBaseOnHostResponse, error)
+
 	// ListIssuesWithResponse request
 	ListIssuesWithResponse(ctx context.Context, params *ListIssuesParams, reqEditors ...RequestEditorFn) (*ListIssuesResponse, error)
 
@@ -22618,6 +22824,11 @@ type ClientWithResponsesInterface interface {
 
 	// ResolveRepoItemWithResponse request
 	ResolveRepoItemWithResponse(ctx context.Context, provider string, owner string, name string, number int64, params *ResolveRepoItemParams, reqEditors ...RequestEditorFn) (*ResolveRepoItemResponse, error)
+
+	// UpdateRepoWorktreeBaseWithBodyWithResponse request with any body
+	UpdateRepoWorktreeBaseWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateRepoWorktreeBaseResponse, error)
+
+	UpdateRepoWorktreeBaseWithResponse(ctx context.Context, provider string, owner string, name string, body UpdateRepoWorktreeBaseJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateRepoWorktreeBaseResponse, error)
 
 	// ListReposWithResponse request
 	ListReposWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListReposResponse, error)
@@ -25154,6 +25365,29 @@ func (r ResolveRepoItemOnHostResponse) StatusCode() int {
 	return 0
 }
 
+type UpdateRepoWorktreeBaseOnHostResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *SettingsResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r UpdateRepoWorktreeBaseOnHostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UpdateRepoWorktreeBaseOnHostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type ListIssuesResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
@@ -27134,6 +27368,29 @@ func (r ResolveRepoItemResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r ResolveRepoItemResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type UpdateRepoWorktreeBaseResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *SettingsResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r UpdateRepoWorktreeBaseResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UpdateRepoWorktreeBaseResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -29379,6 +29636,23 @@ func (c *ClientWithResponses) ResolveRepoItemOnHostWithResponse(ctx context.Cont
 	return ParseResolveRepoItemOnHostResponse(rsp)
 }
 
+// UpdateRepoWorktreeBaseOnHostWithBodyWithResponse request with arbitrary body returning *UpdateRepoWorktreeBaseOnHostResponse
+func (c *ClientWithResponses) UpdateRepoWorktreeBaseOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateRepoWorktreeBaseOnHostResponse, error) {
+	rsp, err := c.UpdateRepoWorktreeBaseOnHostWithBody(ctx, platformHost, provider, owner, name, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateRepoWorktreeBaseOnHostResponse(rsp)
+}
+
+func (c *ClientWithResponses) UpdateRepoWorktreeBaseOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, body UpdateRepoWorktreeBaseOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateRepoWorktreeBaseOnHostResponse, error) {
+	rsp, err := c.UpdateRepoWorktreeBaseOnHost(ctx, platformHost, provider, owner, name, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateRepoWorktreeBaseOnHostResponse(rsp)
+}
+
 // ListIssuesWithResponse request returning *ListIssuesResponse
 func (c *ClientWithResponses) ListIssuesWithResponse(ctx context.Context, params *ListIssuesParams, reqEditors ...RequestEditorFn) (*ListIssuesResponse, error) {
 	rsp, err := c.ListIssues(ctx, params, reqEditors...)
@@ -30432,6 +30706,23 @@ func (c *ClientWithResponses) ResolveRepoItemWithResponse(ctx context.Context, p
 		return nil, err
 	}
 	return ParseResolveRepoItemResponse(rsp)
+}
+
+// UpdateRepoWorktreeBaseWithBodyWithResponse request with arbitrary body returning *UpdateRepoWorktreeBaseResponse
+func (c *ClientWithResponses) UpdateRepoWorktreeBaseWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateRepoWorktreeBaseResponse, error) {
+	rsp, err := c.UpdateRepoWorktreeBaseWithBody(ctx, provider, owner, name, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateRepoWorktreeBaseResponse(rsp)
+}
+
+func (c *ClientWithResponses) UpdateRepoWorktreeBaseWithResponse(ctx context.Context, provider string, owner string, name string, body UpdateRepoWorktreeBaseJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateRepoWorktreeBaseResponse, error) {
+	rsp, err := c.UpdateRepoWorktreeBase(ctx, provider, owner, name, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateRepoWorktreeBaseResponse(rsp)
 }
 
 // ListReposWithResponse request returning *ListReposResponse
@@ -34272,6 +34563,39 @@ func ParseResolveRepoItemOnHostResponse(rsp *http.Response) (*ResolveRepoItemOnH
 	return response, nil
 }
 
+// ParseUpdateRepoWorktreeBaseOnHostResponse parses an HTTP response from a UpdateRepoWorktreeBaseOnHostWithResponse call
+func ParseUpdateRepoWorktreeBaseOnHostResponse(rsp *http.Response) (*UpdateRepoWorktreeBaseOnHostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UpdateRepoWorktreeBaseOnHostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SettingsResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseListIssuesResponse parses an HTTP response from a ListIssuesWithResponse call
 func ParseListIssuesResponse(rsp *http.Response) (*ListIssuesResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -37021,6 +37345,39 @@ func ParseResolveRepoItemResponse(rsp *http.Response) (*ResolveRepoItemResponse,
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest ResolveItemResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseUpdateRepoWorktreeBaseResponse parses an HTTP response from a UpdateRepoWorktreeBaseWithResponse call
+func ParseUpdateRepoWorktreeBaseResponse(rsp *http.Response) (*UpdateRepoWorktreeBaseResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UpdateRepoWorktreeBaseResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SettingsResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

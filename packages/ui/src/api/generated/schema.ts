@@ -1581,6 +1581,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/host/{platform_host}/repo/{provider}/{owner}/{name}/worktree-base": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update repository worktree base */
+        put: operations["update-repo-worktree-base-on-host"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/issues": {
         parameters: {
             query?: never;
@@ -2916,6 +2933,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/repo/{provider}/{owner}/{name}/worktree-base": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update repository worktree base */
+        put: operations["update-repo-worktree-base"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/repos": {
         parameters: {
             query?: never;
@@ -3740,6 +3774,7 @@ export interface components {
             platform_host: string;
             provider: string;
             repo_path: string;
+            worktree_base_path?: string;
         };
         CreateDiffReviewDraftCommentHostInputBody: {
             /**
@@ -5732,6 +5767,15 @@ export interface components {
             releases: components["schemas"]["RepoSummaryReleaseResponse"][] | null;
             repo: components["schemas"]["RepoRefResponse"];
             timeline_updated_at?: string;
+        };
+        RepoWorktreeBaseRequest: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/RepoWorktreeBaseRequest.json
+             */
+            readonly $schema?: string;
+            worktree_base_path: string;
         };
         ResolveDiscussionHostInputBody: {
             /**
@@ -9839,6 +9883,44 @@ export interface operations {
             };
         };
     };
+    "update-repo-worktree-base-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RepoWorktreeBaseRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
     "list-issues": {
         parameters: {
             query?: {
@@ -12860,6 +12942,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ResolveItemResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "update-repo-worktree-base": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RepoWorktreeBaseRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsResponse"];
                 };
             };
             /** @description Error */

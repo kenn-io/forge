@@ -111,6 +111,37 @@ export async function refreshRepo(owner: string, name: string, options: RepoRequ
   return data;
 }
 
+export async function updateRepoWorktreeBasePath(
+  owner: string,
+  name: string,
+  options: RepoRequestOptions,
+  worktreeBasePath: string,
+): Promise<Settings> {
+  const ref = {
+    provider: options.provider,
+    platformHost: options.host,
+    owner,
+    name,
+    repoPath: `${owner}/${name}`,
+  };
+  const { data, error, response } = await client.PUT(
+    providerRepoPath(ref, "/worktree-base"),
+    {
+      params: { path: providerRouteParams(ref) },
+      body: { worktree_base_path: worktreeBasePath },
+    },
+  );
+  if (!data) {
+    throw new Error(
+      requestErrorMessage(
+        error,
+        `PUT /repos/{owner}/{name}/worktree-base -> ${response.status}`,
+      ),
+    );
+  }
+  return data;
+}
+
 export async function previewRepos(
   owner: string,
   pattern: string,

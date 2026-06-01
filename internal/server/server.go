@@ -742,6 +742,7 @@ func newServer(
 		s.workspaces.SetIssueBranchSlugEnabled(
 			cfg.IssueWorkspaceBranchSlugEnabled(),
 		)
+		s.workspaces.SetWorktreeBasePathResolver(s.worktreeBasePathForRepo)
 		ptyOwnerDir := options.PtyOwnerDir
 		if ptyOwnerDir == "" {
 			ptyOwnerDir = filepath.Join(

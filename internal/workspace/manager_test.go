@@ -451,6 +451,49 @@ func TestSetupFailurePersistsStatusWhenContextCanceled(t *testing.T) {
 	assert.Contains(events[1].Message, "clone manager not set")
 }
 
+func TestSetupUsesConfiguredWorktreeBasePath(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	wtDir := t.TempDir()
+
+	repoID := seedRepo(t, d, "github.com", "acme", "widget")
+	seedMR(t, d, repoID, 42, "feature/thing")
+
+	localRepo := setupLocalWorktreeBaseForWorkspaceGitTest(t, "feature/thing")
+	tmuxScript, _ := writeRecorderScript(t)
+
+	mgr := NewManager(d, wtDir)
+	mgr.SetTmuxCommand([]string{tmuxScript})
+	mgr.SetWorktreeBasePathResolver(func(
+		context.Context, string, string, string,
+	) (string, bool, error) {
+		return localRepo, true, nil
+	})
+
+	ws, err := mgr.Create(t.Context(), "github.com", "acme", "widget", 42)
+	require.NoError(err)
+	require.NoError(mgr.Setup(t.Context(), ws))
+
+	got, err := d.GetWorkspace(t.Context(), ws.ID)
+	require.NoError(err)
+	require.NotNil(got)
+	assert.Equal("ready", got.Status)
+	assert.Equal("feature/thing", got.WorkspaceBranch)
+
+	listOutput := string(runWorkspaceTestGit(t, localRepo, "worktree", "list", "--porcelain"))
+	canonicalWorktreePath, err := filepath.EvalSymlinks(ws.WorktreePath)
+	require.NoError(err)
+	assert.Contains(listOutput, "worktree "+canonicalWorktreePath)
+
+	headSHA, err := gitHeadSHA(t.Context(), ws.WorktreePath)
+	require.NoError(err)
+	sourceSHA := strings.TrimSpace(string(runWorkspaceTestGit(
+		t, localRepo, "rev-parse", "refs/remotes/origin/feature/thing",
+	)))
+	assert.Equal(sourceSHA, headSHA)
+}
+
 func TestFailSetupUsesSinglePersistenceBudget(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
@@ -716,7 +759,10 @@ func TestRollbackWorktreeDeletesBranchWhenContextCanceled(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
-	mgr.rollbackWorktree(ctx, cloneDir, ws, workspaceBranchUnknown)
+	mgr.rollbackWorktree(ctx, workspaceGitSource{
+		dir:      cloneDir,
+		lockRoot: cloneDir,
+	}, ws, workspaceBranchUnknown)
 
 	_, exists, err := gitRefSHA(
 		t.Context(), cloneDir, "refs/heads/"+branch,
@@ -837,6 +883,30 @@ func configureOriginHeadForIssueWorkspace(t *testing.T, cloneDir string) {
 		t, cloneDir, "symbolic-ref",
 		"refs/remotes/origin/HEAD", "refs/remotes/origin/main",
 	)
+}
+
+func setupLocalWorktreeBaseForWorkspaceGitTest(
+	t *testing.T, branch string,
+) string {
+	t.Helper()
+	dir := t.TempDir()
+	repo := filepath.Join(dir, "repo")
+	runWorkspaceTestGit(t, dir, "init", "--initial-branch=main", repo)
+	runWorkspaceTestGit(t, repo, "config", "user.email", "test@test.com")
+	runWorkspaceTestGit(t, repo, "config", "user.name", "Test")
+	runWorkspaceTestGit(
+		t, repo, "remote", "add", "origin",
+		"https://github.com/acme/widget.git",
+	)
+	require.NoError(t, os.WriteFile(
+		filepath.Join(repo, "base.txt"), []byte("base\n"), 0o644,
+	))
+	runWorkspaceTestGit(t, repo, "add", ".")
+	runWorkspaceTestGit(t, repo, "commit", "-m", "base commit")
+	runWorkspaceTestGit(
+		t, repo, "update-ref", "refs/remotes/origin/"+branch, "HEAD",
+	)
+	return repo
 }
 
 func configureSameRepoPRRefs(
@@ -2969,7 +3039,10 @@ func TestManagerAddWorktreeAcquiresRepoLock(t *testing.T) {
 	}
 	done := make(chan error, 1)
 	go func() {
-		_, err := mgr.addWorktree(t.Context(), cloneDir, ws)
+		_, err := mgr.addWorktree(t.Context(), workspaceGitSource{
+			dir:      cloneDir,
+			lockRoot: cloneDir,
+		}, ws)
 		done <- err
 	}()
 

@@ -39,6 +39,26 @@ type repoConfigHostInput struct {
 	Name         string `path:"name"`
 }
 
+type repoWorktreeBaseRequest struct {
+	WorktreeBasePath string `json:"worktree_base_path"`
+}
+
+type repoWorktreeBaseInput struct {
+	Provider     string `path:"provider"`
+	PlatformHost string
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Body         repoWorktreeBaseRequest
+}
+
+type repoWorktreeBaseHostInput struct {
+	Provider     string `path:"provider"`
+	PlatformHost string `path:"platform_host"`
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Body         repoWorktreeBaseRequest
+}
+
 type settingsOutput = bodyOutput[settingsResponse]
 
 type setActiveWorktreeInput struct {
@@ -211,6 +231,20 @@ func (s *Server) registerSettingsAPI(api huma.API) {
 		Summary:     "Refresh repository",
 		Tags:        []string{"Settings"},
 	}, s.refreshConfiguredRepoOnHost)
+	huma.Register(api, huma.Operation{
+		OperationID: "update-repo-worktree-base",
+		Method:      http.MethodPut,
+		Path:        "/repo/{provider}/{owner}/{name}/worktree-base",
+		Summary:     "Update repository worktree base",
+		Tags:        []string{"Settings"},
+	}, s.updateConfiguredRepoWorktreeBase)
+	huma.Register(api, huma.Operation{
+		OperationID: "update-repo-worktree-base-on-host",
+		Method:      http.MethodPut,
+		Path:        "/host/{platform_host}/repo/{provider}/{owner}/{name}/worktree-base",
+		Summary:     "Update repository worktree base",
+		Tags:        []string{"Settings"},
+	}, s.updateConfiguredRepoWorktreeBaseOnHost)
 	huma.Register(api, huma.Operation{
 		OperationID:   "delete-repo",
 		Method:        http.MethodDelete,

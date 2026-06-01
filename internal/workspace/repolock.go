@@ -18,7 +18,7 @@ type Locker interface {
 	Unlock() error
 }
 
-// FileLockManager serializes worktree mutations on a single bare clone.
+// FileLockManager serializes worktree mutations on a single Git repository.
 //
 // git worktree add/remove/prune all update the bare clone's worktrees
 // metadata, HEAD references, and the local branch namespace. Concurrent
@@ -80,8 +80,9 @@ func (m *FileLockManager) stateFor(lockPath string) *repoLockState {
 // file lock are held, or ctx is done. On success the returned Locker
 // holds the lock; Unlock must be called exactly once to release it.
 //
-// repoRoot is the bare clone directory; the lock file lives inside it
-// so the lock travels with the clone and disappears with it.
+// repoRoot is the directory that owns the lock file. For middleman's
+// managed bare clones that is the clone directory; for user-configured
+// local worktree bases it is a middleman-owned lock directory.
 func (m *FileLockManager) Acquire(
 	ctx context.Context, repoRoot string,
 ) (Locker, error) {

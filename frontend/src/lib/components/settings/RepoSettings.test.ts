@@ -16,15 +16,23 @@ vi.mock("../../api/settings.js", () => ({
   removeRepo: vi.fn(),
   getSettings: vi.fn(),
   refreshRepo: vi.fn(),
+  updateRepoWorktreeBasePath: vi.fn(),
   previewRepos: vi.fn(),
   bulkAddRepos: vi.fn(),
 }));
 
-import { addRepo, bulkAddRepos, previewRepos, refreshRepo } from "../../api/settings.js";
+import {
+  addRepo,
+  bulkAddRepos,
+  previewRepos,
+  refreshRepo,
+  updateRepoWorktreeBasePath,
+} from "../../api/settings.js";
 import RepoSettings from "./RepoSettings.svelte";
 
 const mockAddRepo = vi.mocked(addRepo);
 const mockRefreshRepo = vi.mocked(refreshRepo);
+const mockUpdateRepoWorktreeBasePath = vi.mocked(updateRepoWorktreeBasePath);
 const mockPreviewRepos = vi.mocked(previewRepos);
 const mockBulkAddRepos = vi.mocked(bulkAddRepos);
 
@@ -34,6 +42,7 @@ describe("RepoSettings", () => {
     mockRefreshSyncStatus.mockReset();
     mockAddRepo.mockReset();
     mockRefreshRepo.mockReset();
+    mockUpdateRepoWorktreeBasePath.mockReset();
     mockPreviewRepos.mockReset();
     mockBulkAddRepos.mockReset();
   });
@@ -233,6 +242,79 @@ describe("RepoSettings", () => {
       provider: "github",
       host: "github.com",
     });
+  });
+
+  it("saves a worktree base path for exact repositories", async () => {
+    const onUpdate = vi.fn();
+    const updatedRepos = [
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "api",
+        repo_path: "acme/api",
+        worktree_base_path: "/Users/acme/api",
+        is_glob: false,
+        matched_repo_count: 1,
+      },
+    ];
+    mockUpdateRepoWorktreeBasePath.mockResolvedValue({
+      repos: updatedRepos,
+      activity: {
+        view_mode: "threaded",
+        time_range: "7d",
+        hide_closed: false,
+        hide_bots: false,
+        collapse_threads: false,
+        default_branch_retention_days: 90,
+        default_branch_max_commits: 5000,
+      },
+      terminal: {
+        font_family: "",
+        font_size: 14,
+        scrollback: 1000,
+        line_height: 1,
+        letter_spacing: 0,
+        cursor_blink: true,
+        font_ligatures: false,
+        renderer: "xterm",
+      },
+      agents: [],
+    });
+
+    render(RepoSettings, {
+      props: {
+        repos: [
+          {
+            provider: "github",
+            platform_host: "github.com",
+            owner: "acme",
+            name: "api",
+            repo_path: "acme/api",
+            is_glob: false,
+            matched_repo_count: 1,
+          },
+        ],
+        onUpdate,
+      },
+    });
+
+    await fireEvent.input(
+      screen.getByPlaceholderText("Optional local repository path"),
+      { target: { value: "/Users/acme/api" } },
+    );
+    await fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(mockUpdateRepoWorktreeBasePath).toHaveBeenCalledWith(
+      "acme",
+      "api",
+      {
+        provider: "github",
+        host: "github.com",
+      },
+      "/Users/acme/api",
+    );
+    await waitFor(() => expect(onUpdate).toHaveBeenCalledWith(updatedRepos));
   });
 
   it("updates repos and refreshes sync status after import", async () => {

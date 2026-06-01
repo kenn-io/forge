@@ -2,7 +2,13 @@
   import { tick } from "svelte";
   import { getStores } from "@middleman/ui";
   import type { ConfigRepo } from "@middleman/ui/api/types";
-  import { addRepo, removeRepo, getSettings, refreshRepo } from "../../api/settings.js";
+  import {
+    addRepo,
+    removeRepo,
+    getSettings,
+    refreshRepo,
+    updateRepoWorktreeBasePath,
+  } from "../../api/settings.js";
   import ProviderIcon from "../provider/ProviderIcon.svelte";
   import RepoImportModal from "./RepoImportModal.svelte";
 
@@ -27,6 +33,9 @@
   let removeError = $state<string | null>(null);
   let refreshingByKey = $state<Record<string, boolean>>({});
   let refreshErrors = $state<Record<string, string>>({});
+  let worktreeBaseDrafts = $state<Record<string, string>>({});
+  let savingWorktreeBaseByKey = $state<Record<string, boolean>>({});
+  let worktreeBaseErrors = $state<Record<string, string>>({});
 
   const showProviderIcons = $derived.by(() => {
     const providers = new Set(
@@ -46,6 +55,10 @@
   function repoDisplayLabel(repo: ConfigRepo): string {
     const label = repoLabel(repo);
     return repo.is_glob ? `${label} (${repo.matched_repo_count})` : label;
+  }
+
+  function worktreeBaseValue(repo: ConfigRepo, key: string): string {
+    return worktreeBaseDrafts[key] ?? repo.worktree_base_path ?? "";
   }
 
   async function handleAdd(): Promise<void> {
@@ -116,6 +129,39 @@
     }
   }
 
+  async function handleWorktreeBaseSave(repo: ConfigRepo): Promise<void> {
+    if (embedded || repo.is_glob) return;
+    const key = repoKey(repo);
+    savingWorktreeBaseByKey = { ...savingWorktreeBaseByKey, [key]: true };
+    if (worktreeBaseErrors[key]) {
+      const nextErrors = { ...worktreeBaseErrors };
+      delete nextErrors[key];
+      worktreeBaseErrors = nextErrors;
+    }
+    try {
+      const settings = await updateRepoWorktreeBasePath(
+        repo.owner,
+        repo.name,
+        {
+          provider: repo.provider,
+          host: repo.platform_host,
+        },
+        worktreeBaseValue(repo, key).trim(),
+      );
+      const nextDrafts = { ...worktreeBaseDrafts };
+      delete nextDrafts[key];
+      worktreeBaseDrafts = nextDrafts;
+      onUpdate(settings.repos);
+    } catch (err) {
+      worktreeBaseErrors = {
+        ...worktreeBaseErrors,
+        [key]: err instanceof Error ? err.message : String(err),
+      };
+    } finally {
+      savingWorktreeBaseByKey = { ...savingWorktreeBaseByKey, [key]: false };
+    }
+  }
+
   function handleInputKeydown(e: KeyboardEvent): void {
     if (e.key === "Enter") {
       e.preventDefault();
@@ -152,6 +198,41 @@
     <div class="repo-row">
       <div class="repo-main">
         <span class="repo-name">{#if showProviderIcons}<ProviderIcon provider={repo.provider} size={16} class="repo-provider-icon" />{/if}{repoDisplayLabel(repo)}</span>
+        {#if !repo.is_glob}
+          <div class="worktree-base-control">
+            <label for={`worktree-base-${key}`}>Worktree base</label>
+            <input
+              id={`worktree-base-${key}`}
+              class="worktree-base-input"
+              type="text"
+              placeholder="Optional local repository path"
+              value={worktreeBaseValue(repo, key)}
+              disabled={embedded || Boolean(savingWorktreeBaseByKey[key])}
+              oninput={(event) => {
+                worktreeBaseDrafts = {
+                  ...worktreeBaseDrafts,
+                  [key]: event.currentTarget.value,
+                };
+              }}
+              onkeydown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  void handleWorktreeBaseSave(repo);
+                }
+              }}
+            />
+            <button
+              class="worktree-base-save"
+              onclick={() => void handleWorktreeBaseSave(repo)}
+              disabled={embedded || Boolean(savingWorktreeBaseByKey[key]) || worktreeBaseValue(repo, key).trim() === (repo.worktree_base_path ?? "")}
+            >
+              {savingWorktreeBaseByKey[key] ? "Saving..." : "Save"}
+            </button>
+          </div>
+          {#if worktreeBaseErrors[key]}
+            <div class="error-msg row-error">{worktreeBaseErrors[key]}</div>
+          {/if}
+        {/if}
         {#if refreshErrors[key]}
           <div class="error-msg row-error">{refreshErrors[key]}</div>
         {/if}
@@ -231,6 +312,22 @@
   .repo-main { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
   .repo-name { display: inline-flex; align-items: center; gap: 6px; font-size: var(--font-size-md); color: var(--text-primary); font-weight: 500; }
   :global(.repo-provider-icon) { color: var(--text-secondary); }
+  .worktree-base-control { display: grid; grid-template-columns: auto minmax(180px, 1fr) auto; align-items: center; gap: 8px; max-width: min(100%, 720px); }
+  .worktree-base-control label { color: var(--text-muted); font-size: var(--font-size-sm); white-space: nowrap; }
+  .worktree-base-input {
+    min-width: 0; font-size: var(--font-size-sm); padding: 5px 8px;
+    color: var(--text-primary); background: var(--bg-inset);
+    border: 1px solid var(--border-muted); border-radius: var(--radius-sm);
+    font-family: var(--font-mono);
+  }
+  .worktree-base-input:focus { border-color: var(--accent-blue); outline: none; }
+  .worktree-base-save {
+    padding: 4px 10px; font-size: var(--font-size-sm); font-weight: 600;
+    color: var(--accent-blue); border: 1px solid color-mix(in srgb, var(--accent-blue) 35%, var(--border-muted));
+    border-radius: var(--radius-sm);
+  }
+  .worktree-base-save:hover:not(:disabled) { background: color-mix(in srgb, var(--accent-blue) 10%, transparent); }
+  .worktree-base-save:disabled { opacity: 0.45; cursor: not-allowed; }
   .repo-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
   .refresh-btn {
     padding: 4px 10px; font-size: var(--font-size-sm); font-weight: 500;
@@ -269,4 +366,8 @@
   .add-btn:disabled { opacity: 0.5; cursor: not-allowed; }
   .error-msg { font-size: var(--font-size-sm); color: var(--accent-red); padding: 4px 0; }
   .row-error { padding: 0; }
+  @media (max-width: 640px) {
+    .worktree-base-control { grid-template-columns: 1fr auto; }
+    .worktree-base-control label { grid-column: 1 / -1; }
+  }
 </style>

@@ -115,7 +115,14 @@ export function providerItemPath(kind: "pulls" | "issues", ref: ProviderRouteRef
   return `/${kind}/{provider}/{owner}/{name}/{number}${suffix}`;
 }
 
-type RepoSuffix = "" | "/comment-autocomplete" | "/commits/{sha}/diff" | "/labels" | "/refresh" | "/resolve/{number}";
+type RepoSuffix =
+  | ""
+  | "/comment-autocomplete"
+  | "/commits/{sha}/diff"
+  | "/labels"
+  | "/refresh"
+  | "/worktree-base"
+  | "/resolve/{number}";
 
 type RepoPath<S extends RepoSuffix> =
   | `/repo/{provider}/{owner}/{name}${S}`

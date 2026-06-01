@@ -13,6 +13,7 @@ import (
 	"go.kenn.io/middleman/internal/db"
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/middleman/internal/workspace"
 	"go.kenn.io/middleman/internal/workspace/localruntime"
 )
 
@@ -71,6 +72,7 @@ func (s *Server) buildLocalSettingsResponse() settingsResponse {
 			Owner:            raw.Owner,
 			Name:             raw.Name,
 			RepoPath:         configRepoPath(raw),
+			WorktreeBasePath: raw.WorktreeBasePath,
 			IsGlob:           raw.HasNameGlob(),
 			MatchedRepoCount: matchedRepoCount(raw, tracked),
 		}
@@ -196,6 +198,32 @@ func sameConfiguredRepo(left, right config.Repo) bool {
 			right.PlatformHostOrDefault(),
 		) &&
 		strings.EqualFold(configRepoPath(left), configRepoPath(right))
+}
+
+func (s *Server) worktreeBasePathForRepo(
+	_ context.Context, platformHost, owner, name string,
+) (string, bool, error) {
+	if s.cfg == nil {
+		return "", false, nil
+	}
+	target := config.Repo{
+		Platform:     "github",
+		PlatformHost: platformHost,
+		Owner:        owner,
+		Name:         name,
+	}
+	s.cfgMu.Lock()
+	defer s.cfgMu.Unlock()
+	for _, repo := range s.cfg.Repos {
+		if repo.HasNameGlob() || strings.TrimSpace(repo.WorktreeBasePath) == "" {
+			continue
+		}
+		target.Platform = repo.PlatformOrDefault()
+		if sameConfiguredRepo(repo, target) {
+			return repo.WorktreeBasePath, true, nil
+		}
+	}
+	return "", false, nil
 }
 
 func repoMatchesConfig(
@@ -627,6 +655,97 @@ func (s *Server) refreshConfiguredRepoOnHost(
 		Owner:        input.Owner,
 		Name:         input.Name,
 	})
+}
+
+func (s *Server) updateConfiguredRepoWorktreeBase(
+	ctx context.Context, input *repoWorktreeBaseInput,
+) (*settingsOutput, error) {
+	return s.updateConfiguredRepoWorktreeBasePath(ctx, repoConfigInput{
+		Provider:     input.Provider,
+		PlatformHost: input.PlatformHost,
+		Owner:        input.Owner,
+		Name:         input.Name,
+	}, input.Body.WorktreeBasePath)
+}
+
+func (s *Server) updateConfiguredRepoWorktreeBaseOnHost(
+	ctx context.Context, input *repoWorktreeBaseHostInput,
+) (*settingsOutput, error) {
+	return s.updateConfiguredRepoWorktreeBasePath(ctx, repoConfigInput{
+		Provider:     input.Provider,
+		PlatformHost: input.PlatformHost,
+		Owner:        input.Owner,
+		Name:         input.Name,
+	}, input.Body.WorktreeBasePath)
+}
+
+func (s *Server) updateConfiguredRepoWorktreeBasePath(
+	ctx context.Context, ref repoConfigInput, rawPath string,
+) (*settingsOutput, error) {
+	if s.cfgPath == "" {
+		return nil, problemNotFound(CodeSettingsUnavailable, "settings not available", nil)
+	}
+
+	provider, err := normalizeRouteProvider(ref.Provider)
+	if err != nil {
+		return nil, problemValidation("path.provider", err.Error())
+	}
+	targetRef := config.Repo{
+		Platform:     provider,
+		PlatformHost: ref.PlatformHost,
+		Owner:        ref.Owner,
+		Name:         ref.Name,
+	}
+
+	worktreeBasePath := strings.TrimSpace(rawPath)
+	if worktreeBasePath != "" {
+		abs, err := workspace.ValidateWorktreeBasePath(
+			ctx, worktreeBasePath, targetRef.PlatformHostOrDefault(),
+			ref.Owner, ref.Name,
+		)
+		if err != nil {
+			return nil, problemValidation("body.worktree_base_path", err.Error())
+		}
+		worktreeBasePath = abs
+	}
+
+	s.cfgMu.Lock()
+	idx := -1
+	for i, rp := range s.cfg.Repos {
+		if sameConfiguredRepo(rp, targetRef) {
+			idx = i
+			break
+		}
+	}
+	if idx == -1 {
+		s.cfgMu.Unlock()
+		return nil, problemNotFound(CodeRepoNotFound,
+			ref.Owner+"/"+ref.Name+" is not configured", nil)
+	}
+	if s.cfg.Repos[idx].HasNameGlob() {
+		s.cfgMu.Unlock()
+		return nil, problemBadRequest(
+			CodeBadRequest,
+			"worktree base paths are only supported for exact repositories",
+			nil,
+		)
+	}
+
+	prev := s.cfg.Repos[idx].WorktreeBasePath
+	s.cfg.Repos[idx].WorktreeBasePath = worktreeBasePath
+	if err := s.cfg.Validate(); err != nil {
+		s.cfg.Repos[idx].WorktreeBasePath = prev
+		s.cfgMu.Unlock()
+		return nil, problemBadRequest(CodeBadRequest, err.Error(), nil)
+	}
+	if err := s.cfg.Save(s.cfgPath); err != nil {
+		s.cfg.Repos[idx].WorktreeBasePath = prev
+		s.cfgMu.Unlock()
+		return nil, problemInternal("save config: " + err.Error())
+	}
+	s.cfgMu.Unlock()
+
+	return &settingsOutput{Body: s.buildLocalSettingsResponse()}, nil
 }
 
 func (s *Server) deleteConfiguredRepo(

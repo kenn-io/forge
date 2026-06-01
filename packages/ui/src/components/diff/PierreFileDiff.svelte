@@ -22,6 +22,7 @@
     tabWidth?: number;
     loadFileText?: ((side: "old" | "new") => Promise<string>) | undefined;
     lineAnnotations?: DiffLineAnnotation<unknown>[];
+    transientLineAnnotation?: DiffLineAnnotation<unknown> | null;
     selectedRange?: SelectedLineRange | null;
     selectedRanges?: SelectedLineRange[];
     enableLineSelection?: boolean;
@@ -30,6 +31,16 @@
   }
 
   type PierreSide = NonNullable<Parameters<GetLineIndexUtility>[1]>;
+  type RenderedLinePair = {
+    content: HTMLElement;
+    gutter: HTMLElement;
+  };
+  type TransientAnnotationRow = {
+    content?: HTMLElement;
+    gutter?: HTMLElement;
+    key: string;
+    wrapper: HTMLElement;
+  };
   const emptyFile: DiffFile = {
     path: "",
     old_path: "",
@@ -49,6 +60,7 @@
     tabWidth = 4,
     loadFileText,
     lineAnnotations = [],
+    transientLineAnnotation = null,
     selectedRange = null,
     selectedRanges = [],
     enableLineSelection = false,
@@ -72,6 +84,9 @@
   let renderRetryFrame: number | undefined;
   let renderRetryTick = $state(0);
   let renderRetryCount = 0;
+  let renderedLineRows = new Map<number, RenderedLinePair[]>();
+  let selectedRangeElements = new Set<HTMLElement>();
+  let transientAnnotationRow: TransientAnnotationRow | undefined;
   const inactiveCleanupDelayMs = 10_000;
   const maxImmediateRenderRetries = 5;
 
@@ -280,6 +295,7 @@
       return;
     }
     rendered = false;
+    clearRenderedDomState();
     if (fullContext) {
       if (renderFullContext(fullContext)) {
         renderAttemptKey = nextRenderAttemptKey;
@@ -330,6 +346,17 @@
     }
   });
 
+  $effect(() => {
+    const transientAnnotationKey = transientLineAnnotation
+      ? stableAnnotationKey(transientLineAnnotation)
+      : "";
+    if (!transientAnnotationKey && !transientAnnotationRow) return;
+    if (!rendered || !host?.shadowRoot) return;
+    cancelSelectedRangesApplication();
+    applyTransientLineAnnotation();
+    applySelectedRanges();
+  });
+
   function installDemandContextHandler(): void {
     const root = host?.shadowRoot;
     if (!root || root === demandContextHandlerRoot) return;
@@ -349,6 +376,9 @@
     removeDemandContextHandler();
     cancelSelectedRangesApplication();
     cancelRenderRetry();
+    clearSelectedRangeElements();
+    clearTransientLineAnnotation();
+    renderedLineRows = new Map();
     pierreDiff?.cleanUp();
     pierreDiff = undefined;
   }
@@ -379,6 +409,7 @@
     cancelSelectedRangesApplication();
     reviewRangeFrame = requestAnimationFrame(() => {
       reviewRangeFrame = undefined;
+      applyTransientLineAnnotation();
       applySelectedRanges();
     });
   }
@@ -387,11 +418,7 @@
     const root = host?.shadowRoot;
     const pre = root?.querySelector("pre");
     if (!root || !pre) return;
-    for (const element of root.querySelectorAll<HTMLElement>("[data-review-range-line]")) {
-      element.removeAttribute("data-review-range-line");
-      element.removeAttribute("data-selected-line");
-      element.classList.remove("gutter--selected", "gutter-new", "gutter-old");
-    }
+    clearSelectedRangeElements();
     const ranges = selectedRange ? [selectedRange, ...selectedRanges] : selectedRanges;
     if (!ranges.length || !pierreDiff) return;
 
@@ -407,37 +434,21 @@
       const startIndex = split ? startIndexes[1] : startIndexes[0];
       const endIndex = split ? endIndexes[1] : endIndexes[0];
       markSelectedLineIndexes(
-        pre,
         Math.min(startIndex, endIndex),
         Math.max(startIndex, endIndex),
-        split,
         range.side as PierreSide,
       );
     }
   }
 
   function markSelectedLineIndexes(
-    pre: HTMLPreElement,
     first: number,
     last: number,
-    split: boolean,
     side: PierreSide,
   ): void {
     const isSingle = first === last;
-    for (const code of Array.from(pre.children)) {
-      const [gutter, content] = Array.from(code.children);
-      if (!gutter || !content) continue;
-      const contentRows = Array.from(content.children);
-      const gutterRows = Array.from(gutter.children);
-      for (let i = 0; i < contentRows.length; i++) {
-        const contentElement = contentRows[i];
-        const gutterElement = gutterRows[i];
-        if (!(contentElement instanceof HTMLElement) || !(gutterElement instanceof HTMLElement)) {
-          continue;
-        }
-        const lineIndex = parseRenderedLineIndex(contentElement, split);
-        if ((lineIndex ?? 0) > last) break;
-        if (lineIndex == null || lineIndex < first) continue;
+    for (let lineIndex = first; lineIndex <= last; lineIndex += 1) {
+      for (const { content: contentElement, gutter: gutterElement } of renderedLineRows.get(lineIndex) ?? []) {
         let value = isSingle ? "single" : lineIndex === first ? "first" : lineIndex === last ? "last" : "";
         markSelectedRangeElement(contentElement, value);
         markSelectedRangeElement(gutterElement, value, side);
@@ -464,11 +475,27 @@
     value: string,
     side?: PierreSide,
   ): void {
+    selectedRangeElements.add(element);
     element.setAttribute("data-review-range-line", "");
     element.setAttribute("data-selected-line", value);
     if (side && element.hasAttribute("data-column-number")) {
       element.classList.add("gutter--selected", side === "deletions" ? "gutter-old" : "gutter-new");
     }
+  }
+
+  function clearSelectedRangeElements(): void {
+    for (const element of selectedRangeElements) {
+      element.removeAttribute("data-review-range-line");
+      element.removeAttribute("data-selected-line");
+      element.classList.remove("gutter--selected", "gutter-new", "gutter-old");
+    }
+    selectedRangeElements.clear();
+  }
+
+  function clearRenderedDomState(): void {
+    clearSelectedRangeElements();
+    clearTransientLineAnnotation();
+    renderedLineRows = new Map();
   }
 
   function parseRenderedLineIndex(element: HTMLElement, split: boolean): number | undefined {
@@ -564,15 +591,18 @@
     if (!context || fileKey !== requestFileKey) return;
     renderFullContext(context);
     if (fileKey !== requestFileKey) return;
+    clearRenderedDomState();
     pierreDiff?.expandHunk(hunkIndex, direction, expansionLineCount);
     applyLineTargetAttributes();
     applyHunkHeaderLabels();
     applyLineCommentButtons();
+    scheduleSelectedRangesApplication();
   }
 
   function renderFullContext(context: { oldFile: FileContents; newFile: FileContents }): boolean {
     if (!pierreDiff || !host) return false;
     rendered = false;
+    clearRenderedDomState();
     const didRender = pierreDiff.render({
       fileContainer: host,
       oldFile: context.oldFile,
@@ -681,6 +711,7 @@
     }
 
     const split = pre.getAttribute("data-diff-type") === "split";
+    refreshRenderedLineRows(pre, split);
     const getLineIndex = getPierreLineIndex(pierreDiff);
     for (const hunk of fileHunks) {
       for (const line of hunk.lines) {
@@ -779,6 +810,101 @@
     };
   }
 
+  function applyTransientLineAnnotation(): void {
+    const annotation = transientLineAnnotation;
+    if (!annotation || !host || !renderAnnotation) {
+      clearTransientLineAnnotation();
+      return;
+    }
+
+    const slotName = annotationSlotName(annotation);
+    const key = [
+      slotName,
+      stableAnnotationKey(annotation.metadata),
+    ].join(":");
+    if (transientAnnotationRow?.key === key) return;
+
+    clearTransientLineAnnotation();
+
+    const existingSlot = hasAnnotationSlot(slotName);
+    const row = existingSlot ? undefined : insertTransientAnnotationRow(annotation);
+    if (!existingSlot && !row) return;
+
+    const content = renderAnnotation(annotation);
+    if (!content) return;
+
+    const wrapper = document.createElement("div");
+    wrapper.dataset.transientAnnotationSlot = "";
+    wrapper.slot = slotName;
+    wrapper.style.whiteSpace = "normal";
+    wrapper.appendChild(content);
+
+    // eslint-disable-next-line svelte/no-dom-manipulating -- Pierre owns this custom element; annotations are passed through its light-DOM slot API.
+    host.appendChild(wrapper);
+    transientAnnotationRow = {
+      key,
+      wrapper,
+      ...row,
+    };
+  }
+
+  function clearTransientLineAnnotation(): void {
+    transientAnnotationRow?.wrapper.remove();
+    transientAnnotationRow?.content?.remove();
+    transientAnnotationRow?.gutter?.remove();
+    transientAnnotationRow = undefined;
+  }
+
+  function hasAnnotationSlot(slotName: string): boolean {
+    const root = host?.shadowRoot;
+    if (!root) return false;
+    for (const slot of root.querySelectorAll<HTMLSlotElement>("slot")) {
+      if (slot.name === slotName) return true;
+    }
+    return false;
+  }
+
+  function insertTransientAnnotationRow(
+    annotation: DiffLineAnnotation<unknown>,
+  ): { content: HTMLElement; gutter: HTMLElement } | undefined {
+    const root = host?.shadowRoot;
+    const pre = root?.querySelector("pre");
+    if (!pre || !pierreDiff) return undefined;
+
+    const split = pre.getAttribute("data-diff-type") === "split";
+    const indexes = getPierreLineIndex(pierreDiff)(
+      annotation.lineNumber,
+      annotation.side as PierreSide,
+    );
+    if (!indexes) return undefined;
+
+    const lineIndex = split ? indexes[1] : indexes[0];
+    const target = renderedLinePair(pre, lineIndex, split);
+    if (!target) return undefined;
+
+    const gutter = document.createElement("div");
+    gutter.setAttribute("data-gutter-buffer", "annotation");
+    gutter.setAttribute("data-buffer-size", "1");
+    gutter.style.gridRow = "span 1";
+
+    const content = document.createElement("div");
+    content.setAttribute("data-line-annotation", `0,${lineIndex}`);
+    const annotationContent = document.createElement("div");
+    annotationContent.setAttribute("data-annotation-content", "");
+    const slot = document.createElement("slot");
+    slot.name = annotationSlotName(annotation);
+    annotationContent.appendChild(slot);
+    content.appendChild(annotationContent);
+
+    target.gutter.after(gutter);
+    target.content.after(content);
+    return { content, gutter };
+  }
+
+  function annotationSlotName(annotation: DiffLineAnnotation<unknown>): string {
+    return `annotation-${annotation.side}-${annotation.lineNumber}`;
+  }
+
   function markLineTarget(
     pre: HTMLPreElement,
     indexes: [number, number] | undefined,
@@ -788,27 +914,59 @@
     if (!indexes) return;
     const lineIndex = split ? indexes[1] : indexes[0];
     if (!Number.isFinite(lineIndex)) return;
-    const row = renderedLineRow(pre, lineIndex, split);
-    if (!row) return;
-    row.setAttribute("data-diff-path", renderFile.path);
-    row.tabIndex = -1;
+    const pair = renderedLinePair(pre, lineIndex, split);
+    if (!pair) return;
+    pair.content.setAttribute("data-diff-path", renderFile.path);
+    pair.content.tabIndex = -1;
     for (const [name, value] of Object.entries(attributes)) {
-      row.setAttribute(name, value);
+      pair.content.setAttribute(name, value);
     }
   }
 
-  function renderedLineRow(
+  function refreshRenderedLineRows(pre: HTMLPreElement, split: boolean): void {
+    const next = new Map<number, RenderedLinePair[]>();
+    for (const code of Array.from(pre.children)) {
+      const [gutter, content] = Array.from(code.children);
+      if (!gutter || !content) continue;
+      const contentRows = Array.from(content.children);
+      const gutterRows = Array.from(gutter.children);
+      for (let index = 0; index < contentRows.length; index += 1) {
+        const contentElement = contentRows[index];
+        const gutterElement = gutterRows[index];
+        if (!(contentElement instanceof HTMLElement) || !(gutterElement instanceof HTMLElement)) {
+          continue;
+        }
+        const lineIndex = parseRenderedLineIndex(contentElement, split);
+        if (lineIndex == null) continue;
+        const rows = next.get(lineIndex) ?? [];
+        rows.push({ content: contentElement, gutter: gutterElement });
+        next.set(lineIndex, rows);
+      }
+    }
+    renderedLineRows = next;
+  }
+
+  function renderedLinePair(
     pre: HTMLPreElement,
     targetIndex: number,
     split: boolean,
-  ): HTMLElement | undefined {
+  ): RenderedLinePair | undefined {
+    const cached = renderedLineRows.get(targetIndex)?.[0];
+    if (cached) return cached;
     for (const code of Array.from(pre.children)) {
-      const [, content] = Array.from(code.children);
-      if (!content) continue;
+      const [gutter, content] = Array.from(code.children);
+      if (!gutter || !content) continue;
+      const gutterRows = Array.from(gutter.children);
       for (const contentElement of Array.from(content.children)) {
         if (!(contentElement instanceof HTMLElement)) continue;
         const lineIndex = parseRenderedLineIndex(contentElement, split);
-        if (lineIndex === targetIndex) return contentElement;
+        if (lineIndex === targetIndex) {
+          const index = Array.prototype.indexOf.call(content.children, contentElement);
+          const gutterElement = gutterRows[index];
+          if (gutterElement instanceof HTMLElement) {
+            return { content: contentElement, gutter: gutterElement };
+          }
+        }
         if ((lineIndex ?? 0) > targetIndex) return undefined;
       }
     }

@@ -31,6 +31,7 @@ const pierre = (() => {
   class FileDiff {
     cleanUp = cleanUp;
     expandHunk = () => {};
+    getLineIndex = (lineNumber: number): [number, number] => [lineNumber, lineNumber];
     render = renderDiff;
     setOptions = () => {};
     setSelectedLines = () => {};
@@ -183,5 +184,32 @@ describe("PierreFileDiff", () => {
     await waitFor(() => {
       expect(pierre.renderCount()).toBe(2);
     });
+  });
+
+  it("does not rerender when transient annotation metadata changes", async () => {
+    const { default: PierreFileDiff } = await import("./PierreFileDiff.svelte");
+    const file = makeFile();
+
+    const { rerender } = render(PierreFileDiff, {
+      props: { active: true, file },
+    });
+
+    await waitFor(() => {
+      expect(pierre.renderCount()).toBe(1);
+    });
+
+    await rerender({
+      active: true,
+      file,
+      selectedRange: { start: 2, end: 2, side: "additions" },
+      transientLineAnnotation: {
+        side: "additions",
+        lineNumber: 2,
+        metadata: { id: "composer:additions:2", body: "draft text" },
+      },
+    });
+    await Promise.resolve();
+
+    expect(pierre.renderCount()).toBe(1);
   });
 });

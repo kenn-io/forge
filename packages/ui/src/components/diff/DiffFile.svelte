@@ -126,20 +126,24 @@
         metadata: { kind: "thread", id: thread.id, thread, canReply: canReplyToThreads },
       });
     }
-    if (reviewEnabled && composerRange) {
-      annotations.push({
-        side: pierreSide(reviewSideFromValue(composerRange.side)),
-        lineNumber: composerRange.line,
-        metadata: {
-          kind: "composer",
-          id: `composer:${rangeKey(composerRange)}`,
-          range: composerRange,
-        },
-      });
-    }
     return annotations;
   });
   const pierreLineAnnotations = $derived(lineAnnotations as DiffLineAnnotation<unknown>[]);
+  const composerAnnotation = $derived.by<DiffLineAnnotation<DiffAnnotation> | null>(() => {
+    if (!reviewEnabled || !composerRange) return null;
+    return {
+      side: pierreSide(reviewSideFromValue(composerRange.side)),
+      lineNumber: composerRange.line,
+      metadata: {
+        kind: "composer",
+        id: `composer:${rangeKey(composerRange)}`,
+        range: composerRange,
+      },
+    };
+  });
+  const pierreComposerAnnotation = $derived(
+    composerAnnotation as DiffLineAnnotation<unknown> | null,
+  );
   const draftSelectedRanges = $derived.by<SelectedLineRange[]>(() => {
     if (!reviewEnabled) return [];
     const ranges: SelectedLineRange[] = [];
@@ -530,6 +534,7 @@
           {tabWidth}
           loadFileText={contextExpansionEnabled ? loadDiffText : undefined}
           lineAnnotations={pierreLineAnnotations}
+          transientLineAnnotation={pierreComposerAnnotation}
           selectedRange={selectedRange}
           selectedRanges={draftSelectedRanges}
           enableLineSelection={reviewEnabled && !!diffHeadSHA}

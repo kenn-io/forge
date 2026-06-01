@@ -86,6 +86,7 @@
       class="repo-tree-caret"
       class:expanded
       aria-label={`Toggle ${label}`}
+      aria-expanded={expanded}
       onclick={caretClick}
       onmousedown={caretMouseDown}
       type="button"

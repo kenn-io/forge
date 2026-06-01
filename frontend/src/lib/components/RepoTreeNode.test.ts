@@ -68,6 +68,48 @@ describe("RepoTreeNode", () => {
     expect(onToggleExpand).toHaveBeenCalledOnce();
   });
 
+  it("exposes expanded state via aria-expanded on the caret control", () => {
+    // aria-expanded lives on the caret <button>, not the role=option row
+    // (which does not support the attribute), so assistive tech can tell
+    // whether a collapsible group is open.
+    const { unmount } = render(RepoTreeNode, {
+      props: {
+        kind: "owner",
+        label: "acme",
+        ariaLabel: "github.com/acme",
+        depth: 0,
+        hasChildren: true,
+        expanded: true,
+        selectionState: "unchecked",
+        highlighted: false,
+        onToggleExpand: vi.fn(),
+        onToggleSelect: vi.fn(),
+      },
+    });
+    expect(screen.getByLabelText("Toggle acme").getAttribute("aria-expanded")).toBe(
+      "true",
+    );
+    unmount();
+
+    render(RepoTreeNode, {
+      props: {
+        kind: "owner",
+        label: "acme",
+        ariaLabel: "github.com/acme",
+        depth: 0,
+        hasChildren: true,
+        expanded: false,
+        selectionState: "unchecked",
+        highlighted: false,
+        onToggleExpand: vi.fn(),
+        onToggleSelect: vi.fn(),
+      },
+    });
+    expect(screen.getByLabelText("Toggle acme").getAttribute("aria-expanded")).toBe(
+      "false",
+    );
+  });
+
   it("calls onToggleSelect when the checkbox is clicked", async () => {
     const onToggleSelect = vi.fn();
     render(RepoTreeNode, {

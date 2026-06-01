@@ -83,6 +83,8 @@
   let reviewRangeFrame: number | undefined;
   let renderRetryFrame: number | undefined;
   let renderRetryTick = $state(0);
+  let viewportProbeFrame: number | undefined;
+  let viewportProbeTick = $state(0);
   let renderRetryCount = 0;
   let renderedLineRows = new Map<number, RenderedLinePair[]>();
   let selectedRangeElements = new Set<HTMLElement>();
@@ -231,6 +233,7 @@
       cancelInactiveCleanup();
       cancelSelectedRangesApplication();
       cancelRenderRetry();
+      cancelViewportProbe();
       cleanUpPierreDiff();
       contextLoadPromise = undefined;
     };
@@ -263,8 +266,9 @@
   });
 
   $effect(() => {
+    const currentViewportProbeTick = viewportProbeTick;
     const currentRenderRetryTick = renderRetryTick;
-    if (currentRenderRetryTick < 0) return;
+    if (currentRenderRetryTick < 0 || currentViewportProbeTick < 0) return;
     if (!active && !isHostNearViewport()) {
       scheduleInactiveCleanup();
       return;
@@ -329,6 +333,20 @@
   });
 
   $effect(() => {
+    if (!host || active || rendered) return;
+    const root = host.closest(".diff-area");
+    if (!(root instanceof HTMLElement)) return;
+    root.addEventListener("scroll", scheduleViewportProbe, { passive: true });
+    window.addEventListener("resize", scheduleViewportProbe);
+    scheduleViewportProbe();
+    return () => {
+      root.removeEventListener("scroll", scheduleViewportProbe);
+      window.removeEventListener("resize", scheduleViewportProbe);
+      cancelViewportProbe();
+    };
+  });
+
+  $effect(() => {
     if (active && pierreDiff && pierreFile) {
       pierreDiff.setThemeType(themeType);
     }
@@ -387,6 +405,20 @@
     if (renderRetryFrame == null) return;
     cancelAnimationFrame(renderRetryFrame);
     renderRetryFrame = undefined;
+  }
+
+  function scheduleViewportProbe(): void {
+    if (viewportProbeFrame != null) return;
+    viewportProbeFrame = requestAnimationFrame(() => {
+      viewportProbeFrame = undefined;
+      viewportProbeTick += 1;
+    });
+  }
+
+  function cancelViewportProbe(): void {
+    if (viewportProbeFrame == null) return;
+    cancelAnimationFrame(viewportProbeFrame);
+    viewportProbeFrame = undefined;
   }
 
   function scheduleRenderRetry(): void {

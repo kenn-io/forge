@@ -4,12 +4,12 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/middleman/internal/procutil"
+	gitcmd "go.kenn.io/kit/git/cmd"
+	gitenv "go.kenn.io/kit/git/env"
 )
 
 func TestAllowsNewMigration(t *testing.T) {
@@ -22,7 +22,7 @@ func TestAllowsNewMigration(t *testing.T) {
 	gitCommand(t, "add", "internal/db/migrations/000002_next.up.sql")
 
 	var stderr bytes.Buffer
-	assert.Zero(t, run(&stderr))
+	assert.Zero(t, run(t.Context(), &stderr))
 	assert.Empty(t, stderr.String())
 }
 
@@ -44,7 +44,7 @@ func TestBlocksNewMigrationWhenNumberAlreadyExistsOnMain(t *testing.T) {
 	gitCommand(t, "add", "internal/db/migrations/000002_branch_name.up.sql", "internal/db/migrations/000002_branch_name.down.sql")
 
 	var stderr bytes.Buffer
-	assert.Equal(1, run(&stderr))
+	assert.Equal(1, run(t.Context(), &stderr))
 	assert.Contains(stderr.String(), "duplicate migration number")
 	assert.Contains(stderr.String(), "000002")
 	assert.Contains(stderr.String(), "000002_branch_name")
@@ -61,7 +61,7 @@ func TestBlocksMainBranchMigrationEdit(t *testing.T) {
 	gitCommand(t, "add", "internal/db/migrations/000001_init.up.sql")
 
 	var stderr bytes.Buffer
-	assert.Equal(t, 1, run(&stderr))
+	assert.Equal(t, 1, run(t.Context(), &stderr))
 	assert.Contains(t, stderr.String(), "Refusing to commit staged migration history changes")
 	assert.Contains(t, stderr.String(), "internal/db/migrations/000001_init.up.sql")
 }
@@ -75,7 +75,7 @@ func TestBlocksMainBranchMigrationRename(t *testing.T) {
 	gitCommand(t, "mv", "internal/db/migrations/000001_init.up.sql", "internal/db/migrations/000001_renamed.up.sql")
 
 	var stderr bytes.Buffer
-	assert.Equal(t, 1, run(&stderr))
+	assert.Equal(t, 1, run(t.Context(), &stderr))
 	assert.Contains(t, stderr.String(), "internal/db/migrations/000001_init.up.sql")
 }
 
@@ -113,11 +113,9 @@ func gitCommand(t *testing.T, args ...string) {
 func gitCommandIn(t *testing.T, dir string, args ...string) {
 	t.Helper()
 
-	gitArgs := append([]string{"-c", "core.hooksPath=/dev/null"}, args...)
-	cmd := procutil.Command("git", gitArgs...)
-	cmd.Dir = dir
-	cmd.Env = cleanGitEnv(os.Environ())
-	output, err := cmd.CombinedOutput()
+	runner := gitcmd.New().WithConfig("core.hooksPath", os.DevNull)
+	runner.Env = cleanGitEnv(os.Environ())
+	output, _, err := runner.Run(t.Context(), dir, nil, args...)
 	require.NoError(t, err, string(output))
 }
 
@@ -132,13 +130,5 @@ func isolateGitEnvironment(t *testing.T) {
 }
 
 func cleanGitEnv(env []string) []string {
-	cleaned := make([]string, 0, len(env))
-	for _, entry := range env {
-		key, _, _ := strings.Cut(entry, "=")
-		if key == "GIT_DIR" || key == "GIT_WORK_TREE" || strings.HasPrefix(key, "GIT_") {
-			continue
-		}
-		cleaned = append(cleaned, entry)
-	}
-	return cleaned
+	return gitenv.StripAll(env)
 }

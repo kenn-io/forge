@@ -19,9 +19,9 @@ import (
 	"time"
 
 	gh "github.com/google/go-github/v84/github"
+	"go.kenn.io/kit/git/env"
 	"go.kenn.io/middleman/internal/config"
 	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/gitenv"
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/platform"
 	"go.kenn.io/middleman/internal/procutil"

@@ -1,15 +1,18 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"maps"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"slices"
 	"strings"
+	"syscall"
 
-	"go.kenn.io/middleman/internal/procutil"
+	gitcmd "go.kenn.io/kit/git/cmd"
 )
 
 const (
@@ -20,32 +23,34 @@ const (
 var gitEnv []string
 
 func main() {
-	os.Exit(run(os.Stderr))
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	os.Exit(run(ctx, os.Stderr))
 }
 
-func run(stderr io.Writer) int {
+func run(ctx context.Context, stderr io.Writer) int {
 	baseRef := getenvDefault("MIDDLEMAN_MIGRATION_BASE_REF", defaultBaseRef)
 	migrationDir := strings.TrimRight(getenvDefault("MIDDLEMAN_MIGRATION_DIR", defaultMigrationDir), "/")
 
-	if _, err := git("rev-parse", "--git-dir"); err != nil {
+	if _, err := git(ctx, "rev-parse", "--git-dir"); err != nil {
 		fmt.Fprintln(stderr, "migration history check must run inside a git worktree")
 		return 1
 	}
 
-	if _, err := git("rev-parse", "--verify", "--quiet", baseRef+"^{commit}"); err != nil {
+	if _, err := git(ctx, "rev-parse", "--verify", "--quiet", baseRef+"^{commit}"); err != nil {
 		fmt.Fprintf(stderr, "Cannot verify migration history because %s is unavailable.\n", baseRef)
 		fmt.Fprintln(stderr, "Fetch the main branch or set MIDDLEMAN_MIGRATION_BASE_REF to the main-branch ref to compare against.")
 		return 1
 	}
 
-	diff, err := git("diff", "--cached", "--name-status", "--", migrationDir)
+	diff, err := git(ctx, "diff", "--cached", "--name-status", "--", migrationDir)
 	if err != nil {
 		fmt.Fprintf(stderr, "failed to inspect staged migrations: %v\n", err)
 		return 1
 	}
 
-	changedViolations := changedMainBranchMigrations(baseRef, migrationDir, diff)
-	duplicateViolations, err := duplicateMigrationNumberViolations(baseRef, migrationDir, diff)
+	changedViolations := changedMainBranchMigrations(ctx, baseRef, migrationDir, diff)
+	duplicateViolations, err := duplicateMigrationNumberViolations(ctx, baseRef, migrationDir, diff)
 	if err != nil {
 		fmt.Fprintf(stderr, "failed to verify migration numbers: %v\n", err)
 		return 1
@@ -73,7 +78,7 @@ func run(stderr io.Writer) int {
 	return 1
 }
 
-func changedMainBranchMigrations(baseRef, migrationDir, diff string) []string {
+func changedMainBranchMigrations(ctx context.Context, baseRef, migrationDir, diff string) []string {
 	var violations []string
 	for line := range strings.SplitSeq(diff, "\n") {
 		if line == "" {
@@ -89,7 +94,7 @@ func changedMainBranchMigrations(baseRef, migrationDir, diff string) []string {
 			if !strings.HasPrefix(path, migrationDir+"/") {
 				continue
 			}
-			if _, err := git("cat-file", "-e", baseRef+":"+path); err == nil {
+			if _, err := git(ctx, "cat-file", "-e", baseRef+":"+path); err == nil {
 				violations = append(violations, path)
 			}
 		}
@@ -121,8 +126,8 @@ func (v duplicateNumberViolation) Compare(other duplicateNumberViolation) int {
 	return strings.Compare(v.number, other.number)
 }
 
-func duplicateMigrationNumberViolations(baseRef, migrationDir, diff string) ([]duplicateNumberViolation, error) {
-	baseByNumber, err := migrationNamesByNumberOnRef(baseRef, migrationDir)
+func duplicateMigrationNumberViolations(ctx context.Context, baseRef, migrationDir, diff string) ([]duplicateNumberViolation, error) {
+	baseByNumber, err := migrationNamesByNumberOnRef(ctx, baseRef, migrationDir)
 	if err != nil {
 		return nil, err
 	}
@@ -158,8 +163,8 @@ func duplicateMigrationNumberViolations(baseRef, migrationDir, diff string) ([]d
 	return violations, nil
 }
 
-func migrationNamesByNumberOnRef(ref, migrationDir string) (map[string]map[string]struct{}, error) {
-	output, err := git("ls-tree", "-r", "--name-only", ref, "--", migrationDir)
+func migrationNamesByNumberOnRef(ctx context.Context, ref, migrationDir string) (map[string]map[string]struct{}, error) {
+	output, err := git(ctx, "ls-tree", "-r", "--name-only", ref, "--", migrationDir)
 	if err != nil {
 		return nil, err
 	}
@@ -240,12 +245,12 @@ func getenvDefault(key, fallback string) string {
 	return fallback
 }
 
-func git(args ...string) (string, error) {
-	cmd := procutil.Command("git", args...)
+func git(ctx context.Context, args ...string) (string, error) {
+	runner := gitcmd.New()
 	if gitEnv != nil {
-		cmd.Env = gitEnv
+		runner.Env = gitEnv
 	}
-	output, err := cmd.Output()
+	output, err := runner.Output(ctx, "", args...)
 	if err != nil {
 		return "", err
 	}

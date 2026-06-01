@@ -18,9 +18,9 @@ import (
 	"sync"
 	"time"
 
+	"go.kenn.io/kit/git/env"
 	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/gitclone"
-	"go.kenn.io/middleman/internal/gitenv"
 	"go.kenn.io/middleman/internal/procutil"
 	"go.kenn.io/middleman/internal/workspace/localruntime"
 )

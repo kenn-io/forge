@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"go.kenn.io/kit/git/env"
 	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/gitclone"
-	"go.kenn.io/middleman/internal/gitenv"
 	"go.kenn.io/middleman/internal/procutil"
 )
 

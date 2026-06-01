@@ -3,20 +3,18 @@ package gitclone
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	gitcmd "go.kenn.io/kit/git/cmd"
+	gitremote "go.kenn.io/kit/git/remote"
 	"golang.org/x/sync/singleflight"
-
-	"go.kenn.io/middleman/internal/gitenv"
-	"go.kenn.io/middleman/internal/procutil"
 )
 
 // ensureCloneTimeout caps how long a single bare-clone create-or-fetch
@@ -54,58 +52,23 @@ func New(baseDir string, tokens map[string]string) *Manager {
 // ClonePath returns the filesystem path for a repo's bare clone.
 // Path is partitioned by host: {baseDir}/{host}/{owner}/{name}.git
 func (m *Manager) ClonePath(host, owner, name string) (string, error) {
-	if err := validateClonePathValue("host", host, false, true); err != nil {
-		return "", err
-	}
-	if err := validateClonePathValue("owner", owner, true, true); err != nil {
-		return "", err
-	}
-	if err := validateClonePathValue("name", name, false, false); err != nil {
-		return "", err
-	}
-	clonePath := filepath.Join(m.baseDir, host, owner, name+".git")
-	rel, err := relativeClonePath(m.baseDir, clonePath)
-	if err != nil {
-		return "", err
-	}
-	if err := validateClonePathValue("relative", rel, true, false); err != nil {
-		return "", err
-	}
-	return clonePath, nil
-}
-
-func relativeClonePath(baseDir, clonePath string) (string, error) {
-	baseAbs, err := filepath.Abs(baseDir)
-	if err != nil {
-		return "", fmt.Errorf("resolve clone base: %w", err)
-	}
-	cloneAbs, err := filepath.Abs(clonePath)
-	if err != nil {
-		return "", fmt.Errorf("resolve clone path: %w", err)
-	}
-	rel, err := filepath.Rel(baseAbs, cloneAbs)
-	if err != nil {
-		return "", fmt.Errorf("resolve clone relative path: %w", err)
-	}
-	return filepath.ToSlash(rel), nil
-}
-
-func validateClonePathValue(label, value string, allowSlash, allowEmpty bool) error {
-	if value == "" && allowEmpty {
-		return nil
-	}
-	if value == "" || strings.TrimSpace(value) != value || filepath.IsAbs(value) || strings.Contains(value, "\\") {
-		return fmt.Errorf("unsafe clone path %s %q", label, value)
-	}
-	if !allowSlash && strings.Contains(value, "/") {
-		return fmt.Errorf("unsafe clone path %s %q", label, value)
-	}
-	for part := range strings.SplitSeq(value, "/") {
-		if part == "" || part == "." || part == ".." {
-			return fmt.Errorf("unsafe clone path %s %q", label, value)
+	if host == "" && owner == "" {
+		// Preserve local fixture clones at {baseDir}/{name}.git while
+		// still using kit's path validator for the repository name.
+		if _, err := gitremote.ClonePath(m.baseDir, gitremote.Identity{
+			Host:  "local",
+			Owner: "fixture",
+			Name:  name,
+		}); err != nil {
+			return "", err
 		}
+		return filepath.Join(m.baseDir, name+".git"), nil
 	}
-	return nil
+	return gitremote.ClonePath(m.baseDir, gitremote.Identity{
+		Host:  host,
+		Owner: owner,
+		Name:  name,
+	})
 }
 
 // EnsureClone creates or fetches a bare clone for the given repo.
@@ -344,115 +307,17 @@ func (m *Manager) MergeBase(
 	return strings.TrimSpace(string(out)), nil
 }
 
-// git runs a git command with auth env vars set for the given host.
+// git runs a git command with auth configured for the given host.
 func validateRemoteURLHost(expectedHost, remoteURL string) error {
-	actualHost := remoteURLHost(remoteURL)
-	if actualHost == "" {
-		return nil
-	}
-	if normalizeCloneHost(actualHost) != normalizeCloneHost(expectedHost) {
-		return fmt.Errorf(
-			"clone remote host %q does not match configured platform host %q",
-			actualHost, expectedHost,
-		)
-	}
-	return nil
+	return gitremote.ValidateRemoteHost(expectedHost, remoteURL)
 }
 
 func validateRemoteURLIdentity(expectedHost, owner, name, remoteURL string) error {
-	if err := validateRemoteURLHost(expectedHost, remoteURL); err != nil {
-		return err
-	}
-	actualRepo := remoteURLRepoPath(remoteURL)
-	if actualRepo == "" {
-		return nil
-	}
-	expectedRepo := strings.Trim(strings.TrimSpace(owner)+"/"+strings.TrimSpace(name), "/")
-	if !strings.EqualFold(actualRepo, expectedRepo) {
-		return fmt.Errorf(
-			"clone remote repo %q does not match configured repo %q",
-			actualRepo, expectedRepo,
-		)
-	}
-	return nil
-}
-
-func remoteURLHost(remoteURL string) string {
-	remoteURL = strings.TrimSpace(remoteURL)
-	if remoteURL == "" {
-		return ""
-	}
-	if isLocalRemoteURL(remoteURL) {
-		return ""
-	}
-	if u, err := url.Parse(remoteURL); err == nil {
-		if u.Host != "" {
-			return u.Host
-		}
-	}
-	prefix, _, ok := strings.Cut(remoteURL, ":")
-	if !ok || strings.Contains(prefix, "/") {
-		return ""
-	}
-	if at := strings.LastIndex(prefix, "@"); at >= 0 {
-		prefix = prefix[at+1:]
-	}
-	return prefix
-}
-
-func remoteURLRepoPath(remoteURL string) string {
-	remoteURL = strings.TrimSpace(remoteURL)
-	if remoteURL == "" {
-		return ""
-	}
-	if isLocalRemoteURL(remoteURL) {
-		return ""
-	}
-	var repoPath string
-	if u, err := url.Parse(remoteURL); err == nil && u.Host != "" {
-		repoPath = u.Path
-	} else {
-		prefix, path, ok := strings.Cut(remoteURL, ":")
-		if !ok || strings.Contains(prefix, "/") {
-			return ""
-		}
-		repoPath = path
-	}
-	repoPath = strings.Trim(strings.TrimSpace(repoPath), "/")
-	repoPath = strings.TrimSuffix(repoPath, ".git")
-	if repoPath == "" || strings.Contains(repoPath, "\\") {
-		return ""
-	}
-	return repoPath
-}
-
-func isLocalRemoteURL(remoteURL string) bool {
-	if filepath.VolumeName(remoteURL) != "" || isWindowsDrivePath(remoteURL) {
-		return true
-	}
-	if u, err := url.Parse(remoteURL); err == nil && strings.EqualFold(u.Scheme, "file") {
-		return true
-	}
-	return false
-}
-
-func isWindowsDrivePath(value string) bool {
-	if len(value) < 3 || value[1] != ':' {
-		return false
-	}
-	drive := value[0]
-	if (drive < 'A' || drive > 'Z') && (drive < 'a' || drive > 'z') {
-		return false
-	}
-	return value[2] == '\\' || value[2] == '/'
-}
-
-func normalizeCloneHost(host string) string {
-	host = strings.ToLower(strings.Trim(strings.TrimSpace(host), "[]"))
-	if before, ok := strings.CutSuffix(host, ":443"); ok {
-		return before
-	}
-	return host
+	return gitremote.ValidateRemoteIdentity(gitremote.Identity{
+		Host:  expectedHost,
+		Owner: owner,
+		Name:  name,
+	}, remoteURL)
 }
 
 func (m *Manager) git(
@@ -464,47 +329,29 @@ func (m *Manager) git(
 func (m *Manager) gitWithInput(
 	ctx context.Context, host, dir string, input []byte, args ...string,
 ) ([]byte, error) {
-	cmd := procutil.CommandContext(ctx, "git", args...)
-	if dir != "" {
-		cmd.Dir = dir
-	}
+	runner := m.gitRunner(host)
+	var stdin io.Reader
 	if input != nil {
-		cmd.Stdin = bytes.NewReader(input)
+		stdin = bytes.NewReader(input)
 	}
-	cmd.Env = append(gitenv.StripAll(os.Environ()),
-		"GIT_TERMINAL_PROMPT=0",
-		"GIT_CONFIG_NOSYSTEM=1",
-		"GIT_CONFIG_GLOBAL="+os.DevNull,
-	)
-	configCount := 0
-	addGitConfig := func(key, value string) {
-		cmd.Env = append(cmd.Env,
-			fmt.Sprintf("GIT_CONFIG_KEY_%d=%s", configCount, key),
-			fmt.Sprintf("GIT_CONFIG_VALUE_%d=%s", configCount, value),
-		)
-		configCount++
-	}
-	addGitConfig("gc.auto", "0")
-	addGitConfig("maintenance.auto", "false")
-	if token := m.tokens[host]; token != "" {
-		// GitHub's smart HTTP endpoint requires Basic auth, not Bearer.
-		// Use "x-access-token" as the username with the token as password.
-		cred := base64.StdEncoding.EncodeToString(
-			[]byte("x-access-token:" + token))
-		addGitConfig("http.extraHeader", "Authorization: Basic "+cred)
-	}
-	cmd.Env = append(cmd.Env, fmt.Sprintf("GIT_CONFIG_COUNT=%d", configCount))
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	out, err := procutil.Output(ctx, cmd, "git subprocess capacity")
+	out, stderr, err := runner.Run(ctx, dir, stdin, args...)
 	if err != nil {
-		msg := stderr.String()
+		msg := string(stderr)
 		if isNotFoundError(msg) {
 			return nil, fmt.Errorf("%w: %s", ErrNotFound, msg)
 		}
 		return nil, fmt.Errorf("%w: %s", err, msg)
 	}
 	return out, nil
+}
+
+func (m *Manager) gitRunner(host string) gitcmd.Runner {
+	runner := gitcmd.New()
+	if token := m.tokens[host]; token != "" {
+		// GitHub's smart HTTP endpoint expects Basic auth credentials.
+		runner = runner.WithBasicAuth("x-access-token", token)
+	}
+	return runner
 }
 
 // isNotFoundError checks if git stderr indicates a missing object or ref.

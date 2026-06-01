@@ -14,10 +14,9 @@ import (
 	gh "github.com/google/go-github/v84/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/kit/git/env"
+	gitcmd "go.kenn.io/kit/git/cmd"
 	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/gitclone"
-	"go.kenn.io/middleman/internal/procutil"
 )
 
 // gitRun runs a git command in the given dir and returns trimmed stdout.
@@ -25,9 +24,8 @@ import (
 // cause test git operations to mutate the host repo's config.
 func gitRun(t *testing.T, dir string, args ...string) string {
 	t.Helper()
-	cmd := procutil.Command("git", args...)
-	cmd.Dir = dir
-	cmd.Env = append(gitenv.StripAll(os.Environ()),
+	cmd := gitcmd.New().Command(t.Context(), dir, args...)
+	cmd.Env = append(cmd.Env,
 		"GIT_AUTHOR_NAME=test",
 		"GIT_AUTHOR_EMAIL=test@test.com",
 		"GIT_COMMITTER_NAME=test",

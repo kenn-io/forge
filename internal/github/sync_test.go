@@ -21,11 +21,10 @@ import (
 	"github.com/shurcooL/githubv4"
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/kit/git/env"
+	gitcmd "go.kenn.io/kit/git/cmd"
 	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/gitclone"
 	"go.kenn.io/middleman/internal/platform"
-	"go.kenn.io/middleman/internal/procutil"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
 )
 
@@ -39,12 +38,7 @@ func setupBareRemoteForSyncTest(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	remote := filepath.Join(dir, "remote.git")
-	cmd := procutil.Command("git", "init", "--bare", "--initial-branch=main", remote)
-	cmd.Dir = dir
-	cmd.Env = append(gitenv.StripAll(os.Environ()),
-		"GIT_CONFIG_GLOBAL="+os.DevNull,
-		"GIT_CONFIG_SYSTEM="+os.DevNull,
-	)
+	cmd := gitcmd.New().Command(t.Context(), dir, "init", "--bare", "--initial-branch=main", remote)
 	out, err := cmd.CombinedOutput()
 	require.NoError(t, err, "git init --bare failed: %s", out)
 	return remote
@@ -119,14 +113,8 @@ func setupSyncBranchActivityFixture(t *testing.T, defaultBranch string) syncBran
 
 func syncActivityGitRun(t *testing.T, dir string, args ...string) string {
 	t.Helper()
-	cmd := procutil.Command("git", args...)
-	cmd.Dir = dir
-	cmd.Env = append(gitenv.StripAll(os.Environ()),
-		"GIT_CONFIG_GLOBAL="+os.DevNull,
-		"GIT_CONFIG_SYSTEM="+os.DevNull,
-	)
-	out, err := cmd.CombinedOutput()
-	require.NoError(t, err, "git %v failed: %s", args, out)
+	out, stderr, err := gitcmd.New().Run(t.Context(), dir, nil, args...)
+	require.NoError(t, err, "git %v failed: %s%s", args, out, stderr)
 	return strings.TrimSpace(string(out))
 }
 

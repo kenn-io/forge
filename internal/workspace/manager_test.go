@@ -17,10 +17,9 @@ import (
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"go.kenn.io/kit/git/env"
+	gitcmd "go.kenn.io/kit/git/cmd"
 	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/gitclone"
-	"go.kenn.io/middleman/internal/procutil"
 	"go.kenn.io/middleman/internal/ptyowner"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
 )
@@ -737,15 +736,8 @@ func configureForkPRRefs(
 
 func runWorkspaceTestGit(t *testing.T, dir string, args ...string) []byte {
 	t.Helper()
-	cmd := procutil.Command("git", args...)
-	cmd.Dir = dir
-	cmd.Env = append(
-		gitenv.StripAll(os.Environ()),
-		"GIT_CONFIG_GLOBAL=/dev/null",
-		"GIT_CONFIG_SYSTEM=/dev/null",
-	)
-	out, err := cmd.CombinedOutput()
-	require.NoError(t, err, "git %v failed: %s", args, out)
+	out, stderr, err := gitcmd.New().Run(t.Context(), dir, nil, args...)
+	require.NoError(t, err, "git %v failed: %s%s", args, out, stderr)
 	return out
 }
 

@@ -8,10 +8,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"go.kenn.io/kit/git/env"
+	gitcmd "go.kenn.io/kit/git/cmd"
 	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/gitclone"
-	"go.kenn.io/middleman/internal/procutil"
 )
 
 // DiffRepoResult holds the SHAs from the test repo for use in assertions.
@@ -50,14 +49,14 @@ func SetupDiffRepo(
 	}
 
 	// Initialize a working repo and create the base commit.
-	if err := git(workDir, "init", "-b", "main"); err != nil {
+	if err := git(ctx, workDir, "init", "-b", "main"); err != nil {
 		return nil, fmt.Errorf("git init: %w", err)
 	}
-	if err := git(workDir,
+	if err := git(ctx, workDir,
 		"config", "user.email", "test@example.com"); err != nil {
 		return nil, err
 	}
-	if err := git(workDir,
+	if err := git(ctx, workDir,
 		"config", "user.name", "Test"); err != nil {
 		return nil, err
 	}
@@ -80,22 +79,22 @@ func SetupDiffRepo(
 		return nil, err
 	}
 
-	if err := git(workDir, "add", "-A"); err != nil {
+	if err := git(ctx, workDir, "add", "-A"); err != nil {
 		return nil, err
 	}
-	if err := git(workDir,
+	if err := git(ctx, workDir,
 		"commit", "-m", "Initial commit"); err != nil {
 		return nil, err
 	}
 
-	baseSHA, err := revParse(workDir, "HEAD")
+	baseSHA, err := revParse(ctx, workDir, "HEAD")
 	if err != nil {
 		return nil, fmt.Errorf("rev-parse base: %w", err)
 	}
 
 	// --- PR branch with changes ---
 
-	if err := git(workDir,
+	if err := git(ctx, workDir,
 		"checkout", "-b", "feature/caching"); err != nil {
 		return nil, err
 	}
@@ -121,15 +120,15 @@ func SetupDiffRepo(
 		return nil, err
 	}
 
-	if err := git(workDir, "add", "-A"); err != nil {
+	if err := git(ctx, workDir, "add", "-A"); err != nil {
 		return nil, err
 	}
-	if err := git(workDir,
+	if err := git(ctx, workDir,
 		"commit", "-m", "feat: add caching layer"); err != nil {
 		return nil, err
 	}
 
-	headSHA, err := revParse(workDir, "HEAD")
+	headSHA, err := revParse(ctx, workDir, "HEAD")
 	if err != nil {
 		return nil, fmt.Errorf("rev-parse head: %w", err)
 	}
@@ -142,15 +141,15 @@ func SetupDiffRepo(
 		"docs/cache-plan.md", cachePlanContent); err != nil {
 		return nil, err
 	}
-	if err := git(workDir, "add", "-A"); err != nil {
+	if err := git(ctx, workDir, "add", "-A"); err != nil {
 		return nil, err
 	}
-	if err := git(workDir,
+	if err := git(ctx, workDir,
 		"commit", "-m", "test: cover caching layer"); err != nil {
 		return nil, err
 	}
 
-	altHeadSHA, err := revParse(workDir, "HEAD")
+	altHeadSHA, err := revParse(ctx, workDir, "HEAD")
 	if err != nil {
 		return nil, fmt.Errorf("rev-parse alternate head: %w", err)
 	}
@@ -160,7 +159,7 @@ func SetupDiffRepo(
 		filepath.Dir(barePath), 0o755); err != nil {
 		return nil, err
 	}
-	if err := git("",
+	if err := git(ctx, "",
 		"clone", "--bare", workDir, barePath); err != nil {
 		return nil, fmt.Errorf("bare clone: %w", err)
 	}
@@ -194,22 +193,18 @@ func SetupDiffRepo(
 	}, nil
 }
 
-func git(dir string, args ...string) error {
+func git(ctx context.Context, dir string, args ...string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("git: no args")
 	}
-	cmd := procutil.Command("git", args...)
-	if dir != "" {
-		cmd.Dir = dir
-	}
+	cmd := gitcmd.New().Command(ctx, dir, args...)
 	// Strip inherited GIT_* variables before spawning git. When the
 	// test binary is invoked from a git hook (e.g. prek's pre-commit
 	// hook running `go test`), the outer git exports GIT_DIR,
 	// GIT_WORK_TREE, and friends — which would silently override
 	// cmd.Dir and cause `git config user.email` to write to the
 	// hosting repo's .git/config instead of the fixture workrepo.
-	cmd.Env = append(gitenv.StripAll(os.Environ()),
-		"GIT_TERMINAL_PROMPT=0",
+	cmd.Env = append(cmd.Env,
 		"GIT_AUTHOR_DATE=2026-03-28T12:00:00Z",
 		"GIT_COMMITTER_DATE=2026-03-28T12:00:00Z",
 	)
@@ -222,11 +217,8 @@ func git(dir string, args ...string) error {
 	return nil
 }
 
-func revParse(dir, ref string) (string, error) {
-	cmd := procutil.Command("git", "rev-parse", ref)
-	cmd.Dir = dir
-	cmd.Env = gitenv.StripAll(os.Environ())
-	out, err := cmd.Output()
+func revParse(ctx context.Context, dir, ref string) (string, error) {
+	out, err := gitcmd.New().Output(ctx, dir, "rev-parse", ref)
 	if err != nil {
 		return "", err
 	}

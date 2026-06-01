@@ -8,25 +8,14 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/kit/git/env"
-	"go.kenn.io/middleman/internal/procutil"
+	gitcmd "go.kenn.io/kit/git/cmd"
 )
 
 func commitTestRun(t *testing.T, dir string, name string, args ...string) {
 	t.Helper()
-	cmd := procutil.Command(name, args...)
-	cmd.Dir = dir
-	cmd.Env = append(gitenv.StripAll(os.Environ()),
-		"GIT_CONFIG_GLOBAL="+os.DevNull,
-		"GIT_CONFIG_SYSTEM="+os.DevNull,
-		"GIT_CONFIG_COUNT=2",
-		"GIT_CONFIG_KEY_0=gc.auto",
-		"GIT_CONFIG_VALUE_0=0",
-		"GIT_CONFIG_KEY_1=maintenance.auto",
-		"GIT_CONFIG_VALUE_1=false",
-	)
-	out, err := cmd.CombinedOutput()
-	require.NoError(t, err, "command %s %v failed: %s", name, args, out)
+	require.Equal(t, "git", name)
+	out, stderr, err := gitcmd.New().Run(t.Context(), dir, nil, args...)
+	require.NoError(t, err, "command %s %v failed: %s%s", name, args, out, stderr)
 }
 
 // setupCommitTestRepo creates a bare repo with 5 commits on a "pr" branch
@@ -65,10 +54,7 @@ func setupCommitTestRepo(t *testing.T) (string, string, string) {
 
 func gitSHA(t *testing.T, dir, ref string) string {
 	t.Helper()
-	cmd := procutil.Command("git", "rev-parse", ref)
-	cmd.Dir = dir
-	cmd.Env = append(gitenv.StripAll(os.Environ()), "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_SYSTEM="+os.DevNull)
-	out, err := cmd.Output()
+	out, err := gitcmd.New().Output(t.Context(), dir, "rev-parse", ref)
 	require.NoError(t, err)
 	return strings.TrimSpace(string(out))
 }

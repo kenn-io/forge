@@ -19,12 +19,11 @@ import (
 	"time"
 
 	gh "github.com/google/go-github/v84/github"
-	"go.kenn.io/kit/git/env"
+	gitcmd "go.kenn.io/kit/git/cmd"
 	"go.kenn.io/middleman/internal/config"
 	"go.kenn.io/middleman/internal/db"
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/platform"
-	"go.kenn.io/middleman/internal/procutil"
 	"go.kenn.io/middleman/internal/server"
 	"go.kenn.io/middleman/internal/stacks"
 	"go.kenn.io/middleman/internal/testutil"
@@ -168,14 +167,12 @@ func (p e2eStaticProvider) ListIssueEvents(
 
 type globRefreshContextKey struct{}
 
-func e2eGit(dir string, args ...string) error {
+func e2eGit(ctx context.Context, dir string, args ...string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("git: no args")
 	}
-	cmd := procutil.Command("git", args...)
-	cmd.Dir = dir
-	cmd.Env = append(gitenv.StripAll(os.Environ()),
-		"GIT_TERMINAL_PROMPT=0",
+	cmd := gitcmd.New().Command(ctx, dir, args...)
+	cmd.Env = append(cmd.Env,
 		"GIT_AUTHOR_DATE=2026-04-28T12:00:00Z",
 		"GIT_COMMITTER_DATE=2026-04-28T12:00:00Z",
 	)
@@ -187,19 +184,19 @@ func e2eGit(dir string, args ...string) error {
 	return nil
 }
 
-func createBareRepoFixture(tmpDir, host, owner, name string) (string, error) {
+func createBareRepoFixture(ctx context.Context, tmpDir, host, owner, name string) (string, error) {
 	workDir := filepath.Join(tmpDir, "fixture-work", host, owner, name)
 	barePath := filepath.Join(tmpDir, "clones", host, owner, name+".git")
 	if err := os.MkdirAll(workDir, 0o755); err != nil {
 		return "", fmt.Errorf("mkdir fixture workdir: %w", err)
 	}
-	if err := e2eGit(workDir, "init", "-b", "main"); err != nil {
+	if err := e2eGit(ctx, workDir, "init", "-b", "main"); err != nil {
 		return "", fmt.Errorf("init fixture repo: %w", err)
 	}
-	if err := e2eGit(workDir, "config", "user.email", "e2e@example.com"); err != nil {
+	if err := e2eGit(ctx, workDir, "config", "user.email", "e2e@example.com"); err != nil {
 		return "", fmt.Errorf("config fixture repo email: %w", err)
 	}
-	if err := e2eGit(workDir, "config", "user.name", "E2E Fixture"); err != nil {
+	if err := e2eGit(ctx, workDir, "config", "user.name", "E2E Fixture"); err != nil {
 		return "", fmt.Errorf("config fixture repo name: %w", err)
 	}
 	if err := os.WriteFile(
@@ -209,16 +206,16 @@ func createBareRepoFixture(tmpDir, host, owner, name string) (string, error) {
 	); err != nil {
 		return "", fmt.Errorf("write fixture file: %w", err)
 	}
-	if err := e2eGit(workDir, "add", "README.md"); err != nil {
+	if err := e2eGit(ctx, workDir, "add", "README.md"); err != nil {
 		return "", fmt.Errorf("stage fixture repo: %w", err)
 	}
-	if err := e2eGit(workDir, "commit", "-m", "fixture: seed gitlab repo"); err != nil {
+	if err := e2eGit(ctx, workDir, "commit", "-m", "fixture: seed gitlab repo"); err != nil {
 		return "", fmt.Errorf("commit fixture repo: %w", err)
 	}
 	if err := os.MkdirAll(filepath.Dir(barePath), 0o755); err != nil {
 		return "", fmt.Errorf("mkdir bare fixture parent: %w", err)
 	}
-	if err := e2eGit("", "clone", "--bare", workDir, barePath); err != nil {
+	if err := e2eGit(ctx, "", "clone", "--bare", workDir, barePath); err != nil {
 		return "", fmt.Errorf("clone bare fixture repo: %w", err)
 	}
 	return barePath, nil
@@ -535,6 +532,7 @@ func run(
 		return fmt.Errorf("seed fixtures: %w", err)
 	}
 	gitLabCloneURL, err := createBareRepoFixture(
+		ctx,
 		tmpDir,
 		"gitlab.example.com",
 		"group",

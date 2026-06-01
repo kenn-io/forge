@@ -18,7 +18,7 @@ import (
 	"sync"
 	"time"
 
-	"go.kenn.io/kit/git/env"
+	gitcmd "go.kenn.io/kit/git/cmd"
 	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/gitclone"
 	"go.kenn.io/middleman/internal/procutil"
@@ -2167,16 +2167,7 @@ func localBranchExists(
 func workspaceGitCommand(
 	ctx context.Context, dir string, args ...string,
 ) *exec.Cmd {
-	cmd := procutil.CommandContext(ctx, "git", args...)
-	if dir != "" {
-		cmd.Dir = dir
-	}
-	cmd.Env = append(
-		gitenv.StripAll(os.Environ()),
-		"GIT_CONFIG_GLOBAL="+os.DevNull,
-		"GIT_CONFIG_SYSTEM="+os.DevNull,
-	)
-	return cmd
+	return gitcmd.New().Command(ctx, dir, args...)
 }
 
 func nextAvailableBranchName(

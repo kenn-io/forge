@@ -10,8 +10,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/kit/git/env"
-	"go.kenn.io/middleman/internal/procutil"
+	gitcmd "go.kenn.io/kit/git/cmd"
 )
 
 func TestDiff(t *testing.T) {
@@ -199,9 +198,7 @@ func TestDiffArgumentBuildersTerminateOptionsBeforeRevisions(t *testing.T) {
 
 func getSHA(t *testing.T, dir, ref string) string {
 	t.Helper()
-	cmd := procutil.Command("git", "-C", dir, "rev-parse", ref)
-	cmd.Env = gitenv.StripAll(os.Environ())
-	out, err := cmd.Output()
+	out, err := gitcmd.New().Output(t.Context(), dir, "rev-parse", ref)
 	require.NoError(t, err)
 	return strings.TrimSpace(string(out))
 }

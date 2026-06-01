@@ -9,8 +9,7 @@ import (
 
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/kit/git/env"
-	"go.kenn.io/middleman/internal/procutil"
+	gitcmd "go.kenn.io/kit/git/cmd"
 )
 
 func TestParseRemoteURL_GitHubFormats(t *testing.T) {
@@ -143,7 +142,7 @@ func TestResolveIdentityFromPath_NoOriginRemote(t *testing.T) {
 	assert := Assert.New(t)
 
 	dir := t.TempDir()
-	require.NoError(runGit(dir, "init", "-q"))
+	require.NoError(runGit(t, dir, "init", "-q"))
 
 	identity, err := ResolveIdentityFromPath(context.Background(), dir)
 	require.NoError(err)
@@ -158,8 +157,8 @@ func TestResolveIdentityFromPath_UnrecognizableRemote(t *testing.T) {
 	assert := Assert.New(t)
 
 	dir := t.TempDir()
-	require.NoError(runGit(dir, "init", "-q"))
-	require.NoError(runGit(dir, "remote", "add", "origin", "/local/only/repo"))
+	require.NoError(runGit(t, dir, "init", "-q"))
+	require.NoError(runGit(t, dir, "remote", "add", "origin", "/local/only/repo"))
 
 	identity, err := ResolveIdentityFromPath(context.Background(), dir)
 	require.NoError(err)
@@ -174,8 +173,8 @@ func TestResolveIdentityFromPath_RecognizedRemote(t *testing.T) {
 	assert := Assert.New(t)
 
 	dir := t.TempDir()
-	require.NoError(runGit(dir, "init", "-q"))
-	require.NoError(runGit(dir, "remote", "add", "origin", "git@github.com:wesm/examplerepo.git"))
+	require.NoError(runGit(t, dir, "init", "-q"))
+	require.NoError(runGit(t, dir, "remote", "add", "origin", "git@github.com:wesm/examplerepo.git"))
 
 	identity, err := ResolveIdentityFromPath(context.Background(), dir)
 	require.NoError(err)
@@ -208,10 +207,10 @@ func TestResolveIdentityFromPath_RequiresPath(t *testing.T) {
 	require.Error(err)
 }
 
-func runGit(dir string, args ...string) error {
-	cmd := procutil.Command("git", args...)
-	cmd.Dir = dir
-	cmd.Env = append(gitenv.StripAll(os.Environ()),
+func runGit(t *testing.T, dir string, args ...string) error {
+	t.Helper()
+	cmd := gitcmd.New().Command(t.Context(), dir, args...)
+	cmd.Env = append(cmd.Env,
 		"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@example.com",
 		"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@example.com",
 	)
@@ -228,8 +227,8 @@ func TestResolveIdentityFromPath_ResolvesRelativePaths(t *testing.T) {
 	assert := Assert.New(t)
 
 	dir := t.TempDir()
-	require.NoError(runGit(dir, "init", "-q"))
-	require.NoError(runGit(dir, "remote", "add", "origin", "git@github.com:o/n.git"))
+	require.NoError(runGit(t, dir, "init", "-q"))
+	require.NoError(runGit(t, dir, "remote", "add", "origin", "git@github.com:o/n.git"))
 
 	parent := t.TempDir()
 	cwd := filepath.Join(parent, "cwd")

@@ -6,13 +6,11 @@ import (
 	"log/slog"
 	"net"
 	"net/url"
-	"os"
 	"strings"
 
-	"go.kenn.io/kit/git/env"
+	gitcmd "go.kenn.io/kit/git/cmd"
 	"go.kenn.io/middleman/internal/db"
 	ghclient "go.kenn.io/middleman/internal/github"
-	"go.kenn.io/middleman/internal/procutil"
 )
 
 type PRAssociationUpdate struct {
@@ -286,13 +284,7 @@ func gitOutput(
 	dir string,
 	args ...string,
 ) (string, error) {
-	cmd := procutil.CommandContext(ctx, "git", args...)
-	cmd.Dir = dir
-	cmd.Env = append(
-		gitenv.StripAll(os.Environ()),
-		"GIT_CONFIG_GLOBAL=/dev/null",
-		"GIT_CONFIG_SYSTEM=/dev/null",
-	)
+	cmd := gitcmd.New().Command(ctx, dir, args...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("%w: %s", err, strings.TrimSpace(string(out)))

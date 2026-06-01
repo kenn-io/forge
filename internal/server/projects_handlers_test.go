@@ -15,9 +15,8 @@ import (
 
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/kit/git/env"
+	gitcmd "go.kenn.io/kit/git/cmd"
 	"go.kenn.io/middleman/internal/db"
-	"go.kenn.io/middleman/internal/procutil"
 )
 
 // TestW1SliceAGate is the falsifiable capability gate from the convergence
@@ -39,7 +38,7 @@ func TestW1SliceAGate(t *testing.T) {
 	defer ts.Close()
 
 	repoDir := t.TempDir()
-	require.NoError(initLocalOnlyGitRepo(repoDir))
+	require.NoError(initLocalOnlyGitRepo(t.Context(), repoDir))
 
 	// 1) Register a project from a path with no `gh` context and no
 	//    parseable remote. The response must include a server-assigned
@@ -222,7 +221,7 @@ func TestRegisterProject_PreservesExplicitProviderIdentity(t *testing.T) {
 	defer ts.Close()
 
 	repoDir := t.TempDir()
-	require.NoError(initLocalOnlyGitRepo(repoDir))
+	require.NoError(initLocalOnlyGitRepo(t.Context(), repoDir))
 
 	body := mustMarshal(t, map[string]any{
 		"local_path": repoDir,
@@ -362,7 +361,7 @@ func TestRegisterProject_DuplicatePathReturns409(t *testing.T) {
 	defer ts.Close()
 
 	repoDir := t.TempDir()
-	require.NoError(initLocalOnlyGitRepo(repoDir))
+	require.NoError(initLocalOnlyGitRepo(t.Context(), repoDir))
 
 	body := mustMarshal(t, map[string]any{"local_path": repoDir})
 	resp := httpDo(t, ts, http.MethodPost, "/api/v1/projects", body)
@@ -386,7 +385,7 @@ func TestRegisterProject_AcceptsCallerProvidedIdentity(t *testing.T) {
 	defer ts.Close()
 
 	repoDir := t.TempDir()
-	require.NoError(initLocalOnlyGitRepo(repoDir))
+	require.NoError(initLocalOnlyGitRepo(t.Context(), repoDir))
 
 	// Even though the repo has no remote, the caller can provide
 	// platform_identity directly. Caller-provided wins, and the handler
@@ -460,7 +459,7 @@ func TestRegisterProject_DoesNotSubscribeRepoToSync(t *testing.T) {
 	before := srv.syncer.TrackedRepos()
 
 	repoDir := t.TempDir()
-	require.NoError(initLocalOnlyGitRepo(repoDir))
+	require.NoError(initLocalOnlyGitRepo(t.Context(), repoDir))
 
 	body := mustMarshal(t, map[string]any{
 		"local_path": repoDir,
@@ -517,7 +516,7 @@ func TestRegisterWorktree_DuplicatePathReturns409(t *testing.T) {
 	defer ts.Close()
 
 	repoDir := t.TempDir()
-	require.NoError(initLocalOnlyGitRepo(repoDir))
+	require.NoError(initLocalOnlyGitRepo(t.Context(), repoDir))
 
 	body := mustMarshal(t, map[string]any{"local_path": repoDir})
 	resp := httpDo(t, ts, http.MethodPost, "/api/v1/projects", body)
@@ -579,7 +578,7 @@ func TestRegisterProject_RejectsPartialPlatformIdentity(t *testing.T) {
 	defer ts.Close()
 
 	repoDir := t.TempDir()
-	require.NoError(initLocalOnlyGitRepo(repoDir))
+	require.NoError(initLocalOnlyGitRepo(t.Context(), repoDir))
 
 	missingFieldBody := mustMarshal(t, map[string]any{
 		"local_path": repoDir,
@@ -652,7 +651,7 @@ func TestRegisterWorktree_RejectsBlankFields(t *testing.T) {
 	defer ts.Close()
 
 	repoDir := t.TempDir()
-	require.NoError(initLocalOnlyGitRepo(repoDir))
+	require.NoError(initLocalOnlyGitRepo(t.Context(), repoDir))
 
 	regBody := mustMarshal(t, map[string]any{"local_path": repoDir})
 	resp := httpDo(t, ts, http.MethodPost, "/api/v1/projects", regBody)
@@ -761,8 +760,7 @@ func TestInitLocalOnlyGitRepoIgnoresInheritedGitEnv(t *testing.T) {
 	assert := Assert.New(t)
 
 	host := t.TempDir()
-	initCmd := procutil.Command("git", "init", "-q", "-b", "main", host)
-	initCmd.Env = gitenv.StripAll(os.Environ())
+	initCmd := gitcmd.New().Command(t.Context(), "", "init", "-q", "-b", "main", host)
 	require.NoError(initCmd.Run(), "seed host repo")
 
 	hostConfig := filepath.Join(host, ".git", "config")
@@ -773,7 +771,7 @@ func TestInitLocalOnlyGitRepoIgnoresInheritedGitEnv(t *testing.T) {
 	t.Setenv("GIT_DIR", filepath.Join(host, ".git"))
 	t.Setenv("GIT_WORK_TREE", target)
 
-	require.NoError(initLocalOnlyGitRepo(target))
+	require.NoError(initLocalOnlyGitRepo(t.Context(), target))
 
 	after, err := os.ReadFile(hostConfig)
 	require.NoError(err)
@@ -784,10 +782,8 @@ func TestInitLocalOnlyGitRepoIgnoresInheritedGitEnv(t *testing.T) {
 
 // initLocalOnlyGitRepo runs `git init` in dir without configuring any remote,
 // matching the no-`gh` Add Existing path.
-func initLocalOnlyGitRepo(dir string) error {
-	cmd := procutil.Command("git", "init", "-q")
-	cmd.Dir = dir
-	cmd.Env = gitenv.StripAll(os.Environ())
+func initLocalOnlyGitRepo(ctx context.Context, dir string) error {
+	cmd := gitcmd.New().Command(ctx, dir, "init", "-q")
 	if err := cmd.Run(); err != nil {
 		return err
 	}

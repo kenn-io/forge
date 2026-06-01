@@ -4,17 +4,14 @@ package gitclone
 
 import (
 	"context"
-	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/kit/git/env"
-	"go.kenn.io/middleman/internal/procutil"
+	gitcmd "go.kenn.io/kit/git/cmd"
 )
 
 // setupTestRepo creates a bare "remote" repo with one commit and returns
@@ -44,27 +41,16 @@ func commitAndPush(t *testing.T, work, file, content, msg string) string {
 	run(t, work, "git", "add", ".")
 	run(t, work, "git", "commit", "-m", msg)
 	run(t, work, "git", "push", "origin", "main")
-	cmd := procutil.Command("git", "-C", work, "rev-parse", "HEAD")
-	cmd.Env = filteredGitTestEnv()
-	out, err := cmd.Output()
+	out, err := gitcmd.New().Output(t.Context(), work, "rev-parse", "HEAD")
 	require.NoError(t, err)
 	return strings.TrimSpace(string(out))
 }
 
-func filteredGitTestEnv() []string {
-	return append(gitenv.StripAll(os.Environ()),
-		"GIT_CONFIG_GLOBAL="+os.DevNull,
-		"GIT_CONFIG_SYSTEM="+os.DevNull,
-	)
-}
-
 func run(t *testing.T, dir string, name string, args ...string) {
 	t.Helper()
-	cmd := procutil.Command(name, args...)
-	cmd.Dir = dir
-	cmd.Env = filteredGitTestEnv()
-	out, err := cmd.CombinedOutput()
-	require.NoError(t, err, "command %s %v failed: %s", name, args, out)
+	require.Equal(t, "git", name)
+	out, stderr, err := gitcmd.New().Run(t.Context(), dir, nil, args...)
+	require.NoError(t, err, "command %s %v failed: %s%s", name, args, out, stderr)
 }
 
 func TestEnsureClone(t *testing.T) {
@@ -334,9 +320,7 @@ func TestEnsureCloneRestoresOriginHead(t *testing.T) {
 	clonePath, err := mgr.ClonePath("github.com", "testowner", "testrepo")
 	require.NoError(err)
 	run(t, clonePath, "git", "symbolic-ref", "--delete", "refs/remotes/origin/HEAD")
-	_, err = procutil.Command(
-		"git", "-C", clonePath, "symbolic-ref", "refs/remotes/origin/HEAD",
-	).Output()
+	_, err = gitcmd.New().Output(t.Context(), clonePath, "symbolic-ref", "refs/remotes/origin/HEAD")
 	require.Error(err)
 
 	require.NoError(mgr.EnsureClone(
@@ -398,14 +382,10 @@ func TestEnsureCloneToleratesUnresolvedRemoteHead(t *testing.T) {
 // is unset; `git config --get-all` signals that with exit code 1.
 func getFetchRefspecs(t *testing.T, clonePath string) []string {
 	t.Helper()
-	cmd := procutil.Command("git", "-C", clonePath,
+	out, err := gitcmd.New().Output(t.Context(), clonePath,
 		"config", "--get-all", "remote.origin.fetch")
-	cmd.Env = append(gitenv.StripAll(os.Environ()),
-		"GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_SYSTEM="+os.DevNull)
-	out, err := cmd.Output()
 	if err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+		if gitcmd.IsExitCode(err, 1) {
 			return nil // key unset
 		}
 		require.NoError(t, err)
@@ -421,9 +401,7 @@ func getFetchRefspecs(t *testing.T, clonePath string) []string {
 
 func gitSymbolicRef(t *testing.T, dir, ref string) string {
 	t.Helper()
-	cmd := procutil.Command("git", "-C", dir, "symbolic-ref", ref)
-	cmd.Env = filteredGitTestEnv()
-	out, err := cmd.Output()
+	out, err := gitcmd.New().Output(t.Context(), dir, "symbolic-ref", ref)
 	require.NoError(t, err)
 	return strings.TrimSpace(string(out))
 }
@@ -470,9 +448,7 @@ func TestMergeBase(t *testing.T) {
 	// Get the HEAD SHA.
 	clonePath, err := mgr.ClonePath("github.com", "testowner", "testrepo")
 	require.NoError(err)
-	cmd := procutil.Command("git", "-C", clonePath, "rev-parse", "HEAD")
-	cmd.Env = filteredGitTestEnv()
-	out, err := cmd.Output()
+	out, err := gitcmd.New().Output(t.Context(), clonePath, "rev-parse", "HEAD")
 	require.NoError(err)
 	headSHA := strings.TrimSpace(string(out))
 

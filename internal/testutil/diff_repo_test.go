@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/middleman/internal/procutil"
+	gitcmd "go.kenn.io/kit/git/cmd"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
 )
 
@@ -26,7 +26,7 @@ func TestSetupDiffRepoDoesNotLeakIntoHostGitDir(t *testing.T) {
 	r := require.New(t)
 
 	host := t.TempDir()
-	initCmd := procutil.Command("git", "init", "-q", "-b", "main", host)
+	initCmd := gitcmd.New().Command(t.Context(), "", "init", "-q", "-b", "main", host)
 	initCmd.Env = []string{
 		"PATH=" + os.Getenv("PATH"),
 		"HOME=" + os.Getenv("HOME"),

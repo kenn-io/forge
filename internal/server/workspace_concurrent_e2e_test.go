@@ -10,8 +10,8 @@ import (
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	gitcmd "go.kenn.io/kit/git/cmd"
 	"go.kenn.io/middleman/internal/apiclient/generated"
-	"go.kenn.io/middleman/internal/procutil"
 )
 
 // TestWorkspaceConcurrentSameRepoOperationsE2E exercises the per-repo
@@ -178,10 +178,8 @@ func (e *unexpectedStatusError) Error() string {
 // each managed worktree adds one more.
 func listBareWorktrees(t *testing.T, bare string) int {
 	t.Helper()
-	cmd := procutil.Command("git", "worktree", "list", "--porcelain")
-	cmd.Dir = bare
-	out, err := cmd.CombinedOutput()
-	require.NoError(t, err, "git worktree list: %s", out)
+	out, stderr, err := gitcmd.New().Run(t.Context(), bare, nil, "worktree", "list", "--porcelain")
+	require.NoError(t, err, "git worktree list: %s%s", out, stderr)
 	count := 0
 	for line := range strings.SplitSeq(string(out), "\n") {
 		if strings.HasPrefix(line, "worktree ") {

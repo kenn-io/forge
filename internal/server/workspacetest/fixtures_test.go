@@ -13,14 +13,13 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/kit/git/env"
+	gitcmd "go.kenn.io/kit/git/cmd"
 	"go.kenn.io/middleman/internal/apiclient"
 	"go.kenn.io/middleman/internal/apiclient/generated"
 	"go.kenn.io/middleman/internal/config"
 	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/gitclone"
 	ghclient "go.kenn.io/middleman/internal/github"
-	"go.kenn.io/middleman/internal/procutil"
 	"go.kenn.io/middleman/internal/server"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
 )
@@ -160,23 +159,14 @@ func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 
 func runGit(t *testing.T, dir string, args ...string) {
 	t.Helper()
-	cmd := procutil.Command("git", append([]string{"-c", "init.defaultBranch=main"}, args...)...)
-	cmd.Dir = dir
-	cmd.Env = append(gitenv.StripAll(os.Environ()), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
-	out, err := cmd.CombinedOutput()
-	require.NoError(t, err, "git %v failed: %s", args, out)
+	runner := gitcmd.New().WithConfig("init.defaultBranch", "main")
+	out, stderr, err := runner.Run(t.Context(), dir, nil, args...)
+	require.NoError(t, err, "git %v failed: %s%s", args, out, stderr)
 }
 
 func testGitSHA(t *testing.T, dir, ref string) string {
 	t.Helper()
-	cmd := procutil.Command("git", "rev-parse", ref)
-	cmd.Dir = dir
-	cmd.Env = append(
-		gitenv.StripAll(os.Environ()),
-		"GIT_CONFIG_GLOBAL=/dev/null",
-		"GIT_CONFIG_SYSTEM=/dev/null",
-	)
-	out, err := cmd.Output()
+	out, err := gitcmd.New().Output(t.Context(), dir, "rev-parse", ref)
 	require.NoError(t, err)
 	return strings.TrimSpace(string(out))
 }

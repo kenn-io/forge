@@ -13,7 +13,8 @@ export function kbdGlyph(spec: KeySpec): string {
   if (spec.ctrlOrMeta) parts.push(isMac ? "⌘" : "Ctrl");
   if (spec.shift) parts.push(isMac ? "⇧" : "Shift");
   if (spec.alt) parts.push(isMac ? "⌥" : "Alt");
-  parts.push(spec.key.length === 1 ? spec.key.toUpperCase() : spec.key);
+  if (spec.key === " ") parts.push("Space");
+  else parts.push(spec.key.length === 1 ? spec.key.toUpperCase() : spec.key);
   return parts.join(isMac ? "" : "+");
 }
 
@@ -23,6 +24,6 @@ export function kbdAriaLabel(spec: KeySpec): string {
   if (spec.ctrlOrMeta) parts.push(isMac ? "Command" : "Control");
   if (spec.shift) parts.push("Shift");
   if (spec.alt) parts.push(isMac ? "Option" : "Alt");
-  parts.push(spec.key);
+  parts.push(spec.key === " " ? "Space" : spec.key);
   return parts.join("-");
 }

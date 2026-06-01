@@ -225,6 +225,24 @@ describe("visibleRows", () => {
     ]);
   });
 
+  it("labels flattened single-repo owners as owner/repo to keep them distinct", () => {
+    // team-a and team-b each have one repo named "api". Flattened to leaves,
+    // bare "api" rows would be indistinguishable; the displayLabel disambiguates
+    // while the underlying node/value stays the leaf for selection.
+    const tree = buildRepoTree([
+      opt("github.com", "team-a/api"),
+      opt("github.com", "team-b/api"),
+    ]);
+    const rows = visibleRows(tree, { isCollapsed: () => false });
+    const labels = rows.map((r) => r.displayLabel ?? r.node.label);
+    expect(labels).toContain("team-a/api");
+    expect(labels).toContain("team-b/api");
+    // node identity is still the leaf (value/id unchanged for selection)
+    const teamA = rows.find((r) => r.displayLabel === "team-a/api")!;
+    expect(teamA.node.kind).toBe("repo");
+    expect((teamA.node as { value: string }).value).toBe("github.com/team-a/api");
+  });
+
   it("still flattens a genuinely single-repo owner under a filter", () => {
     // solo really has one repo, so flattening it remains correct even mid-filter.
     const tree = buildRepoTree([

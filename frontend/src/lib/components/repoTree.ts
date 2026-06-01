@@ -99,6 +99,13 @@ export interface VisibleRow {
   depth: number;
   hasChildren: boolean;
   expanded: boolean;
+  /**
+   * Overrides the visible label when set. Used for flattened single-repo owners,
+   * which render `owner/repo` instead of the bare repo name so two owners that
+   * each have one identically-named repo stay distinguishable. `node` is
+   * unchanged (identity, value, and selection still use the leaf).
+   */
+  displayLabel?: string;
 }
 
 export interface VisibleRowsOptions {
@@ -142,13 +149,16 @@ export function visibleRows(
     }
     for (const owner of host.owners) {
       // Flatten only owners that genuinely have a single repo, not owners
-      // narrowed to one match by the active filter.
+      // narrowed to one match by the active filter. Show `owner/repo` as the
+      // label so two single-repo owners with the same repo name stay distinct.
       if (owner.original.children.length === 1) {
+        const leaf = owner.original.children[0]!;
         rows.push({
-          node: owner.original.children[0]!,
+          node: leaf,
           depth: ownerDepth,
           hasChildren: false,
           expanded: false,
+          displayLabel: `${owner.original.label}/${leaf.label}`,
         });
         continue;
       }

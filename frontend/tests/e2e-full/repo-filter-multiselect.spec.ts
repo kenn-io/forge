@@ -75,6 +75,25 @@ test("keyboard navigation survives a real checkbox click", async ({ page }) => {
   await expect(page.locator(".typeahead-list")).toHaveCount(0);
 });
 
+test("flattened single-repo owner shows the owner/repo path, not a bare repo name", async ({ page }) => {
+  // gitlab.example.com/group has one repo "project", so it auto-flattens to a
+  // single row. That row must read "group/project" (visible text) to stay
+  // distinguishable from a same-named repo under another owner, while its
+  // accessible name remains the full path.
+  await page.goto("/issues");
+  await waitForIssueList(page);
+
+  await page.getByTitle("Select repository").click();
+
+  const row = page.getByRole("option", {
+    name: "gitlab.example.com/group/project",
+    exact: true,
+  });
+  await expect(row).toBeVisible();
+  // visible label is "group/project", not the bare "project"
+  await expect(row.locator(".repo-tree-label")).toHaveText("group/project");
+});
+
 test("repository selector cascades an owner group to all its repos", async ({ page }) => {
   await page.goto("/issues");
   await waitForIssueList(page);

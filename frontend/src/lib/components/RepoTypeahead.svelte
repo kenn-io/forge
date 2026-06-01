@@ -320,7 +320,7 @@
       {#each rows as row, i (row.node.id)}
         <RepoTreeNode
           kind={row.node.kind}
-          label={row.node.label}
+          label={row.displayLabel ?? row.node.label}
           ariaLabel={rowAriaLabel(row)}
           provider={row.node.kind === "host" ? row.node.provider : undefined}
           depth={row.depth}
@@ -329,7 +329,7 @@
           selectionState={nodeSelectionState(row.node, selectedSet)}
           highlighted={i + 1 === highlightIndex}
           segments={query !== "" && row.node.kind === "repo"
-            ? highlightSegments(row.node.label, query)
+            ? highlightSegments(row.displayLabel ?? row.node.label, query)
             : undefined}
           onToggleExpand={() => toggleRowExpand(row)}
           onToggleSelect={() => toggleRowSelect(row)}

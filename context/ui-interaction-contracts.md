@@ -141,6 +141,26 @@ Rows that contain buttons, links, or toggles need clear event ownership.
 - If a component claims menu-like behavior, it must honor the keyboard and focus
   contract of that role. Otherwise, use simpler semantics honestly.
 
+## Controlled Form Controls
+
+A native form control driven from app state must not also run its own default
+action, or the two fight and the control renders the inverse of its real state.
+
+- A native `<input type="checkbox">` with `checked={state}` still toggles itself
+  on a real click (the click default action). When app state owns the value,
+  cancel that default action (`onclick` `preventDefault`) so the box only ever
+  reflects `state`. The repo selector's tri-state checkbox
+  (`frontend/src/lib/components/TreeCheckbox.svelte`) is the reference: a
+  controlled custom control that suppresses the native toggle and drives
+  selection from `onmousedown`, not click.
+- Keep an underlying real `<input>` for accessibility and tests even when the
+  visuals are custom: set `indeterminate` imperatively for the partial state, and
+  expose `aria-checked` (`"mixed"` for partial) on the owning row.
+- Tri-state selection that cascades to descendants must keep parent and child
+  visuals consistent: a parent is checked only when all leaves are, partial when
+  some are, unchecked when none are. A parent disagreeing with all its children
+  is a desync bug.
+
 ## Filtering And Visibility Rules
 
 Not every visibility control means "remove this entity entirely."
@@ -188,6 +208,11 @@ breakage.
 - Store tests for persistence scope and normalization logic.
 - Playwright/e2e tests for navigation away/back, Escape behavior, nested button
   activation, and other multi-surface flows.
+- For controlled native form controls, assert behavior under a real
+  `fireEvent.click`, not only `fireEvent.mouseDown`. A mousedown-only test skips
+  the native default action (e.g. a checkbox's own toggle) and will pass while a
+  real click desyncs the control. A real-browser visual check catches this class
+  of bug when the suite is green.
 - Keyboard e2e tests should cover conflicting scopes, modal frame ownership,
   async action failure, overflow scroll-into-view, and mobile redirect cases
   when those behaviors are part of the feature.

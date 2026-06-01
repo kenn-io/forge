@@ -1,0 +1,6 @@
+interface:
+  display_name: "Dev Ephemeral Running Instances"
+  short_description: "List live middleman dev-ephemeral stacks and stale status files."
+  default_prompt: "Use $dev-ephemeral-running-instances to list middleman dev-ephemeral stacks and report which worktree each one belongs to."
+policy:
+  allow_implicit_invocation: false

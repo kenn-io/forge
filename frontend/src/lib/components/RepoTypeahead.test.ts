@@ -388,6 +388,55 @@ describe("RepoTypeahead", () => {
     });
   });
 
+  it("moves focus from a leaf to its parent owner on ArrowLeft", async () => {
+    // Single host auto-flattens, so rows are: [All repos], import-lab (owner,
+    // depth 0), api (leaf, depth 1), web (leaf, depth 1). ArrowLeft on a leaf
+    // should jump focus up to the owner row, per the keyboard contract.
+    settingsStore.setConfiguredRepos([
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "import-lab",
+        name: "api",
+        repo_path: "import-lab/api",
+        is_glob: false,
+        matched_repo_count: 1,
+      },
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "import-lab",
+        name: "web",
+        repo_path: "import-lab/web",
+        is_glob: false,
+        matched_repo_count: 1,
+      },
+    ]);
+
+    render(RepoTypeahead, { props: { selected: undefined, onchange: vi.fn() } });
+
+    await fireEvent.click(screen.getByRole("button", { name: /all repos/i }));
+    const input = screen.getByPlaceholderText("Filter repos...");
+
+    // ArrowDown onto the owner row, then onto the first leaf (api).
+    await fireEvent.keyDown(input, { key: "ArrowDown" });
+    await fireEvent.keyDown(input, { key: "ArrowDown" });
+    const leaf = screen.getByRole("option", { name: "github.com/import-lab/api" });
+    await waitFor(() => expect(leaf.classList.contains("highlighted")).toBe(true));
+
+    // ArrowLeft on the leaf moves focus to its parent owner.
+    await fireEvent.keyDown(input, { key: "ArrowLeft" });
+    await waitFor(() => {
+      const owner = screen.getByRole("option", { name: "github.com/import-lab" });
+      expect(owner.classList.contains("highlighted")).toBe(true);
+      expect(
+        screen
+          .getByRole("option", { name: "github.com/import-lab/api" })
+          .classList.contains("highlighted"),
+      ).toBe(false);
+    });
+  });
+
   it("toggles selection of the focused row with space", async () => {
     const onchange = vi.fn();
     settingsStore.setConfiguredRepos([

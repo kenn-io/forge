@@ -215,8 +215,21 @@
       if (row?.hasChildren && !row.expanded) expansion.toggle(row.node.id);
     } else if (e.key === "ArrowLeft") {
       e.preventDefault();
-      const row = rows[highlightIndex - 1];
-      if (row?.hasChildren && row.expanded) expansion.toggle(row.node.id);
+      const idx = highlightIndex - 1;
+      const row = rows[idx];
+      if (row?.hasChildren && row.expanded) {
+        expansion.toggle(row.node.id);
+      } else if (row) {
+        // On a leaf (or an already-collapsed group), move focus to the parent:
+        // the nearest preceding visible row at a shallower depth.
+        for (let i = idx - 1; i >= 0; i -= 1) {
+          const candidate = rows[i];
+          if (candidate && candidate.depth < row.depth) {
+            highlightIndex = i + 1;
+            break;
+          }
+        }
+      }
     } else if (e.key === "Enter") {
       e.preventDefault();
       if (highlightIndex === 0) {

@@ -175,6 +175,39 @@ describe("visibleRows", () => {
     expect(labels).not.toContain("api");
   });
 
+  it("keeps a multi-repo owner as an owner row when a filter matches only one repo", () => {
+    // acme genuinely has 3 repos; the query matches only "api". The owner must
+    // stay a visible owner row (not collapse into a lone leaf), so its context
+    // is preserved and same-named repos under other owners stay unambiguous.
+    const tree = buildRepoTree([
+      opt("github.com", "acme/api"),
+      opt("github.com", "acme/web"),
+      opt("github.com", "acme/infra"),
+    ]);
+    const rows = visibleRows(tree, { isCollapsed: () => false, query: "api" });
+    const acme = rows.find((r) => r.node.label === "acme");
+    expect(acme).toBeTruthy();
+    expect(acme!.hasChildren).toBe(true);
+    expect(acme!.node.kind).toBe("owner");
+    // the single matching leaf is shown beneath the still-visible owner
+    const api = rows.find((r) => r.node.label === "api");
+    expect(api?.node.kind).toBe("repo");
+    expect(rows.some((r) => r.node.label === "web")).toBe(false);
+  });
+
+  it("still flattens a genuinely single-repo owner under a filter", () => {
+    // solo really has one repo, so flattening it remains correct even mid-filter.
+    const tree = buildRepoTree([
+      opt("github.com", "acme/api"),
+      opt("github.com", "acme/web"),
+      opt("github.com", "solo/onlyrepo"),
+    ]);
+    const rows = visibleRows(tree, { isCollapsed: () => false, query: "only" });
+    expect(rows.some((r) => r.node.label === "solo")).toBe(false);
+    const leaf = rows.find((r) => r.node.label === "onlyrepo");
+    expect(leaf?.hasChildren).toBe(false);
+  });
+
   it("omits a collapsed host's owners in multi-host mode", () => {
     const tree = buildRepoTree([
       opt("github.com", "acme/api"),

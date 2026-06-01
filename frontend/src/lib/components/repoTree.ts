@@ -115,6 +115,16 @@ export function visibleRows(
   const matches = (leaf: RepoLeaf) =>
     !filtering || leaf.value.toLowerCase().includes(q);
 
+  // Single-repo-owner flattening keys on the owner's TRUE repo count, captured
+  // before filtering prunes children. Otherwise an owner with several repos but
+  // only one match would collapse into a lone leaf and lose its owner context.
+  const originalChildCount = new Map<string, number>();
+  for (const host of tree) {
+    for (const owner of host.children) {
+      originalChildCount.set(owner.id, owner.children.length);
+    }
+  }
+
   // Prune to owners/hosts that still have a matching leaf.
   const pruned = tree
     .map((host) => ({
@@ -140,7 +150,11 @@ export function visibleRows(
       if (!hostExpanded) continue;
     }
     for (const owner of host.children) {
-      if (owner.children.length === 1) {
+      // Flatten only owners that genuinely have a single repo, not owners
+      // narrowed to one match by the active filter.
+      const isSingleRepoOwner =
+        (originalChildCount.get(owner.id) ?? owner.children.length) === 1;
+      if (isSingleRepoOwner) {
         rows.push({
           node: owner.children[0]!,
           depth: ownerDepth,

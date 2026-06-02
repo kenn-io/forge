@@ -17,6 +17,7 @@ const mkPR = (overrides: Record<string, unknown>): PullRequest =>
     CIStatus: "",
     CIChecksJSON: "",
     MergeableState: "clean",
+    ReviewDecision: "",
     LastActivityAt: new Date().toISOString(),
     PlatformExternalID: "ext-1",
     repo_owner: "o",
@@ -150,6 +151,40 @@ describe("PullItem kanban status", () => {
     }));
 
     expect(screen.getByLabelText("Workspace attached (ready)")).toBeTruthy();
+  });
+
+  it("shows an approved indicator when the PR is approved", () => {
+    renderItem(
+      mkPR({
+        Title: "Cache widget details",
+        ReviewDecision: "APPROVED",
+      }),
+    );
+
+    expect(screen.getByLabelText("PR approved")).toBeTruthy();
+  });
+
+  it("shows a changes requested indicator when the PR explicitly requests changes", () => {
+    renderItem(
+      mkPR({
+        Title: "Cache widget details",
+        ReviewDecision: "CHANGES_REQUESTED",
+      }),
+    );
+
+    expect(screen.getByLabelText("Changes requested")).toBeTruthy();
+  });
+
+  it("hides the review indicator when the PR has no terminal review decision", () => {
+    renderItem(
+      mkPR({
+        Title: "Cache widget details",
+        ReviewDecision: "REVIEW_REQUIRED",
+      }),
+    );
+
+    expect(screen.queryByLabelText("PR approved")).toBeNull();
+    expect(screen.queryByLabelText("Changes requested")).toBeNull();
   });
 
   it("shows the kanban status for open PRs", () => {

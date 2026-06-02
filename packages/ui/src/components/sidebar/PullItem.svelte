@@ -11,6 +11,8 @@
   } from "../../utils/ci-buckets-warn.js";
   import CITokenCluster, { composeAriaLabel } from "../shared/CITokenCluster.svelte";
   import CircleAlertIcon from "@lucide/svelte/icons/circle-alert";
+  import CircleCheckBigIcon from "@lucide/svelte/icons/circle-check-big";
+  import OctagonXIcon from "@lucide/svelte/icons/octagon-x";
   import Chip from "../shared/Chip.svelte";
   import GitHubLabels from "../shared/GitHubLabels.svelte";
   import WorkspaceIndicator from "../shared/WorkspaceIndicator.svelte";
@@ -104,6 +106,21 @@
     pr.State === "open",
   );
   const labels = $derived(pr.labels ?? []);
+  const reviewDecision = $derived(pr.ReviewDecision.trim().toUpperCase());
+  const reviewIndicator = $derived.by(
+    ():
+      | { kind: "approved"; label: string }
+      | { kind: "changes-requested"; label: string }
+      | null => {
+      if (reviewDecision === "APPROVED") {
+        return { kind: "approved", label: "PR approved" };
+      }
+      if (reviewDecision === "CHANGES_REQUESTED") {
+        return { kind: "changes-requested", label: "Changes requested" };
+      }
+      return null;
+    },
+  );
 
   function handleImportClick(e: MouseEvent): void {
     e.stopPropagation();
@@ -183,6 +200,19 @@
       {/if}
       {#if pr.workspace}
         <WorkspaceIndicator status={pr.workspace.status} />
+      {/if}
+      {#if reviewIndicator}
+        <span
+          class={["review-indicator", `review-indicator--${reviewIndicator.kind}`]}
+          aria-label={reviewIndicator.label}
+          title={reviewIndicator.label}
+        >
+          {#if reviewIndicator.kind === "approved"}
+            <CircleCheckBigIcon size={13} strokeWidth={2.2} aria-hidden="true" />
+          {:else}
+            <OctagonXIcon size={13} strokeWidth={2.2} aria-hidden="true" />
+          {/if}
+        </span>
       {/if}
       {#if hasWorktree && worktreeName}
         <span class="worktree-name" title="Linked to {worktreeName}">{worktreeName}</span>
@@ -380,6 +410,21 @@
     max-width: 80px;
     flex-shrink: 1;
     min-width: 0;
+  }
+
+  .review-indicator {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+  }
+
+  .review-indicator--approved {
+    color: var(--accent-green);
+  }
+
+  .review-indicator--changes-requested {
+    color: var(--accent-red);
   }
 
   .ci-unavailable {

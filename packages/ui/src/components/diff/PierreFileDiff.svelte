@@ -881,7 +881,7 @@
     event: MouseEvent,
   ): boolean {
     return selectedRangeMatchesLineCommentTarget(target, event) ||
-      selectedLineTargetExists(target);
+      (!event.shiftKey && selectedLineTargetExists(target));
   }
 
   function selectedLineTargetExists(target: { lineNumber: number; side: PierreSide }): boolean {

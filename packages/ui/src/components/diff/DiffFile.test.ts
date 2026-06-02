@@ -388,12 +388,24 @@ describe("DiffFile", () => {
     });
   }
 
-  async function clickLineCommentButton(line: number, side: "left" | "right"): Promise<void> {
+  async function clickLineCommentButton(
+    line: number,
+    side: "left" | "right",
+    options: { shiftKey?: boolean } = {},
+  ): Promise<void> {
     const button = await findLineCommentButton(line, side);
-    button.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, button: 0 }));
-    await fireEvent.mouseDown(button, { button: 0 });
-    await fireEvent.pointerUp(button, { pointerId: 1, pointerType: "mouse" });
-    await fireEvent.click(button);
+    button.dispatchEvent(new MouseEvent("pointerdown", {
+      bubbles: true,
+      button: 0,
+      shiftKey: options.shiftKey,
+    }));
+    await fireEvent.mouseDown(button, { button: 0, shiftKey: options.shiftKey });
+    await fireEvent.pointerUp(button, {
+      pointerId: 1,
+      pointerType: "mouse",
+      shiftKey: options.shiftKey,
+    });
+    await fireEvent.click(button, { shiftKey: options.shiftKey });
   }
 
   async function keyboardActivateLineCommentButton(
@@ -488,6 +500,27 @@ describe("DiffFile", () => {
 
     expect(screen.queryByPlaceholderText("Leave a comment")).toBeNull();
     expect(selectedPierreLines()).toHaveLength(0);
+  });
+
+  it("keeps shift-click line comment button selection from collapsing active ranges", async () => {
+    renderDiffFile(makeFile(), {
+      reviewEnabled: true,
+      diffHeadSHA: "diff-head",
+      nativeMultilineRanges: true,
+    });
+
+    await selectPierreLine(1, "right");
+    await clickLineCommentButton(2, "right", { shiftKey: true });
+
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText("Leave a comment")).toBeTruthy();
+      expect(selectedPierreLines()?.length).toBeGreaterThanOrEqual(2);
+    });
+
+    await clickLineCommentButton(2, "right", { shiftKey: true });
+
+    expect(screen.getByPlaceholderText("Leave a comment")).toBeTruthy();
+    expect(selectedPierreLines()?.length).toBeGreaterThanOrEqual(2);
   });
 
   it("does not create multiline review ranges across separate hunks", async () => {

@@ -147,7 +147,7 @@ make vet        # go vet
 - Commit bodies must add any important context about the bug, regression, constraint, or tradeoff that motivated the change; do not rely on the diff to explain intent
 - Run tests before committing when applicable
 - Before pushing UI changes, run the full affected Playwright e2e suite locally after the final UI/test edit; focused tests alone are not enough.
-- Never push or pull unless explicitly asked
+- Never push new workstreams unless explicitly asked. When addressing review feedback or CI failures on an existing PR, an agent may push after the fix is implemented and relevant local validation has run.
 
 ## Pull Requests
 

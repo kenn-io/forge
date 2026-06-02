@@ -130,6 +130,19 @@ test.describe("PR list view", () => {
     await waitForPullList(page);
 
     await selectPullGrouping(page, "All");
+    const approvedItem = page.locator(".pull-item", {
+      hasText: "Add widget caching layer",
+    });
+    const changesRequestedItem = page.locator(".pull-item", {
+      hasText: "Fix race condition in event loop",
+    });
+    await expect(
+      approvedItem.locator("[aria-label='PR approved']"),
+    ).toBeVisible();
+    await expect(
+      changesRequestedItem.locator("[aria-label='Changes requested']"),
+    ).toBeVisible();
+
     const firstItem = page.locator(".pull-item").first();
     const repoChip = firstItem.locator(".repo-chip");
     await expect(repoChip).toBeVisible();

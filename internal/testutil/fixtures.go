@@ -186,6 +186,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 		Additions:         55,
 		Deletions:         12,
 		CommentCount:      2,
+		ReviewDecision:    "CHANGES_REQUESTED",
 		MergeableState:    "dirty",
 		CreatedAt:         w2Created,
 		UpdatedAt:         now.Add(-20 * time.Hour),

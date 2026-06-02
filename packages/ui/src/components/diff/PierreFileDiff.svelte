@@ -18,6 +18,7 @@
   interface Props {
     file: DiffFile | null | undefined;
     active?: boolean;
+    viewMode?: "unified" | "split";
     wordWrap?: boolean;
     tabWidth?: number;
     loadFileText?: ((side: "old" | "new") => Promise<string>) | undefined;
@@ -56,6 +57,7 @@
   const {
     file,
     active = true,
+    viewMode = "unified",
     wordWrap = false,
     tabWidth = 4,
     loadFileText,
@@ -106,7 +108,7 @@
   });
 
   const pierreOptions = $derived.by<FileDiffOptions<unknown>>(() => ({
-    diffStyle: "unified",
+    diffStyle: viewMode,
     diffIndicators: "bars",
     disableFileHeader: true,
     enableLineSelection,
@@ -287,6 +289,7 @@
     pierreDiff.setOptions(pierreOptions);
     const nextRenderAttemptKey = [
       fileKey,
+      viewMode,
       wordWrap,
       tabWidth,
       fullContext ? "full" : "patch",

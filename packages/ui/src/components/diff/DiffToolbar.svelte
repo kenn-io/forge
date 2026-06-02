@@ -151,6 +151,23 @@
       class="compact-switch-row"
       type="button"
       role="switch"
+      aria-label="Side-by-side diffs"
+      aria-checked={diff.getViewMode() === "split"}
+      onclick={() => diff.setViewMode(diff.getViewMode() === "split" ? "unified" : "split")}
+    >
+      <span>Side-by-side</span>
+      <span
+        class="toggle-switch"
+        class:toggle-switch--on={diff.getViewMode() === "split"}
+        aria-hidden="true"
+      >
+        <span class="toggle-knob"></span>
+      </span>
+    </button>
+    <button
+      class="compact-switch-row"
+      type="button"
+      role="switch"
       aria-checked={diff.getWordWrap()}
       onclick={() => diff.setWordWrap(!diff.getWordWrap())}
     >

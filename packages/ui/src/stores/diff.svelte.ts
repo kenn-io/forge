@@ -26,6 +26,7 @@ export type DiffScope =
   | { kind: "range"; fromSha: string; toSha: string };
 
 export type WorkspaceDiffBase = "head" | "pushed" | "merge-target";
+export type DiffViewMode = "unified" | "split";
 
 export type DiffScrollTarget = {
   path: string;
@@ -97,6 +98,7 @@ function safeSetItem(key: string, value: string): void {
 }
 
 const VALID_TAB_WIDTHS = [1, 2, 4, 8];
+const VALID_DIFF_VIEW_MODES: DiffViewMode[] = ["unified", "split"];
 
 function loadTabWidth(): number {
   const raw = parseInt(
@@ -104,6 +106,13 @@ function loadTabWidth(): number {
     10,
   );
   return VALID_TAB_WIDTHS.includes(raw) ? raw : 4;
+}
+
+function loadDiffViewMode(): DiffViewMode {
+  const raw = safeGetItem("diff-view-mode");
+  return VALID_DIFF_VIEW_MODES.includes(raw as DiffViewMode)
+    ? raw as DiffViewMode
+    : "unified";
 }
 
 function loadCollapsedFiles(): Record<string, string[]> {
@@ -167,6 +176,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
   let hideWhitespace = $state(
     safeGetItem("diff-hide-whitespace") === "true",
   );
+  let viewMode = $state<DiffViewMode>(loadDiffViewMode());
   let collapsedFiles = $state<Record<string, string[]>>(
     loadCollapsedFiles(),
   );
@@ -276,6 +286,9 @@ export function createDiffStore(opts?: DiffStoreOptions) {
   }
   function getHideWhitespace(): boolean {
     return hideWhitespace;
+  }
+  function getViewMode(): DiffViewMode {
+    return viewMode;
   }
   function getFileCategoryFilter(): DiffFileCategoryFilter {
     return fileCategoryFilter;
@@ -394,6 +407,11 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     } else if (currentWorkspaceID) {
       void reloadWorkspaceDiffOnly();
     }
+  }
+
+  function setViewMode(mode: DiffViewMode): void {
+    viewMode = mode;
+    safeSetItem("diff-view-mode", mode);
   }
 
   async function reloadDiffOnly(): Promise<void> {
@@ -1087,6 +1105,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     getRichPreview,
     getFilePreviewGeneration,
     getHideWhitespace,
+    getViewMode,
     getFileCategoryFilter,
     getActiveFile,
     setActiveFile,
@@ -1101,6 +1120,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     setWordWrap,
     setRichPreview,
     setHideWhitespace,
+    setViewMode,
     isFileCollapsed,
     areAllVisibleFilesCollapsed,
     toggleFileCollapsed,

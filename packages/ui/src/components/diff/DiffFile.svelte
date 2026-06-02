@@ -58,6 +58,7 @@
   const collapsed = $derived(diffStore.isFileCollapsed(owner, name, number, file.path));
   const richPreview = $derived(diffStore.getRichPreview());
   const wordWrap = $derived(diffStore.getWordWrap());
+  const viewMode = $derived(diffStore.getViewMode());
   const tabWidth = $derived(diffStore.getTabWidth());
   const filePreviewGeneration = $derived(diffStore.getFilePreviewGeneration());
   const showRichPreview = $derived(
@@ -530,6 +531,7 @@
         <PierreFileDiff
           {file}
           active={inViewport}
+          {viewMode}
           {wordWrap}
           {tabWidth}
           loadFileText={contextExpansionEnabled ? loadDiffText : undefined}

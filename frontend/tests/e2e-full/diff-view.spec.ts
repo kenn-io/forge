@@ -736,6 +736,7 @@ test.describe("diff view", () => {
     await page.addInitScript(() => {
       localStorage.removeItem("diff-tab-width");
       localStorage.removeItem("diff-hide-whitespace");
+      localStorage.removeItem("diff-view-mode");
       localStorage.removeItem("diff-word-wrap");
       localStorage.removeItem("diff-rich-preview");
       localStorage.removeItem("diff-collapsed-files");
@@ -1226,6 +1227,26 @@ test.describe("diff view", () => {
 
     // Wait for the re-fetch to land and assert it actually happened.
     await expect.poll(() => fetchCount).toBeGreaterThan(initialCount);
+  });
+
+  test("side-by-side toggle renders Pierre split diffs", async ({ page }) => {
+    await mockDiffApi(page, smallDiff);
+    await navigateToDiff(page);
+    await waitForDiffLoaded(page);
+
+    const firstFile = page.locator('[data-file-path="internal/server/handler.go"]');
+    await firstFile.scrollIntoViewIfNeeded();
+
+    await openDiffFilterMenu(page);
+    const sideBySide = page.getByRole("switch", { name: "Side-by-side diffs" });
+    await expect(sideBySide).toHaveAttribute("aria-checked", "false");
+    await sideBySide.click();
+    await expect(sideBySide).toHaveAttribute("aria-checked", "true");
+    await expect.poll(async () => {
+      return await firstFile.locator(".pierre-diff").evaluate((host) => {
+        return host.shadowRoot?.querySelector("pre")?.getAttribute("data-diff-type");
+      });
+    }).toBe("split");
   });
 
   test("j/k keyboard navigation moves between files", async ({ page }) => {

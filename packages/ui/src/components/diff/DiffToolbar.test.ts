@@ -23,6 +23,7 @@ describe("DiffToolbar", () => {
   afterEach(() => {
     cleanup();
     localStorage.removeItem("diff-word-wrap");
+    localStorage.removeItem("diff-view-mode");
   });
 
   it("defaults the changed file category filter to all and renders category buttons", async () => {
@@ -74,6 +75,30 @@ describe("DiffToolbar", () => {
     expect(diff.getWordWrap()).toBe(true);
     expect(wordWrap.getAttribute("aria-checked")).toBe("true");
     expect(localStorage.getItem("diff-word-wrap")).toBe("true");
+  });
+
+  it("toggles the side-by-side diff preference", async () => {
+    const { diff } = renderToolbar();
+
+    await fireEvent.click(
+      screen.getByRole("button", { name: "More diff filters" }),
+    );
+    const sideBySide = screen.getByRole("switch", { name: "Side-by-side diffs" });
+
+    expect(diff.getViewMode()).toBe("unified");
+    expect(sideBySide.getAttribute("aria-checked")).toBe("false");
+
+    await fireEvent.click(sideBySide);
+
+    expect(diff.getViewMode()).toBe("split");
+    expect(sideBySide.getAttribute("aria-checked")).toBe("true");
+    expect(localStorage.getItem("diff-view-mode")).toBe("split");
+
+    await fireEvent.click(sideBySide);
+
+    expect(diff.getViewMode()).toBe("unified");
+    expect(sideBySide.getAttribute("aria-checked")).toBe("false");
+    expect(localStorage.getItem("diff-view-mode")).toBe("unified");
   });
 
   it("hides rich preview controls when disabled", async () => {

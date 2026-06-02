@@ -5,7 +5,7 @@ import {
   waitFor,
 } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { DiffLineAnnotation } from "@pierre/diffs";
+import type { DiffLineAnnotation, FileDiffOptions } from "@pierre/diffs";
 import type { DiffFile } from "../../api/types.js";
 
 const pierre = (() => {
@@ -14,6 +14,7 @@ const pierre = (() => {
     render: 0,
   };
   let renderResults: boolean[] = [];
+  let lastOptions: FileDiffOptions<unknown> | undefined;
   const cleanUp = () => {
     counts.cleanUp += 1;
   };
@@ -30,11 +31,16 @@ const pierre = (() => {
     }],
   };
   class FileDiff {
+    constructor(options?: FileDiffOptions<unknown>) {
+      lastOptions = options;
+    }
     cleanUp = cleanUp;
     expandHunk = () => {};
     getLineIndex = (lineNumber: number): [number, number] => [lineNumber, lineNumber];
     render = renderDiff;
-    setOptions = () => {};
+    setOptions = (options?: FileDiffOptions<unknown>) => {
+      lastOptions = options;
+    };
     setSelectedLines = () => {};
     setThemeType = () => {};
   }
@@ -42,6 +48,7 @@ const pierre = (() => {
     cleanUp,
     cleanUpCount: () => counts.cleanUp,
     FileDiff,
+    lastOptions: () => lastOptions,
     metadata,
     parsePatchFiles: () => [{ files: [metadata] }],
     processFile: () => metadata,
@@ -51,6 +58,7 @@ const pierre = (() => {
       counts.cleanUp = 0;
       counts.render = 0;
       renderResults = [];
+      lastOptions = undefined;
     },
     setRenderResults: (results: boolean[]) => {
       renderResults = [...results];
@@ -196,6 +204,20 @@ describe("PierreFileDiff", () => {
       Element.prototype.getBoundingClientRect = originalGetBoundingClientRect;
       diffArea.remove();
     }
+  });
+
+  it("passes split diff style to Pierre when side-by-side mode is enabled", async () => {
+    const { default: PierreFileDiff } = await import("./PierreFileDiff.svelte");
+
+    render(PierreFileDiff, {
+      props: { active: true, file: makeFile(), viewMode: "split" },
+    });
+
+    await waitFor(() => {
+      expect(pierre.renderCount()).toBe(1);
+    });
+
+    expect(pierre.lastOptions()?.diffStyle).toBe("split");
   });
 
   it("rerenders when annotation metadata changes without moving lines", async () => {

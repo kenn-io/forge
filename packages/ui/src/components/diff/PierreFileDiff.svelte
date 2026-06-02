@@ -456,39 +456,52 @@
     const pre = root?.querySelector("pre");
     if (!root || !pre) return;
     clearSelectedRangeElements();
-    const ranges = selectedRange ? [selectedRange, ...selectedRanges] : selectedRanges;
-    if (!ranges.length || !pierreDiff) return;
+    if ((!selectedRange && !selectedRanges.length) || !pierreDiff) return;
 
     const split = pre.getAttribute("data-diff-type") === "split";
     const getLineIndex = getPierreLineIndex(pierreDiff);
-    for (const range of ranges) {
-      const startIndexes = getLineIndex(range.start, range.side as PierreSide);
-      const endIndexes = getLineIndex(
-        range.end,
-        (range.endSide ?? range.side) as PierreSide,
-      );
-      if (!startIndexes || !endIndexes) continue;
-      const startIndex = split ? startIndexes[1] : startIndexes[0];
-      const endIndex = split ? endIndexes[1] : endIndexes[0];
-      markSelectedLineIndexes(
-        Math.min(startIndex, endIndex),
-        Math.max(startIndex, endIndex),
-        range.side as PierreSide,
-      );
+    if (selectedRange) {
+      markSelectedRange(getLineIndex, split, selectedRange, true);
     }
+    for (const range of selectedRanges) {
+      markSelectedRange(getLineIndex, split, range, false);
+    }
+  }
+
+  function markSelectedRange(
+    getLineIndex: GetLineIndexUtility,
+    split: boolean,
+    range: SelectedLineRange,
+    active: boolean,
+  ): void {
+    const startIndexes = getLineIndex(range.start, range.side as PierreSide);
+    const endIndexes = getLineIndex(
+      range.end,
+      (range.endSide ?? range.side) as PierreSide,
+    );
+    if (!startIndexes || !endIndexes) return;
+    const startIndex = split ? startIndexes[1] : startIndexes[0];
+    const endIndex = split ? endIndexes[1] : endIndexes[0];
+    markSelectedLineIndexes(
+      Math.min(startIndex, endIndex),
+      Math.max(startIndex, endIndex),
+      range.side as PierreSide,
+      active,
+    );
   }
 
   function markSelectedLineIndexes(
     first: number,
     last: number,
     side: PierreSide,
+    active: boolean,
   ): void {
     const isSingle = first === last;
     for (let lineIndex = first; lineIndex <= last; lineIndex += 1) {
       for (const { content: contentElement, gutter: gutterElement } of renderedLineRows.get(lineIndex) ?? []) {
         let value = isSingle ? "single" : lineIndex === first ? "first" : lineIndex === last ? "last" : "";
-        markSelectedRangeElement(contentElement, value);
-        markSelectedRangeElement(gutterElement, value, side);
+        markSelectedRangeElement(contentElement, value, undefined, active);
+        markSelectedRangeElement(gutterElement, value, side, active);
         if (
           contentElement.nextSibling instanceof HTMLElement &&
           gutterElement.nextSibling instanceof HTMLElement &&
@@ -500,8 +513,8 @@
           } else if (lineIndex === first || lineIndex === last) {
             value = "";
           }
-          markSelectedRangeElement(contentElement.nextSibling, value);
-          markSelectedRangeElement(gutterElement.nextSibling, value, side);
+          markSelectedRangeElement(contentElement.nextSibling, value, undefined, active);
+          markSelectedRangeElement(gutterElement.nextSibling, value, side, active);
         }
       }
     }
@@ -511,10 +524,14 @@
     element: HTMLElement,
     value: string,
     side?: PierreSide,
+    active = false,
   ): void {
     selectedRangeElements.add(element);
     element.setAttribute("data-review-range-line", "");
     element.setAttribute("data-selected-line", value);
+    if (active) {
+      element.setAttribute("data-active-review-range-line", "");
+    }
     if (side && element.hasAttribute("data-column-number")) {
       element.classList.add("gutter--selected", side === "deletions" ? "gutter-old" : "gutter-new");
     }
@@ -524,6 +541,7 @@
     for (const element of selectedRangeElements) {
       element.removeAttribute("data-review-range-line");
       element.removeAttribute("data-selected-line");
+      element.removeAttribute("data-active-review-range-line");
       element.classList.remove("gutter--selected", "gutter-new", "gutter-old");
     }
     selectedRangeElements.clear();
@@ -869,7 +887,7 @@
   function selectedLineTargetExists(target: { lineNumber: number; side: PierreSide }): boolean {
     const attr = target.side === "additions" ? "data-diff-new-line" : "data-diff-old-line";
     return host?.shadowRoot?.querySelector(
-      `[data-selected-line][${attr}="${target.lineNumber}"]`,
+      `[data-active-review-range-line][${attr}="${target.lineNumber}"]`,
     ) != null;
   }
 

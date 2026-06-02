@@ -563,6 +563,41 @@ describe("DiffFile", () => {
     });
   });
 
+  it("opens a new inline composer on a line that already has a saved draft", async () => {
+    renderDiffFile(makeFile(), {
+      reviewEnabled: true,
+      diffHeadSHA: "diff-head",
+      draftComments: [{
+        id: "draft-existing",
+        body: "Existing draft on this line",
+        path: "src/foo.ts",
+        side: "right",
+        line: 2,
+        new_line: 2,
+        line_type: "add",
+        diff_head_sha: "diff-head",
+        created_at: "2026-03-30T14:01:00Z",
+        updated_at: "2026-03-30T14:01:00Z",
+      }],
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Existing draft on this line")).toBeTruthy();
+      const selectedDraftLine = document
+        .querySelector(".pierre-diff")
+        ?.shadowRoot
+        ?.querySelector('[data-selected-line][data-diff-new-line="2"]');
+      expect(selectedDraftLine).toBeTruthy();
+    });
+
+    await clickLineCommentButton(2, "right");
+
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText("Leave a comment")).toBeTruthy();
+    });
+    expect(screen.getByText("Existing draft on this line")).toBeTruthy();
+  });
+
   it("renders published review threads under their matching diff line", async () => {
     renderDiffFile(makeFile(), {
       reviewEnabled: true,

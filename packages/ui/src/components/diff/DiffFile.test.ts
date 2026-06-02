@@ -400,6 +400,9 @@ describe("DiffFile", () => {
       expect(element).toBeTruthy();
       return element!;
     });
+    button.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, button: 0 }));
+    await fireEvent.mouseDown(button, { button: 0 });
+    await fireEvent.pointerUp(button, { pointerId: 1, pointerType: "mouse" });
     await fireEvent.click(button);
   }
 
@@ -443,7 +446,9 @@ describe("DiffFile", () => {
 
     await clickLineCommentButton(2, "right");
     expect(screen.getByPlaceholderText("Leave a comment")).toBeTruthy();
-    expect(selectedPierreLines()).toHaveLength(4);
+    await waitFor(() => {
+      expect(selectedPierreLines()).toHaveLength(4);
+    });
 
     await clickLineCommentButton(2, "right");
 

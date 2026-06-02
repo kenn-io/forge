@@ -91,6 +91,7 @@
   let renderedLineRows = new Map<number, RenderedLinePair[]>();
   let selectedRangeElements = new Set<HTMLElement>();
   let transientAnnotationRow: TransientAnnotationRow | undefined;
+  let lineCommentButtonWasSelectedOnPointerDown = false;
   const inactiveCleanupDelayMs = 10_000;
   const maxImmediateRenderRetries = 5;
 
@@ -818,11 +819,19 @@
     button.title = label;
     button.setAttribute("aria-label", label);
     button.setAttribute("data-middleman-line-comment-button", "");
+    button.addEventListener("pointerdown", (event) => {
+      lineCommentButtonWasSelectedOnPointerDown = lineCommentTargetIsSelected(target, event);
+    });
+    button.addEventListener("mousedown", (event) => {
+      lineCommentButtonWasSelectedOnPointerDown = lineCommentTargetIsSelected(target, event);
+    });
     button.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
+      const collapse = lineCommentButtonWasSelectedOnPointerDown;
+      lineCommentButtonWasSelectedOnPointerDown = false;
       onLineSelected?.(
-        selectedRangeMatchesLineCommentTarget(target, event)
+        collapse
           ? null
           : lineCommentSelection(target, event),
       );
@@ -841,6 +850,21 @@
       selectedEndSide === target.side &&
       selectedRange.start === target.lineNumber &&
       selectedRange.end === target.lineNumber;
+  }
+
+  function lineCommentTargetIsSelected(
+    target: { lineNumber: number; side: PierreSide },
+    event: MouseEvent,
+  ): boolean {
+    return selectedRangeMatchesLineCommentTarget(target, event) ||
+      selectedLineTargetExists(target);
+  }
+
+  function selectedLineTargetExists(target: { lineNumber: number; side: PierreSide }): boolean {
+    const attr = target.side === "additions" ? "data-diff-new-line" : "data-diff-old-line";
+    return host?.shadowRoot?.querySelector(
+      `[data-selected-line][${attr}="${target.lineNumber}"]`,
+    ) != null;
   }
 
   function lineCommentSelection(

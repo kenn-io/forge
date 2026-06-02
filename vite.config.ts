@@ -20,8 +20,12 @@ export default defineConfig({
       "packages/ui/src/**/*.bench.test.ts",
     ],
     rules: {
-      // Svelte bind:this variables are assigned by the compiler, which Oxlint
-      // cannot see; keep those bindings valid without local suppressions.
+      // Oxlint does not yet model Svelte template writes reliably. Watch the
+      // embedded-framework RFC for the eventual fix path; the direct open
+      // evidence is a bind:this false positive in a related rule.
+      // https://github.com/oxc-project/oxc/discussions/21936
+      // https://github.com/oxc-project/oxc/issues/19470
+      // https://github.com/oxc-project/oxc/issues/15761
       "eslint/no-unassigned-vars": "off",
       // These type-aware rules are useful for cleanup work, but enabling them
       // during the Vite+ migration would turn existing non-buggy code into

@@ -1,0 +1,72 @@
+package localruntime
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+
+	ptyownerruntime "go.kenn.io/middleman/internal/ptyowner/runtime"
+)
+
+type ptyOwnerLifecycle struct {
+	owner   ptyownerruntime.Owner
+	session string
+	pty     ptyownerruntime.PTY
+}
+
+func (l ptyOwnerLifecycle) Detach() {
+	if l.pty != nil {
+		l.pty.Close()
+	}
+}
+
+func (l ptyOwnerLifecycle) Stop(ctx context.Context) error {
+	if l.pty != nil {
+		defer l.pty.Close()
+	}
+	if l.owner != nil {
+		if err := l.owner.Stop(ctx, l.session); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func startPtyOwnerSession(
+	ctx context.Context,
+	owner ptyownerruntime.Owner,
+	info SessionInfo,
+	command []string,
+	cwd string,
+	extraStripVars []string,
+) (*session, error) {
+	if len(command) == 0 || command[0] == "" {
+		return nil, errors.New("session command is empty")
+	}
+	ptySession, err := owner.Start(ctx, info.Key, cwd, command, extraStripVars)
+	if err != nil {
+		return nil, fmt.Errorf("start pty owner: %w", err)
+	}
+	slog.Debug(
+		"runtime session pty owner started",
+		"workspace_id", info.WorkspaceID,
+		"session_key", info.Key,
+		"target_key", info.TargetKey,
+	)
+	info.Status = SessionStatusRunning
+	s := &session{
+		info: info,
+		pty:  ptySession,
+		lifecycle: ptyOwnerLifecycle{
+			owner:   owner,
+			session: info.Key,
+			pty:     ptySession,
+		},
+		done:        make(chan struct{}),
+		outputDone:  make(chan struct{}),
+		subscribers: make(map[chan []byte]struct{}),
+	}
+	go s.drainOutput()
+	return s, nil
+}

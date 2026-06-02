@@ -683,6 +683,8 @@ func setupBareCloneForWorkspaceGitTest(t *testing.T) string {
 	runWorkspaceTestGit(t, work, "commit", "-m", "base commit")
 	runWorkspaceTestGit(t, work, "push", "origin", "main")
 	runWorkspaceTestGit(t, dir, "clone", "--bare", remote, cloneDir)
+	runWorkspaceTestGit(t, cloneDir, "config", "user.email", "test@test.com")
+	runWorkspaceTestGit(t, cloneDir, "config", "user.name", "Test")
 
 	return cloneDir
 }

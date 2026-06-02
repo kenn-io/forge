@@ -42,18 +42,24 @@ type owner struct {
 	pty   gopty.Pty
 	cmd   *gopty.Cmd
 
-	mu           sync.Mutex
-	outputBuffer []byte
-	title        string
-	titleParser  terminalTitleParser
-	subscribers  map[chan []byte]struct{}
-	exitCode     int
-	exited       bool
-	done         chan struct{}
-	drainDone    chan struct{}
-	stopOnce     sync.Once
-	closePtyOnce sync.Once
-	connSem      chan struct{}
+	mu                     sync.Mutex
+	outputBuffer           []byte
+	title                  string
+	titleParser            terminalTitleParser
+	subscribers            map[chan []byte]struct{}
+	activeAttachments      int
+	exitCode               int
+	exited                 bool
+	done                   chan struct{}
+	drainDone              chan struct{}
+	stopRequested          chan struct{}
+	activeAttachmentsDone  chan struct{}
+	postExitAttachmentDone chan struct{}
+	stopOnce               sync.Once
+	activeDoneOnce         sync.Once
+	postExitDoneOnce       sync.Once
+	closePtyOnce           sync.Once
+	connSem                chan struct{}
 }
 
 func RunOwner(ctx context.Context, opts Options) error {
@@ -113,14 +119,17 @@ func RunOwner(ctx context.Context, opts Options) error {
 		return err
 	}
 	o := &owner{
-		paths:       paths,
-		pty:         p,
-		cmd:         cmd,
-		subscribers: make(map[chan []byte]struct{}),
-		exitCode:    -1,
-		done:        make(chan struct{}),
-		drainDone:   make(chan struct{}),
-		connSem:     make(chan struct{}, maxOwnerConnections),
+		paths:                  paths,
+		pty:                    p,
+		cmd:                    cmd,
+		subscribers:            make(map[chan []byte]struct{}),
+		exitCode:               -1,
+		done:                   make(chan struct{}),
+		drainDone:              make(chan struct{}),
+		stopRequested:          make(chan struct{}),
+		activeAttachmentsDone:  make(chan struct{}),
+		postExitAttachmentDone: make(chan struct{}),
+		connSem:                make(chan struct{}, maxOwnerConnections),
 		state: ownerState{
 			Session:   opts.Session,
 			Addr:      "unix://" + paths.Socket,
@@ -173,13 +182,46 @@ func RunOwner(ctx context.Context, opts Options) error {
 		<-o.done
 		return ctx.Err()
 	case <-o.done:
-		return nil
+		return o.waitAfterNaturalExit(ctx, acceptErr, o.exitRetentionDone())
 	case err := <-acceptErr:
 		if errors.Is(err, net.ErrClosed) {
 			return nil
 		}
 		o.stop()
 		<-o.done
+		return err
+	}
+}
+
+func (o *owner) exitRetentionDone() <-chan struct{} {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.activeAttachments > 0 {
+		return o.activeAttachmentsDone
+	}
+	return o.postExitAttachmentDone
+}
+
+func (o *owner) waitAfterNaturalExit(
+	ctx context.Context,
+	acceptErr <-chan error,
+	retained <-chan struct{},
+) error {
+	timer := time.NewTimer(ownerFirstRequestTimeout)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-o.stopRequested:
+		return nil
+	case <-retained:
+		return nil
+	case <-timer.C:
+		return nil
+	case err := <-acceptErr:
+		if errors.Is(err, net.ErrClosed) {
+			return nil
+		}
 		return err
 	}
 }
@@ -229,7 +271,7 @@ func (o *owner) handleConn(conn net.Conn) {
 		}
 		_ = enc.Encode(Response{Type: ResponseOK, OK: true})
 	case RequestAttach:
-		o.handleAttach(reader, enc, first.Request())
+		o.handleAttach(conn, reader, enc, first.Request())
 	default:
 		_ = enc.Encode(Response{
 			Type: ResponseError, Error: "unknown pty owner request",
@@ -238,10 +280,13 @@ func (o *owner) handleConn(conn net.Conn) {
 }
 
 func (o *owner) handleAttach(
+	conn net.Conn,
 	reader *bufio.Reader,
 	enc *json.Encoder,
 	first Request,
 ) {
+	startedAfterExit := o.beginAttach()
+	defer o.endAttach(startedAfterExit)
 	if first.Cols > 0 && first.Rows > 0 {
 		_ = o.pty.Resize(first.Cols, first.Rows)
 	}
@@ -271,6 +316,7 @@ func (o *owner) handleAttach(
 			Type: ResponseExit, OK: true, ExitCode: &code,
 		})
 		writeMu.Unlock()
+		_ = conn.Close()
 	}()
 
 	for {
@@ -302,6 +348,33 @@ func (o *owner) handleAttach(
 			return
 		default:
 		}
+	}
+}
+
+func (o *owner) beginAttach() bool {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.activeAttachments++
+	return o.exited
+}
+
+func (o *owner) endAttach(startedAfterExit bool) {
+	o.mu.Lock()
+	if o.activeAttachments > 0 {
+		o.activeAttachments--
+	}
+	exitedWithoutActiveAttachments := o.exited && o.activeAttachments == 0
+	o.mu.Unlock()
+
+	if startedAfterExit {
+		o.postExitDoneOnce.Do(func() {
+			close(o.postExitAttachmentDone)
+		})
+	}
+	if exitedWithoutActiveAttachments {
+		o.activeDoneOnce.Do(func() {
+			close(o.activeAttachmentsDone)
+		})
 	}
 }
 
@@ -371,6 +444,7 @@ func (o *owner) wait() {
 
 func (o *owner) stop() {
 	o.stopOnce.Do(func() {
+		close(o.stopRequested)
 		if o.cmd != nil && o.cmd.Process != nil {
 			killOwnerProcess(o.cmd.Process)
 		}

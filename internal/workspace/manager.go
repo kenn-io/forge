@@ -1405,6 +1405,24 @@ func (m *Manager) ForgetRuntimeTmuxSession(
 	return m.db.DeleteWorkspaceTmuxSession(ctx, workspaceID, sessionName)
 }
 
+// ForgetRuntimeTmuxSessionCreatedAt removes one stored runtime tmux session
+// only if it still belongs to the same runtime session generation.
+func (m *Manager) ForgetRuntimeTmuxSessionCreatedAt(
+	ctx context.Context,
+	workspaceID string,
+	sessionName string,
+	createdAt time.Time,
+) (bool, error) {
+	if sessionName == "" {
+		return false, nil
+	}
+	m.runtimeTmuxMu.Lock()
+	defer m.runtimeTmuxMu.Unlock()
+	return m.db.DeleteWorkspaceTmuxSessionCreatedAt(
+		ctx, workspaceID, sessionName, createdAt,
+	)
+}
+
 // ForgetMissingRuntimeTmuxSession removes a stored runtime tmux session only
 // after tmux reports that the session no longer exists.
 func (m *Manager) ForgetMissingRuntimeTmuxSession(

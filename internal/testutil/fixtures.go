@@ -121,7 +121,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 	if err := d.UpsertMREvents(ctx, []db.MREvent{
 		{
 			MergeRequestID: w1ID,
-			PlatformID:     int64Ptr(5011),
+			PlatformID:     new(int64(5011)),
 			EventType:      "review",
 			Author:         "alice",
 			Summary:        "APPROVED",
@@ -130,7 +130,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 		},
 		{
 			MergeRequestID: w1ID,
-			PlatformID:     int64Ptr(5012),
+			PlatformID:     new(int64(5012)),
 			EventType:      "review",
 			Author:         "bob",
 			Summary:        "CHANGES_REQUESTED",
@@ -139,7 +139,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 		},
 		{
 			MergeRequestID: w1ID,
-			PlatformID:     int64Ptr(5013),
+			PlatformID:     new(int64(5013)),
 			EventType:      "review",
 			Author:         "bob",
 			Summary:        "APPROVED",
@@ -148,7 +148,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 		},
 		{
 			MergeRequestID: w1ID,
-			PlatformID:     int64Ptr(5014),
+			PlatformID:     new(int64(5014)),
 			EventType:      "review",
 			Author:         "carol",
 			Summary:        "APPROVED",
@@ -160,7 +160,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 	}
 	if err := d.UpsertMREvents(ctx, []db.MREvent{{
 		MergeRequestID: w1ID,
-		PlatformID:     int64Ptr(5014),
+		PlatformID:     new(int64(5014)),
 		EventType:      "review",
 		Author:         "carol",
 		Summary:        "DISMISSED",
@@ -1039,11 +1039,6 @@ func setPRStats(pr *gh.PullRequest, additions, deletions int) *gh.PullRequest {
 	pr.Additions = &additions
 	pr.Deletions = &deletions
 	return pr
-}
-
-//go:fix inline
-func int64Ptr(value int64) *int64 {
-	return new(value)
 }
 
 func setPRHeadSHA(pr *gh.PullRequest, sha string) *gh.PullRequest {

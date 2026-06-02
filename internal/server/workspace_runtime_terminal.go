@@ -54,36 +54,6 @@ func (s *Server) handleWorkspaceRuntimeSessionTerminal(
 	s.serveRuntimeTerminal(w, r, attachment)
 }
 
-func (s *Server) handleWorkspaceRuntimeShellTerminal(
-	w http.ResponseWriter,
-	r *http.Request,
-) {
-	logWebsocketDebug(
-		"runtime shell websocket request",
-		"workspace_id", r.PathValue("id"),
-		"path", r.URL.Path,
-		"query", r.URL.RawQuery,
-	)
-	summary, ok := s.readyRuntimeWorkspaceForHTTP(
-		w, r, r.PathValue("id"),
-	)
-	if !ok {
-		return
-	}
-
-	attachment, err := s.runtime.AttachShell(summary.ID)
-	if err != nil {
-		logWebsocketDebug(
-			"runtime shell attach failed",
-			"workspace_id", summary.ID,
-			"err", err,
-		)
-		http.Error(w, err.Error(), http.StatusNotFound)
-		return
-	}
-	s.serveRuntimeTerminal(w, r, attachment)
-}
-
 func (s *Server) serveRuntimeTerminal(
 	w http.ResponseWriter,
 	r *http.Request,

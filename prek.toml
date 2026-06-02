@@ -72,6 +72,7 @@ hooks = [
     language = "system",
     entry = "make api-generate",
     files = "^(go\\.mod|go\\.sum|cmd/middleman-openapi/.*\\.go|internal/server/.*\\.go|internal/db/.*\\.go|internal/apiclient/.*|frontend/package\\.json|frontend/bun\\.lock)$",
+    exclude = "^(internal/apiclient/generated/client\\.gen\\.go|internal/apiclient/spec/openapi\\.json)$",
     pass_filenames = false,
     priority = 25,
   },

@@ -22,7 +22,6 @@ import (
 	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/gitclone"
 	"go.kenn.io/middleman/internal/procutil"
-	"go.kenn.io/middleman/internal/workspace/localruntime"
 )
 
 // Manager owns middleman's persisted workspace lifecycle.
@@ -1011,13 +1010,13 @@ func (m *Manager) cleanupTmuxSession(
 			main:    true,
 		})
 	}
-	stored, err := m.db.ListWorkspaceTmuxSessions(ctx, ws.ID)
+	stored, err := m.db.ListWorkspaceRuntimeTmuxSessions(ctx, ws.ID)
 	if err != nil {
 		return err
 	}
 	for _, storedSession := range stored {
 		sessions = append(sessions, cleanupTarget{
-			session: storedSession.SessionName,
+			session: storedSession.TmuxSession,
 		})
 	}
 
@@ -1048,7 +1047,7 @@ func (m *Manager) cleanupTmuxSession(
 	if err := errors.Join(cleanupErrs...); err != nil {
 		return err
 	}
-	if err := m.db.DeleteWorkspaceTmuxSessions(ctx, ws.ID); err != nil {
+	if err := m.db.DeleteWorkspaceRuntimeSessions(ctx, ws.ID); err != nil {
 		return err
 	}
 	return nil
@@ -1112,13 +1111,13 @@ func (m *Manager) ReapOrphanTmuxSessions(ctx context.Context) error {
 		}
 		live[ws.TmuxSession] = true
 	}
-	storedSessions, err := m.db.ListAllWorkspaceTmuxSessions(ctx)
+	storedSessions, err := m.db.ListAllWorkspaceRuntimeTmuxSessions(ctx)
 	if err != nil {
 		return err
 	}
 	for _, stored := range storedSessions {
-		if stored.SessionName != "" {
-			live[stored.SessionName] = true
+		if stored.TmuxSession != "" {
+			live[stored.TmuxSession] = true
 		}
 	}
 
@@ -1168,25 +1167,25 @@ func (m *Manager) PruneMissingTmuxSessions(ctx context.Context) error {
 		live[session] = true
 	}
 
-	storedSessions, err := m.db.ListAllWorkspaceTmuxSessions(ctx)
+	storedSessions, err := m.db.ListAllWorkspaceRuntimeTmuxSessions(ctx)
 	if err != nil {
 		return err
 	}
 	for _, stored := range storedSessions {
-		if stored.SessionName == "" {
+		if stored.TmuxSession == "" {
 			continue
 		}
-		if live[stored.SessionName] {
+		if live[stored.TmuxSession] {
 			continue
 		}
 		slog.Debug(
 			"prune missing runtime tmux session",
 			"workspace_id", stored.WorkspaceID,
 			"target_key", stored.TargetKey,
-			"tmux_session", stored.SessionName,
+			"tmux_session", stored.TmuxSession,
 		)
-		if err := m.db.DeleteWorkspaceTmuxSession(
-			ctx, stored.WorkspaceID, stored.SessionName,
+		if _, err := m.db.DeleteWorkspaceRuntimeSessionCreatedAt(
+			ctx, stored.WorkspaceID, stored.SessionKey, stored.CreatedAt,
 		); err != nil {
 			return err
 		}
@@ -1368,128 +1367,118 @@ func (m *Manager) listTmuxSessions(
 	return sessions, nil
 }
 
-// RecordRuntimeTmuxSession records a tmux-backed runtime launch so
-// activity probing and cleanup survive an application restart.
-func (m *Manager) RecordRuntimeTmuxSession(
+// RecordRuntimeSession stores a durable runtime session identity and its
+// metadata. Normal launched terminals and agents use the session scope.
+func (m *Manager) RecordRuntimeSession(
 	ctx context.Context,
-	workspaceID string,
-	sessionName string,
-	targetKey string,
-	createdAt time.Time,
+	session db.WorkspaceRuntimeSession,
 ) error {
-	if sessionName == "" {
+	if session.SessionKey == "" {
 		return nil
 	}
-	m.runtimeTmuxMu.Lock()
-	defer m.runtimeTmuxMu.Unlock()
-	return m.db.UpsertWorkspaceTmuxSession(ctx, &db.WorkspaceTmuxSession{
-		WorkspaceID: workspaceID,
-		SessionName: sessionName,
-		TargetKey:   targetKey,
-		CreatedAt:   createdAt,
-	})
+	return m.db.UpsertWorkspaceRuntimeSession(ctx, &session)
 }
 
-// ForgetRuntimeTmuxSession removes a stored tmux-backed runtime
-// launch after an explicit stop succeeds.
-func (m *Manager) ForgetRuntimeTmuxSession(
+func (m *Manager) UpdateRuntimeSessionLabel(
 	ctx context.Context,
 	workspaceID string,
-	sessionName string,
-) error {
-	if sessionName == "" {
-		return nil
-	}
-	m.runtimeTmuxMu.Lock()
-	defer m.runtimeTmuxMu.Unlock()
-	return m.db.DeleteWorkspaceTmuxSession(ctx, workspaceID, sessionName)
-}
-
-// ForgetRuntimeTmuxSessionCreatedAt removes one stored runtime tmux session
-// only if it still belongs to the same runtime session generation.
-func (m *Manager) ForgetRuntimeTmuxSessionCreatedAt(
-	ctx context.Context,
-	workspaceID string,
-	sessionName string,
-	createdAt time.Time,
+	sessionKey string,
+	label string,
 ) (bool, error) {
-	if sessionName == "" {
+	if sessionKey == "" {
 		return false, nil
 	}
-	m.runtimeTmuxMu.Lock()
-	defer m.runtimeTmuxMu.Unlock()
-	return m.db.DeleteWorkspaceTmuxSessionCreatedAt(
-		ctx, workspaceID, sessionName, createdAt,
+	return m.db.UpdateWorkspaceRuntimeSessionLabel(
+		ctx, workspaceID, sessionKey, label,
 	)
 }
 
-// ForgetMissingRuntimeTmuxSession removes a stored runtime tmux session only
-// after tmux reports that the session no longer exists.
-func (m *Manager) ForgetMissingRuntimeTmuxSession(
+func (m *Manager) ForgetRuntimeSession(
 	ctx context.Context,
 	workspaceID string,
-	sessionName string,
+	sessionKey string,
+) error {
+	if sessionKey == "" {
+		return nil
+	}
+	return m.db.DeleteWorkspaceRuntimeSession(ctx, workspaceID, sessionKey)
+}
+
+func (m *Manager) ForgetRuntimeSessionCreatedAt(
+	ctx context.Context,
+	workspaceID string,
+	sessionKey string,
 	createdAt time.Time,
 ) (bool, error) {
-	if sessionName == "" {
+	if sessionKey == "" {
 		return false, nil
 	}
-	m.runtimeTmuxMu.Lock()
-	defer m.runtimeTmuxMu.Unlock()
-	exists, err := m.tmuxSessionExists(ctx, sessionName)
-	if err != nil {
-		return false, err
-	}
-	if exists {
-		return false, nil
-	}
-	return m.db.DeleteWorkspaceTmuxSessionCreatedAt(
-		ctx, workspaceID, sessionName, createdAt,
+	return m.db.DeleteWorkspaceRuntimeSessionCreatedAt(
+		ctx, workspaceID, sessionKey, createdAt,
 	)
 }
 
-// StopStoredRuntimeTmuxSession cleans up a persisted runtime tmux session even
-// when the in-memory runtime manager no longer knows about it.
-func (m *Manager) StopStoredRuntimeTmuxSession(
+func (m *Manager) ForgetRuntimeSessionAfterExit(
 	ctx context.Context,
 	workspaceID string,
-	targetKey string,
+	sessionKey string,
+	createdAt time.Time,
+	tmuxSession string,
 ) (bool, error) {
-	if targetKey == "" {
+	if sessionKey == "" {
 		return false, nil
 	}
-	m.runtimeTmuxMu.Lock()
-	defer m.runtimeTmuxMu.Unlock()
-	stored, err := m.db.ListWorkspaceTmuxSessions(ctx, workspaceID)
-	if err != nil {
-		return false, err
-	}
-	for _, storedSession := range stored {
-		if storedSession.TargetKey != targetKey ||
-			storedSession.SessionName == "" {
-			continue
-		}
-		if err := m.killTmuxSession(
-			ctx, storedSession.SessionName,
-		); err != nil && !isTmuxKillSessionGone(err) {
-			return true, fmt.Errorf(
-				"kill tmux session %q: %w",
-				storedSession.SessionName, err,
+	tmuxSession = strings.TrimSpace(tmuxSession)
+	if tmuxSession != "" {
+		exists, err := m.tmuxSessionExists(ctx, tmuxSession)
+		if err != nil {
+			return false, fmt.Errorf(
+				"check exited runtime tmux session %q: %w",
+				tmuxSession, err,
 			)
 		}
-		if err := m.db.DeleteWorkspaceTmuxSession(
-			ctx, workspaceID, storedSession.SessionName,
-		); err != nil {
-			return true, err
+		if exists {
+			return false, nil
 		}
-		return true, nil
 	}
-	return false, nil
+	return m.db.DeleteWorkspaceRuntimeSessionCreatedAt(
+		ctx, workspaceID, sessionKey, createdAt,
+	)
 }
 
-// StopStoredRuntimeTmuxSessionByKey cleans up a persisted runtime tmux session
-// addressed by the public localruntime session key.
-func (m *Manager) StopStoredRuntimeTmuxSessionByKey(
+func (m *Manager) RuntimeSessionsForWorkspace(
+	ctx context.Context,
+	workspaceID string,
+) ([]db.WorkspaceRuntimeSession, error) {
+	return m.db.ListWorkspaceRuntimeSessions(ctx, workspaceID)
+}
+
+func (m *Manager) AllRuntimeSessions(
+	ctx context.Context,
+) ([]db.WorkspaceRuntimeSession, error) {
+	return m.db.ListAllWorkspaceRuntimeSessions(ctx)
+}
+
+func (m *Manager) RuntimeSessionKeysForWorkspace(
+	ctx context.Context,
+	workspaceID string,
+) ([]string, error) {
+	sessions, err := m.db.ListWorkspaceRuntimeSessions(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	keys := make([]string, 0, len(sessions))
+	for _, session := range sessions {
+		if session.SessionKey != "" {
+			keys = append(keys, session.SessionKey)
+		}
+	}
+	return keys, nil
+}
+
+// StopStoredRuntimeSessionByKey cleans up a persisted runtime session even
+// when the in-memory runtime manager no longer knows about it.
+func (m *Manager) StopStoredRuntimeSessionByKey(
 	ctx context.Context,
 	workspaceID string,
 	sessionKey string,
@@ -1497,18 +1486,47 @@ func (m *Manager) StopStoredRuntimeTmuxSessionByKey(
 	if sessionKey == "" {
 		return false, nil
 	}
-	stored, err := m.db.ListWorkspaceTmuxSessions(ctx, workspaceID)
+	stored, err := m.db.ListWorkspaceRuntimeSessions(ctx, workspaceID)
 	if err != nil {
 		return false, err
 	}
 	for _, storedSession := range stored {
-		if localruntime.SessionKey(workspaceID, storedSession.TargetKey) == sessionKey {
-			return m.StopStoredRuntimeTmuxSession(
-				ctx, workspaceID, storedSession.TargetKey,
-			)
+		if storedSession.SessionKey == sessionKey {
+			return m.stopStoredRuntimeSession(ctx, workspaceID, storedSession)
 		}
 	}
 	return false, nil
+}
+
+func (m *Manager) stopStoredRuntimeSession(
+	ctx context.Context,
+	workspaceID string,
+	storedSession db.WorkspaceRuntimeSession,
+) (bool, error) {
+	m.runtimeTmuxMu.Lock()
+	defer m.runtimeTmuxMu.Unlock()
+	if storedSession.TmuxSession != "" {
+		if err := m.killTmuxSession(ctx, storedSession.TmuxSession); err != nil &&
+			!isTmuxKillSessionGone(err) {
+			return true, fmt.Errorf(
+				"kill tmux session %q: %w",
+				storedSession.TmuxSession, err,
+			)
+		}
+	} else if m.ptyOwner != nil {
+		if err := m.ptyOwner.Stop(ctx, storedSession.SessionKey); err != nil {
+			return true, fmt.Errorf(
+				"stop pty owner session %q: %w",
+				storedSession.SessionKey, err,
+			)
+		}
+	}
+	if err := m.db.DeleteWorkspaceRuntimeSession(
+		ctx, workspaceID, storedSession.SessionKey,
+	); err != nil {
+		return true, err
+	}
+	return true, nil
 }
 
 // TmuxSessionsForWorkspace returns the persisted workspace tmux
@@ -1520,7 +1538,7 @@ func (m *Manager) TmuxSessionsForWorkspace(
 	workspaceID string,
 	baseSession string,
 ) ([]string, error) {
-	stored, err := m.db.ListWorkspaceTmuxSessions(ctx, workspaceID)
+	stored, err := m.db.ListWorkspaceRuntimeTmuxSessions(ctx, workspaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -1531,7 +1549,7 @@ func (m *Manager) TmuxSessionsForWorkspace(
 		out = append(out, baseSession)
 	}
 	for _, storedSession := range stored {
-		session := storedSession.SessionName
+		session := storedSession.TmuxSession
 		if session == "" || seen[session] {
 			continue
 		}

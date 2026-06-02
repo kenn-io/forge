@@ -101,20 +101,23 @@ export async function stopWorkspaceSession(
   }
 }
 
-export async function ensureWorkspaceShell(
+export async function renameWorkspaceSession(
   workspaceId: string,
+  sessionKey: string,
+  label: string,
   fetchFn: RuntimeFetch = fetch,
 ): Promise<RuntimeSession> {
   const response = await fetchFn(
-    `${workspaceRuntimeURL(workspaceId)}/shell`,
+    `${workspaceRuntimeURL(workspaceId)}/sessions/${encodeURIComponent(sessionKey)}`,
     {
-      method: "POST",
+      method: "PATCH",
       headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ label }),
     },
   );
   return readJSON<RuntimeSession>(
     response,
-    `Ensure shell failed (${response.status})`,
+    `Rename session failed (${response.status})`,
   );
 }
 
@@ -126,15 +129,6 @@ export function workspaceSessionWebSocketPath(
     `${wsBaseUrl()}/workspaces/${encodeURIComponent(workspaceId)}` +
     `/runtime/sessions/${encodeURIComponent(sessionKey)}` +
     "/terminal"
-  );
-}
-
-export function workspaceShellWebSocketPath(
-  workspaceId: string,
-): string {
-  return (
-    `${wsBaseUrl()}/workspaces/${encodeURIComponent(workspaceId)}` +
-    "/runtime/shell/terminal"
   );
 }
 

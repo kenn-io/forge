@@ -116,9 +116,9 @@ const workspaceRuntime = {
       available: true,
     },
     {
-      key: "tmux",
-      label: "tmux",
-      kind: "tmux",
+      key: "shell",
+      label: "Shell",
+      kind: "shell",
       source: "system",
       command: ["tmux"],
       available: false,
@@ -134,7 +134,6 @@ const workspaceRuntime = {
     },
   ],
   sessions: [],
-  shell_session: null,
 };
 
 type RuntimeTarget = (typeof workspaceRuntime.launch_targets)[number];
@@ -147,9 +146,13 @@ type RuntimeSession = {
   status: "starting" | "running" | "exited" | "error";
   created_at: string;
 };
-type WorkspaceRuntime = Omit<typeof workspaceRuntime, "sessions" | "shell_session"> & {
+type WorkspaceRuntime = Omit<typeof workspaceRuntime, "sessions"> & {
   sessions: RuntimeSession[];
-  shell_session: RuntimeSession | null;
+};
+type RuntimeEvents = {
+  launches: string[];
+  renames: Array<{ sessionKey: string; label: string }>;
+  deletes: string[];
 };
 
 /**
@@ -183,8 +186,9 @@ async function setupTerminalMocks(
       body?: unknown;
     };
     runtime?: WorkspaceRuntime;
+    runtimeEvents?: RuntimeEvents;
   },
-): Promise<void> {
+): Promise<{ runtime: WorkspaceRuntime }> {
   const ws = opts?.workspace ?? testWorkspace;
   const rrRepos = opts?.roborevRepos ?? roborevRepos;
   const rrJobs = opts?.roborevJobs ?? roborevJobs;
@@ -325,12 +329,18 @@ async function setupTerminalMocks(
         });
         return;
       }
+      opts?.runtimeEvents?.launches.push(target.key);
       let session = runtime.sessions.find(
-        (candidate) => candidate.target_key === target.key,
+        (candidate) =>
+          candidate.target_key === target.key &&
+          ["running", "starting"].includes(candidate.status),
       );
       if (!session) {
+        const previous = runtime.sessions.find(
+          (candidate) => candidate.target_key === target.key,
+        );
         session = {
-          key: `${ws.id}:${target.key}`,
+          key: previous?.key ?? `${ws.id}:${target.key}`,
           workspace_id: ws.id,
           target_key: target.key,
           label: target.label,
@@ -338,7 +348,12 @@ async function setupTerminalMocks(
           status: "running",
           created_at: "2026-04-10T12:00:00Z",
         };
-        runtime.sessions = [...runtime.sessions, session];
+        runtime.sessions = [
+          ...runtime.sessions.filter(
+            (candidate) => candidate.key !== session.key,
+          ),
+          session,
+        ];
       }
       await route.fulfill({
         status: 200,
@@ -354,49 +369,52 @@ async function setupTerminalMocks(
         `/api/v1/workspaces/${ws.id}/runtime/sessions/`,
       ),
     async (route) => {
-      if (route.request().method() !== "DELETE") {
-        await route.continue();
-        return;
-      }
       const url = new URL(route.request().url());
       const sessionKey = decodeURIComponent(
         url.pathname.split("/").at(-1) ?? "",
       );
+
+      if (route.request().method() === "PATCH") {
+        const body = JSON.parse(
+          route.request().postData() ?? "{}",
+        ) as { label?: string };
+        const label = body.label?.trim() ?? "";
+        const index = runtime.sessions.findIndex(
+          (session) => session.key === sessionKey,
+        );
+        if (index < 0 || !label) {
+          await route.fulfill({
+            status: 404,
+            contentType: "application/json",
+            body: JSON.stringify({ detail: "session not found" }),
+          });
+          return;
+        }
+        const updated = {
+          ...runtime.sessions[index],
+          label,
+        };
+        runtime.sessions = runtime.sessions.map((session) =>
+          session.key === sessionKey ? updated : session,
+        );
+        opts?.runtimeEvents?.renames.push({ sessionKey, label });
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(updated),
+        });
+        return;
+      }
+
+      if (route.request().method() !== "DELETE") {
+        await route.continue();
+        return;
+      }
       runtime.sessions = runtime.sessions.filter(
         (session) => session.key !== sessionKey,
       );
+      opts?.runtimeEvents?.deletes.push(sessionKey);
       await route.fulfill({ status: 204 });
-    },
-  );
-
-  await page.route(
-    `**/api/v1/workspaces/${ws.id}/runtime/shell`,
-    async (route) => {
-      if (route.request().method() !== "POST") {
-        await route.fulfill({ status: 405 });
-        return;
-      }
-      if (
-        !runtime.shell_session ||
-        !["running", "starting"].includes(
-          runtime.shell_session.status,
-        )
-      ) {
-        runtime.shell_session = {
-          key: `${ws.id}:shell`,
-          workspace_id: ws.id,
-          target_key: "plain_shell",
-          label: "Shell",
-          kind: "plain_shell",
-          status: "running",
-          created_at: "2026-04-10T12:00:00Z",
-        };
-      }
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify(runtime.shell_session),
-      });
     },
   );
 
@@ -455,6 +473,240 @@ async function setupTerminalMocks(
       await route.fulfill({ status: 404 });
     },
   );
+
+  return { runtime };
+}
+
+async function dragWorkflowTabToGroup(
+  page: import("@playwright/test").Page,
+  tabLabel: string,
+  groupIndex: number,
+  position: "center" | "left-edge",
+): Promise<void> {
+  await page.evaluate(
+    ({ tabLabel, groupIndex, position }) => {
+      const source = Array.from(
+        document.querySelectorAll('[role="tab"]'),
+      ).find((element) =>
+        element.textContent?.includes(tabLabel),
+      );
+      const target = Array.from(
+        document.querySelectorAll(
+          '[aria-label="Workflow group drop targets"]',
+        ),
+      )[groupIndex];
+      if (!(source instanceof HTMLElement)) {
+        throw new Error(`Missing workflow tab: ${tabLabel}`);
+      }
+      if (!(target instanceof HTMLElement)) {
+        throw new Error(`Missing workflow group: ${groupIndex}`);
+      }
+
+      const transfer = new DataTransfer();
+      source.dispatchEvent(
+        new DragEvent("dragstart", {
+          bubbles: true,
+          cancelable: true,
+          dataTransfer: transfer,
+        }),
+      );
+
+      const rect = target.getBoundingClientRect();
+      const clientX =
+        position === "left-edge"
+          ? rect.left + 4
+          : rect.left + rect.width / 2;
+      const clientY = rect.top + rect.height / 2;
+      target.dispatchEvent(
+        new DragEvent("dragover", {
+          bubbles: true,
+          cancelable: true,
+          clientX,
+          clientY,
+          dataTransfer: transfer,
+        }),
+      );
+      target.dispatchEvent(
+        new DragEvent("drop", {
+          bubbles: true,
+          cancelable: true,
+          clientX,
+          clientY,
+          dataTransfer: transfer,
+        }),
+      );
+      source.dispatchEvent(
+        new DragEvent("dragend", {
+          bubbles: true,
+          cancelable: true,
+          dataTransfer: transfer,
+        }),
+      );
+    },
+    { tabLabel, groupIndex, position },
+  );
+}
+
+function workflowDragRuntime(): WorkspaceRuntime {
+  return {
+    ...workspaceRuntime,
+    sessions: [
+      {
+        key: "ws-123:codex",
+        workspace_id: "ws-123",
+        target_key: "codex",
+        label: "Codex",
+        kind: "agent",
+        status: "running",
+        created_at: "2026-04-10T12:00:00Z",
+      },
+      {
+        key: "ws-123:reviewer",
+        workspace_id: "ws-123",
+        target_key: "codex",
+        label: "Reviewer",
+        kind: "agent",
+        status: "running",
+        created_at: "2026-04-10T12:00:00Z",
+      },
+    ],
+  };
+}
+
+function workflowDragLayout() {
+  return {
+    version: 1,
+    open: false,
+    dock: "bottom",
+    height: 300,
+    activeSessionKey: null,
+    tree: null,
+    terminalGroups: [],
+    activeTerminalGroupID: null,
+    sessionRegions: {
+      "ws-123:codex": "workflow",
+      "ws-123:reviewer": "workflow",
+    },
+    workflowMode: "tabs",
+    workflowTree: {
+      type: "split",
+      id: "workflow-root",
+      direction: "horizontal",
+      ratio: 0.5,
+      first: {
+        type: "leaf",
+        id: "workflow-left",
+        tabs: ["home", "session:ws-123:codex"],
+        activeTabKey: "session:ws-123:codex",
+      },
+      second: {
+        type: "leaf",
+        id: "workflow-right",
+        tabs: ["session:ws-123:reviewer"],
+        activeTabKey: "session:ws-123:reviewer",
+      },
+    },
+    activeWorkflowLeafID: "workflow-left",
+    recentWorkflowLeafIDs: ["workflow-left", "workflow-right"],
+    customSessionLabels: {},
+  };
+}
+
+function topDockedTerminalWorkflowLayout() {
+  return {
+    version: 1,
+    open: true,
+    dock: "top",
+    height: 300,
+    activeSessionKey: null,
+    tree: null,
+    terminalGroups: [],
+    activeTerminalGroupID: null,
+    sessionRegions: {
+      "ws-123:codex": "workflow",
+    },
+    workflowMode: "tabs",
+    workflowTree: {
+      type: "leaf",
+      id: "workflow-root",
+      tabs: ["home", "terminal", "session:ws-123:codex"],
+      activeTabKey: "home",
+    },
+    activeWorkflowLeafID: "workflow-root",
+    recentWorkflowLeafIDs: ["workflow-root"],
+    customSessionLabels: {},
+  };
+}
+
+function closedTopDockedTerminalWorkflowLayout() {
+  return {
+    version: 1,
+    open: false,
+    dock: "top",
+    height: 300,
+    activeSessionKey: "ws-123:plain_shell",
+    tree: {
+      type: "leaf",
+      id: "terminal-leaf",
+      sessionKey: "ws-123:plain_shell",
+    },
+    terminalGroups: [
+      {
+        id: "terminal-group",
+        activeSessionKey: "ws-123:plain_shell",
+        tree: {
+          type: "leaf",
+          id: "terminal-leaf",
+          sessionKey: "ws-123:plain_shell",
+        },
+      },
+    ],
+    activeTerminalGroupID: "terminal-group",
+    sessionRegions: {
+      "ws-123:plain_shell": "terminal",
+    },
+    workflowMode: "tabs",
+    workflowTree: {
+      type: "leaf",
+      id: "workflow-root",
+      tabs: ["home", "terminal"],
+      activeTabKey: "home",
+    },
+    activeWorkflowLeafID: "workflow-root",
+    recentWorkflowLeafIDs: ["workflow-root"],
+    customSessionLabels: {},
+  };
+}
+
+function shellWorkflowPreset() {
+  return {
+    id: "preset-shell",
+    name: "Shell focus",
+    createdAt: "2026-04-10T12:00:00.000Z",
+    updatedAt: "2026-04-10T12:00:00.000Z",
+    sessions: [],
+    layout: {
+      version: 1,
+      open: false,
+      dock: "bottom",
+      height: 300,
+      activeSessionKey: null,
+      tree: null,
+      terminalGroups: [],
+      activeTerminalGroupID: null,
+      sessionRegions: {},
+      workflowMode: "tabs",
+      workflowTree: {
+        type: "leaf",
+        id: "workflow-root",
+        tabs: ["home", "shell"],
+        activeTabKey: "shell",
+      },
+      activeWorkflowLeafID: "workflow-root",
+      recentWorkflowLeafIDs: ["workflow-root"],
+      customSessionLabels: {},
+    },
+  };
 }
 
 test(
@@ -479,6 +731,42 @@ test(
         error:
           "Unhandled GET /@fs/tmp/project/api/v1/roborev/status",
       },
+    });
+  },
+);
+
+test(
+  "provider-aware detail mocks enforce provider and host identity",
+  async ({ page }) => {
+    await setupTerminalMocks(page);
+    await page.goto("/");
+
+    const statuses = await page.evaluate(async () => {
+      const paths = [
+        "/api/v1/pulls/github/acme/widgets/42",
+        "/api/v1/pulls/github/acme/widgets/84",
+        "/api/v1/host/example.com/pulls/github/acme/widgets/84",
+        "/api/v1/pulls/gitlab/acme/widgets/42",
+        "/api/v1/issues/github/acme/widgets/7",
+        "/api/v1/issues/gitlab/acme/widgets/7",
+      ];
+      return Object.fromEntries(
+        await Promise.all(
+          paths.map(async (path) => {
+            const response = await fetch(path);
+            return [path, response.status];
+          }),
+        ),
+      );
+    });
+
+    expect(statuses).toEqual({
+      "/api/v1/pulls/github/acme/widgets/42": 200,
+      "/api/v1/pulls/github/acme/widgets/84": 404,
+      "/api/v1/host/example.com/pulls/github/acme/widgets/84": 200,
+      "/api/v1/pulls/gitlab/acme/widgets/42": 404,
+      "/api/v1/issues/github/acme/widgets/7": 200,
+      "/api/v1/issues/gitlab/acme/widgets/7": 404,
     });
   },
 );
@@ -1104,11 +1392,11 @@ test.describe("workspace launch home", () => {
         page.getByRole("button", { name: "Codex" }),
       ).toBeVisible();
       await expect(
-        page.getByRole("button", { name: "tmux" }),
+        page.getByRole("button", { name: "Shell" }),
       ).toBeDisabled();
       await expect(
         page.getByRole("button", {
-          name: "Open shell drawer",
+          name: "Open terminal panel",
         }),
       ).toBeVisible();
       await expect(page.getByText("Plain shell")).toHaveCount(0);
@@ -1135,7 +1423,6 @@ test.describe("workspace launch home", () => {
               created_at: "2026-04-10T12:00:00Z",
             },
           ],
-          shell_session: null,
         },
       });
 
@@ -1166,7 +1453,7 @@ test.describe("workspace launch home", () => {
 
       await page.goto("/terminal/ws-123");
 
-      const tabs = page.locator(".workspace-tabs");
+      const tabs = page.getByRole("region", { name: "Workflow panes" });
       await expect(
         tabs.getByRole("tab", { name: "Codex" }),
       ).toBeVisible();
@@ -1212,6 +1499,403 @@ test.describe("workspace launch home", () => {
   );
 
   test(
+    "selects the top-docked terminal when moving an inactive workflow tab into it",
+    async ({ page }) => {
+      await setupTerminalMocks(page, {
+        runtime: {
+          ...workspaceRuntime,
+          sessions: [
+            {
+              key: "ws-123:codex",
+              workspace_id: "ws-123",
+              target_key: "codex",
+              label: "Codex",
+              kind: "agent",
+              status: "running",
+              created_at: "2026-04-10T12:00:00Z",
+            },
+          ],
+        },
+      });
+      await page.addInitScript((layout) => {
+        localStorage.setItem(
+          "middleman-workspace-terminal-layout:ws-123",
+          JSON.stringify(layout),
+        );
+        localStorage.setItem(
+          "middleman-workspace-active-tab:ws-123",
+          "home",
+        );
+      }, topDockedTerminalWorkflowLayout());
+
+      await page.goto("/terminal/ws-123");
+
+      const workflow = page.getByRole("region", {
+        name: "Workflow panes",
+      });
+      await expect(
+        workflow.getByRole("tab", { name: "Home" }),
+      ).toHaveAttribute("aria-selected", "true");
+      await expect(
+        workflow.getByRole("tab", { name: "Terminal" }),
+      ).toHaveAttribute("aria-selected", "false");
+
+      await workflow
+        .getByRole("button", { name: "Move Codex to terminal" })
+        .click();
+
+      await expect(
+        workflow.getByRole("tab", { name: "Terminal" }),
+      ).toHaveAttribute("aria-selected", "true");
+      await expect(
+        page.locator(".workflow-leaf .terminal-container"),
+      ).toBeVisible();
+    },
+  );
+
+  test(
+    "keeps a closed top-docked terminal reachable when terminal sessions exist",
+    async ({ page }) => {
+      await setupTerminalMocks(page, {
+        runtime: {
+          ...workspaceRuntime,
+          sessions: [
+            {
+              key: "ws-123:plain_shell",
+              workspace_id: "ws-123",
+              target_key: "plain_shell",
+              label: "Shell",
+              kind: "plain_shell",
+              status: "running",
+              created_at: "2026-04-10T12:00:00Z",
+            },
+          ],
+        },
+      });
+      await page.addInitScript((layout) => {
+        localStorage.setItem(
+          "middleman-workspace-terminal-layout:ws-123",
+          JSON.stringify(layout),
+        );
+        localStorage.setItem(
+          "middleman-workspace-active-tab:ws-123",
+          "home",
+        );
+      }, closedTopDockedTerminalWorkflowLayout());
+
+      await page.goto("/terminal/ws-123");
+
+      const workflow = page.getByRole("region", {
+        name: "Workflow panes",
+      });
+      const terminalTab = workflow.getByRole("tab", {
+        name: "Terminal",
+      });
+      await expect(terminalTab).toBeVisible();
+      await expect(terminalTab).toHaveAttribute(
+        "aria-selected",
+        "false",
+      );
+      await expect(
+        page.locator(".workflow-leaf .terminal-container"),
+      ).toHaveCount(0);
+
+      await terminalTab.click();
+
+      await expect(terminalTab).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
+      await expect(
+        page.locator(".workflow-leaf .terminal-container"),
+      ).toBeVisible();
+    },
+  );
+
+  test(
+    "applies a workflow preset that restores the Shell workflow tab",
+    async ({ page }) => {
+      await page.addInitScript((preset) => {
+        localStorage.removeItem(
+          "middleman-workspace-terminal-layout:ws-123",
+        );
+        localStorage.setItem(
+          "middleman-workspace-layout-presets",
+          JSON.stringify([preset]),
+        );
+        localStorage.setItem(
+          "middleman-workspace-active-tab:ws-123",
+          "home",
+        );
+      }, shellWorkflowPreset());
+      await setupTerminalMocks(page);
+
+      await page.goto("/terminal/ws-123");
+
+      await page
+        .getByRole("button", { name: "Workflow presets" })
+        .click();
+      await page
+        .getByRole("dialog", { name: "Workflow presets" })
+        .getByRole("button", { name: "Shell focus", exact: true })
+        .click();
+
+      const workflow = page.getByRole("region", {
+        name: "Workflow panes",
+      });
+      await expect(
+        workflow.getByRole("tab", { name: "Shell" }),
+      ).toHaveAttribute("aria-selected", "true");
+      await expect(
+        page.locator(".workflow-leaf .terminal-container"),
+      ).toBeVisible();
+    },
+  );
+
+  test(
+    "workflow pane drops append in the center and split at the edge",
+    async ({ page }) => {
+      await setupTerminalMocks(page, {
+        runtime: workflowDragRuntime(),
+      });
+      await page.addInitScript((layout) => {
+        localStorage.setItem(
+          "middleman-workspace-terminal-layout:ws-123",
+          JSON.stringify(layout),
+        );
+      }, workflowDragLayout());
+
+      await page.goto("/terminal/ws-123");
+
+      await expect(page.locator(".workflow-leaf")).toHaveCount(2);
+      await dragWorkflowTabToGroup(page, "Reviewer", 0, "center");
+      await expect(page.locator(".workflow-leaf")).toHaveCount(1);
+      await expect(
+        page
+          .locator(".workflow-leaf")
+          .first()
+          .getByRole("tab", { name: /Reviewer/ }),
+      ).toBeVisible();
+
+      await page.evaluate((layout) => {
+        localStorage.setItem(
+          "middleman-workspace-terminal-layout:ws-123",
+          JSON.stringify(layout),
+        );
+      }, workflowDragLayout());
+      await page.reload();
+
+      await expect(page.locator(".workflow-leaf")).toHaveCount(2);
+      await dragWorkflowTabToGroup(page, "Reviewer", 0, "left-edge");
+      await expect(page.locator(".workflow-leaf")).toHaveCount(2);
+      await expect(
+        page
+          .locator(".workflow-leaf")
+          .first()
+          .getByRole("tab", { name: /Reviewer/ }),
+      ).toBeVisible();
+    },
+  );
+
+  test(
+    "saves updates applies and deletes workflow presets",
+    async ({ page }) => {
+      await page.addInitScript(() => {
+        localStorage.removeItem(
+          "middleman-workspace-terminal-layout:ws-123",
+        );
+        localStorage.removeItem(
+          "middleman-workspace-layout-presets",
+        );
+      });
+      const runtimeEvents: RuntimeEvents = {
+        launches: [],
+        renames: [],
+        deletes: [],
+      };
+      const mocked = await setupTerminalMocks(page, {
+        runtimeEvents,
+      });
+
+      await page.goto("/terminal/ws-123");
+      await page
+        .getByRole("button", { name: "Codex" })
+        .click();
+      await expect(
+        page.getByRole("tab", { name: "Codex" }),
+      ).toBeVisible();
+      await page
+        .getByRole("button", {
+          name: "Open terminal panel",
+        })
+        .click();
+      await expect(
+        page.locator(".terminal-panel.open .terminal-container"),
+      ).toBeVisible();
+
+      await page
+        .getByRole("button", { name: "Rename Codex" })
+        .click();
+      const renameDialog = page.getByRole("dialog", {
+        name: "Rename tab",
+      });
+      await renameDialog.getByLabel("Name").fill("Reviewer");
+      await renameDialog
+        .getByRole("button", { name: "Save" })
+        .click();
+      await expect(
+        page.getByRole("tab", { name: "Reviewer" }),
+      ).toBeVisible();
+
+      let presetPromptMessage = "";
+      page.once("dialog", async (dialog) => {
+        presetPromptMessage = dialog.message();
+        await dialog.accept("Review pair");
+      });
+      await page
+        .getByRole("button", { name: "Workflow presets" })
+        .click();
+      await page
+        .getByRole("dialog", { name: "Workflow presets" })
+        .getByRole("button", { name: "Save as preset" })
+        .click();
+      expect(presetPromptMessage).toBe("Preset name");
+      await expect
+        .poll(() =>
+          page.evaluate(() => {
+            const raw = localStorage.getItem(
+              "middleman-workspace-layout-presets",
+            );
+            const presets = raw ? JSON.parse(raw) : [];
+            return presets.map((preset: { name: string }) => preset.name);
+          }),
+        )
+        .toEqual(["Review pair"]);
+
+      await page
+        .getByRole("button", { name: "Rename Reviewer" })
+        .click();
+      await renameDialog.getByLabel("Name").fill("Navigator");
+      await renameDialog
+        .getByRole("button", { name: "Save" })
+        .click();
+      await expect(
+        page.getByRole("tab", { name: "Navigator" }),
+      ).toBeVisible();
+
+      await page
+        .getByRole("button", { name: "Workflow presets" })
+        .click();
+      const presetDialog = page.getByRole("dialog", {
+        name: "Workflow presets",
+      });
+      await expect(
+        presetDialog.getByRole("button", {
+          name: "Update selected",
+        }),
+      ).toBeEnabled();
+      await presetDialog
+        .getByRole("button", { name: "Update selected" })
+        .click();
+      await expect
+        .poll(() =>
+          page.evaluate(() => {
+            const raw = localStorage.getItem(
+              "middleman-workspace-layout-presets",
+            );
+            const presets = raw ? JSON.parse(raw) : [];
+            return presets[0]?.sessions.find(
+              (session: { targetKey: string }) =>
+                session.targetKey === "codex",
+            )?.label;
+          }),
+        )
+        .toBe("Navigator");
+
+      await page
+        .locator(
+          '.terminal-panel .panel-action[aria-label="Close terminal panel"]',
+        )
+        .click();
+      await expect(
+        page.locator(".terminal-panel.open"),
+      ).toHaveCount(0);
+      mocked.runtime.sessions = [];
+      runtimeEvents.launches = [];
+      runtimeEvents.renames = [];
+      runtimeEvents.deletes = [];
+
+      await page
+        .getByRole("button", { name: "Workflow presets" })
+        .click();
+      await page
+        .getByRole("dialog", { name: "Workflow presets" })
+        .getByRole("button", { name: "Review pair", exact: true })
+        .click();
+      await expect
+        .poll(() => runtimeEvents.launches)
+        .toEqual(["codex", "plain_shell"]);
+      await expect
+        .poll(() => runtimeEvents.renames)
+        .toEqual([
+          {
+            sessionKey: "ws-123:codex",
+            label: "Navigator",
+          },
+        ]);
+      await expect(
+        page.getByRole("tab", { name: "Navigator" }),
+      ).toBeVisible();
+      await expect(
+        page.locator(".terminal-panel.open .terminal-container"),
+      ).toBeVisible();
+      await expect
+        .poll(() =>
+          page.evaluate(() => {
+            const raw = localStorage.getItem(
+              "middleman-workspace-terminal-layout:ws-123",
+            );
+            const layout = raw ? JSON.parse(raw) : null;
+            return {
+              open: layout?.open,
+              codexRegion: layout?.sessionRegions?.["ws-123:codex"],
+              shellRegion:
+                layout?.sessionRegions?.["ws-123:plain_shell"],
+            };
+          }),
+        )
+        .toEqual({
+          open: true,
+          codexRegion: "workflow",
+          shellRegion: "terminal",
+        });
+
+      await page
+        .getByRole("button", { name: "Workflow presets" })
+        .click();
+      await page
+        .getByRole("dialog", { name: "Workflow presets" })
+        .getByRole("button", { name: "Delete Review pair" })
+        .click();
+      await expect
+        .poll(() =>
+          page.evaluate(() => {
+            const raw = localStorage.getItem(
+              "middleman-workspace-layout-presets",
+            );
+            return raw ? JSON.parse(raw).length : 0;
+          }),
+        )
+        .toBe(0);
+      await expect(
+        page
+          .getByRole("dialog", { name: "Workflow presets" })
+          .getByText("No presets saved"),
+      ).toBeVisible();
+    },
+  );
+
+  test(
     "launches an agent into a compact running tab",
     async ({ page }) => {
       await page.goto("/terminal/ws-123");
@@ -1220,7 +1904,7 @@ test.describe("workspace launch home", () => {
         .getByRole("button", { name: "Codex" })
         .click();
 
-      const tabs = page.locator(".workspace-tabs");
+      const tabs = page.getByRole("region", { name: "Workflow panes" });
       await expect(
         tabs.getByRole("tab", { name: "Codex" }),
       ).toBeVisible();
@@ -1356,7 +2040,7 @@ test.describe("workspace launch home", () => {
   );
 
   test(
-    "opens the plain shell from the bottom drawer",
+    "opens the plain shell from the bottom terminal panel",
     async ({ page }) => {
       const terminalSockets: string[] = [];
       page.on("websocket", (socket) => {
@@ -1366,17 +2050,19 @@ test.describe("workspace launch home", () => {
       await page.goto("/terminal/ws-123");
       await page
         .getByRole("button", {
-          name: "Open shell drawer",
+          name: "Open terminal panel",
         })
         .click();
 
       await expect(
-        page.locator(".shell-drawer .terminal-container"),
+        page.locator(".terminal-panel.open .terminal-container"),
       ).toBeVisible();
       await expect
         .poll(() =>
           terminalSockets.some((url) =>
-            url.includes("/runtime/shell/terminal"),
+            url.includes(
+              "/runtime/sessions/ws-123%3Aplain_shell/terminal",
+            ),
           ),
         )
         .toBe(true);
@@ -1384,13 +2070,13 @@ test.describe("workspace launch home", () => {
   );
 
   test(
-    "restarts an exited shell session when opening the drawer",
+    "restarts an exited shell session when opening the terminal panel",
     async ({ page }) => {
       const shellEnsures: string[] = [];
       page.on("request", (request) => {
         if (
           request.method() === "POST" &&
-          request.url().includes("/runtime/shell")
+          request.url().includes("/runtime/sessions")
         ) {
           shellEnsures.push(request.url());
         }
@@ -1399,22 +2085,24 @@ test.describe("workspace launch home", () => {
       await setupTerminalMocks(page, {
         runtime: {
           ...workspaceRuntime,
-          shell_session: {
-            key: "ws-123:shell",
-            workspace_id: "ws-123",
-            target_key: "plain_shell",
-            label: "Shell",
-            kind: "plain_shell",
-            status: "exited",
-            created_at: "2026-04-10T12:00:00Z",
-          },
+          sessions: [
+            {
+              key: "ws-123:plain_shell",
+              workspace_id: "ws-123",
+              target_key: "plain_shell",
+              label: "Plain shell",
+              kind: "plain_shell",
+              status: "exited",
+              created_at: "2026-04-10T12:00:00Z",
+            },
+          ],
         },
       });
 
       await page.goto("/terminal/ws-123");
       await page
         .getByRole("button", {
-          name: "Open shell drawer",
+          name: "Open terminal panel",
         })
         .click();
 
@@ -1422,7 +2110,7 @@ test.describe("workspace launch home", () => {
         .poll(() => shellEnsures.length)
         .toBe(1);
       await expect(
-        page.locator(".shell-drawer .terminal-container"),
+        page.locator(".terminal-panel.open .terminal-container"),
       ).toBeVisible();
     },
   );
@@ -1519,6 +2207,7 @@ test.describe("sidebar toggle behavior", () => {
   test(
     "workspace list resize reclamps the right sidebar",
     async ({ page }) => {
+      await page.setViewportSize({ width: 980, height: 720 });
       await page.goto("/terminal/ws-123");
 
       const listSidebar = page.locator(
@@ -1541,25 +2230,13 @@ test.describe("sidebar toggle behavior", () => {
           (el) => el.getBoundingClientRect().width,
         );
 
-      const handle = page.getByRole("separator", {
+      const handle = page.getByRole("button", {
         name: "Resize sidebar",
       });
       await expect(handle).toBeVisible();
-
-      const box = await handle.boundingBox();
-      expect(box).toBeTruthy();
-
-      if (box) {
-        await page.mouse.move(
-          box.x + box.width / 2,
-          box.y + box.height / 2,
-        );
-        await page.mouse.down();
-        await page.mouse.move(
-          box.x + 180,
-          box.y + box.height / 2,
-        );
-        await page.mouse.up();
+      await handle.focus();
+      for (let i = 0; i < 8; i += 1) {
+        await page.keyboard.press("ArrowRight");
       }
 
       await expect
@@ -1574,7 +2251,7 @@ test.describe("sidebar toggle behavior", () => {
         (el) => el.getBoundingClientRect().width,
       );
       expect(resizedListWidth).toBeGreaterThan(
-        initialListWidth + 100,
+        initialListWidth + 40,
       );
 
       const terminalWidth = await page
@@ -2105,7 +2782,6 @@ test.describe("workspace list bubble opens right sidebar", () => {
               body: JSON.stringify({
                 launch_targets: [],
                 sessions: [],
-                shell_session: null,
               }),
             });
           },
@@ -2286,7 +2962,6 @@ test.describe("workspace list bubble opens right sidebar", () => {
               body: JSON.stringify({
                 launch_targets: [],
                 sessions: [],
-                shell_session: null,
               }),
             });
           },
@@ -2505,7 +3180,6 @@ test.describe("delayed-response navigation", () => {
             body: JSON.stringify({
               launch_targets: [],
               sessions: [],
-              shell_session: null,
             }),
           });
         },
@@ -2542,7 +3216,6 @@ test.describe("delayed-response navigation", () => {
             body: JSON.stringify({
               launch_targets: [],
               sessions: [],
-              shell_session: null,
             }),
           });
         },
@@ -2592,9 +3265,9 @@ test.describe("delayed-response navigation", () => {
   );
 
   test(
-    "shell drawer closes when navigating to a different workspace",
+    "terminal panel closes when navigating to a different workspace",
     async ({ page }) => {
-      // Regression: keeping the drawer open across a workspace
+      // Regression: keeping the bottom terminal open across a workspace
       // change kept the previous workspace's shell TerminalPane
       // mounted with its WebSocket pointing at workspace A. The
       // user could see workspace B but type into A's shell.
@@ -2611,10 +3284,10 @@ test.describe("delayed-response navigation", () => {
         mr_title: "B title",
       };
       const shellSession = (wsId: string) => ({
-        key: `${wsId}:shell`,
+        key: `${wsId}:plain_shell`,
         workspace_id: wsId,
         target_key: "plain_shell",
-        label: "Shell",
+        label: "Plain shell",
         kind: "plain_shell",
         status: "running" as const,
         created_at: "2026-04-10T12:00:00Z",
@@ -2665,30 +3338,20 @@ test.describe("delayed-response navigation", () => {
               contentType: "application/json",
               body: JSON.stringify({
                 ...workspaceRuntime,
-                shell_session: shellSession(ws.id),
+                sessions: [shellSession(ws.id)],
               }),
-            });
-          },
-        );
-        await page.route(
-          `**/api/v1/workspaces/${ws.id}/runtime/shell`,
-          async (route) => {
-            await route.fulfill({
-              status: 200,
-              contentType: "application/json",
-              body: JSON.stringify(shellSession(ws.id)),
             });
           },
         );
       }
 
       await page.goto(`/terminal/${wsA.id}`);
-      // Open the shell drawer for A.
+      // Open the terminal panel for A.
       await page
-        .getByRole("button", { name: "Open shell drawer" })
+        .getByRole("button", { name: "Open terminal panel" })
         .click();
       await expect(
-        page.locator(".shell-drawer .terminal-container"),
+        page.locator(".terminal-panel.open .terminal-container"),
       ).toBeVisible();
 
       // Navigate to B by clicking its row.
@@ -2701,11 +3364,11 @@ test.describe("delayed-response navigation", () => {
         new RegExp(`/terminal/${wsB.id}$`),
       );
 
-      // The drawer must close so the previous workspace's shell
+      // The panel must close so the previous workspace's shell
       // pane unmounts and its WebSocket tears down. Otherwise
       // keystrokes from B's session would be routed to A's shell.
       await expect(
-        page.locator(".shell-drawer .terminal-container"),
+        page.locator(".terminal-panel.open .terminal-container"),
       ).toHaveCount(0);
     },
   );
@@ -2824,7 +3487,7 @@ test.describe("delayed-response navigation", () => {
       await page.goto(`/terminal/${wsA.id}`);
       // A's session tab should be visible.
       await expect(
-        page.locator(".workspace-stage .stage-pane"),
+        page.locator(".workspace-stage .group-tab-panel"),
       ).not.toHaveCount(0);
 
       await page
@@ -2956,12 +3619,9 @@ test.describe("issue workspace sidebar", () => {
       });
 
       await page.route(
-        "**/api/v1/repos/acme/widgets/issues/7**",
+        "**/api/v1/host/example.com/issues/github/acme/widgets/7",
         async (route) => {
-          const url = new URL(route.request().url());
-          seenHosts.push(
-            url.searchParams.get("platform_host") ?? "",
-          );
+          seenHosts.push("example.com");
           await route.fulfill({
             status: 200,
             contentType: "application/json",
@@ -2970,12 +3630,9 @@ test.describe("issue workspace sidebar", () => {
         },
       );
       await page.route(
-        "**/api/v1/repos/acme/widgets/issues/7/sync**",
+        "**/api/v1/host/example.com/issues/github/acme/widgets/7/sync",
         async (route) => {
-          const url = new URL(route.request().url());
-          seenHosts.push(
-            url.searchParams.get("platform_host") ?? "",
-          );
+          seenHosts.push("example.com");
           await route.fulfill({
             status: 200,
             contentType: "application/json",

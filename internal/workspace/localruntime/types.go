@@ -4,7 +4,7 @@ type LaunchTargetKind string
 
 const (
 	LaunchTargetAgent      LaunchTargetKind = "agent"
-	LaunchTargetTmux       LaunchTargetKind = "tmux"
+	LaunchTargetShell      LaunchTargetKind = "shell"
 	LaunchTargetPlainShell LaunchTargetKind = "plain_shell"
 )
 

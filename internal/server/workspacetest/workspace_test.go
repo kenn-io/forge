@@ -29,11 +29,10 @@ func TestWorkspaceRuntimeTargetsE2E(t *testing.T) {
 	require.NotNil(resp.JSON200.Sessions)
 	assert.NotEmpty(*resp.JSON200.LaunchTargets)
 	assert.Empty(*resp.JSON200.Sessions)
-	assert.Nil(resp.JSON200.ShellSession)
 	assertWorkspaceRuntimeTarget(
 		t, *resp.JSON200.LaunchTargets, "plain_shell",
 	)
-	assertWorkspaceRuntimeTarget(t, *resp.JSON200.LaunchTargets, "tmux")
+	assertWorkspaceRuntimeTarget(t, *resp.JSON200.LaunchTargets, "shell")
 }
 
 func TestWorkspaceRuntimeTargetsUseConfiguredTmuxCommandE2E(t *testing.T) {
@@ -60,15 +59,15 @@ func TestWorkspaceRuntimeTargetsUseConfiguredTmuxCommandE2E(t *testing.T) {
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.LaunchTargets)
 
-	var tmux generated.LaunchTarget
+	var shell generated.LaunchTarget
 	for _, target := range *resp.JSON200.LaunchTargets {
-		if target.Key == "tmux" {
-			tmux = target
+		if target.Key == "shell" {
+			shell = target
 			break
 		}
 	}
-	assert.Equal([]string{tmuxPath, "--scope", "tmux"}, *tmux.Command)
-	assert.True(tmux.Available)
+	assert.Equal([]string{tmuxPath, "--scope", "tmux"}, *shell.Command)
+	assert.True(shell.Available)
 }
 
 func TestWorkspaceRuntimeLaunchUnavailableTargetE2E(t *testing.T) {
@@ -94,7 +93,7 @@ func TestWorkspaceRuntimeLaunchUnavailableTargetE2E(t *testing.T) {
 	require.Contains(t, string(resp.Body), "not available")
 }
 
-func TestWorkspaceRuntimeLaunchPlainShellUsesShellSessionE2E(t *testing.T) {
+func TestWorkspaceRuntimeLaunchPlainShellCreatesRuntimeSessionE2E(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
 
@@ -120,8 +119,7 @@ func TestWorkspaceRuntimeLaunchPlainShellUsesShellSessionE2E(t *testing.T) {
 	require.NoError(err)
 	require.Equal(http.StatusOK, getResp.StatusCode())
 	require.NotNil(getResp.JSON200)
-	require.NotNil(getResp.JSON200.ShellSession)
 	require.NotNil(getResp.JSON200.Sessions)
-	assert.Equal(shell.Key, getResp.JSON200.ShellSession.Key)
-	assert.Empty(*getResp.JSON200.Sessions)
+	require.Len(*getResp.JSON200.Sessions, 1)
+	assert.Equal(shell.Key, (*getResp.JSON200.Sessions)[0].Key)
 }

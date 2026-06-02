@@ -2441,6 +2441,21 @@ components:
         - branch
         - path
       type: object
+    RenameWorkspaceRuntimeSessionInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/RenameWorkspaceRuntimeSessionInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        label:
+          type: string
+      required:
+        - label
+      type: object
     ReplyToDiscussionHostInputBody:
       additionalProperties: false
       properties:
@@ -3493,8 +3508,6 @@ components:
           type:
             - array
             - "null"
-        shell_session:
-          $ref: "#/components/schemas/SessionInfo"
       required:
         - launch_targets
         - sessions
@@ -9039,15 +9052,25 @@ paths:
       summary: Stop workspace runtime session
       tags:
         - Workspaces
-  /workspaces/{id}/runtime/shell:
-    post:
-      operationId: ensure-workspace-runtime-shell
+    patch:
+      operationId: rename-workspace-runtime-session
       parameters:
         - in: path
           name: id
           required: true
           schema:
             type: string
+        - in: path
+          name: session_key
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RenameWorkspaceRuntimeSessionInputBody"
+        required: true
       responses:
         "200":
           content:
@@ -9061,7 +9084,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
-      summary: Ensure workspace runtime shell
+      summary: Rename workspace runtime session
       tags:
         - Workspaces
 servers:

@@ -823,6 +823,91 @@ func TestOpenRepairsCurrentSchemaMissingWorkspaceTerminalBackend(t *testing.T) {
 	require.NoError(err)
 }
 
+func TestOpenMigratesWorkspaceTmuxSessionsIntoRuntimeSessions(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "runtime-tmux-migration.db")
+
+	d, err := Open(path)
+	require.NoError(err)
+	require.NoError(d.InsertWorkspace(ctx, &Workspace{
+		ID:              "ws-1",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		ItemType:        WorkspaceItemTypePullRequest,
+		ItemNumber:      1,
+		GitHeadRef:      "feature/helper",
+		WorktreePath:    "/tmp/ws-1",
+		TmuxSession:     "middleman-ws-1",
+		Status:          "ready",
+		WorkspaceBranch: "feature/helper",
+	}))
+	require.NoError(d.Close())
+
+	raw, err := sql.Open("sqlite", path)
+	require.NoError(err)
+	_, err = raw.Exec(`
+		CREATE TABLE middleman_workspace_tmux_sessions (
+		    workspace_id TEXT NOT NULL,
+		    session_name TEXT NOT NULL,
+		    target_key   TEXT NOT NULL,
+		    created_at   DATETIME NOT NULL DEFAULT (datetime('now')),
+		    PRIMARY KEY(workspace_id, session_name)
+		);
+		CREATE INDEX middleman_workspace_tmux_sessions_workspace_id_idx
+		    ON middleman_workspace_tmux_sessions(workspace_id);
+		DELETE FROM middleman_workspace_runtime_sessions;
+		INSERT INTO middleman_workspace_tmux_sessions
+		    (workspace_id, session_name, target_key, created_at)
+		VALUES
+		    ('ws-1', 'middleman-ws-1-helper', 'helper',
+		     '2026-05-30 12:00:00+00:00');
+		UPDATE schema_migrations SET version = 29, dirty = FALSE;
+	`)
+	require.NoError(err)
+	require.NoError(raw.Close())
+
+	reopened, err := Open(path)
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(reopened.Close()) })
+
+	require.False(tableExistsForTest(
+		t, reopened.ReadDB(), "middleman_workspace_tmux_sessions",
+	))
+	var (
+		workspaceID string
+		sessionKey  string
+		targetKey   string
+		label       string
+		kind        string
+		scope       string
+		tmuxSession string
+		createdAt   time.Time
+	)
+	err = reopened.ReadDB().QueryRow(`
+		SELECT workspace_id, session_key, target_key, label, kind, scope,
+		       tmux_session, created_at
+		FROM middleman_workspace_runtime_sessions
+		WHERE workspace_id = ?`, "ws-1",
+	).Scan(
+		&workspaceID, &sessionKey, &targetKey, &label, &kind, &scope,
+		&tmuxSession, &createdAt,
+	)
+	require.NoError(err)
+	require.Equal("ws-1", workspaceID)
+	require.True(strings.HasPrefix(sessionKey, "ws-1_"))
+	require.Equal("helper", targetKey)
+	require.Equal("helper", label)
+	require.Equal("agent", kind)
+	require.Equal("session", scope)
+	require.Equal("middleman-ws-1-helper", tmuxSession)
+	require.Equal(
+		time.Date(2026, 5, 30, 12, 0, 0, 0, time.UTC), createdAt.UTC(),
+	)
+}
+
 func TestOpenInitializesBranchActivitySchema(t *testing.T) {
 	require := require.New(t)
 	ctx := t.Context()

@@ -1,12 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
-  ensureWorkspaceShell,
   getWorkspaceRuntime,
   launchWorkspaceSession,
+  renameWorkspaceSession,
   stopWorkspaceSession,
   workspaceSessionWebSocketPath,
-  workspaceShellWebSocketPath,
   workspaceTmuxWebSocketPath,
 } from "./workspace-runtime.js";
 
@@ -58,9 +57,32 @@ describe("workspace-runtime api", () => {
           },
         ),
       )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            key: "ws-1:helper",
+            workspace_id: "ws-1",
+            target_key: "helper",
+            label: "Review helper",
+            kind: "agent",
+            status: "running",
+            created_at: "2026-04-25T00:00:00Z",
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
+      )
       .mockResolvedValueOnce(new Response(null, { status: 204 }));
 
     await launchWorkspaceSession("ws-1", "helper", fetchMock);
+    await renameWorkspaceSession(
+      "ws-1",
+      "ws-1:helper",
+      "Review helper",
+      fetchMock,
+    );
     await stopWorkspaceSession("ws-1", "ws-1:helper", fetchMock);
 
     expect(fetchMock).toHaveBeenNthCalledWith(
@@ -76,47 +98,26 @@ describe("workspace-runtime api", () => {
       2,
       "/api/v1/workspaces/ws-1/runtime/sessions/ws-1%3Ahelper",
       {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ label: "Review helper" }),
+      },
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "/api/v1/workspaces/ws-1/runtime/sessions/ws-1%3Ahelper",
+      {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
       },
     );
   });
 
-  it("ensures shell and builds websocket paths", async () => {
-    const fetchMock = vi.fn(async () =>
-      new Response(
-        JSON.stringify({
-          key: "ws-1:shell",
-          workspace_id: "ws-1",
-          target_key: "plain_shell",
-          label: "Shell",
-          kind: "plain_shell",
-          status: "running",
-          created_at: "2026-04-25T00:00:00Z",
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        },
-      ),
-    );
-
-    await ensureWorkspaceShell("ws-1", fetchMock);
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/api/v1/workspaces/ws-1/runtime/shell",
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      },
-    );
+  it("builds runtime websocket paths", () => {
     expect(
       workspaceSessionWebSocketPath("ws-1", "ws-1:helper"),
     ).toBe(
       "/ws/v1/workspaces/ws-1/runtime/sessions/ws-1%3Ahelper/terminal",
-    );
-    expect(workspaceShellWebSocketPath("ws-1")).toBe(
-      "/ws/v1/workspaces/ws-1/runtime/shell/terminal",
     );
     expect(workspaceTmuxWebSocketPath("ws-1")).toBe(
       "/ws/v1/workspaces/ws-1/terminal",
@@ -145,9 +146,6 @@ describe("workspace-runtime api", () => {
     );
     expect(workspaceSessionWebSocketPath("ws-1", "ws-1:helper")).toBe(
       "/middleman/ws/v1/workspaces/ws-1/runtime/sessions/ws-1%3Ahelper/terminal",
-    );
-    expect(workspaceShellWebSocketPath("ws-1")).toBe(
-      "/middleman/ws/v1/workspaces/ws-1/runtime/shell/terminal",
     );
     expect(workspaceTmuxWebSocketPath("ws-1")).toBe(
       "/middleman/ws/v1/workspaces/ws-1/terminal",

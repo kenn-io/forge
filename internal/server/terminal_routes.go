@@ -46,15 +46,4 @@ func (s *Server) registerTerminalAPI(api huma.API, tmuxCmd []string) {
 		r, w := humago.Unwrap(ctx)
 		s.handleWorkspaceRuntimeSessionTerminal(w, r)
 	})
-
-	shellOp := &huma.Operation{
-		OperationID: "connect-workspace-runtime-shell-terminal",
-		Method:      http.MethodGet,
-		Path:        "/workspaces/{id}/runtime/shell/terminal",
-		Hidden:      true,
-	}
-	api.Adapter().Handle(shellOp, func(ctx huma.Context) {
-		r, w := humago.Unwrap(ctx)
-		s.handleWorkspaceRuntimeShellTerminal(w, r)
-	})
 }

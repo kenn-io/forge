@@ -4,26 +4,43 @@
   import HouseIcon from "@lucide/svelte/icons/house";
   import TerminalIcon from "@lucide/svelte/icons/terminal";
   import SparklesIcon from "@lucide/svelte/icons/sparkles";
+  import MoveIcon from "@lucide/svelte/icons/move";
+  import {
+    clearActiveTerminalDrag,
+    startRuntimeSessionDrag,
+  } from "./terminal-drag";
 
   interface WorkspaceTabsProps {
+    workspaceId?: string;
     activeKey: string;
     sessions: RuntimeSession[];
-    tmuxOpen?: boolean;
+    displayLabels?: Record<string, string>;
+    shellOpen?: boolean;
+    terminalOpen?: boolean;
     onSelectHome?: () => void;
-    onSelectTmux?: () => void;
+    onSelectShell?: () => void;
+    onSelectTerminal?: () => void;
     onSelectSession?: (sessionKey: string) => void;
-    onCloseTmux?: () => void;
+    onCloseShell?: () => void;
+    onCloseTerminal?: () => void;
+    onMoveSessionToTerminal?: (sessionKey: string) => void;
     onCloseSession?: (sessionKey: string) => void;
   }
 
   const {
+    workspaceId = "",
     activeKey,
     sessions,
-    tmuxOpen = false,
+    displayLabels = {},
+    shellOpen = false,
+    terminalOpen = false,
     onSelectHome,
-    onSelectTmux,
+    onSelectShell,
+    onSelectTerminal,
     onSelectSession,
-    onCloseTmux,
+    onCloseShell,
+    onCloseTerminal,
+    onMoveSessionToTerminal,
     onCloseSession,
   }: WorkspaceTabsProps = $props();
 
@@ -31,6 +48,18 @@
     if (status === "running") return "running";
     if (status === "starting") return "starting";
     return "exited";
+  }
+
+  function labelFor(session: RuntimeSession): string {
+    return displayLabels[session.key] ?? session.label;
+  }
+
+  function startSessionDrag(
+    event: DragEvent,
+    session: RuntimeSession,
+  ): void {
+    if (!workspaceId) return;
+    startRuntimeSessionDrag(event, { workspaceId, sessionKey: session.key });
   }
 </script>
 
@@ -47,31 +76,62 @@
     <span class="tab-label">Home</span>
   </button>
 
-  {#if tmuxOpen}
+  {#if shellOpen}
     <div
       class={[
         "tab-with-close",
         "tab",
-        "tab-tmux",
-        { active: activeKey === "tmux" },
+        "tab-shell",
+        { active: activeKey === "shell" },
       ]}
     >
       <button
         role="tab"
-        aria-selected={activeKey === "tmux"}
+        aria-selected={activeKey === "shell"}
         class="tab-button"
-        onclick={() => onSelectTmux?.()}
+        onclick={() => onSelectShell?.()}
       >
         <span class="tab-icon" aria-hidden="true">
           <TerminalIcon size="13" strokeWidth="2" />
         </span>
-        <span class="tab-label">tmux</span>
+        <span class="tab-label">Shell</span>
       </button>
       <button
         class="tab-close"
-        aria-label="Close tmux"
+        aria-label="Close Shell"
         title="Close tab"
-        onclick={() => onCloseTmux?.()}
+        onclick={() => onCloseShell?.()}
+      >
+        <XIcon size="12" strokeWidth="2.25" aria-hidden="true" />
+      </button>
+    </div>
+  {/if}
+
+  {#if terminalOpen}
+    <div
+      class={[
+        "tab-with-close",
+        "tab",
+        "tab-terminal",
+        { active: activeKey === "terminal" },
+      ]}
+    >
+      <button
+        role="tab"
+        aria-selected={activeKey === "terminal"}
+        class="tab-button"
+        onclick={() => onSelectTerminal?.()}
+      >
+        <span class="tab-icon" aria-hidden="true">
+          <TerminalIcon size="13" strokeWidth="2" />
+        </span>
+        <span class="tab-label">Terminal</span>
+      </button>
+      <button
+        class="tab-close"
+        aria-label="Close terminal"
+        title="Close tab"
+        onclick={() => onCloseTerminal?.()}
       >
         <XIcon size="12" strokeWidth="2.25" aria-hidden="true" />
       </button>
@@ -88,22 +148,37 @@
     >
       <button
         role="tab"
+        draggable={workspaceId !== ""}
+        ondragstart={(event) => startSessionDrag(event, session)}
+        ondragend={clearActiveTerminalDrag}
         aria-selected={activeKey === `session:${session.key}`}
         class="tab-button"
         onclick={() => onSelectSession?.(session.key)}
       >
         <span class="tab-icon" aria-hidden="true">
-          <SparklesIcon size="13" strokeWidth="2" />
+          {#if session.kind === "plain_shell"}
+            <TerminalIcon size="13" strokeWidth="2" />
+          {:else}
+            <SparklesIcon size="13" strokeWidth="2" />
+          {/if}
         </span>
-        <span class="tab-label">{session.label}</span>
+        <span class="tab-label">{labelFor(session)}</span>
         <span
           class={["status-dot", sessionStatusClass(session.status)]}
           title={session.status}
         ></span>
       </button>
       <button
+        class="tab-action"
+        aria-label={`Move ${labelFor(session)} to terminal`}
+        title="Move to terminal"
+        onclick={() => onMoveSessionToTerminal?.(session.key)}
+      >
+        <MoveIcon size="12" strokeWidth="2.25" aria-hidden="true" />
+      </button>
+      <button
         class="tab-close"
-        aria-label={`Close ${session.label}`}
+        aria-label={`Close ${labelFor(session)}`}
         title="Close tab"
         onclick={() => onCloseSession?.(session.key)}
       >
@@ -228,18 +303,39 @@
     transition: color 80ms ease, background-color 80ms ease;
   }
 
+  .tab-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border: 0;
+    border-radius: 3px;
+    background: transparent;
+    color: transparent;
+    font: inherit;
+    cursor: pointer;
+    transition: color 80ms ease, background-color 80ms ease;
+  }
+
+  .tab-with-close:hover .tab-action,
+  .tab-with-close.active .tab-action,
+  .tab-action:focus-visible,
   .tab-with-close:hover .tab-close,
   .tab-with-close.active .tab-close,
   .tab-close:focus-visible {
     color: var(--text-muted);
   }
 
+  .tab-action:hover,
+  .tab-action:focus-visible,
   .tab-close:hover,
   .tab-close:focus-visible {
     background: var(--bg-inset);
     color: var(--text-primary);
   }
 
+  .tab-action:focus-visible,
   .tab-close:focus-visible {
     outline: 2px solid var(--accent-blue);
     outline-offset: -2px;

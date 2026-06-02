@@ -1956,24 +1956,8 @@ export interface paths {
         delete: operations["stop-workspace-runtime-session"];
         options?: never;
         head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/workspaces/{id}/runtime/shell": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Ensure workspace runtime shell */
-        post: operations["ensure-workspace-runtime-shell"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
+        /** Rename workspace runtime session */
+        patch: operations["rename-workspace-runtime-session"];
         trace?: never;
     };
 }
@@ -3117,6 +3101,15 @@ export interface components {
             branch: string;
             path: string;
         };
+        RenameWorkspaceRuntimeSessionInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/RenameWorkspaceRuntimeSessionInputBody.json
+             */
+            readonly $schema?: string;
+            label: string;
+        };
         ReplyToDiscussionHostInputBody: {
             /**
              * Format: uri
@@ -3588,7 +3581,6 @@ export interface components {
             readonly $schema?: string;
             launch_targets: components["schemas"]["LaunchTarget"][] | null;
             sessions: components["schemas"]["SessionInfo"][] | null;
-            shell_session?: components["schemas"]["SessionInfo"];
         };
         WorktreeLinkResponse: {
             worktree_branch?: string;
@@ -8233,16 +8225,21 @@ export interface operations {
             };
         };
     };
-    "ensure-workspace-runtime-shell": {
+    "rename-workspace-runtime-session": {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 id: string;
+                session_key: string;
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RenameWorkspaceRuntimeSessionInputBody"];
+            };
+        };
         responses: {
             /** @description OK */
             200: {

@@ -380,7 +380,6 @@ type workspaceResponse struct {
 type workspaceRuntimeResponse struct {
 	LaunchTargets []localruntime.LaunchTarget `json:"launch_targets"`
 	Sessions      []localruntime.SessionInfo  `json:"sessions"`
-	ShellSession  *localruntime.SessionInfo   `json:"shell_session,omitempty"`
 }
 
 // workspaceRef is the lightweight link from item detail APIs back to an

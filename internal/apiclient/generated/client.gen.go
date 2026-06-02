@@ -1278,6 +1278,13 @@ type RegisterWorktreeInputBody struct {
 	Path   string  `json:"path"`
 }
 
+// RenameWorkspaceRuntimeSessionInputBody defines model for RenameWorkspaceRuntimeSessionInputBody.
+type RenameWorkspaceRuntimeSessionInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string `json:"$schema,omitempty"`
+	Label  string  `json:"label"`
+}
+
 // ReplyToDiscussionHostInputBody defines model for ReplyToDiscussionHostInputBody.
 type ReplyToDiscussionHostInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -1687,7 +1694,6 @@ type WorkspaceRuntimeResponse struct {
 	Schema        *string         `json:"$schema,omitempty"`
 	LaunchTargets *[]LaunchTarget `json:"launch_targets"`
 	Sessions      *[]SessionInfo  `json:"sessions"`
-	ShellSession  *SessionInfo    `json:"shell_session,omitempty"`
 }
 
 // WorktreeLinkResponse defines model for WorktreeLinkResponse.
@@ -2058,6 +2064,9 @@ type CreateWorkspaceJSONRequestBody = CreateWorkspaceInputBody
 
 // LaunchWorkspaceRuntimeSessionJSONRequestBody defines body for LaunchWorkspaceRuntimeSession for application/json ContentType.
 type LaunchWorkspaceRuntimeSessionJSONRequestBody = LaunchWorkspaceRuntimeSessionInputBody
+
+// RenameWorkspaceRuntimeSessionJSONRequestBody defines body for RenameWorkspaceRuntimeSession for application/json ContentType.
+type RenameWorkspaceRuntimeSessionJSONRequestBody = RenameWorkspaceRuntimeSessionInputBody
 
 // RequestEditorFn  is the function signature for the RequestEditor callback function
 type RequestEditorFn func(ctx context.Context, req *http.Request) error
@@ -2627,8 +2636,10 @@ type ClientInterface interface {
 	// StopWorkspaceRuntimeSession request
 	StopWorkspaceRuntimeSession(ctx context.Context, id string, sessionKey string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// EnsureWorkspaceRuntimeShell request
-	EnsureWorkspaceRuntimeShell(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// RenameWorkspaceRuntimeSessionWithBody request with any body
+	RenameWorkspaceRuntimeSessionWithBody(ctx context.Context, id string, sessionKey string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	RenameWorkspaceRuntimeSession(ctx context.Context, id string, sessionKey string, body RenameWorkspaceRuntimeSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
 func (c *Client) ListActivity(ctx context.Context, params *ListActivityParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -4815,8 +4826,20 @@ func (c *Client) StopWorkspaceRuntimeSession(ctx context.Context, id string, ses
 	return c.Client.Do(req)
 }
 
-func (c *Client) EnsureWorkspaceRuntimeShell(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewEnsureWorkspaceRuntimeShellRequest(c.Server, id)
+func (c *Client) RenameWorkspaceRuntimeSessionWithBody(ctx context.Context, id string, sessionKey string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRenameWorkspaceRuntimeSessionRequestWithBody(c.Server, id, sessionKey, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RenameWorkspaceRuntimeSession(ctx context.Context, id string, sessionKey string, body RenameWorkspaceRuntimeSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRenameWorkspaceRuntimeSessionRequest(c.Server, id, sessionKey, body)
 	if err != nil {
 		return nil, err
 	}
@@ -13182,8 +13205,19 @@ func NewStopWorkspaceRuntimeSessionRequest(server string, id string, sessionKey 
 	return req, nil
 }
 
-// NewEnsureWorkspaceRuntimeShellRequest generates requests for EnsureWorkspaceRuntimeShell
-func NewEnsureWorkspaceRuntimeShellRequest(server string, id string) (*http.Request, error) {
+// NewRenameWorkspaceRuntimeSessionRequest calls the generic RenameWorkspaceRuntimeSession builder with application/json body
+func NewRenameWorkspaceRuntimeSessionRequest(server string, id string, sessionKey string, body RenameWorkspaceRuntimeSessionJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewRenameWorkspaceRuntimeSessionRequestWithBody(server, id, sessionKey, "application/json", bodyReader)
+}
+
+// NewRenameWorkspaceRuntimeSessionRequestWithBody generates requests for RenameWorkspaceRuntimeSession with any type of body
+func NewRenameWorkspaceRuntimeSessionRequestWithBody(server string, id string, sessionKey string, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -13193,12 +13227,19 @@ func NewEnsureWorkspaceRuntimeShellRequest(server string, id string) (*http.Requ
 		return nil, err
 	}
 
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "session_key", sessionKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
 	serverURL, err := url.Parse(server)
 	if err != nil {
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/workspaces/%s/runtime/shell", pathParam0)
+	operationPath := fmt.Sprintf("/workspaces/%s/runtime/sessions/%s", pathParam0, pathParam1)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -13208,10 +13249,12 @@ func NewEnsureWorkspaceRuntimeShellRequest(server string, id string) (*http.Requ
 		return nil, err
 	}
 
-	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	req, err := http.NewRequest("PATCH", queryURL.String(), body)
 	if err != nil {
 		return nil, err
 	}
+
+	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
@@ -13751,8 +13794,10 @@ type ClientWithResponsesInterface interface {
 	// StopWorkspaceRuntimeSessionWithResponse request
 	StopWorkspaceRuntimeSessionWithResponse(ctx context.Context, id string, sessionKey string, reqEditors ...RequestEditorFn) (*StopWorkspaceRuntimeSessionResponse, error)
 
-	// EnsureWorkspaceRuntimeShellWithResponse request
-	EnsureWorkspaceRuntimeShellWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*EnsureWorkspaceRuntimeShellResponse, error)
+	// RenameWorkspaceRuntimeSessionWithBodyWithResponse request with any body
+	RenameWorkspaceRuntimeSessionWithBodyWithResponse(ctx context.Context, id string, sessionKey string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RenameWorkspaceRuntimeSessionResponse, error)
+
+	RenameWorkspaceRuntimeSessionWithResponse(ctx context.Context, id string, sessionKey string, body RenameWorkspaceRuntimeSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*RenameWorkspaceRuntimeSessionResponse, error)
 }
 
 type ListActivityResponse struct {
@@ -16722,7 +16767,7 @@ func (r StopWorkspaceRuntimeSessionResponse) StatusCode() int {
 	return 0
 }
 
-type EnsureWorkspaceRuntimeShellResponse struct {
+type RenameWorkspaceRuntimeSessionResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *SessionInfo
@@ -16730,7 +16775,7 @@ type EnsureWorkspaceRuntimeShellResponse struct {
 }
 
 // Status returns HTTPResponse.Status
-func (r EnsureWorkspaceRuntimeShellResponse) Status() string {
+func (r RenameWorkspaceRuntimeSessionResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -16738,7 +16783,7 @@ func (r EnsureWorkspaceRuntimeShellResponse) Status() string {
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r EnsureWorkspaceRuntimeShellResponse) StatusCode() int {
+func (r RenameWorkspaceRuntimeSessionResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -18323,13 +18368,21 @@ func (c *ClientWithResponses) StopWorkspaceRuntimeSessionWithResponse(ctx contex
 	return ParseStopWorkspaceRuntimeSessionResponse(rsp)
 }
 
-// EnsureWorkspaceRuntimeShellWithResponse request returning *EnsureWorkspaceRuntimeShellResponse
-func (c *ClientWithResponses) EnsureWorkspaceRuntimeShellWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*EnsureWorkspaceRuntimeShellResponse, error) {
-	rsp, err := c.EnsureWorkspaceRuntimeShell(ctx, id, reqEditors...)
+// RenameWorkspaceRuntimeSessionWithBodyWithResponse request with arbitrary body returning *RenameWorkspaceRuntimeSessionResponse
+func (c *ClientWithResponses) RenameWorkspaceRuntimeSessionWithBodyWithResponse(ctx context.Context, id string, sessionKey string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RenameWorkspaceRuntimeSessionResponse, error) {
+	rsp, err := c.RenameWorkspaceRuntimeSessionWithBody(ctx, id, sessionKey, contentType, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseEnsureWorkspaceRuntimeShellResponse(rsp)
+	return ParseRenameWorkspaceRuntimeSessionResponse(rsp)
+}
+
+func (c *ClientWithResponses) RenameWorkspaceRuntimeSessionWithResponse(ctx context.Context, id string, sessionKey string, body RenameWorkspaceRuntimeSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*RenameWorkspaceRuntimeSessionResponse, error) {
+	rsp, err := c.RenameWorkspaceRuntimeSession(ctx, id, sessionKey, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRenameWorkspaceRuntimeSessionResponse(rsp)
 }
 
 // ParseListActivityResponse parses an HTTP response from a ListActivityWithResponse call
@@ -22461,15 +22514,15 @@ func ParseStopWorkspaceRuntimeSessionResponse(rsp *http.Response) (*StopWorkspac
 	return response, nil
 }
 
-// ParseEnsureWorkspaceRuntimeShellResponse parses an HTTP response from a EnsureWorkspaceRuntimeShellWithResponse call
-func ParseEnsureWorkspaceRuntimeShellResponse(rsp *http.Response) (*EnsureWorkspaceRuntimeShellResponse, error) {
+// ParseRenameWorkspaceRuntimeSessionResponse parses an HTTP response from a RenameWorkspaceRuntimeSessionWithResponse call
+func ParseRenameWorkspaceRuntimeSessionResponse(rsp *http.Response) (*RenameWorkspaceRuntimeSessionResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &EnsureWorkspaceRuntimeShellResponse{
+	response := &RenameWorkspaceRuntimeSessionResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}

@@ -89,6 +89,31 @@ func seedMRWithHeadRepo(
 	require.NoError(t, err)
 }
 
+func recordRuntimeTmuxSessionForTest(
+	t *testing.T,
+	d *db.DB,
+	workspaceID string,
+	sessionKey string,
+	targetKey string,
+	tmuxSession string,
+	createdAt time.Time,
+) {
+	t.Helper()
+	require.NoError(t, d.UpsertWorkspaceRuntimeSession(
+		t.Context(),
+		&db.WorkspaceRuntimeSession{
+			WorkspaceID: workspaceID,
+			SessionKey:  sessionKey,
+			TargetKey:   targetKey,
+			Label:       targetKey,
+			Kind:        "agent",
+			Scope:       "session",
+			TmuxSession: tmuxSession,
+			CreatedAt:   createdAt,
+		},
+	))
+}
+
 func TestCreate(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
@@ -978,10 +1003,11 @@ func TestManagerCleanupPtyOwnerWorkspaceStopsStoredRuntimeTmuxSessions(t *testin
 
 	ws, err := mgr.Create(t.Context(), "github.com", "acme", "widget", 42)
 	require.NoError(err)
-	require.NoError(mgr.RecordRuntimeTmuxSession(
-		t.Context(), ws.ID, "middleman-runtime-session", "agent-1",
+	recordRuntimeTmuxSessionForTest(
+		t, d, ws.ID, "ws-runtime-session", "agent-1",
+		"middleman-runtime-session",
 		time.Date(2026, 4, 29, 1, 0, 0, 0, time.UTC),
-	))
+	)
 
 	_, err = mgr.Delete(t.Context(), ws.ID, true, nil)
 	require.NoError(err)
@@ -995,7 +1021,7 @@ func TestManagerCleanupPtyOwnerWorkspaceStopsStoredRuntimeTmuxSessions(t *testin
 		[]string{"wrap", "kill-session", "-t", "middleman-runtime-session"},
 		argvs[0],
 	)
-	stored, err := d.ListWorkspaceTmuxSessions(t.Context(), ws.ID)
+	stored, err := d.ListWorkspaceRuntimeTmuxSessions(t.Context(), ws.ID)
 	require.NoError(err)
 	assert.Empty(stored)
 }
@@ -1349,14 +1375,11 @@ func TestManagerReapOrphanTmuxSessionsKeepsStoredRuntimeSessions(
 		TmuxSession:  "middleman-0000000000000001",
 		Status:       "ready",
 	}))
-	require.NoError(d.UpsertWorkspaceTmuxSession(
-		context.Background(),
-		&db.WorkspaceTmuxSession{
-			WorkspaceID: "0000000000000001",
-			SessionName: "middleman-0000000000000001-57de4cf40144bdf7",
-			TargetKey:   "codex",
-		},
-	))
+	recordRuntimeTmuxSessionForTest(
+		t, d, "0000000000000001", "0000000000000001_codex",
+		"codex", "middleman-0000000000000001-57de4cf40144bdf7",
+		time.Time{},
+	)
 
 	require.NoError(mgr.ReapOrphanTmuxSessions(context.Background()))
 
@@ -1444,31 +1467,25 @@ func TestManagerPruneMissingTmuxSessionsRemovesStaleRecords(
 		"0000000000000003",
 	)
 	require.NoError(err)
-	require.NoError(d.UpsertWorkspaceTmuxSession(
-		ctx,
-		&db.WorkspaceTmuxSession{
-			WorkspaceID: "0000000000000001",
-			SessionName: "middleman-0000000000000001-57de4cf40144bdf7",
-			TargetKey:   "codex",
-		},
-	))
-	require.NoError(d.UpsertWorkspaceTmuxSession(
-		ctx,
-		&db.WorkspaceTmuxSession{
-			WorkspaceID: "0000000000000001",
-			SessionName: "middleman-0000000000000001-c857d09db23e6822",
-			TargetKey:   "claude",
-		},
-	))
+	recordRuntimeTmuxSessionForTest(
+		t, d, "0000000000000001", "0000000000000001_codex",
+		"codex", "middleman-0000000000000001-57de4cf40144bdf7",
+		time.Time{},
+	)
+	recordRuntimeTmuxSessionForTest(
+		t, d, "0000000000000001", "0000000000000001_claude",
+		"claude", "middleman-0000000000000001-c857d09db23e6822",
+		time.Time{},
+	)
 
 	require.NoError(mgr.PruneMissingTmuxSessions(ctx))
 
-	stored, err := d.ListWorkspaceTmuxSessions(ctx, "0000000000000001")
+	stored, err := d.ListWorkspaceRuntimeTmuxSessions(ctx, "0000000000000001")
 	require.NoError(err)
 	require.Len(stored, 1)
 	assert.Equal(
 		"middleman-0000000000000001-57de4cf40144bdf7",
-		stored[0].SessionName,
+		stored[0].TmuxSession,
 	)
 
 	live, err := d.GetWorkspace(ctx, "0000000000000001")
@@ -1510,22 +1527,17 @@ func TestManagerTmuxSessionsForWorkspaceReadsStoredRuntimeSessions(
 		TmuxSession:  "middleman-0000000000000001",
 		Status:       "ready",
 	}))
-	require.NoError(d.UpsertWorkspaceTmuxSession(
-		context.Background(),
-		&db.WorkspaceTmuxSession{
-			WorkspaceID: "0000000000000001",
-			SessionName: "middleman-0000000000000001-57de4cf40144bdf7",
-			TargetKey:   "codex",
-		},
-	))
-	require.NoError(d.UpsertWorkspaceTmuxSession(
-		context.Background(),
-		&db.WorkspaceTmuxSession{
-			WorkspaceID: "0000000000000001",
-			SessionName: "middleman-0000000000000001-c857d09db23e6822",
-			TargetKey:   "claude",
-		},
-	))
+	createdAt := time.Date(2026, 5, 30, 12, 0, 0, 0, time.UTC)
+	recordRuntimeTmuxSessionForTest(
+		t, d, "0000000000000001", "0000000000000001_codex",
+		"codex", "middleman-0000000000000001-57de4cf40144bdf7",
+		createdAt.Add(time.Minute),
+	)
+	recordRuntimeTmuxSessionForTest(
+		t, d, "0000000000000001", "0000000000000001_claude",
+		"claude", "middleman-0000000000000001-c857d09db23e6822",
+		createdAt,
+	)
 	require.NoError(d.InsertWorkspace(context.Background(), &Workspace{
 		ID:           "0000000000000002",
 		PlatformHost: "github.com",
@@ -1538,14 +1550,11 @@ func TestManagerTmuxSessionsForWorkspaceReadsStoredRuntimeSessions(
 		TmuxSession:  "middleman-0000000000000002",
 		Status:       "ready",
 	}))
-	require.NoError(d.UpsertWorkspaceTmuxSession(
-		context.Background(),
-		&db.WorkspaceTmuxSession{
-			WorkspaceID: "0000000000000002",
-			SessionName: "middleman-0000000000000002-57de4cf40144bdf7",
-			TargetKey:   "codex",
-		},
-	))
+	recordRuntimeTmuxSessionForTest(
+		t, d, "0000000000000002", "0000000000000002_codex",
+		"codex", "middleman-0000000000000002-57de4cf40144bdf7",
+		createdAt,
+	)
 
 	sessions, err := mgr.TmuxSessionsForWorkspace(
 		context.Background(),
@@ -1603,22 +1612,16 @@ func TestManagerCleanupTmuxSessionKillsRuntimeSessionsForWorkspace(
 		WorktreePath: filepath.Join(t.TempDir(), "live"),
 	}
 	require.NoError(d.InsertWorkspace(context.Background(), ws))
-	require.NoError(d.UpsertWorkspaceTmuxSession(
-		context.Background(),
-		&db.WorkspaceTmuxSession{
-			WorkspaceID: ws.ID,
-			SessionName: "middleman-0000000000000001-57de4cf40144bdf7",
-			TargetKey:   "codex",
-		},
-	))
-	require.NoError(d.UpsertWorkspaceTmuxSession(
-		context.Background(),
-		&db.WorkspaceTmuxSession{
-			WorkspaceID: ws.ID,
-			SessionName: "middleman-0000000000000001-c857d09db23e6822",
-			TargetKey:   "claude",
-		},
-	))
+	recordRuntimeTmuxSessionForTest(
+		t, d, ws.ID, "0000000000000001_codex", "codex",
+		"middleman-0000000000000001-57de4cf40144bdf7",
+		time.Time{},
+	)
+	recordRuntimeTmuxSessionForTest(
+		t, d, ws.ID, "0000000000000001_claude", "claude",
+		"middleman-0000000000000001-c857d09db23e6822",
+		time.Time{},
+	)
 
 	require.NoError(mgr.cleanupTmuxSession(context.Background(), ws))
 
@@ -1638,7 +1641,7 @@ func TestManagerCleanupTmuxSessionKillsRuntimeSessionsForWorkspace(
 		"kill-session", "-t",
 		"middleman-0000000000000002-57de4cf40144bdf7",
 	})
-	stored, err := d.ListWorkspaceTmuxSessions(context.Background(), ws.ID)
+	stored, err := d.ListWorkspaceRuntimeTmuxSessions(context.Background(), ws.ID)
 	require.NoError(err)
 	assert.Empty(stored)
 }
@@ -1693,17 +1696,18 @@ func TestManagerCleanupTmuxSessionPreservesStoredRowsAfterRuntimeKillFailure(
 	}
 	require.NoError(d.InsertWorkspace(context.Background(), ws))
 	for _, targetKey := range []string{"codex", "claude"} {
-		require.NoError(d.UpsertWorkspaceTmuxSession(
-			context.Background(),
-			&db.WorkspaceTmuxSession{
-				WorkspaceID: ws.ID,
-				SessionName: map[string]string{
-					"codex":  "middleman-0000000000000001-57de4cf40144bdf7",
-					"claude": "middleman-0000000000000001-c857d09db23e6822",
-				}[targetKey],
-				TargetKey: targetKey,
-			},
-		))
+		recordRuntimeTmuxSessionForTest(
+			t,
+			d,
+			ws.ID,
+			ws.ID+"_"+targetKey,
+			targetKey,
+			map[string]string{
+				"codex":  "middleman-0000000000000001-57de4cf40144bdf7",
+				"claude": "middleman-0000000000000001-c857d09db23e6822",
+			}[targetKey],
+			time.Time{},
+		)
 	}
 
 	err := mgr.cleanupTmuxSession(context.Background(), ws)
@@ -1723,30 +1727,19 @@ func TestManagerCleanupTmuxSessionPreservesStoredRowsAfterRuntimeKillFailure(
 		"middleman-0000000000000001-c857d09db23e6822",
 	})
 
-	stored, err := d.ListWorkspaceTmuxSessions(context.Background(), ws.ID)
+	stored, err := d.ListWorkspaceRuntimeTmuxSessions(context.Background(), ws.ID)
 	require.NoError(err)
 	require.Len(stored, 2)
 }
 
-func TestManagerForgetMissingRuntimeTmuxSessionPreservesRecreatedRow(
+func TestManagerForgetRuntimeSessionCreatedAtPreservesRecreatedRow(
 	t *testing.T,
 ) {
 	assert := Assert.New(t)
 	require := require.New(t)
 
-	dir := t.TempDir()
-	script := filepath.Join(dir, "fake-tmux")
-	body := "#!/bin/sh\n" +
-		`if [ "$1" = "has-session" ]; then` + "\n" +
-		`  echo "can't find session: $3" >&2` + "\n" +
-		`  exit 1` + "\n" +
-		`fi` + "\n" +
-		"exit 0\n"
-	require.NoError(os.WriteFile(script, []byte(body), 0o755))
-
 	d := openTestDB(t)
 	mgr := NewManager(d, t.TempDir())
-	mgr.SetTmuxCommand([]string{script})
 	require.NoError(d.InsertWorkspace(context.Background(), &Workspace{
 		ID:           "ws-1",
 		TmuxSession:  "middleman-ws-1",
@@ -1761,24 +1754,95 @@ func TestManagerForgetMissingRuntimeTmuxSessionPreservesRecreatedRow(
 	}))
 	oldCreatedAt := time.Date(2026, 4, 29, 1, 0, 0, 0, time.UTC)
 	newCreatedAt := time.Date(2026, 4, 29, 1, 1, 0, 0, time.UTC)
-	sessionName := "middleman-ws-1-helper"
-	require.NoError(mgr.RecordRuntimeTmuxSession(
-		context.Background(), "ws-1", sessionName, "helper", oldCreatedAt,
-	))
-	require.NoError(mgr.RecordRuntimeTmuxSession(
-		context.Background(), "ws-1", sessionName, "helper", newCreatedAt,
-	))
+	sessionKey := "ws-1_helper"
+	recordRuntimeTmuxSessionForTest(
+		t, d, "ws-1", sessionKey, "helper", "middleman-ws-1-helper",
+		oldCreatedAt,
+	)
+	recordRuntimeTmuxSessionForTest(
+		t, d, "ws-1", sessionKey, "helper", "middleman-ws-1-helper",
+		newCreatedAt,
+	)
 
-	deleted, err := mgr.ForgetMissingRuntimeTmuxSession(
-		context.Background(), "ws-1", sessionName, oldCreatedAt,
+	deleted, err := mgr.ForgetRuntimeSessionCreatedAt(
+		context.Background(), "ws-1", sessionKey, oldCreatedAt,
 	)
 	require.NoError(err)
 	assert.False(deleted)
 
-	stored, err := d.ListWorkspaceTmuxSessions(context.Background(), "ws-1")
+	stored, err := d.ListWorkspaceRuntimeTmuxSessions(context.Background(), "ws-1")
 	require.NoError(err)
 	require.Len(stored, 1)
 	assert.Equal(newCreatedAt, stored[0].CreatedAt)
+}
+
+func TestManagerForgetRuntimeSessionAfterExitKeepsLiveTmuxSession(
+	t *testing.T,
+) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	d := openTestDB(t)
+	mgr := NewManager(d, t.TempDir())
+	require.NoError(d.InsertWorkspace(context.Background(), &Workspace{
+		ID:           "ws-1",
+		TmuxSession:  "middleman-ws-1",
+		Status:       "ready",
+		PlatformHost: "github.com",
+		RepoOwner:    "acme",
+		RepoName:     "widget",
+		ItemType:     db.WorkspaceItemTypePullRequest,
+		ItemNumber:   1,
+		GitHeadRef:   "feature/live",
+		WorktreePath: filepath.Join(t.TempDir(), "live"),
+	}))
+	createdAt := time.Date(2026, 4, 29, 1, 0, 0, 0, time.UTC)
+	sessionKey := "ws-1_helper"
+	tmuxSession := "middleman-ws-1-helper"
+	recordRuntimeTmuxSessionForTest(
+		t, d, "ws-1", sessionKey, "helper", tmuxSession, createdAt,
+	)
+
+	dir := t.TempDir()
+	record := filepath.Join(dir, "record")
+	existsFile := filepath.Join(dir, "exists")
+	script := filepath.Join(dir, "fake-tmux")
+	body := "#!/bin/sh\n" +
+		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
+		`if [ "$1" = "has-session" ]; then` + "\n" +
+		`  if [ -f "$TMUX_EXISTS_FILE" ]; then exit 0; fi` + "\n" +
+		`  echo "can't find session: $3" >&2` + "\n" +
+		`  exit 1` + "\n" +
+		`fi` + "\n" +
+		`exit 0` + "\n"
+	require.NoError(os.WriteFile(script, []byte(body), 0o755))
+	t.Setenv("TMUX_RECORD", record)
+	t.Setenv("TMUX_EXISTS_FILE", existsFile)
+	mgr.SetTmuxCommand([]string{script})
+
+	require.NoError(os.WriteFile(existsFile, []byte("1"), 0o644))
+	deleted, err := mgr.ForgetRuntimeSessionAfterExit(
+		context.Background(), "ws-1", sessionKey, createdAt, tmuxSession,
+	)
+	require.NoError(err)
+	assert.False(deleted)
+	stored, err := d.ListWorkspaceRuntimeTmuxSessions(context.Background(), "ws-1")
+	require.NoError(err)
+	require.Len(stored, 1)
+	assert.Equal(sessionKey, stored[0].SessionKey)
+
+	require.NoError(os.Remove(existsFile))
+	deleted, err = mgr.ForgetRuntimeSessionAfterExit(
+		context.Background(), "ws-1", sessionKey, createdAt, tmuxSession,
+	)
+	require.NoError(err)
+	assert.True(deleted)
+	stored, err = d.ListWorkspaceRuntimeTmuxSessions(context.Background(), "ws-1")
+	require.NoError(err)
+	assert.Empty(stored)
+
+	argvs := readRecorderArgv(t, record)
+	assert.Contains(argvs, []string{"has-session", "-t", tmuxSession})
 }
 
 func TestManagerRequestRetryFailsWhenTmuxCleanupFails(t *testing.T) {

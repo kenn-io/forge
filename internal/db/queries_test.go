@@ -1153,10 +1153,14 @@ func TestUpsertRepoByProviderIDMergesCollidingWorkspaceRows(t *testing.T) {
 		Outcome:     "ok",
 		Message:     "source event",
 	}))
-	require.NoError(d.UpsertWorkspaceTmuxSession(ctx, &WorkspaceTmuxSession{
+	require.NoError(d.UpsertWorkspaceRuntimeSession(ctx, &WorkspaceRuntimeSession{
 		WorkspaceID: "source-workspace",
-		SessionName: "source-session",
+		SessionKey:  "source-workspace_source",
 		TargetKey:   "source",
+		Label:       "source",
+		Kind:        "agent",
+		Scope:       "session",
+		TmuxSession: "source-session",
 	}))
 
 	destinationID, err := d.UpsertRepo(ctx, RepoIdentity{
@@ -1185,10 +1189,14 @@ func TestUpsertRepoByProviderIDMergesCollidingWorkspaceRows(t *testing.T) {
 		Outcome:     "ok",
 		Message:     "destination event",
 	}))
-	require.NoError(d.UpsertWorkspaceTmuxSession(ctx, &WorkspaceTmuxSession{
+	require.NoError(d.UpsertWorkspaceRuntimeSession(ctx, &WorkspaceRuntimeSession{
 		WorkspaceID: "destination-workspace",
-		SessionName: "destination-session",
+		SessionKey:  "destination-workspace_destination",
 		TargetKey:   "destination",
+		Label:       "destination",
+		Kind:        "agent",
+		Scope:       "session",
+		TmuxSession: "destination-session",
 	}))
 
 	gotID, err := d.UpsertRepoByProviderID(ctx, RepoIdentity{
@@ -1219,11 +1227,11 @@ func TestUpsertRepoByProviderIDMergesCollidingWorkspaceRows(t *testing.T) {
 	assert.Equal("source event", events[0].Message)
 	assert.Equal("destination event", events[1].Message)
 
-	tmuxSessions, err := d.ListWorkspaceTmuxSessions(ctx, "destination-workspace")
+	tmuxSessions, err := d.ListWorkspaceRuntimeTmuxSessions(ctx, "destination-workspace")
 	require.NoError(err)
 	require.Len(tmuxSessions, 2)
-	assert.Equal("destination-session", tmuxSessions[0].SessionName)
-	assert.Equal("source-session", tmuxSessions[1].SessionName)
+	assert.Equal("source-session", tmuxSessions[0].TmuxSession)
+	assert.Equal("destination-session", tmuxSessions[1].TmuxSession)
 
 	summary, err := d.GetWorkspaceSummary(ctx, "destination-workspace")
 	require.NoError(err)
@@ -3963,43 +3971,51 @@ func TestWorkspaceCRUD(t *testing.T) {
 	assert.Equal("ensure clone: clone failed", events[0].Message)
 	assert.False(events[0].CreatedAt.IsZero())
 
-	require.NoError(d.UpsertWorkspaceTmuxSession(
+	require.NoError(d.UpsertWorkspaceRuntimeSession(
 		ctx,
-		&WorkspaceTmuxSession{
+		&WorkspaceRuntimeSession{
 			WorkspaceID: "ws-abc-123",
-			SessionName: "middleman-ws-abc-123-codex",
+			SessionKey:  "ws-abc-123_codex",
 			TargetKey:   "codex",
+			Label:       "Codex",
+			Kind:        "agent",
+			Scope:       "session",
+			TmuxSession: "middleman-ws-abc-123-codex",
 		},
 	))
-	require.NoError(d.UpsertWorkspaceTmuxSession(
+	require.NoError(d.UpsertWorkspaceRuntimeSession(
 		ctx,
-		&WorkspaceTmuxSession{
+		&WorkspaceRuntimeSession{
 			WorkspaceID: "ws-abc-123",
-			SessionName: "middleman-ws-abc-123-claude",
+			SessionKey:  "ws-abc-123_claude",
 			TargetKey:   "claude",
+			Label:       "Claude",
+			Kind:        "agent",
+			Scope:       "session",
+			TmuxSession: "middleman-ws-abc-123-claude",
 		},
 	))
-	tmuxSessions, err := d.ListWorkspaceTmuxSessions(ctx, "ws-abc-123")
+	tmuxSessions, err := d.ListWorkspaceRuntimeTmuxSessions(ctx, "ws-abc-123")
 	require.NoError(err)
 	require.Len(tmuxSessions, 2)
-	assert.Equal("middleman-ws-abc-123-claude", tmuxSessions[0].SessionName)
-	assert.Equal("claude", tmuxSessions[0].TargetKey)
+	assert.Equal("middleman-ws-abc-123-codex", tmuxSessions[0].TmuxSession)
+	assert.Equal("codex", tmuxSessions[0].TargetKey)
 	assert.False(tmuxSessions[0].CreatedAt.IsZero())
 
-	allTmuxSessions, err := d.ListAllWorkspaceTmuxSessions(ctx)
+	allTmuxSessions, err := d.ListAllWorkspaceRuntimeTmuxSessions(ctx)
 	require.NoError(err)
 	require.Len(allTmuxSessions, 2)
 
-	require.NoError(d.DeleteWorkspaceTmuxSession(
-		ctx, "ws-abc-123", "middleman-ws-abc-123-claude",
+	require.NoError(d.DeleteWorkspaceRuntimeSession(
+		ctx, "ws-abc-123", "ws-abc-123_claude",
 	))
-	tmuxSessions, err = d.ListWorkspaceTmuxSessions(ctx, "ws-abc-123")
+	tmuxSessions, err = d.ListWorkspaceRuntimeTmuxSessions(ctx, "ws-abc-123")
 	require.NoError(err)
 	require.Len(tmuxSessions, 1)
-	assert.Equal("middleman-ws-abc-123-codex", tmuxSessions[0].SessionName)
+	assert.Equal("middleman-ws-abc-123-codex", tmuxSessions[0].TmuxSession)
 
-	require.NoError(d.DeleteWorkspaceTmuxSessions(ctx, "ws-abc-123"))
-	tmuxSessions, err = d.ListWorkspaceTmuxSessions(ctx, "ws-abc-123")
+	require.NoError(d.DeleteWorkspaceRuntimeSessions(ctx, "ws-abc-123"))
+	tmuxSessions, err = d.ListWorkspaceRuntimeTmuxSessions(ctx, "ws-abc-123")
 	require.NoError(err)
 	assert.Empty(tmuxSessions)
 
@@ -4024,14 +4040,14 @@ func TestWorkspaceCRUD(t *testing.T) {
 	assert.Nil(noSuch)
 }
 
-func TestFreshWorkspaceTmuxSessionSchemaIncludesCreatedAt(t *testing.T) {
+func TestFreshWorkspaceRuntimeSessionSchemaIncludesTmuxSession(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 
 	d := openTestDB(t)
 	rows, err := d.ReadDB().QueryContext(
 		context.Background(),
-		`PRAGMA table_info(middleman_workspace_tmux_sessions)`,
+		`PRAGMA table_info(middleman_workspace_runtime_sessions)`,
 	)
 	require.NoError(err)
 	defer rows.Close()
@@ -4053,6 +4069,7 @@ func TestFreshWorkspaceTmuxSessionSchemaIncludesCreatedAt(t *testing.T) {
 	}
 	require.NoError(rows.Err())
 
+	assert.Equal("TEXT", columns["tmux_session"])
 	assert.Equal("DATETIME", columns["created_at"])
 }
 

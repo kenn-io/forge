@@ -575,10 +575,14 @@ type WorkspaceSetupEvent struct {
 	CreatedAt   time.Time
 }
 
-type WorkspaceTmuxSession struct {
+type WorkspaceRuntimeSession struct {
 	WorkspaceID string
-	SessionName string
+	SessionKey  string
 	TargetKey   string
+	Label       string
+	Kind        string
+	Scope       string
+	TmuxSession string
 	CreatedAt   time.Time
 }
 

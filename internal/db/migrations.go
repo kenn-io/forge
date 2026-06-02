@@ -23,6 +23,7 @@ const (
 	recreateDatabaseInstruction    = "delete the database file and let middleman recreate it"
 	timestampRepairGateVersion     = 10
 	workspaceSetupMigrationVersion = 11
+	runtimeTmuxMigrationVersion    = 30
 )
 
 //go:embed migrations/*.sql
@@ -115,6 +116,22 @@ func runMigrations(rw *sql.DB) (int, error) {
 	m, err := migrate.NewWithInstance("iofs", sourceDriver, "sqlite", databaseDriver)
 	if err != nil {
 		return migratedb.NilVersion, wrapMigrationError(fmt.Errorf("create migrator: %w", err))
+	}
+
+	if version < runtimeTmuxMigrationVersion && latest >= runtimeTmuxMigrationVersion {
+		if version < runtimeTmuxMigrationVersion-1 {
+			if err := m.Migrate(uint(runtimeTmuxMigrationVersion - 1)); err != nil &&
+				!errors.Is(err, migrate.ErrNoChange) {
+				return migratedb.NilVersion, wrapMigrationError(
+					fmt.Errorf("apply migrations before runtime tmux migration: %w", err),
+				)
+			}
+		}
+		if err := reconcileWorkspaceTmuxSessionsRuntimeMigration(rw); err != nil {
+			return migratedb.NilVersion, wrapMigrationError(
+				fmt.Errorf("repair workspace tmux session migration state: %w", err),
+			)
+		}
 	}
 
 	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
@@ -252,6 +269,82 @@ func reconcileWorkspaceTerminalBackendColumn(rw *sql.DB) error {
 		    ADD COLUMN terminal_backend TEXT NOT NULL DEFAULT ''
 	`)
 	return err
+}
+
+func reconcileWorkspaceTmuxSessionsRuntimeMigration(rw *sql.DB) error {
+	hasRuntimeSessions := hasTable(rw, "middleman_workspace_runtime_sessions")
+	hasTmuxSessions := hasTable(rw, "middleman_workspace_tmux_sessions")
+	if !hasRuntimeSessions && !hasTmuxSessions {
+		return nil
+	}
+	if _, err := rw.Exec(`PRAGMA foreign_keys = OFF`); err != nil {
+		return err
+	}
+	var rebuildErr error
+	if hasRuntimeSessions {
+		_, rebuildErr = rw.Exec(`
+			DROP TABLE IF EXISTS middleman_workspace_runtime_sessions_runtime_migration;
+			CREATE TABLE middleman_workspace_runtime_sessions_runtime_migration (
+			    workspace_id  TEXT NOT NULL REFERENCES middleman_workspaces(id) ON DELETE CASCADE,
+			    session_key   TEXT NOT NULL,
+			    target_key    TEXT NOT NULL,
+			    label         TEXT NOT NULL,
+			    kind          TEXT NOT NULL,
+			    scope         TEXT NOT NULL DEFAULT 'session',
+			    tmux_session  TEXT NOT NULL DEFAULT '',
+			    created_at    DATETIME NOT NULL DEFAULT (datetime('now')),
+			    PRIMARY KEY (workspace_id, session_key),
+			    UNIQUE (session_key)
+			);
+			INSERT OR IGNORE INTO middleman_workspace_runtime_sessions_runtime_migration
+			    (workspace_id, session_key, target_key, label, kind, scope,
+			     tmux_session, created_at)
+			SELECT
+			    session.workspace_id, session.session_key,
+			    session.target_key, session.label, session.kind,
+			    session.scope, session.tmux_session, session.created_at
+			FROM middleman_workspace_runtime_sessions AS session
+			WHERE EXISTS (
+			    SELECT 1
+			    FROM middleman_workspaces AS workspace
+			    WHERE workspace.id = session.workspace_id
+			);
+			DROP INDEX IF EXISTS middleman_workspace_runtime_sessions_workspace_id_idx;
+			DROP TABLE middleman_workspace_runtime_sessions;
+			ALTER TABLE middleman_workspace_runtime_sessions_runtime_migration
+			    RENAME TO middleman_workspace_runtime_sessions;
+			CREATE INDEX middleman_workspace_runtime_sessions_workspace_id_idx
+			    ON middleman_workspace_runtime_sessions(workspace_id);
+		`)
+	}
+	if rebuildErr == nil && hasTmuxSessions {
+		_, rebuildErr = rw.Exec(`
+		DROP TABLE IF EXISTS middleman_workspace_tmux_sessions_runtime_migration;
+		CREATE TABLE middleman_workspace_tmux_sessions_runtime_migration (
+		    workspace_id TEXT NOT NULL,
+		    session_name TEXT NOT NULL,
+		    target_key   TEXT NOT NULL,
+		    created_at   DATETIME NOT NULL DEFAULT (datetime('now')),
+		    PRIMARY KEY (workspace_id, session_name),
+		    UNIQUE (session_name)
+		);
+		INSERT OR IGNORE INTO middleman_workspace_tmux_sessions_runtime_migration
+		    (workspace_id, session_name, target_key, created_at)
+		SELECT workspace_id, session_name, target_key, created_at
+		FROM middleman_workspace_tmux_sessions;
+		DROP INDEX IF EXISTS middleman_workspace_tmux_sessions_workspace_id_idx;
+		DROP TABLE middleman_workspace_tmux_sessions;
+		ALTER TABLE middleman_workspace_tmux_sessions_runtime_migration
+		    RENAME TO middleman_workspace_tmux_sessions;
+		CREATE INDEX middleman_workspace_tmux_sessions_workspace_id_idx
+		    ON middleman_workspace_tmux_sessions(workspace_id);
+	`)
+	}
+	_, enableErr := rw.Exec(`PRAGMA foreign_keys = ON`)
+	if rebuildErr != nil {
+		return rebuildErr
+	}
+	return enableErr
 }
 
 func reconcileWorkspaceSetupMigrationVersion10(

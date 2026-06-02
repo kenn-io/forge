@@ -331,9 +331,11 @@ test.describe("workspace sidebar full-stack", () => {
       await page.goto(
         `${isolatedServer.info.base_url}/terminal/${createdWorkspace.id}`,
       );
-      await page.getByRole("button", { name: "Open shell drawer" }).click();
+      await page.getByRole("button", { name: "Open terminal panel" }).click();
 
-      const canvas = page.locator(".shell-drawer .terminal-container canvas");
+      const canvas = page.locator(
+        ".terminal-panel.open .terminal-container canvas",
+      );
       await expect(canvas).toBeVisible();
       await expect
         .poll(async () => {

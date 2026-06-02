@@ -5,20 +5,63 @@
   import WorkspaceListSidebar from "./WorkspaceListSidebar.svelte";
   import TerminalPane from "./TerminalPane.svelte";
   import WorkspaceHome from "./WorkspaceHome.svelte";
-  import WorkspaceTabs from "./WorkspaceTabs.svelte";
   import LaunchMenu from "./LaunchMenu.svelte";
   import TerminalOptionsMenu from "./TerminalOptionsMenu.svelte";
-  import ShellDrawer from "./ShellDrawer.svelte";
+  import DockedTerminalPanel from "./DockedTerminalPanel.svelte";
+  import WorkflowSplitTree, {
+    type WorkflowTabDescriptor,
+  } from "./WorkflowSplitTree.svelte";
+  import WorkflowPresetMenu from "./WorkflowPresetMenu.svelte";
   import type { RuntimeSession } from "@middleman/ui/api/types";
   import {
-    ensureWorkspaceShell,
     getWorkspaceRuntime,
     launchWorkspaceSession,
+    renameWorkspaceSession,
     stopWorkspaceSession,
     workspaceSessionWebSocketPath,
     workspaceTmuxWebSocketPath,
     type WorkspaceRuntimeState,
   } from "../../api/workspace-runtime.js";
+  import {
+    activateWorkflowTab,
+    addTerminalGroup,
+    appendWorkflowTabToLeaf,
+    activeTerminalGroup,
+    clampTerminalHeight,
+    closeSessionInTerminalGroups,
+    collectSessionKeys,
+    createTerminalGroup,
+    defaultTerminalLayout,
+    findLeafBySession,
+    firstLeaf,
+    moveWorkflowTabBefore,
+    normalizeTerminalLayout,
+    normalizeWorkflowTree,
+    parseTerminalLayout,
+    splitPane,
+    splitSessionIntoPane,
+    splitWorkflowTabIntoLeaf,
+    terminalGroupForSession,
+    updateSplitRatio,
+    updateTerminalGroupTree,
+    updateWorkflowSplitRatio,
+    type PaneNode,
+    type SessionRegion,
+    type SplitDirection,
+    type TerminalGroup,
+    type TerminalDock,
+    type TerminalLayoutState,
+    type WorkflowTabKey,
+  } from "./terminal-layout";
+  import {
+    mapWorkflowNodeSessionKeys,
+    type WorkflowPreset,
+    type WorkflowPresetSession,
+  } from "./workflow-presets";
+  import {
+    clearActiveTerminalDrag,
+    readRuntimeSessionDrag,
+  } from "./terminal-drag";
   import {
     CollapsibleResizableSidebar,
     SplitResizeHandle,
@@ -52,12 +95,6 @@
     mr_state?: string | null;
     mr_is_draft?: boolean | null;
     associated_pr_number?: number | null;
-  }
-
-  interface ClosedShellSession {
-    workspaceId: string;
-    key: string;
-    createdAt: string;
   }
 
   interface ClosedRuntimeSession {
@@ -114,6 +151,16 @@
   let forcePromptForId = $state<string | null>(null);
   let forceDeleting = $state(false);
   let cancelForceBtnEl = $state<HTMLButtonElement | null>(null);
+  let stopPromptSession = $state<RuntimeSession | null>(null);
+  let stopSessionStopping = $state(false);
+  let cancelStopBtnEl = $state<HTMLButtonElement | null>(null);
+  let renamePrompt = $state<{
+    sessionKey: string;
+    originalLabel: string;
+  } | null>(null);
+  let renameInputValue = $state("");
+  let renameSaving = $state(false);
+  let renameInputEl = $state<HTMLInputElement | null>(null);
   // Bumps on every workspace route change. Async delete callbacks
   // capture this at request time and bail out if it has moved on,
   // covering the case where the user leaves and returns to the same
@@ -125,15 +172,17 @@
     typeof setInterval
   > | null>(null);
   let eventSource = $state<EventSource | null>(null);
-  let activeTabKey = $state("home");
-  let tmuxTabOpen = $state(false);
-  let tmuxTerminalMounted = $state(false);
+  let activeTabKey = $state<WorkflowTabKey>("home");
+  let shellTabOpen = $state(false);
+  let shellTerminalMounted = $state(false);
   let mountedSessionKeys = $state<string[]>([]);
   let closedSessions = $state<ClosedRuntimeSession[]>([]);
-  let closedShellSession = $state<ClosedShellSession | null>(null);
   let launchingKey = $state<string | null>(null);
-  let shellOpen = $state(false);
-  let shellLoading = $state(false);
+  let terminalLayout = $state<TerminalLayoutState>(
+    defaultTerminalLayout(),
+  );
+  let terminalLayoutWorkspaceId = $state("");
+  let terminalLaunching = $state(false);
 
   const SIDEBAR_TAB_KEY = "middleman-workspace-sidebar-tab";
   const SIDEBAR_OPEN_KEY = "middleman-workspace-sidebar-open";
@@ -142,6 +191,14 @@
     "middleman-workspace-list-sidebar-width";
   const ACTIVE_WORKSPACE_TAB_KEY_PREFIX =
     "middleman-workspace-active-tab:";
+  const TERMINAL_LAYOUT_KEY_PREFIX =
+    "middleman-workspace-terminal-layout:";
+  const WORKFLOW_PRESETS_KEY = "middleman-workspace-layout-presets";
+  const PLAIN_SHELL_TARGET = "plain_shell";
+
+  let workflowPresets = $state<WorkflowPreset[]>(loadWorkflowPresets());
+  let selectedWorkflowPresetId = $state<string | null>(null);
+  let applyingWorkflowPreset = $state(false);
 
   type SidebarTab = "diff" | "pr" | "issue" | "reviews";
 
@@ -232,25 +289,83 @@
   const launchTargets = $derived(
     runtimeLive ? (runtime?.launch_targets ?? []) : [],
   );
-  const shellSession = $derived(
-    runtimeLive ? (runtime?.shell_session ?? null) : null,
-  );
-  const shellSessionLocallyClosed = $derived(
-    shellSession !== null &&
-      closedShellSession?.workspaceId === shellSession.workspace_id &&
-      closedShellSession?.key === shellSession.key &&
-      closedShellSession?.createdAt === shellSession.created_at,
-  );
-  const shellSessionActive = $derived(
-    !shellSessionLocallyClosed &&
-      (shellSession?.status === "running" ||
-        shellSession?.status === "starting"),
-  );
-  const activeSession = $derived.by(() => {
-    if (!activeTabKey.startsWith("session:")) return null;
-    const key = activeTabKey.slice("session:".length);
-    return runtimeSessions.find((session) => session.key === key) ?? null;
+  const sessionDisplayLabels = $derived.by(() => {
+    const labels: Record<string, string> = {};
+    for (const session of runtimeSessions) {
+      labels[session.key] = session.label;
+    }
+    return labels;
   });
+  const terminalSessions = $derived(
+    runtimeSessions.filter(
+      (session) => sessionRegion(session) === "terminal",
+    ),
+  );
+  function upsertRuntimeSession(session: RuntimeSession): RuntimeSession[] {
+    const sessions = [
+      ...runtimeSessions.filter((candidate) => candidate.key !== session.key),
+      session,
+    ];
+    if (runtimeLive && runtime) {
+      runtime = {
+        ...runtime,
+        sessions: [
+          ...runtime.sessions.filter((candidate) => candidate.key !== session.key),
+          session,
+        ],
+      };
+    }
+    return sessions;
+  }
+  const currentTerminalGroup = $derived(activeTerminalGroup(terminalLayout));
+  const workflowSessions = $derived(
+    runtimeSessions.filter(
+      (session) => sessionRegion(session) === "workflow",
+    ),
+  );
+  const workflowTabDescriptors = $derived.by<WorkflowTabDescriptor[]>(() => {
+    const tabs: WorkflowTabDescriptor[] = [
+      {
+        key: "home",
+        label: "Home",
+        kind: "home",
+      },
+    ];
+    if (shellTabOpen) {
+      tabs.push({
+        key: "shell",
+        label: "Shell",
+        kind: "shell",
+        closable: true,
+      });
+    }
+    if (
+      terminalLayout.dock === "top" &&
+      (terminalLayout.open || terminalSessions.length > 0)
+    ) {
+      tabs.push({
+        key: "terminal",
+        label: "Terminal",
+        kind: "terminal",
+        closable: true,
+      });
+    }
+    for (const session of workflowSessions) {
+      tabs.push({
+        key: workflowTabKeyForSession(session.key),
+        label: sessionDisplayLabels[session.key] ?? session.label,
+        kind: session.kind === "plain_shell" ? "plain_shell" : "agent",
+        status: session.status,
+        renamable: true,
+        movableToTerminal: true,
+        closable: true,
+      });
+    }
+    return tabs;
+  });
+  const terminalPanelInStage = $derived(
+    terminalLayout.open && terminalLayout.dock === "top",
+  );
 
   // While `workspaceId` has moved on but the previous workspace's
   // data is still on screen (the in-place transition), mutating
@@ -264,6 +379,11 @@
       workspace.id !== workspaceId,
   );
   const actionsBlocked = $derived(transitioning);
+  const modalOpen = $derived(
+    forcePromptMessage !== null ||
+      stopPromptSession !== null ||
+      renamePrompt !== null,
+  );
 
   $effect(() => {
     localStorage.setItem(SIDEBAR_TAB_KEY, sidebarTab);
@@ -286,6 +406,17 @@
       WORKSPACE_LIST_WIDTH_KEY,
       String(workspaceListWidth),
     );
+  });
+  $effect(() => {
+    if (!workspaceId) return;
+    if (terminalLayoutWorkspaceId !== workspaceId) return;
+    localStorage.setItem(
+      terminalLayoutStorageKey(workspaceId),
+      JSON.stringify(terminalLayout),
+    );
+  });
+  $effect(() => {
+    localStorage.setItem(WORKFLOW_PRESETS_KEY, JSON.stringify(workflowPresets));
   });
 
   function handleSegmentClick(tab: SidebarTab): void {
@@ -465,34 +596,223 @@
     );
   }
 
-  function markShellClosed(
-    id: string,
-    shellKey: string,
-    createdAt: string,
-  ): void {
-    closedShellSession = { workspaceId: id, key: shellKey, createdAt };
-  }
-
-  function clearClosedShellIfReplaced(
-    id: string,
-    shell: RuntimeSession | null | undefined,
-  ): void {
-    if (
-      closedShellSession?.workspaceId === id &&
-      (closedShellSession.key !== shell?.key ||
-        closedShellSession.createdAt !== shell?.created_at)
-    ) {
-      closedShellSession = null;
-    }
-  }
-
   function isSessionTerminalMounted(
     sessionKey: string,
   ): boolean {
     return mountedSessionKeys.includes(sessionKey);
   }
 
-  function rememberActiveTab(key: string): void {
+  function defaultSessionRegion(session: RuntimeSession): SessionRegion {
+    return session.target_key === PLAIN_SHELL_TARGET ? "terminal" : "workflow";
+  }
+
+  function isActiveRuntimeSession(session: RuntimeSession): boolean {
+    return session.status === "running" || session.status === "starting";
+  }
+
+  function sessionRegion(session: RuntimeSession): SessionRegion {
+    return terminalLayout.sessionRegions[session.key] ?? defaultSessionRegion(session);
+  }
+
+  function workflowTabKeyForSession(sessionKey: string): WorkflowTabKey {
+    return `session:${sessionKey}`;
+  }
+
+  function sessionKeyFromWorkflowTab(tabKey: WorkflowTabKey): string | null {
+    return tabKey.startsWith("session:") ? tabKey.slice("session:".length) : null;
+  }
+
+  function terminalLayoutStorageKey(id: string): string {
+    return `${TERMINAL_LAYOUT_KEY_PREFIX}${id}`;
+  }
+
+  function loadTerminalLayout(id: string): TerminalLayoutState {
+    return parseTerminalLayout(localStorage.getItem(terminalLayoutStorageKey(id)));
+  }
+
+  function loadWorkflowPresets(): WorkflowPreset[] {
+    const raw = localStorage.getItem(WORKFLOW_PRESETS_KEY);
+    if (!raw) return [];
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (!Array.isArray(parsed)) return [];
+      return parsed.flatMap((item) => {
+        const preset = parseWorkflowPreset(item);
+        return preset ? [preset] : [];
+      });
+    } catch {
+      return [];
+    }
+  }
+
+  function parseWorkflowPreset(value: unknown): WorkflowPreset | null {
+    if (value === null || typeof value !== "object" || Array.isArray(value)) {
+      return null;
+    }
+    const record = value as Record<string, unknown>;
+    if (
+      typeof record.id !== "string" ||
+      typeof record.name !== "string" ||
+      typeof record.createdAt !== "string" ||
+      typeof record.updatedAt !== "string" ||
+      !Array.isArray(record.sessions)
+    ) {
+      return null;
+    }
+    const sessions = record.sessions.flatMap((item) => {
+      if (item === null || typeof item !== "object" || Array.isArray(item)) {
+        return [];
+      }
+      const session = item as Record<string, unknown>;
+      if (
+        typeof session.sourceKey !== "string" ||
+        typeof session.targetKey !== "string" ||
+        typeof session.label !== "string" ||
+        (session.region !== "workflow" && session.region !== "terminal")
+      ) {
+        return [];
+      }
+      return [
+        {
+          sourceKey: session.sourceKey,
+          targetKey: session.targetKey,
+          label: session.label,
+          region: session.region,
+        } satisfies WorkflowPresetSession,
+      ];
+    });
+    return {
+      id: record.id,
+      name: record.name,
+      createdAt: record.createdAt,
+      updatedAt: record.updatedAt,
+      sessions,
+      layout: parseTerminalLayout(JSON.stringify(record.layout)),
+    };
+  }
+
+  function terminalSessionKeysFrom(
+    sessions: RuntimeSession[],
+    layout: TerminalLayoutState = terminalLayout,
+  ): string[] {
+    return sessions
+      .filter(
+        (session) =>
+          (layout.sessionRegions[session.key] ?? defaultSessionRegion(session)) ===
+          "terminal",
+      )
+      .map((session) => session.key);
+  }
+
+  function workflowTabKeysFrom(
+    sessions: RuntimeSession[],
+    layout: TerminalLayoutState = terminalLayout,
+  ): WorkflowTabKey[] {
+    const keys: WorkflowTabKey[] = ["home"];
+    if (shellTabOpen) {
+      keys.push("shell");
+    }
+    if (
+      layout.dock === "top" &&
+      (layout.open || terminalSessionKeysFrom(sessions, layout).length > 0)
+    ) {
+      keys.push("terminal");
+    }
+    for (const session of sessions) {
+      const region =
+        layout.sessionRegions[session.key] ?? defaultSessionRegion(session);
+      if (region === "workflow") {
+        keys.push(workflowTabKeyForSession(session.key));
+      }
+    }
+    return keys;
+  }
+
+  function normalizeLayoutForSessions(
+    sessions: RuntimeSession[],
+    base: TerminalLayoutState = terminalLayout,
+    activeWorkflowTab: WorkflowTabKey = activeTabKey,
+  ): TerminalLayoutState {
+    const allKeys = sessions.map((session) => session.key);
+    let next = normalizeTerminalLayout(base, allKeys);
+    const sessionRegions = { ...next.sessionRegions };
+    for (const session of sessions) {
+      sessionRegions[session.key] =
+        sessionRegions[session.key] ?? defaultSessionRegion(session);
+    }
+    next = { ...next, sessionRegions };
+    const terminalKeys = terminalSessionKeysFrom(sessions, next);
+    let terminalGroups = next.terminalGroups.filter((group) =>
+      collectTerminalGroupKeys(group).some((key) => terminalKeys.includes(key)),
+    );
+    const groupedKeys = new Set(
+      terminalGroups.flatMap((group) => collectTerminalGroupKeys(group)),
+    );
+    for (const key of terminalKeys) {
+      if (!groupedKeys.has(key)) {
+        terminalGroups = [...terminalGroups, createTerminalGroup(key)];
+      }
+    }
+    const activeGroup =
+      (next.activeTerminalGroupID
+        ? terminalGroups.find((group) => group.id === next.activeTerminalGroupID)
+        : null) ??
+      (next.activeSessionKey
+        ? terminalGroups.find((group) =>
+            collectTerminalGroupKeys(group).includes(next.activeSessionKey!),
+          )
+        : null) ??
+      terminalGroups[0] ??
+      null;
+    const activeSessionKey =
+      activeGroup?.activeSessionKey ??
+      firstLeaf(activeGroup?.tree ?? null)?.sessionKey ??
+      null;
+    const normalized = {
+      ...next,
+      activeSessionKey,
+      tree: activeGroup?.tree ?? null,
+      terminalGroups,
+      activeTerminalGroupID: activeGroup?.id ?? null,
+    };
+    const workflowTree = activateWorkflowTab(
+      normalizeWorkflowTree(
+        normalized.workflowTree,
+        workflowTabKeysFrom(sessions, normalized),
+      ),
+      activeWorkflowTab,
+    );
+    return {
+      ...normalized,
+      workflowTree,
+    };
+  }
+
+  function collectTerminalGroupKeys(group: TerminalGroup): string[] {
+    return group.tree ? collectSessionKeys(group.tree) : [];
+  }
+
+  function layoutWithTerminalGroups(
+    base: TerminalLayoutState,
+    groups: TerminalGroup[],
+    activeGroupID: string | null,
+  ): TerminalLayoutState {
+    const activeGroup =
+      (activeGroupID
+        ? groups.find((group) => group.id === activeGroupID)
+        : null) ??
+      groups[0] ??
+      null;
+    return {
+      ...base,
+      terminalGroups: groups,
+      activeTerminalGroupID: activeGroup?.id ?? null,
+      activeSessionKey: activeGroup?.activeSessionKey ?? null,
+      tree: activeGroup?.tree ?? null,
+    };
+  }
+
+  function rememberActiveTab(key: WorkflowTabKey): void {
     if (!workspaceId) return;
     localStorage.setItem(
       `${ACTIVE_WORKSPACE_TAB_KEY_PREFIX}${workspaceId}`,
@@ -500,17 +820,37 @@
     );
   }
 
-  function selectWorkspaceTab(key: string): void {
+  function selectWorkspaceTab(key: WorkflowTabKey): void {
+    if (terminalLayout.workflowMode === "grid") {
+      terminalLayout = { ...terminalLayout, workflowMode: "tabs" };
+    }
+    terminalLayout = {
+      ...terminalLayout,
+      workflowTree: activateWorkflowTab(terminalLayout.workflowTree, key),
+    };
     activeTabKey = key;
     rememberActiveTab(key);
   }
 
-  function restoreWorkspaceTab(id: string): string {
+  function restoreWorkspaceTabSelection(key: WorkflowTabKey): void {
+    activeTabKey = key;
+    rememberActiveTab(key);
+  }
+
+  function restoreWorkspaceTab(id: string): WorkflowTabKey {
     const remembered = localStorage.getItem(
       `${ACTIVE_WORKSPACE_TAB_KEY_PREFIX}${id}`,
     );
     if (remembered === "diff") return "home";
-    return remembered ?? "home";
+    if (
+      remembered === "home" ||
+      remembered === "shell" ||
+      remembered === "terminal" ||
+      remembered?.startsWith("session:")
+    ) {
+      return remembered as WorkflowTabKey;
+    }
+    return "home";
   }
 
   function defaultSidebarTab(): SidebarTab {
@@ -584,21 +924,25 @@
     }
   }
 
-  async function fetchRuntime(): Promise<void> {
-    if (!workspaceId) return;
+  async function fetchRuntime(): Promise<WorkspaceRuntimeState | null> {
+    if (!workspaceId) return null;
     const id = workspaceId;
     const seq = runtimeFetchSeq + 1;
     runtimeFetchSeq = seq;
     try {
       const data = await getWorkspaceRuntime(id);
-      if (id !== workspaceId || seq !== runtimeFetchSeq) return;
+      if (id !== workspaceId || seq !== runtimeFetchSeq) return null;
       runtime = data;
       runtimeForId = id;
       runtimeError = null;
-      clearClosedShellIfReplaced(id, data.shell_session);
+      terminalLayout = normalizeLayoutForSessions(data.sessions);
       if (
         activeTabKey.startsWith("session:") &&
-        !activeSession
+        !data.sessions.some(
+          (session) =>
+            session.key === activeTabKey.slice("session:".length) &&
+            sessionRegion(session) === "workflow",
+        )
       ) {
         selectWorkspaceTab("home");
       }
@@ -606,22 +950,25 @@
         (key) =>
           data.sessions.some((session) => session.key === key),
       );
+      return data;
     } catch (err) {
-      if (id !== workspaceId || seq !== runtimeFetchSeq) return;
+      if (id !== workspaceId || seq !== runtimeFetchSeq) return null;
       runtimeError =
         err instanceof Error
           ? err.message
           : "Runtime load failed";
+      return null;
     }
   }
 
   async function handleLaunch(targetKey: string): Promise<void> {
     if (!workspaceId || launchingKey || actionsBlocked) return;
     const target = launchTargets.find((t) => t.key === targetKey);
-    if (target?.kind === "tmux") {
-      tmuxTabOpen = true;
-      tmuxTerminalMounted = true;
-      selectWorkspaceTab("tmux");
+    if (target?.kind === "shell") {
+      shellTabOpen = true;
+      shellTerminalMounted = true;
+      terminalLayout = normalizeLayoutForSessions(runtimeSessions, terminalLayout);
+      selectWorkspaceTab("shell");
       return;
     }
 
@@ -638,8 +985,13 @@
       await fetchRuntime();
       if (id !== workspaceId) return;
       clearClosedSession(session);
-      mountSessionTerminal(session.key);
-      selectWorkspaceTab(`session:${session.key}`);
+      if (session.target_key === PLAIN_SHELL_TARGET) {
+        moveSessionToTerminal(session.key);
+      } else {
+        moveSessionToWorkflow(session.key);
+        mountSessionTerminal(session.key);
+        selectWorkspaceTab(workflowTabKeyForSession(session.key));
+      }
     } catch (err) {
       if (id !== workspaceId) return;
       runtimeError =
@@ -650,18 +1002,49 @@
   }
 
   function openSession(sessionKey: string): void {
-    mountSessionTerminal(sessionKey);
-    selectWorkspaceTab(`session:${sessionKey}`);
-  }
-
-  async function closeSession(session: RuntimeSession): Promise<void> {
-    if (actionsBlocked) return;
-    if (
-      session.status === "running" &&
-      !confirm(`Stop ${session.label}?`)
-    ) {
+    const session = runtimeSessions.find((s) => s.key === sessionKey);
+    if (session && sessionRegion(session) === "terminal") {
+      selectTerminalSession(sessionKey);
       return;
     }
+    mountSessionTerminal(sessionKey);
+    selectWorkspaceTab(workflowTabKeyForSession(sessionKey));
+  }
+
+  function closeSession(session: RuntimeSession): void {
+    if (actionsBlocked) return;
+    if (session.status === "running") {
+      const triggerEl =
+        document.activeElement instanceof HTMLElement
+          ? document.activeElement
+          : null;
+      previouslyFocusedEl = triggerEl;
+      stopPromptSession = session;
+      return;
+    }
+    void stopSession(session);
+  }
+
+  async function confirmStopSession(): Promise<void> {
+    if (stopSessionStopping || stopPromptSession === null) return;
+    stopSessionStopping = true;
+    const session = stopPromptSession;
+    try {
+      await stopSession(session);
+      if (stopPromptSession?.key === session.key) {
+        stopPromptSession = null;
+      }
+    } finally {
+      stopSessionStopping = false;
+    }
+  }
+
+  function cancelStopSession(): void {
+    if (stopSessionStopping) return;
+    stopPromptSession = null;
+  }
+
+  async function stopSession(session: RuntimeSession): Promise<void> {
     const id = workspaceId;
     try {
       await stopWorkspaceSession(id, session.key);
@@ -669,6 +1052,18 @@
       await fetchRuntime();
       if (id !== workspaceId) return;
       unmountSessionTerminal(session.key);
+      const terminalGroups = closeSessionInTerminalGroups(
+        terminalLayout.terminalGroups,
+        session.key,
+      );
+      terminalLayout = normalizeLayoutForSessions(
+        runtimeSessions,
+        layoutWithTerminalGroups(
+          terminalLayout,
+          terminalGroups,
+          terminalLayout.activeTerminalGroupID,
+        ),
+      );
       if (activeTabKey === `session:${session.key}`) {
         selectWorkspaceTab("home");
       }
@@ -683,55 +1078,738 @@
     if (session.workspace_id !== workspaceId) return;
     markSessionClosed(session);
     unmountSessionTerminal(session.key);
+    const terminalGroups = closeSessionInTerminalGroups(
+      terminalLayout.terminalGroups,
+      session.key,
+    );
+    terminalLayout = normalizeLayoutForSessions(
+      runtimeSessions,
+      layoutWithTerminalGroups(
+        terminalLayout,
+        terminalGroups,
+        terminalLayout.activeTerminalGroupID,
+      ),
+    );
     if (activeTabKey === `session:${session.key}`) {
       selectWorkspaceTab("home");
     }
     void fetchRuntime();
   }
 
-  function handleShellExit(
-    id: string,
-    shellKey: string,
-    createdAt: string,
-  ): void {
-    if (id !== workspaceId) return;
-    markShellClosed(id, shellKey, createdAt);
-    shellOpen = false;
-    shellLoading = false;
-    void fetchRuntime();
-  }
-
-  async function toggleShell(): Promise<void> {
-    if (shellOpen) {
-      shellOpen = false;
-      return;
-    }
-    if (actionsBlocked) return;
-    shellOpen = true;
-    if (shellLoading) return;
-
-    // Always call ensureWorkspaceShell on open. It is idempotent
-    // server-side (returns the existing session if running, starts
-    // a fresh one if exited), so trusting the locally-cached
-    // shellSessionActive flag would mount a TerminalPane against a
-    // shell the server has already torn down — yielding a 404
-    // attach + reconnect loop.
+  async function launchTerminalSession(
+    insertIntoTree = true,
+  ): Promise<RuntimeSession | null> {
+    if (!workspaceId || terminalLaunching || actionsBlocked) return null;
     const id = workspaceId;
-    shellLoading = true;
+    terminalLaunching = true;
     runtimeError = null;
     try {
-      await ensureWorkspaceShell(id);
-      if (id !== workspaceId) return;
+      const session = await launchWorkspaceSession(id, PLAIN_SHELL_TARGET);
+      if (id !== workspaceId) return null;
+      const sessionsWithLaunch = upsertRuntimeSession(session);
+      if (!insertIntoTree) {
+        clearClosedSession(session);
+        return session;
+      }
+      const groups = insertIntoTree
+        ? addTerminalGroup(terminalLayout.terminalGroups, session.key)
+        : terminalLayout.terminalGroups;
+      const activeGroupID =
+        groups.at(-1)?.id ?? terminalLayout.activeTerminalGroupID;
+      terminalLayout = normalizeLayoutForSessions(
+        sessionsWithLaunch,
+        layoutWithTerminalGroups(
+          {
+            ...terminalLayout,
+            open: true,
+            sessionRegions: {
+              ...terminalLayout.sessionRegions,
+              [session.key]: "terminal",
+            },
+          },
+          groups,
+          activeGroupID,
+        ),
+      );
       await fetchRuntime();
+      if (id !== workspaceId) return null;
+      clearClosedSession(session);
+      if (terminalLayout.dock === "top") {
+        selectWorkspaceTab("terminal");
+      }
+      return session;
     } catch (err) {
-      if (id !== workspaceId) return;
+      if (id !== workspaceId) return null;
       runtimeError =
         err instanceof Error
           ? err.message
-          : "Shell launch failed";
+          : "Terminal launch failed";
     } finally {
-      if (id === workspaceId) shellLoading = false;
+      if (id === workspaceId) terminalLaunching = false;
     }
+    return null;
+  }
+
+  async function toggleTerminalPanel(): Promise<void> {
+    if (terminalLayout.open) {
+      terminalLayout = normalizeLayoutForSessions(runtimeSessions, {
+        ...terminalLayout,
+        open: false,
+      });
+      if (activeTabKey === "terminal") {
+        selectWorkspaceTab("home");
+      }
+      return;
+    }
+    terminalLayout = { ...terminalLayout, open: true };
+    if (!terminalSessions.some(isActiveRuntimeSession)) {
+      await launchTerminalSession();
+    } else if (terminalLayout.dock === "top") {
+      selectWorkspaceTab("terminal");
+    }
+  }
+
+  function selectTerminalSession(sessionKey: string): void {
+    const group = terminalGroupForSession(terminalLayout.terminalGroups, sessionKey);
+    const groups = terminalLayout.terminalGroups.map((candidate) =>
+      candidate.id === group?.id
+        ? { ...candidate, activeSessionKey: sessionKey }
+        : candidate,
+    );
+    terminalLayout = normalizeLayoutForSessions(
+      runtimeSessions,
+      layoutWithTerminalGroups(
+        {
+          ...terminalLayout,
+          open: true,
+        },
+        groups,
+        group?.id ?? terminalLayout.activeTerminalGroupID,
+      ),
+    );
+    if (terminalLayout.dock === "top") {
+      selectWorkspaceTab("terminal");
+    }
+  }
+
+  function selectTerminalGroup(groupID: string): void {
+    terminalLayout = normalizeLayoutForSessions(
+      runtimeSessions,
+      layoutWithTerminalGroups(
+        { ...terminalLayout, open: true },
+        terminalLayout.terminalGroups,
+        groupID,
+      ),
+    );
+    if (terminalLayout.dock === "top") {
+      selectWorkspaceTab("terminal");
+    }
+  }
+
+  function moveSessionToTerminal(sessionKey: string): void {
+    const session = runtimeSessions.find((s) => s.key === sessionKey);
+    if (!session) return;
+    const groups = addTerminalGroup(terminalLayout.terminalGroups, sessionKey);
+    terminalLayout = normalizeLayoutForSessions(runtimeSessions, {
+      ...layoutWithTerminalGroups(
+        {
+          ...terminalLayout,
+          open: true,
+          sessionRegions: {
+            ...terminalLayout.sessionRegions,
+            [sessionKey]: "terminal",
+          },
+        },
+        groups,
+        terminalGroupForSession(groups, sessionKey)?.id ?? null,
+      ),
+    });
+    if (terminalLayout.dock === "top") {
+      selectWorkspaceTab("terminal");
+    } else if (activeTabKey === `session:${sessionKey}`) {
+      selectWorkspaceTab("home");
+    }
+  }
+
+  function moveSessionToWorkflow(sessionKey: string): void {
+    const terminalGroups = closeSessionInTerminalGroups(
+      terminalLayout.terminalGroups,
+      sessionKey,
+    );
+    terminalLayout = normalizeLayoutForSessions(runtimeSessions, {
+      ...layoutWithTerminalGroups(
+        {
+          ...terminalLayout,
+          workflowMode: "tabs",
+        },
+        terminalGroups,
+        terminalLayout.activeTerminalGroupID,
+      ),
+      sessionRegions: {
+        ...terminalLayout.sessionRegions,
+        [sessionKey]: "workflow",
+      },
+    });
+    mountSessionTerminal(sessionKey);
+    selectWorkspaceTab(workflowTabKeyForSession(sessionKey));
+  }
+
+  function layoutWithWorkflowTab(
+    tabKey: WorkflowTabKey,
+    base: TerminalLayoutState,
+  ): TerminalLayoutState {
+    if (tabKey === "shell") {
+      shellTabOpen = true;
+      shellTerminalMounted = true;
+      return base;
+    }
+    if (tabKey === "terminal") {
+      return { ...base, open: true, dock: "top" };
+    }
+    const sessionKey = sessionKeyFromWorkflowTab(tabKey);
+    if (sessionKey === null) return base;
+    mountSessionTerminal(sessionKey);
+    const terminalGroups = closeSessionInTerminalGroups(
+      base.terminalGroups,
+      sessionKey,
+    );
+    return {
+      ...layoutWithTerminalGroups(
+        {
+          ...base,
+          workflowMode: "tabs",
+        },
+        terminalGroups,
+        base.activeTerminalGroupID,
+      ),
+      sessionRegions: {
+        ...base.sessionRegions,
+        [sessionKey]: "workflow",
+      },
+    };
+  }
+
+  function moveWorkflowTabBeforeTarget(
+    sourceTabKey: WorkflowTabKey,
+    targetTabKey: WorkflowTabKey,
+  ): void {
+    if (sourceTabKey === targetTabKey) return;
+    const prepared = normalizeLayoutForSessions(
+      runtimeSessions,
+      layoutWithWorkflowTab(sourceTabKey, terminalLayout),
+    );
+    terminalLayout = normalizeLayoutForSessions(runtimeSessions, {
+      ...prepared,
+      workflowTree: moveWorkflowTabBefore(
+        prepared.workflowTree,
+        sourceTabKey,
+        targetTabKey,
+      ),
+    });
+    selectWorkspaceTab(sourceTabKey);
+  }
+
+  function appendWorkflowTabToGroup(
+    sourceTabKey: WorkflowTabKey,
+    leafID: string,
+  ): void {
+    const prepared = normalizeLayoutForSessions(
+      runtimeSessions,
+      layoutWithWorkflowTab(sourceTabKey, terminalLayout),
+    );
+    terminalLayout = normalizeLayoutForSessions(runtimeSessions, {
+      ...prepared,
+      workflowTree: appendWorkflowTabToLeaf(
+        prepared.workflowTree,
+        sourceTabKey,
+        leafID,
+      ),
+    });
+    selectWorkspaceTab(sourceTabKey);
+  }
+
+  function splitWorkflowTabIntoGroup(
+    sourceTabKey: WorkflowTabKey,
+    leafID: string,
+    direction: SplitDirection,
+    placement: "before" | "after",
+  ): void {
+    const prepared = normalizeLayoutForSessions(
+      runtimeSessions,
+      layoutWithWorkflowTab(sourceTabKey, terminalLayout),
+    );
+    terminalLayout = normalizeLayoutForSessions(runtimeSessions, {
+      ...prepared,
+      workflowTree: splitWorkflowTabIntoLeaf(
+        prepared.workflowTree,
+        sourceTabKey,
+        leafID,
+        direction,
+        placement,
+      ),
+    });
+    selectWorkspaceTab(sourceTabKey);
+  }
+
+  function closeWorkflowTab(tabKey: WorkflowTabKey): void {
+    if (tabKey === "shell") {
+      shellTabOpen = false;
+      shellTerminalMounted = false;
+      terminalLayout = normalizeLayoutForSessions(runtimeSessions);
+      if (activeTabKey === "shell") {
+        selectWorkspaceTab("home");
+      }
+      return;
+    }
+    if (tabKey === "terminal") {
+      terminalLayout = normalizeLayoutForSessions(runtimeSessions, {
+        ...terminalLayout,
+        open: false,
+      });
+      if (activeTabKey === "terminal") {
+        selectWorkspaceTab("home");
+      }
+      return;
+    }
+    const sessionKey = sessionKeyFromWorkflowTab(tabKey);
+    if (sessionKey === null) return;
+    const session = runtimeSessions.find((s) => s.key === sessionKey);
+    if (session) {
+      void closeSession(session);
+    }
+  }
+
+  function moveWorkflowTabToTerminal(tabKey: WorkflowTabKey): void {
+    const sessionKey = sessionKeyFromWorkflowTab(tabKey);
+    if (sessionKey !== null) {
+      moveSessionToTerminal(sessionKey);
+    }
+  }
+
+  function renameWorkflowTab(tabKey: WorkflowTabKey): void {
+    const sessionKey = sessionKeyFromWorkflowTab(tabKey);
+    if (sessionKey === null) return;
+    const session = runtimeSessions.find((s) => s.key === sessionKey);
+    if (!session) return;
+    openRenamePrompt(session);
+  }
+
+  function openRenamePrompt(session: RuntimeSession): void {
+    const triggerEl =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    previouslyFocusedEl = triggerEl;
+    renamePrompt = {
+      sessionKey: session.key,
+      originalLabel: session.label,
+    };
+    renameInputValue = session.label;
+  }
+
+  async function saveRenamePrompt(): Promise<void> {
+    if (renamePrompt === null || renameSaving) return;
+    const trimmed = renameInputValue.trim();
+    if (!trimmed) return;
+    if (trimmed === renamePrompt.originalLabel) {
+      cancelRenamePrompt();
+      return;
+    }
+
+    const id = workspaceId;
+    const sessionKey = renamePrompt.sessionKey;
+    renameSaving = true;
+    runtimeError = null;
+    try {
+      const updated = await renameWorkspaceSession(id, sessionKey, trimmed);
+      if (id !== workspaceId) return;
+      runtime = runtime
+        ? {
+            ...runtime,
+            sessions: runtime.sessions.map((session) =>
+              session.key === sessionKey ? updated : session,
+            ),
+          }
+        : runtime;
+      renamePrompt = null;
+      renameInputValue = "";
+    } catch (err) {
+      if (id !== workspaceId) return;
+      runtimeError =
+        err instanceof Error ? err.message : "Rename failed";
+    } finally {
+      if (id === workspaceId) renameSaving = false;
+    }
+  }
+
+  function cancelRenamePrompt(): void {
+    if (renameSaving) return;
+    renamePrompt = null;
+    renameInputValue = "";
+  }
+
+  function renameSession(session: RuntimeSession): void {
+    renameWorkflowTab(workflowTabKeyForSession(session.key));
+  }
+
+  function createPresetSnapshot(name: string, id = newPresetID()): WorkflowPreset {
+    const now = new Date().toISOString();
+    return {
+      id,
+      name,
+      createdAt:
+        workflowPresets.find((preset) => preset.id === id)?.createdAt ?? now,
+      updatedAt: now,
+      sessions: runtimeSessions.map((session) => ({
+        sourceKey: session.key,
+        targetKey: session.target_key,
+        region: sessionRegion(session),
+        label: sessionDisplayLabels[session.key] ?? session.label,
+      })),
+      layout: terminalLayout,
+    };
+  }
+
+  function saveWorkflowPreset(): void {
+    const name = prompt("Preset name", "Review workspace");
+    if (name === null) return;
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const preset = createPresetSnapshot(trimmed);
+    workflowPresets = [...workflowPresets, preset];
+    selectedWorkflowPresetId = preset.id;
+  }
+
+  function updateWorkflowPreset(presetID: string): void {
+    const existing = workflowPresets.find((preset) => preset.id === presetID);
+    if (!existing) return;
+    const preset = createPresetSnapshot(existing.name, existing.id);
+    workflowPresets = workflowPresets.map((candidate) =>
+      candidate.id === presetID ? preset : candidate,
+    );
+    selectedWorkflowPresetId = preset.id;
+  }
+
+  async function applyWorkflowPreset(presetID: string): Promise<void> {
+    if (!workspaceId || applyingWorkflowPreset || actionsBlocked) return;
+    const preset = workflowPresets.find((candidate) => candidate.id === presetID);
+    if (!preset) return;
+    const id = workspaceId;
+    applyingWorkflowPreset = true;
+    runtimeError = null;
+    try {
+      const keyMap = new Map<string, string>();
+      for (const spec of preset.sessions) {
+        let session = await launchWorkspaceSession(id, spec.targetKey);
+        if (id !== workspaceId) return;
+        if (spec.label.trim() && spec.label !== session.label) {
+          session = await renameWorkspaceSession(id, session.key, spec.label.trim());
+          if (id !== workspaceId) return;
+        }
+        keyMap.set(spec.sourceKey, session.key);
+      }
+      const mappedLayout = mapPresetLayout(preset.layout, keyMap);
+      const refreshed = await fetchRuntime();
+      if (id !== workspaceId || !refreshed) return;
+      const presetActiveTab = firstWorkflowTab(mappedLayout) ?? "home";
+      shellTabOpen = collectPresetTabs(mappedLayout).includes("shell");
+      shellTerminalMounted = shellTabOpen;
+      terminalLayout = normalizeLayoutForSessions(
+        refreshed.sessions,
+        mappedLayout,
+        presetActiveTab,
+      );
+      mountedSessionKeys = refreshed.sessions
+        .filter((session) => sessionRegionForLayout(session, terminalLayout) === "workflow")
+        .map((session) => session.key);
+      selectedWorkflowPresetId = preset.id;
+      selectWorkspaceTab(firstWorkflowTab(terminalLayout) ?? "home");
+    } catch (err) {
+      if (id !== workspaceId) return;
+      runtimeError =
+        err instanceof Error ? err.message : "Preset launch failed";
+    } finally {
+      if (id === workspaceId) applyingWorkflowPreset = false;
+    }
+  }
+
+  function deleteWorkflowPreset(presetID: string): void {
+    workflowPresets = workflowPresets.filter((preset) => preset.id !== presetID);
+    if (selectedWorkflowPresetId === presetID) {
+      selectedWorkflowPresetId = null;
+    }
+  }
+
+  function mapPresetLayout(
+    layout: TerminalLayoutState,
+    keyMap: ReadonlyMap<string, string>,
+  ): TerminalLayoutState {
+    const sessionRegions: Record<string, SessionRegion> = {};
+    for (const [sourceKey, region] of Object.entries(layout.sessionRegions)) {
+      const mappedKey = keyMap.get(sourceKey);
+      if (mappedKey) sessionRegions[mappedKey] = region;
+    }
+    return {
+      ...layout,
+      activeSessionKey:
+        layout.activeSessionKey ? keyMap.get(layout.activeSessionKey) ?? null : null,
+      tree: mapPaneNodeSessionKeys(layout.tree, keyMap),
+      terminalGroups: mapTerminalGroupSessionKeys(layout.terminalGroups, keyMap),
+      workflowTree: mapWorkflowNodeSessionKeys(layout.workflowTree, keyMap),
+      sessionRegions,
+      customSessionLabels: {},
+    };
+  }
+
+  function mapTerminalGroupSessionKeys(
+    groups: TerminalGroup[],
+    keyMap: ReadonlyMap<string, string>,
+  ): TerminalGroup[] {
+    return groups.flatMap((group) => {
+      const tree = mapPaneNodeSessionKeys(group.tree, keyMap);
+      if (!tree) return [];
+      return [
+        {
+          ...group,
+          activeSessionKey: group.activeSessionKey
+            ? keyMap.get(group.activeSessionKey) ?? firstLeaf(tree)?.sessionKey ?? null
+            : firstLeaf(tree)?.sessionKey ?? null,
+          tree,
+        },
+      ];
+    });
+  }
+
+  function mapPaneNodeSessionKeys(
+    node: PaneNode | null,
+    keyMap: ReadonlyMap<string, string>,
+  ): PaneNode | null {
+    if (!node) return null;
+    if (node.type === "leaf") {
+      const mappedKey = keyMap.get(node.sessionKey);
+      return mappedKey ? { ...node, sessionKey: mappedKey } : null;
+    }
+    const first = mapPaneNodeSessionKeys(node.first, keyMap);
+    const second = mapPaneNodeSessionKeys(node.second, keyMap);
+    if (!first) return second;
+    if (!second) return first;
+    return { ...node, first, second };
+  }
+
+  function collectPresetTabs(layout: TerminalLayoutState): WorkflowTabKey[] {
+    if (!layout.workflowTree) return [];
+    const keys: WorkflowTabKey[] = [];
+    function visit(node: NonNullable<TerminalLayoutState["workflowTree"]>): void {
+      if (node.type === "leaf") {
+        keys.push(...node.tabs);
+        return;
+      }
+      visit(node.first);
+      visit(node.second);
+    }
+    visit(layout.workflowTree);
+    return keys;
+  }
+
+  function firstWorkflowTab(layout: TerminalLayoutState): WorkflowTabKey | null {
+    if (!layout.workflowTree) return null;
+    if (layout.workflowTree.type === "leaf") {
+      return layout.workflowTree.activeTabKey;
+    }
+    const leaf = firstWorkflowLeafFrom(layout.workflowTree);
+    return leaf?.activeTabKey ?? null;
+  }
+
+  function firstWorkflowLeafFrom(
+    node: NonNullable<TerminalLayoutState["workflowTree"]>,
+  ): Extract<NonNullable<TerminalLayoutState["workflowTree"]>, { type: "leaf" }> | null {
+    if (node.type === "leaf") return node;
+    return firstWorkflowLeafFrom(node.first) ?? firstWorkflowLeafFrom(node.second);
+  }
+
+  function sessionRegionForLayout(
+    session: RuntimeSession,
+    layout: TerminalLayoutState,
+  ): SessionRegion {
+    return layout.sessionRegions[session.key] ?? defaultSessionRegion(session);
+  }
+
+  function newPresetID(): string {
+    if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+      return `preset-${crypto.randomUUID()}`;
+    }
+    return `preset-${Date.now().toString(36)}-${Math.random()
+      .toString(16)
+      .slice(2)}`;
+  }
+
+  async function splitTerminal(direction: SplitDirection): Promise<void> {
+    if (terminalLaunching || actionsBlocked) return;
+    const groupBeforeLaunch = currentTerminalGroup;
+    const treeBeforeLaunch = groupBeforeLaunch?.tree ?? null;
+    const targetLeaf =
+      terminalLayout.activeSessionKey !== null
+        ? findLeafBySession(treeBeforeLaunch, terminalLayout.activeSessionKey)
+        : firstLeaf(treeBeforeLaunch);
+    const session = await launchTerminalSession(false);
+    if (!session) return;
+    const groupID =
+      groupBeforeLaunch?.id ?? terminalLayout.activeTerminalGroupID ?? newPaneGroupID();
+    const groups =
+      groupBeforeLaunch === null
+        ? [createTerminalGroup(session.key, groupID)]
+        : updateTerminalGroupTree(
+            terminalLayout.terminalGroups,
+            groupID,
+            (group) => ({
+              ...group,
+              activeSessionKey: session.key,
+              tree: splitPane(
+                treeBeforeLaunch,
+                targetLeaf?.id ?? null,
+                session.key,
+                direction,
+              ),
+            }),
+          );
+    terminalLayout = normalizeLayoutForSessions(
+      upsertRuntimeSession(session),
+      layoutWithTerminalGroups(
+        {
+          ...terminalLayout,
+          open: true,
+          sessionRegions: {
+            ...terminalLayout.sessionRegions,
+            [session.key]: "terminal",
+          },
+        },
+        groups,
+        groupID,
+      ),
+    );
+    if (terminalLayout.dock === "top") {
+      selectWorkspaceTab("terminal");
+    }
+  }
+
+  function splitTerminalSessionIntoPane(
+    sessionKey: string,
+    targetLeafID: string,
+    direction: SplitDirection,
+    placement: "before" | "after",
+  ): void {
+    if (actionsBlocked) return;
+    const session = runtimeSessions.find((candidate) => candidate.key === sessionKey);
+    const groupID = terminalLayout.activeTerminalGroupID;
+    const group = currentTerminalGroup;
+    if (!session || !groupID || !group) return;
+    const sourceLeaf = findLeafBySession(group.tree, sessionKey);
+    if (sourceLeaf?.id === targetLeafID) {
+      selectTerminalSession(sessionKey);
+      return;
+    }
+    const groupsWithoutSource = closeSessionInTerminalGroups(
+      terminalLayout.terminalGroups,
+      sessionKey,
+    );
+    const targetGroup =
+      groupsWithoutSource.find((candidate) => candidate.id === groupID) ?? group;
+    const tree = splitSessionIntoPane(
+      targetGroup.tree,
+      targetLeafID,
+      sessionKey,
+      direction,
+      placement,
+    );
+    const groups = updateTerminalGroupTree(
+      groupsWithoutSource.some((candidate) => candidate.id === groupID)
+        ? groupsWithoutSource
+        : [...groupsWithoutSource, targetGroup],
+      groupID,
+      (candidate) => ({
+        ...candidate,
+        activeSessionKey: sessionKey,
+        tree,
+      }),
+    );
+    terminalLayout = normalizeLayoutForSessions(runtimeSessions, {
+      ...layoutWithTerminalGroups(
+        {
+          ...terminalLayout,
+          open: true,
+          sessionRegions: {
+            ...terminalLayout.sessionRegions,
+            [sessionKey]: "terminal",
+          },
+        },
+        groups,
+        groupID,
+      ),
+    });
+  }
+
+  function newPaneGroupID(): string {
+    if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+      return `terminal-group-${crypto.randomUUID()}`;
+    }
+    return `terminal-group-${Date.now().toString(36)}-${Math.random()
+      .toString(16)
+      .slice(2)}`;
+  }
+
+  function dockTerminalPanel(dock: TerminalDock): void {
+    terminalLayout = normalizeLayoutForSessions(runtimeSessions, {
+      ...terminalLayout,
+      dock,
+      open: true,
+    });
+    if (dock === "top") {
+      selectWorkspaceTab("terminal");
+    } else if (activeTabKey === "terminal") {
+      selectWorkspaceTab("home");
+    }
+  }
+
+  function resizeTerminalPanel(height: number): void {
+    terminalLayout = {
+      ...terminalLayout,
+      height: clampTerminalHeight(height),
+    };
+  }
+
+  function updateActiveTerminalTree(tree: PaneNode | null): void {
+    const activeGroupID = terminalLayout.activeTerminalGroupID;
+    terminalLayout = {
+      ...terminalLayout,
+      tree,
+      terminalGroups: activeGroupID
+        ? updateTerminalGroupTree(
+            terminalLayout.terminalGroups,
+            activeGroupID,
+            (group) => ({ ...group, tree }),
+          )
+        : terminalLayout.terminalGroups,
+    };
+  }
+
+  function readDroppedSession(event: DragEvent): string | null {
+    return readRuntimeSessionDrag(event, workspaceId);
+  }
+
+  function handleWorkflowDragOver(event: DragEvent): void {
+    if (readDroppedSession(event) === null) return;
+    event.preventDefault();
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = "move";
+    }
+  }
+
+  function handleWorkflowDrop(event: DragEvent): void {
+    const sessionKey = readDroppedSession(event);
+    if (sessionKey === null) return;
+    event.preventDefault();
+    moveSessionToWorkflow(sessionKey);
+    clearActiveTerminalDrag();
   }
 
   function startPolling(): void {
@@ -782,7 +1860,9 @@
     }
   }
 
-  async function handleDelete(): Promise<void> {
+  async function handleDelete(
+    triggerEl: HTMLElement | null = null,
+  ): Promise<void> {
     if (actionsBlocked) return;
     actionError = null;
     const targetId = workspaceId;
@@ -792,7 +1872,7 @@
     // last point we can read the originating focused element. By
     // the time the post-await effect runs, the browser has cleared
     // focus to document.body.
-    const triggerEl =
+    triggerEl ??=
       document.activeElement instanceof HTMLElement
         ? document.activeElement
         : null;
@@ -885,10 +1965,22 @@
 
   let previouslyFocusedEl: HTMLElement | null = null;
 
-  function handleForcePromptKeydown(event: KeyboardEvent): void {
+  function cancelActiveModal(): void {
+    if (renamePrompt !== null) {
+      cancelRenamePrompt();
+      return;
+    }
+    if (stopPromptSession !== null) {
+      cancelStopSession();
+      return;
+    }
+    cancelForceDelete();
+  }
+
+  function handleConfirmPromptKeydown(event: KeyboardEvent): void {
     if (event.key === "Escape") {
       event.preventDefault();
-      cancelForceDelete();
+      cancelActiveModal();
       return;
     }
     if (event.key !== "Tab") return;
@@ -902,24 +1994,39 @@
       ),
     );
     if (focusable.length === 0) return;
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    if (!first || !last) return;
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first.focus();
-    }
+    const currentIndex = focusable.findIndex(
+      (el) => el === document.activeElement,
+    );
+    const nextIndex = event.shiftKey
+      ? currentIndex <= 0
+        ? focusable.length - 1
+        : currentIndex - 1
+      : currentIndex < 0 ||
+          currentIndex >= focusable.length - 1
+        ? 0
+        : currentIndex + 1;
+    event.preventDefault();
+    focusable[nextIndex]?.focus();
   }
 
   $effect(() => {
-    if (forcePromptMessage !== null) {
+    if (renamePrompt !== null) {
+      void tick().then(() => {
+        renameInputEl?.focus();
+        renameInputEl?.select();
+      });
+    } else if (stopPromptSession !== null) {
+      void tick().then(() => cancelStopBtnEl?.focus());
+    } else if (forcePromptMessage !== null) {
       void tick().then(() => cancelForceBtnEl?.focus());
-    } else if (previouslyFocusedEl !== null) {
-      previouslyFocusedEl.focus();
+    } else if (!modalOpen && previouslyFocusedEl !== null) {
+      const triggerEl = previouslyFocusedEl;
       previouslyFocusedEl = null;
+      void tick().then(() => {
+        if (document.contains(triggerEl)) {
+          triggerEl.focus();
+        }
+      });
     }
   });
 
@@ -927,6 +2034,20 @@
     if (forcePromptMessage === null) return;
     return untrack(() =>
       pushModalFrame("workspace-force-delete", []),
+    );
+  });
+
+  $effect(() => {
+    if (stopPromptSession === null) return;
+    return untrack(() =>
+      pushModalFrame("workspace-stop-session", []),
+    );
+  });
+
+  $effect(() => {
+    if (renamePrompt === null) return;
+    return untrack(() =>
+      pushModalFrame("workspace-rename-session", []),
     );
   });
 
@@ -953,20 +2074,27 @@
   // it in place.
   $effect(() => {
     const id = workspaceId;
+    const restoredLayout = id ? loadTerminalLayout(id) : defaultTerminalLayout();
     const restoredTab = restoreWorkspaceTab(id);
+    const restoredActiveTab =
+      restoredTab === "terminal" &&
+      !(restoredLayout.open && restoredLayout.dock === "top")
+        ? "home"
+        : restoredTab;
+    const layoutForActiveTab =
+      restoredActiveTab === "home"
+        ? restoredLayout
+        : { ...restoredLayout, workflowMode: "tabs" as const };
 
     // Tab state from the previous workspace can't be valid for a
     // different workspace's runtime, so reset these even though
-    // workspace/runtime themselves are kept. shellOpen must reset
-    // too: the ShellDrawer's TerminalPane only opens its WebSocket
-    // on mount, so leaving the drawer open across a workspace
-    // change would route keystrokes to the previous workspace's
-    // shell while the user looks at the new workspace.
-    activeTabKey = restoredTab;
-    tmuxTabOpen = restoredTab === "tmux";
-    shellOpen = false;
+    // workspace/runtime themselves are kept.
+    restoreWorkspaceTabSelection(restoredActiveTab);
+    shellTabOpen = restoredActiveTab === "shell";
+    terminalLayout = layoutForActiveTab;
+    terminalLayoutWorkspaceId = id;
     launchingKey = null;
-    shellLoading = false;
+    terminalLaunching = false;
     closedSessions = [];
 
     // Errors/transient flags from the prior workspace should not
@@ -982,10 +2110,15 @@
     // the previous value.
     forcePromptMessage = null;
     forcePromptForId = null;
+    stopPromptSession = null;
+    stopSessionStopping = false;
+    renamePrompt = null;
+    renameInputValue = "";
+    renameSaving = false;
     workspaceGen += 1;
-    tmuxTerminalMounted = restoredTab === "tmux";
-    mountedSessionKeys = restoredTab.startsWith("session:")
-      ? [restoredTab.slice("session:".length)]
+    shellTerminalMounted = restoredActiveTab === "shell";
+    mountedSessionKeys = restoredActiveTab.startsWith("session:")
+      ? [restoredActiveTab.slice("session:".length)]
       : [];
 
     if (!id) {
@@ -1053,7 +2186,7 @@
   });
 </script>
 
-<div class="terminal-view" inert={forcePromptMessage !== null}>
+<div class="terminal-view" inert={modalOpen}>
   {#snippet terminalMainContent()}
     <div class="terminal-main">
       {#if !workspaceId}
@@ -1110,7 +2243,8 @@
           </button>
           <button
             class="retry-btn danger"
-            onclick={() => void handleDelete()}
+            onclick={(event) =>
+              void handleDelete(event.currentTarget)}
           >
             Delete
           </button>
@@ -1170,7 +2304,8 @@
             <button
               class="header-btn danger"
               disabled={actionsBlocked}
-              onclick={() => void handleDelete()}
+              onclick={(event) =>
+                void handleDelete(event.currentTarget)}
             >
               Delete
             </button>
@@ -1180,33 +2315,17 @@
           <div class="terminal-area">
             <div class="workspace-surface">
               <div class="workspace-toolbar">
-                <WorkspaceTabs
-                  activeKey={activeTabKey}
-                  sessions={runtimeSessions}
-                  tmuxOpen={tmuxTabOpen}
-                  onSelectHome={() => {
-                    selectWorkspaceTab("home");
-                  }}
-                  onSelectTmux={() => {
-                    tmuxTerminalMounted = true;
-                    selectWorkspaceTab("tmux");
-                  }}
-                  onSelectSession={openSession}
-                  onCloseTmux={() => {
-                    tmuxTabOpen = false;
-                    tmuxTerminalMounted = false;
-                    if (activeTabKey === "tmux") {
-                      selectWorkspaceTab("home");
-                    }
-                  }}
-                  onCloseSession={(key) => {
-                    const session = runtimeSessions.find(
-                      (s) => s.key === key,
-                    );
-                    if (session) void closeSession(session);
-                  }}
-                />
+                <div class="workspace-toolbar-title">Workflow</div>
                 <div class="workspace-actions">
+                  <WorkflowPresetMenu
+                    presets={workflowPresets}
+                    selectedPresetId={selectedWorkflowPresetId}
+                    applying={applyingWorkflowPreset}
+                    onSaveNew={saveWorkflowPreset}
+                    onUpdate={updateWorkflowPreset}
+                    onApply={(presetId) => void applyWorkflowPreset(presetId)}
+                    onDelete={deleteWorkflowPreset}
+                  />
                   <TerminalOptionsMenu />
                   <LaunchMenu
                     launchTargets={launchTargets}
@@ -1218,7 +2337,13 @@
               {#if runtimeError}
                 <div class="runtime-error">{runtimeError}</div>
               {/if}
-              <div class="workspace-stage">
+              <div
+                class="workspace-stage"
+                role="region"
+                aria-label="Workflow panes"
+                ondragover={handleWorkflowDragOver}
+                ondrop={handleWorkflowDrop}
+              >
                 {#if !runtimeLive}
                   <div class="state-message">
                     <SpinnerIcon
@@ -1230,65 +2355,153 @@
                     <span>Loading workspace runtime...</span>
                   </div>
                 {:else}
-                  <div
-                    class="stage-pane"
-                    class:active={activeTabKey === "home"}
-                  >
-                    <WorkspaceHome
-                      {workspace}
-                      launchTargets={launchTargets}
-                      sessions={runtimeSessions}
-                      {launchingKey}
-                      onLaunch={(key) => void handleLaunch(key)}
-                      onOpenSession={openSession}
-                    />
-                  </div>
-                  {#if tmuxTabOpen}
-                    <div
-                      class="stage-pane"
-                      class:active={activeTabKey === "tmux"}
+                  {#if terminalLayout.workflowTree}
+                    <WorkflowSplitTree
+                      {workspaceId}
+                      node={terminalLayout.workflowTree}
+                      tabs={workflowTabDescriptors}
+                      {activeTabKey}
+                      onSelectTab={(tabKey) => {
+                        if (tabKey === "shell") shellTerminalMounted = true;
+                        if (tabKey === "terminal") {
+                          terminalLayout = { ...terminalLayout, open: true };
+                        }
+                        const sessionKey = sessionKeyFromWorkflowTab(tabKey);
+                        if (sessionKey) mountSessionTerminal(sessionKey);
+                        selectWorkspaceTab(tabKey);
+                      }}
+                      onMoveTabBefore={moveWorkflowTabBeforeTarget}
+                      onAppendTabToLeaf={appendWorkflowTabToGroup}
+                      onSplitTab={splitWorkflowTabIntoGroup}
+                      onMoveTabToTerminal={moveWorkflowTabToTerminal}
+                      onCloseTab={closeWorkflowTab}
+                      onRenameTab={renameWorkflowTab}
+                      onRatioChange={(splitId, ratio) => {
+                        terminalLayout = {
+                          ...terminalLayout,
+                          workflowTree: updateWorkflowSplitRatio(
+                            terminalLayout.workflowTree,
+                            splitId,
+                            ratio,
+                          ),
+                        };
+                      }}
                     >
-                      {#if tmuxTerminalMounted}
-                        <TerminalPane
-                          websocketPath={workspaceTmuxWebSocketPath(
-                            workspaceId,
+                      {#snippet renderTab(tabKey, active)}
+                        {#if tabKey === "home"}
+                          {#if workspace}
+                            <WorkspaceHome
+                              {workspace}
+                              launchTargets={launchTargets}
+                              sessions={workflowSessions}
+                              displayLabels={sessionDisplayLabels}
+                              {launchingKey}
+                              onLaunch={(key) => void handleLaunch(key)}
+                              onOpenSession={openSession}
+                            />
+                          {/if}
+                        {:else if tabKey === "shell"}
+                          {#if shellTerminalMounted}
+                            <TerminalPane
+                              websocketPath={workspaceTmuxWebSocketPath(
+                                workspaceId,
+                              )}
+                              reconnectOnExit={true}
+                              {active}
+                            />
+                          {/if}
+                        {:else if tabKey === "terminal" && terminalPanelInStage}
+                          <DockedTerminalPanel
+                            {workspaceId}
+                            sessions={terminalSessions}
+                            displayLabels={sessionDisplayLabels}
+                            tree={terminalLayout.tree}
+                            activeSessionKey={terminalLayout.activeSessionKey}
+                            open={terminalLayout.open}
+                            dock={terminalLayout.dock}
+                            height={terminalLayout.height}
+                            loading={terminalLaunching}
+                            onToggle={() => void toggleTerminalPanel()}
+                            onNewTerminal={() => void launchTerminalSession()}
+                            onSplit={(direction) => void splitTerminal(direction)}
+                            onSelect={selectTerminalSession}
+                            onClose={(session) => void closeSession(session)}
+                            onRename={renameSession}
+                            onMoveToWorkflow={moveSessionToWorkflow}
+                            onDock={dockTerminalPanel}
+                            onResize={resizeTerminalPanel}
+                            onDropSession={moveSessionToTerminal}
+                            onExit={handleSessionExit}
+                            onSplitSession={splitTerminalSessionIntoPane}
+                            onRatioChange={(splitId, ratio) => {
+                              updateActiveTerminalTree(
+                                updateSplitRatio(
+                                  terminalLayout.tree,
+                                  splitId,
+                                  ratio,
+                                ),
+                              );
+                            }}
+                          />
+                        {:else}
+                          {@const sessionKey = sessionKeyFromWorkflowTab(tabKey)}
+                          {@const session = runtimeSessions.find(
+                            (candidate) => candidate.key === sessionKey,
                           )}
-                          reconnectOnExit={true}
-                          active={activeTabKey === "tmux"}
-                        />
-                      {/if}
-                    </div>
+                          {#if session && isSessionTerminalMounted(session.key)}
+                            {#key session.key}
+                              <TerminalPane
+                                websocketPath={workspaceSessionWebSocketPath(
+                                  workspaceId,
+                                  session.key,
+                                )}
+                                reconnectOnExit={false}
+                                {active}
+                                onExit={() => handleSessionExit(session)}
+                                initialStatus={session.status}
+                              />
+                            {/key}
+                          {/if}
+                        {/if}
+                      {/snippet}
+                    </WorkflowSplitTree>
                   {/if}
-                  {#each runtimeSessions as session (session.key)}
-                    <div
-                      class="stage-pane"
-                      class:active={activeTabKey === `session:${session.key}`}
-                    >
-                      {#if isSessionTerminalMounted(session.key)}
-                        <TerminalPane
-                          websocketPath={workspaceSessionWebSocketPath(
-                            workspaceId,
-                            session.key,
-                          )}
-                          reconnectOnExit={false}
-                          active={activeTabKey === `session:${session.key}`}
-                          onExit={() => handleSessionExit(session)}
-                          initialStatus={session.status}
-                        />
-                      {/if}
-                    </div>
-                  {/each}
                 {/if}
               </div>
-              <ShellDrawer
-                {workspaceId}
-                open={shellOpen}
-                loading={shellLoading}
-                shellSession={shellSessionActive ? shellSession : null}
-                onToggle={() => void toggleShell()}
-                onExit={(id, shellKey, createdAt) =>
-                  handleShellExit(id, shellKey, createdAt)}
-              />
+              {#if terminalLayout.dock === "bottom"}
+                <DockedTerminalPanel
+                  {workspaceId}
+                  sessions={terminalSessions}
+                  displayLabels={sessionDisplayLabels}
+                  tree={terminalLayout.tree}
+                  activeSessionKey={terminalLayout.activeSessionKey}
+                  open={terminalLayout.open}
+                  dock={terminalLayout.dock}
+                  height={terminalLayout.height}
+                  loading={terminalLaunching}
+                  onToggle={() => void toggleTerminalPanel()}
+                  onNewTerminal={() => void launchTerminalSession()}
+                  onSplit={(direction) => void splitTerminal(direction)}
+                  onSelect={selectTerminalSession}
+                  onClose={(session) => void closeSession(session)}
+                  onRename={renameSession}
+                  onMoveToWorkflow={moveSessionToWorkflow}
+                  onDock={dockTerminalPanel}
+                  onResize={resizeTerminalPanel}
+                  onDropSession={moveSessionToTerminal}
+                  onExit={handleSessionExit}
+                  onSplitSession={splitTerminalSessionIntoPane}
+                  onRatioChange={(splitId, ratio) => {
+                    updateActiveTerminalTree(
+                      updateSplitRatio(
+                        terminalLayout.tree,
+                        splitId,
+                        ratio,
+                      ),
+                    );
+                  }}
+                />
+              {/if}
             </div>
           </div>
           {#if sidebarOpen && workspace && !hideRightSidebar}
@@ -1349,11 +2562,119 @@
   {/if}
 </div>
 
+{#if renamePrompt !== null}
+  <div
+    class="force-delete-backdrop"
+    role="presentation"
+    onkeydown={handleConfirmPromptKeydown}
+  >
+    <div
+      class="force-delete-dialog rename-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="rename-session-title"
+      aria-describedby="rename-session-message"
+    >
+      <form
+        class="rename-form"
+        onsubmit={(event) => {
+          event.preventDefault();
+          void saveRenamePrompt();
+        }}
+      >
+        <div class="force-delete-header">
+          <h2 id="rename-session-title">Rename tab</h2>
+        </div>
+        <p id="rename-session-message" class="force-delete-message">
+          Choose the label shown in the workflow and terminal panes.
+        </p>
+        <label class="rename-field">
+          <span>Name</span>
+          <input
+            bind:this={renameInputEl}
+            bind:value={renameInputValue}
+            autocomplete="off"
+            spellcheck="false"
+          />
+        </label>
+        <div class="force-delete-actions">
+          <button
+            type="button"
+            class="force-delete-cancel"
+            disabled={renameSaving}
+            onclick={cancelRenamePrompt}
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            class="rename-confirm"
+            disabled={renameSaving || renameInputValue.trim() === ""}
+          >
+            {renameSaving ? "Saving..." : "Save"}
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+{/if}
+
+{#if stopPromptSession !== null}
+  <div
+    class="force-delete-backdrop"
+    role="presentation"
+    onkeydown={handleConfirmPromptKeydown}
+  >
+    <div
+      class="force-delete-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="stop-session-title"
+      aria-describedby="stop-session-message"
+    >
+      <div class="force-delete-header">
+        <AlertIcon
+          class="force-delete-icon"
+          size="20"
+          strokeWidth="2"
+          aria-hidden="true"
+        />
+        <h2 id="stop-session-title">Stop {stopPromptSession.label}?</h2>
+      </div>
+      <p id="stop-session-message" class="force-delete-message">
+        This will stop the running session and close its pane.
+      </p>
+      <p class="force-delete-hint">
+        Any foreground command running inside this session may be interrupted.
+      </p>
+      <div class="force-delete-actions">
+        <button
+          type="button"
+          class="force-delete-cancel"
+          disabled={stopSessionStopping}
+          bind:this={cancelStopBtnEl}
+          onclick={cancelStopSession}
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          class="force-delete-confirm"
+          disabled={stopSessionStopping}
+          onclick={() => void confirmStopSession()}
+        >
+          {stopSessionStopping ? "Stopping…" : "Stop session"}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
 {#if forcePromptMessage !== null}
   <div
     class="force-delete-backdrop"
     role="presentation"
-    onkeydown={handleForcePromptKeydown}
+    onkeydown={handleConfirmPromptKeydown}
   >
     <div
       class="force-delete-dialog"
@@ -1585,6 +2906,17 @@
     flex-shrink: 0;
   }
 
+  .workspace-toolbar-title {
+    display: inline-flex;
+    align-items: center;
+    padding: 0 10px;
+    color: var(--text-muted);
+    font-size: var(--font-size-xs);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
   .workspace-actions {
     display: flex;
     align-items: center;
@@ -1607,20 +2939,8 @@
     flex: 1;
     min-height: 0;
     overflow: hidden;
-  }
-
-  /* Tabs stay mounted across switches so terminal scrollback and the
-   * WebSocket survive — non-active panes are layered below and
-   * hidden via visibility so layout/sizing is preserved. */
-  .stage-pane {
-    position: absolute;
-    inset: 0;
-    visibility: hidden;
-  }
-
-  .stage-pane.active {
-    visibility: visible;
-    z-index: 1;
+    padding: 6px;
+    background: var(--bg-primary);
   }
 
   .seg-control {
@@ -1702,6 +3022,17 @@
     animation: force-delete-pop 160ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 
+  .rename-dialog {
+    width: min(460px, 100%);
+  }
+
+  .rename-form {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin: 0;
+  }
+
   .force-delete-header {
     display: flex;
     align-items: center;
@@ -1734,6 +3065,33 @@
     line-height: 1.5;
   }
 
+  .rename-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: var(--font-size-xs);
+    font-weight: 600;
+    color: var(--text-secondary);
+  }
+
+  .rename-field input {
+    width: 100%;
+    height: 34px;
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-sm);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    padding: 0 10px;
+    font: inherit;
+    font-size: var(--font-size-sm);
+    outline: none;
+  }
+
+  .rename-field input:focus {
+    border-color: var(--accent-blue);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-blue) 22%, transparent);
+  }
+
   .force-delete-actions {
     display: flex;
     justify-content: flex-end;
@@ -1742,7 +3100,8 @@
   }
 
   .force-delete-cancel,
-  .force-delete-confirm {
+  .force-delete-confirm,
+  .rename-confirm {
     height: 30px;
     padding: 0 14px;
     font-size: var(--font-size-sm);
@@ -1771,13 +3130,26 @@
     font-weight: 600;
   }
 
+  .rename-confirm {
+    background: var(--accent-blue);
+    border: 1px solid var(--accent-blue);
+    color: #fff;
+    font-weight: 600;
+  }
+
   .force-delete-confirm:hover:not(:disabled) {
     background: color-mix(in srgb, var(--accent-red) 88%, black);
     border-color: color-mix(in srgb, var(--accent-red) 88%, black);
   }
 
+  .rename-confirm:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--accent-blue) 88%, black);
+    border-color: color-mix(in srgb, var(--accent-blue) 88%, black);
+  }
+
   .force-delete-cancel:disabled,
-  .force-delete-confirm:disabled {
+  .force-delete-confirm:disabled,
+  .rename-confirm:disabled {
     opacity: 0.6;
     cursor: not-allowed;
   }

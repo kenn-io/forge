@@ -24,6 +24,7 @@
     workspace: WorkspaceHomeWorkspace;
     launchTargets: LaunchTarget[];
     sessions: RuntimeSession[];
+    displayLabels?: Record<string, string>;
     launchingKey?: string | null;
     onLaunch?: (targetKey: string) => void;
     onOpenSession?: (sessionKey: string) => void;
@@ -33,6 +34,7 @@
     workspace,
     launchTargets,
     sessions,
+    displayLabels = {},
     launchingKey = null,
     onLaunch,
     onOpenSession,
@@ -48,8 +50,12 @@
 
   function sourceLabel(target: LaunchTarget): string {
     if (target.source === "config") return "configured";
-    if (target.kind === "tmux") return "tmux";
+    if (target.kind === "shell") return "shell";
     return "detected";
+  }
+
+  function targetLabel(target: LaunchTarget): string {
+    return target.kind === "shell" ? "Shell" : target.label;
   }
 
   function statusLabel(status: string): string {
@@ -57,6 +63,10 @@
     if (status === "starting") return "Starting";
     if (status === "exited") return "Exited";
     return status;
+  }
+
+  function labelFor(session: RuntimeSession): string {
+    return displayLabels[session.key] ?? session.label;
   }
 </script>
 
@@ -92,18 +102,18 @@
     </div>
     <div class="launch-grid">
       {#each visibleTargets as target (target.key)}
-        {@const isTmux = target.kind === "tmux"}
+        {@const isShell = target.kind === "shell"}
         {@const isAgent = target.kind === "agent"}
         {@const isLaunching = launchingKey === target.key}
         <button
           class="launch-card"
           disabled={!target.available || isLaunching}
-          title={target.disabled_reason ?? target.label}
-          aria-label={target.label}
+          title={target.disabled_reason ?? targetLabel(target)}
+          aria-label={targetLabel(target)}
           onclick={() => onLaunch?.(target.key)}
         >
           <span class="card-icon" aria-hidden="true">
-            {#if isTmux}
+            {#if isShell}
               <TerminalIcon size="14" strokeWidth="2" />
             {:else if isAgent}
               <SparklesIcon size="14" strokeWidth="2" />
@@ -111,7 +121,7 @@
               <BoxIcon size="14" strokeWidth="2" />
             {/if}
           </span>
-          <span class="card-label">{target.label}</span>
+          <span class="card-label">{targetLabel(target)}</span>
           <span class="card-source">{sourceLabel(target)}</span>
           {#if isLaunching}
             <span class="card-status">starting…</span>
@@ -137,7 +147,7 @@
               class={["session-dot", session.status]}
               aria-hidden="true"
             ></span>
-            <span class="session-label">{session.label}</span>
+            <span class="session-label">{labelFor(session)}</span>
             <span class="session-status">{statusLabel(session.status)}</span>
           </button>
         {/each}

@@ -126,24 +126,24 @@ func TestResolveLaunchTargetsIncludesSystemTargets(t *testing.T) {
 		}),
 	)
 
-	tmux := findTarget(t, targets, "tmux")
-	shell := findTarget(t, targets, "plain_shell")
+	shell := findTarget(t, targets, "shell")
+	plainShell := findTarget(t, targets, "plain_shell")
 	assert := Assert.New(t)
-	assert.Equal(LaunchTargetTmux, tmux.Kind)
-	assert.True(tmux.Available)
-	assert.Equal([]string{"tmux"}, tmux.Command)
-	assert.Equal(LaunchTargetPlainShell, shell.Kind)
+	assert.Equal(LaunchTargetShell, shell.Kind)
 	assert.True(shell.Available)
+	assert.Equal([]string{"tmux"}, shell.Command)
+	assert.Equal(LaunchTargetPlainShell, plainShell.Kind)
+	assert.True(plainShell.Available)
 }
 
 func TestResolveLaunchTargetsMarksTmuxUnavailable(t *testing.T) {
 	targets := ResolveLaunchTargets(nil, []string{"tmux"}, fakeLookPath(nil))
 
-	tmux := findTarget(t, targets, "tmux")
+	shell := findTarget(t, targets, "shell")
 	assert := Assert.New(t)
-	assert.Equal(LaunchTargetTmux, tmux.Kind)
-	assert.False(tmux.Available)
-	assert.Contains(tmux.DisabledReason, "not found")
+	assert.Equal(LaunchTargetShell, shell.Kind)
+	assert.False(shell.Available)
+	assert.Contains(shell.DisabledReason, "not found")
 }
 
 func TestResolveLaunchTargetsUsesConfiguredTmuxCommand(t *testing.T) {
@@ -155,8 +155,8 @@ func TestResolveLaunchTargetsUsesConfiguredTmuxCommand(t *testing.T) {
 		}),
 	)
 
-	tmux := findTarget(t, targets, "tmux")
+	shell := findTarget(t, targets, "shell")
 	assert := Assert.New(t)
-	assert.Equal([]string{"/opt/bin/tmux-wrapper", "--scope", "tmux"}, tmux.Command)
-	assert.True(tmux.Available)
+	assert.Equal([]string{"/opt/bin/tmux-wrapper", "--scope", "tmux"}, shell.Command)
+	assert.True(shell.Available)
 }

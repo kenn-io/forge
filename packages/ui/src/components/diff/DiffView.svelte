@@ -62,6 +62,9 @@
   let scrollTargetRun = 0;
   let scrollingToTarget: DiffScrollTarget | null = null;
   let restoredScrollScope = "";
+  const maxScrollTargetAttempts = 240;
+  const requiredFileTargetVisibleFrames = 20;
+  const requiredLineTargetVisibleFrames = 2;
 
   onMount(() => {
     if (loadOnMount) {
@@ -275,10 +278,12 @@
       !sameScrollTarget(normalizeScrollTarget(diffStore.getScrollTarget()), target)
     ) return;
 
-    const requiredVisibleFrames = 2;
+    const requiredVisibleFrames = target.line == null
+      ? requiredFileTargetVisibleFrames
+      : requiredLineTargetVisibleFrames;
     let visibleFrames = 0;
     let targetReached = false;
-    for (let attempt = 0; attempt < 60; attempt += 1) {
+    for (let attempt = 0; attempt < maxScrollTargetAttempts; attempt += 1) {
       await nextAnimationFrame();
       if (
         scrollTargetRun !== run ||
@@ -292,6 +297,13 @@
         continue;
       }
       if (isScrollTargetVisible(target)) {
+        if (target.line == null) {
+          targetReached = scrollToTarget(target);
+          if (!targetReached) {
+            visibleFrames = 0;
+            continue;
+          }
+        }
         visibleFrames += 1;
       } else {
         targetReached = false;

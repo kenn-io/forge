@@ -425,6 +425,9 @@ type ciFixtureOptions struct {
 	// providerCheckRuns replaces the fixture provider's check runs for
 	// PR #1 when the test needs refreshes to preserve a multi-check payload.
 	providerCheckRuns []*gh.CheckRun
+	// providerCheckRunError makes the fixture provider fail check-run refreshes for
+	// PR #1 when no provider-side representation exists for the seeded DB state.
+	providerCheckRunError error
 }
 
 func ciChecksToCheckRuns(checks []db.CICheck) []*gh.CheckRun {
@@ -494,6 +497,14 @@ func setPR1CIState(
 	if len(opts.providerCheckRuns) > 0 {
 		if !fc.SetPullRequestCheckRuns("acme", "widgets", 1, opts.providerCheckRuns) {
 			http.Error(w, "replace fixture check runs", http.StatusNotFound)
+			return
+		}
+	}
+	if opts.providerCheckRunError != nil {
+		if !fc.SetPullRequestCheckRunError(
+			"acme", "widgets", 1, opts.providerCheckRunError,
+		) {
+			http.Error(w, "set fixture check error", http.StatusNotFound)
 			return
 		}
 	}
@@ -1083,12 +1094,12 @@ func run(
 			r.URL.Path == "/__e2e/pr-ci-state/malformed" {
 			// No fixture-provider analogue for malformed JSON exists
 			// — a real sync would replace the seeded text with a
-			// valid array. The anti-resync stamp inside
-			// setPR1CIState is the only defence.
+			// valid array. Keep check refreshes failing so any
+			// incidental forced refresh preserves the seeded payload.
 			setPR1CIState(w, r, database, fc, "malformed", ciFixtureOptions{
-				statusName: "failure",
-				checksJSON: "{not json",
-				// pinProviderTo intentionally nil
+				statusName:            "failure",
+				checksJSON:            "{not json",
+				providerCheckRunError: errors.New("fixture malformed CI refresh failed"),
 			})
 			return
 		}

@@ -31,9 +31,13 @@
   }
 
   function sourceLabel(target: LaunchTarget): string {
-    if (target.kind === "tmux") return "tmux";
+    if (target.kind === "shell") return "shell";
     if (target.source === "config") return "configured";
     return target.source;
+  }
+
+  function targetLabel(target: LaunchTarget): string {
+    return target.kind === "shell" ? "Shell" : target.label;
   }
 
   $effect(() => {
@@ -87,16 +91,16 @@
     <div class="launch-popover">
       <div class="popover-heading">Run configurations</div>
       {#each visibleTargets as target (target.key)}
-        {@const isTmux = target.kind === "tmux"}
+        {@const isShell = target.kind === "shell"}
         {@const isAgent = target.kind === "agent"}
         <button
           class="launch-option"
           disabled={!target.available || launchingKey === target.key}
-          title={target.disabled_reason ?? target.label}
+          title={target.disabled_reason ?? targetLabel(target)}
           onclick={() => launch(target.key)}
         >
           <span class="option-icon" aria-hidden="true">
-            {#if isTmux}
+            {#if isShell}
               <TerminalIcon size="13" strokeWidth="2" />
             {:else if isAgent}
               <SparklesIcon size="13" strokeWidth="2" />
@@ -104,7 +108,7 @@
               <BoxIcon size="13" strokeWidth="2" />
             {/if}
           </span>
-          <span class="option-label">{target.label}</span>
+          <span class="option-label">{targetLabel(target)}</span>
           <span class="option-source">{sourceLabel(target)}</span>
         </button>
       {/each}

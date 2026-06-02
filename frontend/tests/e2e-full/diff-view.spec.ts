@@ -2082,7 +2082,7 @@ test.describe("diff view (git-backed)", () => {
     }
   });
 
-  test("inline review comments persist selected left and right diff targets", async ({ page }) => {
+  test("inline review composer opens and persists selected left and right diff targets", async ({ page }) => {
     const server = await startIsolatedE2EServer();
     try {
       const baseURL = server.info.base_url;
@@ -2102,6 +2102,7 @@ test.describe("diff view (git-backed)", () => {
       await selectPierreReviewLine(cacheFile, 1, "right");
       await expect(page.getByPlaceholder("Leave a comment")).toBeVisible();
       await expect(page.getByPlaceholder("Leave a comment")).toBeFocused();
+      await expectPierreDiffFirstVisible(cacheFile, diffAdditionsSelector);
       const cacheContentBox = await cacheFile.locator(".file-content").boundingBox();
       const composerBox = await cacheFile.locator(".inline-composer").boundingBox();
       expect(cacheContentBox).not.toBeNull();

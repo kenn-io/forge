@@ -99,6 +99,98 @@ func TestOwnerStopWhileRunOwnerReturns(t *testing.T) {
 	}
 }
 
+func TestOwnerQuickExitRemainsAttachable(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	if runtime.GOOS == "windows" {
+		t.Skip("in-process PTY owner test requires a host PTY")
+	}
+
+	root := t.TempDir()
+	session := "middleman-quick-exit"
+	done := make(chan error, 1)
+	go func() {
+		done <- RunOwner(t.Context(), Options{
+			Root:    root,
+			Session: session,
+			Cwd:     t.TempDir(),
+			Command: []string{"sh", "-c", "printf quick-exit-output; exit 7"},
+		})
+	}()
+
+	client := Client{Root: root}
+	waitOwnerReady(t, done, client, session)
+
+	attach, err := client.Attach(context.Background(), session, 120, 30)
+	require.NoError(err)
+	defer attach.Close()
+
+	assert.Contains(
+		readUntil(t, attach.Output, "quick-exit-output"),
+		"quick-exit-output",
+	)
+	select {
+	case <-attach.Done:
+	case <-time.After(2 * time.Second):
+		require.Fail("attachment did not receive exit")
+	}
+	assert.Equal(7, attach.ExitCode())
+	require.NoError(client.Stop(context.Background(), session))
+	select {
+	case err := <-done:
+		require.NoError(err)
+	case <-time.After(2 * time.Second):
+		require.Fail("owner did not stop after quick exit")
+	}
+}
+
+func TestOwnerDetachedBeforeExitKeepsPostExitAttachWindow(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	if runtime.GOOS == "windows" {
+		t.Skip("in-process PTY owner test requires a host PTY")
+	}
+
+	root := t.TempDir()
+	session := "middleman-detach-before-exit"
+	done := make(chan error, 1)
+	go func() {
+		done <- RunOwner(t.Context(), Options{
+			Root:    root,
+			Session: session,
+			Cwd:     t.TempDir(),
+			Command: []string{"sh", "-c", "printf ready; sleep 0.2; printf final-output; exit 9"},
+		})
+	}()
+
+	client := Client{Root: root}
+	waitOwnerReady(t, done, client, session)
+
+	first, err := client.Attach(context.Background(), session, 120, 30)
+	require.NoError(err)
+	assert.Contains(readUntil(t, first.Output, "ready"), "ready")
+	first.Close()
+
+	time.Sleep(300 * time.Millisecond)
+	second, err := client.Attach(context.Background(), session, 120, 30)
+	require.NoError(err)
+	defer second.Close()
+	assert.Contains(readUntil(t, second.Output, "final-output"), "final-output")
+	select {
+	case <-second.Done:
+	case <-time.After(2 * time.Second):
+		require.Fail("post-exit attachment did not receive exit")
+	}
+	assert.Equal(9, second.ExitCode())
+
+	select {
+	case err := <-done:
+		require.NoError(err)
+	case <-time.After(2 * time.Second):
+		require.Fail("owner did not stop after post-exit attachment")
+	}
+}
+
 func TestTerminalTitleParserTracksOSCSequences(t *testing.T) {
 	assert := Assert.New(t)
 	var parser terminalTitleParser

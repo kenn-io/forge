@@ -31,6 +31,8 @@ DEV_BACKEND_LOG ?= $(DEV_LOG_DIR)/backend-dev.log
 # gotestsum prints package names on success and full output on failure,
 # while persisting raw `go test -json` events for downstream reporters.
 GOTESTSUM := go tool gotestsum --format pkgname-and-test-fails --jsonfile
+GO_TEST_P ?=
+GO_TEST_P_FLAG := $(if $(GO_TEST_P),-p $(GO_TEST_P),)
 
 # Ensure go:embed has at least one file (no-op if frontend is built)
 ensure-embed-dir:
@@ -184,15 +186,15 @@ dev-ephemeral-stop:
 
 # Run tests
 test: ensure-embed-dir ensure-tmp-dir
-	$(GOTESTSUM)=tmp/test-output.json -- -p 1 ./... -shuffle=on
+	$(GOTESTSUM)=tmp/test-output.json -- $(GO_TEST_P_FLAG) ./... -shuffle=on
 
 # Run fast tests only
 test-short: ensure-embed-dir ensure-tmp-dir
-	$(GOTESTSUM)=tmp/test-short-output.json -- -p 1 ./... -short -shuffle=on
+	$(GOTESTSUM)=tmp/test-short-output.json -- $(GO_TEST_P_FLAG) ./... -short -shuffle=on
 
 # Run integration tests that execute real git commands (excluded from test-short)
 test-integration: ensure-embed-dir ensure-tmp-dir
-	$(GOTESTSUM)=tmp/test-integration-output.json -- -p 1 -tags integration ./... -shuffle=on
+	$(GOTESTSUM)=tmp/test-integration-output.json -- $(GO_TEST_P_FLAG) -tags integration ./... -shuffle=on
 
 # Report per-package wall time for the slow race-test packages.
 race-times: ensure-embed-dir

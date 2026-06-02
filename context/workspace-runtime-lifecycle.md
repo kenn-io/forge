@@ -17,15 +17,17 @@ Middleman manages three related but different things:
 
 - The persisted workspace record and worktree.
 - The base workspace `tmux` terminal, which is durable and reconnectable.
-- Launched runtime sessions and the shell drawer, which are disposable live
-  processes.
+- Launched runtime sessions and the shell drawer. When tmux is available they
+  are tmux-backed, recorded, and reconnectable across middleman restarts; when
+  tmux is unavailable they use ptyowner.
 
 Rules:
 
 - The base workspace `tmux` tab is part of the durable workspace experience.
-- Launched agent sessions are not durable after natural exit.
-- The shell drawer behaves like a disposable runtime process, not like the base
-  tmux tab.
+- Launched agent sessions and shell sessions are not durable after natural exit.
+- The shell drawer is a singleton per workspace, but a tmux-backed shell should
+  survive middleman server restarts until the shell exits or the workspace is
+  deleted.
 
 ## Natural Exit Rules
 
@@ -37,7 +39,8 @@ Natural process exit should collapse stale runtime state quickly.
   dead terminal tab selected.
 - If the session was tmux-backed, forget the persisted runtime tmux row once the
   backing tmux session is gone.
-- When the shell drawer process exits, close or collapse the drawer and require
+- When the shell drawer process exits, close or collapse the drawer, forget any
+  persisted runtime tmux row once the backing tmux session is gone, and require
   a fresh launch on reopen.
 
 The base workspace `tmux` tab is the exception:
@@ -88,13 +91,14 @@ stale tabs.
 
 ## Shell Command Override
 
-The plain shell session is launched as a direct child of middleman via
-`pty.StartWithSize`, which means it inherits middleman's seccomp filter,
-namespace restrictions, and resource limits. Hardened deployments
-(systemd services with `SystemCallFilter=~@privileged`, `LockPersonality=`,
-`MemoryDenyWriteExecute=`, etc.) will SIGSYS the shell almost immediately:
-zsh and bash both call `setresuid(uid, uid, uid)` during startup to drop
-saved-uid privileges, and that syscall is in `@privileged`.
+When tmux is unavailable, the plain shell session is launched through ptyowner
+rather than as a direct child of middleman. This decouples shell ownership and
+lifetime from the middleman server process. Hardened deployments (systemd
+services with `SystemCallFilter=~@privileged`, `LockPersonality=`,
+`MemoryDenyWriteExecute=`, etc.) can still need a `[shell] command` wrapper or
+external ptyowner manager path that starts the shell outside the restricted
+service unit: zsh and bash both call `setresuid(uid, uid, uid)` during startup to
+drop saved-uid privileges, and that syscall is in `@privileged`.
 
 For these deployments, set `[shell] command = [...]` to wrap the launch
 in something that escapes the parent unit's filter. On systemd hosts,

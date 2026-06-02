@@ -571,10 +571,11 @@ func newServer(
 		if cfg != nil {
 			agents = cfg.Agents
 		}
-		var runtimePtyOwner ptyownerruntime.Owner
-		if !tmuxAvailable {
-			runtimePtyOwner = ptyownerruntime.New(ptyOwnerClient, nil)
-		}
+		// Runtime sessions that are not tmux-backed must still be owned
+		// outside the middleman server process so restarts do not tear down
+		// workspace terminal state. Tmux-backed sessions still attach via
+		// tmux; the runtime manager only uses this owner for non-tmux starts.
+		runtimePtyOwner := ptyownerruntime.New(ptyOwnerClient, nil)
 		s.runtime = localruntime.NewManager(localruntime.Options{
 			Targets: localruntime.ResolveLaunchTargets(
 				agents, tmuxCmd, nil,
@@ -712,17 +713,41 @@ func (s *Server) restoreRuntimeTmuxSessions(ctx context.Context) error {
 		return nil
 	}
 
-	sessions := make([]localruntime.RestoredTmuxSession, 0, len(stored))
 	for _, session := range stored {
-		sessions = append(sessions, localruntime.RestoredTmuxSession{
+		restored := localruntime.RestoredTmuxSession{
 			WorkspaceID: session.WorkspaceID,
 			SessionName: session.SessionName,
 			TargetKey:   session.TargetKey,
 			CreatedAt:   session.CreatedAt,
-		})
+		}
+		err := s.runtime.RestoreTmuxSessions(
+			ctx, []localruntime.RestoredTmuxSession{restored},
+		)
+		if err == nil {
+			continue
+		}
+		var ownerErr localruntime.TmuxSessionOwnershipError
+		if errors.As(err, &ownerErr) && s.workspaces != nil {
+			deleted, forgetErr := s.workspaces.ForgetRuntimeTmuxSessionCreatedAt(
+				ctx, session.WorkspaceID, session.SessionName, session.CreatedAt,
+			)
+			if forgetErr != nil {
+				return forgetErr
+			}
+			slog.Warn(
+				"forget unowned runtime tmux session",
+				"workspace_id", session.WorkspaceID,
+				"target_key", session.TargetKey,
+				"tmux_session", session.SessionName,
+				"deleted", deleted,
+				"err", err,
+			)
+			continue
+		}
+		return err
 	}
-	slog.Debug("restoring runtime tmux sessions", "count", len(sessions))
-	return s.runtime.RestoreTmuxSessions(ctx, sessions)
+	slog.Debug("restored runtime tmux sessions", "count", len(stored))
+	return nil
 }
 
 func (s *Server) handleRuntimeSessionExit(info localruntime.SessionInfo) {

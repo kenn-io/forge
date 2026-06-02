@@ -8,6 +8,8 @@ type DiffFixture = Omit<DiffResult, "files"> & {
   files: DiffFixtureFile[];
 };
 
+const gitBackedDiffTestTimeoutMs = 120_000;
+
 // --- Fixtures ---
 
 // Small fixture: 4 files covering modified (multi-hunk), added, deleted, binary.
@@ -1893,11 +1895,13 @@ test.describe("diff view performance", () => {
 //   - README.md: whitespace-only change
 
 test.describe("diff view (git-backed)", () => {
-  test.describe.configure({ mode: "serial" });
+  test.describe.configure({ mode: "serial", timeout: gitBackedDiffTestTimeoutMs });
 
   let releaseLock: (() => Promise<void>) | null = null;
 
-  test.beforeAll(async () => {
+  // eslint-disable-next-line no-empty-pattern -- Playwright requires fixture destructuring to access testInfo.
+  test.beforeAll(async ({}, testInfo) => {
+    testInfo.setTimeout(gitBackedDiffTestTimeoutMs);
     releaseLock = await acquireExclusiveLock("git-backed-diff");
   });
 

@@ -125,6 +125,7 @@ make vet        # go vet
 
 - Prefer stdlib over external dependencies
 - Do the task requested, not the task imagined. Do not widen scope without explicitly confirming with the user first
+- When a backwards compatibility adapter, shim, alias, fallback wrapper, or legacy translation layer seems useful, ask the user for EXPRESS permission before introducing it. These shims carry very high maintenance cost because they preserve old paths, multiply edge cases, and make future changes harder to reason about; explain the compatibility benefit and why direct migration or removal is not the better choice.
 - Use `huma` for the web framework and OpenAPI generation
 - Regenerate API artifacts with `make api-generate`; the Go client also supports `go generate ./internal/apiclient/generated`
 - **Never use npm** — use `bun install`, `bun run build`, `bun run dev`, etc. for all frontend operations. Never run `npm install` or `npm run` — this creates `package-lock.json` which conflicts with the bun lockfile

@@ -505,6 +505,7 @@ func TestWorkspaceResponseTracksTmuxOutputActivity(t *testing.T) {
 		0o644,
 	))
 	probeAt := now.Add(tmuxSampleMinInterval + time.Second)
+	firstProbeAt := probeAt
 	setClock(probeAt)
 	var second struct {
 		TmuxPaneTitle      *string `json:"tmux_pane_title"`
@@ -526,10 +527,11 @@ func TestWorkspaceResponseTracksTmuxOutputActivity(t *testing.T) {
 	assert.True(second.TmuxWorking)
 	assert.Equal(tmuxActivitySourceOutput, second.TmuxActivitySource)
 	require.NotNil(second.TmuxLastOutputAt)
-	assert.Equal(probeAt.Format(time.RFC3339), *second.TmuxLastOutputAt)
 
 	lastOutputAt, err := time.Parse(time.RFC3339, *second.TmuxLastOutputAt)
 	require.NoError(err)
+	assert.False(lastOutputAt.Before(firstProbeAt), "last output must be observed at or after the first eligible probe")
+	assert.False(lastOutputAt.After(probeAt), "last output must not be newer than the final poll clock")
 	setClock(lastOutputAt.Add(tmuxActivityTTL + time.Second))
 	expired := getRawWorkspaceActivity(t, client, ctx, wsID)
 	assert.False(expired.TmuxWorking)

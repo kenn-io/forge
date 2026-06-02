@@ -3,9 +3,20 @@
 package localruntime
 
 import (
+	"errors"
 	"os"
 	"syscall"
 )
+
+func terminateSessionProcess(process *os.Process) error {
+	if err := syscall.Kill(-process.Pid, syscall.SIGTERM); err != nil {
+		if errors.Is(err, syscall.ESRCH) {
+			return os.ErrProcessDone
+		}
+		return process.Signal(syscall.SIGTERM)
+	}
+	return nil
+}
 
 func killSessionProcess(process *os.Process) error {
 	// pty.StartWithSize sets Setsid, so the launched process is a

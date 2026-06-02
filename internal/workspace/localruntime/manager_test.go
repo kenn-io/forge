@@ -600,35 +600,55 @@ func TestManagerStopIgnoresAbsentTmuxSession(t *testing.T) {
 }
 
 func TestManagerShutdownLeavesTmuxSessionsRunning(t *testing.T) {
+	requirePTYAvailable(t)
+	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
+
+	require := require.New(t)
 	assert := Assert.New(t)
 	dir := t.TempDir()
 	record := filepath.Join(dir, "record")
 	tmuxPath := filepath.Join(dir, "tmux-records")
-	require.NoError(t, os.WriteFile(
+	require.NoError(os.WriteFile(
 		tmuxPath,
 		[]byte("#!/bin/sh\nprintf '%s\\0' \"$@\" >> \"$TMUX_RECORD\"\n"),
 		0o755,
 	))
 	t.Setenv("TMUX_RECORD", record)
-	done := make(chan struct{})
-	close(done)
-	mgr := NewManager(Options{TmuxCommand: []string{tmuxPath}})
-	mgr.sessions["ws-1:codex"] = &session{
-		info: SessionInfo{
-			Key:         "ws-1:codex",
-			WorkspaceID: "ws-1",
-			TargetKey:   "codex",
-			Kind:        LaunchTargetAgent,
+	mgr := NewManager(Options{
+		Targets: []LaunchTarget{
+			helperTarget("codex", "sleep"),
 		},
-		cmd:         &exec.Cmd{},
-		tmuxSession: "middleman-ws-1-codex",
-		done:        done,
+		TmuxCommand: []string{tmuxPath},
+	})
+	t.Cleanup(mgr.Shutdown)
+
+	info, err := mgr.Launch(
+		context.Background(), "ws-1", t.TempDir(), "codex",
+	)
+	require.NoError(err)
+
+	var pid int
+	mgr.mu.Lock()
+	s := mgr.sessions[info.Key]
+	require.NotNil(s)
+	mgr.mu.Unlock()
+
+	s.mu.Lock()
+	s.tmuxSession = "middleman-ws-1-codex"
+	if s.cmd != nil && s.cmd.Process != nil {
+		pid = s.cmd.Process.Pid
 	}
+	s.mu.Unlock()
+	require.Positive(pid)
+	require.True(processAlive(pid), "local attach client should be alive")
 
 	mgr.Shutdown()
 
-	_, err := os.Stat(record)
-	assert.True(os.IsNotExist(err), "shutdown should not invoke tmux cleanup")
+	_, statErr := os.Stat(record)
+	assert.True(os.IsNotExist(statErr), "shutdown should not invoke tmux cleanup")
+	assert.Eventually(func() bool {
+		return !processAlive(pid)
+	}, 5*time.Second, 25*time.Millisecond)
 	assert.Empty(mgr.ListSessions("ws-1"))
 }
 

@@ -144,6 +144,7 @@ type session struct {
 	mu                    sync.Mutex
 	info                  SessionInfo
 	cmd                   *exec.Cmd
+	cancel                context.CancelFunc
 	ptmx                  *os.File
 	ptyOwner              ptyownerruntime.Owner
 	pty                   ptyownerruntime.PTY
@@ -1080,6 +1081,7 @@ func (m *Manager) Shutdown() {
 	for _, s := range sessions {
 		if s.tmuxSession != "" {
 			s.detach()
+			waiting = append(waiting, s)
 			continue
 		}
 		s.stop()
@@ -1540,7 +1542,18 @@ func startSession(
 		"cwd", cwd,
 	)
 
-	cmd := procutil.Command(resolvedPath, command[1:]...)
+	// Runtime sessions outlive the launch request, so they get their own
+	// lifecycle context. Shutdown cancels this to stop the local PTY client
+	// without running tmux kill-session against tmux-backed agents.
+	sessionCtx, cancelSession := context.WithCancel(context.Background())
+	cmd := procutil.CommandContext(sessionCtx, resolvedPath, command[1:]...)
+	cmd.Cancel = func() error {
+		if cmd.Process == nil {
+			return os.ErrProcessDone
+		}
+		return terminateSessionProcess(cmd.Process)
+	}
+	cmd.WaitDelay = 2 * time.Second
 	if cwd != "" {
 		cmd.Dir = cwd
 	}
@@ -1557,6 +1570,7 @@ func startSession(
 		Cols: 120,
 	})
 	if err != nil {
+		cancelSession()
 		return nil, fmt.Errorf("start pty: %w", err)
 	}
 	slog.Debug(
@@ -1571,6 +1585,7 @@ func startSession(
 	s := &session{
 		info:        info,
 		cmd:         cmd,
+		cancel:      cancelSession,
 		ptmx:        ptmx,
 		done:        make(chan struct{}),
 		outputDone:  make(chan struct{}),
@@ -1602,6 +1617,9 @@ func (s *session) watch() SessionInfo {
 		return s.watchPtyOwner()
 	}
 	exitCode := waitExitCode(s.cmd.Wait())
+	if s.cancel != nil {
+		s.cancel()
+	}
 	now := time.Now().UTC()
 
 	s.mu.Lock()
@@ -1864,6 +1882,9 @@ func (s *session) closeSubscribers() {
 
 func (s *session) stop() {
 	s.stopOnce.Do(func() {
+		if s.cancel != nil {
+			s.cancel()
+		}
 		if s.pty != nil {
 			if s.ptyOwner != nil {
 				ctx, cancel := context.WithTimeout(
@@ -1897,6 +1918,9 @@ func (s *session) wasStopRequested() bool {
 
 func (s *session) detach() {
 	s.stopOnce.Do(func() {
+		if s.cancel != nil {
+			s.cancel()
+		}
 		if s.pty != nil {
 			s.pty.Close()
 		}

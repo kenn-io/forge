@@ -61,7 +61,7 @@ import (
 
 const serverRuntimeHelperMarker = "middleman-runtime-helper"
 
-var ptyE2ESemaphore = semaphore.NewWeighted(4)
+var ptyE2ESemaphore = semaphore.NewWeighted(1)
 
 func runParallelPTYE2E(t *testing.T) {
 	t.Helper()

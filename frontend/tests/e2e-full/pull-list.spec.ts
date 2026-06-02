@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Browser, type Page } from "@playwright/test";
 
 // Seeded data summary:
 //   open PRs (8): widgets#1, #2, #6, #7, tools#1, tools#10, #11, #12 (last three form a stack)
@@ -96,7 +96,41 @@ async function expectRepoChipToClipSafely(
   expect(labelOverflow.scrollWidth).toBeGreaterThan(labelOverflow.clientWidth);
 }
 
+async function primeKanbanStateRows(
+  browser: Browser,
+  baseURL: string,
+): Promise<void> {
+  const page = await browser.newPage({ baseURL });
+  try {
+    await page.goto("/pulls");
+    await waitForPullList(page);
+    await page.locator(".pull-item").first().click();
+    await page
+      .locator(".pull-detail")
+      .waitFor({ state: "visible", timeout: 5_000 });
+  } finally {
+    await page.close();
+  }
+}
+
+async function expectPullReviewIndicator(
+  page: Page,
+  title: string,
+  label: string,
+): Promise<void> {
+  const item = page.locator(".pull-item", { hasText: title });
+  await expect(item.locator(`[aria-label='${label}']`)).toBeVisible();
+}
+
 test.describe("PR list view", () => {
+  test.beforeAll(async ({ browser }, testInfo) => {
+    const baseURL = testInfo.project.use.baseURL;
+    if (typeof baseURL !== "string") {
+      throw new Error("PR list e2e setup requires a configured baseURL");
+    }
+    await primeKanbanStateRows(browser, baseURL);
+  });
+
   test.beforeEach(async ({ page }) => {
     await page.goto("/pulls");
     await waitForPullList(page);
@@ -114,34 +148,21 @@ test.describe("PR list view", () => {
       /^8 PRs$/,
     );
 
-    // Seeded fixtures have no kanban_state rows; visiting a PR detail
-    // creates the row server-side via EnsureKanbanState. Without this,
-    // .status-chip never renders because PullItem hides it for empty
-    // KanbanStatus.
-    await page.locator(".pull-item").first().click();
-    await page
-      .locator(".pull-detail")
-      .waitFor({ state: "visible", timeout: 5_000 });
-    await page.goto("/pulls");
-    await waitForPullList(page);
-
     await mockLongPullRepoSlug(page);
     await page.goto("/pulls");
     await waitForPullList(page);
 
     await selectPullGrouping(page, "All");
-    const approvedItem = page.locator(".pull-item", {
-      hasText: "Add widget caching layer",
-    });
-    const changesRequestedItem = page.locator(".pull-item", {
-      hasText: "Fix race condition in event loop",
-    });
-    await expect(
-      approvedItem.locator("[aria-label='PR approved']"),
-    ).toBeVisible();
-    await expect(
-      changesRequestedItem.locator("[aria-label='Changes requested']"),
-    ).toBeVisible();
+    await expectPullReviewIndicator(
+      page,
+      "Add widget caching layer",
+      "PR approved",
+    );
+    await expectPullReviewIndicator(
+      page,
+      "Fix race condition in event loop",
+      "Changes requested",
+    );
 
     const firstItem = page.locator(".pull-item").first();
     const repoChip = firstItem.locator(".repo-chip");

@@ -207,4 +207,46 @@ describe("WorkspaceListSidebar", () => {
     expect(container.querySelectorAll(".ws-row")).toHaveLength(1);
     expect(screen.getByText("Add notification inbox triage")).toBeTruthy();
   });
+
+  it("shows matching workspaces in collapsed groups while filtering", async () => {
+    mockGet.mockResolvedValue({
+      data: {
+        workspaces: [
+          workspaceFixture({
+            id: "ws-hidden",
+            provider: "github",
+            platformHost: "github.com",
+            owner: "kenn-io",
+            name: "middleman",
+            number: 224,
+            title: "Add notification inbox triage",
+            itemType: "issue",
+          }),
+        ],
+      },
+    });
+
+    const { container } = render(WorkspaceListSidebar, {
+      props: { selectedId: "ws-hidden" },
+    });
+    const groupHeader = await screen.findByRole("button", {
+      name: /kenn-io\/middleman/,
+    });
+    const filter = screen.getByLabelText("Filter workspaces");
+
+    expect(container.querySelectorAll(".ws-row")).toHaveLength(1);
+    await fireEvent.click(groupHeader);
+    expect(container.querySelectorAll(".ws-row")).toHaveLength(0);
+
+    await fireEvent.input(filter, {
+      target: { value: "#224" },
+    });
+    expect(container.querySelectorAll(".ws-row")).toHaveLength(1);
+    expect(screen.getByText("Add notification inbox triage")).toBeTruthy();
+
+    await fireEvent.input(filter, {
+      target: { value: "" },
+    });
+    expect(container.querySelectorAll(".ws-row")).toHaveLength(0);
+  });
 });

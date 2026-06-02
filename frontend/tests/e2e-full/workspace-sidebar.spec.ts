@@ -89,6 +89,23 @@ async function waitForWorkspaceReady(
   throw new Error(`workspace ${workspaceId} did not become ready`);
 }
 
+async function createIssueWorkspace(
+  api: APIRequestContext,
+  issueNumber: number,
+): Promise<WorkspaceStatusResponse> {
+  const response = await api.post(
+    `/api/v1/issues/github/acme/widgets/${issueNumber}/workspace`,
+    {
+      data: {},
+    },
+  );
+  expect(response.status()).toBe(202);
+
+  const workspace = (await response.json()) as WorkspaceStatusResponse;
+  await waitForWorkspaceReady(api, workspace.id);
+  return workspace;
+}
+
 test.describe("workspace sidebar full-stack", () => {
   test.describe.configure({ timeout: lockedWorkspaceTestTimeoutMs });
 
@@ -159,6 +176,64 @@ test.describe("workspace sidebar full-stack", () => {
       await expect(
         gitlabGroup.getByRole("img", { name: "GitLab" }),
       ).toBeVisible();
+    } finally {
+      await api?.dispose();
+      await isolatedServer?.stop();
+    }
+  });
+
+  test("filters real workspace API results and expands collapsed matches during search", async ({
+    page,
+  }) => {
+    let isolatedServer: IsolatedE2EServer | null = null;
+    let api: APIRequestContext | null = null;
+    try {
+      isolatedServer = await startIsolatedWorkspaceE2EServer();
+      api = await playwrightRequest.newContext({
+        baseURL: isolatedServer.info.base_url,
+      });
+
+      const safariWorkspace = await createIssueWorkspace(api, 10);
+      await createIssueWorkspace(api, 11);
+
+      const workspacesResponse = await api.get("/api/v1/workspaces");
+      expect(workspacesResponse.ok()).toBe(true);
+      const workspacesPayload = (await workspacesResponse.json()) as {
+        workspaces: Array<{
+          item_number: number;
+          mr_title?: string | null;
+        }>;
+      };
+      expect(
+        workspacesPayload.workspaces.some(
+          (workspace) =>
+            workspace.item_number === 11 &&
+            workspace.mr_title === "Add dark mode support",
+        ),
+      ).toBe(true);
+
+      await page.goto(
+        `${isolatedServer.info.base_url}/terminal/${safariWorkspace.id}`,
+      );
+
+      const rows = page.locator(".workspace-list-sidebar .ws-row");
+      const groupHeader = page
+        .locator(".workspace-list-sidebar .group-header")
+        .filter({
+          has: page.locator(".group-label", { hasText: "acme/widgets" }),
+        });
+      const filter = page.getByLabel("Filter workspaces");
+
+      await expect(rows).toHaveCount(2);
+      await groupHeader.click();
+      await expect(rows).toHaveCount(0);
+
+      await filter.fill("#11");
+      await expect(rows).toHaveCount(1);
+      await expect(rows).toContainText("Add dark mode support");
+
+      await filter.fill("");
+      await expect(rows).toHaveCount(0);
     } finally {
       await api?.dispose();
       await isolatedServer?.stop();

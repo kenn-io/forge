@@ -289,7 +289,8 @@
   </label>
   <div class="sidebar-list">
     {#each [...grouped] as [repoKey, items] (repoKey)}
-      {@const collapsed = collapsedGroups.has(repoKey)}
+      {@const collapsed =
+        !normalizedSearchQuery && collapsedGroups.has(repoKey)}
       <button
         class={["group-header", { collapsed }]}
         onclick={() => toggleGroup(repoKey)}

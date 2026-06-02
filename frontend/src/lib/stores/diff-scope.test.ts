@@ -1,6 +1,12 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vite-plus/test";
 
-const diffRef = { provider: "github", platformHost: "github.com", owner: "o", name: "n", repoPath: "o/n" };
+const diffRef = {
+  provider: "github",
+  platformHost: "github.com",
+  owner: "o",
+  name: "n",
+  repoPath: "o/n",
+};
 const storage = new Map<string, string>();
 vi.stubGlobal("localStorage", {
   getItem: (k: string) => storage.get(k) ?? null,
@@ -10,10 +16,7 @@ vi.stubGlobal("localStorage", {
 });
 
 import { createDiffStore } from "@middleman/ui/stores/diff";
-import type {
-  DiffScope,
-  DiffStoreOptions,
-} from "@middleman/ui/stores/diff";
+import type { DiffScope, DiffStoreOptions } from "@middleman/ui/stores/diff";
 
 type TestClient = NonNullable<DiffStoreOptions["client"]>;
 
@@ -30,14 +33,30 @@ function makeDiffResponse() {
   return {
     stale: false,
     whitespace_only_count: 0,
-    files: [{ path: "a.go", old_path: "a.go", status: "modified", is_binary: false, is_whitespace_only: false, additions: 1, deletions: 0, hunks: [] }],
+    files: [
+      {
+        path: "a.go",
+        old_path: "a.go",
+        status: "modified",
+        is_binary: false,
+        is_whitespace_only: false,
+        additions: 1,
+        deletions: 0,
+        hunks: [],
+      },
+    ],
   };
 }
 
 function makeCommitsResponse(n: number = 3) {
   const commits = [];
   for (let i = n; i > 0; i--) {
-    commits.push({ sha: `sha${i}`, message: `commit ${i}`, author_name: "Alice", authored_at: "2026-01-01T00:00:00Z" });
+    commits.push({
+      sha: `sha${i}`,
+      message: `commit ${i}`,
+      author_name: "Alice",
+      authored_at: "2026-01-01T00:00:00Z",
+    });
   }
   return { commits };
 }
@@ -74,9 +93,7 @@ function installClient(commitCount = 3): void {
 }
 
 function lastQuery(): URLSearchParams {
-  const options = mockGet.mock.calls.at(-1)?.[1] as
-    | TestGetOptions
-    | undefined;
+  const options = mockGet.mock.calls.at(-1)?.[1] as TestGetOptions | undefined;
   const query = new URLSearchParams();
   for (const [key, value] of Object.entries(options?.params?.query ?? {})) {
     if (value !== undefined) query.set(key, String(value));

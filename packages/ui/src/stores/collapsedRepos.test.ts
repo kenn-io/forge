@@ -1,7 +1,12 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  createCollapsedReposStore,
-} from "./collapsedRepos.svelte.js";
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vite-plus/test";
+import { createCollapsedReposStore } from "./collapsedRepos.svelte.js";
 
 const PULLS_KEY = "middleman:collapsedRepos:pulls";
 const ISSUES_KEY = "middleman:collapsedRepos:issues";

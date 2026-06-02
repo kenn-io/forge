@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vite-plus/test";
 import type { PullRequest } from "../api/types.js";
 import type { MiddlemanClient } from "../types.js";
 import { createPullsStore } from "./pulls.svelte.js";

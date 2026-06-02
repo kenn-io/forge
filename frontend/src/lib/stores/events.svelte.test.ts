@@ -1,4 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vite-plus/test";
 
 import { createEventsStore } from "@middleman/ui/stores/events";
 import type { SyncStatus } from "@middleman/ui/api/types";
@@ -52,9 +59,11 @@ function emit(src: StubEventSource, name: string, ev: unknown): void {
 
 beforeEach(() => {
   instances = [];
-  (globalThis as unknown as {
-    EventSource: typeof EventSourceStub;
-  }).EventSource = EventSourceStub;
+  (
+    globalThis as unknown as {
+      EventSource: typeof EventSourceStub;
+    }
+  ).EventSource = EventSourceStub;
 });
 
 afterEach(() => {
@@ -69,7 +78,7 @@ describe("createEventsStore URL building", () => {
     expect(instances[0]?.url).toBe("/api/v1/events");
   });
 
-  it("handles basePath of \"/\"", () => {
+  it('handles basePath of "/"', () => {
     const store = createEventsStore({ getBasePath: () => "/" });
     store.connect();
     expect(instances[0]?.url).toBe("/api/v1/events");

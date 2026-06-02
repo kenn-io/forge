@@ -1,5 +1,5 @@
 import { compile } from "svelte/compiler";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import labelSource from "./DiffScopeLabel.svelte?raw";
 import pickerSource from "./DiffScopePicker.svelte?raw";
 

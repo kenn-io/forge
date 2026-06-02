@@ -1,14 +1,19 @@
 import { expect, test, type Page } from "@playwright/test";
 
 async function waitForPRList(page: Page): Promise<void> {
-  await page.locator(".pull-item").first()
+  await page
+    .locator(".pull-item")
+    .first()
     .waitFor({ state: "visible", timeout: 10_000 });
 }
 
 async function sidebarWidth(page: Page): Promise<number> {
-  return Math.round(await page.locator(".sidebar").first().evaluate((node) =>
-    node.getBoundingClientRect().width
-  ));
+  return Math.round(
+    await page
+      .locator(".sidebar")
+      .first()
+      .evaluate((node) => node.getBoundingClientRect().width),
+  );
 }
 
 test.describe("embedded config", () => {
@@ -24,7 +29,9 @@ test.describe("embedded config", () => {
     ).not.toBeVisible();
   });
 
-  test("hides repo selector when hideRepoSelector is true", async ({ page }) => {
+  test("hides repo selector when hideRepoSelector is true", async ({
+    page,
+  }) => {
     await page.addInitScript(() => {
       window.__middleman_config = { ui: { hideRepoSelector: true } };
     });
@@ -43,11 +50,11 @@ test.describe("embedded config", () => {
 
     // Open a PR detail.
     await page.locator(".pull-item").first().click();
-    await page.locator(".pull-detail").waitFor({ state: "visible", timeout: 10_000 });
+    await page
+      .locator(".pull-detail")
+      .waitFor({ state: "visible", timeout: 10_000 });
 
-    await expect(
-      page.locator(".pull-detail .star-btn"),
-    ).not.toBeAttached();
+    await expect(page.locator(".pull-detail .star-btn")).not.toBeAttached();
   });
 
   test("hides theme toggle when theme.mode is set", async ({ page }) => {
@@ -62,7 +69,9 @@ test.describe("embedded config", () => {
     ).not.toBeAttached();
   });
 
-  test("host sidebarWidth overrides persisted width on pulls", async ({ page }) => {
+  test("host sidebarWidth overrides persisted width on pulls", async ({
+    page,
+  }) => {
     await page.addInitScript(() => {
       localStorage.setItem("middleman-sidebar-width", "520");
       window.__middleman_config = { embed: { sidebarWidth: 410 } };
@@ -87,7 +96,8 @@ test.describe("embedded config", () => {
     // When embedded, /settings is not a valid route and falls
     // through to the activity page. The URL may still say /settings
     // but the activity feed should render instead.
-    await page.locator(".activity-feed")
+    await page
+      .locator(".activity-feed")
       .waitFor({ state: "visible", timeout: 10_000 });
     await expect(page.locator(".settings-page")).not.toBeAttached();
   });

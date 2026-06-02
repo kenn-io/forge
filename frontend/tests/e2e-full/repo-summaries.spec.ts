@@ -2,7 +2,9 @@ import { expect, test } from "@playwright/test";
 import { startIsolatedE2EServerWithOptions } from "./support/e2eServer";
 
 test.describe("repository summaries", () => {
-  test("hides a configured non-github default host in repo labels", async ({ page }) => {
+  test("hides a configured non-github default host in repo labels", async ({
+    page,
+  }) => {
     const server = await startIsolatedE2EServerWithOptions({
       defaultPlatformHost: "ghe.example.com",
     });
@@ -10,19 +12,23 @@ test.describe("repository summaries", () => {
       await page.goto(`${server.info.base_url}/repos`);
 
       const repoCards = page.locator(".repo-card");
-      const enterpriseCard = repoCards.filter({
-        has: page.getByRole("button", {
-          name: /enterprise\s*\/\s*service/,
-        }),
-      }).first();
+      const enterpriseCard = repoCards
+        .filter({
+          has: page.getByRole("button", {
+            name: /enterprise\s*\/\s*service/,
+          }),
+        })
+        .first();
       await expect(enterpriseCard).toBeVisible();
       await expect(enterpriseCard.getByText("ghe.example.com")).toHaveCount(0);
 
-      const githubCard = repoCards.filter({
-        has: page.getByRole("button", {
-          name: /acme\s*\/\s*widgets/,
-        }),
-      }).first();
+      const githubCard = repoCards
+        .filter({
+          has: page.getByRole("button", {
+            name: /acme\s*\/\s*widgets/,
+          }),
+        })
+        .first();
       await expect(githubCard).toBeVisible();
       await expect(githubCard.getByText("github.com")).toBeVisible();
     } finally {
@@ -35,10 +41,12 @@ test.describe("repository summaries", () => {
 
     await page.getByPlaceholder("Filter repositories").fill("acme");
     await page.getByRole("button", { name: "Has issues" }).click();
-    await page.locator(".repo-page__sort-dropdown")
+    await page
+      .locator(".repo-page__sort-dropdown")
       .getByRole("button", { name: "Name" })
       .click();
-    await page.locator(".filter-dropdown")
+    await page
+      .locator(".filter-dropdown")
       .getByRole("button", { name: "Open issues" })
       .click();
 
@@ -59,14 +67,15 @@ test.describe("repository summaries", () => {
 
     await page.getByRole("button", { name: "Repos", exact: true }).click();
     await expect(page).toHaveURL(/\/repos$/);
+    await expect(page.getByPlaceholder("Filter repositories")).toHaveValue(
+      "acme",
+    );
+    await expect(page.getByRole("button", { name: "Has issues" })).toHaveClass(
+      /repo-page__filter--active/,
+    );
     await expect(
-      page.getByPlaceholder("Filter repositories"),
-    ).toHaveValue("acme");
-    await expect(
-      page.getByRole("button", { name: "Has issues" }),
-    ).toHaveClass(/repo-page__filter--active/);
-    await expect(
-      page.locator(".repo-page__sort-dropdown")
+      page
+        .locator(".repo-page__sort-dropdown")
         .getByRole("button", { name: "Open issues" }),
     ).toBeVisible();
 
@@ -111,9 +120,7 @@ test.describe("repository summaries", () => {
       widgetsCard.getByRole("button", { name: "View issues" }),
     ).toHaveCount(0);
 
-    await widgetsCard
-      .getByRole("button", { name: /\d+\s+Open PRs/ })
-      .click();
+    await widgetsCard.getByRole("button", { name: /\d+\s+Open PRs/ }).click();
     await expect(page).toHaveURL(/\/pulls$/);
 
     await page.goto("/repos");
@@ -131,24 +138,22 @@ test.describe("repository summaries", () => {
       name: "New issue in acme/widgets",
     });
     await expect(dialog).toBeVisible();
-    await dialog.getByPlaceholder("Issue title").fill("Repo overview follow-up");
+    await dialog
+      .getByPlaceholder("Issue title")
+      .fill("Repo overview follow-up");
 
     const bodyEditor = dialog.getByRole("textbox", {
       name: "Describe the problem, context, or follow-up work",
     });
     await bodyEditor.click();
     await page.keyboard.type("Add additional filters @al");
-    await expect(
-      page.getByRole("option", { name: /@alice/ }),
-    ).toBeVisible();
+    await expect(page.getByRole("option", { name: /@alice/ })).toBeVisible();
     await page.keyboard.press("Enter");
     await expect(bodyEditor).toContainText("@alice");
 
     await dialog.getByRole("button", { name: "Create issue" }).click();
 
-    await expect(page).toHaveURL(
-      /\/issues\/github\/acme\/widgets\/\d+$/,
-    );
+    await expect(page).toHaveURL(/\/issues\/github\/acme\/widgets\/\d+$/);
     await page.locator(".issue-detail").waitFor({
       state: "visible",
       timeout: 10_000,

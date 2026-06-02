@@ -18,8 +18,7 @@ export default defineConfig({
     screenshot: "off",
   },
   webServer: {
-    command:
-      "bun run dev --host 127.0.0.1 --port 4173 --strictPort",
+    command: "bun run dev --host 127.0.0.1 --port 4173 --strictPort",
     port: 4173,
     cwd: frontendDir,
     reuseExistingServer: true,

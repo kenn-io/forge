@@ -1,6 +1,4 @@
-import type {
-  RoborevClient,
-} from "../../api/roborev/client.js";
+import type { RoborevClient } from "../../api/roborev/client.js";
 import type {
   components,
   operations,
@@ -35,32 +33,18 @@ export function createJobsStore(opts: JobsStoreOptions) {
   let jobs = $state<ReviewJob[]>([]);
   let loading = $state(false);
   let hasMore = $state(false);
-  let stats = $state<JobStats>(
-    { done: 0, closed: 0, open: 0 },
-  );
+  let stats = $state<JobStats>({ done: 0, closed: 0, open: 0 });
   let storeError = $state<string | null>(null);
-  let selectedJobId = $state<number | undefined>(
-    undefined,
-  );
-  let highlightedJobId = $state<number | undefined>(
-    undefined,
-  );
+  let selectedJobId = $state<number | undefined>(undefined);
+  let highlightedJobId = $state<number | undefined>(undefined);
 
   // Filters
   let filterRepo = $state<string | undefined>(undefined);
-  let filterBranch = $state<string | undefined>(
-    undefined,
-  );
-  let filterStatus = $state<string | undefined>(
-    undefined,
-  );
-  let filterSearch = $state<string | undefined>(
-    undefined,
-  );
+  let filterBranch = $state<string | undefined>(undefined);
+  let filterStatus = $state<string | undefined>(undefined);
+  let filterSearch = $state<string | undefined>(undefined);
   let filterHideClosed = $state(false);
-  let filterJobType = $state<string | undefined>(
-    undefined,
-  );
+  let filterJobType = $state<string | undefined>(undefined);
 
   // Sorting (client-side)
   let sortColumn = $state<SortColumn>("id");
@@ -93,19 +77,24 @@ export function createJobsStore(opts: JobsStoreOptions) {
     return Math.max(0, Math.floor((end - start) / 1000));
   }
 
-  function getSortValue(
-    job: ReviewJob,
-    col: SortColumn,
-  ): string | number {
+  function getSortValue(job: ReviewJob, col: SortColumn): string | number {
     switch (col) {
-      case "id": return job.id;
-      case "status": return job.status;
-      case "verdict": return job.verdict ?? "";
-      case "agent": return job.agent;
-      case "elapsed": return getElapsedSeconds(job);
-      case "job_type": return job.job_type;
-      case "enqueued_at": return job.enqueued_at;
-      default: return job.id;
+      case "id":
+        return job.id;
+      case "status":
+        return job.status;
+      case "verdict":
+        return job.verdict ?? "";
+      case "agent":
+        return job.agent;
+      case "elapsed":
+        return getElapsedSeconds(job);
+      case "job_type":
+        return job.job_type;
+      case "enqueued_at":
+        return job.enqueued_at;
+      default:
+        return job.id;
     }
   }
 
@@ -125,10 +114,9 @@ export function createJobsStore(opts: JobsStoreOptions) {
     loading = true;
     storeError = null;
     try {
-      const { data, error } = await client.GET(
-        "/api/jobs",
-        { params: { query: buildQuery() } },
-      );
+      const { data, error } = await client.GET("/api/jobs", {
+        params: { query: buildQuery() },
+      });
       if (error) throw new Error("Failed to load jobs");
       if (version !== requestVersion) return;
       jobs = sortJobs(data?.jobs ?? []);
@@ -146,8 +134,7 @@ export function createJobsStore(opts: JobsStoreOptions) {
       }
     } catch (err) {
       if (version !== requestVersion) return;
-      storeError =
-        err instanceof Error ? err.message : String(err);
+      storeError = err instanceof Error ? err.message : String(err);
     } finally {
       if (version === requestVersion) loading = false;
     }
@@ -161,35 +148,28 @@ export function createJobsStore(opts: JobsStoreOptions) {
     try {
       const q = buildQuery();
       q.before = cursor;
-      const { data, error } = await client.GET(
-        "/api/jobs",
-        { params: { query: q } },
-      );
+      const { data, error } = await client.GET("/api/jobs", {
+        params: { query: q },
+      });
       if (error) {
         throw new Error("Failed to load more jobs");
       }
       if (version !== requestVersion) return;
       const fresh = data?.jobs ?? [];
       const existingIds = new Set(jobs.map((j) => j.id));
-      const newJobs = fresh.filter(
-        (j) => !existingIds.has(j.id),
-      );
+      const newJobs = fresh.filter((j) => !existingIds.has(j.id));
       jobs = sortJobs([...jobs, ...newJobs]);
       hasMore = data?.has_more ?? false;
     } catch (err) {
       if (version !== requestVersion) return;
-      storeError =
-        err instanceof Error ? err.message : String(err);
+      storeError = err instanceof Error ? err.message : String(err);
     } finally {
       if (version === requestVersion) loading = false;
     }
   }
 
   // Filter actions
-  function setFilter(
-    key: string,
-    value: string | boolean | undefined,
-  ): void {
+  function setFilter(key: string, value: string | boolean | undefined): void {
     switch (key) {
       case "repo":
         filterRepo = value as string | undefined;
@@ -215,8 +195,7 @@ export function createJobsStore(opts: JobsStoreOptions) {
 
   function setSortColumn(col: SortColumn): void {
     if (sortColumn === col) {
-      sortDirection =
-        sortDirection === "asc" ? "desc" : "asc";
+      sortDirection = sortDirection === "asc" ? "desc" : "asc";
     } else {
       sortColumn = col;
       sortDirection = col === "id" ? "desc" : "asc";
@@ -226,25 +205,21 @@ export function createJobsStore(opts: JobsStoreOptions) {
 
   // Job actions
   async function cancelJob(id: number): Promise<void> {
-    const { error } = await client.POST(
-      "/api/job/cancel",
-      { body: { job_id: id } },
-    );
+    const { error } = await client.POST("/api/job/cancel", {
+      body: { job_id: id },
+    });
     if (error) {
       opts.onError?.("Failed to cancel job");
       return;
     }
-    jobs = jobs.map((j) =>
-      j.id === id ? { ...j, status: "canceled" } : j,
-    );
+    jobs = jobs.map((j) => (j.id === id ? { ...j, status: "canceled" } : j));
     void loadJobs();
   }
 
   async function rerunJob(id: number): Promise<void> {
-    const { error } = await client.POST(
-      "/api/job/rerun",
-      { body: { job_id: id } },
-    );
+    const { error } = await client.POST("/api/job/rerun", {
+      body: { job_id: id },
+    });
     if (error) {
       opts.onError?.("Failed to rerun job");
       return;
@@ -255,20 +230,14 @@ export function createJobsStore(opts: JobsStoreOptions) {
   // Selection — setSelectedJobId sets state only (no
   // navigation), used by the route-sync effect to avoid
   // an infinite effect_update_depth_exceeded cycle.
-  function setSelectedJobId(
-    id: number | undefined,
-  ): void {
+  function setSelectedJobId(id: number | undefined): void {
     selectedJobId = id;
   }
 
   function selectJob(id: number): void {
     selectedJobId = id;
     highlightedJobId = id;
-    if (
-      !window.location.pathname.endsWith(
-        `/reviews/${id}`,
-      )
-    ) {
+    if (!window.location.pathname.endsWith(`/reviews/${id}`)) {
       opts.navigate(`/reviews/${id}`);
     }
   }
@@ -319,9 +288,7 @@ export function createJobsStore(opts: JobsStoreOptions) {
       selectJob(jobs[0]!.id);
       return;
     }
-    const idx = jobs.findIndex(
-      (j) => j.id === selectedJobId,
-    );
+    const idx = jobs.findIndex((j) => j.id === selectedJobId);
     if (idx < jobs.length - 1) {
       selectJob(jobs[idx + 1]!.id);
     }
@@ -333,9 +300,7 @@ export function createJobsStore(opts: JobsStoreOptions) {
       selectJob(jobs[jobs.length - 1]!.id);
       return;
     }
-    const idx = jobs.findIndex(
-      (j) => j.id === selectedJobId,
-    );
+    const idx = jobs.findIndex((j) => j.id === selectedJobId);
     if (idx > 0) {
       selectJob(jobs[idx - 1]!.id);
     }
@@ -352,9 +317,7 @@ export function createJobsStore(opts: JobsStoreOptions) {
       highlightedJobId = jobs[0]!.id;
       return;
     }
-    const idx = jobs.findIndex(
-      (j) => j.id === highlightedJobId,
-    );
+    const idx = jobs.findIndex((j) => j.id === highlightedJobId);
     if (idx < jobs.length - 1) {
       highlightedJobId = jobs[idx + 1]!.id;
     }
@@ -366,20 +329,28 @@ export function createJobsStore(opts: JobsStoreOptions) {
       highlightedJobId = jobs[jobs.length - 1]!.id;
       return;
     }
-    const idx = jobs.findIndex(
-      (j) => j.id === highlightedJobId,
-    );
+    const idx = jobs.findIndex((j) => j.id === highlightedJobId);
     if (idx > 0) {
       highlightedJobId = jobs[idx - 1]!.id;
     }
   }
 
   // Getters
-  function getJobs(): ReviewJob[] { return jobs; }
-  function isLoading(): boolean { return loading; }
-  function getHasMore(): boolean { return hasMore; }
-  function getStats(): JobStats { return stats; }
-  function getError(): string | null { return storeError; }
+  function getJobs(): ReviewJob[] {
+    return jobs;
+  }
+  function isLoading(): boolean {
+    return loading;
+  }
+  function getHasMore(): boolean {
+    return hasMore;
+  }
+  function getStats(): JobStats {
+    return stats;
+  }
+  function getError(): string | null {
+    return storeError;
+  }
   function getSelectedJobId(): number | undefined {
     return selectedJobId;
   }
@@ -415,21 +386,39 @@ export function createJobsStore(opts: JobsStoreOptions) {
   }
 
   return {
-    getJobs, isLoading, getHasMore, getStats, getError,
-    getSelectedJobId, getHighlightedJobId,
-    getFilterRepo, getFilterBranch,
-    getFilterStatus, getFilterSearch, getFilterHideClosed,
-    getFilterJobType, getSortColumn, getSortDirection,
+    getJobs,
+    isLoading,
+    getHasMore,
+    getStats,
+    getError,
+    getSelectedJobId,
+    getHighlightedJobId,
+    getFilterRepo,
+    getFilterBranch,
+    getFilterStatus,
+    getFilterSearch,
+    getFilterHideClosed,
+    getFilterJobType,
+    getSortColumn,
+    getSortDirection,
     isSSEConnected,
-    loadJobs, loadMore, setFilter, setSortColumn,
-    cancelJob, rerunJob,
+    loadJobs,
+    loadMore,
+    setFilter,
+    setSortColumn,
+    cancelJob,
+    rerunJob,
     setSelectedJobId,
-    selectJob, deselectJob, selectNextJob, selectPrevJob,
-    highlightJob, highlightNextJob, highlightPrevJob,
-    connectSSE, disconnectSSE,
+    selectJob,
+    deselectJob,
+    selectNextJob,
+    selectPrevJob,
+    highlightJob,
+    highlightNextJob,
+    highlightPrevJob,
+    connectSSE,
+    disconnectSSE,
   };
 }
 
-export type JobsStore = ReturnType<
-  typeof createJobsStore
->;
+export type JobsStore = ReturnType<typeof createJobsStore>;

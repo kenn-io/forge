@@ -5,8 +5,8 @@ import {
   screen,
   waitFor,
 } from "@testing-library/svelte";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import type { MockedFunction } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import type { MockedFunction } from "vite-plus/test";
 import RepoImportModal from "./RepoImportModal.svelte";
 import { bulkAddRepos, previewRepos } from "../../api/settings.js";
 

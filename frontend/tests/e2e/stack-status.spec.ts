@@ -30,7 +30,7 @@ function repoRef() {
 
 const checks = [
   {
-    name: "frontend / svelte-check",
+    name: "frontend / vp check",
     status: "completed",
     conclusion: "failure",
     app: "GitHub Actions",
@@ -98,9 +98,11 @@ function prForNumber(number: number, members = stackMembers) {
     Number: number,
     URL: `https://github.com/acme/widgets/pull/${number}`,
     Title: member ? member.title : pr.Title,
-    HeadBranch: member?.base_branch === "main"
-      ? "feat/base-schema"
-      : member?.base_branch.replace("feat/", "feat/child-") ?? pr.HeadBranch,
+    HeadBranch:
+      member?.base_branch === "main"
+        ? "feat/base-schema"
+        : (member?.base_branch.replace("feat/", "feat/child-") ??
+          pr.HeadBranch),
     CIStatus: member?.ci_status ?? pr.CIStatus,
     ReviewDecision: member?.review_decision ?? pr.ReviewDecision,
     MergeableState: member?.mergeable_state ?? pr.MergeableState,
@@ -196,7 +198,11 @@ const stackMembers = [
 
 type StackMember = (typeof stackMembers)[number];
 
-async function fulfillJson(route: Route, body: unknown, status = 200): Promise<void> {
+async function fulfillJson(
+  route: Route,
+  body: unknown,
+  status = 200,
+): Promise<void> {
   await route.fulfill({
     status,
     contentType: "application/json",
@@ -228,7 +234,9 @@ async function mockStackedPR(
       const number = Number(detailMatch[1]!);
       const currentStackMembers = options.stackMembers?.() ?? stackMembers;
       const detailPR = prForNumber(number, currentStackMembers);
-      const member = currentStackMembers.find((candidate) => candidate.number === number);
+      const member = currentStackMembers.find(
+        (candidate) => candidate.number === number,
+      );
       await fulfillJson(route, {
         merge_request: detailPR,
         repo: repoRef(),
@@ -270,7 +278,9 @@ async function mockStackedPR(
     if (method === "GET" && stackMatch) {
       const number = Number(stackMatch[1]!);
       const currentStackMembers = options.stackMembers?.() ?? stackMembers;
-      const member = currentStackMembers.find((candidate) => candidate.number === number);
+      const member = currentStackMembers.find(
+        (candidate) => candidate.number === number,
+      );
       await options.stackResponseDelays?.get(number);
       if (!member) {
         await fulfillJson(route, { error: "PR is not part of a stack" }, 404);
@@ -304,15 +314,17 @@ async function mockStackedPR(
 
     if (method === "GET" && pathname === "/api/v1/settings") {
       await fulfillJson(route, {
-        repos: [{
-          provider: "github",
-          platform_host: "github.com",
-          owner: "acme",
-          name: "widgets",
-          repo_path: "acme/widgets",
-          is_glob: false,
-          matched_repo_count: 1,
-        }],
+        repos: [
+          {
+            provider: "github",
+            platform_host: "github.com",
+            owner: "acme",
+            name: "widgets",
+            repo_path: "acme/widgets",
+            is_glob: false,
+            matched_repo_count: 1,
+          },
+        ],
         activity: {
           view_mode: "threaded",
           time_range: "7d",
@@ -366,22 +378,32 @@ async function mockStackedPR(
   });
 }
 
-async function emitPRDetailRefreshed(page: Page, number: number): Promise<void> {
-  await page.evaluate((ref) => {
-    const eventSources = (window as unknown as {
-      __middlemanEventSources?: EventTarget[];
-    }).__middlemanEventSources;
-    eventSources?.[0]?.dispatchEvent(new MessageEvent("pr_detail_refreshed", {
-      data: JSON.stringify(ref),
-    }));
-  }, {
-    provider: "github",
-    platform_host: "github.com",
-    repo_path: "acme/widgets",
-    owner: "acme",
-    name: "widgets",
-    number,
-  });
+async function emitPRDetailRefreshed(
+  page: Page,
+  number: number,
+): Promise<void> {
+  await page.evaluate(
+    (ref) => {
+      const eventSources = (
+        window as unknown as {
+          __middlemanEventSources?: EventTarget[];
+        }
+      ).__middlemanEventSources;
+      eventSources?.[0]?.dispatchEvent(
+        new MessageEvent("pr_detail_refreshed", {
+          data: JSON.stringify(ref),
+        }),
+      );
+    },
+    {
+      provider: "github",
+      platform_host: "github.com",
+      repo_path: "acme/widgets",
+      owner: "acme",
+      name: "widgets",
+      number,
+    },
+  );
 }
 
 async function installMockEventSource(page: Page): Promise<void> {
@@ -407,17 +429,23 @@ async function installMockEventSource(page: Page): Promise<void> {
       }
     }
 
-    (window as unknown as {
-      EventSource: typeof EventSource;
-      __middlemanEventSources: EventTarget[];
-    }).EventSource = MockEventSource as unknown as typeof EventSource;
-    (window as unknown as {
-      __middlemanEventSources: EventTarget[];
-    }).__middlemanEventSources = eventSources;
+    (
+      window as unknown as {
+        EventSource: typeof EventSource;
+        __middlemanEventSources: EventTarget[];
+      }
+    ).EventSource = MockEventSource as unknown as typeof EventSource;
+    (
+      window as unknown as {
+        __middlemanEventSources: EventTarget[];
+      }
+    ).__middlemanEventSources = eventSources;
   });
 }
 
-test("unstacked pull detail does not request stack context", async ({ page }) => {
+test("unstacked pull detail does not request stack context", async ({
+  page,
+}) => {
   let stackRequests = 0;
   page.on("request", (request) => {
     if (new URL(request.url()).pathname.endsWith("/stack")) {
@@ -433,24 +461,32 @@ test("unstacked pull detail does not request stack context", async ({ page }) =>
   expect(stackRequests).toBe(0);
 });
 
-test("stack status shares the PR detail expandable slot with CI", async ({ page }) => {
+test("stack status shares the PR detail expandable slot with CI", async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 892, height: 998 });
   await mockStackedPR(page);
 
   await page.goto("/pulls/github/acme/widgets/102");
 
   await page.getByTestId("ci-chip").click();
-  await expect(page.getByText("frontend / svelte-check")).toBeVisible();
+  await expect(page.getByText("frontend / vp check")).toBeVisible();
 
   await page.getByTestId("stack-chip").click();
 
-  await expect(page.getByText("frontend / svelte-check")).toBeHidden();
-  await expect(page.getByText("7 PRs · current 2/7 · downstack CI failure")).toBeVisible();
+  await expect(page.getByText("frontend / vp check")).toBeHidden();
+  await expect(
+    page.getByText("7 PRs · current 2/7 · downstack CI failure"),
+  ).toBeVisible();
   await expect(page.getByText("blocked by #101")).toBeVisible();
 
   const currentRow = page.locator(".stack-row--current");
-  const currentBadgesBox = await currentRow.locator(".stack-badges").boundingBox();
-  const currentLinkBox = await currentRow.locator(".stack-member-link").boundingBox();
+  const currentBadgesBox = await currentRow
+    .locator(".stack-badges")
+    .boundingBox();
+  const currentLinkBox = await currentRow
+    .locator(".stack-member-link")
+    .boundingBox();
   expect(currentBadgesBox).not.toBeNull();
   expect(currentLinkBox).not.toBeNull();
   const badgeCenterY = currentBadgesBox!.y + currentBadgesBox!.height / 2;
@@ -458,7 +494,9 @@ test("stack status shares the PR detail expandable slot with CI", async ({ page 
   expect(Math.abs(badgeCenterY - linkCenterY)).toBeLessThanOrEqual(4);
   await expect(page.locator(".stack-member-meta")).toHaveCount(0);
   await expect(page.locator(".stack-base-name")).toHaveText("main");
-  await expect(page.locator(".stack-row--base .stack-member-link")).toHaveCount(0);
+  await expect(page.locator(".stack-row--base .stack-member-link")).toHaveCount(
+    0,
+  );
 
   const stackRows = page.locator(".stack-member-link");
   await expect(stackRows).toHaveText([
@@ -478,7 +516,9 @@ test("stack status shares the PR detail expandable slot with CI", async ({ page 
   await expect(page.locator(".stack-base-name")).toHaveText("main");
 });
 
-test("stack status surfaces inherited downstack merge conflicts", async ({ page }) => {
+test("stack status surfaces inherited downstack merge conflicts", async ({
+  page,
+}) => {
   await mockStackedPR(page, {
     stackMembers: () => [
       { ...stackMembers[0]!, ci_status: "success", mergeable_state: "dirty" },
@@ -490,12 +530,16 @@ test("stack status surfaces inherited downstack merge conflicts", async ({ page 
   await page.goto("/pulls/github/acme/widgets/102");
 
   await expect(page.getByText("This branch has conflicts")).toBeVisible();
-  await expect(page.getByRole("button", {
-    name: /Stacked: 2\/7, 1 downstack merge conflict/i,
-  })).toBeVisible();
+  await expect(
+    page.getByRole("button", {
+      name: /Stacked: 2\/7, 1 downstack merge conflict/i,
+    }),
+  ).toBeVisible();
 
   await page.getByTestId("stack-chip").click();
-  await expect(page.getByText("7 PRs · current 2/7 · downstack conflict")).toBeVisible();
+  await expect(
+    page.getByText("7 PRs · current 2/7 · downstack conflict"),
+  ).toBeVisible();
   await expect(page.getByText("× Conflicts")).toHaveCount(2);
 });
 
@@ -507,9 +551,11 @@ test("stack status follows refreshed detail stack data", async ({ page }) => {
   });
 
   await page.goto("/pulls/github/acme/widgets/102");
-  await expect(page.getByRole("button", {
-    name: /Stacked: 2\/7, 1 downstack CI failure/i,
-  })).toBeVisible();
+  await expect(
+    page.getByRole("button", {
+      name: /Stacked: 2\/7, 1 downstack CI failure/i,
+    }),
+  ).toBeVisible();
 
   currentStackMembers = [
     { ...stackMembers[0]!, ci_status: "success" },
@@ -517,8 +563,12 @@ test("stack status follows refreshed detail stack data", async ({ page }) => {
   ];
   await emitPRDetailRefreshed(page, 102);
 
-  await expect(page.getByRole("button", { name: /Stacked: 2\/2/i })).toBeVisible();
-  await expect(page.getByRole("button", { name: /Stacked: 2\/7/i })).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: /Stacked: 2\/2/i }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: /Stacked: 2\/7/i }),
+  ).toHaveCount(0);
 
   currentStackMembers = [];
   await emitPRDetailRefreshed(page, 102);
@@ -526,7 +576,9 @@ test("stack status follows refreshed detail stack data", async ({ page }) => {
   await expect(page.getByTestId("stack-chip")).toHaveCount(0);
 });
 
-test("stack status stays rendered while navigating to a stack member", async ({ page }) => {
+test("stack status stays rendered while navigating to a stack member", async ({
+  page,
+}) => {
   let releaseStackResponse: () => void = () => {};
   const delayedStackResponse = new Promise<void>((resolve) => {
     releaseStackResponse = resolve;
@@ -537,7 +589,9 @@ test("stack status stays rendered while navigating to a stack member", async ({ 
 
   await page.goto("/pulls/github/acme/widgets/102");
   await page.getByTestId("stack-chip").click();
-  await expect(page.getByText("7 PRs · current 2/7 · downstack CI failure")).toBeVisible();
+  await expect(
+    page.getByText("7 PRs · current 2/7 · downstack CI failure"),
+  ).toBeVisible();
 
   await page.getByRole("button", { name: "#101 base schema" }).click();
 
@@ -559,7 +613,9 @@ test("stack member navigation preserves focus routes", async ({ page }) => {
   await expect(page.getByText("7 PRs · current 1/7")).toBeVisible();
 });
 
-test("stack member navigation updates the activity drawer selection", async ({ page }) => {
+test("stack member navigation updates the activity drawer selection", async ({
+  page,
+}) => {
   await mockStackedPR(page);
 
   await page.goto(
@@ -570,11 +626,15 @@ test("stack member navigation updates the activity drawer selection", async ({ p
 
   await expect(page).toHaveURL(/selected=pr%3A101/);
   await expect(page).toHaveURL(/repo_path=acme%2Fwidgets/);
-  await expect(page.locator(".activity-detail")).toContainText("acme/widgets#101");
+  await expect(page.locator(".activity-detail")).toContainText(
+    "acme/widgets#101",
+  );
   await expect(page.getByText("7 PRs · current 1/7")).toBeVisible();
 });
 
-test("stack rail spans wrapped CI badges at narrow widths", async ({ page }) => {
+test("stack rail spans wrapped CI badges at narrow widths", async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 319, height: 998 });
   await mockStackedPR(page);
 
@@ -583,9 +643,13 @@ test("stack rail spans wrapped CI badges at narrow widths", async ({ page }) => 
 
   const currentRow = page.locator(".stack-row--current");
   const currentRowBox = await currentRow.boundingBox();
-  const currentDotBox = await currentRow.locator(".stack-dot--current").boundingBox();
+  const currentDotBox = await currentRow
+    .locator(".stack-dot--current")
+    .boundingBox();
   const currentLineBox = await currentRow.locator(".stack-line").boundingBox();
-  const currentBadgesBox = await currentRow.locator(".stack-badges").boundingBox();
+  const currentBadgesBox = await currentRow
+    .locator(".stack-badges")
+    .boundingBox();
   expect(currentRowBox).not.toBeNull();
   expect(currentDotBox).not.toBeNull();
   expect(currentLineBox).not.toBeNull();
@@ -600,9 +664,10 @@ test("stack rail spans wrapped CI badges at narrow widths", async ({ page }) => 
   const containerQueryEvidence = await page.evaluate(() => {
     function collectRules(ruleList: CSSRuleList): string[] {
       return Array.from(ruleList).flatMap((rule) => {
-        const nested = "cssRules" in rule
-          ? collectRules((rule as CSSGroupingRule).cssRules)
-          : [];
+        const nested =
+          "cssRules" in rule
+            ? collectRules((rule as CSSGroupingRule).cssRules)
+            : [];
         return [rule.cssText, ...nested];
       });
     }
@@ -614,13 +679,14 @@ test("stack rail spans wrapped CI badges at narrow widths", async ({ page }) => 
       }
     });
     return {
-      hasExpectedContainerRule: rules.some((rule) =>
-        rule.includes("@container pull-detail")
-          && rule.includes("max-width: 440px")
-          && rule.includes(".stack-row")
+      hasExpectedContainerRule: rules.some(
+        (rule) =>
+          rule.includes("@container pull-detail") &&
+          rule.includes("max-width: 440px") &&
+          rule.includes(".stack-row"),
       ),
       hasMalformedRule: rules.some((rule) =>
-        rule.includes("@frontend/src/lib/stores/container.svelte.ts")
+        rule.includes("@frontend/src/lib/stores/container.svelte.ts"),
       ),
     };
   });

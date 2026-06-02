@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import {
   isEmbedded,
   getThemeMode,
@@ -16,12 +16,8 @@ import {
   getToolingStatus,
   initWorkspaceBridge,
 } from "./embed-config.svelte.js";
-import type {
-  ActionHook,
-  ProjectActionHook,
-} from "./embed-config.svelte.js";
+import type { ActionHook, ProjectActionHook } from "./embed-config.svelte.js";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- test helper needs dynamic window access
 const win = window as any;
 
 afterEach(() => {
@@ -159,7 +155,9 @@ describe("actions (migrated from hooks)", () => {
     expect(getIssueActions()).toHaveLength(0);
 
     config.actions.issue.push({
-      id: "mut", label: "Mutated", handler: vi.fn(),
+      id: "mut",
+      label: "Mutated",
+      handler: vi.fn(),
     });
     win.__middleman_notify_config_changed();
     expect(getIssueActions()).toHaveLength(1);
@@ -170,21 +168,33 @@ describe("invokeAction", () => {
   it("passes correct context to handler", () => {
     const handler = vi.fn();
     const action: ActionHook = { id: "a", label: "A", handler };
-    invokeAction(action, { surface: "pull-detail", owner: "org", name: "repo", number: 42 });
+    invokeAction(action, {
+      surface: "pull-detail",
+      owner: "org",
+      name: "repo",
+      number: 42,
+    });
     expect(handler).toHaveBeenCalledWith({
-      surface: "pull-detail", owner: "org", name: "repo", number: 42,
+      surface: "pull-detail",
+      owner: "org",
+      name: "repo",
+      number: 42,
     });
   });
 
   it("catches sync errors from handler", () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     const action: ActionHook = {
-      id: "b", label: "B",
-      handler: () => { throw new Error("boom"); },
+      id: "b",
+      label: "B",
+      handler: () => {
+        throw new Error("boom");
+      },
     };
     invokeAction(action, { surface: "test", owner: "o", name: "n", number: 1 });
     expect(spy).toHaveBeenCalledWith(
-      "Embedding action error:", expect.any(Error),
+      "Embedding action error:",
+      expect.any(Error),
     );
     spy.mockRestore();
   });
@@ -192,13 +202,15 @@ describe("invokeAction", () => {
   it("catches async errors from handler", async () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     const action: ActionHook = {
-      id: "c", label: "C",
+      id: "c",
+      label: "C",
       handler: () => Promise.reject(new Error("async boom")),
     };
     invokeAction(action, { surface: "test", owner: "o", name: "n", number: 1 });
     await vi.waitFor(() => {
       expect(spy).toHaveBeenCalledWith(
-        "Embedding action error:", expect.any(Error),
+        "Embedding action error:",
+        expect.any(Error),
       );
     });
     spy.mockRestore();
@@ -237,9 +249,7 @@ describe("project actions", () => {
     const handler = vi.fn().mockResolvedValue({ ok: true });
     win.__middleman_config = {
       actions: {
-        project: [
-          { id: "add-existing", label: "Add existing", handler },
-        ],
+        project: [{ id: "add-existing", label: "Add existing", handler }],
       },
     };
     win.__middleman_notify_config_changed();
@@ -253,7 +263,9 @@ describe("invokeProjectAction", () => {
   it("passes context to handler and returns its CommandResult", async () => {
     const handler = vi.fn().mockResolvedValue({ ok: true });
     const action: ProjectActionHook = {
-      id: "clone", label: "Clone", handler,
+      id: "clone",
+      label: "Clone",
+      handler,
     };
     const result = await invokeProjectAction(action, {
       surface: "first-run-panel",
@@ -264,7 +276,8 @@ describe("invokeProjectAction", () => {
 
   it("propagates handler-supplied failure", async () => {
     const action: ProjectActionHook = {
-      id: "clone", label: "Clone",
+      id: "clone",
+      label: "Clone",
       handler: () => ({ ok: false, message: "auth failed" }),
     };
     const result = await invokeProjectAction(action, {
@@ -276,8 +289,11 @@ describe("invokeProjectAction", () => {
   it("normalizes thrown errors into a failure result", async () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     const action: ProjectActionHook = {
-      id: "clone", label: "Clone",
-      handler: () => { throw new Error("boom"); },
+      id: "clone",
+      label: "Clone",
+      handler: () => {
+        throw new Error("boom");
+      },
     };
     const result = await invokeProjectAction(action, {
       surface: "first-run-panel",
@@ -289,7 +305,8 @@ describe("invokeProjectAction", () => {
   it("normalizes async rejections into a failure result", async () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     const action: ProjectActionHook = {
-      id: "clone", label: "Clone",
+      id: "clone",
+      label: "Clone",
       handler: () => Promise.reject(new Error("async boom")),
     };
     const result = await invokeProjectAction(action, {
@@ -301,7 +318,8 @@ describe("invokeProjectAction", () => {
 
   it("treats a void return as ok: true so legacy-shaped handlers do not break", async () => {
     const action = {
-      id: "noop", label: "Noop",
+      id: "noop",
+      label: "Noop",
       handler: () => undefined,
     } as unknown as ProjectActionHook;
     const result = await invokeProjectAction(action, {

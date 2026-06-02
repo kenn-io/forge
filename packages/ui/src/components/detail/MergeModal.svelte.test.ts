@@ -1,5 +1,5 @@
 import { cleanup, render } from "@testing-library/svelte";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vite-plus/test";
 
 import MergeModal from "./MergeModal.svelte";
 import {

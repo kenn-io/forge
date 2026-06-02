@@ -209,14 +209,10 @@ test.describe("terminal options popover", () => {
       await expect(
         page.locator(".terminal-container .xterm-screen"),
       ).toBeVisible();
-      await expect
-        .poll(() => terminalScreenSizeKey(page))
-        .not.toBe("0pxx0px");
+      await expect.poll(() => terminalScreenSizeKey(page)).not.toBe("0pxx0px");
       const initialScreenSize = await terminalScreenSizeKey(page);
 
-      await page
-        .getByRole("button", { name: "Terminal options" })
-        .click();
+      await page.getByRole("button", { name: "Terminal options" }).click();
       await expect(
         page.getByRole("dialog", { name: "Terminal options" }),
       ).toBeVisible();
@@ -233,9 +229,7 @@ test.describe("terminal options popover", () => {
         .poll(() => terminalScreenSizeKey(page))
         .toBe(initialScreenSize);
 
-      await page
-        .getByRole("button", { name: "Terminal options" })
-        .click();
+      await page.getByRole("button", { name: "Terminal options" }).click();
       await page.getByLabel("Font size").fill("18");
       await expect
         .poll(() => terminalScreenSizeKey(page))
@@ -258,9 +252,7 @@ test.describe("terminal options popover", () => {
           response.request().method() === "PUT",
       );
       await page.getByRole("button", { name: "Save", exact: true }).click();
-      await expect
-        .poll(() => releaseSettingsSave !== undefined)
-        .toBe(true);
+      await expect.poll(() => releaseSettingsSave !== undefined).toBe(true);
       await page.keyboard.press("Escape");
       await expect(
         page.getByRole("dialog", { name: "Terminal options" }),

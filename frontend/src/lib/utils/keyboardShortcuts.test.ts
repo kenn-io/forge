@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 
 import { shouldIgnoreGlobalShortcutTarget } from "./keyboardShortcuts.js";
 
@@ -16,12 +16,20 @@ describe("shouldIgnoreGlobalShortcutTarget", () => {
   });
 
   it("ignores shortcuts from form controls", () => {
-    expect(shouldIgnoreGlobalShortcutTarget(document.createElement("input"))).toBe(true);
-    expect(shouldIgnoreGlobalShortcutTarget(document.createElement("textarea"))).toBe(true);
-    expect(shouldIgnoreGlobalShortcutTarget(document.createElement("select"))).toBe(true);
+    expect(
+      shouldIgnoreGlobalShortcutTarget(document.createElement("input")),
+    ).toBe(true);
+    expect(
+      shouldIgnoreGlobalShortcutTarget(document.createElement("textarea")),
+    ).toBe(true);
+    expect(
+      shouldIgnoreGlobalShortcutTarget(document.createElement("select")),
+    ).toBe(true);
   });
 
   it("allows shortcuts from ordinary elements", () => {
-    expect(shouldIgnoreGlobalShortcutTarget(document.createElement("div"))).toBe(false);
+    expect(
+      shouldIgnoreGlobalShortcutTarget(document.createElement("div")),
+    ).toBe(false);
   });
 });

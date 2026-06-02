@@ -95,8 +95,7 @@ frontend-dev-bun: frontend-deps
 
 # Run TypeScript/Svelte lint and type checks
 frontend-check: frontend-deps
-	cd packages/ui && bun run typecheck && bun run lint
-	cd frontend && bun run typecheck && bun run lint
+	bun run check
 
 # Prevent production frontend code from bypassing generated API clients
 frontend-api-client-check:

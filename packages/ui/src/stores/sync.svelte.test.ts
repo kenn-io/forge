@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vite-plus/test";
 import type { MiddlemanClient } from "../types.js";
 import { createSyncStore } from "./sync.svelte.js";
 
@@ -16,8 +16,7 @@ describe("sync store", () => {
         GET: get,
         POST: post,
       } as unknown as MiddlemanClient,
-      getPriorityRepos: () =>
-        "github.com/acme/first, github.com/acme/second",
+      getPriorityRepos: () => "github.com/acme/first, github.com/acme/second",
     });
 
     await store.triggerSync();
@@ -25,10 +24,7 @@ describe("sync store", () => {
     expect(post).toHaveBeenCalledWith("/sync", {
       params: {
         query: {
-          priority_repo: [
-            "github.com/acme/first",
-            "github.com/acme/second",
-          ],
+          priority_repo: ["github.com/acme/first", "github.com/acme/second"],
         },
       },
     });

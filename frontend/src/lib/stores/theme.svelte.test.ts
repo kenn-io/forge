@@ -1,4 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vite-plus/test";
 import {
   initTheme,
   isDark,
@@ -34,7 +41,11 @@ afterEach(() => {
   delete window.__middleman_config;
   document.documentElement.classList.remove("dark");
   document.documentElement.style.cssText = "";
-  try { localStorage.removeItem("middleman-theme"); } catch { /* storage blocked */ }
+  try {
+    localStorage.removeItem("middleman-theme");
+  } catch {
+    /* storage blocked */
+  }
   cleanupTheme();
 });
 
@@ -72,9 +83,7 @@ describe("embedded mode with theme.mode", () => {
     window.__middleman_notify_config_changed?.();
     initTheme();
     expect(isDark()).toBe(true);
-    expect(
-      document.documentElement.classList.contains("dark"),
-    ).toBe(true);
+    expect(document.documentElement.classList.contains("dark")).toBe(true);
   });
 
   it("applies light class when mode is light", () => {
@@ -123,7 +132,9 @@ describe("reapplyTheme after removing forced mode", () => {
 
     // User manually toggles to dark (storage will fail silently)
     const origSetItem = localStorage.setItem;
-    localStorage.setItem = () => { throw new Error("blocked"); };
+    localStorage.setItem = () => {
+      throw new Error("blocked");
+    };
     toggleTheme();
     expect(isDark()).toBe(true);
     localStorage.setItem = origSetItem;
@@ -151,15 +162,15 @@ describe("applyThemeOverrides", () => {
 
   it("sets font CSS variables", () => {
     applyThemeOverrides(undefined, { sans: "SF Pro" }, undefined);
-    expect(
-      document.documentElement.style.getPropertyValue("--font-sans"),
-    ).toBe("SF Pro");
+    expect(document.documentElement.style.getPropertyValue("--font-sans")).toBe(
+      "SF Pro",
+    );
   });
 
   it("sets radius CSS variables", () => {
     applyThemeOverrides(undefined, undefined, { sm: "2px" });
-    expect(
-      document.documentElement.style.getPropertyValue("--radius-sm"),
-    ).toBe("2px");
+    expect(document.documentElement.style.getPropertyValue("--radius-sm")).toBe(
+      "2px",
+    );
   });
 });

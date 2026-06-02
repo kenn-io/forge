@@ -6,8 +6,8 @@ import {
 } from "./src/lib/dev/e2ePort";
 
 const host = "127.0.0.1";
-const port = parseE2EPort(process.env.PLAYWRIGHT_PORT)
-  ?? await getAvailablePort(host);
+const port =
+  parseE2EPort(process.env.PLAYWRIGHT_PORT) ?? (await getAvailablePort(host));
 process.env.PLAYWRIGHT_PORT = String(port);
 const baseURL = `http://${host}:${port}`;
 

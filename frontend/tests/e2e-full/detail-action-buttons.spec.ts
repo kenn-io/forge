@@ -1,6 +1,11 @@
 import { execFileSync } from "node:child_process";
 import { access } from "node:fs/promises";
-import { expect, request as playwrightRequest, test, type APIRequestContext } from "@playwright/test";
+import {
+  expect,
+  request as playwrightRequest,
+  test,
+  type APIRequestContext,
+} from "@playwright/test";
 import {
   startIsolatedE2EServer,
   startIsolatedWorkspaceE2EServer,
@@ -55,13 +60,14 @@ async function waitForWorkspaceReady(
   for (let attempt = 0; attempt < 100; attempt += 1) {
     const response = await api.get(`/api/v1/workspaces/${workspaceId}`);
     expect(response.ok()).toBe(true);
-    const workspace = await response.json() as WorkspaceStatusResponse;
+    const workspace = (await response.json()) as WorkspaceStatusResponse;
     if (workspace.status === "ready") {
       return workspace;
     }
     if (workspace.status === "error") {
       throw new Error(
-        workspace.error_message ?? `workspace ${workspaceId} failed to become ready`,
+        workspace.error_message ??
+          `workspace ${workspaceId} failed to become ready`,
       );
     }
     await new Promise((resolve) => setTimeout(resolve, 100));
@@ -73,7 +79,9 @@ async function waitForWorkspaceReady(
 test.describe("detail action buttons", () => {
   test.describe.configure({ timeout: lockedWorkspaceTestTimeoutMs });
 
-  test("issue detail creates a middleman workspace and opens its terminal", async ({ page }) => {
+  test("issue detail creates a middleman workspace and opens its terminal", async ({
+    page,
+  }) => {
     test.skip(
       !hasCommand("git") || !hasCommand("tmux", ["-V"]),
       "git and tmux are required for the real workspace flow",
@@ -95,8 +103,11 @@ test.describe("detail action buttons", () => {
 
       const createResponsePromise = page.waitForResponse((response) => {
         const url = response.url();
-        return response.request().method() === "POST"
-          && url === `${server.info.base_url}/api/v1/issues/github/acme/widgets/10/workspace`;
+        return (
+          response.request().method() === "POST" &&
+          url ===
+            `${server.info.base_url}/api/v1/issues/github/acme/widgets/10/workspace`
+        );
       });
 
       await page.locator(".btn--workspace").click();
@@ -104,7 +115,8 @@ test.describe("detail action buttons", () => {
       const createResponse = await createResponsePromise;
       expect(createResponse.status()).toBe(202);
 
-      const createdWorkspace = await createResponse.json() as WorkspaceStatusResponse;
+      const createdWorkspace =
+        (await createResponse.json()) as WorkspaceStatusResponse;
       expect(createdWorkspace.platform_host).toBe("github.com");
       expect(createdWorkspace.item_type).toBe("issue");
       expect(createdWorkspace.item_number).toBe(10);
@@ -130,7 +142,9 @@ test.describe("detail action buttons", () => {
     }
   });
 
-  test("PR detail shows approve workflows after real pending workflow sync", async ({ page }) => {
+  test("PR detail shows approve workflows after real pending workflow sync", async ({
+    page,
+  }) => {
     const server = await startIsolatedE2EServer();
     try {
       const seedResponse = await page.request.post(
@@ -142,13 +156,17 @@ test.describe("detail action buttons", () => {
 
       await expect(
         page.getByRole("button", { name: "Approve workflows" }),
-      ).toBeVisible({ timeout: 10_000 });
+      ).toBeVisible({
+        timeout: 10_000,
+      });
     } finally {
       await server.stop();
     }
   });
 
-  test("issue workspace button still creates a middleman workspace after detail sync refresh", async ({ page }) => {
+  test("issue workspace button still creates a middleman workspace after detail sync refresh", async ({
+    page,
+  }) => {
     const createdWorkspace = {
       id: "ws-issue-10",
       platform_host: "github.com",
@@ -176,50 +194,45 @@ test.describe("detail action buttons", () => {
         });
       },
     );
-    await page.route(
-      "**/api/v1/workspaces/ws-issue-10",
-      async (route) => {
-        await route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify(createdWorkspace),
-        });
-      },
-    );
-    await page.route(
-      "**/api/v1/workspaces",
-      async (route) => {
-        if (route.request().method() !== "GET") {
-          await route.continue();
-          return;
-        }
-        await route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify({ workspaces: [createdWorkspace] }),
-        });
-      },
-    );
-    await page.route(
-      "**/api/v1/events",
-      async (route) => {
-        await route.fulfill({
-          status: 200,
-          contentType: "text/event-stream",
-          body: "",
-        });
-      },
-    );
+    await page.route("**/api/v1/workspaces/ws-issue-10", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(createdWorkspace),
+      });
+    });
+    await page.route("**/api/v1/workspaces", async (route) => {
+      if (route.request().method() !== "GET") {
+        await route.continue();
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ workspaces: [createdWorkspace] }),
+      });
+    });
+    await page.route("**/api/v1/events", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "text/event-stream",
+        body: "",
+      });
+    });
 
     const syncResponsePromise = page.waitForResponse((response) => {
       const url = response.url();
-      return response.request().method() === "POST"
-        && url.endsWith("/api/v1/issues/github/acme/widgets/10/sync/async");
+      return (
+        response.request().method() === "POST" &&
+        url.endsWith("/api/v1/issues/github/acme/widgets/10/sync/async")
+      );
     });
     const createResponsePromise = page.waitForResponse((response) => {
       const url = response.url();
-      return response.request().method() === "POST"
-        && url.endsWith("/api/v1/issues/github/acme/widgets/10/workspace");
+      return (
+        response.request().method() === "POST" &&
+        url.endsWith("/api/v1/issues/github/acme/widgets/10/workspace")
+      );
     });
 
     await page.goto("/issues/github/acme/widgets/10");
@@ -230,7 +243,9 @@ test.describe("detail action buttons", () => {
     // when the URL has no platform_host query parameter.
     const syncResponse = await syncResponsePromise;
     expect(syncResponse.status()).toBe(202);
-    expect(new URL(syncResponse.url()).searchParams.has("platform_host")).toBe(false);
+    expect(new URL(syncResponse.url()).searchParams.has("platform_host")).toBe(
+      false,
+    );
 
     await page.locator(".btn--workspace").click();
     const createResponse = await createResponsePromise;
@@ -239,7 +254,9 @@ test.describe("detail action buttons", () => {
     await expect(page).toHaveURL(/\/terminal\/ws-issue-10$/);
   });
 
-  test("issue workspace conflict dialog can reuse the existing branch", async ({ page }) => {
+  test("issue workspace conflict dialog can reuse the existing branch", async ({
+    page,
+  }) => {
     const createdWorkspace = {
       id: "ws-issue-10",
       platform_host: "github.com",
@@ -278,9 +295,12 @@ test.describe("detail action buttons", () => {
     await page.route(
       "**/api/v1/issues/github/acme/widgets/10/workspace",
       async (route) => {
-        payloads.push(JSON.parse(
-          route.request().postData() ?? "{}",
-        ) as Record<string, unknown>);
+        payloads.push(
+          JSON.parse(route.request().postData() ?? "{}") as Record<
+            string,
+            unknown
+          >,
+        );
         if (payloads.length === 1) {
           await route.fulfill({
             status: 409,
@@ -296,40 +316,31 @@ test.describe("detail action buttons", () => {
         });
       },
     );
-    await page.route(
-      "**/api/v1/workspaces/ws-issue-10",
-      async (route) => {
-        await route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify(createdWorkspace),
-        });
-      },
-    );
-    await page.route(
-      "**/api/v1/workspaces",
-      async (route) => {
-        if (route.request().method() !== "GET") {
-          await route.continue();
-          return;
-        }
-        await route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify({ workspaces: [createdWorkspace] }),
-        });
-      },
-    );
-    await page.route(
-      "**/api/v1/events",
-      async (route) => {
-        await route.fulfill({
-          status: 200,
-          contentType: "text/event-stream",
-          body: "",
-        });
-      },
-    );
+    await page.route("**/api/v1/workspaces/ws-issue-10", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(createdWorkspace),
+      });
+    });
+    await page.route("**/api/v1/workspaces", async (route) => {
+      if (route.request().method() !== "GET") {
+        await route.continue();
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ workspaces: [createdWorkspace] }),
+      });
+    });
+    await page.route("**/api/v1/events", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "text/event-stream",
+        body: "",
+      });
+    });
 
     await page.goto("/issues/github/acme/widgets/10");
     await expect(page.locator(".issue-detail")).toBeVisible();
@@ -339,23 +350,27 @@ test.describe("detail action buttons", () => {
     const dialog = page.getByRole("dialog", { name: "Branch Name Conflict" });
     await expect(dialog).toBeVisible();
     await expect(dialog).toContainText("middleman/issue-10");
-    await expect(
-      dialog.locator("#issue-workspace-branch-name"),
-    ).toHaveValue("middleman/issue-10-2");
+    await expect(dialog.locator("#issue-workspace-branch-name")).toHaveValue(
+      "middleman/issue-10-2",
+    );
 
     await dialog.getByRole("button", { name: "Use Existing Branch" }).click();
 
-    await expect.poll(() => payloads).toEqual([
-      {},
-      {
-        git_head_ref: "middleman/issue-10",
-        reuse_existing_branch: true,
-      },
-    ]);
+    await expect
+      .poll(() => payloads)
+      .toEqual([
+        {},
+        {
+          git_head_ref: "middleman/issue-10",
+          reuse_existing_branch: true,
+        },
+      ]);
     await expect(page).toHaveURL(/\/terminal\/ws-issue-10$/);
   });
 
-  test("issue workspace conflict dialog can create a new suggested branch", async ({ page }) => {
+  test("issue workspace conflict dialog can create a new suggested branch", async ({
+    page,
+  }) => {
     const createdWorkspace = {
       id: "ws-issue-10",
       platform_host: "github.com",
@@ -394,9 +409,12 @@ test.describe("detail action buttons", () => {
     await page.route(
       "**/api/v1/issues/github/acme/widgets/10/workspace",
       async (route) => {
-        payloads.push(JSON.parse(
-          route.request().postData() ?? "{}",
-        ) as Record<string, unknown>);
+        payloads.push(
+          JSON.parse(route.request().postData() ?? "{}") as Record<
+            string,
+            unknown
+          >,
+        );
         if (payloads.length === 1) {
           await route.fulfill({
             status: 409,
@@ -412,40 +430,31 @@ test.describe("detail action buttons", () => {
         });
       },
     );
-    await page.route(
-      "**/api/v1/workspaces/ws-issue-10",
-      async (route) => {
-        await route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify(createdWorkspace),
-        });
-      },
-    );
-    await page.route(
-      "**/api/v1/workspaces",
-      async (route) => {
-        if (route.request().method() !== "GET") {
-          await route.continue();
-          return;
-        }
-        await route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify({ workspaces: [createdWorkspace] }),
-        });
-      },
-    );
-    await page.route(
-      "**/api/v1/events",
-      async (route) => {
-        await route.fulfill({
-          status: 200,
-          contentType: "text/event-stream",
-          body: "",
-        });
-      },
-    );
+    await page.route("**/api/v1/workspaces/ws-issue-10", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(createdWorkspace),
+      });
+    });
+    await page.route("**/api/v1/workspaces", async (route) => {
+      if (route.request().method() !== "GET") {
+        await route.continue();
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ workspaces: [createdWorkspace] }),
+      });
+    });
+    await page.route("**/api/v1/events", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "text/event-stream",
+        body: "",
+      });
+    });
 
     await page.goto("/issues/github/acme/widgets/10");
     await expect(page.locator(".issue-detail")).toBeVisible();
@@ -456,20 +465,30 @@ test.describe("detail action buttons", () => {
     await expect(dialog).toBeVisible();
     await dialog.getByRole("button", { name: "Create New Branch" }).click();
 
-    await expect.poll(() => payloads).toEqual([
-      {},
-      {
-        git_head_ref: "middleman/issue-10-2",
-      },
-    ]);
+    await expect
+      .poll(() => payloads)
+      .toEqual([
+        {},
+        {
+          git_head_ref: "middleman/issue-10-2",
+        },
+      ]);
     await expect(page).toHaveURL(/\/terminal\/ws-issue-10$/);
   });
 
-  test("pull request actions use shared ActionButton component", async ({ page }) => {
+  test("pull request actions use shared ActionButton component", async ({
+    page,
+  }) => {
     await page.goto("/pulls");
-    await page.locator(".pull-item").first()
+    await page
+      .locator(".pull-item")
+      .first()
       .waitFor({ state: "visible", timeout: 10_000 });
-    await page.locator(".pull-item").filter({ hasText: "Add widget caching layer" }).first().click();
+    await page
+      .locator(".pull-item")
+      .filter({ hasText: "Add widget caching layer" })
+      .first()
+      .click();
     await expect(page.locator(".pull-detail")).toBeVisible();
 
     const approve = page.locator(".btn--approve");
@@ -487,7 +506,9 @@ test.describe("detail action buttons", () => {
     }
   });
 
-  test("repo merge permission disables merge action with reason end-to-end", async ({ page }) => {
+  test("repo merge permission disables merge action with reason end-to-end", async ({
+    page,
+  }) => {
     let isolatedServer: IsolatedE2EServer | null = null;
     try {
       isolatedServer = await startIsolatedE2EServer();
@@ -502,7 +523,7 @@ test.describe("detail action buttons", () => {
         `${baseURL}/api/v1/repo/github/acme/widgets`,
       );
       expect(settingsResponse.ok()).toBe(true);
-      const settings = await settingsResponse.json() as {
+      const settings = (await settingsResponse.json()) as {
         ViewerCanMerge: boolean;
         operations: {
           merge_pr: { available: boolean; code?: string };
@@ -534,7 +555,9 @@ test.describe("detail action buttons", () => {
     }
   });
 
-  test("conflicted pull request disables the merge action", async ({ page }) => {
+  test("conflicted pull request disables the merge action", async ({
+    page,
+  }) => {
     let isolatedServer: IsolatedE2EServer | null = null;
     try {
       isolatedServer = await startIsolatedE2EServer();
@@ -570,15 +593,20 @@ test.describe("detail action buttons", () => {
     await expect(page.locator(".actions-menu-popover")).toHaveCount(0);
   });
 
-  test("narrow actions menu shows state change failures after closing", async ({ page }) => {
+  test("narrow actions menu shows state change failures after closing", async ({
+    page,
+  }) => {
     await page.setViewportSize({ width: 320, height: 720 });
-    await page.route("**/api/v1/pulls/github/acme/widgets/1/github-state", async (route) => {
-      await route.fulfill({
-        status: 500,
-        contentType: "application/json",
-        body: JSON.stringify({ detail: "backend down" }),
-      });
-    });
+    await page.route(
+      "**/api/v1/pulls/github/acme/widgets/1/github-state",
+      async (route) => {
+        await route.fulfill({
+          status: 500,
+          contentType: "application/json",
+          body: JSON.stringify({ detail: "backend down" }),
+        });
+      },
+    );
 
     await page.goto("/pulls/github/acme/widgets/1");
     await expect(page.locator(".pull-detail")).toBeVisible();
@@ -587,13 +615,17 @@ test.describe("detail action buttons", () => {
     await page.locator(".actions-menu-popover .btn--close").click();
 
     await expect(page.locator(".actions-menu-popover")).toHaveCount(0);
-    await expect(page.locator(".primary-actions-wrap .action-error"))
-      .toHaveText("backend down");
-    await expect(page.locator(".primary-actions-wrap .action-error"))
-      .toBeVisible();
+    await expect(
+      page.locator(".primary-actions-wrap .action-error"),
+    ).toHaveText("backend down");
+    await expect(
+      page.locator(".primary-actions-wrap .action-error"),
+    ).toBeVisible();
   });
 
-  test("approve form stays visible in the narrow actions menu", async ({ page }) => {
+  test("approve form stays visible in the narrow actions menu", async ({
+    page,
+  }) => {
     await page.setViewportSize({ width: 320, height: 720 });
     await page.goto("/pulls/github/acme/widgets/1");
     await expect(page.locator(".pull-detail")).toBeVisible();
@@ -603,13 +635,17 @@ test.describe("detail action buttons", () => {
 
     await page.locator(".actions-menu-popover .btn--approve").click();
     await expect(page.locator(".actions-menu-popover")).toBeVisible();
-    await expect(page.locator(".actions-menu-popover .approve-comment"))
-      .toBeVisible();
-    await expect(page.locator(".actions-menu-popover .btn--green"))
-      .toHaveText("Approve");
+    await expect(
+      page.locator(".actions-menu-popover .approve-comment"),
+    ).toBeVisible();
+    await expect(page.locator(".actions-menu-popover .btn--green")).toHaveText(
+      "Approve",
+    );
   });
 
-  test("approve action submits through API, persists review, and refreshes detail and list data", async ({ page }) => {
+  test("approve action submits through API, persists review, and refreshes detail and list data", async ({
+    page,
+  }) => {
     let isolatedServer: IsolatedE2EServer | null = null;
     let api: APIRequestContext | null = null;
     try {
@@ -628,19 +664,22 @@ test.describe("detail action buttons", () => {
       await page.locator(".btn--approve").first().click();
       await page.locator(".approve-comment").fill(approvalBody);
 
-      const approveResponsePromise = page.waitForResponse((response) =>
-        response.request().method() === "POST"
-        && response.url() === `${detailURL}/approve`
+      const approveResponsePromise = page.waitForResponse(
+        (response) =>
+          response.request().method() === "POST" &&
+          response.url() === `${detailURL}/approve`,
       );
-      const detailRefreshPromise = page.waitForResponse((response) =>
-        response.request().method() === "GET"
-        && response.url() === detailURL
+      const detailRefreshPromise = page.waitForResponse(
+        (response) =>
+          response.request().method() === "GET" && response.url() === detailURL,
       );
       const listRefreshPromise = page.waitForResponse((response) => {
         const url = new URL(response.url());
-        return response.request().method() === "GET"
-          && url.origin === baseURL
-          && url.pathname === "/api/v1/pulls";
+        return (
+          response.request().method() === "GET" &&
+          url.origin === baseURL &&
+          url.pathname === "/api/v1/pulls"
+        );
       });
 
       await page.locator(".approve-actions .btn--green").click();
@@ -652,27 +691,35 @@ test.describe("detail action buttons", () => {
       expect((await listRefreshPromise).ok()).toBe(true);
 
       await expect(page.locator(".approve-popover")).toHaveCount(0);
-      await expect(page.locator(".event-card", { hasText: approvalBody }))
-        .toBeVisible();
+      await expect(
+        page.locator(".event-card", { hasText: approvalBody }),
+      ).toBeVisible();
 
-      await expect.poll(async () => {
-        const response = await api!.get("/api/v1/pulls/github/acme/widgets/1");
-        expect(response.ok()).toBe(true);
-        const detail = await response.json() as PullDetailResponse;
-        return detail.events.some((event) =>
-          event.EventType === "review"
-          && event.Author === "fixture-bot"
-          && event.Summary === "APPROVED"
-          && event.Body === approvalBody
-        );
-      }).toBe(true);
+      await expect
+        .poll(async () => {
+          const response = await api!.get(
+            "/api/v1/pulls/github/acme/widgets/1",
+          );
+          expect(response.ok()).toBe(true);
+          const detail = (await response.json()) as PullDetailResponse;
+          return detail.events.some(
+            (event) =>
+              event.EventType === "review" &&
+              event.Author === "fixture-bot" &&
+              event.Summary === "APPROVED" &&
+              event.Body === approvalBody,
+          );
+        })
+        .toBe(true);
     } finally {
       await api?.dispose();
       await isolatedServer?.stop();
     }
   });
 
-  test("self-contained actions close the narrow actions menu after success", async ({ page }) => {
+  test("self-contained actions close the narrow actions menu after success", async ({
+    page,
+  }) => {
     let isolatedServer: IsolatedE2EServer | null = null;
     try {
       isolatedServer = await startIsolatedE2EServer();
@@ -686,8 +733,11 @@ test.describe("detail action buttons", () => {
       await expect(page.locator(".actions-menu-popover")).toBeVisible();
 
       const readyResponse = page.waitForResponse((response) => {
-        return response.request().method() === "POST"
-          && response.url() === `${baseURL}/api/v1/pulls/github/acme/widgets/6/ready-for-review`;
+        return (
+          response.request().method() === "POST" &&
+          response.url() ===
+            `${baseURL}/api/v1/pulls/github/acme/widgets/6/ready-for-review`
+        );
       });
       await page.locator(".actions-menu-popover .btn--ready").click();
       expect((await readyResponse).status()).toBe(200);
@@ -697,7 +747,9 @@ test.describe("detail action buttons", () => {
     }
   });
 
-  test("draft pull request actions keep exactly the same height", async ({ page }) => {
+  test("draft pull request actions keep exactly the same height", async ({
+    page,
+  }) => {
     await page.goto("/pulls/github/acme/widgets/6");
     await expect(page.locator(".pull-detail")).toBeVisible();
 
@@ -711,7 +763,12 @@ test.describe("detail action buttons", () => {
     }
 
     const metrics = await page.evaluate(() => {
-      const selectors = [".btn--ready", ".btn--approve", ".btn--merge", ".btn--close"];
+      const selectors = [
+        ".btn--ready",
+        ".btn--approve",
+        ".btn--merge",
+        ".btn--close",
+      ];
       return selectors.map((selector) => {
         const element = document.querySelector(selector);
         if (!(element instanceof HTMLElement)) {
@@ -733,7 +790,9 @@ test.describe("detail action buttons", () => {
     );
     expect(new Set(metrics.map((metric) => metric.top)).size).toBe(1);
     expect(
-      metrics.slice(0, -1).map((metric, index) => metrics[index + 1]!.left - metric.right),
+      metrics
+        .slice(0, -1)
+        .map((metric, index) => metrics[index + 1]!.left - metric.right),
     ).toEqual(
       Array(metrics.length - 1).fill(
         metrics[1] ? metrics[1].left - metrics[0]!.right : 0,
@@ -741,7 +800,9 @@ test.describe("detail action buttons", () => {
     );
   });
 
-  test("ready for review updates API state and removes the draft action", async ({ page }) => {
+  test("ready for review updates API state and removes the draft action", async ({
+    page,
+  }) => {
     let isolatedServer: IsolatedE2EServer | null = null;
     let api: APIRequestContext | null = null;
     try {
@@ -758,8 +819,11 @@ test.describe("detail action buttons", () => {
 
       const readyResponsePromise = page.waitForResponse((response) => {
         const url = response.url();
-        return response.request().method() === "POST"
-          && url === `${server.info.base_url}/api/v1/pulls/github/acme/widgets/6/ready-for-review`;
+        return (
+          response.request().method() === "POST" &&
+          url ===
+            `${server.info.base_url}/api/v1/pulls/github/acme/widgets/6/ready-for-review`
+        );
       });
 
       await page.locator(".btn--ready").click();
@@ -771,11 +835,15 @@ test.describe("detail action buttons", () => {
       await expect(page.locator(".btn--ready")).toHaveCount(0);
       await expect(page.locator(".btn--approve")).toBeVisible();
 
-      await expect.poll(async () => {
-        const response = await apiContext.get("/api/v1/pulls/github/acme/widgets/6");
-        const detail = await response.json();
-        return detail.merge_request.IsDraft;
-      }).toBe(false);
+      await expect
+        .poll(async () => {
+          const response = await apiContext.get(
+            "/api/v1/pulls/github/acme/widgets/6",
+          );
+          const detail = await response.json();
+          return detail.merge_request.IsDraft;
+        })
+        .toBe(false);
     } finally {
       await api?.dispose();
       await isolatedServer?.stop();

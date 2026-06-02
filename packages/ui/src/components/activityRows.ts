@@ -10,9 +10,7 @@ export interface CollapsedActivityRun {
   representative: ActivityItem;
 }
 
-export type ActivityRow =
-  | ActivityItem
-  | CollapsedActivityRun;
+export type ActivityRow = ActivityItem | CollapsedActivityRun;
 
 export function isCollapsedActivityRow(
   row: ActivityRow,
@@ -20,23 +18,19 @@ export function isCollapsedActivityRow(
   return "kind" in row && row.kind === "collapsed";
 }
 
-export function isDefaultBranchCommitActivity(
-  item: ActivityItem,
-): boolean {
+export function isDefaultBranchCommitActivity(item: ActivityItem): boolean {
   return item.activity_type === "default_branch_commit";
 }
 
-export function isDefaultBranchForcePushActivity(
-  item: ActivityItem,
-): boolean {
+export function isDefaultBranchForcePushActivity(item: ActivityItem): boolean {
   return item.activity_type === "default_branch_force_push";
 }
 
-export function isDefaultBranchActivity(
-  item: ActivityItem,
-): boolean {
-  return isDefaultBranchCommitActivity(item)
-    || isDefaultBranchForcePushActivity(item);
+export function isDefaultBranchActivity(item: ActivityItem): boolean {
+  return (
+    isDefaultBranchCommitActivity(item) ||
+    isDefaultBranchForcePushActivity(item)
+  );
 }
 
 export function shortSha(sha: string | undefined): string {
@@ -59,9 +53,9 @@ function activityRunAuthor(item: ActivityItem): string {
 function activityRunGroupKey(item: ActivityItem): string | null {
   const author = activityRunAuthor(item);
   if (
-    item.activity_type === "commit"
-    || item.activity_type === "comment"
-    || item.activity_type === "review"
+    item.activity_type === "commit" ||
+    item.activity_type === "comment" ||
+    item.activity_type === "review"
   ) {
     return [
       "item",
@@ -85,9 +79,7 @@ function activityRunGroupKey(item: ActivityItem): string | null {
   return null;
 }
 
-export function collapseActivityRuns(
-  items: ActivityItem[],
-): ActivityRow[] {
+export function collapseActivityRuns(items: ActivityItem[]): ActivityRow[] {
   const result: ActivityRow[] = [];
   let i = 0;
 

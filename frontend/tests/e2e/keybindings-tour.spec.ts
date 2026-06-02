@@ -171,18 +171,14 @@ test("keybindings tour: palette, recents, reserved, cheatsheet, sidebar, modal i
   // Snapshot the PR-list selection state before the j keypress. With the
   // palette modal frame active, `j` should land in the search input as a
   // literal character and must NOT change the list selection underneath.
-  const beforeSelectedCount = await page
-    .locator(".pull-item.selected")
-    .count();
+  const beforeSelectedCount = await page.locator(".pull-item.selected").count();
   // Clear any prior input text first so the j keypress lands in an
   // empty field and the resulting value is unambiguous to assert.
   await page.locator(".palette-input").fill("");
   await page.locator(".palette-input").focus();
   await page.keyboard.press("j");
   await expect(page.locator(".palette-input")).toHaveValue("j");
-  const afterSelectedCount = await page
-    .locator(".pull-item.selected")
-    .count();
+  const afterSelectedCount = await page.locator(".pull-item.selected").count();
   expect(afterSelectedCount).toBe(beforeSelectedCount);
   await page.waitForTimeout(500);
 
@@ -198,10 +194,7 @@ test.afterAll(async () => {
   // when video is enabled; we just need at least one to be present.
   const fs = await import("node:fs");
   const path = await import("node:path");
-  const root = path.resolve(
-    process.cwd(),
-    "test-results",
-  );
+  const root = path.resolve(process.cwd(), "test-results");
   function walk(dir: string): string[] {
     const out: string[] = [];
     let entries: import("node:fs").Dirent[];
@@ -219,15 +212,11 @@ test.afterAll(async () => {
   }
   const webms = walk(root).filter((p) => p.includes("keybindings-tour"));
   if (webms.length === 0) {
-    throw new Error(
-      `expected at least one webm under ${root}, found none`,
-    );
+    throw new Error(`expected at least one webm under ${root}, found none`);
   }
   const sizes = webms.map((p) => ({ p, size: fs.statSync(p).size }));
   console.log(
-    `keybindings-tour video files:\n${sizes
-      .map((s) => `  ${s.p} (${s.size} bytes)`)
-      .join("\n")}`,
+    `keybindings-tour video files:\n${sizes.map((s) => `  ${s.p} (${s.size} bytes)`).join("\n")}`,
   );
   // Sanity: at least one should be a few KB. Empty webms mean video
   // capture didn't actually record anything.

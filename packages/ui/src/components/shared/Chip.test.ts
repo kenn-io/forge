@@ -1,6 +1,6 @@
 import { cleanup, render, screen } from "@testing-library/svelte";
 import { createRawSnippet } from "svelte";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vite-plus/test";
 
 import Chip from "./Chip.svelte";
 

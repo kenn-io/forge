@@ -11,7 +11,14 @@
 // captured-fetch problem entirely.
 
 import { cleanup, render, screen, waitFor } from "@testing-library/svelte";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vite-plus/test";
 
 const mocks = vi.hoisted(() => ({
   runtimeClient: {
@@ -40,27 +47,33 @@ vi.mock("../../api/workspace-runtime.js", () => ({
 
 // Stub xterm so the terminal panes don't try to render in jsdom.
 vi.mock("@xterm/xterm", () => ({
-  Terminal: vi.fn().mockImplementation(() => ({
-    cols: 80,
-    rows: 24,
-    open: vi.fn(),
-    loadAddon: vi.fn(),
-    onData: vi.fn(),
-    onBinary: vi.fn(),
-    dispose: vi.fn(),
-    write: vi.fn(),
-    refresh: vi.fn(),
-    clearTextureAtlas: vi.fn(),
-    options: {},
-  })),
+  Terminal: vi.fn().mockImplementation(function () {
+    return {
+      cols: 80,
+      rows: 24,
+      open: vi.fn(),
+      loadAddon: vi.fn(),
+      onData: vi.fn(),
+      onBinary: vi.fn(),
+      dispose: vi.fn(),
+      write: vi.fn(),
+      refresh: vi.fn(),
+      clearTextureAtlas: vi.fn(),
+      options: {},
+    };
+  }),
 }));
 
 vi.mock("@xterm/addon-fit", () => ({
-  FitAddon: vi.fn().mockImplementation(() => ({ fit: vi.fn() })),
+  FitAddon: vi.fn().mockImplementation(function () {
+    return { fit: vi.fn() };
+  }),
 }));
 
 vi.mock("@xterm/addon-webgl", () => ({
-  WebglAddon: vi.fn().mockImplementation(() => ({})),
+  WebglAddon: vi.fn().mockImplementation(function () {
+    return {};
+  }),
 }));
 
 vi.mock("@middleman/ui", async (importOriginal) => {

@@ -5,7 +5,14 @@ import {
   screen,
   waitFor,
 } from "@testing-library/svelte";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vite-plus/test";
 
 const mockPost = vi.hoisted(() => vi.fn());
 const mockLoadDetail = vi.hoisted(() => vi.fn());
@@ -114,9 +121,11 @@ describe("ApproveButton tooltips", () => {
 
   it("keeps the approval popover open and trigger disabled while submitting", async () => {
     let resolvePost: (value: { data: { status: string } }) => void = () => {};
-    mockPost.mockReturnValue(new Promise((resolve) => {
-      resolvePost = resolve;
-    }));
+    mockPost.mockReturnValue(
+      new Promise((resolve) => {
+        resolvePost = resolve;
+      }),
+    );
     renderApproveButton();
 
     const trigger = screen.getByRole("button", { name: /^approve$/i });
@@ -124,9 +133,9 @@ describe("ApproveButton tooltips", () => {
     await fireEvent.input(screen.getByRole("textbox"), {
       target: { value: "lgtm" },
     });
-    await fireEvent.click(screen.getByTitle(
-      "Submit an approving code review on this pull request",
-    ));
+    await fireEvent.click(
+      screen.getByTitle("Submit an approving code review on this pull request"),
+    );
 
     await waitFor(() => {
       expect(trigger.hasAttribute("disabled")).toBe(true);

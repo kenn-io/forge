@@ -158,9 +158,7 @@ test.describe("threaded activity columns", () => {
     ]);
     await page.goto("/?view=threaded");
 
-    const row = page
-      .locator(".item-row:not(.branch-activity-row)")
-      .first();
+    const row = page.locator(".item-row:not(.branch-activity-row)").first();
     await expect(row).toBeVisible();
     const authorCell = row.locator(".cell--author");
     await expect(authorCell).toHaveText("alice");
@@ -216,9 +214,7 @@ test.describe("threaded activity columns", () => {
 
     // Toggle "Hide org name" via the View dropdown.
     await page.getByRole("button", { name: "View", exact: true }).click();
-    await page
-      .locator(".filter-item", { hasText: "Hide org name" })
-      .click();
+    await page.locator(".filter-item", { hasText: "Hide org name" }).click();
     await page.keyboard.press("Escape");
 
     await expect(repoLabel).toHaveText("widgets");

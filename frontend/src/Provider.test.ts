@@ -1,9 +1,14 @@
 import { cleanup, render } from "@testing-library/svelte";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vite-plus/test";
 
-import type {
-  EventsStoreOptions,
-} from "@middleman/ui/stores/events";
+import type { EventsStoreOptions } from "@middleman/ui/stores/events";
 import type { SyncStatus } from "@middleman/ui/api/types";
 import type { MiddlemanClient } from "@middleman/ui";
 
@@ -193,16 +198,11 @@ describe("Provider events store wiring", () => {
     });
 
     expect(refreshDetailOnly).toHaveBeenCalledTimes(1);
-    expect(refreshDetailOnly).toHaveBeenCalledWith(
-      "acme",
-      "widget",
-      42,
-      {
-        provider: "github",
-        platformHost: "github.com",
-        repoPath: "acme/widget",
-      },
-    );
+    expect(refreshDetailOnly).toHaveBeenCalledWith("acme", "widget", 42, {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+    });
   });
 
   it("ignores targeted PR refreshes while an issue detail is visible", () => {

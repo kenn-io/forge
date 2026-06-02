@@ -41,12 +41,9 @@ function apiErrorMessage(
   return error.detail ?? error.title ?? fallback;
 }
 
-export function createActivityStore(
-  opts: ActivityStoreOptions,
-) {
+export function createActivityStore(opts: ActivityStoreOptions) {
   const apiClient = opts.client;
-  const getGlobalRepo =
-    opts.getGlobalRepo ?? (() => undefined);
+  const getGlobalRepo = opts.getGlobalRepo ?? (() => undefined);
   const getBasePath = opts.getBasePath ?? (() => "/");
 
   // --- state ---
@@ -62,8 +59,7 @@ export function createActivityStore(
   let collapseThreads = $state(false);
   let collapseThreadsDefault = false;
   let expandOverrides = $state<Set<string>>(new Set());
-  let pollHandle: ReturnType<typeof setInterval> | null =
-    null;
+  let pollHandle: ReturnType<typeof setInterval> | null = null;
   let pollInFlight = false;
   let requestVersion = 0;
   let pollCount = 0;
@@ -72,9 +68,7 @@ export function createActivityStore(
   let hideClosedMerged = $state(false);
   let hideBots = $state(false);
   let hideDefaultBranchActivity = $state(false);
-  let enabledEvents = $state<Set<string>>(
-    new Set(DEFAULT_EVENT_TYPES),
-  );
+  let enabledEvents = $state<Set<string>>(new Set(DEFAULT_EVENT_TYPES));
   let itemFilter = $state<ItemFilter>("all");
   let initialized = false;
 
@@ -134,9 +128,7 @@ export function createActivityStore(
   function setActivityFilterTypes(types: string[]): void {
     filterTypes = types;
   }
-  function setActivitySearch(
-    q: string | undefined,
-  ): void {
+  function setActivitySearch(q: string | undefined): void {
     searchQuery = q;
   }
   function setTimeRange(range_: TimeRange): void {
@@ -181,9 +173,7 @@ export function createActivityStore(
 
   // --- hydration ---
 
-  function hydrateDefaults(
-    activity: ActivitySettings,
-  ): void {
+  function hydrateDefaults(activity: ActivitySettings): void {
     viewMode = activity.view_mode;
     timeRange = activity.time_range;
     hideClosedMerged = activity.hide_closed;
@@ -211,9 +201,7 @@ export function createActivityStore(
   // --- internals ---
 
   function computeSince(): string {
-    return new Date(
-      Date.now() - RANGE_MS[timeRange],
-    ).toISOString();
+    return new Date(Date.now() - RANGE_MS[timeRange]).toISOString();
   }
 
   function buildParams(): ActivityParams {
@@ -230,16 +218,12 @@ export function createActivityStore(
     loading = true;
     storeError = null;
     try {
-      const { data, error: requestError } =
-        await apiClient.GET("/activity", {
-          params: { query: buildParams() },
-        });
+      const { data, error: requestError } = await apiClient.GET("/activity", {
+        params: { query: buildParams() },
+      });
       if (requestError) {
         throw new Error(
-          apiErrorMessage(
-            requestError,
-            "failed to load activity",
-          ),
+          apiErrorMessage(requestError, "failed to load activity"),
         );
       }
       if (version !== requestVersion) return;
@@ -247,8 +231,7 @@ export function createActivityStore(
       capped = data?.capped ?? false;
     } catch (err) {
       if (version !== requestVersion) return;
-      storeError =
-        err instanceof Error ? err.message : String(err);
+      storeError = err instanceof Error ? err.message : String(err);
     } finally {
       if (version === requestVersion) loading = false;
     }
@@ -257,26 +240,16 @@ export function createActivityStore(
   async function refreshActivity(): Promise<void> {
     const versionAtStart = requestVersion;
     try {
-      const { data, error: requestError } =
-        await apiClient.GET("/activity", {
-          params: { query: buildParams() },
-        });
-      if (
-        requestError ||
-        versionAtStart !== requestVersion
-      )
-        return;
+      const { data, error: requestError } = await apiClient.GET("/activity", {
+        params: { query: buildParams() },
+      });
+      if (requestError || versionAtStart !== requestVersion) return;
       const fresh = data?.items ?? [];
       if (fresh.length === 0) return;
-      const freshById = new Map(
-        fresh.map((it) => [it.id, it]),
-      );
+      const freshById = new Map(fresh.map((it) => [it.id, it]));
       items = items.map((it) => {
         const updated = freshById.get(it.id);
-        if (
-          updated &&
-          updated.item_state !== it.item_state
-        ) {
+        if (updated && updated.item_state !== it.item_state) {
           return { ...it, item_state: updated.item_state };
         }
         return it;
@@ -311,16 +284,12 @@ export function createActivityStore(
     try {
       const params = buildParams();
       params.after = items[0]!.cursor;
-      const { data, error: requestError } =
-        await apiClient.GET("/activity", {
-          params: { query: params },
-        });
+      const { data, error: requestError } = await apiClient.GET("/activity", {
+        params: { query: params },
+      });
       if (requestError) {
         throw new Error(
-          apiErrorMessage(
-            requestError,
-            "failed to poll activity",
-          ),
+          apiErrorMessage(requestError, "failed to poll activity"),
         );
       }
       if (versionAtStart !== requestVersion) return;
@@ -332,12 +301,8 @@ export function createActivityStore(
       }
       const nextItems = resp.items ?? [];
       if (nextItems.length > 0) {
-        const existingIds = new Set(
-          items.map((it) => it.id),
-        );
-        const newItems = nextItems.filter(
-          (it) => !existingIds.has(it.id),
-        );
+        const existingIds = new Set(items.map((it) => it.id));
+        const newItems = nextItems.filter((it) => !existingIds.has(it.id));
         if (newItems.length > 0) {
           items = [...newItems, ...items];
         }
@@ -346,12 +311,8 @@ export function createActivityStore(
       // Silent poll failure
     }
     if (versionAtStart !== requestVersion) return;
-    const cutoff = new Date(
-      Date.now() - RANGE_MS[timeRange],
-    );
-    items = items.filter(
-      (it) => new Date(it.created_at) >= cutoff,
-    );
+    const cutoff = new Date(Date.now() - RANGE_MS[timeRange]);
+    items = items.filter((it) => new Date(it.created_at) >= cutoff);
   }
 
   function startActivityPolling(): void {
@@ -380,9 +341,7 @@ export function createActivityStore(
     else if (hasIssue && !hasPR) itemFilter = "issues";
     else itemFilter = "all";
     enabledEvents = new Set(
-      DEFAULT_EVENT_TYPES.filter(
-        (t) => filterTypes.includes(t),
-      ),
+      DEFAULT_EVENT_TYPES.filter((t) => filterTypes.includes(t)),
     );
   }
 
@@ -404,17 +363,12 @@ export function createActivityStore(
   }
 
   function syncFromURL(): void {
-    const sp = new URLSearchParams(
-      window.location.search,
-    );
+    const sp = new URLSearchParams(window.location.search);
     if (sp.has("types")) {
       const typesParam = sp.get("types");
-      filterTypes = typesParam
-        ? typesParam.split(",")
-        : [];
+      filterTypes = typesParam ? typesParam.split(",") : [];
     }
-    if (sp.has("search"))
-      searchQuery = sp.get("search") ?? undefined;
+    if (sp.has("search")) searchQuery = sp.get("search") ?? undefined;
     if (sp.has("range")) {
       const rangeParam = sp.get("range");
       if (rangeParam && rangeParam in RANGE_MS)
@@ -431,11 +385,8 @@ export function createActivityStore(
   }
 
   function syncToURL(): void {
-    const sp = new URLSearchParams(
-      window.location.search,
-    );
-    if (filterTypes.length > 0)
-      sp.set("types", filterTypes.join(","));
+    const sp = new URLSearchParams(window.location.search);
+    if (filterTypes.length > 0) sp.set("types", filterTypes.join(","));
     else sp.delete("types");
     if (searchQuery) sp.set("search", searchQuery);
     else sp.delete("search");
@@ -495,6 +446,4 @@ export function createActivityStore(
   };
 }
 
-export type ActivityStore = ReturnType<
-  typeof createActivityStore
->;
+export type ActivityStore = ReturnType<typeof createActivityStore>;

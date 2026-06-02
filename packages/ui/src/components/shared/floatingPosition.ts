@@ -28,7 +28,7 @@ export function floatingPopoverStyle({
   const availableWidth = Math.max(0, viewportWidth - edgeGap * 2);
   const width = constrainWidth
     ? Math.min(maxWidth ?? availableWidth, availableWidth)
-    : popoverWidth ?? 0;
+    : (popoverWidth ?? 0);
   const left = clamp(
     align === "end" ? trigger.right - width : trigger.left,
     edgeGap,
@@ -42,10 +42,7 @@ export function floatingPopoverStyle({
     triggerGap,
   });
 
-  const style = [
-    `left: ${Math.round(left)}px`,
-    `top: ${Math.round(top)}px`,
-  ];
+  const style = [`left: ${Math.round(left)}px`, `top: ${Math.round(top)}px`];
   if (constrainWidth) {
     style.push(`width: ${Math.round(width)}px`);
   }

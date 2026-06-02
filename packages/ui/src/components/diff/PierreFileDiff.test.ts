@@ -1,9 +1,4 @@
-import {
-  cleanup,
-  fireEvent,
-  render,
-  waitFor,
-} from "@testing-library/svelte";
+import { cleanup, fireEvent, render, waitFor } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DiffLineAnnotation, FileDiffOptions } from "@pierre/diffs";
 import type { DiffFile } from "../../api/types.js";
@@ -18,7 +13,11 @@ const pierre = (() => {
   let renderResults: boolean[] = [];
   let events: string[] = [];
   let lastExpansion:
-    | { direction: unknown; expansionLineCount: number | undefined; hunkIndex: number }
+    | {
+        direction: unknown;
+        expansionLineCount: number | undefined;
+        hunkIndex: number;
+      }
     | undefined;
   let lastOptions: FileDiffOptions<unknown> | undefined;
   let lastVirtualizer: unknown;
@@ -30,7 +29,9 @@ const pierre = (() => {
     const didRender = renderResults.shift() ?? true;
     events.push(`render:${String(didRender)}`);
     if (didRender && props?.fileContainer) {
-      const root = props.fileContainer.shadowRoot ?? props.fileContainer.attachShadow({ mode: "open" });
+      const root =
+        props.fileContainer.shadowRoot ??
+        props.fileContainer.attachShadow({ mode: "open" });
       root.innerHTML = `
         <pre data-diff-type="unified">
           <div data-separator data-expand-index="0">
@@ -44,10 +45,12 @@ const pierre = (() => {
   const metadata = {
     additionLines: ["new line\n"],
     deletionLines: ["old line\n"],
-    hunks: [{
-      collapsedBefore: 0,
-      hunkSpecs: "@@ -1,2 +1,2 @@",
-    }],
+    hunks: [
+      {
+        collapsedBefore: 0,
+        hunkSpecs: "@@ -1,2 +1,2 @@",
+      },
+    ],
   };
   class FileDiff {
     constructor(options?: FileDiffOptions<unknown>) {
@@ -63,7 +66,10 @@ const pierre = (() => {
       events.push("expand");
       lastExpansion = { direction, expansionLineCount, hunkIndex };
     };
-    getLineIndex = (lineNumber: number): [number, number] => [lineNumber, lineNumber];
+    getLineIndex = (lineNumber: number): [number, number] => [
+      lineNumber,
+      lineNumber,
+    ];
     render = renderDiff;
     setOptions = (options?: FileDiffOptions<unknown>) => {
       lastOptions = options;
@@ -135,17 +141,19 @@ function makeFile(): DiffFile {
 -old line
 +new line
 `,
-    hunks: [{
-      old_start: 1,
-      old_count: 2,
-      new_start: 1,
-      new_count: 2,
-      lines: [
-        { type: "context", content: "line 1", old_num: 1, new_num: 1 },
-        { type: "delete", content: "old line", old_num: 2 },
-        { type: "add", content: "new line", new_num: 2 },
-      ],
-    }],
+    hunks: [
+      {
+        old_start: 1,
+        old_count: 2,
+        new_start: 1,
+        new_count: 2,
+        lines: [
+          { type: "context", content: "line 1", old_num: 1, new_num: 1 },
+          { type: "delete", content: "old line", old_num: 2 },
+          { type: "add", content: "new line", new_num: 2 },
+        ],
+      },
+    ],
   };
 }
 
@@ -188,7 +196,7 @@ describe("PierreFileDiff", () => {
   it("replays context expansion after a deferred full-context render", async () => {
     const { default: PierreFileDiff } = await import("./PierreFileDiff.svelte");
     const loadFileText = vi.fn(async (side: "old" | "new") =>
-      side === "old" ? "line 1\nold line\n" : "line 1\nnew line\n"
+      side === "old" ? "line 1\nold line\n" : "line 1\nnew line\n",
     );
     const hadCancelAnimationFrame = "cancelAnimationFrame" in globalThis;
     const hadRequestAnimationFrame = "requestAnimationFrame" in globalThis;
@@ -210,8 +218,7 @@ describe("PierreFileDiff", () => {
       const expandButton = await waitFor(() => {
         const button = document
           .querySelector(".pierre-diff")
-          ?.shadowRoot
-          ?.querySelector<HTMLElement>("[data-expand-button]");
+          ?.shadowRoot?.querySelector<HTMLElement>("[data-expand-button]");
         expect(button).toBeTruthy();
         return button!;
       });
@@ -227,8 +234,8 @@ describe("PierreFileDiff", () => {
       });
       const events = pierre.events();
       const failedRenderIndex = events.indexOf("render:false");
-      const replayRenderIndex = events.findIndex((event, index) =>
-        index > failedRenderIndex && event === "render:true"
+      const replayRenderIndex = events.findIndex(
+        (event, index) => index > failedRenderIndex && event === "render:true",
       );
       const expandIndex = events.indexOf("expand");
       expect(failedRenderIndex).toBeGreaterThan(-1);
@@ -244,12 +251,14 @@ describe("PierreFileDiff", () => {
       if (hadRequestAnimationFrame) {
         globalThis.requestAnimationFrame = originalRequestAnimationFrame;
       } else {
-        delete (globalThis as { requestAnimationFrame?: unknown }).requestAnimationFrame;
+        delete (globalThis as { requestAnimationFrame?: unknown })
+          .requestAnimationFrame;
       }
       if (hadCancelAnimationFrame) {
         globalThis.cancelAnimationFrame = originalCancelAnimationFrame;
       } else {
-        delete (globalThis as { cancelAnimationFrame?: unknown }).cancelAnimationFrame;
+        delete (globalThis as { cancelAnimationFrame?: unknown })
+          .cancelAnimationFrame;
       }
     }
   });
@@ -271,16 +280,20 @@ describe("PierreFileDiff", () => {
   it("rerenders when annotation metadata changes without moving lines", async () => {
     const { default: PierreFileDiff } = await import("./PierreFileDiff.svelte");
     const file = makeFile();
-    const firstAnnotations: DiffLineAnnotation<unknown>[] = [{
-      side: "additions",
-      lineNumber: 2,
-      metadata: { id: "thread-1", body: "old body", canReply: false },
-    }];
-    const nextAnnotations: DiffLineAnnotation<unknown>[] = [{
-      side: "additions",
-      lineNumber: 2,
-      metadata: { id: "thread-1", body: "new body", canReply: true },
-    }];
+    const firstAnnotations: DiffLineAnnotation<unknown>[] = [
+      {
+        side: "additions",
+        lineNumber: 2,
+        metadata: { id: "thread-1", body: "old body", canReply: false },
+      },
+    ];
+    const nextAnnotations: DiffLineAnnotation<unknown>[] = [
+      {
+        side: "additions",
+        lineNumber: 2,
+        metadata: { id: "thread-1", body: "new body", canReply: true },
+      },
+    ];
 
     const { rerender } = render(PierreFileDiff, {
       props: { file, lineAnnotations: firstAnnotations },

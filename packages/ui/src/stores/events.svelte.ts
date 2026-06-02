@@ -107,12 +107,8 @@ export interface EventsStoreOptions {
   onWorkspacePushedHeadChanged?: (
     event: WorkspacePushedHeadChangedEvent,
   ) => void;
-  onWorkspacePRAssociated?: (
-    event: WorkspacePRAssociatedEvent,
-  ) => void;
-  onWorkspacePRRefreshQueued?: (
-    event: WorkspacePRRefreshQueuedEvent,
-  ) => void;
+  onWorkspacePRAssociated?: (event: WorkspacePRAssociatedEvent) => void;
+  onWorkspacePRRefreshQueued?: (event: WorkspacePRRefreshQueuedEvent) => void;
   onPRDetailRefreshed?: (event: PRDetailRefreshedEvent) => void;
   onPRCIRefreshQueued?: (event: PRCIRefreshQueuedEvent) => void;
   onPRCIRefreshed?: (event: PRCIRefreshedEvent) => void;

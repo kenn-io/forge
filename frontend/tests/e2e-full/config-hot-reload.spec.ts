@@ -2,11 +2,15 @@ import { readFile, writeFile } from "node:fs/promises";
 import { expect, test } from "@playwright/test";
 import { startIsolatedE2EServer } from "./support/e2eServer";
 
-test("config file changes update visible repo choices through SSE", async ({ page }) => {
+test("config file changes update visible repo choices through SSE", async ({
+  page,
+}) => {
   const server = await startIsolatedE2EServer();
   try {
     await page.goto(`${server.info.base_url}/pulls`);
-    await page.locator(".pull-item").first()
+    await page
+      .locator(".pull-item")
+      .first()
       .waitFor({ state: "visible", timeout: 10_000 });
 
     const selector = page.getByTitle("Select repository");

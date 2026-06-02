@@ -83,8 +83,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
   function pullsByRepo(): Map<string, PullRequest[]> {
     const map = new Map<string, PullRequest[]>();
     for (const pr of pulls) {
-      const key =
-        `${pr.repo_owner ?? ""}/${pr.repo_name ?? ""}`;
+      const key = `${pr.repo_owner ?? ""}/${pr.repo_name ?? ""}`;
       const existing = map.get(key);
       if (existing !== undefined) {
         existing.push(pr);
@@ -149,10 +148,10 @@ export function createPullsStore(opts: PullsStoreOptions) {
         (pr.repo_name ?? "") === sel.name &&
         pr.Number === sel.number,
     );
-      const next = list[idx + 1];
-      if (next !== undefined) {
-        selectPRFromPull(next);
-      }
+    const next = list[idx + 1];
+    if (next !== undefined) {
+      selectPRFromPull(next);
+    }
   }
 
   function selectPrevPR(): void {
@@ -182,9 +181,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
 
   // --- writes ---
 
-  function setFilterKanban(
-    kanban: KanbanStatus | undefined,
-  ): void {
+  function setFilterKanban(kanban: KanbanStatus | undefined): void {
     filterKanban = kanban;
   }
 
@@ -237,9 +234,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
   ): KanbanStatus | undefined {
     const pr = pulls.find(
       (p) =>
-        p.repo_owner === owner &&
-        p.repo_name === name &&
-        p.Number === number,
+        p.repo_owner === owner && p.repo_name === name && p.Number === number,
     );
     return pr?.KanbanStatus as KanbanStatus | undefined;
   }
@@ -252,9 +247,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
     status: KanbanStatus,
   ): void {
     pulls = pulls.map((pr) =>
-      pr.repo_owner === owner &&
-      pr.repo_name === name &&
-      pr.Number === number
+      pr.repo_owner === owner && pr.repo_name === name && pr.Number === number
         ? { ...pr, KanbanStatus: status }
         : pr,
     );
@@ -277,9 +270,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
           },
         });
         if (error) {
-          throw new Error(
-            apiErrorMessage(error, "failed to unstar PR"),
-          );
+          throw new Error(apiErrorMessage(error, "failed to unstar PR"));
         }
       } else {
         const { error } = await apiClient.PUT("/starred", {
@@ -291,14 +282,11 @@ export function createPullsStore(opts: PullsStoreOptions) {
           },
         });
         if (error) {
-          throw new Error(
-            apiErrorMessage(error, "failed to star PR"),
-          );
+          throw new Error(apiErrorMessage(error, "failed to star PR"));
         }
       }
     } catch (err) {
-      storeError =
-        err instanceof Error ? err.message : String(err);
+      storeError = err instanceof Error ? err.message : String(err);
       return;
     }
     await loadPulls();
@@ -346,16 +334,12 @@ export function createPullsStore(opts: PullsStoreOptions) {
     } catch (err) {
       return {
         status: "error",
-        message: err instanceof Error
-          ? err.message
-          : "network error",
+        message: err instanceof Error ? err.message : "network error",
       };
     }
   }
 
-  async function loadPulls(
-    params?: PullsParams,
-  ): Promise<void> {
+  async function loadPulls(params?: PullsParams): Promise<void> {
     loading = true;
     storeError = null;
     try {
@@ -374,14 +358,11 @@ export function createPullsStore(opts: PullsStoreOptions) {
         params: { query: merged },
       });
       if (error) {
-        throw new Error(
-          apiErrorMessage(error, "failed to load pulls"),
-        );
+        throw new Error(apiErrorMessage(error, "failed to load pulls"));
       }
       pulls = (data as PullRequest[]) ?? [];
     } catch (err) {
-      storeError =
-        err instanceof Error ? err.message : String(err);
+      storeError = err instanceof Error ? err.message : String(err);
     } finally {
       loading = false;
     }

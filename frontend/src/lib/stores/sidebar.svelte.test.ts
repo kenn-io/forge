@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vite-plus/test";
 import {
   isSidebarCollapsed,
   getSidebarWidth,
@@ -8,13 +8,20 @@ import {
   initSidebar,
 } from "./sidebar.svelte.js";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const win = window as any;
 
 afterEach(() => {
   delete win.__middleman_config;
-  try { localStorage.removeItem("middleman-sidebar"); } catch { /* noop */ }
-  try { localStorage.removeItem("middleman-sidebar-width"); } catch { /* noop */ }
+  try {
+    localStorage.removeItem("middleman-sidebar");
+  } catch {
+    /* noop */
+  }
+  try {
+    localStorage.removeItem("middleman-sidebar-width");
+  } catch {
+    /* noop */
+  }
 });
 
 describe("standalone mode", () => {
@@ -39,9 +46,7 @@ describe("standalone mode", () => {
   it("persists to localStorage", () => {
     initSidebar();
     toggleSidebar();
-    expect(
-      localStorage.getItem("middleman-sidebar"),
-    ).toBe("collapsed");
+    expect(localStorage.getItem("middleman-sidebar")).toBe("collapsed");
   });
 
   it("starts with the default width", () => {
@@ -53,9 +58,7 @@ describe("standalone mode", () => {
     initSidebar();
     setSidebarWidth(420);
     expect(getSidebarWidth()).toBe(420);
-    expect(
-      localStorage.getItem("middleman-sidebar-width"),
-    ).toBe("420");
+    expect(localStorage.getItem("middleman-sidebar-width")).toBe("420");
   });
 });
 

@@ -15,9 +15,7 @@ export function registerScopedActions(
   // actions and PR-detail actions on mount) and tracking the read would make
   // the effect re-run on every successful register, looping forever and
   // tripping Svelte's effect_update_depth_exceeded guard.
-  const next = untrack(() =>
-    new Map(actionsByOwner).set(ownerId, registered),
-  );
+  const next = untrack(() => new Map(actionsByOwner).set(ownerId, registered));
   assertNoConflicts(next);
   actionsByOwner = next;
   return () => {

@@ -1,10 +1,5 @@
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-} from "@testing-library/svelte";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import LeftSidebarToggle from "./LeftSidebarToggle.svelte";
 
 describe("LeftSidebarToggle", () => {
@@ -26,9 +21,7 @@ describe("LeftSidebarToggle", () => {
     const button = screen.getByRole("button", {
       name: "Collapse Workspaces sidebar",
     });
-    expect(button.getAttribute("title")).toBe(
-      "Collapse Workspaces sidebar",
-    );
+    expect(button.getAttribute("title")).toBe("Collapse Workspaces sidebar");
     expect(button.classList.contains("left-sidebar-toggle")).toBe(true);
 
     await fireEvent.click(button);
@@ -49,8 +42,6 @@ describe("LeftSidebarToggle", () => {
       name: "Expand sidebar",
     });
     expect(button.getAttribute("title")).toBe("Expand sidebar");
-    expect(
-      button.classList.contains("left-sidebar-toggle--push"),
-    ).toBe(true);
+    expect(button.classList.contains("left-sidebar-toggle--push")).toBe(true);
   });
 });

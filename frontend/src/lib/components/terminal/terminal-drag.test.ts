@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vite-plus/test";
 import {
   RUNTIME_SESSION_DRAG_MIME,
   WORKFLOW_TAB_DRAG_MIME,
@@ -96,7 +96,7 @@ function fakeDragEvent(options: { exposeGetData?: boolean } = {}): DragEvent {
     dataTransfer: {
       dropEffect: "none",
       effectAllowed: "none",
-      getData: (type: string) => (exposeGetData ? data.get(type) ?? "" : ""),
+      getData: (type: string) => (exposeGetData ? (data.get(type) ?? "") : ""),
       setData: (type: string, value: string) => {
         data.set(type, value);
       },

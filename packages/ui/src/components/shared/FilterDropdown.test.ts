@@ -5,13 +5,7 @@ import {
   screen,
   within,
 } from "@testing-library/svelte";
-import {
-  afterEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vitest";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { tick } from "svelte";
 import FilterDropdown from "./FilterDropdown.svelte";
 
@@ -195,9 +189,7 @@ describe("FilterDropdown", () => {
       },
     });
 
-    await fireEvent.click(
-      screen.getByRole("button", { name: /status/i }),
-    );
+    await fireEvent.click(screen.getByRole("button", { name: /status/i }));
     expect(document.querySelector(".filter-dropdown")).toBeTruthy();
 
     await rerender({

@@ -1,5 +1,5 @@
 import { cleanup, render, screen } from "@testing-library/svelte";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import type { Issue } from "../../api/types.js";
 import { STORES_KEY } from "../../context.js";
@@ -39,9 +39,11 @@ describe("IssueItem", () => {
   });
 
   it("shows a workspace indicator when the issue has an attached workspace", () => {
-    renderItem(mkIssue({
-      workspace: { id: "ws-issue-2", status: "ready" },
-    }));
+    renderItem(
+      mkIssue({
+        workspace: { id: "ws-issue-2", status: "ready" },
+      }),
+    );
 
     expect(screen.getByLabelText("Workspace attached (ready)")).toBeTruthy();
   });

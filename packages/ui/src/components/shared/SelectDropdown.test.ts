@@ -5,7 +5,7 @@ import {
   screen,
   within,
 } from "@testing-library/svelte";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import SelectDropdown from "./SelectDropdown.svelte";
 
 describe("SelectDropdown", () => {
@@ -37,14 +37,10 @@ describe("SelectDropdown", () => {
 
     expect(container.querySelector("select")).toBeNull();
 
-    await fireEvent.click(
-      screen.getByRole("combobox", { name: "Reviewing" }),
-    );
+    await fireEvent.click(screen.getByRole("combobox", { name: "Reviewing" }));
 
     const listbox = screen.getByRole("listbox");
-    await fireEvent.click(
-      within(listbox).getByRole("option", { name: "New" }),
-    );
+    await fireEvent.click(within(listbox).getByRole("option", { name: "New" }));
 
     expect(onchange).toHaveBeenCalledWith("new");
     expect(screen.queryByRole("listbox")).toBeNull();
@@ -58,16 +54,13 @@ describe("SelectDropdown", () => {
     await fireEvent.keyDown(trigger, { key: "ArrowDown" });
 
     const waiting = screen.getByRole("option", { name: "Waiting" });
-    expect(trigger.getAttribute("aria-activedescendant"))
-      .toBe(waiting.id);
+    expect(trigger.getAttribute("aria-activedescendant")).toBe(waiting.id);
   });
 
   it("keeps options out of the tab sequence", async () => {
     renderDropdown();
 
-    await fireEvent.click(
-      screen.getByRole("combobox", { name: "Reviewing" }),
-    );
+    await fireEvent.click(screen.getByRole("combobox", { name: "Reviewing" }));
 
     const options = screen.getAllByRole("option");
     for (const option of options) {
@@ -89,7 +82,8 @@ describe("SelectDropdown", () => {
     });
 
     expect(
-      screen.getByRole("combobox", { name: "Repository: acme/very-long-service" })
+      screen
+        .getByRole("combobox", { name: "Repository: acme/very-long-service" })
         .textContent?.trim(),
     ).toBe("acme/very-long-service");
   });
@@ -99,13 +93,10 @@ describe("SelectDropdown", () => {
     const outside = document.createElement("button");
     document.body.append(outside);
 
-    await fireEvent.click(
-      screen.getByRole("combobox", { name: "Reviewing" }),
-    );
-    await fireEvent.focusOut(
-      container.querySelector(".select-dropdown")!,
-      { relatedTarget: outside },
-    );
+    await fireEvent.click(screen.getByRole("combobox", { name: "Reviewing" }));
+    await fireEvent.focusOut(container.querySelector(".select-dropdown")!, {
+      relatedTarget: outside,
+    });
 
     expect(screen.queryByRole("listbox")).toBeNull();
   });

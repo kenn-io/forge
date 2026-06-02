@@ -39,8 +39,10 @@ function eventSortValue(event: PREvent): number {
 }
 
 function isEarlierEvent(a: PREvent, b: PREvent): boolean {
-  return eventSortValue(a) < eventSortValue(b) ||
-    (eventSortValue(a) === eventSortValue(b) && a.ID < b.ID);
+  return (
+    eventSortValue(a) < eventSortValue(b) ||
+    (eventSortValue(a) === eventSortValue(b) && a.ID < b.ID)
+  );
 }
 
 function reviewThreadID(event: PREvent): string | null {

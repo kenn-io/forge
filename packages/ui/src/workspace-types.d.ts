@@ -24,11 +24,7 @@ interface ImportMeta {
 interface WorkspaceHost {
   key: string;
   label: string;
-  connectionState:
-    | "connected"
-    | "connecting"
-    | "disconnected"
-    | "error";
+  connectionState: "connected" | "connecting" | "disconnected" | "error";
   transport?: "ssh" | "local";
   platform?: string;
   projects: WorkspaceProject[];

@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render } from "@testing-library/svelte";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import type { ActivityItem } from "../api/types.js";
 import ActivityThreaded from "./ActivityThreaded.svelte";
@@ -51,7 +51,8 @@ function branchActivityItem(
     item_title: "",
     item_type: "",
     item_url: "",
-    activity_url: "https://github.com/acme/widgets/commit/a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+    activity_url:
+      "https://github.com/acme/widgets/commit/a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
     ...overrides,
   });
 }
@@ -185,9 +186,7 @@ describe("ActivityThreaded collapse", () => {
   it("selects default branch commit rows for an in-app diff", async () => {
     const onSelectItem = vi.fn();
     const onSelectBranchCommit = vi.fn();
-    const open = vi
-      .spyOn(window, "open")
-      .mockImplementation(() => null);
+    const open = vi.spyOn(window, "open").mockImplementation(() => null);
 
     const { container } = render(ActivityThreaded, {
       props: {
@@ -320,9 +319,7 @@ describe("ActivityThreaded collapse", () => {
 
   it("keeps force-push rows as provider compare links", async () => {
     const onSelectBranchCommit = vi.fn();
-    const open = vi
-      .spyOn(window, "open")
-      .mockImplementation(() => null);
+    const open = vi.spyOn(window, "open").mockImplementation(() => null);
 
     const { container } = render(ActivityThreaded, {
       props: {

@@ -2,7 +2,15 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
-import { cp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import {
+  cp,
+  mkdir,
+  readFile,
+  readdir,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
@@ -97,8 +105,7 @@ async function newestFrontendSourceMtime(
   let newest: number | null = null;
   for (const candidate of candidates) {
     const mtime =
-      (await newestMtimeUnder(candidate)) ??
-      (await fileMtimeMs(candidate));
+      (await newestMtimeUnder(candidate)) ?? (await fileMtimeMs(candidate));
     if (mtime !== null && (newest === null || mtime > newest)) {
       newest = mtime;
     }
@@ -136,7 +143,9 @@ async function tryBuildFrontend(frontendDir: string): Promise<BuildOutcome> {
   });
 }
 
-export async function ensureEmbeddedFrontend(rootDir: string = repoRoot): Promise<void> {
+export async function ensureEmbeddedFrontend(
+  rootDir: string = repoRoot,
+): Promise<void> {
   const embeddedDist = path.join(rootDir, "internal", "web", "dist");
   const embeddedIndex = path.join(embeddedDist, "index.html");
   const frontendDir = path.join(rootDir, "frontend");

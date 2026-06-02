@@ -106,9 +106,7 @@ export async function assertSeededRoborevDaemon(): Promise<void> {
     );
   }
 
-  const statusBody = await fetchDaemonJSON(
-    `${baseURL}/api/roborev/api/status`,
-  );
+  const statusBody = await fetchDaemonJSON(`${baseURL}/api/roborev/api/status`);
 
   const counters: Record<string, number> = {};
   const missing: string[] = [];
@@ -174,15 +172,13 @@ export async function assertSeededRoborevDaemon(): Promise<void> {
       `roborev daemon at ${jobsURL} returned job 73 with ` +
         `agent=${JSON.stringify(agent)}, ` +
         `branch=${JSON.stringify(branch)}, ` +
-        "but the seed pins these to agent=\"codex\" branch=\"main\". " +
+        'but the seed pins these to agent="codex" branch="main". ' +
         wrongDaemonHint(),
     );
   }
 }
 
-async function fetchDaemonJSON(
-  url: string,
-): Promise<Record<string, unknown>> {
+async function fetchDaemonJSON(url: string): Promise<Record<string, unknown>> {
   let body: Record<string, unknown>;
   try {
     const res = await fetch(url, {
@@ -214,34 +210,20 @@ function wrongDaemonHint(): string {
   );
 }
 
-export async function waitForReviewsReady(
-  page: Page,
-): Promise<void> {
+export async function waitForReviewsReady(page: Page): Promise<void> {
   await page.goto("/reviews");
-  await expect(
-    page.locator(".job-table"),
-  ).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator(".job-table")).toBeVisible({ timeout: 15_000 });
 }
 
-export async function waitForJobRows(
-  page: Page,
-  min: number,
-): Promise<void> {
+export async function waitForJobRows(page: Page, min: number): Promise<void> {
   const rows = page.locator(".job-row");
-  await expect(
-    async () => {
-      const count = await rows.count();
-      expect(count).toBeGreaterThanOrEqual(min);
-    },
-  ).toPass({ timeout: 10_000 });
+  await expect(async () => {
+    const count = await rows.count();
+    expect(count).toBeGreaterThanOrEqual(min);
+  }).toPass({ timeout: 10_000 });
 }
 
-export async function openDrawer(
-  page: Page,
-  jobId: number,
-): Promise<void> {
+export async function openDrawer(page: Page, jobId: number): Promise<void> {
   await page.goto(`/reviews/${jobId}`);
-  await expect(
-    page.locator(".drawer"),
-  ).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator(".drawer")).toBeVisible({ timeout: 10_000 });
 }

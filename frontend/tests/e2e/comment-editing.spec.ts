@@ -16,7 +16,11 @@ type TimelineEvent = {
   DedupeKey: string;
 };
 
-async function fulfillJson(route: Route, body: unknown, status = 200): Promise<void> {
+async function fulfillJson(
+  route: Route,
+  body: unknown,
+  status = 200,
+): Promise<void> {
   await route.fulfill({
     status,
     contentType: "application/json",
@@ -98,7 +102,10 @@ function issueDetail(commentBody: string, event: TimelineEvent) {
   };
 }
 
-async function editVisibleTimelineComment(page: Page, body: string): Promise<void> {
+async function editVisibleTimelineComment(
+  page: Page,
+  body: string,
+): Promise<void> {
   await page.getByText(/^Original /).hover();
   await page.getByRole("button", { name: "Edit comment" }).first().click();
   const editor = page.locator(".edit-panel .comment-editor-input");
@@ -139,12 +146,17 @@ test("edits a pull request timeline comment", async ({ page }) => {
       await fulfillJson(route, prDetail(commentBody, event));
     },
   );
-  await page.route("**/api/v1/pulls/github/acme/widgets/42/comments/9101", async (route) => {
-    const reqBody = JSON.parse(route.request().postData() ?? "{}") as { body?: string };
-    patchedBody = reqBody.body ?? "";
-    commentBody = patchedBody;
-    await fulfillJson(route, { ...event, Body: patchedBody });
-  });
+  await page.route(
+    "**/api/v1/pulls/github/acme/widgets/42/comments/9101",
+    async (route) => {
+      const reqBody = JSON.parse(route.request().postData() ?? "{}") as {
+        body?: string;
+      };
+      patchedBody = reqBody.body ?? "";
+      commentBody = patchedBody;
+      await fulfillJson(route, { ...event, Body: patchedBody });
+    },
+  );
 
   await page.goto("/pulls/github/acme/widgets/42");
   await expect(page.getByText("Original PR comment")).toBeVisible();
@@ -181,12 +193,17 @@ test("edits an issue timeline comment", async ({ page }) => {
       await fulfillJson(route, issueDetail(commentBody, event));
     },
   );
-  await page.route("**/api/v1/issues/github/acme/widgets/7/comments/9202", async (route) => {
-    const reqBody = JSON.parse(route.request().postData() ?? "{}") as { body?: string };
-    patchedBody = reqBody.body ?? "";
-    commentBody = patchedBody;
-    await fulfillJson(route, { ...event, Body: patchedBody });
-  });
+  await page.route(
+    "**/api/v1/issues/github/acme/widgets/7/comments/9202",
+    async (route) => {
+      const reqBody = JSON.parse(route.request().postData() ?? "{}") as {
+        body?: string;
+      };
+      patchedBody = reqBody.body ?? "";
+      commentBody = patchedBody;
+      await fulfillJson(route, { ...event, Body: patchedBody });
+    },
+  );
 
   await page.goto("/focus/issues/github/acme/widgets/7");
   await expect(page.getByText("Original issue comment")).toBeVisible();

@@ -1,5 +1,12 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vite-plus/test";
 import type { ActivityItem } from "../api/types.js";
 import ActivityFeed from "./ActivityFeed.svelte";
 
@@ -50,7 +57,8 @@ function branchActivityItem(
     item_title: "",
     item_type: "",
     item_url: "",
-    activity_url: "https://github.com/acme/widgets/commit/a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+    activity_url:
+      "https://github.com/acme/widgets/commit/a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
     ...overrides,
   });
 }
@@ -239,10 +247,12 @@ describe("ActivityFeed compact mode", () => {
     });
 
     const row = container.querySelector(".activity-compact-row");
-    expect(row?.querySelector(".chip--kind-pr")?.textContent?.trim())
-      .toBe("PR");
-    expect(row?.querySelector(".chip--state-merged")?.textContent)
-      .toContain("Merged");
+    expect(row?.querySelector(".chip--kind-pr")?.textContent?.trim()).toBe(
+      "PR",
+    );
+    expect(row?.querySelector(".chip--state-merged")?.textContent).toContain(
+      "Merged",
+    );
     expect(row?.querySelector(".badge")).not.toBeNull();
     expect(row?.querySelector(".state-badge")).not.toBeNull();
   });
@@ -321,7 +331,8 @@ describe("ActivityFeed compact mode", () => {
         author: "middleman",
         author_name: "",
         before_sha: "abc1234901234567890123456789012345678901",
-        body_preview: "abc1234901234567890123456789012345678901 -> def5678901234567890123456789012345678901",
+        body_preview:
+          "abc1234901234567890123456789012345678901 -> def5678901234567890123456789012345678901",
         commit_sha: "",
         activity_url: "",
       }),

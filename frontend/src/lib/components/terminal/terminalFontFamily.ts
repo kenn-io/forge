@@ -62,12 +62,11 @@ function splitFontFamilyList(value: string): string[] {
 
 function normalizeFontFamily(family: string): string {
   const trimmed = family.trim();
-  const unquoted = (
+  const unquoted =
     (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
     (trimmed.startsWith("'") && trimmed.endsWith("'"))
-  )
-    ? trimmed.slice(1, -1)
-    : trimmed;
+      ? trimmed.slice(1, -1)
+      : trimmed;
   return unquoted.toLowerCase();
 }
 

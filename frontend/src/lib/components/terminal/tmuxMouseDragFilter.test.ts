@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 
 import { createTmuxMouseDragFilter } from "./tmuxMouseDragFilter";
 
@@ -9,7 +9,10 @@ const largeDrag = "\x1b[<32;14;5M";
 const laterDrag = "\x1b[<32;15;5M";
 const mouseUp = "\x1b[<0;14;5m";
 
-function collect(filter: ReturnType<typeof createTmuxMouseDragFilter>, input: string[]): string {
+function collect(
+  filter: ReturnType<typeof createTmuxMouseDragFilter>,
+  input: string[],
+): string {
   return input.map((chunk) => filter.filter(chunk)).join("");
 }
 
@@ -17,7 +20,12 @@ describe("tmux mouse drag filter", () => {
   it("suppresses left-button drag reports until selection exceeds threshold", () => {
     const filter = createTmuxMouseDragFilter({ thresholdCells: 3 });
 
-    const output = collect(filter, [mouseDown, smallDrag, thresholdDrag, mouseUp]);
+    const output = collect(filter, [
+      mouseDown,
+      smallDrag,
+      thresholdDrag,
+      mouseUp,
+    ]);
 
     expect(output).toBe(mouseDown + mouseUp);
   });
@@ -25,15 +33,26 @@ describe("tmux mouse drag filter", () => {
   it("flushes buffered drag reports once selection exceeds threshold", () => {
     const filter = createTmuxMouseDragFilter({ thresholdCells: 3 });
 
-    const output = collect(filter, [mouseDown, smallDrag, thresholdDrag, largeDrag, laterDrag, mouseUp]);
+    const output = collect(filter, [
+      mouseDown,
+      smallDrag,
+      thresholdDrag,
+      largeDrag,
+      laterDrag,
+      mouseUp,
+    ]);
 
-    expect(output).toBe(mouseDown + smallDrag + thresholdDrag + largeDrag + laterDrag + mouseUp);
+    expect(output).toBe(
+      mouseDown + smallDrag + thresholdDrag + largeDrag + laterDrag + mouseUp,
+    );
   });
 
   it("passes through non-mouse terminal data around suppressed drag reports", () => {
     const filter = createTmuxMouseDragFilter({ thresholdCells: 3 });
 
-    const output = filter.filter(`paste:${mouseDown}x${smallDrag}y${mouseUp}:done`);
+    const output = filter.filter(
+      `paste:${mouseDown}x${smallDrag}y${mouseUp}:done`,
+    );
 
     expect(output).toBe(`paste:${mouseDown}xy${mouseUp}:done`);
   });
@@ -56,6 +75,8 @@ describe("tmux mouse drag filter", () => {
     const wheelUp = "\x1b[<64;10;5M";
     const dragWithoutDown = "\x1b[<32;12;5M";
 
-    expect(filter.filter(wheelUp + dragWithoutDown)).toBe(wheelUp + dragWithoutDown);
+    expect(filter.filter(wheelUp + dragWithoutDown)).toBe(
+      wheelUp + dragWithoutDown,
+    );
   });
 });

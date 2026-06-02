@@ -36,9 +36,8 @@ export function buildMobileActivityRepoOptions(
     if (!value || seen.has(value)) continue;
     seen.add(value);
     const repoPath = repo.repo_path.trim();
-    const triggerLabel = (valuesByRepoPath.get(repoPath)?.size ?? 0) > 1
-      ? value
-      : repoPath;
+    const triggerLabel =
+      (valuesByRepoPath.get(repoPath)?.size ?? 0) > 1 ? value : repoPath;
     options.push({ value, label: value, triggerLabel });
   }
   return options.sort((left, right) =>

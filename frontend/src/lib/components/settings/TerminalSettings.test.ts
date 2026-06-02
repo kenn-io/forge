@@ -5,7 +5,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/svelte";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 const { mockSetTerminalSettings, mockUpdateSettings } = vi.hoisted(() => ({
   mockSetTerminalSettings: vi.fn(),

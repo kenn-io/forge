@@ -1,8 +1,12 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { prefersReducedMotion } from "./prefers-reduced-motion.svelte.js";
 
 function stubMatchMedia(matches: boolean) {
-  vi.spyOn(window, "matchMedia").mockReturnValue({ matches } as MediaQueryList);
+  Object.defineProperty(window, "matchMedia", {
+    configurable: true,
+    writable: true,
+    value: vi.fn().mockReturnValue({ matches } as MediaQueryList),
+  });
 }
 
 describe("prefersReducedMotion", () => {
@@ -17,7 +21,9 @@ describe("prefersReducedMotion", () => {
 
   it("returns false when matchMedia is unavailable (SSR)", () => {
     const orig = window.matchMedia;
-    (window as { matchMedia: typeof window.matchMedia | undefined }).matchMedia = undefined;
+    (
+      window as { matchMedia: typeof window.matchMedia | undefined }
+    ).matchMedia = undefined;
     try {
       expect(prefersReducedMotion()).toBe(false);
     } finally {

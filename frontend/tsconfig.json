@@ -26,7 +26,5 @@
     "playwright.config.ts",
     "playwright-e2e.config.ts"
   ],
-  "exclude": [
-    "tests/e2e/**/*.ts"
-  ]
+  "exclude": ["tests/e2e/**/*.ts"]
 }

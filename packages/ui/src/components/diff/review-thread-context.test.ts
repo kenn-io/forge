@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 
 import type { DiffResult, PREvent } from "../../api/types.js";
 import {
@@ -31,22 +31,26 @@ function makeDiff(): DiffResult {
   return {
     stale: false,
     whitespace_only_count: 0,
-    files: [{
-      path: "src/new.ts",
-      old_path: "",
-      status: "added",
-      is_binary: false,
-      is_whitespace_only: false,
-      additions: 1,
-      deletions: 0,
-      hunks: [{
-        old_start: 0,
-        old_count: 0,
-        new_start: 1,
-        new_count: 1,
-        lines: [{ type: "add", content: "new line", new_num: 2 }],
-      }],
-    }],
+    files: [
+      {
+        path: "src/new.ts",
+        old_path: "",
+        status: "added",
+        is_binary: false,
+        is_whitespace_only: false,
+        additions: 1,
+        deletions: 0,
+        hunks: [
+          {
+            old_start: 0,
+            old_count: 0,
+            new_start: 1,
+            new_count: 1,
+            lines: [{ type: "add", content: "new line", new_num: 2 }],
+          },
+        ],
+      },
+    ],
   };
 }
 

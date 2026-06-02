@@ -1,5 +1,5 @@
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import config, {
   resolveViteAllowedHosts,
   resolveViteHmr,
@@ -9,13 +9,19 @@ import config, {
 
 describe("vite config", () => {
   it("aliases @middleman/ui to the workspace source tree", () => {
-    const aliases = Array.isArray(config.resolve?.alias) ? config.resolve.alias : [];
+    const aliases = Array.isArray(config.resolve?.alias)
+      ? config.resolve.alias
+      : [];
 
     const uiRootAlias = aliases.find(
-      (alias) => alias.find instanceof RegExp && alias.find.source === "^@middleman\\/ui$",
+      (alias) =>
+        alias.find instanceof RegExp &&
+        alias.find.source === "^@middleman\\/ui$",
     );
     const uiSubpathAlias = aliases.find(
-      (alias) => alias.find instanceof RegExp && alias.find.source === "^@middleman\\/ui\\/api\\/client$",
+      (alias) =>
+        alias.find instanceof RegExp &&
+        alias.find.source === "^@middleman\\/ui\\/api\\/client$",
     );
 
     expect(uiRootAlias?.replacement).toBe(

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 const mocks = vi.hoisted(() => ({
   post: vi.fn(),
@@ -14,11 +14,11 @@ vi.mock("../api/runtime.js", () => ({
 
 vi.mock("../stores/router.svelte.js", () => ({
   navigate: mocks.navigate,
-  buildItemRoute: vi.fn((ref) => (
+  buildItemRoute: vi.fn((ref) =>
     ref.itemType === "pr"
       ? `/pulls/${ref.provider}/${ref.repoPath}/${ref.number}`
-      : `/issues/${ref.provider}/${ref.repoPath}/${ref.number}`
-  )),
+      : `/issues/${ref.provider}/${ref.repoPath}/${ref.number}`,
+  ),
 }));
 
 vi.mock("../stores/flash.svelte.js", () => ({
@@ -86,7 +86,9 @@ describe("itemRefHandler", () => {
         },
       },
     );
-    expect(mocks.navigate).toHaveBeenCalledWith("/pulls/github/acme/widgets/12");
+    expect(mocks.navigate).toHaveBeenCalledWith(
+      "/pulls/github/acme/widgets/12",
+    );
     expect(open).not.toHaveBeenCalled();
     expect(mocks.showFlash).not.toHaveBeenCalled();
   });
@@ -106,7 +108,8 @@ describe("itemRefHandler", () => {
       "data-repo-path": "group/project",
       "data-number": "12",
       "data-item-type": "pr",
-      "data-external-url": "https://gitlab.example.com/group/project/-/merge_requests/12",
+      "data-external-url":
+        "https://gitlab.example.com/group/project/-/merge_requests/12",
     });
 
     expect(mocks.post).toHaveBeenCalledWith(
@@ -141,7 +144,8 @@ describe("itemRefHandler", () => {
       "data-repo-path": "group/project",
       "data-number": "10",
       "data-item-type": "issue",
-      "data-external-url": "https://gitlab.example.com/group/project/-/issues/10",
+      "data-external-url":
+        "https://gitlab.example.com/group/project/-/issues/10",
     });
 
     expect(mocks.post).toHaveBeenCalledWith(

@@ -1,5 +1,12 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vite-plus/test";
 
 const mockPost = vi.fn();
 const mockLoadDetail = vi.fn();
@@ -38,23 +45,26 @@ describe("ReadyForReviewButton", () => {
     mockPost.mockResolvedValue({ data: { status: "ready_for_review" } });
 
     render(ReadyForReviewButton, {
-      props: { provider: "github", platformHost: "github.com", owner: "wesm", name: "middleman", repoPath: "wesm/middleman", number: 141, size: "sm" },
+      props: {
+        provider: "github",
+        platformHost: "github.com",
+        owner: "wesm",
+        name: "middleman",
+        repoPath: "wesm/middleman",
+        number: 141,
+        size: "sm",
+      },
     });
 
     await fireEvent.click(
       screen.getByRole("button", { name: /ready for review/i }),
     );
 
-    expect(mockLoadDetail).toHaveBeenCalledWith(
-      "wesm",
-      "middleman",
-      141,
-      {
-        provider: "github",
-        platformHost: "github.com",
-        repoPath: "wesm/middleman",
-      },
-    );
+    expect(mockLoadDetail).toHaveBeenCalledWith("wesm", "middleman", 141, {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "wesm/middleman",
+    });
     expect(mockLoadPulls).toHaveBeenCalledTimes(1);
   });
 
@@ -67,23 +77,26 @@ describe("ReadyForReviewButton", () => {
     });
 
     render(ReadyForReviewButton, {
-      props: { provider: "github", platformHost: "github.com", owner: "wesm", name: "middleman", repoPath: "wesm/middleman", number: 141, size: "sm" },
+      props: {
+        provider: "github",
+        platformHost: "github.com",
+        owner: "wesm",
+        name: "middleman",
+        repoPath: "wesm/middleman",
+        number: 141,
+        size: "sm",
+      },
     });
 
     await fireEvent.click(
       screen.getByRole("button", { name: /ready for review/i }),
     );
 
-    expect(mockLoadDetail).toHaveBeenCalledWith(
-      "wesm",
-      "middleman",
-      141,
-      {
-        provider: "github",
-        platformHost: "github.com",
-        repoPath: "wesm/middleman",
-      },
-    );
+    expect(mockLoadDetail).toHaveBeenCalledWith("wesm", "middleman", 141, {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "wesm/middleman",
+    });
     expect(mockLoadPulls).toHaveBeenCalledTimes(1);
   });
 });

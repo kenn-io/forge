@@ -75,17 +75,14 @@ export function initTheme(): void {
 
   if (configMode) {
     if (configMode === "system") {
-      const mq = window.matchMedia(
-        "(prefers-color-scheme: dark)",
-      );
+      const mq = window.matchMedia("(prefers-color-scheme: dark)");
       dark = mq.matches;
       const handler = (e: MediaQueryListEvent) => {
         dark = e.matches;
         applyDarkClass(dark);
       };
       mq.addEventListener("change", handler);
-      mediaCleanup = () =>
-        mq.removeEventListener("change", handler);
+      mediaCleanup = () => mq.removeEventListener("change", handler);
     } else {
       dark = configMode === "dark";
     }
@@ -96,27 +93,20 @@ export function initTheme(): void {
     } else {
       // No stored preference — follow OS and track changes until
       // the user manually toggles.
-      const mq = window.matchMedia(
-        "(prefers-color-scheme: dark)",
-      );
+      const mq = window.matchMedia("(prefers-color-scheme: dark)");
       dark = mq.matches;
       const handler = (e: MediaQueryListEvent) => {
         dark = e.matches;
         applyDarkClass(dark);
       };
       mq.addEventListener("change", handler);
-      mediaCleanup = () =>
-        mq.removeEventListener("change", handler);
+      mediaCleanup = () => mq.removeEventListener("change", handler);
     }
   }
 
   applyDarkClass(dark);
 
-  applyThemeOverrides(
-    getThemeColors(),
-    getThemeFonts(),
-    getThemeRadii(),
-  );
+  applyThemeOverrides(getThemeColors(), getThemeFonts(), getThemeRadii());
 }
 
 export function reapplyTheme(): void {
@@ -127,17 +117,14 @@ export function reapplyTheme(): void {
   const configMode = getThemeMode();
   if (configMode) {
     if (configMode === "system") {
-      const mq = window.matchMedia(
-        "(prefers-color-scheme: dark)",
-      );
+      const mq = window.matchMedia("(prefers-color-scheme: dark)");
       dark = mq.matches;
       const handler = (e: MediaQueryListEvent) => {
         dark = e.matches;
         applyDarkClass(dark);
       };
       mq.addEventListener("change", handler);
-      mediaCleanup = () =>
-        mq.removeEventListener("change", handler);
+      mediaCleanup = () => mq.removeEventListener("change", handler);
     } else {
       dark = configMode === "dark";
     }
@@ -152,26 +139,19 @@ export function reapplyTheme(): void {
     } else if (manualDark !== null) {
       dark = manualDark;
     } else {
-      const mq = window.matchMedia(
-        "(prefers-color-scheme: dark)",
-      );
+      const mq = window.matchMedia("(prefers-color-scheme: dark)");
       dark = mq.matches;
       const handler = (e: MediaQueryListEvent) => {
         dark = e.matches;
         applyDarkClass(dark);
       };
       mq.addEventListener("change", handler);
-      mediaCleanup = () =>
-        mq.removeEventListener("change", handler);
+      mediaCleanup = () => mq.removeEventListener("change", handler);
     }
   }
 
   applyDarkClass(dark);
-  applyThemeOverrides(
-    getThemeColors(),
-    getThemeFonts(),
-    getThemeRadii(),
-  );
+  applyThemeOverrides(getThemeColors(), getThemeFonts(), getThemeRadii());
 }
 
 export function cleanupTheme(): void {

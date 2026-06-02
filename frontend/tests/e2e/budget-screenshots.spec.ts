@@ -1,7 +1,9 @@
 import { expect, test } from "@playwright/test";
 import { mockApi } from "./support/mockApi";
 
-test("capture budget display dark mode screenshots (mocked)", async ({ page }) => {
+test("capture budget display dark mode screenshots (mocked)", async ({
+  page,
+}) => {
   await mockApi(page);
   await page.emulateMedia({ colorScheme: "dark" });
   await page.goto("/pulls");

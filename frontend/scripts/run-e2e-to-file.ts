@@ -3,9 +3,14 @@ import { constants } from "node:fs";
 import { mkdir, open, readFile } from "node:fs/promises";
 import { dirname, isAbsolute, resolve } from "node:path";
 
-const outputFile = process.env.MIDDLEMAN_E2E_OUTPUT_FILE ?? "test-results/e2e.log";
+const outputFile =
+  process.env.MIDDLEMAN_E2E_OUTPUT_FILE ?? "test-results/e2e.log";
 const displayFile = isAbsolute(outputFile) ? outputFile : resolve(outputFile);
-const playwrightArgs = ["test", "--config=playwright-e2e.config.ts", ...process.argv.slice(2)];
+const playwrightArgs = [
+  "test",
+  "--config=playwright-e2e.config.ts",
+  ...process.argv.slice(2),
+];
 
 function timestamp(): string {
   return new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
@@ -13,7 +18,11 @@ function timestamp(): string {
 
 await mkdir(dirname(outputFile), { recursive: true });
 
-const logFile = await open(outputFile, constants.O_CREAT | constants.O_TRUNC | constants.O_WRONLY, 0o666);
+const logFile = await open(
+  outputFile,
+  constants.O_CREAT | constants.O_TRUNC | constants.O_WRONLY,
+  0o666,
+);
 await logFile.write(
   `[${timestamp()}] bun run test:e2e\n` +
     `argv: ${JSON.stringify(["playwright", ...playwrightArgs])}\n\n`,
@@ -30,7 +39,9 @@ try {
     child.on("close", (code) => resolve(code ?? 1));
   });
 } catch (error) {
-  await logFile.write(`${error instanceof Error ? error.message : String(error)}\n`);
+  await logFile.write(
+    `${error instanceof Error ? error.message : String(error)}\n`,
+  );
 } finally {
   await logFile.close();
 }

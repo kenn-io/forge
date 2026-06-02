@@ -5,7 +5,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/svelte";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import type { DiffFile, FilesResult } from "../../api/types.js";
 import { STORES_KEY } from "../../context.js";
 import type { DiffStore } from "../../stores/diff.svelte.js";
@@ -18,7 +18,10 @@ if (!globalThis.CSS) {
 globalThis.CSS.escape ??= (value: string) =>
   value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 
-function makeFile(path: string, status: DiffFile["status"] = "modified"): DiffFile {
+function makeFile(
+  path: string,
+  status: DiffFile["status"] = "modified",
+): DiffFile {
   return {
     path,
     old_path: path,
@@ -85,7 +88,9 @@ describe("DiffSidebar", () => {
   });
 
   it("renders the Pierre file tree from diff files", async () => {
-    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
     const files = [
       makeFile("src/app.ts", "modified"),
       makeFile("src/new.ts", "added"),
@@ -94,15 +99,20 @@ describe("DiffSidebar", () => {
 
     renderSidebar(makeDiffStore(files));
 
-    expect((await findTreeItem("src/app.ts")).getAttribute("data-item-git-status"))
-      .toBe("modified");
-    expect((await findTreeItem("src/new.ts")).getAttribute("data-item-git-status"))
-      .toBe("added");
-    expect((await findTreeItem("docs/old.md")).getAttribute("data-item-git-status"))
-      .toBe("deleted");
+    expect(
+      (await findTreeItem("src/app.ts")).getAttribute("data-item-git-status"),
+    ).toBe("modified");
+    expect(
+      (await findTreeItem("src/new.ts")).getAttribute("data-item-git-status"),
+    ).toBe("added");
+    expect(
+      (await findTreeItem("docs/old.md")).getAttribute("data-item-git-status"),
+    ).toBe("deleted");
     const modifiedItem = await findTreeItem("src/app.ts");
     const visibleStatusSections = Array.from(
-      modifiedItem.querySelectorAll("[data-item-section='git'], [data-item-section='decoration']"),
+      modifiedItem.querySelectorAll(
+        "[data-item-section='git'], [data-item-section='decoration']",
+      ),
     )
       .map((node) => node.textContent?.trim())
       .filter(Boolean);
@@ -127,11 +137,7 @@ describe("DiffSidebar", () => {
       )
         .map((item) => item.dataset.itemPath ?? "")
         .filter((path) => wantedPaths.has(path));
-      expect(renderedPaths).toEqual([
-        "src/B.ts",
-        "src/C.ts",
-        "src/a.ts",
-      ]);
+      expect(renderedPaths).toEqual(["src/B.ts", "src/C.ts", "src/a.ts"]);
     });
   });
 
@@ -147,12 +153,16 @@ describe("DiffSidebar", () => {
 
     await findTreeItem("docs/readme.md");
     await waitFor(() => {
-      expect(treeRoot()?.querySelector('[data-item-path="src/file-0.ts"]')).toBeNull();
+      expect(
+        treeRoot()?.querySelector('[data-item-path="src/file-0.ts"]'),
+      ).toBeNull();
     });
   });
 
   it("scrolls the selected file tree row into view when active path changes", async () => {
-    const files = Array.from({ length: 12 }, (_, i) => makeFile(`src/file-${i}.ts`));
+    const files = Array.from({ length: 12 }, (_, i) =>
+      makeFile(`src/file-${i}.ts`),
+    );
     const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
     const scrolledPaths: string[] = [];
     HTMLElement.prototype.scrollIntoView = function scrollIntoView() {

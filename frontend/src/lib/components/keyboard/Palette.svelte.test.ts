@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vite-plus/test";
 
 import Palette from "./Palette.svelte";
 import {
@@ -18,7 +18,11 @@ import { resetModalStack } from "@middleman/ui/stores/keyboard/modal-stack";
 const noop = (): void => {};
 const trueWhen = (): boolean => true;
 
-function action(id: string, label = id, scope: Action["scope"] = "global"): Action {
+function action(
+  id: string,
+  label = id,
+  scope: Action["scope"] = "global",
+): Action {
   return {
     id,
     label,
@@ -150,7 +154,9 @@ describe("Palette", () => {
     await fireEvent.keyDown(input!, { key: "Enter" });
     await rerender({});
     expect(ran).toBe(true);
-    expect(screen.queryByRole("dialog", { name: "Command palette" })).toBeNull();
+    expect(
+      screen.queryByRole("dialog", { name: "Command palette" }),
+    ).toBeNull();
   });
 
   it("clicking a command row runs its handler and closes the palette", async () => {
@@ -177,7 +183,9 @@ describe("Palette", () => {
     await fireEvent.click(row!);
     await rerender({});
     expect(ran).toBe(true);
-    expect(screen.queryByRole("dialog", { name: "Command palette" })).toBeNull();
+    expect(
+      screen.queryByRole("dialog", { name: "Command palette" }),
+    ).toBeNull();
   });
 
   it("renders no Recently used header when localStorage is empty", async () => {
@@ -282,8 +290,8 @@ describe("Palette", () => {
     expect(persisted.items).toBeTruthy();
     expect(persisted.items[0].kind).toBe("pr");
     expect(persisted.items[0].ref.number).toBe(42);
-    expect(
-      Date.parse(persisted.items[0].lastSelectedAt),
-    ).toBeGreaterThan(Date.parse(seedAt));
+    expect(Date.parse(persisted.items[0].lastSelectedAt)).toBeGreaterThan(
+      Date.parse(seedAt),
+    );
   });
 });

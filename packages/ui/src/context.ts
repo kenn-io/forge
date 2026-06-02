@@ -39,8 +39,7 @@ export function getEventCallback(): EventCallback {
 export function getPrepareRoute(): PrepareRouteCallback | null {
   return getContext(PREPARE_ROUTE_KEY);
 }
-export function getWorkspaceCommand():
-  WorkspaceCommandCallback | null {
+export function getWorkspaceCommand(): WorkspaceCommandCallback | null {
   return getContext(WORKSPACE_COMMAND_KEY);
 }
 export function getStores(): StoreInstances {

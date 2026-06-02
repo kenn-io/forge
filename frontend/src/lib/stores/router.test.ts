@@ -1,4 +1,11 @@
-import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
+import {
+  describe,
+  expect,
+  it,
+  beforeEach,
+  afterEach,
+  vi,
+} from "vite-plus/test";
 import {
   navigate,
   getRoute,
@@ -142,7 +149,9 @@ describe("router basic routes", () => {
   });
 
   it("does not parse old query-param pull detail routes", () => {
-    navigate("/pulls/detail?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=42");
+    navigate(
+      "/pulls/detail?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=42",
+    );
     expect(getRoute()).toEqual({ page: "pulls", view: "list" });
   });
 
@@ -237,7 +246,9 @@ describe("router basic routes", () => {
   });
 
   it("does not parse old query-param issue detail routes", () => {
-    navigate("/issues/detail?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=42");
+    navigate(
+      "/issues/detail?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=42",
+    );
     expect(getRoute()).toEqual({ page: "issues" });
   });
 
@@ -281,7 +292,9 @@ describe("router basic routes", () => {
   });
 
   it("does not parse old query-param focus detail routes", () => {
-    navigate("/focus/pr?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=42");
+    navigate(
+      "/focus/pr?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=42",
+    );
     expect(getRoute()).toEqual({ page: "activity" });
   });
 
@@ -349,9 +362,7 @@ describe("router embed-workspace routes", () => {
   });
 
   it("keeps legacy GitHub Enterprise embed detail URLs on GitHub", () => {
-    navigate(
-      "/workspaces/embed/detail/pr/ghe.example.com/acme/widgets/42",
-    );
+    navigate("/workspaces/embed/detail/pr/ghe.example.com/acme/widgets/42");
     expect(getRoute()).toEqual({
       page: "embed-workspace-detail",
       provider: "github",
@@ -418,11 +429,7 @@ describe("router embed-workspace routes", () => {
   });
 
   it("parses /workspaces/embed/empty/:reason for each known reason", () => {
-    for (const reason of [
-      "noSelection",
-      "noRepo",
-      "noWorkspace",
-    ] as const) {
+    for (const reason of ["noSelection", "noRepo", "noWorkspace"] as const) {
       navigate(`/workspaces/embed/empty/${reason}`);
       expect(getRoute()).toEqual({
         page: "embed-workspace-empty",
@@ -463,15 +470,21 @@ describe("router navigation events", () => {
   });
 
   afterEach(() => {
-    delete (window as unknown as { __middleman_config?: unknown }).__middleman_config;
-    (window as unknown as { __middleman_notify_config_changed?: () => void })
-      .__middleman_notify_config_changed?.();
+    delete (window as unknown as { __middleman_config?: unknown })
+      .__middleman_config;
+    (
+      window as unknown as { __middleman_notify_config_changed?: () => void }
+    ).__middleman_notify_config_changed?.();
   });
 
   function installOnNavigate(spy: ReturnType<typeof vi.fn>): void {
-    (window as unknown as { __middleman_config?: unknown }).__middleman_config = { onNavigate: spy };
-    (window as unknown as { __middleman_notify_config_changed?: () => void })
-      .__middleman_notify_config_changed?.();
+    (window as unknown as { __middleman_config?: unknown }).__middleman_config =
+      {
+        onNavigate: spy,
+      };
+    (
+      window as unknown as { __middleman_notify_config_changed?: () => void }
+    ).__middleman_notify_config_changed?.();
   }
 
   it("fires onNavigate with pull payload for files route", () => {
@@ -554,16 +567,20 @@ describe("router window bridges", () => {
   });
 
   it("exposes __middleman_navigate_to_route as a window global", () => {
-    const bridge = (window as unknown as {
-      __middleman_navigate_to_route?: (route: string) => void;
-    }).__middleman_navigate_to_route;
+    const bridge = (
+      window as unknown as {
+        __middleman_navigate_to_route?: (route: string) => void;
+      }
+    ).__middleman_navigate_to_route;
     expect(typeof bridge).toBe("function");
   });
 
   it("__middleman_navigate_to_route updates the SPA route", () => {
-    const bridge = (window as unknown as {
-      __middleman_navigate_to_route: (route: string) => void;
-    }).__middleman_navigate_to_route;
+    const bridge = (
+      window as unknown as {
+        __middleman_navigate_to_route: (route: string) => void;
+      }
+    ).__middleman_navigate_to_route;
 
     bridge("/workspaces/embed/first-run");
     expect(getRoute()).toEqual({ page: "embed-workspace-first-run" });

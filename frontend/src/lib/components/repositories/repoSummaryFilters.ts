@@ -2,12 +2,7 @@ import type { RepoFilter, RepoSort } from "./repoSummary.js";
 
 const storageKey = "middleman:repoSummaryFilters";
 
-const validFilters = new Set<RepoFilter>([
-  "all",
-  "prs",
-  "issues",
-  "stale",
-]);
+const validFilters = new Set<RepoFilter>(["all", "prs", "issues", "stale"]);
 const validSorts = new Set<RepoSort>([
   "name",
   "open-prs",
@@ -68,9 +63,7 @@ export function loadRepoSummaryFilters(): RepoSummaryFilters {
   }
 }
 
-export function saveRepoSummaryFilters(
-  filters: RepoSummaryFilters,
-): void {
+export function saveRepoSummaryFilters(filters: RepoSummaryFilters): void {
   const storage = getStorage();
   if (!storage) return;
 

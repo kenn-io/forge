@@ -3,11 +3,8 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
-import {
-  defaultDevApiUrl,
-  resolveDevApiUrl,
-} from "./apiProxyTarget";
+import { afterEach, describe, expect, it } from "vite-plus/test";
+import { defaultDevApiUrl, resolveDevApiUrl } from "./apiProxyTarget";
 
 describe("resolveDevApiUrl", () => {
   const tempDirs: string[] = [];

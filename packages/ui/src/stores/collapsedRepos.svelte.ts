@@ -30,10 +30,7 @@ export function createCollapsedReposStore() {
   let collapsedInPulls = $state<Set<string>>(readFromStorage("pulls"));
   let collapsedInIssues = $state<Set<string>>(readFromStorage("issues"));
 
-  function isCollapsed(
-    surface: CollapseSurface,
-    repoKey: string,
-  ): boolean {
+  function isCollapsed(surface: CollapseSurface, repoKey: string): boolean {
     if (surface === "pulls") return collapsedInPulls.has(repoKey);
     return collapsedInIssues.has(repoKey);
   }

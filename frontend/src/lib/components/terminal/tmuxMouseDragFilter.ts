@@ -87,10 +87,12 @@ export function createTmuxMouseDragFilter(
     drag: PendingDrag,
     report: SgrMouseReport,
   ): boolean {
-    return Math.max(
-      Math.abs(report.x - drag.startX),
-      Math.abs(report.y - drag.startY),
-    ) > thresholdCells;
+    return (
+      Math.max(
+        Math.abs(report.x - drag.startX),
+        Math.abs(report.y - drag.startY),
+      ) > thresholdCells
+    );
   }
 
   return { filter };

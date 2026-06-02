@@ -1,7 +1,4 @@
-import type {
-  RateLimitHostStatus,
-  SyncStatus,
-} from "../api/types.js";
+import type { RateLimitHostStatus, SyncStatus } from "../api/types.js";
 import type { MiddlemanClient } from "../types.js";
 
 export interface SyncStoreOptions {
@@ -11,17 +8,13 @@ export interface SyncStoreOptions {
 
 export function createSyncStore(opts: SyncStoreOptions) {
   const apiClient = opts.client;
-  const getPriorityRepos =
-    opts.getPriorityRepos ?? (() => undefined);
+  const getPriorityRepos = opts.getPriorityRepos ?? (() => undefined);
 
   // --- state ---
 
   let status = $state<SyncStatus | null>(null);
-  let rateLimits = $state<
-    Record<string, RateLimitHostStatus>
-  >({});
-  let pollingHandle: ReturnType<typeof setInterval> | null =
-    null;
+  let rateLimits = $state<Record<string, RateLimitHostStatus>>({});
+  let pollingHandle: ReturnType<typeof setInterval> | null = null;
   let wasRunning = false;
   let onSyncCompleteOnce: (() => void) | null = null;
   const syncCompleteListeners = new Set<() => void>();
@@ -36,10 +29,7 @@ export function createSyncStore(opts: SyncStoreOptions) {
     return status;
   }
 
-  function getRateLimits(): Record<
-    string,
-    RateLimitHostStatus
-  > {
+  function getRateLimits(): Record<string, RateLimitHostStatus> {
     return rateLimits;
   }
 
@@ -49,9 +39,7 @@ export function createSyncStore(opts: SyncStoreOptions) {
     onSyncCompleteOnce = fn;
   }
 
-  function subscribeSyncComplete(
-    fn: () => void,
-  ): () => void {
+  function subscribeSyncComplete(fn: () => void): () => void {
     syncCompleteListeners.add(fn);
     return () => {
       syncCompleteListeners.delete(fn);
@@ -78,11 +66,10 @@ export function createSyncStore(opts: SyncStoreOptions) {
 
   async function refreshSyncStatus(): Promise<void> {
     const gen = sseGeneration;
-    const [syncResult, rateResult] =
-      await Promise.allSettled([
-        apiClient.GET("/sync/status"),
-        apiClient.GET("/rate-limits"),
-      ]);
+    const [syncResult, rateResult] = await Promise.allSettled([
+      apiClient.GET("/sync/status"),
+      apiClient.GET("/rate-limits"),
+    ]);
 
     // If an SSE push arrived while the poll was in flight, the
     // SSE data is fresher — drop this stale poll result.
@@ -121,15 +108,14 @@ export function createSyncStore(opts: SyncStoreOptions) {
 
     try {
       const priorityRepos = parsePriorityRepos(getPriorityRepos());
-      const syncOptions = priorityRepos.length > 0
-        ? { params: { query: { priority_repo: priorityRepos } } }
-        : {};
+      const syncOptions =
+        priorityRepos.length > 0
+          ? { params: { query: { priority_repo: priorityRepos } } }
+          : {};
       const { error } = await apiClient.POST("/sync", syncOptions);
       if (error) {
         throw new Error(
-          error.detail ??
-            error.title ??
-            "failed to trigger sync",
+          error.detail ?? error.title ?? "failed to trigger sync",
         );
       }
       await refreshSyncStatus();
@@ -138,9 +124,7 @@ export function createSyncStore(opts: SyncStoreOptions) {
         running: false,
         last_run_at: previous?.last_run_at ?? "",
         last_error:
-          err instanceof Error
-            ? err.message
-            : "failed to trigger sync",
+          err instanceof Error ? err.message : "failed to trigger sync",
       };
       wasRunning = false;
       adjustPollingSpeed(false);

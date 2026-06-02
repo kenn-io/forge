@@ -19,11 +19,7 @@ async function loadSettingsWithTimeout(
       getSettings(),
       new Promise<Settings>((_, reject) => {
         timeout = setTimeout(() => {
-          reject(
-            new Error(
-              "timed out loading settings during startup",
-            ),
-          );
+          reject(new Error("timed out loading settings during startup"));
         }, SETTINGS_STARTUP_TIMEOUT_MS);
       }),
     ]);
@@ -48,9 +44,7 @@ export function runAppStartup(deps: AppStartupDeps): () => void {
   let cancelled = false;
   void (async () => {
     try {
-      const settings = await loadSettingsWithTimeout(
-        deps.getSettings,
-      );
+      const settings = await loadSettingsWithTimeout(deps.getSettings);
       if (cancelled) return;
       const stores = deps.getStores();
       if (stores) {
@@ -60,10 +54,7 @@ export function runAppStartup(deps: AppStartupDeps): () => void {
       }
     } catch (err) {
       if (cancelled) return;
-      console.warn(
-        "Failed to load settings, using defaults:",
-        err,
-      );
+      console.warn("Failed to load settings, using defaults:", err);
     }
     if (cancelled) return;
     deps.beforeInitialLoad?.();

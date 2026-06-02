@@ -1,5 +1,5 @@
 import { cleanup, render } from "@testing-library/svelte";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vite-plus/test";
 
 import * as icons from "./icons.ts";
 
@@ -38,7 +38,10 @@ describe("icons barrel", () => {
         },
       });
 
-      expect(container.querySelector("svg"), `${name} should render an svg`).toBeTruthy();
+      expect(
+        container.querySelector("svg"),
+        `${name} should render an svg`,
+      ).toBeTruthy();
       unmount();
     }
   });

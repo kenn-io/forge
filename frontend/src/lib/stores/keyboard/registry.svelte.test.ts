@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vite-plus/test";
 
 import {
   registerScopedActions,
@@ -50,7 +50,11 @@ describe("registry", () => {
   it("getAllActions flattens entries across owners", () => {
     registerScopedActions("owner-a", [action("a.one")]);
     registerScopedActions("owner-b", [action("b.one")]);
-    expect(getAllActions().map((a) => a.id).sort()).toEqual(["a.one", "b.one"]);
+    expect(
+      getAllActions()
+        .map((a) => a.id)
+        .sort(),
+    ).toEqual(["a.one", "b.one"]);
   });
 
   it("registerCheatsheetEntries supports owner-based replacement", () => {
@@ -62,7 +66,11 @@ describe("registry", () => {
     });
     registerCheatsheetEntries("ce-a", [entry("a")]);
     registerCheatsheetEntries("ce-b", [entry("b")]);
-    expect(getAllCheatsheetEntries().map((e) => e.id).sort()).toEqual(["a", "b"]);
+    expect(
+      getAllCheatsheetEntries()
+        .map((e) => e.id)
+        .sort(),
+    ).toEqual(["a", "b"]);
     registerCheatsheetEntries("ce-a", []);
     expect(getAllCheatsheetEntries().map((e) => e.id)).toEqual(["b"]);
   });
@@ -79,9 +87,7 @@ describe("conflict assertion", () => {
       { ...action("a.two"), binding: { key: "k", ctrlOrMeta: true } },
     ];
     registerScopedActions("o1", collide);
-    expect(() => registerScopedActions("o2", collide2)).toThrow(
-      /conflict/i,
-    );
+    expect(() => registerScopedActions("o2", collide2)).toThrow(/conflict/i);
   });
 
   it("allows different scopes with the same binding", () => {

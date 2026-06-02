@@ -1,6 +1,4 @@
-import type {
-  RoborevClient,
-} from "../../api/roborev/client.js";
+import type { RoborevClient } from "../../api/roborev/client.js";
 
 interface LogLine {
   ts: string;
@@ -13,23 +11,17 @@ export interface LogStoreOptions {
   baseUrl: string;
 }
 
-export function createLogStore(
-  opts: LogStoreOptions,
-) {
+export function createLogStore(opts: LogStoreOptions) {
   const client = opts.client;
 
   let lines = $state<LogLine[]>([]);
   let streaming = $state(false);
   let followMode = $state(true);
-  let connectedJobId = $state<number | undefined>(
-    undefined,
-  );
+  let connectedJobId = $state<number | undefined>(undefined);
   let abortController: AbortController | null = null;
   let requestVersion = 0;
 
-  async function startStreaming(
-    jobId: number,
-  ): Promise<void> {
+  async function startStreaming(jobId: number): Promise<void> {
     stopStreaming();
     const version = ++requestVersion;
     connectedJobId = jobId;
@@ -37,8 +29,7 @@ export function createLogStore(
     lines = [];
 
     abortController = new AbortController();
-    const url =
-      `${opts.baseUrl}/api/job/log?job_id=${jobId}`;
+    const url = `${opts.baseUrl}/api/job/log?job_id=${jobId}`;
 
     try {
       const resp = await fetch(url, {
@@ -84,10 +75,7 @@ export function createLogStore(
         }
       }
     } catch (err: unknown) {
-      if (
-        err instanceof DOMException &&
-        err.name === "AbortError"
-      ) {
+      if (err instanceof DOMException && err.name === "AbortError") {
         return;
       }
     } finally {
@@ -106,16 +94,13 @@ export function createLogStore(
     streaming = false;
   }
 
-  async function loadSnapshot(
-    jobId: number,
-  ): Promise<void> {
+  async function loadSnapshot(jobId: number): Promise<void> {
     stopStreaming();
     const version = ++requestVersion;
     lines = [];
-    const { data, error } = await client.GET(
-      "/api/job/output",
-      { params: { query: { job_id: jobId } } },
-    );
+    const { data, error } = await client.GET("/api/job/output", {
+      params: { query: { job_id: jobId } },
+    });
     if (error || !data) return;
     if (version !== requestVersion) return;
     lines = (data.lines ?? []).map((l) => ({
@@ -159,6 +144,4 @@ export function createLogStore(
   };
 }
 
-export type LogStore = ReturnType<
-  typeof createLogStore
->;
+export type LogStore = ReturnType<typeof createLogStore>;

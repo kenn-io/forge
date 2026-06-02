@@ -1,5 +1,12 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vite-plus/test";
 import CIStatus from "./CIStatus.svelte";
 import { __resetCIWarnings } from "../../utils/ci-buckets-warn.js";
 
@@ -195,7 +202,9 @@ describe("CIStatus", () => {
     const title = unavail!.getAttribute("title") ?? "";
     expect(title).toMatch(/CI unavailable:/i);
     expect(title).not.toContain(sentinel);
-    const popover = document.querySelector("[data-testid='ci-unavailable-popover']");
+    const popover = document.querySelector(
+      "[data-testid='ci-unavailable-popover']",
+    );
     expect(popover).not.toBeNull();
     expect(popover!.textContent ?? "").not.toContain(sentinel);
     expect(popover!.textContent ?? "").toMatch(/Malformed JSON/);
@@ -220,7 +229,9 @@ describe("CIStatus", () => {
 
   it("fires unknown warning at most once per distinct conclusion via console.warn", async () => {
     const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const checks = JSON.stringify([{ status: "completed", conclusion: "weird_state" }]);
+    const checks = JSON.stringify([
+      { status: "completed", conclusion: "weird_state" },
+    ]);
     const { rerender } = render(CIStatus, {
       props: { ...chipBaseProps, prKey: "A", checksJSON: checks },
     });
@@ -245,11 +256,21 @@ describe("CIStatus", () => {
         ]),
       },
     });
-    expect(document.querySelector("[data-testid='ci-token-unknown']")).not.toBeNull();
-    expect(document.querySelector("[data-testid='ci-token-failed']")).toBeNull();
-    expect(document.querySelector("[data-testid='ci-token-pending']")).toBeNull();
-    expect(document.querySelector("[data-testid='ci-token-passed']")).toBeNull();
-    expect(document.querySelector("[data-testid='ci-token-skipped']")).toBeNull();
+    expect(
+      document.querySelector("[data-testid='ci-token-unknown']"),
+    ).not.toBeNull();
+    expect(
+      document.querySelector("[data-testid='ci-token-failed']"),
+    ).toBeNull();
+    expect(
+      document.querySelector("[data-testid='ci-token-pending']"),
+    ).toBeNull();
+    expect(
+      document.querySelector("[data-testid='ci-token-passed']"),
+    ).toBeNull();
+    expect(
+      document.querySelector("[data-testid='ci-token-skipped']"),
+    ).toBeNull();
     expect(
       spy.mock.calls.filter(
         (c) =>
@@ -314,11 +335,21 @@ describe("CIStatus", () => {
         checksJSON: JSON.stringify([mkCheck()]),
       },
     });
-    expect(document.querySelector("[data-testid='ci-section-failed']")).toBeNull();
-    expect(document.querySelector("[data-testid='ci-section-pending']")).toBeNull();
-    expect(document.querySelector("[data-testid='ci-section-unknown']")).toBeNull();
-    expect(document.querySelector("[data-testid='ci-section-skipped']")).toBeNull();
-    expect(document.querySelector("[data-testid='ci-section-passed']")).not.toBeNull();
+    expect(
+      document.querySelector("[data-testid='ci-section-failed']"),
+    ).toBeNull();
+    expect(
+      document.querySelector("[data-testid='ci-section-pending']"),
+    ).toBeNull();
+    expect(
+      document.querySelector("[data-testid='ci-section-unknown']"),
+    ).toBeNull();
+    expect(
+      document.querySelector("[data-testid='ci-section-skipped']"),
+    ).toBeNull();
+    expect(
+      document.querySelector("[data-testid='ci-section-passed']"),
+    ).not.toBeNull();
   });
 
   it("Passed section shows first 8 + Show 1 more toggle when count > 8", async () => {
@@ -382,9 +413,11 @@ describe("CIStatus", () => {
   });
 
   it("renders static circle for pending row under prefers-reduced-motion", () => {
-    vi.spyOn(window, "matchMedia").mockReturnValue({
-      matches: true,
-    } as MediaQueryList);
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      writable: true,
+      value: vi.fn().mockReturnValue({ matches: true } as MediaQueryList),
+    });
     render(CIStatus, {
       props: {
         ...chipBaseProps,

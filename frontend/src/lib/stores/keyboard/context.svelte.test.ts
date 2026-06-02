@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import type { IssueSelection } from "@middleman/ui/stores/issues";
 import type { PullSelection } from "@middleman/ui/stores/pulls";
 

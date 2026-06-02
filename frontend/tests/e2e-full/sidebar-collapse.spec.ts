@@ -1,19 +1,23 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
 async function waitForPRList(page: Page): Promise<void> {
-  await page.locator(".pull-item").first()
+  await page
+    .locator(".pull-item")
+    .first()
     .waitFor({ state: "visible", timeout: 10_000 });
 }
 
 async function waitForIssueList(page: Page): Promise<void> {
-  await page.locator(".issue-item").first()
+  await page
+    .locator(".issue-item")
+    .first()
     .waitFor({ state: "visible", timeout: 10_000 });
 }
 
 async function sidebarWidth(sidebar: Locator): Promise<number> {
-  return Math.round(await sidebar.evaluate((node) =>
-    node.getBoundingClientRect().width
-  ));
+  return Math.round(
+    await sidebar.evaluate((node) => node.getBoundingClientRect().width),
+  );
 }
 
 function collapseToggle(sidebar: Locator): Locator {
@@ -69,9 +73,9 @@ async function expectResizedSidebar(
   await page.reload();
   await waitForList(page);
 
-  await expect.poll(async () =>
-    sidebarWidth(page.locator(".sidebar").first())
-  ).toBe(420);
+  await expect
+    .poll(async () => sidebarWidth(page.locator(".sidebar").first()))
+    .toBe(420);
 }
 
 async function expectCompactFiltersAtMinimumWidth(
@@ -111,7 +115,9 @@ async function expectCompactFiltersInNarrowViewport(
   waitForList: (page: Page) => Promise<void>,
 ): Promise<void> {
   await page.setViewportSize({ width: 545, height: 954 });
-  const desktopPath = path.includes("?") ? `${path}&desktop=1` : `${path}?desktop=1`;
+  const desktopPath = path.includes("?")
+    ? `${path}&desktop=1`
+    : `${path}?desktop=1`;
   await page.goto(desktopPath);
   await waitForList(page);
 
@@ -140,17 +146,13 @@ async function setPersistedSidebarWidth(
   return page.locator(".sidebar").first().locator(".filter-bar").first();
 }
 
-async function expectCompactFilterBar(
-  filterBar: Locator,
-): Promise<void> {
+async function expectCompactFilterBar(filterBar: Locator): Promise<void> {
   await expect(
     filterBar.getByRole("button", { name: "Filters" }),
   ).toBeVisible();
   await expect(filterBar.locator(".state-toggle")).toBeHidden();
   await expect(filterBar.locator(".group-toggle")).toBeHidden();
-  await expectFastAnimation(
-    filterBar.locator(".compact-filter-menu"),
-  );
+  await expectFastAnimation(filterBar.locator(".compact-filter-menu"));
 }
 
 async function openCompactFilters(filterBar: Locator): Promise<Locator> {
@@ -160,12 +162,8 @@ async function openCompactFilters(filterBar: Locator): Promise<Locator> {
   return dropdown;
 }
 
-async function expectExpandedFilterBar(
-  filterBar: Locator,
-): Promise<void> {
-  await expect(
-    filterBar.getByRole("button", { name: "Filters" }),
-  ).toBeHidden();
+async function expectExpandedFilterBar(filterBar: Locator): Promise<void> {
+  await expect(filterBar.getByRole("button", { name: "Filters" })).toBeHidden();
   await expect(filterBar.locator(".state-toggle")).toBeVisible();
   await expect(filterBar.locator(".group-toggle")).toBeVisible();
   await expectFastAnimation(filterBar.locator(".state-toggle"));
@@ -187,7 +185,7 @@ async function expectFastAnimation(locator: Locator): Promise<void> {
       .map((value) =>
         value.endsWith("ms")
           ? Number.parseFloat(value)
-          : Number.parseFloat(value) * 1000
+          : Number.parseFloat(value) * 1000,
       );
     return Math.max(...durations);
   });
@@ -275,39 +273,39 @@ test.describe("collapsible sidebar", () => {
     await expect(sidebar).not.toHaveClass(/sidebar--collapsed/);
   });
 
-  test("sidebar can be resized on pulls and keeps the new width after reload", async ({ page }) => {
+  test("sidebar can be resized on pulls and keeps the new width after reload", async ({
+    page,
+  }) => {
     await expectResizedSidebar(page, "/pulls", waitForPRList);
   });
 
-  test("sidebar can be resized on issues and keeps the new width after reload", async ({ page }) => {
+  test("sidebar can be resized on issues and keeps the new width after reload", async ({
+    page,
+  }) => {
     await expectResizedSidebar(page, "/issues", waitForIssueList);
   });
 
-  test("pull filters collapse into a compact menu when sidebar is tight", async ({ page }) => {
-    await expectCompactFiltersAtMinimumWidth(
-      page,
-      "/pulls",
-      waitForPRList,
-    );
+  test("pull filters collapse into a compact menu when sidebar is tight", async ({
+    page,
+  }) => {
+    await expectCompactFiltersAtMinimumWidth(page, "/pulls", waitForPRList);
   });
 
-  test("issue filters collapse into a compact menu when sidebar is tight", async ({ page }) => {
-    await expectCompactFiltersAtMinimumWidth(
-      page,
-      "/issues",
-      waitForIssueList,
-    );
+  test("issue filters collapse into a compact menu when sidebar is tight", async ({
+    page,
+  }) => {
+    await expectCompactFiltersAtMinimumWidth(page, "/issues", waitForIssueList);
   });
 
-  test("pull filters stay compact when a narrow viewport sidebar is opened", async ({ page }) => {
-    await expectCompactFiltersInNarrowViewport(
-      page,
-      "/pulls",
-      waitForPRList,
-    );
+  test("pull filters stay compact when a narrow viewport sidebar is opened", async ({
+    page,
+  }) => {
+    await expectCompactFiltersInNarrowViewport(page, "/pulls", waitForPRList);
   });
 
-  test("issue filters stay compact when a narrow viewport sidebar is opened", async ({ page }) => {
+  test("issue filters stay compact when a narrow viewport sidebar is opened", async ({
+    page,
+  }) => {
     await expectCompactFiltersInNarrowViewport(
       page,
       "/issues",
@@ -315,41 +313,25 @@ test.describe("collapsible sidebar", () => {
     );
   });
 
-  test("pull filters switch at the buffered 396px fit point", async ({ page }) => {
+  test("pull filters switch at the buffered 396px fit point", async ({
+    page,
+  }) => {
     await expectCompactFilterBar(
-      await setPersistedSidebarWidth(
-        page,
-        "/pulls",
-        395,
-        waitForPRList,
-      ),
+      await setPersistedSidebarWidth(page, "/pulls", 395, waitForPRList),
     );
     await expectExpandedFilterBar(
-      await setPersistedSidebarWidth(
-        page,
-        "/pulls",
-        396,
-        waitForPRList,
-      ),
+      await setPersistedSidebarWidth(page, "/pulls", 396, waitForPRList),
     );
   });
 
-  test("issue filters switch at the buffered 373px fit point", async ({ page }) => {
+  test("issue filters switch at the buffered 373px fit point", async ({
+    page,
+  }) => {
     await expectCompactFilterBar(
-      await setPersistedSidebarWidth(
-        page,
-        "/issues",
-        372,
-        waitForIssueList,
-      ),
+      await setPersistedSidebarWidth(page, "/issues", 372, waitForIssueList),
     );
     await expectExpandedFilterBar(
-      await setPersistedSidebarWidth(
-        page,
-        "/issues",
-        373,
-        waitForIssueList,
-      ),
+      await setPersistedSidebarWidth(page, "/issues", 373, waitForIssueList),
     );
   });
 
@@ -389,7 +371,9 @@ test.describe("collapsible sidebar", () => {
     await dropdown.locator(".filter-item", { hasText: "Closed" }).click();
     await expect(filterBar.locator(".list-count-chip")).toHaveText(
       /^1 issues?$/,
-      { timeout: 5_000 },
+      {
+        timeout: 5_000,
+      },
     );
 
     dropdown = await openCompactFilters(filterBar);

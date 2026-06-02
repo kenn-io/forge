@@ -1,7 +1,9 @@
 import { expect, test, type Page } from "@playwright/test";
 
 async function waitForPRList(page: Page): Promise<void> {
-  await page.locator(".pull-item").first()
+  await page
+    .locator(".pull-item")
+    .first()
     .waitFor({ state: "visible", timeout: 10_000 });
 }
 
@@ -52,9 +54,7 @@ async function installWorkspaceRoutes(
     ...baseWorkspace,
     ...opts?.workspace,
   };
-  const detailResponses = [
-    ...(opts?.detailResponses ?? []),
-  ];
+  const detailResponses = [...(opts?.detailResponses ?? [])];
 
   await page.route("**/api/v1/events", async (route) => {
     await route.fulfill({
@@ -77,31 +77,28 @@ async function installWorkspaceRoutes(
     });
   });
 
-  await page.route(
-    `**/api/v1/workspaces/${workspace.id}`,
-    async (route) => {
-      if (route.request().method() !== "GET") {
-        await route.fallback();
-        return;
-      }
+  await page.route(`**/api/v1/workspaces/${workspace.id}`, async (route) => {
+    if (route.request().method() !== "GET") {
+      await route.fallback();
+      return;
+    }
 
-      const nextResponse = detailResponses.shift();
-      if (nextResponse) {
-        await route.fulfill({
-          status: nextResponse.status,
-          contentType: "application/json",
-          body: JSON.stringify(nextResponse.body ?? {}),
-        });
-        return;
-      }
-
+    const nextResponse = detailResponses.shift();
+    if (nextResponse) {
       await route.fulfill({
-        status: 200,
+        status: nextResponse.status,
         contentType: "application/json",
-        body: JSON.stringify(workspace),
+        body: JSON.stringify(nextResponse.body ?? {}),
       });
-    },
-  );
+      return;
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(workspace),
+    });
+  });
 
   await page.route(
     `**/api/v1/workspaces/${workspace.id}/retry`,
@@ -121,7 +118,9 @@ async function installWorkspaceRoutes(
 }
 
 test.describe("lucide migration", () => {
-  test("startup loading state renders the live spinner icon", async ({ page }) => {
+  test("startup loading state renders the live spinner icon", async ({
+    page,
+  }) => {
     let releaseSettings: () => void = () => {};
     const settingsGate = new Promise<void>((resolve) => {
       releaseSettings = resolve;
@@ -146,7 +145,9 @@ test.describe("lucide migration", () => {
     await expect(loadingState).toHaveCount(0);
   });
 
-  test("repo selector keeps the live chevron icon while filtering repos", async ({ page }) => {
+  test("repo selector keeps the live chevron icon while filtering repos", async ({
+    page,
+  }) => {
     await page.goto("/pulls");
     await waitForPRList(page);
 
@@ -172,7 +173,9 @@ test.describe("lucide migration", () => {
     await expect(selector.locator("svg")).toBeVisible();
   });
 
-  test("light mode renders the live filled moon icon in the header", async ({ page }) => {
+  test("light mode renders the live filled moon icon in the header", async ({
+    page,
+  }) => {
     await page.emulateMedia({ colorScheme: "light" });
     await page.goto("/pulls");
     await waitForPRList(page);
@@ -197,7 +200,9 @@ test.describe("lucide migration", () => {
     expect(moonStyles?.fill).not.toBe("none");
   });
 
-  test("workspace creating state renders the terminal spinner icon", async ({ page }) => {
+  test("workspace creating state renders the terminal spinner icon", async ({
+    page,
+  }) => {
     await installWorkspaceRoutes(page, {
       workspace: { status: "creating" },
     });
@@ -209,7 +214,9 @@ test.describe("lucide migration", () => {
     await expect(stateMessage.locator(".spinner")).toBeVisible();
   });
 
-  test("workspace load failure shows the alert icon and retry recovers", async ({ page }) => {
+  test("workspace load failure shows the alert icon and retry recovers", async ({
+    page,
+  }) => {
     await installWorkspaceRoutes(page, {
       detailResponses: [
         {
@@ -232,10 +239,14 @@ test.describe("lucide migration", () => {
     ).toBeVisible();
 
     await stateMessage.getByRole("button", { name: "Retry" }).click();
-    await expect(page.locator(".header-name")).toContainText("Add auth middleware");
+    await expect(page.locator(".header-name")).toContainText(
+      "Add auth middleware",
+    );
   });
 
-  test("workspace setup error shows the alert icon and retry recovers", async ({ page }) => {
+  test("workspace setup error shows the alert icon and retry recovers", async ({
+    page,
+  }) => {
     await installWorkspaceRoutes(page, {
       detailResponses: [
         {
@@ -262,6 +273,8 @@ test.describe("lucide migration", () => {
     ).toBeVisible();
 
     await stateMessage.getByRole("button", { name: "Retry" }).click();
-    await expect(page.locator(".header-name")).toContainText("Add auth middleware");
+    await expect(page.locator(".header-name")).toContainText(
+      "Add auth middleware",
+    );
   });
 });

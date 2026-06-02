@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { bucketForCheck } from "./ci-buckets.js";
 import type { CICheck } from "../api/types.js";
 
@@ -26,8 +26,12 @@ describe("bucketForCheck", () => {
 
   it("returns failed for known failure conclusions", () => {
     for (const conclusion of [
-      "failure", "cancelled", "timed_out",
-      "action_required", "stale", "startup_failure",
+      "failure",
+      "cancelled",
+      "timed_out",
+      "action_required",
+      "stale",
+      "startup_failure",
     ]) {
       expect(bucketForCheck(check({ conclusion }))).toBe("failed");
     }
@@ -49,7 +53,9 @@ describe("bucketForCheck", () => {
   });
 
   it("returns pending when status is non-active and conclusion is empty", () => {
-    expect(bucketForCheck(check({ status: "", conclusion: "" }))).toBe("pending");
+    expect(bucketForCheck(check({ status: "", conclusion: "" }))).toBe(
+      "pending",
+    );
     expect(bucketForCheck(check({ status: "completed", conclusion: "" }))).toBe(
       "pending",
     );
@@ -98,8 +104,16 @@ describe("bucketCIChecks", () => {
 
   it("computes longestCompletedDurationSeconds across completed checks only", () => {
     const result = bucketCIChecks([
-      check({ status: "completed", conclusion: "success", duration_seconds: 30 }),
-      check({ status: "completed", conclusion: "success", duration_seconds: 120 }),
+      check({
+        status: "completed",
+        conclusion: "success",
+        duration_seconds: 30,
+      }),
+      check({
+        status: "completed",
+        conclusion: "success",
+        duration_seconds: 120,
+      }),
       check({ status: "in_progress", duration_seconds: 9999 }),
     ]);
     expect(result.longestCompletedDurationSeconds).toBe(120);
@@ -125,7 +139,13 @@ import { parseCIChecks, safeDiagnosticText } from "./ci-buckets.js";
 describe("parseCIChecks", () => {
   it("parses well-formed JSON into typed checks", () => {
     const json = JSON.stringify([
-      { name: "build", status: "completed", conclusion: "success", url: "", app: "GH" },
+      {
+        name: "build",
+        status: "completed",
+        conclusion: "success",
+        url: "",
+        app: "GH",
+      },
     ]);
     const result = parseCIChecks(json);
     expect(result.error).toBeNull();
@@ -193,7 +213,8 @@ describe("parseCIChecks", () => {
   });
 
   it("safeDiagnosticText forwards locally-created CIChecksJSON shape errors intact", () => {
-    expect(safeDiagnosticText(new Error("CIChecksJSON: payload is not an array")))
-      .toBe("CIChecksJSON: payload is not an array");
+    expect(
+      safeDiagnosticText(new Error("CIChecksJSON: payload is not an array")),
+    ).toBe("CIChecksJSON: payload is not an array");
   });
 });

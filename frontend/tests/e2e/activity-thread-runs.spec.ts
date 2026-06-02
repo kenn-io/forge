@@ -93,11 +93,36 @@ test.describe("threaded activity run collapse", () => {
   }) => {
     await mockSettings(page);
     await mockActivity(page, [
-      prEvent({ id: "r5", type: "review", author: "alice", createdAt: "2026-04-27T15:00:00Z" }),
-      prEvent({ id: "r4", type: "review", author: "alice", createdAt: "2026-04-27T14:00:00Z" }),
-      prEvent({ id: "r3", type: "review", author: "alice", createdAt: "2026-04-27T13:00:00Z" }),
-      prEvent({ id: "r2", type: "review", author: "alice", createdAt: "2026-04-27T12:00:00Z" }),
-      prEvent({ id: "r1", type: "review", author: "alice", createdAt: "2026-04-27T11:00:00Z" }),
+      prEvent({
+        id: "r5",
+        type: "review",
+        author: "alice",
+        createdAt: "2026-04-27T15:00:00Z",
+      }),
+      prEvent({
+        id: "r4",
+        type: "review",
+        author: "alice",
+        createdAt: "2026-04-27T14:00:00Z",
+      }),
+      prEvent({
+        id: "r3",
+        type: "review",
+        author: "alice",
+        createdAt: "2026-04-27T13:00:00Z",
+      }),
+      prEvent({
+        id: "r2",
+        type: "review",
+        author: "alice",
+        createdAt: "2026-04-27T12:00:00Z",
+      }),
+      prEvent({
+        id: "r1",
+        type: "review",
+        author: "alice",
+        createdAt: "2026-04-27T11:00:00Z",
+      }),
     ]);
     await page.goto("/?view=threaded");
 
@@ -106,7 +131,9 @@ test.describe("threaded activity run collapse", () => {
     });
     await expect(collapsed).toHaveCount(1);
     await expect(collapsed.locator(".evt-review")).toBeVisible();
-    await expect(page.locator(".event-row:not(.collapsed-event)")).toHaveCount(0);
+    await expect(page.locator(".event-row:not(.collapsed-event)")).toHaveCount(
+      0,
+    );
   });
 
   test("collapses comments and reviews into separate runs by event type", async ({
@@ -114,12 +141,42 @@ test.describe("threaded activity run collapse", () => {
   }) => {
     await mockSettings(page);
     await mockActivity(page, [
-      prEvent({ id: "c3", type: "comment", author: "alice", createdAt: "2026-04-27T16:00:00Z" }),
-      prEvent({ id: "c2", type: "comment", author: "alice", createdAt: "2026-04-27T15:00:00Z" }),
-      prEvent({ id: "c1", type: "comment", author: "alice", createdAt: "2026-04-27T14:00:00Z" }),
-      prEvent({ id: "r3", type: "review", author: "alice", createdAt: "2026-04-27T13:00:00Z" }),
-      prEvent({ id: "r2", type: "review", author: "alice", createdAt: "2026-04-27T12:00:00Z" }),
-      prEvent({ id: "r1", type: "review", author: "alice", createdAt: "2026-04-27T11:00:00Z" }),
+      prEvent({
+        id: "c3",
+        type: "comment",
+        author: "alice",
+        createdAt: "2026-04-27T16:00:00Z",
+      }),
+      prEvent({
+        id: "c2",
+        type: "comment",
+        author: "alice",
+        createdAt: "2026-04-27T15:00:00Z",
+      }),
+      prEvent({
+        id: "c1",
+        type: "comment",
+        author: "alice",
+        createdAt: "2026-04-27T14:00:00Z",
+      }),
+      prEvent({
+        id: "r3",
+        type: "review",
+        author: "alice",
+        createdAt: "2026-04-27T13:00:00Z",
+      }),
+      prEvent({
+        id: "r2",
+        type: "review",
+        author: "alice",
+        createdAt: "2026-04-27T12:00:00Z",
+      }),
+      prEvent({
+        id: "r1",
+        type: "review",
+        author: "alice",
+        createdAt: "2026-04-27T11:00:00Z",
+      }),
     ]);
     await page.goto("/?view=threaded");
 
@@ -134,14 +191,24 @@ test.describe("threaded activity run collapse", () => {
   test("leaves short runs of comments unrolled", async ({ page }) => {
     await mockSettings(page);
     await mockActivity(page, [
-      prEvent({ id: "c2", type: "comment", author: "alice", createdAt: "2026-04-27T13:00:00Z" }),
-      prEvent({ id: "c1", type: "comment", author: "alice", createdAt: "2026-04-27T12:00:00Z" }),
+      prEvent({
+        id: "c2",
+        type: "comment",
+        author: "alice",
+        createdAt: "2026-04-27T13:00:00Z",
+      }),
+      prEvent({
+        id: "c1",
+        type: "comment",
+        author: "alice",
+        createdAt: "2026-04-27T12:00:00Z",
+      }),
     ]);
     await page.goto("/?view=threaded");
 
     await expect(page.locator(".event-row.collapsed-event")).toHaveCount(0);
-    await expect(
-      page.locator(".event-row:not(.collapsed-event)"),
-    ).toHaveCount(2);
+    await expect(page.locator(".event-row:not(.collapsed-event)")).toHaveCount(
+      2,
+    );
   });
 });

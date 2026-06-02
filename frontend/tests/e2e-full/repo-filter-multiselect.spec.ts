@@ -14,7 +14,9 @@ async function selectRepo(page: Page, name: string): Promise<void> {
   await expect(option.locator("input[type='checkbox']")).toBeChecked();
 }
 
-test("repository selector filters dashboard lists by multiple selected repos", async ({ page }) => {
+test("repository selector filters dashboard lists by multiple selected repos", async ({
+  page,
+}) => {
   await page.goto("/issues");
   await waitForIssueList(page);
 
@@ -32,7 +34,9 @@ test("repository selector filters dashboard lists by multiple selected repos", a
     "acme/tools",
   ]);
 
-  await expect(page.getByText("Widget rendering broken on Safari")).toBeVisible();
+  await expect(
+    page.getByText("Widget rendering broken on Safari"),
+  ).toBeVisible();
   await expect(page.getByText("Add dark mode support")).toBeVisible();
   await expect(page.getByText("Support config file loading")).toBeVisible();
   await expect(page.getByText("GitLab read-only issue")).toHaveCount(0);
@@ -75,7 +79,9 @@ test("keyboard navigation survives a real checkbox click", async ({ page }) => {
   await expect(page.locator(".typeahead-list")).toHaveCount(0);
 });
 
-test("flattened single-repo owner shows the owner/repo path, not a bare repo name", async ({ page }) => {
+test("flattened single-repo owner shows the owner/repo path, not a bare repo name", async ({
+  page,
+}) => {
   // gitlab.example.com/group has one repo "project", so it auto-flattens to a
   // single row. That row must read "group/project" (visible text) to stay
   // distinguishable from a same-named repo under another owner, while its
@@ -94,7 +100,9 @@ test("flattened single-repo owner shows the owner/repo path, not a bare repo nam
   await expect(row.locator(".repo-tree-label")).toHaveText("group/project");
 });
 
-test("repository selector cascades an owner group to all its repos", async ({ page }) => {
+test("repository selector cascades an owner group to all its repos", async ({
+  page,
+}) => {
   await page.goto("/issues");
   await waitForIssueList(page);
 
@@ -124,7 +132,9 @@ test("repository selector cascades an owner group to all its repos", async ({ pa
 
   // The group selection keeps acme's issues visible and excludes repos
   // outside the group, such as the GitLab read-only fixture.
-  await expect(page.getByText("Widget rendering broken on Safari")).toBeVisible();
+  await expect(
+    page.getByText("Widget rendering broken on Safari"),
+  ).toBeVisible();
   await expect(page.getByText("Support config file loading")).toBeVisible();
   await expect(page.getByText("GitLab read-only issue")).toHaveCount(0);
 });

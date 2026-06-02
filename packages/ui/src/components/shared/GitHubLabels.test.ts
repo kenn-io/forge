@@ -1,5 +1,5 @@
 import { cleanup, render, screen } from "@testing-library/svelte";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vite-plus/test";
 import GitHubLabels from "./GitHubLabels.svelte";
 import type { IssueLabel } from "../../api/types.js";
 

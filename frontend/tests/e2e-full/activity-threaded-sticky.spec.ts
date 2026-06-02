@@ -15,18 +15,25 @@ async function openActivityViewDropdown(page: Page) {
   return dropdown;
 }
 
-async function selectActivityViewItem(page: Page, label: string): Promise<void> {
+async function selectActivityViewItem(
+  page: Page,
+  label: string,
+): Promise<void> {
   const dropdown = await openActivityViewDropdown(page);
   await dropdown.locator(".filter-item", { hasText: label }).click();
 }
 
 async function gotoThreadedGrouped(page: Page): Promise<void> {
   await page.goto("/");
-  await page.locator(".activity-table .activity-row").first()
+  await page
+    .locator(".activity-table .activity-row")
+    .first()
     .waitFor({ state: "visible", timeout: 10_000 });
   await selectActivityViewItem(page, "Threaded");
   await page.keyboard.press("Escape");
-  await page.locator(".threaded-view .repo-header").first()
+  await page
+    .locator(".threaded-view .repo-header")
+    .first()
     .waitFor({ state: "visible", timeout: 10_000 });
 }
 
@@ -36,7 +43,9 @@ test.describe("threaded activity sticky headers", () => {
   }) => {
     await gotoThreadedGrouped(page);
 
-    const columnHeaders = page.locator(".threaded-view .activity-column-headers");
+    const columnHeaders = page.locator(
+      ".threaded-view .activity-column-headers",
+    );
     await expect(columnHeaders).toBeVisible();
     const beforeBox = await columnHeaders.boundingBox();
     expect(beforeBox).not.toBeNull();
@@ -99,9 +108,7 @@ test.describe("threaded activity sticky headers", () => {
     // sticky top. If sections were display: contents, two sticky headers
     // would both pin at the same y and visibly overlap.
     const boxes = await Promise.all(
-      Array.from({ length: count }, (_, i) =>
-        repoHeaders.nth(i).boundingBox(),
-      ),
+      Array.from({ length: count }, (_, i) => repoHeaders.nth(i).boundingBox()),
     );
     const yValues = boxes
       .filter((b): b is NonNullable<typeof b> => b !== null)

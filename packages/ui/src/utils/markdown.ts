@@ -30,18 +30,23 @@ type ItemRefToken = Tokens.Generic & {
   text: string;
 };
 
-function assertItemRefToken(token: Tokens.Generic): asserts token is ItemRefToken {
+function assertItemRefToken(
+  token: Tokens.Generic,
+): asserts token is ItemRefToken {
   if (
-    token.type !== "itemRef"
-    || typeof token.raw !== "string"
-    || typeof token.provider !== "string"
-    || (token.platformHost !== undefined && typeof token.platformHost !== "string")
-    || typeof token.owner !== "string"
-    || typeof token.name !== "string"
-    || typeof token.repoPath !== "string"
-    || typeof token.number !== "number"
-    || (token.itemType !== undefined && token.itemType !== "pr" && token.itemType !== "issue")
-    || typeof token.text !== "string"
+    token.type !== "itemRef" ||
+    typeof token.raw !== "string" ||
+    typeof token.provider !== "string" ||
+    (token.platformHost !== undefined &&
+      typeof token.platformHost !== "string") ||
+    typeof token.owner !== "string" ||
+    typeof token.name !== "string" ||
+    typeof token.repoPath !== "string" ||
+    typeof token.number !== "number" ||
+    (token.itemType !== undefined &&
+      token.itemType !== "pr" &&
+      token.itemType !== "issue") ||
+    typeof token.text !== "string"
   ) {
     throw new Error("Unexpected itemRef token shape");
   }
@@ -63,22 +68,21 @@ function itemRefExtension(repo?: RepoContext): TokenizerAndRendererExtension {
       // Bare: look for # preceded by start or non-word
       const bareIdx = src.search(/(^|[^\w])#\d/);
       const mrBareIdx = supportsBangMR ? src.search(/(^|[^\w])!\d/) : -1;
-      const adjusted = bareIdx >= 0 && src[bareIdx] !== "#"
-        ? bareIdx + 1
-        : bareIdx;
-      const adjustedMR = mrBareIdx >= 0 && src[mrBareIdx] !== "!"
-        ? mrBareIdx + 1
-        : mrBareIdx;
+      const adjusted =
+        bareIdx >= 0 && src[bareIdx] !== "#" ? bareIdx + 1 : bareIdx;
+      const adjustedMR =
+        mrBareIdx >= 0 && src[mrBareIdx] !== "!" ? mrBareIdx + 1 : mrBareIdx;
       return [crossIdx, adjusted, adjustedMR]
         .filter((idx) => idx >= 0)
         .sort((a, b) => a - b)[0];
     },
-    tokenizer(this: { lexer: { state: { inLink: boolean } } }, src: string): ItemRefToken | undefined {
+    tokenizer(
+      this: { lexer: { state: { inLink: boolean } } },
+      src: string,
+    ): ItemRefToken | undefined {
       if (this.lexer.state.inLink || !repo) return undefined;
 
-      const crossMatch = src.match(
-        /^([\w.-]+(?:\/[\w.-]+)+)([#!])(\d+)(?!\w)/,
-      );
+      const crossMatch = src.match(/^([\w.-]+(?:\/[\w.-]+)+)([#!])(\d+)(?!\w)/);
       if (crossMatch) {
         const repoPath = crossMatch[1]!;
         const marker = crossMatch[2]!;
@@ -95,7 +99,8 @@ function itemRefExtension(repo?: RepoContext): TokenizerAndRendererExtension {
           name,
           repoPath,
           number: parseInt(crossMatch[3]!, 10),
-          itemType: marker === "!" ? "pr" : supportsBangMR ? "issue" : undefined,
+          itemType:
+            marker === "!" ? "pr" : supportsBangMR ? "issue" : undefined,
           text: crossMatch[0],
         };
       }
@@ -183,14 +188,14 @@ const markedCache = new Map<string, Marked>();
 // Six-dot drag handle SVG used to grab a task-list item. Inlined so
 // the rendered markdown is self-contained and no extra fetch is needed.
 const DRAG_HANDLE_SVG =
-  `<svg viewBox="0 0 12 16" width="12" height="16" aria-hidden="true">`
-  + `<circle cx="3" cy="3" r="1.2"/>`
-  + `<circle cx="9" cy="3" r="1.2"/>`
-  + `<circle cx="3" cy="8" r="1.2"/>`
-  + `<circle cx="9" cy="8" r="1.2"/>`
-  + `<circle cx="3" cy="13" r="1.2"/>`
-  + `<circle cx="9" cy="13" r="1.2"/>`
-  + `</svg>`;
+  `<svg viewBox="0 0 12 16" width="12" height="16" aria-hidden="true">` +
+  `<circle cx="3" cy="3" r="1.2"/>` +
+  `<circle cx="9" cy="3" r="1.2"/>` +
+  `<circle cx="3" cy="8" r="1.2"/>` +
+  `<circle cx="9" cy="8" r="1.2"/>` +
+  `<circle cx="3" cy="13" r="1.2"/>` +
+  `<circle cx="9" cy="13" r="1.2"/>` +
+  `</svg>`;
 
 const taskListRenderer: RendererObject = {
   blockquote(token): string {
@@ -209,8 +214,7 @@ const taskListRenderer: RendererObject = {
   // emit the default disabled checkbox to keep indices aligned.
   checkbox({ checked }): string {
     const inBlockquote = renderState.blockquoteDepth > 0;
-    const interactive = renderState.interactiveTasks
-      && !inBlockquote;
+    const interactive = renderState.interactiveTasks && !inBlockquote;
     const checkedAttr = checked ? ' checked=""' : "";
     if (interactive) {
       const index = renderState.taskIndex++;
@@ -228,31 +232,33 @@ const taskListRenderer: RendererObject = {
     const inner = this.parser.parse(token.tokens);
     renderState.itemStack.pop();
     if (!token.task) return `<li>${inner}</li>\n`;
-    const interactive = renderState.interactiveTasks
-      && renderState.blockquoteDepth === 0;
+    const interactive =
+      renderState.interactiveTasks && renderState.blockquoteDepth === 0;
     if (!interactive) {
       return `<li class="task-list-item">${inner}</li>\n`;
     }
     const index = frame.checkboxIndex;
     const handle =
-      `<span class="task-drag-handle" `
-      + `data-task-index="${index}" `
-      + `draggable="true" `
-      + `role="button" `
-      + `tabindex="-1" `
-      + `aria-label="Drag to reorder">`
-      + DRAG_HANDLE_SVG
-      + `</span>`;
+      `<span class="task-drag-handle" ` +
+      `data-task-index="${index}" ` +
+      `draggable="true" ` +
+      `role="button" ` +
+      `tabindex="-1" ` +
+      `aria-label="Drag to reorder">` +
+      DRAG_HANDLE_SVG +
+      `</span>`;
     return (
-      `<li class="task-list-item task-list-item--interactive" `
-      + `data-task-index="${index}">`
-      + `${handle}${inner}</li>\n`
+      `<li class="task-list-item task-list-item--interactive" ` +
+      `data-task-index="${index}">` +
+      `${handle}${inner}</li>\n`
     );
   },
 };
 
 function getMarked(repo?: RepoContext): Marked {
-  const key = repo ? `${repo.provider}/${repo.platformHost ?? ""}/${repo.repoPath}` : "";
+  const key = repo
+    ? `${repo.provider}/${repo.platformHost ?? ""}/${repo.repoPath}`
+    : "";
   let instance = markedCache.get(key);
   if (!instance) {
     instance = new Marked({ breaks: true, gfm: true });
@@ -285,24 +291,21 @@ export function renderMarkdown(
     itemStack: [],
     blockquoteDepth: 0,
   };
-  const html = DOMPurify.sanitize(
-    getMarked(repo).parse(raw) as string,
-    {
-      ADD_ATTR: [
-        "target",
-        "data-provider",
-        "data-platform-host",
-        "data-owner",
-        "data-name",
-        "data-repo-path",
-        "data-number",
-        "data-item-type",
-        "data-external-url",
-        "data-task-index",
-        "draggable",
-      ],
-    },
-  );
+  const html = DOMPurify.sanitize(getMarked(repo).parse(raw) as string, {
+    ADD_ATTR: [
+      "target",
+      "data-provider",
+      "data-platform-host",
+      "data-owner",
+      "data-name",
+      "data-repo-path",
+      "data-number",
+      "data-item-type",
+      "data-external-url",
+      "data-task-index",
+      "draggable",
+    ],
+  });
   if (htmlCache.size > 500) htmlCache.clear();
   htmlCache.set(key, html);
   return html;

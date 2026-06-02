@@ -18,7 +18,9 @@ function event(
     item_number: number,
     item_state: "open",
     item_title:
-      number === 42 ? "Add browser regression coverage" : "Refactor theme system",
+      number === 42
+        ? "Add browser regression coverage"
+        : "Refactor theme system",
     item_type: "pr",
     item_url: `https://github.com/acme/widgets/pull/${number}`,
     platform_host: "github.com",

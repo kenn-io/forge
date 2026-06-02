@@ -15,12 +15,17 @@ async function openActivityViewDropdown(page: Page) {
   return dropdown;
 }
 
-async function selectActivityViewItem(page: Page, label: string): Promise<void> {
+async function selectActivityViewItem(
+  page: Page,
+  label: string,
+): Promise<void> {
   const dropdown = await openActivityViewDropdown(page);
   await dropdown.locator(".filter-item", { hasText: label }).click();
 }
 
-async function captureWindowOpen(page: Page): Promise<() => Promise<string | null>> {
+async function captureWindowOpen(
+  page: Page,
+): Promise<() => Promise<string | null>> {
   // Intercept window.open before the click handler runs so we can assert
   // exactly what URL the row's link button would have opened.
   await page.evaluate(() => {
@@ -65,11 +70,14 @@ test.describe("activity row link button", () => {
     page,
   }) => {
     await page.goto("/");
-    await page.locator(".activity-table .activity-row").first()
+    await page
+      .locator(".activity-table .activity-row")
+      .first()
       .waitFor({ state: "visible", timeout: 10_000 });
     await selectActivityViewItem(page, "Threaded");
     await page.keyboard.press("Escape");
-    const itemRow = page.locator(".threaded-view .item-row:not(.branch-activity-row)")
+    const itemRow = page
+      .locator(".threaded-view .item-row:not(.branch-activity-row)")
       .first();
     await itemRow.waitFor({ state: "visible", timeout: 10_000 });
 

@@ -18,7 +18,9 @@ function searchParams(search: string): URLSearchParams {
   return new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
 }
 
-export function parseActivitySelection(search: string): ActivitySelection | null {
+export function parseActivitySelection(
+  search: string,
+): ActivitySelection | null {
   const sp = searchParams(search);
   const selected = sp.get("selected");
   if (!selected) return null;

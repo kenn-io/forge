@@ -25,10 +25,14 @@ async function selectActivityViewItem(
 
 async function gotoThreadedActivity(page: Page): Promise<void> {
   await page.goto("/");
-  await page.locator(".activity-table .activity-row").first()
+  await page
+    .locator(".activity-table .activity-row")
+    .first()
     .waitFor({ state: "visible", timeout: 10_000 });
   await selectActivityViewItem(page, "Threaded");
-  await page.locator(".threaded-view .item-row").first()
+  await page
+    .locator(".threaded-view .item-row")
+    .first()
     .waitFor({ state: "visible", timeout: 10_000 });
 }
 
@@ -45,8 +49,9 @@ test.describe("threaded activity collapse", () => {
 
     await page.getByRole("button", { name: "Collapse all" }).click();
     await expect(eventRows).toHaveCount(0);
-    await expect(page.locator(".threaded-view .item-row").first())
-      .toBeVisible();
+    await expect(
+      page.locator(".threaded-view .item-row").first(),
+    ).toBeVisible();
 
     // The control flips to Expand all; clicking it brings event rows back.
     // The activity feed may refresh in the background during the full e2e suite,
@@ -67,8 +72,11 @@ test.describe("threaded activity collapse", () => {
     await page.getByRole("button", { name: "Collapse all" }).click();
     await expect(eventRows).toHaveCount(0);
 
-    await page.locator(".threaded-view .item-row").first()
-      .locator(".thread-caret").click();
+    await page
+      .locator(".threaded-view .item-row")
+      .first()
+      .locator(".thread-caret")
+      .click();
 
     // Only the clicked item's events reappear; the rest stay collapsed.
     await expect(eventRows.first()).toBeVisible();

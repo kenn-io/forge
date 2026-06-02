@@ -1,5 +1,12 @@
 import { cleanup, fireEvent, render } from "@testing-library/svelte";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vite-plus/test";
 import type { ActivityItem } from "../api/types.js";
 import MobileActivityView from "./MobileActivityView.svelte";
 
@@ -33,7 +40,8 @@ function branchActivityItem(
       name: "widgets",
       repo_path: "acme/widgets",
     },
-    activity_url: "https://github.com/acme/widgets/commit/a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+    activity_url:
+      "https://github.com/acme/widgets/commit/a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
     ...overrides,
   } as ActivityItem;
 }
@@ -41,9 +49,11 @@ function branchActivityItem(
 const items = vi.hoisted(() => ({ value: [] as ActivityItem[] }));
 const onSelectItem = vi.hoisted(() => vi.fn());
 const hideOrgName = vi.hoisted(() => ({ value: false }));
-const setHideOrgName = vi.hoisted(() => vi.fn((value: boolean) => {
-  hideOrgName.value = value;
-}));
+const setHideOrgName = vi.hoisted(() =>
+  vi.fn((value: boolean) => {
+    hideOrgName.value = value;
+  }),
+);
 
 vi.mock("../context.js", () => ({
   getStores: () => ({
@@ -152,9 +162,7 @@ describe("MobileActivityView branch activity", () => {
   });
 
   it("does not select a PR or issue when tapping a branch event", async () => {
-    const open = vi
-      .spyOn(window, "open")
-      .mockImplementation(() => null);
+    const open = vi.spyOn(window, "open").mockImplementation(() => null);
 
     const { container } = render(MobileActivityView, {
       props: { onSelectItem },

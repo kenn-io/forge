@@ -1,5 +1,12 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vite-plus/test";
 
 const mockPost = vi.fn();
 const mockRefreshDetailOnly = vi.fn();
@@ -36,7 +43,15 @@ describe("ApproveWorkflowsButton", () => {
 
   it("renders a count when more than one workflow needs approval", () => {
     render(ApproveWorkflowsButton, {
-      props: { provider: "github", platformHost: "github.com", owner: "acme", name: "widget", repoPath: "acme/widget", number: 7, count: 2 },
+      props: {
+        provider: "github",
+        platformHost: "github.com",
+        owner: "acme",
+        name: "widget",
+        repoPath: "acme/widget",
+        number: 7,
+        count: 2,
+      },
     });
 
     expect(
@@ -50,7 +65,15 @@ describe("ApproveWorkflowsButton", () => {
     });
 
     render(ApproveWorkflowsButton, {
-      props: { provider: "github", platformHost: "github.com", owner: "acme", name: "widget", repoPath: "acme/widget", number: 7, count: 2 },
+      props: {
+        provider: "github",
+        platformHost: "github.com",
+        owner: "acme",
+        name: "widget",
+        repoPath: "acme/widget",
+        number: 7,
+        count: 2,
+      },
     });
 
     await fireEvent.click(
@@ -84,7 +107,15 @@ describe("ApproveWorkflowsButton", () => {
     });
 
     render(ApproveWorkflowsButton, {
-      props: { provider: "github", platformHost: "github.com", owner: "acme", name: "widget", repoPath: "acme/widget", number: 7, count: 1 },
+      props: {
+        provider: "github",
+        platformHost: "github.com",
+        owner: "acme",
+        name: "widget",
+        repoPath: "acme/widget",
+        number: 7,
+        count: 1,
+      },
     });
 
     await fireEvent.click(

@@ -39,9 +39,7 @@ export interface NavigateEvent {
   repo?: { host?: string; owner: string; name: string };
 }
 
-export type NavigateCallback = (
-  event: string | NavigateEvent,
-) => void;
+export type NavigateCallback = (event: string | NavigateEvent) => void;
 
 export interface WorkspaceCommandResult {
   ok: boolean;

@@ -101,17 +101,14 @@ const VALID_TAB_WIDTHS = [1, 2, 4, 8];
 const VALID_DIFF_VIEW_MODES: DiffViewMode[] = ["unified", "split"];
 
 function loadTabWidth(): number {
-  const raw = parseInt(
-    safeGetItem("diff-tab-width") ?? "4",
-    10,
-  );
+  const raw = parseInt(safeGetItem("diff-tab-width") ?? "4", 10);
   return VALID_TAB_WIDTHS.includes(raw) ? raw : 4;
 }
 
 function loadDiffViewMode(): DiffViewMode {
   const raw = safeGetItem("diff-view-mode");
   return VALID_DIFF_VIEW_MODES.includes(raw as DiffViewMode)
-    ? raw as DiffViewMode
+    ? (raw as DiffViewMode)
     : "unified";
 }
 
@@ -120,20 +117,13 @@ function loadCollapsedFiles(): Record<string, string[]> {
     const raw = safeGetItem("diff-collapsed-files");
     if (!raw) return {};
     const parsed: unknown = JSON.parse(raw);
-    if (
-      typeof parsed !== "object" ||
-      parsed === null ||
-      Array.isArray(parsed)
-    )
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed))
       return {};
     const result: Record<string, string[]> = {};
     for (const [key, value] of Object.entries(
       parsed as Record<string, unknown>,
     )) {
-      if (
-        Array.isArray(value) &&
-        value.every((v) => typeof v === "string")
-      ) {
+      if (Array.isArray(value) && value.every((v) => typeof v === "string")) {
         result[key] = value as string[];
       }
     }
@@ -143,9 +133,7 @@ function loadCollapsedFiles(): Record<string, string[]> {
   }
 }
 
-function saveCollapsedFiles(
-  cf: Record<string, string[]>,
-): void {
+function saveCollapsedFiles(cf: Record<string, string[]>): void {
   safeSetItem("diff-collapsed-files", JSON.stringify(cf));
 }
 
@@ -167,19 +155,11 @@ export function createDiffStore(opts?: DiffStoreOptions) {
   let fileListAbortController: AbortController | null = null;
 
   let tabWidth = $state(loadTabWidth());
-  let wordWrap = $state(
-    safeGetItem("diff-word-wrap") === "true",
-  );
-  let richPreview = $state(
-    safeGetItem("diff-rich-preview") === "true",
-  );
-  let hideWhitespace = $state(
-    safeGetItem("diff-hide-whitespace") === "true",
-  );
+  let wordWrap = $state(safeGetItem("diff-word-wrap") === "true");
+  let richPreview = $state(safeGetItem("diff-rich-preview") === "true");
+  let hideWhitespace = $state(safeGetItem("diff-hide-whitespace") === "true");
   let viewMode = $state<DiffViewMode>(loadDiffViewMode());
-  let collapsedFiles = $state<Record<string, string[]>>(
-    loadCollapsedFiles(),
-  );
+  let collapsedFiles = $state<Record<string, string[]>>(loadCollapsedFiles());
   let activeFile = $state<string | null>(null);
   let scrollTarget = $state<DiffScrollTarget | null>(null);
   let scrolling = $state(false);
@@ -312,9 +292,10 @@ export function createDiffStore(opts?: DiffStoreOptions) {
 
   function visibleCollapsibleFilePaths(): string[] {
     const visibleDiffFiles = getVisibleDiffFiles();
-    const visibleFiles = visibleDiffFiles.length > 0
-      ? visibleDiffFiles
-      : getVisibleFileList()?.files ?? [];
+    const visibleFiles =
+      visibleDiffFiles.length > 0
+        ? visibleDiffFiles
+        : (getVisibleFileList()?.files ?? []);
     return visibleFiles.map((file) => file.path);
   }
 
@@ -453,8 +434,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     } catch (err) {
       if (ac.signal.aborted) return;
       if (abortController !== ac) return;
-      storeError =
-        err instanceof Error ? err.message : String(err);
+      storeError = err instanceof Error ? err.message : String(err);
       diff = null;
     } finally {
       if (!ac.signal.aborted && abortController === ac) {
@@ -505,10 +485,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
 
     let next = collapsedFiles[key] ?? [];
     if (nextCollapsed) {
-      next = [
-        ...next,
-        ...paths.filter((path) => !next.includes(path)),
-      ];
+      next = [...next, ...paths.filter((path) => !next.includes(path))];
     } else {
       next = next.filter((path) => !paths.includes(path));
     }
@@ -605,12 +582,8 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     };
   }
 
-  function setActiveIfNeeded(
-    files: { path: string }[] | undefined,
-  ): void {
-    if (
-      !files?.some((f) => f.path === activeFile)
-    ) {
+  function setActiveIfNeeded(files: { path: string }[] | undefined): void {
+    if (!files?.some((f) => f.path === activeFile)) {
       activeFile = files?.[0]?.path ?? null;
     }
   }
@@ -769,8 +742,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     stacked = false,
   ): Promise<void> {
     const workspaceScopeChanged =
-      workspaceID !== currentWorkspaceID ||
-      base !== currentWorkspaceBase;
+      workspaceID !== currentWorkspaceID || base !== currentWorkspaceBase;
     currentWorkspaceID = workspaceID;
     currentWorkspaceBase = base;
     currentWorkspaceStacked = stacked;
@@ -928,7 +900,10 @@ export function createDiffStore(opts?: DiffStoreOptions) {
 
   async function loadCommits(): Promise<void> {
     if (commits || commitsLoading) return;
-    if (!currentWorkspaceID && (!currentOwner || !currentName || !currentNumber)) {
+    if (
+      !currentWorkspaceID &&
+      (!currentOwner || !currentName || !currentNumber)
+    ) {
       return;
     }
 
@@ -941,24 +916,19 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     const ref = currentRouteRef();
     try {
       const { data, error, response } = workspaceID
-        ? await apiClient.GET(
-          "/workspaces/{id}/commits",
-          {
+        ? await apiClient.GET("/workspaces/{id}/commits", {
             params: { path: { id: workspaceID } },
-          },
-        )
-        : await apiClient.GET(
-          providerItemPath("pulls", ref, "/commits"),
-          {
+          })
+        : await apiClient.GET(providerItemPath("pulls", ref, "/commits"), {
             params: { path: { ...providerRouteParams(ref), number } },
-          },
-        );
+          });
       if (
         currentWorkspaceID !== workspaceID ||
         currentOwner !== owner ||
         currentName !== name ||
         currentNumber !== number
-      ) return;
+      )
+        return;
       if (!data) {
         throw new Error(apiErrorMessage(error, `HTTP ${response.status}`));
       }
@@ -967,7 +937,8 @@ export function createDiffStore(opts?: DiffStoreOptions) {
         currentOwner !== owner ||
         currentName !== name ||
         currentNumber !== number
-      ) return;
+      )
+        return;
       commits = data.commits ?? [];
     } catch (err) {
       if (
@@ -975,7 +946,8 @@ export function createDiffStore(opts?: DiffStoreOptions) {
         currentOwner !== owner ||
         currentName !== name ||
         currentNumber !== number
-      ) return;
+      )
+        return;
       commitsError = err instanceof Error ? err.message : String(err);
     } finally {
       if (
@@ -1009,7 +981,12 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     scope = { kind: "commit", sha };
     clearFilePreviewCache();
     if (currentOwner && currentName && currentNumber) {
-      void loadDiff(currentOwner, currentName, currentNumber, currentRouteRef());
+      void loadDiff(
+        currentOwner,
+        currentName,
+        currentNumber,
+        currentRouteRef(),
+      );
     } else if (currentWorkspaceID) {
       void loadWorkspaceDiff(
         currentWorkspaceID,
@@ -1024,11 +1001,17 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     const fromIdx = commits.findIndex((c) => c.sha === fromSha);
     const toIdx = commits.findIndex((c) => c.sha === toSha);
     if (fromIdx === -1 || toIdx === -1) return;
-    const [older, newer] = fromIdx > toIdx ? [fromSha, toSha] : [toSha, fromSha];
+    const [older, newer] =
+      fromIdx > toIdx ? [fromSha, toSha] : [toSha, fromSha];
     scope = { kind: "range", fromSha: older, toSha: newer };
     clearFilePreviewCache();
     if (currentOwner && currentName && currentNumber) {
-      void loadDiff(currentOwner, currentName, currentNumber, currentRouteRef());
+      void loadDiff(
+        currentOwner,
+        currentName,
+        currentNumber,
+        currentRouteRef(),
+      );
     } else if (currentWorkspaceID) {
       void loadWorkspaceDiff(
         currentWorkspaceID,
@@ -1042,7 +1025,12 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     scope = { kind: "head" };
     clearFilePreviewCache();
     if (currentOwner && currentName && currentNumber) {
-      void loadDiff(currentOwner, currentName, currentNumber, currentRouteRef());
+      void loadDiff(
+        currentOwner,
+        currentName,
+        currentNumber,
+        currentRouteRef(),
+      );
     } else if (currentWorkspaceID) {
       void loadWorkspaceDiff(
         currentWorkspaceID,

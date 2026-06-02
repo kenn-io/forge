@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import {
   copyFileSync,
   linkSync,
@@ -31,7 +31,9 @@ function writeFakeBun(
     } catch {
       copyFileSync(process.execPath, bunPath);
     }
-    writeFileSync(path.join(frontendDir, "run"), windowsBody ?? body, { flag: "wx" });
+    writeFileSync(path.join(frontendDir, "run"), windowsBody ?? body, {
+      flag: "wx",
+    });
     return;
   }
   writeFileSync(path.join(binDir, "bun"), body, { mode: 0o755, flag: "wx" });
@@ -197,15 +199,33 @@ describe("ensureEmbeddedFrontend", () => {
     mkdirSync(path.join(frontendDist, "assets"), { recursive: true });
     mkdirSync(embeddedDist, { recursive: true });
 
-    writeFileSync(path.join(frontendDist, "index.html"), "<html><body>ok</body></html>", { flag: "wx" });
-    writeFileSync(path.join(frontendDist, "assets", "app.js"), "console.log('ok');", { flag: "wx" });
+    writeFileSync(
+      path.join(frontendDist, "index.html"),
+      "<html><body>ok</body></html>",
+      {
+        flag: "wx",
+      },
+    );
+    writeFileSync(
+      path.join(frontendDist, "assets", "app.js"),
+      "console.log('ok');",
+      {
+        flag: "wx",
+      },
+    );
     writeFileSync(path.join(embeddedDist, "stub.html"), "stub", { flag: "wx" });
 
     await ensureEmbeddedFrontend(dir);
 
-    await expect(readFile(path.join(embeddedDist, "index.html"), "utf8")).resolves.toContain("<body>ok</body>");
-    await expect(readFile(path.join(embeddedDist, "assets", "app.js"), "utf8")).resolves.toContain("console.log");
-    await expect(readFile(path.join(embeddedDist, "stub.html"), "utf8")).resolves.toBe("ok\n");
+    await expect(
+      readFile(path.join(embeddedDist, "index.html"), "utf8"),
+    ).resolves.toContain("<body>ok</body>");
+    await expect(
+      readFile(path.join(embeddedDist, "assets", "app.js"), "utf8"),
+    ).resolves.toContain("console.log");
+    await expect(
+      readFile(path.join(embeddedDist, "stub.html"), "utf8"),
+    ).resolves.toBe("ok\n");
   });
 
   it("refreshes embedded assets when frontend/dist is newer", async () => {
@@ -229,8 +249,12 @@ describe("ensureEmbeddedFrontend", () => {
 
     const embeddedIndex = path.join(embeddedDist, "index.html");
     const frontendIndex = path.join(frontendDist, "index.html");
-    writeFileSync(embeddedIndex, "<html><body>old</body></html>", { flag: "wx" });
-    writeFileSync(frontendIndex, "<html><body>new</body></html>", { flag: "wx" });
+    writeFileSync(embeddedIndex, "<html><body>old</body></html>", {
+      flag: "wx",
+    });
+    writeFileSync(frontendIndex, "<html><body>new</body></html>", {
+      flag: "wx",
+    });
 
     const oldTime = new Date("2026-01-01T00:00:00Z");
     const newTime = new Date("2026-01-01T00:00:10Z");
@@ -239,8 +263,12 @@ describe("ensureEmbeddedFrontend", () => {
 
     await ensureEmbeddedFrontend(dir);
 
-    await expect(readFile(embeddedIndex, "utf8")).resolves.toContain("<body>new</body>");
-    await expect(readFile(path.join(embeddedDist, "stub.html"), "utf8")).resolves.toBe("ok\n");
+    await expect(readFile(embeddedIndex, "utf8")).resolves.toContain(
+      "<body>new</body>",
+    );
+    await expect(
+      readFile(path.join(embeddedDist, "stub.html"), "utf8"),
+    ).resolves.toBe("ok\n");
   });
 
   it("rebuilds frontend/dist when frontend sources are newer", async () => {
@@ -277,8 +305,12 @@ describe("ensureEmbeddedFrontend", () => {
     const frontendIndex = path.join(frontendDist, "index.html");
     const embeddedIndex = path.join(embeddedDist, "index.html");
     const sourceFile = path.join(frontendSrc, "App.svelte");
-    writeFileSync(frontendIndex, "<html><body>old dist</body></html>", { flag: "wx" });
-    writeFileSync(embeddedIndex, "<html><body>old embed</body></html>", { flag: "wx" });
+    writeFileSync(frontendIndex, "<html><body>old dist</body></html>", {
+      flag: "wx",
+    });
+    writeFileSync(embeddedIndex, "<html><body>old embed</body></html>", {
+      flag: "wx",
+    });
     writeFileSync(sourceFile, "<script></script>", { flag: "wx" });
 
     const oldTime = new Date("2026-01-01T00:00:00Z");
@@ -290,7 +322,9 @@ describe("ensureEmbeddedFrontend", () => {
     const restorePath = prependExecutablePath(binDir);
     try {
       await ensureEmbeddedFrontend(dir);
-      await expect(readFile(embeddedIndex, "utf8")).resolves.toContain("<body>rebuilt</body>");
+      await expect(readFile(embeddedIndex, "utf8")).resolves.toContain(
+        "<body>rebuilt</body>",
+      );
     } finally {
       restorePath();
     }
@@ -332,8 +366,12 @@ describe("ensureEmbeddedFrontend", () => {
     const frontendIndex = path.join(frontendDist, "index.html");
     const embeddedIndex = path.join(embeddedDist, "index.html");
     const sourceFile = path.join(frontendSrc, "App.svelte");
-    writeFileSync(frontendIndex, "<html><body>old dist</body></html>", { flag: "wx" });
-    writeFileSync(embeddedIndex, "<html><body>old embed</body></html>", { flag: "wx" });
+    writeFileSync(frontendIndex, "<html><body>old dist</body></html>", {
+      flag: "wx",
+    });
+    writeFileSync(embeddedIndex, "<html><body>old embed</body></html>", {
+      flag: "wx",
+    });
     writeFileSync(sourceFile, "<script></script>", { flag: "wx" });
 
     const oldTime = new Date("2026-01-01T00:00:00Z");
@@ -377,7 +415,9 @@ describe("ensureEmbeddedFrontend", () => {
     const frontendIndex = path.join(frontendDist, "index.html");
     const embeddedIndex = path.join(embeddedDist, "index.html");
     const sourceFile = path.join(frontendSrc, "App.svelte");
-    writeFileSync(frontendIndex, "<html><body>existing dist</body></html>", { flag: "wx" });
+    writeFileSync(frontendIndex, "<html><body>existing dist</body></html>", {
+      flag: "wx",
+    });
     writeFileSync(sourceFile, "<script></script>", { flag: "wx" });
 
     const oldTime = new Date("2026-01-01T00:00:00Z");
@@ -392,7 +432,9 @@ describe("ensureEmbeddedFrontend", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
       await ensureEmbeddedFrontend(dir);
-      await expect(readFile(embeddedIndex, "utf8")).resolves.toContain("<body>existing dist</body>");
+      await expect(readFile(embeddedIndex, "utf8")).resolves.toContain(
+        "<body>existing dist</body>",
+      );
       expect(warnSpy).toHaveBeenCalled();
     } finally {
       restorePath();

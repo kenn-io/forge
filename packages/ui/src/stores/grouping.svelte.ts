@@ -9,11 +9,7 @@ const LEGACY_KEY = "middleman:groupByRepo";
 function readFromStorage(): GroupingMode {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (
-      raw === "flat" ||
-      raw === "byRepo" ||
-      raw === "byWorkflow"
-    ) {
+    if (raw === "flat" || raw === "byRepo" || raw === "byWorkflow") {
       return raw;
     }
     // Migrate from legacy boolean key.
@@ -83,6 +79,4 @@ export function createGroupingStore() {
   };
 }
 
-export type GroupingStore = ReturnType<
-  typeof createGroupingStore
->;
+export type GroupingStore = ReturnType<typeof createGroupingStore>;

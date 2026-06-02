@@ -1,5 +1,12 @@
 import { cleanup, render, waitFor } from "@testing-library/svelte";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vite-plus/test";
 
 const {
   ghosttyTerminalCtor,
@@ -77,7 +84,7 @@ vi.mock("@middleman/ui", () => ({
 }));
 
 vi.mock("@xterm/xterm", () => ({
-  Terminal: vi.fn().mockImplementation((options) => {
+  Terminal: vi.fn().mockImplementation(function (options) {
     xtermTerminalCtor(options);
     const terminal = {
       cols: 80,
@@ -102,7 +109,7 @@ vi.mock("@xterm/xterm", () => ({
 }));
 
 vi.mock("@xterm/addon-fit", () => ({
-  FitAddon: vi.fn().mockImplementation(() => {
+  FitAddon: vi.fn().mockImplementation(function () {
     const addon = { fit: vi.fn() };
     xtermFitAddons.push(addon);
     return addon;
@@ -110,14 +117,14 @@ vi.mock("@xterm/addon-fit", () => ({
 }));
 
 vi.mock("@xterm/addon-ligatures/lib/addon-ligatures.mjs", () => ({
-  LigaturesAddon: vi.fn().mockImplementation(() => {
+  LigaturesAddon: vi.fn().mockImplementation(function () {
     ligaturesAddonCtor();
     return { dispose: vi.fn() };
   }),
 }));
 
 vi.mock("@xterm/addon-webgl", () => ({
-  WebglAddon: vi.fn().mockImplementation((options) => {
+  WebglAddon: vi.fn().mockImplementation(function (options) {
     mockWebglCtor(options);
     return {
       dispose: vi.fn(),
@@ -130,10 +137,12 @@ vi.mock("@xterm/xterm/css/xterm.css", () => ({}));
 
 vi.mock("ghostty-web", () => ({
   init: (...args: []) => mockGhosttyInit(...args),
-  FitAddon: vi.fn().mockImplementation(() => ({
-    fit: vi.fn(),
-  })),
-  Terminal: vi.fn().mockImplementation((options) => {
+  FitAddon: vi.fn().mockImplementation(function () {
+    return {
+      fit: vi.fn(),
+    };
+  }),
+  Terminal: vi.fn().mockImplementation(function (options) {
     ghosttyTerminalCtor(options);
     return {
       cols: 80,
@@ -366,9 +375,7 @@ describe("TerminalPane", () => {
     Object.defineProperty(event, "clipboardData", {
       value: {
         getData: vi.fn((type: string) =>
-          type === "text/plain"
-            ? "first\x1b[201~\nsecond\nthird"
-            : "",
+          type === "text/plain" ? "first\x1b[201~\nsecond\nthird" : "",
         ),
       },
     });

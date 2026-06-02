@@ -1,10 +1,5 @@
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-} from "@testing-library/svelte";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import SplitResizeHandle from "./SplitResizeHandle.svelte";
 
 describe("SplitResizeHandle", () => {
@@ -24,7 +19,9 @@ describe("SplitResizeHandle", () => {
       name: "Resize sidebar",
     });
     expect(handle.classList.contains("split-resize-handle")).toBe(true);
-    expect(handle.classList.contains("activity-split-resize-handle")).toBe(true);
+    expect(handle.classList.contains("activity-split-resize-handle")).toBe(
+      true,
+    );
     expect(handle.className).not.toContain(",");
   });
 

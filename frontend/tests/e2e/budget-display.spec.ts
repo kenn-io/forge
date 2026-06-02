@@ -15,7 +15,9 @@ test("status bar shows budget bars with known data", async ({ page }) => {
   await expect(bars.getByText("GQL")).toBeVisible();
 });
 
-test("budget bars show middleman count when budget enabled", async ({ page }) => {
+test("budget bars show middleman count when budget enabled", async ({
+  page,
+}) => {
   await page.goto("/pulls");
 
   const bars = page.locator(".budget-bars");
@@ -54,15 +56,18 @@ test("popover dismisses on click outside", async ({ page }) => {
   // Popover attaches its outside-click listener via setTimeout(0) to
   // avoid catching the opening click. Flush one animation frame so the
   // listener is registered before we click outside.
-  await page.evaluate(() => new Promise<void>((resolve) =>
-    requestAnimationFrame(() => resolve())
-  ));
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
+  );
 
   await page.locator(".app-main").click();
   await expect(page.locator(".budget-popover")).not.toBeVisible();
 });
 
-test("popover opens via keyboard (Enter) and closes via Escape", async ({ page }) => {
+test("popover opens via keyboard (Enter) and closes via Escape", async ({
+  page,
+}) => {
   await page.goto("/pulls");
 
   const bars = page.locator(".budget-bars");
@@ -86,7 +91,9 @@ test("popover opens via keyboard (Space)", async ({ page }) => {
   await expect(page.locator(".budget-popover")).toBeVisible();
 });
 
-test("mixed known/unknown hosts show worst-case from known only", async ({ page }) => {
+test("mixed known/unknown hosts show worst-case from known only", async ({
+  page,
+}) => {
   await page.route("**/api/v1/rate-limits", async (route) => {
     await route.fulfill({
       status: 200,
@@ -156,12 +163,18 @@ test("mixed known/unknown hosts show worst-case from known only", async ({ page 
 
   // Unknown host's health dot must be tagged unknown so it renders
   // with the muted color token instead of a budget color.
-  const ghHealthDot = popover.locator(".host-section").filter({
-    hasText: "github.com",
-  }).locator(".health-dot");
-  const gheHealthDot = popover.locator(".host-section").filter({
-    hasText: "ghe.corp.example.com",
-  }).locator(".health-dot");
+  const ghHealthDot = popover
+    .locator(".host-section")
+    .filter({
+      hasText: "github.com",
+    })
+    .locator(".health-dot");
+  const gheHealthDot = popover
+    .locator(".host-section")
+    .filter({
+      hasText: "ghe.corp.example.com",
+    })
+    .locator(".health-dot");
   await expect(ghHealthDot).not.toHaveClass(/health-dot--unknown/);
   await expect(gheHealthDot).toHaveClass(/health-dot--unknown/);
 });
@@ -208,7 +221,9 @@ test("budget bars show unknown state when host not known", async ({ page }) => {
   await expect(bars.getByText("req/hr")).not.toBeVisible();
 });
 
-test("paused host shows red health dot and sync paused indicator", async ({ page }) => {
+test("paused host shows red health dot and sync paused indicator", async ({
+  page,
+}) => {
   await page.route("**/api/v1/rate-limits", async (route) => {
     await route.fulfill({
       status: 200,
@@ -311,13 +326,18 @@ test("paused multi-host shows red health dot in popover", async ({ page }) => {
   await expect(popover).toBeVisible();
 
   // Paused host (github.com) health dot should be red
-  const pausedDot = popover.locator(".host-section").filter({
-    hasText: "github.com",
-  }).locator(".health-dot");
+  const pausedDot = popover
+    .locator(".host-section")
+    .filter({
+      hasText: "github.com",
+    })
+    .locator(".health-dot");
   await expect(pausedDot).toHaveCSS("background-color", "rgb(248, 113, 113)");
 });
 
-test("GQL known but REST unknown still shows budget count", async ({ page }) => {
+test("GQL known but REST unknown still shows budget count", async ({
+  page,
+}) => {
   await page.route("**/api/v1/rate-limits", async (route) => {
     await route.fulfill({
       status: 200,
@@ -359,7 +379,9 @@ test("GQL known but REST unknown still shows budget count", async ({ page }) => 
   await expect(bars.getByText("10 req/hr")).toBeVisible();
 });
 
-test("stale host excluded from compact bars, fresh host drives ratio", async ({ page }) => {
+test("stale host excluded from compact bars, fresh host drives ratio", async ({
+  page,
+}) => {
   await page.route("**/api/v1/rate-limits", async (route) => {
     await route.fulfill({
       status: 200,
@@ -420,8 +442,11 @@ test("stale host excluded from compact bars, fresh host drives ratio", async ({ 
   await bars.click();
   const popover = page.getByRole("dialog", { name: "API Budget" });
   await expect(popover).toBeVisible();
-  const staleDot = popover.locator(".host-section").filter({
-    hasText: "ghe.example.com",
-  }).locator(".health-dot");
+  const staleDot = popover
+    .locator(".host-section")
+    .filter({
+      hasText: "ghe.example.com",
+    })
+    .locator(".health-dot");
   await expect(staleDot).toHaveClass(/health-dot--unknown/);
 });

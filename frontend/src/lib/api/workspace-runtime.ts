@@ -16,7 +16,7 @@ export type RuntimeFetch = typeof fetch;
 
 function basePath(): string {
   const path =
-    typeof window !== "undefined" ? window.__BASE_PATH__ ?? "/" : "/";
+    typeof window !== "undefined" ? (window.__BASE_PATH__ ?? "/") : "/";
   return path.replace(/\/$/, "");
 }
 
@@ -32,14 +32,11 @@ function workspaceRuntimeURL(workspaceId: string): string {
   return `${apiBaseUrl()}/workspaces/${encodeURIComponent(workspaceId)}/runtime`;
 }
 
-async function readJSON<T>(
-  response: Response,
-  fallback: string,
-): Promise<T> {
+async function readJSON<T>(response: Response, fallback: string): Promise<T> {
   if (response.ok) {
     return (await response.json()) as T;
   }
-  const body = await response.json().catch(() => ({})) as {
+  const body = (await response.json().catch(() => ({}))) as {
     detail?: string;
     title?: string;
   };
@@ -132,11 +129,8 @@ export function workspaceSessionWebSocketPath(
   );
 }
 
-export function workspaceTmuxWebSocketPath(
-  workspaceId: string,
-): string {
+export function workspaceTmuxWebSocketPath(workspaceId: string): string {
   return (
-    `${wsBaseUrl()}/workspaces/${encodeURIComponent(workspaceId)}` +
-    "/terminal"
+    `${wsBaseUrl()}/workspaces/${encodeURIComponent(workspaceId)}` + "/terminal"
   );
 }

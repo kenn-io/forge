@@ -1,9 +1,15 @@
-import { describe, expect, it, vi } from "vitest";
-import type { Mock } from "vitest";
+import { describe, expect, it, vi } from "vite-plus/test";
+import type { Mock } from "vite-plus/test";
 
 import {
-  canApprovePR, canApproveWorkflows, canMarkReady, canOpenMerge,
-  runApprovePR, runApproveWorkflows, runMarkReady, runOpenMerge,
+  canApprovePR,
+  canApproveWorkflows,
+  canMarkReady,
+  canOpenMerge,
+  runApprovePR,
+  runApproveWorkflows,
+  runMarkReady,
+  runOpenMerge,
   type PRDetailActionInput,
 } from "./keyboard-actions.js";
 
@@ -80,8 +86,8 @@ interface BuildOpts {
 }
 
 function buildInput(opts: BuildOpts = {}): PRDetailActionInput {
-  const client = (opts.client ?? fakeClient()) as unknown as
-    PRDetailActionInput["client"];
+  const client = (opts.client ??
+    fakeClient()) as unknown as PRDetailActionInput["client"];
   const stores = opts.stores ?? fakeStores();
   return {
     pr: {
@@ -103,14 +109,16 @@ function buildInput(opts: BuildOpts = {}): PRDetailActionInput {
       markReady: opts.markReady ?? true,
       approveWorkflows: opts.approveWorkflows ?? true,
     },
-    repoSettings: opts.repoSettings ?? (opts.withRepoSettings === false
-      ? null
-      : {
-        allowSquash: true,
-        allowMerge: true,
-        allowRebase: true,
-        viewerCanMerge: true,
-      }),
+    repoSettings:
+      opts.repoSettings ??
+      (opts.withRepoSettings === false
+        ? null
+        : {
+            allowSquash: true,
+            allowMerge: true,
+            allowRebase: true,
+            viewerCanMerge: true,
+          }),
     stale: opts.stale ?? false,
     stores: stores as unknown as PRDetailActionInput["stores"],
     client,
@@ -158,9 +166,13 @@ describe("runApprovePR", () => {
   it("POSTs to /approve and refreshes detail+pulls on success", async () => {
     const client = fakeClient();
     const stores = fakeStores();
-    await runApprovePR(buildInput({
-      client, stores, approveCommentBody: " hello ",
-    }));
+    await runApprovePR(
+      buildInput({
+        client,
+        stores,
+        approveCommentBody: " hello ",
+      }),
+    );
 
     expect(client.POST).toHaveBeenCalledTimes(1);
     const [path, init] = client.POST.mock.calls[0];
@@ -178,7 +190,9 @@ describe("runApprovePR", () => {
     });
     expect(stores.detail.loadDetail).toHaveBeenCalledTimes(1);
     expect(stores.detail.loadDetail.mock.calls[0]).toEqual([
-      "octo", "repo", 42,
+      "octo",
+      "repo",
+      42,
       {
         provider: "github",
         platformHost: "github.com",
@@ -190,9 +204,12 @@ describe("runApprovePR", () => {
 
   it("uses host route when platformHost differs from default", async () => {
     const client = fakeClient();
-    await runApprovePR(buildInput({
-      client, platformHost: "ghe.example.com",
-    }));
+    await runApprovePR(
+      buildInput({
+        client,
+        platformHost: "ghe.example.com",
+      }),
+    );
     const [path, init] = client.POST.mock.calls[0];
     expect(path).toBe(
       "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/approve",
@@ -208,9 +225,9 @@ describe("runApprovePR", () => {
       response: new Response("{}"),
     });
     const onError = vi.fn();
-    await expect(
-      runApprovePR(buildInput({ client, onError })),
-    ).rejects.toThrow("boom");
+    await expect(runApprovePR(buildInput({ client, onError }))).rejects.toThrow(
+      "boom",
+    );
     expect(onError).toHaveBeenCalledWith("boom");
   });
 
@@ -225,8 +242,7 @@ describe("runApprovePR", () => {
 
 describe("canOpenMerge", () => {
   it("returns false when repoSettings has not loaded", () => {
-    expect(canOpenMerge(buildInput({ withRepoSettings: false })))
-      .toBe(false);
+    expect(canOpenMerge(buildInput({ withRepoSettings: false }))).toBe(false);
   });
 
   it("returns false for closed PR", () => {
@@ -239,21 +255,21 @@ describe("canOpenMerge", () => {
 
   it("returns false when the viewer lacks repo merge permission", () => {
     expect(
-      canOpenMerge(buildInput({
-        repoSettings: {
-          allowSquash: true,
-          allowMerge: true,
-          allowRebase: true,
-          viewerCanMerge: false,
-        },
-      })),
+      canOpenMerge(
+        buildInput({
+          repoSettings: {
+            allowSquash: true,
+            allowMerge: true,
+            allowRebase: true,
+            viewerCanMerge: false,
+          },
+        }),
+      ),
     ).toBe(false);
   });
 
   it("returns false when PR has merge conflicts (dirty)", () => {
-    expect(
-      canOpenMerge(buildInput({ mergeableState: "dirty" })),
-    ).toBe(false);
+    expect(canOpenMerge(buildInput({ mergeableState: "dirty" }))).toBe(false);
   });
 
   it("returns true for clean open PR with merge capability", () => {
@@ -267,20 +283,24 @@ describe("runOpenMerge", () => {
   it("flips setMergeModalOpen(true) and calls onAfterOpenMerge", () => {
     const setOpen = vi.fn();
     const after = vi.fn();
-    runOpenMerge(buildInput({
-      setMergeModalOpen: setOpen,
-      onAfterOpenMerge: after,
-    }));
+    runOpenMerge(
+      buildInput({
+        setMergeModalOpen: setOpen,
+        onAfterOpenMerge: after,
+      }),
+    );
     expect(setOpen).toHaveBeenCalledWith(true);
     expect(after).toHaveBeenCalledTimes(1);
   });
 
   it("does nothing when canOpenMerge is false (e.g. dirty)", () => {
     const setOpen = vi.fn();
-    runOpenMerge(buildInput({
-      mergeableState: "dirty",
-      setMergeModalOpen: setOpen,
-    }));
+    runOpenMerge(
+      buildInput({
+        mergeableState: "dirty",
+        setMergeModalOpen: setOpen,
+      }),
+    );
     expect(setOpen).not.toHaveBeenCalled();
   });
 });
@@ -293,9 +313,9 @@ describe("canMarkReady", () => {
   });
 
   it("returns false when viewer lacks markReady capability", () => {
-    expect(
-      canMarkReady(buildInput({ isDraft: true, markReady: false })),
-    ).toBe(false);
+    expect(canMarkReady(buildInput({ isDraft: true, markReady: false }))).toBe(
+      false,
+    );
   });
 
   it("returns true for draft PR with markReady capability", () => {
@@ -310,9 +330,14 @@ describe("runMarkReady", () => {
     const client = fakeClient();
     const stores = fakeStores();
     const onCompleted = vi.fn();
-    await runMarkReady(buildInput({
-      client, stores, isDraft: true, onCompleted,
-    }));
+    await runMarkReady(
+      buildInput({
+        client,
+        stores,
+        isDraft: true,
+        onCompleted,
+      }),
+    );
     expect(client.POST).toHaveBeenCalledTimes(1);
     const [path] = client.POST.mock.calls[0];
     expect(path).toBe(
@@ -329,30 +354,31 @@ describe("runMarkReady", () => {
     expect(client.POST).not.toHaveBeenCalled();
   });
 
-  it(
-    "refreshes state and reports error on stale-draft 404",
-    async () => {
-      const client = fakeClient();
-      client.POST.mockResolvedValueOnce({
-        data: undefined,
-        error: {
-          title:
-            "failed to mark pull request ready for review: 404 Not Found",
-        },
-        response: new Response("{}"),
-      });
-      const stores = fakeStores();
-      const onError = vi.fn();
-      await expect(
-        runMarkReady(buildInput({
-          client, stores, isDraft: true, onError,
-        })),
-      ).rejects.toThrow(/ready for review.*404/);
-      expect(stores.detail.loadDetail).toHaveBeenCalledTimes(1);
-      expect(stores.pulls.loadPulls).toHaveBeenCalledTimes(1);
-      expect(onError).toHaveBeenCalled();
-    },
-  );
+  it("refreshes state and reports error on stale-draft 404", async () => {
+    const client = fakeClient();
+    client.POST.mockResolvedValueOnce({
+      data: undefined,
+      error: {
+        title: "failed to mark pull request ready for review: 404 Not Found",
+      },
+      response: new Response("{}"),
+    });
+    const stores = fakeStores();
+    const onError = vi.fn();
+    await expect(
+      runMarkReady(
+        buildInput({
+          client,
+          stores,
+          isDraft: true,
+          onError,
+        }),
+      ),
+    ).rejects.toThrow(/ready for review.*404/);
+    expect(stores.detail.loadDetail).toHaveBeenCalledTimes(1);
+    expect(stores.pulls.loadPulls).toHaveBeenCalledTimes(1);
+    expect(onError).toHaveBeenCalled();
+  });
 
   it("does not refresh on a generic mutation error", async () => {
     const client = fakeClient();
@@ -364,9 +390,14 @@ describe("runMarkReady", () => {
     const stores = fakeStores();
     const onError = vi.fn();
     await expect(
-      runMarkReady(buildInput({
-        client, stores, isDraft: true, onError,
-      })),
+      runMarkReady(
+        buildInput({
+          client,
+          stores,
+          isDraft: true,
+          onError,
+        }),
+      ),
     ).rejects.toThrow("permission denied");
     expect(stores.detail.loadDetail).not.toHaveBeenCalled();
     expect(stores.pulls.loadPulls).not.toHaveBeenCalled();
@@ -378,15 +409,13 @@ describe("runMarkReady", () => {
 
 describe("canApproveWorkflows", () => {
   it("returns false for closed PR", () => {
-    expect(
-      canApproveWorkflows(buildInput({ state: "closed" })),
-    ).toBe(false);
+    expect(canApproveWorkflows(buildInput({ state: "closed" }))).toBe(false);
   });
 
   it("returns false when viewer lacks approveWorkflows", () => {
-    expect(
-      canApproveWorkflows(buildInput({ approveWorkflows: false })),
-    ).toBe(false);
+    expect(canApproveWorkflows(buildInput({ approveWorkflows: false }))).toBe(
+      false,
+    );
   });
 
   it("returns true for open PR with workflow capability", () => {
@@ -397,36 +426,37 @@ describe("canApproveWorkflows", () => {
 // runApproveWorkflows ------------------------------------------------
 
 describe("runApproveWorkflows", () => {
-  it(
-    "POSTs to /approve-workflows and refreshes via refreshDetailOnly",
-    async () => {
-      const client = fakeClient();
-      const stores = fakeStores();
-      const onCompleted = vi.fn();
-      await runApproveWorkflows(buildInput({
-        client, stores, onCompleted,
-      }));
-      expect(client.POST).toHaveBeenCalledTimes(1);
-      const [path, init] = client.POST.mock.calls[0];
-      expect(path).toBe(
-        "/pulls/{provider}/{owner}/{name}/{number}/approve-workflows",
-      );
-      expect(init).toEqual({
-        params: {
-          path: {
-            provider: "github",
-            owner: "octo",
-            name: "repo",
-            number: 42,
-          },
+  it("POSTs to /approve-workflows and refreshes via refreshDetailOnly", async () => {
+    const client = fakeClient();
+    const stores = fakeStores();
+    const onCompleted = vi.fn();
+    await runApproveWorkflows(
+      buildInput({
+        client,
+        stores,
+        onCompleted,
+      }),
+    );
+    expect(client.POST).toHaveBeenCalledTimes(1);
+    const [path, init] = client.POST.mock.calls[0];
+    expect(path).toBe(
+      "/pulls/{provider}/{owner}/{name}/{number}/approve-workflows",
+    );
+    expect(init).toEqual({
+      params: {
+        path: {
+          provider: "github",
+          owner: "octo",
+          name: "repo",
+          number: 42,
         },
-      });
-      expect(stores.detail.refreshDetailOnly).toHaveBeenCalledTimes(1);
-      expect(stores.detail.loadDetail).not.toHaveBeenCalled();
-      expect(stores.pulls.loadPulls).toHaveBeenCalledTimes(1);
-      expect(onCompleted).toHaveBeenCalledTimes(1);
-    },
-  );
+      },
+    });
+    expect(stores.detail.refreshDetailOnly).toHaveBeenCalledTimes(1);
+    expect(stores.detail.loadDetail).not.toHaveBeenCalled();
+    expect(stores.pulls.loadPulls).toHaveBeenCalledTimes(1);
+    expect(onCompleted).toHaveBeenCalledTimes(1);
+  });
 
   it("calls onError and throws on API error", async () => {
     const client = fakeClient();
@@ -444,9 +474,12 @@ describe("runApproveWorkflows", () => {
 
   it("does nothing when canApproveWorkflows is false", async () => {
     const client = fakeClient();
-    await runApproveWorkflows(buildInput({
-      client, approveWorkflows: false,
-    }));
+    await runApproveWorkflows(
+      buildInput({
+        client,
+        approveWorkflows: false,
+      }),
+    );
     expect(client.POST).not.toHaveBeenCalled();
   });
 });

@@ -100,14 +100,18 @@ function runHandler(action: RunnableAction, ctx: Context): void {
 }
 
 function surfaceError(actionId: string, err: unknown): void {
-  const msg = err instanceof Error && err.message ? err.message : "Command failed";
+  const msg =
+    err instanceof Error && err.message ? err.message : "Command failed";
   if (!(err instanceof Error) || !err.message) {
     console.error(`keyboard action ${actionId} failed`, err);
   }
   showFlash(msg);
 }
 
-function matches(spec: Action["binding"] | KeySpec, event: KeyboardEvent): boolean {
+function matches(
+  spec: Action["binding"] | KeySpec,
+  event: KeyboardEvent,
+): boolean {
   if (spec === null) return false;
   const specs = Array.isArray(spec) ? spec : [spec];
   return specs.some((s) => {

@@ -74,11 +74,12 @@ test.describe("workspace force-delete", () => {
       // workspace with a fresh worktree we can dirty.
       const createResponse = await api.post(
         "/api/v1/issues/github/acme/widgets/13/workspace",
-        { data: {} },
+        {
+          data: {},
+        },
       );
       expect(createResponse.status()).toBe(202);
-      const created =
-        (await createResponse.json()) as WorkspaceStatusResponse;
+      const created = (await createResponse.json()) as WorkspaceStatusResponse;
       const ready = await waitForWorkspaceReady(api, created.id);
       expect(ready.worktree_path).toBeTruthy();
 
@@ -89,9 +90,7 @@ test.describe("workspace force-delete", () => {
         "uncommitted\n",
       );
 
-      await page.goto(
-        `${isolatedServer.info.base_url}/terminal/${created.id}`,
-      );
+      await page.goto(`${isolatedServer.info.base_url}/terminal/${created.id}`);
 
       await page
         .locator(".header-bar")
@@ -106,9 +105,7 @@ test.describe("workspace force-delete", () => {
       // reached the UI catches the whole detail-pass-through chain.
       await expect(dialog).toContainText("demo-dirty.txt");
 
-      await dialog
-        .getByRole("button", { name: "Force delete" })
-        .click();
+      await dialog.getByRole("button", { name: "Force delete" }).click();
 
       await expect(page).toHaveURL(/\/workspaces$/);
 

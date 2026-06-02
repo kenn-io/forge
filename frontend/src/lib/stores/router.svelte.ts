@@ -32,11 +32,11 @@ export type Route =
     }
   | { page: "issues"; selected?: HostedItemRef }
   | { page: "settings" }
-  | {
+  | ({
       page: "focus";
       itemType: "pr";
       tab?: "files";
-    } & NumberedItemRef
+    } & NumberedItemRef)
   | ({ page: "focus" } & IssueRouteRef & { itemType: "issue" })
   | { page: "focus"; itemType: "mrs"; repo?: string }
   | { page: "focus"; itemType: "issues"; repo?: string }
@@ -121,8 +121,14 @@ function parseProviderNumberedPath(
 ): NumberedItemRef | undefined {
   if (parts.length < start + 4) return undefined;
   const provider = decodeRouteSegment(parts[start] ?? "")?.trim();
-  const owner = decodeRouteSegment(parts[start + 1] ?? "")?.replace(/^\/+|\/+$/g, "");
-  const name = decodeRouteSegment(parts[start + 2] ?? "")?.replace(/^\/+|\/+$/g, "");
+  const owner = decodeRouteSegment(parts[start + 1] ?? "")?.replace(
+    /^\/+|\/+$/g,
+    "",
+  );
+  const name = decodeRouteSegment(parts[start + 2] ?? "")?.replace(
+    /^\/+|\/+$/g,
+    "",
+  );
   const numberText = decodeRouteSegment(parts[start + 3] ?? "");
   if (!provider || !owner || !name || !numberText) return undefined;
 
@@ -161,8 +167,13 @@ function inferLegacyEmbedProvider(platformHost: string): string {
   return platformHost.toLowerCase().includes("gitlab") ? "gitlab" : "github";
 }
 
-function splitRepoPath(repoPath: string): { owner: string; name: string } | undefined {
-  const pathParts = repoPath.replace(/^\/+|\/+$/g, "").split("/").filter(Boolean);
+function splitRepoPath(
+  repoPath: string,
+): { owner: string; name: string } | undefined {
+  const pathParts = repoPath
+    .replace(/^\/+|\/+$/g, "")
+    .split("/")
+    .filter(Boolean);
   if (pathParts.length < 2) return undefined;
   return {
     owner: pathParts.slice(0, -1).join("/"),
@@ -203,7 +214,11 @@ function parseRoute(fullPath: string): Route {
     const pull = parseHostProviderNumberedPath(parts, "pulls", 1);
     const isPullFiles = parts[parts.length - 1] === "files";
     const focusPullLength = parts[1] === "host" ? 8 : 6;
-    if (pull && (parts.length === focusPullLength || (isPullFiles && parts.length === focusPullLength + 1))) {
+    if (
+      pull &&
+      (parts.length === focusPullLength ||
+        (isPullFiles && parts.length === focusPullLength + 1))
+    ) {
       return {
         page: "focus",
         itemType: "pr",
@@ -420,11 +435,7 @@ function parseRoute(fullPath: string): Route {
 
 const configuredInitialRoute = getInitialRoute();
 if (configuredInitialRoute) {
-  history.replaceState(
-    null,
-    "",
-    basePrefix + configuredInitialRoute,
-  );
+  history.replaceState(null, "", basePrefix + configuredInitialRoute);
 }
 
 let route = $state<Route>(
@@ -553,9 +564,11 @@ export function isWorkspaceEmbedPage(page: Page): boolean {
 }
 
 export function isMobilePage(page: Page): boolean {
-  return page === "mobile-activity"
-    || page === "mobile-pulls"
-    || page === "mobile-issues";
+  return (
+    page === "mobile-activity" ||
+    page === "mobile-pulls" ||
+    page === "mobile-issues"
+  );
 }
 
 function fireMiddlemanNavigateEvent(r: Route): void {
@@ -636,7 +649,8 @@ export function setView(v: View): void {
 
 export function getTab(): Tab {
   if (route.page === "pulls" || route.page === "mobile-pulls") return "pulls";
-  if (route.page === "issues" || route.page === "mobile-issues") return "issues";
+  if (route.page === "issues" || route.page === "mobile-issues")
+    return "issues";
   return "pulls";
 }
 

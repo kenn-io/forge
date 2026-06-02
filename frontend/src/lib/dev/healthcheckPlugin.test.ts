@@ -1,8 +1,8 @@
 // @vitest-environment node
 
 import type { AddressInfo } from "node:net";
-import { afterEach, describe, expect, it } from "vitest";
 import { createServer, mergeConfig, type ViteDevServer } from "vite";
+import { afterEach, describe, expect, it } from "vite-plus/test";
 import config from "../../../vite.config";
 
 describe("healthcheckPlugin", () => {

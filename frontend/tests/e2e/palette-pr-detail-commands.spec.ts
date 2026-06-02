@@ -51,9 +51,9 @@ test.describe("PR-detail palette commands", () => {
     // against the actual role so a regression that surfaces the command
     // anyway would fail this assertion (the previous role="option" query
     // matched nothing regardless of palette state).
-    await expect(
-      page.getByRole("button", { name: /Approve PR/i }),
-    ).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /Approve PR/i })).toHaveCount(
+      0,
+    );
   });
 
   test("Mark ready for review appears only when the PR is a draft", async ({

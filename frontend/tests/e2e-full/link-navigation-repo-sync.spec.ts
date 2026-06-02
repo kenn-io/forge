@@ -7,21 +7,23 @@ import { expect, test, type Page } from "@playwright/test";
 // Seed: acme/widgets and acme/tools on github.com (cmd/e2e-server).
 
 async function waitForPullDetail(page: Page): Promise<void> {
-  await page.locator(".pull-detail")
+  await page
+    .locator(".pull-detail")
     .waitFor({ state: "visible", timeout: 10_000 });
 }
 
 async function waitForIssueDetail(page: Page): Promise<void> {
-  await page.locator(".issue-detail")
+  await page
+    .locator(".issue-detail")
     .waitFor({ state: "visible", timeout: 10_000 });
 }
 
 test.describe("deep-link repo dropdown + sidebar sync", () => {
-  test("navigating to a PR in a different repo updates the dropdown and list", async ({ page }) => {
+  test("navigating to a PR in a different repo updates the dropdown and list", async ({
+    page,
+  }) => {
     await page.addInitScript(() => {
-      localStorage.setItem(
-        "middleman-filter-repo", "github.com/acme/widgets",
-      );
+      localStorage.setItem("middleman-filter-repo", "github.com/acme/widgets");
     });
 
     await page.goto("/pulls/github/acme/tools/1");
@@ -29,7 +31,9 @@ test.describe("deep-link repo dropdown + sidebar sync", () => {
 
     await expect(page.locator(".typeahead-value")).toHaveText(
       "github.com/acme/tools",
-      { timeout: 5_000 },
+      {
+        timeout: 5_000,
+      },
     );
 
     const repoHeaders = page.locator(".repo-header__name");
@@ -37,11 +41,11 @@ test.describe("deep-link repo dropdown + sidebar sync", () => {
     await expect(repoHeaders.first()).toHaveText("acme/tools");
   });
 
-  test("navigating to an issue in a different repo updates the dropdown and list", async ({ page }) => {
+  test("navigating to an issue in a different repo updates the dropdown and list", async ({
+    page,
+  }) => {
     await page.addInitScript(() => {
-      localStorage.setItem(
-        "middleman-filter-repo", "github.com/acme/tools",
-      );
+      localStorage.setItem("middleman-filter-repo", "github.com/acme/tools");
     });
 
     await page.goto("/issues/github/acme/widgets/10");
@@ -49,55 +53,71 @@ test.describe("deep-link repo dropdown + sidebar sync", () => {
 
     await expect(page.locator(".typeahead-value")).toHaveText(
       "github.com/acme/widgets",
-      { timeout: 5_000 },
+      {
+        timeout: 5_000,
+      },
     );
   });
 
-  test("navigating between PRs in different repos updates the dropdown each time", async ({ page }) => {
+  test("navigating between PRs in different repos updates the dropdown each time", async ({
+    page,
+  }) => {
     await page.addInitScript(() => {
-      localStorage.setItem(
-        "middleman-filter-repo", "github.com/acme/widgets",
-      );
+      localStorage.setItem("middleman-filter-repo", "github.com/acme/widgets");
     });
 
     await page.goto("/pulls/github/acme/widgets/1");
     await waitForPullDetail(page);
     await expect(page.locator(".typeahead-value")).toHaveText(
       "github.com/acme/widgets",
-      { timeout: 5_000 },
+      {
+        timeout: 5_000,
+      },
     );
 
     await page.goto("/pulls/github/acme/tools/1");
     await waitForPullDetail(page);
     await expect(page.locator(".typeahead-value")).toHaveText(
       "github.com/acme/tools",
-      { timeout: 5_000 },
+      {
+        timeout: 5_000,
+      },
     );
   });
 
-  test("selecting an item from All repos keeps the all-repo filter", async ({ page }) => {
+  test("selecting an item from All repos keeps the all-repo filter", async ({
+    page,
+  }) => {
     await page.goto("/pulls");
-    await page.locator(".pull-item").first()
+    await page
+      .locator(".pull-item")
+      .first()
       .waitFor({ state: "visible", timeout: 10_000 });
 
     await expect(page.locator(".typeahead-value")).toHaveText("All repos");
-    await page.locator(".pull-item").filter({
-      hasText: "Add widget caching layer",
-    }).first().click();
+    await page
+      .locator(".pull-item")
+      .filter({
+        hasText: "Add widget caching layer",
+      })
+      .first()
+      .click();
     await waitForPullDetail(page);
 
     await expect(page.locator(".typeahead-value")).toHaveText("All repos");
   });
 
-  test("opening /pulls without a selection preserves the user's chosen repo", async ({ page }) => {
+  test("opening /pulls without a selection preserves the user's chosen repo", async ({
+    page,
+  }) => {
     await page.addInitScript(() => {
-      localStorage.setItem(
-        "middleman-filter-repo", "github.com/acme/widgets",
-      );
+      localStorage.setItem("middleman-filter-repo", "github.com/acme/widgets");
     });
 
     await page.goto("/pulls");
-    await page.locator(".pull-item").first()
+    await page
+      .locator(".pull-item")
+      .first()
       .waitFor({ state: "visible", timeout: 10_000 });
 
     await expect(page.locator(".typeahead-value")).toHaveText(

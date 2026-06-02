@@ -1,5 +1,18 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/svelte";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  it,
+} from "vite-plus/test";
 import type { DiffFile as DiffFileType } from "../../api/types.js";
 import { STORES_KEY } from "../../context.js";
 import { createDiffStore } from "../../stores/diff.svelte.js";
@@ -22,7 +35,8 @@ let originalReplaceSync: unknown;
 
 beforeAll(() => {
   originalIntersectionObserverExisted = "IntersectionObserver" in globalThis;
-  originalIntersectionObserver = (globalThis as GlobalWithIO).IntersectionObserver;
+  originalIntersectionObserver = (globalThis as GlobalWithIO)
+    .IntersectionObserver;
   class IntersectionObserverStub {
     private readonly callback: IntersectionObserverCallback;
     root: Element | null = null;
@@ -55,7 +69,8 @@ beforeAll(() => {
   (globalThis as GlobalWithIO).IntersectionObserver = IntersectionObserverStub;
 
   originalResizeObserverExisted = "ResizeObserver" in globalThis;
-  originalResizeObserver = (globalThis as GlobalWithResizeObserver).ResizeObserver;
+  originalResizeObserver = (globalThis as GlobalWithResizeObserver)
+    .ResizeObserver;
   class ResizeObserverStub {
     observe(): void {}
     unobserve(): void {}
@@ -66,28 +81,35 @@ beforeAll(() => {
   originalReplaceSync = (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet
     ?.prototype.replaceSync;
   if ((globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet?.prototype) {
-    (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet.prototype.replaceSync
-      ??= function replaceSync(): void {};
+    (
+      globalThis as GlobalWithCSSStyleSheet
+    ).CSSStyleSheet.prototype.replaceSync ??= function replaceSync(): void {};
   }
 });
 
 afterAll(() => {
   if (originalIntersectionObserverExisted) {
-    (globalThis as GlobalWithIO).IntersectionObserver = originalIntersectionObserver;
+    (globalThis as GlobalWithIO).IntersectionObserver =
+      originalIntersectionObserver;
   } else {
     delete (globalThis as GlobalWithIO).IntersectionObserver;
   }
   if (originalResizeObserverExisted) {
-    (globalThis as GlobalWithResizeObserver).ResizeObserver = originalResizeObserver;
+    (globalThis as GlobalWithResizeObserver).ResizeObserver =
+      originalResizeObserver;
   } else {
     delete (globalThis as GlobalWithResizeObserver).ResizeObserver;
   }
   if ((globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet?.prototype) {
     if (originalReplaceSync) {
-      (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet.prototype.replaceSync =
-        originalReplaceSync as (text: string) => void;
+      (
+        globalThis as GlobalWithCSSStyleSheet
+      ).CSSStyleSheet.prototype.replaceSync = originalReplaceSync as (
+        text: string,
+      ) => void;
     } else {
-      delete (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet.prototype.replaceSync;
+      delete (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet.prototype
+        .replaceSync;
     }
   }
 });
@@ -98,7 +120,12 @@ afterEach(() => {
 
 function makeLargeFile(lineCount: number): DiffFileType {
   const lines = [
-    { type: "context" as const, content: "export function render() {", old_num: 1, new_num: 1 },
+    {
+      type: "context" as const,
+      content: "export function render() {",
+      old_num: 1,
+      new_num: 1,
+    },
     ...Array.from({ length: lineCount }, (_, index) => ({
       type: "add" as const,
       content: `  renderLine(${index}, "value-${index}");`,
@@ -111,8 +138,9 @@ function makeLargeFile(lineCount: number): DiffFileType {
     "+++ b/src/large.ts",
     `@@ -1,1 +1,${lineCount + 1} @@`,
     " export function render() {",
-    ...Array.from({ length: lineCount }, (_, index) =>
-      `+  renderLine(${index}, "value-${index}");`
+    ...Array.from(
+      { length: lineCount },
+      (_, index) => `+  renderLine(${index}, "value-${index}");`,
     ),
   ];
 
@@ -125,13 +153,15 @@ function makeLargeFile(lineCount: number): DiffFileType {
     additions: lineCount,
     deletions: 0,
     patch: `${patchLines.join("\n")}\n`,
-    hunks: [{
-      old_start: 1,
-      old_count: 1,
-      new_start: 1,
-      new_count: lineCount + 1,
-      lines,
-    }],
+    hunks: [
+      {
+        old_start: 1,
+        old_count: 1,
+        new_start: 1,
+        new_count: lineCount + 1,
+        lines,
+      },
+    ],
   };
 }
 
@@ -141,7 +171,8 @@ function renderDiffFile(file: DiffFileType) {
     getComments: () => [],
     isSubmitting: () => false,
     getError: () => null,
-    createComment: (_body: string, _range: DiffReviewLineRange) => Promise.resolve(true),
+    createComment: (_body: string, _range: DiffReviewLineRange) =>
+      Promise.resolve(true),
     deleteComment: () => Promise.resolve(true),
   };
 
@@ -158,37 +189,44 @@ function renderDiffFile(file: DiffFileType) {
       diffHeadSHA: "diff-head",
       nativeMultilineRanges: true,
     },
-    context: new Map([[
-      STORES_KEY,
-      {
-        diff,
-        diffReviewDraft,
-        detail: {
-          replyToDiscussion: () => Promise.resolve(true),
+    context: new Map([
+      [
+        STORES_KEY,
+        {
+          diff,
+          diffReviewDraft,
+          detail: {
+            replyToDiscussion: () => Promise.resolve(true),
+          },
         },
-      },
-    ]]),
+      ],
+    ]),
   });
 }
 
 async function waitForRenderedDiff(): Promise<void> {
-  await waitFor(() => {
-    const host = document.querySelector(".pierre-diff");
-    expect(host?.shadowRoot?.querySelector("[data-content]")).toBeTruthy();
-  }, { timeout: 30_000 });
+  await waitFor(
+    () => {
+      const host = document.querySelector(".pierre-diff");
+      expect(host?.shadowRoot?.querySelector("[data-content]")).toBeTruthy();
+    },
+    { timeout: 30_000 },
+  );
 }
 
 async function findLineTarget(line: number): Promise<HTMLElement> {
-  return await waitFor(() => {
-    const target = document
-      .querySelector(".pierre-diff")
-      ?.shadowRoot
-      ?.querySelector<HTMLElement>(
-        `[data-column-number="${line}"][data-line-type="change-addition"]`,
-      );
-    expect(target).toBeTruthy();
-    return target!;
-  }, { timeout: 30_000 });
+  return await waitFor(
+    () => {
+      const target = document
+        .querySelector(".pierre-diff")
+        ?.shadowRoot?.querySelector<HTMLElement>(
+          `[data-column-number="${line}"][data-line-type="change-addition"]`,
+        );
+      expect(target).toBeTruthy();
+      return target!;
+    },
+    { timeout: 30_000 },
+  );
 }
 
 async function openAndCloseComposer(line: number): Promise<number> {
@@ -204,15 +242,21 @@ async function openAndCloseComposer(line: number): Promise<number> {
     pointerId: 1,
     pointerType: "mouse",
   });
-  await waitFor(() => {
-    expect(screen.getByPlaceholderText("Leave a comment")).toBeTruthy();
-  }, { timeout: 30_000 });
+  await waitFor(
+    () => {
+      expect(screen.getByPlaceholderText("Leave a comment")).toBeTruthy();
+    },
+    { timeout: 30_000 },
+  );
 
   const elapsedMs = performance.now() - startedAt;
   await fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-  await waitFor(() => {
-    expect(screen.queryByPlaceholderText("Leave a comment")).toBeNull();
-  }, { timeout: 30_000 });
+  await waitFor(
+    () => {
+      expect(screen.queryByPlaceholderText("Leave a comment")).toBeNull();
+    },
+    { timeout: 30_000 },
+  );
 
   return elapsedMs;
 }
@@ -234,20 +278,25 @@ function benchmarkLineCounts(): number[] {
     .map((part) => Number(part.trim()))
     .filter((value) => Number.isInteger(value) && value > 0);
   if (counts.length === 0) {
-    throw new Error(`invalid DIFF_INLINE_COMMENT_BENCH_LINES=${JSON.stringify(raw)}`);
+    throw new Error(
+      `invalid DIFF_INLINE_COMMENT_BENCH_LINES=${JSON.stringify(raw)}`,
+    );
   }
   return counts;
 }
 
-const benchDescribe = process.env.RUN_DIFF_INLINE_COMMENT_BENCH === "1"
-  ? describe
-  : describe.skip;
+const benchDescribe =
+  process.env.RUN_DIFF_INLINE_COMMENT_BENCH === "1" ? describe : describe.skip;
 
 benchDescribe("DiffFile inline comment opening benchmark", () => {
   it("measures opening and closing an inline composer by diff size", async () => {
     const results = [];
-    const samples = Number(process.env.DIFF_INLINE_COMMENT_BENCH_SAMPLES ?? "7");
-    const warmups = Number(process.env.DIFF_INLINE_COMMENT_BENCH_WARMUPS ?? "2");
+    const samples = Number(
+      process.env.DIFF_INLINE_COMMENT_BENCH_SAMPLES ?? "7",
+    );
+    const warmups = Number(
+      process.env.DIFF_INLINE_COMMENT_BENCH_WARMUPS ?? "2",
+    );
     const sizes = benchmarkLineCounts();
 
     for (const lineCount of sizes) {

@@ -242,16 +242,10 @@ function describeError(
 // Approve PR ----------------------------------------------------------
 
 export function canApprovePR(input: PRDetailActionInput): boolean {
-  return (
-    input.pr.State === "open"
-    && input.viewerCan.approve
-    && !input.stale
-  );
+  return input.pr.State === "open" && input.viewerCan.approve && !input.stale;
 }
 
-export async function runApprovePR(
-  input: PRDetailActionInput,
-): Promise<void> {
+export async function runApprovePR(input: PRDetailActionInput): Promise<void> {
   if (!canApprovePR(input)) return;
   const { ref, number } = input;
   const body = (input.approveCommentBody ?? "").trim();
@@ -267,14 +261,11 @@ export async function runApprovePR(
     input.onError?.(msg);
     throw new Error(msg);
   }
-  await input.stores.detail.loadDetail(
-    ref.owner, ref.name, number,
-    {
-      provider: ref.provider,
-      platformHost: ref.platformHost,
-      repoPath: ref.repoPath,
-    },
-  );
+  await input.stores.detail.loadDetail(ref.owner, ref.name, number, {
+    provider: ref.provider,
+    platformHost: ref.platformHost,
+    repoPath: ref.repoPath,
+  });
   await input.stores.pulls.loadPulls();
 }
 
@@ -282,12 +273,12 @@ export async function runApprovePR(
 
 export function canOpenMerge(input: PRDetailActionInput): boolean {
   return (
-    input.pr.State === "open"
-    && input.viewerCan.merge
-    && input.repoSettings !== null
-    && input.repoSettings.viewerCanMerge
-    && !input.stale
-    && !hasMergeConflicts(input.pr)
+    input.pr.State === "open" &&
+    input.viewerCan.merge &&
+    input.repoSettings !== null &&
+    input.repoSettings.viewerCanMerge &&
+    !input.stale &&
+    !hasMergeConflicts(input.pr)
   );
 }
 
@@ -301,23 +292,20 @@ export function runOpenMerge(input: PRDetailActionInput): void {
 
 export function canMarkReady(input: PRDetailActionInput): boolean {
   return (
-    input.pr.State === "open"
-    && input.pr.IsDraft === true
-    && input.viewerCan.markReady
-    && !input.stale
+    input.pr.State === "open" &&
+    input.pr.IsDraft === true &&
+    input.viewerCan.markReady &&
+    !input.stale
   );
 }
 
 function isStaleDraftRefreshSignal(message: string): boolean {
   return (
-    message.includes("ready for review")
-    && message.includes("404 Not Found")
+    message.includes("ready for review") && message.includes("404 Not Found")
   );
 }
 
-export async function runMarkReady(
-  input: PRDetailActionInput,
-): Promise<void> {
+export async function runMarkReady(input: PRDetailActionInput): Promise<void> {
   if (!canMarkReady(input)) return;
   const { ref, number } = input;
   let mutationError: Error | null = null;
@@ -330,10 +318,7 @@ export async function runMarkReady(
     );
     if (error) {
       throw new Error(
-        describeError(
-          error,
-          "failed to mark pull request ready for review",
-        ),
+        describeError(error, "failed to mark pull request ready for review"),
       );
     }
   } catch (err) {
@@ -341,14 +326,11 @@ export async function runMarkReady(
   }
 
   if (mutationError === null) {
-    await input.stores.detail.loadDetail(
-      ref.owner, ref.name, number,
-      {
-        provider: ref.provider,
-        platformHost: ref.platformHost,
-        repoPath: ref.repoPath,
-      },
-    );
+    await input.stores.detail.loadDetail(ref.owner, ref.name, number, {
+      provider: ref.provider,
+      platformHost: ref.platformHost,
+      repoPath: ref.repoPath,
+    });
     await input.stores.pulls.loadPulls();
     input.onCompleted?.();
     return;
@@ -356,14 +338,11 @@ export async function runMarkReady(
 
   if (isStaleDraftRefreshSignal(mutationError.message)) {
     try {
-      await input.stores.detail.loadDetail(
-        ref.owner, ref.name, number,
-        {
-          provider: ref.provider,
-          platformHost: ref.platformHost,
-          repoPath: ref.repoPath,
-        },
-      );
+      await input.stores.detail.loadDetail(ref.owner, ref.name, number, {
+        provider: ref.provider,
+        platformHost: ref.platformHost,
+        repoPath: ref.repoPath,
+      });
       await input.stores.pulls.loadPulls();
     } catch {
       // Preserve the original mutation error if the stale-state
@@ -376,13 +355,11 @@ export async function runMarkReady(
 
 // Approve pending workflows ------------------------------------------
 
-export function canApproveWorkflows(
-  input: PRDetailActionInput,
-): boolean {
+export function canApproveWorkflows(input: PRDetailActionInput): boolean {
   return (
-    input.pr.State === "open"
-    && input.viewerCan.approveWorkflows
-    && !input.stale
+    input.pr.State === "open" &&
+    input.viewerCan.approveWorkflows &&
+    !input.stale
   );
 }
 
@@ -398,21 +375,15 @@ export async function runApproveWorkflows(
     },
   );
   if (requestError) {
-    const msg = describeError(
-      requestError,
-      "failed to approve workflows",
-    );
+    const msg = describeError(requestError, "failed to approve workflows");
     input.onError?.(msg);
     throw new Error(msg);
   }
-  await input.stores.detail.refreshDetailOnly(
-    ref.owner, ref.name, number,
-    {
-      provider: ref.provider,
-      platformHost: ref.platformHost,
-      repoPath: ref.repoPath,
-    },
-  );
+  await input.stores.detail.refreshDetailOnly(ref.owner, ref.name, number, {
+    provider: ref.provider,
+    platformHost: ref.platformHost,
+    repoPath: ref.repoPath,
+  });
   await input.stores.pulls.loadPulls();
   input.onCompleted?.();
 }

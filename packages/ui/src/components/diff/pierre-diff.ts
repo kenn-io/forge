@@ -19,7 +19,10 @@ export function parsePierreFileDiff(
 ): FileDiffMetadata | undefined {
   const patchedFile = diffFileWithPatch(file);
   if (!patchedFile.patch) return undefined;
-  if (options.enableDemandContextExpansion && canBuildSparsePatchContents(patchedFile)) {
+  if (
+    options.enableDemandContextExpansion &&
+    canBuildSparsePatchContents(patchedFile)
+  ) {
     const contents = sparsePatchContents(patchedFile);
     return processPatchWithContext(patchedFile, contents);
   }
@@ -59,10 +62,20 @@ function processPatchWithContext(
 
   const safePatch = safePierrePatch(file);
   if (safePatch === file.patch) return parsePatchOnly(file);
-  return tryProcessPatch(safePatch, {
-    oldFile: fileContentsWithName(contents.oldFile, safePierreFileName(file, "old"), "safe-old"),
-    newFile: fileContentsWithName(contents.newFile, safePierreFileName(file, "new"), "safe-new"),
-  }) ?? parsePatchOnly({ ...file, patch: safePatch });
+  return (
+    tryProcessPatch(safePatch, {
+      oldFile: fileContentsWithName(
+        contents.oldFile,
+        safePierreFileName(file, "old"),
+        "safe-old",
+      ),
+      newFile: fileContentsWithName(
+        contents.newFile,
+        safePierreFileName(file, "new"),
+        "safe-new",
+      ),
+    }) ?? parsePatchOnly({ ...file, patch: safePatch })
+  );
 }
 
 function tryProcessPatch(
@@ -101,21 +114,25 @@ function safePierrePatch(file: DiffFile): string {
   const oldName = safePierreFileName(file, "old");
   const newName = safePierreFileName(file, "new");
   let inHeader = true;
-  return file.patch.split("\n").map((line) => {
-    if (line.startsWith("@@ ")) {
-      inHeader = false;
+  return file.patch
+    .split("\n")
+    .map((line) => {
+      if (line.startsWith("@@ ")) {
+        inHeader = false;
+        return line;
+      }
+      if (!inHeader) return line;
+      if (line.startsWith("diff --git "))
+        return `diff --git a/${oldName} b/${newName}`;
+      if (line === "--- /dev/null") return line;
+      if (line === "+++ /dev/null") return line;
+      if (line.startsWith("--- ")) return `--- a/${oldName}`;
+      if (line.startsWith("+++ ")) return `+++ b/${newName}`;
+      if (line.startsWith("rename from ")) return `rename from ${oldName}`;
+      if (line.startsWith("rename to ")) return `rename to ${newName}`;
       return line;
-    }
-    if (!inHeader) return line;
-    if (line.startsWith("diff --git ")) return `diff --git a/${oldName} b/${newName}`;
-    if (line === "--- /dev/null") return line;
-    if (line === "+++ /dev/null") return line;
-    if (line.startsWith("--- ")) return `--- a/${oldName}`;
-    if (line.startsWith("+++ ")) return `+++ b/${newName}`;
-    if (line.startsWith("rename from ")) return `rename from ${oldName}`;
-    if (line.startsWith("rename to ")) return `rename to ${newName}`;
-    return line;
-  }).join("\n");
+    })
+    .join("\n");
 }
 
 function synthesizePatch(file: DiffFile): string {
@@ -136,7 +153,10 @@ function synthesizePatch(file: DiffFile): string {
   ].join("\n");
 }
 
-function patchLine(line: { type: "context" | "add" | "delete"; content: string }): string {
+function patchLine(line: {
+  type: "context" | "add" | "delete";
+  content: string;
+}): string {
   const prefix = line.type === "add" ? "+" : line.type === "delete" ? "-" : " ";
   return `${prefix}${line.content}`;
 }
@@ -144,8 +164,9 @@ function patchLine(line: { type: "context" | "add" | "delete"; content: string }
 export function patchPath(path: string): string {
   if (path === "/dev/null" || !needsPatchPathQuote(path)) return path;
   return JSON.stringify(path)
-    .replace(/[\u007f-\u009f]/gu, (char) =>
-      `\\u${char.charCodeAt(0).toString(16).padStart(4, "0")}`
+    .replace(
+      /[\u007f-\u009f]/gu,
+      (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, "0")}`,
     )
     .replace(/\u2028/g, "\\u2028")
     .replace(/\u2029/g, "\\u2029");
@@ -197,27 +218,39 @@ function canBuildSparsePatchContents(file: DiffFile): boolean {
 }
 
 function lineRangeFits(start: number, count: number): boolean {
-  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(count)) return false;
+  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(count))
+    return false;
   if (start < 1 || count < 0) return false;
   return start + count - 1 <= maxSparseContextLine;
 }
 
 function lineNumberFits(lineNumber: number): boolean {
-  return Number.isSafeInteger(lineNumber) &&
+  return (
+    Number.isSafeInteger(lineNumber) &&
     lineNumber >= 1 &&
-    lineNumber <= maxSparseContextLine;
+    lineNumber <= maxSparseContextLine
+  );
 }
 
-function sparsePatchContents(file: DiffFile): { oldFile: FileContents; newFile: FileContents } {
+function sparsePatchContents(file: DiffFile): {
+  oldFile: FileContents;
+  newFile: FileContents;
+} {
   const oldLines: string[] = [];
   const newLines: string[] = [];
 
   for (const hunk of file.hunks ?? []) {
     for (const line of hunk.lines) {
-      if ((line.type === "context" || line.type === "delete") && line.old_num != null) {
+      if (
+        (line.type === "context" || line.type === "delete") &&
+        line.old_num != null
+      ) {
         oldLines[line.old_num - 1] = line.content;
       }
-      if ((line.type === "context" || line.type === "add") && line.new_num != null) {
+      if (
+        (line.type === "context" || line.type === "add") &&
+        line.new_num != null
+      ) {
         newLines[line.new_num - 1] = line.content;
       }
     }
@@ -226,7 +259,11 @@ function sparsePatchContents(file: DiffFile): { oldFile: FileContents; newFile: 
   const newContents = joinSparseLines(newLines);
 
   return {
-    oldFile: pierreFileContents(file.old_path || file.path, oldContents, "sparse-old"),
+    oldFile: pierreFileContents(
+      file.old_path || file.path,
+      oldContents,
+      "sparse-old",
+    ),
     newFile: pierreFileContents(file.path, newContents, "sparse-new"),
   };
 }
@@ -244,11 +281,19 @@ function fileContentsWithName(
   return {
     ...file,
     name,
-    cacheKey: fileContentsCacheKey(name, file.contents, `${cacheIdentity}:${file.cacheKey ?? ""}`),
+    cacheKey: fileContentsCacheKey(
+      name,
+      file.contents,
+      `${cacheIdentity}:${file.cacheKey ?? ""}`,
+    ),
   };
 }
 
-function fileContentsCacheKey(name: string, contents: string, cacheIdentity: string): string {
+function fileContentsCacheKey(
+  name: string,
+  contents: string,
+  cacheIdentity: string,
+): string {
   let hash = 0x811c9dc5;
   const seed = `${cacheIdentity}\0${name}\0${contents.length}\0${contents}`;
   for (let index = 0; index < seed.length; index += 1) {

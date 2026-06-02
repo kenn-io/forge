@@ -19,7 +19,8 @@ test.describe("migrated global shortcuts", () => {
   test("Cmd+[ toggles the sidebar", async ({ page }) => {
     await page.goto("/pulls");
     const sidebar = page.locator("[data-test='sidebar']");
-    const wasCollapsed = (await sidebar.getAttribute("data-collapsed")) === "true";
+    const wasCollapsed =
+      (await sidebar.getAttribute("data-collapsed")) === "true";
     await page.keyboard.press("Meta+BracketLeft");
     await expect(sidebar).toHaveAttribute(
       "data-collapsed",

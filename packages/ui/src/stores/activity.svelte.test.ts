@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vite-plus/test";
 import type { ActivitySettings } from "../api/types.js";
 import { createActivityStore } from "./activity.svelte.js";
 
@@ -65,18 +65,26 @@ describe("activity store collapse state", () => {
     const s = makeStore();
     s.hydrateDefaults(settings(false));
     s.collapseAllThreads();
-    expect(new URLSearchParams(window.location.search).get("collapsed")).toBe("1");
+    expect(new URLSearchParams(window.location.search).get("collapsed")).toBe(
+      "1",
+    );
     s.expandAllThreads();
-    expect(new URLSearchParams(window.location.search).has("collapsed")).toBe(false);
+    expect(new URLSearchParams(window.location.search).has("collapsed")).toBe(
+      false,
+    );
   });
 
   it("writes collapsed=0 when expanding against a collapsed server default", () => {
     const s = makeStore();
     s.hydrateDefaults(settings(true));
     s.expandAllThreads();
-    expect(new URLSearchParams(window.location.search).get("collapsed")).toBe("0");
+    expect(new URLSearchParams(window.location.search).get("collapsed")).toBe(
+      "0",
+    );
     s.collapseAllThreads();
-    expect(new URLSearchParams(window.location.search).has("collapsed")).toBe(false);
+    expect(new URLSearchParams(window.location.search).has("collapsed")).toBe(
+      false,
+    );
   });
 
   it("applies collapsed=0 from the URL over a collapsed server default", () => {
@@ -103,13 +111,17 @@ describe("activity store collapse state", () => {
     s.hydrateDefaults(settings(false));
     s.initializeFromMount();
     expect(s.getCollapseThreads()).toBe(true);
-    expect(new URLSearchParams(window.location.search).get("collapsed")).toBe("1");
+    expect(new URLSearchParams(window.location.search).get("collapsed")).toBe(
+      "1",
+    );
 
     // The server default changes to match the live override; the now-redundant
     // param is dropped so a later default change is not shadowed by it.
     s.hydrateDefaults(settings(true));
     expect(s.getCollapseThreads()).toBe(true);
-    expect(new URLSearchParams(window.location.search).has("collapsed")).toBe(false);
+    expect(new URLSearchParams(window.location.search).has("collapsed")).toBe(
+      false,
+    );
 
     s.hydrateDefaults(settings(false));
     expect(s.getCollapseThreads()).toBe(false);
@@ -124,7 +136,9 @@ describe("activity store default-branch visibility", () => {
 
     s.setHideDefaultBranchActivity(true);
     s.syncToURL();
-    expect(new URLSearchParams(window.location.search).get("hide_branch")).toBe("1");
+    expect(new URLSearchParams(window.location.search).get("hide_branch")).toBe(
+      "1",
+    );
 
     const next = makeStore();
     next.initializeFromMount();
@@ -132,6 +146,8 @@ describe("activity store default-branch visibility", () => {
 
     next.setHideDefaultBranchActivity(false);
     next.syncToURL();
-    expect(new URLSearchParams(window.location.search).has("hide_branch")).toBe(false);
+    expect(new URLSearchParams(window.location.search).has("hide_branch")).toBe(
+      false,
+    );
   });
 });

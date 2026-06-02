@@ -1,7 +1,6 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
-const issueRoute =
-  "/host/ghe.example.com/issues/github/acme/widget/7";
+const issueRoute = "/host/ghe.example.com/issues/github/acme/widget/7";
 
 async function importRouterAt(path: string) {
   vi.resetModules();

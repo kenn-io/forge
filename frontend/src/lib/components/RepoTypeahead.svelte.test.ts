@@ -1,5 +1,12 @@
 import { cleanup, render } from "@testing-library/svelte";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vite-plus/test";
 
 import RepoTypeahead from "./RepoTypeahead.svelte";
 import {
@@ -11,11 +18,12 @@ describe("RepoTypeahead cheatsheet entries", () => {
   beforeEach(() => {
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () =>
-        new Response("[]", {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        }),
+      vi.fn(
+        async () =>
+          new Response("[]", {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          }),
       ),
     );
   });

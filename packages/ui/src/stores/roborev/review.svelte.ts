@@ -1,6 +1,4 @@
-import type {
-  RoborevClient,
-} from "../../api/roborev/client.js";
+import type { RoborevClient } from "../../api/roborev/client.js";
 import type {
   components,
   operations,
@@ -18,9 +16,7 @@ export interface ReviewStoreOptions {
   onError?: (msg: string) => void;
 }
 
-export function createReviewStore(
-  opts: ReviewStoreOptions,
-) {
+export function createReviewStore(opts: ReviewStoreOptions) {
   const client = opts.client;
 
   // State
@@ -28,16 +24,12 @@ export function createReviewStore(
   let selectedJob = $state<ReviewJob | null>(null);
   let responses = $state<ReviewResponse[]>([]);
   let loading = $state(false);
-  let selectedJobId = $state<number | undefined>(
-    undefined,
-  );
+  let selectedJobId = $state<number | undefined>(undefined);
   let reviewNotFound = $state(false);
   let storeError = $state<string | null>(null);
   let requestVersion = 0;
 
-  async function loadReview(
-    jobId: number,
-  ): Promise<void> {
+  async function loadReview(jobId: number): Promise<void> {
     const version = ++requestVersion;
     loading = true;
     reviewNotFound = false;
@@ -50,15 +42,14 @@ export function createReviewStore(
       // parallel. Use allSettled for the job fetch so a
       // transport failure there doesn't drop valid
       // review/comments data.
-      const [reviewResult, commentsResult] =
-        await Promise.all([
-          client.GET("/api/review", {
-            params: { query: { job_id: jobId } },
-          }),
-          client.GET("/api/comments", {
-            params: { query: { job_id: jobId } },
-          }),
-        ]);
+      const [reviewResult, commentsResult] = await Promise.all([
+        client.GET("/api/review", {
+          params: { query: { job_id: jobId } },
+        }),
+        client.GET("/api/comments", {
+          params: { query: { job_id: jobId } },
+        }),
+      ]);
 
       const jobSettled = await Promise.allSettled([
         client.GET("/api/jobs", {
@@ -100,12 +91,8 @@ export function createReviewStore(
         }
       }
 
-      if (
-        !commentsResult.error &&
-        commentsResult.data
-      ) {
-        responses =
-          commentsResult.data.responses ?? [];
+      if (!commentsResult.error && commentsResult.data) {
+        responses = commentsResult.data.responses ?? [];
       }
     } catch {
       if (version !== requestVersion) return;
@@ -116,14 +103,11 @@ export function createReviewStore(
     }
   }
 
-  async function closeReview(
-    jobId: number,
-  ): Promise<void> {
+  async function closeReview(jobId: number): Promise<void> {
     const closed = !(review?.closed ?? false);
-    const { error } = await client.POST(
-      "/api/review/close",
-      { body: { job_id: jobId, closed } },
-    );
+    const { error } = await client.POST("/api/review/close", {
+      body: { job_id: jobId, closed },
+    });
     if (error) {
       opts.onError?.("Failed to close review");
       return;
@@ -133,20 +117,14 @@ export function createReviewStore(
     }
   }
 
-  async function addComment(
-    jobId: number,
-    text: string,
-  ): Promise<boolean> {
-    const { data, error } = await client.POST(
-      "/api/comment",
-      {
-        body: {
-          job_id: jobId,
-          commenter: "web",
-          comment: text,
-        },
+  async function addComment(jobId: number, text: string): Promise<boolean> {
+    const { data, error } = await client.POST("/api/comment", {
+      body: {
+        job_id: jobId,
+        commenter: "web",
+        comment: text,
       },
-    );
+    });
     if (error || !data) {
       opts.onError?.("Failed to add comment");
       return false;
@@ -155,9 +133,7 @@ export function createReviewStore(
     return true;
   }
 
-  function setSelectedJobId(
-    jobId: number | undefined,
-  ): void {
+  function setSelectedJobId(jobId: number | undefined): void {
     selectedJobId = jobId;
     if (jobId !== undefined) {
       void loadReview(jobId);
@@ -219,6 +195,4 @@ export function createReviewStore(
   };
 }
 
-export type ReviewStore = ReturnType<
-  typeof createReviewStore
->;
+export type ReviewStore = ReturnType<typeof createReviewStore>;

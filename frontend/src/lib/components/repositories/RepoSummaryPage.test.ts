@@ -12,7 +12,7 @@ import {
   expect,
   it,
   vi,
-} from "vitest";
+} from "vite-plus/test";
 
 const mockGet = vi.fn();
 const mockPost = vi.fn();
@@ -35,16 +35,13 @@ vi.mock("../../stores/router.svelte.js", () => ({
 }));
 
 vi.mock("../../stores/filter.svelte.js", () => ({
-  setGlobalRepo: (repo: string | undefined) =>
-    mockSetGlobalRepo(repo),
+  setGlobalRepo: (repo: string | undefined) => mockSetGlobalRepo(repo),
 }));
 
 vi.mock("@middleman/ui", async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import("@middleman/ui")>();
-  const { default: MockCommentEditor } = await import(
-    "../../../test/MockCommentEditor.svelte"
-  );
+  const actual = await importOriginal<typeof import("@middleman/ui")>();
+  const { default: MockCommentEditor } =
+    await import("../../../test/MockCommentEditor.svelte");
   return {
     ...actual,
     CommentEditor: MockCommentEditor,
@@ -109,36 +106,28 @@ describe("RepoSummaryPage", () => {
 
   it("renders repository summaries from the API", async () => {
     mockGet.mockResolvedValue({
-      data: [{
-        owner: "acme",
-        name: "widgets",
-        platform_host: "github.com",
-        repo: {
-          provider: "github",
-          platform_host: "github.com",
+      data: [
+        {
           owner: "acme",
           name: "widgets",
-          repo_path: "acme/widgets",
-        },
-        cached_pr_count: 6,
-        open_pr_count: 3,
-        draft_pr_count: 1,
-        cached_issue_count: 4,
-        open_issue_count: 2,
-        most_recent_activity_at: "2026-04-17T15:04:05Z",
-        last_sync_completed_at: "2026-04-17T15:00:00Z",
-        last_sync_started_at: "2026-04-17T14:59:00Z",
-        last_sync_error: "",
-        latest_release: {
-          tag_name: "v2.8.1",
-          name: "Version 2.8.1",
-          url: "https://github.com/acme/widgets/releases/tag/v2.8.1",
-          target_commitish: "main",
-          prerelease: false,
-          published_at: "2026-04-15T12:00:00Z",
-        },
-        releases: [
-          {
+          platform_host: "github.com",
+          repo: {
+            provider: "github",
+            platform_host: "github.com",
+            owner: "acme",
+            name: "widgets",
+            repo_path: "acme/widgets",
+          },
+          cached_pr_count: 6,
+          open_pr_count: 3,
+          draft_pr_count: 1,
+          cached_issue_count: 4,
+          open_issue_count: 2,
+          most_recent_activity_at: "2026-04-17T15:04:05Z",
+          last_sync_completed_at: "2026-04-17T15:00:00Z",
+          last_sync_started_at: "2026-04-17T14:59:00Z",
+          last_sync_error: "",
+          latest_release: {
             tag_name: "v2.8.1",
             name: "Version 2.8.1",
             url: "https://github.com/acme/widgets/releases/tag/v2.8.1",
@@ -146,42 +135,56 @@ describe("RepoSummaryPage", () => {
             prerelease: false,
             published_at: "2026-04-15T12:00:00Z",
           },
-          {
-            tag_name: "v2.8.0",
-            name: "Version 2.8.0",
-            url: "https://github.com/acme/widgets/releases/tag/v2.8.0",
-            target_commitish: "main",
-            prerelease: false,
-            published_at: "2026-04-10T12:00:00Z",
-          },
-          {
-            tag_name: "v2.7.0",
-            name: "Version 2.7.0",
-            url: "https://github.com/acme/widgets/releases/tag/v2.7.0",
-            target_commitish: "main",
-            prerelease: false,
-            published_at: "2026-04-05T12:00:00Z",
-          },
-        ],
-        commits_since_release: 8,
-        commit_timeline: [{
-          sha: "abc123",
-          message: "Ship repo overview timeline",
-          committed_at: "2026-04-16T12:00:00Z",
-        }],
-        active_authors: [
-          { login: "alice", item_count: 3 },
-          { login: "bob", item_count: 2 },
-        ],
-        recent_issues: [{
-          number: 12,
-          title: "Investigate repo summary card",
-          author: "alice",
-          state: "open",
-          url: "https://github.com/acme/widgets/issues/12",
-          last_activity_at: "2026-04-17T14:55:00Z",
-        }],
-      }],
+          releases: [
+            {
+              tag_name: "v2.8.1",
+              name: "Version 2.8.1",
+              url: "https://github.com/acme/widgets/releases/tag/v2.8.1",
+              target_commitish: "main",
+              prerelease: false,
+              published_at: "2026-04-15T12:00:00Z",
+            },
+            {
+              tag_name: "v2.8.0",
+              name: "Version 2.8.0",
+              url: "https://github.com/acme/widgets/releases/tag/v2.8.0",
+              target_commitish: "main",
+              prerelease: false,
+              published_at: "2026-04-10T12:00:00Z",
+            },
+            {
+              tag_name: "v2.7.0",
+              name: "Version 2.7.0",
+              url: "https://github.com/acme/widgets/releases/tag/v2.7.0",
+              target_commitish: "main",
+              prerelease: false,
+              published_at: "2026-04-05T12:00:00Z",
+            },
+          ],
+          commits_since_release: 8,
+          commit_timeline: [
+            {
+              sha: "abc123",
+              message: "Ship repo overview timeline",
+              committed_at: "2026-04-16T12:00:00Z",
+            },
+          ],
+          active_authors: [
+            { login: "alice", item_count: 3 },
+            { login: "bob", item_count: 2 },
+          ],
+          recent_issues: [
+            {
+              number: 12,
+              title: "Investigate repo summary card",
+              author: "alice",
+              state: "open",
+              url: "https://github.com/acme/widgets/issues/12",
+              last_activity_at: "2026-04-17T14:55:00Z",
+            },
+          ],
+        },
+      ],
       error: undefined,
     });
 
@@ -202,15 +205,11 @@ describe("RepoSummaryPage", () => {
     expect(screen.getAllByText("Open PRs").length).toBeGreaterThan(1);
     expect(screen.getByText("v2.8.1")).toBeTruthy();
     expect(screen.getByText("8 commits")).toBeTruthy();
-    expect(
-      screen.getByText("Investigate repo summary card"),
-    ).toBeTruthy();
+    expect(screen.getByText("Investigate repo summary card")).toBeTruthy();
     expect(screen.getByTitle("alice").getAttribute("src")).toContain(
       "https://github.com/alice.png?size=40",
     );
-    expect(
-      screen.getByRole("button", { name: "Release v2.8.0" }),
-    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Release v2.8.0" })).toBeTruthy();
 
     const commitDot = screen.getByRole("button", {
       name: "Commit abc123",
@@ -221,9 +220,7 @@ describe("RepoSummaryPage", () => {
     await fireEvent.mouseLeave(commitDot);
     expect(screen.getByText("Ship repo overview timeline")).toBeTruthy();
     await fireEvent.click(document.body);
-    expect(
-      screen.queryByText("Ship repo overview timeline"),
-    ).toBeNull();
+    expect(screen.queryByText("Ship repo overview timeline")).toBeNull();
   });
 
   it("hides the configured default platform host on repo cards", async () => {
@@ -333,29 +330,31 @@ describe("RepoSummaryPage", () => {
 
   it("keeps cached output visible when a sync issue exists", async () => {
     mockGet.mockResolvedValue({
-      data: [{
-        owner: "acme",
-        name: "widgets",
-        platform_host: "github.com",
-        repo: {
-          provider: "github",
-          platform_host: "github.com",
+      data: [
+        {
           owner: "acme",
           name: "widgets",
-          repo_path: "acme/widgets",
+          platform_host: "github.com",
+          repo: {
+            provider: "github",
+            platform_host: "github.com",
+            owner: "acme",
+            name: "widgets",
+            repo_path: "acme/widgets",
+          },
+          cached_pr_count: 6,
+          open_pr_count: 3,
+          draft_pr_count: 1,
+          cached_issue_count: 4,
+          open_issue_count: 2,
+          most_recent_activity_at: "2026-04-17T15:04:05Z",
+          last_sync_completed_at: "2026-04-17T15:00:00Z",
+          last_sync_started_at: "2026-04-17T14:59:00Z",
+          last_sync_error: "rate limit exceeded",
+          active_authors: [],
+          recent_issues: [],
         },
-        cached_pr_count: 6,
-        open_pr_count: 3,
-        draft_pr_count: 1,
-        cached_issue_count: 4,
-        open_issue_count: 2,
-        most_recent_activity_at: "2026-04-17T15:04:05Z",
-        last_sync_completed_at: "2026-04-17T15:00:00Z",
-        last_sync_started_at: "2026-04-17T14:59:00Z",
-        last_sync_error: "rate limit exceeded",
-        active_authors: [],
-        recent_issues: [],
-      }],
+      ],
       error: undefined,
     });
 
@@ -371,29 +370,31 @@ describe("RepoSummaryPage", () => {
 
   it("navigates from repo metric cells instead of separate view buttons", async () => {
     mockGet.mockResolvedValue({
-      data: [{
-        owner: "acme",
-        name: "widgets",
-        platform_host: "github.com",
-        repo: {
-          provider: "github",
-          platform_host: "github.com",
+      data: [
+        {
           owner: "acme",
           name: "widgets",
-          repo_path: "acme/widgets",
+          platform_host: "github.com",
+          repo: {
+            provider: "github",
+            platform_host: "github.com",
+            owner: "acme",
+            name: "widgets",
+            repo_path: "acme/widgets",
+          },
+          cached_pr_count: 6,
+          open_pr_count: 3,
+          draft_pr_count: 1,
+          cached_issue_count: 4,
+          open_issue_count: 2,
+          most_recent_activity_at: "2026-04-17T15:04:05Z",
+          last_sync_completed_at: "2026-04-17T15:00:00Z",
+          last_sync_started_at: "2026-04-17T14:59:00Z",
+          last_sync_error: "",
+          active_authors: [],
+          recent_issues: [],
         },
-        cached_pr_count: 6,
-        open_pr_count: 3,
-        draft_pr_count: 1,
-        cached_issue_count: 4,
-        open_issue_count: 2,
-        most_recent_activity_at: "2026-04-17T15:04:05Z",
-        last_sync_completed_at: "2026-04-17T15:00:00Z",
-        last_sync_started_at: "2026-04-17T14:59:00Z",
-        last_sync_error: "",
-        active_authors: [],
-        recent_issues: [],
-      }],
+      ],
       error: undefined,
     });
 
@@ -401,27 +402,17 @@ describe("RepoSummaryPage", () => {
 
     await screen.findByRole("button", { name: /acme\s*\/\s*widgets/ });
 
-    expect(
-      screen.queryByRole("button", { name: "View PRs" }),
-    ).toBeNull();
-    expect(
-      screen.queryByRole("button", { name: "View issues" }),
-    ).toBeNull();
+    expect(screen.queryByRole("button", { name: "View PRs" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "View issues" })).toBeNull();
 
-    await fireEvent.click(
-      screen.getByRole("button", { name: /3\s+Open PRs/ }),
-    );
-    expect(mockSetGlobalRepo).toHaveBeenCalledWith(
-      "github.com/acme/widgets",
-    );
+    await fireEvent.click(screen.getByRole("button", { name: /3\s+Open PRs/ }));
+    expect(mockSetGlobalRepo).toHaveBeenCalledWith("github.com/acme/widgets");
     expect(mockNavigate).toHaveBeenCalledWith("/pulls");
 
     await fireEvent.click(
       screen.getByRole("button", { name: /2\s+Open issues/ }),
     );
-    expect(mockSetGlobalRepo).toHaveBeenCalledWith(
-      "github.com/acme/widgets",
-    );
+    expect(mockSetGlobalRepo).toHaveBeenCalledWith("github.com/acme/widgets");
     expect(mockNavigate).toHaveBeenCalledWith("/issues");
   });
 
@@ -507,9 +498,7 @@ describe("RepoSummaryPage", () => {
       screen.getByRole("button", { name: /acme\s*\/\s*stale/ }),
     ).toBeTruthy();
 
-    await fireEvent.click(
-      screen.getByRole("button", { name: "Stale" }),
-    );
+    await fireEvent.click(screen.getByRole("button", { name: "Stale" }));
     expect(
       screen.queryByRole("button", { name: /acme\s*\/\s*fresh/ }),
     ).toBeNull();
@@ -517,10 +506,9 @@ describe("RepoSummaryPage", () => {
       screen.getByRole("button", { name: /acme\s*\/\s*stale/ }),
     ).toBeTruthy();
 
-    await fireEvent.input(
-      screen.getByPlaceholderText("Filter repositories"),
-      { target: { value: "fresh" } },
-    );
+    await fireEvent.input(screen.getByPlaceholderText("Filter repositories"), {
+      target: { value: "fresh" },
+    });
     expect(screen.getByText("No repositories match")).toBeTruthy();
   });
 
@@ -600,13 +588,10 @@ describe("RepoSummaryPage", () => {
     render(RepoSummaryPage);
 
     await screen.findByRole("button", { name: /acme\s*\/\s*fresh/ });
-    await fireEvent.click(
-      screen.getByRole("button", { name: "Stale" }),
-    );
-    await fireEvent.input(
-      screen.getByPlaceholderText("Filter repositories"),
-      { target: { value: "stale" } },
-    );
+    await fireEvent.click(screen.getByRole("button", { name: "Stale" }));
+    await fireEvent.input(screen.getByPlaceholderText("Filter repositories"), {
+      target: { value: "stale" },
+    });
 
     cleanup();
     render(RepoSummaryPage);
@@ -619,36 +604,38 @@ describe("RepoSummaryPage", () => {
       (screen.getByPlaceholderText("Filter repositories") as HTMLInputElement)
         .value,
     ).toBe("stale");
-    expect(
-      screen.getByRole("button", { name: "Stale" }).className,
-    ).toContain("repo-page__filter--active");
+    expect(screen.getByRole("button", { name: "Stale" }).className).toContain(
+      "repo-page__filter--active",
+    );
   });
 
   it("creates an issue from a repo card and navigates to it", async () => {
     mockGet.mockResolvedValue({
-      data: [{
-        owner: "acme",
-        name: "widgets",
-        platform_host: "github.com",
-        repo: {
-          provider: "github",
-          platform_host: "github.com",
+      data: [
+        {
           owner: "acme",
           name: "widgets",
-          repo_path: "acme/widgets",
+          platform_host: "github.com",
+          repo: {
+            provider: "github",
+            platform_host: "github.com",
+            owner: "acme",
+            name: "widgets",
+            repo_path: "acme/widgets",
+          },
+          cached_pr_count: 2,
+          open_pr_count: 1,
+          draft_pr_count: 0,
+          cached_issue_count: 1,
+          open_issue_count: 1,
+          most_recent_activity_at: "2026-04-17T15:04:05Z",
+          last_sync_completed_at: "2026-04-17T15:00:00Z",
+          last_sync_started_at: "2026-04-17T14:59:00Z",
+          last_sync_error: "",
+          active_authors: [],
+          recent_issues: [],
         },
-        cached_pr_count: 2,
-        open_pr_count: 1,
-        draft_pr_count: 0,
-        cached_issue_count: 1,
-        open_issue_count: 1,
-        most_recent_activity_at: "2026-04-17T15:04:05Z",
-        last_sync_completed_at: "2026-04-17T15:00:00Z",
-        last_sync_started_at: "2026-04-17T14:59:00Z",
-        last_sync_error: "",
-        active_authors: [],
-        recent_issues: [],
-      }],
+      ],
       error: undefined,
     });
     mockPost.mockResolvedValue({
@@ -664,9 +651,7 @@ describe("RepoSummaryPage", () => {
     render(RepoSummaryPage);
 
     await screen.findByRole("button", { name: /acme\s*\/\s*widgets/ });
-    await fireEvent.click(
-      screen.getByRole("button", { name: "New issue" }),
-    );
+    await fireEvent.click(screen.getByRole("button", { name: "New issue" }));
 
     expect(
       screen.getByRole("dialog", {
@@ -678,12 +663,9 @@ describe("RepoSummaryPage", () => {
     expect(bodyEditor.getAttribute("data-name")).toBe("widgets");
     expect(bodyEditor.getAttribute("data-platform-host")).toBe("github.com");
 
-    await fireEvent.input(
-      screen.getByPlaceholderText("Issue title"),
-      {
-        target: { value: "Ship repo summaries" },
-      },
-    );
+    await fireEvent.input(screen.getByPlaceholderText("Issue title"), {
+      target: { value: "Ship repo summaries" },
+    });
     await fireEvent.input(
       screen.getByRole("textbox", {
         name: "Describe the problem, context, or follow-up work",
@@ -709,9 +691,7 @@ describe("RepoSummaryPage", () => {
           },
         }),
       );
-      expect(mockSetGlobalRepo).toHaveBeenCalledWith(
-        "github.com/acme/widgets",
-      );
+      expect(mockSetGlobalRepo).toHaveBeenCalledWith("github.com/acme/widgets");
       expect(mockNavigate).toHaveBeenCalledWith(
         "/issues/github/acme/widgets/27",
       );
@@ -720,29 +700,31 @@ describe("RepoSummaryPage", () => {
 
   it("does not send duplicate issue create requests while submitting", async () => {
     mockGet.mockResolvedValue({
-      data: [{
-        owner: "acme",
-        name: "widgets",
-        platform_host: "github.com",
-        repo: {
-          provider: "github",
-          platform_host: "github.com",
+      data: [
+        {
           owner: "acme",
           name: "widgets",
-          repo_path: "acme/widgets",
+          platform_host: "github.com",
+          repo: {
+            provider: "github",
+            platform_host: "github.com",
+            owner: "acme",
+            name: "widgets",
+            repo_path: "acme/widgets",
+          },
+          cached_pr_count: 2,
+          open_pr_count: 1,
+          draft_pr_count: 0,
+          cached_issue_count: 1,
+          open_issue_count: 1,
+          most_recent_activity_at: "2026-04-17T15:04:05Z",
+          last_sync_completed_at: "2026-04-17T15:00:00Z",
+          last_sync_started_at: "2026-04-17T14:59:00Z",
+          last_sync_error: "",
+          active_authors: [],
+          recent_issues: [],
         },
-        cached_pr_count: 2,
-        open_pr_count: 1,
-        draft_pr_count: 0,
-        cached_issue_count: 1,
-        open_issue_count: 1,
-        most_recent_activity_at: "2026-04-17T15:04:05Z",
-        last_sync_completed_at: "2026-04-17T15:00:00Z",
-        last_sync_started_at: "2026-04-17T14:59:00Z",
-        last_sync_error: "",
-        active_authors: [],
-        recent_issues: [],
-      }],
+      ],
       error: undefined,
     });
     let resolvePost:
@@ -758,15 +740,10 @@ describe("RepoSummaryPage", () => {
     render(RepoSummaryPage);
 
     await screen.findByRole("button", { name: /acme\s*\/\s*widgets/ });
-    await fireEvent.click(
-      screen.getByRole("button", { name: "New issue" }),
-    );
-    await fireEvent.input(
-      screen.getByPlaceholderText("Issue title"),
-      {
-        target: { value: "Ship repo summaries" },
-      },
-    );
+    await fireEvent.click(screen.getByRole("button", { name: "New issue" }));
+    await fireEvent.input(screen.getByPlaceholderText("Issue title"), {
+      target: { value: "Ship repo summaries" },
+    });
 
     const createButton = screen.getByRole("button", {
       name: "Create issue",
@@ -863,27 +840,20 @@ describe("RepoSummaryPage", () => {
     }
 
     await fireEvent.click(firstIssueButton);
-    await fireEvent.input(
-      screen.getByPlaceholderText("Issue title"),
-      { target: { value: "Enterprise draft" } },
-    );
-    await fireEvent.click(
-      screen.getByRole("button", { name: "Cancel" }),
-    );
+    await fireEvent.input(screen.getByPlaceholderText("Issue title"), {
+      target: { value: "Enterprise draft" },
+    });
+    await fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
     await fireEvent.click(secondIssueButton);
     expect(
-      (screen.getByPlaceholderText("Issue title") as HTMLInputElement)
-        .value,
+      (screen.getByPlaceholderText("Issue title") as HTMLInputElement).value,
     ).toBe("");
-    await fireEvent.click(
-      screen.getByRole("button", { name: "Cancel" }),
-    );
+    await fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
     await fireEvent.click(firstIssueButton);
     expect(
-      (screen.getByPlaceholderText("Issue title") as HTMLInputElement)
-        .value,
+      (screen.getByPlaceholderText("Issue title") as HTMLInputElement).value,
     ).toBe("Enterprise draft");
     await fireEvent.submit(
       screen.getByRole("button", { name: "Create issue" }),
@@ -917,42 +887,41 @@ describe("RepoSummaryPage", () => {
 
   it("retains modal issue drafts when dismissed", async () => {
     mockGet.mockResolvedValue({
-      data: [{
-        owner: "acme",
-        name: "widgets",
-        platform_host: "github.com",
-        repo: {
-          provider: "github",
-          platform_host: "github.com",
+      data: [
+        {
           owner: "acme",
           name: "widgets",
-          repo_path: "acme/widgets",
+          platform_host: "github.com",
+          repo: {
+            provider: "github",
+            platform_host: "github.com",
+            owner: "acme",
+            name: "widgets",
+            repo_path: "acme/widgets",
+          },
+          cached_pr_count: 2,
+          open_pr_count: 1,
+          draft_pr_count: 0,
+          cached_issue_count: 1,
+          open_issue_count: 1,
+          most_recent_activity_at: "2026-04-17T15:04:05Z",
+          last_sync_completed_at: "2026-04-17T15:00:00Z",
+          last_sync_started_at: "2026-04-17T14:59:00Z",
+          last_sync_error: "",
+          active_authors: [],
+          recent_issues: [],
         },
-        cached_pr_count: 2,
-        open_pr_count: 1,
-        draft_pr_count: 0,
-        cached_issue_count: 1,
-        open_issue_count: 1,
-        most_recent_activity_at: "2026-04-17T15:04:05Z",
-        last_sync_completed_at: "2026-04-17T15:00:00Z",
-        last_sync_started_at: "2026-04-17T14:59:00Z",
-        last_sync_error: "",
-        active_authors: [],
-        recent_issues: [],
-      }],
+      ],
       error: undefined,
     });
 
     render(RepoSummaryPage);
 
     await screen.findByRole("button", { name: /acme\s*\/\s*widgets/ });
-    await fireEvent.click(
-      screen.getByRole("button", { name: "New issue" }),
-    );
-    await fireEvent.input(
-      screen.getByPlaceholderText("Issue title"),
-      { target: { value: "Draft issue title" } },
-    );
+    await fireEvent.click(screen.getByRole("button", { name: "New issue" }));
+    await fireEvent.input(screen.getByPlaceholderText("Issue title"), {
+      target: { value: "Draft issue title" },
+    });
     await fireEvent.input(
       screen.getByRole("textbox", {
         name: "Describe the problem, context, or follow-up work",
@@ -961,19 +930,14 @@ describe("RepoSummaryPage", () => {
         target: { value: "Draft issue body with @alice" },
       },
     );
-    await fireEvent.click(
-      screen.getByRole("button", { name: "Cancel" }),
-    );
+    await fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
     expect(screen.queryByRole("dialog")).toBeNull();
 
-    await fireEvent.click(
-      screen.getByRole("button", { name: "New issue" }),
-    );
+    await fireEvent.click(screen.getByRole("button", { name: "New issue" }));
 
     expect(
-      (screen.getByPlaceholderText("Issue title") as HTMLInputElement)
-        .value,
+      (screen.getByPlaceholderText("Issue title") as HTMLInputElement).value,
     ).toBe("Draft issue title");
     expect(
       (

@@ -1,15 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import type { DiffFile } from "../../api/types.js";
-import {
-  categorizeDiffFile,
-  summarizeDiffFiles,
-} from "./diff-summary.js";
+import { categorizeDiffFile, summarizeDiffFiles } from "./diff-summary.js";
 
-function file(
-  path: string,
-  additions: number,
-  deletions: number,
-): DiffFile {
+function file(path: string, additions: number, deletions: number): DiffFile {
   return {
     path,
     old_path: path,
@@ -25,15 +18,22 @@ function file(
 
 describe("diff summary categorization", () => {
   it("puts generated files into generated", () => {
-    expect(categorizeDiffFile({ ...file("src/api/client.ts", 1, 1), is_generated: true }))
-      .toBe("generated");
+    expect(
+      categorizeDiffFile({
+        ...file("src/api/client.ts", 1, 1),
+        is_generated: true,
+      }),
+    ).toBe("generated");
     expect(categorizeDiffFile(file("bun.lock", 1, 1))).toBe("generated");
-    expect(categorizeDiffFile(file("package-lock.json", 1, 1))).toBe("generated");
+    expect(categorizeDiffFile(file("package-lock.json", 1, 1))).toBe(
+      "generated",
+    );
   });
 
   it("honors explicit non-generated API metadata before filename heuristics", () => {
-    expect(categorizeDiffFile({ ...file("bun.lock", 1, 1), is_generated: false }))
-      .toBe("other");
+    expect(
+      categorizeDiffFile({ ...file("bun.lock", 1, 1), is_generated: false }),
+    ).toBe("other");
   });
 
   it("puts documentation and planning paths into plans/docs", () => {

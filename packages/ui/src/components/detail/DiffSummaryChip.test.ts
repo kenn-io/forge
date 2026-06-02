@@ -6,16 +6,12 @@ import {
   waitFor,
   within,
 } from "@testing-library/svelte";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import type { DiffFile } from "../../api/types.js";
 import DiffSummaryChip from "./DiffSummaryChip.svelte";
 import { DiffSummaryFilesResult } from "./diff-summary.js";
 
-function file(
-  path: string,
-  additions: number,
-  deletions: number,
-): DiffFile {
+function file(path: string, additions: number, deletions: number): DiffFile {
   return {
     path,
     old_path: path,
@@ -30,8 +26,9 @@ function file(
 }
 
 function rowText(popover: HTMLElement, label: string): string {
-  const row = Array.from(popover.querySelectorAll(".diff-summary-row"))
-    .find((candidate) => candidate.textContent?.includes(label));
+  const row = Array.from(popover.querySelectorAll(".diff-summary-row")).find(
+    (candidate) => candidate.textContent?.includes(label),
+  );
   expect(row).toBeTruthy();
   return row?.textContent?.replace(/\s+/g, " ").trim() ?? "";
 }
@@ -71,9 +68,16 @@ describe("DiffSummaryChip", () => {
     );
 
     const popover = await screen.findByRole("status");
-    const labels = Array.from(popover.querySelectorAll(".diff-summary-row > span:first-child"))
-      .map((label) => label.textContent);
-    expect(labels).toEqual(["Plans/docs", "Code", "Tests", "Other", "Generated"]);
+    const labels = Array.from(
+      popover.querySelectorAll(".diff-summary-row > span:first-child"),
+    ).map((label) => label.textContent);
+    expect(labels).toEqual([
+      "Plans/docs",
+      "Code",
+      "Tests",
+      "Other",
+      "Generated",
+    ]);
     expect(screen.getByText("Plans/docs")).toBeTruthy();
     expect(screen.queryByText("Total")).toBeNull();
     expect(rowText(popover, "Plans/docs")).toBe("Plans/docs +10 −2");
@@ -93,14 +97,13 @@ describe("DiffSummaryChip", () => {
       props: {
         additions: 60,
         deletions: 14,
-        loadFiles: vi.fn(async () =>
-          new DiffSummaryFilesResult(
-            false,
-            [
+        loadFiles: vi.fn(
+          async () =>
+            new DiffSummaryFilesResult(false, [
               file("src/App.svelte", 40, 6),
               file("src/App.test.ts", 20, 8),
-            ],
-          )),
+            ]),
+        ),
       },
     });
 
@@ -137,8 +140,9 @@ describe("DiffSummaryChip", () => {
     const trigger = screen.getByRole("button", { name: statLabel(4, 1) });
     await fireEvent.mouseEnter(trigger);
 
-    expect(await screen.findByText("Changed files are still refreshing."))
-      .toBeTruthy();
+    expect(
+      await screen.findByText("Changed files are still refreshing."),
+    ).toBeTruthy();
     await fireEvent.mouseLeave(trigger);
     await fireEvent.mouseEnter(trigger);
 
@@ -234,5 +238,4 @@ describe("DiffSummaryChip", () => {
     await waitFor(() => expect(loadFiles).toHaveBeenCalledTimes(2));
     expect(screen.queryByText("Plans/docs")).toBeNull();
   });
-
 });

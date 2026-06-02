@@ -10,15 +10,10 @@ function classify(width: number): ContainerSize {
   return "wide";
 }
 
-export function initContainerObserver(
-  el: HTMLElement,
-): () => void {
+export function initContainerObserver(el: HTMLElement): () => void {
   function apply(size: ContainerSize): void {
     currentSize = size;
-    el.classList.remove(
-      "container-narrow",
-      "container-medium",
-    );
+    el.classList.remove("container-narrow", "container-medium");
     if (size === "narrow") {
       el.classList.add("container-narrow");
     } else if (size === "medium") {

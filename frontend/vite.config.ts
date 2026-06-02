@@ -8,9 +8,9 @@ import {
   type ProxyOptions,
   type UserConfig,
 } from "vite";
-import type { InlineConfig } from "vitest/node";
-import { resolveDevApiUrl } from "./src/lib/dev/apiProxyTarget";
-import { healthcheckPlugin } from "./src/lib/dev/healthcheckPlugin";
+import type { InlineConfig } from "vite-plus/test/node";
+import { resolveDevApiUrl } from "./src/lib/dev/apiProxyTarget.ts";
+import { healthcheckPlugin } from "./src/lib/dev/healthcheckPlugin.ts";
 
 const require = createRequire(import.meta.url);
 const testingLibrarySvelteEntry = require.resolve("@testing-library/svelte");
@@ -24,20 +24,56 @@ const devServerHmr = resolveViteHmr(devServerPort);
 const workspaceRoot = searchForWorkspaceRoot(process.cwd());
 const uiPkg = path.resolve(process.cwd(), "../packages/ui");
 const uiIndex = path.resolve(process.cwd(), "../packages/ui/src/index.ts");
-const uiGeneratedClient = path.resolve(process.cwd(), "../packages/ui/src/api/generated/client.ts");
-const uiGeneratedSchema = path.resolve(process.cwd(), "../packages/ui/src/api/generated/schema.ts");
-const uiApiTypes = path.resolve(process.cwd(), "../packages/ui/src/api/types.ts");
+const uiGeneratedClient = path.resolve(
+  process.cwd(),
+  "../packages/ui/src/api/generated/client.ts",
+);
+const uiGeneratedSchema = path.resolve(
+  process.cwd(),
+  "../packages/ui/src/api/generated/schema.ts",
+);
+const uiApiTypes = path.resolve(
+  process.cwd(),
+  "../packages/ui/src/api/types.ts",
+);
 const uiApiCsrf = path.resolve(process.cwd(), "../packages/ui/src/api/csrf.ts");
 const uiRoutes = path.resolve(process.cwd(), "../packages/ui/src/routes.ts");
-const uiStoreDetail = path.resolve(process.cwd(), "../packages/ui/src/stores/detail.svelte.ts");
-const uiStoreEvents = path.resolve(process.cwd(), "../packages/ui/src/stores/events.svelte.ts");
-const uiStorePulls = path.resolve(process.cwd(), "../packages/ui/src/stores/pulls.svelte.ts");
-const uiStoreIssues = path.resolve(process.cwd(), "../packages/ui/src/stores/issues.svelte.ts");
-const uiStoreActivity = path.resolve(process.cwd(), "../packages/ui/src/stores/activity.svelte.ts");
-const uiStoreSync = path.resolve(process.cwd(), "../packages/ui/src/stores/sync.svelte.ts");
-const uiStoreDiff = path.resolve(process.cwd(), "../packages/ui/src/stores/diff.svelte.ts");
-const uiStoreGrouping = path.resolve(process.cwd(), "../packages/ui/src/stores/grouping.svelte.ts");
-const uiStoreSettings = path.resolve(process.cwd(), "../packages/ui/src/stores/settings.svelte.ts");
+const uiStoreDetail = path.resolve(
+  process.cwd(),
+  "../packages/ui/src/stores/detail.svelte.ts",
+);
+const uiStoreEvents = path.resolve(
+  process.cwd(),
+  "../packages/ui/src/stores/events.svelte.ts",
+);
+const uiStorePulls = path.resolve(
+  process.cwd(),
+  "../packages/ui/src/stores/pulls.svelte.ts",
+);
+const uiStoreIssues = path.resolve(
+  process.cwd(),
+  "../packages/ui/src/stores/issues.svelte.ts",
+);
+const uiStoreActivity = path.resolve(
+  process.cwd(),
+  "../packages/ui/src/stores/activity.svelte.ts",
+);
+const uiStoreSync = path.resolve(
+  process.cwd(),
+  "../packages/ui/src/stores/sync.svelte.ts",
+);
+const uiStoreDiff = path.resolve(
+  process.cwd(),
+  "../packages/ui/src/stores/diff.svelte.ts",
+);
+const uiStoreGrouping = path.resolve(
+  process.cwd(),
+  "../packages/ui/src/stores/grouping.svelte.ts",
+);
+const uiStoreSettings = path.resolve(
+  process.cwd(),
+  "../packages/ui/src/stores/settings.svelte.ts",
+);
 
 function devApiUrlPlugin(url: string): Plugin {
   return {
@@ -47,8 +83,7 @@ function devApiUrlPlugin(url: string): Plugin {
       return [
         {
           tag: "script",
-          children:
-            `window.__MIDDLEMAN_DEV_API_URL__ = ${JSON.stringify(url)};`,
+          children: `window.__MIDDLEMAN_DEV_API_URL__ = ${JSON.stringify(url)};`,
           injectTo: "head-prepend",
         },
       ];
@@ -62,8 +97,8 @@ export function resolveViteServerPort(
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (!arg) continue;
-    if (arg === "--port" && i+1 < argv.length) {
-      const next = argv[i+1];
+    if (arg === "--port" && i + 1 < argv.length) {
+      const next = argv[i + 1];
       const parsed = parsePort(next);
       if (parsed !== null) return parsed;
     }
@@ -114,17 +149,13 @@ export function resolveViteHmr(
   };
 }
 
-function logWebSocketProxyRequests(): NonNullable<
-  ProxyOptions["configure"]
-> {
+function logWebSocketProxyRequests(): NonNullable<ProxyOptions["configure"]> {
   return (proxy) => {
     proxy.on("proxyReqWs", (_proxyReq, req, socket) => {
       const url = req.url ?? "<unknown>";
       console.info(`[vite:ws-proxy] open ${url}`);
       socket.on("error", (err) => {
-        console.error(
-          `[vite:ws-proxy] socket error ${url}: ${err.message}`,
-        );
+        console.error(`[vite:ws-proxy] socket error ${url}: ${err.message}`);
       });
     });
     proxy.on("error", (err, req) => {
@@ -132,11 +163,8 @@ function logWebSocketProxyRequests(): NonNullable<
       console.error(`[vite:ws-proxy] error ${url}: ${err.message}`);
     });
     proxy.on("close", (_proxyRes, _proxySocket, proxyHead) => {
-      const headLength =
-        proxyHead instanceof Buffer ? proxyHead.length : 0;
-      console.info(
-        `[vite:ws-proxy] close proxyHeadBytes=${headLength}`,
-      );
+      const headLength = proxyHead instanceof Buffer ? proxyHead.length : 0;
+      console.info(`[vite:ws-proxy] close proxyHeadBytes=${headLength}`);
     });
   };
 }

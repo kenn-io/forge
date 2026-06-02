@@ -14,8 +14,8 @@ export function globalRepoForSelectedRoute(route: Route): string | undefined {
   } else if (route.page === "issues" && route.selected) {
     selected = route.selected;
   } else if (
-    route.page === "focus"
-    && (route.itemType === "pr" || route.itemType === "issue")
+    route.page === "focus" &&
+    (route.itemType === "pr" || route.itemType === "issue")
   ) {
     selected = {
       platformHost: route.platformHost,

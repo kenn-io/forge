@@ -23,7 +23,8 @@ async function selectIssueState(page: Page, label: string): Promise<void> {
   }
 
   await page.getByRole("button", { name: "Filters" }).click();
-  await page.locator(".filter-dropdown .filter-item", { hasText: label })
+  await page
+    .locator(".filter-dropdown .filter-item", { hasText: label })
     .first()
     .click();
 }
@@ -36,7 +37,8 @@ async function selectIssueGrouping(page: Page, label: string): Promise<void> {
   }
 
   await page.getByRole("button", { name: "Filters" }).click();
-  await page.locator(".filter-dropdown .filter-item", { hasText: label })
+  await page
+    .locator(".filter-dropdown .filter-item", { hasText: label })
     .last()
     .click();
 }
@@ -49,7 +51,7 @@ async function mockLongIssueRepoSlug(page: Page): Promise<void> {
     (url) => url.pathname.endsWith("/api/v1/issues"),
     async (route) => {
       const response = await route.fetch();
-      const issues = await response.json() as Array<{
+      const issues = (await response.json()) as Array<{
         repo?: { owner?: string; name?: string; repo_path?: string };
         repo_owner?: string;
         repo_name?: string;
@@ -87,13 +89,17 @@ async function expectRepoChipToClipSafely(
   expect(chipBox).not.toBeNull();
   expect(itemBox).not.toBeNull();
   if (chipBox !== null && itemBox !== null) {
-    expect(chipBox.x + chipBox.width).toBeLessThanOrEqual(itemBox.x + itemBox.width + 1);
+    expect(chipBox.x + chipBox.width).toBeLessThanOrEqual(
+      itemBox.x + itemBox.width + 1,
+    );
   }
 
-  const labelOverflow = await repoChip.locator(".chip__label").evaluate((node) => ({
-    clientWidth: (node as HTMLElement).clientWidth,
-    scrollWidth: (node as HTMLElement).scrollWidth,
-  }));
+  const labelOverflow = await repoChip
+    .locator(".chip__label")
+    .evaluate((node) => ({
+      clientWidth: (node as HTMLElement).clientWidth,
+      scrollWidth: (node as HTMLElement).scrollWidth,
+    }));
   expect(labelOverflow.scrollWidth).toBeGreaterThan(labelOverflow.clientWidth);
 }
 
@@ -141,7 +147,9 @@ test.describe("issue list view", () => {
     // Wait for the filtered result to appear (replaces fixed sleep).
     await expect(page.locator(".filter-bar .list-count-chip")).toHaveText(
       /^1 issues?$/,
-      { timeout: 5_000 },
+      {
+        timeout: 5_000,
+      },
     );
 
     const items = page.locator(".issue-item");

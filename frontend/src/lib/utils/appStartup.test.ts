@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { runAppStartup } from "./appStartup.js";
 import type { StoreInstances } from "@middleman/ui";
 import type { Settings } from "@middleman/ui/api/types";

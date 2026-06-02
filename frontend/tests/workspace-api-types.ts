@@ -1,7 +1,4 @@
-import type {
-  WorkspaceHost,
-  WorkspaceProject,
-} from "@middleman/ui/api/types";
+import type { WorkspaceHost, WorkspaceProject } from "@middleman/ui/api/types";
 
 const project = {
   key: "proj-1",

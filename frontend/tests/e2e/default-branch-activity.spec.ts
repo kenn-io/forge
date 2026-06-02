@@ -323,7 +323,9 @@ test.describe("default branch activity", () => {
     await expect(
       page.locator(".activity-row", { hasText: "aaaaaaa -> bbbbbbb" }),
     ).toBeVisible();
-    await expect(page.locator(".activity-row", { hasText: "#0" })).toHaveCount(0);
+    await expect(page.locator(".activity-row", { hasText: "#0" })).toHaveCount(
+      0,
+    );
 
     await selectActivityFilterItem(page, "Hide default-branch activity");
 
@@ -335,7 +337,9 @@ test.describe("default branch activity", () => {
     ).toBeVisible();
   });
 
-  test("renders branch activity as threaded top-level rows", async ({ page }) => {
+  test("renders branch activity as threaded top-level rows", async ({
+    page,
+  }) => {
     await mockDefaultBranchActivity(page);
     await page.goto("/?view=threaded");
 
@@ -371,23 +375,24 @@ test.describe("default branch activity", () => {
     await forcePushRow.click();
     await expect(page.locator(".activity-detail")).toHaveCount(0);
     await expect
-      .poll(() =>
-        page.evaluate(() => window.__middlemanOpenedURL),
-      )
+      .poll(() => page.evaluate(() => window.__middlemanOpenedURL))
       .toContain("github.com/acme/widgets/compare");
   });
 
   test("commit rows open an in-app diff", async ({ page }) => {
     await mockDefaultBranchActivity(page);
     let filePreviewRequests = 0;
-    await page.route("**/api/v1/pulls/github/acme/widgets/0/file-preview**", async (route) => {
-      filePreviewRequests += 1;
-      await route.fulfill({
-        status: 500,
-        contentType: "application/json",
-        body: JSON.stringify({ title: "unexpected file preview request" }),
-      });
-    });
+    await page.route(
+      "**/api/v1/pulls/github/acme/widgets/0/file-preview**",
+      async (route) => {
+        filePreviewRequests += 1;
+        await route.fulfill({
+          status: 500,
+          contentType: "application/json",
+          body: JSON.stringify({ title: "unexpected file preview request" }),
+        });
+      },
+    );
     await page.goto("/?view=threaded");
 
     const commitRow = page.locator(".branch-activity-row", {
@@ -401,26 +406,35 @@ test.describe("default branch activity", () => {
     await expect(page.locator(".activity-detail-header")).toContainText(
       "Commit acme/widgets main Ship direct main commit 2",
     );
-    await expect(page.locator(
-      '.files-sidebar .diff-file-tree [data-item-path="src/direct-main.ts"]',
-    )).toHaveCount(1);
-    const diffFile = page.locator('.diff-file[data-file-path="src/direct-main.ts"]');
-    await expect(diffFile.locator(".file-header")).toContainText("src/direct-main.ts");
+    await expect(
+      page.locator(
+        '.files-sidebar .diff-file-tree [data-item-path="src/direct-main.ts"]',
+      ),
+    ).toHaveCount(1);
+    const diffFile = page.locator(
+      '.diff-file[data-file-path="src/direct-main.ts"]',
+    );
+    await expect(diffFile.locator(".file-header")).toContainText(
+      "src/direct-main.ts",
+    );
     await expect(diffFile.locator(".pierre-diff-loading")).toBeHidden();
-    await expect.poll(() =>
-      pierreDiffCount(diffFile, "[data-content] [data-line-type=\"change-addition\"]"),
-    ).toBe(2);
-    await expect.poll(() =>
-      pierreDiffCount(diffFile, "[data-separator=\"line-info\"]"),
-    ).toBeGreaterThanOrEqual(1);
-    await expect.poll(() =>
-      pierreDiffCount(diffFile, "[data-expand-button]"),
-    ).toBe(0);
-    await expect.poll(() => filePreviewRequests).toBe(0);
     await expect
       .poll(() =>
-        page.evaluate(() => window.__middlemanOpenedURL),
+        pierreDiffCount(
+          diffFile,
+          '[data-content] [data-line-type="change-addition"]',
+        ),
       )
+      .toBe(2);
+    await expect
+      .poll(() => pierreDiffCount(diffFile, '[data-separator="line-info"]'))
+      .toBeGreaterThanOrEqual(1);
+    await expect
+      .poll(() => pierreDiffCount(diffFile, "[data-expand-button]"))
+      .toBe(0);
+    await expect.poll(() => filePreviewRequests).toBe(0);
+    await expect
+      .poll(() => page.evaluate(() => window.__middlemanOpenedURL))
       .toBe("");
   });
 });
@@ -446,18 +460,19 @@ test.describe("mobile default branch activity", () => {
     await expect(branchCard).toBeVisible();
     await expect(branchCard).toContainText("Branch");
     await expect(branchCard).toContainText("6 events");
-    await expect(page.locator(".mobile-activity-card", { hasText: "#0" }))
-      .toHaveCount(0);
+    await expect(
+      page.locator(".mobile-activity-card", { hasText: "#0" }),
+    ).toHaveCount(0);
 
-    await branchCard.locator(".mobile-activity-event", {
-      hasText: "Force-pushed",
-    }).click();
+    await branchCard
+      .locator(".mobile-activity-event", {
+        hasText: "Force-pushed",
+      })
+      .click();
 
     await expect(page).toHaveURL(/\/m/);
     await expect
-      .poll(() =>
-        page.evaluate(() => window.__middlemanOpenedURL),
-      )
+      .poll(() => page.evaluate(() => window.__middlemanOpenedURL))
       .toContain("github.com/acme/widgets/compare");
   });
 });

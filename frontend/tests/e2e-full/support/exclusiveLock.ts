@@ -37,10 +37,12 @@ export function exclusiveLockPath(
 }
 
 function lockMetadata(): string {
-  return JSON.stringify({
-    created_at: new Date().toISOString(),
-    pid: process.pid,
-  }) + "\n";
+  return (
+    JSON.stringify({
+      created_at: new Date().toISOString(),
+      pid: process.pid,
+    }) + "\n"
+  );
 }
 
 function lockWorkerScript(): string {
@@ -195,7 +197,9 @@ async function ensureLockRoot(rootDir: string): Promise<void> {
     throw new Error(`lock root is not a safe directory: ${rootDir}`);
   }
   if (typeof process.getuid === "function" && info.uid !== process.getuid()) {
-    throw new Error(`lock root is owned by uid ${info.uid}, expected ${process.getuid()}`);
+    throw new Error(
+      `lock root is owned by uid ${info.uid}, expected ${process.getuid()}`,
+    );
   }
   await chmod(rootDir, 0o700);
 }
@@ -203,13 +207,7 @@ async function ensureLockRoot(rootDir: string): Promise<void> {
 function spawnLockProcess(lockPath: string): ChildProcess {
   return spawn(
     process.execPath,
-    [
-      "--input-type=module",
-      "-e",
-      lockWorkerScript(),
-      lockPath,
-      lockMetadata(),
-    ],
+    ["--input-type=module", "-e", lockWorkerScript(), lockPath, lockMetadata()],
     {
       stdio: ["pipe", "pipe", "pipe"],
     },
@@ -246,9 +244,11 @@ async function waitForLockProcess(child: ChildProcess): Promise<void> {
         return;
       }
       cleanup();
-      reject(new Error(
-        `lock helper exited before acquiring lock (code=${code}, signal=${signal}): ${stderr.trim()}`,
-      ));
+      reject(
+        new Error(
+          `lock helper exited before acquiring lock (code=${code}, signal=${signal}): ${stderr.trim()}`,
+        ),
+      );
     };
 
     child.stdout?.on("data", onStdout);

@@ -88,12 +88,9 @@ const MODAL_OPENERS: ModalOpener[] = [
       //      then pushes the `issue-detail-confirm` modal frame.
       // Once the fixture exists, replace the throw with the open
       // sequence. Keep the dispatch-isolation assertion below.
-      throw new Error(
-        "issue-detail-confirm modal fixture not implemented",
-      );
+      throw new Error("issue-detail-confirm modal fixture not implemented");
     },
-    todo:
-      "Mock workspace POST 409 with git_head_ref conflict on an issue detail",
+    todo: "Mock workspace POST 409 with git_head_ref conflict on an issue detail",
   },
   {
     name: "shortcut-help",
@@ -126,9 +123,7 @@ for (const m of MODAL_OPENERS) {
     await m.open(page);
 
     // Snapshot list-selection state before any keypress.
-    const beforeSelected = await page
-      .locator(".pr-list-row.selected")
-      .count();
+    const beforeSelected = await page.locator(".pr-list-row.selected").count();
 
     // Background shortcuts that the modal frame must mask. Each is
     // sent through page.keyboard so it dispatches at the document
@@ -140,9 +135,7 @@ for (const m of MODAL_OPENERS) {
     await page.keyboard.press("1");
     await page.keyboard.press("2");
 
-    const afterSelected = await page
-      .locator(".pr-list-row.selected")
-      .count();
+    const afterSelected = await page.locator(".pr-list-row.selected").count();
     expect(afterSelected).toBe(beforeSelected);
   });
 }

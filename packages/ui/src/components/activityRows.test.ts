@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import type { ActivityItem } from "../api/types.js";
 import {
   collapseActivityRuns,
@@ -10,11 +10,7 @@ import {
   activityRepoKey,
 } from "./activityRows.js";
 
-function item(
-  id: string,
-  activity_type: string,
-  author: string,
-): ActivityItem {
+function item(id: string, activity_type: string, author: string): ActivityItem {
   return {
     id,
     cursor: id,
@@ -142,10 +138,9 @@ describe("collapseActivityRuns", () => {
 
     expect(rows).toHaveLength(3);
     expect(isCollapsedActivityRow(rows[0]!)).toBe(true);
-    expect(
-      !isCollapsedActivityRow(rows[1]!)
-        && rows[1]!.activity_type,
-    ).toBe("force_push");
+    expect(!isCollapsedActivityRow(rows[1]!) && rows[1]!.activity_type).toBe(
+      "force_push",
+    );
     expect(isCollapsedActivityRow(rows[2]!)).toBe(true);
   });
 
@@ -215,7 +210,9 @@ describe("activityRepoKey / activityItemKey", () => {
   it("builds a branch key without a PR or issue number", () => {
     const main = { ...base, branchName: "main" };
     const release = { ...base, branchName: "release" };
-    expect(activityBranchKey(main)).toBe(`${activityRepoKey(base)}:branch:main`);
+    expect(activityBranchKey(main)).toBe(
+      `${activityRepoKey(base)}:branch:main`,
+    );
     expect(activityBranchKey(main)).not.toBe(activityBranchKey(release));
   });
 });

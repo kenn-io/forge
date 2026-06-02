@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import {
   warnOnMalformedCIChecksJSON,
   warnOnUnknownConclusions,
@@ -115,7 +115,10 @@ describe("warnOnMalformedCIChecksJSON", () => {
     // intact rather than collapsing to a generic category.
     vi.stubEnv("DEV", false);
     const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    warnOnMalformedCIChecksJSON("[1, 2]", new Error("CIChecksJSON: element 0 is not an object"));
+    warnOnMalformedCIChecksJSON(
+      "[1, 2]",
+      new Error("CIChecksJSON: element 0 is not an object"),
+    );
     const message = spy.mock.calls[0]?.[0] as string;
     expect(message).toContain("CIChecksJSON: element 0 is not an object");
     spy.mockRestore();
@@ -142,8 +145,11 @@ describe("warnOnMalformedCIChecksJSON", () => {
 
   it("includes PR identifier when context is provided", () => {
     const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    warnOnMalformedCIChecksJSON("{}", new Error("bad"), { repo: "x/y", number: 42 });
-    expect((spy.mock.calls[0]?.[0] as string)).toContain("x/y#42");
+    warnOnMalformedCIChecksJSON("{}", new Error("bad"), {
+      repo: "x/y",
+      number: 42,
+    });
+    expect(spy.mock.calls[0]?.[0] as string).toContain("x/y#42");
     spy.mockRestore();
   });
 });

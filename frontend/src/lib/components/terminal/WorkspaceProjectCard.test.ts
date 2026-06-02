@@ -6,11 +6,10 @@ import {
   expect,
   it,
   vi,
-} from "vitest";
+} from "vite-plus/test";
 
 import WorkspaceProjectCard from "./WorkspaceProjectCard.svelte";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- test helper needs dynamic window access
 const win = window as any;
 
 const projectGet = vi.fn();
@@ -60,7 +59,12 @@ function setProjectResponse(project: ProjectFixture | { error: string }): void {
 }
 
 function setWorktreesResponse(
-  worktrees: Array<{ id: string; project_id: string; branch: string; path: string }>,
+  worktrees: Array<{
+    id: string;
+    project_id: string;
+    branch: string;
+    path: string;
+  }>,
 ): void {
   worktreesGet.mockReset();
   worktreesGet.mockResolvedValue({
@@ -94,9 +98,7 @@ describe("WorkspaceProjectCard", () => {
     expect(await screen.findByText("myrepo")).toBeTruthy();
     expect(screen.getByText("/Users/wesm/code/myrepo")).toBeTruthy();
     expect(screen.getByText("main")).toBeTruthy();
-    expect(
-      screen.getByText("This project has no worktrees yet."),
-    ).toBeTruthy();
+    expect(screen.getByText("This project has no worktrees yet.")).toBeTruthy();
     expect(
       screen.getByRole("button", { name: /Create your first worktree/i }),
     ).toBeTruthy();
@@ -152,9 +154,7 @@ describe("WorkspaceProjectCard", () => {
 
     render(WorkspaceProjectCard, { props: { projectId: "prj_1" } });
 
-    expect(
-      await screen.findByRole("img", { name: "GitLab" }),
-    ).toBeTruthy();
+    expect(await screen.findByRole("img", { name: "GitLab" })).toBeTruthy();
   });
 
   it("renders existing worktrees and switches the CTA label", async () => {
@@ -174,9 +174,7 @@ describe("WorkspaceProjectCard", () => {
 
     render(WorkspaceProjectCard, { props: { projectId: "prj_1" } });
     await screen.findByText("feature-x");
-    expect(
-      screen.getByText("/tmp/myrepo-worktrees/feature-x"),
-    ).toBeTruthy();
+    expect(screen.getByText("/tmp/myrepo-worktrees/feature-x")).toBeTruthy();
     expect(
       screen.getByRole("button", { name: /Create another worktree/i }),
     ).toBeTruthy();
@@ -253,9 +251,7 @@ describe("WorkspaceProjectCard", () => {
     await fireEvent.click(
       screen.getByRole("button", { name: /Create your first worktree/i }),
     );
-    expect(
-      await screen.findByText("user cancelled the sheet"),
-    ).toBeTruthy();
+    expect(await screen.findByText("user cancelled the sheet")).toBeTruthy();
   });
 
   it("renders an upgrade-host hint when the new-worktree action is missing", async () => {

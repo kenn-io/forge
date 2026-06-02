@@ -1,10 +1,10 @@
 import { expect, test } from "@playwright/test";
 
 test.describe("provider capabilities", () => {
-  test("PR detail shows locked state only for providers that support it", async ({ page }) => {
-    await page.goto(
-      "/pulls/github/acme/widgets/1",
-    );
+  test("PR detail shows locked state only for providers that support it", async ({
+    page,
+  }) => {
+    await page.goto("/pulls/github/acme/widgets/1");
 
     await expect(page.locator(".pull-detail")).toBeVisible();
     await expect(
@@ -12,16 +12,14 @@ test.describe("provider capabilities", () => {
     ).toBeVisible();
   });
 
-  test("GitLab issue detail hides timeline edit controls when comments are read-only", async ({ page }) => {
-    await page.goto(
-      "/host/gitlab.example.com/issues/gitlab/group/project/11",
-    );
+  test("GitLab issue detail hides timeline edit controls when comments are read-only", async ({
+    page,
+  }) => {
+    await page.goto("/host/gitlab.example.com/issues/gitlab/group/project/11");
 
     const detail = page.locator(".issue-detail");
     await expect(detail).toBeVisible();
-    await expect(
-      detail.getByText("GitLab read-only issue"),
-    ).toBeVisible();
+    await expect(detail.getByText("GitLab read-only issue")).toBeVisible();
     await expect(
       detail.getByText("GitLab read-only timeline comment"),
     ).toBeVisible();

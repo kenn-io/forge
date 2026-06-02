@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import {
   budgetColor,
   worstCaseRatio,
@@ -88,9 +88,7 @@ describe("aggregateBudget", () => {
   });
 
   it("returns hasAny false when all disabled", () => {
-    const result = aggregateBudget([
-      { budget_limit: 0, budget_spent: 0 },
-    ]);
+    const result = aggregateBudget([{ budget_limit: 0, budget_spent: 0 }]);
     expect(result).toEqual({ spent: 0, limit: 0, hasAny: false });
   });
 });

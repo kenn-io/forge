@@ -1,6 +1,13 @@
 import { cleanup, render, waitFor } from "@testing-library/svelte";
 import type { ComponentProps } from "svelte";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vite-plus/test";
 
 const mockFit = vi.fn();
 const mockOpen = vi.fn();
@@ -57,10 +64,12 @@ vi.mock("@middleman/ui", () => ({
 
 vi.mock("ghostty-web", () => ({
   init: (...args: []) => mockInit(...args),
-  FitAddon: vi.fn().mockImplementation(() => ({
-    fit: mockFit,
-  })),
-  Terminal: vi.fn().mockImplementation((options) => {
+  FitAddon: vi.fn().mockImplementation(function () {
+    return {
+      fit: mockFit,
+    };
+  }),
+  Terminal: vi.fn().mockImplementation(function (options) {
     terminalCtor(options);
     return {
       cols: 80,
@@ -311,9 +320,7 @@ describe("GhosttyTerminalPane", () => {
     Object.defineProperty(event, "clipboardData", {
       value: {
         getData: vi.fn((type: string) =>
-          type === "text/plain"
-            ? "first\x1b[201~\nsecond\nthird"
-            : "",
+          type === "text/plain" ? "first\x1b[201~\nsecond\nthird" : "",
         ),
       },
     });

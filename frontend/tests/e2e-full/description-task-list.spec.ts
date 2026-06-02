@@ -60,9 +60,7 @@ test.describe.serial("PR description task list", () => {
       .textContent();
     expect(firstLabel ?? "").toMatch(/Cmd\+K/);
 
-    const handle0 = body.locator(
-      '.task-drag-handle[data-task-index="0"]',
-    );
+    const handle0 = body.locator('.task-drag-handle[data-task-index="0"]');
     const item2 = body.locator(
       '.task-list-item--interactive[data-task-index="2"]',
     );
@@ -142,10 +140,7 @@ test.describe.serial("PR description task list", () => {
     // can't tell us a PATCH has actually persisted.
     let patchResponses = 0;
     const onResponse = (resp: import("@playwright/test").Response) => {
-      if (
-        resp.request().method() === "PATCH"
-        && patchRoute.test(resp.url())
-      ) {
+      if (resp.request().method() === "PATCH" && patchRoute.test(resp.url())) {
         patchResponses++;
       }
     };
@@ -157,9 +152,7 @@ test.describe.serial("PR description task list", () => {
     await expect(cb0).toBeChecked({ checked: !cb0Initial });
     // Wait past the 400ms debounce so PATCH A has been dispatched
     // and is now blocked on firstPatchHeld.
-    await expect
-      .poll(() => patchRequests, { timeout: 3_000 })
-      .toBe(1);
+    await expect.poll(() => patchRequests, { timeout: 3_000 }).toBe(1);
 
     // Toggle the second checkbox while PATCH A is in flight. Its
     // debounced save lands in the per-target queue, holding the
@@ -191,9 +184,13 @@ test.describe.serial("PR description task list", () => {
     await reloadedBody.waitFor({ state: "visible" });
     await expect(
       reloadedBody.locator('input[type="checkbox"][data-task-index="0"]'),
-    ).toBeChecked({ checked: !cb0Initial });
+    ).toBeChecked({
+      checked: !cb0Initial,
+    });
     await expect(
       reloadedBody.locator('input[type="checkbox"][data-task-index="1"]'),
-    ).toBeChecked({ checked: !cb1Initial });
+    ).toBeChecked({
+      checked: !cb1Initial,
+    });
   });
 });

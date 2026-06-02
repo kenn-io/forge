@@ -7,9 +7,7 @@ export interface DaemonStoreOptions {
   onRecover?: () => void;
 }
 
-export function createDaemonStore(
-  opts: DaemonStoreOptions,
-) {
+export function createDaemonStore(opts: DaemonStoreOptions) {
   let available = $state(false);
   let wasEverAvailable = $state(false);
   let version = $state("");
@@ -22,16 +20,13 @@ export function createDaemonStore(
   let canceledJobs = $state(0);
   let activeWorkers = $state(0);
   let maxWorkers = $state(0);
-  let pollHandle: ReturnType<typeof setInterval> | null =
-    null;
+  let pollHandle: ReturnType<typeof setInterval> | null = null;
 
   async function checkHealth(): Promise<void> {
     const prevAvailable = available;
     loading = true;
     try {
-      const { data, error } = await opts.middlemanClient.GET(
-        "/roborev/status",
-      );
+      const { data, error } = await opts.middlemanClient.GET("/roborev/status");
       if (error || !data) {
         available = false;
         queuedJobs = 0;
@@ -71,9 +66,7 @@ export function createDaemonStore(
   }
 
   async function loadStatus(): Promise<void> {
-    const { data, error } = await opts.client.GET(
-      "/api/status",
-    );
+    const { data, error } = await opts.client.GET("/api/status");
     if (error || !data) return;
     queuedJobs = data.queued_jobs;
     runningJobs = data.running_jobs;
@@ -161,6 +154,4 @@ export function createDaemonStore(
   };
 }
 
-export type DaemonStore = ReturnType<
-  typeof createDaemonStore
->;
+export type DaemonStore = ReturnType<typeof createDaemonStore>;

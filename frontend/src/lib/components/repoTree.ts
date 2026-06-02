@@ -38,9 +38,7 @@ function stripHostPrefix(value: string, platformHost: string): string {
   return value.replace(/^[^/]+\//, "");
 }
 
-export function buildRepoTree(
-  options: readonly RepoTreeOption[],
-): HostNode[] {
+export function buildRepoTree(options: readonly RepoTreeOption[]): HostNode[] {
   const hosts = new Map<string, HostNode>();
 
   for (const option of options) {
@@ -131,7 +129,10 @@ export function visibleRows(
     .map((host) => ({
       original: host,
       owners: host.children
-        .map((owner) => ({ original: owner, matchingLeaves: owner.children.filter(matches) }))
+        .map((owner) => ({
+          original: owner,
+          matchingLeaves: owner.children.filter(matches),
+        }))
         .filter((owner) => owner.matchingLeaves.length > 0),
     }))
     .filter((host) => host.owners.length > 0);
@@ -144,7 +145,12 @@ export function visibleRows(
     const ownerDepth = singleHost ? 0 : 1;
     if (!singleHost) {
       const hostExpanded = expandedOf(host.original.id);
-      rows.push({ node: host.original, depth: 0, hasChildren: true, expanded: hostExpanded });
+      rows.push({
+        node: host.original,
+        depth: 0,
+        hasChildren: true,
+        expanded: hostExpanded,
+      });
       if (!hostExpanded) continue;
     }
     for (const owner of host.owners) {

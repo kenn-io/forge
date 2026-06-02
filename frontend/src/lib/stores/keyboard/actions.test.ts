@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 
 import { defaultActions, setStoreInstances } from "./actions.js";
 import {
@@ -86,13 +86,22 @@ describe("defaultActions", () => {
   it("dispatches Edit labels from PR detail context", () => {
     const action = defaultActions.find((a) => a.id === "labels.edit");
     expect(action).toBeDefined();
-    setStoreInstances(() => ({
-      detail: {
-        getDetail: () => ({ repo_owner: "octo", repo_name: "repo", repo, merge_request: { Number: 1 } }),
-      },
-    } as never));
+    setStoreInstances(
+      () =>
+        ({
+          detail: {
+            getDetail: () => ({
+              repo_owner: "octo",
+              repo_name: "repo",
+              repo,
+              merge_request: { Number: 1 },
+            }),
+          },
+        }) as never,
+    );
     const events: OpenLabelPickerDetail[] = [];
-    const listener = (event: Event) => events.push((event as CustomEvent<OpenLabelPickerDetail>).detail);
+    const listener = (event: Event) =>
+      events.push((event as CustomEvent<OpenLabelPickerDetail>).detail);
     window.addEventListener(OPEN_LABEL_PICKER_EVENT, listener);
     try {
       const context = ctx("pulls", { selectedPR: selected });
@@ -108,13 +117,22 @@ describe("defaultActions", () => {
   it("dispatches Edit labels from issue detail context", () => {
     const action = defaultActions.find((a) => a.id === "labels.edit");
     expect(action).toBeDefined();
-    setStoreInstances(() => ({
-      issues: {
-        getIssueDetail: () => ({ repo_owner: "octo", repo_name: "repo", repo, issue: { Number: 1 } }),
-      },
-    } as never));
+    setStoreInstances(
+      () =>
+        ({
+          issues: {
+            getIssueDetail: () => ({
+              repo_owner: "octo",
+              repo_name: "repo",
+              repo,
+              issue: { Number: 1 },
+            }),
+          },
+        }) as never,
+    );
     const events: OpenLabelPickerDetail[] = [];
-    const listener = (event: Event) => events.push((event as CustomEvent<OpenLabelPickerDetail>).detail);
+    const listener = (event: Event) =>
+      events.push((event as CustomEvent<OpenLabelPickerDetail>).detail);
     window.addEventListener(OPEN_LABEL_PICKER_EVENT, listener);
     try {
       const context = ctx("issues", { selectedIssue: selected });

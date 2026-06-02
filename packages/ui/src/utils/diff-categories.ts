@@ -1,9 +1,16 @@
 import type { DiffFile } from "../api/types.js";
 
-export type DiffFileCategory = "plansDocs" | "generated" | "code" | "tests" | "other";
+export type DiffFileCategory =
+  | "plansDocs"
+  | "generated"
+  | "code"
+  | "tests"
+  | "other";
 export type DiffFileCategoryFilter = DiffFileCategory | "all";
 export type DiffFileCategoryCounts = Record<DiffFileCategoryFilter, number>;
-type CategorizableDiffFile = Pick<DiffFile, "path"> & { is_generated?: boolean };
+type CategorizableDiffFile = Pick<DiffFile, "path"> & {
+  is_generated?: boolean;
+};
 
 export const diffFileCategoryOptions: {
   value: DiffFileCategoryFilter;
@@ -52,13 +59,7 @@ const codeExtensions = new Set([
   ".zsh",
 ]);
 
-const docsExtensions = new Set([
-  ".adoc",
-  ".md",
-  ".mdx",
-  ".rst",
-  ".txt",
-]);
+const docsExtensions = new Set([".adoc", ".md", ".mdx", ".rst", ".txt"]);
 
 const docsDirectoryNames = new Set(["doc", "docs", "documentation"]);
 const generatedBasenames = new Set([
@@ -83,15 +84,13 @@ const generatedBasenames = new Set([
   "uv.lock",
   "yarn.lock",
 ]);
-const generatedSuffixes = [
-  ".lock",
-  ".lock.json",
-  ".lock.yaml",
-  ".lock.yml",
-];
+const generatedSuffixes = [".lock", ".lock.json", ".lock.yaml", ".lock.yml"];
 
 function pathParts(path: string): string[] {
-  return path.toLowerCase().split(/[\\/]+/).filter(Boolean);
+  return path
+    .toLowerCase()
+    .split(/[\\/]+/)
+    .filter(Boolean);
 }
 
 function basename(path: string): string {
@@ -107,12 +106,13 @@ function extension(path: string): string {
 
 function hasTestSignal(parts: string[], base: string): boolean {
   return (
-    parts.some((part) =>
-      part === "test" ||
-      part === "tests" ||
-      part === "__tests__" ||
-      part === "e2e" ||
-      part === "spec"
+    parts.some(
+      (part) =>
+        part === "test" ||
+        part === "tests" ||
+        part === "__tests__" ||
+        part === "e2e" ||
+        part === "spec",
     ) ||
     base.includes(".test.") ||
     base.includes(".spec.") ||
@@ -140,19 +140,25 @@ function hasDocsSignal(parts: string[], base: string, ext: string): boolean {
 }
 
 function hasGeneratedSignal(base: string): boolean {
-  return generatedBasenames.has(base) ||
-    generatedSuffixes.some((suffix) => base.endsWith(suffix));
+  return (
+    generatedBasenames.has(base) ||
+    generatedSuffixes.some((suffix) => base.endsWith(suffix))
+  );
 }
 
-export function categorizeDiffFile(file: string | CategorizableDiffFile): DiffFileCategory {
+export function categorizeDiffFile(
+  file: string | CategorizableDiffFile,
+): DiffFileCategory {
   const path = typeof file === "string" ? file : file.path;
   const parts = pathParts(path);
   const base = basename(path);
   const ext = extension(path);
-  const generatedMetadata = typeof file === "string" ? undefined : file.is_generated;
+  const generatedMetadata =
+    typeof file === "string" ? undefined : file.is_generated;
 
   if (generatedMetadata === true) return "generated";
-  if (generatedMetadata !== false && hasGeneratedSignal(base)) return "generated";
+  if (generatedMetadata !== false && hasGeneratedSignal(base))
+    return "generated";
   if (hasTestSignal(parts, base)) return "tests";
   if (hasDocsSignal(parts, base, ext)) return "plansDocs";
   if (codeExtensions.has(ext)) return "code";
@@ -167,7 +173,9 @@ export function filterDiffFilesByCategory(
   return files.filter((file) => categorizeDiffFile(file) === filter);
 }
 
-export function countDiffFilesByCategory(files: DiffFile[]): DiffFileCategoryCounts {
+export function countDiffFilesByCategory(
+  files: DiffFile[],
+): DiffFileCategoryCounts {
   const counts: DiffFileCategoryCounts = {
     plansDocs: 0,
     generated: 0,

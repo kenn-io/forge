@@ -1,20 +1,35 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/svelte";
 import { compile } from "svelte/compiler";
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vite-plus/test";
 import componentSource from "./EventTimeline.svelte?raw";
 import EventTimeline from "./EventTimeline.svelte";
 import { STORES_KEY } from "../../context.js";
 import type { DiffResult, PREvent } from "../../api/types.js";
 import type { DiffStore } from "../../stores/diff.svelte.js";
 
-const compiledCss = compile(
-  componentSource,
-  { filename: "EventTimeline.svelte" },
-).css?.code ?? "";
+const compiledCss =
+  compile(componentSource, { filename: "EventTimeline.svelte" }).css?.code ??
+  "";
 
 type GlobalWithResizeObserver = { ResizeObserver?: unknown };
 type GlobalWithCSSStyleSheet = {
-  CSSStyleSheet?: { prototype: CSSStyleSheet & { replaceSync?: (text: string) => void } };
+  CSSStyleSheet?: {
+    prototype: CSSStyleSheet & { replaceSync?: (text: string) => void };
+  };
 };
 let originalResizeObserver: unknown;
 let originalResizeObserverExisted = false;
@@ -22,7 +37,8 @@ let originalReplaceSync: unknown;
 
 beforeAll(() => {
   originalResizeObserverExisted = "ResizeObserver" in globalThis;
-  originalResizeObserver = (globalThis as GlobalWithResizeObserver).ResizeObserver;
+  originalResizeObserver = (globalThis as GlobalWithResizeObserver)
+    .ResizeObserver;
   class ResizeObserverStub {
     observe(): void {}
     unobserve(): void {}
@@ -33,23 +49,29 @@ beforeAll(() => {
   originalReplaceSync = (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet
     ?.prototype.replaceSync;
   if ((globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet?.prototype) {
-    (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet.prototype.replaceSync
-      ??= function replaceSync(): void {};
+    (
+      globalThis as GlobalWithCSSStyleSheet
+    ).CSSStyleSheet.prototype.replaceSync ??= function replaceSync(): void {};
   }
 });
 
 afterAll(() => {
   if (originalResizeObserverExisted) {
-    (globalThis as GlobalWithResizeObserver).ResizeObserver = originalResizeObserver;
+    (globalThis as GlobalWithResizeObserver).ResizeObserver =
+      originalResizeObserver;
   } else {
     delete (globalThis as GlobalWithResizeObserver).ResizeObserver;
   }
   if ((globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet?.prototype) {
     if (originalReplaceSync) {
-      (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet.prototype.replaceSync =
-        originalReplaceSync as (text: string) => void;
+      (
+        globalThis as GlobalWithCSSStyleSheet
+      ).CSSStyleSheet.prototype.replaceSync = originalReplaceSync as (
+        text: string,
+      ) => void;
     } else {
-      delete (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet.prototype.replaceSync;
+      delete (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet.prototype
+        .replaceSync;
     }
   }
 });
@@ -105,27 +127,41 @@ function makeDiffStore(overrides: Partial<DiffStore> = {}): DiffStore {
   const diff: DiffResult = {
     stale: false,
     whitespace_only_count: 0,
-    files: [{
-      path: "src/review.ts",
-      old_path: "src/review.ts",
-      status: "modified",
-      is_binary: false,
-      is_whitespace_only: false,
-      additions: 2,
-      deletions: 0,
-      hunks: [{
-        old_start: 9,
-        old_count: 1,
-        new_start: 9,
-        new_count: 3,
-        lines: [
-          { type: "context", old_num: 9, new_num: 9, content: "const client = setup();" },
-          { type: "add", new_num: 10, content: "client.enableReviews();" },
-          { type: "add", new_num: 11, content: "client.publishThreads();" },
-          { type: "context", old_num: 10, new_num: 12, content: "return client;" },
+    files: [
+      {
+        path: "src/review.ts",
+        old_path: "src/review.ts",
+        status: "modified",
+        is_binary: false,
+        is_whitespace_only: false,
+        additions: 2,
+        deletions: 0,
+        hunks: [
+          {
+            old_start: 9,
+            old_count: 1,
+            new_start: 9,
+            new_count: 3,
+            lines: [
+              {
+                type: "context",
+                old_num: 9,
+                new_num: 9,
+                content: "const client = setup();",
+              },
+              { type: "add", new_num: 10, content: "client.enableReviews();" },
+              { type: "add", new_num: 11, content: "client.publishThreads();" },
+              {
+                type: "context",
+                old_num: 10,
+                new_num: 12,
+                content: "return client;",
+              },
+            ],
+          },
         ],
-      }],
-    }],
+      },
+    ],
   };
 
   return {
@@ -152,8 +188,8 @@ function findCompiledStyleRule(
     if (!("selectorText" in rule) || !("style" in rule)) continue;
     const selectorText = String(rule.selectorText);
     if (
-      selectorParts.every((part) => selectorText.includes(part))
-      && exclude.every((part) => !selectorText.includes(part))
+      selectorParts.every((part) => selectorText.includes(part)) &&
+      exclude.every((part) => !selectorText.includes(part))
     ) {
       return rule.style as CSSStyleDeclaration;
     }
@@ -256,8 +292,12 @@ describe("EventTimeline", () => {
     ]);
 
     expect(cardStyle.getPropertyValue("background")).toBe("var(--bg-surface)");
-    expect(cardStyle.getPropertyValue("border")).toBe("1px solid var(--border-muted)");
-    expect(cardStyle.getPropertyValue("border-radius")).toBe("var(--radius-md)");
+    expect(cardStyle.getPropertyValue("border")).toBe(
+      "1px solid var(--border-muted)",
+    );
+    expect(cardStyle.getPropertyValue("border-radius")).toBe(
+      "var(--radius-md)",
+    );
     expect(bodyStyle.getPropertyValue("background")).toBe("");
     expect(bodyStyle.getPropertyValue("border")).toBe("");
     expect(bodyStyle.getPropertyValue("border-radius")).toBe("");
@@ -314,7 +354,8 @@ describe("EventTimeline", () => {
     expect(container.querySelectorAll(".thread-reply")).toHaveLength(3);
     expect(screen.getByRole("list", { name: "Threaded replies" })).toBeTruthy();
 
-    const threadText = container.querySelector(".event-card")?.textContent ?? "";
+    const threadText =
+      container.querySelector(".event-card")?.textContent ?? "";
     expect(threadText.indexOf("Main threaded comment")).toBeLessThan(
       threadText.indexOf("Newest threaded reply"),
     );
@@ -381,13 +422,16 @@ describe("EventTimeline", () => {
         number: 7,
       },
       context: new Map([
-        [STORES_KEY, {
-          diff: makeDiffStore(),
-          diffReviewDraft: {
-            setRouteContext: vi.fn(),
-            isSubmitting: () => false,
+        [
+          STORES_KEY,
+          {
+            diff: makeDiffStore(),
+            diffReviewDraft: {
+              setRouteContext: vi.fn(),
+              isSubmitting: () => false,
+            },
           },
-        }],
+        ],
       ]),
     });
 
@@ -395,7 +439,8 @@ describe("EventTimeline", () => {
     await expectPierreTimelineText(/client\.publishThreads\(\);/);
     expect(container.querySelectorAll(".thread-reply")).toHaveLength(2);
 
-    const threadText = container.querySelector(".event-card")?.textContent ?? "";
+    const threadText =
+      container.querySelector(".event-card")?.textContent ?? "";
     expect(threadText.indexOf("This needs a named helper")).toBeLessThan(
       threadText.indexOf("Pushed an update"),
     );
@@ -430,11 +475,15 @@ describe("EventTimeline", () => {
 
     expect(container.querySelectorAll(".thread-reply")).toHaveLength(1);
 
-    await fireEvent.click(screen.getByRole("button", { name: /hide 1 reply/i }));
+    await fireEvent.click(
+      screen.getByRole("button", { name: /hide 1 reply/i }),
+    );
     expect(container.querySelectorAll(".thread-reply")).toHaveLength(0);
     expect(screen.getByRole("button", { name: /show 1 reply/i })).toBeTruthy();
 
-    await fireEvent.click(screen.getByRole("button", { name: /show 1 reply/i }));
+    await fireEvent.click(
+      screen.getByRole("button", { name: /show 1 reply/i }),
+    );
     expect(container.querySelectorAll(".thread-reply")).toHaveLength(1);
   });
 
@@ -462,13 +511,14 @@ describe("EventTimeline", () => {
     expect(document.querySelector(".event--compact")).toBeTruthy();
     expect(document.querySelector(".commit-title")).toBeNull();
     expect(
-      document.querySelector(".commit-body-details")?.classList.contains("event-body"),
+      document
+        .querySelector(".commit-body-details")
+        ?.classList.contains("event-body"),
     ).toBe(true);
     expect(
       document
         .querySelector(".event-header--compact")
-        ?.lastElementChild
-        ?.classList.contains("event-time"),
+        ?.lastElementChild?.classList.contains("event-time"),
     ).toBe(true);
   });
 
@@ -519,8 +569,7 @@ describe("EventTimeline", () => {
     expect(
       document
         .querySelector(".event-header--compact")
-        ?.lastElementChild
-        ?.classList.contains("event-time"),
+        ?.lastElementChild?.classList.contains("event-time"),
     ).toBe(true);
   });
 
@@ -846,18 +895,18 @@ describe("EventTimeline", () => {
     });
 
     const text = container.textContent ?? "";
-    expect(text.indexOf("same timestamp natural second generation")).toBeLessThan(
-      text.indexOf("6666666 -> 9999999"),
-    );
+    expect(
+      text.indexOf("same timestamp natural second generation"),
+    ).toBeLessThan(text.indexOf("6666666 -> 9999999"));
     expect(text.indexOf("6666666 -> 9999999")).toBeLessThan(
       text.indexOf("same timestamp reviewer note"),
     );
     expect(text.indexOf("same timestamp reviewer note")).toBeLessThan(
       text.indexOf("same timestamp natural first generation"),
     );
-    expect(text.indexOf("same timestamp natural first generation")).toBeLessThan(
-      text.indexOf("3333333 -> 6666666"),
-    );
+    expect(
+      text.indexOf("same timestamp natural first generation"),
+    ).toBeLessThan(text.indexOf("3333333 -> 6666666"));
   });
 
   it("keeps same-timestamp unrelated events outside force-push boundary buckets", () => {
@@ -902,15 +951,15 @@ describe("EventTimeline", () => {
     });
 
     const text = container.textContent ?? "";
-    expect(text.indexOf("same timestamp generated commit below comment ID")).toBeLessThan(
-      text.indexOf("3333333 -> 6666666"),
-    );
+    expect(
+      text.indexOf("same timestamp generated commit below comment ID"),
+    ).toBeLessThan(text.indexOf("3333333 -> 6666666"));
     expect(text.indexOf("3333333 -> 6666666")).toBeLessThan(
       text.indexOf("same timestamp reviewer note between IDs"),
     );
-    expect(text.indexOf("same timestamp reviewer note between IDs")).toBeLessThan(
-      text.indexOf("same timestamp original generation"),
-    );
+    expect(
+      text.indexOf("same timestamp reviewer note between IDs"),
+    ).toBeLessThan(text.indexOf("same timestamp original generation"));
   });
 
   it("uses hidden force-push events to order visible commit generations", () => {
@@ -1132,8 +1181,12 @@ describe("EventTimeline", () => {
     const deletedChildren = Array.from(deletedHeader?.children ?? []);
     expect(deletedChildren).toHaveLength(3);
     expect(deletedChildren[0]?.classList.contains("event-author")).toBe(true);
-    expect(deletedChildren[1]?.classList.contains("system-event-summary")).toBe(true);
-    expect(deletedChildren[1]?.classList.contains("system-event-summary--sentence")).toBe(true);
+    expect(deletedChildren[1]?.classList.contains("system-event-summary")).toBe(
+      true,
+    );
+    expect(
+      deletedChildren[1]?.classList.contains("system-event-summary--sentence"),
+    ).toBe(true);
     expect(deletedChildren[2]?.classList.contains("event-time")).toBe(true);
     expect(screen.getByText("Title changed")).toBeTruthy();
     expect(screen.getByText("Base changed")).toBeTruthy();
@@ -1188,7 +1241,9 @@ describe("EventTimeline", () => {
     assert(link.getAttribute("data-name")).toBe("kit");
     assert(link.getAttribute("data-repo-path")).toBe("kenn-io/kit");
     assert(link.getAttribute("data-number")).toBe("1");
-    assert(link.getAttribute("data-external-url")).toBe("https://github.com/kenn-io/kit/pull/1");
+    assert(link.getAttribute("data-external-url")).toBe(
+      "https://github.com/kenn-io/kit/pull/1",
+    );
     assert(screen.getByText("2h ago")).toBeTruthy();
   });
 
@@ -1212,7 +1267,9 @@ describe("EventTimeline", () => {
     });
 
     const link = screen.getByRole("link", { name: "external reference" });
-    expect(link.getAttribute("href")).toBe("https://github.com/kenn-io/middleman/pull/377");
+    expect(link.getAttribute("href")).toBe(
+      "https://github.com/kenn-io/middleman/pull/377",
+    );
     expect(link.classList.contains("item-ref")).toBe(false);
     expect(link.getAttribute("target")).toBe("_blank");
     expect(link.getAttribute("rel")).toBe("noopener noreferrer");
@@ -1253,7 +1310,9 @@ describe("EventTimeline", () => {
       },
     });
 
-    expect(screen.getByText("No activity matches the current filters")).toBeTruthy();
+    expect(
+      screen.getByText("No activity matches the current filters"),
+    ).toBeTruthy();
   });
 
   it("shows inline edit controls for editable issue comments", async () => {
@@ -1316,24 +1375,33 @@ describe("EventTimeline", () => {
         jumpToReviewThread,
       },
       context: new Map([
-        [STORES_KEY, {
-          diff,
-          diffReviewDraft: {
-            setRouteContext: vi.fn(),
-            isSubmitting: () => false,
+        [
+          STORES_KEY,
+          {
+            diff,
+            diffReviewDraft: {
+              setRouteContext: vi.fn(),
+              isSubmitting: () => false,
+            },
           },
-        }],
+        ],
       ]),
     });
 
     expect(screen.getByText("src/review.ts:10-11")).toBeTruthy();
     await expectPierreTimelineText(/client\.publishThreads\(\);/);
-    expect(container.querySelector(".event-body-wrap--with-thread .event-actions")).toBeTruthy();
+    expect(
+      container.querySelector(".event-body-wrap--with-thread .event-actions"),
+    ).toBeTruthy();
 
-    const threadedActions = findCompiledStyleRule(".event-body-wrap--with-thread");
+    const threadedActions = findCompiledStyleRule(
+      ".event-body-wrap--with-thread",
+    );
     expect(threadedActions.getPropertyValue("display")).toBe("flow-root");
 
-    const threadedActionButtons = findCompiledStyleRule(".event-body-wrap--with-thread .event-actions");
+    const threadedActionButtons = findCompiledStyleRule(
+      ".event-body-wrap--with-thread .event-actions",
+    );
     expect(threadedActionButtons.getPropertyValue("position")).toBe("static");
     expect(threadedActionButtons.getPropertyValue("float")).toBe("right");
 
@@ -1350,48 +1418,63 @@ describe("EventTimeline", () => {
       getDiff: () => ({
         stale: false,
         whitespace_only_count: 0,
-        files: [{
-          path,
-          old_path: path,
-          status: "modified",
-          is_binary: false,
-          is_whitespace_only: false,
-          additions: 1,
-          deletions: 0,
-          hunks: [{
-            old_start: 9,
-            old_count: 1,
-            new_start: 9,
-            new_count: 2,
-            lines: [
-              { type: "context", old_num: 9, new_num: 9, content: "const client = setup();" },
-              { type: "add", new_num: 10, content: "client.publishThreads();" },
+        files: [
+          {
+            path,
+            old_path: path,
+            status: "modified",
+            is_binary: false,
+            is_whitespace_only: false,
+            additions: 1,
+            deletions: 0,
+            hunks: [
+              {
+                old_start: 9,
+                old_count: 1,
+                new_start: 9,
+                new_count: 2,
+                lines: [
+                  {
+                    type: "context",
+                    old_num: 9,
+                    new_num: 9,
+                    content: "const client = setup();",
+                  },
+                  {
+                    type: "add",
+                    new_num: 10,
+                    content: "client.publishThreads();",
+                  },
+                ],
+              },
             ],
-          }],
-        }],
+          },
+        ],
       }),
     });
 
     render(EventTimeline, {
       props: {
-        events: [makeReviewThreadEvent({
-          diff_thread: {
-            id: "thread-1",
-            path,
-            side: "right",
-            start_side: "right",
-            start_line: 10,
-            line: 10,
-            new_line: 10,
-            line_type: "add",
-            body: "Please keep this setup explicit.",
-            author_login: "alice",
-            resolved: false,
-            can_resolve: true,
-            created_at: "2024-06-01T12:00:00Z",
-            updated_at: "2024-06-01T12:00:00Z",
-          },
-        })],
+        events: [
+          makeReviewThreadEvent({
+            diff_thread: {
+              id: "thread-1",
+              path,
+              side: "right",
+              start_side: "right",
+              start_line: 10,
+              line: 10,
+              new_line: 10,
+              line_type: "add",
+              body: "Please keep this setup explicit.",
+              author_login: "alice",
+              resolved: false,
+              can_resolve: true,
+              created_at: "2024-06-01T12:00:00Z",
+              updated_at: "2024-06-01T12:00:00Z",
+            },
+          }),
+        ],
         provider: "github",
         platformHost: "github.com",
         repoOwner: "acme",
@@ -1400,13 +1483,16 @@ describe("EventTimeline", () => {
         number: 7,
       },
       context: new Map([
-        [STORES_KEY, {
-          diff,
-          diffReviewDraft: {
-            setRouteContext: vi.fn(),
-            isSubmitting: () => false,
+        [
+          STORES_KEY,
+          {
+            diff,
+            diffReviewDraft: {
+              setRouteContext: vi.fn(),
+              isSubmitting: () => false,
+            },
           },
-        }],
+        ],
       ]),
     });
 
@@ -1426,38 +1512,53 @@ describe("EventTimeline", () => {
         canReplyToThreads: true,
       },
       context: new Map([
-        [STORES_KEY, {
-          detail: {
-            replyToDiscussion: vi.fn().mockResolvedValue(true),
-            getDetailError: vi.fn(),
+        [
+          STORES_KEY,
+          {
+            detail: {
+              replyToDiscussion: vi.fn().mockResolvedValue(true),
+              getDetailError: vi.fn(),
+            },
+            diff: makeDiffStore(),
+            diffReviewDraft: {
+              setRouteContext: vi.fn(),
+              isSubmitting: () => false,
+            },
           },
-          diff: makeDiffStore(),
-          diffReviewDraft: {
-            setRouteContext: vi.fn(),
-            isSubmitting: () => false,
-          },
-        }],
+        ],
       ]),
     });
 
     expect(container.querySelector(".event-card--reply-inline")).toBeTruthy();
     expect(container.querySelector(".thread-controls--reply-only")).toBeNull();
-    expect(container.querySelector(".thread-reply-action--inline")).toBeTruthy();
+    expect(
+      container.querySelector(".thread-reply-action--inline"),
+    ).toBeTruthy();
 
     const inlineReplyCard = findCompiledStyleRule(".event-card--reply-inline");
     expect(inlineReplyCard.getPropertyValue("display")).toBe("flow-root");
 
-    const inlineReplyBody = findCompiledStyleRule(".event-body--with-inline-reply");
+    const inlineReplyBody = findCompiledStyleRule(
+      ".event-body--with-inline-reply",
+    );
     expect(inlineReplyBody.getPropertyValue("display")).toBe("block");
 
-    const inlineReplyFloat = findCompiledStyleRule(".event-body--with-inline-reply .thread-reply-inline-float");
+    const inlineReplyFloat = findCompiledStyleRule(
+      ".event-body--with-inline-reply .thread-reply-inline-float",
+    );
     expect(inlineReplyFloat.getPropertyValue("float")).toBe("right");
     expect(inlineReplyFloat.getPropertyValue("clear")).toBe("right");
-    expect(inlineReplyFloat.getPropertyValue("margin-left")).toBe("var(--focus-detail-space-sm, 0.77rem)");
+    expect(inlineReplyFloat.getPropertyValue("margin-left")).toBe(
+      "var(--focus-detail-space-sm, 0.77rem)",
+    );
 
-    const inlineReplyAction = findCompiledStyleRule(".event-body--with-inline-reply .thread-reply-action--inline");
+    const inlineReplyAction = findCompiledStyleRule(
+      ".event-body--with-inline-reply .thread-reply-action--inline",
+    );
     expect(inlineReplyAction.getPropertyValue("display")).toBe("inline-flex");
-    expect(inlineReplyAction.getPropertyValue("color")).toBe("var(--text-secondary)");
+    expect(inlineReplyAction.getPropertyValue("color")).toBe(
+      "var(--text-secondary)",
+    );
 
     await fireEvent.click(screen.getByRole("button", { name: "Reply" }));
 
@@ -1468,11 +1569,13 @@ describe("EventTimeline", () => {
   it("does not expose replies when a timeline item lacks a local review thread", () => {
     render(EventTimeline, {
       props: {
-        events: [makeEvent({
-          EventType: "review_comment",
-          Body: "Provider thread without local diff metadata",
-          ThreadID: "PRRT_provider_thread",
-        })],
+        events: [
+          makeEvent({
+            EventType: "review_comment",
+            Body: "Provider thread without local diff metadata",
+            ThreadID: "PRRT_provider_thread",
+          }),
+        ],
         provider: "github",
         platformHost: "github.com",
         repoOwner: "acme",
@@ -1482,17 +1585,20 @@ describe("EventTimeline", () => {
         canReplyToThreads: true,
       },
       context: new Map([
-        [STORES_KEY, {
-          detail: {
-            replyToDiscussion: vi.fn().mockResolvedValue(true),
-            getDetailError: vi.fn(),
+        [
+          STORES_KEY,
+          {
+            detail: {
+              replyToDiscussion: vi.fn().mockResolvedValue(true),
+              getDetailError: vi.fn(),
+            },
+            diff: makeDiffStore(),
+            diffReviewDraft: {
+              setRouteContext: vi.fn(),
+              isSubmitting: () => false,
+            },
           },
-          diff: makeDiffStore(),
-          diffReviewDraft: {
-            setRouteContext: vi.fn(),
-            isSubmitting: () => false,
-          },
-        }],
+        ],
       ]),
     });
 
@@ -1519,17 +1625,22 @@ describe("EventTimeline", () => {
         number: 7,
       },
       context: new Map([
-        [STORES_KEY, {
-          diff,
-          diffReviewDraft: {
-            setRouteContext: vi.fn(),
-            isSubmitting: () => false,
+        [
+          STORES_KEY,
+          {
+            diff,
+            diffReviewDraft: {
+              setRouteContext: vi.fn(),
+              isSubmitting: () => false,
+            },
           },
-        }],
+        ],
       ]),
     });
 
     expect(screen.getByText("Outdated")).toBeTruthy();
-    expect(screen.getByText("Diff context is no longer present in the loaded diff.")).toBeTruthy();
+    expect(
+      screen.getByText("Diff context is no longer present in the loaded diff."),
+    ).toBeTruthy();
   });
 });

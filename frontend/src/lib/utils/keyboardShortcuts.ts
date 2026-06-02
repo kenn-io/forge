@@ -7,8 +7,7 @@ export function shouldIgnoreGlobalShortcutTarget(
     return false;
   }
 
-  const element =
-    target instanceof Element ? target : target.parentElement;
+  const element = target instanceof Element ? target : target.parentElement;
 
   return element?.closest(EDITABLE_SELECTOR) !== null;
 }

@@ -2,22 +2,25 @@ import { expect, test, type Page, type Response } from "@playwright/test";
 
 async function openPRTimeline(page: Page): Promise<void> {
   await page.goto("/pulls/github/acme/widgets/1");
-  await page.locator(".pull-detail")
+  await page
+    .locator(".pull-detail")
     .waitFor({ state: "visible", timeout: 10_000 });
-  await expect(page.locator(".pull-detail .detail-title"))
-    .toContainText("Add widget caching layer");
+  await expect(page.locator(".pull-detail .detail-title")).toContainText(
+    "Add widget caching layer",
+  );
 }
 
 function resolveResponse(page: Page, path: string): Promise<Response> {
   return page.waitForResponse((response) => {
     const url = new URL(response.url());
-    return url.pathname === path
-      && response.request().method() === "POST";
+    return url.pathname === path && response.request().method() === "POST";
   });
 }
 
 test.describe("item references through the full stack", () => {
-  test("routes tracked cross-repository timeline references internally", async ({ page }) => {
+  test("routes tracked cross-repository timeline references internally", async ({
+    page,
+  }) => {
     await openPRTimeline(page);
 
     const response = resolveResponse(
@@ -26,14 +29,19 @@ test.describe("item references through the full stack", () => {
     );
     await page.getByRole("link", { name: "Add CLI flag parser" }).click();
 
-    await expect.poll(() => new URL(page.url()).pathname)
+    await expect
+      .poll(() => new URL(page.url()).pathname)
       .toBe("/pulls/github/acme/tools/1");
     await expect((await response).ok()).toBe(true);
-    await expect(page.locator(".pull-detail .detail-title"))
-      .toContainText("Add CLI flag parser");
+    await expect(page.locator(".pull-detail .detail-title")).toContainText(
+      "Add CLI flag parser",
+    );
   });
 
-  test("opens provider fallback URLs for untracked timeline references", async ({ page, context }) => {
+  test("opens provider fallback URLs for untracked timeline references", async ({
+    page,
+    context,
+  }) => {
     await openPRTimeline(page);
 
     const response = resolveResponse(
@@ -45,7 +53,8 @@ test.describe("item references through the full stack", () => {
 
     expect((await popup).url()).toBe("https://github.com/other/repo/pull/77");
     await expect((await response).ok()).toBe(true);
-    await expect.poll(() => new URL(page.url()).pathname)
+    await expect
+      .poll(() => new URL(page.url()).pathname)
       .toBe("/pulls/github/acme/widgets/1");
   });
 });

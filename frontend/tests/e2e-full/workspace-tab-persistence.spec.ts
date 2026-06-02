@@ -1,7 +1,12 @@
 import { execFileSync } from "node:child_process";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { expect, request as playwrightRequest, test, type APIRequestContext } from "@playwright/test";
+import {
+  expect,
+  request as playwrightRequest,
+  test,
+  type APIRequestContext,
+} from "@playwright/test";
 import {
   startIsolatedWorkspaceE2EServer,
   type IsolatedE2EServer,
@@ -31,7 +36,7 @@ async function waitForWorkspaceReady(
   for (let attempt = 0; attempt < 100; attempt += 1) {
     const response = await api.get(`/api/v1/workspaces/${workspaceId}`);
     expect(response.ok()).toBe(true);
-    const workspace = await response.json() as WorkspaceStatusResponse;
+    const workspace = (await response.json()) as WorkspaceStatusResponse;
     if (workspace.status === "ready") {
       return;
     }
@@ -55,7 +60,8 @@ async function createIssueWorkspace(
     },
   );
   expect(createResponse.status()).toBe(202);
-  const createdWorkspace = await createResponse.json() as WorkspaceStatusResponse;
+  const createdWorkspace =
+    (await createResponse.json()) as WorkspaceStatusResponse;
   await waitForWorkspaceReady(api, createdWorkspace.id);
   return createdWorkspace;
 }
@@ -66,7 +72,9 @@ test.describe("workspace tab persistence", () => {
     timeout: lockedWorkspaceTestTimeoutMs,
   });
 
-  test("opening shell tab keeps Home pane mounted across tab switches", async ({ page }) => {
+  test("opening shell tab keeps Home pane mounted across tab switches", async ({
+    page,
+  }) => {
     test.skip(
       !hasCommand("git") || !hasCommand("tmux", ["-V"]),
       "git and tmux are required for the real workspace flow",
@@ -87,7 +95,8 @@ test.describe("workspace tab persistence", () => {
         },
       );
       expect(createResponse.status()).toBe(202);
-      const createdWorkspace = await createResponse.json() as WorkspaceStatusResponse;
+      const createdWorkspace =
+        (await createResponse.json()) as WorkspaceStatusResponse;
       await waitForWorkspaceReady(api, createdWorkspace.id);
 
       await page.goto(
@@ -133,14 +142,19 @@ test.describe("workspace tab persistence", () => {
       await tmuxTab.click();
       await expect(panes).toHaveCount(2);
       const reactivated = workflow.locator(".group-tab-panel.active");
-      await expect(reactivated).toHaveAttribute("data-test-tmux-id", "preserved");
+      await expect(reactivated).toHaveAttribute(
+        "data-test-tmux-id",
+        "preserved",
+      );
     } finally {
       await api?.dispose();
       await isolatedServer?.stop();
     }
   });
 
-  test("returns to the most recently selected tab for each workspace", async ({ page }) => {
+  test("returns to the most recently selected tab for each workspace", async ({
+    page,
+  }) => {
     test.skip(
       !hasCommand("git") || !hasCommand("tmux", ["-V"]),
       "git and tmux are required for the real workspace flow",
@@ -185,7 +199,9 @@ test.describe("workspace tab persistence", () => {
     }
   });
 
-  test("shows workspace diff in the right sidebar without adding a stage pane", async ({ page }) => {
+  test("shows workspace diff in the right sidebar without adding a stage pane", async ({
+    page,
+  }) => {
     test.skip(
       !hasCommand("git") || !hasCommand("tmux", ["-V"]),
       "git and tmux are required for the real workspace flow",
@@ -205,12 +221,14 @@ test.describe("workspace tab persistence", () => {
         `/api/v1/workspaces/${workspace.id}`,
       );
       expect(workspaceResponse.ok()).toBe(true);
-      const workspaceDetail = await workspaceResponse.json() as WorkspaceStatusResponse;
+      const workspaceDetail =
+        (await workspaceResponse.json()) as WorkspaceStatusResponse;
       expect(workspaceDetail.worktree_path).toBeTruthy();
       await writeFile(
         join(workspaceDetail.worktree_path!, "alpha.ts"),
-        Array.from({ length: 360 }, (_, index) => `alpha ${index + 1}`)
-          .join("\n") + "\n",
+        Array.from({ length: 360 }, (_, index) => `alpha ${index + 1}`).join(
+          "\n",
+        ) + "\n",
       );
       await writeFile(
         join(workspaceDetail.worktree_path!, "beta_test.go"),
@@ -226,22 +244,23 @@ test.describe("workspace tab persistence", () => {
       const homeTab = workflow.getByRole("tab", { name: "Home" });
 
       await expect(homeTab).toHaveAttribute("aria-selected", "true");
-      await expect(
-        workflow.getByRole("tab", { name: "Diff" }),
-      ).toHaveCount(0);
+      await expect(workflow.getByRole("tab", { name: "Diff" })).toHaveCount(0);
       await expect(panes).toHaveCount(1);
 
-      const diffResponse = page.waitForResponse((response) =>
-        response
-          .url()
-          .includes(`/api/v1/workspaces/${workspace.id}/diff`) &&
-        response.request().method() === "GET",
+      const diffResponse = page.waitForResponse(
+        (response) =>
+          response.url().includes(`/api/v1/workspaces/${workspace.id}/diff`) &&
+          response.request().method() === "GET",
       );
       await page.locator(".seg-control .seg-btn", { hasText: "Diff" }).click();
-      await expect(page.locator(".right-sidebar .workspace-diff")).toBeVisible();
-      await expect(page.locator(
-        ".right-sidebar .workspace-diff-scope .diff-scope-picker__label",
-      )).toBeHidden();
+      await expect(
+        page.locator(".right-sidebar .workspace-diff"),
+      ).toBeVisible();
+      await expect(
+        page.locator(
+          ".right-sidebar .workspace-diff-scope .diff-scope-picker__label",
+        ),
+      ).toBeHidden();
       const workspaceScopePicker = page.locator(
         ".right-sidebar .workspace-diff-scope .diff-scope-picker",
       );
@@ -308,38 +327,53 @@ test.describe("workspace tab persistence", () => {
       await expect(alphaDiffFile).toBeVisible();
       await expect(betaDiffFile).toHaveCount(1);
       const rightDiffHost = page.locator(".right-sidebar .pierre-diff").first();
-      await expect.poll(async () => {
-        return await rightDiffHost.evaluate((host) => {
-          return host.shadowRoot?.querySelectorAll("[data-gutter] [data-line-type]")
-            .length ?? 0;
-        });
-      }).toBeGreaterThan(0);
-      await expect.poll(async () => {
-        return await rightDiffHost.evaluate((host) => {
-          return host.shadowRoot?.querySelector("[data-gutter]")
-            ?.getBoundingClientRect().width ?? 0;
-        });
-      }).toBeLessThanOrEqual(56);
+      await expect
+        .poll(async () => {
+          return await rightDiffHost.evaluate((host) => {
+            return (
+              host.shadowRoot?.querySelectorAll(
+                "[data-gutter] [data-line-type]",
+              ).length ?? 0
+            );
+          });
+        })
+        .toBeGreaterThan(0);
+      await expect
+        .poll(async () => {
+          return await rightDiffHost.evaluate((host) => {
+            return (
+              host.shadowRoot
+                ?.querySelector("[data-gutter]")
+                ?.getBoundingClientRect().width ?? 0
+            );
+          });
+        })
+        .toBeLessThanOrEqual(56);
       const rightDiffArea = page.locator(".right-sidebar .diff-area");
-      await expect.poll(async () =>
-        rightDiffArea.evaluate((area) => area.scrollHeight > area.clientHeight),
-      ).toBe(true);
-      const beforePageDownScrollTop = await rightDiffArea.evaluate((area) =>
-        area.scrollTop
+      await expect
+        .poll(async () =>
+          rightDiffArea.evaluate(
+            (area) => area.scrollHeight > area.clientHeight,
+          ),
+        )
+        .toBe(true);
+      const beforePageDownScrollTop = await rightDiffArea.evaluate(
+        (area) => area.scrollTop,
       );
       await rightDiffHost.click();
       await rightDiffHost.press("PageDown");
-      await expect.poll(async () =>
-        rightDiffArea.evaluate((area) => area.scrollTop),
-      ).toBeGreaterThan(beforePageDownScrollTop);
-      const afterPageDownScrollTop = await rightDiffArea.evaluate((area) =>
-        area.scrollTop
+      await expect
+        .poll(async () => rightDiffArea.evaluate((area) => area.scrollTop))
+        .toBeGreaterThan(beforePageDownScrollTop);
+      const afterPageDownScrollTop = await rightDiffArea.evaluate(
+        (area) => area.scrollTop,
       );
       await rightDiffHost.press("j");
       await rightDiffHost.press("k");
       await page.waitForTimeout(100);
-      expect(await rightDiffArea.evaluate((area) => area.scrollTop))
-        .toBe(afterPageDownScrollTop);
+      expect(await rightDiffArea.evaluate((area) => area.scrollTop)).toBe(
+        afterPageDownScrollTop,
+      );
       const diffToolbar = page.locator(".right-sidebar .diff-toolbar");
       await expect(diffToolbar.locator(".compact-more-btn")).toBeVisible();
       await expect(
@@ -350,10 +384,12 @@ test.describe("workspace tab persistence", () => {
       ).toHaveCount(0);
       await expect(diffToolbar.locator(".file-list-toggle")).toHaveCount(0);
       await expect(diffToolbar.locator(".category-toggle")).toHaveCount(0);
-      await expect(page.locator(".right-sidebar .workspace-diff-sidebar"))
-        .toHaveCount(0);
-      await expect(page.locator(".right-sidebar .workspace-diff-resize-handle"))
-        .toHaveCount(0);
+      await expect(
+        page.locator(".right-sidebar .workspace-diff-sidebar"),
+      ).toHaveCount(0);
+      await expect(
+        page.locator(".right-sidebar .workspace-diff-resize-handle"),
+      ).toHaveCount(0);
       const toolbarMetrics = await diffToolbar.evaluate((element) => ({
         clientWidth: element.clientWidth,
         scrollWidth: element.scrollWidth,
@@ -365,10 +401,12 @@ test.describe("workspace tab persistence", () => {
       await diffToolbar.getByRole("button", { name: "Jump to file" }).click();
       const fileJump = page.locator(".right-sidebar .file-jump-menu");
       await expect(fileJump).toBeVisible();
-      await expect(fileJump.getByRole("searchbox", { name: "Jump to file" }))
-        .toBeFocused();
-      await expect(fileJump.getByRole("option", { name: /alpha\.ts/ }))
-        .toBeVisible();
+      await expect(
+        fileJump.getByRole("searchbox", { name: "Jump to file" }),
+      ).toBeFocused();
+      await expect(
+        fileJump.getByRole("option", { name: /alpha\.ts/ }),
+      ).toBeVisible();
       const jumpGeometry = await fileJump.evaluate((menu) => {
         const menuRect = menu.getBoundingClientRect();
         const sidebarRect = menu
@@ -385,20 +423,22 @@ test.describe("workspace tab persistence", () => {
       expect(jumpGeometry.extendsLeftOfSidebar).toBe(true);
       await fileJump.getByRole("option", { name: /beta_test\.go/ }).click();
       await expect(fileJump).toBeHidden();
-      await expect.poll(async () =>
-        page.locator(".right-sidebar .diff-area").evaluate((area) => {
-          const beta = area.querySelector<HTMLElement>(
-            '[data-file-path="beta_test.go"]',
-          );
-          const areaRect = area.getBoundingClientRect();
-          const betaRect = beta?.getBoundingClientRect();
-          return Boolean(
-            betaRect &&
+      await expect
+        .poll(async () =>
+          page.locator(".right-sidebar .diff-area").evaluate((area) => {
+            const beta = area.querySelector<HTMLElement>(
+              '[data-file-path="beta_test.go"]',
+            );
+            const areaRect = area.getBoundingClientRect();
+            const betaRect = beta?.getBoundingClientRect();
+            return Boolean(
+              betaRect &&
               betaRect.top >= areaRect.top &&
               betaRect.top < areaRect.bottom,
-          );
-        }),
-      ).toBe(true);
+            );
+          }),
+        )
+        .toBe(true);
       await diffToolbar.locator(".compact-more-btn").click();
       const compactMenu = page.locator(".right-sidebar .compact-menu");
       await expect(compactMenu).toBeVisible();
@@ -418,16 +458,18 @@ test.describe("workspace tab persistence", () => {
       await expect(
         workflow.getByRole("tab", { name: "Shell" }),
       ).toHaveAttribute("aria-selected", "true");
-      await expect(page.locator(".right-sidebar .workspace-diff")).toBeVisible();
+      await expect(
+        page.locator(".right-sidebar .workspace-diff"),
+      ).toBeVisible();
       await expect(panes).toHaveCount(2);
 
-      await workflow.locator(".group-tab-panel.active .terminal-container").click();
+      await workflow
+        .locator(".group-tab-panel.active .terminal-container")
+        .click();
       for (const key of ["j", "k", "[", "]"]) {
         await page.keyboard.press(key);
       }
-      await expect(page).toHaveURL(
-        new RegExp(`/terminal/${workspace.id}$`),
-      );
+      await expect(page).toHaveURL(new RegExp(`/terminal/${workspace.id}$`));
       await expect(
         workflow.getByRole("tab", { name: "Shell" }),
       ).toHaveAttribute("aria-selected", "true");

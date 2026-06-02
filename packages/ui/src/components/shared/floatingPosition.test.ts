@@ -1,8 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 
 import { floatingPopoverStyle } from "./floatingPosition.js";
 
-function rect(input: Partial<Pick<DOMRect, "left" | "right" | "top" | "bottom">>): DOMRect {
+function rect(
+  input: Partial<Pick<DOMRect, "left" | "right" | "top" | "bottom">>,
+): DOMRect {
   return {
     x: 0,
     y: 0,

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import type { DiffFile } from "../../api/types.js";
 import {
   diffFileWithPatch,
@@ -26,17 +26,19 @@ ${patchBody}
     additions: 1,
     deletions: 1,
     patch,
-    hunks: [{
-      old_start: 1,
-      old_count: 2,
-      new_start: 1,
-      new_count: 2,
-      lines: [
-        { type: "context", content: "line 1", old_num: 1, new_num: 1 },
-        { type: "delete", content: "old line", old_num: 2 },
-        { type: "add", content: "new line", new_num: 2 },
-      ],
-    }],
+    hunks: [
+      {
+        old_start: 1,
+        old_count: 2,
+        new_start: 1,
+        new_count: 2,
+        lines: [
+          { type: "context", content: "line 1", old_num: 1, new_num: 1 },
+          { type: "delete", content: "old line", old_num: 2 },
+          { type: "add", content: "new line", new_num: 2 },
+        ],
+      },
+    ],
   };
 }
 
@@ -59,30 +61,32 @@ function makeLargeLineFile(): DiffFile {
     additions: 1,
     deletions: 0,
     patch,
-    hunks: [{
-      old_start: 1_000_000,
-      old_count: 1,
-      new_start: 1_000_000,
-      new_count: 2,
-      lines: [
-        {
-          type: "context",
-          content: "far line",
-          old_num: 1_000_000,
-          new_num: 1_000_000,
-        },
-        {
-          type: "add",
-          content: "new far line",
-          new_num: 1_000_001,
-        },
-      ],
-    }],
+    hunks: [
+      {
+        old_start: 1_000_000,
+        old_count: 1,
+        new_start: 1_000_000,
+        new_count: 2,
+        lines: [
+          {
+            type: "context",
+            content: "far line",
+            old_num: 1_000_000,
+            new_num: 1_000_000,
+          },
+          {
+            type: "add",
+            content: "new far line",
+            new_num: 1_000_001,
+          },
+        ],
+      },
+    ],
   };
 }
 
 function makeGitQuotedPathFile(patchBody = "-old line\n+new line"): DiffFile {
-  const path = "src/a\"b.go";
+  const path = 'src/a"b.go';
   const patch = `diff --git "a/src/a\\"b.go" "b/src/a\\"b.go"
 --- "a/src/a\\"b.go"
 +++ "b/src/a\\"b.go"
@@ -100,29 +104,39 @@ ${patchBody}
     additions: 1,
     deletions: 1,
     patch,
-    hunks: [{
-      old_start: 1,
-      old_count: 2,
-      new_start: 1,
-      new_count: 2,
-      lines: [
-        { type: "context", content: "line 1", old_num: 1, new_num: 1 },
-        { type: "delete", content: "old line", old_num: 2 },
-        { type: "add", content: "new line", new_num: 2 },
-      ],
-    }],
+    hunks: [
+      {
+        old_start: 1,
+        old_count: 2,
+        new_start: 1,
+        new_count: 2,
+        lines: [
+          { type: "context", content: "line 1", old_num: 1, new_num: 1 },
+          { type: "delete", content: "old line", old_num: 2 },
+          { type: "add", content: "new line", new_num: 2 },
+        ],
+      },
+    ],
   };
 }
 
 describe("Pierre diff parsing", () => {
   it("does not assign reusable cache keys to untrusted patch input", () => {
-    const first = parsePierreFileDiff(makeFile("src/foo.ts", "-old line\n+new line"));
-    const second = parsePierreFileDiff(makeFile("src/foo.ts", "-other line\n+changed line"));
+    const first = parsePierreFileDiff(
+      makeFile("src/foo.ts", "-old line\n+new line"),
+    );
+    const second = parsePierreFileDiff(
+      makeFile("src/foo.ts", "-other line\n+changed line"),
+    );
 
     expect(first).toBeDefined();
     expect(second).toBeDefined();
-    expect((first as { cacheKey?: string } | undefined)?.cacheKey).toBeUndefined();
-    expect((second as { cacheKey?: string } | undefined)?.cacheKey).toBeUndefined();
+    expect(
+      (first as { cacheKey?: string } | undefined)?.cacheKey,
+    ).toBeUndefined();
+    expect(
+      (second as { cacheKey?: string } | undefined)?.cacheKey,
+    ).toBeUndefined();
   });
 
   it("uses distinct cache keys for sparse and full context contents", () => {
@@ -130,11 +144,23 @@ describe("Pierre diff parsing", () => {
     const parsed = parsePierreFileDiff(file, {
       enableDemandContextExpansion: true,
     });
-    const sparseOld = pierreFileContents("src/foo.ts", "line 1\nold line\n", "sparse-old");
-    const fullOld = pierreFileContents("src/foo.ts", "line 1\nold line\n", "full-old");
+    const sparseOld = pierreFileContents(
+      "src/foo.ts",
+      "line 1\nold line\n",
+      "sparse-old",
+    );
+    const fullOld = pierreFileContents(
+      "src/foo.ts",
+      "line 1\nold line\n",
+      "full-old",
+    );
     const full = parsePierreFileDiffWithContents(file, {
       oldFile: fullOld,
-      newFile: pierreFileContents("src/foo.ts", "line 1\nnew line\n", "full-new"),
+      newFile: pierreFileContents(
+        "src/foo.ts",
+        "line 1\nnew line\n",
+        "full-new",
+      ),
     });
 
     expect(parsed).toBeDefined();
@@ -150,7 +176,9 @@ describe("Pierre diff parsing", () => {
     });
 
     expect(parsed).toBeDefined();
-    expect((parsed as { isPartial?: boolean } | undefined)?.isPartial).toBe(true);
+    expect((parsed as { isPartial?: boolean } | undefined)?.isPartial).toBe(
+      true,
+    );
   });
 
   it("handles nullable hunk payloads when sparse context expansion is enabled", () => {
@@ -183,9 +211,11 @@ describe("Pierre diff parsing", () => {
 
   it("quotes synthetic patch paths that can be parsed as patch control text", () => {
     expect(patchPath("a/src/normal.ts")).toBe("a/src/normal.ts");
-    expect(patchPath("a/src/evil\n--- a/forged")).toBe("\"a/src/evil\\n--- a/forged\"");
-    expect(patchPath("a/src/a\"b.ts")).toBe("\"a/src/a\\\"b.ts\"");
-    expect(patchPath("a/src/ctl\u007f.ts")).toBe("\"a/src/ctl\\u007f.ts\"");
+    expect(patchPath("a/src/evil\n--- a/forged")).toBe(
+      '"a/src/evil\\n--- a/forged"',
+    );
+    expect(patchPath('a/src/a"b.ts')).toBe('"a/src/a\\"b.ts"');
+    expect(patchPath("a/src/ctl\u007f.ts")).toBe('"a/src/ctl\\u007f.ts"');
     expect(patchPath("/dev/null")).toBe("/dev/null");
   });
 
@@ -198,7 +228,7 @@ describe("Pierre diff parsing", () => {
     const patched = diffFileWithPatch(file);
 
     expect(patched.patch).toContain(
-      "diff --git \"a/src/evil\\n--- a/forged.ts\" \"b/src/evil\\n--- a/forged.ts\"",
+      'diff --git "a/src/evil\\n--- a/forged.ts" "b/src/evil\\n--- a/forged.ts"',
     );
     expect(patched.patch).not.toContain("\n--- a/forged.ts");
   });
@@ -213,13 +243,14 @@ describe("Pierre diff parsing", () => {
   });
 
   it("falls back to safe Pierre headers when sparse context parsing sees quoted paths", () => {
-    const parsed = parsePierreFileDiff(
-      makeGitQuotedPathFile(),
-      { enableDemandContextExpansion: true },
-    );
+    const parsed = parsePierreFileDiff(makeGitQuotedPathFile(), {
+      enableDemandContextExpansion: true,
+    });
 
     expect(parsed).toBeDefined();
-    expect((parsed as { isPartial?: boolean } | undefined)?.isPartial).toBe(false);
+    expect((parsed as { isPartial?: boolean } | undefined)?.isPartial).toBe(
+      false,
+    );
   });
 
   it("preserves hunk body lines that look like patch headers during fallback", () => {

@@ -1,8 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 
-import {
-  buildMobileActivityRepoOptions,
-} from "./mobileActivityRepoOptions.js";
+import { buildMobileActivityRepoOptions } from "./mobileActivityRepoOptions.js";
 
 const baseRepo = {
   provider: "github",
@@ -70,8 +68,17 @@ describe("buildMobileActivityRepoOptions", () => {
 
   it("omits glob configuration rows because they are patterns, not selectable concrete repos", () => {
     const options = buildMobileActivityRepoOptions([
-      { ...baseRepo, platform_host: "github.com", is_glob: true, repo_path: "acme/*" },
-      { ...baseRepo, platform_host: "ghe.example.com", repo_path: "acme/widgets" },
+      {
+        ...baseRepo,
+        platform_host: "github.com",
+        is_glob: true,
+        repo_path: "acme/*",
+      },
+      {
+        ...baseRepo,
+        platform_host: "ghe.example.com",
+        repo_path: "acme/widgets",
+      },
     ]);
 
     expect(options).toEqual([

@@ -4,1086 +4,1086 @@
  */
 
 export interface paths {
-    "/api/branches": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List branches with job counts */
-        get: operations["list-branches"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+  "/api/branches": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/comment": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Add a comment to a job or commit */
-        post: operations["add-comment"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /** List branches with job counts */
+    get: operations["list-branches"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/comment": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/comments": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List comments for a job or commit */
-        get: operations["list-comments"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /** Add a comment to a job or commit */
+    post: operations["add-comment"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/comments": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/job/cancel": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Cancel a queued or running job */
-        post: operations["cancel-job"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /** List comments for a job or commit */
+    get: operations["list-comments"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/job/cancel": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/job/output": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get live output for a running job */
-        get: operations["get-job-output"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /** Cancel a queued or running job */
+    post: operations["cancel-job"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/job/output": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/job/rerun": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Re-enqueue a completed or failed job */
-        post: operations["rerun-job"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /** Get live output for a running job */
+    get: operations["get-job-output"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/job/rerun": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/jobs": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List review jobs */
-        get: operations["list-jobs"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /** Re-enqueue a completed or failed job */
+    post: operations["rerun-job"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/jobs": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/repos": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List repos with job counts */
-        get: operations["list-repos"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /** List review jobs */
+    get: operations["list-jobs"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/repos": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/review": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get a review by job ID or SHA */
-        get: operations["get-review"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /** List repos with job counts */
+    get: operations["list-repos"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/review": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/review/close": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Close or reopen a review */
-        post: operations["close-review"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /** Get a review by job ID or SHA */
+    get: operations["get-review"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/review/close": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/status": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get daemon status */
-        get: operations["get-status"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /** Close or reopen a review */
+    post: operations["close-review"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/status": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/summary": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get review summary statistics */
-        get: operations["get-summary"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /** Get daemon status */
+    get: operations["get-status"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/summary": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
+    /** Get review summary statistics */
+    get: operations["get-summary"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
-    schemas: {
-        AddCommentRequest: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example https://example.com/AddCommentRequest.json
-             */
-            readonly $schema?: string;
-            comment: string;
-            commenter: string;
-            /** Format: int64 */
-            job_id?: number;
-            sha?: string;
-        };
-        AgentStats: {
-            agent: string;
-            /** Format: int64 */
-            errors: number;
-            /** Format: int64 */
-            failed: number;
-            /** Format: double */
-            median_duration_secs: number;
-            /** Format: double */
-            pass_rate: number;
-            /** Format: int64 */
-            passed: number;
-            /** Format: int64 */
-            total: number;
-        };
-        BranchWithCount: {
-            /** Format: int64 */
-            count: number;
-            name: string;
-        };
-        CancelJobOutputBody: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example https://example.com/CancelJobOutputBody.json
-             */
-            readonly $schema?: string;
-            success: boolean;
-        };
-        CancelJobRequest: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example https://example.com/CancelJobRequest.json
-             */
-            readonly $schema?: string;
-            /** Format: int64 */
-            job_id: number;
-        };
-        CloseReviewOutputBody: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example https://example.com/CloseReviewOutputBody.json
-             */
-            readonly $schema?: string;
-            success: boolean;
-        };
-        CloseReviewRequest: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example https://example.com/CloseReviewRequest.json
-             */
-            readonly $schema?: string;
-            closed: boolean;
-            /** Format: int64 */
-            job_id: number;
-        };
-        DaemonStatus: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example https://example.com/DaemonStatus.json
-             */
-            readonly $schema?: string;
-            /** Format: int64 */
-            active_workers: number;
-            /** Format: int64 */
-            applied_jobs: number;
-            /** Format: int64 */
-            canceled_jobs: number;
-            /** Format: int64 */
-            completed_jobs: number;
-            /** Format: int64 */
-            config_reload_counter?: number;
-            config_reloaded_at?: string;
-            /** Format: int64 */
-            failed_jobs: number;
-            machine_id?: string;
-            /** Format: int64 */
-            max_workers: number;
-            /** Format: int64 */
-            queued_jobs: number;
-            /** Format: int64 */
-            rebased_jobs: number;
-            /** Format: int64 */
-            running_jobs: number;
-            version: string;
-        };
-        DurationStats: {
-            /** Format: double */
-            queue_p50_secs: number;
-            /** Format: double */
-            queue_p90_secs: number;
-            /** Format: double */
-            queue_p99_secs: number;
-            /** Format: double */
-            review_p50_secs: number;
-            /** Format: double */
-            review_p90_secs: number;
-            /** Format: double */
-            review_p99_secs: number;
-        };
-        ErrorDetail: {
-            /** @description Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id' */
-            location?: string;
-            /** @description Error message text */
-            message?: string;
-            /** @description The value at the given location */
-            value?: unknown;
-        };
-        ErrorModel: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example https://example.com/ErrorModel.json
-             */
-            readonly $schema?: string;
-            /**
-             * @description A human-readable explanation specific to this occurrence of the problem.
-             * @example Property foo is required but is missing.
-             */
-            detail?: string;
-            /** @description Optional list of individual error details */
-            errors?: components["schemas"]["ErrorDetail"][] | null;
-            /**
-             * Format: uri
-             * @description A URI reference that identifies the specific occurrence of the problem.
-             * @example https://example.com/error-log/abc123
-             */
-            instance?: string;
-            /**
-             * Format: int64
-             * @description HTTP status code
-             * @example 400
-             */
-            status?: number;
-            /**
-             * @description A short, human-readable summary of the problem type. This value should not change between occurrences of the error.
-             * @example Bad Request
-             */
-            title?: string;
-            /**
-             * Format: uri
-             * @description A URI reference to human-readable documentation for the error.
-             * @default about:blank
-             * @example https://example.com/errors/example
-             */
-            type: string;
-        };
-        FailureStats: {
-            errors: {
-                [key: string]: number;
-            };
-            /** Format: int64 */
-            retries: number;
-            /** Format: int64 */
-            total: number;
-        };
-        JobOutputResponse: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example https://example.com/JobOutputResponse.json
-             */
-            readonly $schema?: string;
-            has_more: boolean;
-            /** Format: int64 */
-            job_id: number;
-            lines: components["schemas"]["OutputLine"][] | null;
-            status: string;
-        };
-        JobStats: {
-            /** Format: int64 */
-            closed: number;
-            /** Format: int64 */
-            done: number;
-            /** Format: int64 */
-            open: number;
-        };
-        JobTypeStats: {
-            /** Format: int64 */
-            applied?: number;
-            /** Format: int64 */
-            count: number;
-            /** Format: int64 */
-            rebased?: number;
-            type: string;
-        };
-        ListBranchesOutputBody: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example https://example.com/ListBranchesOutputBody.json
-             */
-            readonly $schema?: string;
-            branches: components["schemas"]["BranchWithCount"][] | null;
-            /** Format: int64 */
-            nulls_remaining: number;
-            /** Format: int64 */
-            total_count: number;
-        };
-        ListCommentsOutputBody: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example https://example.com/ListCommentsOutputBody.json
-             */
-            readonly $schema?: string;
-            responses: components["schemas"]["Response"][] | null;
-        };
-        ListJobsOutputBody: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example https://example.com/ListJobsOutputBody.json
-             */
-            readonly $schema?: string;
-            has_more: boolean;
-            jobs: components["schemas"]["ReviewJob"][] | null;
-            stats: components["schemas"]["JobStats"];
-        };
-        ListReposOutputBody: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example https://example.com/ListReposOutputBody.json
-             */
-            readonly $schema?: string;
-            repos: components["schemas"]["RepoWithCount"][] | null;
-            /** Format: int64 */
-            total_count: number;
-        };
-        OutputLine: {
-            line_type: string;
-            text: string;
-            /** Format: date-time */
-            ts: string;
-        };
-        OverviewStats: {
-            /** Format: int64 */
-            applied: number;
-            /** Format: int64 */
-            canceled: number;
-            /** Format: int64 */
-            done: number;
-            /** Format: int64 */
-            failed: number;
-            /** Format: int64 */
-            queued: number;
-            /** Format: int64 */
-            rebased: number;
-            /** Format: int64 */
-            running: number;
-            /** Format: int64 */
-            total: number;
-        };
-        RepoSummary: {
-            /** Format: int64 */
-            addressed: number;
-            /** Format: int64 */
-            failed: number;
-            name: string;
-            /** Format: int64 */
-            passed: number;
-            path: string;
-            /** Format: int64 */
-            total: number;
-        };
-        RepoWithCount: {
-            /** Format: int64 */
-            count: number;
-            name: string;
-            root_path: string;
-        };
-        RerunJobOutputBody: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example https://example.com/RerunJobOutputBody.json
-             */
-            readonly $schema?: string;
-            success: boolean;
-        };
-        RerunJobRequest: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example https://example.com/RerunJobRequest.json
-             */
-            readonly $schema?: string;
-            /** Format: int64 */
-            job_id: number;
-        };
-        Response: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example https://example.com/Response.json
-             */
-            readonly $schema?: string;
-            /** Format: int64 */
-            commit_id?: number;
-            /** Format: date-time */
-            created_at: string;
-            /** Format: int64 */
-            id: number;
-            /** Format: int64 */
-            job_id?: number;
-            responder: string;
-            response: string;
-            source_machine_id?: string;
-            /** Format: date-time */
-            synced_at?: string;
-            uuid?: string;
-        };
-        Review: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example https://example.com/Review.json
-             */
-            readonly $schema?: string;
-            agent: string;
-            closed: boolean;
-            /** Format: date-time */
-            created_at: string;
-            /** Format: int64 */
-            id: number;
-            job?: components["schemas"]["ReviewJob"];
-            /** Format: int64 */
-            job_id: number;
-            output: string;
-            prompt: string;
-            /** Format: date-time */
-            synced_at?: string;
-            /** Format: date-time */
-            updated_at?: string;
-            updated_by_machine_id?: string;
-            uuid?: string;
-            /** Format: int64 */
-            verdict_bool?: number;
-        };
-        ReviewJob: {
-            agent: string;
-            agentic: boolean;
-            branch?: string;
-            closed?: boolean;
-            /** Format: int64 */
-            commit_id?: number;
-            commit_subject?: string;
-            diff_content?: string;
-            /** Format: date-time */
-            enqueued_at: string;
-            error?: string;
-            /** Format: date-time */
-            finished_at?: string;
-            git_ref: string;
-            /** Format: int64 */
-            id: number;
-            job_type: string;
-            model?: string;
-            output_prefix?: string;
-            /** Format: int64 */
-            parent_job_id?: number;
-            patch?: string;
-            patch_id?: string;
-            prompt?: string;
-            prompt_prebuilt: boolean;
-            provider?: string;
-            reasoning?: string;
-            /** Format: int64 */
-            repo_id: number;
-            repo_name?: string;
-            repo_path?: string;
-            requested_model?: string;
-            requested_provider?: string;
-            /** Format: int64 */
-            retry_count: number;
-            review_type?: string;
-            session_id?: string;
-            source_machine_id?: string;
-            /** Format: date-time */
-            started_at?: string;
-            status: string;
-            /** Format: date-time */
-            synced_at?: string;
-            token_usage?: string;
-            /** Format: date-time */
-            updated_at?: string;
-            uuid?: string;
-            verdict?: string;
-            worker_id?: string;
-            worktree_path?: string;
-        };
-        Summary: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example https://example.com/Summary.json
-             */
-            readonly $schema?: string;
-            agents: components["schemas"]["AgentStats"][] | null;
-            branch?: string;
-            duration: components["schemas"]["DurationStats"];
-            failures: components["schemas"]["FailureStats"];
-            job_types: components["schemas"]["JobTypeStats"][] | null;
-            overview: components["schemas"]["OverviewStats"];
-            repo_path?: string;
-            repos?: components["schemas"]["RepoSummary"][] | null;
-            /** Format: date-time */
-            since: string;
-            verdicts: components["schemas"]["VerdictStats"];
-        };
-        VerdictStats: {
-            /** Format: int64 */
-            addressed: number;
-            /** Format: int64 */
-            failed: number;
-            /** Format: double */
-            pass_rate: number;
-            /** Format: int64 */
-            passed: number;
-            /** Format: double */
-            resolution_rate: number;
-            /** Format: int64 */
-            total: number;
-        };
+  schemas: {
+    AddCommentRequest: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/AddCommentRequest.json
+       */
+      readonly $schema?: string;
+      comment: string;
+      commenter: string;
+      /** Format: int64 */
+      job_id?: number;
+      sha?: string;
     };
-    responses: never;
-    parameters: never;
-    requestBodies: never;
-    headers: never;
-    pathItems: never;
+    AgentStats: {
+      agent: string;
+      /** Format: int64 */
+      errors: number;
+      /** Format: int64 */
+      failed: number;
+      /** Format: double */
+      median_duration_secs: number;
+      /** Format: double */
+      pass_rate: number;
+      /** Format: int64 */
+      passed: number;
+      /** Format: int64 */
+      total: number;
+    };
+    BranchWithCount: {
+      /** Format: int64 */
+      count: number;
+      name: string;
+    };
+    CancelJobOutputBody: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/CancelJobOutputBody.json
+       */
+      readonly $schema?: string;
+      success: boolean;
+    };
+    CancelJobRequest: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/CancelJobRequest.json
+       */
+      readonly $schema?: string;
+      /** Format: int64 */
+      job_id: number;
+    };
+    CloseReviewOutputBody: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/CloseReviewOutputBody.json
+       */
+      readonly $schema?: string;
+      success: boolean;
+    };
+    CloseReviewRequest: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/CloseReviewRequest.json
+       */
+      readonly $schema?: string;
+      closed: boolean;
+      /** Format: int64 */
+      job_id: number;
+    };
+    DaemonStatus: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/DaemonStatus.json
+       */
+      readonly $schema?: string;
+      /** Format: int64 */
+      active_workers: number;
+      /** Format: int64 */
+      applied_jobs: number;
+      /** Format: int64 */
+      canceled_jobs: number;
+      /** Format: int64 */
+      completed_jobs: number;
+      /** Format: int64 */
+      config_reload_counter?: number;
+      config_reloaded_at?: string;
+      /** Format: int64 */
+      failed_jobs: number;
+      machine_id?: string;
+      /** Format: int64 */
+      max_workers: number;
+      /** Format: int64 */
+      queued_jobs: number;
+      /** Format: int64 */
+      rebased_jobs: number;
+      /** Format: int64 */
+      running_jobs: number;
+      version: string;
+    };
+    DurationStats: {
+      /** Format: double */
+      queue_p50_secs: number;
+      /** Format: double */
+      queue_p90_secs: number;
+      /** Format: double */
+      queue_p99_secs: number;
+      /** Format: double */
+      review_p50_secs: number;
+      /** Format: double */
+      review_p90_secs: number;
+      /** Format: double */
+      review_p99_secs: number;
+    };
+    ErrorDetail: {
+      /** @description Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id' */
+      location?: string;
+      /** @description Error message text */
+      message?: string;
+      /** @description The value at the given location */
+      value?: unknown;
+    };
+    ErrorModel: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/ErrorModel.json
+       */
+      readonly $schema?: string;
+      /**
+       * @description A human-readable explanation specific to this occurrence of the problem.
+       * @example Property foo is required but is missing.
+       */
+      detail?: string;
+      /** @description Optional list of individual error details */
+      errors?: components["schemas"]["ErrorDetail"][] | null;
+      /**
+       * Format: uri
+       * @description A URI reference that identifies the specific occurrence of the problem.
+       * @example https://example.com/error-log/abc123
+       */
+      instance?: string;
+      /**
+       * Format: int64
+       * @description HTTP status code
+       * @example 400
+       */
+      status?: number;
+      /**
+       * @description A short, human-readable summary of the problem type. This value should not change between occurrences of the error.
+       * @example Bad Request
+       */
+      title?: string;
+      /**
+       * Format: uri
+       * @description A URI reference to human-readable documentation for the error.
+       * @default about:blank
+       * @example https://example.com/errors/example
+       */
+      type: string;
+    };
+    FailureStats: {
+      errors: {
+        [key: string]: number;
+      };
+      /** Format: int64 */
+      retries: number;
+      /** Format: int64 */
+      total: number;
+    };
+    JobOutputResponse: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/JobOutputResponse.json
+       */
+      readonly $schema?: string;
+      has_more: boolean;
+      /** Format: int64 */
+      job_id: number;
+      lines: components["schemas"]["OutputLine"][] | null;
+      status: string;
+    };
+    JobStats: {
+      /** Format: int64 */
+      closed: number;
+      /** Format: int64 */
+      done: number;
+      /** Format: int64 */
+      open: number;
+    };
+    JobTypeStats: {
+      /** Format: int64 */
+      applied?: number;
+      /** Format: int64 */
+      count: number;
+      /** Format: int64 */
+      rebased?: number;
+      type: string;
+    };
+    ListBranchesOutputBody: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/ListBranchesOutputBody.json
+       */
+      readonly $schema?: string;
+      branches: components["schemas"]["BranchWithCount"][] | null;
+      /** Format: int64 */
+      nulls_remaining: number;
+      /** Format: int64 */
+      total_count: number;
+    };
+    ListCommentsOutputBody: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/ListCommentsOutputBody.json
+       */
+      readonly $schema?: string;
+      responses: components["schemas"]["Response"][] | null;
+    };
+    ListJobsOutputBody: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/ListJobsOutputBody.json
+       */
+      readonly $schema?: string;
+      has_more: boolean;
+      jobs: components["schemas"]["ReviewJob"][] | null;
+      stats: components["schemas"]["JobStats"];
+    };
+    ListReposOutputBody: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/ListReposOutputBody.json
+       */
+      readonly $schema?: string;
+      repos: components["schemas"]["RepoWithCount"][] | null;
+      /** Format: int64 */
+      total_count: number;
+    };
+    OutputLine: {
+      line_type: string;
+      text: string;
+      /** Format: date-time */
+      ts: string;
+    };
+    OverviewStats: {
+      /** Format: int64 */
+      applied: number;
+      /** Format: int64 */
+      canceled: number;
+      /** Format: int64 */
+      done: number;
+      /** Format: int64 */
+      failed: number;
+      /** Format: int64 */
+      queued: number;
+      /** Format: int64 */
+      rebased: number;
+      /** Format: int64 */
+      running: number;
+      /** Format: int64 */
+      total: number;
+    };
+    RepoSummary: {
+      /** Format: int64 */
+      addressed: number;
+      /** Format: int64 */
+      failed: number;
+      name: string;
+      /** Format: int64 */
+      passed: number;
+      path: string;
+      /** Format: int64 */
+      total: number;
+    };
+    RepoWithCount: {
+      /** Format: int64 */
+      count: number;
+      name: string;
+      root_path: string;
+    };
+    RerunJobOutputBody: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/RerunJobOutputBody.json
+       */
+      readonly $schema?: string;
+      success: boolean;
+    };
+    RerunJobRequest: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/RerunJobRequest.json
+       */
+      readonly $schema?: string;
+      /** Format: int64 */
+      job_id: number;
+    };
+    Response: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/Response.json
+       */
+      readonly $schema?: string;
+      /** Format: int64 */
+      commit_id?: number;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: int64 */
+      id: number;
+      /** Format: int64 */
+      job_id?: number;
+      responder: string;
+      response: string;
+      source_machine_id?: string;
+      /** Format: date-time */
+      synced_at?: string;
+      uuid?: string;
+    };
+    Review: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/Review.json
+       */
+      readonly $schema?: string;
+      agent: string;
+      closed: boolean;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: int64 */
+      id: number;
+      job?: components["schemas"]["ReviewJob"];
+      /** Format: int64 */
+      job_id: number;
+      output: string;
+      prompt: string;
+      /** Format: date-time */
+      synced_at?: string;
+      /** Format: date-time */
+      updated_at?: string;
+      updated_by_machine_id?: string;
+      uuid?: string;
+      /** Format: int64 */
+      verdict_bool?: number;
+    };
+    ReviewJob: {
+      agent: string;
+      agentic: boolean;
+      branch?: string;
+      closed?: boolean;
+      /** Format: int64 */
+      commit_id?: number;
+      commit_subject?: string;
+      diff_content?: string;
+      /** Format: date-time */
+      enqueued_at: string;
+      error?: string;
+      /** Format: date-time */
+      finished_at?: string;
+      git_ref: string;
+      /** Format: int64 */
+      id: number;
+      job_type: string;
+      model?: string;
+      output_prefix?: string;
+      /** Format: int64 */
+      parent_job_id?: number;
+      patch?: string;
+      patch_id?: string;
+      prompt?: string;
+      prompt_prebuilt: boolean;
+      provider?: string;
+      reasoning?: string;
+      /** Format: int64 */
+      repo_id: number;
+      repo_name?: string;
+      repo_path?: string;
+      requested_model?: string;
+      requested_provider?: string;
+      /** Format: int64 */
+      retry_count: number;
+      review_type?: string;
+      session_id?: string;
+      source_machine_id?: string;
+      /** Format: date-time */
+      started_at?: string;
+      status: string;
+      /** Format: date-time */
+      synced_at?: string;
+      token_usage?: string;
+      /** Format: date-time */
+      updated_at?: string;
+      uuid?: string;
+      verdict?: string;
+      worker_id?: string;
+      worktree_path?: string;
+    };
+    Summary: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/Summary.json
+       */
+      readonly $schema?: string;
+      agents: components["schemas"]["AgentStats"][] | null;
+      branch?: string;
+      duration: components["schemas"]["DurationStats"];
+      failures: components["schemas"]["FailureStats"];
+      job_types: components["schemas"]["JobTypeStats"][] | null;
+      overview: components["schemas"]["OverviewStats"];
+      repo_path?: string;
+      repos?: components["schemas"]["RepoSummary"][] | null;
+      /** Format: date-time */
+      since: string;
+      verdicts: components["schemas"]["VerdictStats"];
+    };
+    VerdictStats: {
+      /** Format: int64 */
+      addressed: number;
+      /** Format: int64 */
+      failed: number;
+      /** Format: double */
+      pass_rate: number;
+      /** Format: int64 */
+      passed: number;
+      /** Format: double */
+      resolution_rate: number;
+      /** Format: int64 */
+      total: number;
+    };
+  };
+  responses: never;
+  parameters: never;
+  requestBodies: never;
+  headers: never;
+  pathItems: never;
 }
 export type $defs = Record<string, never>;
 export interface operations {
-    "list-branches": {
-        parameters: {
-            query?: {
-                /** @description Filter to branches in these repo paths */
-                repo?: string[] | null;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ListBranchesOutputBody"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ErrorModel"];
-                };
-            };
-        };
+  "list-branches": {
+    parameters: {
+      query?: {
+        /** @description Filter to branches in these repo paths */
+        repo?: string[] | null;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "add-comment": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["AddCommentRequest"];
-            };
+        content: {
+          "application/json": components["schemas"]["ListBranchesOutputBody"];
         };
-        responses: {
-            /** @description Created */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Response"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ErrorModel"];
-                };
-            };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
         };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
     };
-    "list-comments": {
-        parameters: {
-            query?: {
-                /** @description List comments by job ID */
-                job_id?: number;
-                /** @description List comments by commit ID */
-                commit_id?: number;
-                /** @description List comments by commit SHA */
-                sha?: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ListCommentsOutputBody"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ErrorModel"];
-                };
-            };
-        };
+  };
+  "add-comment": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "cancel-job": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CancelJobRequest"];
-            };
-        };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CancelJobOutputBody"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ErrorModel"];
-                };
-            };
-        };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["AddCommentRequest"];
+      };
     };
-    "get-job-output": {
-        parameters: {
-            query: {
-                /** @description Job ID to fetch output for */
-                job_id: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
+    responses: {
+      /** @description Created */
+      201: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["JobOutputResponse"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ErrorModel"];
-                };
-            };
+        content: {
+          "application/json": components["schemas"]["Response"];
         };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
     };
-    "rerun-job": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["RerunJobRequest"];
-            };
-        };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RerunJobOutputBody"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ErrorModel"];
-                };
-            };
-        };
+  };
+  "list-comments": {
+    parameters: {
+      query?: {
+        /** @description List comments by job ID */
+        job_id?: number;
+        /** @description List comments by commit ID */
+        commit_id?: number;
+        /** @description List comments by commit SHA */
+        sha?: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "list-jobs": {
-        parameters: {
-            query?: {
-                /** @description Return a single job by ID */
-                id?: number;
-                /** @description Filter by job status */
-                status?: string;
-                /** @description Filter by repo root path */
-                repo?: string;
-                /** @description Filter by git ref */
-                git_ref?: string;
-                /** @description Filter by branch name */
-                branch?: string;
-                /** @description Include jobs with no branch when filtering by branch */
-                branch_include_empty?: "true" | "false" | "";
-                /** @description Filter by review closed state */
-                closed?: "true" | "false" | "";
-                /** @description Filter by job type */
-                job_type?: string;
-                /** @description Exclude jobs of this type */
-                exclude_job_type?: string;
-                /** @description Filter repos by path prefix */
-                repo_prefix?: string;
-                /** @description Max results (default 50, 0=unlimited, max 10000) */
-                limit?: number;
-                /** @description Skip N results (requires limit>0) */
-                offset?: number;
-                /** @description Cursor: return jobs with ID < this value */
-                before?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ListJobsOutputBody"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ErrorModel"];
-                };
-            };
+        content: {
+          "application/json": components["schemas"]["ListCommentsOutputBody"];
         };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
     };
-    "list-repos": {
-        parameters: {
-            query?: {
-                /** @description Filter to repos with jobs on this branch */
-                branch?: string;
-                /** @description Filter repos by path prefix */
-                prefix?: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ListReposOutputBody"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ErrorModel"];
-                };
-            };
-        };
+  };
+  "cancel-job": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "get-review": {
-        parameters: {
-            query?: {
-                /** @description Look up review by job ID */
-                job_id?: number;
-                /** @description Look up review by commit SHA */
-                sha?: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Review"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ErrorModel"];
-                };
-            };
-        };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CancelJobRequest"];
+      };
     };
-    "close-review": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CloseReviewRequest"];
-            };
+        content: {
+          "application/json": components["schemas"]["CancelJobOutputBody"];
         };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CloseReviewOutputBody"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ErrorModel"];
-                };
-            };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
         };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
     };
-    "get-status": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DaemonStatus"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ErrorModel"];
-                };
-            };
-        };
+  };
+  "get-job-output": {
+    parameters: {
+      query: {
+        /** @description Job ID to fetch output for */
+        job_id: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "get-summary": {
-        parameters: {
-            query?: {
-                /** @description Time window (e.g. 7d, 24h). Default: 7d */
-                since?: string;
-                /** @description Filter by repo root path */
-                repo?: string;
-                /** @description Filter by branch name */
-                branch?: string;
-                /** @description Include per-repo breakdown */
-                all?: "true" | "false";
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Summary"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ErrorModel"];
-                };
-            };
+        content: {
+          "application/json": components["schemas"]["JobOutputResponse"];
         };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
     };
+  };
+  "rerun-job": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RerunJobRequest"];
+      };
+    };
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RerunJobOutputBody"];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+    };
+  };
+  "list-jobs": {
+    parameters: {
+      query?: {
+        /** @description Return a single job by ID */
+        id?: number;
+        /** @description Filter by job status */
+        status?: string;
+        /** @description Filter by repo root path */
+        repo?: string;
+        /** @description Filter by git ref */
+        git_ref?: string;
+        /** @description Filter by branch name */
+        branch?: string;
+        /** @description Include jobs with no branch when filtering by branch */
+        branch_include_empty?: "true" | "false" | "";
+        /** @description Filter by review closed state */
+        closed?: "true" | "false" | "";
+        /** @description Filter by job type */
+        job_type?: string;
+        /** @description Exclude jobs of this type */
+        exclude_job_type?: string;
+        /** @description Filter repos by path prefix */
+        repo_prefix?: string;
+        /** @description Max results (default 50, 0=unlimited, max 10000) */
+        limit?: number;
+        /** @description Skip N results (requires limit>0) */
+        offset?: number;
+        /** @description Cursor: return jobs with ID < this value */
+        before?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ListJobsOutputBody"];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+    };
+  };
+  "list-repos": {
+    parameters: {
+      query?: {
+        /** @description Filter to repos with jobs on this branch */
+        branch?: string;
+        /** @description Filter repos by path prefix */
+        prefix?: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ListReposOutputBody"];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+    };
+  };
+  "get-review": {
+    parameters: {
+      query?: {
+        /** @description Look up review by job ID */
+        job_id?: number;
+        /** @description Look up review by commit SHA */
+        sha?: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Review"];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+    };
+  };
+  "close-review": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CloseReviewRequest"];
+      };
+    };
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["CloseReviewOutputBody"];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+    };
+  };
+  "get-status": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["DaemonStatus"];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+    };
+  };
+  "get-summary": {
+    parameters: {
+      query?: {
+        /** @description Time window (e.g. 7d, 24h). Default: 7d */
+        since?: string;
+        /** @description Filter by repo root path */
+        repo?: string;
+        /** @description Filter by branch name */
+        branch?: string;
+        /** @description Include per-repo breakdown */
+        all?: "true" | "false";
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Summary"];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+    };
+  };
 }

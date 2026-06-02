@@ -1,9 +1,19 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { createDiffStore } from "@middleman/ui/stores/diff";
 import type { DiffStoreOptions } from "@middleman/ui/stores/diff";
-import type { DiffFile, DiffResult, FilesResult } from "@middleman/ui/api/types";
+import type {
+  DiffFile,
+  DiffResult,
+  FilesResult,
+} from "@middleman/ui/api/types";
 
-const ownerRepoRef = { provider: "github", platformHost: "github.com", owner: "owner", name: "repo", repoPath: "owner/repo" };
+const ownerRepoRef = {
+  provider: "github",
+  platformHost: "github.com",
+  owner: "owner",
+  name: "repo",
+  repoPath: "owner/repo",
+};
 
 type TestClient = NonNullable<DiffStoreOptions["client"]>;
 
@@ -36,7 +46,11 @@ function makeFilesResult(
   };
 }
 
-function makeDiffFile(path: string, additions: number, deletions: number): DiffFile {
+function makeDiffFile(
+  path: string,
+  additions: number,
+  deletions: number,
+): DiffFile {
   return {
     path,
     old_path: path,
@@ -52,37 +66,29 @@ function makeDiffFile(path: string, additions: number, deletions: number): DiffF
 
 function testClient(): TestClient {
   return {
-    GET: vi.fn(
-      async (path: string, options?: TestGetOptions) => {
-        const response = await globalThis.fetch(
-          testURL(path, options),
-          options?.signal ? { signal: options.signal } : undefined,
-        );
-        if (!response.ok) {
-          return {
-            error: await response.json().catch(() => ({})),
-            response,
-          };
-        }
+    GET: vi.fn(async (path: string, options?: TestGetOptions) => {
+      const response = await globalThis.fetch(
+        testURL(path, options),
+        options?.signal ? { signal: options.signal } : undefined,
+      );
+      if (!response.ok) {
         return {
-          data: await response.json(),
+          error: await response.json().catch(() => ({})),
           response,
         };
-      },
-    ),
+      }
+      return {
+        data: await response.json(),
+        response,
+      };
+    }),
   } as unknown as TestClient;
 }
 
-function testURL(
-  path: string,
-  options?: TestGetOptions,
-): string {
+function testURL(path: string, options?: TestGetOptions): string {
   let url = `/api/v1${path}`;
   for (const [key, value] of Object.entries(options?.params?.path ?? {})) {
-    url = url.replace(
-      `{${key}}`,
-      encodeURIComponent(String(value)),
-    );
+    url = url.replace(`{${key}}`, encodeURIComponent(String(value)));
   }
   const query = new URLSearchParams();
   for (const [key, value] of Object.entries(options?.params?.query ?? {})) {
@@ -248,12 +254,8 @@ describe("createDiffStore loadDiff", () => {
 
     await store.loadWorkspaceDiff("ws-1", "merge-target");
 
-    expect(calls).toContain(
-      "/api/v1/workspaces/ws-1/files?base=merge-target",
-    );
-    expect(calls).toContain(
-      "/api/v1/workspaces/ws-1/diff?base=merge-target",
-    );
+    expect(calls).toContain("/api/v1/workspaces/ws-1/files?base=merge-target");
+    expect(calls).toContain("/api/v1/workspaces/ws-1/diff?base=merge-target");
   });
 
   it("collapses and expands all visible files in workspace diffs", async () => {
@@ -295,15 +297,23 @@ describe("createDiffStore loadDiff", () => {
 
     expect(store.areAllVisibleFilesCollapsed()).toBe(true);
     expect(store.isFileCollapsed("owner", "repo", 1, "src/app.go")).toBe(true);
-    expect(store.isFileCollapsed("owner", "repo", 1, "src/app_test.go")).toBe(true);
-    expect(store.isFileCollapsed("owner", "repo", 1, "docs/plan.md")).toBe(true);
+    expect(store.isFileCollapsed("owner", "repo", 1, "src/app_test.go")).toBe(
+      true,
+    );
+    expect(store.isFileCollapsed("owner", "repo", 1, "docs/plan.md")).toBe(
+      true,
+    );
 
     store.setFileCategoryFilter("tests");
     store.setAllVisibleFilesCollapsed(false);
 
     expect(store.isFileCollapsed("owner", "repo", 1, "src/app.go")).toBe(true);
-    expect(store.isFileCollapsed("owner", "repo", 1, "src/app_test.go")).toBe(false);
-    expect(store.isFileCollapsed("owner", "repo", 1, "docs/plan.md")).toBe(true);
+    expect(store.isFileCollapsed("owner", "repo", 1, "src/app_test.go")).toBe(
+      false,
+    );
+    expect(store.isFileCollapsed("owner", "repo", 1, "docs/plan.md")).toBe(
+      true,
+    );
   });
 
   it("loads commits for the active workspace diff", async () => {
@@ -636,9 +646,9 @@ describe("createDiffStore loadDiff", () => {
 
     expect(store.getActiveFile()).toBe("b.ts");
     expect(store.getScrollTarget()).toEqual({ path: "b.ts" });
-    expect(calls.filter((url) =>
-      url.includes("/api/v1/workspaces/ws-1/diff"),
-    )).toEqual(["/api/v1/workspaces/ws-1/diff?base=head"]);
+    expect(
+      calls.filter((url) => url.includes("/api/v1/workspaces/ws-1/diff")),
+    ).toEqual(["/api/v1/workspaces/ws-1/diff?base=head"]);
   });
 
   it("uses the workspace diff whitespace count", async () => {
@@ -786,7 +796,7 @@ describe("createDiffStore loadDiff", () => {
             ? input
             : input instanceof URL
               ? input.href
-            : input.url;
+              : input.url;
         const signal = input instanceof Request ? input.signal : init?.signal;
 
         if (url.includes("/1/files")) {
@@ -949,10 +959,7 @@ describe("createDiffStore loadDiff", () => {
         if (url.includes("/diff")) {
           if (url.includes("whitespace=hide")) {
             // Whitespace-filtered diff request fails.
-            return Response.json(
-              { detail: "server error" },
-              { status: 500 },
-            );
+            return Response.json({ detail: "server error" }, { status: 500 });
           }
           return Response.json(diffAll);
         }

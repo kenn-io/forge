@@ -1,5 +1,5 @@
 import { cleanup, render, screen } from "@testing-library/svelte";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vite-plus/test";
 
 import WorkspaceEmbedEmptyState from "./WorkspaceEmbedEmptyState.svelte";
 
@@ -28,8 +28,6 @@ describe("WorkspaceEmbedEmptyState", () => {
     render(WorkspaceEmbedEmptyState, {
       props: { reason: "noWorkspace" },
     });
-    expect(
-      screen.getByText("No workspace for this item yet"),
-    ).toBeTruthy();
+    expect(screen.getByText("No workspace for this item yet")).toBeTruthy();
   });
 });

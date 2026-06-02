@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, rm, stat, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vite-plus/test";
 import {
   acquireExclusiveLock,
   exclusiveLockPath,
@@ -36,9 +36,11 @@ describe("exclusive e2e lock", () => {
   it("creates a stable lock path in the configured temp root", async () => {
     const root = await tempRoot();
 
-    releaseFns.push(await acquireExclusiveLock("workspace-tmux", {
-      rootDir: root,
-    }));
+    releaseFns.push(
+      await acquireExclusiveLock("workspace-tmux", {
+        rootDir: root,
+      }),
+    );
 
     const info = await stat(exclusiveLockPath("workspace-tmux", root));
     const rootInfo = await stat(root);
@@ -80,25 +82,36 @@ describe("exclusive e2e lock", () => {
     const root = path.join(os.tmpdir(), `middleman-lock-link-${process.pid}`);
     tempRoots.push(root);
     await rm(root, { force: true, recursive: true });
-    await symlink(target, root, process.platform === "win32" ? "junction" : undefined);
+    await symlink(
+      target,
+      root,
+      process.platform === "win32" ? "junction" : undefined,
+    );
 
-    await expect(acquireExclusiveLock("workspace-tmux", {
-      rootDir: root,
-    })).rejects.toThrow("lock root is not a safe directory");
+    await expect(
+      acquireExclusiveLock("workspace-tmux", {
+        rootDir: root,
+      }),
+    ).rejects.toThrow("lock root is not a safe directory");
   });
 
   it("recovers a stale lock with a dead owner process", async () => {
     const root = await tempRoot();
     const lockPath = exclusiveLockPath("workspace-tmux", root);
     await mkdir(lockPath);
-    await writeFile(path.join(lockPath, "metadata.json"), JSON.stringify({
-      created_at: new Date(Date.now() - 11 * 60 * 1000).toISOString(),
-      pid: 999_999_999,
-    }) + "\n");
+    await writeFile(
+      path.join(lockPath, "metadata.json"),
+      JSON.stringify({
+        created_at: new Date(Date.now() - 11 * 60 * 1000).toISOString(),
+        pid: 999_999_999,
+      }) + "\n",
+    );
 
-    releaseFns.push(await acquireExclusiveLock("workspace-tmux", {
-      rootDir: root,
-    }));
+    releaseFns.push(
+      await acquireExclusiveLock("workspace-tmux", {
+        rootDir: root,
+      }),
+    );
 
     const info = await stat(lockPath);
     expect(info.isDirectory()).toBe(true);

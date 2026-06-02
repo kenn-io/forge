@@ -1,5 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
-import { startIsolatedE2EServer, type IsolatedE2EServer } from "./support/e2eServer";
+import {
+  startIsolatedE2EServer,
+  type IsolatedE2EServer,
+} from "./support/e2eServer";
 
 // The e2e server seeds the Activity config with view_mode: "flat"
 // and time_range: "7d", so the flat table renders by default.
@@ -11,7 +14,9 @@ import { startIsolatedE2EServer, type IsolatedE2EServer } from "./support/e2eSer
 //   bot authors: 2 (dependabot[bot] on PR#7 and issue#13)
 
 async function waitForTable(page: Page): Promise<void> {
-  await page.locator(".activity-table .activity-row").first()
+  await page
+    .locator(".activity-table .activity-row")
+    .first()
     .waitFor({ state: "visible", timeout: 10_000 });
 }
 
@@ -26,18 +31,16 @@ async function selectActivityFilterItem(
 
 // Verify every badge in the activity table matches the expected text.
 // Uses auto-retrying assertions so it waits for the DOM to settle.
-async function expectAllBadges(
-  page: Page, expected: string,
-): Promise<void> {
+async function expectAllBadges(page: Page, expected: string): Promise<void> {
   const badges = page.locator(".activity-row .badge");
   // First wait for at least one badge with the expected text to appear,
   // proving the filtered response has rendered.
-  await expect(badges.filter({ hasText: expected }).first())
-    .toBeVisible({ timeout: 10_000 });
+  await expect(badges.filter({ hasText: expected }).first()).toBeVisible({
+    timeout: 10_000,
+  });
   // Then verify no badges with the wrong text remain.
   const wrong = expected === "PR" ? "Issue" : "PR";
-  await expect(badges.filter({ hasText: wrong }))
-    .toHaveCount(0);
+  await expect(badges.filter({ hasText: wrong })).toHaveCount(0);
 }
 
 test.describe("activity feed filters", () => {
@@ -66,49 +69,47 @@ test.describe("activity feed filters", () => {
     // Wait for both badge types to appear, proving the unfiltered
     // response has rendered.
     const badges = page.locator(".activity-row .badge");
-    await expect(badges.filter({ hasText: "PR" }).first())
-      .toBeVisible({ timeout: 10_000 });
-    await expect(badges.filter({ hasText: "Issue" }).first())
-      .toBeVisible({ timeout: 10_000 });
+    await expect(badges.filter({ hasText: "PR" }).first()).toBeVisible({
+      timeout: 10_000,
+    });
+    await expect(badges.filter({ hasText: "Issue" }).first()).toBeVisible({
+      timeout: 10_000,
+    });
   });
 
   test("disabling Comments hides comment rows", async ({ page }) => {
     // Verify comments exist initially.
-    await expect(
-      page.locator(".evt-label.evt-comment").first(),
-    ).toBeVisible();
+    await expect(page.locator(".evt-label.evt-comment").first()).toBeVisible();
 
     // Open filter dropdown and disable Comments.
     await selectActivityFilterItem(page, "Comments");
 
-    await expect(
-      page.locator(".evt-label.evt-comment"),
-    ).toHaveCount(0, { timeout: 5_000 });
+    await expect(page.locator(".evt-label.evt-comment")).toHaveCount(0, {
+      timeout: 5_000,
+    });
   });
 
   test("hide closed/merged removes those items", async ({ page }) => {
     // Verify closed/merged items exist initially.
     await expect(
-      page.locator(".state-badge.state-closed, .state-badge.state-merged")
+      page
+        .locator(".state-badge.state-closed, .state-badge.state-merged")
         .first(),
     ).toBeVisible();
 
     // Open filter dropdown and enable "Hide closed/merged".
     await selectActivityFilterItem(page, "Hide closed/merged");
 
-    await expect(
-      page.locator(".state-badge.state-closed"),
-    ).toHaveCount(0, { timeout: 5_000 });
-    await expect(
-      page.locator(".state-badge.state-merged"),
-    ).toHaveCount(0);
+    await expect(page.locator(".state-badge.state-closed")).toHaveCount(0, {
+      timeout: 5_000,
+    });
+    await expect(page.locator(".state-badge.state-merged")).toHaveCount(0);
   });
 
   test("hide bots removes bot-authored items", async ({ page }) => {
-    const botCells = page.locator(
-      ".activity-row .col-author",
-      { hasText: "dependabot[bot]" },
-    );
+    const botCells = page.locator(".activity-row .col-author", {
+      hasText: "dependabot[bot]",
+    });
     await expect(botCells.first()).toBeVisible();
 
     // Open filter dropdown and enable "Hide bots".
@@ -127,8 +128,9 @@ test.describe("activity feed filters", () => {
     // drops below the 7d count, proving the filtered response
     // has rendered.
     await selectActivityFilterItem(page, "24h");
-    await expect(page.locator(".activity-row"))
-      .not.toHaveCount(count7d, { timeout: 10_000 });
+    await expect(page.locator(".activity-row")).not.toHaveCount(count7d, {
+      timeout: 10_000,
+    });
     const count24h = await page.locator(".activity-row").count();
     expect(count24h).toBeLessThan(count7d);
   });
@@ -143,8 +145,12 @@ test.describe("activity feed filters", () => {
     // feed has 14 items, so waiting for exactly the expected
     // match count proves the search completed.
     const rows = page.locator(".activity-row");
-    await expect(rows.first().locator(".item-title"))
-      .toContainText("caching layer", { timeout: 10_000 });
+    await expect(rows.first().locator(".item-title")).toContainText(
+      "caching layer",
+      {
+        timeout: 10_000,
+      },
+    );
 
     const count = await rows.count();
     expect(count).toBeGreaterThan(0);
@@ -154,30 +160,26 @@ test.describe("activity feed filters", () => {
     }
   });
 
-  test("combined: PRs + hide closed/merged shows only open PRs",
-    async ({ page }) => {
-      // Click PRs filter and wait for filtered DOM.
-      await page.locator(".seg-btn", { hasText: "PRs" }).click();
-      await expectAllBadges(page, "PR");
+  test("combined: PRs + hide closed/merged shows only open PRs", async ({
+    page,
+  }) => {
+    // Click PRs filter and wait for filtered DOM.
+    await page.locator(".seg-btn", { hasText: "PRs" }).click();
+    await expectAllBadges(page, "PR");
 
-      // Enable hide closed/merged (client-side filter).
-      await selectActivityFilterItem(page, "Hide closed/merged");
-      await page.locator(".controls-bar")
-        .click({ position: { x: 5, y: 5 } });
+    // Enable hide closed/merged (client-side filter).
+    await selectActivityFilterItem(page, "Hide closed/merged");
+    await page.locator(".controls-bar").click({ position: { x: 5, y: 5 } });
 
-      // Wait for merged/closed badges to disappear.
-      await expect(
-        page.locator(".state-badge.state-merged"),
-      ).toHaveCount(0, { timeout: 5_000 });
-      await expect(
-        page.locator(".state-badge.state-closed"),
-      ).toHaveCount(0);
+    // Wait for merged/closed badges to disappear.
+    await expect(page.locator(".state-badge.state-merged")).toHaveCount(0, {
+      timeout: 5_000,
+    });
+    await expect(page.locator(".state-badge.state-closed")).toHaveCount(0);
 
-      // All remaining badges should still be PR.
-      await expectAllBadges(page, "PR");
-    },
-  );
-
+    // All remaining badges should still be PR.
+    await expectAllBadges(page, "PR");
+  });
 });
 
 test.describe("activity UTC timestamp presentation", () => {
@@ -193,40 +195,62 @@ test.describe("activity UTC timestamp presentation", () => {
   });
 
   test.beforeEach(async ({ page }) => {
-    await page.addInitScript((offsetMs) => {
-      const originalNow = Date.now.bind(Date);
-      Date.now = () => originalNow() + offsetMs;
-    }, 2 * 24 * 60 * 60 * 1000);
+    await page.addInitScript(
+      (offsetMs) => {
+        const originalNow = Date.now.bind(Date);
+        Date.now = () => originalNow() + offsetMs;
+      },
+      2 * 24 * 60 * 60 * 1000,
+    );
     await page.goto(isolatedServer!.info.base_url);
     await waitForTable(page);
   });
 
-  test("activity API timestamps stay UTC and render as local dates", async ({ page }) => {
+  test("activity API timestamps stay UTC and render as local dates", async ({
+    page,
+  }) => {
     await selectActivityFilterItem(page, "30d");
     await expect(page.locator(".activity-row").first()).toBeVisible();
 
     const payload = await page.evaluate(async () => {
-      const response = await fetch("/api/v1/activity?view_mode=flat&time_range=30d");
+      const response = await fetch(
+        "/api/v1/activity?view_mode=flat&time_range=30d",
+      );
       return response.json();
     });
-    const prComment = payload.items.find((item: { item_title: string; author: string; created_at: string; activity_type: string }) =>
-      item.item_title === "Add widget caching layer" && item.author === "carol" && item.activity_type === "comment"
+    const prComment = payload.items.find(
+      (item: {
+        item_title: string;
+        author: string;
+        created_at: string;
+        activity_type: string;
+      }) =>
+        item.item_title === "Add widget caching layer" &&
+        item.author === "carol" &&
+        item.activity_type === "comment",
     );
 
     expect(prComment).toBeTruthy();
     expect(prComment.created_at).toMatch(/Z$/);
 
-    const expectedLabel = await page.evaluate((iso: string) =>
-      new Date(iso).toLocaleDateString(),
-    prComment.created_at);
+    const expectedLabel = await page.evaluate(
+      (iso: string) => new Date(iso).toLocaleDateString(),
+      prComment.created_at,
+    );
 
-    const row = page.locator(".activity-row", {
-      has: page.locator(".item-title", { hasText: "Add widget caching layer" }),
-    }).filter({
-      has: page.locator(".col-author", { hasText: "carol" }),
-    }).filter({
-      has: page.locator(".evt-label.evt-comment"),
-    }).first();
+    const row = page
+      .locator(".activity-row", {
+        has: page.locator(".item-title", {
+          hasText: "Add widget caching layer",
+        }),
+      })
+      .filter({
+        has: page.locator(".col-author", { hasText: "carol" }),
+      })
+      .filter({
+        has: page.locator(".evt-label.evt-comment"),
+      })
+      .first();
 
     await expect(row.locator(".col-when")).toHaveText(expectedLabel);
     expect(expectedLabel).not.toContain("T");

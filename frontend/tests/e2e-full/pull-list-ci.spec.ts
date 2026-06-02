@@ -3,7 +3,9 @@ import { expect, test } from "@playwright/test";
 import { startIsolatedE2EServer } from "./support/e2eServer";
 
 test.describe("pull list CI cluster", () => {
-  test("renders compact tokens from the live list payload (mixed state)", async ({ page }) => {
+  test("renders compact tokens from the live list payload (mixed state)", async ({
+    page,
+  }) => {
     const server = await startIsolatedE2EServer();
     try {
       const seed = await page.request.post(
@@ -14,16 +16,26 @@ test.describe("pull list CI cluster", () => {
       await page.goto(`${server.info.base_url}/pulls`);
 
       const row = page.locator(".pull-item", { hasText: "#1" });
-      await expect(row.locator("[data-testid='ci-token-failed']")).toHaveText(/1/);
-      await expect(row.locator("[data-testid='ci-token-pending']")).toHaveText(/1/);
-      await expect(row.locator("[data-testid='ci-token-passed']")).toHaveText(/2/);
-      await expect(row.locator("[data-testid='ci-token-skipped']")).toHaveText(/1/);
+      await expect(row.locator("[data-testid='ci-token-failed']")).toHaveText(
+        /1/,
+      );
+      await expect(row.locator("[data-testid='ci-token-pending']")).toHaveText(
+        /1/,
+      );
+      await expect(row.locator("[data-testid='ci-token-passed']")).toHaveText(
+        /2/,
+      );
+      await expect(row.locator("[data-testid='ci-token-skipped']")).toHaveText(
+        /1/,
+      );
     } finally {
       await server.stop();
     }
   });
 
-  test("renders the unavailable token when CIChecksJSON is malformed", async ({ page }) => {
+  test("renders the unavailable token when CIChecksJSON is malformed", async ({
+    page,
+  }) => {
     const server = await startIsolatedE2EServer();
     try {
       const seed = await page.request.post(
@@ -51,7 +63,9 @@ test.describe("pull list CI cluster", () => {
     }
   });
 
-  test("renders no CI token cluster for rows without CI status", async ({ page }) => {
+  test("renders no CI token cluster for rows without CI status", async ({
+    page,
+  }) => {
     const server = await startIsolatedE2EServer();
     try {
       await page.goto(`${server.info.base_url}/pulls`);

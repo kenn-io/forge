@@ -46,9 +46,7 @@ const DEV_PAYLOAD_PREVIEW_MAX = 64;
 // the module. Production builds inline this away via Vite's compile-time
 // `import.meta.env.DEV` replacement.
 function isDevMode(): boolean {
-  return (
-    typeof import.meta !== "undefined" && import.meta.env.DEV === true
-  );
+  return typeof import.meta !== "undefined" && import.meta.env.DEV === true;
 }
 
 export function warnOnMalformedCIChecksJSON(

@@ -44,7 +44,11 @@ export function formatCompact(n: number): string {
  */
 export function aggregateBudget(
   entries: { budget_limit: number; budget_spent: number }[],
-): { spent: number; limit: number; hasAny: boolean } {
+): {
+  spent: number;
+  limit: number;
+  hasAny: boolean;
+} {
   let spent = 0;
   let limit = 0;
   let hasAny = false;

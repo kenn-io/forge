@@ -4,10 +4,7 @@ import {
   navigate,
   replaceUrl,
 } from "../router.svelte.js";
-import {
-  isSidebarToggleEnabled,
-  toggleSidebar,
-} from "../sidebar.svelte.js";
+import { isSidebarToggleEnabled, toggleSidebar } from "../sidebar.svelte.js";
 import { toggleTheme } from "../theme.svelte.js";
 import { toggleCheatsheet } from "./cheatsheet-state.svelte.js";
 import { togglePalette } from "./palette-state.svelte.js";
@@ -70,12 +67,14 @@ function labelEditableDetailMatches(
   detail: LabelEditableDetail,
   selection: LabelEditableSelection,
 ): boolean {
-  return detail.repo_owner === selection.owner
-    && detail.repo_name === selection.name
-    && detail.number === selection.number
-    && detail.repo?.provider === selection.provider
-    && detail.repo?.platform_host === selection.platformHost
-    && detail.repo?.repo_path === selection.repoPath;
+  return (
+    detail.repo_owner === selection.owner &&
+    detail.repo_name === selection.name &&
+    detail.number === selection.number &&
+    detail.repo?.provider === selection.provider &&
+    detail.repo?.platform_host === selection.platformHost &&
+    detail.repo?.repo_path === selection.repoPath
+  );
 }
 
 function labelPickerDetailFor(

@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import type { PullDetail } from "../../api/types.js";
 import {
   ACTIONS_KEY,
@@ -28,7 +28,11 @@ const capabilities = {
   label_mutation: false,
 };
 
-function reviewEvent(author: string, summary = "APPROVED", createdAt = "2026-05-01T12:00:00Z") {
+function reviewEvent(
+  author: string,
+  summary = "APPROVED",
+  createdAt = "2026-05-01T12:00:00Z",
+) {
   return {
     ID: Math.floor(Math.random() * 1_000_000),
     MergeRequestID: 1,
@@ -167,10 +171,7 @@ function renderPullDetail(
       hideWorkspaceAction: true,
     },
     context: new Map<symbol, unknown>([
-      [
-        API_CLIENT_KEY,
-        apiClient,
-      ],
+      [API_CLIENT_KEY, apiClient],
       [
         STORES_KEY,
         {
@@ -188,7 +189,9 @@ function renderPullDetail(
 }
 
 function getActionMenuLabelsButton(): HTMLButtonElement {
-  const button = document.querySelector<HTMLButtonElement>(".actions-menu-popover .btn--labels");
+  const button = document.querySelector<HTMLButtonElement>(
+    ".actions-menu-popover .btn--labels",
+  );
   if (button === null) {
     throw new Error("actions menu Labels button not found");
   }
@@ -318,7 +321,7 @@ describe("PullDetail approvals", () => {
     detail.merge_request.CIStatus = "pending";
     detail.merge_request.CIChecksJSON = JSON.stringify([
       {
-        name: "frontend / svelte-check",
+        name: "frontend / vp check",
         status: "completed",
         conclusion: "failure",
         url: "https://example.com/frontend",
@@ -349,18 +352,26 @@ describe("PullDetail approvals", () => {
     renderPullDetail(detail, undefined, apiClient);
 
     await fireEvent.click(
-      screen.getByRole("button", { name: /CI:\s*1 failed check,\s*1 pending check/i }),
+      screen.getByRole("button", {
+        name: /CI:\s*1 failed check,\s*1 pending check/i,
+      }),
     );
 
-    expect(screen.getByText("frontend / svelte-check")).toBeTruthy();
+    expect(screen.getByText("frontend / vp check")).toBeTruthy();
 
     await fireEvent.click(
-      await screen.findByRole("button", { name: /Stacked: 2\/3, 1 downstack CI failure/i }),
+      await screen.findByRole("button", {
+        name: /Stacked: 2\/3, 1 downstack CI failure/i,
+      }),
     );
 
-    expect(screen.queryByText("frontend / svelte-check")).toBeNull();
-    expect(screen.getByText("3 PRs · current 2/3 · downstack CI failure")).toBeTruthy();
-    expect(document.querySelector(".stack-row--current .stack-dot--current")).toBeTruthy();
+    expect(screen.queryByText("frontend / vp check")).toBeNull();
+    expect(
+      screen.getByText("3 PRs · current 2/3 · downstack CI failure"),
+    ).toBeTruthy();
+    expect(
+      document.querySelector(".stack-row--current .stack-dot--current"),
+    ).toBeTruthy();
     expect(screen.getByText("blocked by #1")).toBeTruthy();
 
     const stackLinks = Array.from(
@@ -371,7 +382,9 @@ describe("PullDetail approvals", () => {
       "#2 session storage",
       "#1 base schema",
     ]);
-    expect(document.querySelector(".stack-base-name")?.textContent?.trim()).toBe("main");
+    expect(
+      document.querySelector(".stack-base-name")?.textContent?.trim(),
+    ).toBe("main");
   });
 
   it("does not probe stack context for unstacked pull details", () => {
@@ -405,7 +418,9 @@ describe("PullDetail approvals", () => {
     const labelsAction = screen.getByRole("button", { name: "Labels" });
     await fireEvent.click(labelsAction);
 
-    expect(await screen.findByRole("dialog", { name: "Edit labels" })).toBeTruthy();
+    expect(
+      await screen.findByRole("dialog", { name: "Edit labels" }),
+    ).toBeTruthy();
 
     await fireEvent.click(labelsAction);
 
@@ -426,7 +441,9 @@ describe("PullDetail approvals", () => {
     await fireEvent.click(actionsTrigger);
     await fireEvent.click(getActionMenuLabelsButton());
 
-    expect(await screen.findByRole("dialog", { name: "Edit labels" })).toBeTruthy();
+    expect(
+      await screen.findByRole("dialog", { name: "Edit labels" }),
+    ).toBeTruthy();
     expect(document.querySelector(".actions-menu-popover")).toBeNull();
 
     await fireEvent.mouseDown(actionsTrigger);
@@ -455,7 +472,9 @@ describe("PullDetail approvals", () => {
 
     const labelsAction = getActionMenuLabelsButton();
     const labelsIcon = labelsAction.querySelector("svg");
-    const labelsItem = labelsAction.closest(".actions-menu-popover__item--labels");
+    const labelsItem = labelsAction.closest(
+      ".actions-menu-popover__item--labels",
+    );
 
     expect(labelsAction.classList.contains("action-button--sm")).toBe(true);
     expect(labelsAction.parentElement).toBe(labelsItem);
@@ -498,7 +517,13 @@ describe("PullDetail approvals", () => {
     },
   ];
 
-  for (const { name, mergeableState, checks, requiredWarning, behindWarning } of warningCases) {
+  for (const {
+    name,
+    mergeableState,
+    checks,
+    requiredWarning,
+    behindWarning,
+  } of warningCases) {
     it(name, () => {
       const detail = pullDetail();
       detail.merge_request.MergeableState = mergeableState;
@@ -538,9 +563,7 @@ describe("PullDetail approvals", () => {
     });
 
     await vi.waitFor(() => {
-      expect(
-        screen.queryByRole("button", { name: /merge/i }),
-      ).toBeNull();
+      expect(screen.queryByRole("button", { name: /merge/i })).toBeNull();
     });
   });
 

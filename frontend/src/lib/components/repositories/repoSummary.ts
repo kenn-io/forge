@@ -25,7 +25,12 @@ export interface RepoMetric {
 }
 
 export type RepoFilter = "all" | "prs" | "issues" | "stale";
-export type RepoSort = "name" | "open-prs" | "open-issues" | "activity" | "stale";
+export type RepoSort =
+  | "name"
+  | "open-prs"
+  | "open-issues"
+  | "activity"
+  | "stale";
 
 export const staleReleaseCommitThreshold = 50;
 
@@ -61,8 +66,8 @@ export function repoKey(summary: {
   name: string;
 }): string {
   if (
-    summary.platform_host
-    && shouldShowPlatformHost({
+    summary.platform_host &&
+    shouldShowPlatformHost({
       platform_host: summary.platform_host,
       default_platform_host: summary.default_platform_host,
     })
@@ -110,8 +115,8 @@ export function displayReleaseName(
 
 export function isStaleRelease(summary: RepoSummaryCard): boolean {
   return (
-    summary.latest_release !== undefined
-    && (summary.commits_since_release ?? 0) >= staleReleaseCommitThreshold
+    summary.latest_release !== undefined &&
+    (summary.commits_since_release ?? 0) >= staleReleaseCommitThreshold
   );
 }
 

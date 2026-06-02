@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vite-plus/test";
 
 import type { MiddlemanClient } from "../types.js";
 import type { ProviderRouteRef } from "../api/provider-routes.js";
@@ -19,7 +19,9 @@ interface MockMutation {
   response: { status: number; ok: boolean };
 }
 
-function providerRef(overrides: Partial<ProviderRouteRef> = {}): ProviderRouteRef {
+function providerRef(
+  overrides: Partial<ProviderRouteRef> = {},
+): ProviderRouteRef {
   return {
     provider: "forgejo",
     platformHost: "codeberg.org",
@@ -146,7 +148,8 @@ describe("createDiffReviewDraftStore", () => {
     const oldLoad = deferred<MockDraftLoad>();
     const newLoad = deferred<MockDraftLoad>();
     const client = mockClient({
-      GET: vi.fn()
+      GET: vi
+        .fn()
         .mockReturnValueOnce(oldLoad.promise)
         .mockReturnValueOnce(newLoad.promise),
     });
@@ -158,13 +161,17 @@ describe("createDiffReviewDraftStore", () => {
     store.setContext(ref, 42, true, "new-head");
     await Promise.resolve();
 
-    newLoad.resolve(draftLoad({
-      comments: [{ id: "new", body: "new draft" }],
-    }));
+    newLoad.resolve(
+      draftLoad({
+        comments: [{ id: "new", body: "new draft" }],
+      }),
+    );
     await Promise.resolve();
-    oldLoad.resolve(draftLoad({
-      comments: [{ id: "old", body: "old draft" }],
-    }));
+    oldLoad.resolve(
+      draftLoad({
+        comments: [{ id: "old", body: "old draft" }],
+      }),
+    );
     await Promise.resolve();
 
     expect(store.getComments()).toEqual([{ id: "new", body: "new draft" }]);
@@ -174,9 +181,11 @@ describe("createDiffReviewDraftStore", () => {
   it("surfaces partial publish status while clearing the draft", async () => {
     const client = mockClient({
       GET: mockGet(draftLoad({ nativeMultilineRanges: false })),
-      POST: mockPost(mutation({
-        data: { status: "partially_published" },
-      })),
+      POST: mockPost(
+        mutation({
+          data: { status: "partially_published" },
+        }),
+      ),
     });
     const onPublished = vi.fn();
     const store = createDiffReviewDraftStore({ client, onPublished });
@@ -216,9 +225,11 @@ describe("createDiffReviewDraftStore", () => {
     await expect(store.publish("comment", "summary")).resolves.toBe(true);
     expect(store.getComments()).toEqual([]);
 
-    staleLoad.resolve(draftLoad({
-      comments: [{ id: "stale", body: "old draft" }],
-    }));
+    staleLoad.resolve(
+      draftLoad({
+        comments: [{ id: "stale", body: "old draft" }],
+      }),
+    );
     await staleLoad.promise;
     await Promise.resolve();
 
@@ -240,9 +251,11 @@ describe("createDiffReviewDraftStore", () => {
     await expect(store.publish("comment", "summary")).resolves.toBe(false);
     expect(store.isLoading()).toBe(false);
 
-    staleLoad.resolve(draftLoad({
-      comments: [{ id: "stale", body: "old draft" }],
-    }));
+    staleLoad.resolve(
+      draftLoad({
+        comments: [{ id: "stale", body: "old draft" }],
+      }),
+    );
     await staleLoad.promise;
     await Promise.resolve();
 
@@ -264,9 +277,11 @@ describe("createDiffReviewDraftStore", () => {
     await expect(store.discard()).resolves.toBe(true);
     expect(store.isLoading()).toBe(false);
 
-    staleLoad.resolve(draftLoad({
-      comments: [{ id: "stale", body: "old draft" }],
-    }));
+    staleLoad.resolve(
+      draftLoad({
+        comments: [{ id: "stale", body: "old draft" }],
+      }),
+    );
     await staleLoad.promise;
     await Promise.resolve();
 

@@ -91,43 +91,42 @@ test("palette is vertically centered in the viewport", async ({ page }) => {
   expect(Math.abs(dialogCenterY - viewportCenterY)).toBeLessThan(8);
 });
 
-test(
-  "arrow-down past the visible window scrolls the highlighted row into view",
-  async ({ page }) => {
-    await page.goto("/pulls");
-    await page.keyboard.press("Meta+K");
+test("arrow-down past the visible window scrolls the highlighted row into view", async ({
+  page,
+}) => {
+  await page.goto("/pulls");
+  await page.keyboard.press("Meta+K");
 
-    const dialog = page.getByRole("dialog", { name: "Command palette" });
-    await expect(dialog).toBeVisible();
+  const dialog = page.getByRole("dialog", { name: "Command palette" });
+  await expect(dialog).toBeVisible();
 
-    // pr: filters to the injected long list. groupResults caps at 10
-    // entries per group, so the list shows 10 PR rows. The .palette-list
-    // pane is short enough that arrow-down past visible rows must scroll.
-    await page.locator(".palette-input").fill("pr:");
+  // pr: filters to the injected long list. groupResults caps at 10
+  // entries per group, so the list shows 10 PR rows. The .palette-list
+  // pane is short enough that arrow-down past visible rows must scroll.
+  await page.locator(".palette-input").fill("pr:");
 
-    const rows = page.locator(".palette-list .palette-row");
-    await expect(rows.first()).toBeVisible();
-    const rowCount = await rows.count();
-    expect(rowCount).toBeGreaterThan(0);
+  const rows = page.locator(".palette-list .palette-row");
+  await expect(rows.first()).toBeVisible();
+  const rowCount = await rows.count();
+  expect(rowCount).toBeGreaterThan(0);
 
-    // Arrow-down to the last row. After each press, the highlighted row
-    // must be inside the .palette-list bounds (i.e. scrolled into view).
-    for (let i = 1; i < rowCount; i++) {
-      await page.keyboard.press("ArrowDown");
-    }
+  // Arrow-down to the last row. After each press, the highlighted row
+  // must be inside the .palette-list bounds (i.e. scrolled into view).
+  for (let i = 1; i < rowCount; i++) {
+    await page.keyboard.press("ArrowDown");
+  }
 
-    const inView = await page.evaluate(() => {
-      const listEl = document.querySelector<HTMLElement>(".palette-list");
-      const highlight = document.querySelector<HTMLElement>(
-        ".palette-row-highlight",
-      );
-      if (!listEl || !highlight) return null;
-      const lr = listEl.getBoundingClientRect();
-      const hr = highlight.getBoundingClientRect();
-      // scrollIntoView({ block: "nearest" }) keeps the row's top and
-      // bottom within the container's visible area.
-      return hr.top >= lr.top - 1 && hr.bottom <= lr.bottom + 1;
-    });
-    expect(inView).toBe(true);
-  },
-);
+  const inView = await page.evaluate(() => {
+    const listEl = document.querySelector<HTMLElement>(".palette-list");
+    const highlight = document.querySelector<HTMLElement>(
+      ".palette-row-highlight",
+    );
+    if (!listEl || !highlight) return null;
+    const lr = listEl.getBoundingClientRect();
+    const hr = highlight.getBoundingClientRect();
+    // scrollIntoView({ block: "nearest" }) keeps the row's top and
+    // bottom within the container's visible area.
+    return hr.top >= lr.top - 1 && hr.bottom <= lr.bottom + 1;
+  });
+  expect(inView).toBe(true);
+});

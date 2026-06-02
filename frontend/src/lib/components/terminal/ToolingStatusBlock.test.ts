@@ -1,5 +1,12 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vite-plus/test";
 
 import ToolingStatusBlock from "./ToolingStatusBlock.svelte";
 
@@ -140,9 +147,7 @@ describe("ToolingStatusBlock", () => {
 
     const button = screen.getByLabelText("Copy auth command");
     await fireEvent.click(button);
-    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
-      "gh auth login",
-    );
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith("gh auth login");
   });
 
   it("renders nothing when tooling is undefined and hideWhenUnknown is set", () => {

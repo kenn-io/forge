@@ -1,22 +1,29 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vite-plus/test";
 
 import { createDetailStore } from "@middleman/ui/stores/detail";
 import type { MiddlemanClient } from "@middleman/ui";
 
-const pullRef = { provider: "github", platformHost: "github.com", repoPath: "octo/repo" };
+const pullRef = {
+  provider: "github",
+  platformHost: "github.com",
+  repoPath: "octo/repo",
+};
 
 interface MockDetail {
   repo_owner: string;
   repo_name: string;
-  repo: { provider: string; platform_host: string; owner: string; name: string; repo_path: string };
+  repo: {
+    provider: string;
+    platform_host: string;
+    owner: string;
+    name: string;
+    repo_path: string;
+  };
   merge_request: { Number: number };
   events: unknown[];
 }
 
-function makeDetail(
-  events: unknown[] = [],
-  number = 1,
-): MockDetail {
+function makeDetail(events: unknown[] = [], number = 1): MockDetail {
   return {
     repo_owner: "octo",
     repo_name: "repo",

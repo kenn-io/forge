@@ -148,7 +148,9 @@ test.beforeEach(async ({ page }) => {
   await mockSplitViewPR(page);
 });
 
-test("lets wide PR detail panes opt into split conversation and files", async ({ page }) => {
+test("lets wide PR detail panes opt into split conversation and files", async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 2200, height: 1000 });
   await page.goto("/pulls/github/acme/widgets/42");
 

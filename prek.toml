@@ -144,10 +144,10 @@ hooks = [
   },
   {
     id = "frontend-check",
-    name = "typescript svelte lint",
+    name = "vite-plus frontend check",
     language = "system",
     entry = "make frontend-check",
-    files = "^(package\\.json|bun\\.lock|frontend/((src|tests)/.*\\.(svelte|ts)|package\\.json|tsconfig\\.json|vite\\.config\\.ts|playwright(-e2e)?\\.config\\.ts|eslint\\.config\\.(js|mjs|cjs))|packages/ui/(src/.*\\.(svelte|ts)|package\\.json|tsconfig\\.json|eslint\\.config\\.(js|mjs|cjs)))$",
+    files = "^(vite\\.config\\.ts|package\\.json|bun\\.lock|frontend/((src|tests)/.*\\.(svelte|ts)|package\\.json|tsconfig\\.json|vite\\.config\\.ts|playwright(-e2e)?\\.config\\.ts)|packages/ui/(src/.*\\.(svelte|ts)|package\\.json|tsconfig\\.json))$",
     pass_filenames = false,
     require_serial = true,
     priority = 30,

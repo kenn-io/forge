@@ -1,6 +1,6 @@
 import { cleanup, render, screen } from "@testing-library/svelte";
 import { createRawSnippet } from "svelte";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vite-plus/test";
 import ActionButton from "./ActionButton.svelte";
 
 describe("ActionButton", () => {
@@ -52,9 +52,9 @@ describe("ActionButton", () => {
     expect(button.querySelector(".action-button__label")?.textContent).toBe(
       "Approve workflows",
     );
-    expect(button.querySelector(".action-button__short-label")?.textContent).toBe(
-      "Workflows",
-    );
+    expect(
+      button.querySelector(".action-button__short-label")?.textContent,
+    ).toBe("Workflows");
   });
 
   it("renders trailing content after responsive labels", () => {

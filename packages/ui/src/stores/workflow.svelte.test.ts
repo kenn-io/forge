@@ -1,10 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 
 import type { PullRequest } from "../api/types.js";
-import {
-  classifyPR,
-  groupByWorkflow,
-} from "./workflow.svelte.js";
+import { classifyPR, groupByWorkflow } from "./workflow.svelte.js";
 
 function pr(
   id: number,

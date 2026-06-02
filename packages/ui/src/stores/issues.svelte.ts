@@ -402,7 +402,9 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
         );
         if (gen !== issueSyncGeneration) return;
         if (requestError) {
-          throw new Error(apiErrorMessage(requestError, "failed to load issue"));
+          throw new Error(
+            apiErrorMessage(requestError, "failed to load issue"),
+          );
         }
         issueDetail = data
           ? withPreservedLocalBody({
@@ -424,7 +426,10 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       const finalSyncMode = currentLoad.syncMode;
       if (gen === issueSyncGeneration && finalSyncMode === true) {
         void syncIssueDetail(owner, name, number, gen, requestRef);
-      } else if (gen === issueSyncGeneration && finalSyncMode === "background") {
+      } else if (
+        gen === issueSyncGeneration &&
+        finalSyncMode === "background"
+      ) {
         void enqueueBackgroundIssueSync(
           owner,
           name,
@@ -617,10 +622,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       },
     );
     if (requestError) {
-      const message = apiErrorMessage(
-        requestError,
-        "failed to update labels",
-      );
+      const message = apiErrorMessage(requestError, "failed to update labels");
       detailError = message;
       throw new Error(message);
     }
@@ -772,9 +774,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     // forge a collision with a different target. provider and
     // platformHost are part of the key so the same owner/name/number
     // on different hosts or providers can't share a queue slot.
-    return JSON.stringify([
-      provider, platformHost ?? "", owner, name, number,
-    ]);
+    return JSON.stringify([provider, platformHost ?? "", owner, name, number]);
   }
 
   async function runIssueBodyPatch(
@@ -796,19 +796,18 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     // that happens to share owner/name/number.
     let localBodyMatchesSent = false;
     try {
-      const { data, error: requestError } =
-        await apiClient.PATCH(
-          providerItemPath("issues", ref, ""),
-          {
-            params: {
-              path: {
-                ...providerRouteParams(ref),
-                number,
-              },
+      const { data, error: requestError } = await apiClient.PATCH(
+        providerItemPath("issues", ref, ""),
+        {
+          params: {
+            path: {
+              ...providerRouteParams(ref),
+              number,
             },
-            body: { body },
           },
-        );
+          body: { body },
+        },
+      );
       if (requestError) {
         throw new Error(
           apiErrorMessage(requestError, "failed to update issue"),
@@ -827,8 +826,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
         issueDetail = data as IssueDetail;
       }
     } catch (err) {
-      detailError =
-        err instanceof Error ? err.message : String(err);
+      detailError = err instanceof Error ? err.message : String(err);
     }
     if (
       succeeded &&
@@ -866,7 +864,11 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     },
   ): Promise<void> {
     const key = issueSaveQueueKey(
-      routeRef.provider, routeRef.platformHost, owner, name, number,
+      routeRef.provider,
+      routeRef.platformHost,
+      owner,
+      name,
+      number,
     );
     queuedIssueSaves.set(key, { body, routeRef });
     const existing = inflightIssueSaves.get(key);
@@ -877,7 +879,11 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
           const next = queuedIssueSaves.get(key)!;
           queuedIssueSaves.delete(key);
           await runIssueBodyPatch(
-            owner, name, number, next.body, next.routeRef,
+            owner,
+            name,
+            number,
+            next.body,
+            next.routeRef,
           );
         }
       } finally {
@@ -943,7 +949,12 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       issueDetail.repo_name === name &&
       issueDetail.issue.Number === number
     ) {
-      await loadIssueDetail(owner, name, number, currentIssueDetailRef(owner, name, number));
+      await loadIssueDetail(
+        owner,
+        name,
+        number,
+        currentIssueDetailRef(owner, name, number),
+      );
     }
   }
 

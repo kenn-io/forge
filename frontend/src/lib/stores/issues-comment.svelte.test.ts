@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vite-plus/test";
 
 import { createIssuesStore } from "@middleman/ui/stores/issues";
 import type { MiddlemanClient } from "@middleman/ui";
@@ -23,10 +23,7 @@ interface MockIssueDetail {
   events: unknown[];
 }
 
-function makeDetail(
-  events: unknown[] = [],
-  number = 1,
-): MockIssueDetail {
+function makeDetail(events: unknown[] = [], number = 1): MockIssueDetail {
   return {
     repo_owner: "octo",
     repo_name: "repo",
@@ -72,9 +69,7 @@ describe("createIssuesStore submitIssueComment", () => {
     await Promise.resolve();
     await Promise.resolve();
     await Promise.resolve();
-    const listCallsBefore = getCalls.filter(
-      (p) => p === "/issues",
-    ).length;
+    const listCallsBefore = getCalls.filter((p) => p === "/issues").length;
 
     await store.submitIssueComment("octo", "repo", 1, "hi");
     // Drain the background syncIssueDetail fired by submitIssueComment.
@@ -83,9 +78,7 @@ describe("createIssuesStore submitIssueComment", () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    const listCallsAfter = getCalls.filter(
-      (p) => p === "/issues",
-    ).length;
+    const listCallsAfter = getCalls.filter((p) => p === "/issues").length;
     expect(listCallsAfter).toBeGreaterThan(listCallsBefore);
   });
 
@@ -154,12 +147,7 @@ describe("createIssuesStore submitIssueComment", () => {
     await store.loadIssueDetail("octo", "repo", 1, issueRef);
 
     // Fire submitIssueComment without awaiting; refresh GET will block on refreshPromise.
-    const submitPromise = store.submitIssueComment(
-      "octo",
-      "repo",
-      1,
-      "hi",
-    );
+    const submitPromise = store.submitIssueComment("octo", "repo", 1, "hi");
     await Promise.resolve();
     await Promise.resolve();
     await Promise.resolve();
@@ -167,8 +155,7 @@ describe("createIssuesStore submitIssueComment", () => {
     // User navigates to a different issue before the refresh resolves.
     await store.loadIssueDetail("octo", "repo", 2, issueRef);
     expect(
-      (store.getIssueDetail() as unknown as MockIssueDetail)
-        ?.issue.Number,
+      (store.getIssueDetail() as unknown as MockIssueDetail)?.issue.Number,
     ).toBe(2);
 
     // Now release the in-flight refresh — it must be discarded.
@@ -178,8 +165,7 @@ describe("createIssuesStore submitIssueComment", () => {
     await Promise.resolve();
 
     expect(
-      (store.getIssueDetail() as unknown as MockIssueDetail)
-        ?.issue.Number,
+      (store.getIssueDetail() as unknown as MockIssueDetail)?.issue.Number,
     ).toBe(2);
   });
 

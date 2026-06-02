@@ -336,15 +336,12 @@ export async function mockApi(page: Page): Promise<void> {
       const prProvider = canonicalProvider(
         decodePathSegment(providerPrMatch[2]),
       );
-      const platformHost = routePlatformHost(
-        prProvider,
-        providerPrMatch[1],
-      );
+      const platformHost = routePlatformHost(prProvider, providerPrMatch[1]);
       const prOwner = decodePathSegment(providerPrMatch[3]);
       const prName = decodePathSegment(providerPrMatch[4]);
       const prNumber = parseInt(providerPrMatch[5]!, 10);
-      const pr = localPulls.find(
-        (p) => matchesRouteIdentity(p, {
+      const pr = localPulls.find((p) =>
+        matchesRouteIdentity(p, {
           provider: prProvider,
           platformHost,
           owner: prOwner,
@@ -419,8 +416,8 @@ export async function mockApi(page: Page): Promise<void> {
       const issueOwner = decodePathSegment(providerIssueMatch[3]);
       const issueName = decodePathSegment(providerIssueMatch[4]);
       const issueNumber = parseInt(providerIssueMatch[5]!, 10);
-      const issue = issues.find(
-        (candidate) => matchesRouteIdentity(candidate, {
+      const issue = issues.find((candidate) =>
+        matchesRouteIdentity(candidate, {
           provider: issueProvider,
           platformHost,
           owner: issueOwner,

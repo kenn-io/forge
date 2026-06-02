@@ -2,43 +2,116 @@
   "name": "@middleman/ui",
   "version": "0.0.1",
   "type": "module",
-  "svelte": "src/index.ts",
   "main": "src/index.ts",
   "types": "src/index.ts",
+  "svelte": "src/index.ts",
   "exports": {
-    ".": { "svelte": "./src/index.ts", "default": "./src/index.ts" },
-    "./api/types": { "default": "./src/api/types.ts" },
-    "./api/client": { "default": "./src/api/generated/client.ts" },
-    "./api/schema": { "default": "./src/api/generated/schema.ts" },
-    "./api/problems": { "default": "./src/api/problems.ts" },
-    "./api/provider-capabilities": { "default": "./src/api/provider-capabilities.ts" },
-    "./api/provider-routes": { "default": "./src/api/provider-routes.ts" },
-    "./utils/time": { "default": "./src/utils/time.ts" },
-    "./utils/markdown": { "default": "./src/utils/markdown.ts" },
-    "./utils/clipboard": { "default": "./src/utils/clipboard.ts" },
-    "./utils/repo-color": { "default": "./src/utils/repo-color.ts" },
-    "./routes": { "default": "./src/routes.ts" },
-    "./stores/pulls": { "svelte": "./src/stores/pulls.svelte.ts", "default": "./src/stores/pulls.svelte.ts" },
-    "./stores/issues": { "svelte": "./src/stores/issues.svelte.ts", "default": "./src/stores/issues.svelte.ts" },
-    "./stores/detail": { "svelte": "./src/stores/detail.svelte.ts", "default": "./src/stores/detail.svelte.ts" },
-    "./stores/activity": { "svelte": "./src/stores/activity.svelte.ts", "default": "./src/stores/activity.svelte.ts" },
-    "./stores/sync": { "svelte": "./src/stores/sync.svelte.ts", "default": "./src/stores/sync.svelte.ts" },
-    "./stores/diff": { "svelte": "./src/stores/diff.svelte.ts", "default": "./src/stores/diff.svelte.ts" },
-    "./stores/grouping": { "svelte": "./src/stores/grouping.svelte.ts", "default": "./src/stores/grouping.svelte.ts" },
-    "./stores/workflow": { "svelte": "./src/stores/workflow.svelte.ts", "default": "./src/stores/workflow.svelte.ts" },
-    "./stores/collapsedRepos": { "svelte": "./src/stores/collapsedRepos.svelte.ts", "default": "./src/stores/collapsedRepos.svelte.ts" },
-    "./stores/settings": { "svelte": "./src/stores/settings.svelte.ts", "default": "./src/stores/settings.svelte.ts" },
-    "./stores/flash": { "svelte": "./src/stores/flash.svelte.ts", "default": "./src/stores/flash.svelte.ts" },
-    "./stores/events": { "svelte": "./src/stores/events.svelte.ts", "default": "./src/stores/events.svelte.ts" },
-    "./stores/keyboard/keyspec": { "default": "./src/stores/keyboard/keyspec.ts" },
-    "./stores/keyboard/modal-stack": { "svelte": "./src/stores/keyboard/modal-stack.svelte.ts", "default": "./src/stores/keyboard/modal-stack.svelte.ts" },
-    "./api/roborev/client": { "default": "./src/api/roborev/client.ts" },
-    "./api/roborev/schema": { "default": "./src/api/roborev/generated/schema.ts" },
-    "./api/csrf": { "default": "./src/api/csrf.ts" }
+    ".": {
+      "svelte": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./api/types": {
+      "default": "./src/api/types.ts"
+    },
+    "./api/client": {
+      "default": "./src/api/generated/client.ts"
+    },
+    "./api/schema": {
+      "default": "./src/api/generated/schema.ts"
+    },
+    "./api/problems": {
+      "default": "./src/api/problems.ts"
+    },
+    "./api/provider-capabilities": {
+      "default": "./src/api/provider-capabilities.ts"
+    },
+    "./api/provider-routes": {
+      "default": "./src/api/provider-routes.ts"
+    },
+    "./utils/time": {
+      "default": "./src/utils/time.ts"
+    },
+    "./utils/markdown": {
+      "default": "./src/utils/markdown.ts"
+    },
+    "./utils/clipboard": {
+      "default": "./src/utils/clipboard.ts"
+    },
+    "./utils/repo-color": {
+      "default": "./src/utils/repo-color.ts"
+    },
+    "./routes": {
+      "default": "./src/routes.ts"
+    },
+    "./stores/pulls": {
+      "svelte": "./src/stores/pulls.svelte.ts",
+      "default": "./src/stores/pulls.svelte.ts"
+    },
+    "./stores/issues": {
+      "svelte": "./src/stores/issues.svelte.ts",
+      "default": "./src/stores/issues.svelte.ts"
+    },
+    "./stores/detail": {
+      "svelte": "./src/stores/detail.svelte.ts",
+      "default": "./src/stores/detail.svelte.ts"
+    },
+    "./stores/activity": {
+      "svelte": "./src/stores/activity.svelte.ts",
+      "default": "./src/stores/activity.svelte.ts"
+    },
+    "./stores/sync": {
+      "svelte": "./src/stores/sync.svelte.ts",
+      "default": "./src/stores/sync.svelte.ts"
+    },
+    "./stores/diff": {
+      "svelte": "./src/stores/diff.svelte.ts",
+      "default": "./src/stores/diff.svelte.ts"
+    },
+    "./stores/grouping": {
+      "svelte": "./src/stores/grouping.svelte.ts",
+      "default": "./src/stores/grouping.svelte.ts"
+    },
+    "./stores/workflow": {
+      "svelte": "./src/stores/workflow.svelte.ts",
+      "default": "./src/stores/workflow.svelte.ts"
+    },
+    "./stores/collapsedRepos": {
+      "svelte": "./src/stores/collapsedRepos.svelte.ts",
+      "default": "./src/stores/collapsedRepos.svelte.ts"
+    },
+    "./stores/settings": {
+      "svelte": "./src/stores/settings.svelte.ts",
+      "default": "./src/stores/settings.svelte.ts"
+    },
+    "./stores/flash": {
+      "svelte": "./src/stores/flash.svelte.ts",
+      "default": "./src/stores/flash.svelte.ts"
+    },
+    "./stores/events": {
+      "svelte": "./src/stores/events.svelte.ts",
+      "default": "./src/stores/events.svelte.ts"
+    },
+    "./stores/keyboard/keyspec": {
+      "default": "./src/stores/keyboard/keyspec.ts"
+    },
+    "./stores/keyboard/modal-stack": {
+      "svelte": "./src/stores/keyboard/modal-stack.svelte.ts",
+      "default": "./src/stores/keyboard/modal-stack.svelte.ts"
+    },
+    "./api/roborev/client": {
+      "default": "./src/api/roborev/client.ts"
+    },
+    "./api/roborev/schema": {
+      "default": "./src/api/roborev/generated/schema.ts"
+    },
+    "./api/csrf": {
+      "default": "./src/api/csrf.ts"
+    }
   },
   "scripts": {
-    "lint": "node ./node_modules/eslint/bin/eslint.js .",
-    "typecheck": "node -e \"process.argv.splice(1, 0, 'svelte-check'); require(require.resolve('svelte-check/bin/svelte-check'))\" -- --tsconfig ./tsconfig.json --fail-on-warnings && node ./node_modules/typescript/bin/tsc --noEmit -p ./tsconfig.json"
+    "check": "cd ../.. && vp check packages/ui '!packages/ui/src/api/generated/**' '!packages/ui/src/api/roborev/generated/**' --no-error-on-unmatched-pattern",
+    "lint": "cd ../.. && vp lint packages/ui --no-error-on-unmatched-pattern",
+    "typecheck": "cd ../.. && vp check packages/ui '!packages/ui/src/api/generated/**' '!packages/ui/src/api/roborev/generated/**' --no-fmt --no-lint --no-error-on-unmatched-pattern"
   },
   "dependencies": {
     "@lucide/svelte": "1.3.0",
@@ -58,24 +131,16 @@
     "prosemirror-state": "^1.4.4",
     "svelte-tiptap": "3.0.1"
   },
-  "peerDependencies": {
-    "svelte": "^5.0.0"
-  },
   "devDependencies": {
-    "@eslint/js": "^10.0.1",
     "@testing-library/svelte": "5.2.8",
     "@tsconfig/svelte": "^5.0.0",
-    "@types/node": "^24.9.2",
     "@types/dompurify": "3.2.0",
-    "eslint": "^10.1.0",
-    "eslint-config-prettier": "^10.1.8",
-    "eslint-plugin-svelte": "^3.16.0",
-    "globals": "^17.4.0",
+    "@types/node": "^24.9.2",
     "openapi-fetch": "^0.17.0",
     "svelte": "^5.55.0",
-    "svelte-check": "4.4.5",
-    "typescript": "5.9.3",
-    "typescript-eslint": "^8.58.0",
-    "vitest": "3.2.4"
+    "vite-plus": "0.1.22"
+  },
+  "peerDependencies": {
+    "svelte": "^5.0.0"
   }
 }

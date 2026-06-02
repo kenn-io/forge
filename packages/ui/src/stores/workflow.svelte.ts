@@ -10,10 +10,7 @@ export const workflowGroupOrder: WorkflowGroup[] = [
   "closed",
 ];
 
-export const workflowGroupLabels: Record<
-  WorkflowGroup,
-  string
-> = {
+export const workflowGroupLabels: Record<WorkflowGroup, string> = {
   new: "New",
   reviewing: "Reviewing",
   waiting: "Waiting",
@@ -27,9 +24,7 @@ export interface WorkflowGroupEntry {
   items: PullRequest[];
 }
 
-function normalizeKanbanStatus(
-  status: string | undefined,
-): WorkflowGroup {
+function normalizeKanbanStatus(status: string | undefined): WorkflowGroup {
   if (
     status === "new" ||
     status === "reviewing" ||
@@ -61,9 +56,7 @@ export function classifyPR(pr: PullRequest): WorkflowGroup {
  * Items within each group are sorted by LastActivityAt
  * descending.
  */
-export function groupByWorkflow(
-  prs: PullRequest[],
-): WorkflowGroupEntry[] {
+export function groupByWorkflow(prs: PullRequest[]): WorkflowGroupEntry[] {
   const buckets = new Map<WorkflowGroup, PullRequest[]>();
   for (const g of workflowGroupOrder) {
     buckets.set(g, []);

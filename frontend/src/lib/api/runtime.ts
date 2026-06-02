@@ -5,7 +5,7 @@ import type { components } from "@middleman/ui/api/schema";
 import { csrfFetch, type FetchFn } from "@middleman/ui/api/csrf";
 
 const basePath =
-  typeof window !== "undefined" ? window.__BASE_PATH__ ?? "/" : "/";
+  typeof window !== "undefined" ? (window.__BASE_PATH__ ?? "/") : "/";
 const baseUrl =
   typeof window !== "undefined"
     ? new URL(
@@ -21,10 +21,7 @@ export const querySerializer: QuerySerializerOptions = {
   },
 };
 
-export function createRuntimeClient(
-  fetch?: FetchFn,
-  clientBaseURL = baseUrl,
-) {
+export function createRuntimeClient(fetch?: FetchFn, clientBaseURL = baseUrl) {
   const inner =
     fetch ??
     ((...args: Parameters<typeof globalThis.fetch>) =>
@@ -39,10 +36,7 @@ export const client = createRuntimeClient();
 
 export function apiErrorMessage(
   error:
-    | Pick<
-        Partial<components["schemas"]["ProblemError"]>,
-        "detail" | "title"
-      >
+    | Pick<Partial<components["schemas"]["ProblemError"]>, "detail" | "title">
     | undefined,
   fallback: string,
 ): string {

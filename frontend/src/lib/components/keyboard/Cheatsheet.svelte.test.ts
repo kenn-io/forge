@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vite-plus/test";
 
 import Cheatsheet from "./Cheatsheet.svelte";
 import {
@@ -34,14 +34,12 @@ function action(
   };
 }
 
-function sectionByHeader(
-  dialog: Element,
-  header: string,
-): Element | undefined {
+function sectionByHeader(dialog: Element, header: string): Element | undefined {
   return Array.from(dialog.querySelectorAll(".cheatsheet-section")).find(
     (section) =>
-      (section.querySelector(".cheatsheet-section-header")?.textContent ?? "")
-        .trim() === header,
+      (
+        section.querySelector(".cheatsheet-section-header")?.textContent ?? ""
+      ).trim() === header,
   );
 }
 
@@ -134,8 +132,9 @@ describe("Cheatsheet", () => {
     expect(backdrop).not.toBeNull();
     await fireEvent.click(backdrop!);
     await rerender({});
-    expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" }))
-      .toBeNull();
+    expect(
+      screen.queryByRole("dialog", { name: "Keyboard shortcuts" }),
+    ).toBeNull();
   });
 
   it("omits the Component shortcuts section when no entries exist", async () => {

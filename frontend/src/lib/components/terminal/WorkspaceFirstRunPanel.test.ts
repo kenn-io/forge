@@ -6,11 +6,10 @@ import {
   expect,
   it,
   vi,
-} from "vitest";
+} from "vite-plus/test";
 
 import WorkspaceFirstRunPanel from "./WorkspaceFirstRunPanel.svelte";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- test helper needs dynamic window access
 const win = window as any;
 
 interface SetupArgs {
@@ -32,7 +31,8 @@ function setupConfig({
         {
           id: "add-existing",
           label: "Add Existing",
-          handler: handlers["add-existing"] ?? vi.fn().mockResolvedValue({ ok: true }),
+          handler:
+            handlers["add-existing"] ?? vi.fn().mockResolvedValue({ ok: true }),
         },
         {
           id: "clone",
@@ -42,7 +42,9 @@ function setupConfig({
         {
           id: "connect-github",
           label: "Connect GH",
-          handler: handlers["connect-github"] ?? vi.fn().mockResolvedValue({ ok: true }),
+          handler:
+            handlers["connect-github"] ??
+            vi.fn().mockResolvedValue({ ok: true }),
         },
       ],
     },
@@ -105,9 +107,7 @@ describe("WorkspaceFirstRunPanel", () => {
     setupConfig({ ghAuthed: false, ghAvailable: false });
     render(WorkspaceFirstRunPanel);
 
-    expect(
-      screen.getByText("Install gh to use this option."),
-    ).toBeTruthy();
+    expect(screen.getByText("Install gh to use this option.")).toBeTruthy();
   });
 
   it("invokes the action handler when the user clicks", async () => {
@@ -135,9 +135,7 @@ describe("WorkspaceFirstRunPanel", () => {
     await fireEvent.click(
       screen.getByRole("button", { name: /Clone a repository/i }),
     );
-    expect(
-      await screen.findByText("Couldn't reach the remote"),
-    ).toBeTruthy();
+    expect(await screen.findByText("Couldn't reach the remote")).toBeTruthy();
   });
 
   it("renders an upgrade-host hint when the action is not registered", async () => {
@@ -172,15 +170,17 @@ describe("WorkspaceFirstRunPanel", () => {
     win.__middleman_config.workspace = {
       selectedHostKey: "gitlab-main",
       selectedWorktreeKey: null,
-      hosts: [{
-        key: "gitlab-main",
-        label: "GitLab",
-        connectionState: "connected",
-        platform: "gitlab",
-        projects: [],
-        sessions: [],
-        resources: null,
-      }],
+      hosts: [
+        {
+          key: "gitlab-main",
+          label: "GitLab",
+          connectionState: "connected",
+          platform: "gitlab",
+          projects: [],
+          sessions: [],
+          resources: null,
+        },
+      ],
     };
     win.__middleman_config.embed.tooling.glab = {
       available: true,

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { buildCanonicalProviderItemURL } from "./item-reference.js";
 import { renderMarkdown } from "./markdown.js";
 
@@ -12,39 +12,44 @@ describe("renderMarkdown task lists", () => {
       repoPath: "acme/widgets",
     });
 
-    expect(html).toContain('class="item-ref" href="/issues/github/acme/widgets/12"');
+    expect(html).toContain(
+      'class="item-ref" href="/issues/github/acme/widgets/12"',
+    );
     expect(html).toContain('data-platform-host="github.com"');
     expect(html).toContain('data-owner="acme"');
     expect(html).toContain('data-name="widgets"');
     expect(html).toContain('data-repo-path="acme/widgets"');
     expect(html).toContain('data-number="12"');
-    expect(html).toContain('data-external-url="https://github.com/acme/widgets/issues/12"');
+    expect(html).toContain(
+      'data-external-url="https://github.com/acme/widgets/issues/12"',
+    );
     expect(html).toContain('href="/issues/github/acme/tools/13"');
     expect(html).toContain('data-repo-path="acme/tools"');
-    expect(html).toContain('data-external-url="https://github.com/acme/tools/issues/13"');
+    expect(html).toContain(
+      'data-external-url="https://github.com/acme/tools/issues/13"',
+    );
   });
 
   it("renders gitlab issue and merge request references with provider fallback links", () => {
-    const html = renderMarkdown("See #41 and group/project#42 and group/project!43 and !44", {
-      provider: "gitlab",
-      platformHost: "gitlab.example.com",
-      owner: "group",
-      name: "project",
-      repoPath: "group/project",
-    });
+    const html = renderMarkdown(
+      "See #41 and group/project#42 and group/project!43 and !44",
+      {
+        provider: "gitlab",
+        platformHost: "gitlab.example.com",
+        owner: "group",
+        name: "project",
+        repoPath: "group/project",
+      },
+    );
 
     expect(html).toContain(
       'href="/host/gitlab.example.com/issues/gitlab/group/project/41"',
     );
-    expect(html).toContain(
-      'data-number="41" data-item-type="issue"',
-    );
+    expect(html).toContain('data-number="41" data-item-type="issue"');
     expect(html).toContain(
       'href="/host/gitlab.example.com/issues/gitlab/group/project/42"',
     );
-    expect(html).toContain(
-      'data-number="42" data-item-type="issue"',
-    );
+    expect(html).toContain('data-number="42" data-item-type="issue"');
     expect(html).toContain(
       'data-external-url="https://gitlab.example.com/group/project/-/issues/42"',
     );
@@ -61,15 +66,20 @@ describe("renderMarkdown task lists", () => {
   });
 
   it("disambiguates overlapping gitlab issue and merge request numbers", () => {
-    const html = renderMarkdown("See #10, !10, group/project#10, and group/project!10", {
-      provider: "gitlab",
-      platformHost: "gitlab.example.com",
-      owner: "group",
-      name: "project",
-      repoPath: "group/project",
-    });
+    const html = renderMarkdown(
+      "See #10, !10, group/project#10, and group/project!10",
+      {
+        provider: "gitlab",
+        platformHost: "gitlab.example.com",
+        owner: "group",
+        name: "project",
+        repoPath: "group/project",
+      },
+    );
 
-    expect(html.match(/data-number="10" data-item-type="issue"/g)).toHaveLength(2);
+    expect(html.match(/data-number="10" data-item-type="issue"/g)).toHaveLength(
+      2,
+    );
     expect(html.match(/data-number="10" data-item-type="pr"/g)).toHaveLength(2);
     expect(html).toContain(
       'data-external-url="https://gitlab.example.com/group/project/-/issues/10"',
@@ -94,24 +104,28 @@ describe("renderMarkdown task lists", () => {
   });
 
   it("builds provider-canonical pull request fallback links", () => {
-    expect(buildCanonicalProviderItemURL({
-      provider: "github",
-      platformHost: "github.com",
-      owner: "acme",
-      name: "widgets",
-      repoPath: "acme/widgets",
-      number: 12,
-      itemType: "pr",
-    })).toBe("https://github.com/acme/widgets/pull/12");
-    expect(buildCanonicalProviderItemURL({
-      provider: "gitlab",
-      platformHost: "gitlab.example.com",
-      owner: "group",
-      name: "project",
-      repoPath: "group/project",
-      number: 42,
-      itemType: "pr",
-    })).toBe("https://gitlab.example.com/group/project/-/merge_requests/42");
+    expect(
+      buildCanonicalProviderItemURL({
+        provider: "github",
+        platformHost: "github.com",
+        owner: "acme",
+        name: "widgets",
+        repoPath: "acme/widgets",
+        number: 12,
+        itemType: "pr",
+      }),
+    ).toBe("https://github.com/acme/widgets/pull/12");
+    expect(
+      buildCanonicalProviderItemURL({
+        provider: "gitlab",
+        platformHost: "gitlab.example.com",
+        owner: "group",
+        name: "project",
+        repoPath: "group/project",
+        number: 42,
+        itemType: "pr",
+      }),
+    ).toBe("https://gitlab.example.com/group/project/-/merge_requests/42");
   });
 
   it("renders disabled checkboxes by default", () => {
@@ -124,7 +138,9 @@ describe("renderMarkdown task lists", () => {
     const html = renderMarkdown(
       "- [ ] alpha\n- [x] beta\n- [ ] gamma",
       undefined,
-      { interactiveTasks: true },
+      {
+        interactiveTasks: true,
+      },
     );
     expect(html).not.toContain('disabled=""');
     expect(html).toContain('data-task-index="0"');
@@ -195,7 +211,9 @@ describe("renderMarkdown task lists", () => {
     const html = renderMarkdown(
       "> - [ ] inside blockquote\n\n- [ ] outside",
       undefined,
-      { interactiveTasks: true },
+      {
+        interactiveTasks: true,
+      },
     );
     // The blockquoted checkbox stays disabled with no data-task-index.
     expect(html).toMatch(
@@ -214,7 +232,9 @@ describe("renderMarkdown task lists", () => {
     const html = renderMarkdown(
       "- [ ] outer\n  - [ ] inner\n- [x] sibling",
       undefined,
-      { interactiveTasks: true },
+      {
+        interactiveTasks: true,
+      },
     );
     // The outer <li> wraps both the outer checkbox AND the nested
     // list — its data-task-index must match its OWN checkbox (0),

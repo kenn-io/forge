@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import {
   getWorkspaceRuntime,
@@ -15,24 +15,23 @@ describe("workspace-runtime api", () => {
   });
 
   it("loads runtime state and normalizes nullable arrays", async () => {
-    const fetchMock = vi.fn(async () =>
-      new Response(
-        JSON.stringify({
-          launch_targets: null,
-          sessions: null,
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        },
-      ),
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            launch_targets: null,
+            sessions: null,
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
     );
 
     const runtime = await getWorkspaceRuntime("ws-1", fetchMock);
 
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/api/v1/workspaces/ws-1/runtime",
-    );
+    expect(fetchMock).toHaveBeenCalledWith("/api/v1/workspaces/ws-1/runtime");
     expect(runtime.launch_targets).toEqual([]);
     expect(runtime.sessions).toEqual([]);
   });
@@ -114,9 +113,7 @@ describe("workspace-runtime api", () => {
   });
 
   it("builds runtime websocket paths", () => {
-    expect(
-      workspaceSessionWebSocketPath("ws-1", "ws-1:helper"),
-    ).toBe(
+    expect(workspaceSessionWebSocketPath("ws-1", "ws-1:helper")).toBe(
       "/ws/v1/workspaces/ws-1/runtime/sessions/ws-1%3Ahelper/terminal",
     );
     expect(workspaceTmuxWebSocketPath("ws-1")).toBe(
@@ -126,17 +123,18 @@ describe("workspace-runtime api", () => {
 
   it("includes the configured base path in runtime and websocket paths", async () => {
     window.__BASE_PATH__ = "/middleman/";
-    const fetchMock = vi.fn(async () =>
-      new Response(
-        JSON.stringify({
-          launch_targets: [],
-          sessions: [],
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        },
-      ),
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            launch_targets: [],
+            sessions: [],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
     );
 
     await getWorkspaceRuntime("ws-1", fetchMock);

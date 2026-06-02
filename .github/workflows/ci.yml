@@ -41,11 +41,8 @@ jobs:
       - name: Install JS dependencies
         run: bun install --frozen-lockfile
 
-      - name: Run frontend lint and typecheck
-        run: cd frontend && bun run typecheck && bun run lint
-
-      - name: Run packages/ui lint and typecheck
-        run: cd packages/ui && bun run typecheck && bun run lint
+      - name: Run frontend tooling checks
+        run: bun run check
 
       - name: Run guardrail checks
         run: make guardrail-check

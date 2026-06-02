@@ -80,9 +80,9 @@ function walkTaskLines(lines: string[], visitor: TaskLineVisitor): void {
     // same indent continues the list item and may legitimately open a
     // fence as part of the item's content.
     if (
-      openFence === null
-      && listIndent === null
-      && isIndentedCodeStart(line)
+      openFence === null &&
+      listIndent === null &&
+      isIndentedCodeStart(line)
     ) {
       continue;
     }
@@ -98,8 +98,7 @@ function walkTaskLines(lines: string[], visitor: TaskLineVisitor): void {
         openFence = null;
         // A fenced block at the same indent as the list bullet ends
         // the list — Markdown treats the fence as block-level content.
-        if (listIndent !== null
-          && leadingWhitespaceCount(line) <= listIndent) {
+        if (listIndent !== null && leadingWhitespaceCount(line) <= listIndent) {
           listIndent = null;
         }
         continue;
@@ -115,10 +114,7 @@ function walkTaskLines(lines: string[], visitor: TaskLineVisitor): void {
 
     // Dedent out of the list when a non-blank line sits at or below
     // the list bullet indent and isn't itself a bullet at that level.
-    if (
-      listIndent !== null &&
-      indent < listIndent
-    ) {
+    if (listIndent !== null && indent < listIndent) {
       listIndent = null;
     }
 
@@ -167,10 +163,7 @@ export function listTaskItems(source: string): TaskItem[] {
 // non-blank line is still indented past the bullet. The block ends
 // at the first non-blank line that sits at or below the bullet's
 // indentation.
-function findTaskBlockEnd(
-  lines: string[],
-  start: number,
-): number {
+function findTaskBlockEnd(lines: string[], start: number): number {
   const bulletIndent = leadingWhitespaceCount(lines[start]!);
   let end = start + 1;
   let pendingBlankRun = 0;
@@ -236,10 +229,7 @@ export function moveTaskListItem(
   // pass through unchanged.
   if (toStart >= fromStart && toStart < fromEnd) return source;
   const moved = lines.slice(fromStart, fromEnd);
-  const without = [
-    ...lines.slice(0, fromStart),
-    ...lines.slice(fromEnd),
-  ];
+  const without = [...lines.slice(0, fromStart), ...lines.slice(fromEnd)];
   // Where to insert depends on direction: moving down lands the block
   // where the target block ended (minus the removed block's length);
   // moving up lands it where the target block started.

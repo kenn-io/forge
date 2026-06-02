@@ -32,24 +32,29 @@ test.describe.serial("issue description task list", () => {
     const cb1 = body.locator('input[type="checkbox"][data-task-index="1"]');
     const cb0Expected = !(await cb0.isChecked());
     const cb1Expected = !(await cb1.isChecked());
-    const checkboxMarker = (checked: boolean) => checked ? "[x]" : "[ ]";
+    const checkboxMarker = (checked: boolean) => (checked ? "[x]" : "[ ]");
     const patchRoute = /\/api\/v1\/issues\/[^/]+\/[^/]+\/[^/]+\/11$/;
-    const persisted = page.waitForResponse((resp) => {
-      if (
-        resp.request().method() !== "PATCH"
-        || !patchRoute.test(resp.url())
-        || !resp.ok()
-      ) {
-        return false;
-      }
-      const body = resp.request().postData() ?? "";
-      return body.includes(
-        `${checkboxMarker(cb0Expected)} System preference detected on first launch`,
-      )
-        && body.includes(
-          `${checkboxMarker(cb1Expected)} Manual toggle in settings overrides system`,
+    const persisted = page.waitForResponse(
+      (resp) => {
+        if (
+          resp.request().method() !== "PATCH" ||
+          !patchRoute.test(resp.url()) ||
+          !resp.ok()
+        ) {
+          return false;
+        }
+        const body = resp.request().postData() ?? "";
+        return (
+          body.includes(
+            `${checkboxMarker(cb0Expected)} System preference detected on first launch`,
+          ) &&
+          body.includes(
+            `${checkboxMarker(cb1Expected)} Manual toggle in settings overrides system`,
+          )
         );
-    }, { timeout: 5_000 });
+      },
+      { timeout: 5_000 },
+    );
 
     await cb0.click();
     await expect(cb0).toBeChecked({ checked: cb0Expected });
@@ -63,10 +68,14 @@ test.describe.serial("issue description task list", () => {
 
     await expect(
       reloadedBody.locator('input[type="checkbox"][data-task-index="0"]'),
-    ).toBeChecked({ checked: cb0Expected });
+    ).toBeChecked({
+      checked: cb0Expected,
+    });
     await expect(
       reloadedBody.locator('input[type="checkbox"][data-task-index="1"]'),
-    ).toBeChecked({ checked: cb1Expected });
+    ).toBeChecked({
+      checked: cb1Expected,
+    });
   });
 
   test("drag handle reorders a task item and persists on reload", async ({
@@ -78,9 +87,7 @@ test.describe.serial("issue description task list", () => {
       .textContent();
     expect(firstLabel ?? "").toMatch(/System preference/);
 
-    const handle0 = body.locator(
-      '.task-drag-handle[data-task-index="0"]',
-    );
+    const handle0 = body.locator('.task-drag-handle[data-task-index="0"]');
     const item2 = body.locator(
       '.task-list-item--interactive[data-task-index="2"]',
     );
@@ -158,10 +165,7 @@ test.describe.serial("issue description task list", () => {
     // can't tell us a PATCH has actually persisted.
     let patchResponses = 0;
     const onResponse = (resp: import("@playwright/test").Response) => {
-      if (
-        resp.request().method() === "PATCH"
-        && patchRoute.test(resp.url())
-      ) {
+      if (resp.request().method() === "PATCH" && patchRoute.test(resp.url())) {
         patchResponses++;
       }
     };
@@ -169,9 +173,7 @@ test.describe.serial("issue description task list", () => {
 
     await cb0.click();
     await expect(cb0).toBeChecked({ checked: !cb0Initial });
-    await expect
-      .poll(() => patchRequests, { timeout: 3_000 })
-      .toBe(1);
+    await expect.poll(() => patchRequests, { timeout: 3_000 }).toBe(1);
 
     await cb1.click();
     await expect(cb1).toBeChecked({ checked: !cb1Initial });
@@ -193,9 +195,13 @@ test.describe.serial("issue description task list", () => {
     await reloadedBody.waitFor({ state: "visible" });
     await expect(
       reloadedBody.locator('input[type="checkbox"][data-task-index="0"]'),
-    ).toBeChecked({ checked: !cb0Initial });
+    ).toBeChecked({
+      checked: !cb0Initial,
+    });
     await expect(
       reloadedBody.locator('input[type="checkbox"][data-task-index="1"]'),
-    ).toBeChecked({ checked: !cb1Initial });
+    ).toBeChecked({
+      checked: !cb1Initial,
+    });
   });
 });

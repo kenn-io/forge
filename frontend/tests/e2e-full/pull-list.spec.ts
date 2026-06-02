@@ -24,7 +24,8 @@ async function selectPullState(page: Page, label: string): Promise<void> {
   }
 
   await page.getByRole("button", { name: "Filters" }).click();
-  await page.locator(".filter-dropdown .filter-item", { hasText: label })
+  await page
+    .locator(".filter-dropdown .filter-item", { hasText: label })
     .first()
     .click();
 }
@@ -37,7 +38,8 @@ async function selectPullGrouping(page: Page, label: string): Promise<void> {
   }
 
   await page.getByRole("button", { name: "Filters" }).click();
-  await page.locator(".filter-dropdown .filter-item", { hasText: label })
+  await page
+    .locator(".filter-dropdown .filter-item", { hasText: label })
     .last()
     .click();
 }
@@ -48,11 +50,11 @@ const longRepoPath = `acme/${longRepoName}`;
 async function mockLongPullRepoSlug(page: Page): Promise<void> {
   await page.route(
     (url) =>
-      url.pathname.endsWith("/api/v1/pulls")
-      && url.searchParams.get("state") === "open",
+      url.pathname.endsWith("/api/v1/pulls") &&
+      url.searchParams.get("state") === "open",
     async (route) => {
       const response = await route.fetch();
-      const pulls = await response.json() as Array<{
+      const pulls = (await response.json()) as Array<{
         repo?: { owner?: string; name?: string; repo_path?: string };
         repo_owner?: string;
         repo_name?: string;
@@ -90,13 +92,17 @@ async function expectRepoChipToClipSafely(
   expect(chipBox).not.toBeNull();
   expect(itemBox).not.toBeNull();
   if (chipBox !== null && itemBox !== null) {
-    expect(chipBox.x + chipBox.width).toBeLessThanOrEqual(itemBox.x + itemBox.width + 1);
+    expect(chipBox.x + chipBox.width).toBeLessThanOrEqual(
+      itemBox.x + itemBox.width + 1,
+    );
   }
 
-  const labelOverflow = await repoChip.locator(".chip__label").evaluate((node) => ({
-    clientWidth: (node as HTMLElement).clientWidth,
-    scrollWidth: (node as HTMLElement).scrollWidth,
-  }));
+  const labelOverflow = await repoChip
+    .locator(".chip__label")
+    .evaluate((node) => ({
+      clientWidth: (node as HTMLElement).clientWidth,
+      scrollWidth: (node as HTMLElement).scrollWidth,
+    }));
   expect(labelOverflow.scrollWidth).toBeGreaterThan(labelOverflow.clientWidth);
 }
 
@@ -167,7 +173,9 @@ test.describe("PR list view", () => {
     // the debounced search request completes.
     await expect(page.locator(".filter-bar .list-count-chip")).toHaveText(
       /^1 PRs?$/,
-      { timeout: 5_000 },
+      {
+        timeout: 5_000,
+      },
     );
 
     // Verify the single remaining item is the expected one.
@@ -226,9 +234,7 @@ test.describe("PR list view", () => {
     expect(detailBox).not.toBeNull();
     expect(headerBox).not.toBeNull();
     if (areaBox !== null && detailBox !== null && headerBox !== null) {
-      const scrollportWidth = await pullDetail.evaluate(
-        (el) => el.clientWidth,
-      );
+      const scrollportWidth = await pullDetail.evaluate((el) => el.clientWidth);
       const scrollportCenter = detailBox.x + scrollportWidth / 2;
       const headerCenter = headerBox.x + headerBox.width / 2;
       expect(

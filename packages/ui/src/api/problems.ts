@@ -43,7 +43,10 @@ export async function readProblem(
     return null;
   }
   const ct = response.headers.get("content-type") ?? "";
-  if (!ct.includes("application/problem+json") && !ct.includes("application/json")) {
+  if (
+    !ct.includes("application/problem+json") &&
+    !ct.includes("application/json")
+  ) {
     return null;
   }
   let body: unknown;

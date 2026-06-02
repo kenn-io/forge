@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vite-plus/test";
 
 import { createDetailStore } from "@middleman/ui/stores/detail";
 import { createIssuesStore } from "@middleman/ui/stores/issues";
@@ -29,17 +29,20 @@ describe("provider-aware detail API routes", () => {
       repoPath: "Group/SubGroup/Project",
     } as never);
 
-    expect(client.GET).toHaveBeenCalledWith("/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}", {
-      params: {
-        path: {
-          provider: "gitlab",
-          platform_host: "gitlab.example.com:8443",
-          owner: "Group/SubGroup",
-          name: "Project",
-          number: 12,
+    expect(client.GET).toHaveBeenCalledWith(
+      "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}",
+      {
+        params: {
+          path: {
+            provider: "gitlab",
+            platform_host: "gitlab.example.com:8443",
+            owner: "Group/SubGroup",
+            name: "Project",
+            number: 12,
+          },
         },
       },
-    });
+    );
   });
 
   it("refreshes pending PR CI through the provider CI endpoint", async () => {
@@ -81,17 +84,20 @@ describe("provider-aware detail API routes", () => {
       repoPath: "Group/SubGroup/Project",
     });
 
-    expect(client.POST).toHaveBeenCalledWith("/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/ci-refresh", {
-      params: {
-        path: {
-          provider: "gitlab",
-          platform_host: "gitlab.example.com:8443",
-          owner: "Group/SubGroup",
-          name: "Project",
-          number: 12,
+    expect(client.POST).toHaveBeenCalledWith(
+      "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/ci-refresh",
+      {
+        params: {
+          path: {
+            provider: "gitlab",
+            platform_host: "gitlab.example.com:8443",
+            owner: "Group/SubGroup",
+            name: "Project",
+            number: 12,
+          },
         },
       },
-    });
+    );
   });
 
   it("flashes CI refresh warnings returned with preserved detail", async () => {
@@ -175,7 +181,9 @@ describe("provider-aware detail API routes", () => {
       repoPath: "acme/widgets",
     });
 
-    expect(showFlash).toHaveBeenCalledWith("refresh PR CI: upstream unavailable");
+    expect(showFlash).toHaveBeenCalledWith(
+      "refresh PR CI: upstream unavailable",
+    );
     showFlash.mockRestore();
   });
 
@@ -483,16 +491,19 @@ describe("provider-aware detail API routes", () => {
       repoPath: "Group/SubGroup/Project",
     } as never);
 
-    expect(client.GET).toHaveBeenCalledWith("/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}", {
-      params: {
-        path: {
-          provider: "gitlab",
-          platform_host: "gitlab.example.com:8443",
-          owner: "Group/SubGroup",
-          name: "Project",
-          number: 7,
+    expect(client.GET).toHaveBeenCalledWith(
+      "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}",
+      {
+        params: {
+          path: {
+            provider: "gitlab",
+            platform_host: "gitlab.example.com:8443",
+            owner: "Group/SubGroup",
+            name: "Project",
+            number: 7,
+          },
         },
       },
-    });
+    );
   });
 });

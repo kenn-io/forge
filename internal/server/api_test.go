@@ -1372,6 +1372,32 @@ func TestAPIListItemsIncludeWorkspaceRefs(t *testing.T) {
 	assert.Equal("ws-issue-2", workspaceByItem["issue:2"])
 }
 
+func TestAPIListPullsOrdersByLastActivityDescending(t *testing.T) {
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	base := time.Date(2026, 5, 20, 12, 0, 0, 0, time.UTC)
+	seedPR(t, database, "acme", "widget", 1,
+		withSeedPRTimes(base, base, base.Add(time.Hour)),
+	)
+	seedPR(t, database, "acme", "widget", 2,
+		withSeedPRTimes(base, base, base.Add(3*time.Hour)),
+	)
+	seedPR(t, database, "acme", "widget", 3,
+		withSeedPRTimes(base, base, base.Add(2*time.Hour)),
+	)
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.ListPullsWithResponse(t.Context(), nil)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.Len(*resp.JSON200, 3)
+	assert := Assert.New(t)
+	assert.Equal(int64(2), (*resp.JSON200)[0].Number)
+	assert.Equal(int64(3), (*resp.JSON200)[1].Number)
+	assert.Equal(int64(1), (*resp.JSON200)[2].Number)
+}
+
 func TestAPIListPullsKeepsCachedCIDecorationsAfterIndexSync(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

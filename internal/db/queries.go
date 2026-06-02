@@ -2167,7 +2167,7 @@ func (d *DB) UpsertMergeRequest(ctx context.Context, mr *MergeRequest) (int64, e
 		    detail_fetched_at    = COALESCE(middleman_merge_requests.detail_fetched_at, excluded.detail_fetched_at),
 		    ci_had_pending       = middleman_merge_requests.ci_had_pending,
 		    updated_at           = excluded.updated_at,
-		    last_activity_at     = excluded.last_activity_at,
+		    last_activity_at     = MAX(middleman_merge_requests.last_activity_at, excluded.last_activity_at),
 		    merged_at            = excluded.merged_at,
 		    closed_at            = excluded.closed_at,
 		    mergeable_state      = excluded.mergeable_state

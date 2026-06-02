@@ -2077,6 +2077,46 @@ func TestUpsertAndGetPullRequest(t *testing.T) {
 	assert.Nil(missing)
 }
 
+func TestUpsertMergeRequestPreservesNewerLastActivity(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+
+	repoID := insertTestRepo(t, d, "owner", "repo")
+	base := baseTime()
+	newerActivity := base.Add(2 * time.Hour)
+	pr := &MergeRequest{
+		RepoID:         repoID,
+		PlatformID:     42,
+		Number:         7,
+		URL:            "https://github.com/owner/repo/pull/7",
+		Title:          "fix: something",
+		Author:         "alice",
+		State:          "open",
+		Body:           "body text",
+		HeadBranch:     "fix/something",
+		BaseBranch:     "main",
+		CreatedAt:      base,
+		UpdatedAt:      base,
+		LastActivityAt: newerActivity,
+	}
+
+	_, err := d.UpsertMergeRequest(ctx, pr)
+	require.NoError(err)
+
+	pr.Title = "fix: something synced"
+	pr.LastActivityAt = base
+	_, err = d.UpsertMergeRequest(ctx, pr)
+	require.NoError(err)
+
+	got, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	require.NotNil(got)
+	assert.Equal("fix: something synced", got.Title)
+	assert.True(got.LastActivityAt.Equal(newerActivity))
+}
+
 func TestListPullRequests(t *testing.T) {
 	d := openTestDB(t)
 

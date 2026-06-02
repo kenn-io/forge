@@ -20,6 +20,7 @@ import (
 
 const (
 	EnabledEnv           = "TELEMETRY_ENABLED"
+	ServerPingInterval   = 24 * time.Hour
 	installIDMetadataKey = "telemetry.install_id"
 	postHogAPIKey        = "phc_AzHd9YvuHR7M5poKzC6eW654d3SgKyBdoQPuwkWhimUf"
 	postHogEndpoint      = "https://us.i.posthog.com"
@@ -170,6 +171,34 @@ func (r *Reporter) Capture(event string, properties map[string]any) error {
 		Timestamp:  time.Now().UTC(),
 		Properties: props,
 	})
+}
+
+func (r *Reporter) StartServerStartedPingLoop(
+	ctx context.Context,
+	interval time.Duration,
+	repoCount func() int,
+) {
+	if !r.Enabled() || interval <= 0 || repoCount == nil {
+		return
+	}
+
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if err := r.Capture("server_started", map[string]any{
+					"repo_count": repoCount(),
+				}); err != nil {
+					slog.Warn("capture telemetry ping", "err", err)
+				}
+			}
+		}
+	}()
 }
 
 func (r *Reporter) Close() error {

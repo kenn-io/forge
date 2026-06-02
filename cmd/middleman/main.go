@@ -465,6 +465,12 @@ func run(opts serve.Options) error {
 		syscall.SIGINT,
 		syscall.SIGTERM,
 	)
+	telemetryReporter.StartServerStartedPingLoop(
+		ctx, telemetry.ServerPingInterval,
+		func() int {
+			return len(syncer.TrackedRepos())
+		},
+	)
 
 	syncer.SetOnSyncCompleted(stacks.SyncCompletedHook(ctx, database, nil))
 	syncer.Start(ctx)

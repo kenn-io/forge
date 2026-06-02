@@ -821,9 +821,26 @@
     button.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
-      onLineSelected?.(lineCommentSelection(target, event));
+      onLineSelected?.(
+        selectedRangeMatchesLineCommentTarget(target, event)
+          ? null
+          : lineCommentSelection(target, event),
+      );
     });
     return button;
+  }
+
+  function selectedRangeMatchesLineCommentTarget(
+    target: { lineNumber: number; side: PierreSide },
+    event: MouseEvent,
+  ): boolean {
+    if (event.shiftKey || !selectedRange) return false;
+    const selectedSide = selectedRange.side ?? target.side;
+    const selectedEndSide = selectedRange.endSide ?? selectedSide;
+    return selectedSide === target.side &&
+      selectedEndSide === target.side &&
+      selectedRange.start === target.lineNumber &&
+      selectedRange.end === target.lineNumber;
   }
 
   function lineCommentSelection(

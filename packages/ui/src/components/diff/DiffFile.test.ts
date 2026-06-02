@@ -388,6 +388,21 @@ describe("DiffFile", () => {
     });
   }
 
+  async function clickLineCommentButton(line: number, side: "left" | "right"): Promise<void> {
+    const sideLabel = side === "left" ? "old" : "new";
+    const button = await waitFor(() => {
+      const element = document
+        .querySelector(".pierre-diff")
+        ?.shadowRoot
+        ?.querySelector<HTMLButtonElement>(
+          `[data-middleman-line-comment-button][aria-label="Comment on ${sideLabel} line ${line}"]`,
+        );
+      expect(element).toBeTruthy();
+      return element!;
+    });
+    await fireEvent.click(button);
+  }
+
   function selectedPierreLines(): NodeListOf<Element> | undefined {
     return document
       .querySelector(".pierre-diff")
@@ -418,6 +433,22 @@ describe("DiffFile", () => {
     await selectPierreLine(2, "right", { shiftKey: true });
 
     expect(selectedPierreLines()).toHaveLength(4);
+  });
+
+  it("toggles an empty inline composer from the line comment button", async () => {
+    renderDiffFile(makeFile(), {
+      reviewEnabled: true,
+      diffHeadSHA: "diff-head",
+    });
+
+    await clickLineCommentButton(2, "right");
+    expect(screen.getByPlaceholderText("Leave a comment")).toBeTruthy();
+    expect(selectedPierreLines()).toHaveLength(4);
+
+    await clickLineCommentButton(2, "right");
+
+    expect(screen.queryByPlaceholderText("Leave a comment")).toBeNull();
+    expect(selectedPierreLines()).toHaveLength(0);
   });
 
   it("does not create multiline review ranges across separate hunks", async () => {

@@ -389,8 +389,28 @@ describe("DiffFile", () => {
   }
 
   async function clickLineCommentButton(line: number, side: "left" | "right"): Promise<void> {
+    const button = await findLineCommentButton(line, side);
+    button.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, button: 0 }));
+    await fireEvent.mouseDown(button, { button: 0 });
+    await fireEvent.pointerUp(button, { pointerId: 1, pointerType: "mouse" });
+    await fireEvent.click(button);
+  }
+
+  async function keyboardActivateLineCommentButton(
+    line: number,
+    side: "left" | "right",
+  ): Promise<void> {
+    const button = await findLineCommentButton(line, side);
+    button.focus();
+    await fireEvent.click(button);
+  }
+
+  async function findLineCommentButton(
+    line: number,
+    side: "left" | "right",
+  ): Promise<HTMLButtonElement> {
     const sideLabel = side === "left" ? "old" : "new";
-    const button = await waitFor(() => {
+    return await waitFor(() => {
       const element = document
         .querySelector(".pierre-diff")
         ?.shadowRoot
@@ -400,10 +420,6 @@ describe("DiffFile", () => {
       expect(element).toBeTruthy();
       return element!;
     });
-    button.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, button: 0 }));
-    await fireEvent.mouseDown(button, { button: 0 });
-    await fireEvent.pointerUp(button, { pointerId: 1, pointerType: "mouse" });
-    await fireEvent.click(button);
   }
 
   function selectedPierreLines(): NodeListOf<Element> | undefined {
@@ -451,6 +467,24 @@ describe("DiffFile", () => {
     });
 
     await clickLineCommentButton(2, "right");
+
+    expect(screen.queryByPlaceholderText("Leave a comment")).toBeNull();
+    expect(selectedPierreLines()).toHaveLength(0);
+  });
+
+  it("toggles an empty inline composer from keyboard line comment button activation", async () => {
+    renderDiffFile(makeFile(), {
+      reviewEnabled: true,
+      diffHeadSHA: "diff-head",
+    });
+
+    await clickLineCommentButton(2, "right");
+    expect(screen.getByPlaceholderText("Leave a comment")).toBeTruthy();
+    await waitFor(() => {
+      expect(selectedPierreLines()).toHaveLength(4);
+    });
+
+    await keyboardActivateLineCommentButton(2, "right");
 
     expect(screen.queryByPlaceholderText("Leave a comment")).toBeNull();
     expect(selectedPierreLines()).toHaveLength(0);

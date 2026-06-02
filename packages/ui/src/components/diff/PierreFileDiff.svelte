@@ -91,6 +91,7 @@
   let renderedLineRows = new Map<number, RenderedLinePair[]>();
   let selectedRangeElements = new Set<HTMLElement>();
   let transientAnnotationRow: TransientAnnotationRow | undefined;
+  let lineCommentButtonHasPointerSnapshot = false;
   let lineCommentButtonWasSelectedOnPointerDown = false;
   const inactiveCleanupDelayMs = 10_000;
   const maxImmediateRenderRetries = 5;
@@ -820,15 +821,20 @@
     button.setAttribute("aria-label", label);
     button.setAttribute("data-middleman-line-comment-button", "");
     button.addEventListener("pointerdown", (event) => {
+      lineCommentButtonHasPointerSnapshot = true;
       lineCommentButtonWasSelectedOnPointerDown = lineCommentTargetIsSelected(target, event);
     });
     button.addEventListener("mousedown", (event) => {
+      lineCommentButtonHasPointerSnapshot = true;
       lineCommentButtonWasSelectedOnPointerDown = lineCommentTargetIsSelected(target, event);
     });
     button.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
-      const collapse = lineCommentButtonWasSelectedOnPointerDown;
+      const collapse = lineCommentButtonHasPointerSnapshot
+        ? lineCommentButtonWasSelectedOnPointerDown
+        : selectedRangeMatchesLineCommentTarget(target, event);
+      lineCommentButtonHasPointerSnapshot = false;
       lineCommentButtonWasSelectedOnPointerDown = false;
       onLineSelected?.(
         collapse

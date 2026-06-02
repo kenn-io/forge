@@ -2323,6 +2323,96 @@ test.describe("workspace list bubble opens right sidebar", () => {
       expect(maxRight - minRight).toBeLessThanOrEqual(1);
     },
   );
+
+  test(
+    "filters workspace rows by repo, title, and item number",
+    async ({ page }) => {
+      const wsTitle = {
+        ...testWorkspace,
+        id: "ws-title",
+        repo_owner: "kenn-io",
+        repo_name: "kataflow",
+        repo: workspaceRepoRef("kenn-io", "kataflow"),
+        item_number: 9,
+        mr_title: "Migrate native HTTP surface to Huma v2",
+      };
+      const wsRepo = {
+        ...testWorkspace,
+        id: "ws-repo",
+        repo_owner: "kenn-io",
+        repo_name: "kenn-platform",
+        repo: workspaceRepoRef("kenn-io", "kenn-platform"),
+        item_number: 2,
+        mr_title: "Hosted code fetch and caching strategy",
+      };
+      const wsNumber = {
+        ...testIssueWorkspace,
+        id: "ws-number",
+        repo_owner: "kenn-io",
+        repo_name: "middleman",
+        repo: workspaceRepoRef("kenn-io", "middleman"),
+        item_number: 224,
+        mr_title: "Add notification inbox triage",
+      };
+      const list = [wsTitle, wsRepo, wsNumber];
+
+      await mockApi(page);
+      await page.route(
+        "**/api/v1/events",
+        async (route) => {
+          await route.fulfill({
+            status: 200,
+            contentType: "text/event-stream",
+            body: "",
+          });
+        },
+      );
+      await page.route(
+        "**/api/v1/workspaces",
+        async (route) => {
+          if (route.request().method() === "GET") {
+            await route.fulfill({
+              status: 200,
+              contentType: "application/json",
+              body: JSON.stringify({ workspaces: list }),
+            });
+            return;
+          }
+          await route.fulfill({ status: 200 });
+        },
+      );
+
+      await page.goto("/workspaces");
+
+      const rows = page.locator(".workspace-list-sidebar .ws-row");
+      const filter = page.getByLabel("Filter workspaces");
+      await expect(rows).toHaveCount(3);
+
+      await filter.fill("huma");
+      await expect(rows).toHaveCount(1);
+      await expect(rows.first()).toContainText(
+        "Migrate native HTTP surface to Huma v2",
+      );
+
+      await filter.fill("kenn-platform");
+      await expect(rows).toHaveCount(1);
+      await expect(rows.first()).toContainText(
+        "Hosted code fetch and caching strategy",
+      );
+
+      await filter.fill("#224");
+      await expect(rows).toHaveCount(1);
+      await expect(rows.first()).toContainText(
+        "Add notification inbox triage",
+      );
+
+      await filter.fill("not-present");
+      await expect(rows).toHaveCount(0);
+      await expect(
+        page.locator(".workspace-list-sidebar"),
+      ).toContainText("No workspaces match.");
+    },
+  );
 });
 
 // -------------------------------------------------------

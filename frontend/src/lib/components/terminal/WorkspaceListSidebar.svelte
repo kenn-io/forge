@@ -5,6 +5,7 @@
   import GitBranchIcon from "@lucide/svelte/icons/git-branch";
   import ArrowUpIcon from "@lucide/svelte/icons/arrow-up";
   import ArrowDownIcon from "@lucide/svelte/icons/arrow-down";
+  import SearchIcon from "@lucide/svelte/icons/search";
   import { client } from "../../api/runtime.js";
   import {
     DiffStats,
@@ -72,12 +73,30 @@
 
   let workspaces = $state.raw<Workspace[]>([]);
   let collapsedGroups = $state<Set<string>>(new Set());
+  let searchQuery = $state("");
 
   type GroupedWorkspaces = Map<string, Workspace[]>;
 
+  const normalizedSearchQuery = $derived(
+    searchQuery.trim().toLowerCase(),
+  );
+
+  const visibleWorkspaces = $derived.by(() => {
+    if (!normalizedSearchQuery) return workspaces;
+    return workspaces.filter((ws) =>
+      workspaceMatchesSearch(ws, normalizedSearchQuery),
+    );
+  });
+
+  const sidebarCountLabel = $derived(
+    normalizedSearchQuery
+      ? `${visibleWorkspaces.length}/${workspaces.length}`
+      : `${workspaces.length}`,
+  );
+
   const grouped: GroupedWorkspaces = $derived.by(() => {
     const map = new Map<string, Workspace[]>();
-    for (const ws of workspaces) {
+    for (const ws of visibleWorkspaces) {
       const key =
         `${ws.platform_host}/${ws.repo_owner}` +
         `/${ws.repo_name}`;
@@ -122,6 +141,39 @@
 
   function displayName(ws: Workspace): string {
     return ws.mr_title ?? ws.git_head_ref;
+  }
+
+  function updateSearch(event: Event): void {
+    searchQuery = event.currentTarget instanceof HTMLInputElement
+      ? event.currentTarget.value
+      : "";
+  }
+
+  function workspaceMatchesSearch(
+    ws: Workspace,
+    query: string,
+  ): boolean {
+    const itemKind = ws.item_type === "issue" ? "issue" : "pr";
+    const itemNumber = String(ws.item_number);
+    const haystack = [
+      displayName(ws),
+      ws.git_head_ref,
+      shortBranch(ws.git_head_ref),
+      ws.platform_host,
+      ws.repo_owner,
+      ws.repo_name,
+      ws.repo?.repo_path,
+      `${ws.repo_owner}/${ws.repo_name}`,
+      `${ws.platform_host}/${ws.repo_owner}/${ws.repo_name}`,
+      itemNumber,
+      `#${itemNumber}`,
+      `${itemKind} ${itemNumber}`,
+      `${itemKind} #${itemNumber}`,
+    ];
+
+    return haystack.some((value) =>
+      value?.toLowerCase().includes(query),
+    );
   }
 
   function statusDotClass(ws: Workspace): string {
@@ -210,7 +262,7 @@
 <div class="workspace-list-sidebar">
   <div class="sidebar-header">
     <span class="sidebar-header-label">Workspaces</span>
-    <span class="sidebar-header-count">{workspaces.length}</span>
+    <span class="sidebar-header-count">{sidebarCountLabel}</span>
     {#if isSidebarToggleEnabled && onCollapseSidebar}
       <LeftSidebarToggle
         state="expanded"
@@ -220,6 +272,21 @@
       />
     {/if}
   </div>
+  <label class="workspace-filter">
+    <SearchIcon
+      class="workspace-filter-icon"
+      size="13"
+      strokeWidth="2.25"
+      aria-hidden="true"
+    />
+    <input
+      type="search"
+      value={searchQuery}
+      placeholder="Filter workspaces"
+      aria-label="Filter workspaces"
+      oninput={updateSearch}
+    />
+  </label>
   <div class="sidebar-list">
     {#each [...grouped] as [repoKey, items] (repoKey)}
       {@const collapsed = collapsedGroups.has(repoKey)}
@@ -364,6 +431,9 @@
         {/each}
       {/if}
     {/each}
+    {#if visibleWorkspaces.length === 0 && normalizedSearchQuery}
+      <p class="filter-empty">No workspaces match.</p>
+    {/if}
   </div>
 </div>
 
@@ -411,6 +481,46 @@
     opacity: 0.7;
   }
 
+  .workspace-filter {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 28px;
+    margin: 6px 8px 4px;
+    padding: 0 8px;
+    border: 1px solid var(--border-muted);
+    border-radius: 6px;
+    background: var(--bg-surface);
+    color: var(--text-muted);
+    flex-shrink: 0;
+  }
+
+  :global(.workspace-filter-icon) {
+    flex-shrink: 0;
+  }
+
+  .workspace-filter input {
+    width: 100%;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: var(--text-primary);
+    font-size: var(--font-size-sm);
+    line-height: 1;
+  }
+
+  .workspace-filter input::placeholder {
+    color: var(--text-muted);
+    opacity: 0.8;
+  }
+
+  .workspace-filter:focus-within {
+    border-color: var(--accent-blue);
+    box-shadow: 0 0 0 1px var(--accent-blue);
+  }
+
   .sidebar-list {
     flex: 1;
     overflow-y: auto;
@@ -429,6 +539,13 @@
 
   .sidebar-list::-webkit-scrollbar-thumb:hover {
     background: var(--text-muted);
+  }
+
+  .filter-empty {
+    margin: 14px 12px;
+    color: var(--text-muted);
+    font-size: var(--font-size-sm);
+    line-height: 1.4;
   }
 
   .group-header {

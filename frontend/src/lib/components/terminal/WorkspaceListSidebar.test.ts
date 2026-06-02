@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import WorkspaceListSidebar from "./WorkspaceListSidebar.svelte";
@@ -30,6 +30,9 @@ interface WorkspaceFixtureOptions {
   owner: string;
   name: string;
   number: number;
+  title?: string;
+  branch?: string;
+  itemType?: "pull_request" | "issue";
 }
 
 function workspaceFixture({
@@ -39,6 +42,9 @@ function workspaceFixture({
   owner,
   name,
   number,
+  title = `PR ${number}`,
+  branch = `feature-${number}`,
+  itemType = "pull_request",
 }: WorkspaceFixtureOptions) {
   return {
     id,
@@ -52,14 +58,14 @@ function workspaceFixture({
     platform_host: platformHost,
     repo_owner: owner,
     repo_name: name,
-    item_type: "pull_request",
+    item_type: itemType,
     item_number: number,
-    git_head_ref: `feature-${number}`,
+    git_head_ref: branch,
     worktree_path: `/tmp/${id}`,
     tmux_session: id,
     status: "ready",
     created_at: "2026-05-12T12:00:00Z",
-    mr_title: `PR ${number}`,
+    mr_title: title,
     mr_state: "open",
   };
 }
@@ -135,5 +141,70 @@ describe("WorkspaceListSidebar", () => {
 
     await screen.findByText("acme/widgets");
     expect(screen.queryByRole("img", { name: "GitHub" })).toBeNull();
+  });
+
+  it("filters workspaces by title, repo, and item number", async () => {
+    mockGet.mockResolvedValue({
+      data: {
+        workspaces: [
+          workspaceFixture({
+            id: "ws-title",
+            provider: "github",
+            platformHost: "github.com",
+            owner: "kenn-io",
+            name: "kataflow",
+            number: 9,
+            title: "Migrate native HTTP surface to Huma v2",
+            branch: "feat/huma-adoption",
+          }),
+          workspaceFixture({
+            id: "ws-repo",
+            provider: "github",
+            platformHost: "github.com",
+            owner: "kenn-io",
+            name: "kenn-platform",
+            number: 2,
+            title: "Hosted code fetch and caching strategy",
+          }),
+          workspaceFixture({
+            id: "ws-number",
+            provider: "github",
+            platformHost: "github.com",
+            owner: "kenn-io",
+            name: "middleman",
+            number: 224,
+            title: "Add notification inbox triage",
+            itemType: "issue",
+          }),
+        ],
+      },
+    });
+
+    const { container } = render(WorkspaceListSidebar, {
+      props: { selectedId: "ws-title" },
+    });
+    const filter = await screen.findByLabelText("Filter workspaces");
+
+    await fireEvent.input(filter, {
+      target: { value: "huma" },
+    });
+    expect(container.querySelectorAll(".ws-row")).toHaveLength(1);
+    expect(
+      screen.getByText("Migrate native HTTP surface to Huma v2"),
+    ).toBeTruthy();
+
+    await fireEvent.input(filter, {
+      target: { value: "kenn-platform" },
+    });
+    expect(container.querySelectorAll(".ws-row")).toHaveLength(1);
+    expect(
+      screen.getByText("Hosted code fetch and caching strategy"),
+    ).toBeTruthy();
+
+    await fireEvent.input(filter, {
+      target: { value: "#224" },
+    });
+    expect(container.querySelectorAll(".ws-row")).toHaveLength(1);
+    expect(screen.getByText("Add notification inbox triage")).toBeTruthy();
   });
 });

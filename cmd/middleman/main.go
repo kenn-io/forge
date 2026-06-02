@@ -415,7 +415,7 @@ func run(opts serve.Options) error {
 		}
 	}()
 	if telemetryReporter.Enabled() {
-		if err := telemetryReporter.Capture("server_started", map[string]any{
+		if err := telemetryReporter.Capture("daemon_active", map[string]any{
 			"repo_count": len(repos),
 		}); err != nil {
 			slog.Warn("capture telemetry event", "err", err)
@@ -465,13 +465,6 @@ func run(opts serve.Options) error {
 		syscall.SIGINT,
 		syscall.SIGTERM,
 	)
-	telemetryReporter.StartServerStartedPingLoop(
-		ctx, telemetry.ServerPingInterval,
-		func() int {
-			return len(syncer.TrackedRepos())
-		},
-	)
-
 	syncer.SetOnSyncCompleted(stacks.SyncCompletedHook(ctx, database, nil))
 	syncer.Start(ctx)
 	defer syncer.Stop()

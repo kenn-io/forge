@@ -1,6 +1,7 @@
 package telemetry
 
 import (
+	"runtime"
 	"testing"
 
 	"github.com/posthog/posthog-go"
@@ -65,24 +66,39 @@ func TestReporterCaptureUsesAnonymousDistinctID(t *testing.T) {
 		client:     client,
 		distinctID: "anonymous-install-id",
 		enabled:    true,
+		version:    "1.2.3",
+		commit:     "abc123",
 	}
 
-	err := reporter.Capture("app_loaded", map[string]any{
-		"$geoip_disable": false,
-		"distinct_id":    "user-provided",
-		"repo":           "owner/name",
-		"view":           "pulls",
+	err := reporter.Capture("daemon_active", map[string]any{
+		"$geoip_disable":          false,
+		"$process_person_profile": true,
+		"application":             "caller-app",
+		"app":                     "caller-app",
+		"distinct_id":             "user-provided",
+		"repo":                    "owner/name",
+		"repo_count":              7,
+		"source":                  "caller",
+		"version":                 "caller-version",
 	})
 	require.NoError(err)
 
 	capture, ok := client.message.(posthog.Capture)
 	require.True(ok)
 	assert.Equal("anonymous-install-id", capture.DistinctId)
-	assert.Equal("app_loaded", capture.Event)
-	assert.Equal("pulls", capture.Properties["view"])
+	assert.Equal("daemon_active", capture.Event)
+	assert.Equal(7, capture.Properties["repo_count"])
 	assert.NotContains(capture.Properties, "distinct_id")
 	assert.NotContains(capture.Properties, "repo")
+	assert.NotContains(capture.Properties, "app")
+	assert.False(capture.Properties["$process_person_profile"].(bool))
 	assert.True(capture.Properties["$geoip_disable"].(bool))
+	assert.Equal("middleman", capture.Properties["application"])
+	assert.Equal("1.2.3", capture.Properties["version"])
+	assert.Equal("abc123", capture.Properties["commit"])
+	assert.Equal(runtime.GOOS, capture.Properties["goos"])
+	assert.Equal(runtime.GOARCH, capture.Properties["goarch"])
+	assert.Equal("daemon", capture.Properties["source"])
 }
 
 func TestReporterCaptureRejectsUnsupportedEvents(t *testing.T) {
@@ -95,7 +111,7 @@ func TestReporterCaptureRejectsUnsupportedEvents(t *testing.T) {
 		enabled:    true,
 	}
 
-	err := reporter.Capture("repo_opened", map[string]any{"view": "pulls"})
+	err := reporter.Capture("server_started", map[string]any{"repo_count": 7})
 	require.ErrorIs(err, ErrUnsupportedEvent)
 }
 
@@ -116,5 +132,26 @@ func TestReporterCaptureDropsUnsafePropertyValues(t *testing.T) {
 	capture, ok := client.message.(posthog.Capture)
 	require.True(ok)
 	assert.NotContains(capture.Properties, "view")
+	assert.False(capture.Properties["$process_person_profile"].(bool))
 	assert.True(capture.Properties["$geoip_disable"].(bool))
+	assert.Equal("middleman", capture.Properties["application"])
+	assert.Equal("backend", capture.Properties["source"])
+}
+
+func TestSanitizePropertiesAddsNonOverridablePrivacyAndApplication(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	properties, err := SanitizeProperties("app_loaded", map[string]any{
+		"$geoip_disable":          false,
+		"$process_person_profile": true,
+		"application":             "caller-app",
+		"view":                    "pulls",
+	})
+	require.NoError(err)
+
+	assert.Equal("pulls", properties["view"])
+	assert.False(properties["$process_person_profile"].(bool))
+	assert.True(properties["$geoip_disable"].(bool))
+	assert.Equal("middleman", properties["application"])
 }

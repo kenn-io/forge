@@ -1,6 +1,7 @@
 package telemetry
 
 import (
+	"runtime"
 	"testing"
 
 	"github.com/posthog/posthog-go"
@@ -64,14 +65,18 @@ func TestReporterCaptureUsesAnonymousDistinctID(t *testing.T) {
 	reporter := &Reporter{
 		client:     client,
 		distinctID: "anonymous-install-id",
+		version:    "dev",
+		commit:     "abc123",
 		enabled:    true,
 	}
 
 	err := reporter.Capture("app_loaded", map[string]any{
-		"$geoip_disable": false,
-		"distinct_id":    "user-provided",
-		"repo":           "owner/name",
-		"view":           "pulls",
+		"$geoip_disable":          false,
+		"$process_person_profile": true,
+		"application":             "not-middleman",
+		"distinct_id":             "user-provided",
+		"repo":                    "owner/name",
+		"view":                    "pulls",
 	})
 	require.NoError(err)
 
@@ -82,7 +87,32 @@ func TestReporterCaptureUsesAnonymousDistinctID(t *testing.T) {
 	assert.Equal("pulls", capture.Properties["view"])
 	assert.NotContains(capture.Properties, "distinct_id")
 	assert.NotContains(capture.Properties, "repo")
+	assert.Equal("middleman", capture.Properties["application"])
+	assert.Equal("dev", capture.Properties["version"])
+	assert.Equal("abc123", capture.Properties["commit"])
+	assert.Equal("backend", capture.Properties["source"])
 	assert.True(capture.Properties["$geoip_disable"].(bool))
+	assert.False(capture.Properties["$process_person_profile"].(bool))
+}
+
+func TestSanitizePropertiesForcesStandardPrivacyProperties(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	properties, err := SanitizeProperties("daemon_active", map[string]any{
+		"$geoip_disable":          false,
+		"$process_person_profile": true,
+		"application":             "not-middleman",
+		"app":                     "legacy",
+		"repo_count":              3,
+	})
+	require.NoError(err)
+
+	assert.Equal(3, properties["repo_count"])
+	assert.Equal("middleman", properties["application"])
+	assert.True(properties["$geoip_disable"].(bool))
+	assert.False(properties["$process_person_profile"].(bool))
+	assert.NotContains(properties, "app")
 }
 
 func TestReporterCaptureRejectsUnsupportedEvents(t *testing.T) {
@@ -92,6 +122,8 @@ func TestReporterCaptureRejectsUnsupportedEvents(t *testing.T) {
 	reporter := &Reporter{
 		client:     client,
 		distinctID: "anonymous-install-id",
+		version:    "dev",
+		commit:     "abc123",
 		enabled:    true,
 	}
 
@@ -107,6 +139,8 @@ func TestReporterCaptureDropsUnsafePropertyValues(t *testing.T) {
 	reporter := &Reporter{
 		client:     client,
 		distinctID: "anonymous-install-id",
+		version:    "dev",
+		commit:     "abc123",
 		enabled:    true,
 	}
 
@@ -116,5 +150,39 @@ func TestReporterCaptureDropsUnsafePropertyValues(t *testing.T) {
 	capture, ok := client.message.(posthog.Capture)
 	require.True(ok)
 	assert.NotContains(capture.Properties, "view")
+	assert.Equal("middleman", capture.Properties["application"])
+	assert.Equal("dev", capture.Properties["version"])
 	assert.True(capture.Properties["$geoip_disable"].(bool))
+	assert.False(capture.Properties["$process_person_profile"].(bool))
+}
+
+func TestReporterCaptureDaemonActiveUsesStandardShape(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	client := &fakePostHogClient{}
+	reporter := &Reporter{
+		client:     client,
+		distinctID: "anonymous-install-id",
+		version:    "dev",
+		commit:     "abc123",
+		enabled:    true,
+	}
+
+	err := reporter.Capture("daemon_active", map[string]any{"repo_count": 7})
+	require.NoError(err)
+
+	capture, ok := client.message.(posthog.Capture)
+	require.True(ok)
+	assert.Equal("anonymous-install-id", capture.DistinctId)
+	assert.Equal("daemon_active", capture.Event)
+	assert.Equal(7, capture.Properties["repo_count"])
+	assert.Equal("middleman", capture.Properties["application"])
+	assert.Equal("dev", capture.Properties["version"])
+	assert.Equal("abc123", capture.Properties["commit"])
+	assert.Equal(runtime.GOOS, capture.Properties["goos"])
+	assert.Equal(runtime.GOARCH, capture.Properties["goarch"])
+	assert.Equal("backend", capture.Properties["source"])
+	assert.True(capture.Properties["$geoip_disable"].(bool))
+	assert.False(capture.Properties["$process_person_profile"].(bool))
 }

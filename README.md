@@ -241,8 +241,8 @@ repository URL or needs to preserve provider-canonical casing.
 
 ## Telemetry
 
-Middleman sends limited anonymous telemetry to PostHog: `server_started` with repo count at startup and every 24 hours for long-running applications, and `app_loaded` with view name, plus version, commit, OS/arch, and an anonymous install ID.
-It does not send repo names, PR/issue content, provider tokens, usernames, or IP geolocation; set `TELEMETRY_ENABLED=0` to disable it.
+Middleman sends limited anonymous telemetry to PostHog: `daemon_active` with repo count at startup and at most once every 24 hours for long-running applications, and `app_loaded` with view name. Events include `application=middleman`, version, commit, OS/arch, and a stable anonymous install ID as the PostHog `DistinctId`.
+It does not send repo names, PR/issue content, provider tokens, usernames, or IP geolocation, and every capture sets `$process_person_profile=false` and `$geoip_disable=true`; set `TELEMETRY_ENABLED=0` to disable it.
 
 ## Embedding
 

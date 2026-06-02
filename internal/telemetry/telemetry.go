@@ -20,7 +20,7 @@ import (
 
 const (
 	EnabledEnv           = "TELEMETRY_ENABLED"
-	ServerPingInterval   = 24 * time.Hour
+	DaemonPingInterval   = 24 * time.Hour
 	installIDMetadataKey = "telemetry.install_id"
 	postHogAPIKey        = "phc_AzHd9YvuHR7M5poKzC6eW654d3SgKyBdoQPuwkWhimUf"
 	postHogEndpoint      = "https://us.i.posthog.com"
@@ -33,6 +33,9 @@ type propertyFilter func(any) (any, bool)
 var allowedEvents = map[string]map[string]propertyFilter{
 	"app_loaded": {
 		"view": safeTelemetryToken,
+	},
+	"daemon_active": {
+		"repo_count": safeTelemetryNumber,
 	},
 	"server_started": {
 		"repo_count": safeTelemetryNumber,
@@ -48,6 +51,8 @@ type Client interface {
 type Reporter struct {
 	client     enqueueCloser
 	distinctID string
+	version    string
+	commit     string
 	enabled    bool
 }
 
@@ -88,7 +93,7 @@ func SanitizeProperties(event string, properties map[string]any) (map[string]any
 			safeProperties[key] = safeValue
 		}
 	}
-	safeProperties["$geoip_disable"] = true
+	addStaticProperties(safeProperties)
 	return safeProperties, nil
 }
 
@@ -110,13 +115,14 @@ func NewReporter(opts Options) (*Reporter, error) {
 		Endpoint:     postHogEndpoint,
 		DisableGeoIP: &disableGeoIP,
 		DefaultEventProperties: posthog.Properties{
-			"app":            "middleman",
-			"source":         "backend",
-			"version":        opts.Version,
-			"commit":         opts.Commit,
-			"goos":           runtime.GOOS,
-			"goarch":         runtime.GOARCH,
-			"$geoip_disable": true,
+			"$process_person_profile": false,
+			"$geoip_disable":          true,
+			"application":             "middleman",
+			"source":                  "backend",
+			"version":                 opts.Version,
+			"commit":                  opts.Commit,
+			"goos":                    runtime.GOOS,
+			"goarch":                  runtime.GOARCH,
 		},
 	})
 	if err != nil {
@@ -126,6 +132,8 @@ func NewReporter(opts Options) (*Reporter, error) {
 	return &Reporter{
 		client:     client,
 		distinctID: distinctID,
+		version:    opts.Version,
+		commit:     opts.Commit,
 		enabled:    true,
 	}, nil
 }
@@ -164,6 +172,7 @@ func (r *Reporter) Capture(event string, properties map[string]any) error {
 
 	props := posthog.Properties{}
 	maps.Copy(props, safeProperties)
+	r.addStandardProperties(props)
 
 	return r.client.Enqueue(posthog.Capture{
 		DistinctId: r.distinctID,
@@ -173,7 +182,22 @@ func (r *Reporter) Capture(event string, properties map[string]any) error {
 	})
 }
 
-func (r *Reporter) StartServerStartedPingLoop(
+func addStaticProperties(properties map[string]any) {
+	properties["$process_person_profile"] = false
+	properties["$geoip_disable"] = true
+	properties["application"] = "middleman"
+}
+
+func (r *Reporter) addStandardProperties(properties map[string]any) {
+	addStaticProperties(properties)
+	properties["version"] = r.version
+	properties["commit"] = r.commit
+	properties["goos"] = runtime.GOOS
+	properties["goarch"] = runtime.GOARCH
+	properties["source"] = "backend"
+}
+
+func (r *Reporter) StartDaemonActivePingLoop(
 	ctx context.Context,
 	interval time.Duration,
 	repoCount func() int,
@@ -191,7 +215,7 @@ func (r *Reporter) StartServerStartedPingLoop(
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				if err := r.Capture("server_started", map[string]any{
+				if err := r.Capture("daemon_active", map[string]any{
 					"repo_count": repoCount(),
 				}); err != nil {
 					slog.Warn("capture telemetry ping", "err", err)

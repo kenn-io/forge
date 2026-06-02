@@ -851,7 +851,7 @@
       event.stopPropagation();
       const collapse = lineCommentButtonHasPointerSnapshot
         ? lineCommentButtonWasSelectedOnPointerDown
-        : selectedRangeMatchesLineCommentTarget(target, event);
+        : lineCommentTargetIsSelected(target, event);
       lineCommentButtonHasPointerSnapshot = false;
       lineCommentButtonWasSelectedOnPointerDown = false;
       onLineSelected?.(

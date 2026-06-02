@@ -523,6 +523,27 @@ describe("DiffFile", () => {
     expect(selectedPierreLines()?.length).toBeGreaterThanOrEqual(2);
   });
 
+  it("toggles an active multiline composer from keyboard line comment button activation", async () => {
+    renderDiffFile(makeFile(), {
+      reviewEnabled: true,
+      diffHeadSHA: "diff-head",
+      nativeMultilineRanges: true,
+    });
+
+    await selectPierreLine(1, "right");
+    await selectPierreLine(2, "right", { shiftKey: true });
+
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText("Leave a comment")).toBeTruthy();
+      expect(selectedPierreLines()?.length).toBeGreaterThanOrEqual(2);
+    });
+
+    await keyboardActivateLineCommentButton(2, "right");
+
+    expect(screen.queryByPlaceholderText("Leave a comment")).toBeNull();
+    expect(selectedPierreLines()).toHaveLength(0);
+  });
+
   it("does not create multiline review ranges across separate hunks", async () => {
     renderDiffFile(makeFile({
       additions: 2,

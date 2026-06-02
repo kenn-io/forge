@@ -1,6 +1,6 @@
 ---
 name: dev-ephemeral-running-instances
-description: Use only when the user explicitly invokes dev-ephemeral-running-instances. Lists middleman dev-ephemeral status files across git worktrees, checks recorded launcher/backend/frontend PIDs and backend/frontend URLs, reports which worktree each running, degraded, stale, or invalid instance belongs to, and prepares clean shutdown command lists when explicitly requested.
+description: Use only when the user explicitly invokes dev-ephemeral-running-instances. Must be run outside the Codex sandbox because sandboxed scans cannot reliably see all Codex worktrees, uv/Python state, or the process table. Lists middleman dev-ephemeral status files across git worktrees, checks recorded launcher/backend/frontend PIDs and backend/frontend URLs, reports which worktree each running, degraded, stale, or invalid instance belongs to, and prepares clean shutdown command lists when explicitly requested.
 ---
 
 # Dev Ephemeral Running Instances
@@ -8,6 +8,10 @@ description: Use only when the user explicitly invokes dev-ephemeral-running-ins
 ## Overview
 
 List middleman `dev-ephemeral` instances across Codex git worktrees without stopping or cleaning up any process by default. Use the bundled Python script as the source of truth for process and URL checks.
+
+## Sandbox Requirement
+
+Run this skill outside the Codex sandbox. The inspector needs read access to all `~/.codex/worktrees` entries, `uv`/Python runtime state, the process table, and loopback URLs. Sandboxed runs can falsely report no status files, fail to run `ps`, or fail to initialize `uv`; treat those results as invalid and rerun outside the sandbox.
 
 ## Workflow
 

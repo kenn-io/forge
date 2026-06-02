@@ -54,6 +54,32 @@ func startPtyOwnerSession(
 		"session_key", info.Key,
 		"target_key", info.TargetKey,
 	)
+	return newPtyOwnerSession(owner, info, ptySession), nil
+}
+
+func attachPtyOwnerSession(
+	ctx context.Context,
+	owner ptyownerruntime.Owner,
+	info SessionInfo,
+) (*session, error) {
+	ptySession, err := owner.Attach(ctx, info.Key)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %q: %v", ErrSessionNotFound, info.Key, err)
+	}
+	slog.Debug(
+		"runtime session pty owner attached",
+		"workspace_id", info.WorkspaceID,
+		"session_key", info.Key,
+		"target_key", info.TargetKey,
+	)
+	return newPtyOwnerSession(owner, info, ptySession), nil
+}
+
+func newPtyOwnerSession(
+	owner ptyownerruntime.Owner,
+	info SessionInfo,
+	ptySession ptyownerruntime.PTY,
+) *session {
 	info.Status = SessionStatusRunning
 	s := &session{
 		info: info,
@@ -68,5 +94,5 @@ func startPtyOwnerSession(
 		subscribers: make(map[chan []byte]struct{}),
 	}
 	go s.drainOutput()
-	return s, nil
+	return s
 }

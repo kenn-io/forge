@@ -61,7 +61,7 @@ func withTestPtyOwnerRuntime(t *testing.T, options Options) Options {
 	return options
 }
 
-func TestManagerLaunchesSingletonPerWorkspaceTarget(t *testing.T) {
+func TestManagerLaunchesIndependentSessionsPerWorkspaceTarget(t *testing.T) {
 	requirePTYAvailable(t)
 	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
 
@@ -78,12 +78,38 @@ func TestManagerLaunchesSingletonPerWorkspaceTarget(t *testing.T) {
 
 	sessions := mgr.ListSessions("ws-1")
 	assert := Assert.New(t)
-	assert.Equal(session1.Key, session2.Key)
+	assert.NotEqual(session1.Key, session2.Key)
+	assert.Equal("helper", session1.Label)
+	assert.Equal("helper 2", session2.Label)
 	assert.Equal(SessionStatusRunning, session1.Status)
-	assert.Len(sessions, 1)
+	assert.Len(sessions, 2)
 }
 
-func TestManagerLaunchConcurrentStartsOneProcess(t *testing.T) {
+func TestManagerRenamesSessionMetadata(t *testing.T) {
+	requirePTYAvailable(t)
+	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
+
+	ctx := context.Background()
+	mgr := NewManager(withTestPtyOwnerRuntime(t, Options{Targets: []LaunchTarget{
+		helperTarget("helper", "sleep"),
+	}}))
+	t.Cleanup(mgr.Shutdown)
+
+	session, err := mgr.Launch(ctx, "ws-1", t.TempDir(), "helper")
+	require.NoError(t, err)
+
+	renamed, err := mgr.RenameSession("ws-1", session.Key, "Review helper")
+	require.NoError(t, err)
+
+	assert := Assert.New(t)
+	assert.Equal(session.Key, renamed.Key)
+	assert.Equal("Review helper", renamed.Label)
+	sessions := mgr.ListSessions("ws-1")
+	require.Len(t, sessions, 1)
+	assert.Equal("Review helper", sessions[0].Label)
+}
+
+func TestManagerLaunchConcurrentStartsIndependentProcesses(t *testing.T) {
 	requirePTYAvailable(t)
 	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
 	require := require.New(t)
@@ -119,32 +145,36 @@ func TestManagerLaunchConcurrentStartsOneProcess(t *testing.T) {
 	for err := range errs {
 		require.NoError(err)
 	}
-	var firstKey string
+	keys := make(map[string]bool)
+	labels := make(map[string]bool)
 	for info := range infos {
-		if firstKey == "" {
-			firstKey = info.Key
-		}
-		assert.Equal(firstKey, info.Key)
+		keys[info.Key] = true
+		labels[info.Label] = true
 	}
+	assert.Len(keys, launches)
+	assert.Len(labels, launches)
+	assert.True(labels["helper"])
 	require.Eventually(func() bool {
 		data, err := os.ReadFile(record)
 		if err != nil {
 			return false
 		}
-		return strings.Count(string(data), "\n") == 1
+		return strings.Count(string(data), "\n") == launches
 	}, 2*time.Second, 20*time.Millisecond)
-	assert.Len(mgr.ListSessions("ws-1"), 1)
+	assert.Len(mgr.ListSessions("ws-1"), launches)
 }
 
-func TestSessionKeyIsFilesystemSafe(t *testing.T) {
-	key := sessionKey("ws:alpha", "foo:bar/baz")
+func TestNewSessionKeyUsesWorkspacePrefixAndRandomSuffix(t *testing.T) {
+	first, err := NewSessionKey("ws-1")
+	require.NoError(t, err)
+	second, err := NewSessionKey("ws-1")
+	require.NoError(t, err)
 
 	assert := Assert.New(t)
-	assert.NotContains(key, ":")
-	assert.NotContains(key, "/")
-	assert.NotContains(key, `\\`)
-	assert.Equal(key, sessionKey("ws:alpha", "foo:bar/baz"))
-	assert.NotEqual(key, sessionKey("ws:alpha", "foo:bar/qux"))
+	assert.True(strings.HasPrefix(first, "ws-1_"))
+	assert.True(strings.HasPrefix(second, "ws-1_"))
+	assert.NotEqual(first, second)
+	assert.Len(strings.TrimPrefix(first, "ws-1_"), 16)
 }
 
 func TestManagerLaunchUnavailableTarget(t *testing.T) {
@@ -281,7 +311,7 @@ exit 0
 		Targets: []LaunchTarget{
 			agent,
 			{
-				Key: "tmux", Label: "tmux", Kind: LaunchTargetTmux,
+				Key: "shell", Label: "Shell", Kind: LaunchTargetShell,
 				Source: "system", Command: []string{tmuxPath},
 				Available: true,
 			},
@@ -342,7 +372,7 @@ exit 0
 		Targets: []LaunchTarget{
 			agent,
 			{
-				Key: "tmux", Label: "tmux", Kind: LaunchTargetTmux,
+				Key: "shell", Label: "Shell", Kind: LaunchTargetShell,
 				Source: "system", Command: []string{"tmux"},
 				Available: true,
 			},
@@ -365,7 +395,7 @@ func TestManagerLaunchCommandRejectsRelativeTmuxCommandWhenWrapped(t *testing.T)
 		Targets: []LaunchTarget{
 			agent,
 			{
-				Key: "tmux", Label: "tmux", Kind: LaunchTargetTmux,
+				Key: "shell", Label: "Shell", Kind: LaunchTargetShell,
 				Source: "system", Command: []string{"./tmux"},
 				Available: true,
 			},
@@ -401,7 +431,7 @@ exit 0
 		Targets: []LaunchTarget{
 			agent,
 			{
-				Key: "tmux", Label: "tmux", Kind: LaunchTargetTmux,
+				Key: "shell", Label: "Shell", Kind: LaunchTargetShell,
 				Source: "system", Command: []string{tmuxPath},
 				Available: true,
 			},
@@ -424,7 +454,7 @@ exit 0
 	})
 }
 
-func TestManagerEnsureShellWrapsInTmuxWhenAvailable(t *testing.T) {
+func TestManagerLaunchPlainShellWrapsInTmuxWhenAvailable(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
 	t.Setenv("XDG_RUNTIME_DIR", "argv-visible-value")
@@ -446,24 +476,26 @@ exit 0
 `, shellquote.Join(record)), 0o755))
 	mgr := NewManager(Options{
 		Targets: []LaunchTarget{{
-			Key: "tmux", Label: "tmux", Kind: LaunchTargetTmux,
+			Key: "shell", Label: "Shell", Kind: LaunchTargetShell,
 			Source: "system", Command: []string{tmuxPath},
 			Available: true,
-		}},
+		}, plainShellTarget()},
 		ShellCommand:    helperCommand("sleep"),
 		TmuxCommand:     []string{tmuxPath},
 		TmuxOwnerMarker: "middleman:test-owner",
 	})
 	t.Cleanup(mgr.Shutdown)
 
-	session, err := mgr.EnsureShell(
+	session, err := mgr.Launch(
 		context.Background(), "ws:alpha", "/tmp/work tree",
+		string(LaunchTargetPlainShell),
 	)
 	require.NoError(err)
-	sessionName := tmuxSessionName("ws:alpha", string(LaunchTargetPlainShell))
+	sessionName := tmuxSessionName("ws:alpha", session.Key)
 
 	assert.Equal(sessionName, session.TmuxSession)
 	assert.Equal(string(LaunchTargetPlainShell), session.TargetKey)
+	assert.Equal("Shell", session.Label)
 	records := readNullArgvRecord(t, record)
 	var newSession []string
 	for _, record := range records {
@@ -495,11 +527,10 @@ exit 0
 	})
 	assert.NotContains(newSessionText, "argv-visible-value")
 	assert.NotContains(newSessionText, "custom-visible-value")
-	require.NotNil(mgr.ShellSession("ws:alpha"))
-	assert.Empty(mgr.ListSessions("ws:alpha"))
+	assert.Len(mgr.ListSessions("ws:alpha"), 1)
 }
 
-func TestManagerRestoreTmuxSessionRestoresPlainShellSlot(t *testing.T) {
+func TestManagerRestoreTmuxSessionRestoresPlainShellRuntimeSession(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
 	tmuxPath := writeLongRunningAttachTmux(t)
@@ -509,26 +540,27 @@ func TestManagerRestoreTmuxSessionRestoresPlainShellSlot(t *testing.T) {
 	t.Cleanup(mgr.Shutdown)
 	createdAt := time.Date(2026, 5, 28, 12, 0, 0, 0, time.UTC)
 
-	err := mgr.RestoreTmuxSessions(context.Background(), []RestoredTmuxSession{{
+	err := mgr.RestoreRuntimeSessions(context.Background(), []RestoredRuntimeSession{{
 		WorkspaceID: "ws-1",
-		SessionName: "middleman-ws-1-shell",
+		SessionKey:  "ws-1_shell-restored",
+		TmuxSession: "middleman-ws-1-shell",
 		TargetKey:   string(LaunchTargetPlainShell),
 		CreatedAt:   createdAt,
 	}})
 	require.NoError(err)
 
-	shell := mgr.ShellSession("ws-1")
-	require.NotNil(shell)
-	assert.Equal(sessionKey("ws-1", string(LaunchTargetPlainShell)), shell.Key)
+	sessions := mgr.ListSessions("ws-1")
+	require.Len(sessions, 1)
+	shell := sessions[0]
+	assert.Equal("ws-1_shell-restored", shell.Key)
 	assert.Equal(string(LaunchTargetPlainShell), shell.TargetKey)
 	assert.Equal(LaunchTargetPlainShell, shell.Kind)
 	assert.Equal("Shell", shell.Label)
 	assert.Equal("middleman-ws-1-shell", shell.TmuxSession)
 	assert.Equal(createdAt, shell.CreatedAt)
-	assert.Empty(mgr.ListSessions("ws-1"))
 }
 
-func TestManagerRestoreTmuxSessionReusesExistingPlainShell(t *testing.T) {
+func TestManagerRestoreTmuxSessionReusesExistingPlainShellRuntimeSession(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
 	tmuxPath := writeLongRunningAttachTmux(t)
@@ -536,22 +568,60 @@ func TestManagerRestoreTmuxSessionReusesExistingPlainShell(t *testing.T) {
 		TmuxCommand: []string{tmuxPath},
 	})
 	t.Cleanup(mgr.Shutdown)
-	restored := RestoredTmuxSession{
+	restored := RestoredRuntimeSession{
 		WorkspaceID: "ws-1",
-		SessionName: "middleman-ws-1-shell",
+		SessionKey:  "ws-1_shell-restored",
+		TmuxSession: "middleman-ws-1-shell",
 		TargetKey:   string(LaunchTargetPlainShell),
 		CreatedAt:   time.Date(2026, 5, 28, 12, 0, 0, 0, time.UTC),
 	}
 
-	require.NoError(mgr.RestoreTmuxSessions(
-		context.Background(), []RestoredTmuxSession{restored},
+	require.NoError(mgr.RestoreRuntimeSessions(
+		context.Background(), []RestoredRuntimeSession{restored},
 	))
-	require.NoError(mgr.RestoreTmuxSessions(
-		context.Background(), []RestoredTmuxSession{restored},
+	require.NoError(mgr.RestoreRuntimeSessions(
+		context.Background(), []RestoredRuntimeSession{restored},
 	))
 
-	require.NotNil(mgr.ShellSession("ws-1"))
-	assert.Empty(mgr.ListSessions("ws-1"))
+	assert.Len(mgr.ListSessions("ws-1"), 1)
+}
+
+func TestManagerRestorePtyOwnerSessionIgnoresRemovedTarget(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	sessionKey := "ws-1_removedtarget"
+	owner := newFakeRuntimePtyOwner()
+	owner.startedSession = sessionKey
+	owner.startedPTY = &fakeRuntimePTY{
+		output: make(chan []byte, 64),
+		done:   make(chan struct{}),
+	}
+	mgr := NewManager(Options{
+		PtyOwnerRuntime: owner,
+	})
+	t.Cleanup(mgr.Shutdown)
+	createdAt := time.Date(2026, 5, 28, 12, 0, 0, 0, time.UTC)
+
+	err := mgr.RestoreRuntimeSessions(context.Background(), []RestoredRuntimeSession{{
+		WorkspaceID: "ws-1",
+		SessionKey:  sessionKey,
+		TargetKey:   "removed-agent",
+		Label:       "Removed Agent",
+		Kind:        LaunchTargetAgent,
+		CWD:         t.TempDir(),
+		CreatedAt:   createdAt,
+	}})
+	require.NoError(err)
+
+	sessions := mgr.ListSessions("ws-1")
+	require.Len(sessions, 1)
+	assert.Equal(0, owner.starts)
+	assert.Equal(1, owner.attaches)
+	assert.Equal(sessionKey, sessions[0].Key)
+	assert.Equal("removed-agent", sessions[0].TargetKey)
+	assert.Equal("Removed Agent", sessions[0].Label)
+	assert.Equal(LaunchTargetAgent, sessions[0].Kind)
+	assert.Equal(createdAt, sessions[0].CreatedAt)
 }
 
 func TestManagerRestoreTmuxSessionRejectsUnownedSession(t *testing.T) {
@@ -578,9 +648,10 @@ exit 0
 	})
 	t.Cleanup(mgr.Shutdown)
 
-	err := mgr.RestoreTmuxSessions(context.Background(), []RestoredTmuxSession{{
+	err := mgr.RestoreRuntimeSessions(context.Background(), []RestoredRuntimeSession{{
 		WorkspaceID: "ws-1",
-		SessionName: "middleman-ws-1-shell",
+		SessionKey:  "ws-1_shell-restored",
+		TmuxSession: "middleman-ws-1-shell",
 		TargetKey:   string(LaunchTargetPlainShell),
 		CreatedAt:   time.Date(2026, 5, 28, 12, 0, 0, 0, time.UTC),
 	}})
@@ -588,7 +659,6 @@ exit 0
 	var ownershipErr TmuxSessionOwnershipError
 	require.ErrorAs(err, &ownershipErr)
 	assert.Equal("middleman-ws-1-shell", ownershipErr.Session)
-	assert.Nil(mgr.ShellSession("ws-1"))
 	assert.NotContains(readNullArgvRecord(t, record), []string{
 		"attach-session", "-t", "middleman-ws-1-shell",
 	})
@@ -647,7 +717,7 @@ exit 0
 		Targets: []LaunchTarget{
 			agent,
 			{
-				Key: "tmux", Label: "tmux", Kind: LaunchTargetTmux,
+				Key: "shell", Label: "Shell", Kind: LaunchTargetShell,
 				Source: "system", Command: []string{tmuxPath},
 				Available: true,
 			},
@@ -700,7 +770,7 @@ exit 0
 		Targets: []LaunchTarget{
 			agent,
 			{
-				Key: "tmux", Label: "tmux", Kind: LaunchTargetTmux,
+				Key: "shell", Label: "Shell", Kind: LaunchTargetShell,
 				Source: "system", Command: []string{tmuxPath},
 				Available: true,
 			},
@@ -727,7 +797,7 @@ func TestManagerLaunchCommandRejectsRelativeAgentCommandWhenWrapped(t *testing.T
 		Targets: []LaunchTarget{
 			agent,
 			{
-				Key: "tmux", Label: "tmux", Kind: LaunchTargetTmux,
+				Key: "shell", Label: "Shell", Kind: LaunchTargetShell,
 				Source: "system", Command: []string{"/usr/bin/tmux"},
 				Available: true,
 			},
@@ -862,7 +932,7 @@ func TestManagerLaunchCommandFallsBackWhenTmuxUnavailable(t *testing.T) {
 		Targets: []LaunchTarget{
 			agent,
 			{
-				Key: "tmux", Label: "tmux", Kind: LaunchTargetTmux,
+				Key: "shell", Label: "Shell", Kind: LaunchTargetShell,
 				Source: "system", Command: []string{"tmux"},
 				Available: false, DisabledReason: "tmux not found",
 			},
@@ -927,7 +997,7 @@ func TestManagerLaunchCommandDoesNotWrapWhenConfigDisabled(t *testing.T) {
 		Targets: []LaunchTarget{
 			agent,
 			{
-				Key: "tmux", Label: "tmux", Kind: LaunchTargetTmux,
+				Key: "shell", Label: "Shell", Kind: LaunchTargetShell,
 				Source: "system", Command: []string{"/usr/bin/tmux"},
 				Available: true,
 			},
@@ -1092,9 +1162,12 @@ func TestManagerShutdownDetachesPtyOwnerSessions(t *testing.T) {
 	mgr := NewManager(Options{
 		PtyOwnerRuntime: owner,
 		ShellCommand:    []string{"/bin/sh"},
+		Targets:         []LaunchTarget{plainShellTarget()},
 	})
 
-	info, err := mgr.EnsureShell(ctx, "ws-1", t.TempDir())
+	info, err := mgr.Launch(
+		ctx, "ws-1", t.TempDir(), string(LaunchTargetPlainShell),
+	)
 	require.NoError(err)
 	require.Equal(string(LaunchTargetPlainShell), info.TargetKey)
 
@@ -1117,23 +1190,18 @@ func TestManagerStopWorkspaceStopsKnownPtyOwnerSessionsAfterRestart(t *testing.T
 
 	owner := newFakeRuntimePtyOwner()
 	mgr := NewManager(Options{
-		Targets: []LaunchTarget{{
-			Key:       "helper",
-			Label:     "Helper",
-			Kind:      LaunchTargetAgent,
-			Command:   []string{"/bin/sh"},
-			Available: true,
-		}},
 		PtyOwnerRuntime: owner,
-		ShellCommand:    []string{"/bin/sh"},
+		KnownPtyOwnerSessionKeys: func(
+			context.Context,
+			string,
+		) ([]string, error) {
+			return []string{"ws-1_a", "ws-1_b"}, nil
+		},
 	})
 
 	mgr.StopWorkspace(context.Background(), "ws-1")
 
-	assert.ElementsMatch([]string{
-		sessionKey("ws-1", string(LaunchTargetPlainShell)),
-		sessionKey("ws-1", "helper"),
-	}, owner.stoppedSessions)
+	assert.ElementsMatch([]string{"ws-1_a", "ws-1_b"}, owner.stoppedSessions)
 }
 
 func TestPtyOwnerLifecycleStopClosesAttachmentAfterOwnerStopFailure(t *testing.T) {
@@ -1172,10 +1240,13 @@ func TestManagerStopKeepsPtyOwnerSessionRetryableAfterStopFailure(t *testing.T) 
 	mgr := NewManager(Options{
 		PtyOwnerRuntime: owner,
 		ShellCommand:    []string{"/bin/sh"},
+		Targets:         []LaunchTarget{plainShellTarget()},
 	})
 	t.Cleanup(mgr.Shutdown)
 
-	info, err := mgr.EnsureShell(ctx, "ws-1", t.TempDir())
+	info, err := mgr.Launch(
+		ctx, "ws-1", t.TempDir(), string(LaunchTargetPlainShell),
+	)
 	require.NoError(err)
 
 	err = mgr.Stop(ctx, "ws-1", info.Key)
@@ -1476,6 +1547,7 @@ func TestManagerRemovesNaturallyExitedShell(t *testing.T) {
 	owner := newFakeRuntimePtyOwner()
 	mgr := NewManager(Options{
 		ShellCommand: []string{"/bin/sh"},
+		Targets:      []LaunchTarget{plainShellTarget()},
 		OnSessionExit: func(info SessionInfo) {
 			exited <- info
 		},
@@ -1483,7 +1555,9 @@ func TestManagerRemovesNaturallyExitedShell(t *testing.T) {
 	})
 	t.Cleanup(mgr.Shutdown)
 
-	shell, err := mgr.EnsureShell(ctx, "ws-1", t.TempDir())
+	shell, err := mgr.Launch(
+		ctx, "ws-1", t.TempDir(), string(LaunchTargetPlainShell),
+	)
 	require.NoError(t, err)
 	owner.startedPTY.Close()
 
@@ -1503,156 +1577,36 @@ func TestManagerRemovesNaturallyExitedShell(t *testing.T) {
 	assert.NotNil(got.ExitedAt)
 	assert.NotNil(got.ExitCode)
 	assert.Equal(0, *got.ExitCode)
-	assert.Nil(mgr.ShellSession("ws-1"))
-}
-
-func TestManagerShellSingletonPerWorkspace(t *testing.T) {
-	requirePTYAvailable(t)
-	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
-
-	ctx := context.Background()
-	mgr := NewManager(withTestPtyOwnerRuntime(t, Options{
-		ShellCommand: helperCommand("sleep"),
-	}))
-	t.Cleanup(mgr.Shutdown)
-
-	shell1, err := mgr.EnsureShell(ctx, "ws-1", t.TempDir())
-	require.NoError(t, err)
-	shell2, err := mgr.EnsureShell(ctx, "ws-1", t.TempDir())
-	require.NoError(t, err)
-
-	assert := Assert.New(t)
-	assert.Equal(shell1.Key, shell2.Key)
-	assert.Equal(SessionStatusRunning, shell1.Status)
 	assert.Empty(mgr.ListSessions("ws-1"))
 }
 
-func TestManagerEnsureShellWithResultReportsCreatedState(t *testing.T) {
+func TestManagerLaunchPlainShellCreatesIndependentSessions(t *testing.T) {
 	requirePTYAvailable(t)
 	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
 
-	require := require.New(t)
-	assert := Assert.New(t)
 	ctx := context.Background()
 	mgr := NewManager(withTestPtyOwnerRuntime(t, Options{
 		ShellCommand: helperCommand("sleep"),
+		Targets:      []LaunchTarget{plainShellTarget()},
 	}))
 	t.Cleanup(mgr.Shutdown)
 
-	first, err := mgr.EnsureShellWithResult(ctx, "ws-1", t.TempDir())
-	require.NoError(err)
-	second, err := mgr.EnsureShellWithResult(ctx, "ws-1", t.TempDir())
-	require.NoError(err)
-
-	assert.True(first.Created)
-	assert.False(second.Created)
-	assert.Equal(first.Session.Key, second.Session.Key)
-	assert.Equal(first.Session.CreatedAt, second.Session.CreatedAt)
-}
-
-func TestManagerEnsureShellWithResultReportsPreexistingTmuxSession(t *testing.T) {
-	require := require.New(t)
-	assert := Assert.New(t)
-	dir := t.TempDir()
-	tmuxPath := filepath.Join(dir, "tmux")
-	require.NoError(os.WriteFile(tmuxPath, []byte(`#!/bin/sh
-if [ "$1" = "has-session" ]; then
-  exit 0
-fi
-exit 0
-`), 0o755))
-	owner := newFakeRuntimePtyOwner()
-	mgr := NewManager(Options{
-		Targets: []LaunchTarget{{
-			Key: "tmux", Label: "tmux", Kind: LaunchTargetTmux,
-			Source: "system", Command: []string{tmuxPath},
-			Available: true,
-		}},
-		ShellCommand:    helperCommand("sleep"),
-		TmuxCommand:     []string{tmuxPath},
-		PtyOwnerRuntime: owner,
-	})
-	t.Cleanup(mgr.Shutdown)
-
-	result, err := mgr.EnsureShellWithResult(
-		context.Background(), "ws-1", t.TempDir(),
+	shell1, err := mgr.Launch(
+		ctx, "ws-1", t.TempDir(), string(LaunchTargetPlainShell),
 	)
-	require.NoError(err)
-
-	assert.True(result.Created)
-	assert.NotEmpty(result.Session.TmuxSession)
-}
-
-// TestManagerEnsureShellSkipsZombieSessions pins the runningSession
-// outputClosed check that prevents EnsureShell from returning a
-// session whose drainOutput already saw PTY EOF but whose
-// watchSession's cmd.Wait hasn't fired yet.
-//
-// Wrapped shells (systemd-run --wait, etc.) routinely sit in this
-// "output dead, status still Running" window after the inner zsh
-// exits while the wrapper does its cleanup. Without this guard,
-// EnsureShell would hand the next caller a snapshot of the zombie:
-// status=Running, but a closed Output channel that yields nothing.
-// The frontend then mounts a TerminalPane, attaches, gets the exit
-// frame instantly, auto-closes — and on the user's next click does
-// it all over again until the zombie is finally collected. From the
-// user's seat that looks like a hang.
-func TestManagerEnsureShellSkipsZombieSessions(t *testing.T) {
-	requirePTYAvailable(t)
-	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
-
-	require := require.New(t)
-	assert := Assert.New(t)
-	ctx := context.Background()
-	mgr := NewManager(withTestPtyOwnerRuntime(t, Options{
-		ShellCommand: helperCommand("sleep"),
-	}))
-	t.Cleanup(mgr.Shutdown)
-
-	first, err := mgr.EnsureShell(ctx, "ws-1", t.TempDir())
-	require.NoError(err)
-	require.Equal(SessionStatusRunning, first.Status)
-
-	// Reach into the manager state and synthesize the zombie window:
-	// outputClosed flipped while the watchSession goroutine is still
-	// blocked on cmd.Wait (the helperCommand("sleep") process never
-	// exits, so cmd.Wait won't return until Shutdown kills it).
-	mgr.mu.Lock()
-	s := mgr.shells[first.Key]
-	mgr.mu.Unlock()
-	require.NotNil(s, "shell session should be in m.shells")
-	s.mu.Lock()
-	s.outputClosed = true
-	s.mu.Unlock()
-
-	second, err := mgr.EnsureShell(ctx, "ws-1", t.TempDir())
-	require.NoError(err)
-	assert.Equal(SessionStatusRunning, second.Status)
-	assert.NotEqual(
-		first.CreatedAt, second.CreatedAt,
-		"EnsureShell after a zombie must return a fresh session",
+	require.NoError(t, err)
+	shell2, err := mgr.Launch(
+		ctx, "ws-1", t.TempDir(), string(LaunchTargetPlainShell),
 	)
-	// The new session replaces the zombie in the map.
-	mgr.mu.Lock()
-	current := mgr.shells[first.Key]
-	mgr.mu.Unlock()
-	assert.NotSame(s, current,
-		"the zombie should have been replaced, not reused")
+	require.NoError(t, err)
 
-	// Once the zombie is no longer in the map, Manager.Shutdown
-	// can't reach it. EnsureShell must therefore reap it inline:
-	// SIGKILL the process group so cmd.Wait returns and the
-	// per-session watchSession goroutine completes (closing s.done).
-	// helperCommand("sleep") would otherwise block forever.
-	require.Eventually(func() bool {
-		select {
-		case <-s.done:
-			return true
-		default:
-			return false
-		}
-	}, 2*time.Second, 20*time.Millisecond,
-		"zombie's process must be killed and reaped, not orphaned")
+	assert := Assert.New(t)
+	assert.NotEqual(shell1.Key, shell2.Key)
+	assert.Equal(SessionStatusRunning, shell1.Status)
+	assert.Equal(SessionStatusRunning, shell2.Status)
+	assert.Equal("Shell", shell1.Label)
+	assert.Equal("Shell 2", shell2.Label)
+	assert.Len(mgr.ListSessions("ws-1"), 2)
 }
 
 // TestAttachmentSessionOutputClosedDistinguishesSubscriberDrop covers
@@ -1675,13 +1629,16 @@ func TestAttachmentSessionOutputClosedDistinguishesSubscriberDrop(t *testing.T) 
 	ctx := context.Background()
 	mgr := NewManager(withTestPtyOwnerRuntime(t, Options{
 		ShellCommand: helperCommand("sleep"),
+		Targets:      []LaunchTarget{plainShellTarget()},
 	}))
 	t.Cleanup(mgr.Shutdown)
 
-	shell, err := mgr.EnsureShell(ctx, "ws-1", t.TempDir())
+	shell, err := mgr.Launch(
+		ctx, "ws-1", t.TempDir(), string(LaunchTargetPlainShell),
+	)
 	require.NoError(err)
 
-	attach, err := mgr.AttachShell("ws-1")
+	attach, err := mgr.AttachSession("ws-1", shell.Key)
 	require.NoError(err)
 	t.Cleanup(attach.Close)
 	require.Equal(shell.Key, attach.Info().Key)
@@ -1691,7 +1648,7 @@ func TestAttachmentSessionOutputClosedDistinguishesSubscriberDrop(t *testing.T) 
 		"freshly-attached session should not look output-closed")
 
 	mgr.mu.Lock()
-	s := mgr.shells[shell.Key]
+	s := mgr.sessions[shell.Key]
 	mgr.mu.Unlock()
 	require.NotNil(s)
 
@@ -1755,10 +1712,15 @@ type fakeRuntimePtyOwner struct {
 	stoppedSessions     []string
 	stopErr             error
 	starts              int
+	attaches            int
 }
 
 func newFakeRuntimePtyOwner() *fakeRuntimePtyOwner {
 	return &fakeRuntimePtyOwner{}
+}
+
+func (f *fakeRuntimePtyOwner) HasState(session string) bool {
+	return f.startedSession == session
 }
 
 func writeLongRunningAttachTmux(t *testing.T) string {
@@ -1789,6 +1751,17 @@ func (f *fakeRuntimePtyOwner) Start(
 	f.startedPTY = &fakeRuntimePTY{
 		output: make(chan []byte, 64),
 		done:   make(chan struct{}),
+	}
+	return f.startedPTY, nil
+}
+
+func (f *fakeRuntimePtyOwner) Attach(
+	_ context.Context,
+	session string,
+) (ptyownerruntime.PTY, error) {
+	f.attaches++
+	if !f.HasState(session) || f.startedPTY == nil {
+		return nil, errors.New("missing pty owner state")
 	}
 	return f.startedPTY, nil
 }
@@ -1829,7 +1802,7 @@ func (f *fakeRuntimePTY) Close() {
 	}
 }
 
-func TestManagerShellConcurrentStartsOneProcess(t *testing.T) {
+func TestManagerPlainShellConcurrentLaunchesStartIndependentProcesses(t *testing.T) {
 	requirePTYAvailable(t)
 	t.Setenv("MIDDLEMAN_LOCALRUNTIME_HELPER", "1")
 	require := require.New(t)
@@ -1839,6 +1812,7 @@ func TestManagerShellConcurrentStartsOneProcess(t *testing.T) {
 	record := filepath.Join(t.TempDir(), "shell-starts")
 	mgr := NewManager(withTestPtyOwnerRuntime(t, Options{
 		ShellCommand: helperRecordCommand(record),
+		Targets:      []LaunchTarget{plainShellTarget()},
 	}))
 	t.Cleanup(mgr.Shutdown)
 
@@ -1849,7 +1823,9 @@ func TestManagerShellConcurrentStartsOneProcess(t *testing.T) {
 	cwd := t.TempDir()
 	for range launches {
 		wg.Go(func() {
-			info, err := mgr.EnsureShell(ctx, "ws-1", cwd)
+			info, err := mgr.Launch(
+				ctx, "ws-1", cwd, string(LaunchTargetPlainShell),
+			)
 			errs <- err
 			infos <- info
 		})
@@ -1861,21 +1837,19 @@ func TestManagerShellConcurrentStartsOneProcess(t *testing.T) {
 	for err := range errs {
 		require.NoError(err)
 	}
-	var firstKey string
+	keys := make(map[string]bool, launches)
 	for info := range infos {
-		if firstKey == "" {
-			firstKey = info.Key
-		}
-		assert.Equal(firstKey, info.Key)
+		keys[info.Key] = true
 	}
+	assert.Len(keys, launches)
 	require.Eventually(func() bool {
 		data, err := os.ReadFile(record)
 		if err != nil {
 			return false
 		}
-		return strings.Count(string(data), "\n") == 1
+		return strings.Count(string(data), "\n") == launches
 	}, 2*time.Second, 20*time.Millisecond)
-	assert.NotNil(mgr.ShellSession("ws-1"))
+	assert.Len(mgr.ListSessions("ws-1"), launches)
 }
 
 func TestManagerShutdownRejectsNewLaunches(t *testing.T) {
@@ -2101,6 +2075,7 @@ func TestManagerStopWorkspaceStopsAllSessions(t *testing.T) {
 		Targets: []LaunchTarget{
 			helperTarget("agent-a", "sleep"),
 			helperTarget("agent-b", "sleep"),
+			plainShellTarget(),
 		},
 		ShellCommand: helperCommand("sleep"),
 	}))
@@ -2110,7 +2085,7 @@ func TestManagerStopWorkspaceStopsAllSessions(t *testing.T) {
 	require.NoError(err)
 	_, err = mgr.Launch(ctx, "ws-1", t.TempDir(), "agent-b")
 	require.NoError(err)
-	_, err = mgr.EnsureShell(ctx, "ws-1", t.TempDir())
+	_, err = mgr.Launch(ctx, "ws-1", t.TempDir(), string(LaunchTargetPlainShell))
 	require.NoError(err)
 
 	// A second workspace's sessions must survive.
@@ -2120,8 +2095,17 @@ func TestManagerStopWorkspaceStopsAllSessions(t *testing.T) {
 	mgr.StopWorkspace(ctx, "ws-1")
 
 	assert.Empty(mgr.ListSessions("ws-1"))
-	assert.Nil(mgr.ShellSession("ws-1"))
 	assert.Len(mgr.ListSessions("ws-2"), 1)
+}
+
+func plainShellTarget() LaunchTarget {
+	return LaunchTarget{
+		Key:       string(LaunchTargetPlainShell),
+		Label:     "Shell",
+		Kind:      LaunchTargetPlainShell,
+		Source:    "system",
+		Available: true,
+	}
 }
 
 func helperTarget(key, mode string) LaunchTarget {

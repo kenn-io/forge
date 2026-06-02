@@ -66,7 +66,7 @@ test.describe("workspace tab persistence", () => {
     timeout: lockedWorkspaceTestTimeoutMs,
   });
 
-  test("opening tmux tab keeps Home pane mounted across tab switches", async ({ page }) => {
+  test("opening shell tab keeps Home pane mounted across tab switches", async ({ page }) => {
     test.skip(
       !hasCommand("git") || !hasCommand("tmux", ["-V"]),
       "git and tmux are required for the real workspace flow",
@@ -94,50 +94,45 @@ test.describe("workspace tab persistence", () => {
         `${isolatedServer.info.base_url}/terminal/${createdWorkspace.id}`,
       );
 
-      const stage = page.locator(".workspace-stage");
-      const panes = stage.locator(":scope > .stage-pane");
-      const homeTab = page.locator('.workspace-tabs [role="tab"]', {
-        hasText: "Home",
-      });
-      const tmuxTab = page.locator('.workspace-tabs [role="tab"]', {
-        hasText: "tmux",
-      });
+      const workflow = page.getByRole("region", { name: "Workflow panes" });
+      const panes = workflow.locator(".group-tab-panel");
+      const homeTab = workflow.getByRole("tab", { name: "Home" });
+      const tmuxTab = workflow.getByRole("tab", { name: "Shell" });
 
       // Initial state: only the Home pane is in the stage.
       await expect(homeTab).toHaveAttribute("aria-selected", "true");
       await expect(panes).toHaveCount(1);
 
-      // Open the tmux tab via the Launch menu. The tab is always
+      // Open the shell tab. It is backed by tmux when available and is
       // available because tmux is a built-in launch target.
-      await page.locator(".launch-trigger").click();
-      await page.locator(".launch-option", { hasText: "tmux" }).click();
+      await workflow.getByRole("button", { name: "Shell" }).click();
 
-      // After opening tmux, both Home and tmux panes should be in
-      // the DOM, with tmux marked active.
+      // After opening Shell, both Home and Shell panes should be in
+      // the DOM, with Shell marked active.
       await expect(panes).toHaveCount(2);
       await expect(tmuxTab).toHaveAttribute("aria-selected", "true");
-      const tmuxPane = stage.locator(":scope > .stage-pane.active");
+      const tmuxPane = workflow.locator(".group-tab-panel.active");
       await expect(tmuxPane).toHaveCount(1);
 
-      // Mark the tmux pane so we can later confirm it's the same
+      // Mark the shell pane so we can later confirm it's the same
       // DOM element rather than a fresh remount.
       await tmuxPane.evaluate((el) => {
         el.setAttribute("data-test-tmux-id", "preserved");
       });
 
-      // Switch to Home: tmux pane must remain mounted.
+      // Switch to Home: shell pane must remain mounted.
       await homeTab.click();
       await expect(homeTab).toHaveAttribute("aria-selected", "true");
       await expect(panes).toHaveCount(2);
       await expect(
-        stage.locator(':scope > .stage-pane[data-test-tmux-id="preserved"]'),
+        workflow.locator('.group-tab-panel[data-test-tmux-id="preserved"]'),
       ).toHaveCount(1);
 
-      // Switch back to tmux: must be the same DOM element, not a
+      // Switch back to Shell: must be the same DOM element, not a
       // freshly mounted one.
       await tmuxTab.click();
       await expect(panes).toHaveCount(2);
-      const reactivated = stage.locator(":scope > .stage-pane.active");
+      const reactivated = workflow.locator(".group-tab-panel.active");
       await expect(reactivated).toHaveAttribute("data-test-tmux-id", "preserved");
     } finally {
       await api?.dispose();
@@ -166,17 +161,13 @@ test.describe("workspace tab persistence", () => {
         `${isolatedServer.info.base_url}/terminal/${firstWorkspace.id}`,
       );
 
-      const homeTab = page.locator('.workspace-tabs [role="tab"]', {
-        hasText: "Home",
-      });
-      const tmuxTab = page.locator('.workspace-tabs [role="tab"]', {
-        hasText: "tmux",
-      });
+      const workflow = page.getByRole("region", { name: "Workflow panes" });
+      const homeTab = workflow.getByRole("tab", { name: "Home" });
+      const tmuxTab = workflow.getByRole("tab", { name: "Shell" });
 
       await expect(homeTab).toHaveAttribute("aria-selected", "true");
 
-      await page.locator(".launch-trigger").click();
-      await page.locator(".launch-option", { hasText: "tmux" }).click();
+      await workflow.getByRole("button", { name: "Shell" }).click();
       await expect(tmuxTab).toHaveAttribute("aria-selected", "true");
 
       await page.goto(
@@ -230,16 +221,14 @@ test.describe("workspace tab persistence", () => {
         `${isolatedServer.info.base_url}/terminal/${workspace.id}`,
       );
 
-      const stage = page.locator(".workspace-stage");
-      const panes = stage.locator(":scope > .stage-pane");
-      const homeTab = page.locator('.workspace-tabs [role="tab"]', {
-        hasText: "Home",
-      });
+      const workflow = page.getByRole("region", { name: "Workflow panes" });
+      const panes = workflow.locator(".group-tab-panel");
+      const homeTab = workflow.getByRole("tab", { name: "Home" });
 
       await expect(homeTab).toHaveAttribute("aria-selected", "true");
-      await expect(page.locator('.workspace-tabs [role="tab"]', {
-        hasText: "Diff",
-      })).toHaveCount(0);
+      await expect(
+        workflow.getByRole("tab", { name: "Diff" }),
+      ).toHaveCount(0);
       await expect(panes).toHaveCount(1);
 
       const diffResponse = page.waitForResponse((response) =>
@@ -405,24 +394,23 @@ test.describe("workspace tab persistence", () => {
       await expect(panes).toHaveCount(1);
       await expect(homeTab).toHaveAttribute("aria-selected", "true");
 
-      await page.locator(".launch-trigger").click();
-      await page.locator(".launch-option", { hasText: "tmux" }).click();
-      await expect(page.locator('.workspace-tabs [role="tab"]', {
-        hasText: "tmux",
-      })).toHaveAttribute("aria-selected", "true");
+      await workflow.getByRole("button", { name: "Shell" }).click();
+      await expect(
+        workflow.getByRole("tab", { name: "Shell" }),
+      ).toHaveAttribute("aria-selected", "true");
       await expect(page.locator(".right-sidebar .workspace-diff")).toBeVisible();
       await expect(panes).toHaveCount(2);
 
-      await page.locator(".stage-pane.active .terminal-container").click();
+      await workflow.locator(".group-tab-panel.active .terminal-container").click();
       for (const key of ["j", "k", "[", "]"]) {
         await page.keyboard.press(key);
       }
       await expect(page).toHaveURL(
         new RegExp(`/terminal/${workspace.id}$`),
       );
-      await expect(page.locator('.workspace-tabs [role="tab"]', {
-        hasText: "tmux",
-      })).toHaveAttribute("aria-selected", "true");
+      await expect(
+        workflow.getByRole("tab", { name: "Shell" }),
+      ).toHaveAttribute("aria-selected", "true");
       await expect(alphaDiffFile).toBeVisible();
     } finally {
       await api?.dispose();

@@ -27,16 +27,14 @@ vi.mock("../../api/runtime.js", () => ({
 }));
 
 vi.mock("../../api/workspace-runtime.js", () => ({
-  ensureWorkspaceShell: vi.fn(),
   getWorkspaceRuntime: vi.fn().mockResolvedValue({
     launch_targets: [],
     sessions: [],
-    shell_session: null,
   }),
   launchWorkspaceSession: vi.fn(),
+  renameWorkspaceSession: vi.fn(),
   stopWorkspaceSession: vi.fn(),
   workspaceSessionWebSocketPath: () => "",
-  workspaceShellWebSocketPath: () => "",
   workspaceTmuxWebSocketPath: () => "",
 }));
 

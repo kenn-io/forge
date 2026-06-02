@@ -251,6 +251,66 @@ async function fulfillJson(
   });
 }
 
+function decodePathSegment(segment: string | undefined): string {
+  return decodeURIComponent(segment ?? "");
+}
+
+function canonicalProvider(provider: string): string {
+  const normalized = provider.toLowerCase();
+  if (normalized === "gh") return "github";
+  if (normalized === "gl") return "gitlab";
+  if (normalized === "fj") return "forgejo";
+  return normalized;
+}
+
+function defaultPlatformHost(provider: string): string {
+  switch (canonicalProvider(provider)) {
+    case "github":
+      return "github.com";
+    case "gitlab":
+      return "gitlab.com";
+    case "forgejo":
+      return "codeberg.org";
+    case "gitea":
+      return "gitea.com";
+    default:
+      return "";
+  }
+}
+
+function routePlatformHost(
+  provider: string,
+  hostSegment: string | undefined,
+): string {
+  const host = decodePathSegment(hostSegment).trim();
+  return host || defaultPlatformHost(provider);
+}
+
+function matchesRouteIdentity(
+  candidate: {
+    repo?: { provider?: string | undefined } | undefined;
+    platform_host: string;
+    repo_owner: string;
+    repo_name: string;
+    Number: number;
+  },
+  ref: {
+    provider: string;
+    platformHost: string;
+    owner: string;
+    name: string;
+    number: number;
+  },
+): boolean {
+  return (
+    canonicalProvider(candidate.repo?.provider ?? "") === ref.provider &&
+    candidate.platform_host === ref.platformHost &&
+    candidate.repo_owner === ref.owner &&
+    candidate.repo_name === ref.name &&
+    candidate.Number === ref.number
+  );
+}
+
 export async function mockApi(page: Page): Promise<void> {
   // Deep-clone so mutations (e.g. PATCH) don't leak between tests.
   const localPulls: typeof pulls = JSON.parse(JSON.stringify(pulls));
@@ -262,6 +322,49 @@ export async function mockApi(page: Page): Promise<void> {
 
     if (method === "GET" && pathname === "/api/v1/pulls") {
       await fulfillJson(route, localPulls);
+      return;
+    }
+
+    const providerPrMatch = pathname.match(
+      /^\/api\/v1(?:\/host\/([^/]+))?\/pulls\/([^/]+)\/([^/]+)\/([^/]+)\/(\d+)(?:\/(sync|sync\/async))?$/,
+    );
+    if (
+      providerPrMatch &&
+      ((method === "GET" && !providerPrMatch[6]) ||
+        (method === "POST" && providerPrMatch[6]?.startsWith("sync")))
+    ) {
+      const prProvider = canonicalProvider(
+        decodePathSegment(providerPrMatch[2]),
+      );
+      const platformHost = routePlatformHost(
+        prProvider,
+        providerPrMatch[1],
+      );
+      const prOwner = decodePathSegment(providerPrMatch[3]);
+      const prName = decodePathSegment(providerPrMatch[4]);
+      const prNumber = parseInt(providerPrMatch[5]!, 10);
+      const pr = localPulls.find(
+        (p) => matchesRouteIdentity(p, {
+          provider: prProvider,
+          platformHost,
+          owner: prOwner,
+          name: prName,
+          number: prNumber,
+        }),
+      );
+      if (pr) {
+        await fulfillJson(route, {
+          merge_request: pr,
+          repo_owner: pr.repo_owner,
+          repo_name: pr.repo_name,
+          platform_host: pr.platform_host,
+          detail_loaded: true,
+          detail_fetched_at: "2026-03-30T14:00:00Z",
+          worktree_links: pr.worktree_links,
+        });
+      } else {
+        await fulfillJson(route, { error: "Not found" }, 404);
+      }
       return;
     }
 
@@ -295,6 +398,49 @@ export async function mockApi(page: Page): Promise<void> {
 
     if (method === "GET" && pathname === "/api/v1/issues") {
       await fulfillJson(route, issues);
+      return;
+    }
+
+    const providerIssueMatch = pathname.match(
+      /^\/api\/v1(?:\/host\/([^/]+))?\/issues\/([^/]+)\/([^/]+)\/([^/]+)\/(\d+)(?:\/(sync|sync\/async))?$/,
+    );
+    if (
+      providerIssueMatch &&
+      ((method === "GET" && !providerIssueMatch[6]) ||
+        (method === "POST" && providerIssueMatch[6]?.startsWith("sync")))
+    ) {
+      const issueProvider = canonicalProvider(
+        decodePathSegment(providerIssueMatch[2]),
+      );
+      const platformHost = routePlatformHost(
+        issueProvider,
+        providerIssueMatch[1],
+      );
+      const issueOwner = decodePathSegment(providerIssueMatch[3]);
+      const issueName = decodePathSegment(providerIssueMatch[4]);
+      const issueNumber = parseInt(providerIssueMatch[5]!, 10);
+      const issue = issues.find(
+        (candidate) => matchesRouteIdentity(candidate, {
+          provider: issueProvider,
+          platformHost,
+          owner: issueOwner,
+          name: issueName,
+          number: issueNumber,
+        }),
+      );
+      if (!issue) {
+        await fulfillJson(route, { title: "Not found" }, 404);
+        return;
+      }
+      await fulfillJson(route, {
+        issue,
+        events: [],
+        platform_host: issue.platform_host,
+        repo_owner: issue.repo_owner,
+        repo_name: issue.repo_name,
+        detail_loaded: true,
+        detail_fetched_at: "2026-03-30T14:00:00Z",
+      });
       return;
     }
 

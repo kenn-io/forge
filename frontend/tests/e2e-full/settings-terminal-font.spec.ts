@@ -199,7 +199,7 @@ test.describe("terminal options popover", () => {
       await page.addInitScript((workspaceId) => {
         localStorage.setItem(
           `middleman-workspace-active-tab:${workspaceId}`,
-          "tmux",
+          "shell",
         );
       }, workspace.id);
 

@@ -1549,6 +1549,7 @@ type StackMemberResponse struct {
 	BlockedBy      *int64 `json:"blocked_by"`
 	CiStatus       string `json:"ci_status"`
 	IsDraft        bool   `json:"is_draft"`
+	MergeableState string `json:"mergeable_state"`
 	Number         int64  `json:"number"`
 	Position       int64  `json:"position"`
 	ReviewDecision string `json:"review_decision"`

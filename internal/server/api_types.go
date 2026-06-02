@@ -437,6 +437,7 @@ type stackMemberResponse struct {
 	State          string `json:"state"`
 	CIStatus       string `json:"ci_status"`
 	ReviewDecision string `json:"review_decision"`
+	MergeableState string `json:"mergeable_state"`
 	Position       int    `json:"position"`
 	IsDraft        bool   `json:"is_draft"`
 	BaseBranch     string `json:"base_branch"`

@@ -13,6 +13,7 @@ interface StackMember {
   state: string;
   ci_status: string;
   review_decision: string;
+  mergeable_state: string;
   position: number;
   is_draft: boolean;
   base_branch: string;
@@ -37,6 +38,7 @@ function member(
     state: "open",
     ci_status: "success",
     review_decision: "APPROVED",
+    mergeable_state: "",
     position: overrides.position,
     is_draft: false,
     base_branch: "main",
@@ -130,5 +132,21 @@ describe("StackStatus", () => {
     });
 
     expect(screen.queryByRole("button", { name: /Stacked:/i })).toBeNull();
+  });
+
+  it("surfaces downstack merge conflicts on the chip and stack row", () => {
+    renderStackStatus(stack({
+      members: [
+        member({ number: 1, position: 1, mergeable_state: "dirty" }),
+        member({ number: 2, position: 2, mergeable_state: "dirty" }),
+        member({ number: 3, position: 3 }),
+      ],
+    }));
+
+    expect(screen.getByRole("button", {
+      name: /Stacked: 2\/3, 1 downstack merge conflict/i,
+    })).toBeTruthy();
+    expect(screen.getAllByText("× Conflicts")).toHaveLength(2);
+    expect(screen.getByText(/3 PRs . current 2\/3 . downstack conflict/)).toBeTruthy();
   });
 });

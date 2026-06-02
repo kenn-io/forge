@@ -991,6 +991,10 @@ func (s *Server) listPulls(ctx context.Context, input *listPullsInput) (*listPul
 	for i, mr := range mrs {
 		mrIDs[i] = mr.ID
 	}
+	stackConflictBlocked, err := s.db.ListMRsBlockedByStackConflicts(ctx, mrIDs)
+	if err != nil {
+		return nil, problemInternal("load stack conflict state failed")
+	}
 	links, err := s.db.GetWorktreeLinksForMRs(ctx, mrIDs)
 	if err != nil {
 		return nil, problemInternal("load worktree links failed")
@@ -1011,8 +1015,12 @@ func (s *Server) listPulls(ctx context.Context, input *listPullsInput) (*listPul
 		if wl == nil {
 			wl = []worktreeLinkResponse{}
 		}
+		responseMR := mr
+		if stackConflictBlocked[mr.ID] {
+			responseMR.MergeableState = "dirty"
+		}
 		resp := mergeRequestResponse{
-			MergeRequest:  mr,
+			MergeRequest:  responseMR,
 			Repo:          s.repoRefFromRepo(rp),
 			RepoOwner:     rp.Owner,
 			RepoName:      rp.Name,
@@ -1172,7 +1180,6 @@ func (s *Server) buildPullDetailResponse(
 		return mergeRequestDetailResponse{}, problemInternal("load repo failed")
 	}
 	resp := mergeRequestDetailResponse{
-		MergeRequest:     mr,
 		Events:           eventResponses,
 		Repo:             s.repoRefFromRepo(*repo),
 		RepoOwner:        repo.Owner,
@@ -1199,6 +1206,14 @@ func (s *Server) buildPullDetailResponse(
 		stackContext := stackContextForPR(mr.Number, stack, members)
 		resp.Stack = &stackContext
 	}
+	responseMR := *mr
+	if stack != nil {
+		blockedBy := computeConflictBlockedBy(members)
+		if _, ok := blockedBy[mr.Number]; ok && mr.State == db.MergeRequestStateOpen {
+			responseMR.MergeableState = "dirty"
+		}
+	}
+	resp.MergeRequest = &responseMR
 
 	if s.workspaces != nil {
 		wsRef, wsErr := s.workspaces.GetByMR(

@@ -47,6 +47,7 @@
     state: string;
     ci_status: string;
     review_decision: string;
+    mergeable_state: string;
     position: number;
     is_draft: boolean;
     base_branch: string;
@@ -88,12 +89,40 @@
       member.state !== "merged"
     ),
   );
+  const downstackConflicts = $derived(
+    members.filter((member) =>
+      member.position < (data?.position ?? 0) &&
+      member.mergeable_state === "dirty" &&
+      member.state !== "merged"
+    ),
+  );
+  const downstackBlockerCount = $derived.by(() => {
+    return members.filter((member) =>
+      member.position < (data?.position ?? 0) &&
+      member.state !== "merged" &&
+      (member.ci_status === "failure" || member.mergeable_state === "dirty")
+    ).length;
+  });
   const summary = $derived.by(() => {
     if (!data) return "";
     const failureText = downstackFailures.length > 0
       ? ` · downstack CI ${downstackFailures.length === 1 ? "failure" : "failures"}`
       : "";
-    return `${data.size} PRs · current ${data.position}/${data.size}${failureText}`;
+    const conflictText = downstackConflicts.length > 0
+      ? ` · downstack ${downstackConflicts.length === 1 ? "conflict" : "conflicts"}`
+      : "";
+    return `${data.size} PRs · current ${data.position}/${data.size}${failureText}${conflictText}`;
+  });
+  const chipAriaLabel = $derived.by(() => {
+    if (!data) return "Stacked";
+    const parts = [`Stacked: ${data.position}/${data.size}`];
+    if (downstackFailures.length > 0) {
+      parts.push(`${downstackFailures.length} downstack CI failure${downstackFailures.length === 1 ? "" : "s"}`);
+    }
+    if (downstackConflicts.length > 0) {
+      parts.push(`${downstackConflicts.length} downstack merge conflict${downstackConflicts.length === 1 ? "" : "s"}`);
+    }
+    return parts.join(", ");
   });
 
   function stackWithPosition(stack: StackContext, num: number): StackContext | null {
@@ -201,10 +230,17 @@
     return { text: "○ Review", className: "stack-status-label--muted" };
   }
 
+  function mergeableLabel(member: StackMember): { text: string; className: string } | null {
+    if (member.state === "merged" || member.mergeable_state !== "dirty") return null;
+    return { text: "× Conflicts", className: "stack-status-label--red" };
+  }
+
   function dotClass(member: StackMember, isCurrent: boolean): string {
     if (isCurrent) return "stack-dot stack-dot--current";
     if (member.state === "merged") return "stack-dot stack-dot--merged";
-    if (member.ci_status === "failure") return "stack-dot stack-dot--red";
+    if (member.mergeable_state === "dirty" || member.ci_status === "failure") {
+      return "stack-dot stack-dot--red";
+    }
     if (member.ci_status === "pending" || member.review_decision === "CHANGES_REQUESTED") {
       return "stack-dot stack-dot--amber";
     }
@@ -240,7 +276,7 @@
         interactive={true}
         tone="neutral"
         uppercase={false}
-        ariaLabel={`Stacked: ${data.position}/${data.size}${downstackFailures.length > 0 ? `, ${downstackFailures.length} downstack CI failure${downstackFailures.length === 1 ? "" : "s"}` : ""}`}
+        ariaLabel={chipAriaLabel}
         dataTestid="stack-chip"
         onclick={toggleExpanded}
         title={expanded ? "Collapse stack" : "Expand stack"}
@@ -248,10 +284,10 @@
       >
         <Layers2Icon size={12} strokeWidth={2.3} aria-hidden="true" />
         <span class="stack-chip-label">Stacked: {data.position}/{data.size}</span>
-        {#if downstackFailures.length > 0}
+        {#if downstackBlockerCount > 0}
           <span class="stack-chip-failure" aria-hidden="true">
             <XIcon size={12} strokeWidth={2.8} />
-            <span>{downstackFailures.length}</span>
+            <span>{downstackBlockerCount}</span>
           </span>
         {/if}
         <ChevronDownIcon
@@ -272,6 +308,7 @@
               {@const isCurrent = member.number === number}
               {@const ci = statusLabel(member)}
               {@const review = reviewLabel(member)}
+              {@const mergeable = mergeableLabel(member)}
               <div
                 class="stack-row"
                 class:stack-row--current={isCurrent}
@@ -294,6 +331,7 @@
                   </button>
                 </span>
                 <span class="stack-badges">
+                  {#if mergeable}<span class={`stack-status-label ${mergeable.className}`}>{mergeable.text}</span>{/if}
                   {#if ci}<span class={`stack-status-label ${ci.className}`}>{ci.text}</span>{/if}
                   {#if review}<span class={`stack-status-label ${review.className}`}>{review.text}</span>{/if}
                   {#if member.blocked_by != null && isCurrent}

@@ -22,12 +22,12 @@ func computeStackHealth(members []db.StackMemberWithPR) string {
 		}
 
 		// Drafts cannot be merged, so they never count as green.
-		isGreen := !m.IsDraft && m.CIStatus == "success" && m.ReviewDecision == "APPROVED"
+		isGreen := stackMemberReady(m)
 		if !isGreen {
 			allGreen = false
 		}
 
-		if m.CIStatus == "failure" || m.ReviewDecision == "CHANGES_REQUESTED" {
+		if stackMemberBlocksDownstream(m) {
 			// A PR only counts as "blocked" when it actually blocks something
 			// downstream — i.e. has at least one non-merged descendant. A
 			// failing tip with nothing below it is not blocking anything.
@@ -49,22 +49,41 @@ func computeStackHealth(members []db.StackMemberWithPR) string {
 		return "all_green"
 	case lowestOpenIdx >= 0:
 		m := members[lowestOpenIdx]
-		if !m.IsDraft && m.CIStatus == "success" && m.ReviewDecision == "APPROVED" {
+		if stackMemberReady(m) {
 			return "base_ready"
 		}
 	}
 	return "in_progress"
 }
 
+func stackMemberReady(m db.StackMemberWithPR) bool {
+	return !m.IsDraft &&
+		m.CIStatus == "success" &&
+		m.ReviewDecision == "APPROVED" &&
+		m.MergeableState != "dirty"
+}
+
 func computeBlockedBy(members []db.StackMemberWithPR) map[int]int {
+	return computeBlockedByPredicate(members, stackMemberBlocksDownstream)
+}
+
+func computeConflictBlockedBy(members []db.StackMemberWithPR) map[int]int {
+	return computeBlockedByPredicate(members, func(m db.StackMemberWithPR) bool {
+		return m.MergeableState == "dirty"
+	})
+}
+
+func computeBlockedByPredicate(
+	members []db.StackMemberWithPR,
+	blocks func(db.StackMemberWithPR) bool,
+) map[int]int {
 	blockedBy := make(map[int]int)
 	var rootBlocker int
 	for _, m := range members {
 		if m.State == "merged" {
 			continue
 		}
-		isBlocked := m.CIStatus == "failure" || m.ReviewDecision == "CHANGES_REQUESTED"
-		if isBlocked && rootBlocker == 0 {
+		if blocks(m) && rootBlocker == 0 {
 			rootBlocker = m.Number
 		} else if rootBlocker != 0 && m.Number != rootBlocker {
 			blockedBy[m.Number] = rootBlocker
@@ -73,8 +92,25 @@ func computeBlockedBy(members []db.StackMemberWithPR) map[int]int {
 	return blockedBy
 }
 
+func stackMemberBlocksDownstream(m db.StackMemberWithPR) bool {
+	return m.CIStatus == "failure" ||
+		m.ReviewDecision == "CHANGES_REQUESTED" ||
+		m.MergeableState == "dirty"
+}
+
+func effectiveStackMemberMergeableState(m db.StackMemberWithPR, blockedBy map[int]int) string {
+	if m.MergeableState == "dirty" {
+		return "dirty"
+	}
+	if _, ok := blockedBy[m.Number]; ok && m.State == "open" {
+		return "dirty"
+	}
+	return m.MergeableState
+}
+
 func toStackMemberResponses(members []db.StackMemberWithPR) []stackMemberResponse {
 	blocked := computeBlockedBy(members)
+	conflictBlocked := computeConflictBlockedBy(members)
 	out := make([]stackMemberResponse, len(members))
 	for i, m := range members {
 		out[i] = stackMemberResponse{
@@ -83,6 +119,7 @@ func toStackMemberResponses(members []db.StackMemberWithPR) []stackMemberRespons
 			State:          m.State,
 			CIStatus:       m.CIStatus,
 			ReviewDecision: m.ReviewDecision,
+			MergeableState: effectiveStackMemberMergeableState(m, conflictBlocked),
 			Position:       m.Position,
 			IsDraft:        m.IsDraft,
 			BaseBranch:     m.BaseBranch,

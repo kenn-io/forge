@@ -521,6 +521,7 @@ type StackMemberWithPR struct {
 	ReviewDecision string
 	IsDraft        bool
 	BaseBranch     string
+	MergeableState string
 }
 
 const (

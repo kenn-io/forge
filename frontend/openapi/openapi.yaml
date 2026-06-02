@@ -3148,6 +3148,8 @@ components:
           type: string
         is_draft:
           type: boolean
+        mergeable_state:
+          type: string
         number:
           format: int64
           type: integer
@@ -3166,6 +3168,7 @@ components:
         - state
         - ci_status
         - review_decision
+        - mergeable_state
         - position
         - is_draft
         - base_branch

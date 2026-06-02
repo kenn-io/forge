@@ -103,6 +103,7 @@ function prForNumber(number: number, members = stackMembers) {
       : member?.base_branch.replace("feat/", "feat/child-") ?? pr.HeadBranch,
     CIStatus: member?.ci_status ?? pr.CIStatus,
     ReviewDecision: member?.review_decision ?? pr.ReviewDecision,
+    MergeableState: member?.mergeable_state ?? pr.MergeableState,
   };
 }
 
@@ -113,6 +114,7 @@ const stackMembers = [
     state: "open",
     ci_status: "failure",
     review_decision: "APPROVED",
+    mergeable_state: "",
     position: 1,
     is_draft: false,
     base_branch: "main",
@@ -124,6 +126,7 @@ const stackMembers = [
     state: "open",
     ci_status: "pending",
     review_decision: "APPROVED",
+    mergeable_state: "",
     position: 2,
     is_draft: false,
     base_branch: "feat/base-schema",
@@ -135,6 +138,7 @@ const stackMembers = [
     state: "open",
     ci_status: "success",
     review_decision: "APPROVED",
+    mergeable_state: "",
     position: 3,
     is_draft: false,
     base_branch: "feat/session-storage",
@@ -146,6 +150,7 @@ const stackMembers = [
     state: "open",
     ci_status: "success",
     review_decision: "APPROVED",
+    mergeable_state: "",
     position: 4,
     is_draft: false,
     base_branch: "feat/auth-flow",
@@ -157,6 +162,7 @@ const stackMembers = [
     state: "open",
     ci_status: "success",
     review_decision: "APPROVED",
+    mergeable_state: "",
     position: 5,
     is_draft: false,
     base_branch: "feat/cache-api",
@@ -168,6 +174,7 @@ const stackMembers = [
     state: "open",
     ci_status: "success",
     review_decision: "",
+    mergeable_state: "",
     position: 6,
     is_draft: false,
     base_branch: "feat/logs",
@@ -179,6 +186,7 @@ const stackMembers = [
     state: "open",
     ci_status: "pending",
     review_decision: "",
+    mergeable_state: "",
     position: 7,
     is_draft: false,
     base_branch: "feat/agent-retries",
@@ -468,6 +476,27 @@ test("stack status shares the PR detail expandable slot with CI", async ({ page 
   await expect(page).toHaveURL(/\/pulls\/github\/acme\/widgets\/101$/);
   await expect(page.getByText("7 PRs · current 1/7")).toBeVisible();
   await expect(page.locator(".stack-base-name")).toHaveText("main");
+});
+
+test("stack status surfaces inherited downstack merge conflicts", async ({ page }) => {
+  await mockStackedPR(page, {
+    stackMembers: () => [
+      { ...stackMembers[0]!, ci_status: "success", mergeable_state: "dirty" },
+      { ...stackMembers[1]!, ci_status: "success", mergeable_state: "dirty" },
+      ...stackMembers.slice(2),
+    ],
+  });
+
+  await page.goto("/pulls/github/acme/widgets/102");
+
+  await expect(page.getByText("This branch has conflicts")).toBeVisible();
+  await expect(page.getByRole("button", {
+    name: /Stacked: 2\/7, 1 downstack merge conflict/i,
+  })).toBeVisible();
+
+  await page.getByTestId("stack-chip").click();
+  await expect(page.getByText("7 PRs · current 2/7 · downstack conflict")).toBeVisible();
+  await expect(page.getByText("× Conflicts")).toHaveCount(2);
 });
 
 test("stack status follows refreshed detail stack data", async ({ page }) => {

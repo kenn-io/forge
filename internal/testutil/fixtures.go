@@ -371,17 +371,18 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 		num                int
 		title, head, base  string
 		ci, review, author string
+		mergeableState     string
 	}{
-		{10, "Auth: extract token refresh helper", "feat/auth-base", "main", "success", "APPROVED", "alice"},
-		{11, "Auth: add retry with backoff", "feat/auth-retry", "feat/auth-base", "success", "", "alice"},
-		{12, "Auth: error handling UI", "feat/auth-ui", "feat/auth-retry", "pending", "", "alice"},
+		{10, "Auth: extract token refresh helper", "feat/auth-base", "main", "success", "APPROVED", "alice", "dirty"},
+		{11, "Auth: add retry with backoff", "feat/auth-retry", "feat/auth-base", "success", "", "alice", ""},
+		{12, "Auth: error handling UI", "feat/auth-ui", "feat/auth-retry", "pending", "", "alice", ""},
 	}
 	buildToolsStackFixturePR := func(i int) *gh.PullRequest {
 		pr := stackPRs[i]
 		created := stackBase.Add(time.Duration(i) * time.Hour)
 		return setPRBranches(
 			setPRStats(
-				buildGHPR("acme", "tools", int64(2010+i), pr.num, pr.title, pr.author, "open", false, "", created, created),
+				buildGHPR("acme", "tools", int64(2010+i), pr.num, pr.title, pr.author, "open", false, pr.mergeableState, created, created),
 				50+i*10,
 				5,
 			),
@@ -404,6 +405,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 			BaseBranch:        pr.base,
 			CIStatus:          pr.ci,
 			ReviewDecision:    pr.review,
+			MergeableState:    pr.mergeableState,
 			Additions:         50 + i*10,
 			Deletions:         5,
 			CreatedAt:         created,

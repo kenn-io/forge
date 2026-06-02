@@ -21,6 +21,13 @@ func draftMember(number, pos int, ci, review string) db.StackMemberWithPR {
 	}
 }
 
+func conflictMember(number, pos int) db.StackMemberWithPR {
+	return db.StackMemberWithPR{
+		Number: number, Position: pos, State: "open",
+		CIStatus: "success", ReviewDecision: "APPROVED", MergeableState: "dirty",
+	}
+}
+
 func TestComputeStackHealth(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -59,6 +66,17 @@ func TestComputeStackHealth(t *testing.T) {
 			member(1, 1, "open", "success", "CHANGES_REQUESTED"),
 			member(2, 2, "open", "success", "APPROVED"),
 		}, "blocked"},
+		{"merge conflict with descendant is blocked", []db.StackMemberWithPR{
+			conflictMember(1, 1),
+			member(2, 2, "open", "success", "APPROVED"),
+		}, "blocked"},
+		{"single conflicted PR is not all green", []db.StackMemberWithPR{
+			conflictMember(1, 1),
+		}, "in_progress"},
+		{"conflicted tip does not block base", []db.StackMemberWithPR{
+			member(1, 1, "open", "success", "APPROVED"),
+			conflictMember(2, 2),
+		}, "base_ready"},
 		{"in progress", []db.StackMemberWithPR{
 			member(1, 1, "open", "pending", ""),
 			member(2, 2, "open", "pending", ""),
@@ -116,4 +134,25 @@ func TestComputeBlockedBy(t *testing.T) {
 	}
 	blocked = computeBlockedBy(members)
 	assert.Equal(1, blocked[2])
+
+	// Merge conflicts trigger both blocked_by and effective dirty state.
+	members = []db.StackMemberWithPR{
+		conflictMember(1, 1),
+		member(2, 2, "open", "success", "APPROVED"),
+	}
+	blocked = computeBlockedBy(members)
+	assert.Equal(1, blocked[2])
+	conflictBlocked := computeConflictBlockedBy(members)
+	assert.Equal(1, conflictBlocked[2])
+	responses := toStackMemberResponses(members)
+	assert.Equal("dirty", responses[0].MergeableState)
+	assert.Equal("dirty", responses[1].MergeableState)
+
+	// CI blockers do not turn mergeable_state into dirty.
+	members = []db.StackMemberWithPR{
+		member(1, 1, "open", "failure", ""),
+		member(2, 2, "open", "success", "APPROVED"),
+	}
+	responses = toStackMemberResponses(members)
+	assert.Empty(responses[1].MergeableState)
 }

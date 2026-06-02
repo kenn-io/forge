@@ -172,7 +172,8 @@ func (d *DB) ListStacksWithMembers(ctx context.Context, repoFilter string) ([]St
 	}
 	memberQuery := `
 		SELECT sm.stack_id, sm.merge_request_id, sm.position,
-		       p.number, p.title, p.state, p.ci_status, p.review_decision, p.is_draft, p.base_branch
+		       p.number, p.title, p.state, p.ci_status, p.review_decision,
+		       p.is_draft, p.base_branch, p.mergeable_state
 		FROM middleman_stack_members sm
 		JOIN middleman_merge_requests p ON p.id = sm.merge_request_id
 		WHERE sm.stack_id IN (` + sqlPlaceholders(len(stackIDs)) + `)
@@ -189,7 +190,8 @@ func (d *DB) ListStacksWithMembers(ctx context.Context, repoFilter string) ([]St
 		var m StackMemberWithPR
 		if err := mRows.Scan(
 			&m.StackID, &m.MergeRequestID, &m.Position,
-			&m.Number, &m.Title, &m.State, &m.CIStatus, &m.ReviewDecision, &m.IsDraft, &m.BaseBranch,
+			&m.Number, &m.Title, &m.State, &m.CIStatus, &m.ReviewDecision,
+			&m.IsDraft, &m.BaseBranch, &m.MergeableState,
 		); err != nil {
 			return nil, nil, fmt.Errorf("scan stack member: %w", err)
 		}
@@ -264,7 +266,8 @@ func (d *DB) getStackForPRWhere(ctx context.Context, where string, args ...any) 
 
 	rows, err := d.ro.QueryContext(ctx, `
 		SELECT sm.stack_id, sm.merge_request_id, sm.position,
-		       p.number, p.title, p.state, p.ci_status, p.review_decision, p.is_draft, p.base_branch
+		       p.number, p.title, p.state, p.ci_status, p.review_decision,
+		       p.is_draft, p.base_branch, p.mergeable_state
 		FROM middleman_stack_members sm
 		JOIN middleman_merge_requests p ON p.id = sm.merge_request_id
 		WHERE sm.stack_id = ?
@@ -280,11 +283,55 @@ func (d *DB) getStackForPRWhere(ctx context.Context, where string, args ...any) 
 		var m StackMemberWithPR
 		if err := rows.Scan(
 			&m.StackID, &m.MergeRequestID, &m.Position,
-			&m.Number, &m.Title, &m.State, &m.CIStatus, &m.ReviewDecision, &m.IsDraft, &m.BaseBranch,
+			&m.Number, &m.Title, &m.State, &m.CIStatus, &m.ReviewDecision,
+			&m.IsDraft, &m.BaseBranch, &m.MergeableState,
 		); err != nil {
 			return nil, nil, fmt.Errorf("scan stack member: %w", err)
 		}
 		members = append(members, m)
 	}
 	return &stack, members, rows.Err()
+}
+
+// ListMRsBlockedByStackConflicts returns merge request IDs whose stack has an
+// earlier non-merged dirty member. It is used by API response assembly to
+// surface the stack-root conflict without mutating the provider-sourced PR row.
+func (d *DB) ListMRsBlockedByStackConflicts(ctx context.Context, mrIDs []int64) (map[int64]bool, error) {
+	blocked := make(map[int64]bool)
+	if len(mrIDs) == 0 {
+		return blocked, nil
+	}
+
+	args := make([]any, len(mrIDs))
+	for i, id := range mrIDs {
+		args[i] = id
+	}
+
+	rows, err := d.ro.QueryContext(ctx, `
+		SELECT DISTINCT target.merge_request_id
+		FROM middleman_stack_members target
+		JOIN middleman_merge_requests target_pr ON target_pr.id = target.merge_request_id
+		JOIN middleman_stack_members blocker
+		  ON blocker.stack_id = target.stack_id
+		 AND blocker.position < target.position
+		JOIN middleman_merge_requests blocker_pr ON blocker_pr.id = blocker.merge_request_id
+		WHERE target.merge_request_id IN (`+sqlPlaceholders(len(mrIDs))+`)
+		  AND target_pr.state = 'open'
+		  AND blocker_pr.state != 'merged'
+		  AND blocker_pr.mergeable_state = 'dirty'`,
+		args...,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list mrs blocked by stack conflicts: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan stack conflict blocker: %w", err)
+		}
+		blocked[id] = true
+	}
+	return blocked, rows.Err()
 }

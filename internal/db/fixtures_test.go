@@ -59,6 +59,10 @@ func withMRState(state MergeRequestState) testMROpt {
 	return func(mr *MergeRequest) { mr.State = state }
 }
 
+func withMRMergeableState(state string) testMROpt {
+	return func(mr *MergeRequest) { mr.MergeableState = state }
+}
+
 func withMRAuthor(author string) testMROpt {
 	return func(mr *MergeRequest) { mr.Author = author }
 }

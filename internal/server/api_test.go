@@ -16124,7 +16124,7 @@ func seedStackedPR(
 	owner, name string, number int,
 	head, base string, state db.MergeRequestState, ci, review string,
 ) int64 {
-	return seedStackedPRDraft(t, database, owner, name, number, head, base, state, ci, review, false)
+	return seedStackedPRState(t, database, owner, name, number, head, base, state, ci, review, false, "")
 }
 
 func seedStackedPRDraft(
@@ -16132,6 +16132,24 @@ func seedStackedPRDraft(
 	owner, name string, number int,
 	head, base string, state db.MergeRequestState, ci, review string,
 	isDraft bool,
+) int64 {
+	return seedStackedPRState(t, database, owner, name, number, head, base, state, ci, review, isDraft, "")
+}
+
+func seedStackedPRMergeable(
+	t *testing.T, database *db.DB,
+	owner, name string, number int,
+	head, base string, state db.MergeRequestState, ci, review, mergeableState string,
+) int64 {
+	return seedStackedPRState(t, database, owner, name, number, head, base, state, ci, review, false, mergeableState)
+}
+
+func seedStackedPRState(
+	t *testing.T, database *db.DB,
+	owner, name string, number int,
+	head, base string, state db.MergeRequestState, ci, review string,
+	isDraft bool,
+	mergeableState string,
 ) int64 {
 	t.Helper()
 	ctx := t.Context()
@@ -16150,6 +16168,7 @@ func seedStackedPRDraft(
 		BaseBranch:     base,
 		CIStatus:       ci,
 		ReviewDecision: review,
+		MergeableState: mergeableState,
 		CreatedAt:      now,
 		UpdatedAt:      now,
 		LastActivityAt: now,
@@ -16289,6 +16308,52 @@ func TestAPIGetPullDetailIncludesStackContext(t *testing.T) {
 	require.Equal(http.StatusOK, unstacked.StatusCode())
 	require.NotNil(unstacked.JSON200)
 	assert.Nil(unstacked.JSON200.Stack)
+}
+
+func TestAPIStackBaseConflictMarksDownstreamPRsDirty(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	client := setupTestClient(t, srv)
+	ctx := t.Context()
+
+	seedStackedPRMergeable(
+		t, database, "acme", "widget", 10,
+		"feat/api-base", "main", db.MergeRequestStateOpen, "success", "APPROVED", "dirty",
+	)
+	seedStackedPR(t, database, "acme", "widget", 11, "feat/api-retry", "feat/api-base", db.MergeRequestStateOpen, "success", "APPROVED")
+	runStackDetection(t, database, "acme", "widget")
+
+	repo, err := database.GetRepoByOwnerName(ctx, "acme", "widget")
+	require.NoError(err)
+	require.NotNil(repo)
+	assert.Empty(requireMR(t, database, repo.ID, 11).MergeableState)
+
+	listResp, err := client.HTTP.ListPullsWithResponse(ctx, &generated.ListPullsParams{})
+	require.NoError(err)
+	require.Equal(http.StatusOK, listResp.StatusCode(), string(listResp.Body))
+	require.NotNil(listResp.JSON200)
+	require.Len(*listResp.JSON200, 2)
+	assert.Equal("dirty", (*listResp.JSON200)[0].MergeableState)
+	assert.Equal("dirty", (*listResp.JSON200)[1].MergeableState)
+
+	stackResp, err := client.HTTP.GetPullStackWithResponse(ctx, "gh", "acme", "widget", 11)
+	require.NoError(err)
+	require.Equal(http.StatusOK, stackResp.StatusCode(), string(stackResp.Body))
+	require.NotNil(stackResp.JSON200)
+	require.NotNil(stackResp.JSON200.Members)
+	assert.Equal("blocked", stackResp.JSON200.Health)
+	assert.Equal("dirty", (*stackResp.JSON200.Members)[0].MergeableState)
+	assert.Equal("dirty", (*stackResp.JSON200.Members)[1].MergeableState)
+	require.NotNil((*stackResp.JSON200.Members)[1].BlockedBy)
+	assert.Equal(int64(10), *(*stackResp.JSON200.Members)[1].BlockedBy)
+
+	detailResp, err := client.HTTP.GetPullWithResponse(ctx, "gh", "acme", "widget", 11)
+	require.NoError(err)
+	require.Equal(http.StatusOK, detailResp.StatusCode(), string(detailResp.Body))
+	require.NotNil(detailResp.JSON200)
+	assert.Equal("dirty", detailResp.JSON200.MergeRequest.MergeableState)
+	assert.Empty(requireMR(t, database, repo.ID, 11).MergeableState)
 }
 
 func TestAPIGetStackForPR_DraftNotBaseReady(t *testing.T) {

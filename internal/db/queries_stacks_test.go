@@ -7,9 +7,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func insertTestMRWithBranches(t *testing.T, d *DB, repoID int64, number int, head, base string, state MergeRequestState) int64 {
+func insertTestMRWithBranches(
+	t *testing.T,
+	d *DB,
+	repoID int64,
+	number int,
+	head, base string,
+	state MergeRequestState,
+	opts ...testMROpt,
+) int64 {
 	t.Helper()
-	return insertTestMRWithOptions(t, d, testMR(repoID, number, withMRTitle("PR "+head), withMRBranches(head, base), withMRState(state)))
+	allOpts := []testMROpt{withMRTitle("PR " + head), withMRBranches(head, base), withMRState(state)}
+	allOpts = append(allOpts, opts...)
+	return insertTestMRWithOptions(t, d, testMR(repoID, number, allOpts...))
 }
 
 func TestListPRsForStackDetection(t *testing.T) {
@@ -69,6 +79,60 @@ func TestUpsertStackAndReplaceMembers(t *testing.T) {
 	assert.Len(memberMap[stackID], 2)
 	assert.Equal(1, memberMap[stackID][0].Position)
 	assert.Equal(2, memberMap[stackID][1].Position)
+}
+
+func TestStackMembersIncludeMergeableState(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	repoID := insertTestRepo(t, d, "org", "repo")
+
+	mrID1 := insertTestMRWithBranches(
+		t, d, repoID, 1, "feature/a", "main", "open", withMRMergeableState("dirty"),
+	)
+	mrID2 := insertTestMRWithBranches(t, d, repoID, 2, "feature/b", "feature/a", "open")
+	stackID, err := d.UpsertStack(ctx, repoID, 1, "feature")
+	require.NoError(err)
+	err = d.ReplaceStackMembers(ctx, stackID, []StackMember{
+		{StackID: stackID, MergeRequestID: mrID1, Position: 1},
+		{StackID: stackID, MergeRequestID: mrID2, Position: 2},
+	})
+	require.NoError(err)
+
+	_, members, err := d.GetStackForPRByRepoID(ctx, repoID, 2)
+	require.NoError(err)
+	require.Len(members, 2)
+	assert.Equal("dirty", members[0].MergeableState)
+	assert.Empty(members[1].MergeableState)
+}
+
+func TestListMRsBlockedByStackConflicts(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	repoID := insertTestRepo(t, d, "org", "repo")
+
+	mrID1 := insertTestMRWithBranches(
+		t, d, repoID, 1, "feature/a", "main", "open", withMRMergeableState("dirty"),
+	)
+	mrID2 := insertTestMRWithBranches(t, d, repoID, 2, "feature/b", "feature/a", "open")
+	mrID3 := insertTestMRWithBranches(t, d, repoID, 3, "feature/c", "feature/b", "open")
+	stackID, err := d.UpsertStack(ctx, repoID, 1, "feature")
+	require.NoError(err)
+	err = d.ReplaceStackMembers(ctx, stackID, []StackMember{
+		{StackID: stackID, MergeRequestID: mrID1, Position: 1},
+		{StackID: stackID, MergeRequestID: mrID2, Position: 2},
+		{StackID: stackID, MergeRequestID: mrID3, Position: 3},
+	})
+	require.NoError(err)
+
+	blocked, err := d.ListMRsBlockedByStackConflicts(ctx, []int64{mrID1, mrID2, mrID3})
+	require.NoError(err)
+	assert.False(blocked[mrID1])
+	assert.True(blocked[mrID2])
+	assert.True(blocked[mrID3])
 }
 
 func TestDeleteStaleStacks(t *testing.T) {

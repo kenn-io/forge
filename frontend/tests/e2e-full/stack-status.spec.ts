@@ -5,11 +5,13 @@ test("stack status renders a passive base row from the full-stack API", async ({
 
   const detail = page.locator(".pull-detail");
   await expect(detail).toBeVisible();
+  await expect(detail.getByText("This branch has conflicts")).toBeVisible();
 
   await detail.getByTestId("stack-chip").click();
 
   const panel = detail.locator(".stack-panel");
-  await expect(panel).toContainText("3 PRs · current 2/3");
+  await expect(panel).toContainText("3 PRs · current 2/3 · downstack conflict");
+  await expect(panel.getByText("× Conflicts")).toHaveCount(3);
   await expect(panel.locator(".stack-member-link")).toHaveText([
     "#12 Auth: error handling UI",
     "#11 Auth: add retry with backoff",

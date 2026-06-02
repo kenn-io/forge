@@ -3426,6 +3426,7 @@ export interface components {
             blocked_by: number | null;
             ci_status: string;
             is_draft: boolean;
+            mergeable_state: string;
             /** Format: int64 */
             number: number;
             /** Format: int64 */

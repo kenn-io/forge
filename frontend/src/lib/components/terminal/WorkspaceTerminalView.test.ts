@@ -474,7 +474,7 @@ describe("WorkspaceTerminalView", () => {
 
   it("uses an in-app modal when stopping a running shell", async () => {
     localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
-    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTerminalSession());
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTwoTerminalSessions());
     const confirm = vi.fn();
     vi.stubGlobal("confirm", confirm);
 
@@ -814,7 +814,7 @@ describe("WorkspaceTerminalView", () => {
 
   it("moves a workflow shell back into the terminal panel", async () => {
     localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
-    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTerminalSession());
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTwoTerminalSessions());
 
     render(WorkspaceTerminalView, {
       props: {

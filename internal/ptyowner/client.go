@@ -466,7 +466,8 @@ func isStaleOwnerConnection(err error) bool {
 		errors.Is(err, net.ErrClosed) ||
 		errors.Is(err, syscall.ECONNREFUSED) ||
 		errors.Is(err, syscall.ECONNRESET) ||
-		errors.Is(err, syscall.EPIPE)
+		errors.Is(err, syscall.EPIPE) ||
+		isPlatformStaleOwnerConnection(err)
 }
 
 func ownerHelperEnvironment(env []string) []string {

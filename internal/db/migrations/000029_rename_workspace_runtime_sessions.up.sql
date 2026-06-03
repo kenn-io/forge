@@ -1,5 +1,8 @@
 PRAGMA foreign_keys = OFF;
 
+-- middleman_workspace_runtime_sessions is introduced by this migration and
+-- does not exist in any prior released schema. This defensive drop only clears
+-- an abandoned branch-local table before renaming the existing tmux table.
 DROP INDEX IF EXISTS middleman_workspace_runtime_sessions_workspace_id_idx;
 DROP TABLE IF EXISTS middleman_workspace_runtime_sessions;
 DROP INDEX IF EXISTS middleman_workspace_tmux_sessions_workspace_id_idx;

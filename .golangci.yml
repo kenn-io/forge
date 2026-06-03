@@ -7,6 +7,7 @@ linters:
     - errcheck
     - forbidigo
     - govet
+    - importas
     - ineffassign
     - staticcheck
     - unused
@@ -20,6 +21,11 @@ linters:
     errcheck:
       check-type-assertions: false
       check-blank: false
+    importas:
+      no-unaliased: true
+      alias:
+        - pkg: github.com/google/go-github/v84/github
+          alias: gh
     forbidigo:
       forbid:
         - pattern: '^t\.(Fatal|Fatalf|Error|Errorf|Fail|FailNow)$'
@@ -38,7 +44,7 @@ linters:
           msg: Use internal/procutil.Command so Windows subprocesses do not flash console windows.
         - pattern: '^exec\.CommandContext$'
           msg: Use internal/procutil.CommandContext so Windows subprocesses do not flash console windows.
-        - pattern: '^(gh|github)\.NewClient$'
+        - pattern: '^gh\.NewClient$'
           msg: Direct go-github client construction belongs in internal/github or provider startup; use provider capabilities instead.
         - pattern: '^githubv4\.New(Client|EnterpriseClient)$'
           msg: Direct GitHub GraphQL client construction belongs in internal/github or provider startup; use provider capabilities instead.

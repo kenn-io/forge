@@ -28,6 +28,11 @@ HTTP transports. New Go test packages should add a package-local
 `github_api_guard_test.go` blank import unless the package's `TestMain` installs
 the guard directly.
 
+`forbidigo` also rejects direct `go-github` and `githubv4` client construction
+outside `internal/github` and provider startup. Add provider capabilities or
+provider-owned helpers instead of constructing GitHub REST or GraphQL clients in
+server, sync, or test helper packages.
+
 ## Provider work
 
 When adding or changing a provider, pick tests at the boundary where users would

@@ -38,6 +38,10 @@ linters:
           msg: Use internal/procutil.Command so Windows subprocesses do not flash console windows.
         - pattern: '^exec\.CommandContext$'
           msg: Use internal/procutil.CommandContext so Windows subprocesses do not flash console windows.
+        - pattern: '^(gh|github)\.NewClient$'
+          msg: Direct go-github client construction belongs in internal/github or provider startup; use provider capabilities instead.
+        - pattern: '^githubv4\.New(Client|EnterpriseClient)$'
+          msg: Direct GitHub GraphQL client construction belongs in internal/github or provider startup; use provider capabilities instead.
       analyze-types: true
   exclusions:
     generated: lax
@@ -58,6 +62,22 @@ linters:
           - forbidigo
         path: internal/db/.*_test\.go
         text: Use internal/testutil/dbtest fixtures in tests instead of db.Open.
+      - linters:
+          - forbidigo
+        path: internal/github/.*\.go
+        text: Direct .* client construction belongs in internal/github or provider startup.
+      - linters:
+          - forbidigo
+        path: cmd/middleman/provider_startup\.go
+        text: Direct go-github client construction belongs in internal/github or provider startup.
+      - linters:
+          - forbidigo
+        path: middleman\.go
+        text: Direct go-github client construction belongs in internal/github or provider startup.
+      - linters:
+          - forbidigo
+        path: internal/server/api_test\.go
+        text: Direct GitHub GraphQL client construction belongs in internal/github or provider startup.
     paths:
       - third_party$
       - builtin$

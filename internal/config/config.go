@@ -1098,6 +1098,7 @@ func repoPathOrFullName(r Repo) string {
 var reservedSystemLaunchTargetKeys = map[string]bool{
 	"tmux":        true,
 	"plain_shell": true,
+	"shell":       true,
 }
 
 var (

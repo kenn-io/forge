@@ -46,6 +46,9 @@ func ResolveLaunchTargets(
 	seen := make(map[string]struct{}, len(agents)+len(builtinAgents))
 
 	for _, agent := range agents {
+		if isSystemLaunchTargetKey(agent.Key) {
+			continue
+		}
 		target := LaunchTarget{
 			Key:     agent.Key,
 			Label:   agent.Label,
@@ -114,6 +117,12 @@ func shellTarget(
 	}
 	target.Available = true
 	return target
+}
+
+func isSystemLaunchTargetKey(key string) bool {
+	return key == string(LaunchTargetShell) ||
+		key == string(LaunchTargetPlainShell) ||
+		key == "tmux"
 }
 
 func cloneTarget(target LaunchTarget) LaunchTarget {

@@ -160,3 +160,42 @@ func TestResolveLaunchTargetsUsesConfiguredTmuxCommand(t *testing.T) {
 	assert.Equal([]string{"/opt/bin/tmux-wrapper", "--scope", "tmux"}, shell.Command)
 	assert.True(shell.Available)
 }
+
+func TestResolveLaunchTargetsSkipsSystemKeyAgents(t *testing.T) {
+	cfg := []config.Agent{
+		{
+			Key:     "shell",
+			Label:   "Configured Shell",
+			Command: []string{"/opt/shell-agent"},
+		},
+		{
+			Key:     "plain_shell",
+			Label:   "Configured Plain Shell",
+			Command: []string{"/opt/plain-shell-agent"},
+		},
+	}
+
+	targets := ResolveLaunchTargets(
+		cfg,
+		[]string{"tmux"},
+		fakeLookPath(map[string]string{
+			"tmux": "/usr/bin/tmux",
+		}),
+	)
+
+	assert := Assert.New(t)
+	assert.Len(targetsWithKey(targets, "shell"), 1)
+	assert.Len(targetsWithKey(targets, "plain_shell"), 1)
+	assert.Equal("system", findTarget(t, targets, "shell").Source)
+	assert.Equal("system", findTarget(t, targets, "plain_shell").Source)
+}
+
+func targetsWithKey(targets []LaunchTarget, key string) []LaunchTarget {
+	matches := make([]LaunchTarget, 0, 1)
+	for _, target := range targets {
+		if target.Key == key {
+			matches = append(matches, target)
+		}
+	}
+	return matches
+}

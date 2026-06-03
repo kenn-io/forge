@@ -184,7 +184,7 @@ jobs:
       - name: Run tests (race detector)
         run: |
           mkdir -p tmp
-          go tool gotestsum --format pkgname-and-test-fails --jsonfile=tmp/test-race-output.json --jsonfile-timing-events=tmp/test-race-timing-events.json -- -race ./... -shuffle=on -parallel=4
+          go tool gotestsum --format pkgname-and-test-fails --jsonfile=tmp/test-race-output.json --jsonfile-timing-events=tmp/test-race-timing-events.json -- -race ./... -shuffle=on -parallel=2
 
       - name: Summarize race test timings
         if: ${{ !cancelled() && hashFiles('tmp/test-race-output.json') != '' }}

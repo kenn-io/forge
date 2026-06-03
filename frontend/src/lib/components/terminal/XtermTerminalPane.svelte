@@ -7,6 +7,10 @@
   import { WebglAddon } from "@xterm/addon-webgl";
   import "@xterm/xterm/css/xterm.css";
   import { workspaceTmuxWebSocketPath } from "../../api/workspace-runtime.js";
+  import {
+    createBracketedPastePayload,
+    isMultilinePaste,
+  } from "./bracketedPaste.js";
   import { buildTerminalFontFamily } from "./terminalFontFamily.js";
   import { createTmuxMouseDragFilter } from "./tmuxMouseDragFilter.js";
 
@@ -251,6 +255,20 @@
     sendResize(terminal.cols, terminal.rows);
   }
 
+  function handleTerminalPaste(event: ClipboardEvent): void {
+    if (ws?.readyState !== WebSocket.OPEN) return;
+
+    const pastedText =
+      event.clipboardData?.getData("text/plain") ||
+      event.clipboardData?.getData("text") ||
+      "";
+    if (!isMultilinePaste(pastedText)) return;
+
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    ws.send(encoder.encode(createBracketedPastePayload(pastedText)));
+  }
+
   function connect(): void {
     if (disposed || !terminal) return;
 
@@ -368,6 +386,7 @@
       ws.close();
       ws = null;
     }
+    containerEl?.removeEventListener("paste", handleTerminalPaste, true);
     if (terminal) {
       ligaturesAddon?.dispose();
       ligaturesAddon = null;
@@ -449,6 +468,7 @@
       terminal = term;
 
       term.open(containerEl);
+      containerEl.addEventListener("paste", handleTerminalPaste, true);
 
       const fit = new FitAddon();
       fitAddon = fit;

@@ -882,7 +882,35 @@ func TestOpenRenamesWorkspaceTmuxSessionsTableToRuntimeSessions(t *testing.T) {
 		`SELECT COUNT(*) FROM middleman_workspace_runtime_sessions`,
 	).Scan(&count)
 	require.NoError(err)
-	require.Zero(count)
+	require.Equal(1, count)
+	var session WorkspaceRuntimeSession
+	err = reopened.ReadDB().QueryRow(`
+		SELECT workspace_id, session_key, target_key, label, kind, scope,
+		       tmux_session, created_at
+		FROM middleman_workspace_runtime_sessions`,
+	).Scan(
+		&session.WorkspaceID,
+		&session.SessionKey,
+		&session.TargetKey,
+		&session.Label,
+		&session.Kind,
+		&session.Scope,
+		&session.TmuxSession,
+		&session.CreatedAt,
+	)
+	require.NoError(err)
+	require.Equal("ws-1", session.WorkspaceID)
+	require.NotEqual("middleman-ws-1-helper", session.SessionKey)
+	require.Regexp(`^ws-1_[0-9a-f]{16}$`, session.SessionKey)
+	require.Equal("helper", session.TargetKey)
+	require.Equal("helper", session.Label)
+	require.Equal("agent", session.Kind)
+	require.Equal("session", session.Scope)
+	require.Equal("middleman-ws-1-helper", session.TmuxSession)
+	require.Equal(
+		time.Date(2026, 5, 30, 12, 0, 0, 0, time.UTC),
+		session.CreatedAt.UTC(),
+	)
 	for _, column := range []string{
 		"workspace_id",
 		"session_key",

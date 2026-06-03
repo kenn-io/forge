@@ -19,6 +19,9 @@ type tmuxAttachLifecycle struct {
 }
 
 func (l tmuxAttachLifecycle) Detach() {
+	if l.cmd != nil && l.cmd.Process != nil {
+		_ = terminateSessionProcess(l.cmd.Process)
+	}
 	if l.ptmx != nil {
 		_ = l.ptmx.Close()
 	}

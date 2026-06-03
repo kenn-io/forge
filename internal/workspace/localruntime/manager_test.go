@@ -1156,12 +1156,7 @@ func TestManagerShutdownLeavesTmuxSessionsRunning(t *testing.T) {
 	_, statErr := os.Stat(record)
 	assert.True(os.IsNotExist(statErr), "shutdown should not invoke tmux cleanup")
 	assert.Eventually(func() bool {
-		select {
-		case <-s.done:
-			return true
-		default:
-			return false
-		}
+		return !processAlive(pid)
 	}, 5*time.Second, 25*time.Millisecond)
 	assert.Empty(mgr.ListSessions("ws-1"))
 }

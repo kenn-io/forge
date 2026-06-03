@@ -303,7 +303,7 @@ describe("RepoSettings", () => {
       screen.getByPlaceholderText("Optional local repository path"),
       { target: { value: "/Users/acme/api" } },
     );
-    await fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Save worktree base for acme/api" }));
 
     expect(mockUpdateRepoWorktreeBasePath).toHaveBeenCalledWith(
       "acme",

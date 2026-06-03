@@ -223,6 +223,7 @@
             />
             <button
               class="worktree-base-save"
+              aria-label={`Save worktree base for ${repoDisplayLabel(repo)}`}
               onclick={() => void handleWorktreeBaseSave(repo)}
               disabled={embedded || Boolean(savingWorktreeBaseByKey[key]) || worktreeBaseValue(repo, key).trim() === (repo.worktree_base_path ?? "")}
             >

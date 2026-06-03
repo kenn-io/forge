@@ -300,7 +300,10 @@ func TestReadClientFetchesMergeRequestsIssuesEventsReleasesTagsAndPipelines(t *t
 			writeJSON(w, `{"id": 1001, "iid": 7, "project_id": 42, "title": "MR detail", "state": "opened", "source_branch": "feature", "target_branch": "main", "sha": "abc", "draft": false, "work_in_progress": true, "pipeline": {"id": 501, "status": "success"}}`)
 		case "/api/v4/projects/42/merge_requests/7/discussions":
 			writeJSON(w, `[
-				{"id": "disc1", "notes": [{"id": 1, "body": "visible", "system": false, "author": {"username": "alice"}, "created_at": "2026-04-01T10:00:00Z"}]}
+				{"id": "disc1", "notes": [
+					{"id": 1, "body": "visible", "system": false, "author": {"username": "alice"}, "created_at": "2026-04-01T10:00:00Z"},
+					{"id": 2, "body": "merged", "system": true, "author": {"username": "maintainer"}, "created_at": "2026-04-01T10:30:00Z"}
+				]}
 			]`)
 		case "/api/v4/projects/42/merge_requests/7/commits":
 			writeJSON(w, `[{"id": "abcdef123456", "title": "commit title", "message": "commit body", "author_name": "Alice", "created_at": "2026-04-01T09:00:00Z"}]`)
@@ -341,9 +344,11 @@ func TestReadClientFetchesMergeRequestsIssuesEventsReleasesTagsAndPipelines(t *t
 
 	mrEvents, err := client.ListMergeRequestEvents(context.Background(), ref, 7)
 	require.NoError(err)
-	require.Len(mrEvents, 2)
+	require.Len(mrEvents, 3)
 	assert.Equal("issue_comment", mrEvents[0].EventType)
-	assert.Equal("commit", mrEvents[1].EventType)
+	assert.Equal("merged", mrEvents[1].EventType)
+	assert.Equal("maintainer", mrEvents[1].Author)
+	assert.Equal("commit", mrEvents[2].EventType)
 
 	issues, err := client.ListOpenIssues(context.Background(), ref)
 	require.NoError(err)

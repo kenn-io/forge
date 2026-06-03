@@ -1242,9 +1242,10 @@ func (s *Server) buildPullDetailResponse(
 }
 
 func withSyntheticMRLifecycleEvents(mr db.MergeRequest, events []db.MREvent) []db.MREvent {
-	hasEventType := func(eventType string) bool {
+	hasLifecycleEvent := func(eventType string, createdAt time.Time) bool {
+		createdAt = createdAt.UTC()
 		for _, event := range events {
-			if event.EventType == eventType {
+			if event.EventType == eventType && event.CreatedAt.UTC().Equal(createdAt) {
 				return true
 			}
 		}
@@ -1254,15 +1255,15 @@ func withSyntheticMRLifecycleEvents(mr db.MergeRequest, events []db.MREvent) []d
 	out := append([]db.MREvent{}, events...)
 	switch mr.State {
 	case db.MergeRequestStateMerged:
-		if mr.MergedAt != nil && !hasEventType("merged") {
+		if mr.MergedAt != nil && !hasLifecycleEvent("merged", *mr.MergedAt) {
 			out = append(out, syntheticMRLifecycleEvent(mr, -1, "merged", "merged this", *mr.MergedAt))
 		}
 	case db.MergeRequestStateClosed:
-		if mr.ClosedAt != nil && !hasEventType("closed") {
+		if mr.ClosedAt != nil && !hasLifecycleEvent("closed", *mr.ClosedAt) {
 			out = append(out, syntheticMRLifecycleEvent(mr, -2, "closed", "closed this", *mr.ClosedAt))
 		}
 	case db.MergeRequestStateOpen:
-		if mr.ClosedAt != nil && !hasEventType("reopened") {
+		if mr.ClosedAt != nil && !hasLifecycleEvent("reopened", mr.UpdatedAt) {
 			out = append(out, syntheticMRLifecycleEvent(mr, -3, "reopened", "reopened this", mr.UpdatedAt))
 		}
 	}

@@ -302,7 +302,14 @@ func NormalizeMergeRequestDiscussions(
 			continue
 		}
 		for _, note := range discussion.Notes {
-			if note == nil || note.System {
+			if note == nil {
+				continue
+			}
+			if note.System {
+				event, ok := normalizeMergeRequestSystemNote(repo, mrNumber, note)
+				if ok {
+					events = append(events, event)
+				}
 				continue
 			}
 			events = append(events, platform.MergeRequestEvent{

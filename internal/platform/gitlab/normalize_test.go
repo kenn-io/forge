@@ -488,7 +488,13 @@ func TestNormalizeMergeRequestDiscussions(t *testing.T) {
 			Notes: []*gitlab.Note{
 				{
 					ID:     201,
-					Body:   "system note",
+					Body:   "merged",
+					System: true,
+					Author: gitlab.NoteAuthor{Username: "maintainer"},
+				},
+				{
+					ID:     203,
+					Body:   "changed milestone",
 					System: true,
 					Author: gitlab.NoteAuthor{Username: "gitlab"},
 				},
@@ -506,8 +512,8 @@ func TestNormalizeMergeRequestDiscussions(t *testing.T) {
 
 	events := NormalizeMergeRequestDiscussions(repo, 7, discussions)
 
-	// Should have 3 events (system note filtered)
-	assert.Len(events, 3)
+	// Should have 4 events (unrecognized system note filtered)
+	assert.Len(events, 4)
 
 	// First note from first discussion
 	assert.Equal("disc-abc123", events[0].ThreadID)
@@ -523,10 +529,14 @@ func TestNormalizeMergeRequestDiscussions(t *testing.T) {
 	assert.Equal("author", events[1].Author)
 	assert.True(events[1].Resolved)
 
-	// Note from second discussion (system note skipped)
-	assert.Equal("disc-def456", events[2].ThreadID)
-	assert.Equal("commenter", events[2].Author)
-	assert.False(events[2].Resolvable)
+	assert.Equal("merged", events[2].EventType)
+	assert.Equal("maintainer", events[2].Author)
+	assert.Equal("merged", events[2].Summary)
+
+	// User note from second discussion
+	assert.Equal("disc-def456", events[3].ThreadID)
+	assert.Equal("commenter", events[3].Author)
+	assert.False(events[3].Resolvable)
 }
 
 func TestNormalizeIssueDiscussions(t *testing.T) {

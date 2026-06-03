@@ -79,7 +79,7 @@ frontend-deps:
 
 # Build frontend SPA and copy into embed directory
 frontend: frontend-deps
-	cd frontend && bun run build
+	cd frontend && ../node_modules/.bin/vp build --logLevel warn
 	bun scripts/check-asset-base-paths.mjs
 	rm -rf internal/web/dist
 	cp -r frontend/dist internal/web/dist
@@ -89,13 +89,13 @@ frontend: frontend-deps
 frontend-dev:
 	./scripts/frontend-dev.sh $(ARGS)
 
-# Run Vite dev server with Bun (use alongside `make dev`)
+# Run Vite+ dev server after installing dependencies with Bun (use alongside `make dev`)
 frontend-dev-bun: frontend-deps
-	cd frontend && bun run dev
+	cd frontend && ../node_modules/.bin/vp dev
 
 # Run TypeScript/Svelte lint and type checks
 frontend-check: frontend-deps
-	bun run check
+	./node_modules/.bin/vp check frontend packages/ui '!packages/ui/src/api/generated/**' '!packages/ui/src/api/roborev/generated/**' --no-error-on-unmatched-pattern
 
 # Prevent production frontend code from bypassing generated API clients
 frontend-api-client-check:
@@ -289,10 +289,10 @@ help:
 	@echo "  dev-ephemeral  - Run backend and frontend dev servers on free ports with copied DB state and status JSON"
 	@echo "  dev-ephemeral-stop - Stop the default ephemeral dev stack, or use STATUS=/path/to/dev-ephemeral.json"
 	@echo "  frontend-deps  - Install Bun workspace dependencies for frontend and packages/ui"
-	@echo "  frontend       - Build frontend SPA"
+	@echo "  frontend       - Build frontend SPA with Vite+"
 	@echo "  frontend-dev   - Install deps and run Vite dev server, logging to tmp/logs/frontend-dev.log (honors MIDDLEMAN_CONFIG)"
-	@echo "  frontend-dev-bun - Install deps with Bun and run Vite dev server (honors MIDDLEMAN_CONFIG)"
-	@echo "  frontend-check - Run TS/Svelte lint and typecheck for frontend and packages/ui"
+	@echo "  frontend-dev-bun - Install deps with Bun and run Vite+ dev server (honors MIDDLEMAN_CONFIG)"
+	@echo "  frontend-check - Run Vite+ format, lint, and type checks for frontend and packages/ui"
 	@echo "  frontend-api-client-check - Prevent manual /api/v1 frontend calls outside generated clients"
 	@echo "  font-size-token-check - Enforce --font-size design tokens in frontend styles"
 	@echo "  api-generate   - Regenerate checked-in OpenAPI and TS schema"

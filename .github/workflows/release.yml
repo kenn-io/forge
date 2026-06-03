@@ -38,7 +38,7 @@ jobs:
           bun-version: "1.3.11"
 
       - name: Build frontend
-        run: cd frontend && bun install --frozen-lockfile && bun run build
+        run: bun install --frozen-lockfile && cd frontend && ../node_modules/.bin/vp build --logLevel warn
 
       - name: Embed frontend
         run: |
@@ -103,7 +103,7 @@ jobs:
           bun-version: "1.3.11"
 
       - name: Build frontend
-        run: cd frontend && bun install --frozen-lockfile && bun run build
+        run: bun install --frozen-lockfile && cd frontend && ../node_modules/.bin/vp build --logLevel warn
 
       - name: Embed frontend
         shell: bash

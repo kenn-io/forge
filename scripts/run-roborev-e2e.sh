@@ -29,7 +29,8 @@ trap cleanup EXIT
 # 1. Build frontend + e2e server (unless SKIP_BUILD=1)
 if [ "${SKIP_BUILD:-}" != "1" ]; then
   echo "--- build frontend ---"
-  cd "$REPO_ROOT/frontend" && bun install --frozen-lockfile && bun run build
+  cd "$REPO_ROOT" && bun install --frozen-lockfile
+  cd "$REPO_ROOT/frontend" && ../node_modules/.bin/vp build --logLevel warn
   rm -rf "$REPO_ROOT/internal/web/dist"
   cp -r "$REPO_ROOT/frontend/dist" "$REPO_ROOT/internal/web/dist"
 

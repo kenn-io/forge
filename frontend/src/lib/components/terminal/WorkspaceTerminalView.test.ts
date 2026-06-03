@@ -47,51 +47,61 @@ class MockWebSocket {
 }
 
 vi.mock("@xterm/xterm", () => ({
-  Terminal: vi.fn().mockImplementation((options) => ({
-    cols: 80,
-    rows: 24,
-    clearTextureAtlas: vi.fn(),
-    dispose: mocks.mockDispose,
-    loadAddon: mocks.mockLoadAddon,
-    onBinary: vi.fn(),
-    onData: mocks.mockOnData,
-    open: mocks.mockOpen,
-    refresh: vi.fn(),
-    write: mocks.terminalWrite,
-    options: { ...options },
-  })),
+  Terminal: vi.fn().mockImplementation(function (options) {
+    return {
+      cols: 80,
+      rows: 24,
+      clearTextureAtlas: vi.fn(),
+      dispose: mocks.mockDispose,
+      loadAddon: mocks.mockLoadAddon,
+      onBinary: vi.fn(),
+      onData: mocks.mockOnData,
+      open: mocks.mockOpen,
+      refresh: vi.fn(),
+      write: mocks.terminalWrite,
+      options: { ...options },
+    };
+  }),
 }));
 
 vi.mock("@xterm/addon-fit", () => ({
-  FitAddon: vi.fn().mockImplementation(() => ({
-    fit: mocks.mockFit,
-  })),
+  FitAddon: vi.fn().mockImplementation(function () {
+    return {
+      fit: mocks.mockFit,
+    };
+  }),
 }));
 
 vi.mock("@xterm/addon-webgl", () => ({
-  WebglAddon: vi.fn().mockImplementation(() => ({
-    dispose: vi.fn(),
-    onContextLoss: vi.fn(),
-  })),
+  WebglAddon: vi.fn().mockImplementation(function () {
+    return {
+      dispose: vi.fn(),
+      onContextLoss: vi.fn(),
+    };
+  }),
 }));
 
 vi.mock("@xterm/xterm/css/xterm.css", () => ({}));
 
 vi.mock("ghostty-web", () => ({
   init: vi.fn().mockResolvedValue(undefined),
-  FitAddon: vi.fn().mockImplementation(() => ({
-    fit: mocks.mockFit,
-  })),
-  Terminal: vi.fn().mockImplementation((options) => ({
-    cols: 80,
-    rows: 24,
-    open: mocks.mockOpen,
-    loadAddon: mocks.mockLoadAddon,
-    onData: mocks.mockOnData,
-    dispose: mocks.mockDispose,
-    write: mocks.terminalWrite,
-    options: { ...options },
-  })),
+  FitAddon: vi.fn().mockImplementation(function () {
+    return {
+      fit: mocks.mockFit,
+    };
+  }),
+  Terminal: vi.fn().mockImplementation(function (options) {
+    return {
+      cols: 80,
+      rows: 24,
+      open: mocks.mockOpen,
+      loadAddon: mocks.mockLoadAddon,
+      onData: mocks.mockOnData,
+      dispose: mocks.mockDispose,
+      write: mocks.terminalWrite,
+      options: { ...options },
+    };
+  }),
 }));
 
 vi.mock("@middleman/ui", async (importOriginal) => {

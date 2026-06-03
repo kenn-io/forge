@@ -372,7 +372,7 @@ make build-release  # Optimized, stripped release binary
 make test           # All Go tests
 make test-short     # Fast tests only
 make lint           # golangci-lint
-make frontend-check # Svelte and TypeScript checks
+make frontend-check # Vite+ formatting, lint, and type checks
 make api-generate   # Regenerate OpenAPI spec and clients
 make clean          # Remove build artifacts
 ```

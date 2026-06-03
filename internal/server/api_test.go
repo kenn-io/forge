@@ -20697,7 +20697,7 @@ func TestWorkspaceRuntimeRestoresTmuxShellAfterRestartE2E(t *testing.T) {
 	)
 }
 
-func TestWorkspaceRuntimeRestoreForgetsUnownedTmuxShellE2E(t *testing.T) {
+func TestWorkspaceRuntimeRestoreKeepsStoredTmuxShellWithDifferentOwnerMarkerE2E(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("fake tmux fixture uses Unix shell semantics")
 	}
@@ -20737,9 +20737,9 @@ func TestWorkspaceRuntimeRestoreForgetsUnownedTmuxShellE2E(t *testing.T) {
 
 	stored, err = fixture.database.ListWorkspaceRuntimeTmuxSessions(ctx, ws.Id)
 	require.NoError(err)
-	assert.Empty(stored)
+	require.Len(stored, 1)
 	_, err = os.Stat(sessionPath)
-	require.NoError(err, "unowned tmux session should not be killed")
+	require.NoError(err, "stored tmux session should not be killed")
 
 	runtimeResp, err := restartedClient.HTTP.GetWorkspaceRuntimeWithResponse(
 		ctx, ws.Id,
@@ -20748,7 +20748,9 @@ func TestWorkspaceRuntimeRestoreForgetsUnownedTmuxShellE2E(t *testing.T) {
 	require.Equal(http.StatusOK, runtimeResp.StatusCode())
 	require.NotNil(runtimeResp.JSON200)
 	require.NotNil(runtimeResp.JSON200.Sessions)
-	assert.Empty(*runtimeResp.JSON200.Sessions)
+	require.Len(*runtimeResp.JSON200.Sessions, 1)
+	assert.Equal(stored[0].SessionKey, (*runtimeResp.JSON200.Sessions)[0].Key)
+	assert.Equal(string(localruntime.SessionStatusRunning), (*runtimeResp.JSON200.Sessions)[0].Status)
 }
 
 // TestWorkspaceRuntimePlainShellTerminalWebSocketE2E exercises the runtime

@@ -734,24 +734,6 @@ func (s *Server) restoreRuntimeSessions(ctx context.Context) error {
 		if err == nil {
 			continue
 		}
-		var ownerErr localruntime.TmuxSessionOwnershipError
-		if errors.As(err, &ownerErr) && s.workspaces != nil {
-			deleted, forgetErr := s.workspaces.ForgetRuntimeSessionCreatedAt(
-				ctx, session.WorkspaceID, session.SessionKey, session.CreatedAt,
-			)
-			if forgetErr != nil {
-				return forgetErr
-			}
-			slog.Warn(
-				"forget unowned runtime tmux session",
-				"workspace_id", session.WorkspaceID,
-				"target_key", session.TargetKey,
-				"tmux_session", session.TmuxSession,
-				"deleted", deleted,
-				"err", err,
-			)
-			continue
-		}
 		if errors.Is(err, localruntime.ErrSessionNotFound) {
 			if _, forgetErr := s.workspaces.ForgetRuntimeSessionCreatedAt(
 				ctx, session.WorkspaceID, session.SessionKey, session.CreatedAt,

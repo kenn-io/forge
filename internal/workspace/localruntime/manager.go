@@ -461,16 +461,12 @@ func (m *Manager) restoreRuntimeSession(
 		)
 		return nil
 	}
-	if tmuxSession != "" {
-		if err := m.validateRestoredTmuxSessionOwner(ctx, tmuxSession); err != nil {
-			return err
-		}
-	} else if m.ptyOwnerRuntime == nil {
+	if tmuxSession == "" && m.ptyOwnerRuntime == nil {
 		return fmt.Errorf(
 			"%w: %q: pty owner runtime unavailable",
 			ErrSessionUnavailable, key,
 		)
-	} else if !m.ptyOwnerRuntime.HasState(key) {
+	} else if tmuxSession == "" && !m.ptyOwnerRuntime.HasState(key) {
 		return fmt.Errorf(
 			"%w: %q: pty owner state missing",
 			ErrSessionUnavailable, key,
@@ -551,6 +547,12 @@ func (m *Manager) restoreRuntimeSession(
 		)
 	}
 	if err != nil {
+		if tmuxSession != "" && isTmuxCommandUnavailable(err) {
+			return fmt.Errorf(
+				"%w: restored tmux attach unavailable for %q: %v",
+				ErrSessionUnavailable, key, err,
+			)
+		}
 		return err
 	}
 	started.tmuxSession = tmuxSession
@@ -589,63 +591,6 @@ func (m *Manager) restoredRuntimeCommand(
 		command = []string{"tmux"}
 	}
 	return append(command, "attach-session", "-t", restored.TmuxSession), nil
-}
-
-// TmuxSessionOwnershipError reports that a restored tmux session exists but
-// does not carry this manager's owner marker.
-type TmuxSessionOwnershipError struct {
-	Session string
-	Err     error
-}
-
-func (e TmuxSessionOwnershipError) Error() string {
-	if e.Err == nil {
-		return fmt.Sprintf("tmux session %q is not owned by this manager", e.Session)
-	}
-	return fmt.Sprintf(
-		"tmux session %q ownership validation failed: %v",
-		e.Session, e.Err,
-	)
-}
-
-func (e TmuxSessionOwnershipError) Unwrap() error {
-	return e.Err
-}
-
-func (m *Manager) validateRestoredTmuxSessionOwner(
-	ctx context.Context,
-	session string,
-) error {
-	if m.tmuxOwnerMarker == "" {
-		return nil
-	}
-	command := slices.Clone(m.tmuxCommand)
-	if len(command) == 0 {
-		command = []string{"tmux"}
-	}
-	var err error
-	command, err = resolveTmuxCommand(command)
-	if err != nil {
-		return fmt.Errorf(
-			"%w: tmux owner validation unavailable for %q: %v",
-			ErrSessionUnavailable, session, err,
-		)
-	}
-	err = (tmuxLauncher{
-		TmuxCommand: command,
-		Session:     session,
-		OwnerMarker: m.tmuxOwnerMarker,
-	}).validateOwner(ctx)
-	if err == nil {
-		return nil
-	}
-	if isTmuxCommandUnavailable(err) {
-		return fmt.Errorf(
-			"%w: tmux owner validation unavailable for %q: %v",
-			ErrSessionUnavailable, session, err,
-		)
-	}
-	return TmuxSessionOwnershipError{Session: session, Err: err}
 }
 
 func isTmuxCommandUnavailable(err error) bool {

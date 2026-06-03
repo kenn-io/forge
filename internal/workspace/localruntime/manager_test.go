@@ -723,24 +723,22 @@ func TestManagerRestorePtyOwnerAttachFailureIsUnavailable(t *testing.T) {
 	assert.Empty(mgr.ListSessions("ws-1"))
 }
 
-func TestManagerRestoreTmuxSessionRejectsUnownedSession(t *testing.T) {
+func TestManagerRestoreTmuxSessionAttachesStoredSessionWithoutOwnerValidation(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
 
 	dir := t.TempDir()
-	record := filepath.Join(dir, "tmux-record")
 	tmuxPath := filepath.Join(dir, "tmux")
-	require.NoError(os.WriteFile(tmuxPath, fmt.Appendf(nil, `#!/bin/sh
-printf '%%s\0' "$#" "$@" >> %s
+	require.NoError(os.WriteFile(tmuxPath, []byte(`#!/bin/sh
 if [ "$1" = "show-options" ]; then
-  printf 'attacker-owner\n'
-  exit 0
+  exit 99
 fi
 if [ "$1" = "attach-session" ]; then
-  exit 2
+  trap 'exit 0' HUP INT TERM
+  while :; do sleep 1; done
 fi
 exit 0
-`, shellquote.Join(record)), 0o755))
+`), 0o755))
 	mgr := NewManager(Options{
 		TmuxCommand:     []string{tmuxPath},
 		TmuxOwnerMarker: "middleman:test-owner",
@@ -755,12 +753,8 @@ exit 0
 		CreatedAt:   time.Date(2026, 5, 28, 12, 0, 0, 0, time.UTC),
 	}})
 
-	var ownershipErr TmuxSessionOwnershipError
-	require.ErrorAs(err, &ownershipErr)
-	assert.Equal("middleman-ws-1-shell", ownershipErr.Session)
-	assert.NotContains(readNullArgvRecord(t, record), []string{
-		"attach-session", "-t", "middleman-ws-1-shell",
-	})
+	require.NoError(err)
+	assert.Len(mgr.ListSessions("ws-1"), 1)
 }
 
 func TestManagerRestoreTmuxSessionUnavailableWhenCommandCannotResolve(

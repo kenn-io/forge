@@ -1251,6 +1251,19 @@ func withSyntheticMRLifecycleEvents(mr db.MergeRequest, events []db.MREvent) []d
 		}
 		return false
 	}
+	hasReopenedEventAfterClose := func(closedAt time.Time) bool {
+		closedAt = closedAt.UTC()
+		for _, event := range events {
+			if event.EventType != "reopened" {
+				continue
+			}
+			eventAt := event.CreatedAt.UTC()
+			if eventAt.Equal(closedAt) || eventAt.After(closedAt) {
+				return true
+			}
+		}
+		return false
+	}
 
 	out := append([]db.MREvent{}, events...)
 	switch mr.State {
@@ -1263,7 +1276,7 @@ func withSyntheticMRLifecycleEvents(mr db.MergeRequest, events []db.MREvent) []d
 			out = append(out, syntheticMRLifecycleEvent(mr, -2, "closed", "closed this", *mr.ClosedAt))
 		}
 	case db.MergeRequestStateOpen:
-		if mr.ClosedAt != nil && !hasLifecycleEvent("reopened", mr.UpdatedAt) {
+		if mr.ClosedAt != nil && !hasReopenedEventAfterClose(*mr.ClosedAt) {
 			out = append(out, syntheticMRLifecycleEvent(mr, -3, "reopened", "reopened this", mr.UpdatedAt))
 		}
 	}

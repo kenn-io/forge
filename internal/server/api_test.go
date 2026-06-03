@@ -1837,6 +1837,10 @@ func TestAPIGetPullIncludesLifecycleTimelineEvents(t *testing.T) {
 		withSeedPRTimes(createdAt, reopenedAt, reopenedAt),
 		withSeedPRLifecycle(db.MergeRequestStateOpen, nil, &previousClosedAt),
 	)
+	duplicateReopenedMRID := seedPR(t, database, "acme", "widget", 7,
+		withSeedPRTimes(createdAt, reopenedAt.Add(time.Hour), reopenedAt.Add(time.Hour)),
+		withSeedPRLifecycle(db.MergeRequestStateOpen, nil, &previousClosedAt),
+	)
 	require.NoError(database.UpsertMREvents(ctx, []db.MREvent{{
 		MergeRequestID: duplicateMRID,
 		EventType:      "merged",
@@ -1856,8 +1860,15 @@ func TestAPIGetPullIncludesLifecycleTimelineEvents(t *testing.T) {
 		EventType:      "reopened",
 		Author:         "maintainer",
 		Summary:        "previously reopened by provider",
-		CreatedAt:      previousClosedAt.Add(30 * time.Minute),
+		CreatedAt:      previousClosedAt.Add(-30 * time.Minute),
 		DedupeKey:      "provider-reopened",
+	}, {
+		MergeRequestID: duplicateReopenedMRID,
+		EventType:      "reopened",
+		Author:         "maintainer",
+		Summary:        "reopened by provider",
+		CreatedAt:      previousClosedAt.Add(30 * time.Minute),
+		DedupeKey:      "provider-current-reopened",
 	}}))
 
 	mergedResp, err := client.HTTP.GetPullWithResponse(ctx, "gh", "acme", "widget", 1)
@@ -1926,7 +1937,17 @@ func TestAPIGetPullIncludesLifecycleTimelineEvents(t *testing.T) {
 	assert.Equal("reopened this", (*repeatedReopenedResp.JSON200.Events)[0].Summary)
 	assert.True((*repeatedReopenedResp.JSON200.Events)[0].CreatedAt.Equal(reopenedAt))
 	assert.Equal("previously reopened by provider", (*repeatedReopenedResp.JSON200.Events)[1].Summary)
-	assert.True((*repeatedReopenedResp.JSON200.Events)[1].CreatedAt.Equal(previousClosedAt.Add(30 * time.Minute)))
+	assert.True((*repeatedReopenedResp.JSON200.Events)[1].CreatedAt.Equal(previousClosedAt.Add(-30 * time.Minute)))
+
+	duplicateReopenedResp, err := client.HTTP.GetPullWithResponse(ctx, "gh", "acme", "widget", 7)
+	require.NoError(err)
+	require.Equal(http.StatusOK, duplicateReopenedResp.StatusCode())
+	require.NotNil(duplicateReopenedResp.JSON200)
+	require.NotNil(duplicateReopenedResp.JSON200.Events)
+	require.Len(*duplicateReopenedResp.JSON200.Events, 1)
+	assert.Equal("reopened", (*duplicateReopenedResp.JSON200.Events)[0].EventType)
+	assert.Equal("reopened by provider", (*duplicateReopenedResp.JSON200.Events)[0].Summary)
+	assert.NotEqual(int64(-3), (*duplicateReopenedResp.JSON200.Events)[0].ID)
 }
 
 func TestAPIGetPullIncludesDeletedCommentTimelineEvent(t *testing.T) {

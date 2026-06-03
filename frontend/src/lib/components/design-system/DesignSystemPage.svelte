@@ -107,6 +107,7 @@
           <p>Typical small-chip usage from list and detail surfaces.</p>
           <div class="chip-row">
             <Chip size="sm" class="chip--muted">+120/-12</Chip>
+            <Chip size="sm" class="chip--muted" uppercase={false} dataTestid="descender-chip">kenn-io/msgvault</Chip>
             <Chip size="sm" class="chip--teal">Worktree</Chip>
             <Chip size="sm" class="chip--amber">Draft</Chip>
           </div>

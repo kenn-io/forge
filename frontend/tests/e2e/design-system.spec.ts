@@ -23,6 +23,8 @@ test("design system page renders chip matrix with shared styles", async ({ page 
     hasText: "Muted",
   }).first();
   const plainCaseChip = page.getByText("plain case", { exact: true }).first();
+  const descenderChip = page.getByText("kenn-io/msgvault", { exact: true })
+    .first();
   const interactiveChip = page.getByRole("button", {
     name: "Interactive",
   }).first();
@@ -31,6 +33,7 @@ test("design system page renders chip matrix with shared styles", async ({ page 
   await expect(mdGreenChip).toBeVisible();
   await expect(mutedChip).toBeVisible();
   await expect(plainCaseChip).toBeVisible();
+  await expect(descenderChip).toBeVisible();
   await expect(interactiveChip).toBeVisible();
 
   const styles = await Promise.all([
@@ -65,6 +68,13 @@ test("design system page renders chip matrix with shared styles", async ({ page 
         letterSpacing: styles.letterSpacing,
       };
     }),
+    descenderChip.evaluate((node) => {
+      const chip = node.closest(".chip");
+      const chipBox = chip?.getBoundingClientRect();
+      return {
+        chipHeight: chipBox?.height ?? 0,
+      };
+    }),
     interactiveChip.evaluate((node) => {
       const styles = getComputedStyle(node);
       return {
@@ -84,7 +94,25 @@ test("design system page renders chip matrix with shared styles", async ({ page 
   expect(styles[2].backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
   expect(styles[3].textTransform).toBe("none");
   expect(styles[3].letterSpacing).toBe("normal");
-  expect(styles[4].cursor).toBe("pointer");
+  expect(styles[4].chipHeight).toBe(18);
+  expect(styles[5].cursor).toBe("pointer");
+});
+
+test("chip descenders render without clipping", async ({ page }, testInfo) => {
+  test.skip(
+    process.env.MIDDLEMAN_VISUAL_E2E !== "1",
+    "Set MIDDLEMAN_VISUAL_E2E=1 to run chip visual snapshots.",
+  );
+  test.skip(
+    testInfo.project.name !== "chromium",
+    "Chip visual snapshot is Chromium-only.",
+  );
+
+  await page.goto("/design-system");
+  const descenderChip = page.getByTestId("descender-chip");
+
+  await expect(descenderChip).toBeVisible();
+  await expect(descenderChip).toHaveScreenshot("chip-descenders.png");
 });
 
 test("design system page ignores list keyboard navigation shortcuts", async ({ page }) => {

@@ -46,6 +46,8 @@ func TestTmuxLauncherAgentOperationsKeepEnvValuesOutOfArgv(t *testing.T) {
 	assert.Contains(newSession, "middleman:test-owner")
 	assert.Contains(newSessionText, `XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR-}"`)
 	assert.Contains(newSessionText, "__middleman_env_file=")
+	assert.Contains(newSessionText, "trap __middleman_cleanup_env_file EXIT")
+	assert.Contains(newSessionText, "trap - EXIT")
 	assert.NotContains(newSessionText, "argv-visible-value")
 	assert.NotContains(newSessionText, "secret-value")
 }

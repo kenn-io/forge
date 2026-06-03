@@ -230,9 +230,13 @@ func (l tmuxLauncher) newSessionPaneCommand() (string, func(), error) {
 	}
 	return strings.Join([]string{
 		"__middleman_env_file=" + shellCommand([]string{path}),
+		`__middleman_cleanup_env_file() { /bin/rm -f "$__middleman_env_file"; }`,
+		`trap __middleman_cleanup_env_file EXIT`,
 		`if [ ! -r "$__middleman_env_file" ]; then exit 127; fi`,
 		`. "$__middleman_env_file"`,
-		`/bin/rm -f "$__middleman_env_file"`,
+		`__middleman_cleanup_env_file`,
+		`trap - EXIT`,
+		`unset -f __middleman_cleanup_env_file`,
 		`unset __middleman_env_file`,
 		l.Pane.paneCommand,
 	}, "\n"), cleanup, nil
@@ -260,6 +264,9 @@ func writeTmuxPaneEnvironment(env []string, keys []string) (string, error) {
 		content.WriteByte('\n')
 	}
 
+	// This short-lived handoff keeps preserved values out of tmux argv. The
+	// file is 0600 and cleaned on tmux launch failure and pane shell exit, but
+	// it is not intended to be a same-user sandbox boundary.
 	file, err := os.CreateTemp(tmuxPaneEnvironmentTempDir(), "middleman-tmux-env-*")
 	if err != nil {
 		return "", err

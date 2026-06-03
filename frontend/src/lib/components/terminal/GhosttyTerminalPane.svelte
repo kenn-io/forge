@@ -14,6 +14,7 @@
   import { getStores } from "@middleman/ui";
   import { FitAddon, Terminal } from "ghostty-web";
   import { workspaceTmuxWebSocketPath } from "../../api/workspace-runtime.js";
+  import { isMultilinePaste } from "./bracketedPaste.js";
   import { buildTerminalFontFamily } from "./terminalFontFamily.js";
   import { createTmuxMouseDragFilter } from "./tmuxMouseDragFilter.js";
 
@@ -194,6 +195,20 @@
     return bytes.slice().buffer;
   }
 
+  function handleTerminalPaste(event: ClipboardEvent): void {
+    if (ws?.readyState !== WebSocket.OPEN || !terminal) return;
+
+    const pastedText =
+      event.clipboardData?.getData("text/plain") ||
+      event.clipboardData?.getData("text") ||
+      "";
+    if (!isMultilinePaste(pastedText)) return;
+
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    terminal.paste(pastedText);
+  }
+
   function refreshVisibleTerminal(): void {
     if (!terminal) return;
 
@@ -324,6 +339,7 @@
       ws.close();
       ws = null;
     }
+    containerEl?.removeEventListener("paste", handleTerminalPaste, true);
     if (terminal) {
       terminal.dispose();
       terminal = null;
@@ -368,6 +384,7 @@
       terminal = term;
 
       term.open(containerEl);
+      containerEl.addEventListener("paste", handleTerminalPaste, true);
 
       const fit = new FitAddon();
       fitAddon = fit;

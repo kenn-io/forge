@@ -6,6 +6,7 @@ const mockFit = vi.fn();
 const mockOpen = vi.fn();
 const mockLoadAddon = vi.fn();
 const mockOnData = vi.fn();
+const mockPaste = vi.fn();
 const mockDispose = vi.fn();
 const mockInit = vi.fn().mockResolvedValue(undefined);
 const terminalCtor = vi.fn();
@@ -67,6 +68,7 @@ vi.mock("ghostty-web", () => ({
       open: mockOpen,
       loadAddon: mockLoadAddon,
       onData: mockOnData,
+      paste: mockPaste,
       dispose: mockDispose,
       write: terminalWrite,
       options: { ...options },
@@ -89,6 +91,13 @@ describe("GhosttyTerminalPane", () => {
     mockOpen.mockReset();
     mockLoadAddon.mockReset();
     mockOnData.mockReset();
+    mockPaste.mockReset();
+    mockPaste.mockImplementation((text: string) => {
+      const dataHandler = mockOnData.mock.calls[0]?.[0] as
+        | ((data: string) => void)
+        | undefined;
+      dataHandler?.(`\x1b[200~${text}\x1b[201~`);
+    });
     mockDispose.mockReset();
     mockInit.mockClear();
     terminalWrite.mockReset();
@@ -284,6 +293,66 @@ describe("GhosttyTerminalPane", () => {
     expect(Array.from(new Uint8Array(sent as ArrayBuffer))).toEqual([
       0x80, 0x81,
     ]);
+  });
+
+  it("sends browser multiline paste through ghostty bracketed paste handling", async () => {
+    const { container } = await renderStarted({ workspaceId: "ws-123" });
+
+    socketAt(0).sent = [];
+    const terminalContainer = container.querySelector(".terminal-container");
+    expect(terminalContainer).toBeDefined();
+    const laterPasteListener = vi.fn();
+    terminalContainer!.addEventListener("paste", laterPasteListener, true);
+
+    const event = new Event("paste", {
+      bubbles: true,
+      cancelable: true,
+    }) as ClipboardEvent;
+    Object.defineProperty(event, "clipboardData", {
+      value: {
+        getData: vi.fn((type: string) =>
+          type === "text/plain" ? "first\nsecond\nthird" : "",
+        ),
+      },
+    });
+
+    const defaultAllowed = terminalContainer!.dispatchEvent(event);
+
+    expect(defaultAllowed).toBe(false);
+    expect(laterPasteListener).not.toHaveBeenCalled();
+    expect(mockPaste).toHaveBeenCalledWith("first\nsecond\nthird");
+    expect(sentText(socketAt(0), 0)).toBe(
+      "\x1b[200~first\nsecond\nthird\x1b[201~",
+    );
+  });
+
+  it("leaves single-line browser paste for ghostty default handling", async () => {
+    const { container } = await renderStarted({ workspaceId: "ws-123" });
+
+    socketAt(0).sent = [];
+    const terminalContainer = container.querySelector(".terminal-container");
+    expect(terminalContainer).toBeDefined();
+    const laterPasteListener = vi.fn();
+    terminalContainer!.addEventListener("paste", laterPasteListener, true);
+
+    const event = new Event("paste", {
+      bubbles: true,
+      cancelable: true,
+    }) as ClipboardEvent;
+    Object.defineProperty(event, "clipboardData", {
+      value: {
+        getData: vi.fn((type: string) =>
+          type === "text/plain" ? "single line" : "",
+        ),
+      },
+    });
+
+    const defaultAllowed = terminalContainer!.dispatchEvent(event);
+
+    expect(defaultAllowed).toBe(true);
+    expect(laterPasteListener).toHaveBeenCalledTimes(1);
+    expect(mockPaste).not.toHaveBeenCalled();
+    expect(socketAt(0).sent).toHaveLength(0);
   });
 
   it("does not open a websocket when initialStatus is exited", async () => {

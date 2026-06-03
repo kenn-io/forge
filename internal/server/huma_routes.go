@@ -5318,6 +5318,17 @@ func (s *Server) renameWorkspaceRuntimeSession(
 	)
 	if err != nil {
 		if errors.Is(err, localruntime.ErrSessionNotFound) {
+			stored, renamed, renameErr := s.renameStoredRuntimeSession(
+				ctx, summary.ID, input.SessionKey, label,
+			)
+			if renameErr != nil {
+				return nil, problemInternal(
+					"rename stored runtime session: " + renameErr.Error(),
+				)
+			}
+			if renamed {
+				return &workspaceRuntimeSessionOutput{Body: stored}, nil
+			}
 			return nil, problemNotFound(CodeNotFound, err.Error(), nil)
 		}
 		return nil, problemInternal("rename runtime session: " + err.Error())
@@ -5335,6 +5346,30 @@ func (s *Server) renameWorkspaceRuntimeSession(
 		}
 	}
 	return &workspaceRuntimeSessionOutput{Body: session}, nil
+}
+
+func (s *Server) renameStoredRuntimeSession(
+	ctx context.Context,
+	workspaceID string,
+	sessionKey string,
+	label string,
+) (localruntime.SessionInfo, bool, error) {
+	updated, err := s.workspaces.UpdateRuntimeSessionLabel(
+		ctx, workspaceID, sessionKey, label,
+	)
+	if err != nil || !updated {
+		return localruntime.SessionInfo{}, false, err
+	}
+	stored, err := s.workspaces.RuntimeSessionsForWorkspace(ctx, workspaceID)
+	if err != nil {
+		return localruntime.SessionInfo{}, false, err
+	}
+	for _, session := range stored {
+		if session.SessionKey == sessionKey {
+			return storedRuntimeSessionInfo(session), true, nil
+		}
+	}
+	return localruntime.SessionInfo{}, false, nil
 }
 
 func (s *Server) getReadyRuntimeWorkspace(

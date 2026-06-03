@@ -17998,10 +17998,36 @@ func TestWorkspaceRuntimeUnavailablePtyOwnerSessionStaysUntilUserStopE2E(t *test
 	assert.Equal(string(localruntime.SessionStatusError), session.Status)
 	assert.Equal(string(localruntime.LaunchTargetPlainShell), session.TargetKey)
 
+	renameResp, err := restartedClient.HTTP.RenameWorkspaceRuntimeSessionWithResponse(
+		ctx,
+		ws.Id,
+		sessionKey,
+		generated.RenameWorkspaceRuntimeSessionInputBody{
+			Label: "Recovered shell",
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, renameResp.StatusCode())
+	require.NotNil(renameResp.JSON200)
+	assert.Equal(sessionKey, renameResp.JSON200.Key)
+	assert.Equal("Recovered shell", renameResp.JSON200.Label)
+	assert.Equal(string(localruntime.SessionStatusError), renameResp.JSON200.Status)
+
+	runtimeResp, err = restartedClient.HTTP.GetWorkspaceRuntimeWithResponse(
+		ctx, ws.Id,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, runtimeResp.StatusCode())
+	require.NotNil(runtimeResp.JSON200)
+	require.NotNil(runtimeResp.JSON200.Sessions)
+	require.Len(*runtimeResp.JSON200.Sessions, 1)
+	assert.Equal("Recovered shell", (*runtimeResp.JSON200.Sessions)[0].Label)
+
 	stored, err := fixture.database.ListWorkspaceRuntimeSessions(ctx, ws.Id)
 	require.NoError(err)
 	require.Len(stored, 1)
 	assert.Equal(sessionKey, stored[0].SessionKey)
+	assert.Equal("Recovered shell", stored[0].Label)
 
 	stopResp, err := restartedClient.HTTP.StopWorkspaceRuntimeSessionWithResponse(
 		ctx, ws.Id, sessionKey,

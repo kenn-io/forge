@@ -210,9 +210,12 @@ func TestNormalizeMergeRequestIssueEventsAndArtifacts(t *testing.T) {
 		[]TimelineEventDTO{
 			{ID: 401, User: UserDTO{UserName: "grace"}, Type: "assigned", Assignee: UserDTO{UserName: "grace"}, Created: base},
 			{ID: 403, User: UserDTO{UserName: "ivy"}, Type: "change_title", PreviousTitle: "Old tea", CurrentTitle: "New tea", Created: base.Add(time.Minute)},
+			{ID: 405, User: UserDTO{UserName: "mona"}, Type: "merged", Created: base.Add(2 * time.Minute)},
+			{ID: 406, User: UserDTO{UserName: "nina"}, Type: "close", Created: base.Add(3 * time.Minute)},
+			{ID: 407, User: UserDTO{UserName: "otto"}, Type: "reopen", Created: base.Add(4 * time.Minute)},
 		},
 	)
-	require.Len(mrTimelineEvents, 2)
+	require.Len(mrTimelineEvents, 5)
 	assert.Equal("assigned", mrTimelineEvents[0].EventType)
 	assert.Equal("grace", mrTimelineEvents[0].Author)
 	assert.Equal("self-assigned this", mrTimelineEvents[0].Summary)
@@ -222,6 +225,18 @@ func TestNormalizeMergeRequestIssueEventsAndArtifacts(t *testing.T) {
 	assert.Equal(`"Old tea" -> "New tea"`, mrTimelineEvents[1].Summary)
 	assert.JSONEq(`{"previous_title":"Old tea","current_title":"New tea"}`, mrTimelineEvents[1].MetadataJSON)
 	assert.Equal("gitea/gitea.com/gitea/tea/mr/7/renamed_title/403", mrTimelineEvents[1].DedupeKey)
+	assert.Equal("merged", mrTimelineEvents[2].EventType)
+	assert.Equal("mona", mrTimelineEvents[2].Author)
+	assert.Equal("merged this", mrTimelineEvents[2].Summary)
+	assert.Equal("gitea/gitea.com/gitea/tea/mr/7/merged/405", mrTimelineEvents[2].DedupeKey)
+	assert.Equal("closed", mrTimelineEvents[3].EventType)
+	assert.Equal("nina", mrTimelineEvents[3].Author)
+	assert.Equal("closed this", mrTimelineEvents[3].Summary)
+	assert.Equal("gitea/gitea.com/gitea/tea/mr/7/closed/406", mrTimelineEvents[3].DedupeKey)
+	assert.Equal("reopened", mrTimelineEvents[4].EventType)
+	assert.Equal("otto", mrTimelineEvents[4].Author)
+	assert.Equal("reopened this", mrTimelineEvents[4].Summary)
+	assert.Equal("gitea/gitea.com/gitea/tea/mr/7/reopened/407", mrTimelineEvents[4].DedupeKey)
 
 	issueTimelineEvents := NormalizeIssueTimelineEvents(
 		platform.KindGitea,

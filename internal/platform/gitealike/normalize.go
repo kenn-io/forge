@@ -302,6 +302,11 @@ func normalizeTimelineEvent(item TimelineEventDTO) (eventType, summary, metadata
 		return eventType, assignmentSummary(eventType, item.User.UserName, item.Assignee.UserName), "", true
 	}
 
+	eventType, ok = normalizeLifecycleEventType(item.Type)
+	if ok {
+		return eventType, lifecycleSummary(eventType), "", true
+	}
+
 	if !isTitleChangeEvent(item.Type) {
 		return "", "", "", false
 	}
@@ -320,6 +325,32 @@ func normalizeAssignmentEventType(value string) (string, bool) {
 		return "unassigned", true
 	default:
 		return "", false
+	}
+}
+
+func normalizeLifecycleEventType(value string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "merged":
+		return "merged", true
+	case "closed", "close":
+		return "closed", true
+	case "reopened", "reopen":
+		return "reopened", true
+	default:
+		return "", false
+	}
+}
+
+func lifecycleSummary(eventType string) string {
+	switch eventType {
+	case "merged":
+		return "merged this"
+	case "closed":
+		return "closed this"
+	case "reopened":
+		return "reopened this"
+	default:
+		return ""
 	}
 }
 

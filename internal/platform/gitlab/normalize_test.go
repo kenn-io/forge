@@ -268,16 +268,29 @@ func TestNormalizeNotesKeepsAssignmentSystemNotes(t *testing.T) {
 		{ID: 1, Body: "visible", System: false, Author: gitlab.NoteAuthor{Username: "alice"}, CreatedAt: &createdAt},
 		{ID: 2, Body: "assigned to @bob", System: true, Author: gitlab.NoteAuthor{Username: "root"}, CreatedAt: &createdAt},
 		{ID: 3, Body: "changed milestone", System: true, Author: gitlab.NoteAuthor{Username: "root"}, CreatedAt: &createdAt},
+		{ID: 4, Body: "merged", System: true, Author: gitlab.NoteAuthor{Username: "maintainer"}, CreatedAt: &createdAt},
+		{ID: 5, Body: "closed", System: true, Author: gitlab.NoteAuthor{Username: "closer"}, CreatedAt: &createdAt},
+		{ID: 6, Body: "reopened", System: true, Author: gitlab.NoteAuthor{Username: "opener"}, CreatedAt: &createdAt},
 	}
 
 	mrEvents := NormalizeMergeRequestNotes(testGitLabRepoRef(), 7, notes)
-	require.Len(mrEvents, 2)
+	require.Len(mrEvents, 5)
 	assert.Equal("issue_comment", mrEvents[0].EventType)
 	assert.Equal("visible", mrEvents[0].Body)
 	assert.Equal("gitlab:gitlab.example.com:group/project:mr:7:note:1", mrEvents[0].DedupeKey)
 	assert.Equal("assigned", mrEvents[1].EventType)
 	assert.Equal("assigned to @bob", mrEvents[1].Summary)
 	assert.Equal("gitlab:gitlab.example.com:group/project:mr:7:system_note:2", mrEvents[1].DedupeKey)
+	assert.Equal("merged", mrEvents[2].EventType)
+	assert.Equal("merged", mrEvents[2].Summary)
+	assert.Equal("maintainer", mrEvents[2].Author)
+	assert.Equal("gitlab:gitlab.example.com:group/project:mr:7:system_note:4", mrEvents[2].DedupeKey)
+	assert.Equal("closed", mrEvents[3].EventType)
+	assert.Equal("closed", mrEvents[3].Summary)
+	assert.Equal("closer", mrEvents[3].Author)
+	assert.Equal("reopened", mrEvents[4].EventType)
+	assert.Equal("reopened", mrEvents[4].Summary)
+	assert.Equal("opener", mrEvents[4].Author)
 
 	issueEvents := NormalizeIssueNotes(testGitLabRepoRef(), 5, notes)
 	require.Len(issueEvents, 2)

@@ -333,6 +333,21 @@ func TestGraphQLFetcherFetchRepoPRsIncludesTimelineEvents(t *testing.T) {
 				"actor":{"login":"wesm"},
 				"assignee":{"__typename":"User","login":"wesm"},
 				"createdAt":"` + now + `"
+			},{
+				"__typename":"MergedEvent",
+				"id":"ME_1",
+				"actor":{"login":"merger"},
+				"createdAt":"` + now + `"
+			},{
+				"__typename":"ClosedEvent",
+				"id":"CE_1",
+				"actor":{"login":"closer"},
+				"createdAt":"` + now + `"
+			},{
+				"__typename":"ReopenedEvent",
+				"id":"RE_1",
+				"actor":{"login":"opener"},
+				"createdAt":"` + now + `"
 			}],"pageInfo":{"hasNextPage":false,"endCursor":""}}
 		}],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`))
 	}))
@@ -347,7 +362,7 @@ func TestGraphQLFetcherFetchRepoPRsIncludesTimelineEvents(t *testing.T) {
 	require.NotNil(result)
 	require.Len(result.PullRequests, 1)
 	require.True(sawTimelineItems)
-	require.Len(result.PullRequests[0].TimelineEvents, 3)
+	require.Len(result.PullRequests[0].TimelineEvents, 6)
 
 	event := result.PullRequests[0].TimelineEvents[0]
 	assert.Equal("base_ref_changed", event.EventType)
@@ -365,6 +380,18 @@ func TestGraphQLFetcherFetchRepoPRsIncludesTimelineEvents(t *testing.T) {
 	assert.Equal("AE_1", assigned.NodeID)
 	assert.Equal("wesm", assigned.Actor)
 	assert.Equal("wesm", assigned.Assignee)
+	merged := result.PullRequests[0].TimelineEvents[3]
+	assert.Equal("merged", merged.EventType)
+	assert.Equal("ME_1", merged.NodeID)
+	assert.Equal("merger", merged.Actor)
+	closed := result.PullRequests[0].TimelineEvents[4]
+	assert.Equal("closed", closed.EventType)
+	assert.Equal("CE_1", closed.NodeID)
+	assert.Equal("closer", closed.Actor)
+	reopened := result.PullRequests[0].TimelineEvents[5]
+	assert.Equal("reopened", reopened.EventType)
+	assert.Equal("RE_1", reopened.NodeID)
+	assert.Equal("opener", reopened.Actor)
 	assert.True(result.PullRequests[0].TimelineComplete)
 }
 

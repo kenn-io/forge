@@ -326,7 +326,7 @@ const pullRequestTimelineEventsQuery = `
 query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $number) {
-      timelineItems(itemTypes: [HEAD_REF_FORCE_PUSHED_EVENT, COMMENT_DELETED_EVENT, CROSS_REFERENCED_EVENT, RENAMED_TITLE_EVENT, BASE_REF_CHANGED_EVENT, ASSIGNED_EVENT, UNASSIGNED_EVENT], first: 100, after: $cursor) {
+      timelineItems(itemTypes: [HEAD_REF_FORCE_PUSHED_EVENT, COMMENT_DELETED_EVENT, CROSS_REFERENCED_EVENT, RENAMED_TITLE_EVENT, BASE_REF_CHANGED_EVENT, ASSIGNED_EVENT, UNASSIGNED_EVENT, MERGED_EVENT, CLOSED_EVENT, REOPENED_EVENT], first: 100, after: $cursor) {
         nodes {
           __typename
           ... on Node {
@@ -403,6 +403,18 @@ query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
               ... on Organization { login }
               ... on User { login }
             }
+            createdAt
+          }
+          ... on MergedEvent {
+            actor { login }
+            createdAt
+          }
+          ... on ClosedEvent {
+            actor { login }
+            createdAt
+          }
+          ... on ReopenedEvent {
+            actor { login }
             createdAt
           }
         }
@@ -1487,6 +1499,12 @@ func (c *liveClient) ListPullRequestTimelineEvents(
 				event.EventType = "assigned"
 			case "UnassignedEvent":
 				event.EventType = "unassigned"
+			case "MergedEvent":
+				event.EventType = "merged"
+			case "ClosedEvent":
+				event.EventType = "closed"
+			case "ReopenedEvent":
+				event.EventType = "reopened"
 			default:
 				continue
 			}

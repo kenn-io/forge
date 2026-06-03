@@ -109,6 +109,9 @@
     review_comment: "Review Comment",
     assigned: "Assigned",
     unassigned: "Unassigned",
+    merged: "Merged",
+    closed: "Closed",
+    reopened: "Reopened",
   };
 
   const typeColors: Record<string, string> = {
@@ -120,6 +123,9 @@
     force_push: "var(--accent-red)",
     assigned: "var(--accent-blue)",
     unassigned: "var(--text-muted)",
+    merged: "var(--accent-green)",
+    closed: "var(--text-muted)",
+    reopened: "var(--accent-blue)",
   };
 
   function shouldRenderMarkdown(eventType: string): boolean {
@@ -487,7 +493,10 @@
       eventType === "renamed_title" ||
       eventType === "base_ref_changed" ||
       eventType === "assigned" ||
-      eventType === "unassigned"
+      eventType === "unassigned" ||
+      eventType === "merged" ||
+      eventType === "closed" ||
+      eventType === "reopened"
     );
   }
 
@@ -517,6 +526,12 @@
         return "Assigned";
       case "unassigned":
         return "Unassigned";
+      case "merged":
+        return "Merged";
+      case "closed":
+        return "Closed";
+      case "reopened":
+        return "Reopened";
       case "force_push":
         return "Force-pushed";
       default:

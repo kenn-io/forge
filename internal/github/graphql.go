@@ -89,7 +89,7 @@ type gqlPR struct {
 	TimelineItems struct {
 		Nodes    []gqlPullRequestTimelineItem
 		PageInfo pageInfo
-	} `graphql:"timelineItems(itemTypes: [HEAD_REF_FORCE_PUSHED_EVENT, COMMENT_DELETED_EVENT, CROSS_REFERENCED_EVENT, RENAMED_TITLE_EVENT, BASE_REF_CHANGED_EVENT, ASSIGNED_EVENT, UNASSIGNED_EVENT], first: 100)"`
+	} `graphql:"timelineItems(itemTypes: [HEAD_REF_FORCE_PUSHED_EVENT, COMMENT_DELETED_EVENT, CROSS_REFERENCED_EVENT, RENAMED_TITLE_EVENT, BASE_REF_CHANGED_EVENT, ASSIGNED_EVENT, UNASSIGNED_EVENT, MERGED_EVENT, CLOSED_EVENT, REOPENED_EVENT], first: 100)"`
 }
 
 type gqlComment struct {
@@ -132,6 +132,9 @@ type gqlPullRequestTimelineItem struct {
 	BaseRefChangedEvent     gqlBaseRefChangedEvent     `graphql:"... on BaseRefChangedEvent"`
 	AssignedEvent           gqlAssignedEvent           `graphql:"... on AssignedEvent"`
 	UnassignedEvent         gqlAssignedEvent           `graphql:"... on UnassignedEvent"`
+	MergedEvent             gqlLifecycleEvent          `graphql:"... on MergedEvent"`
+	ClosedEvent             gqlLifecycleEvent          `graphql:"... on ClosedEvent"`
+	ReopenedEvent           gqlLifecycleEvent          `graphql:"... on ReopenedEvent"`
 }
 
 type gqlIssueTimelineItem struct {
@@ -212,6 +215,11 @@ type gqlBaseRefChangedEvent struct {
 type gqlAssignedEvent struct {
 	Actor     *gqlActorRef
 	Assignee  gqlAssignee
+	CreatedAt time.Time
+}
+
+type gqlLifecycleEvent struct {
+	Actor     *gqlActorRef
 	CreatedAt time.Time
 }
 
@@ -951,6 +959,12 @@ func adaptPullRequestTimelineEvent(gql *gqlPullRequestTimelineItem) (PullRequest
 		copyAssignmentEvent(&event, "assigned", gql.AssignedEvent)
 	case "UnassignedEvent":
 		copyAssignmentEvent(&event, "unassigned", gql.UnassignedEvent)
+	case "MergedEvent":
+		copyLifecycleEvent(&event, "merged", gql.MergedEvent)
+	case "ClosedEvent":
+		copyLifecycleEvent(&event, "closed", gql.ClosedEvent)
+	case "ReopenedEvent":
+		copyLifecycleEvent(&event, "reopened", gql.ReopenedEvent)
 	default:
 		return PullRequestTimelineEvent{}, false
 	}
@@ -960,6 +974,14 @@ func adaptPullRequestTimelineEvent(gql *gqlPullRequestTimelineItem) (PullRequest
 func copyAssignmentEvent(event *PullRequestTimelineEvent, eventType string, src gqlAssignedEvent) {
 	event.EventType = eventType
 	event.Assignee = src.Assignee.Login()
+	event.CreatedAt = src.CreatedAt
+	if src.Actor != nil {
+		event.Actor = src.Actor.Login
+	}
+}
+
+func copyLifecycleEvent(event *PullRequestTimelineEvent, eventType string, src gqlLifecycleEvent) {
+	event.EventType = eventType
 	event.CreatedAt = src.CreatedAt
 	if src.Actor != nil {
 		event.Actor = src.Actor.Login

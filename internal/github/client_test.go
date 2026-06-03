@@ -469,7 +469,7 @@ func TestListPullRequestTimelineEvents(t *testing.T) {
 			_, _ = w.Write([]byte(`{"data":{"repository":{"pullRequest":{"timelineItems":{"nodes":[{"__typename":"HeadRefForcePushedEvent","id":"HFP_1","actor":{"login":"alice"},"beforeCommit":{"oid":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"afterCommit":{"oid":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},"createdAt":"2024-06-01T12:00:00Z","ref":{"name":"feature"}},{"__typename":"RenamedTitleEvent","id":"RTE_1","actor":{"login":"bob"},"createdAt":"2024-06-01T12:05:00Z","previousTitle":"Old title","currentTitle":"New title"}],"pageInfo":{"hasNextPage":true,"endCursor":"cursor-1"}}}}}}`))
 			return
 		}
-		_, _ = w.Write([]byte(`{"data":{"repository":{"pullRequest":{"timelineItems":{"nodes":[{"__typename":"BaseRefChangedEvent","id":"BRC_1","actor":{"login":"carol"},"createdAt":"2024-06-01T12:10:00Z","previousRefName":"main","currentRefName":"release"},{"__typename":"CommentDeletedEvent","id":"CDE_1","actor":{"login":"maintainer"},"createdAt":"2024-06-01T12:12:00Z","deletedCommentAuthor":{"login":"reviewer"}},{"__typename":"CrossReferencedEvent","id":"CRE_1","actor":{"login":"dave"},"createdAt":"2024-06-01T12:15:00Z","isCrossRepository":true,"willCloseTarget":false,"source":{"__typename":"Issue","number":77,"title":"Related bug","url":"https://github.com/other/repo/issues/77","repository":{"owner":{"login":"other"},"name":"repo"}}},{"__typename":"AssignedEvent","id":"AE_1","actor":{"login":"wesm"},"assignee":{"__typename":"User","login":"wesm"},"createdAt":"2024-06-01T12:20:00Z"},{"__typename":"UnassignedEvent","id":"UE_1","actor":{"login":"alice"},"assignee":{"__typename":"User","login":"bob"},"createdAt":"2024-06-01T12:25:00Z"}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}`))
+		_, _ = w.Write([]byte(`{"data":{"repository":{"pullRequest":{"timelineItems":{"nodes":[{"__typename":"BaseRefChangedEvent","id":"BRC_1","actor":{"login":"carol"},"createdAt":"2024-06-01T12:10:00Z","previousRefName":"main","currentRefName":"release"},{"__typename":"CommentDeletedEvent","id":"CDE_1","actor":{"login":"maintainer"},"createdAt":"2024-06-01T12:12:00Z","deletedCommentAuthor":{"login":"reviewer"}},{"__typename":"CrossReferencedEvent","id":"CRE_1","actor":{"login":"dave"},"createdAt":"2024-06-01T12:15:00Z","isCrossRepository":true,"willCloseTarget":false,"source":{"__typename":"Issue","number":77,"title":"Related bug","url":"https://github.com/other/repo/issues/77","repository":{"owner":{"login":"other"},"name":"repo"}}},{"__typename":"AssignedEvent","id":"AE_1","actor":{"login":"wesm"},"assignee":{"__typename":"User","login":"wesm"},"createdAt":"2024-06-01T12:20:00Z"},{"__typename":"UnassignedEvent","id":"UE_1","actor":{"login":"alice"},"assignee":{"__typename":"User","login":"bob"},"createdAt":"2024-06-01T12:25:00Z"},{"__typename":"MergedEvent","id":"ME_1","actor":{"login":"merger"},"createdAt":"2024-06-01T12:30:00Z"},{"__typename":"ClosedEvent","id":"CE_1","actor":{"login":"closer"},"createdAt":"2024-06-01T12:35:00Z"},{"__typename":"ReopenedEvent","id":"RE_1","actor":{"login":"opener"},"createdAt":"2024-06-01T12:40:00Z"}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}`))
 	})
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
@@ -481,7 +481,7 @@ func TestListPullRequestTimelineEvents(t *testing.T) {
 
 	events, err := c.ListPullRequestTimelineEvents(t.Context(), "owner", "repo", 42)
 	require.NoError(err)
-	require.Len(events, 7)
+	require.Len(events, 10)
 	require.Equal("force_push", events[0].EventType)
 	require.Equal("HFP_1", events[0].NodeID)
 	require.Equal("alice", events[0].Actor)
@@ -511,6 +511,12 @@ func TestListPullRequestTimelineEvents(t *testing.T) {
 	require.Equal("unassigned", events[6].EventType)
 	require.Equal("alice", events[6].Actor)
 	require.Equal("bob", events[6].Assignee)
+	require.Equal("merged", events[7].EventType)
+	require.Equal("merger", events[7].Actor)
+	require.Equal("closed", events[8].EventType)
+	require.Equal("closer", events[8].Actor)
+	require.Equal("reopened", events[9].EventType)
+	require.Equal("opener", events[9].Actor)
 	require.Equal(2, calls)
 	require.Equal([]string{http.MethodPost, http.MethodPost}, methods)
 	require.Equal([]string{"application/json", "application/json"}, contentTypes)

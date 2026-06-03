@@ -121,6 +121,7 @@ guardrail-check: frontend-api-client-check font-size-token-check huma-route-chec
 # Regenerate the checked-in OpenAPI document and generated clients
 api-generate:
 	set -e; tmp="$$(mktemp)"; trap 'rm -f "$$tmp"' EXIT; GOCACHE="$${GOCACHE:-/tmp/middleman-gocache}" go run ./cmd/middleman-openapi -out "$$tmp" -format yaml; if [ -f frontend/openapi/openapi.yaml ] && cmp -s "$$tmp" frontend/openapi/openapi.yaml; then rm "$$tmp"; else mv "$$tmp" frontend/openapi/openapi.yaml; fi; trap - EXIT
+	mkdir -p internal/apiclient/spec
 	set -e; tmp="$$(mktemp)"; trap 'rm -f "$$tmp"' EXIT; GOCACHE="$${GOCACHE:-/tmp/middleman-gocache}" go run ./cmd/middleman-openapi -out "$$tmp" -version 3.0 -format json; if [ -f internal/apiclient/spec/openapi.json ] && cmp -s "$$tmp" internal/apiclient/spec/openapi.json; then rm "$$tmp"; else mv "$$tmp" internal/apiclient/spec/openapi.json; fi; trap - EXIT
 	set -e; tmp="$$(mktemp)"; trap 'rm -f "$$tmp"' EXIT; (cd frontend && bun ./node_modules/openapi-typescript/bin/cli.js openapi/openapi.yaml --enum-values -o "$$tmp"); if [ -f packages/ui/src/api/generated/schema.ts ] && cmp -s "$$tmp" packages/ui/src/api/generated/schema.ts; then rm "$$tmp"; else mv "$$tmp" packages/ui/src/api/generated/schema.ts; fi; trap - EXIT
 	set -e; tmp="$$(mktemp)"; trap 'rm -f "$$tmp"' EXIT; printf '%s\n' \

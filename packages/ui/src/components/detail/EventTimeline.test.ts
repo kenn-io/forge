@@ -189,6 +189,41 @@ describe("EventTimeline", () => {
     expect(screen.getByText("aaaaaaa -> bbbbbbb")).toBeTruthy();
   });
 
+  it("renders lifecycle event labels and summaries", () => {
+    render(EventTimeline, {
+      props: {
+        events: [
+          makeEvent({
+            ID: 3,
+            EventType: "merged",
+            Summary: "merged this",
+            CreatedAt: "2024-06-01T12:03:00Z",
+          }),
+          makeEvent({
+            ID: 2,
+            EventType: "closed",
+            Summary: "closed this",
+            CreatedAt: "2024-06-01T12:02:00Z",
+          }),
+          makeEvent({
+            ID: 1,
+            EventType: "reopened",
+            Summary: "reopened this",
+            CreatedAt: "2024-06-01T12:01:00Z",
+          }),
+        ],
+      },
+    });
+
+    expect(screen.getByText("Merged")).toBeTruthy();
+    expect(screen.getByText("Closed")).toBeTruthy();
+    expect(screen.getByText("Reopened")).toBeTruthy();
+    expect(screen.getByText("merged this")).toBeTruthy();
+    expect(screen.getByText("closed this")).toBeTruthy();
+    expect(screen.getByText("reopened this")).toBeTruthy();
+    expect(document.querySelectorAll(".event--compact")).toHaveLength(3);
+  });
+
   it("keeps the timeline entry card while rendering body content without a nested card surface", () => {
     const { container } = render(EventTimeline, {
       props: {

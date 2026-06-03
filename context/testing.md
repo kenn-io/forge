@@ -14,6 +14,20 @@ When changing structs, fields, aliases, fragments, pagination arguments, or nest
 
 CI runs the live GraphQL validation as a separate Go test step using the workflow `GITHUB_TOKEN` only in trusted contexts, such as pushes to `main`, manual `workflow_dispatch` runs, and same-repository pull requests. The general pull request Go test step does not receive a GitHub token.
 
+## GitHub API HTTP guard
+
+Go test packages import `internal/testenv/githubguard` to block accidental
+`api.github.com` requests through `http.DefaultTransport`. The guard returns
+`testenv.ErrGitHubAPIBlocked` before the request reaches the network, so default
+test runs fail fast instead of spending GitHub API rate limit.
+
+The guard intentionally no-ops when `MIDDLEMAN_LIVE_GITHUB_TESTS=1` is set so
+the live GraphQL validation can reach GitHub. It does not block subprocesses
+such as `gh`, `curl`, or `git`, and it does not block tests that install custom
+HTTP transports. New Go test packages should add a package-local
+`github_api_guard_test.go` blank import unless the package's `TestMain` installs
+the guard directly.
+
 ## Provider work
 
 When adding or changing a provider, pick tests at the boundary where users would

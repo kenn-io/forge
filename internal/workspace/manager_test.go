@@ -494,6 +494,126 @@ func TestSetupUsesConfiguredWorktreeBasePath(t *testing.T) {
 	assert.Equal(sourceSHA, headSHA)
 }
 
+func TestSetupUsesManagedCloneForForkPRWithConfiguredWorktreeBasePath(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	wtDir := t.TempDir()
+	cloneBaseDir := t.TempDir()
+
+	const (
+		host     = "github.com"
+		owner    = "acme"
+		name     = "widget"
+		prNumber = 245
+		branch   = "fork/thing"
+	)
+	repoID := seedRepo(t, d, host, owner, name)
+	seedMRWithHeadRepo(
+		t, d, repoID, prNumber, branch,
+		"https://github.com/contributor/widget.git",
+	)
+
+	remote, pullSHA := setupRemoteForForkPRWorktreeTest(
+		t, branch, prNumber,
+	)
+	clones := gitclone.New(cloneBaseDir, nil)
+	cloneDir, err := clones.ClonePath(host, owner, name)
+	require.NoError(err)
+	require.NoError(os.MkdirAll(filepath.Dir(cloneDir), 0o755))
+	runWorkspaceTestGit(t, cloneBaseDir, "clone", "--bare", remote, cloneDir)
+	runWorkspaceTestGit(
+		t, cloneDir, "remote", "set-url", "origin",
+		"https://github.com/acme/widget.git",
+	)
+	runWorkspaceTestGit(
+		t, cloneDir, "config", "--add",
+		"url."+remote+".insteadOf", "https://github.com/acme/widget.git",
+	)
+	runWorkspaceTestGit(t, cloneDir, "update-ref", "-d", "refs/heads/"+branch)
+
+	localRepo := setupLocalWorktreeBaseForWorkspaceGitTest(t, branch)
+	tmuxScript, _ := writeRecorderScript(t)
+
+	mgr := NewManager(d, wtDir)
+	mgr.SetClones(clones)
+	mgr.SetTmuxCommand([]string{tmuxScript})
+	mgr.SetWorktreeBasePathResolver(func(
+		context.Context, string, string, string,
+	) (string, bool, error) {
+		return localRepo, true, nil
+	})
+
+	ws, err := mgr.Create(t.Context(), host, owner, name, prNumber)
+	require.NoError(err)
+	require.NoError(mgr.Setup(t.Context(), ws))
+
+	got, err := d.GetWorkspace(t.Context(), ws.ID)
+	require.NoError(err)
+	require.NotNil(got)
+	assert.Equal("ready", got.Status)
+	assert.Equal(branch, got.WorkspaceBranch)
+
+	headSHA, err := gitHeadSHA(t.Context(), ws.WorktreePath)
+	require.NoError(err)
+	assert.Equal(pullSHA, headSHA)
+
+	canonicalWorktreePath, err := filepath.EvalSymlinks(ws.WorktreePath)
+	require.NoError(err)
+	managedList := string(runWorkspaceTestGit(
+		t, cloneDir, "worktree", "list", "--porcelain",
+	))
+	assert.Contains(managedList, "worktree "+canonicalWorktreePath)
+	localList := string(runWorkspaceTestGit(
+		t, localRepo, "worktree", "list", "--porcelain",
+	))
+	assert.NotContains(localList, "worktree "+canonicalWorktreePath)
+}
+
+func TestCleanupUsesExistingWorktreeGitDirWhenConfiguredBaseChanges(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	const branch = "middleman/pr-99"
+	actualRepo := setupLocalWorktreeBaseForWorkspaceGitTest(t, "feature/thing")
+	wrongRepo := setupLocalWorktreeBaseForWorkspaceGitTest(t, "feature/thing")
+	worktreePath := filepath.Join(t.TempDir(), "workspace")
+	runWorkspaceTestGit(
+		t, actualRepo,
+		"worktree", "add", worktreePath, "-b", branch, "HEAD",
+	)
+	runWorkspaceTestGit(t, wrongRepo, "branch", branch, "HEAD")
+
+	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr.SetWorktreeBasePathResolver(func(
+		context.Context, string, string, string,
+	) (string, bool, error) {
+		return wrongRepo, true, nil
+	})
+	ws := &Workspace{
+		ID:              "ws-cleanup-existing-worktree",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		ItemType:        db.WorkspaceItemTypePullRequest,
+		ItemNumber:      99,
+		GitHeadRef:      "feature/thing",
+		WorkspaceBranch: branch,
+		WorktreePath:    worktreePath,
+	}
+
+	require.NoError(mgr.cleanupWorkspaceArtifactsForDelete(t.Context(), ws))
+
+	_, err := os.Stat(worktreePath)
+	assert.True(os.IsNotExist(err), "cleanup should remove original worktree")
+	actualExists, err := localBranchExists(t.Context(), actualRepo, branch)
+	require.NoError(err)
+	assert.False(actualExists)
+	wrongExists, err := localBranchExists(t.Context(), wrongRepo, branch)
+	require.NoError(err)
+	assert.True(wrongExists, "cleanup must not delete branch from current settings repo")
+}
+
 func TestFailSetupUsesSinglePersistenceBudget(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
@@ -904,6 +1024,45 @@ func setupLocalWorktreeBaseForWorkspaceGitTest(
 		t, repo, "update-ref", "refs/remotes/origin/"+branch, "HEAD",
 	)
 	return repo
+}
+
+func setupRemoteForForkPRWorktreeTest(
+	t *testing.T, branch string, prNumber int,
+) (remote, pullSHA string) {
+	t.Helper()
+	dir := t.TempDir()
+	work := filepath.Join(dir, "work")
+	remote = filepath.Join(dir, "remote.git")
+	runWorkspaceTestGit(t, dir, "init", "--initial-branch=main", work)
+	runWorkspaceTestGit(t, work, "config", "user.email", "test@test.com")
+	runWorkspaceTestGit(t, work, "config", "user.name", "Test")
+	require.NoError(t, os.WriteFile(
+		filepath.Join(work, "base.txt"), []byte("base\n"), 0o644,
+	))
+	runWorkspaceTestGit(t, work, "add", ".")
+	runWorkspaceTestGit(t, work, "commit", "-m", "base commit")
+	runWorkspaceTestGit(t, dir, "init", "--bare", "--initial-branch=main", remote)
+	runWorkspaceTestGit(t, work, "remote", "add", "origin", remote)
+	runWorkspaceTestGit(t, work, "push", "origin", "main")
+
+	originSHA := strings.TrimSpace(string(runWorkspaceTestGit(
+		t, work, "rev-parse", "HEAD",
+	)))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(work, "fork.txt"), []byte("fork\n"), 0o644,
+	))
+	runWorkspaceTestGit(t, work, "add", ".")
+	runWorkspaceTestGit(t, work, "commit", "-m", "fork head")
+	pullSHA = strings.TrimSpace(string(runWorkspaceTestGit(
+		t, work, "rev-parse", "HEAD",
+	)))
+	require.NotEqual(t, originSHA, pullSHA)
+	runWorkspaceTestGit(
+		t, work, "push", "origin",
+		originSHA+":refs/heads/"+branch,
+		pullSHA+":refs/pull/"+strconv.Itoa(prNumber)+"/head",
+	)
+	return remote, pullSHA
 }
 
 func configureSameRepoPRRefs(
@@ -3062,19 +3221,33 @@ func TestManagerCleanupForDeleteAcquiresRepoLock(t *testing.T) {
 	baseDir := t.TempDir()
 	cloneDir := filepath.Join(baseDir, host, owner, name+".git")
 	require.NoError(os.MkdirAll(filepath.Dir(cloneDir), 0o755))
+	work := filepath.Join(t.TempDir(), "source")
+	runWorkspaceTestGit(t, baseDir, "init", "--initial-branch=main", work)
+	runWorkspaceTestGit(t, work, "config", "user.email", "test@test.com")
+	runWorkspaceTestGit(t, work, "config", "user.name", "Test")
+	require.NoError(os.WriteFile(
+		filepath.Join(work, "base.txt"), []byte("base\n"), 0o644,
+	))
+	runWorkspaceTestGit(t, work, "add", ".")
+	runWorkspaceTestGit(t, work, "commit", "-m", "base commit")
 	runWorkspaceTestGit(
-		t, baseDir, "init", "--bare", "--initial-branch=main", cloneDir,
+		t, baseDir, "clone", "--bare", work, cloneDir,
 	)
 
 	mgr := NewManager(openTestDB(t), t.TempDir())
 	mgr.SetClones(gitclone.New(baseDir, nil))
+	worktreePath := filepath.Join(t.TempDir(), "missing-wt")
+	runWorkspaceTestGit(
+		t, cloneDir, "worktree", "add", worktreePath, "HEAD",
+	)
+	require.NoError(os.RemoveAll(worktreePath))
 
 	ws := &Workspace{
 		ID:           "ws-cleanup-lock",
 		PlatformHost: host,
 		RepoOwner:    owner,
 		RepoName:     name,
-		WorktreePath: filepath.Join(t.TempDir(), "missing-wt"),
+		WorktreePath: worktreePath,
 	}
 
 	held, err := mgr.locks.Acquire(t.Context(), cloneDir)

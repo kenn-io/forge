@@ -529,10 +529,12 @@ func (m *Manager) Setup(
 func (m *Manager) workspaceSetupGitDir(
 	ctx context.Context, ws *Workspace,
 ) (string, error) {
-	if baseDir, ok, err := m.localWorktreeBaseDir(
-		ctx, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
-	); err != nil || ok {
-		return baseDir, err
+	if ws.MRHeadRepo == nil {
+		if baseDir, ok, err := m.localWorktreeBaseDir(
+			ctx, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
+		); err != nil || ok {
+			return baseDir, err
+		}
 	}
 
 	if m.clones == nil {
@@ -1128,10 +1130,24 @@ func (m *Manager) cleanupWorkspaceArtifactsForDelete(
 func (m *Manager) workspaceCleanupGitDir(
 	ctx context.Context, ws *Workspace,
 ) (string, bool, error) {
+	commonDir, err := worktreeCommonGitDir(ctx, ws.WorktreePath)
+	if err == nil {
+		return commonDir, true, nil
+	}
+
 	if baseDir, ok, err := m.localWorktreeBaseDir(
 		ctx, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
 	); err != nil || ok {
-		return baseDir, ok, err
+		if err != nil || !ok {
+			return baseDir, ok, err
+		}
+		tracked, err := gitDirTracksWorktreePath(ctx, baseDir, ws.WorktreePath)
+		if err != nil {
+			return "", false, err
+		}
+		if tracked {
+			return baseDir, true, nil
+		}
 	}
 
 	if m.clones != nil {
@@ -1146,15 +1162,19 @@ func (m *Manager) workspaceCleanupGitDir(
 			return "", false, err
 		}
 		if ready {
-			return cloneDir, true, nil
+			tracked, err := gitDirTracksWorktreePath(
+				ctx, cloneDir, ws.WorktreePath,
+			)
+			if err != nil {
+				return "", false, err
+			}
+			if tracked {
+				return cloneDir, true, nil
+			}
 		}
 	}
 
-	commonDir, err := worktreeCommonGitDir(ctx, ws.WorktreePath)
-	if err != nil {
-		return "", false, nil
-	}
-	return commonDir, true, nil
+	return "", false, nil
 }
 
 func (m *Manager) cleanupTmuxSession(
@@ -2471,6 +2491,59 @@ func worktreeCommonGitDir(
 		)
 	}
 	return strings.TrimSpace(string(out)), nil
+}
+
+func gitDirTracksWorktreePath(
+	ctx context.Context, gitDir, worktreePath string,
+) (bool, error) {
+	if strings.TrimSpace(worktreePath) == "" {
+		return false, nil
+	}
+	want, err := canonicalWorktreeListPath(worktreePath)
+	if err != nil {
+		return false, fmt.Errorf("resolve workspace path: %w", err)
+	}
+	cmd := workspaceGitCommand(
+		ctx, gitDir, "worktree", "list", "--porcelain",
+	)
+	out, err := procutil.CombinedOutput(
+		ctx, cmd, "git subprocess capacity",
+	)
+	if err != nil {
+		return false, fmt.Errorf(
+			"%w: %s", err, strings.TrimSpace(string(out)),
+		)
+	}
+	for line := range strings.SplitSeq(string(out), "\n") {
+		path, ok := strings.CutPrefix(line, "worktree ")
+		if !ok {
+			continue
+		}
+		got, err := canonicalWorktreeListPath(strings.TrimSpace(path))
+		if err != nil {
+			return false, fmt.Errorf("resolve tracked worktree path: %w", err)
+		}
+		if got == want {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func canonicalWorktreeListPath(path string) (string, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	if evaluated, err := filepath.EvalSymlinks(abs); err == nil {
+		return evaluated, nil
+	}
+	parent := filepath.Dir(abs)
+	evaluatedParent, err := filepath.EvalSymlinks(parent)
+	if err != nil {
+		return abs, nil
+	}
+	return filepath.Join(evaluatedParent, filepath.Base(abs)), nil
 }
 
 func gitIsBareRepository(ctx context.Context, dir string) (bool, error) {

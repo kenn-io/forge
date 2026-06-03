@@ -41,7 +41,7 @@ async function selectPullGrouping(page: Page, label: string): Promise<void> {
 const longRepoName = "widgets-with-an-extremely-long-repository-name";
 const longRepoPath = `acme/${longRepoName}`;
 
-async function mockLongPullRepoSlug(page: Page): Promise<void> {
+async function mockSidebarPullPayload(page: Page): Promise<void> {
   await page.route(
     (url) =>
       url.pathname.endsWith("/api/v1/pulls")
@@ -49,6 +49,8 @@ async function mockLongPullRepoSlug(page: Page): Promise<void> {
     async (route) => {
       const response = await route.fetch();
       const pulls = await response.json() as Array<{
+        ReviewDecision?: string;
+        Title?: string;
         repo?: { owner?: string; name?: string; repo_path?: string };
         repo_owner?: string;
         repo_name?: string;
@@ -61,6 +63,13 @@ async function mockLongPullRepoSlug(page: Page): Promise<void> {
           firstPull.repo.owner = "acme";
           firstPull.repo.name = longRepoName;
           firstPull.repo.repo_path = longRepoPath;
+        }
+      }
+      for (const pull of pulls) {
+        if (pull.Title === "Add widget caching layer") {
+          pull.ReviewDecision = "APPROVED";
+        } else if (pull.Title === "Fix race condition in event loop") {
+          pull.ReviewDecision = "CHANGES_REQUESTED";
         }
       }
       await route.fulfill({ response, json: pulls });
@@ -148,7 +157,7 @@ test.describe("PR list view", () => {
       /^8 PRs$/,
     );
 
-    await mockLongPullRepoSlug(page);
+    await mockSidebarPullPayload(page);
     await page.goto("/pulls");
     await waitForPullList(page);
 

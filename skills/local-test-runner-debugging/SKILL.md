@@ -24,6 +24,29 @@ Prove whether the failure is local runner/environment pressure or a product/test
    - a no-op or list-only runner mode when available;
    - a fresh temp output directory when the runner supports it.
 
+## Tmux Orphan Checks
+
+middleman tests can spawn real tmux sessions. If a test process is `SIGKILL`ed, its normal cleanup can be bypassed and those sessions may remain.
+
+Inspect candidates without deleting them:
+
+```sh
+tmux list-sessions -F '#{session_name}	#{session_created}	#{session_attached}	#{session_windows}'
+tmux show-options -qv -t <session> @middleman_owner
+tmux display-message -p -t <session> '#{pane_current_path} #{pane_current_command} #{pane_title}'
+tmux capture-pane -p -t <session> -S -80
+```
+
+A tmux session is a plausible middleman test orphan only when the evidence lines up:
+
+- the name matches middleman's managed shapes: `middleman-<16 lowercase hex>` or `middleman-<16 lowercase hex>-<16 lowercase hex>`;
+- it is unattached and not being used by a live middleman dev server, workspace, or runtime session;
+- its `@middleman_owner` marker points at this checkout's manager, or other evidence clearly ties it to the failed test run;
+- its pane path, command, title, or captured output points at this repo/test run rather than a user shell;
+- if the local SQLite state is available, it is not referenced by a live workspace row or stored runtime tmux-session row.
+
+Do not classify a session as safe to delete from name alone. If any check is ambiguous, leave it out of the cleanup target list and report the uncertainty.
+
 ## Safety
 
 Never kill, stop, delete, terminate, remove, or clean up processes, tmux sessions, servers, jobs, status files, browser state, sockets, or test artifacts unless the user explicitly approves the exact target list and intended command. You may inspect and report without approval.

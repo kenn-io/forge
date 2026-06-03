@@ -16,7 +16,7 @@
     reconnectOnExit?: boolean;
     active?: boolean;
     onExit?: (code: number) => void;
-    // When the session is already exited at mount time, skip the
+    // When the session is not attachable at mount time, skip the
     // WebSocket connect — the server's attach endpoint returns 404
     // for non-running sessions, which would loop scheduleReconnect.
     initialStatus?: string;
@@ -61,6 +61,14 @@
   const MAX_RECONNECT_DELAY = 30000;
   const TERMINAL_SMOOTH_SCROLL_DURATION = 0;
   const TERMINAL_MINIMUM_CONTRAST_RATIO = 4.5;
+
+  function isAttachableInitialStatus(status: string | undefined): boolean {
+    return status === undefined || status === "running" || status === "starting";
+  }
+
+  function initialStatusMessage(status: string | undefined): string {
+    return status === "exited" ? "Process exited" : "Session unavailable";
+  }
 
   function defaultTerminalFontFamily(): string {
     const rootFontFamily = getComputedStyle(
@@ -485,9 +493,11 @@
       });
       resizeObserver.observe(containerEl);
 
-      if (initialStatus === "exited") {
+      if (!isAttachableInitialStatus(initialStatus)) {
         exited = true;
-        term.write("\r\n\x1b[90m[Process exited]\x1b[0m\r\n");
+        term.write(
+          `\r\n\x1b[90m[${initialStatusMessage(initialStatus)}]\x1b[0m\r\n`,
+        );
         return;
       }
       connect();

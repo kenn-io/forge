@@ -24,6 +24,7 @@ const {
     cols: number;
     refresh: ReturnType<typeof vi.fn>;
     rows: number;
+    write: ReturnType<typeof vi.fn>;
   }>,
   xtermOnDataHandlers: [] as Array<(data: string) => void>,
   xtermTerminalCtor: vi.fn(),
@@ -323,6 +324,24 @@ describe("TerminalPane", () => {
     xtermOnDataHandlers[0]!("\x1b[<32;12;5M");
 
     expect(sentText(socket, 0)).toBe("\x1b[<32;12;5M");
+  });
+
+  it("does not attach xterm sessions with unavailable initial status", async () => {
+    render(TerminalPane, {
+      props: {
+        websocketPath:
+          "/api/v1/workspaces/ws-123/runtime/sessions/ws-123%3Ahelper/terminal",
+        reconnectOnExit: false,
+        initialStatus: "error",
+      },
+    });
+
+    await waitFor(() => expect(xtermTerminalCtor).toHaveBeenCalled());
+
+    expect(mockSockets).toHaveLength(0);
+    expect(xtermInstances[0]!.write).toHaveBeenCalledWith(
+      expect.stringContaining("[Session unavailable]"),
+    );
   });
 });
 

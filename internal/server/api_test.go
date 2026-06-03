@@ -18856,11 +18856,8 @@ for a in "$@"; do
 done
 case "$1" in
   list-sessions)
-    printf 'middleman-0000000000000001\nmiddleman-0000000000000001-0123456789abcdef\n'
-    exit 0
-    ;;
-  show-options)
-    printf '%%s\n' "$MIDDLEMAN_TMUX_OWNER"
+    printf 'middleman-0000000000000001\t%%s\n' "$MIDDLEMAN_TMUX_OWNER"
+    printf 'middleman-0000000000000001-0123456789abcdef\t%%s\n' "$MIDDLEMAN_TMUX_OWNER"
     exit 0
     ;;
   kill-session)

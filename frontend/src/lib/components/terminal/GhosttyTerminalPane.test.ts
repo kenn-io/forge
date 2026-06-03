@@ -300,6 +300,20 @@ describe("GhosttyTerminalPane", () => {
     );
   });
 
+  it("does not open a websocket when initialStatus is error", async () => {
+    await renderStarted({
+      websocketPath:
+        "/api/v1/workspaces/ws-123/runtime/sessions/ws-123%3Ahelper/terminal",
+      reconnectOnExit: false,
+      initialStatus: "error",
+    });
+
+    expect(sockets).toHaveLength(0);
+    expect(terminalWrite).toHaveBeenCalledWith(
+      expect.stringContaining("[Session unavailable]"),
+    );
+  });
+
   it("does not restart sessions when reconnectOnExit is false", async () => {
     const onExit = vi.fn();
 

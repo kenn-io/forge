@@ -1259,15 +1259,12 @@ func TestManagerReapOrphanTmuxSessionsKillsUnknownManagedSessions(t *testing.T) 
 		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
 		`for a in "$@"; do` + "\n" +
 		`  if [ "$a" = "list-sessions" ]; then` + "\n" +
-		`    printf 'middleman-0000000000000001\nmiddleman-ffffffffffffffff\nmiddleman-aaaaaaaaaaaaaaaa-0123456789abcdef\nmiddleman-aaaaaaaaaaaaaaaa-claude\nmiddleman-notes\nother-session\n'` + "\n" +
+		`    printf 'middleman-0000000000000001\t%s\n' "$MIDDLEMAN_TMUX_OWNER"` + "\n" +
+		`    printf 'middleman-ffffffffffffffff\n'` + "\n" +
+		`    printf 'middleman-aaaaaaaaaaaaaaaa-0123456789abcdef\t%s\n' "$MIDDLEMAN_TMUX_OWNER"` + "\n" +
+		`    printf 'middleman-aaaaaaaaaaaaaaaa-claude\t%s\n' "$MIDDLEMAN_TMUX_OWNER"` + "\n" +
+		`    printf 'middleman-notes\nother-session\n'` + "\n" +
 		`    exit 0` + "\n" +
-		`  fi` + "\n" +
-		`  if [ "$a" = "show-options" ]; then` + "\n" +
-		`    if [ "$5" = "middleman-aaaaaaaaaaaaaaaa-0123456789abcdef" ] || [ "$5" = "middleman-aaaaaaaaaaaaaaaa-claude" ]; then` + "\n" +
-		`      printf '%s\n' "$MIDDLEMAN_TMUX_OWNER"` + "\n" +
-		`      exit 0` + "\n" +
-		`    fi` + "\n" +
-		`    exit 1` + "\n" +
 		`  fi` + "\n" +
 		"done\n" +
 		"exit 0\n"
@@ -1296,32 +1293,20 @@ func TestManagerReapOrphanTmuxSessionsKillsUnknownManagedSessions(t *testing.T) 
 	require.NoError(mgr.ReapOrphanTmuxSessions(context.Background()))
 
 	argvs := readRecorderArgv(t, record)
-	require.Len(argvs, 4)
+	require.Len(argvs, 2)
 	assert.Equal(
-		[]string{"wrap", "list-sessions", "-F", "#{session_name}"},
+		[]string{
+			"wrap", "list-sessions", "-F",
+			"#{session_name}\t#{@middleman_owner}",
+		},
 		argvs[0],
-	)
-	assert.Equal(
-		[]string{
-			"wrap", "show-options", "-qv", "-t",
-			"middleman-ffffffffffffffff", "@middleman_owner",
-		},
-		argvs[1],
-	)
-	assert.Equal(
-		[]string{
-			"wrap", "show-options", "-qv", "-t",
-			"middleman-aaaaaaaaaaaaaaaa-0123456789abcdef",
-			"@middleman_owner",
-		},
-		argvs[2],
 	)
 	assert.Equal(
 		[]string{
 			"wrap", "kill-session", "-t",
 			"middleman-aaaaaaaaaaaaaaaa-0123456789abcdef",
 		},
-		argvs[3],
+		argvs[1],
 	)
 	assert.NotContains(argvs, []string{
 		"wrap", "show-options", "-qv", "-t",
@@ -1346,11 +1331,9 @@ func TestManagerReapOrphanTmuxSessionsKeepsStoredRuntimeSessions(
 		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
 		`for a in "$@"; do` + "\n" +
 		`  if [ "$a" = "list-sessions" ]; then` + "\n" +
-		`    printf 'middleman-0000000000000001\nmiddleman-0000000000000001-57de4cf40144bdf7\nmiddleman-aaaaaaaaaaaaaaaa-c857d09db23e6822\n'` + "\n" +
-		`    exit 0` + "\n" +
-		`  fi` + "\n" +
-		`  if [ "$a" = "show-options" ]; then` + "\n" +
-		`    printf '%s\n' "$MIDDLEMAN_TMUX_OWNER"` + "\n" +
+		`    printf 'middleman-0000000000000001\t%s\n' "$MIDDLEMAN_TMUX_OWNER"` + "\n" +
+		`    printf 'middleman-0000000000000001-57de4cf40144bdf7\t%s\n' "$MIDDLEMAN_TMUX_OWNER"` + "\n" +
+		`    printf 'middleman-aaaaaaaaaaaaaaaa-c857d09db23e6822\t%s\n' "$MIDDLEMAN_TMUX_OWNER"` + "\n" +
 		`    exit 0` + "\n" +
 		`  fi` + "\n" +
 		"done\n" +

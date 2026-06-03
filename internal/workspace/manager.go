@@ -1121,7 +1121,7 @@ func (m *Manager) ReapOrphanTmuxSessions(ctx context.Context) error {
 		}
 	}
 
-	sessions, err := m.listTmuxSessions(ctx)
+	sessions, err := m.listTmuxSessionInfos(ctx)
 	if err != nil {
 		if isTmuxCommandUnavailable(err) {
 			return nil
@@ -1129,23 +1129,19 @@ func (m *Manager) ReapOrphanTmuxSessions(ctx context.Context) error {
 		return err
 	}
 	for _, session := range sessions {
-		if !isMiddlemanWorkspaceTmuxSessionName(session) {
+		if !isMiddlemanWorkspaceTmuxSessionName(session.name) {
 			continue
 		}
-		if live[session] {
+		if live[session.name] {
 			continue
 		}
-		owned, err := m.tmuxSessionOwnedByThisManager(ctx, session)
-		if err != nil {
-			return err
-		}
-		if !owned {
+		if session.owner != m.tmuxOwnerMarker() {
 			continue
 		}
-		if err := m.killTmuxSession(ctx, session); err != nil &&
+		if err := m.killTmuxSession(ctx, session.name); err != nil &&
 			!isTmuxKillSessionGone(err) {
 			return fmt.Errorf(
-				"kill orphan tmux session %q: %w", session, err,
+				"kill orphan tmux session %q: %w", session.name, err,
 			)
 		}
 	}
@@ -1276,26 +1272,6 @@ func (m *Manager) TmuxOwnerMarker() string {
 	return m.tmuxOwnerMarker()
 }
 
-func (m *Manager) tmuxSessionOwnedByThisManager(
-	ctx context.Context, session string,
-) (bool, error) {
-	cmd := m.tmuxExec(
-		ctx,
-		"show-options", "-qv", "-t", session,
-		"@middleman_owner",
-	)
-	out, err := procutil.Output(
-		ctx, cmd, "tmux subprocess capacity",
-	)
-	if err != nil {
-		if procutil.IsResourceExhausted(err) {
-			return false, err
-		}
-		return false, nil
-	}
-	return strings.TrimSpace(string(out)) == m.tmuxOwnerMarker(), nil
-}
-
 func (m *Manager) workspaceHasCreatedTmuxSession(
 	ctx context.Context, ws *Workspace,
 ) (bool, error) {
@@ -1339,10 +1315,18 @@ func isTmuxCommandUnavailable(err error) bool {
 	return errors.Is(err, exec.ErrNotFound) || errors.Is(err, os.ErrNotExist)
 }
 
-func (m *Manager) listTmuxSessions(
+type tmuxSessionInfo struct {
+	name  string
+	owner string
+}
+
+func (m *Manager) listTmuxSessionInfos(
 	ctx context.Context,
-) ([]string, error) {
-	cmd := m.tmuxExec(ctx, "list-sessions", "-F", "#{session_name}")
+) ([]tmuxSessionInfo, error) {
+	cmd := m.tmuxExec(
+		ctx,
+		"list-sessions", "-F", "#{session_name}\t#{@middleman_owner}",
+	)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -1357,12 +1341,35 @@ func (m *Manager) listTmuxSessions(
 		}
 		return nil, fmt.Errorf("tmux list-sessions: %w: %s", err, msg)
 	}
-	var sessions []string
+	var sessions []tmuxSessionInfo
 	for line := range strings.SplitSeq(stdout.String(), "\n") {
-		line = strings.TrimSpace(line)
-		if line != "" {
-			sessions = append(sessions, line)
+		line = strings.TrimSuffix(line, "\r")
+		if line == "" {
+			continue
 		}
+		name, owner, _ := strings.Cut(line, "\t")
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		sessions = append(sessions, tmuxSessionInfo{
+			name:  name,
+			owner: strings.TrimSpace(owner),
+		})
+	}
+	return sessions, nil
+}
+
+func (m *Manager) listTmuxSessions(
+	ctx context.Context,
+) ([]string, error) {
+	infos, err := m.listTmuxSessionInfos(ctx)
+	if err != nil {
+		return nil, err
+	}
+	sessions := make([]string, 0, len(infos))
+	for _, info := range infos {
+		sessions = append(sessions, info.name)
 	}
 	return sessions, nil
 }

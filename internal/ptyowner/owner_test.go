@@ -182,6 +182,7 @@ func TestOwnerDetachedBeforeExitKeepsPostExitAttachWindow(t *testing.T) {
 		require.Fail("post-exit attachment did not receive exit")
 	}
 	assert.Equal(9, second.ExitCode())
+	second.Close()
 
 	select {
 	case err := <-done:

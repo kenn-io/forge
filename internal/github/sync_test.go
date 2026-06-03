@@ -2303,6 +2303,60 @@ func TestIndexUpsertMergeRequestPreservesCachedCIForSameHead(t *testing.T) {
 	assert.Contains(stored.CIChecksJSON, "build")
 }
 
+func TestIndexUpsertMergeRequestPreservesReviewDecisionWhenOmitted(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	now := time.Date(2026, 5, 20, 12, 0, 0, 0, time.UTC)
+	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "owner", "repo"))
+	require.NoError(err)
+
+	_, err = d.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:          repoID,
+		PlatformID:      1001,
+		Number:          1,
+		URL:             "https://github.com/owner/repo/pull/1",
+		Title:           "Approved PR",
+		State:           "open",
+		HeadBranch:      "feature",
+		BaseBranch:      "main",
+		PlatformHeadSHA: "same-head",
+		ReviewDecision:  "APPROVED",
+		CreatedAt:       now,
+		UpdatedAt:       now,
+		LastActivityAt:  now,
+	})
+	require.NoError(err)
+
+	syncer := NewSyncer(nil, d, nil, nil, time.Minute, nil, testBudget(500))
+	err = syncer.indexUpsertMergeRequest(
+		ctx,
+		RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"},
+		repoID,
+		platform.MergeRequest{
+			PlatformID:     1001,
+			Number:         1,
+			URL:            "https://github.com/owner/repo/pull/1",
+			Title:          "Approved PR",
+			State:          "open",
+			HeadBranch:     "feature",
+			BaseBranch:     "main",
+			HeadSHA:        "same-head",
+			CreatedAt:      now,
+			UpdatedAt:      now.Add(time.Minute),
+			LastActivityAt: now.Add(time.Minute),
+		},
+	)
+	require.NoError(err)
+
+	stored, err := d.GetMergeRequest(ctx, "owner", "repo", 1)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Equal("APPROVED", stored.ReviewDecision)
+}
+
 func TestPreserveMergeableStateSkipsChangedOrUnknownHeadOrBase(t *testing.T) {
 	assert := Assert.New(t)
 	tests := []struct {
@@ -2396,6 +2450,32 @@ func TestPreserveCIStateKeepsOmittedStateForMatchingHead(t *testing.T) {
 
 	assert.Equal("success", normalized.CIStatus)
 	assert.Contains(normalized.CIChecksJSON, "build")
+}
+
+func TestPreserveReviewDecisionKeepsOmittedDecisionForMatchingHead(t *testing.T) {
+	assert := Assert.New(t)
+	normalized := db.MergeRequest{PlatformHeadSHA: "same-head"}
+	existing := db.MergeRequest{
+		PlatformHeadSHA: "same-head",
+		ReviewDecision:  "CHANGES_REQUESTED",
+	}
+
+	preserveReviewDecisionIfOmitted(&normalized, &existing)
+
+	assert.Equal("CHANGES_REQUESTED", normalized.ReviewDecision)
+}
+
+func TestPreserveReviewDecisionSkipsChangedHead(t *testing.T) {
+	assert := Assert.New(t)
+	normalized := db.MergeRequest{PlatformHeadSHA: "new-head"}
+	existing := db.MergeRequest{
+		PlatformHeadSHA: "old-head",
+		ReviewDecision:  "APPROVED",
+	}
+
+	preserveReviewDecisionIfOmitted(&normalized, &existing)
+
+	assert.Empty(normalized.ReviewDecision)
 }
 
 func TestPreserveCIStateClearsCachedChecksWhenStatusChanges(t *testing.T) {

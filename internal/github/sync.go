@@ -3753,6 +3753,7 @@ func (s *Syncer) indexUpsertMergeRequest(
 	if existing != nil {
 		normalized.Additions = existing.Additions
 		normalized.Deletions = existing.Deletions
+		preserveReviewDecisionIfOmitted(normalized, existing)
 		preserveMergeableStateIfOmitted(normalized, existing)
 		needsCIDetailRefresh = preserveCIStateIfOmitted(normalized, existing)
 	}
@@ -3836,6 +3837,7 @@ func (s *Syncer) indexUpsertMR(
 	if existing != nil {
 		normalized.Additions = existing.Additions
 		normalized.Deletions = existing.Deletions
+		preserveReviewDecisionIfOmitted(normalized, existing)
 		preserveMergeableStateIfOmitted(normalized, existing)
 		needsCIDetailRefresh = preserveCIStateIfOmitted(normalized, existing)
 	}
@@ -7116,6 +7118,24 @@ func preserveMergeableStateIfOmitted(
 		(normalized.MergeableState == "unknown" && existing.MergeableState != "") {
 		normalized.MergeableState = existing.MergeableState
 	}
+}
+
+func preserveReviewDecisionIfOmitted(
+	normalized *db.MergeRequest,
+	existing *db.MergeRequest,
+) {
+	if normalized == nil || existing == nil {
+		return
+	}
+	if normalized.ReviewDecision != "" || existing.ReviewDecision == "" {
+		return
+	}
+	if normalized.PlatformHeadSHA != "" &&
+		existing.PlatformHeadSHA != "" &&
+		normalized.PlatformHeadSHA != existing.PlatformHeadSHA {
+		return
+	}
+	normalized.ReviewDecision = existing.ReviewDecision
 }
 
 func preserveCIStateIfOmitted(

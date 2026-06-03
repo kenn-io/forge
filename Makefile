@@ -120,10 +120,10 @@ guardrail-check: frontend-api-client-check font-size-token-check huma-route-chec
 
 # Regenerate the checked-in OpenAPI document and generated clients
 api-generate:
-	GOCACHE="$${GOCACHE:-/tmp/middleman-gocache}" go run ./cmd/middleman-openapi -out frontend/openapi/openapi.yaml
-	GOCACHE="$${GOCACHE:-/tmp/middleman-gocache}" go run ./cmd/middleman-openapi -out internal/apiclient/spec/openapi.json -version 3.0
-	cd frontend && bun ./node_modules/openapi-typescript/bin/cli.js openapi/openapi.yaml --enum-values -o ../packages/ui/src/api/generated/schema.ts
-	printf '%s\n' \
+	set -e; tmp="$$(mktemp)"; trap 'rm -f "$$tmp"' EXIT; GOCACHE="$${GOCACHE:-/tmp/middleman-gocache}" go run ./cmd/middleman-openapi -out "$$tmp"; if [ -f frontend/openapi/openapi.yaml ] && cmp -s "$$tmp" frontend/openapi/openapi.yaml; then rm "$$tmp"; else mv "$$tmp" frontend/openapi/openapi.yaml; fi; trap - EXIT
+	set -e; tmp="$$(mktemp)"; trap 'rm -f "$$tmp"' EXIT; GOCACHE="$${GOCACHE:-/tmp/middleman-gocache}" go run ./cmd/middleman-openapi -out "$$tmp" -version 3.0; if [ -f internal/apiclient/spec/openapi.json ] && cmp -s "$$tmp" internal/apiclient/spec/openapi.json; then rm "$$tmp"; else mv "$$tmp" internal/apiclient/spec/openapi.json; fi; trap - EXIT
+	set -e; tmp="$$(mktemp)"; trap 'rm -f "$$tmp"' EXIT; (cd frontend && bun ./node_modules/openapi-typescript/bin/cli.js openapi/openapi.yaml --enum-values -o "$$tmp"); if [ -f packages/ui/src/api/generated/schema.ts ] && cmp -s "$$tmp" packages/ui/src/api/generated/schema.ts; then rm "$$tmp"; else mv "$$tmp" packages/ui/src/api/generated/schema.ts; fi; trap - EXIT
+	set -e; tmp="$$(mktemp)"; trap 'rm -f "$$tmp"' EXIT; printf '%s\n' \
 		'/**' \
 		' * This file was auto-generated from frontend/openapi/openapi.yaml.' \
 		' * Do not make direct changes to the file.' \
@@ -135,8 +135,8 @@ api-generate:
 		'export function createAPIClient(baseUrl: string, options: Pick<ClientOptions, "fetch" | "querySerializer"> = {}) {' \
 		'  return createClient<paths>({ baseUrl, ...options });' \
 		'}' \
-		> packages/ui/src/api/generated/client.ts
-	GOCACHE="$${GOCACHE:-/tmp/middleman-gocache}" go generate ./internal/apiclient/generated
+		> "$$tmp"; if [ -f packages/ui/src/api/generated/client.ts ] && cmp -s "$$tmp" packages/ui/src/api/generated/client.ts; then rm "$$tmp"; else mv "$$tmp" packages/ui/src/api/generated/client.ts; fi; trap - EXIT
+	set -e; tmp="$$(mktemp)"; trap 'rm -f "$$tmp"' EXIT; (cd internal/apiclient/generated && GOCACHE="$${GOCACHE:-/tmp/middleman-gocache}" go tool oapi-codegen --config config.yaml -o "$$tmp" ../spec/openapi.json); if [ -f internal/apiclient/generated/client.gen.go ] && cmp -s "$$tmp" internal/apiclient/generated/client.gen.go; then rm "$$tmp"; else mv "$$tmp" internal/apiclient/generated/client.gen.go; fi; trap - EXIT
 
 # Regenerate roborev TypeScript client types from checked-in OpenAPI spec
 roborev-api-generate:

@@ -6,8 +6,14 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/cenkalti/backoff/v5"
 	ptyownerruntime "go.kenn.io/middleman/internal/ptyowner/runtime"
+	internalretry "go.kenn.io/middleman/internal/retry"
 )
+
+var newPtyOwnerAttachBackOff = func() backoff.BackOff {
+	return internalretry.DefaultBackOff()
+}
 
 type ptyOwnerLifecycle struct {
 	owner   ptyownerruntime.Owner
@@ -62,9 +68,22 @@ func attachPtyOwnerSession(
 	owner ptyownerruntime.Owner,
 	info SessionInfo,
 ) (*session, error) {
-	ptySession, err := owner.Attach(ctx, info.Key)
+	ptySession, err := internalretry.Do(ctx, internalretry.Config[ptyownerruntime.PTY]{
+		Label:    "runtime pty owner attach",
+		BackOff:  newPtyOwnerAttachBackOff(),
+		MaxTries: 4,
+		IsTransient: func(error) bool {
+			return true
+		},
+		Op: func() (ptyownerruntime.PTY, error) {
+			return owner.Attach(ctx, info.Key)
+		},
+	})
 	if err != nil {
-		return nil, fmt.Errorf("%w: %q: %v", ErrSessionNotFound, info.Key, err)
+		return nil, fmt.Errorf(
+			"%w: %q: %v",
+			ErrSessionUnavailable, info.Key, err,
+		)
 	}
 	slog.Debug(
 		"runtime session pty owner attached",

@@ -33,8 +33,11 @@ const (
 )
 
 var (
-	errManagerShutdown   = errors.New("runtime manager is shut down")
-	ErrSessionNotFound   = errors.New("runtime session not found")
+	errManagerShutdown    = errors.New("runtime manager is shut down")
+	ErrSessionNotFound    = errors.New("runtime session not found")
+	ErrSessionUnavailable = errors.New(
+		"runtime session is temporarily unavailable",
+	)
 	errWorkspaceStopping = errors.New(
 		"workspace is being stopped",
 	)
@@ -462,8 +465,16 @@ func (m *Manager) restoreRuntimeSession(
 		if err := m.validateRestoredTmuxSessionOwner(ctx, tmuxSession); err != nil {
 			return err
 		}
-	} else if m.ptyOwnerRuntime == nil || !m.ptyOwnerRuntime.HasState(key) {
-		return fmt.Errorf("%w: %q", ErrSessionNotFound, key)
+	} else if m.ptyOwnerRuntime == nil {
+		return fmt.Errorf(
+			"%w: %q: pty owner runtime unavailable",
+			ErrSessionUnavailable, key,
+		)
+	} else if !m.ptyOwnerRuntime.HasState(key) {
+		return fmt.Errorf(
+			"%w: %q: pty owner state missing",
+			ErrSessionUnavailable, key,
+		)
 	}
 
 	target, err := m.target(targetKey)

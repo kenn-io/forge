@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -5121,13 +5122,88 @@ func (s *Server) getWorkspaceRuntime(
 	if err != nil {
 		return nil, err
 	}
+	sessions, err := s.workspaceRuntimeSessions(ctx, summary.ID)
+	if err != nil {
+		return nil, problemInternal("list runtime sessions: " + err.Error())
+	}
 
 	return &getWorkspaceRuntimeOutput{
 		Body: workspaceRuntimeResponse{
 			LaunchTargets: s.runtime.LaunchTargets(),
-			Sessions:      s.runtime.ListSessions(summary.ID),
+			Sessions:      sessions,
 		},
 	}, nil
+}
+
+func (s *Server) workspaceRuntimeSessions(
+	ctx context.Context,
+	workspaceID string,
+) ([]localruntime.SessionInfo, error) {
+	sessions := s.runtime.ListSessions(workspaceID)
+	if s.workspaces == nil {
+		return sessions, nil
+	}
+	stored, err := s.workspaces.RuntimeSessionsForWorkspace(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	return mergeStoredRuntimeSessions(sessions, stored), nil
+}
+
+func mergeStoredRuntimeSessions(
+	live []localruntime.SessionInfo,
+	stored []db.WorkspaceRuntimeSession,
+) []localruntime.SessionInfo {
+	sessions := slices.Clone(live)
+	seen := make(map[string]struct{}, len(sessions))
+	for _, session := range sessions {
+		seen[session.Key] = struct{}{}
+	}
+	for _, session := range stored {
+		if session.SessionKey == "" {
+			continue
+		}
+		if _, ok := seen[session.SessionKey]; ok {
+			continue
+		}
+		sessions = append(sessions, storedRuntimeSessionInfo(session))
+		seen[session.SessionKey] = struct{}{}
+	}
+	slices.SortFunc(sessions, localruntime.SessionInfo.Compare)
+	return sessions
+}
+
+func storedRuntimeSessionInfo(
+	session db.WorkspaceRuntimeSession,
+) localruntime.SessionInfo {
+	targetKey := strings.TrimSpace(session.TargetKey)
+	kind := localruntime.LaunchTargetKind(strings.TrimSpace(session.Kind))
+	if kind == "" {
+		kind = localruntime.LaunchTargetAgent
+	}
+	if targetKey == string(localruntime.LaunchTargetPlainShell) ||
+		kind == localruntime.LaunchTargetPlainShell {
+		targetKey = string(localruntime.LaunchTargetPlainShell)
+		kind = localruntime.LaunchTargetPlainShell
+	}
+	label := strings.TrimSpace(session.Label)
+	if label == "" {
+		if kind == localruntime.LaunchTargetPlainShell {
+			label = "Shell"
+		} else {
+			label = targetKey
+		}
+	}
+	return localruntime.SessionInfo{
+		Key:         session.SessionKey,
+		WorkspaceID: session.WorkspaceID,
+		TargetKey:   targetKey,
+		Label:       label,
+		Kind:        kind,
+		Status:      localruntime.SessionStatusError,
+		CreatedAt:   session.CreatedAt,
+		TmuxSession: session.TmuxSession,
+	}
 }
 
 func (s *Server) launchWorkspaceRuntimeSession(
@@ -5185,14 +5261,6 @@ func (s *Server) recordRuntimeSession(
 		},
 	); err != nil {
 		return problemInternal("record runtime session: " + err.Error())
-	}
-	if session.TmuxSession == "" {
-		return nil
-	}
-	if runtimeSessionTmuxSession(
-		s.runtime.ListSessions(workspaceID), session.Key,
-	) == "" {
-		_ = s.workspaces.ForgetRuntimeSession(ctx, workspaceID, session.Key)
 	}
 	return nil
 }
@@ -5267,18 +5335,6 @@ func (s *Server) renameWorkspaceRuntimeSession(
 		}
 	}
 	return &workspaceRuntimeSessionOutput{Body: session}, nil
-}
-
-func runtimeSessionTmuxSession(
-	sessions []localruntime.SessionInfo,
-	key string,
-) string {
-	for _, session := range sessions {
-		if session.Key == key {
-			return session.TmuxSession
-		}
-	}
-	return ""
 }
 
 func (s *Server) getReadyRuntimeWorkspace(

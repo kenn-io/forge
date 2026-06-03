@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cenkalti/backoff/v5"
 	"github.com/creack/pty/v2"
 	shellquote "github.com/kballard/go-shellquote"
 	Assert "github.com/stretchr/testify/assert"
@@ -622,6 +623,97 @@ func TestManagerRestorePtyOwnerSessionIgnoresRemovedTarget(t *testing.T) {
 	assert.Equal("Removed Agent", sessions[0].Label)
 	assert.Equal(LaunchTargetAgent, sessions[0].Kind)
 	assert.Equal(createdAt, sessions[0].CreatedAt)
+}
+
+func TestManagerRestorePtyOwnerSessionRetriesAttach(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	sessionKey := "ws-1_retry-attach"
+	owner := newFakeRuntimePtyOwner()
+	owner.startedSession = sessionKey
+	owner.startedPTY = &fakeRuntimePTY{
+		output: make(chan []byte, 64),
+		done:   make(chan struct{}),
+	}
+	owner.attachErrs = []error{
+		errors.New("owner socket not ready"),
+		errors.New("owner still starting"),
+	}
+	previousBackOff := newPtyOwnerAttachBackOff
+	newPtyOwnerAttachBackOff = func() backoff.BackOff {
+		expo := backoff.NewExponentialBackOff()
+		expo.InitialInterval = time.Millisecond
+		expo.MaxInterval = time.Millisecond
+		expo.RandomizationFactor = 0
+		return expo
+	}
+	t.Cleanup(func() { newPtyOwnerAttachBackOff = previousBackOff })
+	mgr := NewManager(Options{
+		PtyOwnerRuntime: owner,
+	})
+	t.Cleanup(mgr.Shutdown)
+
+	err := mgr.RestoreRuntimeSessions(context.Background(), []RestoredRuntimeSession{{
+		WorkspaceID: "ws-1",
+		SessionKey:  sessionKey,
+		TargetKey:   "helper",
+		Label:       "Helper",
+		Kind:        LaunchTargetAgent,
+		CWD:         t.TempDir(),
+		CreatedAt:   time.Date(2026, 5, 28, 12, 0, 0, 0, time.UTC),
+	}})
+	require.NoError(err)
+
+	sessions := mgr.ListSessions("ws-1")
+	require.Len(sessions, 1)
+	assert.Equal(3, owner.attaches)
+	assert.Equal(sessionKey, sessions[0].Key)
+	assert.Equal(SessionStatusRunning, sessions[0].Status)
+}
+
+func TestManagerRestorePtyOwnerAttachFailureIsUnavailable(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	sessionKey := "ws-1_unavailable-attach"
+	owner := newFakeRuntimePtyOwner()
+	owner.startedSession = sessionKey
+	owner.startedPTY = &fakeRuntimePTY{
+		output: make(chan []byte, 64),
+		done:   make(chan struct{}),
+	}
+	owner.attachErrs = []error{
+		errors.New("owner socket not ready"),
+		errors.New("owner still starting"),
+		errors.New("owner still absent"),
+		errors.New("owner gone"),
+	}
+	previousBackOff := newPtyOwnerAttachBackOff
+	newPtyOwnerAttachBackOff = func() backoff.BackOff {
+		expo := backoff.NewExponentialBackOff()
+		expo.InitialInterval = time.Millisecond
+		expo.MaxInterval = time.Millisecond
+		expo.RandomizationFactor = 0
+		return expo
+	}
+	t.Cleanup(func() { newPtyOwnerAttachBackOff = previousBackOff })
+	mgr := NewManager(Options{
+		PtyOwnerRuntime: owner,
+	})
+	t.Cleanup(mgr.Shutdown)
+
+	err := mgr.RestoreRuntimeSessions(context.Background(), []RestoredRuntimeSession{{
+		WorkspaceID: "ws-1",
+		SessionKey:  sessionKey,
+		TargetKey:   "helper",
+		Label:       "Helper",
+		Kind:        LaunchTargetAgent,
+		CWD:         t.TempDir(),
+		CreatedAt:   time.Date(2026, 5, 28, 12, 0, 0, 0, time.UTC),
+	}})
+	require.ErrorIs(err, ErrSessionUnavailable)
+	require.NotErrorIs(err, ErrSessionNotFound)
+	assert.Equal(4, owner.attaches)
+	assert.Empty(mgr.ListSessions("ws-1"))
 }
 
 func TestManagerRestoreTmuxSessionRejectsUnownedSession(t *testing.T) {
@@ -1730,6 +1822,7 @@ type fakeRuntimePtyOwner struct {
 	stoppedSession      string
 	stoppedSessions     []string
 	stopErr             error
+	attachErrs          []error
 	starts              int
 	attaches            int
 }
@@ -1779,6 +1872,11 @@ func (f *fakeRuntimePtyOwner) Attach(
 	session string,
 ) (ptyownerruntime.PTY, error) {
 	f.attaches++
+	if len(f.attachErrs) > 0 {
+		err := f.attachErrs[0]
+		f.attachErrs = f.attachErrs[1:]
+		return nil, err
+	}
 	if !f.HasState(session) || f.startedPTY == nil {
 		return nil, errors.New("missing pty owner state")
 	}

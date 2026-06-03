@@ -17910,6 +17910,76 @@ func TestWorkspaceRuntimePtyOwnerShellReattachesAfterServerRestartE2E(t *testing
 	assert.True(os.IsNotExist(err))
 }
 
+func TestWorkspaceRuntimeUnavailablePtyOwnerSessionStaysUntilUserStopE2E(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("test fixture uses /bin/sh")
+	}
+	runParallelPTYE2E(t)
+
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	fixture, dir, ptyOwnerDir := setupPtyOwnerWorkspaceFixture(t)
+	ctx := context.Background()
+	ws := createReadyWorkspace(t, ctx, fixture.client)
+	sessionKey := ws.Id + "_stale-shell"
+	createdAt := time.Date(2026, 6, 3, 12, 0, 0, 0, time.UTC)
+	require.NoError(fixture.server.workspaces.RecordRuntimeSession(
+		ctx,
+		db.WorkspaceRuntimeSession{
+			WorkspaceID: ws.Id,
+			SessionKey:  sessionKey,
+			TargetKey:   string(localruntime.LaunchTargetPlainShell),
+			Label:       "Shell",
+			Kind:        string(localruntime.LaunchTargetPlainShell),
+			Scope:       "session",
+			CreatedAt:   createdAt,
+		},
+	))
+
+	gracefulShutdown(t, fixture.server)
+
+	cfg := &config.Config{Tmux: config.Tmux{
+		Command: []string{filepath.Join(dir, "missing-tmux")},
+	}}
+	options := ptyOwnerServerOptions(ptyOwnerDir)
+	options.Clones = fixture.clones
+	options.WorktreeDir = fixture.worktrees
+	restarted := New(
+		fixture.database, fixture.server.syncer, nil, "/", cfg, options,
+	)
+	t.Cleanup(func() { gracefulShutdown(t, restarted) })
+	restartedClient := setupTestClient(t, restarted)
+
+	runtimeResp, err := restartedClient.HTTP.GetWorkspaceRuntimeWithResponse(
+		ctx, ws.Id,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, runtimeResp.StatusCode())
+	require.NotNil(runtimeResp.JSON200)
+	require.NotNil(runtimeResp.JSON200.Sessions)
+	require.Len(*runtimeResp.JSON200.Sessions, 1)
+	session := (*runtimeResp.JSON200.Sessions)[0]
+	assert.Equal(sessionKey, session.Key)
+	assert.Equal("Shell", session.Label)
+	assert.Equal(string(localruntime.SessionStatusError), session.Status)
+	assert.Equal(string(localruntime.LaunchTargetPlainShell), session.TargetKey)
+
+	stored, err := fixture.database.ListWorkspaceRuntimeSessions(ctx, ws.Id)
+	require.NoError(err)
+	require.Len(stored, 1)
+	assert.Equal(sessionKey, stored[0].SessionKey)
+
+	stopResp, err := restartedClient.HTTP.StopWorkspaceRuntimeSessionWithResponse(
+		ctx, ws.Id, sessionKey,
+	)
+	require.NoError(err)
+	require.Equal(http.StatusNoContent, stopResp.StatusCode())
+	stored, err = fixture.database.ListWorkspaceRuntimeSessions(ctx, ws.Id)
+	require.NoError(err)
+	assert.Empty(stored)
+}
+
 func TestWorkspaceDeleteStopsPtyOwnerAgentAfterServerRestartE2E(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("test fixture uses /bin/sh")
@@ -19231,7 +19301,7 @@ func TestWorkspaceRuntimeStopClearsStoredWrappedAgentSessionAfterRuntimeForgetE2
 	})
 }
 
-func TestWorkspaceRuntimeStopTmuxCleanupFailureCleansExitedSessionE2E(
+func TestWorkspaceRuntimeStopTmuxCleanupFailureRetainsStoredSessionE2E(
 	t *testing.T,
 ) {
 	require := require.New(t)
@@ -19312,7 +19382,12 @@ exit 0
 			getResp.JSON200.Sessions == nil {
 			return false
 		}
-		return len(*getResp.JSON200.Sessions) == 0
+		if len(*getResp.JSON200.Sessions) != 1 {
+			return false
+		}
+		session := (*getResp.JSON200.Sessions)[0]
+		return session.Key == launchResp.JSON200.Key &&
+			session.Status == string(localruntime.SessionStatusError)
 	}, 2*time.Second, 20*time.Millisecond)
 
 	stored, err := database.ListWorkspaceRuntimeTmuxSessions(ctx, ws.Id)

@@ -760,6 +760,17 @@ func (s *Server) restoreRuntimeSessions(ctx context.Context) error {
 			}
 			continue
 		}
+		if errors.Is(err, localruntime.ErrSessionUnavailable) {
+			slog.Warn(
+				"runtime session unavailable after restore",
+				"workspace_id", session.WorkspaceID,
+				"session_key", session.SessionKey,
+				"target_key", session.TargetKey,
+				"tmux_session", session.TmuxSession,
+				"err", err,
+			)
+			continue
+		}
 		return err
 	}
 

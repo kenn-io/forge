@@ -2393,7 +2393,7 @@
                             <WorkspaceHome
                               {workspace}
                               launchTargets={launchTargets}
-                              sessions={workflowSessions}
+                              sessions={runtimeSessions}
                               displayLabels={sessionDisplayLabels}
                               {launchingKey}
                               onLaunch={(key) => void handleLaunch(key)}

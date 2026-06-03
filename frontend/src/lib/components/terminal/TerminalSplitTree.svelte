@@ -177,62 +177,70 @@
 {#if node.type === "leaf"}
   {@const session = sessionForKey(node.sessionKey)}
   <div
-    class={["terminal-leaf", { active: activeSessionKey === node.sessionKey }]}
+    class={[
+      "terminal-leaf",
+      {
+        active: activeSessionKey === node.sessionKey,
+        "single-session": sessions.length <= 1,
+      },
+    ]}
   >
     {#if session}
-      <div
-        class="leaf-header"
-        role="group"
-        aria-label={`${labelFor(session)} terminal pane`}
-        draggable="true"
-        ondragstart={(event) => startSessionDrag(event, session)}
-        ondragend={clearActiveTerminalDrag}
-      >
-        <button
-          class="leaf-title"
+      {#if sessions.length > 1}
+        <div
+          class="leaf-header"
+          role="group"
+          aria-label={`${labelFor(session)} terminal pane`}
           draggable="true"
           ondragstart={(event) => startSessionDrag(event, session)}
           ondragend={clearActiveTerminalDrag}
-          onclick={() => onSelect?.(session.key)}
-          aria-label={`Focus ${labelFor(session)}`}
         >
-          <span class="leaf-icon" aria-hidden="true">
-            {#if session.kind === "plain_shell"}
-              <TerminalIcon size="12" strokeWidth="2" />
-            {:else}
-              <SparklesIcon size="12" strokeWidth="2" />
-            {/if}
-          </span>
-          <span class="leaf-label">{labelFor(session)}</span>
-          <span class={["leaf-dot", session.status]}></span>
-        </button>
-        <div class="leaf-actions">
           <button
-            class="leaf-action"
-            title="Rename"
-            aria-label={`Rename ${labelFor(session)}`}
-            onclick={() => onRename?.(session)}
+            class="leaf-title"
+            draggable="true"
+            ondragstart={(event) => startSessionDrag(event, session)}
+            ondragend={clearActiveTerminalDrag}
+            onclick={() => onSelect?.(session.key)}
+            aria-label={`Focus ${labelFor(session)}`}
           >
-            <PencilIcon size="12" strokeWidth="2" aria-hidden="true" />
+            <span class="leaf-icon" aria-hidden="true">
+              {#if session.kind === "plain_shell"}
+                <TerminalIcon size="12" strokeWidth="2" />
+              {:else}
+                <SparklesIcon size="12" strokeWidth="2" />
+              {/if}
+            </span>
+            <span class="leaf-label">{labelFor(session)}</span>
+            <span class={["leaf-dot", session.status]}></span>
           </button>
-          <button
-            class="leaf-action"
-            title="Move to workflow"
-            aria-label={`Move ${labelFor(session)} to workflow`}
-            onclick={() => onMoveToWorkflow?.(session.key)}
-          >
-            <MoveIcon size="12" strokeWidth="2" aria-hidden="true" />
-          </button>
-          <button
-            class="leaf-action"
-            title="Close"
-            aria-label={`Close ${labelFor(session)}`}
-            onclick={() => onClose?.(session)}
-          >
-            <XIcon size="12" strokeWidth="2.2" aria-hidden="true" />
-          </button>
+          <div class="leaf-actions">
+            <button
+              class="leaf-action"
+              title="Rename"
+              aria-label={`Rename ${labelFor(session)}`}
+              onclick={() => onRename?.(session)}
+            >
+              <PencilIcon size="12" strokeWidth="2" aria-hidden="true" />
+            </button>
+            <button
+              class="leaf-action"
+              title="Move to workflow"
+              aria-label={`Move ${labelFor(session)} to workflow`}
+              onclick={() => onMoveToWorkflow?.(session.key)}
+            >
+              <MoveIcon size="12" strokeWidth="2" aria-hidden="true" />
+            </button>
+            <button
+              class="leaf-action"
+              title="Close"
+              aria-label={`Close ${labelFor(session)}`}
+              onclick={() => onClose?.(session)}
+            >
+              <XIcon size="12" strokeWidth="2.2" aria-hidden="true" />
+            </button>
+          </div>
         </div>
-      </div>
+      {/if}
       {#key session.key}
         <div
           class={[

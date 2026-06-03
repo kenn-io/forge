@@ -62,6 +62,15 @@ describe("WorkspaceHome", () => {
             status: "running",
             created_at: "2026-04-25T00:00:00Z",
           },
+          {
+            key: "ws-1:shell",
+            workspace_id: "ws-1",
+            target_key: "plain_shell",
+            label: "Shell",
+            kind: "plain_shell",
+            status: "running",
+            created_at: "2026-04-25T00:00:01Z",
+          },
         ],
         onLaunch,
         onOpenSession,
@@ -90,5 +99,7 @@ describe("WorkspaceHome", () => {
 
     await fireEvent.click(screen.getByRole("button", { name: /Codex\s+Running/ }));
     expect(onOpenSession).toHaveBeenCalledWith("ws-1:codex");
+    await fireEvent.click(screen.getByRole("button", { name: /Shell\s+Running/ }));
+    expect(onOpenSession).toHaveBeenCalledWith("ws-1:shell");
   });
 });

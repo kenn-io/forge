@@ -686,6 +686,7 @@
     border-bottom: 1px solid var(--border-muted);
     background: var(--bg-inset);
     overflow-x: auto;
+    scrollbar-width: none;
   }
 
   .group-tabs.drag-sorting {
@@ -693,6 +694,7 @@
   }
 
   .group-tabs::-webkit-scrollbar {
+    width: 0;
     height: 0;
   }
 

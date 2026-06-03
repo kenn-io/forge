@@ -195,10 +195,12 @@
     gap: 0;
     min-width: 0;
     overflow-x: auto;
+    scrollbar-width: none;
     height: 100%;
   }
 
   .workspace-tabs::-webkit-scrollbar {
+    width: 0;
     height: 0;
   }
 

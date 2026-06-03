@@ -12,6 +12,7 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"testing"
 	"time"
 
 	"github.com/posthog/posthog-go"
@@ -97,7 +98,7 @@ func SanitizeProperties(event string, properties map[string]any) (map[string]any
 }
 
 func NewReporter(opts Options) (*Reporter, error) {
-	if !EnabledFromEnv() {
+	if !EnabledFromEnv() || testing.Testing() {
 		return DisabledReporter(), nil
 	}
 	if opts.Database == nil {

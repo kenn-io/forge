@@ -37,6 +37,22 @@ func TestNewReporterDisabledByEnvDoesNotCreateInstallID(t *testing.T) {
 	assert.False(found)
 }
 
+func TestNewReporterDisabledInGoTestEvenWhenEnvEnabled(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	t.Setenv(EnabledEnv, "1")
+	database := dbtest.Open(t)
+
+	reporter, err := NewReporter(Options{Database: database})
+	require.NoError(err)
+
+	assert.False(reporter.Enabled())
+	_, found, err := database.AppMetadataValue(t.Context(), installIDMetadataKey)
+	require.NoError(err)
+	assert.False(found)
+}
+
 func TestLoadOrCreateInstallIDIsStableAndAnonymous(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

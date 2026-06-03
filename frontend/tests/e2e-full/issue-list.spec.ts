@@ -100,6 +100,10 @@ test.describe("issue list view", () => {
 
   test("sidebar issue pills use the shared chip component", async ({ page }) => {
     try {
+      await expect(page.locator(".filter-bar .list-count-chip")).toHaveText(
+        /^5 issues$/,
+      );
+
       await mockLongIssueRepoSlug(page);
       await page.goto("/issues");
       await waitForIssueList(page);

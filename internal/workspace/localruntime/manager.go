@@ -626,7 +626,10 @@ func (m *Manager) validateRestoredTmuxSessionOwner(
 	var err error
 	command, err = resolveTmuxCommand(command)
 	if err != nil {
-		return err
+		return fmt.Errorf(
+			"%w: tmux owner validation unavailable for %q: %v",
+			ErrSessionUnavailable, session, err,
+		)
 	}
 	err = (tmuxLauncher{
 		TmuxCommand: command,
@@ -636,10 +639,19 @@ func (m *Manager) validateRestoredTmuxSessionOwner(
 	if err == nil {
 		return nil
 	}
-	if procutil.IsResourceExhausted(err) {
-		return err
+	if isTmuxCommandUnavailable(err) {
+		return fmt.Errorf(
+			"%w: tmux owner validation unavailable for %q: %v",
+			ErrSessionUnavailable, session, err,
+		)
 	}
 	return TmuxSessionOwnershipError{Session: session, Err: err}
+}
+
+func isTmuxCommandUnavailable(err error) bool {
+	return procutil.IsResourceExhausted(err) ||
+		errors.Is(err, os.ErrNotExist) ||
+		errors.Is(err, os.ErrPermission)
 }
 
 func (m *Manager) LaunchTargets() []LaunchTarget {

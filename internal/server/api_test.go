@@ -17845,6 +17845,25 @@ func TestWorkspaceRuntimePtyOwnerShellReattachesAfterServerRestartE2E(t *testing
 
 	originalShell := launchPlainShellRuntimeSession(t, ctx, fixture.client, ws.Id)
 	cleanupPtyOwnerWorkspace(t, ptyOwnerDir, originalShell.Key)
+	staleTmuxKey := ws.Id + "_stale-tmux"
+	require.NoError(fixture.database.UpsertWorkspaceRuntimeSession(
+		ctx,
+		&db.WorkspaceRuntimeSession{
+			WorkspaceID: ws.Id,
+			SessionKey:  staleTmuxKey,
+			TargetKey:   "helper",
+			Label:       "Helper",
+			Kind:        string(localruntime.LaunchTargetAgent),
+			Scope:       "session",
+			TmuxSession: "middleman-stale-runtime-tmux",
+			CreatedAt:   originalShell.CreatedAt.Add(-time.Minute),
+		},
+	))
+	t.Cleanup(func() {
+		_ = fixture.database.DeleteWorkspaceRuntimeSession(
+			context.Background(), ws.Id, staleTmuxKey,
+		)
+	})
 
 	ts := httptest.NewServer(fixture.server)
 	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
@@ -17881,8 +17900,22 @@ func TestWorkspaceRuntimePtyOwnerShellReattachesAfterServerRestartE2E(t *testing
 	require.Equal(http.StatusOK, runtimeResp.StatusCode())
 	require.NotNil(runtimeResp.JSON200)
 	require.NotNil(runtimeResp.JSON200.Sessions)
-	require.Len(*runtimeResp.JSON200.Sessions, 1)
-	assert.Equal(originalShell.Key, (*runtimeResp.JSON200.Sessions)[0].Key)
+	require.Len(*runtimeResp.JSON200.Sessions, 2)
+	var restoredShell *generated.SessionInfo
+	var unavailableTmux *generated.SessionInfo
+	for i := range *runtimeResp.JSON200.Sessions {
+		session := &(*runtimeResp.JSON200.Sessions)[i]
+		switch session.Key {
+		case originalShell.Key:
+			restoredShell = session
+		case staleTmuxKey:
+			unavailableTmux = session
+		}
+	}
+	require.NotNil(restoredShell)
+	assert.Equal(string(localruntime.SessionStatusRunning), restoredShell.Status)
+	require.NotNil(unavailableTmux)
+	assert.Equal(string(localruntime.SessionStatusError), unavailableTmux.Status)
 
 	restartedTS := httptest.NewServer(restarted)
 	t.Cleanup(restartedTS.Close)
@@ -18800,13 +18833,12 @@ exit 0
 	assert.Contains(newSession, "-c")
 	assert.Contains(strings.Join(newSession, "\n"), agentPath)
 	assert.Contains(strings.Join(newSession, "\n"), "--flag")
-	assert.NotContains(newSession, "@middleman_owner")
-	require.Eventually(func() bool {
-		return tmuxRecordContains(readTmuxRecord(t, record), []string{
-			"set-option", "-q", "-t", session,
-			"@middleman_owner", srv.workspaces.TmuxOwnerMarker(),
-		})
-	}, 2*time.Second, 20*time.Millisecond)
+	assert.Contains(newSession, ";")
+	assert.Contains(newSession, "set-option")
+	assert.Contains(newSession, "-t")
+	assert.Contains(newSession, session)
+	assert.Contains(newSession, "@middleman_owner")
+	assert.Contains(newSession, srv.workspaces.TmuxOwnerMarker())
 
 	listResp, err := client.HTTP.ListWorkspacesWithResponse(ctx)
 	require.NoError(err)
@@ -19003,7 +19035,7 @@ exit 0
 	})
 }
 
-func TestWorkspaceRuntimeLaunchTmuxOwnerMarkerFailureCleansSessionE2E(
+func TestWorkspaceRuntimeLaunchTmuxOwnerMarkerFailureRejectsSessionE2E(
 	t *testing.T,
 ) {
 	require := require.New(t)
@@ -19058,7 +19090,7 @@ exit 0
 		}},
 		Tmux: config.Tmux{Command: []string{tmuxPath}},
 	}
-	client, database, _, _, srv := setupTestServerWithWorkspacesServer(t, cfg)
+	client, database, _, _, _ := setupTestServerWithWorkspacesServer(t, cfg)
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, client)
 
@@ -19079,12 +19111,7 @@ exit 0
 		if ok {
 			sessionName = name
 		}
-		if sessionName == "" {
-			return false
-		}
-		return tmuxRecordContains(readTmuxRecord(t, record), []string{
-			"kill-session", "-t", sessionName,
-		})
+		return sessionName != ""
 	}, 2*time.Second, 20*time.Millisecond)
 	var runtimeNewSession []string
 	for _, argv := range readTmuxRecord(t, record) {
@@ -19096,10 +19123,17 @@ exit 0
 		}
 	}
 	require.NotNil(runtimeNewSession)
-	assert.NotContains(runtimeNewSession, "@middleman_owner")
-	assert.Contains(readTmuxRecord(t, record), []string{
-		"set-option", "-q", "-t", sessionName,
-		"@middleman_owner", srv.workspaces.TmuxOwnerMarker(),
+	assert.Contains(runtimeNewSession, "@middleman_owner")
+	assert.False(slices.ContainsFunc(
+		readTmuxRecord(t, record),
+		func(argv []string) bool {
+			return len(argv) > 0 &&
+				argv[0] == "set-option" &&
+				slices.Contains(argv, sessionName)
+		},
+	))
+	assert.NotContains(readTmuxRecord(t, record), []string{
+		"kill-session", "-t", sessionName,
 	})
 
 	require.Eventually(func() bool {
@@ -19117,12 +19151,6 @@ exit 0
 		stored, err := database.ListWorkspaceRuntimeTmuxSessions(ctx, ws.Id)
 		return err == nil && len(stored) == 0
 	}, 2*time.Second, 20*time.Millisecond)
-}
-
-func tmuxRecordContains(argvs [][]string, want []string) bool {
-	return slices.ContainsFunc(argvs, func(argv []string) bool {
-		return slices.Equal(argv, want)
-	})
 }
 
 func runtimeTmuxSessionNameForTest(workspaceID string, targetKey string) string {
@@ -21513,6 +21541,18 @@ session_arg() {
   done
   printf '%s' "$session"
 }
+owner_arg() {
+  owner=""
+  while [ "$#" -gt 0 ]; do
+    if [ "$1" = "@middleman_owner" ]; then
+      shift
+      owner="${1:-}"
+      break
+    fi
+    [ "$#" -gt 0 ] && shift || true
+  done
+  printf '%s' "$owner"
+}
 cmd="${1:-}"
 [ "$#" -gt 0 ] && shift || true
 case "$cmd" in
@@ -21533,18 +21573,14 @@ case "$cmd" in
   new-session)
     session="$(session_arg "$@")"
     [ -n "$session" ] && : > "$state_dir/$session"
+    owner="$(owner_arg "$@")"
+    if [ -n "$session" ] && [ -n "$owner" ]; then
+      printf '%s\n' "$owner" > "$state_dir/$session.owner"
+    fi
     ;;
   set-option)
     session="$(session_arg "$@")"
-    owner=""
-    while [ "$#" -gt 0 ]; do
-      if [ "$1" = "@middleman_owner" ]; then
-        shift
-        owner="${1:-}"
-        break
-      fi
-      shift || true
-    done
+    owner="$(owner_arg "$@")"
     if [ -n "$session" ] && [ -n "$owner" ]; then
       printf '%s\n' "$owner" > "$state_dir/$session.owner"
     fi

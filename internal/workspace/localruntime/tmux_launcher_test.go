@@ -40,14 +40,14 @@ func TestTmuxLauncherAgentOperationsKeepEnvValuesOutOfArgv(t *testing.T) {
 	assert.Contains(newSession, "-c")
 	assert.Contains(newSession, "/tmp/work tree")
 	assert.Contains(newSessionText, "exec env -i")
+	assert.Contains(newSession, ";")
+	assert.Contains(newSession, "set-option")
+	assert.Contains(newSession, "@middleman_owner")
+	assert.Contains(newSession, "middleman:test-owner")
 	assert.Contains(newSessionText, `XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR-}"`)
 	assert.Contains(newSessionText, "__middleman_env_file=")
 	assert.NotContains(newSessionText, "argv-visible-value")
 	assert.NotContains(newSessionText, "secret-value")
-	assert.Equal([]string{
-		"/usr/bin/tmux", "set-option", "-q", "-t", "middleman-test",
-		"@middleman_owner", "middleman:test-owner",
-	}, launcher.setOwnerCommand())
 }
 
 func TestTmuxLauncherShellPolicyPreservesCustomEnvByKey(t *testing.T) {

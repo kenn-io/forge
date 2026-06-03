@@ -449,10 +449,15 @@ exit 0
 
 	assert.Equal([]string{tmuxPath, "attach-session", "-t", sessionName}, launch.Command)
 	assert.Equal(sessionName, launch.TmuxSession)
-	assert.Contains(readNullArgvRecord(t, record), []string{
-		"set-option", "-q", "-t", sessionName,
-		"@middleman_owner", "middleman:test-owner",
-	})
+	records := readNullArgvRecord(t, record)
+	require.Len(records, 2)
+	newSession := records[1]
+	assert.Contains(newSession, ";")
+	assert.Contains(newSession, "set-option")
+	assert.Contains(newSession, "-t")
+	assert.Contains(newSession, sessionName)
+	assert.Contains(newSession, "@middleman_owner")
+	assert.Contains(newSession, "middleman:test-owner")
 }
 
 func TestManagerLaunchPlainShellWrapsInTmuxWhenAvailable(t *testing.T) {
@@ -522,10 +527,12 @@ exit 0
 	assert.Contains(newSession, "-E")
 	assert.NotContains(newSession, "-e")
 	assert.Contains(newSessionText, "__middleman_env_file=")
-	assert.Contains(records, []string{
-		"set-option", "-q", "-t", sessionName,
-		"@middleman_owner", "middleman:test-owner",
-	})
+	assert.Contains(newSession, ";")
+	assert.Contains(newSession, "set-option")
+	assert.Contains(newSession, "-t")
+	assert.Contains(newSession, sessionName)
+	assert.Contains(newSession, "@middleman_owner")
+	assert.Contains(newSession, "middleman:test-owner")
 	assert.NotContains(newSessionText, "argv-visible-value")
 	assert.NotContains(newSessionText, "custom-visible-value")
 	assert.Len(mgr.ListSessions("ws:alpha"), 1)
@@ -756,6 +763,28 @@ exit 0
 	})
 }
 
+func TestManagerRestoreTmuxSessionUnavailableWhenCommandCannotResolve(
+	t *testing.T,
+) {
+	require := require.New(t)
+
+	mgr := NewManager(Options{
+		TmuxCommand:     []string{"/missing/middleman-test-tmux"},
+		TmuxOwnerMarker: "middleman:test-owner",
+	})
+	t.Cleanup(mgr.Shutdown)
+
+	err := mgr.RestoreRuntimeSessions(context.Background(), []RestoredRuntimeSession{{
+		WorkspaceID: "ws-1",
+		SessionKey:  "ws-1_shell-restored",
+		TmuxSession: "middleman-ws-1-shell",
+		TargetKey:   string(LaunchTargetPlainShell),
+		CreatedAt:   time.Date(2026, 5, 28, 12, 0, 0, 0, time.UTC),
+	}})
+
+	require.ErrorIs(err, ErrSessionUnavailable)
+}
+
 func TestTmuxSessionNameUsesOpaqueTargetHash(t *testing.T) {
 	assert := Assert.New(t)
 
@@ -769,7 +798,7 @@ func TestTmuxSessionNameUsesOpaqueTargetHash(t *testing.T) {
 	assert.Contains(fooSlash, "middleman-ws-alpha-")
 }
 
-func TestManagerLaunchCommandCleansUpWhenOwnerMarkingFails(t *testing.T) {
+func TestManagerLaunchCommandFailsWhenOwnerMarkingFailsDuringCreate(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("tmux owner shell wrapper uses Unix shell semantics")
 	}
@@ -778,7 +807,7 @@ func TestManagerLaunchCommandCleansUpWhenOwnerMarkingFails(t *testing.T) {
 	require := require.New(t)
 	dir := t.TempDir()
 	record := filepath.Join(dir, "record")
-	tmuxPath := filepath.Join(dir, "tmux-fails-set-option")
+	tmuxPath := filepath.Join(dir, "tmux-fails-owner-create")
 	require.NoError(os.WriteFile(tmuxPath, fmt.Appendf(nil, `#!/bin/sh
 printf '%%s\0' "$@" >> %s
 case "$1" in
@@ -787,9 +816,6 @@ case "$1" in
     exit 1
     ;;
   new-session)
-    exit 0
-    ;;
-  set-option)
     for a in "$@"; do
       if [ "$a" = "@middleman_owner" ]; then
         exit 42
@@ -827,7 +853,7 @@ exit 0
 	recorded := string(data)
 	assert.Contains(recorded, "new-session")
 	assert.Contains(recorded, "@middleman_owner")
-	assert.Contains(recorded, "kill-session")
+	assert.NotContains(recorded, "kill-session")
 }
 
 func TestManagerLaunchCommandDoesNotKillSessionWhenTmuxCreateFails(t *testing.T) {

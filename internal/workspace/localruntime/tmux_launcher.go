@@ -130,12 +130,6 @@ func (l tmuxLauncher) prepare(ctx context.Context) (tmuxLaunchResult, error) {
 		return tmuxLaunchResult{}, fmt.Errorf("tmux new-session: %w", err)
 	}
 	created = true
-	if l.OwnerMarker != "" {
-		if err := l.run(ctx, l.setOwnerCommand()); err != nil {
-			_ = l.run(ctx, l.killSessionCommand())
-			return tmuxLaunchResult{}, fmt.Errorf("tmux set owner: %w", err)
-		}
-	}
 	return tmuxLaunchResult{
 		AttachCommand: l.attachSessionCommand(),
 		Created:       true,
@@ -309,19 +303,15 @@ func (l tmuxLauncher) newSessionCommand(paneCommand string) []string {
 	if l.CWD != "" {
 		command = append(command, "-c", l.CWD)
 	}
-	return append(command, paneCommand)
-}
-
-func (l tmuxLauncher) setOwnerCommand() []string {
-	return append(
-		slices.Clone(l.TmuxCommand),
-		"set-option", "-q", "-t", l.Session,
-		"@middleman_owner", l.OwnerMarker,
-	)
-}
-
-func (l tmuxLauncher) killSessionCommand() []string {
-	return append(slices.Clone(l.TmuxCommand), "kill-session", "-t", l.Session)
+	command = append(command, paneCommand)
+	if l.OwnerMarker != "" {
+		command = append(
+			command,
+			";", "set-option", "-q", "-t", l.Session,
+			"@middleman_owner", l.OwnerMarker,
+		)
+	}
+	return command
 }
 
 func (l tmuxLauncher) attachSessionCommand() []string {

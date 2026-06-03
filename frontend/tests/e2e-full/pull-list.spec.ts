@@ -1,4 +1,8 @@
 import { expect, test, type Browser, type Page } from "@playwright/test";
+import {
+  startIsolatedE2EServer,
+  type IsolatedE2EServer,
+} from "./support/e2eServer";
 
 // Seeded data summary:
 //   open PRs (8): widgets#1, #2, #6, #7, tools#1, tools#10, #11, #12 (last three form a stack)
@@ -41,7 +45,7 @@ async function selectPullGrouping(page: Page, label: string): Promise<void> {
 const longRepoName = "widgets-with-an-extremely-long-repository-name";
 const longRepoPath = `acme/${longRepoName}`;
 
-async function mockSidebarPullPayload(page: Page): Promise<void> {
+async function mockLongPullRepoSlug(page: Page): Promise<void> {
   await page.route(
     (url) =>
       url.pathname.endsWith("/api/v1/pulls")
@@ -49,8 +53,6 @@ async function mockSidebarPullPayload(page: Page): Promise<void> {
     async (route) => {
       const response = await route.fetch();
       const pulls = await response.json() as Array<{
-        ReviewDecision?: string;
-        Title?: string;
         repo?: { owner?: string; name?: string; repo_path?: string };
         repo_owner?: string;
         repo_name?: string;
@@ -63,13 +65,6 @@ async function mockSidebarPullPayload(page: Page): Promise<void> {
           firstPull.repo.owner = "acme";
           firstPull.repo.name = longRepoName;
           firstPull.repo.repo_path = longRepoPath;
-        }
-      }
-      for (const pull of pulls) {
-        if (pull.Title === "Add widget caching layer") {
-          pull.ReviewDecision = "APPROVED";
-        } else if (pull.Title === "Fix race condition in event loop") {
-          pull.ReviewDecision = "CHANGES_REQUESTED";
         }
       }
       await route.fulfill({ response, json: pulls });
@@ -132,14 +127,6 @@ async function expectPullReviewIndicator(
 }
 
 test.describe("PR list view", () => {
-  test.beforeAll(async ({ browser }, testInfo) => {
-    const baseURL = testInfo.project.use.baseURL;
-    if (typeof baseURL !== "string") {
-      throw new Error("PR list e2e setup requires a configured baseURL");
-    }
-    await primeKanbanStateRows(browser, baseURL);
-  });
-
   test.beforeEach(async ({ page }) => {
     await page.goto("/pulls");
     await waitForPullList(page);
@@ -148,36 +135,6 @@ test.describe("PR list view", () => {
   test("renders open PRs by default with correct count", async ({ page }) => {
     const countBadge = page.locator(".filter-bar .list-count-chip");
     await expect(countBadge).toHaveText(/^8 PRs$/);
-  });
-
-  test("sidebar status pills use the shared chip component", async ({
-    page,
-  }) => {
-    await expect(page.locator(".filter-bar .list-count-chip")).toHaveText(
-      /^8 PRs$/,
-    );
-
-    await mockSidebarPullPayload(page);
-    await page.goto("/pulls");
-    await waitForPullList(page);
-
-    await selectPullGrouping(page, "All");
-    await expectPullReviewIndicator(
-      page,
-      "Add widget caching layer",
-      "PR approved",
-    );
-    await expectPullReviewIndicator(
-      page,
-      "Fix race condition in event loop",
-      "Changes requested",
-    );
-
-    const firstItem = page.locator(".pull-item").first();
-    const repoChip = firstItem.locator(".repo-chip");
-    await expect(repoChip).toBeVisible();
-    await expectRepoChipToClipSafely(firstItem, repoChip, longRepoPath);
-    await expect(firstItem.locator(".status-chip")).toBeVisible();
   });
 
   test("closed state shows closed and merged PRs with correct count", async ({
@@ -280,5 +237,50 @@ test.describe("PR list view", () => {
       expect(Math.abs(headerCenter - scrollportCenter)).toBeLessThan(2);
       expect(headerBox.width).toBeLessThanOrEqual(800);
     }
+  });
+});
+
+test.describe("PR list sidebar", () => {
+  let server: IsolatedE2EServer | undefined;
+
+  test.beforeAll(async ({ browser }) => {
+    server = await startIsolatedE2EServer();
+    await primeKanbanStateRows(browser, server.info.base_url);
+  });
+
+  test.afterAll(async () => {
+    await server?.stop();
+  });
+
+  test("sidebar status pills use the shared chip component", async ({
+    page,
+  }) => {
+    if (!server) {
+      throw new Error("PR list sidebar e2e server was not started");
+    }
+    await mockLongPullRepoSlug(page);
+    await page.goto(`${server.info.base_url}/pulls`);
+    await waitForPullList(page);
+
+    await expect(page.locator(".filter-bar .list-count-chip")).toHaveText(
+      /^8 PRs$/,
+    );
+    await selectPullGrouping(page, "All");
+    await expectPullReviewIndicator(
+      page,
+      "Add widget caching layer",
+      "PR approved",
+    );
+    await expectPullReviewIndicator(
+      page,
+      "Fix race condition in event loop",
+      "Changes requested",
+    );
+
+    const firstItem = page.locator(".pull-item").first();
+    const repoChip = firstItem.locator(".repo-chip");
+    await expect(repoChip).toBeVisible();
+    await expectRepoChipToClipSafely(firstItem, repoChip, longRepoPath);
+    await expect(firstItem.locator(".status-chip")).toBeVisible();
   });
 });

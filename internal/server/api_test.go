@@ -18537,7 +18537,7 @@ func TestWorkspaceRuntimeNaturalAgentExitRemovesSessionE2E(t *testing.T) {
 		Label:   "Helper",
 		Command: serverRuntimeHelperCommand("exit"),
 	}}, Tmux: config.Tmux{AgentSessions: &disableTmuxAgentSessions}}
-	client, _, _, _, _ := setupTestServerWithWorkspacesServer(t, cfg)
+	client, database, _, _, _ := setupTestServerWithWorkspacesServer(t, cfg)
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, client)
 
@@ -18563,6 +18563,9 @@ func TestWorkspaceRuntimeNaturalAgentExitRemovesSessionE2E(t *testing.T) {
 		}
 		return len(*runtimeResp.JSON200.Sessions) == 0
 	}, 2*time.Second, 20*time.Millisecond)
+	stored, err := database.ListWorkspaceRuntimeSessions(ctx, ws.Id)
+	require.NoError(err)
+	assert.Empty(stored)
 	assert.NotEmpty(launchResp.JSON200.Key)
 }
 
@@ -18577,7 +18580,7 @@ func TestWorkspaceRuntimePtyOwnerQuickExitLaunchSucceedsE2E(t *testing.T) {
 		Label:   "Helper",
 		Command: serverRuntimeHelperCommand("print-exit"),
 	}}, Tmux: config.Tmux{AgentSessions: &disableTmuxAgentSessions}}
-	client, _, _, _, _ := setupTestServerWithWorkspacesServer(t, cfg)
+	client, database, _, _, _ := setupTestServerWithWorkspacesServer(t, cfg)
 	ctx := context.Background()
 	ws := createReadyWorkspace(t, ctx, client)
 
@@ -18604,6 +18607,9 @@ func TestWorkspaceRuntimePtyOwnerQuickExitLaunchSucceedsE2E(t *testing.T) {
 		}
 		return len(*runtimeResp.JSON200.Sessions) == 0
 	}, 2*time.Second, 20*time.Millisecond)
+	stored, err := database.ListWorkspaceRuntimeSessions(ctx, ws.Id)
+	require.NoError(err)
+	assert.Empty(stored)
 }
 
 func TestWorkspaceRuntimeNaturalTmuxAgentExitForgetsStoredSessionE2E(

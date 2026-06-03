@@ -5235,7 +5235,40 @@ func (s *Server) launchWorkspaceRuntimeSession(
 		_ = s.runtime.Stop(cleanupCtx, summary.ID, session.Key)
 		return nil, err
 	}
+	s.forgetRecordedRuntimeSessionIfExited(ctx, session)
 	return &workspaceRuntimeSessionOutput{Body: session}, nil
+}
+
+func (s *Server) forgetRecordedRuntimeSessionIfExited(
+	ctx context.Context,
+	session localruntime.SessionInfo,
+) {
+	if s.workspaces == nil || s.runtime == nil || session.Key == "" {
+		return
+	}
+	for _, live := range s.runtime.ListSessions(session.WorkspaceID) {
+		if live.Key == session.Key {
+			return
+		}
+	}
+	cleanupCtx, cancel := context.WithTimeout(
+		context.WithoutCancel(ctx), runtimeSessionCleanupTimeout,
+	)
+	defer cancel()
+	if _, err := s.workspaces.ForgetRuntimeSessionAfterExit(
+		cleanupCtx,
+		session.WorkspaceID,
+		session.Key,
+		session.CreatedAt,
+		session.TmuxSession,
+	); err != nil {
+		slog.Warn(
+			"forget runtime session that exited before record completed",
+			"workspace_id", session.WorkspaceID,
+			"session_key", session.Key,
+			"err", err,
+		)
+	}
 }
 
 func (s *Server) recordRuntimeSession(

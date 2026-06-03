@@ -324,6 +324,39 @@ func TestClientStopTreatsStaleOwnerStateAsAbsent(t *testing.T) {
 	require.True(os.IsNotExist(err))
 }
 
+func TestClientStopTreatsClosedOwnerAfterConnectAsAbsent(t *testing.T) {
+	require := require.New(t)
+
+	root := t.TempDir()
+	paths, err := NewSessionPaths(root, "middleman-stale-after-connect")
+	require.NoError(err)
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(err)
+	defer listener.Close()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		conn, acceptErr := listener.Accept()
+		if acceptErr == nil {
+			_ = conn.Close()
+		}
+	}()
+	require.NoError(writeState(paths, ownerState{
+		Session: "middleman-stale-after-connect",
+		Addr:    listener.Addr().String(),
+		Token:   "token",
+		Cwd:     t.TempDir(),
+	}))
+
+	err = (&Client{Root: root}).Stop(context.Background(), "middleman-stale-after-connect")
+
+	require.NoError(err)
+	<-done
+	_, err = os.Stat(paths.Dir)
+	require.True(os.IsNotExist(err))
+}
+
 func TestClientEnsurePreservesStateOnContextCancellation(t *testing.T) {
 	require := require.New(t)
 

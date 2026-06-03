@@ -7,11 +7,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"go.kenn.io/middleman/internal/procutil"
@@ -409,9 +411,7 @@ func (c *Client) Stop(ctx context.Context, session string) error {
 	conn, state, err := c.connect(ctx, session)
 	if err != nil {
 		if isAbsentOwner(err) {
-			_ = os.Remove(paths.Socket)
-			_ = os.RemoveAll(paths.Dir)
-			removeSocketDir(paths)
+			cleanupAbsentOwner(paths)
 			return nil
 		}
 		return err
@@ -422,10 +422,18 @@ func (c *Client) Stop(ctx context.Context, session string) error {
 	enc := json.NewEncoder(conn)
 	dec := json.NewDecoder(conn)
 	if err := enc.Encode(Request{Type: RequestStop, Token: state.Token}); err != nil {
+		if isAbsentOwner(err) {
+			cleanupAbsentOwner(paths)
+			return nil
+		}
 		return err
 	}
 	var resp Response
 	if err := dec.Decode(&resp); err != nil {
+		if isAbsentOwner(err) {
+			cleanupAbsentOwner(paths)
+			return nil
+		}
 		return err
 	}
 	if !resp.OK {
@@ -434,22 +442,35 @@ func (c *Client) Stop(ctx context.Context, session string) error {
 	return c.waitStopped(ctx, session, paths.Dir)
 }
 
+func cleanupAbsentOwner(paths SessionPaths) {
+	_ = os.Remove(paths.Socket)
+	_ = os.RemoveAll(paths.Dir)
+	removeSocketDir(paths)
+}
+
 func isAbsentOwner(err error) bool {
 	return errors.Is(err, os.ErrNotExist) || isStaleOwnerConnection(err)
 }
 
 func isStaleOwnerConnection(err error) bool {
-	var netErr *net.OpError
-	if !errors.As(err, &netErr) {
+	if err == nil ||
+		errors.Is(err, context.Canceled) ||
+		errors.Is(err, context.DeadlineExceeded) {
 		return false
 	}
-	if errors.Is(err, context.Canceled) ||
-		errors.Is(err, context.DeadlineExceeded) ||
-		netErr.Timeout() {
+	var netErr *net.OpError
+	if errors.As(err, &netErr) && netErr.Timeout() {
 		return false
 	}
 	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "connection refused") ||
+	return errors.Is(err, io.EOF) ||
+		errors.Is(err, net.ErrClosed) ||
+		errors.Is(err, syscall.ECONNRESET) ||
+		errors.Is(err, syscall.EPIPE) ||
+		strings.Contains(msg, "connection refused") ||
+		strings.Contains(msg, "broken pipe") ||
+		strings.Contains(msg, "connection reset by peer") ||
+		strings.Contains(msg, "use of closed network connection") ||
 		strings.Contains(msg, "actively refused")
 }
 

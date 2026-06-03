@@ -462,16 +462,11 @@ func isStaleOwnerConnection(err error) bool {
 	if errors.As(err, &netErr) && netErr.Timeout() {
 		return false
 	}
-	msg := strings.ToLower(err.Error())
 	return errors.Is(err, io.EOF) ||
 		errors.Is(err, net.ErrClosed) ||
+		errors.Is(err, syscall.ECONNREFUSED) ||
 		errors.Is(err, syscall.ECONNRESET) ||
-		errors.Is(err, syscall.EPIPE) ||
-		strings.Contains(msg, "connection refused") ||
-		strings.Contains(msg, "broken pipe") ||
-		strings.Contains(msg, "connection reset by peer") ||
-		strings.Contains(msg, "use of closed network connection") ||
-		strings.Contains(msg, "actively refused")
+		errors.Is(err, syscall.EPIPE)
 }
 
 func ownerHelperEnvironment(env []string) []string {

@@ -320,11 +320,21 @@ func (o *owner) handleAttach(
 	}()
 
 	for {
+		decoded := make(chan attachRequestResult, 1)
+		go func() {
+			var req Request
+			err := decodeOwnerRequest(reader, maxOwnerRequestSize, &req)
+			decoded <- attachRequestResult{req: req, err: err}
+		}()
 		var req Request
-		if err := decodeOwnerRequest(
-			reader, maxOwnerRequestSize, &req,
-		); err != nil {
+		select {
+		case <-writeDone:
 			return
+		case result := <-decoded:
+			if result.err != nil {
+				return
+			}
+			req = result.req
 		}
 		if req.Token != o.state.Token {
 			return
@@ -349,6 +359,11 @@ func (o *owner) handleAttach(
 		default:
 		}
 	}
+}
+
+type attachRequestResult struct {
+	req Request
+	err error
 }
 
 func (o *owner) beginAttach() bool {

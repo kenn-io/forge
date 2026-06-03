@@ -660,13 +660,12 @@ func NewGraphQLFetcher(
 		}
 	}
 	if budget != nil {
-		tc.Transport = &budgetTransport{
+		base = &budgetTransport{
 			base:   base,
 			budget: budget,
 		}
-	} else {
-		tc.Transport = base
 	}
+	tc.Transport = wrapPublicGitHubAPIGuard(base)
 
 	var gqlClient *githubv4.Client
 	if platformHost == "" || platformHost == "github.com" {

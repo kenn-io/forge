@@ -188,11 +188,11 @@ func NewClient(
 	)
 	tc := oauth2.NewClient(context.Background(), ts)
 	et := &etagTransport{base: tc.Transport}
+	var transport http.RoundTripper = et
 	if budget != nil {
-		tc.Transport = &budgetTransport{base: et, budget: budget}
-	} else {
-		tc.Transport = et
+		transport = &budgetTransport{base: et, budget: budget}
 	}
+	tc.Transport = wrapPublicGitHubAPIGuard(transport)
 
 	var ghClient *gh.Client
 	if platformHost == "" || platformHost == "github.com" {

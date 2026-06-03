@@ -755,18 +755,18 @@ func TestMarkPullRequestReadyForReviewReturnsTypedStaleStateError(t *testing.T) 
 	require.Equal([]string{"application/json", "application/json"}, contentTypes)
 }
 
-// TestNewClientWiresETagTransport verifies that NewClient installs the
-// etagTransport at the top of the underlying http.Client's transport
-// chain. The transport's behavior is exercised exhaustively in
-// etag_transport_test.go; this test guards against the constructor
-// silently dropping or reordering the wrap so the wired-up chain
-// stays in sync with the transport's contract.
+// TestNewClientWiresETagTransport verifies that NewClient keeps the
+// etagTransport in the underlying http.Client's transport chain. The
+// transport's behavior is exercised exhaustively in etag_transport_test.go;
+// this test guards against the constructor silently dropping the wrap.
 func TestNewClientWiresETagTransport(t *testing.T) {
 	c, err := NewClient("fake-token", "", nil, nil)
 	require.NoError(t, err)
 	lc, ok := c.(*liveClient)
 	require.Truef(t, ok, "expected *liveClient, got %T", c)
 	transport := lc.gh.Client().Transport
-	_, ok = transport.(*etagTransport)
-	require.Truef(t, ok, "expected *etagTransport at top of transport chain, got %T", transport)
+	guard, ok := transport.(publicGitHubAPIGuardTransport)
+	require.Truef(t, ok, "expected publicGitHubAPIGuardTransport at top of transport chain, got %T", transport)
+	_, ok = guard.base.(*etagTransport)
+	require.Truef(t, ok, "expected *etagTransport under public GitHub guard, got %T", guard.base)
 }

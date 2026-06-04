@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { DiffFile } from "../../api/types.js";
-import { diffFileWithPatch, parsePierreFileDiff, patchPath } from "./pierre-diff.js";
+import {
+  diffFileWithPatch,
+  parsePierreFileDiff,
+  parsePierreFileDiffWithContents,
+  patchPath,
+  pierreFileContents,
+} from "./pierre-diff.js";
 
 function makeFile(path: string, patchBody: string): DiffFile {
   const patch = `diff --git a/${path} b/${path}
@@ -119,13 +125,23 @@ describe("Pierre diff parsing", () => {
     expect((second as { cacheKey?: string } | undefined)?.cacheKey).toBeUndefined();
   });
 
-  it("omits cache keys when sparse context files are supplied for expansion", () => {
-    const parsed = parsePierreFileDiff(makeFile("src/foo.ts", "-old line\n+new line"), {
+  it("uses distinct cache keys for sparse and full context contents", () => {
+    const file = makeFile("src/foo.ts", "-old line\n+new line");
+    const parsed = parsePierreFileDiff(file, {
       enableDemandContextExpansion: true,
+    });
+    const sparseOld = pierreFileContents("src/foo.ts", "line 1\nold line\n", "sparse-old");
+    const fullOld = pierreFileContents("src/foo.ts", "line 1\nold line\n", "full-old");
+    const full = parsePierreFileDiffWithContents(file, {
+      oldFile: fullOld,
+      newFile: pierreFileContents("src/foo.ts", "line 1\nnew line\n", "full-new"),
     });
 
     expect(parsed).toBeDefined();
-    expect((parsed as { cacheKey?: string } | undefined)?.cacheKey).toBeUndefined();
+    expect(full).toBeDefined();
+    expect(sparseOld.cacheKey).toBeDefined();
+    expect(fullOld.cacheKey).toBeDefined();
+    expect(fullOld.cacheKey).not.toBe(sparseOld.cacheKey);
   });
 
   it("falls back to patch-only parsing for huge sparse line ranges", () => {

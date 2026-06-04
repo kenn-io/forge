@@ -359,33 +359,7 @@ describe("DiffFile", () => {
     side: "left" | "right",
     options: { shiftKey?: boolean } = {},
   ): Promise<void> {
-    const type = side === "left" ? "change-deletion" : "change-addition";
-    const fallback = side === "left" ? "context" : "context,context-expanded";
-    const selector = [
-      `[data-column-number="${line}"][data-line-type="${type}"]`,
-      ...fallback.split(",").map((lineType) =>
-        `[data-column-number="${line}"][data-line-type="${lineType}"]`
-      ),
-    ].join(",");
-    const target = await waitFor(() => {
-      const element = document
-        .querySelector(".pierre-diff")
-        ?.shadowRoot
-        ?.querySelector<HTMLElement>(selector);
-      expect(element).toBeTruthy();
-      return element!;
-    });
-    await fireEvent.pointerDown(target, {
-      button: 0,
-      pointerId: 1,
-      pointerType: "mouse",
-      shiftKey: options.shiftKey,
-    });
-    await fireEvent.pointerUp(document, {
-      pointerId: 1,
-      pointerType: "mouse",
-      shiftKey: options.shiftKey,
-    });
+    await clickLineCommentButton(line, side, options);
   }
 
   async function clickLineCommentButton(
@@ -439,6 +413,16 @@ describe("DiffFile", () => {
       .querySelector(".pierre-diff")
       ?.shadowRoot
       ?.querySelectorAll("[data-selected-line]");
+  }
+
+  function expandedContextLineTexts(): string[] {
+    return Array.from(
+      document
+        .querySelector(".pierre-diff")
+        ?.shadowRoot
+        ?.querySelectorAll<HTMLElement>("[data-content] [data-line-type='context-expanded']")
+        ?? [],
+    ).map((line) => line.textContent?.trim() ?? "");
   }
 
   it("allows shift-selecting ranges only when native multiline ranges are supported", async () => {
@@ -885,6 +869,10 @@ describe("DiffFile", () => {
       const text = document.querySelector(".pierre-diff")?.shadowRoot?.textContent ?? "";
       expect(text).toContain("shared 10");
       expect(text).toContain("@@ -77,3 +77,3 @@ lateContext");
+      const expandedLines = expandedContextLineTexts();
+      expect(expandedLines.length).toBeGreaterThan(0);
+      expect(expandedLines.every((line) => line.length > 0)).toBe(true);
+      expect(expandedLines.some((line) => line.includes("shared 10"))).toBe(true);
     });
     expect(loadFilePreview).toHaveBeenCalledWith(
       expect.any(String),
@@ -900,6 +888,106 @@ describe("DiffFile", () => {
       "src/context.ts",
       "new",
     );
+  });
+
+  it("continues expanding context after full file text is loaded", async () => {
+    const oldText = Array.from({ length: 90 }, (_, index) => `shared ${index + 1}`);
+    const newText = [...oldText];
+    oldText[1] = "old early";
+    newText[1] = "new early";
+    oldText[77] = "old late";
+    newText[77] = "new late";
+
+    const file = makeFile({
+      path: "src/context.ts",
+      old_path: "src/context.ts",
+      patch: `diff --git a/src/context.ts b/src/context.ts
+--- a/src/context.ts
++++ b/src/context.ts
+@@ -1,3 +1,3 @@
+ shared 1
+-old early
++new early
+ shared 3
+@@ -77,3 +77,3 @@ lateContext
+ shared 77
+-old late
++new late
+ shared 79
+`,
+      hunks: [
+        {
+          old_start: 1,
+          old_count: 3,
+          new_start: 1,
+          new_count: 3,
+          lines: [
+            { type: "context", content: "shared 1", old_num: 1, new_num: 1 },
+            { type: "delete", content: "old early", old_num: 2 },
+            { type: "add", content: "new early", new_num: 2 },
+            { type: "context", content: "shared 3", old_num: 3, new_num: 3 },
+          ],
+        },
+        {
+          old_start: 77,
+          old_count: 3,
+          new_start: 77,
+          new_count: 3,
+          lines: [
+            { type: "context", content: "shared 77", old_num: 77, new_num: 77 },
+            { type: "delete", content: "old late", old_num: 78 },
+            { type: "add", content: "new late", new_num: 78 },
+            { type: "context", content: "shared 79", old_num: 79, new_num: 79 },
+          ],
+        },
+      ],
+    });
+    const { diff } = renderDiffFile(file);
+    vi.spyOn(diff, "loadFilePreview")
+      .mockImplementation(async (_owner, _name, _number, path, side) => {
+        return textPreview(path, side === "old" ? oldText.join("\n") : newText.join("\n"));
+      });
+
+    const firstExpandButton = await waitFor(() => {
+      const button = document
+        .querySelector(".pierre-diff")
+        ?.shadowRoot
+        ?.querySelector<HTMLElement>("[data-expand-button]");
+      expect(button).toBeTruthy();
+      return button!;
+    });
+    await fireEvent.click(firstExpandButton);
+
+    await waitFor(() => {
+      const text = document.querySelector(".pierre-diff")?.shadowRoot?.textContent ?? "";
+      expect(text).toContain("shared 10");
+      expect(text).not.toContain("shared 50");
+      const expandedLines = expandedContextLineTexts();
+      expect(expandedLines.length).toBeGreaterThan(0);
+      expect(expandedLines.every((line) => line.length > 0)).toBe(true);
+      expect(expandedLines.some((line) => line.includes("shared 10"))).toBe(true);
+    });
+
+    const nextExpandButton = await waitFor(() => {
+      const buttons = Array.from(
+        document
+          .querySelector(".pierre-diff")
+          ?.shadowRoot
+          ?.querySelectorAll<HTMLElement>("[data-expand-button]") ?? [],
+      );
+      const button = buttons.find((candidate) => candidate !== firstExpandButton);
+      expect(button).toBeTruthy();
+      return button!;
+    });
+    await fireEvent.click(nextExpandButton);
+
+    await waitFor(() => {
+      const text = document.querySelector(".pierre-diff")?.shadowRoot?.textContent ?? "";
+      expect(text).toContain("shared 50");
+      const expandedLines = expandedContextLineTexts();
+      expect(expandedLines.every((line) => line.length > 0)).toBe(true);
+      expect(expandedLines.some((line) => line.includes("shared 50"))).toBe(true);
+    });
   });
 
   it("hides Pierre context expansion when file text loading is disabled", async () => {

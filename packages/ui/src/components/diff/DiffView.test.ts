@@ -131,6 +131,60 @@ describe("DiffView", () => {
     expect(requestScrollToFile).toHaveBeenCalledWith("b.ts");
   });
 
+  it("pages the diff area with PageDown even when focus is outside the diff pane", async () => {
+    const diff = makeDiffStore();
+    const { container } = renderDiffView(diff);
+    const diffArea = container.querySelector(".diff-area") as HTMLDivElement;
+    Object.defineProperty(diffArea, "clientHeight", {
+      configurable: true,
+      value: 400,
+    });
+    Object.defineProperty(diffArea, "scrollHeight", {
+      configurable: true,
+      value: 2_000,
+    });
+    const outsideButton = document.createElement("button");
+    document.body.append(outsideButton);
+    outsideButton.focus();
+
+    try {
+      await fireEvent.keyDown(window, { key: "PageDown" });
+
+      expect(diffArea.scrollTop).toBe(336);
+      expect(document.activeElement).toBe(diffArea);
+    } finally {
+      outsideButton.remove();
+    }
+  });
+
+  it("cancels pending programmatic scroll when the user wheels the diff pane", async () => {
+    let scrollTarget: DiffScrollTarget | null = { path: "b.ts" };
+    const consumeScrollTarget = vi.fn(() => {
+      scrollTarget = null;
+    });
+    const clearScrolling = vi.fn();
+    const files = [makeFile("a.ts"), makeFile("b.ts")];
+    const result: DiffResult = {
+      stale: false,
+      whitespace_only_count: 0,
+      files,
+    };
+    const diff = makeDiffStore({
+      getDiff: () => result,
+      getVisibleDiffFiles: () => files,
+      getScrollTarget: () => scrollTarget,
+      consumeScrollTarget,
+      clearScrolling,
+    });
+
+    const { container } = renderDiffView(diff);
+    const diffArea = container.querySelector(".diff-area") as HTMLDivElement;
+    await fireEvent.wheel(diffArea);
+
+    expect(consumeScrollTarget).toHaveBeenCalledOnce();
+    expect(clearScrolling).toHaveBeenCalledOnce();
+  });
+
   it("keeps a scroll target pending until the file is rendered", async () => {
     const consumeScrollTarget = vi.fn();
     const diff = makeDiffStore({

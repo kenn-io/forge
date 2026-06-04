@@ -220,6 +220,25 @@
     scrollClearRaf = requestAnimationFrame(() => diffStore.clearScrolling());
   }
 
+  function cancelPendingProgrammaticScroll(): void {
+    scrollTargetRun += 1;
+    scrollingToTarget = null;
+    diffStore.consumeScrollTarget();
+    diffStore.clearScrolling();
+    cancelAnimationFrame(scrollClearRaf);
+    scrollClearRaf = 0;
+  }
+
+  function cancelProgrammaticScrollIfUserOverrides(): void {
+    if (
+      scrollingToTarget ||
+      normalizeScrollTarget(diffStore.getScrollTarget()) ||
+      diffStore.isScrolling()
+    ) {
+      cancelPendingProgrammaticScroll();
+    }
+  }
+
   function queryDiffElement(selector: string): HTMLElement | null {
     if (!diffArea) return null;
     const lightMatch = diffArea.querySelector<HTMLElement>(selector);
@@ -436,12 +455,40 @@
     }
   }
 
-  // j/k keyboard navigation between files.
+  function isTextEntryTarget(target: EventTarget | null): boolean {
+    if (!(target instanceof HTMLElement)) return false;
+    const tag = target.tagName;
+    return tag === "INPUT" ||
+      tag === "TEXTAREA" ||
+      tag === "SELECT" ||
+      target.isContentEditable;
+  }
+
+  function pageDiffArea(direction: 1 | -1): void {
+    const area = diffArea;
+    if (!area) return;
+    cancelPendingProgrammaticScroll();
+    const maxTop = Math.max(0, area.scrollHeight - area.clientHeight);
+    const pageSize = Math.max(1, area.clientHeight - 64);
+    area.scrollTop = Math.min(maxTop, Math.max(0, area.scrollTop + pageSize * direction));
+    area.focus({ preventScroll: true });
+    wakeDiffVirtualizer();
+    onScrollTopChange?.(area.scrollTop);
+  }
+
+  function onDiffUserScrollIntent(): void {
+    cancelProgrammaticScrollIfUserOverrides();
+  }
+
+  // j/k keyboard navigation between files; PageUp/PageDown page the diff pane.
   function handleKeydown(e: KeyboardEvent): void {
-    if (e.target instanceof HTMLElement) {
-      const tag = e.target.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
-      if (e.target.isContentEditable) return;
+    if (isTextEntryTarget(e.target)) return;
+
+    if (e.key === "PageDown" || e.key === "PageUp") {
+      if (e.metaKey || e.ctrlKey || e.altKey || !diff) return;
+      e.preventDefault();
+      pageDiffArea(e.key === "PageDown" ? 1 : -1);
+      return;
     }
 
     if (e.key === "j" || e.key === "k") {
@@ -504,6 +551,12 @@
           class:diff-area--word-wrap={wordWrap}
           bind:this={diffArea}
           onscroll={onDiffScroll}
+          onwheel={onDiffUserScrollIntent}
+          ontouchstart={onDiffUserScrollIntent}
+          onpointerdown={onDiffUserScrollIntent}
+          role="region"
+          aria-label="Changed file diffs"
+          tabindex="-1"
           style:tab-size={tabWidth}
         >
           <div class="diff-content" bind:this={diffContent}>

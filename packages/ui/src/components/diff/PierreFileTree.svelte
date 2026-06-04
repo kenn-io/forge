@@ -24,6 +24,7 @@
   let tree: FileTree | undefined;
   let renderedTreeKey = "";
   let syncingSelection = false;
+  let selectedPathScrollFrame = 0;
 
   const safeFiles = $derived(files ?? []);
   const treePaths = $derived(safeFiles.map((file) => file.path));
@@ -81,6 +82,7 @@
 
   onMount(() => {
     return () => {
+      cancelAnimationFrame(selectedPathScrollFrame);
       tree?.cleanUp();
       tree = undefined;
     };
@@ -122,8 +124,29 @@
     if (selectedPath && tree.getItem(selectedPath)) {
       tree.getItem(selectedPath)?.select();
       tree.focusNearestPath(selectedPath);
+      scheduleSelectedPathIntoView(selectedPath);
     }
     syncingSelection = false;
+  }
+
+  function scheduleSelectedPathIntoView(path: string): void {
+    scrollPathIntoView(path);
+    cancelAnimationFrame(selectedPathScrollFrame);
+    selectedPathScrollFrame = requestAnimationFrame(() => {
+      selectedPathScrollFrame = 0;
+      scrollPathIntoView(path);
+    });
+  }
+
+  function scrollPathIntoView(path: string): void {
+    const root = host?.shadowRoot;
+    if (!root) return;
+    for (const item of root.querySelectorAll<HTMLElement>("[data-item-path]")) {
+      if (item.dataset.itemPath !== path) continue;
+      if (typeof item.scrollIntoView !== "function") return;
+      item.scrollIntoView({ block: "nearest" });
+      return;
+    }
   }
 </script>
 

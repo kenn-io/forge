@@ -26,6 +26,25 @@ export function parsePierreFileDiff(
   return parsePatchOnly(patchedFile);
 }
 
+export function parsePierreFileDiffWithContents(
+  file: DiffFile,
+  contents: { oldFile: FileContents; newFile: FileContents },
+): FileDiffMetadata | undefined {
+  return processPatchWithContext(diffFileWithPatch(file), contents);
+}
+
+export function pierreFileContents(
+  name: string,
+  contents: string,
+  cacheIdentity: string,
+): FileContents {
+  return {
+    name,
+    contents,
+    cacheKey: fileContentsCacheKey(name, contents, cacheIdentity),
+  };
+}
+
 export function diffFileWithPatch(file: DiffFile): DiffFile {
   const patch = file.patch || synthesizePatch(file);
   return patch === file.patch ? file : { ...file, patch };
@@ -41,8 +60,8 @@ function processPatchWithContext(
   const safePatch = safePierrePatch(file);
   if (safePatch === file.patch) return parsePatchOnly(file);
   return tryProcessPatch(safePatch, {
-    oldFile: { ...contents.oldFile, name: safePierreFileName(file, "old") },
-    newFile: { ...contents.newFile, name: safePierreFileName(file, "new") },
+    oldFile: fileContentsWithName(contents.oldFile, safePierreFileName(file, "old"), "safe-old"),
+    newFile: fileContentsWithName(contents.newFile, safePierreFileName(file, "new"), "safe-new"),
   }) ?? parsePatchOnly({ ...file, patch: safePatch });
 }
 
@@ -207,18 +226,34 @@ function sparsePatchContents(file: DiffFile): { oldFile: FileContents; newFile: 
   const newContents = joinSparseLines(newLines);
 
   return {
-    oldFile: {
-      name: file.old_path || file.path,
-      contents: oldContents,
-    },
-    newFile: {
-      name: file.path,
-      contents: newContents,
-    },
+    oldFile: pierreFileContents(file.old_path || file.path, oldContents, "sparse-old"),
+    newFile: pierreFileContents(file.path, newContents, "sparse-new"),
   };
 }
 
 function joinSparseLines(lines: string[]): string {
   while (lines.length > 0 && lines[lines.length - 1] == null) lines.pop();
   return lines.map((line) => line ?? "").join("\n");
+}
+
+function fileContentsWithName(
+  file: FileContents,
+  name: string,
+  cacheIdentity: string,
+): FileContents {
+  return {
+    ...file,
+    name,
+    cacheKey: fileContentsCacheKey(name, file.contents, `${cacheIdentity}:${file.cacheKey ?? ""}`),
+  };
+}
+
+function fileContentsCacheKey(name: string, contents: string, cacheIdentity: string): string {
+  let hash = 0x811c9dc5;
+  const seed = `${cacheIdentity}\0${name}\0${contents.length}\0${contents}`;
+  for (let index = 0; index < seed.length; index += 1) {
+    hash ^= seed.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return `${cacheIdentity}:${contents.length}:${(hash >>> 0).toString(36)}`;
 }

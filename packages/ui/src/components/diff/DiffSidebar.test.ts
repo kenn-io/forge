@@ -10,6 +10,7 @@ import type { DiffFile, FilesResult } from "../../api/types.js";
 import { STORES_KEY } from "../../context.js";
 import type { DiffStore } from "../../stores/diff.svelte.js";
 import DiffSidebar from "./DiffSidebar.svelte";
+import PierreFileTree from "./PierreFileTree.svelte";
 
 if (!globalThis.CSS) {
   globalThis.CSS = {} as typeof CSS;
@@ -148,5 +149,41 @@ describe("DiffSidebar", () => {
     await waitFor(() => {
       expect(treeRoot()?.querySelector('[data-item-path="src/file-0.ts"]')).toBeNull();
     });
+  });
+
+  it("scrolls the selected file tree row into view when active path changes", async () => {
+    const files = Array.from({ length: 12 }, (_, i) => makeFile(`src/file-${i}.ts`));
+    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
+    const scrolledPaths: string[] = [];
+    HTMLElement.prototype.scrollIntoView = function scrollIntoView() {
+      scrolledPaths.push(this.dataset.itemPath ?? "");
+    };
+
+    try {
+      const { rerender } = render(PierreFileTree, {
+        props: {
+          files,
+          selectedPath: "src/file-0.ts",
+        },
+      });
+
+      await findTreeItem("src/file-0.ts");
+      await waitFor(() => {
+        expect(scrolledPaths).toContain("src/file-0.ts");
+      });
+      scrolledPaths.length = 0;
+
+      await rerender({
+        files,
+        selectedPath: "src/file-8.ts",
+      });
+
+      await findTreeItem("src/file-8.ts");
+      await waitFor(() => {
+        expect(scrolledPaths).toContain("src/file-8.ts");
+      });
+    } finally {
+      HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
+    }
   });
 });

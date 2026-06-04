@@ -312,6 +312,13 @@ async function pierreDiffCount(file: ReturnType<Page["locator"]>, selector: stri
   }, selector);
 }
 
+async function pierreDiffTexts(file: ReturnType<Page["locator"]>, selector: string) {
+  return await file.locator(".pierre-diff").evaluate((host, selector) => {
+    return Array.from(host.shadowRoot?.querySelectorAll(selector) ?? [])
+      .map((element) => element.textContent?.trim() ?? "");
+  }, selector);
+}
+
 async function expectPierreDiffCount(
   file: ReturnType<Page["locator"]>,
   selector: string,
@@ -937,6 +944,50 @@ test.describe("diff view", () => {
         Math.round(el.getBoundingClientRect().height),
       ),
     ).toBeGreaterThan(300);
+  });
+
+  test("manual paging and wheel scrolling override sidebar file jumps", async ({ page }) => {
+    await mockDiffApi(page, largeDiff);
+    await navigateToDiff(page);
+    await waitForDiffLoaded(page);
+    await waitForSidebarFilesLoaded(page);
+
+    const diffArea = page.locator(".diff-area");
+
+    await treeFileItem(page, "src/pkg8/file_40.go").click();
+    await expect(page.locator('[data-file-path="src/pkg8/file_40.go"]'))
+      .toBeVisible();
+    const firstJumpTop = await diffArea.evaluate((area) => Math.round(area.scrollTop));
+
+    await page.keyboard.press("PageDown");
+    await expect.poll(async () =>
+      diffArea.evaluate((area) => Math.round(area.scrollTop)),
+    ).toBeGreaterThan(firstJumpTop + 100);
+    await expect(page.locator(".diff-file-tree [data-item-type='file'][aria-selected='true']"))
+      .toBeInViewport();
+    const afterPageDownTop = await diffArea.evaluate((area) => Math.round(area.scrollTop));
+    await page.waitForTimeout(400);
+    await expect.poll(async () =>
+      diffArea.evaluate((area) => Math.round(area.scrollTop)),
+    ).toBeGreaterThan(afterPageDownTop - 10);
+
+    await treeFileItem(page, "src/pkg8/file_41.go").click();
+    await expect(page.locator('[data-file-path="src/pkg8/file_41.go"]'))
+      .toBeVisible();
+    const secondJumpTop = await diffArea.evaluate((area) => Math.round(area.scrollTop));
+
+    await diffArea.hover();
+    await page.mouse.wheel(0, 900);
+    await expect.poll(async () =>
+      diffArea.evaluate((area) => Math.round(area.scrollTop)),
+    ).toBeGreaterThan(secondJumpTop + 100);
+    await expect(page.locator(".diff-file-tree [data-item-type='file'][aria-selected='true']"))
+      .toBeInViewport();
+    const afterWheelTop = await diffArea.evaluate((area) => Math.round(area.scrollTop));
+    await page.waitForTimeout(400);
+    await expect.poll(async () =>
+      diffArea.evaluate((area) => Math.round(area.scrollTop)),
+    ).toBeGreaterThan(afterWheelTop - 10);
   });
 
   test("deleted file name has strikethrough in sidebar", async ({ page }) => {
@@ -2117,6 +2168,13 @@ test.describe("diff view (git-backed)", () => {
       await expect.poll(() =>
         pierreDiffCount(handlerFile, "[data-line-type='context-expanded']")
       ).toBeGreaterThan(expandedContextRowsBefore);
+      await expect.poll(async () => {
+        const texts = await pierreDiffTexts(
+          handlerFile,
+          "[data-content] [data-line-type='context-expanded']",
+        );
+        return texts.filter((text) => text.length > 0).length;
+      }).toBeGreaterThan(0);
       await expect.poll(() => [...new Set(previewSides)].sort())
         .toEqual(["new", "old"]);
     } finally {

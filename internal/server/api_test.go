@@ -21048,6 +21048,17 @@ exit 0
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode())
 
+	require.Eventually(func() bool {
+		return slices.ContainsFunc(
+			readTmuxRecord(t, record),
+			func(argv []string) bool {
+				return slices.Equal(argv, []string{
+					"kill-session", "-t",
+					"middleman-0000000000000001-0123456789abcdef",
+				})
+			},
+		)
+	}, 2*time.Second, 20*time.Millisecond)
 	argvs := readTmuxRecord(t, record)
 	assert.Contains(argvs, []string{
 		"kill-session", "-t", "middleman-0000000000000001-0123456789abcdef",

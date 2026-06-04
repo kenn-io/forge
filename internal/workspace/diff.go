@@ -647,15 +647,20 @@ func addWorktreeWhitespaceFlag(
 	if !hideWhitespace {
 		return args
 	}
+	if len(args) < 2 {
+		return append([]string{"-w"}, args...)
+	}
 	withWhitespace := make([]string, 0, len(args)+1)
-	withWhitespace = append(withWhitespace, args[:2]...)
+	withWhitespace = append(withWhitespace, args[0], args[1])
 	withWhitespace = append(withWhitespace, "-w")
 	withWhitespace = append(withWhitespace, args[2:]...)
 	return withWhitespace
 }
 
 func worktreeDiffArgs(args ...string) []string {
-	return append([]string{"diff", "--no-ext-diff", "--no-textconv"}, args...)
+	result := make([]string, 0, len(args)+3)
+	result = append(result, "diff", "--no-ext-diff", "--no-textconv")
+	return append(result, args...)
 }
 
 func appendWorktreePathspec(args []string, path string) []string {

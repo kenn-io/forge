@@ -50,6 +50,7 @@ func TestBranchActivityWalksDefaultBranchFirstParent(t *testing.T) {
 		t.Context(), "github.com", "acme", "widgets", "main", time.Unix(0, 0).UTC(), "", 0,
 	)
 	require.NoError(err)
+	require.Len(commits, 3)
 
 	var subjects []string
 	for _, commit := range commits {

@@ -173,10 +173,7 @@ func (m *Manager) Diff(
 		"-M", "-C", "--find-copies-harder",
 		"-U3",
 	)
-	if hideWhitespace {
-		patchArgs = append(patchArgs[:2],
-			append([]string{"-w"}, patchArgs[2:]...)...)
-	}
+	patchArgs = addDiffWhitespaceFlag(patchArgs, hideWhitespace)
 	patchArgs = append(patchArgs, "--end-of-options", mergeBase, headSHA)
 	patchOut, err := m.git(ctx, clonePath, patchArgs...)
 	if err != nil {
@@ -306,7 +303,7 @@ func diffRawArgs(mergeBase, headSHA string, hideWhitespace bool) []string {
 		"--find-copies-harder",
 	)
 	if hideWhitespace {
-		args = append(args[:2], append([]string{"-w"}, args[2:]...)...)
+		args = addDiffWhitespaceFlag(args, true)
 	}
 	return append(args, "--end-of-options", mergeBase, headSHA)
 }
@@ -320,7 +317,23 @@ func diffRawNoRenameArgs(mergeBase, headSHA string, hideWhitespace bool) []strin
 }
 
 func diffArgs(args ...string) []string {
-	return append([]string{"diff", "--no-ext-diff", "--no-textconv"}, args...)
+	result := make([]string, 0, len(args)+3)
+	result = append(result, "diff", "--no-ext-diff", "--no-textconv")
+	return append(result, args...)
+}
+
+func addDiffWhitespaceFlag(args []string, hideWhitespace bool) []string {
+	if !hideWhitespace {
+		return args
+	}
+	if len(args) < 2 {
+		return append([]string{"-w"}, args...)
+	}
+	withWhitespace := make([]string, 0, len(args)+1)
+	withWhitespace = append(withWhitespace, args[0], args[1])
+	withWhitespace = append(withWhitespace, "-w")
+	withWhitespace = append(withWhitespace, args[2:]...)
+	return withWhitespace
 }
 
 // FileContent returns one file's blob content at ref. maxBytes guards API

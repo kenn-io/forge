@@ -390,6 +390,7 @@ func TestCreateIssueReuseLocalBaseBranchCheckedOutReturnsConflict(t *testing.T) 
 	require.Nil(ws)
 	var conflict *IssueWorkspaceBranchConflictError
 	require.ErrorAs(err, &conflict)
+	require.NotNil(conflict)
 	assert.Equal(branch, conflict.Branch)
 	assert.Equal(branch+"-2", conflict.SuggestedBranch)
 }

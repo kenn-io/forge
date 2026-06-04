@@ -810,6 +810,9 @@ func validateOriginRemoteURL(
 }
 
 func originRemoteSchemeAllowed(remoteURL string) bool {
+	if !strings.Contains(remoteURL, "://") {
+		return true
+	}
 	parsed, err := url.Parse(remoteURL)
 	if err != nil {
 		return false
@@ -1472,7 +1475,15 @@ func (m *Manager) workspaceCleanupGitDir(
 	commonDir, err := worktreeCommonGitDir(ctx, ws.WorktreePath)
 	if err == nil {
 		if gitDirMatchesWorkspaceRepo(ctx, commonDir, ws) {
-			return commonDir, true, nil
+			owned, err := gitDirOwnsLinkedWorktree(
+				ctx, commonDir, ws.WorktreePath,
+			)
+			if err != nil {
+				return "", false, err
+			}
+			if owned {
+				return commonDir, true, nil
+			}
 		}
 	}
 
@@ -1523,6 +1534,44 @@ func (m *Manager) workspaceCleanupGitDir(
 	}
 
 	return "", false, nil
+}
+
+func gitDirOwnsLinkedWorktree(
+	ctx context.Context, gitDir, worktreePath string,
+) (bool, error) {
+	commonDir, err := canonicalFilesystemPath(gitDir)
+	if err != nil {
+		return false, fmt.Errorf("resolve git common dir: %w", err)
+	}
+	worktreeDir, err := canonicalWorktreeListPath(worktreePath)
+	if err != nil {
+		return false, fmt.Errorf("resolve workspace path: %w", err)
+	}
+	if pathContains(worktreeDir, commonDir) {
+		return false, nil
+	}
+	return gitDirTracksWorktreePath(ctx, gitDir, worktreePath)
+}
+
+func canonicalFilesystemPath(path string) (string, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	if evaluated, err := filepath.EvalSymlinks(abs); err == nil {
+		return evaluated, nil
+	}
+	return abs, nil
+}
+
+func pathContains(parent, child string) bool {
+	rel, err := filepath.Rel(parent, child)
+	if err != nil {
+		return false
+	}
+	return rel == "." ||
+		(rel != ".." &&
+			!strings.HasPrefix(rel, ".."+string(os.PathSeparator)))
 }
 
 func gitDirMatchesWorkspaceRepo(

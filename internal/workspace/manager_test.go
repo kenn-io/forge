@@ -687,6 +687,23 @@ func TestValidateWorktreeBasePathAcceptsLoopbackHTTPOrigin(t *testing.T) {
 	require.Equal(localRepo, got)
 }
 
+func TestValidateWorktreeBasePathAcceptsSCPStyleSSHOrigin(t *testing.T) {
+	require := require.New(t)
+
+	localRepo := setupLocalWorktreeBaseForWorkspaceGitTest(t, "feature/thing")
+	runWorkspaceTestGit(
+		t, localRepo, "remote", "set-url", "origin",
+		"git@github.com:acme/widget.git",
+	)
+
+	got, err := ValidateWorktreeBasePath(
+		t.Context(), localRepo, "github.com", "acme", "widget",
+	)
+
+	require.NoError(err)
+	require.Equal(localRepo, got)
+}
+
 func TestValidateWorktreeBasePathRejectsSymlinkPath(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
@@ -1172,6 +1189,44 @@ func TestCleanupUsesExistingWorktreeGitDirWhenConfiguredBaseChanges(t *testing.T
 	wrongExists, err := localBranchExists(t.Context(), wrongRepo, branch)
 	require.NoError(err)
 	assert.True(wrongExists, "cleanup must not delete branch from current settings repo")
+}
+
+func TestCleanupDoesNotTrustReplacementCloneAtWorkspacePath(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	const branch = "middleman/pr-42"
+	_, remote := setupLocalWorktreeBaseWithRemoteForWorkspaceGitTest(t, "feature/thing")
+	worktreePath := filepath.Join(t.TempDir(), "workspace")
+	runWorkspaceTestGit(t, t.TempDir(), "clone", remote, worktreePath)
+	runWorkspaceTestGit(
+		t, worktreePath, "remote", "set-url", "origin",
+		"https://github.com/acme/widget.git",
+	)
+	runWorkspaceTestGit(t, worktreePath, "branch", branch, "HEAD")
+
+	mgr := NewManager(openTestDB(t), t.TempDir())
+	ws := &Workspace{
+		ID:              "ws-replaced-clone",
+		Platform:        "github",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		ItemType:        db.WorkspaceItemTypePullRequest,
+		ItemNumber:      42,
+		GitHeadRef:      "feature/thing",
+		WorkspaceBranch: branch,
+		WorktreePath:    worktreePath,
+	}
+
+	gitDir, ok, err := mgr.workspaceCleanupGitDir(t.Context(), ws)
+
+	require.NoError(err)
+	assert.False(ok)
+	assert.Empty(gitDir)
+	branchExists, err := localBranchExists(t.Context(), worktreePath, branch)
+	require.NoError(err)
+	assert.True(branchExists)
 }
 
 func TestCleanupIgnoresInvalidConfiguredBaseWhenWorktreeAbsent(t *testing.T) {

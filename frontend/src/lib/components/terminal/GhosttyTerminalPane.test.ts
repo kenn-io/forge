@@ -102,9 +102,7 @@ describe("GhosttyTerminalPane", () => {
     mockOnData.mockReset();
     mockPaste.mockReset();
     mockPaste.mockImplementation((text: string) => {
-      const dataHandler = mockOnData.mock.calls[0]?.[0] as
-        | ((data: string) => void)
-        | undefined;
+      const dataHandler = mockOnData.mock.calls[0]?.[0] as ((data: string) => void) | undefined;
       dataHandler?.(`\x1b[200~${text}\x1b[201~`);
     });
     mockDispose.mockReset();
@@ -330,9 +328,7 @@ describe("GhosttyTerminalPane", () => {
     expect(defaultAllowed).toBe(false);
     expect(laterPasteListener).not.toHaveBeenCalled();
     expect(mockPaste).toHaveBeenCalledWith("first[201~\nsecond\nthird");
-    expect(sentText(socketAt(0), 0)).toBe(
-      "\x1b[200~first[201~\nsecond\nthird\x1b[201~",
-    );
+    expect(sentText(socketAt(0), 0)).toBe("\x1b[200~first[201~\nsecond\nthird\x1b[201~");
   });
 
   it("leaves single-line browser paste for ghostty default handling", async () => {
@@ -350,9 +346,7 @@ describe("GhosttyTerminalPane", () => {
     }) as ClipboardEvent;
     Object.defineProperty(event, "clipboardData", {
       value: {
-        getData: vi.fn((type: string) =>
-          type === "text/plain" ? "single line" : "",
-        ),
+        getData: vi.fn((type: string) => (type === "text/plain" ? "single line" : "")),
       },
     });
 

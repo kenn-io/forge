@@ -384,9 +384,7 @@ describe("TerminalPane", () => {
 
     expect(defaultAllowed).toBe(false);
     expect(laterPasteListener).not.toHaveBeenCalled();
-    expect(sentText(mockSockets[0]!, 0)).toBe(
-      "\x1b[200~first[201~\nsecond\nthird\x1b[201~",
-    );
+    expect(sentText(mockSockets[0]!, 0)).toBe("\x1b[200~first[201~\nsecond\nthird\x1b[201~");
   });
 
   it("sends browser multiline paste raw when bracketed paste is disabled", async () => {
@@ -405,9 +403,7 @@ describe("TerminalPane", () => {
     }) as ClipboardEvent;
     Object.defineProperty(event, "clipboardData", {
       value: {
-        getData: vi.fn((type: string) =>
-          type === "text/plain" ? "first\nsecond\nthird" : "",
-        ),
+        getData: vi.fn((type: string) => (type === "text/plain" ? "first\nsecond\nthird" : "")),
       },
     });
 
@@ -435,9 +431,7 @@ describe("TerminalPane", () => {
     }) as ClipboardEvent;
     Object.defineProperty(event, "clipboardData", {
       value: {
-        getData: vi.fn((type: string) =>
-          type === "text/plain" ? "single line" : "",
-        ),
+        getData: vi.fn((type: string) => (type === "text/plain" ? "single line" : "")),
       },
     });
 

@@ -9,10 +9,7 @@ export function createBracketedPastePayload(text: string): string {
   return `${BRACKETED_PASTE_START}${sanitizeTerminalPasteText(text)}${BRACKETED_PASTE_END}`;
 }
 
-export function createTerminalPastePayload(
-  text: string,
-  bracketedPasteMode: boolean,
-): string {
+export function createTerminalPastePayload(text: string, bracketedPasteMode: boolean): string {
   const sanitizedText = sanitizeTerminalPasteText(text);
   if (!bracketedPasteMode) return sanitizedText;
   return `${BRACKETED_PASTE_START}${sanitizedText}${BRACKETED_PASTE_END}`;

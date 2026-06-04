@@ -14,6 +14,7 @@ concurrency:
 
 jobs:
   build-frontend:
+    needs: prepare-release
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -37,11 +38,11 @@ jobs:
           name: middleman-frontend-dist
           path: frontend/dist
 
-  release:
+  build-release:
     needs: build-frontend
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
         with:
@@ -57,30 +58,107 @@ jobs:
           name: middleman-frontend-dist
           path: internal/web/dist
 
-      - name: Resolve release notes
-        id: release_notes
-        run: |
-          TAG_NAME="${GITHUB_REF#refs/tags/}"
-          ARGS="release --clean"
-
-          TAG_TYPE=$(git cat-file -t "$TAG_NAME")
-          if [ "$TAG_TYPE" = "tag" ]; then
-            TAG_MSG=$(git tag -l --format='%(contents:body)' "$TAG_NAME")
-            if [ -n "$TAG_MSG" ]; then
-              printf '%s\n' "$TAG_MSG" > release-notes.md
-              ARGS="$ARGS --release-notes=release-notes.md"
-            fi
-          else
-            echo "Warning: $TAG_NAME is a lightweight tag, using GoReleaser-generated notes"
-          fi
-
-          echo "args=$ARGS" >> "$GITHUB_OUTPUT"
-
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@5daf1e915a5f0af01ddbcd89a43b8061ff4f1a89  # v7.2.2
         with:
           distribution: goreleaser
           version: v2.16.0
-          args: ${{ steps.release_notes.outputs.args }}
+          args: release --clean --skip=publish
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: middleman-release-artifacts
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/*.deb
+            dist/*.rpm
+            dist/SHA256SUMS
+          if-no-files-found: error
+
+  prepare-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      has_body: ${{ steps.release_metadata.outputs.has_body }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate release tag
+        run: |
+          set -euo pipefail
+          tag_commit="$(git rev-list -n 1 "$GITHUB_REF_NAME")"
+
+          if ! git show-ref --verify --quiet refs/remotes/origin/main; then
+            echo "::error::origin/main was not fetched for release tag validation."
+            exit 1
+          fi
+
+          if ! git merge-base --is-ancestor "$tag_commit" origin/main; then
+            echo "::error::Release tags must point at commits reachable from origin/main."
+            exit 1
+          fi
+
+      - name: Resolve release metadata
+        id: release_metadata
+        run: |
+          set -euo pipefail
+          mkdir -p release-meta
+          : > release-meta/release-notes.md
+          has_body=false
+
+          tag_type="$(git cat-file -t "$GITHUB_REF_NAME")"
+          if [ "$tag_type" = "tag" ]; then
+            tag_body="$(git tag -l --format='%(contents:body)' "$GITHUB_REF_NAME")"
+            if [ -n "$tag_body" ]; then
+              printf '%s\n' "$tag_body" > release-meta/release-notes.md
+              has_body=true
+            fi
+          fi
+
+          echo "has_body=$has_body" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: middleman-release-meta
+          path: release-meta
+
+  publish:
+    needs:
+      - build-release
+      - prepare-release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: middleman-release-artifacts
+          path: artifacts
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: middleman-release-meta
+          path: release-meta
+
+      - name: Publish release with tag notes
+        if: needs.prepare-release.outputs.has_body == 'true'
+        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda  # v3.0.0
+        with:
+          files: artifacts/*
+          body_path: release-meta/release-notes.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish release with generated notes
+        if: needs.prepare-release.outputs.has_body != 'true'
+        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda  # v3.0.0
+        with:
+          files: artifacts/*
+          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -3869,6 +3869,7 @@ export interface components {
             name: string;
             owner: string;
             platform_host: string;
+            provider: string;
         };
         CreateWorktreeFromMergeRequestInputBody: {
             /**

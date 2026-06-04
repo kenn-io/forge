@@ -87,7 +87,7 @@ func TestHandlerWorkspaceNotReady(t *testing.T) {
 
 	mgr := workspace.NewManager(d, wtDir)
 	ws, err := mgr.Create(
-		t.Context(), "github.com", "acme", "widget", 42,
+		t.Context(), "github", "github.com", "acme", "widget", 42,
 	)
 	require.NoError(t, err)
 	require.Equal(t, "creating", ws.Status)

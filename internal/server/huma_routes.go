@@ -447,6 +447,7 @@ type getStackForPROutput = bodyOutput[stackContextResponse]
 
 type createWorkspaceInput struct {
 	Body struct {
+		Provider     string `json:"provider"`
 		PlatformHost string `json:"platform_host"`
 		Owner        string `json:"owner"`
 		Name         string `json:"name"`
@@ -4646,6 +4647,7 @@ func (s *Server) createWorkspace(
 
 	ws, err := s.workspaces.Create(
 		ctx,
+		input.Body.Provider,
 		input.Body.PlatformHost,
 		input.Body.Owner,
 		input.Body.Name,

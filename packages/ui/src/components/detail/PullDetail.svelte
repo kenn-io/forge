@@ -1066,6 +1066,7 @@
         "/workspaces",
         {
           body: {
+            provider,
             platform_host: detail.platform_host,
             owner: detail.repo_owner,
             name: detail.repo_name,

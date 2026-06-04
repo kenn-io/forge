@@ -232,12 +232,10 @@ func (m *Manager) tmuxExec(
 // materialize the worktree and tmux session.
 func (m *Manager) Create(
 	ctx context.Context,
-	platformHost, owner, name string,
+	provider, platformHost, owner, name string,
 	mrNumber int,
 ) (*Workspace, error) {
-	repo, err := m.db.GetRepoByHostOwnerName(
-		ctx, platformHost, owner, name,
-	)
+	repo, err := m.workspaceRepo(ctx, provider, platformHost, owner, name)
 	if err != nil {
 		return nil, fmt.Errorf("look up repo: %w", err)
 	}
@@ -274,7 +272,7 @@ func (m *Manager) Create(
 		MRHeadRepo:      workspaceHeadRepo(platformHost, owner, name, mr.HeadRepoCloneURL),
 		WorkspaceBranch: workspaceBranchUnknown,
 		WorktreePath: filepath.Join(
-			m.worktreeDir, platformHost, owner, name,
+			m.worktreeDir, repo.Platform, platformHost, owner, name,
 			fmt.Sprintf("pr-%d", mrNumber),
 		),
 		TmuxSession:     "middleman-" + id,
@@ -365,7 +363,7 @@ func (m *Manager) CreateIssue(
 		GitHeadRef:      gitHeadRef,
 		WorkspaceBranch: workspaceBranch,
 		WorktreePath: filepath.Join(
-			m.worktreeDir, platformHost, owner, name,
+			m.worktreeDir, repo.Platform, platformHost, owner, name,
 			fmt.Sprintf("issue-%d", issueNumber),
 		),
 		TmuxSession:     "middleman-" + id,
@@ -658,6 +656,13 @@ func (m *Manager) issueWorkspaceRepo(
 	ctx context.Context,
 	provider, platformHost, owner, name string,
 ) (*db.Repo, error) {
+	return m.workspaceRepo(ctx, provider, platformHost, owner, name)
+}
+
+func (m *Manager) workspaceRepo(
+	ctx context.Context,
+	provider, platformHost, owner, name string,
+) (*db.Repo, error) {
 	provider = strings.TrimSpace(provider)
 	if provider == "" {
 		return m.db.GetRepoByHostOwnerName(ctx, platformHost, owner, name)
@@ -773,10 +778,7 @@ func validateOriginFetchRefspec(ctx context.Context, dir string) error {
 		return fmt.Errorf("read origin fetch refspec: %w", err)
 	}
 	for _, value := range values {
-		switch strings.TrimSpace(value) {
-		case "+refs/heads/*:refs/remotes/origin/*",
-			"refs/heads/*:refs/remotes/origin/*":
-		default:
+		if !originFetchRefspecUpdatesOrigin(value) {
 			return fmt.Errorf(
 				"origin fetch refspec %q may update unsafe refs",
 				value,
@@ -784,6 +786,20 @@ func validateOriginFetchRefspec(ctx context.Context, dir string) error {
 		}
 	}
 	return nil
+}
+
+func originFetchRefspecUpdatesOrigin(value string) bool {
+	refspec := strings.TrimSpace(value)
+	if refspec == "" || strings.HasPrefix(refspec, "^") {
+		return false
+	}
+	refspec = strings.TrimPrefix(refspec, "+")
+	src, dst, ok := strings.Cut(refspec, ":")
+	if !ok {
+		return false
+	}
+	return strings.HasPrefix(src, "refs/heads/") &&
+		strings.HasPrefix(dst, "refs/remotes/origin/")
 }
 
 func gitConfigValues(ctx context.Context, dir, key string) ([]string, error) {
@@ -868,7 +884,9 @@ func (m *Manager) addWorktree(
 	var branch string
 	err := m.withRepoLockForGitDir(ctx, cloneDir, func() error {
 		if refreshBeforeAdd {
-			if err := fetchWorkspaceBase(ctx, cloneDir); err != nil {
+			if err := fetchWorkspaceBase(
+				ctx, cloneDir, ws.ItemType == db.WorkspaceItemTypeIssue,
+			); err != nil {
 				return err
 			}
 		}
@@ -2365,15 +2383,18 @@ func runGit(ctx context.Context, dir string, args ...string) error {
 	return nil
 }
 
-func fetchWorkspaceBase(ctx context.Context, dir string) error {
+func fetchWorkspaceBase(ctx context.Context, dir string, requireOriginHead bool) error {
 	if err := runGit(
 		ctx, dir,
-		"fetch", "--prune", "origin",
+		"fetch", "--prune", "--no-tags", "origin",
 		"+refs/heads/*:refs/remotes/origin/*",
 	); err != nil {
 		return fmt.Errorf("fetch configured worktree base: %w", err)
 	}
 	if err := refreshWorkspaceBaseOriginHead(ctx, dir); err != nil {
+		if !requireOriginHead {
+			return nil
+		}
 		return err
 	}
 	return nil

@@ -373,6 +373,39 @@ func TestRepoConfigAPIE2EUpdatesWorktreeBasePath(t *testing.T) {
 	assert.Empty(cfgAfterClear.Repos[0].WorktreeBasePath)
 }
 
+func TestRepoConfigAPIE2ERejectsUnsafeWorktreeScopedBaseConfig(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	srv, _, cfgPath := setupTestServerWithConfig(t)
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	localRepo := setupSettingsLocalGitRepoForDefaultHost(t)
+	runSettingsGit(t, localRepo, "config", "extensions.worktreeConfig", "true")
+	runSettingsGit(
+		t, localRepo, "config", "--worktree",
+		"filter.demo.clean", "demo-clean",
+	)
+
+	updateResp := doServerJSON(
+		t, ts.Client(), http.MethodPut,
+		ts.URL+"/api/v1/repo/github/acme/widget/worktree-base",
+		generated.RepoWorktreeBaseRequest{
+			WorktreeBasePath: localRepo,
+		},
+	)
+	defer updateResp.Body.Close()
+	require.Equal(http.StatusBadRequest, updateResp.StatusCode)
+	body, err := io.ReadAll(updateResp.Body)
+	require.NoError(err)
+	assert.Contains(string(body), "filter.demo.clean")
+
+	cfgAfterRejectedUpdate, err := config.Load(cfgPath)
+	require.NoError(err)
+	require.Len(cfgAfterRejectedUpdate.Repos, 1)
+	assert.Empty(cfgAfterRejectedUpdate.Repos[0].WorktreeBasePath)
+}
+
 func TestRepoConfigAPIE2EWorkspaceCreationUsesWorktreeBasePath(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

@@ -687,7 +687,10 @@ components:
           type: string
         platform_host:
           type: string
+        provider:
+          type: string
       required:
+        - provider
         - platform_host
         - owner
         - name

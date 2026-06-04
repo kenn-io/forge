@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -463,6 +464,98 @@ name = "widget"
 	assert.Contains(listOutput, "worktree "+canonicalWorktreePath)
 }
 
+func TestRepoConfigAPIE2EDeleteReusedIssueBranchKeepsLocalBranch(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	localRepo, _, platformHost := setupSettingsLocalGitRepo(t)
+	require.NoError(os.WriteFile(cfgPath, []byte(`
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[tmux]
+command = ["sh", "-c", "exit 0"]
+
+[[repos]]
+platform_host = "`+platformHost+`"
+owner = "acme"
+name = "widget"
+`), 0o644))
+	cfg, err := config.Load(cfgPath)
+	require.NoError(err)
+
+	database := dbtest.Open(t)
+	repoID, err := database.UpsertRepo(
+		t.Context(), db.GitHubRepoIdentity(platformHost, "acme", "widget"),
+	)
+	require.NoError(err)
+	seedSettingsWorkspaceIssue(t, database, repoID, 7, "")
+
+	syncer := github.NewSyncer(
+		map[string]github.Client{"github.com": &mockGH{}},
+		database, nil,
+		[]github.RepoRef{{Owner: "acme", Name: "widget", PlatformHost: platformHost}},
+		time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+
+	srv := server.NewWithConfig(
+		database, syncer, nil, nil, cfg, cfgPath,
+		server.ServerOptions{WorktreeDir: filepath.Join(dir, "workspaces")},
+	)
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	const branch = "middleman/issue-7"
+	runSettingsGit(t, localRepo, "branch", branch, "HEAD")
+
+	client, err := generated.NewClientWithResponses(ts.URL + "/api/v1")
+	require.NoError(err)
+	updateResp, err := client.UpdateRepoWorktreeBaseOnHostWithResponse(
+		t.Context(), platformHost, "github", "acme", "widget",
+		generated.RepoWorktreeBaseRequest{WorktreeBasePath: localRepo},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, updateResp.StatusCode(), string(updateResp.Body))
+	reuse := true
+	createResp, err := client.CreateIssueWorkspaceOnHostWithResponse(
+		t.Context(), platformHost, "github", "acme", "widget", 7,
+		generated.CreateIssueWorkspaceOnHostJSONRequestBody{
+			ReuseExistingBranch: &reuse,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, createResp.StatusCode(), string(createResp.Body))
+	require.NotNil(createResp.JSON202)
+
+	ready := waitForSettingsWorkspaceReady(t, client, createResp.JSON202.Id)
+	assert.Equal("ready", ready.Status)
+	assert.Equal(branch, strings.TrimSpace(string(runSettingsGitOutput(
+		t, ready.WorktreePath, "branch", "--show-current",
+	))))
+	stored, err := database.GetWorkspace(t.Context(), ready.Id)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Empty(stored.WorkspaceBranch)
+
+	deleteResp := doServerJSON(
+		t, ts.Client(), http.MethodDelete,
+		ts.URL+"/api/v1/workspaces/"+ready.Id+"?force=true",
+		map[string]any{},
+	)
+	defer deleteResp.Body.Close()
+	require.Equal(http.StatusNoContent, deleteResp.StatusCode)
+	assert.Contains(
+		string(runSettingsGitOutput(t, localRepo, "branch", "--list", branch)),
+		branch,
+	)
+}
+
 func TestRepoConfigAPIE2ERefreshGlobAndErrors(t *testing.T) {
 	assert := Assert.New(t)
 	mock := &mockGH{
@@ -598,6 +691,26 @@ func seedSettingsWorkspaceMR(
 		State:          db.MergeRequestStateOpen,
 		HeadBranch:     headBranch,
 		BaseBranch:     "main",
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		LastActivityAt: now,
+	})
+	require.NoError(t, err)
+}
+
+func seedSettingsWorkspaceIssue(
+	t *testing.T, database *db.DB,
+	repoID int64, number int, title string,
+) {
+	t.Helper()
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	_, err := database.UpsertIssue(t.Context(), &db.Issue{
+		RepoID:         repoID,
+		PlatformID:     repoID*10000 + int64(number),
+		Number:         number,
+		Title:          title,
+		Author:         "author",
+		State:          "open",
 		CreatedAt:      now,
 		UpdatedAt:      now,
 		LastActivityAt: now,

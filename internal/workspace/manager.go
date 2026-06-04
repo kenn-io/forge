@@ -498,9 +498,13 @@ func (m *Manager) Setup(
 			ws.ID, workspaceSetupStageWorktree, err,
 		)
 	}
-	ws.WorkspaceBranch = branch
+	persistedBranch := branch
+	if ws.ItemType == db.WorkspaceItemTypeIssue && ws.WorkspaceBranch == "" {
+		persistedBranch = ""
+	}
+	ws.WorkspaceBranch = persistedBranch
 	if err := m.updateWorkspaceBranch(
-		ctx, ws.ID, branch,
+		ctx, ws.ID, persistedBranch,
 	); err != nil {
 		m.rollbackWorktree(ctx, gitDir, ws, branch)
 		return m.failSetup(
@@ -670,12 +674,14 @@ func validateNoExecutableLocalGitConfig(ctx context.Context, dir string) error {
 func localGitConfigKeyMayExecute(key string) bool {
 	key = strings.ToLower(strings.TrimSpace(key))
 	return key == "core.fsmonitor" ||
+		key == "core.askpass" ||
 		key == "core.sshcommand" ||
 		key == "credential.helper" ||
 		(strings.HasPrefix(key, "credential.") &&
 			strings.HasSuffix(key, ".helper")) ||
 		(strings.HasPrefix(key, "filter.") &&
 			(strings.HasSuffix(key, ".process") ||
+				strings.HasSuffix(key, ".clean") ||
 				strings.HasSuffix(key, ".smudge"))) ||
 		(strings.HasPrefix(key, "url.") &&
 			strings.HasSuffix(key, ".insteadof")) ||
@@ -687,9 +693,24 @@ func localGitConfigKeyMayExecute(key string) bool {
 }
 
 func localGitConfigKeys(ctx context.Context, dir string) ([]string, error) {
+	keys, err := localGitConfigKeysForScope(ctx, dir, "--local")
+	if err != nil {
+		return nil, err
+	}
+	worktreeKeys, err := localGitConfigKeysForScope(ctx, dir, "--worktree")
+	if err != nil {
+		return nil, err
+	}
+	keys = append(keys, worktreeKeys...)
+	return keys, nil
+}
+
+func localGitConfigKeysForScope(
+	ctx context.Context, dir, scope string,
+) ([]string, error) {
 	cmd := workspaceGitCommand(
 		ctx, dir,
-		"config", "--local", "--name-only", "--list",
+		"config", scope, "--name-only", "--list",
 	)
 	out, err := procutil.CombinedOutput(
 		ctx, cmd, "git subprocess capacity",
@@ -698,6 +719,13 @@ func localGitConfigKeys(ctx context.Context, dir string) ([]string, error) {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
 			return nil, nil
+		}
+		if scope == "--worktree" {
+			outText := string(out)
+			if strings.Contains(outText, "extensions.worktreeConfig") ||
+				strings.Contains(outText, "extension worktreeConfig") {
+				return nil, nil
+			}
 		}
 		return nil, fmt.Errorf(
 			"%w: %s", err, strings.TrimSpace(string(out)),
@@ -773,7 +801,7 @@ func (m *Manager) addIssueWorktree(
 		); err != nil {
 			return "", err
 		}
-		return ws.GitHeadRef, nil
+		return "", nil
 	}
 	startRef := workspaceStartRef(ws)
 	if err := runGitWorktreeAdd(

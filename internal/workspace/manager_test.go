@@ -575,7 +575,9 @@ func TestValidateWorktreeBasePathRejectsExecutableLocalConfig(t *testing.T) {
 	}{
 		{name: "filter process", key: "filter.demo.process", value: "demo-filter"},
 		{name: "filter smudge", key: "filter.demo.smudge", value: "demo-smudge"},
+		{name: "filter clean", key: "filter.demo.clean", value: "demo-clean"},
 		{name: "fsmonitor", key: "core.fsmonitor", value: "demo-fsmonitor"},
+		{name: "askpass", key: "core.askPass", value: "demo-askpass"},
 		{name: "ssh command", key: "core.sshCommand", value: "demo-ssh"},
 		{name: "credential helper", key: "credential.helper", value: "!demo-helper"},
 		{name: "url rewrite", key: "url.https://example.invalid/.insteadOf", value: "https://github.com/"},
@@ -600,6 +602,27 @@ func TestValidateWorktreeBasePathRejectsExecutableLocalConfig(t *testing.T) {
 			assert.Contains(err.Error(), "may execute or rewrite git commands")
 		})
 	}
+}
+
+func TestValidateWorktreeBasePathRejectsExecutableWorktreeConfig(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	localRepo := setupLocalWorktreeBaseForWorkspaceGitTest(t, "feature/thing")
+	runWorkspaceTestGit(t, localRepo, "config", "extensions.worktreeConfig", "true")
+	runWorkspaceTestGit(
+		t, localRepo, "config", "--worktree",
+		"filter.demo.clean", "demo-clean",
+	)
+
+	got, err := ValidateWorktreeBasePath(
+		t.Context(), localRepo, "github.com", "acme", "widget",
+	)
+
+	require.Empty(got)
+	require.Error(err)
+	assert.Contains(err.Error(), "filter.demo.clean")
+	assert.Contains(err.Error(), "may execute or rewrite git commands")
 }
 
 func TestSetupUsesManagedCloneForForkPRWithConfiguredWorktreeBasePath(t *testing.T) {

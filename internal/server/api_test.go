@@ -24508,7 +24508,7 @@ func TestWorkspaceCreateIssueBranchConflictReturnsTyped409(t *testing.T) {
 	stored, err := fixture.database.GetWorkspace(ctx, reused.ID)
 	require.NoError(err)
 	require.NotNil(stored)
-	assert.Equal(slugBranch, stored.WorkspaceBranch)
+	assert.Empty(stored.WorkspaceBranch)
 }
 
 func prepareIssueWorkspaceAssociationFixture(

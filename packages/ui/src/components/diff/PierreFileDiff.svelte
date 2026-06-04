@@ -137,9 +137,7 @@
       applyLineCommentButtons();
       syncLineAnnotationWrappers();
       rendered = true;
-      if (!fullContext) {
-        installDemandContextHandler();
-      }
+      installDemandContextHandler();
       scheduleSelectedRangesApplication();
     },
     unsafeCSS: `
@@ -613,11 +611,27 @@
   ): void {
     clearRenderedDomState();
     pierreDiff?.expandHunk(hunkIndex, direction, expansionLineCount);
+    if (pierreDiff instanceof VirtualizedFileDiff && host && fullContext) {
+      if (isHostInScrollViewport()) {
+        pierreDiff.setVisibility(true);
+      }
+      const didRender = pierreDiff.render({
+        fileContainer: host,
+        oldFile: fullContext.oldFile,
+        newFile: fullContext.newFile,
+        forceRender: true,
+        lineAnnotations,
+      });
+      if (!didRender) {
+        scheduleRenderRetry();
+      }
+    }
     removeStalePlaceholderPres();
     applyLineTargetAttributes();
     applyHunkHeaderLabels();
     applyLineCommentButtons();
     syncLineAnnotationWrappers();
+    installDemandContextHandler();
     scheduleSelectedRangesApplication();
   }
 
@@ -651,6 +665,7 @@
       applyLineCommentButtons();
       syncLineAnnotationWrappers();
       rendered = true;
+      installDemandContextHandler();
       scheduleSelectedRangesApplication();
     }
     return didRender;

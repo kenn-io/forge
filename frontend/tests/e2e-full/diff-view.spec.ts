@@ -373,12 +373,17 @@ async function expectPierreCodeTabSize(
   }).toBe(tabSize);
 }
 
-async function clickPierreContextExpander(file: ReturnType<Page["locator"]>): Promise<void> {
-  const expander = file
-    .locator(".pierre-diff [data-separator][data-expand-index] [data-expand-button]")
-    .first();
+async function clickPierreContextExpander(
+  file: ReturnType<Page["locator"]>,
+  separatorIndex = 0,
+): Promise<void> {
+  const separator = file
+    .locator(".pierre-diff [data-separator][data-expand-index]")
+    .filter({ visible: true })
+    .nth(separatorIndex);
+  const expander = separator.locator("[data-expand-button]").filter({ visible: true }).first();
   await expect(expander).toBeVisible();
-  await expander.click({ modifiers: ["Shift"] });
+  await expander.click();
 }
 
 async function expectPierreDarkBackgroundMatchesAppSurface(

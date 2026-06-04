@@ -16,6 +16,7 @@ import (
 	"go.kenn.io/middleman/internal/db"
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/server"
+	"go.kenn.io/middleman/internal/testutil"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
 )
 
@@ -39,6 +40,29 @@ func setupTestServer(t *testing.T) (*server.Server, *db.DB) {
 	})
 
 	return srv, database
+}
+
+func setupTestServerWithFixtureClient(
+	t *testing.T,
+) (*server.Server, *db.DB, *testutil.FixtureClient, *ghclient.Syncer) {
+	t.Helper()
+
+	database := dbtest.Open(t)
+	client := testutil.NewFixtureClient().(*testutil.FixtureClient)
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": client},
+		database, nil, defaultTestRepos, time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+
+	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		require.NoError(t, srv.Shutdown(ctx))
+	})
+
+	return srv, database, client, syncer
 }
 
 func setupTestClient(t *testing.T, srv *server.Server) *apiclient.Client {

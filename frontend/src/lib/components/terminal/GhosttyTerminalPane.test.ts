@@ -311,7 +311,9 @@ describe("GhosttyTerminalPane", () => {
     Object.defineProperty(event, "clipboardData", {
       value: {
         getData: vi.fn((type: string) =>
-          type === "text/plain" ? "first\nsecond\nthird" : "",
+          type === "text/plain"
+            ? "first\x1b[201~\nsecond\nthird"
+            : "",
         ),
       },
     });
@@ -320,9 +322,9 @@ describe("GhosttyTerminalPane", () => {
 
     expect(defaultAllowed).toBe(false);
     expect(laterPasteListener).not.toHaveBeenCalled();
-    expect(mockPaste).toHaveBeenCalledWith("first\nsecond\nthird");
+    expect(mockPaste).toHaveBeenCalledWith("first[201~\nsecond\nthird");
     expect(sentText(socketAt(0), 0)).toBe(
-      "\x1b[200~first\nsecond\nthird\x1b[201~",
+      "\x1b[200~first[201~\nsecond\nthird\x1b[201~",
     );
   });
 

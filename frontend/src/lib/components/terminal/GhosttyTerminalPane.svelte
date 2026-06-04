@@ -14,7 +14,10 @@
   import { getStores } from "@middleman/ui";
   import { FitAddon, Terminal } from "ghostty-web";
   import { workspaceTmuxWebSocketPath } from "../../api/workspace-runtime.js";
-  import { isMultilinePaste } from "./bracketedPaste.js";
+  import {
+    isMultilinePaste,
+    sanitizeTerminalPasteText,
+  } from "./bracketedPaste.js";
   import { buildTerminalFontFamily } from "./terminalFontFamily.js";
   import { createTmuxMouseDragFilter } from "./tmuxMouseDragFilter.js";
 
@@ -206,7 +209,7 @@
 
     event.preventDefault();
     event.stopImmediatePropagation();
-    terminal.paste(pastedText);
+    terminal.paste(sanitizeTerminalPasteText(pastedText));
   }
 
   function refreshVisibleTerminal(): void {

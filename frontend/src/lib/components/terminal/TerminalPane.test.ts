@@ -22,6 +22,7 @@ const {
   xtermInstances: [] as Array<{
     clearTextureAtlas: ReturnType<typeof vi.fn>;
     cols: number;
+    modes: { bracketedPasteMode: boolean };
     refresh: ReturnType<typeof vi.fn>;
     rows: number;
     write: ReturnType<typeof vi.fn>;
@@ -81,6 +82,7 @@ vi.mock("@xterm/xterm", () => ({
     const terminal = {
       cols: 80,
       rows: 24,
+      modes: { bracketedPasteMode: false },
       options: { ...options },
       clearTextureAtlas: vi.fn(),
       dispose: vi.fn(),
@@ -350,11 +352,45 @@ describe("TerminalPane", () => {
     });
 
     await waitFor(() => expect(xtermOnDataHandlers).toHaveLength(1));
+    xtermInstances[0]!.modes.bracketedPasteMode = true;
     mockSockets[0]!.sent = [];
     const terminalContainer = container.querySelector(".terminal-container");
     expect(terminalContainer).toBeDefined();
     const laterPasteListener = vi.fn();
     terminalContainer!.addEventListener("paste", laterPasteListener, true);
+
+    const event = new Event("paste", {
+      bubbles: true,
+      cancelable: true,
+    }) as ClipboardEvent;
+    Object.defineProperty(event, "clipboardData", {
+      value: {
+        getData: vi.fn((type: string) =>
+          type === "text/plain"
+            ? "first\x1b[201~\nsecond\nthird"
+            : "",
+        ),
+      },
+    });
+
+    const defaultAllowed = terminalContainer!.dispatchEvent(event);
+
+    expect(defaultAllowed).toBe(false);
+    expect(laterPasteListener).not.toHaveBeenCalled();
+    expect(sentText(mockSockets[0]!, 0)).toBe(
+      "\x1b[200~first[201~\nsecond\nthird\x1b[201~",
+    );
+  });
+
+  it("sends browser multiline paste raw when bracketed paste is disabled", async () => {
+    const { container } = render(TerminalPane, {
+      props: { workspaceId: "ws-123" },
+    });
+
+    await waitFor(() => expect(xtermOnDataHandlers).toHaveLength(1));
+    mockSockets[0]!.sent = [];
+    const terminalContainer = container.querySelector(".terminal-container");
+    expect(terminalContainer).toBeDefined();
 
     const event = new Event("paste", {
       bubbles: true,
@@ -371,10 +407,7 @@ describe("TerminalPane", () => {
     const defaultAllowed = terminalContainer!.dispatchEvent(event);
 
     expect(defaultAllowed).toBe(false);
-    expect(laterPasteListener).not.toHaveBeenCalled();
-    expect(sentText(mockSockets[0]!, 0)).toBe(
-      "\x1b[200~first\nsecond\nthird\x1b[201~",
-    );
+    expect(sentText(mockSockets[0]!, 0)).toBe("first\nsecond\nthird");
   });
 
   it("leaves single-line browser paste for xterm.js default handling", async () => {

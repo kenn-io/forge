@@ -2040,6 +2040,152 @@ test.describe("workspace launch home", () => {
   );
 
   test(
+    "xterm workspace terminal sends multiline browser paste as one payload",
+    async ({ page }) => {
+      await page.addInitScript(() => {
+        type RecordedSocket = {
+          sent: unknown[];
+          url: string;
+        };
+        const recordedSockets: RecordedSocket[] = [];
+        Object.defineProperty(
+          window,
+          "__middlemanRecordedTerminalSockets",
+          {
+            value: recordedSockets,
+          },
+        );
+        const NativeWebSocket = window.WebSocket;
+
+        class MockTerminalWebSocket extends EventTarget {
+          static CONNECTING = 0;
+          static OPEN = 1;
+          static CLOSING = 2;
+          static CLOSED = 3;
+
+          binaryType = "arraybuffer";
+          extensions = "";
+          onclose: ((event: CloseEvent) => void) | null = null;
+          onerror: ((event: Event) => void) | null = null;
+          onmessage: ((event: MessageEvent) => void) | null = null;
+          onopen: ((event: Event) => void) | null = null;
+          protocol = "";
+          readyState = MockTerminalWebSocket.OPEN;
+          readonly url: string;
+          private readonly record?: RecordedSocket;
+
+          constructor(
+            url: string | URL,
+            protocols?: string | string[],
+          ) {
+            super();
+            this.url = String(url);
+            if (!this.url.includes("/ws/v1/workspaces/")) {
+              return new NativeWebSocket(url, protocols);
+            }
+            this.record = { url: this.url, sent: [] };
+            recordedSockets.push(this.record);
+            queueMicrotask(() => {
+              const event = new Event("open");
+              this.dispatchEvent(event);
+              this.onopen?.(event);
+            });
+          }
+
+          close(): void {
+            this.readyState = MockTerminalWebSocket.CLOSED;
+            const event = new CloseEvent("close");
+            this.dispatchEvent(event);
+            this.onclose?.(event);
+          }
+
+          send(data: unknown): void {
+            if (!this.record) return;
+            if (data instanceof ArrayBuffer) {
+              this.record.sent.push(
+                Array.from(new Uint8Array(data)),
+              );
+              return;
+            }
+            if (ArrayBuffer.isView(data)) {
+              this.record.sent.push(
+                Array.from(
+                  new Uint8Array(
+                    data.buffer,
+                    data.byteOffset,
+                    data.byteLength,
+                  ),
+                ),
+              );
+              return;
+            }
+            this.record.sent.push(data);
+          }
+        }
+
+        window.WebSocket =
+          MockTerminalWebSocket as unknown as typeof WebSocket;
+      });
+
+      await page.goto("/terminal/ws-123", {
+        waitUntil: "domcontentloaded",
+      });
+      const launchTarget = page.getByRole("button", { name: "Codex" });
+      await expect(launchTarget).toBeVisible();
+      await launchTarget.click();
+
+      await expect(page.locator(".terminal-container .xterm")).toBeVisible();
+      await page.evaluate(() => {
+        for (const socket of (
+          window as unknown as {
+            __middlemanRecordedTerminalSockets: Array<{
+              sent: unknown[];
+            }>;
+          }
+        ).__middlemanRecordedTerminalSockets) {
+          socket.sent = [];
+        }
+      });
+
+      const terminal = page.locator(".terminal-container").first();
+      await terminal.evaluate((element) => {
+        const event = new Event("paste", {
+          bubbles: true,
+          cancelable: true,
+        }) as ClipboardEvent;
+        Object.defineProperty(event, "clipboardData", {
+          value: {
+            getData: (type: string) =>
+              type === "text/plain" ? "first\nsecond\nthird" : "",
+          },
+        });
+        element.dispatchEvent(event);
+      });
+
+      await expect
+        .poll(async () =>
+          page.evaluate(() => {
+            const decoder = new TextDecoder();
+            return (
+              window as unknown as {
+                __middlemanRecordedTerminalSockets: Array<{
+                  sent: unknown[];
+                }>;
+              }
+            ).__middlemanRecordedTerminalSockets
+              .flatMap((socket) => socket.sent)
+              .map((frame) =>
+                Array.isArray(frame)
+                  ? decoder.decode(new Uint8Array(frame))
+                  : frame,
+              );
+          }),
+        )
+        .toContainEqual("first\nsecond\nthird");
+    },
+  );
+
+  test(
     "opens the plain shell from the bottom terminal panel",
     async ({ page }) => {
       const terminalSockets: string[] = [];

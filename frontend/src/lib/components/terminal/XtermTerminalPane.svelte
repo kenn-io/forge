@@ -8,7 +8,7 @@
   import "@xterm/xterm/css/xterm.css";
   import { workspaceTmuxWebSocketPath } from "../../api/workspace-runtime.js";
   import {
-    createBracketedPastePayload,
+    createTerminalPastePayload,
     isMultilinePaste,
   } from "./bracketedPaste.js";
   import { buildTerminalFontFamily } from "./terminalFontFamily.js";
@@ -266,7 +266,14 @@
 
     event.preventDefault();
     event.stopImmediatePropagation();
-    ws.send(encoder.encode(createBracketedPastePayload(pastedText)));
+    ws.send(
+      encoder.encode(
+        createTerminalPastePayload(
+          pastedText,
+          terminal?.modes.bracketedPasteMode ?? false,
+        ),
+      ),
+    );
   }
 
   function connect(): void {

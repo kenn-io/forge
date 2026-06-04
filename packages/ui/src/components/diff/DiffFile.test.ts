@@ -943,7 +943,7 @@ describe("DiffFile", () => {
       ],
     });
     const { diff } = renderDiffFile(file);
-    vi.spyOn(diff, "loadFilePreview")
+    const loadFilePreview = vi.spyOn(diff, "loadFilePreview")
       .mockImplementation(async (_owner, _name, _number, path, side) => {
         return textPreview(path, side === "old" ? oldText.join("\n") : newText.join("\n"));
       });
@@ -988,6 +988,7 @@ describe("DiffFile", () => {
       expect(expandedLines.every((line) => line.length > 0)).toBe(true);
       expect(expandedLines.some((line) => line.includes("shared 50"))).toBe(true);
     });
+    expect(loadFilePreview).toHaveBeenCalledTimes(2);
   });
 
   it("hides Pierre context expansion when file text loading is disabled", async () => {

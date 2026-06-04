@@ -611,20 +611,8 @@
   ): void {
     clearRenderedDomState();
     pierreDiff?.expandHunk(hunkIndex, direction, expansionLineCount);
-    if (pierreDiff instanceof VirtualizedFileDiff && host && fullContext) {
-      if (isHostInScrollViewport()) {
-        pierreDiff.setVisibility(true);
-      }
-      const didRender = pierreDiff.render({
-        fileContainer: host,
-        oldFile: fullContext.oldFile,
-        newFile: fullContext.newFile,
-        forceRender: true,
-        lineAnnotations,
-      });
-      if (!didRender) {
-        scheduleRenderRetry();
-      }
+    if (pierreDiff instanceof VirtualizedFileDiff && isHostInScrollViewport()) {
+      pierreDiff.setVisibility(true);
     }
     removeStalePlaceholderPres();
     applyLineTargetAttributes();

@@ -17,6 +17,7 @@ require (
 	github.com/gofrs/flock v0.13.0
 	github.com/golang-migrate/migrate/v4 v4.19.1
 	github.com/google/go-github/v84 v84.0.0
+	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
 	github.com/klauspost/compress v1.18.5
 	github.com/oapi-codegen/runtime v1.3.1
 	github.com/posthog/posthog-go v1.12.6

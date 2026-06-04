@@ -354,6 +354,42 @@ func TestCreateIssueExplicitGitHeadRefBypassesSlug(t *testing.T) {
 	assert.Equal("custom/branch", ws.GitHeadRef)
 }
 
+func TestCreateIssueReuseLocalBaseBranchCheckedOutReturnsConflict(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	d := openTestDB(t)
+	ctx := t.Context()
+	repoID := seedRepo(t, d, "github.com", "acme", "widget")
+	seedIssue(t, d, repoID, 7, "")
+
+	const branch = "middleman/issue-7"
+	localRepo := setupLocalWorktreeBaseForWorkspaceGitTest(t, "feature/thing")
+	runWorkspaceTestGit(
+		t, localRepo,
+		"worktree", "add", filepath.Join(t.TempDir(), "existing"),
+		"-b", branch, "HEAD",
+	)
+
+	mgr := NewManager(d, t.TempDir())
+	mgr.SetWorktreeBasePathResolver(func(
+		context.Context, string, string, string,
+	) (string, bool, error) {
+		return localRepo, true, nil
+	})
+
+	ws, err := mgr.CreateIssue(
+		ctx, "github.com", "acme", "widget", 7,
+		CreateIssueOptions{ReuseExistingBranch: true},
+	)
+
+	require.Nil(ws)
+	var conflict *IssueWorkspaceBranchConflictError
+	require.ErrorAs(err, &conflict)
+	assert.Equal(branch, conflict.Branch)
+	assert.Equal(branch+"-2", conflict.SuggestedBranch)
+}
+
 func TestCreateRepoNotTracked(t *testing.T) {
 	d := openTestDB(t)
 	mgr := NewManager(d, t.TempDir())

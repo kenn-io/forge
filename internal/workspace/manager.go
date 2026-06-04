@@ -330,7 +330,7 @@ func (m *Manager) CreateIssue(
 	}
 
 	workspaceBranch := gitHeadRef
-	branchDir, ok, err := m.issueBranchInspectionDir(
+	branchDir, ok, localBase, err := m.issueBranchInspectionDir(
 		ctx, platformHost, owner, name,
 	)
 	if err != nil {
@@ -339,6 +339,7 @@ func (m *Manager) CreateIssue(
 	if ok {
 		branch, err := issueWorkspaceBranchForExistingLocalBranch(
 			ctx, branchDir, gitHeadRef, opts.ReuseExistingBranch,
+			localBase,
 		)
 		if err != nil {
 			return nil, err
@@ -385,12 +386,12 @@ func newWorkspaceID() (string, error) {
 
 func (m *Manager) issueBranchInspectionDir(
 	ctx context.Context, platformHost, owner, name string,
-) (string, bool, error) {
+) (dir string, ok bool, localBase bool, err error) {
 	if baseDir, ok, err := m.localWorktreeBaseDir(ctx, platformHost, owner, name); err != nil || ok {
-		return baseDir, ok, err
+		return baseDir, ok, ok, err
 	}
 	if m.clones == nil {
-		return "", false, nil
+		return "", false, false, nil
 	}
 
 	remoteURL := fmt.Sprintf(
@@ -400,18 +401,18 @@ func (m *Manager) issueBranchInspectionDir(
 	if err := m.clones.EnsureClone(
 		ctx, platformHost, owner, name, remoteURL,
 	); err != nil {
-		return "", false, fmt.Errorf("ensure clone: %w", err)
+		return "", false, false, fmt.Errorf("ensure clone: %w", err)
 	}
 
 	cloneDir, err := m.clones.ClonePath(platformHost, owner, name)
 	if err != nil {
-		return "", false, err
+		return "", false, false, err
 	}
-	return cloneDir, true, nil
+	return cloneDir, true, false, nil
 }
 
 func issueWorkspaceBranchForExistingLocalBranch(
-	ctx context.Context, dir, branch string, reuse bool,
+	ctx context.Context, dir, branch string, reuse, localBase bool,
 ) (string, error) {
 	exists, err := localBranchExists(ctx, dir, branch)
 	if err != nil {
@@ -421,6 +422,22 @@ func issueWorkspaceBranchForExistingLocalBranch(
 		return branch, nil
 	}
 	if reuse {
+		if localBase {
+			checkedOut, err := localBranchCheckedOut(ctx, dir, branch)
+			if err != nil {
+				return "", fmt.Errorf("inspect checked out branch: %w", err)
+			}
+			if checkedOut {
+				suggested, err := nextAvailableBranchName(ctx, dir, branch)
+				if err != nil {
+					return "", fmt.Errorf("suggest branch name: %w", err)
+				}
+				return "", &IssueWorkspaceBranchConflictError{
+					Branch:          branch,
+					SuggestedBranch: suggested,
+				}
+			}
+		}
 		return "", nil
 	}
 	suggested, err := nextAvailableBranchName(ctx, dir, branch)
@@ -2579,6 +2596,30 @@ func localBranchExists(
 		return false, nil
 	}
 	return false, err
+}
+
+func localBranchCheckedOut(
+	ctx context.Context, dir, branch string,
+) (bool, error) {
+	cmd := workspaceGitCommand(
+		ctx, dir, "worktree", "list", "--porcelain",
+	)
+	out, err := procutil.CombinedOutput(
+		ctx, cmd, "git subprocess capacity",
+	)
+	if err != nil {
+		return false, fmt.Errorf(
+			"%w: %s", err, strings.TrimSpace(string(out)),
+		)
+	}
+	want := "refs/heads/" + branch
+	for line := range strings.SplitSeq(string(out), "\n") {
+		got, ok := strings.CutPrefix(line, "branch ")
+		if ok && strings.TrimSpace(got) == want {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func workspaceGitCommand(

@@ -2,10 +2,6 @@ version: 2
 
 project_name: middleman
 
-before:
-  hooks:
-    - make frontend
-
 builds:
   - id: middleman
     main: ./cmd/middleman

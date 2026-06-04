@@ -84,6 +84,7 @@
   let pierreDiffVirtualizer: Virtualizer | undefined;
   let demandContextHandlerRoot: ShadowRoot | undefined;
   let fullContext: { oldFile: FileContents; newFile: FileContents } | undefined = $state();
+  let fullContextFileDiff: FileDiffMetadata | undefined;
   let fullContextRendered = false;
   let contextLoadPromise: Promise<{ oldFile: FileContents; newFile: FileContents }> | undefined;
   let contextError: string | null = $state(null);
@@ -253,6 +254,7 @@
     contextLoadPromise = undefined;
     contextError = null;
     fullContext = undefined;
+    fullContextFileDiff = undefined;
     fullContextRendered = false;
     rendered = emptyTextualDiff;
     renderAttemptKey = "";
@@ -389,6 +391,7 @@
     clearTransientLineAnnotation();
     clearLineAnnotationWrappers();
     renderedLineRows = new Map();
+    fullContextFileDiff = undefined;
     pierreDiff?.cleanUp();
     pierreDiff = undefined;
   }
@@ -611,8 +614,11 @@
   ): void {
     clearRenderedDomState();
     pierreDiff?.expandHunk(hunkIndex, direction, expansionLineCount);
-    if (pierreDiff instanceof VirtualizedFileDiff && isHostInScrollViewport()) {
-      pierreDiff.setVisibility(true);
+    if (pierreDiff instanceof VirtualizedFileDiff && fullContext && fullContextFileDiff) {
+      const didRender = renderFullContextRange(fullContext, fullContextFileDiff);
+      if (!didRender) {
+        scheduleRenderRetry();
+      }
     }
     removeStalePlaceholderPres();
     applyLineTargetAttributes();
@@ -628,22 +634,9 @@
     fullContextRendered = false;
     rendered = false;
     clearRenderedDomState();
-    if (pierreDiff instanceof VirtualizedFileDiff) {
-      recreatePierreDiffForFullContext();
-    }
-    if (pierreDiff instanceof VirtualizedFileDiff && isHostInScrollViewport()) {
-      pierreDiff.setVisibility(true);
-    }
-    const fullContextFileDiff = parsePierreFileDiffWithContents(renderFile, context) ?? pierreFile;
+    fullContextFileDiff = parsePierreFileDiffWithContents(renderFile, context) ?? pierreFile;
     if (!fullContextFileDiff) return false;
-    const didRender = pierreDiff.render({
-      fileContainer: host,
-      fileDiff: fullContextFileDiff,
-      oldFile: context.oldFile,
-      newFile: context.newFile,
-      forceRender: true,
-      lineAnnotations,
-    });
+    const didRender = renderFullContextRange(context, fullContextFileDiff);
     pierreDiff.setSelectedLines(selectedRange);
     if (didRender) {
       fullContextRendered = true;
@@ -659,15 +652,36 @@
     return didRender;
   }
 
-  function recreatePierreDiffForFullContext(): void {
-    removeDemandContextHandler();
-    clearSelectedRangeElements();
-    clearTransientLineAnnotation();
-    clearLineAnnotationWrappers();
-    renderedLineRows = new Map();
-    pierreDiff?.cleanUp();
-    pierreDiff = createPierreDiff();
-    pierreDiff.setOptions(pierreOptions);
+  function renderFullContextRange(
+    context: { oldFile: FileContents; newFile: FileContents },
+    fileDiff: FileDiffMetadata,
+  ): boolean {
+    if (!pierreDiff || !host) return false;
+    const props = {
+      fileContainer: host,
+      fileDiff,
+      oldFile: context.oldFile,
+      newFile: context.newFile,
+      forceRender: true,
+      lineAnnotations,
+      renderRange: {
+        startingLine: 0,
+        totalLines: Number.POSITIVE_INFINITY,
+        bufferBefore: 0,
+        bufferAfter: 0,
+      },
+    } satisfies Parameters<FileDiff<unknown>["render"]>[0];
+    if (!(pierreDiff instanceof VirtualizedFileDiff)) {
+      return pierreDiff.render(props);
+    }
+    if (isHostInScrollViewport()) {
+      pierreDiff.setVisibility(true);
+    }
+    const render = FileDiff.prototype.render as (
+      this: FileDiff<unknown>,
+      props: Parameters<FileDiff<unknown>["render"]>[0],
+    ) => boolean;
+    return render.call(pierreDiff as unknown as FileDiff<unknown>, props);
   }
 
   async function loadFullContext(

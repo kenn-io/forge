@@ -361,6 +361,25 @@ async function expectPierreDiffFirstText(
   }).toContain(text);
 }
 
+async function expectPierreDiffVisibleText(
+  file: ReturnType<Page["locator"]>,
+  selector: string,
+  text: string,
+) {
+  await expect.poll(async () => {
+    return await file.locator(".pierre-diff").evaluate((host, { selector, text }) => {
+      return Array.from(host.shadowRoot?.querySelectorAll(selector) ?? [])
+        .some((element) => {
+          if (!(element instanceof HTMLElement)) return false;
+          const rect = element.getBoundingClientRect();
+          return rect.width > 0
+            && rect.height > 0
+            && element.textContent?.includes(text);
+        });
+    }, { selector, text });
+  }).toBe(true);
+}
+
 async function expectPierreCodeTabSize(
   file: ReturnType<Page["locator"]>,
   tabSize: string,
@@ -2180,6 +2199,11 @@ test.describe("diff view (git-backed)", () => {
         );
         return texts.filter((text) => text.length > 0).length;
       }).toBeGreaterThan(0);
+      await expectPierreDiffVisibleText(
+        handlerFile,
+        "[data-content] [data-line-type='context-expanded']",
+        "// line 1",
+      );
       await expect.poll(() => [...new Set(previewSides)].sort())
         .toEqual(["new", "old"]);
     } finally {

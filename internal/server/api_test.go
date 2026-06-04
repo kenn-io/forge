@@ -25516,6 +25516,7 @@ func TestWorkspaceDeleteDoesNotCleanupReplacementCloneE2E(t *testing.T) {
 		GitHeadRef:      "feature",
 		WorkspaceBranch: branch,
 		WorktreePath:    replacementClone,
+		TerminalBackend: workspace.TerminalBackendTmux,
 		Status:          "ready",
 	}))
 

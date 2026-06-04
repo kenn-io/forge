@@ -125,10 +125,10 @@ func worktreeDiffFilesFromRefs(
 	hideWhitespace bool,
 	includeUntracked bool,
 ) ([]gitclone.DiffFile, error) {
-	rawArgs := appendWorktreeHeadRef(addWorktreeWhitespaceFlag([]string{
-		"diff", "--raw", "-z", "-M", "-C", "--find-copies-harder",
+	rawArgs := appendWorktreeHeadRef(addWorktreeWhitespaceFlag(worktreeDiffArgs(
+		"--raw", "-z", "-M", "-C", "--find-copies-harder",
 		baseRef,
-	}, hideWhitespace), headRef)
+	), hideWhitespace), headRef)
 	rawOut, err := worktreeGitOutput(ctx, dir, rawArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("git diff --raw: %w", err)
@@ -145,10 +145,10 @@ func worktreeDiffFilesFromRefs(
 		files = filterWorktreeWhitespaceOnlyFiles(files, wsFiles)
 	}
 
-	numstatArgs := appendWorktreeHeadRef(addWorktreeWhitespaceFlag([]string{
-		"diff", "--numstat", "-z", "-M", "-C", "--find-copies-harder",
+	numstatArgs := appendWorktreeHeadRef(addWorktreeWhitespaceFlag(worktreeDiffArgs(
+		"--numstat", "-z", "-M", "-C", "--find-copies-harder",
 		baseRef,
-	}, hideWhitespace), headRef)
+	), hideWhitespace), headRef)
 	numstatOut, err := worktreeGitOutput(ctx, dir, numstatArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("git diff --numstat: %w", err)
@@ -426,10 +426,10 @@ func worktreeDiffFromRefsPath(
 		return nil, fmt.Errorf("whitespace count: %w", err)
 	}
 
-	rawArgs := appendWorktreeHeadRef(addWorktreeWhitespaceFlag([]string{
-		"diff", "--raw", "-z", "-M", "-C", "--find-copies-harder",
+	rawArgs := appendWorktreeHeadRef(addWorktreeWhitespaceFlag(worktreeDiffArgs(
+		"--raw", "-z", "-M", "-C", "--find-copies-harder",
 		baseRef,
-	}, hideWhitespace), headRef)
+	), hideWhitespace), headRef)
 	rawArgs = appendWorktreePathspec(rawArgs, path)
 	rawOut, err := worktreeGitOutput(ctx, dir, rawArgs...)
 	if err != nil {
@@ -437,19 +437,19 @@ func worktreeDiffFromRefsPath(
 	}
 	files := gitclone.ParseRawZ(rawOut)
 
-	numstatArgs := appendWorktreeHeadRef(addWorktreeWhitespaceFlag([]string{
-		"diff", "--numstat", "-z", "-M", "-C", "--find-copies-harder",
+	numstatArgs := appendWorktreeHeadRef(addWorktreeWhitespaceFlag(worktreeDiffArgs(
+		"--numstat", "-z", "-M", "-C", "--find-copies-harder",
 		baseRef,
-	}, hideWhitespace), headRef)
+	), hideWhitespace), headRef)
 	numstatArgs = appendWorktreePathspec(numstatArgs, path)
 	numstatOut, err := worktreeGitOutput(ctx, dir, numstatArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("git diff --numstat: %w", err)
 	}
 
-	patchArgs := appendWorktreeHeadRef(addWorktreeWhitespaceFlag([]string{
-		"diff", "-M", "-C", "--find-copies-harder", "-U3", baseRef,
-	}, hideWhitespace), headRef)
+	patchArgs := appendWorktreeHeadRef(addWorktreeWhitespaceFlag(worktreeDiffArgs(
+		"-M", "-C", "--find-copies-harder", "-U3", baseRef,
+	), hideWhitespace), headRef)
 	patchArgs = appendWorktreePathspec(patchArgs, path)
 	patchOut, err := worktreeGitOutput(ctx, dir, patchArgs...)
 	if err != nil {
@@ -652,6 +652,10 @@ func addWorktreeWhitespaceFlag(
 	withWhitespace = append(withWhitespace, "-w")
 	withWhitespace = append(withWhitespace, args[2:]...)
 	return withWhitespace
+}
+
+func worktreeDiffArgs(args ...string) []string {
+	return append([]string{"diff", "--no-ext-diff", "--no-textconv"}, args...)
 }
 
 func appendWorktreePathspec(args []string, path string) []string {
@@ -919,9 +923,9 @@ func worktreeWhitespaceOnlyCount(
 func worktreeWhitespaceOnlyFiles(
 	ctx context.Context, dir string, baseRef string, headRef string, path string,
 ) (map[string]bool, error) {
-	allArgs := appendWorktreePathspec(appendWorktreeHeadRef([]string{
-		"diff", "--raw", "-z", "--no-renames", baseRef,
-	}, headRef), path)
+	allArgs := appendWorktreePathspec(appendWorktreeHeadRef(worktreeDiffArgs(
+		"--raw", "-z", "--no-renames", baseRef,
+	), headRef), path)
 	outAll, err := worktreeGitOutput(ctx, dir, allArgs...)
 	if err != nil {
 		return nil, err
@@ -930,9 +934,9 @@ func worktreeWhitespaceOnlyFiles(
 	allFiles := worktreeRawPaths(outAll)
 	result := make(map[string]bool)
 	for file := range allFiles {
-		args := appendWorktreeHeadRef([]string{
-			"diff", "--numstat", "-z", "--no-renames", "-w", baseRef,
-		}, headRef)
+		args := appendWorktreeHeadRef(worktreeDiffArgs(
+			"--numstat", "-z", "--no-renames", "-w", baseRef,
+		), headRef)
 		outNoWhitespace, err := worktreeGitOutput(
 			ctx, dir, appendWorktreePathspec(args, file)...,
 		)

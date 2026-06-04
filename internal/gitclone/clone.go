@@ -336,11 +336,13 @@ func (m *Manager) git(
 }
 
 // RunGit runs a Git command with the same host-scoped authentication and
-// automation defaults as managed clone operations.
+// automation defaults as managed clone operations. It routes through the
+// networked path so callers fetching user-configured worktree bases get the
+// same credential resolution and rotation-retry behavior as managed clones.
 func (m *Manager) RunGit(
 	ctx context.Context, host, dir string, args ...string,
 ) ([]byte, error) {
-	return m.git(ctx, host, dir, args...)
+	return m.gitNetworked(ctx, host, dir, nil, args...)
 }
 
 func (m *Manager) gitWithInput(

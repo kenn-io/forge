@@ -116,6 +116,69 @@ func TestWorktreeDiffFilesMarksGeneratedFiles(t *testing.T) {
 	assert.False(generated["src.ts"])
 }
 
+func TestWorktreeDiffIgnoresExternalDiffConfig(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	work := setupDivergenceWorktree(t)
+
+	scriptDir := t.TempDir()
+	script := filepath.Join(scriptDir, "external-diff.sh")
+	marker := filepath.Join(scriptDir, "marker")
+	require.NoError(os.WriteFile(
+		script,
+		[]byte("#!/bin/sh\nprintf ran > \"$(dirname \"$0\")/marker\"\nexit 42\n"),
+		0o755,
+	))
+	runWorkspaceTestGit(t, work, "config", "diff.external", script)
+	require.NoError(os.WriteFile(
+		filepath.Join(work, "f.txt"), []byte("dirty\n"), 0o644,
+	))
+
+	diff, ok, err := WorktreeDiff(
+		t.Context(), work, WorktreeDiffBaseHead, false,
+	)
+
+	require.NoError(err)
+	require.True(ok)
+	require.NotNil(diff)
+	_, statErr := os.Stat(marker)
+	assert.True(os.IsNotExist(statErr), "diff.external must not run")
+}
+
+func TestWorktreeDiffIgnoresTextconvConfig(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	work := setupDivergenceWorktree(t)
+
+	scriptDir := t.TempDir()
+	script := filepath.Join(scriptDir, "textconv.sh")
+	marker := filepath.Join(scriptDir, "marker")
+	require.NoError(os.WriteFile(
+		script,
+		[]byte("#!/bin/sh\nprintf ran > \"$(dirname \"$0\")/marker\"\nexit 42\n"),
+		0o755,
+	))
+	runWorkspaceTestGit(t, work, "config", "diff.demo.textconv", script)
+	require.NoError(os.WriteFile(
+		filepath.Join(work, ".gitattributes"), []byte("*.txt diff=demo\n"), 0o644,
+	))
+	runWorkspaceTestGit(t, work, "add", ".gitattributes")
+	runWorkspaceTestGit(t, work, "commit", "-m", "add diff attributes")
+	require.NoError(os.WriteFile(
+		filepath.Join(work, "f.txt"), []byte("dirty\n"), 0o644,
+	))
+
+	diff, ok, err := WorktreeDiff(
+		t.Context(), work, WorktreeDiffBaseHead, false,
+	)
+
+	require.NoError(err)
+	require.True(ok)
+	require.NotNil(diff)
+	_, statErr := os.Stat(marker)
+	assert.True(os.IsNotExist(statErr), "textconv must not run")
+}
+
 func TestWorktreeFileDiffAgainstHeadScopesPatchToOnePath(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)

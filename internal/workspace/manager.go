@@ -711,11 +711,15 @@ func localGitConfigKeyMayExecute(key string) bool {
 		key == "core.gitproxy" ||
 		key == "core.sshcommand" ||
 		key == "credential.helper" ||
+		key == "diff.external" ||
 		key == "fetch.recursesubmodules" ||
 		strings.HasPrefix(key, "http.") ||
 		key == "submodule.recurse" ||
 		(strings.HasPrefix(key, "credential.") &&
 			strings.HasSuffix(key, ".helper")) ||
+		(strings.HasPrefix(key, "diff.") &&
+			(strings.HasSuffix(key, ".command") ||
+				strings.HasSuffix(key, ".textconv"))) ||
 		(strings.HasPrefix(key, "filter.") &&
 			(strings.HasSuffix(key, ".process") ||
 				strings.HasSuffix(key, ".clean") ||
@@ -2501,10 +2505,6 @@ func fetchWorkspaceBaseWithGit(
 		return err
 	}
 	return nil
-}
-
-func refreshWorkspaceBaseOriginHead(ctx context.Context, dir string) error {
-	return refreshWorkspaceBaseOriginHeadWithGit(ctx, runGit, dir)
 }
 
 func refreshWorkspaceBaseOriginHeadWithGit(

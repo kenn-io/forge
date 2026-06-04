@@ -25,8 +25,9 @@ func (m *Manager) DiffFiles(
 		return nil, err
 	}
 	rawOut, err := m.git(ctx, clonePath,
-		"diff", "--raw", "-z", "-M", "-C",
-		"--find-copies-harder", "--end-of-options", mergeBase, headSHA,
+		diffArgs("--raw", "-z", "-M", "-C",
+			"--find-copies-harder", "--end-of-options", mergeBase, headSHA,
+		)...,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("git diff --raw: %w", err)
@@ -36,8 +37,9 @@ func (m *Manager) DiffFiles(
 		files = []DiffFile{}
 	}
 	numstatOut, err := m.git(ctx, clonePath,
-		"diff", "--numstat", "-z", "-M", "-C",
-		"--find-copies-harder", "--end-of-options", mergeBase, headSHA,
+		diffArgs("--numstat", "-z", "-M", "-C",
+			"--find-copies-harder", "--end-of-options", mergeBase, headSHA,
+		)...,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("git diff --numstat: %w", err)
@@ -167,10 +169,10 @@ func (m *Manager) Diff(
 	files := ParseRawZ(rawOut)
 
 	// Step 3: Get patch content.
-	patchArgs := []string{
-		"diff", "-M", "-C", "--find-copies-harder",
+	patchArgs := diffArgs(
+		"-M", "-C", "--find-copies-harder",
 		"-U3",
-	}
+	)
 	if hideWhitespace {
 		patchArgs = append(patchArgs[:2],
 			append([]string{"-w"}, patchArgs[2:]...)...)
@@ -278,8 +280,9 @@ func (m *Manager) whitespaceOnlyFiles(
 		return nil, err
 	}
 	numstatOut, err := m.git(ctx, clonePath,
-		"diff", "--numstat", "-z", "--no-renames", "-w",
-		"--end-of-options", mergeBase, headSHA,
+		diffArgs("--numstat", "-z", "--no-renames", "-w",
+			"--end-of-options", mergeBase, headSHA,
+		)...,
 	)
 	if err != nil {
 		return nil, err
@@ -298,10 +301,10 @@ func (m *Manager) whitespaceOnlyFiles(
 }
 
 func diffRawArgs(mergeBase, headSHA string, hideWhitespace bool) []string {
-	args := []string{
-		"diff", "--raw", "-z", "-M", "-C",
+	args := diffArgs(
+		"--raw", "-z", "-M", "-C",
 		"--find-copies-harder",
-	}
+	)
 	if hideWhitespace {
 		args = append(args[:2], append([]string{"-w"}, args[2:]...)...)
 	}
@@ -309,11 +312,15 @@ func diffRawArgs(mergeBase, headSHA string, hideWhitespace bool) []string {
 }
 
 func diffRawNoRenameArgs(mergeBase, headSHA string, hideWhitespace bool) []string {
-	args := []string{"diff", "--raw", "-z", "--no-renames"}
+	args := diffArgs("--raw", "-z", "--no-renames")
 	if hideWhitespace {
 		args = append(args, "-w")
 	}
 	return append(args, "--end-of-options", mergeBase, headSHA)
+}
+
+func diffArgs(args ...string) []string {
+	return append([]string{"diff", "--no-ext-diff", "--no-textconv"}, args...)
 }
 
 // FileContent returns one file's blob content at ref. maxBytes guards API

@@ -582,6 +582,7 @@ func TestValidateWorktreeBasePathRejectsExecutableLocalConfig(t *testing.T) {
 		{name: "alternate refs command", key: "core.alternateRefsCommand", value: "demo-alternates"},
 		{name: "askpass", key: "core.askPass", value: "demo-askpass"},
 		{name: "git proxy", key: "core.gitProxy", value: "demo-proxy"},
+		{name: "hooks path", key: "core.hooksPath", value: filepath.Join(t.TempDir(), "hooks")},
 		{name: "ssh command", key: "core.sshCommand", value: "demo-ssh"},
 		{name: "credential helper", key: "credential.helper", value: "!demo-helper"},
 		{name: "diff external", key: "diff.external", value: "demo-diff"},
@@ -617,6 +618,27 @@ func TestValidateWorktreeBasePathRejectsExecutableLocalConfig(t *testing.T) {
 			assert.Contains(err.Error(), "may execute or rewrite git commands")
 		})
 	}
+}
+
+func TestValidateWorktreeBasePathRejectsExecutableGitHooks(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	localRepo := setupLocalWorktreeBaseForWorkspaceGitTest(t, "feature/thing")
+	commonDir := strings.TrimSpace(string(runWorkspaceTestGit(
+		t, localRepo, "rev-parse", "--path-format=absolute", "--git-common-dir",
+	)))
+	hookPath := filepath.Join(commonDir, "hooks", "reference-transaction")
+	require.NoError(os.WriteFile(hookPath, []byte("#!/bin/sh\nexit 1\n"), 0o755))
+
+	got, err := ValidateWorktreeBasePath(
+		t.Context(), localRepo, "github.com", "acme", "widget",
+	)
+
+	require.Empty(got)
+	require.Error(err)
+	assert.Contains(err.Error(), "reference-transaction")
+	assert.Contains(err.Error(), "must not be executable")
 }
 
 func TestValidateWorktreeBasePathRejectsUnsafeOriginSchemes(t *testing.T) {
@@ -1082,6 +1104,30 @@ func TestFetchWorkspaceBaseConstrainsNegotiationTips(t *testing.T) {
 	assert.Contains(fetchArgs, "--negotiation-tip=refs/remotes/origin/*")
 	assert.Contains(fetchArgs, "--recurse-submodules=no")
 	assert.Contains(fetchArgs, "--no-tags")
+}
+
+func TestFetchWorkspaceBaseDisablesGitHooks(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	var calls [][]string
+	run := func(_ context.Context, _ string, args ...string) error {
+		calls = append(calls, slices.Clone(args))
+		return nil
+	}
+
+	require.NoError(fetchWorkspaceBaseWithGit(
+		t.Context(), run, t.TempDir(), false,
+	))
+	require.Len(calls, 2)
+	for _, args := range calls {
+		require.GreaterOrEqual(len(args), 2)
+		assert.Equal("-c", args[0])
+		assert.Equal("core.hooksPath=/dev/null", args[1])
+	}
+	assert.Contains(calls[0], "fetch")
+	assert.Contains(calls[1], "remote")
+	assert.Contains(calls[1], "set-head")
 }
 
 func TestCleanupUsesExistingWorktreeGitDirWhenConfiguredBaseChanges(t *testing.T) {
@@ -3405,6 +3451,46 @@ func TestManagerRequestRetryQueuesWhileCreatingAndStartsIfErrored(t *testing.T) 
 	require.NoError(err)
 	assert.Nil(next)
 	assert.False(queued)
+}
+
+func TestManagerRequestRetryPreservesReusedIssueBranchSentinel(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	d := openTestDB(t)
+	mgr := NewManager(d, t.TempDir())
+	ctx := context.Background()
+	errMsg := "setup failed"
+	ws := &Workspace{
+		ID:              "ws-reused-issue-retry",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		ItemType:        db.WorkspaceItemTypeIssue,
+		ItemNumber:      7,
+		GitHeadRef:      "feature/reused",
+		WorkspaceBranch: "",
+		WorktreePath:    "/tmp/ws-reused-issue-retry",
+		TmuxSession:     "middleman-ws-reused-issue-retry",
+		Status:          "error",
+		ErrorMessage:    &errMsg,
+	}
+	require.NoError(d.InsertWorkspace(ctx, ws))
+
+	next, startNow, err := mgr.RequestRetry(ctx, ws.ID)
+	require.NoError(err)
+	require.NotNil(next)
+	assert.True(startNow)
+	assert.Equal("creating", next.Status)
+	assert.Empty(next.WorkspaceBranch)
+	assert.Nil(next.ErrorMessage)
+
+	stored, err := d.GetWorkspace(ctx, ws.ID)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Equal("creating", stored.Status)
+	assert.Empty(stored.WorkspaceBranch)
+	assert.Nil(stored.ErrorMessage)
 }
 
 func TestManagerRequestRetryStartsWhenSetupFailedBeforeQueue(t *testing.T) {

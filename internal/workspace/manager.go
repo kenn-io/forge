@@ -650,6 +650,9 @@ func ValidateWorktreeBasePath(
 	if err := validateNoExecutableLocalGitConfig(ctx, abs); err != nil {
 		return "", err
 	}
+	if err := validateNoExecutableGitHooks(ctx, abs); err != nil {
+		return "", err
+	}
 	if err := validateOriginFetchRefspec(ctx, abs); err != nil {
 		return "", err
 	}
@@ -703,12 +706,41 @@ func validateNoExecutableLocalGitConfig(ctx context.Context, dir string) error {
 	return nil
 }
 
+func validateNoExecutableGitHooks(ctx context.Context, dir string) error {
+	commonDir, err := worktreeCommonGitDir(ctx, dir)
+	if err != nil {
+		return fmt.Errorf("inspect git hooks dir: %w", err)
+	}
+	hooksDir := filepath.Join(commonDir, "hooks")
+	entries, err := os.ReadDir(hooksDir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("read git hooks dir: %w", err)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || strings.HasSuffix(entry.Name(), ".sample") {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return fmt.Errorf("inspect git hook %q: %w", entry.Name(), err)
+		}
+		if info.Mode()&0o111 != 0 {
+			return fmt.Errorf("git hook %q must not be executable", entry.Name())
+		}
+	}
+	return nil
+}
+
 func localGitConfigKeyMayExecute(key string) bool {
 	key = strings.ToLower(strings.TrimSpace(key))
 	return key == "core.fsmonitor" ||
 		key == "core.alternaterefscommand" ||
 		key == "core.askpass" ||
 		key == "core.gitproxy" ||
+		key == "core.hookspath" ||
 		key == "core.sshcommand" ||
 		key == "credential.helper" ||
 		key == "diff.external" ||
@@ -1030,11 +1062,11 @@ func (m *Manager) addPreferredWorktree(
 		); err != nil {
 			cleanupCtx, cancel := cleanupContext(ctx)
 			defer cancel()
-			_ = runGit(
+			_ = runGitWithoutHooks(
 				cleanupCtx, cloneDir,
 				"worktree", "remove", "--force", ws.WorktreePath,
 			)
-			_ = runGit(
+			_ = runGitWithoutHooks(
 				cleanupCtx, cloneDir,
 				"branch", "-D", "--", ws.GitHeadRef,
 			)
@@ -1073,7 +1105,7 @@ func (m *Manager) addPreferredWorktree(
 	); err != nil {
 		cleanupCtx, cancel := cleanupContext(ctx)
 		defer cancel()
-		_ = runGit(
+		_ = runGitWithoutHooks(
 			cleanupCtx, cloneDir,
 			"worktree", "remove", "--force", ws.WorktreePath,
 		)
@@ -1104,13 +1136,13 @@ func setBranchUpstream(
 	ctx context.Context,
 	worktreePath, branch, remote, mergeRef string,
 ) error {
-	if err := runGit(
+	if err := runGitWithoutHooks(
 		ctx, worktreePath,
 		"config", "branch."+branch+".remote", remote,
 	); err != nil {
 		return err
 	}
-	return runGit(
+	return runGitWithoutHooks(
 		ctx, worktreePath,
 		"config", "branch."+branch+".merge", mergeRef,
 	)
@@ -1325,17 +1357,23 @@ func (m *Manager) prepareWorkspaceRetry(
 			),
 		)
 	}
-	if err := m.updateWorkspaceBranch(
-		ctx, ws.ID, workspaceBranchUnknown,
-	); err != nil {
+	retryBranch := retryWorkspaceBranch(ws)
+	if err := m.updateWorkspaceBranch(ctx, ws.ID, retryBranch); err != nil {
 		return m.failSetup(
 			ctx,
 			ws.ID, workspaceSetupStageSetup,
 			fmt.Errorf("reset workspace branch before retry: %w", err),
 		)
 	}
-	m.markRetryStarted(ctx, ws)
+	m.markRetryStarted(ctx, ws, retryBranch)
 	return nil
+}
+
+func retryWorkspaceBranch(ws *Workspace) string {
+	if ws.ItemType == db.WorkspaceItemTypeIssue && ws.WorkspaceBranch == "" {
+		return ""
+	}
+	return workspaceBranchUnknown
 }
 
 func (m *Manager) consumeQueuedRetry(id string) bool {
@@ -1348,8 +1386,10 @@ func (m *Manager) consumeQueuedRetry(id string) bool {
 	return true
 }
 
-func (m *Manager) markRetryStarted(ctx context.Context, ws *Workspace) {
-	ws.WorkspaceBranch = workspaceBranchUnknown
+func (m *Manager) markRetryStarted(
+	ctx context.Context, ws *Workspace, workspaceBranch string,
+) {
+	ws.WorkspaceBranch = workspaceBranch
 	ws.Status = "creating"
 	ws.ErrorMessage = nil
 	m.recordSetupEvent(
@@ -1375,7 +1415,7 @@ func (m *Manager) cleanupWorkspaceArtifactsForRetry(
 	}
 
 	return m.withRepoLockForGitDir(ctx, gitDir, func() error {
-		if err := runGit(
+		if err := runGitWithoutHooks(
 			ctx, gitDir,
 			"worktree", "remove", "--force", ws.WorktreePath,
 		); err != nil && !isGitWorktreeAbsent(err) {
@@ -1393,7 +1433,7 @@ func (m *Manager) cleanupWorkspaceArtifactsForRetry(
 		); err != nil {
 			return err
 		}
-		if err := runGit(ctx, gitDir, "worktree", "prune"); err != nil {
+		if err := runGitWithoutHooks(ctx, gitDir, "worktree", "prune"); err != nil {
 			return fmt.Errorf("prune git worktrees: %w", err)
 		}
 		return nil
@@ -1416,12 +1456,12 @@ func (m *Manager) cleanupWorkspaceArtifactsForDelete(
 	}
 
 	return m.withRepoLockForGitDir(ctx, gitDir, func() error {
-		_ = runGit(
+		_ = runGitWithoutHooks(
 			ctx, gitDir,
 			"worktree", "remove", "--force", ws.WorktreePath,
 		)
 		m.deleteWorkspaceBranches(ctx, gitDir, ws, ws.WorkspaceBranch)
-		_ = runGit(ctx, gitDir, "worktree", "prune")
+		_ = runGitWithoutHooks(ctx, gitDir, "worktree", "prune")
 		return nil
 	})
 }
@@ -2460,6 +2500,16 @@ func runGit(ctx context.Context, dir string, args ...string) error {
 	return nil
 }
 
+func runGitWithoutHooks(ctx context.Context, dir string, args ...string) error {
+	return runGit(ctx, dir, gitArgsWithoutHooks(args...)...)
+}
+
+func gitArgsWithoutHooks(args ...string) []string {
+	gitArgs := make([]string, 0, len(args)+2)
+	gitArgs = append(gitArgs, "-c", "core.hooksPath=/dev/null")
+	return append(gitArgs, args...)
+}
+
 func fetchWorkspaceBase(ctx context.Context, dir string, requireOriginHead bool) error {
 	return fetchWorkspaceBaseWithGit(ctx, runGit, dir, requireOriginHead)
 }
@@ -2490,7 +2540,10 @@ func fetchWorkspaceBaseWithGit(
 	dir string,
 	requireOriginHead bool,
 ) error {
-	if err := run(
+	runWithoutHooks := func(ctx context.Context, dir string, args ...string) error {
+		return run(ctx, dir, gitArgsWithoutHooks(args...)...)
+	}
+	if err := runWithoutHooks(
 		ctx, dir,
 		"fetch", "--prune", "--no-tags", "--recurse-submodules=no",
 		"--negotiation-tip=refs/remotes/origin/*", "origin",
@@ -2498,7 +2551,7 @@ func fetchWorkspaceBaseWithGit(
 	); err != nil {
 		return fmt.Errorf("fetch configured worktree base: %w", err)
 	}
-	if err := refreshWorkspaceBaseOriginHeadWithGit(ctx, run, dir); err != nil {
+	if err := refreshWorkspaceBaseOriginHeadWithGit(ctx, runWithoutHooks, dir); err != nil {
 		if !requireOriginHead {
 			return nil
 		}
@@ -2560,11 +2613,7 @@ func runGitWorktreeAdd(
 	ctx context.Context, dir, worktreePath string, args ...string,
 ) error {
 	gitArgs := make([]string, 0, len(args)+5)
-	gitArgs = append(
-		gitArgs,
-		"-c", "core.hooksPath=/dev/null",
-		"worktree", "add", worktreePath,
-	)
+	gitArgs = append(gitArgs, gitArgsWithoutHooks("worktree", "add", worktreePath)...)
 	gitArgs = append(gitArgs, args...)
 	return runGit(ctx, dir, gitArgs...)
 }
@@ -2722,7 +2771,7 @@ func (m *Manager) rollbackWorktree(
 	cleanupCtx, cancel := cleanupContext(ctx)
 	defer cancel()
 	err := m.withRepoLockForGitDir(cleanupCtx, cloneDir, func() error {
-		if err := runGit(
+		if err := runGitWithoutHooks(
 			cleanupCtx, cloneDir,
 			"worktree", "remove", "--force", ws.WorktreePath,
 		); err != nil {
@@ -2750,7 +2799,7 @@ func (m *Manager) deleteWorkspaceBranches(
 				"branch", branch, "err", err)
 			continue
 		}
-		if err := runGit(
+		if err := runGitWithoutHooks(
 			ctx, cloneDir, "branch", "-D", "--", branch,
 		); err != nil {
 			slog.Warn("workspace branch delete failed",
@@ -2781,7 +2830,7 @@ func deleteWorkspaceBranchStrict(
 	); err != nil {
 		return err
 	}
-	if err := runGit(
+	if err := runGitWithoutHooks(
 		ctx, cloneDir, "branch", "-D", "--", branch,
 	); err != nil && !isGitBranchAbsent(err) {
 		return fmt.Errorf("delete git branch %q: %w", branch, err)

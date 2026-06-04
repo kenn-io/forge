@@ -100,6 +100,7 @@
   const fileKey = $derived(`${renderFile.path}\0${renderFile.old_path}\0${renderFile.patch}`);
   const fileHunks = $derived(renderFile.hunks ?? []);
   const emptyTextualDiff = $derived(!renderFile.patch.trim() || fileHunks.length === 0);
+  const reservedHeight = $derived(placeholderHeight || estimatedDiffHeight(renderFile));
   const pierreFile = $derived.by<FileDiffMetadata | undefined>(() => {
     return parsePierreFileDiff(renderFile, {
       // Pierre marks patch-only diffs as partial and hides expansion controls.
@@ -594,6 +595,15 @@
   function measuredRenderedHeight(): number {
     const height = host?.getBoundingClientRect().height ?? 0;
     return Number.isFinite(height) && height > 0 ? Math.ceil(height) : placeholderHeight;
+  }
+
+  function estimatedDiffHeight(f: DiffFile): number {
+    if (f.is_binary || !f.hunks.length) return 96;
+    const lineCount = f.hunks.reduce((count, hunk) => count + hunk.lines.length, 0);
+    const separatorCount = Math.max(1, f.hunks.length);
+    const estimatedLineHeight = 22;
+    const verticalPadding = 12;
+    return Math.max(96, (lineCount + separatorCount) * estimatedLineHeight + verticalPadding);
   }
 
   function handleDemandContextClick(event: Event): void {
@@ -1128,7 +1138,7 @@
 <div
   class="pierre-diff-shell"
   class:pierre-diff-shell--loading={!rendered}
-  style:min-height={placeholderHeight ? `${placeholderHeight}px` : undefined}
+  style:min-height={reservedHeight ? `${reservedHeight}px` : undefined}
   aria-busy={!rendered}
 >
   {#if !emptyTextualDiff}

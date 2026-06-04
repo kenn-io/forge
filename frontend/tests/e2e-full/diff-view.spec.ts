@@ -918,6 +918,27 @@ test.describe("diff view", () => {
     ).toBe(0);
   });
 
+  test("sidebar jump to the last file preserves expanded body space above it", async ({ page }) => {
+    await mockDiffApi(page, largeDiff);
+    await navigateToDiff(page);
+    await waitForDiffLoaded(page);
+    await waitForSidebarFilesLoaded(page);
+
+    await treeFileItem(page, "src/pkg9/file_49.go").click();
+    await expect(page.locator('[data-file-path="src/pkg9/file_49.go"]'))
+      .toBeVisible();
+
+    const earlierFile = page.locator('[data-file-path="src/pkg5/file_25.go"]');
+    await expect(earlierFile.locator(".file-header"))
+      .toHaveAttribute("title", "Collapse file");
+    await expect(earlierFile.locator(".file-content")).toBeAttached();
+    await expect.poll(async () =>
+      earlierFile.locator(".pierre-diff-shell").evaluate((el) =>
+        Math.round(el.getBoundingClientRect().height),
+      ),
+    ).toBeGreaterThan(300);
+  });
+
   test("deleted file name has strikethrough in sidebar", async ({ page }) => {
     await mockDiffApi(page, smallDiff);
     await navigateToDiff(page);
@@ -2236,6 +2257,7 @@ test.describe("diff view (git-backed)", () => {
     const configFile = page.locator(
       '[data-file-path="config.yaml"]',
     );
+    await configFile.scrollIntoViewIfNeeded();
     await expect(configFile).toBeVisible();
 
     // Only deletion lines -- no additions or context.

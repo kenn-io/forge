@@ -201,13 +201,13 @@ func sameConfiguredRepo(left, right config.Repo) bool {
 }
 
 func (s *Server) worktreeBasePathForRepo(
-	_ context.Context, platformHost, owner, name string,
+	_ context.Context, provider, platformHost, owner, name string,
 ) (string, bool, error) {
 	if s.cfg == nil {
 		return "", false, nil
 	}
 	target := config.Repo{
-		Platform:     "github",
+		Platform:     provider,
 		PlatformHost: platformHost,
 		Owner:        owner,
 		Name:         name,
@@ -218,7 +218,6 @@ func (s *Server) worktreeBasePathForRepo(
 		if repo.HasNameGlob() || strings.TrimSpace(repo.WorktreeBasePath) == "" {
 			continue
 		}
-		target.Platform = repo.PlatformOrDefault()
 		if sameConfiguredRepo(repo, target) {
 			return repo.WorktreeBasePath, true, nil
 		}

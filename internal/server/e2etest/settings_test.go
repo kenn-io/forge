@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	gh "github.com/google/go-github/v84/github"
 	Assert "github.com/stretchr/testify/assert"
@@ -18,6 +19,10 @@ import (
 	gitcmd "go.kenn.io/kit/git/cmd"
 	"go.kenn.io/middleman/internal/apiclient/generated"
 	"go.kenn.io/middleman/internal/config"
+	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/middleman/internal/github"
+	"go.kenn.io/middleman/internal/server"
+	"go.kenn.io/middleman/internal/testutil/dbtest"
 )
 
 func doServerJSON(
@@ -367,6 +372,96 @@ func TestRepoConfigAPIE2EUpdatesWorktreeBasePath(t *testing.T) {
 	assert.Empty(cfgAfterClear.Repos[0].WorktreeBasePath)
 }
 
+func TestRepoConfigAPIE2EWorkspaceCreationUsesWorktreeBasePath(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	require.NoError(os.WriteFile(cfgPath, []byte(`
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[tmux]
+command = ["sh", "-c", "exit 0"]
+
+[[repos]]
+owner = "acme"
+name = "widget"
+`), 0o644))
+	cfg, err := config.Load(cfgPath)
+	require.NoError(err)
+
+	database := dbtest.Open(t)
+	repoID, err := database.UpsertRepo(
+		t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+	seedSettingsWorkspaceMR(t, database, repoID, 42, "feature/thing")
+
+	syncer := github.NewSyncer(
+		map[string]github.Client{"github.com": &mockGH{}},
+		database, nil,
+		[]github.RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}},
+		time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+
+	srv := server.NewWithConfig(
+		database, syncer, nil, nil, cfg, cfgPath,
+		server.ServerOptions{WorktreeDir: filepath.Join(dir, "workspaces")},
+	)
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	localRepo := setupSettingsLocalGitRepo(t)
+	runSettingsGit(
+		t, localRepo,
+		"update-ref", "refs/remotes/origin/feature/thing", "HEAD",
+	)
+
+	updateResp := doServerJSON(
+		t, ts.Client(), http.MethodPut,
+		ts.URL+"/api/v1/repo/github/acme/widget/worktree-base",
+		generated.RepoWorktreeBaseRequest{WorktreeBasePath: localRepo},
+	)
+	defer updateResp.Body.Close()
+	require.Equal(http.StatusOK, updateResp.StatusCode)
+
+	client, err := generated.NewClientWithResponses(ts.URL + "/api/v1")
+	require.NoError(err)
+	createResp, err := client.CreateWorkspaceWithResponse(
+		t.Context(),
+		generated.CreateWorkspaceInputBody{
+			PlatformHost: "github.com",
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     42,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, createResp.StatusCode(), string(createResp.Body))
+	require.NotNil(createResp.JSON202)
+
+	ready := waitForSettingsWorkspaceReady(t, client, createResp.JSON202.Id)
+	assert.Equal("ready", ready.Status)
+	assert.Equal("feature/thing", ready.GitHeadRef)
+	stored, err := database.GetWorkspace(t.Context(), ready.Id)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Equal("feature/thing", stored.WorkspaceBranch)
+
+	canonicalWorktreePath, err := filepath.EvalSymlinks(ready.WorktreePath)
+	require.NoError(err)
+	listOutput := string(runSettingsGitOutput(
+		t, localRepo, "worktree", "list", "--porcelain",
+	))
+	assert.Contains(listOutput, "worktree "+canonicalWorktreePath)
+}
+
 func TestRepoConfigAPIE2ERefreshGlobAndErrors(t *testing.T) {
 	assert := Assert.New(t)
 	mock := &mockGH{
@@ -443,4 +538,61 @@ func runSettingsGit(t *testing.T, dir string, args ...string) {
 	t.Helper()
 	out, stderr, err := gitcmd.New().Run(t.Context(), dir, nil, args...)
 	require.NoError(t, err, "git %v failed: %s%s", args, out, stderr)
+}
+
+func runSettingsGitOutput(t *testing.T, dir string, args ...string) []byte {
+	t.Helper()
+	out, stderr, err := gitcmd.New().Run(t.Context(), dir, nil, args...)
+	require.NoError(t, err, "git %v failed: %s%s", args, out, stderr)
+	return out
+}
+
+func seedSettingsWorkspaceMR(
+	t *testing.T, database *db.DB,
+	repoID int64, number int, headBranch string,
+) {
+	t.Helper()
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	_, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
+		RepoID:         repoID,
+		PlatformID:     repoID*10000 + int64(number),
+		Number:         number,
+		Title:          "Test PR",
+		Author:         "author",
+		State:          db.MergeRequestStateOpen,
+		HeadBranch:     headBranch,
+		BaseBranch:     "main",
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		LastActivityAt: now,
+	})
+	require.NoError(t, err)
+}
+
+func waitForSettingsWorkspaceReady(
+	t *testing.T,
+	client *generated.ClientWithResponses,
+	workspaceID string,
+) *generated.WorkspaceResponse {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+
+	ticker := time.NewTicker(25 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		resp, err := client.GetWorkspaceWithResponse(ctx, workspaceID)
+		require.NoError(t, err)
+		if resp.StatusCode() == http.StatusOK &&
+			resp.JSON200 != nil &&
+			resp.JSON200.Status == "ready" {
+			return resp.JSON200
+		}
+
+		select {
+		case <-ctx.Done():
+			require.NoError(t, ctx.Err(), "workspace %s never reached ready", workspaceID)
+		case <-ticker.C:
+		}
+	}
 }

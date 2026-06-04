@@ -373,7 +373,7 @@ func TestCreateIssueReuseLocalBaseBranchCheckedOutReturnsConflict(t *testing.T) 
 
 	mgr := NewManager(d, t.TempDir())
 	mgr.SetWorktreeBasePathResolver(func(
-		context.Context, string, string, string,
+		context.Context, string, string, string, string,
 	) (string, bool, error) {
 		return localRepo, true, nil
 	})
@@ -502,7 +502,7 @@ func TestSetupUsesConfiguredWorktreeBasePath(t *testing.T) {
 	mgr := NewManager(d, wtDir)
 	mgr.SetTmuxCommand([]string{tmuxScript})
 	mgr.SetWorktreeBasePathResolver(func(
-		context.Context, string, string, string,
+		context.Context, string, string, string, string,
 	) (string, bool, error) {
 		return localRepo, true, nil
 	})
@@ -528,6 +528,35 @@ func TestSetupUsesConfiguredWorktreeBasePath(t *testing.T) {
 		t, localRepo, "rev-parse", "refs/remotes/origin/feature/thing",
 	)))
 	assert.Equal(sourceSHA, headSHA)
+}
+
+func TestValidateWorktreeBasePathRejectsLocalRemotes(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	tests := []struct {
+		name      string
+		remoteURL string
+	}{
+		{name: "absolute path", remoteURL: filepath.Join(t.TempDir(), "remote.git")},
+		{name: "file URL", remoteURL: "file://" + filepath.ToSlash(filepath.Join(t.TempDir(), "remote.git"))},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			localRepo := setupLocalWorktreeBaseForWorkspaceGitTest(t, "feature/thing")
+			runWorkspaceTestGit(
+				t, localRepo, "remote", "set-url", "origin", tt.remoteURL,
+			)
+
+			got, err := ValidateWorktreeBasePath(
+				t.Context(), localRepo, "github.com", "acme", "widget",
+			)
+
+			require.Empty(got)
+			require.Error(err)
+			assert.Contains(err.Error(), "origin remote must include a forge host")
+		})
+	}
 }
 
 func TestSetupUsesManagedCloneForForkPRWithConfiguredWorktreeBasePath(t *testing.T) {
@@ -575,7 +604,7 @@ func TestSetupUsesManagedCloneForForkPRWithConfiguredWorktreeBasePath(t *testing
 	mgr.SetClones(clones)
 	mgr.SetTmuxCommand([]string{tmuxScript})
 	mgr.SetWorktreeBasePathResolver(func(
-		context.Context, string, string, string,
+		context.Context, string, string, string, string,
 	) (string, bool, error) {
 		return localRepo, true, nil
 	})
@@ -622,7 +651,7 @@ func TestCleanupUsesExistingWorktreeGitDirWhenConfiguredBaseChanges(t *testing.T
 
 	mgr := NewManager(openTestDB(t), t.TempDir())
 	mgr.SetWorktreeBasePathResolver(func(
-		context.Context, string, string, string,
+		context.Context, string, string, string, string,
 	) (string, bool, error) {
 		return wrongRepo, true, nil
 	})

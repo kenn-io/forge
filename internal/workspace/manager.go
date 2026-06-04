@@ -52,7 +52,7 @@ type Manager struct {
 // WorktreeBasePathResolver resolves a tracked remote repository to a
 // user-configured local repository that should own new git worktrees.
 type WorktreeBasePathResolver func(
-	ctx context.Context, platformHost, owner, name string,
+	ctx context.Context, platform, platformHost, owner, name string,
 ) (path string, ok bool, err error)
 
 // CreateIssueOptions controls how issue-backed workspaces choose their branch.
@@ -261,6 +261,7 @@ func (m *Manager) Create(
 
 	ws := &Workspace{
 		ID:              id,
+		Platform:        repo.Platform,
 		PlatformHost:    platformHost,
 		RepoOwner:       owner,
 		RepoName:        name,
@@ -331,7 +332,7 @@ func (m *Manager) CreateIssue(
 
 	workspaceBranch := gitHeadRef
 	branchDir, ok, localBase, err := m.issueBranchInspectionDir(
-		ctx, platformHost, owner, name,
+		ctx, repo.Platform, platformHost, owner, name,
 	)
 	if err != nil {
 		return nil, err
@@ -354,6 +355,7 @@ func (m *Manager) CreateIssue(
 
 	ws := &Workspace{
 		ID:              id,
+		Platform:        repo.Platform,
 		PlatformHost:    platformHost,
 		RepoOwner:       owner,
 		RepoName:        name,
@@ -385,9 +387,9 @@ func newWorkspaceID() (string, error) {
 }
 
 func (m *Manager) issueBranchInspectionDir(
-	ctx context.Context, platformHost, owner, name string,
+	ctx context.Context, platform, platformHost, owner, name string,
 ) (dir string, ok bool, localBase bool, err error) {
-	if baseDir, ok, err := m.localWorktreeBaseDir(ctx, platformHost, owner, name); err != nil || ok {
+	if baseDir, ok, err := m.localWorktreeBaseDir(ctx, platform, platformHost, owner, name); err != nil || ok {
 		return baseDir, ok, ok, err
 	}
 	if m.clones == nil {
@@ -548,7 +550,7 @@ func (m *Manager) workspaceSetupGitDir(
 ) (string, error) {
 	if ws.MRHeadRepo == nil {
 		if baseDir, ok, err := m.localWorktreeBaseDir(
-			ctx, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
+			ctx, ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
 		); err != nil || ok {
 			return baseDir, err
 		}
@@ -579,12 +581,12 @@ func (m *Manager) workspaceSetupGitDir(
 }
 
 func (m *Manager) localWorktreeBaseDir(
-	ctx context.Context, platformHost, owner, name string,
+	ctx context.Context, platform, platformHost, owner, name string,
 ) (string, bool, error) {
 	if m.worktreeBaseResolver == nil {
 		return "", false, nil
 	}
-	raw, ok, err := m.worktreeBaseResolver(ctx, platformHost, owner, name)
+	raw, ok, err := m.worktreeBaseResolver(ctx, platform, platformHost, owner, name)
 	if err != nil {
 		return "", false, err
 	}
@@ -633,6 +635,9 @@ func ValidateWorktreeBasePath(
 	if err != nil {
 		return "", fmt.Errorf("read origin remote: %w", err)
 	}
+	if gitremote.RemoteHost(remoteURL) == "" || gitremote.RemoteRepoPath(remoteURL) == "" {
+		return "", fmt.Errorf("origin remote must include a forge host and repository path")
+	}
 	if err := gitremote.ValidateRemoteIdentity(gitremote.Identity{
 		Host:  platformHost,
 		Owner: owner,
@@ -671,9 +676,8 @@ func (m *Manager) addWorktreeLocked(
 	} else {
 		fallbackBranch := syntheticPRWorktreeBranch(ws.ItemNumber)
 		startRef := workspaceStartRef(ws)
-		fallbackErr := runGit(
-			ctx, cloneDir,
-			"worktree", "add", ws.WorktreePath,
+		fallbackErr := runGitWorktreeAdd(
+			ctx, cloneDir, ws.WorktreePath,
 			"-b", fallbackBranch, startRef,
 		)
 		if fallbackErr == nil {
@@ -694,18 +698,16 @@ func (m *Manager) addIssueWorktree(
 		workspaceBranch = ws.GitHeadRef
 	}
 	if workspaceBranch == "" {
-		if err := runGit(
-			ctx, cloneDir,
-			"worktree", "add", ws.WorktreePath, ws.GitHeadRef,
+		if err := runGitWorktreeAdd(
+			ctx, cloneDir, ws.WorktreePath, ws.GitHeadRef,
 		); err != nil {
 			return "", err
 		}
 		return ws.GitHeadRef, nil
 	}
 	startRef := workspaceStartRef(ws)
-	if err := runGit(
-		ctx, cloneDir,
-		"worktree", "add", ws.WorktreePath,
+	if err := runGitWorktreeAdd(
+		ctx, cloneDir, ws.WorktreePath,
 		"-b", workspaceBranch, startRef,
 	); err != nil {
 		return "", err
@@ -723,9 +725,8 @@ func (m *Manager) addPreferredWorktree(
 	}
 
 	if ws.MRHeadRepo != nil {
-		err := runGit(
-			ctx, cloneDir,
-			"worktree", "add", ws.WorktreePath,
+		err := runGitWorktreeAdd(
+			ctx, cloneDir, ws.WorktreePath,
 			"-b", ws.GitHeadRef, workspaceStartRef(ws),
 		)
 		if err != nil {
@@ -749,9 +750,8 @@ func (m *Manager) addPreferredWorktree(
 		return "", err
 	}
 	if !exists {
-		if err := runGit(
-			ctx, cloneDir,
-			"worktree", "add", ws.WorktreePath,
+		if err := runGitWorktreeAdd(
+			ctx, cloneDir, ws.WorktreePath,
 			"-b", ws.GitHeadRef, startRef,
 		); err != nil {
 			return "", err
@@ -781,9 +781,8 @@ func (m *Manager) addPreferredWorktree(
 		)
 	}
 
-	if err := runGit(
-		ctx, cloneDir,
-		"worktree", "add", ws.WorktreePath, ws.GitHeadRef,
+	if err := runGitWorktreeAdd(
+		ctx, cloneDir, ws.WorktreePath, ws.GitHeadRef,
 	); err != nil {
 		return "", err
 	}
@@ -1153,7 +1152,7 @@ func (m *Manager) workspaceCleanupGitDir(
 	}
 
 	if baseDir, ok, err := m.localWorktreeBaseDir(
-		ctx, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
+		ctx, ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
 	); err != nil || ok {
 		if err != nil || !ok {
 			return baseDir, ok, err
@@ -2131,6 +2130,19 @@ func runGit(ctx context.Context, dir string, args ...string) error {
 		)
 	}
 	return nil
+}
+
+func runGitWorktreeAdd(
+	ctx context.Context, dir, worktreePath string, args ...string,
+) error {
+	gitArgs := make([]string, 0, len(args)+5)
+	gitArgs = append(
+		gitArgs,
+		"-c", "core.hooksPath=/dev/null",
+		"worktree", "add", worktreePath,
+	)
+	gitArgs = append(gitArgs, args...)
+	return runGit(ctx, dir, gitArgs...)
 }
 
 // runBuiltCmd runs a pre-built exec.Cmd and wraps any failure with

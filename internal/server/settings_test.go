@@ -1955,6 +1955,36 @@ port = 8091
 	assert.Equal("Group/Subgroup/Project", dbRepo.RepoPath)
 }
 
+func TestWorktreeBasePathResolverMatchesProviderIdentity(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	srv := &Server{cfg: &config.Config{Repos: []config.Repo{
+		{
+			Platform:         "github",
+			PlatformHost:     "forge.example.com",
+			Owner:            "acme",
+			Name:             "widget",
+			WorktreeBasePath: "/tmp/github-widget",
+		},
+		{
+			Platform:         "gitlab",
+			PlatformHost:     "forge.example.com",
+			Owner:            "acme",
+			Name:             "widget",
+			WorktreeBasePath: "/tmp/gitlab-widget",
+		},
+	}}}
+
+	got, ok, err := srv.worktreeBasePathForRepo(
+		t.Context(), "gitlab", "forge.example.com", "acme", "widget",
+	)
+
+	require.NoError(err)
+	require.True(ok)
+	assert.Equal("/tmp/gitlab-widget", got)
+}
+
 func TestHandleBulkAddReposPersistsGiteaProviderIdentity(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

@@ -335,7 +335,7 @@ func TestRepoConfigAPIE2EUpdatesWorktreeBasePath(t *testing.T) {
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
-	localRepo := setupSettingsLocalGitRepo(t)
+	localRepo := setupSettingsLocalGitRepoForDefaultHost(t)
 
 	updateResp := doServerJSON(
 		t, ts.Client(), http.MethodPut,
@@ -378,6 +378,7 @@ func TestRepoConfigAPIE2EWorkspaceCreationUsesWorktreeBasePath(t *testing.T) {
 
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.toml")
+	localRepo, remote, platformHost := setupSettingsLocalGitRepo(t)
 	require.NoError(os.WriteFile(cfgPath, []byte(`
 sync_interval = "5m"
 github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
@@ -388,6 +389,7 @@ port = 8091
 command = ["sh", "-c", "exit 0"]
 
 [[repos]]
+platform_host = "`+platformHost+`"
 owner = "acme"
 name = "widget"
 `), 0o644))
@@ -396,7 +398,7 @@ name = "widget"
 
 	database := dbtest.Open(t)
 	repoID, err := database.UpsertRepo(
-		t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"),
+		t.Context(), db.GitHubRepoIdentity(platformHost, "acme", "widget"),
 	)
 	require.NoError(err)
 	seedSettingsWorkspaceMR(t, database, repoID, 42, "feature/thing")
@@ -404,7 +406,7 @@ name = "widget"
 	syncer := github.NewSyncer(
 		map[string]github.Client{"github.com": &mockGH{}},
 		database, nil,
-		[]github.RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}},
+		[]github.RepoRef{{Owner: "acme", Name: "widget", PlatformHost: platformHost}},
 		time.Minute, nil, nil,
 	)
 	t.Cleanup(syncer.Stop)
@@ -417,27 +419,25 @@ name = "widget"
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
-	localRepo := setupSettingsLocalGitRepo(t)
 	runSettingsGit(
 		t, localRepo,
-		"push", "origin", "HEAD:refs/heads/feature/thing",
+		"push", remote, "HEAD:refs/heads/feature/thing",
 	)
+	runSettingsGit(t, remote, "update-server-info")
 	runSettingsGit(t, localRepo, "fetch", "--prune", "origin")
-
-	updateResp := doServerJSON(
-		t, ts.Client(), http.MethodPut,
-		ts.URL+"/api/v1/repo/github/acme/widget/worktree-base",
-		generated.RepoWorktreeBaseRequest{WorktreeBasePath: localRepo},
-	)
-	defer updateResp.Body.Close()
-	require.Equal(http.StatusOK, updateResp.StatusCode)
 
 	client, err := generated.NewClientWithResponses(ts.URL + "/api/v1")
 	require.NoError(err)
+	updateResp, err := client.UpdateRepoWorktreeBaseOnHostWithResponse(
+		t.Context(), platformHost, "github", "acme", "widget",
+		generated.RepoWorktreeBaseRequest{WorktreeBasePath: localRepo},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, updateResp.StatusCode(), string(updateResp.Body))
 	createResp, err := client.CreateWorkspaceWithResponse(
 		t.Context(),
 		generated.CreateWorkspaceInputBody{
-			PlatformHost: "github.com",
+			PlatformHost: platformHost,
 			Owner:        "acme",
 			Name:         "widget",
 			MrNumber:     42,
@@ -516,23 +516,24 @@ name = "widget-*"
 	require.Equal(t, http.StatusBadRequest, nonGlobResp.StatusCode)
 }
 
-func setupSettingsLocalGitRepo(t *testing.T) string {
+func setupSettingsLocalGitRepo(t *testing.T) (repo, remote, platformHost string) {
 	t.Helper()
 	root := t.TempDir()
-	remote := filepath.Join(root, "remote.git")
-	repo := filepath.Join(root, "widget")
+	remote = filepath.Join(root, "acme", "widget.git")
+	repo = filepath.Join(root, "widget")
+	require.NoError(t, os.MkdirAll(filepath.Dir(remote), 0o755))
 	runSettingsGit(t, root, "init", "--bare", "--initial-branch=main", remote)
+	gitServer := httptest.NewServer(http.FileServer(http.Dir(root)))
+	t.Cleanup(gitServer.Close)
+	remoteURL := gitServer.URL + "/acme/widget.git"
+	parsed, err := url.Parse(gitServer.URL)
+	require.NoError(t, err)
+	platformHost = parsed.Host
+
 	runSettingsGit(t, root, "init", "--initial-branch=main", repo)
 	runSettingsGit(t, repo, "config", "user.email", "test@example.com")
 	runSettingsGit(t, repo, "config", "user.name", "Test")
-	runSettingsGit(
-		t, repo, "remote", "add", "origin",
-		"https://github.com/acme/widget.git",
-	)
-	runSettingsGit(
-		t, repo, "config", "--add",
-		"url."+remote+".insteadOf", "https://github.com/acme/widget.git",
-	)
+	runSettingsGit(t, repo, "remote", "add", "origin", remote)
 	require.NoError(t, os.WriteFile(
 		filepath.Join(repo, "README.md"), []byte("test\n"), 0o644,
 	))
@@ -540,6 +541,32 @@ func setupSettingsLocalGitRepo(t *testing.T) string {
 	runSettingsGit(t, repo, "commit", "-m", "initial commit")
 	runSettingsGit(t, repo, "push", "origin", "HEAD:refs/heads/main")
 	runSettingsGit(t, remote, "symbolic-ref", "HEAD", "refs/heads/main")
+	runSettingsGit(t, remote, "update-server-info")
+	runSettingsGit(t, repo, "remote", "set-url", "origin", remoteURL)
+	runSettingsGit(t, repo, "fetch", "--prune", "origin")
+	runSettingsGit(
+		t, repo, "symbolic-ref",
+		"refs/remotes/origin/HEAD", "refs/remotes/origin/main",
+	)
+	return repo, remote, platformHost
+}
+
+func setupSettingsLocalGitRepoForDefaultHost(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	repo := filepath.Join(root, "widget")
+	runSettingsGit(t, root, "init", "--initial-branch=main", repo)
+	runSettingsGit(t, repo, "config", "user.email", "test@example.com")
+	runSettingsGit(t, repo, "config", "user.name", "Test")
+	runSettingsGit(
+		t, repo, "remote", "add", "origin",
+		"https://github.com/acme/widget.git",
+	)
+	require.NoError(t, os.WriteFile(
+		filepath.Join(repo, "README.md"), []byte("test\n"), 0o644,
+	))
+	runSettingsGit(t, repo, "add", ".")
+	runSettingsGit(t, repo, "commit", "-m", "initial commit")
 	return repo
 }
 

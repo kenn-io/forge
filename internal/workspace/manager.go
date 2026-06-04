@@ -652,29 +652,44 @@ func ValidateWorktreeBasePath(
 }
 
 func validateNoExecutableLocalGitConfig(ctx context.Context, dir string) error {
-	keys, err := localGitConfigKeysMatching(
-		ctx,
-		dir,
-		`^(filter\..*\.(process|smudge)|core\.fsmonitor)$`,
-	)
+	keys, err := localGitConfigKeys(ctx, dir)
 	if err != nil {
 		return fmt.Errorf("inspect executable local git config: %w", err)
 	}
-	if len(keys) > 0 {
-		return fmt.Errorf(
-			"local git config %q may execute commands during checkout",
-			keys[0],
-		)
+	for _, key := range keys {
+		if localGitConfigKeyMayExecute(key) {
+			return fmt.Errorf(
+				"local git config %q may execute or rewrite git commands",
+				key,
+			)
+		}
 	}
 	return nil
 }
 
-func localGitConfigKeysMatching(
-	ctx context.Context, dir, pattern string,
-) ([]string, error) {
+func localGitConfigKeyMayExecute(key string) bool {
+	key = strings.ToLower(strings.TrimSpace(key))
+	return key == "core.fsmonitor" ||
+		key == "core.sshcommand" ||
+		key == "credential.helper" ||
+		(strings.HasPrefix(key, "credential.") &&
+			strings.HasSuffix(key, ".helper")) ||
+		(strings.HasPrefix(key, "filter.") &&
+			(strings.HasSuffix(key, ".process") ||
+				strings.HasSuffix(key, ".smudge"))) ||
+		(strings.HasPrefix(key, "url.") &&
+			strings.HasSuffix(key, ".insteadof")) ||
+		key == "include.path" ||
+		(strings.HasPrefix(key, "includeif.") &&
+			strings.HasSuffix(key, ".path")) ||
+		(strings.HasPrefix(key, "protocol.") &&
+			strings.HasSuffix(key, ".allow"))
+}
+
+func localGitConfigKeys(ctx context.Context, dir string) ([]string, error) {
 	cmd := workspaceGitCommand(
 		ctx, dir,
-		"config", "--local", "--name-only", "--get-regexp", pattern,
+		"config", "--local", "--name-only", "--list",
 	)
 	out, err := procutil.CombinedOutput(
 		ctx, cmd, "git subprocess capacity",
@@ -1212,15 +1227,19 @@ func (m *Manager) workspaceCleanupGitDir(
 		if err != nil {
 			baseDir, ok = "", false
 		}
-		if !ok {
+		if !ok && m.clones == nil {
 			return baseDir, ok, nil
 		}
-		tracked, err := gitDirTracksWorktreePath(ctx, baseDir, ws.WorktreePath)
-		if err != nil {
-			return "", false, err
-		}
-		if tracked {
-			return baseDir, true, nil
+		if ok {
+			tracked, err := gitDirTracksWorktreePath(
+				ctx, baseDir, ws.WorktreePath,
+			)
+			if err != nil {
+				return "", false, err
+			}
+			if tracked {
+				return baseDir, true, nil
+			}
 		}
 	}
 
@@ -2194,7 +2213,55 @@ func fetchWorkspaceBase(ctx context.Context, dir string) error {
 	if err := runGit(ctx, dir, "fetch", "--prune", "origin"); err != nil {
 		return fmt.Errorf("fetch configured worktree base: %w", err)
 	}
+	if err := refreshWorkspaceBaseOriginHead(ctx, dir); err != nil {
+		return err
+	}
 	return nil
+}
+
+func refreshWorkspaceBaseOriginHead(ctx context.Context, dir string) error {
+	setHeadErr := runGit(ctx, dir, "remote", "set-head", "origin", "-a")
+	if setHeadErr == nil {
+		return nil
+	}
+	if originHeadRefReady(ctx, dir) {
+		return nil
+	}
+	for _, branch := range []string{"main", "master"} {
+		ref := "refs/remotes/origin/" + branch
+		if gitRefExists(ctx, dir, ref) {
+			if err := runGit(
+				ctx, dir, "symbolic-ref",
+				"refs/remotes/origin/HEAD", ref,
+			); err != nil {
+				return fmt.Errorf(
+					"set configured worktree base origin/HEAD: %w", err,
+				)
+			}
+			return nil
+		}
+	}
+	return fmt.Errorf(
+		"refresh configured worktree base origin/HEAD: %w", setHeadErr,
+	)
+}
+
+func originHeadRefReady(ctx context.Context, dir string) bool {
+	out, err := gitOutput(
+		ctx, dir, "symbolic-ref", "--quiet", "refs/remotes/origin/HEAD",
+	)
+	if err != nil {
+		return false
+	}
+	return gitRefExists(ctx, dir, strings.TrimSpace(out))
+}
+
+func gitRefExists(ctx context.Context, dir, ref string) bool {
+	cmd := workspaceGitCommand(
+		ctx, dir, "show-ref", "--verify", "--quiet", ref,
+	)
+	err := cmd.Run()
+	return err == nil
 }
 
 func runGitWorktreeAdd(

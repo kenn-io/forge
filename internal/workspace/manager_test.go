@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -493,10 +496,12 @@ func TestSetupUsesConfiguredWorktreeBasePath(t *testing.T) {
 	d := openTestDB(t)
 	wtDir := t.TempDir()
 
-	repoID := seedRepo(t, d, "github.com", "acme", "widget")
+	localRepo, _, platformHost := setupHTTPWorktreeBaseForWorkspaceGitTest(
+		t, "feature/thing",
+	)
+	repoID := seedRepo(t, d, platformHost, "acme", "widget")
 	seedMR(t, d, repoID, 42, "feature/thing")
 
-	localRepo := setupLocalWorktreeBaseForWorkspaceGitTest(t, "feature/thing")
 	tmuxScript, _ := writeRecorderScript(t)
 
 	mgr := NewManager(d, wtDir)
@@ -507,7 +512,7 @@ func TestSetupUsesConfiguredWorktreeBasePath(t *testing.T) {
 		return localRepo, true, nil
 	})
 
-	ws, err := mgr.Create(t.Context(), "github.com", "acme", "widget", 42)
+	ws, err := mgr.Create(t.Context(), platformHost, "acme", "widget", 42)
 	require.NoError(err)
 	require.NoError(mgr.Setup(t.Context(), ws))
 
@@ -571,6 +576,12 @@ func TestValidateWorktreeBasePathRejectsExecutableLocalConfig(t *testing.T) {
 		{name: "filter process", key: "filter.demo.process", value: "demo-filter"},
 		{name: "filter smudge", key: "filter.demo.smudge", value: "demo-smudge"},
 		{name: "fsmonitor", key: "core.fsmonitor", value: "demo-fsmonitor"},
+		{name: "ssh command", key: "core.sshCommand", value: "demo-ssh"},
+		{name: "credential helper", key: "credential.helper", value: "!demo-helper"},
+		{name: "url rewrite", key: "url.https://example.invalid/.insteadOf", value: "https://github.com/"},
+		{name: "include path", key: "include.path", value: filepath.Join(t.TempDir(), "config")},
+		{name: "conditional include", key: "includeIf.gitdir:~/demo/.path", value: filepath.Join(t.TempDir(), "config")},
+		{name: "protocol allow", key: "protocol.ext.allow", value: "always"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -583,8 +594,10 @@ func TestValidateWorktreeBasePathRejectsExecutableLocalConfig(t *testing.T) {
 
 			require.Empty(got)
 			require.Error(err)
-			assert.Contains(err.Error(), tt.key)
-			assert.Contains(err.Error(), "may execute commands during checkout")
+			assert.Contains(
+				strings.ToLower(err.Error()), strings.ToLower(tt.key),
+			)
+			assert.Contains(err.Error(), "may execute or rewrite git commands")
 		})
 	}
 }
@@ -672,12 +685,12 @@ func TestSetupFetchesConfiguredWorktreeBasePathBeforeAdd(t *testing.T) {
 	wtDir := t.TempDir()
 
 	const branch = "feature/fetch-before-add"
-	repoID := seedRepo(t, d, "github.com", "acme", "widget")
-	seedMR(t, d, repoID, 42, branch)
-
-	localRepo, remote := setupLocalWorktreeBaseWithRemoteForWorkspaceGitTest(
+	localRepo, remote, platformHost := setupHTTPWorktreeBaseForWorkspaceGitTest(
 		t, branch,
 	)
+	repoID := seedRepo(t, d, platformHost, "acme", "widget")
+	seedMR(t, d, repoID, 42, branch)
+
 	remoteWork := filepath.Join(t.TempDir(), "remote-work")
 	runWorkspaceTestGit(t, t.TempDir(), "clone", remote, remoteWork)
 	runWorkspaceTestGit(t, remoteWork, "config", "user.email", "test@test.com")
@@ -692,6 +705,7 @@ func TestSetupFetchesConfiguredWorktreeBasePathBeforeAdd(t *testing.T) {
 		t, remoteWork, "rev-parse", "HEAD",
 	)))
 	runWorkspaceTestGit(t, remoteWork, "push", "origin", "HEAD:refs/heads/"+branch)
+	runWorkspaceTestGit(t, remote, "update-server-info")
 
 	tmuxScript, _ := writeRecorderScript(t)
 	mgr := NewManager(d, wtDir)
@@ -702,13 +716,52 @@ func TestSetupFetchesConfiguredWorktreeBasePathBeforeAdd(t *testing.T) {
 		return localRepo, true, nil
 	})
 
-	ws, err := mgr.Create(t.Context(), "github.com", "acme", "widget", 42)
+	ws, err := mgr.Create(t.Context(), platformHost, "acme", "widget", 42)
 	require.NoError(err)
 	require.NoError(mgr.Setup(t.Context(), ws))
 
 	headSHA, err := gitHeadSHA(t.Context(), ws.WorktreePath)
 	require.NoError(err)
 	assert.Equal(expectedSHA, headSHA)
+}
+
+func TestSetupRefreshesConfiguredWorktreeBaseOriginHead(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	wtDir := t.TempDir()
+
+	localRepo, _, platformHost := setupHTTPWorktreeBaseForWorkspaceGitTest(
+		t, "feature/thing",
+	)
+	runWorkspaceTestGit(t, localRepo, "symbolic-ref", "--delete", "refs/remotes/origin/HEAD")
+	repoID := seedRepo(t, d, platformHost, "acme", "widget")
+	seedIssue(t, d, repoID, 7, "")
+
+	tmuxScript, _ := writeRecorderScript(t)
+	mgr := NewManager(d, wtDir)
+	mgr.SetTmuxCommand([]string{tmuxScript})
+	mgr.SetWorktreeBasePathResolver(func(
+		context.Context, string, string, string, string,
+	) (string, bool, error) {
+		return localRepo, true, nil
+	})
+
+	ws, err := mgr.CreateIssue(
+		t.Context(), platformHost, "acme", "widget", 7, CreateIssueOptions{},
+	)
+	require.NoError(err)
+	require.NoError(mgr.Setup(t.Context(), ws))
+
+	got, err := d.GetWorkspace(t.Context(), ws.ID)
+	require.NoError(err)
+	require.NotNil(got)
+	assert.Equal("ready", got.Status)
+	assert.Equal("middleman/issue-7", got.WorkspaceBranch)
+	ref := strings.TrimSpace(string(runWorkspaceTestGit(
+		t, localRepo, "symbolic-ref", "refs/remotes/origin/HEAD",
+	)))
+	assert.Equal("refs/remotes/origin/main", ref)
 }
 
 func TestCleanupUsesExistingWorktreeGitDirWhenConfiguredBaseChanges(t *testing.T) {
@@ -778,6 +831,54 @@ func TestCleanupIgnoresInvalidConfiguredBaseWhenWorktreeAbsent(t *testing.T) {
 	}
 
 	require.NoError(mgr.cleanupWorkspaceArtifactsForDelete(t.Context(), ws))
+}
+
+func TestCleanupFallsBackToManagedCloneWhenConfiguredBaseInvalid(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	const branch = "middleman/pr-99"
+	cloneBaseDir := t.TempDir()
+	clones := gitclone.New(cloneBaseDir, nil)
+	cloneDir, err := clones.ClonePath("github.com", "acme", "widget")
+	require.NoError(err)
+	require.NoError(os.MkdirAll(filepath.Dir(cloneDir), 0o755))
+	runWorkspaceTestGit(
+		t, cloneBaseDir, "clone", "--bare",
+		setupLocalWorktreeBaseForWorkspaceGitTest(t, "feature/thing"),
+		cloneDir,
+	)
+	worktreePath := filepath.Join(t.TempDir(), "workspace")
+	runWorkspaceTestGit(
+		t, cloneDir, "worktree", "add", worktreePath, "-b", branch, "HEAD",
+	)
+	require.NoError(os.RemoveAll(worktreePath))
+
+	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr.SetClones(clones)
+	mgr.SetWorktreeBasePathResolver(func(
+		context.Context, string, string, string, string,
+	) (string, bool, error) {
+		return filepath.Join(t.TempDir(), "missing"), true, nil
+	})
+	ws := &Workspace{
+		ID:              "ws-cleanup-managed-fallback",
+		Platform:        "github",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		ItemType:        db.WorkspaceItemTypePullRequest,
+		ItemNumber:      99,
+		GitHeadRef:      "feature/thing",
+		WorkspaceBranch: branch,
+		WorktreePath:    worktreePath,
+	}
+
+	require.NoError(mgr.cleanupWorkspaceArtifactsForDelete(t.Context(), ws))
+
+	exists, err := localBranchExists(t.Context(), cloneDir, branch)
+	require.NoError(err)
+	assert.False(exists)
 }
 
 func TestFailSetupUsesSinglePersistenceBudget(t *testing.T) {
@@ -1191,11 +1292,7 @@ func setupLocalWorktreeBaseWithRemoteForWorkspaceGitTest(
 	runWorkspaceTestGit(t, repo, "config", "user.name", "Test")
 	runWorkspaceTestGit(
 		t, repo, "remote", "add", "origin",
-		"https://github.com/acme/widget.git",
-	)
-	runWorkspaceTestGit(
-		t, repo, "config", "--add",
-		"url."+remote+".insteadOf", "https://github.com/acme/widget.git",
+		remote,
 	)
 	require.NoError(t, os.WriteFile(
 		filepath.Join(repo, "base.txt"), []byte("base\n"), 0o644,
@@ -1205,11 +1302,58 @@ func setupLocalWorktreeBaseWithRemoteForWorkspaceGitTest(
 	runWorkspaceTestGit(t, repo, "push", "origin", "HEAD:refs/heads/main")
 	runWorkspaceTestGit(t, remote, "symbolic-ref", "HEAD", "refs/heads/main")
 	runWorkspaceTestGit(t, repo, "push", "origin", "HEAD:refs/heads/"+branch)
-	runWorkspaceTestGit(t, repo, "fetch", "--prune", "origin")
+	runWorkspaceTestGit(
+		t, repo, "remote", "set-url", "origin",
+		"https://github.com/acme/widget.git",
+	)
 	runWorkspaceTestGit(
 		t, repo, "update-ref", "refs/remotes/origin/"+branch, "HEAD",
 	)
+	runWorkspaceTestGit(
+		t, repo, "symbolic-ref",
+		"refs/remotes/origin/HEAD", "refs/remotes/origin/main",
+	)
 	return repo, remote
+}
+
+func setupHTTPWorktreeBaseForWorkspaceGitTest(
+	t *testing.T, branch string,
+) (repo, remote, platformHost string) {
+	t.Helper()
+	root := t.TempDir()
+	remote = filepath.Join(root, "acme", "widget.git")
+	repo = filepath.Join(root, "repo")
+	require.NoError(t, os.MkdirAll(filepath.Dir(remote), 0o755))
+	runWorkspaceTestGit(
+		t, root, "init", "--bare", "--initial-branch=main", remote,
+	)
+	server := httptest.NewServer(http.FileServer(http.Dir(root)))
+	t.Cleanup(server.Close)
+	remoteURL := server.URL + "/acme/widget.git"
+	parsed, err := url.Parse(server.URL)
+	require.NoError(t, err)
+	platformHost = parsed.Host
+
+	runWorkspaceTestGit(t, root, "init", "--initial-branch=main", repo)
+	runWorkspaceTestGit(t, repo, "config", "user.email", "test@test.com")
+	runWorkspaceTestGit(t, repo, "config", "user.name", "Test")
+	runWorkspaceTestGit(t, repo, "remote", "add", "origin", remote)
+	require.NoError(t, os.WriteFile(
+		filepath.Join(repo, "base.txt"), []byte("base\n"), 0o644,
+	))
+	runWorkspaceTestGit(t, repo, "add", ".")
+	runWorkspaceTestGit(t, repo, "commit", "-m", "base commit")
+	runWorkspaceTestGit(t, repo, "push", "origin", "HEAD:refs/heads/main")
+	runWorkspaceTestGit(t, remote, "symbolic-ref", "HEAD", "refs/heads/main")
+	runWorkspaceTestGit(t, repo, "push", "origin", "HEAD:refs/heads/"+branch)
+	runWorkspaceTestGit(t, remote, "update-server-info")
+	runWorkspaceTestGit(t, repo, "remote", "set-url", "origin", remoteURL)
+	runWorkspaceTestGit(t, repo, "fetch", "--prune", "origin")
+	runWorkspaceTestGit(
+		t, repo, "symbolic-ref",
+		"refs/remotes/origin/HEAD", "refs/remotes/origin/main",
+	)
+	return repo, remote, platformHost
 }
 
 func setupRemoteForForkPRWorktreeTest(

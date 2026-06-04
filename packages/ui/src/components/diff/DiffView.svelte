@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Virtualizer } from "@pierre/diffs";
   import { onMount, tick, untrack } from "svelte";
   import { getStores } from "../../context.js";
   import type { DiffScrollTarget } from "../../stores/diff.svelte.js";
@@ -56,9 +57,12 @@
   }: Props = $props();
 
   let diffArea: HTMLDivElement | undefined = $state();
+  let diffContent: HTMLDivElement | undefined = $state();
+  let diffVirtualizer: Virtualizer | undefined = $state();
   let scrollClearRaf = 0;
   let scrollRestoreRaf = 0;
   let scrollTargetRaf = 0;
+  let virtualizerWakeRaf = 0;
   let scrollTargetRun = 0;
   let scrollingToTarget: DiffScrollTarget | null = null;
   let restoredScrollScope = "";
@@ -82,6 +86,7 @@
       cancelAnimationFrame(scrollClearRaf);
       cancelAnimationFrame(scrollRestoreRaf);
       cancelAnimationFrame(scrollTargetRaf);
+      cancelAnimationFrame(virtualizerWakeRaf);
       diffStore.clearDiff();
       diffReviewDraft?.clear();
     };
@@ -138,7 +143,33 @@
       scrollRestoreRaf = 0;
       if (diffArea !== area) return;
       area.scrollTop = Math.max(0, restoreTop);
+      wakeDiffVirtualizer();
     });
+  });
+
+  $effect(() => {
+    const area = diffArea;
+    const content = diffContent;
+    if (
+      !area ||
+      !content ||
+      typeof ResizeObserver === "undefined" ||
+      typeof IntersectionObserver === "undefined"
+    ) {
+      diffVirtualizer = undefined;
+      return;
+    }
+
+    const virtualizer = new Virtualizer();
+    virtualizer.setup(area, content);
+    diffVirtualizer = virtualizer;
+
+    return () => {
+      virtualizer.cleanUp();
+      if (diffVirtualizer === virtualizer) {
+        diffVirtualizer = undefined;
+      }
+    };
   });
 
   function scrollWithinDiffArea(el: Element, offset = 0): void {
@@ -146,6 +177,7 @@
     const areaRect = diffArea.getBoundingClientRect();
     const elRect = el.getBoundingClientRect();
     diffArea.scrollTop += elRect.top - areaRect.top - offset;
+    wakeDiffVirtualizer();
   }
 
   function diffFileElement(path: string): HTMLElement | null {
@@ -175,6 +207,7 @@
         return false;
       }
       diffArea.scrollTop += elRect.top - areaRect.top;
+      wakeDiffVirtualizer();
     } else {
       return false;
     }
@@ -234,6 +267,17 @@
       elRect.top < areaRect.bottom;
   }
 
+  function isScrollTargetReady(target: DiffScrollTarget): boolean {
+    if (target.line != null) return true;
+    const el = diffFileElement(target.path);
+    if (!el) return false;
+    if (el.querySelector(".binary-notice, .empty-textual-diff")) return true;
+    const shell = el.querySelector(".pierre-diff-shell");
+    if (shell?.getAttribute("aria-busy") === "true") return false;
+    const host = el.querySelector<HTMLElement>(".pierre-diff");
+    return !host || host.shadowRoot?.querySelector("pre[data-diff]") != null;
+  }
+
   function jumpToDraftComment(comment: DiffReviewDraftComment): void {
     if (!diffArea) return;
     const el = queryDiffElement(
@@ -246,8 +290,22 @@
     const areaRect = diffArea.getBoundingClientRect();
     const elRect = el.getBoundingClientRect();
     diffArea.scrollTop += elRect.top - areaRect.top - 72;
+    wakeDiffVirtualizer();
     el.focus({ preventScroll: true });
     finishProgrammaticScroll();
+  }
+
+  function wakeDiffVirtualizer(): void {
+    const area = diffArea;
+    if (!area) return;
+    area.dispatchEvent(new Event("scroll"));
+    cancelAnimationFrame(virtualizerWakeRaf);
+    virtualizerWakeRaf = requestAnimationFrame(() => {
+      virtualizerWakeRaf = 0;
+      if (diffArea === area) {
+        area.dispatchEvent(new Event("scroll"));
+      }
+    });
   }
 
   // Watch for scroll requests from the sidebar file list (via the store).
@@ -296,7 +354,7 @@
         visibleFrames = 0;
         continue;
       }
-      if (isScrollTargetVisible(target)) {
+      if (isScrollTargetVisible(target) && isScrollTargetReady(target)) {
         if (target.line == null) {
           targetReached = scrollToTarget(target);
           if (!targetReached) {
@@ -448,35 +506,38 @@
           onscroll={onDiffScroll}
           style:tab-size={tabWidth}
         >
-          {#if visibleFiles.length === 0}
-            <div class="diff-state diff-state--empty">
-              <p class="diff-state-msg">No changed files match this category.</p>
-            </div>
-          {/if}
-          {#each visibleFiles as file (file.path)}
-            <DiffFileComponent
-              {file}
-              {provider}
-              {platformHost}
-              {owner}
-              {name}
-              {repoPath}
-              {number}
-              {richPreviewEnabled}
-              {contextExpansionEnabled}
-              {reviewEnabled}
-              canReplyToThreads={canReplyToThreads && !diff?.stale}
-              {diffHeadSHA}
-              {nativeMultilineRanges}
-              {reviewThreads}
-            />
-          {/each}
-          {#if reviewEnabled && diffReviewDraft}
-            {#if reviewWarning}
-              <div class="review-warning">{reviewWarning}</div>
+          <div class="diff-content" bind:this={diffContent}>
+            {#if visibleFiles.length === 0}
+              <div class="diff-state diff-state--empty">
+                <p class="diff-state-msg">No changed files match this category.</p>
+              </div>
             {/if}
-            <DiffReviewDraftTray onjump={jumpToDraftComment} />
-          {/if}
+            {#each visibleFiles as file (file.path)}
+              <DiffFileComponent
+                {file}
+                {provider}
+                {platformHost}
+                {owner}
+                {name}
+                {repoPath}
+                {number}
+                {richPreviewEnabled}
+                {contextExpansionEnabled}
+                {reviewEnabled}
+                canReplyToThreads={canReplyToThreads && !diff?.stale}
+                {diffHeadSHA}
+                {nativeMultilineRanges}
+                {reviewThreads}
+                virtualizer={diffVirtualizer}
+              />
+            {/each}
+            {#if reviewEnabled && diffReviewDraft}
+              {#if reviewWarning}
+                <div class="review-warning">{reviewWarning}</div>
+              {/if}
+              <DiffReviewDraftTray onjump={jumpToDraftComment} />
+            {/if}
+          </div>
         </div>
       </div>
     {/if}
@@ -527,6 +588,10 @@
   .diff-area {
     flex: 1;
     overflow: auto;
+  }
+
+  .diff-content {
+    min-width: 0;
   }
 
   .diff-state {

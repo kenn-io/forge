@@ -1,6 +1,5 @@
 import {
   cleanup,
-  fireEvent,
   render,
   waitFor,
 } from "@testing-library/svelte";
@@ -12,9 +11,11 @@ const pierre = (() => {
   const counts = {
     cleanUp: 0,
     render: 0,
+    virtualized: 0,
   };
   let renderResults: boolean[] = [];
   let lastOptions: FileDiffOptions<unknown> | undefined;
+  let lastVirtualizer: unknown;
   const cleanUp = () => {
     counts.cleanUp += 1;
   };
@@ -44,11 +45,19 @@ const pierre = (() => {
     setSelectedLines = () => {};
     setThemeType = () => {};
   }
+  class VirtualizedFileDiff extends FileDiff {
+    constructor(options?: FileDiffOptions<unknown>, virtualizer?: unknown) {
+      super(options);
+      counts.virtualized += 1;
+      lastVirtualizer = virtualizer;
+    }
+  }
   return {
     cleanUp,
     cleanUpCount: () => counts.cleanUp,
     FileDiff,
     lastOptions: () => lastOptions,
+    lastVirtualizer: () => lastVirtualizer,
     metadata,
     parsePatchFiles: () => [{ files: [metadata] }],
     processFile: () => metadata,
@@ -57,12 +66,16 @@ const pierre = (() => {
     reset: () => {
       counts.cleanUp = 0;
       counts.render = 0;
+      counts.virtualized = 0;
       renderResults = [];
       lastOptions = undefined;
+      lastVirtualizer = undefined;
     },
     setRenderResults: (results: boolean[]) => {
       renderResults = [...results];
     },
+    virtualizedCount: () => counts.virtualized,
+    VirtualizedFileDiff,
   };
 })();
 
@@ -70,6 +83,7 @@ vi.doMock("@pierre/diffs", () => ({
   FileDiff: pierre.FileDiff,
   parsePatchFiles: pierre.parsePatchFiles,
   processFile: pierre.processFile,
+  VirtualizedFileDiff: pierre.VirtualizedFileDiff,
 }));
 
 function makeFile(): DiffFile {
@@ -110,47 +124,20 @@ describe("PierreFileDiff", () => {
     pierre.reset();
   });
 
-  it("cleans up rendered Pierre instances when deactivated", async () => {
+  it("uses Pierre virtualized diffs when a viewer virtualizer is provided", async () => {
     const { default: PierreFileDiff } = await import("./PierreFileDiff.svelte");
-    const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
-    Element.prototype.getBoundingClientRect = function () {
-      if (this instanceof HTMLElement && this.tagName === "DIFFS-CONTAINER") {
-        return {
-          top: 0,
-          bottom: 240,
-          left: 0,
-          right: 500,
-          width: 500,
-          height: 240,
-          x: 0,
-          y: 0,
-          toJSON: () => ({}),
-        } as DOMRect;
-      }
-      return originalGetBoundingClientRect.call(this);
-    };
+    const virtualizer = { type: "simple" };
 
-    try {
-      const file = makeFile();
-      const { container, rerender } = render(PierreFileDiff, {
-        props: { active: true, file },
-      });
+    render(PierreFileDiff, {
+      props: { file: makeFile(), virtualizer: virtualizer as never },
+    });
 
-      await waitFor(() => {
-        expect(pierre.renderCount()).toBe(1);
-      });
+    await waitFor(() => {
+      expect(pierre.renderCount()).toBe(1);
+    });
 
-      vi.useFakeTimers();
-      await rerender({ active: false, file });
-      await vi.advanceTimersByTimeAsync(10_000);
-
-      expect(pierre.cleanUpCount()).toBe(1);
-      expect(
-        container.querySelector<HTMLElement>(".pierre-diff-shell")?.style.minHeight,
-      ).toBe("240px");
-    } finally {
-      Element.prototype.getBoundingClientRect = originalGetBoundingClientRect;
-    }
+    expect(pierre.virtualizedCount()).toBe(1);
+    expect(pierre.lastVirtualizer()).toEqual(virtualizer);
   });
 
   it("retries when Pierre declines an initial render attempt", async () => {
@@ -158,7 +145,7 @@ describe("PierreFileDiff", () => {
     pierre.setRenderResults([false, true]);
 
     render(PierreFileDiff, {
-      props: { active: true, file: makeFile() },
+      props: { file: makeFile() },
     });
 
     await waitFor(() => {
@@ -166,51 +153,11 @@ describe("PierreFileDiff", () => {
     });
   });
 
-  it("renders an inactive expanded file after a fallback viewport probe", async () => {
-    const { default: PierreFileDiff } = await import("./PierreFileDiff.svelte");
-    const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
-    const diffArea = document.createElement("div");
-    diffArea.className = "diff-area";
-    document.body.appendChild(diffArea);
-    let fileNearViewport = false;
-    Element.prototype.getBoundingClientRect = function () {
-      if (this instanceof HTMLElement && this.classList.contains("diff-area")) {
-        return rect({ top: 0, bottom: 400, height: 400 });
-      }
-      if (this instanceof HTMLElement && this.tagName === "DIFFS-CONTAINER") {
-        return fileNearViewport
-          ? rect({ top: 80, bottom: 180, height: 100 })
-          : rect({ top: 1_200, bottom: 1_300, height: 100 });
-      }
-      return originalGetBoundingClientRect.call(this);
-    };
-
-    try {
-      render(PierreFileDiff, {
-        target: diffArea,
-        props: { active: false, file: makeFile() },
-      });
-
-      await Promise.resolve();
-      expect(pierre.renderCount()).toBe(0);
-
-      fileNearViewport = true;
-      await fireEvent.scroll(diffArea);
-
-      await waitFor(() => {
-        expect(pierre.renderCount()).toBe(1);
-      });
-    } finally {
-      Element.prototype.getBoundingClientRect = originalGetBoundingClientRect;
-      diffArea.remove();
-    }
-  });
-
   it("passes split diff style to Pierre when side-by-side mode is enabled", async () => {
     const { default: PierreFileDiff } = await import("./PierreFileDiff.svelte");
 
     render(PierreFileDiff, {
-      props: { active: true, file: makeFile(), viewMode: "split" },
+      props: { file: makeFile(), viewMode: "split" },
     });
 
     await waitFor(() => {
@@ -235,14 +182,14 @@ describe("PierreFileDiff", () => {
     }];
 
     const { rerender } = render(PierreFileDiff, {
-      props: { active: true, file, lineAnnotations: firstAnnotations },
+      props: { file, lineAnnotations: firstAnnotations },
     });
 
     await waitFor(() => {
       expect(pierre.renderCount()).toBe(1);
     });
 
-    await rerender({ active: true, file, lineAnnotations: nextAnnotations });
+    await rerender({ file, lineAnnotations: nextAnnotations });
 
     await waitFor(() => {
       expect(pierre.renderCount()).toBe(2);
@@ -254,7 +201,7 @@ describe("PierreFileDiff", () => {
     const file = makeFile();
 
     const { rerender } = render(PierreFileDiff, {
-      props: { active: true, file },
+      props: { file },
     });
 
     await waitFor(() => {
@@ -262,7 +209,6 @@ describe("PierreFileDiff", () => {
     });
 
     await rerender({
-      active: true,
       file,
       selectedRange: { start: 2, end: 2, side: "additions" },
       transientLineAnnotation: {
@@ -276,25 +222,3 @@ describe("PierreFileDiff", () => {
     expect(pierre.renderCount()).toBe(1);
   });
 });
-
-function rect({
-  top,
-  bottom,
-  height,
-}: {
-  top: number;
-  bottom: number;
-  height: number;
-}): DOMRect {
-  return {
-    top,
-    bottom,
-    height,
-    left: 0,
-    right: 500,
-    width: 500,
-    x: 0,
-    y: top,
-    toJSON: () => ({}),
-  } as DOMRect;
-}

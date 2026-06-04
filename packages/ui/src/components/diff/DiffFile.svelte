@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { DiffLineAnnotation, SelectedLineRange } from "@pierre/diffs";
+  import type { DiffLineAnnotation, SelectedLineRange, Virtualizer } from "@pierre/diffs";
   import { mount, onMount, unmount } from "svelte";
   import type { DiffFile as DiffFileType } from "../../api/types.js";
   import type { DiffReviewDraftComment } from "../../stores/diff-review-draft.svelte.js";
@@ -36,6 +36,7 @@
     diffHeadSHA?: string | undefined;
     nativeMultilineRanges?: boolean;
     reviewThreads?: ReviewThread[];
+    virtualizer?: Virtualizer | undefined;
   }
 
   const {
@@ -53,6 +54,7 @@
     diffHeadSHA = undefined,
     nativeMultilineRanges = false,
     reviewThreads = [],
+    virtualizer,
   }: Props = $props();
 
   const collapsed = $derived(diffStore.isFileCollapsed(owner, name, number, file.path));
@@ -542,6 +544,7 @@
           enableLineSelection={reviewEnabled && !!diffHeadSHA}
           onLineSelected={handlePierreSelection}
           renderAnnotation={renderUnknownAnnotation}
+          {virtualizer}
         />
       {/if}
     </div>

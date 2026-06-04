@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { FileDiff } from "@pierre/diffs";
+  import { FileDiff, VirtualizedFileDiff } from "@pierre/diffs";
   import type {
     DiffLineAnnotation,
     ExpansionDirections,
@@ -9,6 +9,7 @@
     GetLineIndexUtility,
     SelectedLineRange,
     ThemeTypes,
+    Virtualizer,
   } from "@pierre/diffs";
   import { onMount } from "svelte";
   import type { DiffFile } from "../../api/types.js";
@@ -29,6 +30,7 @@
     enableLineSelection?: boolean;
     onLineSelected?: (selection: SelectedLineRange | null) => void;
     renderAnnotation?: (annotation: DiffLineAnnotation<unknown>) => HTMLElement | undefined;
+    virtualizer?: Virtualizer | undefined;
   }
 
   type PierreSide = NonNullable<Parameters<GetLineIndexUtility>[1]>;
@@ -55,52 +57,48 @@
   };
 
   const {
-    file,
-    active = true,
+    file = null,
     viewMode = "unified",
     wordWrap = false,
     tabWidth = 4,
-    loadFileText,
+    loadFileText = undefined,
     lineAnnotations = [],
     transientLineAnnotation = null,
     selectedRange = null,
     selectedRanges = [],
     enableLineSelection = false,
-    onLineSelected,
-    renderAnnotation,
+    onLineSelected = undefined,
+    renderAnnotation = undefined,
+    virtualizer = undefined,
   }: Props = $props();
 
-  let host: HTMLDivElement | undefined = $state();
-  let pierreDiff: FileDiff<unknown> | undefined;
+  let host: HTMLElement | undefined = $state();
+  let pierreDiff: FileDiff<unknown> | VirtualizedFileDiff<unknown> | undefined;
+  let pierreDiffVirtualizer: Virtualizer | undefined;
   let demandContextHandlerRoot: ShadowRoot | undefined;
   let fullContext: { oldFile: FileContents; newFile: FileContents } | undefined = $state();
   let contextLoadPromise: Promise<{ oldFile: FileContents; newFile: FileContents }> | undefined;
   let contextError: string | null = $state(null);
   let themeType = $state<ThemeTypes>(appThemeType());
   let rendered = $state(false);
-  let placeholderHeight = $state(0);
   let renderedFileKey = "";
   let renderAttemptKey = "";
-  let inactiveCleanupTimer: ReturnType<typeof setTimeout> | undefined;
   let reviewRangeFrame: number | undefined;
   let renderRetryFrame: number | undefined;
   let renderRetryTick = $state(0);
-  let viewportProbeFrame: number | undefined;
-  let viewportProbeTick = $state(0);
   let renderRetryCount = 0;
   let renderedLineRows = new Map<number, RenderedLinePair[]>();
   let selectedRangeElements = new Set<HTMLElement>();
+  let lineAnnotationWrappers = new Map<string, HTMLElement>();
   let transientAnnotationRow: TransientAnnotationRow | undefined;
   let lineCommentButtonHasPointerSnapshot = false;
   let lineCommentButtonWasSelectedOnPointerDown = false;
-  const inactiveCleanupDelayMs = 10_000;
   const maxImmediateRenderRetries = 5;
 
   const renderFile = $derived(file ? diffFileWithPatch(file) : emptyFile);
   const fileKey = $derived(`${renderFile.path}\0${renderFile.old_path}\0${renderFile.patch}`);
   const fileHunks = $derived(renderFile.hunks ?? []);
   const emptyTextualDiff = $derived(!renderFile.patch.trim() || fileHunks.length === 0);
-  const reservedHeight = $derived(placeholderHeight || estimatedDiffHeight(renderFile));
   const pierreFile = $derived.by<FileDiffMetadata | undefined>(() => {
     return parsePierreFileDiff(renderFile, {
       // Pierre marks patch-only diffs as partial and hides expansion controls.
@@ -128,9 +126,11 @@
     expansionLineCount: 40,
     tokenizeMaxLineLength: 2_000,
     onPostRender: () => {
+      removeStalePlaceholderPres();
       applyLineTargetAttributes();
       applyHunkHeaderLabels();
       applyLineCommentButtons();
+      syncLineAnnotationWrappers();
       rendered = true;
       if (!fullContext) {
         installDemandContextHandler();
@@ -235,25 +235,22 @@
 
     return () => {
       themeObserver?.disconnect();
-      cancelInactiveCleanup();
       cancelSelectedRangesApplication();
       cancelRenderRetry();
-      cancelViewportProbe();
       cleanUpPierreDiff();
       contextLoadPromise = undefined;
     };
   });
 
   $effect(() => {
-    if (renderedFileKey === fileKey) return;
+    if (renderedFileKey === fileKey && pierreDiffVirtualizer === virtualizer) return;
     renderedFileKey = fileKey;
-    cancelInactiveCleanup();
+    pierreDiffVirtualizer = virtualizer;
     cleanUpPierreDiff();
     contextLoadPromise = undefined;
     contextError = null;
     fullContext = undefined;
-    rendered = false;
-    placeholderHeight = 0;
+    rendered = emptyTextualDiff;
     renderAttemptKey = "";
     renderRetryCount = 0;
     cancelRenderRetry();
@@ -271,25 +268,21 @@
   });
 
   $effect(() => {
-    const currentViewportProbeTick = viewportProbeTick;
     const currentRenderRetryTick = renderRetryTick;
-    if (currentRenderRetryTick < 0 || currentViewportProbeTick < 0) return;
-    if (!active && !isHostNearViewport()) {
-      scheduleInactiveCleanup();
-      return;
-    }
-    cancelInactiveCleanup();
+    if (currentRenderRetryTick < 0) return;
     if (emptyTextualDiff) {
       cleanUpPierreDiff();
       renderAttemptKey = "";
       rendered = true;
-      placeholderHeight = 0;
       return;
     }
     if (!host) return;
     if (!pierreFile) return;
-    pierreDiff ??= new FileDiff<unknown>(pierreOptions, getPierreDiffWorkerPool());
+    pierreDiff ??= createPierreDiff();
     pierreDiff.setOptions(pierreOptions);
+    if (pierreDiff instanceof VirtualizedFileDiff && isHostInScrollViewport()) {
+      pierreDiff.setVisibility(true);
+    }
     const nextRenderAttemptKey = [
       fileKey,
       viewMode,
@@ -323,11 +316,12 @@
       if (didRender) {
         renderAttemptKey = nextRenderAttemptKey;
         renderRetryCount = 0;
+        removeStalePlaceholderPres();
         applyLineTargetAttributes();
         applyHunkHeaderLabels();
         applyLineCommentButtons();
+        syncLineAnnotationWrappers();
         rendered = true;
-        placeholderHeight = 0;
         installDemandContextHandler();
         scheduleSelectedRangesApplication();
       } else {
@@ -339,21 +333,7 @@
   });
 
   $effect(() => {
-    if (!host || rendered) return;
-    const root = host.closest(".diff-area");
-    if (!(root instanceof HTMLElement)) return;
-    root.addEventListener("scroll", scheduleViewportProbe, { passive: true });
-    window.addEventListener("resize", scheduleViewportProbe);
-    scheduleViewportProbe();
-    return () => {
-      root.removeEventListener("scroll", scheduleViewportProbe);
-      window.removeEventListener("resize", scheduleViewportProbe);
-      cancelViewportProbe();
-    };
-  });
-
-  $effect(() => {
-    if (active && pierreDiff && pierreFile) {
+    if (pierreDiff && pierreFile) {
       pierreDiff.setThemeType(themeType);
     }
   });
@@ -402,29 +382,28 @@
     cancelRenderRetry();
     clearSelectedRangeElements();
     clearTransientLineAnnotation();
+    clearLineAnnotationWrappers();
     renderedLineRows = new Map();
     pierreDiff?.cleanUp();
     pierreDiff = undefined;
+  }
+
+  function createPierreDiff(): FileDiff<unknown> | VirtualizedFileDiff<unknown> {
+    const workerPool = getPierreDiffWorkerPool();
+    if (!virtualizer) return new FileDiff<unknown>(pierreOptions, workerPool, true);
+    return new VirtualizedFileDiff<unknown>(
+      pierreOptions,
+      virtualizer,
+      undefined,
+      workerPool,
+      true,
+    );
   }
 
   function cancelRenderRetry(): void {
     if (renderRetryFrame == null) return;
     cancelAnimationFrame(renderRetryFrame);
     renderRetryFrame = undefined;
-  }
-
-  function scheduleViewportProbe(): void {
-    if (viewportProbeFrame != null) return;
-    viewportProbeFrame = requestAnimationFrame(() => {
-      viewportProbeFrame = undefined;
-      viewportProbeTick += 1;
-    });
-  }
-
-  function cancelViewportProbe(): void {
-    if (viewportProbeFrame == null) return;
-    cancelAnimationFrame(viewportProbeFrame);
-    viewportProbeFrame = undefined;
   }
 
   function scheduleRenderRetry(): void {
@@ -454,7 +433,7 @@
 
   function applySelectedRanges(): void {
     const root = host?.shadowRoot;
-    const pre = root?.querySelector("pre");
+    const pre = renderedDiffPre(root);
     if (!root || !pre) return;
     clearSelectedRangeElements();
     if ((!selectedRange && !selectedRanges.length) || !pierreDiff) return;
@@ -551,6 +530,7 @@
   function clearRenderedDomState(): void {
     clearSelectedRangeElements();
     clearTransientLineAnnotation();
+    clearLineAnnotationWrappers();
     renderedLineRows = new Map();
   }
 
@@ -562,48 +542,6 @@
     if (split && indexes.length === 2) return indexes[1];
     if (!split) return indexes[0];
     return undefined;
-  }
-
-  function scheduleInactiveCleanup(): void {
-    if (!pierreDiff || inactiveCleanupTimer) return;
-    inactiveCleanupTimer = setTimeout(() => {
-      inactiveCleanupTimer = undefined;
-      if (active || !pierreDiff) return;
-      placeholderHeight = measuredRenderedHeight();
-      cleanUpPierreDiff();
-      renderAttemptKey = "";
-      rendered = false;
-    }, inactiveCleanupDelayMs);
-  }
-
-  function cancelInactiveCleanup(): void {
-    if (!inactiveCleanupTimer) return;
-    clearTimeout(inactiveCleanupTimer);
-    inactiveCleanupTimer = undefined;
-  }
-
-  function isHostNearViewport(): boolean {
-    if (!host) return false;
-    const root = host.closest(".diff-area");
-    if (!(root instanceof HTMLElement)) return false;
-    const rootRect = root.getBoundingClientRect();
-    const hostRect = host.getBoundingClientRect();
-    return hostRect.bottom > rootRect.top - 600 &&
-      hostRect.top < rootRect.bottom + 600;
-  }
-
-  function measuredRenderedHeight(): number {
-    const height = host?.getBoundingClientRect().height ?? 0;
-    return Number.isFinite(height) && height > 0 ? Math.ceil(height) : placeholderHeight;
-  }
-
-  function estimatedDiffHeight(f: DiffFile): number {
-    if (f.is_binary || !f.hunks.length) return 96;
-    const lineCount = f.hunks.reduce((count, hunk) => count + hunk.lines.length, 0);
-    const separatorCount = Math.max(1, f.hunks.length);
-    const estimatedLineHeight = 22;
-    const verticalPadding = 12;
-    return Math.max(96, (lineCount + separatorCount) * estimatedLineHeight + verticalPadding);
   }
 
   function handleDemandContextClick(event: Event): void {
@@ -658,9 +596,11 @@
     if (fileKey !== requestFileKey) return;
     clearRenderedDomState();
     pierreDiff?.expandHunk(hunkIndex, direction, expansionLineCount);
+    removeStalePlaceholderPres();
     applyLineTargetAttributes();
     applyHunkHeaderLabels();
     applyLineCommentButtons();
+    syncLineAnnotationWrappers();
     scheduleSelectedRangesApplication();
   }
 
@@ -668,6 +608,9 @@
     if (!pierreDiff || !host) return false;
     rendered = false;
     clearRenderedDomState();
+    if (pierreDiff instanceof VirtualizedFileDiff && isHostInScrollViewport()) {
+      pierreDiff.setVisibility(true);
+    }
     const didRender = pierreDiff.render({
       fileContainer: host,
       oldFile: context.oldFile,
@@ -677,11 +620,12 @@
     });
     pierreDiff.setSelectedLines(selectedRange);
     if (didRender) {
+      removeStalePlaceholderPres();
       applyLineTargetAttributes();
       applyHunkHeaderLabels();
       applyLineCommentButtons();
+      syncLineAnnotationWrappers();
       rendered = true;
-      placeholderHeight = 0;
       scheduleSelectedRangesApplication();
     }
     return didRender;
@@ -767,7 +711,7 @@
 
   function applyLineTargetAttributes(): void {
     const root = host?.shadowRoot;
-    const pre = root?.querySelector("pre");
+    const pre = renderedDiffPre(root);
     if (!root || !pre || !pierreDiff) return;
     for (const line of root.querySelectorAll<HTMLElement>("[data-diff-path]")) {
       line.removeAttribute("data-diff-path");
@@ -796,7 +740,7 @@
 
   function applyLineCommentButtons(): void {
     const root = host?.shadowRoot;
-    const pre = root?.querySelector("pre");
+    const pre = renderedDiffPre(root);
     if (!root || !pre) return;
     for (const button of root.querySelectorAll("[data-middleman-line-comment-button]")) {
       button.remove();
@@ -819,10 +763,28 @@
         }
         const target = lineCommentTarget(contentElement);
         if (!target) continue;
+        installLineSelectionHandler(contentElement);
+        installLineSelectionHandler(gutterElement);
         gutterElement.setAttribute("data-middleman-line-comment-cell", "");
         gutterElement.appendChild(lineCommentButton(target));
       }
     }
+  }
+
+  function installLineSelectionHandler(element: HTMLElement): void {
+    if (element.hasAttribute("data-middleman-line-selection-target")) return;
+    element.setAttribute("data-middleman-line-selection-target", "");
+    element.addEventListener("click", handleLineSelectionClick);
+  }
+
+  function handleLineSelectionClick(event: MouseEvent): void {
+    if (!enableLineSelection || !onLineSelected || event.defaultPrevented) return;
+    const element = event.currentTarget;
+    if (!(element instanceof HTMLElement)) return;
+    const target = lineCommentTarget(element);
+    if (!target) return;
+    const collapse = lineCommentTargetIsSelected(target, event);
+    onLineSelected(collapse ? null : lineCommentSelection(target, event));
   }
 
   function lineCommentTarget(
@@ -932,13 +894,23 @@
       slotName,
       stableAnnotationKey(annotation.metadata),
     ].join(":");
-    if (transientAnnotationRow?.key === key) return;
+    if (transientAnnotationRow?.key === key) {
+      if (!hasAnnotationSlot(slotName)) {
+        const row = insertTransientAnnotationRow(annotation);
+        if (row) {
+          transientAnnotationRow = {
+            ...transientAnnotationRow,
+            ...row,
+          };
+        }
+      }
+      return;
+    }
 
     clearTransientLineAnnotation();
 
-    const existingSlot = hasAnnotationSlot(slotName);
-    const row = existingSlot ? undefined : insertTransientAnnotationRow(annotation);
-    if (!existingSlot && !row) return;
+    const row = hasAnnotationSlot(slotName) ? undefined : insertTransientAnnotationRow(annotation);
+    if (!hasAnnotationSlot(slotName) && !row) return;
 
     const content = renderAnnotation(annotation);
     if (!content) return;
@@ -965,6 +937,45 @@
     transientAnnotationRow = undefined;
   }
 
+  function syncLineAnnotationWrappers(): void {
+    if (!host || !renderAnnotation) {
+      clearLineAnnotationWrappers();
+      return;
+    }
+    const activeKeys = new Set<string>();
+    for (const annotation of lineAnnotations) {
+      const slotName = annotationSlotName(annotation);
+      const key = `${slotName}:${stableAnnotationKey(annotation)}`;
+      activeKeys.add(key);
+      if (lineAnnotationWrappers.has(key)) continue;
+
+      const content = renderAnnotation(annotation);
+      if (!content) continue;
+
+      const wrapper = document.createElement("div");
+      wrapper.dataset.middlemanLineAnnotationWrapper = "";
+      wrapper.slot = slotName;
+      wrapper.style.whiteSpace = "normal";
+      wrapper.appendChild(content);
+      // eslint-disable-next-line svelte/no-dom-manipulating -- Pierre owns this custom element; annotations are passed through its light-DOM slot API.
+      host.appendChild(wrapper);
+      lineAnnotationWrappers.set(key, wrapper);
+    }
+
+    for (const [key, wrapper] of lineAnnotationWrappers) {
+      if (activeKeys.has(key)) continue;
+      lineAnnotationWrappers.delete(key);
+      wrapper.remove();
+    }
+  }
+
+  function clearLineAnnotationWrappers(): void {
+    for (const wrapper of lineAnnotationWrappers.values()) {
+      wrapper.remove();
+    }
+    lineAnnotationWrappers.clear();
+  }
+
   function hasAnnotationSlot(slotName: string): boolean {
     const root = host?.shadowRoot;
     if (!root) return false;
@@ -978,7 +989,7 @@
     annotation: DiffLineAnnotation<unknown>,
   ): { content: HTMLElement; gutter: HTMLElement } | undefined {
     const root = host?.shadowRoot;
-    const pre = root?.querySelector("pre");
+    const pre = renderedDiffPre(root);
     if (!pre || !pierreDiff) return undefined;
 
     const split = pre.getAttribute("data-diff-type") === "split";
@@ -1026,10 +1037,38 @@
     if (!Number.isFinite(lineIndex)) return;
     const pair = renderedLinePair(pre, lineIndex, split);
     if (!pair) return;
-    pair.content.setAttribute("data-diff-path", renderFile.path);
     pair.content.tabIndex = -1;
+    pair.gutter.tabIndex = -1;
+    pair.content.setAttribute("data-diff-path", renderFile.path);
+    pair.gutter.setAttribute("data-diff-path", renderFile.path);
     for (const [name, value] of Object.entries(attributes)) {
       pair.content.setAttribute(name, value);
+      pair.gutter.setAttribute(name, value);
+    }
+  }
+
+  function isHostInScrollViewport(): boolean {
+    if (!host) return false;
+    const root = host.closest(".diff-area");
+    const hostRect = host.getBoundingClientRect();
+    const rootRect = root?.getBoundingClientRect() ?? {
+      top: 0,
+      bottom: window.innerHeight,
+    };
+    return hostRect.bottom > rootRect.top && hostRect.top < rootRect.bottom;
+  }
+
+  function renderedDiffPre(root = host?.shadowRoot): HTMLPreElement | null {
+    return root?.querySelector<HTMLPreElement>("pre[data-diff]") ?? null;
+  }
+
+  function removeStalePlaceholderPres(): void {
+    const root = host?.shadowRoot;
+    if (!root) return;
+    for (const pre of root.querySelectorAll<HTMLPreElement>("pre:not([data-diff])")) {
+      if (pre.childElementCount === 0 && !pre.textContent?.trim()) {
+        pre.remove();
+      }
     }
   }
 
@@ -1138,16 +1177,14 @@
 <div
   class="pierre-diff-shell"
   class:pierre-diff-shell--loading={!rendered}
-  style:min-height={reservedHeight ? `${reservedHeight}px` : undefined}
   aria-busy={!rendered}
 >
-  {#if !emptyTextualDiff}
-    <diffs-container
-      class="pierre-diff"
-      class:pierre-diff--pending={!rendered}
-      bind:this={host}
-    ></diffs-container>
-  {/if}
+  <diffs-container
+    class="pierre-diff"
+    class:pierre-diff--pending={!rendered}
+    hidden={emptyTextualDiff}
+    bind:this={host}
+  ></diffs-container>
   {#if rendered && emptyTextualDiff}
     <div class="empty-textual-diff">No textual changes</div>
   {/if}

@@ -25487,6 +25487,52 @@ func TestWorkspaceDeletePreservesUserCreatedBranch(t *testing.T) {
 	)
 }
 
+func TestWorkspaceDeleteDoesNotCleanupReplacementCloneE2E(t *testing.T) {
+	t.Parallel()
+
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	client, database, _, remotePath := setupTestServerWithWorkspaces(t)
+	ctx := t.Context()
+	const branch = "middleman/pr-42"
+	replacementClone := filepath.Join(t.TempDir(), "replacement-clone")
+	runGit(t, filepath.Dir(replacementClone), "clone", remotePath, replacementClone)
+	runGit(
+		t, replacementClone, "remote", "set-url", "origin",
+		"https://github.com/acme/widget.git",
+	)
+	runGit(t, replacementClone, "branch", branch, "HEAD")
+	branchSHA := testGitSHA(t, replacementClone, "refs/heads/"+branch)
+	wsID := "ws-replacement-clone"
+	require.NoError(database.InsertWorkspace(ctx, &workspace.Workspace{
+		ID:              wsID,
+		Platform:        "github",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		ItemType:        db.WorkspaceItemTypePullRequest,
+		ItemNumber:      42,
+		GitHeadRef:      "feature",
+		WorkspaceBranch: branch,
+		WorktreePath:    replacementClone,
+		Status:          "ready",
+	}))
+
+	force := true
+	deleteResp, err := client.HTTP.DeleteWorkspaceWithResponse(
+		ctx, wsID, &generated.DeleteWorkspaceParams{Force: &force},
+	)
+
+	require.NoError(err)
+	require.Equal(http.StatusNoContent, deleteResp.StatusCode())
+	assert.DirExists(replacementClone)
+	assert.Equal(branchSHA, testGitSHA(t, replacementClone, "refs/heads/"+branch))
+	got, err := database.GetWorkspace(ctx, wsID)
+	require.NoError(err)
+	assert.Nil(got)
+}
+
 func TestWorkspaceCreatePreservesExistingLocalPreferredBranch(t *testing.T) {
 	t.Parallel()
 

@@ -7803,6 +7803,88 @@ func TestAPIGetIssueUsesPlatformHostQuery(t *testing.T) {
 	}
 }
 
+func TestAPIGetIssueWorkspaceUsesProviderScopedLookup(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := t.Context()
+
+	database := dbtest.Open(t)
+	for _, provider := range []string{"github", "gitlab"} {
+		repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
+			Platform:     provider,
+			PlatformHost: "forge.example.com",
+			Owner:        "acme",
+			Name:         "widget",
+		})
+		require.NoError(err)
+		_, err = database.UpsertIssue(ctx, &db.Issue{
+			RepoID:         repoID,
+			PlatformID:     int64(len(provider)) * 1000,
+			Number:         7,
+			URL:            "https://forge.example.com/acme/widget/issues/7",
+			Title:          provider + " issue",
+			Author:         "testuser",
+			State:          "open",
+			CreatedAt:      time.Now().UTC().Truncate(time.Second),
+			UpdatedAt:      time.Now().UTC().Truncate(time.Second),
+			LastActivityAt: time.Now().UTC().Truncate(time.Second),
+		})
+		require.NoError(err)
+	}
+	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
+		ID:              "github-issue-workspace",
+		Platform:        "github",
+		PlatformHost:    "forge.example.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		ItemType:        db.WorkspaceItemTypeIssue,
+		ItemNumber:      7,
+		GitHeadRef:      "middleman/issue-7",
+		WorkspaceBranch: "middleman/issue-7",
+		WorktreePath:    filepath.Join(t.TempDir(), "github"),
+		TmuxSession:     "github-issue-workspace",
+		Status:          "ready",
+	}))
+	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
+		ID:              "gitlab-issue-workspace",
+		Platform:        "gitlab",
+		PlatformHost:    "forge.example.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		ItemType:        db.WorkspaceItemTypeIssue,
+		ItemNumber:      7,
+		GitHeadRef:      "middleman/issue-7",
+		WorkspaceBranch: "middleman/issue-7",
+		WorktreePath:    filepath.Join(t.TempDir(), "gitlab"),
+		TmuxSession:     "gitlab-issue-workspace",
+		Status:          "ready",
+	}))
+
+	syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
+	t.Cleanup(syncer.Stop)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	srv.workspaces = workspace.NewManager(database, t.TempDir())
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/api/v1/host/forge.example.com/issues/gitlab/acme/widget/7",
+		nil,
+	)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	var body rawIssueDetailResponse
+	require.NoError(json.Unmarshal(rr.Body.Bytes(), &body))
+	if assert.NotNil(body.Workspace) {
+		assert.Equal("gitlab-issue-workspace", body.Workspace.ID)
+	}
+	if assert.NotNil(body.Issue) {
+		assert.Equal("gitlab issue", body.Issue.Title)
+	}
+}
+
 func TestAPISyncIssueUsesPlatformHostQuery(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)

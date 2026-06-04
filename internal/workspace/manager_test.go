@@ -582,6 +582,8 @@ func TestValidateWorktreeBasePathRejectsExecutableLocalConfig(t *testing.T) {
 		{name: "git proxy", key: "core.gitProxy", value: "demo-proxy"},
 		{name: "ssh command", key: "core.sshCommand", value: "demo-ssh"},
 		{name: "credential helper", key: "credential.helper", value: "!demo-helper"},
+		{name: "fetch recurse submodules", key: "fetch.recurseSubmodules", value: "true"},
+		{name: "submodule recurse", key: "submodule.recurse", value: "true"},
 		{name: "url rewrite", key: "url.https://example.invalid/.insteadOf", value: "https://github.com/"},
 		{name: "include path", key: "include.path", value: filepath.Join(t.TempDir(), "config")},
 		{name: "conditional include", key: "includeIf.gitdir:~/demo/.path", value: filepath.Join(t.TempDir(), "config")},

@@ -702,6 +702,8 @@ func localGitConfigKeyMayExecute(key string) bool {
 		key == "core.gitproxy" ||
 		key == "core.sshcommand" ||
 		key == "credential.helper" ||
+		key == "fetch.recursesubmodules" ||
+		key == "submodule.recurse" ||
 		(strings.HasPrefix(key, "credential.") &&
 			strings.HasSuffix(key, ".helper")) ||
 		(strings.HasPrefix(key, "filter.") &&
@@ -1539,6 +1541,22 @@ func (m *Manager) GetByIssue(
 ) (*Workspace, error) {
 	return m.db.GetWorkspaceByIssue(
 		ctx, platformHost, owner, name, issueNumber,
+	)
+}
+
+// GetByIssueForProvider returns the workspace for a specific provider-scoped
+// issue, or nil.
+func (m *Manager) GetByIssueForProvider(
+	ctx context.Context,
+	provider, platformHost, owner, name string,
+	issueNumber int,
+) (*Workspace, error) {
+	kind, err := platform.NormalizeKind(provider)
+	if err != nil {
+		return nil, err
+	}
+	return m.db.GetWorkspaceByIssueForProvider(
+		ctx, string(kind), platformHost, owner, name, issueNumber,
 	)
 }
 
@@ -2386,7 +2404,7 @@ func runGit(ctx context.Context, dir string, args ...string) error {
 func fetchWorkspaceBase(ctx context.Context, dir string, requireOriginHead bool) error {
 	if err := runGit(
 		ctx, dir,
-		"fetch", "--prune", "--no-tags", "origin",
+		"fetch", "--prune", "--no-tags", "--recurse-submodules=no", "origin",
 		"+refs/heads/*:refs/remotes/origin/*",
 	); err != nil {
 		return fmt.Errorf("fetch configured worktree base: %w", err)

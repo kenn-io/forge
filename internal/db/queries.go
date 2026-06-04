@@ -4482,6 +4482,27 @@ func (d *DB) GetWorkspaceByIssue(
 	platformHost, owner, name string,
 	issueNumber int,
 ) (*Workspace, error) {
+	return d.getWorkspaceByIssue(ctx, "", platformHost, owner, name, issueNumber)
+}
+
+// GetWorkspaceByIssueForProvider returns the workspace for a specific issue
+// within a provider identity, or nil if not found.
+func (d *DB) GetWorkspaceByIssueForProvider(
+	ctx context.Context,
+	provider, platformHost, owner, name string,
+	issueNumber int,
+) (*Workspace, error) {
+	return d.getWorkspaceByIssue(
+		ctx, provider, platformHost, owner, name, issueNumber,
+	)
+}
+
+func (d *DB) getWorkspaceByIssue(
+	ctx context.Context,
+	provider, platformHost, owner, name string,
+	issueNumber int,
+) (*Workspace, error) {
+	provider = strings.ToLower(strings.TrimSpace(provider))
 	platformHost, owner, name = canonicalRepoLookupIdentifier(platformHost, owner, name)
 	var ws Workspace
 	err := d.ro.QueryRowContext(ctx, `
@@ -4492,8 +4513,10 @@ func (d *DB) GetWorkspaceByIssue(
 		       error_message, created_at
 		FROM middleman_workspaces
 		WHERE platform_host = ? AND repo_owner_key = ?
-		  AND repo_name_key = ? AND item_type = ? AND item_number = ?`,
+		  AND repo_name_key = ? AND item_type = ? AND item_number = ?
+		  AND (? = '' OR platform = ?)`,
 		platformHost, owner, name, WorkspaceItemTypeIssue, issueNumber,
+		provider, provider,
 	).Scan(
 		&ws.ID, &ws.Platform, &ws.PlatformHost, &ws.RepoOwner, &ws.RepoName,
 		&ws.ItemType, &ws.ItemNumber, &ws.AssociatedPRNumber,

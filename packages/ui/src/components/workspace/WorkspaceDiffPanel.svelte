@@ -98,6 +98,7 @@
         number={itemNumber}
         loadOnMount={false}
         keyboardActive={false}
+        pageKeyboardActive={active}
         richPreviewEnabled={false}
         contextExpansionEnabled={false}
         reviewMode="disabled"

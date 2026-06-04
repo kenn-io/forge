@@ -18,6 +18,7 @@
     number: number;
     loadOnMount?: boolean;
     keyboardActive?: boolean;
+    pageKeyboardActive?: boolean;
     richPreviewEnabled?: boolean;
     contextExpansionEnabled?: boolean;
     provider: string;
@@ -40,6 +41,7 @@
     number,
     loadOnMount = true,
     keyboardActive = true,
+    pageKeyboardActive = keyboardActive,
     richPreviewEnabled = true,
     contextExpansionEnabled = true,
     provider,
@@ -480,16 +482,22 @@
     cancelProgrammaticScrollIfUserOverrides();
   }
 
-  // j/k keyboard navigation between files; PageUp/PageDown page the diff pane.
-  function handleKeydown(e: KeyboardEvent): void {
-    if (isTextEntryTarget(e.target)) return;
+  function handlePageKeydown(e: KeyboardEvent): boolean {
+    if (isTextEntryTarget(e.target)) return false;
 
     if (e.key === "PageDown" || e.key === "PageUp") {
-      if (e.metaKey || e.ctrlKey || e.altKey || !diff) return;
+      if (e.metaKey || e.ctrlKey || e.altKey || !diff) return false;
       e.preventDefault();
       pageDiffArea(e.key === "PageDown" ? 1 : -1);
-      return;
+      return true;
     }
+    return false;
+  }
+
+  // j/k keyboard navigation between files; PageUp/PageDown page the diff pane.
+  function handleKeydown(e: KeyboardEvent): void {
+    if (handlePageKeydown(e)) return;
+    if (isTextEntryTarget(e.target)) return;
 
     if (e.key === "j" || e.key === "k") {
       if (!diff || navigationFiles.length === 0) return;
@@ -517,6 +525,11 @@
     }
   }
 
+  function handleDiffAreaKeydown(e: KeyboardEvent): void {
+    if (!pageKeyboardActive || keyboardActive) return;
+    handlePageKeydown(e);
+  }
+
   $effect(() => {
     if (!keyboardActive) return;
     window.addEventListener("keydown", handleKeydown);
@@ -531,11 +544,13 @@
     area.addEventListener("wheel", onDiffUserScrollIntent);
     area.addEventListener("touchstart", onDiffUserScrollIntent);
     area.addEventListener("pointerdown", onDiffUserScrollIntent);
+    area.addEventListener("keydown", handleDiffAreaKeydown);
 
     return () => {
       area.removeEventListener("wheel", onDiffUserScrollIntent);
       area.removeEventListener("touchstart", onDiffUserScrollIntent);
       area.removeEventListener("pointerdown", onDiffUserScrollIntent);
+      area.removeEventListener("keydown", handleDiffAreaKeydown);
     };
   });
 </script>

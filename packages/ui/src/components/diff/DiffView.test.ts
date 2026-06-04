@@ -101,7 +101,13 @@ function makeDiffStore(
   } as unknown as DiffStore;
 }
 
-function renderDiffView(diff: DiffStore) {
+function renderDiffView(
+  diff: DiffStore,
+  props: {
+    keyboardActive?: boolean;
+    pageKeyboardActive?: boolean;
+  } = {},
+) {
   return render(DiffView, {
     props: {
       provider: "github",
@@ -111,6 +117,7 @@ function renderDiffView(diff: DiffStore) {
       repoPath: "acme/widgets",
       number: 1,
       loadOnMount: false,
+      ...props,
     },
     context: new Map([[STORES_KEY, { diff }]]),
   });
@@ -152,6 +159,42 @@ describe("DiffView", () => {
 
       expect(diffArea.scrollTop).toBe(336);
       expect(document.activeElement).toBe(diffArea);
+    } finally {
+      outsideButton.remove();
+    }
+  });
+
+  it("pages the focused diff area when only local page keys are active", async () => {
+    const requestScrollToFile = vi.fn();
+    const diff = makeDiffStore({ requestScrollToFile });
+    const { container } = renderDiffView(diff, {
+      keyboardActive: false,
+      pageKeyboardActive: true,
+    });
+    const diffArea = container.querySelector(".diff-area") as HTMLDivElement;
+    Object.defineProperty(diffArea, "clientHeight", {
+      configurable: true,
+      value: 400,
+    });
+    Object.defineProperty(diffArea, "scrollHeight", {
+      configurable: true,
+      value: 2_000,
+    });
+    const outsideButton = document.createElement("button");
+    document.body.append(outsideButton);
+
+    try {
+      outsideButton.focus();
+      await fireEvent.keyDown(window, { key: "PageDown" });
+      expect(diffArea.scrollTop).toBe(0);
+
+      diffArea.focus();
+      await fireEvent.keyDown(diffArea, { key: "PageDown" });
+      await fireEvent.keyDown(diffArea, { key: "j" });
+
+      expect(diffArea.scrollTop).toBe(336);
+      expect(document.activeElement).toBe(diffArea);
+      expect(requestScrollToFile).not.toHaveBeenCalled();
     } finally {
       outsideButton.remove();
     }

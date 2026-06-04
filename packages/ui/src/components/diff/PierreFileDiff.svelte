@@ -112,13 +112,10 @@
     diffStyle: viewMode,
     diffIndicators: "bars",
     disableFileHeader: true,
-    enableLineSelection,
+    enableLineSelection: false,
     hunkSeparators: "line-info",
     lineDiffType: "word",
-    lineHoverHighlight: enableLineSelection ? "both" : "disabled",
-    ...(onLineSelected && {
-      onLineSelected,
-    }),
+    lineHoverHighlight: "disabled",
     ...(renderAnnotation && { renderAnnotation }),
     overflow: wordWrap ? "wrap" : "scroll",
     theme: { dark: "pierre-dark", light: "pierre-light" },
@@ -763,28 +760,10 @@
         }
         const target = lineCommentTarget(contentElement);
         if (!target) continue;
-        installLineSelectionHandler(contentElement);
-        installLineSelectionHandler(gutterElement);
         gutterElement.setAttribute("data-middleman-line-comment-cell", "");
         gutterElement.appendChild(lineCommentButton(target));
       }
     }
-  }
-
-  function installLineSelectionHandler(element: HTMLElement): void {
-    if (element.hasAttribute("data-middleman-line-selection-target")) return;
-    element.setAttribute("data-middleman-line-selection-target", "");
-    element.addEventListener("click", handleLineSelectionClick);
-  }
-
-  function handleLineSelectionClick(event: MouseEvent): void {
-    if (!enableLineSelection || !onLineSelected || event.defaultPrevented) return;
-    const element = event.currentTarget;
-    if (!(element instanceof HTMLElement)) return;
-    const target = lineCommentTarget(element);
-    if (!target) return;
-    const collapse = lineCommentTargetIsSelected(target, event);
-    onLineSelected(collapse ? null : lineCommentSelection(target, event));
   }
 
   function lineCommentTarget(
@@ -811,10 +790,12 @@
     button.setAttribute("aria-label", label);
     button.setAttribute("data-middleman-line-comment-button", "");
     button.addEventListener("pointerdown", (event) => {
+      event.stopPropagation();
       lineCommentButtonHasPointerSnapshot = true;
       lineCommentButtonWasSelectedOnPointerDown = lineCommentTargetIsSelected(target, event);
     });
     button.addEventListener("mousedown", (event) => {
+      event.stopPropagation();
       lineCommentButtonHasPointerSnapshot = true;
       lineCommentButtonWasSelectedOnPointerDown = lineCommentTargetIsSelected(target, event);
     });

@@ -725,7 +725,7 @@ async function selectPierreReviewLine(
   ].join(",");
   const target = file.locator(`.pierre-diff ${selector}`).first();
   await expect(target).toBeVisible({ timeout: 10_000 });
-  await target.click();
+  await target.locator("[data-middleman-line-comment-button]").click();
 }
 
 // --- Functional tests ---
@@ -2119,6 +2119,30 @@ test.describe("diff view (git-backed)", () => {
       ).toBeGreaterThan(expandedContextRowsBefore);
       await expect.poll(() => [...new Set(previewSides)].sort())
         .toEqual(["new", "old"]);
+    } finally {
+      await server.stop();
+    }
+  });
+
+  test("inline review composer only opens from the gutter comment button", async ({ page }) => {
+    const server = await startIsolatedE2EServer();
+    try {
+      const baseURL = server.info.base_url;
+      await page.goto(`${baseURL}/pulls/github/acme/widgets/1/files`);
+      await waitForDiffLoaded(page);
+      await waitForSidebarFilesLoaded(page);
+
+      const cacheFile = page.locator('[data-file-path="internal/cache.go"]');
+      await cacheFile.scrollIntoViewIfNeeded();
+      const lineContent = cacheFile
+        .locator('.pierre-diff [data-line][data-diff-new-line="1"]')
+        .first();
+      await expect(lineContent).toBeVisible();
+      await lineContent.click();
+      await expect(page.getByPlaceholder("Leave a comment")).toHaveCount(0);
+
+      await selectPierreReviewLine(cacheFile, 1, "right");
+      await expect(page.getByPlaceholder("Leave a comment")).toBeVisible();
     } finally {
       await server.stop();
     }

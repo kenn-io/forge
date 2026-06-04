@@ -483,7 +483,7 @@ func (m *Manager) Setup(
 		ws.ID, workspaceSetupStageSetup, "started",
 		"starting workspace setup",
 	)
-	gitDir, err := m.workspaceSetupGitDir(ctx, ws)
+	gitDir, refreshBeforeAdd, err := m.workspaceSetupGitDir(ctx, ws)
 	if err != nil {
 		return m.failSetup(
 			ctx,
@@ -491,7 +491,7 @@ func (m *Manager) Setup(
 		)
 	}
 
-	branch, err := m.addWorktree(ctx, gitDir, ws)
+	branch, err := m.addWorktree(ctx, gitDir, refreshBeforeAdd, ws)
 	if err != nil {
 		return m.failSetup(
 			ctx,
@@ -547,17 +547,17 @@ func (m *Manager) Setup(
 
 func (m *Manager) workspaceSetupGitDir(
 	ctx context.Context, ws *Workspace,
-) (string, error) {
+) (string, bool, error) {
 	if ws.MRHeadRepo == nil {
 		if baseDir, ok, err := m.localWorktreeBaseDir(
 			ctx, ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
 		); err != nil || ok {
-			return baseDir, err
+			return baseDir, ok, err
 		}
 	}
 
 	if m.clones == nil {
-		return "", fmt.Errorf("clone manager not set")
+		return "", false, fmt.Errorf("clone manager not set")
 	}
 
 	remoteURL := fmt.Sprintf(
@@ -568,16 +568,16 @@ func (m *Manager) workspaceSetupGitDir(
 		ctx, ws.PlatformHost, ws.RepoOwner,
 		ws.RepoName, remoteURL,
 	); err != nil {
-		return "", err
+		return "", false, err
 	}
 
 	cloneDir, err := m.clones.ClonePath(
 		ws.PlatformHost, ws.RepoOwner, ws.RepoName,
 	)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
-	return cloneDir, nil
+	return cloneDir, false, nil
 }
 
 func (m *Manager) localWorktreeBaseDir(
@@ -638,6 +638,9 @@ func ValidateWorktreeBasePath(
 	if gitremote.RemoteHost(remoteURL) == "" || gitremote.RemoteRepoPath(remoteURL) == "" {
 		return "", fmt.Errorf("origin remote must include a forge host and repository path")
 	}
+	if err := validateNoExecutableLocalGitConfig(ctx, abs); err != nil {
+		return "", err
+	}
 	if err := gitremote.ValidateRemoteIdentity(gitremote.Identity{
 		Host:  platformHost,
 		Owner: owner,
@@ -648,14 +651,66 @@ func ValidateWorktreeBasePath(
 	return abs, nil
 }
 
+func validateNoExecutableLocalGitConfig(ctx context.Context, dir string) error {
+	keys, err := localGitConfigKeysMatching(
+		ctx,
+		dir,
+		`^(filter\..*\.(process|smudge)|core\.fsmonitor)$`,
+	)
+	if err != nil {
+		return fmt.Errorf("inspect executable local git config: %w", err)
+	}
+	if len(keys) > 0 {
+		return fmt.Errorf(
+			"local git config %q may execute commands during checkout",
+			keys[0],
+		)
+	}
+	return nil
+}
+
+func localGitConfigKeysMatching(
+	ctx context.Context, dir, pattern string,
+) ([]string, error) {
+	cmd := workspaceGitCommand(
+		ctx, dir,
+		"config", "--local", "--name-only", "--get-regexp", pattern,
+	)
+	out, err := procutil.CombinedOutput(
+		ctx, cmd, "git subprocess capacity",
+	)
+	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+			return nil, nil
+		}
+		return nil, fmt.Errorf(
+			"%w: %s", err, strings.TrimSpace(string(out)),
+		)
+	}
+	var keys []string
+	for line := range strings.SplitSeq(string(out), "\n") {
+		key := strings.TrimSpace(line)
+		if key != "" {
+			keys = append(keys, key)
+		}
+	}
+	return keys, nil
+}
+
 // addWorktree creates the workspace's worktree and branch under the
 // per-repo lock. The lock prevents concurrent worktree mutations on
 // the same git repository from clobbering each other; see FileLockManager.
 func (m *Manager) addWorktree(
-	ctx context.Context, cloneDir string, ws *Workspace,
+	ctx context.Context, cloneDir string, refreshBeforeAdd bool, ws *Workspace,
 ) (string, error) {
 	var branch string
 	err := m.withRepoLockForGitDir(ctx, cloneDir, func() error {
+		if refreshBeforeAdd {
+			if err := fetchWorkspaceBase(ctx, cloneDir); err != nil {
+				return err
+			}
+		}
 		var addErr error
 		branch, addErr = m.addWorktreeLocked(ctx, cloneDir, ws)
 		return addErr
@@ -1154,8 +1209,11 @@ func (m *Manager) workspaceCleanupGitDir(
 	if baseDir, ok, err := m.localWorktreeBaseDir(
 		ctx, ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
 	); err != nil || ok {
-		if err != nil || !ok {
-			return baseDir, ok, err
+		if err != nil {
+			baseDir, ok = "", false
+		}
+		if !ok {
+			return baseDir, ok, nil
 		}
 		tracked, err := gitDirTracksWorktreePath(ctx, baseDir, ws.WorktreePath)
 		if err != nil {
@@ -2128,6 +2186,13 @@ func runGit(ctx context.Context, dir string, args ...string) error {
 		return fmt.Errorf(
 			"%w: %s", err, strings.TrimSpace(string(out)),
 		)
+	}
+	return nil
+}
+
+func fetchWorkspaceBase(ctx context.Context, dir string) error {
+	if err := runGit(ctx, dir, "fetch", "--prune", "origin"); err != nil {
+		return fmt.Errorf("fetch configured worktree base: %w", err)
 	}
 	return nil
 }

@@ -559,6 +559,36 @@ func TestValidateWorktreeBasePathRejectsLocalRemotes(t *testing.T) {
 	}
 }
 
+func TestValidateWorktreeBasePathRejectsExecutableLocalConfig(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	tests := []struct {
+		name  string
+		key   string
+		value string
+	}{
+		{name: "filter process", key: "filter.demo.process", value: "demo-filter"},
+		{name: "filter smudge", key: "filter.demo.smudge", value: "demo-smudge"},
+		{name: "fsmonitor", key: "core.fsmonitor", value: "demo-fsmonitor"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			localRepo := setupLocalWorktreeBaseForWorkspaceGitTest(t, "feature/thing")
+			runWorkspaceTestGit(t, localRepo, "config", tt.key, tt.value)
+
+			got, err := ValidateWorktreeBasePath(
+				t.Context(), localRepo, "github.com", "acme", "widget",
+			)
+
+			require.Empty(got)
+			require.Error(err)
+			assert.Contains(err.Error(), tt.key)
+			assert.Contains(err.Error(), "may execute commands during checkout")
+		})
+	}
+}
+
 func TestSetupUsesManagedCloneForForkPRWithConfiguredWorktreeBasePath(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
@@ -635,6 +665,52 @@ func TestSetupUsesManagedCloneForForkPRWithConfiguredWorktreeBasePath(t *testing
 	assert.NotContains(localList, "worktree "+canonicalWorktreePath)
 }
 
+func TestSetupFetchesConfiguredWorktreeBasePathBeforeAdd(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	wtDir := t.TempDir()
+
+	const branch = "feature/fetch-before-add"
+	repoID := seedRepo(t, d, "github.com", "acme", "widget")
+	seedMR(t, d, repoID, 42, branch)
+
+	localRepo, remote := setupLocalWorktreeBaseWithRemoteForWorkspaceGitTest(
+		t, branch,
+	)
+	remoteWork := filepath.Join(t.TempDir(), "remote-work")
+	runWorkspaceTestGit(t, t.TempDir(), "clone", remote, remoteWork)
+	runWorkspaceTestGit(t, remoteWork, "config", "user.email", "test@test.com")
+	runWorkspaceTestGit(t, remoteWork, "config", "user.name", "Test")
+	runWorkspaceTestGit(t, remoteWork, "checkout", branch)
+	require.NoError(os.WriteFile(
+		filepath.Join(remoteWork, "fresh.txt"), []byte("fresh\n"), 0o644,
+	))
+	runWorkspaceTestGit(t, remoteWork, "add", ".")
+	runWorkspaceTestGit(t, remoteWork, "commit", "-m", "fresh branch commit")
+	expectedSHA := strings.TrimSpace(string(runWorkspaceTestGit(
+		t, remoteWork, "rev-parse", "HEAD",
+	)))
+	runWorkspaceTestGit(t, remoteWork, "push", "origin", "HEAD:refs/heads/"+branch)
+
+	tmuxScript, _ := writeRecorderScript(t)
+	mgr := NewManager(d, wtDir)
+	mgr.SetTmuxCommand([]string{tmuxScript})
+	mgr.SetWorktreeBasePathResolver(func(
+		context.Context, string, string, string, string,
+	) (string, bool, error) {
+		return localRepo, true, nil
+	})
+
+	ws, err := mgr.Create(t.Context(), "github.com", "acme", "widget", 42)
+	require.NoError(err)
+	require.NoError(mgr.Setup(t.Context(), ws))
+
+	headSHA, err := gitHeadSHA(t.Context(), ws.WorktreePath)
+	require.NoError(err)
+	assert.Equal(expectedSHA, headSHA)
+}
+
 func TestCleanupUsesExistingWorktreeGitDirWhenConfiguredBaseChanges(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
@@ -677,6 +753,31 @@ func TestCleanupUsesExistingWorktreeGitDirWhenConfiguredBaseChanges(t *testing.T
 	wrongExists, err := localBranchExists(t.Context(), wrongRepo, branch)
 	require.NoError(err)
 	assert.True(wrongExists, "cleanup must not delete branch from current settings repo")
+}
+
+func TestCleanupIgnoresInvalidConfiguredBaseWhenWorktreeAbsent(t *testing.T) {
+	require := require.New(t)
+
+	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr.SetWorktreeBasePathResolver(func(
+		context.Context, string, string, string, string,
+	) (string, bool, error) {
+		return filepath.Join(t.TempDir(), "missing"), true, nil
+	})
+	ws := &Workspace{
+		ID:              "ws-cleanup-invalid-base",
+		Platform:        "github",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		ItemType:        db.WorkspaceItemTypePullRequest,
+		ItemNumber:      99,
+		GitHeadRef:      "feature/thing",
+		WorkspaceBranch: "middleman/pr-99",
+		WorktreePath:    filepath.Join(t.TempDir(), "already-removed"),
+	}
+
+	require.NoError(mgr.cleanupWorkspaceArtifactsForDelete(t.Context(), ws))
 }
 
 func TestFailSetupUsesSinglePersistenceBudget(t *testing.T) {
@@ -1071,8 +1172,20 @@ func setupLocalWorktreeBaseForWorkspaceGitTest(
 	t *testing.T, branch string,
 ) string {
 	t.Helper()
+	repo, _ := setupLocalWorktreeBaseWithRemoteForWorkspaceGitTest(t, branch)
+	return repo
+}
+
+func setupLocalWorktreeBaseWithRemoteForWorkspaceGitTest(
+	t *testing.T, branch string,
+) (string, string) {
+	t.Helper()
 	dir := t.TempDir()
+	remote := filepath.Join(dir, "remote.git")
 	repo := filepath.Join(dir, "repo")
+	runWorkspaceTestGit(
+		t, dir, "init", "--bare", "--initial-branch=main", remote,
+	)
 	runWorkspaceTestGit(t, dir, "init", "--initial-branch=main", repo)
 	runWorkspaceTestGit(t, repo, "config", "user.email", "test@test.com")
 	runWorkspaceTestGit(t, repo, "config", "user.name", "Test")
@@ -1080,15 +1193,23 @@ func setupLocalWorktreeBaseForWorkspaceGitTest(
 		t, repo, "remote", "add", "origin",
 		"https://github.com/acme/widget.git",
 	)
+	runWorkspaceTestGit(
+		t, repo, "config", "--add",
+		"url."+remote+".insteadOf", "https://github.com/acme/widget.git",
+	)
 	require.NoError(t, os.WriteFile(
 		filepath.Join(repo, "base.txt"), []byte("base\n"), 0o644,
 	))
 	runWorkspaceTestGit(t, repo, "add", ".")
 	runWorkspaceTestGit(t, repo, "commit", "-m", "base commit")
+	runWorkspaceTestGit(t, repo, "push", "origin", "HEAD:refs/heads/main")
+	runWorkspaceTestGit(t, remote, "symbolic-ref", "HEAD", "refs/heads/main")
+	runWorkspaceTestGit(t, repo, "push", "origin", "HEAD:refs/heads/"+branch)
+	runWorkspaceTestGit(t, repo, "fetch", "--prune", "origin")
 	runWorkspaceTestGit(
 		t, repo, "update-ref", "refs/remotes/origin/"+branch, "HEAD",
 	)
-	return repo
+	return repo, remote
 }
 
 func setupRemoteForForkPRWorktreeTest(
@@ -3260,7 +3381,7 @@ func TestManagerAddWorktreeAcquiresRepoLock(t *testing.T) {
 	}
 	done := make(chan error, 1)
 	go func() {
-		_, err := mgr.addWorktree(t.Context(), cloneDir, ws)
+		_, err := mgr.addWorktree(t.Context(), cloneDir, false, ws)
 		done <- err
 	}()
 

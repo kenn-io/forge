@@ -420,8 +420,9 @@ name = "widget"
 	localRepo := setupSettingsLocalGitRepo(t)
 	runSettingsGit(
 		t, localRepo,
-		"update-ref", "refs/remotes/origin/feature/thing", "HEAD",
+		"push", "origin", "HEAD:refs/heads/feature/thing",
 	)
+	runSettingsGit(t, localRepo, "fetch", "--prune", "origin")
 
 	updateResp := doServerJSON(
 		t, ts.Client(), http.MethodPut,
@@ -518,7 +519,9 @@ name = "widget-*"
 func setupSettingsLocalGitRepo(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
+	remote := filepath.Join(root, "remote.git")
 	repo := filepath.Join(root, "widget")
+	runSettingsGit(t, root, "init", "--bare", "--initial-branch=main", remote)
 	runSettingsGit(t, root, "init", "--initial-branch=main", repo)
 	runSettingsGit(t, repo, "config", "user.email", "test@example.com")
 	runSettingsGit(t, repo, "config", "user.name", "Test")
@@ -526,11 +529,17 @@ func setupSettingsLocalGitRepo(t *testing.T) string {
 		t, repo, "remote", "add", "origin",
 		"https://github.com/acme/widget.git",
 	)
+	runSettingsGit(
+		t, repo, "config", "--add",
+		"url."+remote+".insteadOf", "https://github.com/acme/widget.git",
+	)
 	require.NoError(t, os.WriteFile(
 		filepath.Join(repo, "README.md"), []byte("test\n"), 0o644,
 	))
 	runSettingsGit(t, repo, "add", ".")
 	runSettingsGit(t, repo, "commit", "-m", "initial commit")
+	runSettingsGit(t, repo, "push", "origin", "HEAD:refs/heads/main")
+	runSettingsGit(t, remote, "symbolic-ref", "HEAD", "refs/heads/main")
 	return repo
 }
 

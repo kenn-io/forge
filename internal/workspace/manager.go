@@ -632,8 +632,12 @@ func ValidateWorktreeBasePath(
 	if !stat.IsDir() {
 		return "", fmt.Errorf("path is not a directory: %s", abs)
 	}
-	if err := runGit(ctx, abs, "rev-parse", "--is-inside-work-tree"); err != nil {
+	insideWorkTree, err := gitOutput(ctx, abs, "rev-parse", "--is-inside-work-tree")
+	if err != nil {
 		return "", fmt.Errorf("path is not a git worktree: %w", err)
+	}
+	if strings.TrimSpace(insideWorkTree) != "true" {
+		return "", fmt.Errorf("path is not a git worktree: %s", abs)
 	}
 	remoteURL, err := gitConfigValue(ctx, abs, "remote.origin.url")
 	if err != nil {
@@ -643,6 +647,9 @@ func ValidateWorktreeBasePath(
 		return "", fmt.Errorf("origin remote must include a forge host and repository path")
 	}
 	if err := validateNoExecutableLocalGitConfig(ctx, abs); err != nil {
+		return "", err
+	}
+	if err := validateOriginFetchRefspec(ctx, abs); err != nil {
 		return "", err
 	}
 	if err := gitremote.ValidateRemoteIdentity(gitremote.Identity{
@@ -674,6 +681,7 @@ func validateNoExecutableLocalGitConfig(ctx context.Context, dir string) error {
 func localGitConfigKeyMayExecute(key string) bool {
 	key = strings.ToLower(strings.TrimSpace(key))
 	return key == "core.fsmonitor" ||
+		key == "core.alternaterefscommand" ||
 		key == "core.askpass" ||
 		key == "core.sshcommand" ||
 		key == "credential.helper" ||
@@ -690,6 +698,49 @@ func localGitConfigKeyMayExecute(key string) bool {
 			strings.HasSuffix(key, ".path")) ||
 		(strings.HasPrefix(key, "protocol.") &&
 			strings.HasSuffix(key, ".allow"))
+}
+
+func validateOriginFetchRefspec(ctx context.Context, dir string) error {
+	values, err := gitConfigValues(ctx, dir, "remote.origin.fetch")
+	if err != nil {
+		return fmt.Errorf("read origin fetch refspec: %w", err)
+	}
+	for _, value := range values {
+		switch strings.TrimSpace(value) {
+		case "+refs/heads/*:refs/remotes/origin/*",
+			"refs/heads/*:refs/remotes/origin/*":
+		default:
+			return fmt.Errorf(
+				"origin fetch refspec %q may update unsafe refs",
+				value,
+			)
+		}
+	}
+	return nil
+}
+
+func gitConfigValues(ctx context.Context, dir, key string) ([]string, error) {
+	cmd := workspaceGitCommand(ctx, dir, "config", "--get-all", key)
+	out, err := procutil.CombinedOutput(
+		ctx, cmd, "git subprocess capacity",
+	)
+	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+			return nil, nil
+		}
+		return nil, fmt.Errorf(
+			"%w: %s", err, strings.TrimSpace(string(out)),
+		)
+	}
+	var values []string
+	for line := range strings.SplitSeq(string(out), "\n") {
+		value := strings.TrimSpace(line)
+		if value != "" {
+			values = append(values, value)
+		}
+	}
+	return values, nil
 }
 
 func localGitConfigKeys(ctx context.Context, dir string) ([]string, error) {
@@ -2238,7 +2289,11 @@ func runGit(ctx context.Context, dir string, args ...string) error {
 }
 
 func fetchWorkspaceBase(ctx context.Context, dir string) error {
-	if err := runGit(ctx, dir, "fetch", "--prune", "origin"); err != nil {
+	if err := runGit(
+		ctx, dir,
+		"fetch", "--prune", "origin",
+		"+refs/heads/*:refs/remotes/origin/*",
+	); err != nil {
 		return fmt.Errorf("fetch configured worktree base: %w", err)
 	}
 	if err := refreshWorkspaceBaseOriginHead(ctx, dir); err != nil {

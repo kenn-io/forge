@@ -577,6 +577,7 @@ func TestValidateWorktreeBasePathRejectsExecutableLocalConfig(t *testing.T) {
 		{name: "filter smudge", key: "filter.demo.smudge", value: "demo-smudge"},
 		{name: "filter clean", key: "filter.demo.clean", value: "demo-clean"},
 		{name: "fsmonitor", key: "core.fsmonitor", value: "demo-fsmonitor"},
+		{name: "alternate refs command", key: "core.alternateRefsCommand", value: "demo-alternates"},
 		{name: "askpass", key: "core.askPass", value: "demo-askpass"},
 		{name: "ssh command", key: "core.sshCommand", value: "demo-ssh"},
 		{name: "credential helper", key: "credential.helper", value: "!demo-helper"},
@@ -602,6 +603,52 @@ func TestValidateWorktreeBasePathRejectsExecutableLocalConfig(t *testing.T) {
 			assert.Contains(err.Error(), "may execute or rewrite git commands")
 		})
 	}
+}
+
+func TestValidateWorktreeBasePathRejectsUnsafeOriginFetchRefspec(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	localRepo := setupLocalWorktreeBaseForWorkspaceGitTest(t, "feature/thing")
+	runWorkspaceTestGit(
+		t, localRepo,
+		"config", "--unset-all", "remote.origin.fetch",
+	)
+	runWorkspaceTestGit(
+		t, localRepo,
+		"config", "--add", "remote.origin.fetch",
+		"+refs/heads/*:refs/heads/*",
+	)
+
+	got, err := ValidateWorktreeBasePath(
+		t.Context(), localRepo, "github.com", "acme", "widget",
+	)
+
+	require.Empty(got)
+	require.Error(err)
+	assert.Contains(err.Error(), "origin fetch refspec")
+	assert.Contains(err.Error(), "may update unsafe refs")
+}
+
+func TestValidateWorktreeBasePathRejectsBareRepositories(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	dir := t.TempDir()
+	bareRepo := filepath.Join(dir, "repo.git")
+	runWorkspaceTestGit(t, dir, "init", "--bare", bareRepo)
+	runWorkspaceTestGit(
+		t, bareRepo, "config", "remote.origin.url",
+		"https://github.com/acme/widget.git",
+	)
+
+	got, err := ValidateWorktreeBasePath(
+		t.Context(), bareRepo, "github.com", "acme", "widget",
+	)
+
+	require.Empty(got)
+	require.Error(err)
+	assert.Contains(err.Error(), "path is not a git worktree")
 }
 
 func TestValidateWorktreeBasePathRejectsExecutableWorktreeConfig(t *testing.T) {

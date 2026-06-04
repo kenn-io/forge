@@ -7885,6 +7885,58 @@ func TestAPIGetIssueWorkspaceUsesProviderScopedLookup(t *testing.T) {
 	}
 }
 
+func TestAPICreateWorkspaceRejectsEmptyProviderForAmbiguousRepo(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := t.Context()
+
+	srv, database := setupTestServer(t)
+	srv.workspaces = workspace.NewManager(database, t.TempDir())
+	for _, provider := range []string{"github", "gitlab"} {
+		repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
+			Platform:     provider,
+			PlatformHost: "forge.example.com",
+			Owner:        "acme",
+			Name:         "widget",
+		})
+		require.NoError(err)
+		_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
+			RepoID:         repoID,
+			PlatformID:     int64(len(provider)) * 1000,
+			Number:         7,
+			URL:            "https://forge.example.com/acme/widget/pull/7",
+			Title:          provider + " PR",
+			Author:         "testuser",
+			State:          "open",
+			HeadBranch:     "feature",
+			BaseBranch:     "main",
+			CreatedAt:      time.Now().UTC().Truncate(time.Second),
+			UpdatedAt:      time.Now().UTC().Truncate(time.Second),
+			LastActivityAt: time.Now().UTC().Truncate(time.Second),
+		})
+		require.NoError(err)
+	}
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			Provider:     "",
+			PlatformHost: "forge.example.com",
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     7,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusBadRequest, resp.StatusCode(), string(resp.Body))
+
+	var problem rawProblemDetail
+	require.NoError(json.Unmarshal(resp.Body, &problem))
+	assert.Equal("validationError", problem.Code)
+	assert.Equal("body.provider", problem.Details["field"])
+}
+
 func TestAPISyncIssueUsesPlatformHostQuery(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)

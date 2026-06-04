@@ -3992,6 +3992,40 @@ func TestGetRepoByHostOwnerNameUsesLookupKeysForNonGitHubRows(t *testing.T) {
 	assert.Equal("projectname", repo.NameKey)
 }
 
+func TestCountReposByHostOwnerNameCountsProviders(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+
+	_, err := d.UpsertRepo(ctx, RepoIdentity{
+		Platform:     "github",
+		PlatformHost: "forge.example.com",
+		Owner:        "acme",
+		Name:         "widget",
+	})
+	require.NoError(err)
+	_, err = d.UpsertRepo(ctx, RepoIdentity{
+		Platform:     "gitlab",
+		PlatformHost: "forge.example.com",
+		Owner:        "acme",
+		Name:         "widget",
+	})
+	require.NoError(err)
+
+	count, err := d.CountReposByHostOwnerName(
+		ctx, "forge.example.com", "acme", "widget",
+	)
+	require.NoError(err)
+	assert.Equal(2, count)
+
+	miss, err := d.CountReposByHostOwnerName(
+		ctx, "forge.example.com", "acme", "missing",
+	)
+	require.NoError(err)
+	assert.Equal(0, miss)
+}
+
 func TestRepoIdentifierCasefoldTriggers(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)

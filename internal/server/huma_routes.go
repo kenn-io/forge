@@ -4646,10 +4646,14 @@ func (s *Server) createWorkspace(
 	if s.workspaces == nil {
 		return nil, problemServiceUnavailable("workspace manager not configured")
 	}
+	provider, err := s.createWorkspaceProvider(ctx, input)
+	if err != nil {
+		return nil, err
+	}
 
 	ws, err := s.workspaces.Create(
 		ctx,
-		input.Body.Provider,
+		provider,
 		input.Body.PlatformHost,
 		input.Body.Owner,
 		input.Body.Name,
@@ -4682,6 +4686,41 @@ func (s *Server) createWorkspace(
 		Status: http.StatusAccepted,
 		Body:   s.toWorkspaceResponse(ctx, summary),
 	}, nil
+}
+
+func (s *Server) createWorkspaceProvider(
+	ctx context.Context, input *createWorkspaceInput,
+) (string, error) {
+	provider := strings.TrimSpace(input.Body.Provider)
+	if provider != "" {
+		kind, err := platform.NormalizeKind(provider)
+		if err != nil {
+			return "", problemValidation("body.provider", err.Error())
+		}
+		return string(kind), nil
+	}
+	count, err := s.db.CountReposByHostOwnerName(
+		ctx, input.Body.PlatformHost, input.Body.Owner, input.Body.Name,
+	)
+	if err != nil {
+		return "", problemInternal("count matching repos: " + err.Error())
+	}
+	if count > 1 {
+		return "", problemValidation(
+			"body.provider",
+			"provider is required when multiple providers share this host and repository",
+		)
+	}
+	repo, err := s.db.GetRepoByHostOwnerName(
+		ctx, input.Body.PlatformHost, input.Body.Owner, input.Body.Name,
+	)
+	if err != nil {
+		return "", problemInternal("lookup workspace repo: " + err.Error())
+	}
+	if repo == nil {
+		return "", nil
+	}
+	return repo.Platform, nil
 }
 
 func (s *Server) runWorkspaceSetup(ws *workspace.Workspace) {

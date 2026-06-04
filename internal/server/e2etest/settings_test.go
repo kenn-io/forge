@@ -497,6 +497,57 @@ name = "widget"
 	assert.Contains(listOutput, "worktree "+canonicalWorktreePath)
 }
 
+func TestWorkspaceAPIE2ERejectsEmptyProviderForAmbiguousRepo(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+
+	database := dbtest.Open(t)
+	syncer := github.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
+	t.Cleanup(syncer.Stop)
+	srv := server.New(
+		database, syncer, nil, "/", nil,
+		server.ServerOptions{WorktreeDir: filepath.Join(t.TempDir(), "workspaces")},
+	)
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	for _, provider := range []string{"github", "gitlab"} {
+		repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
+			Platform:     provider,
+			PlatformHost: "forge.example.com",
+			Owner:        "acme",
+			Name:         "widget",
+		})
+		require.NoError(err)
+		seedSettingsWorkspaceMR(t, database, repoID, 7, "feature")
+	}
+	client, err := generated.NewClientWithResponses(ts.URL + "/api/v1")
+	require.NoError(err)
+
+	resp, err := client.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			Provider:     "",
+			PlatformHost: "forge.example.com",
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     7,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusBadRequest, resp.StatusCode(), string(resp.Body))
+
+	var problem struct {
+		Code    string         `json:"code"`
+		Details map[string]any `json:"details"`
+	}
+	require.NoError(json.Unmarshal(resp.Body, &problem))
+	assert.Equal("validationError", problem.Code)
+	assert.Equal("body.provider", problem.Details["field"])
+}
+
 func TestRepoConfigAPIE2EDeleteReusedIssueBranchKeepsLocalBranch(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

@@ -4334,6 +4334,26 @@ func (d *DB) GetRepoByHostOwnerName(
 	return &r, nil
 }
 
+// CountReposByHostOwnerName returns how many provider identities share a
+// host/owner/name lookup key.
+func (d *DB) CountReposByHostOwnerName(
+	ctx context.Context,
+	host, owner, name string,
+) (int, error) {
+	host, owner, name = canonicalRepoIdentifier(host, owner, name)
+	var count int
+	err := d.ro.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM middleman_repos
+		WHERE platform_host = ? AND owner_key = ? AND name_key = ?`,
+		host, owner, name,
+	).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("count repos by host/owner/name: %w", err)
+	}
+	return count, nil
+}
+
 // --- Workspaces ---
 
 func canonicalWorkspacePlatform(provider string) string {

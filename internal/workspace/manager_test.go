@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -1007,6 +1008,26 @@ func TestFetchWorkspaceBaseRequiresOriginHeadOnlyForIssueWorkspaces(t *testing.T
 
 	require.NoError(fetchWorkspaceBase(t.Context(), localRepo, false))
 	require.Error(fetchWorkspaceBase(t.Context(), localRepo, true))
+}
+
+func TestFetchWorkspaceBaseConstrainsNegotiationTips(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	var calls [][]string
+	run := func(_ context.Context, _ string, args ...string) error {
+		calls = append(calls, slices.Clone(args))
+		return nil
+	}
+
+	require.NoError(fetchWorkspaceBaseWithGit(
+		t.Context(), run, t.TempDir(), false,
+	))
+	require.NotEmpty(calls)
+	fetchArgs := calls[0]
+	assert.Contains(fetchArgs, "--negotiation-tip=refs/remotes/origin/*")
+	assert.Contains(fetchArgs, "--recurse-submodules=no")
+	assert.Contains(fetchArgs, "--no-tags")
 }
 
 func TestCleanupUsesExistingWorktreeGitDirWhenConfiguredBaseChanges(t *testing.T) {

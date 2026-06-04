@@ -886,8 +886,9 @@ func (m *Manager) addWorktree(
 	var branch string
 	err := m.withRepoLockForGitDir(ctx, cloneDir, func() error {
 		if refreshBeforeAdd {
-			if err := fetchWorkspaceBase(
-				ctx, cloneDir, ws.ItemType == db.WorkspaceItemTypeIssue,
+			if err := m.fetchWorkspaceBase(
+				ctx, cloneDir, ws.PlatformHost,
+				ws.ItemType == db.WorkspaceItemTypeIssue,
 			); err != nil {
 				return err
 			}
@@ -2402,14 +2403,44 @@ func runGit(ctx context.Context, dir string, args ...string) error {
 }
 
 func fetchWorkspaceBase(ctx context.Context, dir string, requireOriginHead bool) error {
-	if err := runGit(
+	return fetchWorkspaceBaseWithGit(ctx, runGit, dir, requireOriginHead)
+}
+
+func (m *Manager) fetchWorkspaceBase(
+	ctx context.Context,
+	dir, platformHost string,
+	requireOriginHead bool,
+) error {
+	run := runGit
+	if m.clones != nil {
+		run = func(ctx context.Context, dir string, args ...string) error {
+			out, err := m.clones.RunGit(ctx, platformHost, dir, args...)
+			if err != nil {
+				return fmt.Errorf(
+					"%w: %s", err, strings.TrimSpace(string(out)),
+				)
+			}
+			return nil
+		}
+	}
+	return fetchWorkspaceBaseWithGit(ctx, run, dir, requireOriginHead)
+}
+
+func fetchWorkspaceBaseWithGit(
+	ctx context.Context,
+	run func(context.Context, string, ...string) error,
+	dir string,
+	requireOriginHead bool,
+) error {
+	if err := run(
 		ctx, dir,
-		"fetch", "--prune", "--no-tags", "--recurse-submodules=no", "origin",
+		"fetch", "--prune", "--no-tags", "--recurse-submodules=no",
+		"--negotiation-tip=refs/remotes/origin/*", "origin",
 		"+refs/heads/*:refs/remotes/origin/*",
 	); err != nil {
 		return fmt.Errorf("fetch configured worktree base: %w", err)
 	}
-	if err := refreshWorkspaceBaseOriginHead(ctx, dir); err != nil {
+	if err := refreshWorkspaceBaseOriginHeadWithGit(ctx, run, dir); err != nil {
 		if !requireOriginHead {
 			return nil
 		}
@@ -2419,7 +2450,15 @@ func fetchWorkspaceBase(ctx context.Context, dir string, requireOriginHead bool)
 }
 
 func refreshWorkspaceBaseOriginHead(ctx context.Context, dir string) error {
-	setHeadErr := runGit(ctx, dir, "remote", "set-head", "origin", "-a")
+	return refreshWorkspaceBaseOriginHeadWithGit(ctx, runGit, dir)
+}
+
+func refreshWorkspaceBaseOriginHeadWithGit(
+	ctx context.Context,
+	run func(context.Context, string, ...string) error,
+	dir string,
+) error {
+	setHeadErr := run(ctx, dir, "remote", "set-head", "origin", "-a")
 	if setHeadErr == nil {
 		return nil
 	}
@@ -2429,7 +2468,7 @@ func refreshWorkspaceBaseOriginHead(ctx context.Context, dir string) error {
 	for _, branch := range []string{"main", "master"} {
 		ref := "refs/remotes/origin/" + branch
 		if gitRefExists(ctx, dir, ref) {
-			if err := runGit(
+			if err := run(
 				ctx, dir, "symbolic-ref",
 				"refs/remotes/origin/HEAD", ref,
 			); err != nil {

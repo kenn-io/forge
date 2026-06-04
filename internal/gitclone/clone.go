@@ -335,6 +335,14 @@ func (m *Manager) git(
 	return m.gitWithInput(ctx, dir, nil, args...)
 }
 
+// RunGit runs a Git command with the same host-scoped authentication and
+// automation defaults as managed clone operations.
+func (m *Manager) RunGit(
+	ctx context.Context, host, dir string, args ...string,
+) ([]byte, error) {
+	return m.git(ctx, host, dir, args...)
+}
+
 func (m *Manager) gitWithInput(
 	ctx context.Context, dir string, input []byte, args ...string,
 ) ([]byte, error) {

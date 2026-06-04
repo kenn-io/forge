@@ -522,6 +522,22 @@
     window.addEventListener("keydown", handleKeydown);
     return () => window.removeEventListener("keydown", handleKeydown);
   });
+
+  $effect(() => {
+    const area = diffArea;
+    if (!area) return;
+
+    area.tabIndex = -1;
+    area.addEventListener("wheel", onDiffUserScrollIntent);
+    area.addEventListener("touchstart", onDiffUserScrollIntent);
+    area.addEventListener("pointerdown", onDiffUserScrollIntent);
+
+    return () => {
+      area.removeEventListener("wheel", onDiffUserScrollIntent);
+      area.removeEventListener("touchstart", onDiffUserScrollIntent);
+      area.removeEventListener("pointerdown", onDiffUserScrollIntent);
+    };
+  });
 </script>
 
 <div class="diff-view">
@@ -551,12 +567,8 @@
           class:diff-area--word-wrap={wordWrap}
           bind:this={diffArea}
           onscroll={onDiffScroll}
-          onwheel={onDiffUserScrollIntent}
-          ontouchstart={onDiffUserScrollIntent}
-          onpointerdown={onDiffUserScrollIntent}
           role="region"
           aria-label="Changed file diffs"
-          tabindex="-1"
           style:tab-size={tabWidth}
         >
           <div class="diff-content" bind:this={diffContent}>

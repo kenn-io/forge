@@ -7885,6 +7885,90 @@ func TestAPIGetIssueWorkspaceUsesProviderScopedLookup(t *testing.T) {
 	}
 }
 
+func TestAPIGetPRWorkspaceUsesProviderScopedLookup(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := t.Context()
+
+	database := dbtest.Open(t)
+	for _, provider := range []string{"github", "gitlab"} {
+		repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
+			Platform:     provider,
+			PlatformHost: "forge.example.com",
+			Owner:        "acme",
+			Name:         "widget",
+		})
+		require.NoError(err)
+		_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
+			RepoID:         repoID,
+			PlatformID:     int64(len(provider)) * 1000,
+			Number:         7,
+			URL:            "https://forge.example.com/acme/widget/pull/7",
+			Title:          provider + " PR",
+			Author:         "testuser",
+			State:          "open",
+			HeadBranch:     "feature",
+			BaseBranch:     "main",
+			CreatedAt:      time.Now().UTC().Truncate(time.Second),
+			UpdatedAt:      time.Now().UTC().Truncate(time.Second),
+			LastActivityAt: time.Now().UTC().Truncate(time.Second),
+		})
+		require.NoError(err)
+	}
+	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
+		ID:              "github-pr-workspace",
+		Platform:        "github",
+		PlatformHost:    "forge.example.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		ItemType:        db.WorkspaceItemTypePullRequest,
+		ItemNumber:      7,
+		GitHeadRef:      "feature",
+		WorkspaceBranch: "middleman/pr-7",
+		WorktreePath:    filepath.Join(t.TempDir(), "github"),
+		TmuxSession:     "github-pr-workspace",
+		Status:          "ready",
+	}))
+	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
+		ID:              "gitlab-pr-workspace",
+		Platform:        "gitlab",
+		PlatformHost:    "forge.example.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		ItemType:        db.WorkspaceItemTypePullRequest,
+		ItemNumber:      7,
+		GitHeadRef:      "feature",
+		WorkspaceBranch: "middleman/pr-7",
+		WorktreePath:    filepath.Join(t.TempDir(), "gitlab"),
+		TmuxSession:     "gitlab-pr-workspace",
+		Status:          "ready",
+	}))
+
+	syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
+	t.Cleanup(syncer.Stop)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	srv.workspaces = workspace.NewManager(database, t.TempDir())
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/api/v1/host/forge.example.com/pulls/gitlab/acme/widget/7",
+		nil,
+	)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	var body mergeRequestDetailResponse
+	require.NoError(json.Unmarshal(rr.Body.Bytes(), &body))
+	if assert.NotNil(body.Workspace) {
+		assert.Equal("gitlab-pr-workspace", body.Workspace.ID)
+	}
+	if assert.NotNil(body.MergeRequest) {
+		assert.Equal("gitlab PR", body.MergeRequest.Title)
+	}
+}
+
 func TestAPICreateWorkspaceRejectsEmptyProviderForAmbiguousRepo(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)
@@ -7917,11 +8001,12 @@ func TestAPICreateWorkspaceRejectsEmptyProviderForAmbiguousRepo(t *testing.T) {
 		require.NoError(err)
 	}
 	client := setupTestClient(t, srv)
+	provider := ""
 
 	resp, err := client.HTTP.CreateWorkspaceWithResponse(
 		ctx,
 		generated.CreateWorkspaceInputBody{
-			Provider:     "",
+			Provider:     &provider,
 			PlatformHost: "forge.example.com",
 			Owner:        "acme",
 			Name:         "widget",
@@ -7935,6 +8020,49 @@ func TestAPICreateWorkspaceRejectsEmptyProviderForAmbiguousRepo(t *testing.T) {
 	require.NoError(json.Unmarshal(resp.Body, &problem))
 	assert.Equal("validationError", problem.Code)
 	assert.Equal("body.provider", problem.Details["field"])
+}
+
+func TestAPICreateWorkspaceAllowsOmittedProviderForUnambiguousRepo(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+
+	srv, database := setupTestServer(t)
+	srv.workspaces = workspace.NewManager(database, t.TempDir())
+	repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
+		Platform:     "github",
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+	})
+	require.NoError(err)
+	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:         repoID,
+		PlatformID:     7000,
+		Number:         7,
+		URL:            "https://github.com/acme/widget/pull/7",
+		Title:          "github PR",
+		Author:         "testuser",
+		State:          "open",
+		HeadBranch:     "feature",
+		BaseBranch:     "main",
+		CreatedAt:      time.Now().UTC().Truncate(time.Second),
+		UpdatedAt:      time.Now().UTC().Truncate(time.Second),
+		LastActivityAt: time.Now().UTC().Truncate(time.Second),
+	})
+	require.NoError(err)
+
+	payload := strings.NewReader(`{
+		"platform_host": "github.com",
+		"owner": "acme",
+		"name": "widget",
+		"mr_number": 7
+	}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces", payload)
+	req.Header.Set("content-type", "application/json")
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	require.Equal(http.StatusAccepted, rr.Code, rr.Body.String())
 }
 
 func TestAPISyncIssueUsesPlatformHostQuery(t *testing.T) {

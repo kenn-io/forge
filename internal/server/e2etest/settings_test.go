@@ -525,11 +525,12 @@ func TestWorkspaceAPIE2ERejectsEmptyProviderForAmbiguousRepo(t *testing.T) {
 	}
 	client, err := generated.NewClientWithResponses(ts.URL + "/api/v1")
 	require.NoError(err)
+	provider := ""
 
 	resp, err := client.CreateWorkspaceWithResponse(
 		ctx,
 		generated.CreateWorkspaceInputBody{
-			Provider:     "",
+			Provider:     &provider,
 			PlatformHost: "forge.example.com",
 			Owner:        "acme",
 			Name:         "widget",

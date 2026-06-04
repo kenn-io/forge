@@ -1396,6 +1396,41 @@ func TestAddWorktreeUsesFallbackWhenLocalBasePreferredBranchCheckedOut(t *testin
 	assert.Equal(originSHA, headSHA)
 }
 
+func TestLocalBaseExistingPRBranchIsNotDeletedOnCleanup(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	const branch = "feature/thing"
+	localRepo := setupLocalWorktreeBaseForWorkspaceGitTest(t, branch)
+	runWorkspaceTestGit(t, localRepo, "branch", branch, "refs/remotes/origin/"+branch)
+	mgr := NewManager(openTestDB(t), t.TempDir())
+	ws := &Workspace{
+		ID:              "ws-existing-local-pr-branch",
+		Platform:        "github",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		ItemType:        db.WorkspaceItemTypePullRequest,
+		ItemNumber:      42,
+		GitHeadRef:      branch,
+		WorkspaceBranch: workspaceBranchUnknown,
+		WorktreePath:    filepath.Join(t.TempDir(), "worktree"),
+		TmuxSession:     "ws-existing-local-pr-branch",
+		Status:          "ready",
+	}
+
+	managedBranch, err := mgr.addWorktreeLocked(t.Context(), localRepo, true, ws)
+	require.NoError(err)
+	require.Empty(managedBranch)
+	ws.WorkspaceBranch = managedBranch
+
+	require.NoError(mgr.cleanupWorkspaceArtifactsForDelete(t.Context(), ws))
+
+	exists, err := localBranchExists(t.Context(), localRepo, branch)
+	require.NoError(err)
+	assert.True(exists)
+}
+
 func TestAddPreferredWorktreeHeadRepoRouting(t *testing.T) {
 	type worktreeExpectation struct {
 		headSHA  string

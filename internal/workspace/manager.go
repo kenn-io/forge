@@ -1076,6 +1076,9 @@ func (m *Manager) addPreferredWorktree(
 		return "", fmt.Errorf("configure branch upstream: %w", err)
 	}
 
+	// The branch already existed before this workspace was materialized. Return
+	// an empty managed branch so rollback, retry, and delete cleanup remove only
+	// the worktree and never delete the user's pre-existing local branch.
 	return "", nil
 }
 
@@ -1570,6 +1573,18 @@ func (m *Manager) GetByMR(
 ) (*Workspace, error) {
 	return m.db.GetWorkspaceByMR(
 		ctx, platformHost, owner, name, mrNumber,
+	)
+}
+
+// GetByMRForProvider returns the workspace for a specific provider-scoped MR,
+// or nil.
+func (m *Manager) GetByMRForProvider(
+	ctx context.Context,
+	provider, platformHost, owner, name string,
+	mrNumber int,
+) (*Workspace, error) {
+	return m.db.GetWorkspaceByMRForProvider(
+		ctx, provider, platformHost, owner, name, mrNumber,
 	)
 }
 

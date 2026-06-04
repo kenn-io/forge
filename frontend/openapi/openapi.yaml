@@ -690,7 +690,6 @@ components:
         provider:
           type: string
       required:
-        - provider
         - platform_host
         - owner
         - name

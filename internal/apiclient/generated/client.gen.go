@@ -695,7 +695,7 @@ type CreateWorkspaceInputBody struct {
 	Name         string  `json:"name"`
 	Owner        string  `json:"owner"`
 	PlatformHost string  `json:"platform_host"`
-	Provider     string  `json:"provider"`
+	Provider     *string `json:"provider,omitempty"`
 }
 
 // CreateWorktreeFromMergeRequestInputBody defines model for CreateWorktreeFromMergeRequestInputBody.

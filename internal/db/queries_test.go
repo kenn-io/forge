@@ -4295,6 +4295,65 @@ func TestGetWorkspaceByIssueForProviderDisambiguatesProvider(t *testing.T) {
 	assert.Nil(miss)
 }
 
+func TestGetWorkspaceByMRForProviderDisambiguatesProvider(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+
+	for _, provider := range []string{"github", "gitlab"} {
+		_, err := d.UpsertRepo(ctx, RepoIdentity{
+			Platform:     provider,
+			PlatformHost: "forge.example.com",
+			Owner:        "acme",
+			Name:         "widget",
+		})
+		require.NoError(err)
+	}
+	require.NoError(d.InsertWorkspace(ctx, &Workspace{
+		ID:              "github-pr-workspace",
+		Platform:        "github",
+		PlatformHost:    "forge.example.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		ItemType:        WorkspaceItemTypePullRequest,
+		ItemNumber:      7,
+		GitHeadRef:      "feature",
+		WorkspaceBranch: "middleman/pr-7",
+		WorktreePath:    "/tmp/github-pr-workspace",
+		TmuxSession:     "github-pr-workspace",
+		Status:          "ready",
+	}))
+	require.NoError(d.InsertWorkspace(ctx, &Workspace{
+		ID:              "gitlab-pr-workspace",
+		Platform:        "gitlab",
+		PlatformHost:    "forge.example.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		ItemType:        WorkspaceItemTypePullRequest,
+		ItemNumber:      7,
+		GitHeadRef:      "feature",
+		WorkspaceBranch: "middleman/pr-7",
+		WorktreePath:    "/tmp/gitlab-pr-workspace",
+		TmuxSession:     "gitlab-pr-workspace",
+		Status:          "ready",
+	}))
+
+	got, err := d.GetWorkspaceByMRForProvider(
+		ctx, "gitlab", "forge.example.com", "acme", "widget", 7,
+	)
+	require.NoError(err)
+	require.NotNil(got)
+	assert.Equal("gitlab-pr-workspace", got.ID)
+	assert.Equal("gitlab", got.Platform)
+
+	miss, err := d.GetWorkspaceByMRForProvider(
+		ctx, "forgejo", "forge.example.com", "acme", "widget", 7,
+	)
+	require.NoError(err)
+	assert.Nil(miss)
+}
+
 func TestFreshWorkspaceRuntimeSessionSchemaIncludesTmuxSession(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

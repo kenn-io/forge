@@ -4466,6 +4466,27 @@ func (d *DB) GetWorkspaceByMR(
 	platformHost, owner, name string,
 	mrNumber int,
 ) (*Workspace, error) {
+	return d.getWorkspaceByMR(ctx, "", platformHost, owner, name, mrNumber)
+}
+
+// GetWorkspaceByMRForProvider returns the workspace for a specific MR within a
+// provider identity, or nil if not found.
+func (d *DB) GetWorkspaceByMRForProvider(
+	ctx context.Context,
+	provider, platformHost, owner, name string,
+	mrNumber int,
+) (*Workspace, error) {
+	return d.getWorkspaceByMR(
+		ctx, provider, platformHost, owner, name, mrNumber,
+	)
+}
+
+func (d *DB) getWorkspaceByMR(
+	ctx context.Context,
+	provider, platformHost, owner, name string,
+	mrNumber int,
+) (*Workspace, error) {
+	provider = strings.ToLower(strings.TrimSpace(provider))
 	platformHost, owner, name = canonicalRepoLookupIdentifier(platformHost, owner, name)
 	var ws Workspace
 	err := d.ro.QueryRowContext(ctx, `
@@ -4474,10 +4495,12 @@ func (d *DB) GetWorkspaceByMR(
 		       git_head_ref, mr_head_repo, workspace_branch,
 		       worktree_path, tmux_session, terminal_backend, status,
 		       error_message, created_at
-		FROM middleman_workspaces
-		WHERE platform_host = ? AND repo_owner_key = ?
-		  AND repo_name_key = ? AND item_type = ? AND item_number = ?`,
+			FROM middleman_workspaces
+			WHERE platform_host = ? AND repo_owner_key = ?
+			  AND repo_name_key = ? AND item_type = ? AND item_number = ?
+			  AND (? = '' OR platform = ?)`,
 		platformHost, owner, name, WorkspaceItemTypePullRequest, mrNumber,
+		provider, provider,
 	).Scan(
 		&ws.ID, &ws.Platform, &ws.PlatformHost, &ws.RepoOwner, &ws.RepoName,
 		&ws.ItemType, &ws.ItemNumber, &ws.AssociatedPRNumber,

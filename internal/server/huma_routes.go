@@ -447,7 +447,7 @@ type getStackForPROutput = bodyOutput[stackContextResponse]
 
 type createWorkspaceInput struct {
 	Body struct {
-		Provider     string `json:"provider"`
+		Provider     string `json:"provider,omitempty"`
 		PlatformHost string `json:"platform_host"`
 		Owner        string `json:"owner"`
 		Name         string `json:"name"`
@@ -1481,8 +1481,9 @@ func (s *Server) buildPullDetailResponse(
 	resp.MergeRequest = &responseMR
 
 	if s.workspaces != nil {
-		wsRef, wsErr := s.workspaces.GetByMR(
-			ctx, repo.PlatformHost, repo.Owner, repo.Name, mr.Number,
+		wsRef, wsErr := s.workspaces.GetByMRForProvider(
+			ctx, repo.Platform, repo.PlatformHost, repo.Owner, repo.Name,
+			mr.Number,
 		)
 		if wsErr == nil && wsRef != nil {
 			resp.Workspace = &workspaceRef{

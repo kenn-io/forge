@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/url"
 	"os"
 	"os/exec"
@@ -621,6 +622,14 @@ func ValidateWorktreeBasePath(
 	if err != nil {
 		return "", fmt.Errorf("resolve path: %w", err)
 	}
+	if linkInfo, err := os.Lstat(abs); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "", fmt.Errorf("path does not exist: %s", abs)
+		}
+		return "", fmt.Errorf("lstat path: %w", err)
+	} else if linkInfo.Mode()&os.ModeSymlink != 0 {
+		return "", fmt.Errorf("path must not be a symbolic link: %s", abs)
+	}
 	stat, err := os.Stat(abs)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -703,6 +712,7 @@ func localGitConfigKeyMayExecute(key string) bool {
 		key == "core.sshcommand" ||
 		key == "credential.helper" ||
 		key == "fetch.recursesubmodules" ||
+		strings.HasPrefix(key, "http.") ||
 		key == "submodule.recurse" ||
 		(strings.HasPrefix(key, "credential.") &&
 			strings.HasSuffix(key, ".helper")) ||
@@ -710,6 +720,8 @@ func localGitConfigKeyMayExecute(key string) bool {
 			(strings.HasSuffix(key, ".process") ||
 				strings.HasSuffix(key, ".clean") ||
 				strings.HasSuffix(key, ".smudge"))) ||
+		(strings.HasPrefix(key, "remote.") &&
+			strings.HasSuffix(key, ".proxy")) ||
 		(strings.HasPrefix(key, "url.") &&
 			strings.HasSuffix(key, ".insteadof")) ||
 		key == "include.path" ||
@@ -767,11 +779,26 @@ func originRemoteSchemeAllowed(remoteURL string) bool {
 		return false
 	}
 	switch strings.ToLower(parsed.Scheme) {
-	case "", "http", "https", "ssh":
+	case "", "https", "ssh":
 		return true
+	case "http":
+		return hostIsLoopback(parsed.Host)
 	default:
 		return false
 	}
+}
+
+func hostIsLoopback(hostport string) bool {
+	host := hostport
+	if parsedHost, _, err := net.SplitHostPort(hostport); err == nil {
+		host = parsedHost
+	}
+	host = strings.Trim(strings.ToLower(host), "[]")
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func validateOriginFetchRefspec(ctx context.Context, dir string) error {
@@ -894,7 +921,7 @@ func (m *Manager) addWorktree(
 			}
 		}
 		var addErr error
-		branch, addErr = m.addWorktreeLocked(ctx, cloneDir, ws)
+		branch, addErr = m.addWorktreeLocked(ctx, cloneDir, refreshBeforeAdd, ws)
 		return addErr
 	})
 	return branch, err
@@ -903,12 +930,12 @@ func (m *Manager) addWorktree(
 // addWorktreeLocked runs the worktree-add decision tree. Callers must
 // hold the per-repo lock for cloneDir before invoking this function.
 func (m *Manager) addWorktreeLocked(
-	ctx context.Context, cloneDir string, ws *Workspace,
+	ctx context.Context, cloneDir string, localBase bool, ws *Workspace,
 ) (string, error) {
 	if ws.ItemType == db.WorkspaceItemTypeIssue {
 		return m.addIssueWorktree(ctx, cloneDir, ws)
 	}
-	if branch, err := m.addPreferredWorktree(ctx, cloneDir, ws); err == nil {
+	if branch, err := m.addPreferredWorktree(ctx, cloneDir, localBase, ws); err == nil {
 		return branch, nil
 	} else {
 		fallbackBranch := syntheticPRWorktreeBranch(ws.ItemNumber)
@@ -953,7 +980,7 @@ func (m *Manager) addIssueWorktree(
 }
 
 func (m *Manager) addPreferredWorktree(
-	ctx context.Context, cloneDir string, ws *Workspace,
+	ctx context.Context, cloneDir string, localBase bool, ws *Workspace,
 ) (string, error) {
 	if err := validateLocalBranchName(
 		ctx, cloneDir, ws.GitHeadRef,
@@ -1016,6 +1043,18 @@ func (m *Manager) addPreferredWorktree(
 			"preferred branch %q points at %s, not %s",
 			ws.GitHeadRef, branchSHA, startSHA,
 		)
+	}
+	if localBase {
+		checkedOut, err := localBranchCheckedOut(ctx, cloneDir, ws.GitHeadRef)
+		if err != nil {
+			return "", fmt.Errorf("inspect checked out branch: %w", err)
+		}
+		if checkedOut {
+			return "", fmt.Errorf(
+				"preferred branch %q is already checked out",
+				ws.GitHeadRef,
+			)
+		}
 	}
 
 	if err := runGitWorktreeAdd(

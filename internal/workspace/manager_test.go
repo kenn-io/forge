@@ -584,6 +584,12 @@ func TestValidateWorktreeBasePathRejectsExecutableLocalConfig(t *testing.T) {
 		{name: "ssh command", key: "core.sshCommand", value: "demo-ssh"},
 		{name: "credential helper", key: "credential.helper", value: "!demo-helper"},
 		{name: "fetch recurse submodules", key: "fetch.recurseSubmodules", value: "true"},
+		{name: "http proxy", key: "http.proxy", value: "http://127.0.0.1:1"},
+		{name: "http url proxy", key: "http.https://github.com.proxy", value: "http://127.0.0.1:1"},
+		{name: "http ssl verify", key: "http.sslVerify", value: "false"},
+		{name: "http extra header", key: "http.extraHeader", value: "Authorization: bearer secret"},
+		{name: "http cookie file", key: "http.cookieFile", value: filepath.Join(t.TempDir(), "cookies")},
+		{name: "remote proxy", key: "remote.origin.proxy", value: "http://127.0.0.1:1"},
 		{name: "submodule recurse", key: "submodule.recurse", value: "true"},
 		{name: "url rewrite", key: "url.https://example.invalid/.insteadOf", value: "https://github.com/"},
 		{name: "include path", key: "include.path", value: filepath.Join(t.TempDir(), "config")},
@@ -613,19 +619,63 @@ func TestValidateWorktreeBasePathRejectsUnsafeOriginSchemes(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 
+	tests := []struct {
+		name      string
+		remoteURL string
+	}{
+		{name: "git protocol", remoteURL: "git://github.com/acme/widget.git"},
+		{name: "plain http", remoteURL: "http://github.com/acme/widget.git"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			localRepo := setupLocalWorktreeBaseForWorkspaceGitTest(t, "feature/thing")
+			runWorkspaceTestGit(
+				t, localRepo, "remote", "set-url", "origin", tt.remoteURL,
+			)
+
+			got, err := ValidateWorktreeBasePath(
+				t.Context(), localRepo, "github.com", "acme", "widget",
+			)
+
+			require.Empty(got)
+			require.Error(err)
+			assert.Contains(err.Error(), "origin remote scheme is not allowed")
+		})
+	}
+}
+
+func TestValidateWorktreeBasePathAcceptsLoopbackHTTPOrigin(t *testing.T) {
+	require := require.New(t)
+
 	localRepo := setupLocalWorktreeBaseForWorkspaceGitTest(t, "feature/thing")
 	runWorkspaceTestGit(
 		t, localRepo, "remote", "set-url", "origin",
-		"git://github.com/acme/widget.git",
+		"http://127.0.0.1/acme/widget.git",
 	)
 
 	got, err := ValidateWorktreeBasePath(
-		t.Context(), localRepo, "github.com", "acme", "widget",
+		t.Context(), localRepo, "127.0.0.1", "acme", "widget",
+	)
+
+	require.NoError(err)
+	require.Equal(localRepo, got)
+}
+
+func TestValidateWorktreeBasePathRejectsSymlinkPath(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	localRepo := setupLocalWorktreeBaseForWorkspaceGitTest(t, "feature/thing")
+	linkPath := filepath.Join(t.TempDir(), "repo-link")
+	require.NoError(os.Symlink(localRepo, linkPath))
+
+	got, err := ValidateWorktreeBasePath(
+		t.Context(), linkPath, "github.com", "acme", "widget",
 	)
 
 	require.Empty(got)
 	require.Error(err)
-	assert.Contains(err.Error(), "origin remote scheme is not allowed")
+	assert.Contains(err.Error(), "symbolic link")
 }
 
 func TestValidateWorktreeBasePathRejectsAdditionalOriginURLs(t *testing.T) {
@@ -1279,7 +1329,7 @@ func TestAddPreferredWorktreeRejectsUnsafeBranchName(t *testing.T) {
 	}
 
 	_, err := mgr.addPreferredWorktree(
-		t.Context(), cloneDir, ws,
+		t.Context(), cloneDir, false, ws,
 	)
 	require.Error(err)
 	require.Contains(err.Error(), "invalid branch name")
@@ -1313,6 +1363,37 @@ func TestValidateLocalBranchNameIgnoresBrokenWorkingTreeCwd(t *testing.T) {
 	)
 	out, err := cmd.CombinedOutput()
 	require.NoError(err, string(out))
+}
+
+func TestAddWorktreeUsesFallbackWhenLocalBasePreferredBranchCheckedOut(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	const branch = "feature/thing"
+	localRepo := setupLocalWorktreeBaseForWorkspaceGitTest(t, branch)
+	existingWorktree := filepath.Join(t.TempDir(), "existing")
+	runWorkspaceTestGit(
+		t, localRepo, "worktree", "add", existingWorktree,
+		"-b", branch, "refs/remotes/origin/"+branch,
+	)
+	mgr := NewManager(openTestDB(t), t.TempDir())
+	ws := &Workspace{
+		ItemType:     db.WorkspaceItemTypePullRequest,
+		ItemNumber:   42,
+		GitHeadRef:   branch,
+		WorktreePath: filepath.Join(t.TempDir(), "worktree"),
+	}
+
+	gotBranch, err := mgr.addWorktreeLocked(t.Context(), localRepo, true, ws)
+
+	require.NoError(err)
+	assert.Equal(syntheticPRWorktreeBranch(42), gotBranch)
+	headSHA, err := gitHeadSHA(t.Context(), ws.WorktreePath)
+	require.NoError(err)
+	originSHA := strings.TrimSpace(string(runWorkspaceTestGit(
+		t, localRepo, "rev-parse", "refs/remotes/origin/"+branch,
+	)))
+	assert.Equal(originSHA, headSHA)
 }
 
 func TestAddPreferredWorktreeHeadRepoRouting(t *testing.T) {
@@ -1397,7 +1478,7 @@ func TestAddPreferredWorktreeHeadRepoRouting(t *testing.T) {
 			)
 			require.NoError(err)
 
-			branch, err := mgr.addPreferredWorktree(t.Context(), cloneDir, ws)
+			branch, err := mgr.addPreferredWorktree(t.Context(), cloneDir, false, ws)
 			require.NoError(err)
 			assert.Equal(tt.headBranch, branch)
 

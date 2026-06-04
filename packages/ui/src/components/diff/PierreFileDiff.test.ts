@@ -1,5 +1,6 @@
 import {
   cleanup,
+  fireEvent,
   render,
   waitFor,
 } from "@testing-library/svelte";
@@ -10,18 +11,35 @@ import type { DiffFile } from "../../api/types.js";
 const pierre = (() => {
   const counts = {
     cleanUp: 0,
+    expand: 0,
     render: 0,
     virtualized: 0,
   };
   let renderResults: boolean[] = [];
+  let events: string[] = [];
+  let lastExpansion:
+    | { direction: unknown; expansionLineCount: number | undefined; hunkIndex: number }
+    | undefined;
   let lastOptions: FileDiffOptions<unknown> | undefined;
   let lastVirtualizer: unknown;
   const cleanUp = () => {
     counts.cleanUp += 1;
   };
-  const renderDiff = () => {
+  const renderDiff = (props?: { fileContainer?: HTMLElement }) => {
     counts.render += 1;
-    return renderResults.shift() ?? true;
+    const didRender = renderResults.shift() ?? true;
+    events.push(`render:${String(didRender)}`);
+    if (didRender && props?.fileContainer) {
+      const root = props.fileContainer.shadowRoot ?? props.fileContainer.attachShadow({ mode: "open" });
+      root.innerHTML = `
+        <pre data-diff-type="unified">
+          <div data-separator data-expand-index="0">
+            <button type="button" data-expand-button data-expand-down>expand</button>
+          </div>
+        </pre>
+      `;
+    }
+    return didRender;
   };
   const metadata = {
     additionLines: ["new line\n"],
@@ -36,7 +54,15 @@ const pierre = (() => {
       lastOptions = options;
     }
     cleanUp = cleanUp;
-    expandHunk = () => {};
+    expandHunk = (
+      hunkIndex: number,
+      direction: unknown,
+      expansionLineCount?: number,
+    ) => {
+      counts.expand += 1;
+      events.push("expand");
+      lastExpansion = { direction, expansionLineCount, hunkIndex };
+    };
     getLineIndex = (lineNumber: number): [number, number] => [lineNumber, lineNumber];
     render = renderDiff;
     setOptions = (options?: FileDiffOptions<unknown>) => {
@@ -55,7 +81,10 @@ const pierre = (() => {
   return {
     cleanUp,
     cleanUpCount: () => counts.cleanUp,
+    expandCount: () => counts.expand,
+    events: () => [...events],
     FileDiff,
+    lastExpansion: () => lastExpansion,
     lastOptions: () => lastOptions,
     lastVirtualizer: () => lastVirtualizer,
     metadata,
@@ -65,8 +94,11 @@ const pierre = (() => {
     renderCount: () => counts.render,
     reset: () => {
       counts.cleanUp = 0;
+      counts.expand = 0;
       counts.render = 0;
       counts.virtualized = 0;
+      lastExpansion = undefined;
+      events = [];
       renderResults = [];
       lastOptions = undefined;
       lastVirtualizer = undefined;
@@ -151,6 +183,75 @@ describe("PierreFileDiff", () => {
     await waitFor(() => {
       expect(pierre.renderCount()).toBe(2);
     });
+  });
+
+  it("replays context expansion after a deferred full-context render", async () => {
+    const { default: PierreFileDiff } = await import("./PierreFileDiff.svelte");
+    const loadFileText = vi.fn(async (side: "old" | "new") =>
+      side === "old" ? "line 1\nold line\n" : "line 1\nnew line\n"
+    );
+    const hadCancelAnimationFrame = "cancelAnimationFrame" in globalThis;
+    const hadRequestAnimationFrame = "requestAnimationFrame" in globalThis;
+    const originalCancelAnimationFrame = globalThis.cancelAnimationFrame;
+    const originalRequestAnimationFrame = globalThis.requestAnimationFrame;
+    const frameCallbacks: FrameRequestCallback[] = [];
+    globalThis.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+      frameCallbacks.push(callback);
+      return frameCallbacks.length;
+    }) as typeof requestAnimationFrame;
+    globalThis.cancelAnimationFrame = (() => {}) as typeof cancelAnimationFrame;
+    pierre.setRenderResults([true, false, true, true]);
+
+    try {
+      render(PierreFileDiff, {
+        props: { file: makeFile(), loadFileText },
+      });
+
+      const expandButton = await waitFor(() => {
+        const button = document
+          .querySelector(".pierre-diff")
+          ?.shadowRoot
+          ?.querySelector<HTMLElement>("[data-expand-button]");
+        expect(button).toBeTruthy();
+        return button!;
+      });
+
+      await fireEvent.click(expandButton);
+
+      for (const callback of frameCallbacks.splice(0)) {
+        callback(performance.now());
+      }
+
+      await waitFor(() => {
+        expect(pierre.expandCount()).toBe(1);
+      });
+      const events = pierre.events();
+      const failedRenderIndex = events.indexOf("render:false");
+      const replayRenderIndex = events.findIndex((event, index) =>
+        index > failedRenderIndex && event === "render:true"
+      );
+      const expandIndex = events.indexOf("expand");
+      expect(failedRenderIndex).toBeGreaterThan(-1);
+      expect(replayRenderIndex).toBeGreaterThan(failedRenderIndex);
+      expect(expandIndex).toBeGreaterThan(replayRenderIndex);
+      expect(pierre.lastExpansion()).toEqual({
+        direction: "down",
+        expansionLineCount: undefined,
+        hunkIndex: 0,
+      });
+      expect(loadFileText).toHaveBeenCalledTimes(2);
+    } finally {
+      if (hadRequestAnimationFrame) {
+        globalThis.requestAnimationFrame = originalRequestAnimationFrame;
+      } else {
+        delete (globalThis as { requestAnimationFrame?: unknown }).requestAnimationFrame;
+      }
+      if (hadCancelAnimationFrame) {
+        globalThis.cancelAnimationFrame = originalCancelAnimationFrame;
+      } else {
+        delete (globalThis as { cancelAnimationFrame?: unknown }).cancelAnimationFrame;
+      }
+    }
   });
 
   it("passes split diff style to Pierre when side-by-side mode is enabled", async () => {

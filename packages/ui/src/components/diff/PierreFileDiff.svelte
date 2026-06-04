@@ -50,6 +50,12 @@
     key: string;
     wrapper: HTMLElement;
   };
+  type PendingContextExpansion = {
+    direction: ExpansionDirections;
+    expansionLineCount: number | undefined;
+    fileKey: string;
+    hunkIndex: number;
+  };
   const emptyFile: DiffFile = {
     path: "",
     old_path: "",
@@ -100,6 +106,7 @@
   let selectedRangeElements = new Set<HTMLElement>();
   let lineAnnotationWrappers = new Map<string, HTMLElement>();
   let transientAnnotationRow: TransientAnnotationRow | undefined;
+  let pendingContextExpansion: PendingContextExpansion | undefined;
   let lineCommentButtonHasPointerSnapshot = false;
   let lineCommentButtonWasSelectedOnPointerDown = false;
   const maxImmediateRenderRetries = 5;
@@ -256,6 +263,7 @@
     fullContext = undefined;
     fullContextFileDiff = undefined;
     fullContextRendered = false;
+    pendingContextExpansion = undefined;
     rendered = emptyTextualDiff;
     renderAttemptKey = "";
     renderRetryCount = 0;
@@ -607,7 +615,14 @@
       if (fileKey !== requestFileKey) return;
       if (!didRender) {
         if (!fullContextFileDiff) return;
+        pendingContextExpansion = {
+          direction,
+          expansionLineCount,
+          fileKey: requestFileKey,
+          hunkIndex,
+        };
         scheduleRenderRetry();
+        return;
       }
     }
     expandRenderedHunk(hunkIndex, direction, expansionLineCount);
@@ -654,8 +669,20 @@
       rendered = true;
       installDemandContextHandler();
       scheduleSelectedRangesApplication();
+      replayPendingContextExpansion();
     }
     return didRender;
+  }
+
+  function replayPendingContextExpansion(): void {
+    const pending = pendingContextExpansion;
+    if (!pending || pending.fileKey !== fileKey) return;
+    pendingContextExpansion = undefined;
+    expandRenderedHunk(
+      pending.hunkIndex,
+      pending.direction,
+      pending.expansionLineCount,
+    );
   }
 
   function renderFullContextRange(

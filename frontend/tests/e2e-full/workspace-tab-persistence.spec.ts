@@ -209,7 +209,7 @@ test.describe("workspace tab persistence", () => {
       expect(workspaceDetail.worktree_path).toBeTruthy();
       await writeFile(
         join(workspaceDetail.worktree_path!, "alpha.ts"),
-        Array.from({ length: 120 }, (_, index) => `alpha ${index + 1}`)
+        Array.from({ length: 360 }, (_, index) => `alpha ${index + 1}`)
           .join("\n") + "\n",
       );
       await writeFile(
@@ -320,6 +320,26 @@ test.describe("workspace tab persistence", () => {
             ?.getBoundingClientRect().width ?? 0;
         });
       }).toBeLessThanOrEqual(56);
+      const rightDiffArea = page.locator(".right-sidebar .diff-area");
+      await expect.poll(async () =>
+        rightDiffArea.evaluate((area) => area.scrollHeight > area.clientHeight),
+      ).toBe(true);
+      const beforePageDownScrollTop = await rightDiffArea.evaluate((area) =>
+        area.scrollTop
+      );
+      await rightDiffHost.click();
+      await rightDiffHost.press("PageDown");
+      await expect.poll(async () =>
+        rightDiffArea.evaluate((area) => area.scrollTop),
+      ).toBeGreaterThan(beforePageDownScrollTop);
+      const afterPageDownScrollTop = await rightDiffArea.evaluate((area) =>
+        area.scrollTop
+      );
+      await rightDiffHost.press("j");
+      await rightDiffHost.press("k");
+      await page.waitForTimeout(100);
+      expect(await rightDiffArea.evaluate((area) => area.scrollTop))
+        .toBe(afterPageDownScrollTop);
       const diffToolbar = page.locator(".right-sidebar .diff-toolbar");
       await expect(diffToolbar.locator(".compact-more-btn")).toBeVisible();
       await expect(

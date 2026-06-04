@@ -410,6 +410,18 @@ func TestMiddlemanctlCommandsUseRealAPIAndSQLite(t *testing.T) {
 	versionOut := runMiddleman(t, ts.URL, "api", "GET", "/version")
 	assert.Contains(versionOut, `"version"`)
 
+	starOut := runMiddleman(
+		t, ts.URL,
+		"api", "PUT", "/starred",
+		"item_type: pr, owner: acme, name: widgets, number: 1",
+	)
+	assert.Empty(starOut)
+	starredOut := runMiddleman(t, ts.URL, "--output", "jsonl", "pulls", "--starred")
+	starredLines := strings.Split(strings.TrimSpace(starredOut), "\n")
+	require.Len(starredLines, 1)
+	assert.Equal(float64(1), jsonNumberField(t, starredLines[0]))
+	assert.True(jsonBoolField(t, starredLines[0], "starred", "Starred"))
+
 	apiListOut := runMiddleman(t, ts.URL, "--output", "jsonl", "api", "list")
 	assert.Contains(apiListOut, `"method":"GET"`)
 	assert.Contains(apiListOut, `"path":"/pulls"`)
@@ -464,6 +476,20 @@ func jsonNumberField(t *testing.T, raw string) float64 {
 	}
 	require.Failf(t, "missing number field", "payload: %s", raw)
 	return 0
+}
+
+func jsonBoolField(t *testing.T, raw string, fields ...string) bool {
+	t.Helper()
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal([]byte(raw), &payload))
+	for _, field := range fields {
+		value, ok := payload[field].(bool)
+		if ok {
+			return value
+		}
+	}
+	require.Failf(t, "missing boolean field", "payload: %s", raw)
+	return false
 }
 
 func TestAPIRequesterFetchesCompleteJSON(t *testing.T) {

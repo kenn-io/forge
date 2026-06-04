@@ -4807,6 +4807,7 @@ func (s *Server) createIssueWorkspace(
 		repo.Name,
 		input.Number,
 		workspace.CreateIssueOptions{
+			Provider:            input.Provider,
 			GitHeadRef:          strings.TrimSpace(derefString(input.Body.GitHeadRef)),
 			ReuseExistingBranch: input.Body.ReuseExistingBranch,
 		},

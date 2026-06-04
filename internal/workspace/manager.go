@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"os/exec"
 	"os/user"
@@ -22,6 +23,7 @@ import (
 	gitremote "go.kenn.io/kit/git/remote"
 	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/gitclone"
+	"go.kenn.io/middleman/internal/platform"
 	"go.kenn.io/middleman/internal/procutil"
 )
 
@@ -61,6 +63,7 @@ type WorktreeBasePathResolver func(
 // branch with that name already exists, callers can either ask the manager to
 // reuse it or supply a different GitHeadRef.
 type CreateIssueOptions struct {
+	Provider            string
 	GitHeadRef          string
 	ReuseExistingBranch bool
 }
@@ -300,9 +303,7 @@ func (m *Manager) CreateIssue(
 	issueNumber int,
 	opts CreateIssueOptions,
 ) (*Workspace, error) {
-	repo, err := m.db.GetRepoByHostOwnerName(
-		ctx, platformHost, owner, name,
-	)
+	repo, err := m.issueWorkspaceRepo(ctx, opts.Provider, platformHost, owner, name)
 	if err != nil {
 		return nil, fmt.Errorf("look up repo: %w", err)
 	}
@@ -639,27 +640,37 @@ func ValidateWorktreeBasePath(
 	if strings.TrimSpace(insideWorkTree) != "true" {
 		return "", fmt.Errorf("path is not a git worktree: %s", abs)
 	}
-	remoteURL, err := gitConfigValue(ctx, abs, "remote.origin.url")
-	if err != nil {
-		return "", fmt.Errorf("read origin remote: %w", err)
-	}
-	if gitremote.RemoteHost(remoteURL) == "" || gitremote.RemoteRepoPath(remoteURL) == "" {
-		return "", fmt.Errorf("origin remote must include a forge host and repository path")
-	}
 	if err := validateNoExecutableLocalGitConfig(ctx, abs); err != nil {
 		return "", err
 	}
 	if err := validateOriginFetchRefspec(ctx, abs); err != nil {
 		return "", err
 	}
-	if err := gitremote.ValidateRemoteIdentity(gitremote.Identity{
-		Host:  platformHost,
-		Owner: owner,
-		Name:  name,
-	}, remoteURL); err != nil {
-		return "", fmt.Errorf("origin remote does not match repository: %w", err)
+	if err := validateOriginRemoteURLs(
+		ctx, abs, platformHost, owner, name,
+	); err != nil {
+		return "", err
 	}
 	return abs, nil
+}
+
+func (m *Manager) issueWorkspaceRepo(
+	ctx context.Context,
+	provider, platformHost, owner, name string,
+) (*db.Repo, error) {
+	provider = strings.TrimSpace(provider)
+	if provider == "" {
+		return m.db.GetRepoByHostOwnerName(ctx, platformHost, owner, name)
+	}
+	kind, err := platform.NormalizeKind(provider)
+	if err != nil {
+		return nil, err
+	}
+	return m.db.GetRepoByIdentity(ctx, db.RepoIdentity{
+		Platform:     string(kind),
+		PlatformHost: platformHost,
+		RepoPath:     owner + "/" + name,
+	})
 }
 
 func validateNoExecutableLocalGitConfig(ctx context.Context, dir string) error {
@@ -683,6 +694,7 @@ func localGitConfigKeyMayExecute(key string) bool {
 	return key == "core.fsmonitor" ||
 		key == "core.alternaterefscommand" ||
 		key == "core.askpass" ||
+		key == "core.gitproxy" ||
 		key == "core.sshcommand" ||
 		key == "credential.helper" ||
 		(strings.HasPrefix(key, "credential.") &&
@@ -698,6 +710,61 @@ func localGitConfigKeyMayExecute(key string) bool {
 			strings.HasSuffix(key, ".path")) ||
 		(strings.HasPrefix(key, "protocol.") &&
 			strings.HasSuffix(key, ".allow"))
+}
+
+func validateOriginRemoteURLs(
+	ctx context.Context, dir, platformHost, owner, name string,
+) error {
+	remoteURLs, err := gitConfigValues(ctx, dir, "remote.origin.url")
+	if err != nil {
+		return fmt.Errorf("read origin remote: %w", err)
+	}
+	if len(remoteURLs) == 0 {
+		return fmt.Errorf("read origin remote: no origin URL configured")
+	}
+	for _, remoteURL := range remoteURLs {
+		if err := validateOriginRemoteURL(
+			remoteURL, platformHost, owner, name,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateOriginRemoteURL(
+	remoteURL, platformHost, owner, name string,
+) error {
+	if gitremote.RemoteHost(remoteURL) == "" ||
+		gitremote.RemoteRepoPath(remoteURL) == "" {
+		return fmt.Errorf(
+			"origin remote must include a forge host and repository path",
+		)
+	}
+	if !originRemoteSchemeAllowed(remoteURL) {
+		return fmt.Errorf("origin remote scheme is not allowed: %s", remoteURL)
+	}
+	if err := gitremote.ValidateRemoteIdentity(gitremote.Identity{
+		Host:  platformHost,
+		Owner: owner,
+		Name:  name,
+	}, remoteURL); err != nil {
+		return fmt.Errorf("origin remote does not match repository: %w", err)
+	}
+	return nil
+}
+
+func originRemoteSchemeAllowed(remoteURL string) bool {
+	parsed, err := url.Parse(remoteURL)
+	if err != nil {
+		return false
+	}
+	switch strings.ToLower(parsed.Scheme) {
+	case "", "http", "https", "ssh":
+		return true
+	default:
+		return false
+	}
 }
 
 func validateOriginFetchRefspec(ctx context.Context, dir string) error {
@@ -1297,7 +1364,9 @@ func (m *Manager) workspaceCleanupGitDir(
 ) (string, bool, error) {
 	commonDir, err := worktreeCommonGitDir(ctx, ws.WorktreePath)
 	if err == nil {
-		return commonDir, true, nil
+		if gitDirMatchesWorkspaceRepo(ctx, commonDir, ws) {
+			return commonDir, true, nil
+		}
 	}
 
 	if baseDir, ok, err := m.localWorktreeBaseDir(
@@ -1347,6 +1416,14 @@ func (m *Manager) workspaceCleanupGitDir(
 	}
 
 	return "", false, nil
+}
+
+func gitDirMatchesWorkspaceRepo(
+	ctx context.Context, dir string, ws *Workspace,
+) bool {
+	return validateOriginRemoteURLs(
+		ctx, dir, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
+	) == nil
 }
 
 func (m *Manager) cleanupTmuxSession(

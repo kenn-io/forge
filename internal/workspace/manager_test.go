@@ -579,6 +579,7 @@ func TestValidateWorktreeBasePathRejectsExecutableLocalConfig(t *testing.T) {
 		{name: "fsmonitor", key: "core.fsmonitor", value: "demo-fsmonitor"},
 		{name: "alternate refs command", key: "core.alternateRefsCommand", value: "demo-alternates"},
 		{name: "askpass", key: "core.askPass", value: "demo-askpass"},
+		{name: "git proxy", key: "core.gitProxy", value: "demo-proxy"},
 		{name: "ssh command", key: "core.sshCommand", value: "demo-ssh"},
 		{name: "credential helper", key: "credential.helper", value: "!demo-helper"},
 		{name: "url rewrite", key: "url.https://example.invalid/.insteadOf", value: "https://github.com/"},
@@ -603,6 +604,44 @@ func TestValidateWorktreeBasePathRejectsExecutableLocalConfig(t *testing.T) {
 			assert.Contains(err.Error(), "may execute or rewrite git commands")
 		})
 	}
+}
+
+func TestValidateWorktreeBasePathRejectsUnsafeOriginSchemes(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	localRepo := setupLocalWorktreeBaseForWorkspaceGitTest(t, "feature/thing")
+	runWorkspaceTestGit(
+		t, localRepo, "remote", "set-url", "origin",
+		"git://github.com/acme/widget.git",
+	)
+
+	got, err := ValidateWorktreeBasePath(
+		t.Context(), localRepo, "github.com", "acme", "widget",
+	)
+
+	require.Empty(got)
+	require.Error(err)
+	assert.Contains(err.Error(), "origin remote scheme is not allowed")
+}
+
+func TestValidateWorktreeBasePathRejectsAdditionalOriginURLs(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	localRepo := setupLocalWorktreeBaseForWorkspaceGitTest(t, "feature/thing")
+	runWorkspaceTestGit(
+		t, localRepo, "config", "--add", "remote.origin.url",
+		"https://github.com/evil/widget.git",
+	)
+
+	got, err := ValidateWorktreeBasePath(
+		t.Context(), localRepo, "github.com", "acme", "widget",
+	)
+
+	require.Empty(got)
+	require.Error(err)
+	assert.Contains(err.Error(), "origin remote does not match repository")
 }
 
 func TestValidateWorktreeBasePathRejectsUnsafeOriginFetchRefspec(t *testing.T) {
@@ -670,6 +709,39 @@ func TestValidateWorktreeBasePathRejectsExecutableWorktreeConfig(t *testing.T) {
 	require.Error(err)
 	assert.Contains(err.Error(), "filter.demo.clean")
 	assert.Contains(err.Error(), "may execute or rewrite git commands")
+}
+
+func TestCreateIssueUsesProviderQualifiedRepo(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+
+	_, err := d.UpsertRepo(ctx, db.RepoIdentity{
+		Platform:     "github",
+		PlatformHost: "forge.example.com",
+		Owner:        "acme",
+		Name:         "widget",
+	})
+	require.NoError(err)
+	gitlabRepoID, err := d.UpsertRepo(ctx, db.RepoIdentity{
+		Platform:     "gitlab",
+		PlatformHost: "forge.example.com",
+		Owner:        "acme",
+		Name:         "widget",
+	})
+	require.NoError(err)
+	seedIssue(t, d, gitlabRepoID, 7, "GitLab issue")
+
+	mgr := NewManager(d, t.TempDir())
+	ws, err := mgr.CreateIssue(
+		ctx, "forge.example.com", "acme", "widget", 7,
+		CreateIssueOptions{Provider: "gitlab"},
+	)
+
+	require.NoError(err)
+	require.NotNil(ws)
+	assert.Equal("gitlab", ws.Platform)
 }
 
 func TestSetupUsesManagedCloneForForkPRWithConfiguredWorktreeBasePath(t *testing.T) {
@@ -949,6 +1021,39 @@ func TestCleanupFallsBackToManagedCloneWhenConfiguredBaseInvalid(t *testing.T) {
 	exists, err := localBranchExists(t.Context(), cloneDir, branch)
 	require.NoError(err)
 	assert.False(exists)
+}
+
+func TestCleanupSkipsReplacedWorktreeFromWrongRepo(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	const branch = "middleman/pr-99"
+	unrelatedRepo := setupLocalWorktreeBaseForWorkspaceGitTest(t, "feature/thing")
+	runWorkspaceTestGit(
+		t, unrelatedRepo, "remote", "set-url", "origin",
+		"https://github.com/evil/widget.git",
+	)
+	runWorkspaceTestGit(t, unrelatedRepo, "branch", branch, "HEAD")
+
+	mgr := NewManager(openTestDB(t), t.TempDir())
+	ws := &Workspace{
+		ID:              "ws-cleanup-replaced-worktree",
+		Platform:        "github",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		ItemType:        db.WorkspaceItemTypePullRequest,
+		ItemNumber:      99,
+		GitHeadRef:      "feature/thing",
+		WorkspaceBranch: branch,
+		WorktreePath:    unrelatedRepo,
+	}
+
+	require.NoError(mgr.cleanupWorkspaceArtifactsForDelete(t.Context(), ws))
+
+	exists, err := localBranchExists(t.Context(), unrelatedRepo, branch)
+	require.NoError(err)
+	assert.True(exists)
 }
 
 func TestFailSetupUsesSinglePersistenceBudget(t *testing.T) {

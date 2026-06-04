@@ -11,7 +11,7 @@
     ThemeTypes,
     Virtualizer,
   } from "@pierre/diffs";
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
   import type { DiffFile } from "../../api/types.js";
   import {
     appThemeType,
@@ -600,9 +600,15 @@
     const alreadyRendered = fullContextRendered;
     const context = await loadFullContext(requestFileKey);
     if (!context || fileKey !== requestFileKey) return;
-    if (!alreadyRendered) {
+    await tick();
+    if (fileKey !== requestFileKey) return;
+    if (!alreadyRendered && !fullContextRendered) {
       const didRender = renderFullContext(context);
-      if (!didRender || fileKey !== requestFileKey) return;
+      if (fileKey !== requestFileKey) return;
+      if (!didRender) {
+        if (!fullContextFileDiff) return;
+        scheduleRenderRetry();
+      }
     }
     expandRenderedHunk(hunkIndex, direction, expansionLineCount);
   }
@@ -615,10 +621,10 @@
     clearRenderedDomState();
     pierreDiff?.expandHunk(hunkIndex, direction, expansionLineCount);
     if (pierreDiff instanceof VirtualizedFileDiff && fullContext && fullContextFileDiff) {
+      pierreDiff.rerender();
+    } else if (fullContext && fullContextFileDiff) {
       const didRender = renderFullContextRange(fullContext, fullContextFileDiff);
-      if (!didRender) {
-        scheduleRenderRetry();
-      }
+      if (!didRender) scheduleRenderRetry();
     }
     removeStalePlaceholderPres();
     applyLineTargetAttributes();
@@ -664,24 +670,26 @@
       newFile: context.newFile,
       forceRender: true,
       lineAnnotations,
-      renderRange: {
-        startingLine: 0,
-        totalLines: Number.POSITIVE_INFINITY,
-        bufferBefore: 0,
-        bufferAfter: 0,
-      },
     } satisfies Parameters<FileDiff<unknown>["render"]>[0];
     if (!(pierreDiff instanceof VirtualizedFileDiff)) {
-      return pierreDiff.render(props);
+      return pierreDiff.render({
+        ...props,
+        renderRange: {
+          startingLine: 0,
+          totalLines: Number.POSITIVE_INFINITY,
+          bufferBefore: 0,
+          bufferAfter: 0,
+        },
+      });
     }
     if (isHostInScrollViewport()) {
       pierreDiff.setVisibility(true);
     }
-    const render = FileDiff.prototype.render as (
-      this: FileDiff<unknown>,
-      props: Parameters<FileDiff<unknown>["render"]>[0],
-    ) => boolean;
-    return render.call(pierreDiff as unknown as FileDiff<unknown>, props);
+    if (pierreDiff.fileDiff !== fileDiff) {
+      pierreDiff.fileDiff = fileDiff;
+      pierreDiff.setMetrics(undefined, true);
+    }
+    return pierreDiff.render(props);
   }
 
   async function loadFullContext(

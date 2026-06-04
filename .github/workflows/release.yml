@@ -6,205 +6,52 @@ on:
       - 'v*'
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  build-linux:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - goarch: amd64
-            runner: ubuntu-latest
-          - goarch: arm64
-            runner: ubuntu-24.04-arm
-
-    runs-on: ${{ matrix.runner }}
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
-        with:
-          persist-credentials: false
-
-      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417  # v6.3.0
-        with:
-          go-version-file: go.mod
-
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6  # v2
-        with:
-          bun-version: "1.3.11"
-
-      - name: Build frontend
-        run: cd frontend && bun install --frozen-lockfile && bun run build
-
-      - name: Embed frontend
-        run: |
-          rm -rf internal/web/dist
-          cp -r frontend/dist internal/web/dist
-
-      - name: Build
-        env:
-          GOOS: linux
-          GOARCH: ${{ matrix.goarch }}
-          CGO_ENABLED: "0"
-        run: |
-          set -euo pipefail
-          VERSION="${GITHUB_REF_NAME#v}"
-          COMMIT="${GITHUB_SHA:0:8}"
-          BUILD_DATE="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
-
-          mkdir -p dist
-          LDFLAGS="-s -w -X main.version=v${VERSION} -X main.commit=${COMMIT} -X main.buildDate=${BUILD_DATE}"
-          go build -buildvcs=false -ldflags="$LDFLAGS" -trimpath \
-            -o dist/middleman ./cmd/middleman
-
-          ./dist/middleman version
-
-          cd dist
-          ARCHIVE="middleman_${VERSION}_linux_${{ matrix.goarch }}.tar.gz"
-          tar czf "$ARCHIVE" middleman
-          rm middleman
-
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
-        with:
-          name: middleman-linux-${{ matrix.goarch }}
-          path: dist/*.tar.gz
-
-  build:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: macos-15
-            goos: darwin
-            goarch: amd64
-          - os: macos-15
-            goos: darwin
-            goarch: arm64
-          - os: windows-latest
-            goos: windows
-            goarch: amd64
-
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
-        with:
-          persist-credentials: false
-
-      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417  # v6.3.0
-        with:
-          go-version-file: go.mod
-
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6  # v2
-        with:
-          bun-version: "1.3.11"
-
-      - name: Build frontend
-        run: cd frontend && bun install --frozen-lockfile && bun run build
-
-      - name: Embed frontend
-        shell: bash
-        run: |
-          rm -rf internal/web/dist
-          cp -r frontend/dist internal/web/dist
-
-      - name: Build
-        shell: bash
-        env:
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
-          CGO_ENABLED: "0"
-          MACOSX_DEPLOYMENT_TARGET: ${{ matrix.goos == 'darwin' && '11.0' || '' }}
-        run: |
-          set -euo pipefail
-          VERSION="${GITHUB_REF_NAME#v}"
-          COMMIT="${GITHUB_SHA:0:8}"
-          BUILD_DATE="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
-          EXT=""
-          if [ "$GOOS" = "windows" ]; then EXT=".exe"; fi
-
-          mkdir -p dist
-          LDFLAGS="-s -w -X main.version=v${VERSION} -X main.commit=${COMMIT} -X main.buildDate=${BUILD_DATE}"
-          go build -buildvcs=false -ldflags="$LDFLAGS" -trimpath \
-            -o dist/middleman${EXT} ./cmd/middleman
-
-          if [ "$GOOS" != "darwin" ] || [ "$GOARCH" = "$(go env GOHOSTARCH)" ]; then
-            ./dist/middleman${EXT} version
-          fi
-
-          cd dist
-          if [ "$GOOS" = "windows" ]; then
-            ARCHIVE="middleman_${VERSION}_${{ matrix.goos }}_${{ matrix.goarch }}.zip"
-            7z a "$ARCHIVE" middleman${EXT}
-          else
-            ARCHIVE="middleman_${VERSION}_${{ matrix.goos }}_${{ matrix.goarch }}.tar.gz"
-            tar czf "$ARCHIVE" middleman${EXT}
-          fi
-          rm middleman${EXT}
-
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
-        with:
-          name: middleman-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: |
-            dist/*.tar.gz
-            dist/*.zip
-
   release:
-    needs: [build-linux, build]
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
         with:
-          persist-credentials: false
+          fetch-depth: 0
 
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6.4.0
         with:
-          path: artifacts
-          merge-multiple: true
+          go-version-file: go.mod
 
-      - name: Generate checksums
-        run: |
-          cd artifacts
-          sha256sum ./*.tar.gz ./*.zip > SHA256SUMS
-          cat SHA256SUMS
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6  # v2
+        with:
+          bun-version: "1.3.11"
 
-      - name: Get tag message
-        id: tag_message
+      - name: Resolve release notes
+        id: release_notes
         run: |
           TAG_NAME="${GITHUB_REF#refs/tags/}"
+          ARGS="release --clean"
 
-          TAG_TYPE=$(git cat-file -t "$TAG_NAME" 2>/dev/null || true)
-          if [ "$TAG_TYPE" != "tag" ]; then
-            echo "Warning: $TAG_NAME is a lightweight tag, using auto-generated notes"
-            echo "has_body=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          TAG_MSG=$(git tag -l --format='%(contents:body)' "$TAG_NAME")
-
-          if [ -n "$TAG_MSG" ]; then
-            DELIM="TAGMSG_$(date +%s%N)"
-            {
-              echo "body<<$DELIM"
-              echo "$TAG_MSG"
-              echo "$DELIM"
-              echo "has_body=true"
-            } >> "$GITHUB_OUTPUT"
+          TAG_TYPE=$(git cat-file -t "$TAG_NAME")
+          if [ "$TAG_TYPE" = "tag" ]; then
+            TAG_MSG=$(git tag -l --format='%(contents:body)' "$TAG_NAME")
+            if [ -n "$TAG_MSG" ]; then
+              printf '%s\n' "$TAG_MSG" > release-notes.md
+              ARGS="$ARGS --release-notes=release-notes.md"
+            fi
           else
-            echo "has_body=false" >> "$GITHUB_OUTPUT"
+            echo "Warning: $TAG_NAME is a lightweight tag, using GoReleaser-generated notes"
           fi
 
-      - name: Create Release
-        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda  # v3.0.0
+          echo "args=$ARGS" >> "$GITHUB_OUTPUT"
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@5daf1e915a5f0af01ddbcd89a43b8061ff4f1a89  # v7.2.2
         with:
-          files: |
-            artifacts/*.tar.gz
-            artifacts/*.zip
-            artifacts/SHA256SUMS
-          body: ${{ steps.tag_message.outputs.has_body == 'true' && steps.tag_message.outputs.body || '' }}
-          generate_release_notes: ${{ steps.tag_message.outputs.has_body != 'true' }}
+          distribution: goreleaser
+          version: '~> v2'
+          args: ${{ steps.release_notes.outputs.args }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

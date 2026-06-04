@@ -1,0 +1,57 @@
+version: 2
+
+project_name: middleman
+
+before:
+  hooks:
+    - make frontend
+
+builds:
+  - id: middleman
+    main: ./cmd/middleman
+    binary: middleman
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -buildvcs=false
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version=v{{ .Version }} -X main.commit={{ .ShortCommit }} -X main.buildDate={{ .Date }}
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - id: middleman
+    ids:
+      - middleman
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: SHA256SUMS
+
+nfpms:
+  - id: middleman-linux-packages
+    ids:
+      - middleman
+    package_name: middleman
+    file_name_template: "{{ .ProjectName }}_{{ .Version }}_linux_{{ .Arch }}"
+    vendor: middleman
+    homepage: https://github.com/kenn-io/middleman
+    maintainer: middleman contributors
+    description: Local-first dashboard for tracking pull and merge requests.
+    license: MIT
+    formats:
+      - deb
+      - rpm
+    bindir: /usr/bin

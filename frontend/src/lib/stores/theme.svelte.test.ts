@@ -162,6 +162,8 @@ describe("applyThemeOverrides", () => {
 
   it("sets radius CSS variables", () => {
     applyThemeOverrides(undefined, undefined, { sm: "2px" });
-    expect(document.documentElement.style.getPropertyValue("--radius-sm")).toBe("2px");
+    expect(document.documentElement.style.getPropertyValue("--radius-sm")).toBe(
+      "2px",
+    );
   });
 });

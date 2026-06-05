@@ -207,7 +207,9 @@ describe("PullDetail approvals", () => {
   it("shows approval count and expands approver names", async () => {
     renderPullDetail(pullDetail());
 
-    const trigger = screen.getByRole("button", { name: "APPROVED (2)" });
+    const trigger = screen.getByRole("button", {
+      name: "APPROVED (2)",
+    });
     await fireEvent.click(trigger);
 
     const popup = document.querySelector(".approval-popup");
@@ -225,7 +227,9 @@ describe("PullDetail approvals", () => {
 
     renderPullDetail(detail);
 
-    const trigger = screen.getByRole("button", { name: "APPROVED (2)" });
+    const trigger = screen.getByRole("button", {
+      name: "APPROVED (2)",
+    });
     await fireEvent.click(trigger);
 
     const popup = document.querySelector(".approval-popup");
@@ -252,7 +256,9 @@ describe("PullDetail approvals", () => {
     expect(detailStore.refreshPendingCI).not.toHaveBeenCalled();
 
     await fireEvent.click(
-      screen.getByRole("button", { name: /CI:\s*1\s*pending\s*check/i }),
+      screen.getByRole("button", {
+        name: /CI:\s*1\s*pending\s*check/i,
+      }),
     );
 
     expect(detailStore.refreshPendingCI).toHaveBeenCalledTimes(1);
@@ -361,7 +367,9 @@ describe("PullDetail approvals", () => {
     );
 
     expect(screen.queryByText("frontend / vp check")).toBeNull();
-    expect(screen.getByText("3 PRs · current 2/3 · downstack CI failure")).toBeTruthy();
+    expect(
+      screen.getByText("3 PRs · current 2/3 · downstack CI failure"),
+    ).toBeTruthy();
     expect(
       document.querySelector(".stack-row--current .stack-dot--current"),
     ).toBeTruthy();
@@ -428,7 +436,9 @@ describe("PullDetail approvals", () => {
 
     renderPullDetail(detail);
 
-    const actionsTrigger = screen.getByRole("button", { name: "Actions" });
+    const actionsTrigger = screen.getByRole("button", {
+      name: "Actions",
+    });
     await fireEvent.click(actionsTrigger);
     await fireEvent.click(getActionMenuLabelsButton());
 

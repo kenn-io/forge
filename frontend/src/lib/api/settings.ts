@@ -50,7 +50,9 @@ function normalizeUpdateRequest(settings: {
 export async function getSettings(): Promise<Settings> {
   const { data, error, response } = await client.GET("/settings");
   if (!data) {
-    throw new Error(requestErrorMessage(error, `GET /settings -> ${response.status}`));
+    throw new Error(
+      requestErrorMessage(error, `GET /settings -> ${response.status}`),
+    );
   }
   return data;
 }
@@ -64,7 +66,9 @@ export async function updateSettings(settings: {
     body: normalizeUpdateRequest(settings),
   });
   if (!data) {
-    throw new Error(requestErrorMessage(error, `PUT /settings -> ${response.status}`));
+    throw new Error(
+      requestErrorMessage(error, `PUT /settings -> ${response.status}`),
+    );
   }
   return data;
 }
@@ -100,7 +104,10 @@ export async function removeRepo(
   });
   if (!response.ok) {
     throw new Error(
-      requestErrorMessage(error, `DELETE /repos/{owner}/{name} -> ${response.status}`),
+      requestErrorMessage(
+        error,
+        `DELETE /repos/{owner}/{name} -> ${response.status}`,
+      ),
     );
   }
 }

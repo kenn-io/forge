@@ -101,7 +101,10 @@ async function expectRepoChipToClipSafely(
   expect(labelOverflow.scrollWidth).toBeGreaterThan(labelOverflow.clientWidth);
 }
 
-async function primeKanbanStateRows(browser: Browser, baseURL: string): Promise<void> {
+async function primeKanbanStateRows(
+  browser: Browser,
+  baseURL: string,
+): Promise<void> {
   const page = await browser.newPage({ baseURL });
   try {
     await page.goto("/pulls");
@@ -157,9 +160,12 @@ test.describe("PR list view", () => {
     // matching item is already visible in the unfiltered list, so
     // we must wait on a condition that only becomes true after
     // the debounced search request completes.
-    await expect(page.locator(".filter-bar .list-count-chip")).toHaveText(/^1 PRs?$/, {
-      timeout: 5_000,
-    });
+    await expect(page.locator(".filter-bar .list-count-chip")).toHaveText(
+      /^1 PRs?$/,
+      {
+        timeout: 5_000,
+      },
+    );
 
     // Verify the single remaining item is the expected one.
     const items = page.locator(".pull-item");
@@ -186,7 +192,9 @@ test.describe("PR list view", () => {
       el.appendChild(filler);
     });
 
-    const overflowY = await pullDetail.evaluate((el) => getComputedStyle(el).overflowY);
+    const overflowY = await pullDetail.evaluate(
+      (el) => getComputedStyle(el).overflowY,
+    );
     expect(["auto", "scroll"]).toContain(overflowY);
 
     const before = await pullDetail.evaluate((el) => ({

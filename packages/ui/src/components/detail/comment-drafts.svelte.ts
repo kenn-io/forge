@@ -52,7 +52,9 @@ export function getCommentDraft(
   platformHost?: string | undefined,
 ): string {
   const keys = getCommentDraftKeys(target, owner, name, number, platformHost);
-  return drafts[keys.primary] ?? (keys.legacy ? drafts[keys.legacy] : undefined) ?? "";
+  return (
+    drafts[keys.primary] ?? (keys.legacy ? drafts[keys.legacy] : undefined) ?? ""
+  );
 }
 
 export function getCommentDraftByKey(key: string): string {

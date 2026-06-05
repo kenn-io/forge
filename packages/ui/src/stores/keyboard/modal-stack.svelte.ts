@@ -41,7 +41,10 @@ export function getStackDepth(): number {
 }
 
 export function getStack(): ModalFrame[] {
-  return stack.map((f) => ({ frameId: f.frameId, actions: [...f.actions] }));
+  return stack.map((f) => ({
+    frameId: f.frameId,
+    actions: [...f.actions],
+  }));
 }
 
 export function resetModalStack(): void {

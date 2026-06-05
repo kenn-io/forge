@@ -3,7 +3,10 @@ import type { ActivitySettings } from "../api/types.js";
 import { createActivityStore } from "./activity.svelte.js";
 
 const fakeClient = {
-  GET: async () => ({ data: { items: [], capped: false }, error: null }),
+  GET: async () => ({
+    data: { items: [], capped: false },
+    error: null,
+  }),
 } as unknown as Parameters<typeof createActivityStore>[0]["client"];
 
 function settings(collapse: boolean): ActivitySettings {
@@ -132,6 +135,8 @@ describe("activity store default-branch visibility", () => {
 
     next.setHideDefaultBranchActivity(false);
     next.syncToURL();
-    expect(new URLSearchParams(window.location.search).has("hide_branch")).toBe(false);
+    expect(new URLSearchParams(window.location.search).has("hide_branch")).toBe(
+      false,
+    );
   });
 });

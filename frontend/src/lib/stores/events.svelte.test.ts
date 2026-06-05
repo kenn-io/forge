@@ -256,13 +256,22 @@ describe("createEventsStore event dispatch", () => {
     });
 
     expect(onWorkspacePushedHeadChanged).toHaveBeenCalledWith(
-      expect.objectContaining({ workspace_id: "ws_123", new_sha: "2222222" }),
+      expect.objectContaining({
+        workspace_id: "ws_123",
+        new_sha: "2222222",
+      }),
     );
     expect(onWorkspacePRRefreshQueued).toHaveBeenCalledWith(
-      expect.objectContaining({ workspace_id: "ws_123", priority: "high" }),
+      expect.objectContaining({
+        workspace_id: "ws_123",
+        priority: "high",
+      }),
     );
     expect(onPRDetailRefreshed).toHaveBeenCalledWith(
-      expect.objectContaining({ repo_path: "acme/widgets", number: 42 }),
+      expect.objectContaining({
+        repo_path: "acme/widgets",
+        number: 42,
+      }),
     );
     expect(onPRCIRefreshQueued).toHaveBeenCalledWith(
       expect.objectContaining({ head_sha: "2222222", priority: "low" }),

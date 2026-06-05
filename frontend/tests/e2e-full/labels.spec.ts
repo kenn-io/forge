@@ -22,7 +22,9 @@ test.describe("label editing", () => {
       await page.goto(`${baseURL}/pulls/github/acme/widgets/1`);
       await expect(page.locator(".pull-detail")).toBeVisible();
       await expect(
-        page.locator(".pull-detail .chips-row .label-pill", { hasText: "bug" }),
+        page.locator(".pull-detail .chips-row .label-pill", {
+          hasText: "bug",
+        }),
       ).toBeVisible();
 
       await page.getByRole("button", { name: "Labels" }).click();
@@ -35,7 +37,9 @@ test.describe("label editing", () => {
         page.getByRole("menuitemcheckbox", { name: /triage/i }),
       ).toHaveAttribute("aria-checked", "false");
       await page.keyboard.type("tri");
-      await expect(page.getByRole("menuitemcheckbox", { name: /bug/i })).toHaveCount(0);
+      await expect(page.getByRole("menuitemcheckbox", { name: /bug/i })).toHaveCount(
+        0,
+      );
       await expect(
         page.getByRole("menuitemcheckbox", { name: /triage/i }),
       ).toBeVisible();
@@ -134,7 +138,9 @@ test.describe("label editing", () => {
       await page.goto(`${baseURL}/issues/github/acme/widgets/10`);
       await expect(page.locator(".issue-detail")).toBeVisible();
       await expect(
-        page.locator(".issue-detail .meta-row .label-pill", { hasText: "bug" }),
+        page.locator(".issue-detail .meta-row .label-pill", {
+          hasText: "bug",
+        }),
       ).toBeVisible();
 
       await page.getByRole("button", { name: "Labels" }).click();
@@ -149,14 +155,18 @@ test.describe("label editing", () => {
       await page.getByRole("button", { name: "Clear selected labels" }).click();
       expect((await updateResponse).status()).toBe(200);
 
-      await expect(page.locator(".issue-detail .meta-row .label-pill")).toHaveCount(0);
+      await expect(page.locator(".issue-detail .meta-row .label-pill")).toHaveCount(
+        0,
+      );
       await expect(
         page
           .locator(".issue-detail .meta-row")
           .getByRole("button", { name: "Labels", exact: true }),
       ).toBeVisible();
       await page.reload();
-      await expect(page.locator(".issue-detail .meta-row .label-pill")).toHaveCount(0);
+      await expect(page.locator(".issue-detail .meta-row .label-pill")).toHaveCount(
+        0,
+      );
     } finally {
       await isolatedServer?.stop();
     }

@@ -325,12 +325,12 @@ describe("TerminalSettings", () => {
     expect((screen.getByLabelText("Line height") as HTMLInputElement).disabled).toBe(
       true,
     );
-    expect((screen.getByLabelText("Letter spacing") as HTMLInputElement).disabled).toBe(
-      true,
-    );
-    expect((screen.getByLabelText("Font ligatures") as HTMLInputElement).disabled).toBe(
-      true,
-    );
+    expect(
+      (screen.getByLabelText("Letter spacing") as HTMLInputElement).disabled,
+    ).toBe(true);
+    expect(
+      (screen.getByLabelText("Font ligatures") as HTMLInputElement).disabled,
+    ).toBe(true);
     expect(
       screen.getByText(
         "ghostty-web does not expose line height, letter spacing, or ligature controls.",

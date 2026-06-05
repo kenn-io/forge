@@ -15,7 +15,9 @@ export type ProblemCode = ProblemBody["code"];
 
 export const ProblemCodes = Object.fromEntries(
   problemErrorCodeValues.map((code) => [code, code]),
-) as { readonly [K in ProblemCode]: K };
+) as {
+  readonly [K in ProblemCode]: K;
+};
 
 const problemCodeValues = new Set<string>(problemErrorCodeValues);
 

@@ -193,7 +193,12 @@ const diffResponse = {
               new_num: 1,
               content: "const a = 1;",
             },
-            { type: "add", old_num: null, new_num: 2, content: "const b = 2;" },
+            {
+              type: "add",
+              old_num: null,
+              new_num: 2,
+              content: "const b = 2;",
+            },
           ],
         },
       ],
@@ -424,7 +429,9 @@ async function mockInlineReviewAPI(
   });
   await page.route(`**${path}/review-draft/publish`, async (route) => {
     draftComments = options.remainingDraftComments ?? [];
-    await fulfillJson(route, { status: options.publishStatus ?? "published" });
+    await fulfillJson(route, {
+      status: options.publishStatus ?? "published",
+    });
   });
   await page.route(`**${path}/review-threads/1/resolve`, async (route) => {
     reviewThreadResolved = true;
@@ -462,7 +469,9 @@ test("adds and publishes an inline draft review comment", async ({ page }) => {
   await expect(page.locator(".inline-draft-comment")).toContainText(
     "Please cover this line.",
   );
-  await expect(page.getByRole("button", { name: "Show full comment" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Show full comment" })).toHaveCount(
+    0,
+  );
   await page.getByRole("button", { name: "Publish review" }).click();
   await expect(page.getByText("1 draft comment")).toBeHidden();
 });
@@ -591,7 +600,9 @@ test("keeps inline composer inside the visible diff pane on long lines", async (
   );
 });
 
-test("shows saved draft comments inline and jumps from the tray", async ({ page }) => {
+test("shows saved draft comments inline and jumps from the tray", async ({
+  page,
+}) => {
   await page.addInitScript(() => {
     localStorage.setItem("diff-word-wrap", "true");
   });
@@ -686,9 +697,9 @@ test("hides inline review controls when provider draft review is unsupported", a
 
   await page.goto("/pulls/github/acme/widgets/42");
   await page.getByRole("button", { name: "Files changed" }).click();
-  await expect(page.getByRole("button", { name: "Comment on new line 2" })).toHaveCount(
-    0,
-  );
+  await expect(
+    page.getByRole("button", { name: "Comment on new line 2" }),
+  ).toHaveCount(0);
 });
 
 test("resolves a published inline review thread from the timeline", async ({
@@ -709,7 +720,9 @@ test("shows published inline review context in conversation and jumps to the dif
 
   await page.goto("/pulls/github/acme/widgets/42");
 
-  await expect(page.getByLabel("Commented diff context")).toContainText("const b = 2;");
+  await expect(page.getByLabel("Commented diff context")).toContainText(
+    "const b = 2;",
+  );
   await page.getByRole("button", { name: "Jump to diff" }).click();
 
   await expect(page.getByRole("button", { name: /Files changed/ })).toHaveClass(
@@ -732,7 +745,9 @@ test("keeps published inline review context loaded after switching back from fil
 
   await page.getByRole("button", { name: "Conversation" }).click();
   await expect(page).toHaveURL(/\/pulls\/github\/acme\/widgets\/42$/);
-  await expect(page.getByLabel("Commented diff context")).toContainText("const b = 2;");
+  await expect(page.getByLabel("Commented diff context")).toContainText(
+    "const b = 2;",
+  );
   await expect(page.getByText("Loading diff")).toHaveCount(0);
 
   await page.getByRole("button", { name: "Files changed" }).click();
@@ -741,7 +756,9 @@ test("keeps published inline review context loaded after switching back from fil
   );
 });
 
-test("preserves PR detail scroll positions while switching tabs", async ({ page }) => {
+test("preserves PR detail scroll positions while switching tabs", async ({
+  page,
+}) => {
   await mockInlineReviewAPI(
     page,
     baseCapabilities,
@@ -758,7 +775,9 @@ test("preserves PR detail scroll positions while switching tabs", async ({ page 
   );
 
   await page.goto("/pulls/github/acme/widgets/42");
-  await page.addStyleTag({ content: ".pull-detail { min-height: 1800px; }" });
+  await page.addStyleTag({
+    content: ".pull-detail { min-height: 1800px; }",
+  });
   const conversationScroller = page.locator(".pull-detail");
   await expect(conversationScroller).toBeVisible();
   await conversationScroller.evaluate((element) => {
@@ -819,7 +838,9 @@ test("preserves PR detail scroll position after pushed refresh events", async ({
       close(): void {}
 
       emit(type: string, payload: unknown): void {
-        const event = new MessageEvent(type, { data: JSON.stringify(payload) });
+        const event = new MessageEvent(type, {
+          data: JSON.stringify(payload),
+        });
         for (const listener of this.listeners.get(type) ?? []) {
           listener(event);
         }
@@ -869,7 +890,9 @@ test("preserves PR detail scroll position after pushed refresh events", async ({
   );
 
   await page.goto("/pulls/github/acme/widgets/42");
-  await page.addStyleTag({ content: ".pull-detail { min-height: 1800px; }" });
+  await page.addStyleTag({
+    content: ".pull-detail { min-height: 1800px; }",
+  });
   const conversationScroller = page.locator(".pull-detail");
   await expect(conversationScroller).toBeVisible();
   await conversationScroller.evaluate((element) => {

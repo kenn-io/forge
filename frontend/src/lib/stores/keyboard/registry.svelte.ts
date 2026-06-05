@@ -5,7 +5,10 @@ import type { Action, CheatsheetEntry } from "./types.js";
 let actionsByOwner = $state<Map<string, Action[]>>(new Map());
 let cheatsheetByOwner = $state<Map<string, CheatsheetEntry[]>>(new Map());
 
-export function registerScopedActions(ownerId: string, actions: Action[]): () => void {
+export function registerScopedActions(
+  ownerId: string,
+  actions: Action[],
+): () => void {
   const registered = [...actions];
   // Reads of actionsByOwner inside the registration helpers must not be
   // tracked: callers wire this through $effect (App.svelte registers default

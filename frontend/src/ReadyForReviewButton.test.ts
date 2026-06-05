@@ -35,7 +35,9 @@ describe("ReadyForReviewButton", () => {
   });
 
   it("refreshes detail and pull lists after marking ready for review", async () => {
-    mockPost.mockResolvedValue({ data: { status: "ready_for_review" } });
+    mockPost.mockResolvedValue({
+      data: { status: "ready_for_review" },
+    });
 
     render(ReadyForReviewButton, {
       props: {

@@ -86,12 +86,15 @@ export function sortRows(rows: RepoImportRow[], sort: SortState): RepoImportRow[
         cmp = rowKey(left.row).localeCompare(rowKey(right.row));
       } else {
         const leftTime = left.row.pushed_at ? Date.parse(left.row.pushed_at) : null;
-        const rightTime = right.row.pushed_at ? Date.parse(right.row.pushed_at) : null;
+        const rightTime = right.row.pushed_at
+          ? Date.parse(right.row.pushed_at)
+          : null;
         if (leftTime === null && rightTime === null) cmp = 0;
         else if (leftTime === null) cmp = 1;
         else if (rightTime === null) cmp = -1;
         else
-          cmp = sort.direction === "desc" ? rightTime - leftTime : leftTime - rightTime;
+          cmp =
+            sort.direction === "desc" ? rightTime - leftTime : leftTime - rightTime;
       }
       if (sort.direction === "desc" && sort.field !== "pushed_at") cmp = -cmp;
       if (cmp !== 0) return cmp;
@@ -132,7 +135,8 @@ export function applyRangeSelection(input: {
     ? input.visibleRows.findIndex((row) => rowKey(row) === input.anchorKey)
     : -1;
   if (clickedIndex === -1) return { selected: next, anchorKey: input.clickedKey };
-  const start = anchorIndex === -1 ? clickedIndex : Math.min(anchorIndex, clickedIndex);
+  const start =
+    anchorIndex === -1 ? clickedIndex : Math.min(anchorIndex, clickedIndex);
   const end = anchorIndex === -1 ? clickedIndex : Math.max(anchorIndex, clickedIndex);
   for (const row of input.visibleRows.slice(start, end + 1)) {
     if (row.already_configured) continue;

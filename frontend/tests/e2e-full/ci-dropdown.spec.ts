@@ -18,7 +18,9 @@ test.describe("CI dropdown", () => {
 
       const refreshResponse = await page.request.post(
         `${server.info.base_url}/api/v1/pulls/github/acme/widgets/1/ci-refresh`,
-        { data: {} },
+        {
+          data: {},
+        },
       );
       expect(refreshResponse.ok()).toBe(true);
       const refreshedDetail = (await refreshResponse.json()) as {
@@ -41,7 +43,9 @@ test.describe("CI dropdown", () => {
     }
   });
 
-  test("expanded pending CI checks trigger a detail sync refresh", async ({ page }) => {
+  test("expanded pending CI checks trigger a detail sync refresh", async ({
+    page,
+  }) => {
     const server = await startIsolatedE2EServer();
     try {
       await page.addInitScript(() => {
@@ -62,7 +66,9 @@ test.describe("CI dropdown", () => {
         `${server.info.base_url}/__e2e/pr-ci-state/pending`,
       );
       expect(seedResponse.ok()).toBe(true);
-      await expect(seedResponse.json()).resolves.toEqual({ status: "pending" });
+      await expect(seedResponse.json()).resolves.toEqual({
+        status: "pending",
+      });
 
       const backgroundSync = page.waitForResponse((response) => {
         const url = new URL(response.url());
@@ -162,7 +168,9 @@ test.describe("CI dropdown", () => {
       name: /CI: \d+ (passed|pending|failed|skipped) checks?/i,
     });
     const diffStatsChip = detail.locator(".diff-summary-trigger");
-    const labelsButton = detail.getByRole("button", { name: /^Labels$/ });
+    const labelsButton = detail.getByRole("button", {
+      name: /^Labels$/,
+    });
     const actionRow = detail.locator(".primary-actions-wrap");
     await chip.waitFor({ state: "visible", timeout: 10_000 });
     const chipStylesBefore = await chip.evaluate((node) => {
@@ -214,7 +222,9 @@ test.describe("CI dropdown", () => {
       "test",
     ]);
     await expect(detail.locator(".ci-duration")).toHaveText(["1m 30s", "45s", "2m"]);
-    const roborevRow = detail.locator(".ci-row", { hasText: "roborev" });
+    const roborevRow = detail.locator(".ci-row", {
+      hasText: "roborev",
+    });
     await expect(roborevRow).toHaveCount(1);
     expect(await roborevRow.evaluate((node) => node.tagName)).not.toBe("A");
   });
@@ -282,7 +292,9 @@ test.describe("CI dropdown", () => {
 
       await page.goto(`${server.info.base_url}/pulls/github/acme/widgets/1`);
 
-      await expect(page.locator(".pull-detail [data-testid='ci-chip']")).toHaveCount(0);
+      await expect(page.locator(".pull-detail [data-testid='ci-chip']")).toHaveCount(
+        0,
+      );
     } finally {
       await server.stop();
     }

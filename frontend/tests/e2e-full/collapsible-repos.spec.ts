@@ -115,7 +115,9 @@ test.describe("collapsible repo groups", () => {
     await newStatusHeader(page).click();
 
     await expect(newStatusHeader(page)).toHaveAttribute("aria-expanded", "false");
-    await expect(newStatusHeader(page).locator(".repo-header__count")).toHaveText("8");
+    await expect(newStatusHeader(page).locator(".repo-header__count")).toHaveText(
+      "8",
+    );
     await expect(page.locator(".pull-item")).toHaveCount(0);
 
     await newStatusHeader(page).click();
@@ -140,7 +142,9 @@ test.describe("collapsible repo groups", () => {
     await refreshedPage.close();
   });
 
-  test("collapse is independent across pulls and issues surfaces", async ({ page }) => {
+  test("collapse is independent across pulls and issues surfaces", async ({
+    page,
+  }) => {
     // Collapse acme/widgets on /pulls.
     await widgetsHeader(page).click();
     await expect(widgetsHeader(page)).toHaveAttribute("aria-expanded", "false");
@@ -154,7 +158,9 @@ test.describe("collapsible repo groups", () => {
     await expect(page.locator(".issue-item")).toHaveCount(5);
   });
 
-  test("issue list — collapse, expand, and persist acme/widgets", async ({ page }) => {
+  test("issue list — collapse, expand, and persist acme/widgets", async ({
+    page,
+  }) => {
     await page.goto("/issues");
     await waitForIssueList(page);
 

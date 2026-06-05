@@ -61,7 +61,9 @@ describe("Cheatsheet", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
     openCheatsheet();
     await rerender({});
-    const dialog = screen.getByRole("dialog", { name: "Keyboard shortcuts" });
+    const dialog = screen.getByRole("dialog", {
+      name: "Keyboard shortcuts",
+    });
     expect(dialog).not.toBeNull();
     expect(dialog.getAttribute("aria-modal")).toBe("true");
     closeCheatsheet();
@@ -71,23 +73,31 @@ describe("Cheatsheet", () => {
 
   it("renders the Global section with at least one bound action", async () => {
     registerScopedActions("test", [
-      action("test.global", "Test global action", "global", { key: "g" }),
+      action("test.global", "Test global action", "global", {
+        key: "g",
+      }),
     ]);
     const { rerender } = render(Cheatsheet, { props: {} });
     openCheatsheet();
     await rerender({});
-    const dialog = screen.getByRole("dialog", { name: "Keyboard shortcuts" });
+    const dialog = screen.getByRole("dialog", {
+      name: "Keyboard shortcuts",
+    });
     const section = sectionByHeader(dialog, "Global");
     expect(section).toBeTruthy();
     expect(section!.textContent ?? "").toContain("Test global action");
   });
 
   it("renders the Commands section for actions without a binding", async () => {
-    registerScopedActions("test", [action("test.cmd", "Test command", "global", null)]);
+    registerScopedActions("test", [
+      action("test.cmd", "Test command", "global", null),
+    ]);
     const { rerender } = render(Cheatsheet, { props: {} });
     openCheatsheet();
     await rerender({});
-    const dialog = screen.getByRole("dialog", { name: "Keyboard shortcuts" });
+    const dialog = screen.getByRole("dialog", {
+      name: "Keyboard shortcuts",
+    });
     const section = sectionByHeader(dialog, "Commands");
     expect(section).toBeTruthy();
     expect(section!.textContent ?? "").toContain("Test command");
@@ -101,7 +111,9 @@ describe("Cheatsheet", () => {
     const { rerender } = render(Cheatsheet, { props: {} });
     openCheatsheet();
     await rerender({});
-    const dialog = screen.getByRole("dialog", { name: "Keyboard shortcuts" });
+    const dialog = screen.getByRole("dialog", {
+      name: "Keyboard shortcuts",
+    });
     const before = sectionByHeader(dialog, "Global");
     expect(before).toBeTruthy();
     expect(before!.textContent ?? "").toContain("Alpha command");
@@ -112,7 +124,9 @@ describe("Cheatsheet", () => {
     await fireEvent.input(input!, { target: { value: "alpha" } });
     await rerender({});
 
-    const dialog2 = screen.getByRole("dialog", { name: "Keyboard shortcuts" });
+    const dialog2 = screen.getByRole("dialog", {
+      name: "Keyboard shortcuts",
+    });
     const after = sectionByHeader(dialog2, "Global");
     expect(after).toBeTruthy();
     expect(after!.textContent ?? "").toContain("Alpha command");
@@ -133,12 +147,16 @@ describe("Cheatsheet", () => {
 
   it("omits the Component shortcuts section when no entries exist", async () => {
     registerScopedActions("test", [
-      action("test.global", "Test global action", "global", { key: "g" }),
+      action("test.global", "Test global action", "global", {
+        key: "g",
+      }),
     ]);
     const { rerender } = render(Cheatsheet, { props: {} });
     openCheatsheet();
     await rerender({});
-    const dialog = screen.getByRole("dialog", { name: "Keyboard shortcuts" });
+    const dialog = screen.getByRole("dialog", {
+      name: "Keyboard shortcuts",
+    });
     expect(sectionByHeader(dialog, "Component shortcuts")).toBeUndefined();
   });
 });

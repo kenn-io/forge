@@ -16,7 +16,9 @@ test("config file changes update visible repo choices through SSE", async ({
     const selector = page.getByTitle("Select repository");
     await selector.click();
     await expect(
-      page.getByRole("option", { name: "github.com/hotreload/config-watch" }),
+      page.getByRole("option", {
+        name: "github.com/hotreload/config-watch",
+      }),
     ).toHaveCount(0);
 
     const initialConfig = await readFile(server.info.config_path, "utf8");
@@ -30,7 +32,9 @@ name = "config-watch"
     );
 
     await expect(
-      page.getByRole("option", { name: "github.com/hotreload/config-watch" }),
+      page.getByRole("option", {
+        name: "github.com/hotreload/config-watch",
+      }),
     ).toBeVisible({ timeout: 10_000 });
   } finally {
     await server.stop();

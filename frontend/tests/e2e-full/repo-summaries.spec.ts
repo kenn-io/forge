@@ -111,10 +111,12 @@ test.describe("repository summaries", () => {
       }),
     ).toHaveAttribute("href", "https://github.com/acme/widgets");
 
-    await expect(widgetsCard.getByRole("button", { name: "View PRs" })).toHaveCount(0);
-    await expect(widgetsCard.getByRole("button", { name: "View issues" })).toHaveCount(
+    await expect(widgetsCard.getByRole("button", { name: "View PRs" })).toHaveCount(
       0,
     );
+    await expect(
+      widgetsCard.getByRole("button", { name: "View issues" }),
+    ).toHaveCount(0);
 
     await widgetsCard.getByRole("button", { name: /\d+\s+Open PRs/ }).click();
     await expect(page).toHaveURL(/\/pulls$/);

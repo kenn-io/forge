@@ -176,7 +176,10 @@ function isLeftButtonDown(report: SgrMouseReport): boolean {
 
 function isLeftButtonDrag(report: SgrMouseReport): boolean {
   return (
-    report.final === "M" && isMotion(report) && !isWheel(report) && button(report) === 0
+    report.final === "M" &&
+    isMotion(report) &&
+    !isWheel(report) &&
+    button(report) === 0
   );
 }
 

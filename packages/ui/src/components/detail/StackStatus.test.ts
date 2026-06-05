@@ -149,6 +149,8 @@ describe("StackStatus", () => {
       }),
     ).toBeTruthy();
     expect(screen.getAllByText("× Conflicts")).toHaveLength(2);
-    expect(screen.getByText(/3 PRs . current 2\/3 . downstack conflict/)).toBeTruthy();
+    expect(
+      screen.getByText(/3 PRs . current 2\/3 . downstack conflict/),
+    ).toBeTruthy();
   });
 });

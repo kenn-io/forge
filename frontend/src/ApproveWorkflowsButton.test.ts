@@ -111,7 +111,9 @@ describe("ApproveWorkflowsButton", () => {
       },
     });
 
-    await fireEvent.click(screen.getByRole("button", { name: /^approve workflows$/i }));
+    await fireEvent.click(
+      screen.getByRole("button", { name: /^approve workflows$/i }),
+    );
 
     expect(screen.getByText("GitHub API error")).toBeTruthy();
     expect(mockRefreshDetailOnly).not.toHaveBeenCalled();

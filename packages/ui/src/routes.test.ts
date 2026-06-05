@@ -26,7 +26,9 @@ describe("route item builders", () => {
     const ref = { ...githubWidgets, number: 42 };
 
     expect(buildPullRequestRoute(ref)).toBe("/pulls/github/acme/widgets/42");
-    expect(buildPullRequestFilesRoute(ref)).toBe("/pulls/github/acme/widgets/42/files");
+    expect(buildPullRequestFilesRoute(ref)).toBe(
+      "/pulls/github/acme/widgets/42/files",
+    );
   });
 
   it("builds issue routes with encoded platform hosts", () => {
@@ -98,7 +100,11 @@ describe("route item builders", () => {
   });
 
   it("builds routed item routes for normal and focus surfaces", () => {
-    const pr = { itemType: "pr", ...githubWidgets, number: 42 } as const;
+    const pr = {
+      itemType: "pr",
+      ...githubWidgets,
+      number: 42,
+    } as const;
     const issue = {
       itemType: "issue",
       ...githubWidgets,

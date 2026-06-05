@@ -3,7 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 import type { ActivityItem } from "../api/types.js";
 import ActivityFeed from "./ActivityFeed.svelte";
 
-function activityItem(id: string, overrides: Partial<ActivityItem> = {}): ActivityItem {
+function activityItem(
+  id: string,
+  overrides: Partial<ActivityItem> = {},
+): ActivityItem {
   return {
     id,
     cursor: id,
@@ -54,7 +57,9 @@ function branchActivityItem(
 }
 
 const items = vi.hoisted(() => ({ value: [] as ActivityItem[] }));
-const viewMode = vi.hoisted(() => ({ value: "flat" as "flat" | "threaded" }));
+const viewMode = vi.hoisted(() => ({
+  value: "flat" as "flat" | "threaded",
+}));
 const collapseThreads = vi.hoisted(() => ({ value: false }));
 const collapseAllThreads = vi.hoisted(() => vi.fn());
 const expandAllThreads = vi.hoisted(() => vi.fn());
@@ -237,7 +242,9 @@ describe("ActivityFeed compact mode", () => {
 
     const row = container.querySelector(".activity-compact-row");
     expect(row?.querySelector(".chip--kind-pr")?.textContent?.trim()).toBe("PR");
-    expect(row?.querySelector(".chip--state-merged")?.textContent).toContain("Merged");
+    expect(row?.querySelector(".chip--state-merged")?.textContent).toContain(
+      "Merged",
+    );
     expect(row?.querySelector(".badge")).not.toBeNull();
     expect(row?.querySelector(".state-badge")).not.toBeNull();
   });

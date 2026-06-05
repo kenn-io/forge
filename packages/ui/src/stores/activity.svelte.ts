@@ -332,7 +332,9 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     if (hasPR && !hasIssue) itemFilter = "prs";
     else if (hasIssue && !hasPR) itemFilter = "issues";
     else itemFilter = "all";
-    enabledEvents = new Set(DEFAULT_EVENT_TYPES.filter((t) => filterTypes.includes(t)));
+    enabledEvents = new Set(
+      DEFAULT_EVENT_TYPES.filter((t) => filterTypes.includes(t)),
+    );
   }
 
   function applyCollapsedFromURL(): void {

@@ -280,7 +280,9 @@ describe("RepoImportModal", () => {
 
     await fireEvent.change(provider, { target: { value: "gitea" } });
     expect(host.value).toBe("gitea.com");
-    await fireEvent.input(pattern, { target: { value: "team/service-*" } });
+    await fireEvent.input(pattern, {
+      target: { value: "team/service-*" },
+    });
     preview.mockResolvedValueOnce({
       provider: "gitea",
       platform_host: "gitea.com",
@@ -309,7 +311,9 @@ describe("RepoImportModal", () => {
     close.focus();
     await fireEvent.keyDown(close, { key: "Tab", shiftKey: true });
 
-    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Cancel" }));
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: "Cancel" }),
+    );
   });
 
   it("ignores stale preview responses after input changes", async () => {

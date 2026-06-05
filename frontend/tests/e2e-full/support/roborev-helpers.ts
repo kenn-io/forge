@@ -187,7 +187,9 @@ async function fetchDaemonJSON(url: string): Promise<Record<string, unknown>> {
     throw new Error(
       `roborev daemon at ${url} is not reachable (${String(err)}). ` +
         wrongDaemonHint(),
-      { cause: err },
+      {
+        cause: err,
+      },
     );
   }
   return body;
@@ -207,7 +209,9 @@ function wrongDaemonHint(): string {
 
 export async function waitForReviewsReady(page: Page): Promise<void> {
   await page.goto("/reviews");
-  await expect(page.locator(".job-table")).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator(".job-table")).toBeVisible({
+    timeout: 15_000,
+  });
 }
 
 export async function waitForJobRows(page: Page, min: number): Promise<void> {
@@ -220,5 +224,7 @@ export async function waitForJobRows(page: Page, min: number): Promise<void> {
 
 export async function openDrawer(page: Page, jobId: number): Promise<void> {
   await page.goto(`/reviews/${jobId}`);
-  await expect(page.locator(".drawer")).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator(".drawer")).toBeVisible({
+    timeout: 10_000,
+  });
 }

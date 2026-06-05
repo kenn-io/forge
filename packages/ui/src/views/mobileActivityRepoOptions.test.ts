@@ -34,8 +34,16 @@ describe("buildMobileActivityRepoOptions", () => {
 
   it("shortens trigger labels when repo paths are unique", () => {
     const options = buildMobileActivityRepoOptions([
-      { ...baseRepo, platform_host: "github.com", repo_path: "acme/widgets" },
-      { ...baseRepo, platform_host: "ghe.example.com", repo_path: "acme/api" },
+      {
+        ...baseRepo,
+        platform_host: "github.com",
+        repo_path: "acme/widgets",
+      },
+      {
+        ...baseRepo,
+        platform_host: "ghe.example.com",
+        repo_path: "acme/api",
+      },
     ]);
 
     expect(options).toEqual([
@@ -54,9 +62,21 @@ describe("buildMobileActivityRepoOptions", () => {
 
   it("sorts concrete repo options by label", () => {
     const options = buildMobileActivityRepoOptions([
-      { ...baseRepo, platform_host: "github.com", repo_path: "zeta/widgets" },
-      { ...baseRepo, platform_host: "github.com", repo_path: "acme/widgets" },
-      { ...baseRepo, platform_host: "ghe.example.com", repo_path: "acme/api" },
+      {
+        ...baseRepo,
+        platform_host: "github.com",
+        repo_path: "zeta/widgets",
+      },
+      {
+        ...baseRepo,
+        platform_host: "github.com",
+        repo_path: "acme/widgets",
+      },
+      {
+        ...baseRepo,
+        platform_host: "ghe.example.com",
+        repo_path: "acme/api",
+      },
     ]);
 
     expect(options.map((option) => option.label)).toEqual([

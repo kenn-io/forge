@@ -61,12 +61,18 @@ test("keyboard navigation survives a real checkbox click", async ({ page }) => {
 
   // Real click on a leaf repo's checkbox.
   await page
-    .getByRole("option", { name: "github.com/acme/widgets", exact: true })
+    .getByRole("option", {
+      name: "github.com/acme/widgets",
+      exact: true,
+    })
     .locator("input[type='checkbox']")
     .click();
   await expect(
     page
-      .getByRole("option", { name: "github.com/acme/widgets", exact: true })
+      .getByRole("option", {
+        name: "github.com/acme/widgets",
+        exact: true,
+      })
       .locator("input[type='checkbox']"),
   ).toBeChecked();
 

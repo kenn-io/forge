@@ -1,6 +1,8 @@
 const EDITABLE_SELECTOR = "input, textarea, select, [contenteditable='true']";
 
-export function shouldIgnoreGlobalShortcutTarget(target: EventTarget | null): boolean {
+export function shouldIgnoreGlobalShortcutTarget(
+  target: EventTarget | null,
+): boolean {
   if (!(target instanceof Node)) {
     return false;
   }

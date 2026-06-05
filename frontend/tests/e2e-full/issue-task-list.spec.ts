@@ -13,7 +13,9 @@ if (chromiumBinary) {
 test.describe.serial("issue description task list", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/issues/github/acme/widgets/11");
-    await page.locator(".issue-detail").waitFor({ state: "visible", timeout: 15_000 });
+    await page
+      .locator(".issue-detail")
+      .waitFor({ state: "visible", timeout: 15_000 });
     await page.locator(".body-section .markdown-body").waitFor({ state: "visible" });
     // Give the page-load background sync time to settle so it can't
     // race with our optimistic click and clobber the local body.
@@ -72,7 +74,9 @@ test.describe.serial("issue description task list", () => {
     });
   });
 
-  test("drag handle reorders a task item and persists on reload", async ({ page }) => {
+  test("drag handle reorders a task item and persists on reload", async ({
+    page,
+  }) => {
     const body = page.locator(".body-section .markdown-body");
     const firstLabel = await body
       .locator('.task-list-item--interactive[data-task-index="0"]')
@@ -98,7 +102,9 @@ test.describe.serial("issue description task list", () => {
       await page.mouse.move(
         startX + ((targetX - startX) * i) / steps,
         startY + ((targetY - startY) * i) / steps,
-        { steps: 4 },
+        {
+          steps: 4,
+        },
       );
     }
     await page.mouse.up();

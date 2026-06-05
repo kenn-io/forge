@@ -101,7 +101,10 @@ function normalizeFilter(value: unknown): PRTimelineFilterState {
       persisted.showForcePushes,
       DEFAULT_PR_TIMELINE_FILTER.showForcePushes,
     ),
-    hideBots: booleanOrDefault(persisted.hideBots, DEFAULT_PR_TIMELINE_FILTER.hideBots),
+    hideBots: booleanOrDefault(
+      persisted.hideBots,
+      DEFAULT_PR_TIMELINE_FILTER.hideBots,
+    ),
   };
 }
 
@@ -145,7 +148,11 @@ export function filterPREvents(
   return events.filter((event) => {
     const threadID = timelineThreadID(event);
     if (filter.hideBots && isBotAuthor(event.Author)) return false;
-    if (!filter.showReplies && threadID && threadRoots.get(threadID)?.ID !== event.ID) {
+    if (
+      !filter.showReplies &&
+      threadID &&
+      threadRoots.get(threadID)?.ID !== event.ID
+    ) {
       return false;
     }
     switch (timelineEventBucket(event)) {

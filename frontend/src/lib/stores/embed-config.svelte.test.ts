@@ -191,7 +191,12 @@ describe("invokeAction", () => {
         throw new Error("boom");
       },
     };
-    invokeAction(action, { surface: "test", owner: "o", name: "n", number: 1 });
+    invokeAction(action, {
+      surface: "test",
+      owner: "o",
+      name: "n",
+      number: 1,
+    });
     expect(spy).toHaveBeenCalledWith("Embedding action error:", expect.any(Error));
     spy.mockRestore();
   });
@@ -203,7 +208,12 @@ describe("invokeAction", () => {
       label: "C",
       handler: () => Promise.reject(new Error("async boom")),
     };
-    invokeAction(action, { surface: "test", owner: "o", name: "n", number: 1 });
+    invokeAction(action, {
+      surface: "test",
+      owner: "o",
+      name: "n",
+      number: 1,
+    });
     await vi.waitFor(() => {
       expect(spy).toHaveBeenCalledWith("Embedding action error:", expect.any(Error));
     });
@@ -264,7 +274,9 @@ describe("invokeProjectAction", () => {
     const result = await invokeProjectAction(action, {
       surface: "first-run-panel",
     });
-    expect(handler).toHaveBeenCalledWith({ surface: "first-run-panel" });
+    expect(handler).toHaveBeenCalledWith({
+      surface: "first-run-panel",
+    });
     expect(result).toEqual({ ok: true });
   });
 

@@ -123,7 +123,9 @@ describe("recents", () => {
 
   it("pruneStale keeps items exactly at the 30-day boundary", () => {
     const now = new Date("2026-05-09T12:00:00Z");
-    const exactly30 = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const exactly30 = new Date(
+      now.getTime() - 30 * 24 * 60 * 60 * 1000,
+    ).toISOString();
     localStorage.setItem(
       RECENTS_KEY,
       JSON.stringify({
@@ -204,8 +206,16 @@ describe("recents", () => {
       JSON.stringify({
         version: 1,
         items: [
-          { kind: "pr", ref: null, lastSelectedAt: "2026-01-01T00:00:00Z" },
-          { kind: "pr", ref: {}, lastSelectedAt: "2026-01-01T00:00:00Z" },
+          {
+            kind: "pr",
+            ref: null,
+            lastSelectedAt: "2026-01-01T00:00:00Z",
+          },
+          {
+            kind: "pr",
+            ref: {},
+            lastSelectedAt: "2026-01-01T00:00:00Z",
+          },
           {
             kind: "pr",
             ref: {

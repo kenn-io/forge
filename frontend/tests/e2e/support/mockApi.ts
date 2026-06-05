@@ -274,7 +274,10 @@ function defaultPlatformHost(provider: string): string {
   }
 }
 
-function routePlatformHost(provider: string, hostSegment: string | undefined): string {
+function routePlatformHost(
+  provider: string,
+  hostSegment: string | undefined,
+): string {
   const host = decodePathSegment(hostSegment).trim();
   return host || defaultPlatformHost(provider);
 }
@@ -395,7 +398,9 @@ export async function mockApi(page: Page): Promise<void> {
       ((method === "GET" && !providerIssueMatch[6]) ||
         (method === "POST" && providerIssueMatch[6]?.startsWith("sync")))
     ) {
-      const issueProvider = canonicalProvider(decodePathSegment(providerIssueMatch[2]));
+      const issueProvider = canonicalProvider(
+        decodePathSegment(providerIssueMatch[2]),
+      );
       const platformHost = routePlatformHost(issueProvider, providerIssueMatch[1]);
       const issueOwner = decodePathSegment(providerIssueMatch[3]);
       const issueName = decodePathSegment(providerIssueMatch[4]);

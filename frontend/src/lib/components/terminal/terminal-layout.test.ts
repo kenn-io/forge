@@ -58,7 +58,10 @@ describe("terminal layout tree", () => {
 
     expect(collectSessionKeys(moved)).toEqual(["ws-1_a", "ws-1_b"]);
     expect(countLeaves(moved)).toBe(2);
-    expect(moved).toMatchObject({ type: "split", direction: "vertical" });
+    expect(moved).toMatchObject({
+      type: "split",
+      direction: "vertical",
+    });
   });
 
   it("maps pointer position to split edges only near pane edges", () => {

@@ -48,7 +48,9 @@ describe("Palette", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
     openPalette();
     await rerender({});
-    const dialog = screen.getByRole("dialog", { name: "Command palette" });
+    const dialog = screen.getByRole("dialog", {
+      name: "Command palette",
+    });
     expect(dialog).not.toBeNull();
     expect(dialog.getAttribute("aria-modal")).toBe("true");
     closePalette();
@@ -92,7 +94,9 @@ describe("Palette", () => {
     const { rerender } = render(Palette, { props: {} });
     openPalette();
     await rerender({});
-    const dialog = screen.getByRole("dialog", { name: "Command palette" });
+    const dialog = screen.getByRole("dialog", {
+      name: "Command palette",
+    });
     const input = dialog.querySelector(".palette-input");
     expect(input).not.toBeNull();
     await fireEvent.keyDown(input!, { key: "ArrowDown" });
@@ -112,7 +116,9 @@ describe("Palette", () => {
     const { rerender } = render(Palette, { props: {} });
     openPalette();
     await rerender({});
-    const dialog = screen.getByRole("dialog", { name: "Command palette" });
+    const dialog = screen.getByRole("dialog", {
+      name: "Command palette",
+    });
     const input = dialog.querySelector(".palette-input");
     expect(input).not.toBeNull();
     await fireEvent.keyDown(input!, { key: "ArrowUp" });
@@ -142,7 +148,9 @@ describe("Palette", () => {
     const { rerender } = render(Palette, { props: {} });
     openPalette();
     await rerender({});
-    const dialog = screen.getByRole("dialog", { name: "Command palette" });
+    const dialog = screen.getByRole("dialog", {
+      name: "Command palette",
+    });
     const input = dialog.querySelector(".palette-input");
     expect(input).not.toBeNull();
     await fireEvent.keyDown(input!, { key: "Enter" });
@@ -169,7 +177,9 @@ describe("Palette", () => {
     const { rerender } = render(Palette, { props: {} });
     openPalette();
     await rerender({});
-    const dialog = screen.getByRole("dialog", { name: "Command palette" });
+    const dialog = screen.getByRole("dialog", {
+      name: "Command palette",
+    });
     const row = dialog.querySelector(".palette-row");
     expect(row).not.toBeNull();
     await fireEvent.click(row!);
@@ -182,7 +192,9 @@ describe("Palette", () => {
     const { rerender } = render(Palette, { props: {} });
     openPalette();
     await rerender({});
-    const dialog = screen.getByRole("dialog", { name: "Command palette" });
+    const dialog = screen.getByRole("dialog", {
+      name: "Command palette",
+    });
     const headers = Array.from(dialog.querySelectorAll(".palette-group-header")).map(
       (el) => el.textContent ?? "",
     );
@@ -214,7 +226,9 @@ describe("Palette", () => {
     const { rerender } = render(Palette, { props: {} });
     openPalette();
     await rerender({});
-    const dialog = screen.getByRole("dialog", { name: "Command palette" });
+    const dialog = screen.getByRole("dialog", {
+      name: "Command palette",
+    });
     const headersBefore = Array.from(
       dialog.querySelectorAll(".palette-group-header"),
     ).map((el) => el.textContent ?? "");
@@ -258,7 +272,9 @@ describe("Palette", () => {
     const { rerender } = render(Palette, { props: {} });
     openPalette();
     await rerender({});
-    const dialog = screen.getByRole("dialog", { name: "Command palette" });
+    const dialog = screen.getByRole("dialog", {
+      name: "Command palette",
+    });
     const recentGroup = Array.from(dialog.querySelectorAll(".palette-group")).find(
       (g) =>
         (g.querySelector(".palette-group-header")?.textContent ?? "").includes(

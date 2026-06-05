@@ -86,7 +86,9 @@ test("popover opens via keyboard (Space)", async ({ page }) => {
   await expect(page.locator(".budget-popover")).toBeVisible();
 });
 
-test("mixed known/unknown hosts show worst-case from known only", async ({ page }) => {
+test("mixed known/unknown hosts show worst-case from known only", async ({
+  page,
+}) => {
   await page.route("**/api/v1/rate-limits", async (route) => {
     await route.fulfill({
       status: 200,
@@ -214,7 +216,9 @@ test("budget bars show unknown state when host not known", async ({ page }) => {
   await expect(bars.getByText("req/hr")).not.toBeVisible();
 });
 
-test("paused host shows red health dot and sync paused indicator", async ({ page }) => {
+test("paused host shows red health dot and sync paused indicator", async ({
+  page,
+}) => {
   await page.route("**/api/v1/rate-limits", async (route) => {
     await route.fulfill({
       status: 200,

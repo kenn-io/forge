@@ -451,7 +451,9 @@ test("unstacked pull detail does not request stack context", async ({ page }) =>
   expect(stackRequests).toBe(0);
 });
 
-test("stack status shares the PR detail expandable slot with CI", async ({ page }) => {
+test("stack status shares the PR detail expandable slot with CI", async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 892, height: 998 });
   await mockStackedPR(page);
 
@@ -498,11 +500,21 @@ test("stack status shares the PR detail expandable slot with CI", async ({ page 
   await expect(page.locator(".stack-base-name")).toHaveText("main");
 });
 
-test("stack status surfaces inherited downstack merge conflicts", async ({ page }) => {
+test("stack status surfaces inherited downstack merge conflicts", async ({
+  page,
+}) => {
   await mockStackedPR(page, {
     stackMembers: () => [
-      { ...stackMembers[0]!, ci_status: "success", mergeable_state: "dirty" },
-      { ...stackMembers[1]!, ci_status: "success", mergeable_state: "dirty" },
+      {
+        ...stackMembers[0]!,
+        ci_status: "success",
+        mergeable_state: "dirty",
+      },
+      {
+        ...stackMembers[1]!,
+        ci_status: "success",
+        mergeable_state: "dirty",
+      },
       ...stackMembers.slice(2),
     ],
   });

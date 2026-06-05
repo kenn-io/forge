@@ -157,7 +157,9 @@ test.describe("comment editor autocomplete", () => {
     page,
   }) => {
     await page.goto("/issues/github/acme/widgets/12");
-    await page.locator(".issue-detail").waitFor({ state: "visible", timeout: 10_000 });
+    await page
+      .locator(".issue-detail")
+      .waitFor({ state: "visible", timeout: 10_000 });
     await expect(page.getByText("Detail not yet loaded")).toHaveCount(0, {
       timeout: 10_000,
     });

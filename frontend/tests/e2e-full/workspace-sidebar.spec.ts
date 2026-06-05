@@ -24,7 +24,9 @@ type TerminalCanvasStats = {
   height: number;
 };
 
-async function readTerminalCanvasStats(canvas: Locator): Promise<TerminalCanvasStats> {
+async function readTerminalCanvasStats(
+  canvas: Locator,
+): Promise<TerminalCanvasStats> {
   return await canvas.evaluate((node) => {
     const terminalCanvas = node as HTMLCanvasElement;
     const context = terminalCanvas.getContext("2d");
@@ -124,7 +126,8 @@ test.describe("workspace sidebar full-stack", () => {
         },
       );
       expect(githubResponse.status()).toBe(202);
-      const githubWorkspace = (await githubResponse.json()) as WorkspaceStatusResponse;
+      const githubWorkspace =
+        (await githubResponse.json()) as WorkspaceStatusResponse;
       await waitForWorkspaceReady(api, githubWorkspace.id);
 
       const gitlabResponse = await api.post(
@@ -134,7 +137,8 @@ test.describe("workspace sidebar full-stack", () => {
         },
       );
       expect(gitlabResponse.status()).toBe(202);
-      const gitlabWorkspace = (await gitlabResponse.json()) as WorkspaceStatusResponse;
+      const gitlabWorkspace =
+        (await gitlabResponse.json()) as WorkspaceStatusResponse;
       await waitForWorkspaceReady(api, gitlabWorkspace.id);
 
       const workspacesResponse = await api.get("/api/v1/workspaces");
@@ -148,16 +152,26 @@ test.describe("workspace sidebar full-stack", () => {
         ),
       ).toEqual(new Set(["github", "gitlab"]));
 
-      await page.goto(`${isolatedServer.info.base_url}/terminal/${githubWorkspace.id}`);
+      await page.goto(
+        `${isolatedServer.info.base_url}/terminal/${githubWorkspace.id}`,
+      );
 
-      const githubGroup = page.locator(".workspace-list-sidebar .group-header").filter({
-        has: page.locator(".group-label", { hasText: "acme/widgets" }),
-      });
+      const githubGroup = page
+        .locator(".workspace-list-sidebar .group-header")
+        .filter({
+          has: page.locator(".group-label", {
+            hasText: "acme/widgets",
+          }),
+        });
       await expect(githubGroup.getByRole("img", { name: "GitHub" })).toBeVisible();
 
-      const gitlabGroup = page.locator(".workspace-list-sidebar .group-header").filter({
-        has: page.locator(".group-label", { hasText: "group/project" }),
-      });
+      const gitlabGroup = page
+        .locator(".workspace-list-sidebar .group-header")
+        .filter({
+          has: page.locator(".group-label", {
+            hasText: "group/project",
+          }),
+        });
       await expect(gitlabGroup.getByRole("img", { name: "GitLab" })).toBeVisible();
     } finally {
       await api?.dispose();
@@ -195,12 +209,18 @@ test.describe("workspace sidebar full-stack", () => {
         ),
       ).toBe(true);
 
-      await page.goto(`${isolatedServer.info.base_url}/terminal/${safariWorkspace.id}`);
+      await page.goto(
+        `${isolatedServer.info.base_url}/terminal/${safariWorkspace.id}`,
+      );
 
       const rows = page.locator(".workspace-list-sidebar .ws-row");
-      const groupHeader = page.locator(".workspace-list-sidebar .group-header").filter({
-        has: page.locator(".group-label", { hasText: "acme/widgets" }),
-      });
+      const groupHeader = page
+        .locator(".workspace-list-sidebar .group-header")
+        .filter({
+          has: page.locator(".group-label", {
+            hasText: "acme/widgets",
+          }),
+        });
       const filter = page.getByLabel("Filter workspaces");
 
       await expect(rows).toHaveCount(2);
@@ -236,7 +256,8 @@ test.describe("workspace sidebar full-stack", () => {
       );
       expect(createResponse.status()).toBe(202);
 
-      const createdWorkspace = (await createResponse.json()) as WorkspaceStatusResponse;
+      const createdWorkspace =
+        (await createResponse.json()) as WorkspaceStatusResponse;
       await waitForWorkspaceReady(api, createdWorkspace.id);
 
       await page.goto(
@@ -298,7 +319,8 @@ test.describe("workspace sidebar full-stack", () => {
       );
       expect(createResponse.status()).toBe(202);
 
-      const createdWorkspace = (await createResponse.json()) as WorkspaceStatusResponse;
+      const createdWorkspace =
+        (await createResponse.json()) as WorkspaceStatusResponse;
       await waitForWorkspaceReady(api, createdWorkspace.id);
 
       await page.goto(

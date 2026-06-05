@@ -7,7 +7,9 @@ describe("sync store", () => {
     const post = vi.fn(async () => ({ error: undefined }));
     const get = vi.fn(async (path: string) => {
       if (path === "/sync/status") {
-        return { data: { running: false, last_run_at: "", last_error: "" } };
+        return {
+          data: { running: false, last_run_at: "", last_error: "" },
+        };
       }
       return { data: { hosts: {} } };
     });

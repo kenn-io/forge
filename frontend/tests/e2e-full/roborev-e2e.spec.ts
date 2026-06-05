@@ -215,7 +215,9 @@ test.describe.serial("Roborev", () => {
   // Group 3: Filtering
   // -------------------------------------------------------
   test.describe("Filtering", () => {
-    test("status dropdown: select failed shows only failed jobs", async ({ page }) => {
+    test("status dropdown: select failed shows only failed jobs", async ({
+      page,
+    }) => {
       await waitForReviewsReady(page);
       await waitForJobRows(page, 10);
 
@@ -288,7 +290,9 @@ test.describe.serial("Roborev", () => {
       await expandBtn.click();
 
       // Select feat/auth branch
-      const branchItem = page.locator(".branch-item").filter({ hasText: "feat/auth" });
+      const branchItem = page
+        .locator(".branch-item")
+        .filter({ hasText: "feat/auth" });
       await expect(branchItem).toBeVisible();
       await branchItem.click();
 
@@ -390,7 +394,9 @@ test.describe.serial("Roborev", () => {
       const firstIdAfter = await page.locator(".col-id .mono").first().textContent();
 
       // The first ID should now be a lower number (ascending)
-      expect(Number(firstIdAfter?.trim())).toBeLessThan(Number(firstIdBefore?.trim()));
+      expect(Number(firstIdAfter?.trim())).toBeLessThan(
+        Number(firstIdBefore?.trim()),
+      );
     });
 
     test("click Status header sorts by status", async ({ page }) => {
@@ -419,7 +425,9 @@ test.describe.serial("Roborev", () => {
       await waitForReviewsReady(page);
       await waitForJobRows(page, 10);
 
-      const elapsedHeader = page.locator("th.sortable").filter({ hasText: "Elapsed" });
+      const elapsedHeader = page
+        .locator("th.sortable")
+        .filter({ hasText: "Elapsed" });
       await elapsedHeader.click();
       await page.waitForTimeout(300);
 
@@ -675,7 +683,9 @@ test.describe.serial("Roborev", () => {
 
       // Reload
       await page.reload();
-      await expect(page.locator(".drawer")).toBeVisible({ timeout: 15_000 });
+      await expect(page.locator(".drawer")).toBeVisible({
+        timeout: 15_000,
+      });
       await expect(page.locator(".job-id")).toContainText("72");
     });
   });
@@ -741,7 +751,9 @@ test.describe.serial("Roborev", () => {
       await page.keyboard.press("Shift+?");
       const modal = page.locator(".modal-backdrop");
       await expect(modal).toBeVisible();
-      await expect(page.locator(".modal-content")).toContainText("Keyboard Shortcuts");
+      await expect(page.locator(".modal-content")).toContainText(
+        "Keyboard Shortcuts",
+      );
 
       // Close with Escape
       await page.keyboard.press("Escape");
@@ -789,7 +801,9 @@ test.describe.serial("Roborev", () => {
       expect(text).toMatch(/Workers \d+\/\d+/);
     });
 
-    test("status strip connection indicator has connected class", async ({ page }) => {
+    test("status strip connection indicator has connected class", async ({
+      page,
+    }) => {
       await waitForReviewsReady(page);
       const indicator = page.locator(".daemon-status .conn-indicator.connected");
       await expect(indicator).toBeVisible();
@@ -808,7 +822,9 @@ test.describe.serial("Roborev", () => {
       startDaemon();
     });
 
-    test("fresh load shows empty state with unreachable message", async ({ page }) => {
+    test("fresh load shows empty state with unreachable message", async ({
+      page,
+    }) => {
       await page.goto("/reviews");
       // Daemon was never available on this fresh page, so
       // ReviewsView shows the empty-state fallback.
@@ -842,7 +858,9 @@ test.describe.serial("Roborev", () => {
       await expect(retryBtn).toHaveText("Retry");
     });
 
-    test("retry button while daemon still down keeps empty state", async ({ page }) => {
+    test("retry button while daemon still down keeps empty state", async ({
+      page,
+    }) => {
       await page.goto("/reviews");
       await expect(page.locator(".empty-state")).toBeVisible({
         timeout: 15_000,
@@ -940,8 +958,12 @@ test.describe.serial("Roborev", () => {
       // Click a row to open the drawer and verify content
       // actually loaded (not just an empty shell)
       await page.locator(".job-row").first().click();
-      await expect(page.locator(".drawer")).toBeVisible({ timeout: 10_000 });
-      await expect(page.locator(".job-id")).toBeVisible({ timeout: 5_000 });
+      await expect(page.locator(".drawer")).toBeVisible({
+        timeout: 10_000,
+      });
+      await expect(page.locator(".job-id")).toBeVisible({
+        timeout: 5_000,
+      });
       await expect(page.locator(".drawer-header")).toContainText(/\d+/);
     });
   });

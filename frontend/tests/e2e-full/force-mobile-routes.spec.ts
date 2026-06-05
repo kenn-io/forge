@@ -10,7 +10,9 @@ test("force-mobile flag renders canonical issue route with focus presentation", 
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.addInitScript(() => {
     (
-      window as unknown as { __MIDDLEMAN_FORCE_MOBILE_ROUTES__?: boolean }
+      window as unknown as {
+        __MIDDLEMAN_FORCE_MOBILE_ROUTES__?: boolean;
+      }
     ).__MIDDLEMAN_FORCE_MOBILE_ROUTES__ = true;
   });
 

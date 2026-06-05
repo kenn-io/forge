@@ -12,7 +12,9 @@ export interface CollapsedActivityRun {
 
 export type ActivityRow = ActivityItem | CollapsedActivityRun;
 
-export function isCollapsedActivityRow(row: ActivityRow): row is CollapsedActivityRun {
+export function isCollapsedActivityRow(
+  row: ActivityRow,
+): row is CollapsedActivityRun {
   return "kind" in row && row.kind === "collapsed";
 }
 
@@ -25,7 +27,9 @@ export function isDefaultBranchForcePushActivity(item: ActivityItem): boolean {
 }
 
 export function isDefaultBranchActivity(item: ActivityItem): boolean {
-  return isDefaultBranchCommitActivity(item) || isDefaultBranchForcePushActivity(item);
+  return (
+    isDefaultBranchCommitActivity(item) || isDefaultBranchForcePushActivity(item)
+  );
 }
 
 export function shortSha(sha: string | undefined): string {

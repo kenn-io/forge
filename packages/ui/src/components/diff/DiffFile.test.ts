@@ -60,8 +60,8 @@ beforeAll(() => {
   }
   (globalThis as GlobalWithResizeObserver).ResizeObserver = ResizeObserverStub;
 
-  originalReplaceSync = (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet?.prototype
-    .replaceSync;
+  originalReplaceSync = (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet
+    ?.prototype.replaceSync;
   if ((globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet?.prototype) {
     (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet.prototype.replaceSync ??=
       function replaceSync(): void {};
@@ -124,7 +124,12 @@ function makeFile(overrides: Partial<DiffFileType> = {}): DiffFileType {
         new_start: 1,
         new_count: 5,
         lines: [
-          { type: "context", content: "line 1", old_num: 1, new_num: 1 },
+          {
+            type: "context",
+            content: "line 1",
+            old_num: 1,
+            new_num: 1,
+          },
           { type: "delete", content: "old line", old_num: 2 },
           { type: "add", content: "new line", new_num: 2 },
         ],
@@ -296,7 +301,8 @@ describe("DiffFile", () => {
         return [];
       }
     }
-    (globalThis as GlobalWithIO).IntersectionObserver = PendingIntersectionObserverStub;
+    (globalThis as GlobalWithIO).IntersectionObserver =
+      PendingIntersectionObserverStub;
 
     try {
       renderDiffFile(makeFile());
@@ -689,7 +695,9 @@ describe("DiffFile", () => {
     const textarea = screen.getByPlaceholderText("Reply to thread");
     expect(textarea).toBe(document.activeElement);
 
-    await fireEvent.input(textarea, { target: { value: "Follow-up reply" } });
+    await fireEvent.input(textarea, {
+      target: { value: "Follow-up reply" },
+    });
     await fireEvent.click(screen.getByRole("button", { name: "Reply" }));
 
     await waitFor(() => {
@@ -871,10 +879,20 @@ describe("DiffFile", () => {
           new_start: 1,
           new_count: 3,
           lines: [
-            { type: "context", content: "shared 1", old_num: 1, new_num: 1 },
+            {
+              type: "context",
+              content: "shared 1",
+              old_num: 1,
+              new_num: 1,
+            },
             { type: "delete", content: "old early", old_num: 2 },
             { type: "add", content: "new early", new_num: 2 },
-            { type: "context", content: "shared 3", old_num: 3, new_num: 3 },
+            {
+              type: "context",
+              content: "shared 3",
+              old_num: 3,
+              new_num: 3,
+            },
           ],
         },
         {
@@ -883,10 +901,20 @@ describe("DiffFile", () => {
           new_start: 77,
           new_count: 3,
           lines: [
-            { type: "context", content: "shared 77", old_num: 77, new_num: 77 },
+            {
+              type: "context",
+              content: "shared 77",
+              old_num: 77,
+              new_num: 77,
+            },
             { type: "delete", content: "old late", old_num: 78 },
             { type: "add", content: "new late", new_num: 78 },
-            { type: "context", content: "shared 79", old_num: 79, new_num: 79 },
+            {
+              type: "context",
+              content: "shared 79",
+              old_num: 79,
+              new_num: 79,
+            },
           ],
         },
       ],
@@ -969,10 +997,20 @@ describe("DiffFile", () => {
           new_start: 1,
           new_count: 3,
           lines: [
-            { type: "context", content: "shared 1", old_num: 1, new_num: 1 },
+            {
+              type: "context",
+              content: "shared 1",
+              old_num: 1,
+              new_num: 1,
+            },
             { type: "delete", content: "old early", old_num: 2 },
             { type: "add", content: "new early", new_num: 2 },
-            { type: "context", content: "shared 3", old_num: 3, new_num: 3 },
+            {
+              type: "context",
+              content: "shared 3",
+              old_num: 3,
+              new_num: 3,
+            },
           ],
         },
         {
@@ -981,10 +1019,20 @@ describe("DiffFile", () => {
           new_start: 77,
           new_count: 3,
           lines: [
-            { type: "context", content: "shared 77", old_num: 77, new_num: 77 },
+            {
+              type: "context",
+              content: "shared 77",
+              old_num: 77,
+              new_num: 77,
+            },
             { type: "delete", content: "old late", old_num: 78 },
             { type: "add", content: "new late", new_num: 78 },
-            { type: "context", content: "shared 79", old_num: 79, new_num: 79 },
+            {
+              type: "context",
+              content: "shared 79",
+              old_num: 79,
+              new_num: 79,
+            },
           ],
         },
       ],
@@ -1067,10 +1115,20 @@ describe("DiffFile", () => {
           new_start: 1,
           new_count: 3,
           lines: [
-            { type: "context", content: "shared 1", old_num: 1, new_num: 1 },
+            {
+              type: "context",
+              content: "shared 1",
+              old_num: 1,
+              new_num: 1,
+            },
             { type: "delete", content: "old early", old_num: 2 },
             { type: "add", content: "new early", new_num: 2 },
-            { type: "context", content: "shared 3", old_num: 3, new_num: 3 },
+            {
+              type: "context",
+              content: "shared 3",
+              old_num: 3,
+              new_num: 3,
+            },
           ],
         },
         {
@@ -1079,15 +1137,27 @@ describe("DiffFile", () => {
           new_start: 77,
           new_count: 3,
           lines: [
-            { type: "context", content: "shared 77", old_num: 77, new_num: 77 },
+            {
+              type: "context",
+              content: "shared 77",
+              old_num: 77,
+              new_num: 77,
+            },
             { type: "delete", content: "old late", old_num: 78 },
             { type: "add", content: "new late", new_num: 78 },
-            { type: "context", content: "shared 79", old_num: 79, new_num: 79 },
+            {
+              type: "context",
+              content: "shared 79",
+              old_num: 79,
+              new_num: 79,
+            },
           ],
         },
       ],
     });
-    const { diff } = renderDiffFile(file, { contextExpansionEnabled: false });
+    const { diff } = renderDiffFile(file, {
+      contextExpansionEnabled: false,
+    });
     const loadFilePreview = vi.spyOn(diff, "loadFilePreview");
 
     await waitFor(() => {
@@ -1123,10 +1193,20 @@ describe("DiffFile", () => {
           new_start: 1,
           new_count: 3,
           lines: [
-            { type: "context", content: "shared 1", old_num: 1, new_num: 1 },
+            {
+              type: "context",
+              content: "shared 1",
+              old_num: 1,
+              new_num: 1,
+            },
             { type: "delete", content: "old early", old_num: 2 },
             { type: "add", content: "new early", new_num: 2 },
-            { type: "context", content: "shared 3", old_num: 3, new_num: 3 },
+            {
+              type: "context",
+              content: "shared 3",
+              old_num: 3,
+              new_num: 3,
+            },
           ],
         },
         {
@@ -1135,10 +1215,20 @@ describe("DiffFile", () => {
           new_start: 17,
           new_count: 3,
           lines: [
-            { type: "context", content: "shared 17", old_num: 17, new_num: 17 },
+            {
+              type: "context",
+              content: "shared 17",
+              old_num: 17,
+              new_num: 17,
+            },
             { type: "delete", content: "old late", old_num: 18 },
             { type: "add", content: "new late", new_num: 18 },
-            { type: "context", content: "shared 19", old_num: 19, new_num: 19 },
+            {
+              type: "context",
+              content: "shared 19",
+              old_num: 19,
+              new_num: 19,
+            },
           ],
         },
       ],

@@ -122,7 +122,8 @@ function safePierrePatch(file: DiffFile): string {
         return line;
       }
       if (!inHeader) return line;
-      if (line.startsWith("diff --git ")) return `diff --git a/${oldName} b/${newName}`;
+      if (line.startsWith("diff --git "))
+        return `diff --git a/${oldName} b/${newName}`;
       if (line === "--- /dev/null") return line;
       if (line === "+++ /dev/null") return line;
       if (line.startsWith("--- ")) return `--- a/${oldName}`;
@@ -239,7 +240,10 @@ function sparsePatchContents(file: DiffFile): {
 
   for (const hunk of file.hunks ?? []) {
     for (const line of hunk.lines) {
-      if ((line.type === "context" || line.type === "delete") && line.old_num != null) {
+      if (
+        (line.type === "context" || line.type === "delete") &&
+        line.old_num != null
+      ) {
         oldLines[line.old_num - 1] = line.content;
       }
       if ((line.type === "context" || line.type === "add") && line.new_num != null) {
@@ -251,7 +255,11 @@ function sparsePatchContents(file: DiffFile): {
   const newContents = joinSparseLines(newLines);
 
   return {
-    oldFile: pierreFileContents(file.old_path || file.path, oldContents, "sparse-old"),
+    oldFile: pierreFileContents(
+      file.old_path || file.path,
+      oldContents,
+      "sparse-old",
+    ),
     newFile: pierreFileContents(file.path, newContents, "sparse-new"),
   };
 }

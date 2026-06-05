@@ -543,7 +543,9 @@ describe("createDiffStore loadDiff", () => {
           );
         }
         if (url.includes("/workspaces/ws-1/diff")) {
-          return Response.json(url.includes("whitespace=hide") ? diffHidden : diffAll);
+          return Response.json(
+            url.includes("whitespace=hide") ? diffHidden : diffAll,
+          );
         }
         return Response.json({}, { status: 404 });
       },
@@ -565,7 +567,9 @@ describe("createDiffStore loadDiff", () => {
       expect(store.isDiffLoading()).toBe(false);
     });
 
-    expect(calls).toContain("/api/v1/workspaces/ws-1/files?base=head&whitespace=hide");
+    expect(calls).toContain(
+      "/api/v1/workspaces/ws-1/files?base=head&whitespace=hide",
+    );
     expect(calls).toContain("/api/v1/workspaces/ws-1/diff?base=head&whitespace=hide");
   });
 
@@ -601,9 +605,9 @@ describe("createDiffStore loadDiff", () => {
 
     expect(store.getActiveFile()).toBe("b.ts");
     expect(store.getScrollTarget()).toEqual({ path: "b.ts" });
-    expect(calls.filter((url) => url.includes("/api/v1/workspaces/ws-1/diff"))).toEqual(
-      ["/api/v1/workspaces/ws-1/diff?base=head"],
-    );
+    expect(
+      calls.filter((url) => url.includes("/api/v1/workspaces/ws-1/diff")),
+    ).toEqual(["/api/v1/workspaces/ws-1/diff?base=head"]);
   });
 
   it("uses the workspace diff whitespace count", async () => {

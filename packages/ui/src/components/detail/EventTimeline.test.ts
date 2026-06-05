@@ -38,8 +38,8 @@ beforeAll(() => {
   }
   (globalThis as GlobalWithResizeObserver).ResizeObserver = ResizeObserverStub;
 
-  originalReplaceSync = (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet?.prototype
-    .replaceSync;
+  originalReplaceSync = (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet
+    ?.prototype.replaceSync;
   if ((globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet?.prototype) {
     (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet.prototype.replaceSync ??=
       function replaceSync(): void {};
@@ -136,8 +136,16 @@ function makeDiffStore(overrides: Partial<DiffStore> = {}): DiffStore {
                 new_num: 9,
                 content: "const client = setup();",
               },
-              { type: "add", new_num: 10, content: "client.enableReviews();" },
-              { type: "add", new_num: 11, content: "client.publishThreads();" },
+              {
+                type: "add",
+                new_num: 10,
+                content: "client.enableReviews();",
+              },
+              {
+                type: "add",
+                new_num: 11,
+                content: "client.publishThreads();",
+              },
               {
                 type: "context",
                 old_num: 10,
@@ -279,7 +287,9 @@ describe("EventTimeline", () => {
     ]);
 
     expect(cardStyle.getPropertyValue("background")).toBe("var(--bg-surface)");
-    expect(cardStyle.getPropertyValue("border")).toBe("1px solid var(--border-muted)");
+    expect(cardStyle.getPropertyValue("border")).toBe(
+      "1px solid var(--border-muted)",
+    );
     expect(cardStyle.getPropertyValue("border-radius")).toBe("var(--radius-md)");
     expect(bodyStyle.getPropertyValue("background")).toBe("");
     expect(bodyStyle.getPropertyValue("border")).toBe("");
@@ -488,7 +498,9 @@ describe("EventTimeline", () => {
     expect(document.querySelector(".event--compact")).toBeTruthy();
     expect(document.querySelector(".commit-title")).toBeNull();
     expect(
-      document.querySelector(".commit-body-details")?.classList.contains("event-body"),
+      document
+        .querySelector(".commit-body-details")
+        ?.classList.contains("event-body"),
     ).toBe(true);
     expect(
       document
@@ -1239,7 +1251,9 @@ describe("EventTimeline", () => {
       },
     });
 
-    const link = screen.getByRole("link", { name: "external reference" });
+    const link = screen.getByRole("link", {
+      name: "external reference",
+    });
     expect(link.getAttribute("href")).toBe(
       "https://github.com/kenn-io/middleman/pull/377",
     );
@@ -1377,7 +1391,10 @@ describe("EventTimeline", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Jump to diff" }));
 
     expect(jumpToReviewThread).toHaveBeenCalledWith(
-      expect.objectContaining({ id: "thread-1", path: "src/review.ts" }),
+      expect.objectContaining({
+        id: "thread-1",
+        path: "src/review.ts",
+      }),
     );
   });
 

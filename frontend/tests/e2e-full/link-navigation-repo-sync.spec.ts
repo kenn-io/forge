@@ -25,9 +25,12 @@ test.describe("deep-link repo dropdown + sidebar sync", () => {
     await page.goto("/pulls/github/acme/tools/1");
     await waitForPullDetail(page);
 
-    await expect(page.locator(".typeahead-value")).toHaveText("github.com/acme/tools", {
-      timeout: 5_000,
-    });
+    await expect(page.locator(".typeahead-value")).toHaveText(
+      "github.com/acme/tools",
+      {
+        timeout: 5_000,
+      },
+    );
 
     const repoHeaders = page.locator(".repo-header__name");
     await expect(repoHeaders).toHaveCount(1, { timeout: 5_000 });
@@ -70,9 +73,12 @@ test.describe("deep-link repo dropdown + sidebar sync", () => {
 
     await page.goto("/pulls/github/acme/tools/1");
     await waitForPullDetail(page);
-    await expect(page.locator(".typeahead-value")).toHaveText("github.com/acme/tools", {
-      timeout: 5_000,
-    });
+    await expect(page.locator(".typeahead-value")).toHaveText(
+      "github.com/acme/tools",
+      {
+        timeout: 5_000,
+      },
+    );
   });
 
   test("selecting an item from All repos keeps the all-repo filter", async ({

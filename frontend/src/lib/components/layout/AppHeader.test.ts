@@ -233,7 +233,9 @@ describe("AppHeader", () => {
     setSidebarCollapsed(true);
     const { container } = render(AppHeader);
 
-    expect(container.querySelector("button[title='Expand sidebar'] svg")).toBeTruthy();
+    expect(
+      container.querySelector("button[title='Expand sidebar'] svg"),
+    ).toBeTruthy();
   });
 
   it("opens selected Activity PR in PRs tab with files tab preserved", async () => {

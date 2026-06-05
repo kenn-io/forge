@@ -83,7 +83,9 @@ test.describe("mobile activity repository selector", () => {
     const activityRepos = await mockMobileRepoSettings(page);
 
     await page.goto("/m?range=30d&view=threaded");
-    const repoSelect = page.getByRole("combobox", { name: /Repository/ });
+    const repoSelect = page.getByRole("combobox", {
+      name: /Repository/,
+    });
     await expect(repoSelect).toBeVisible();
 
     await repoSelect.click();
@@ -92,7 +94,9 @@ test.describe("mobile activity repository selector", () => {
       page.getByRole("option", { name: "github.com/acme/widgets" }),
     ).toBeVisible();
     await expect(
-      page.getByRole("option", { name: "ghe.example.com/acme/widgets" }),
+      page.getByRole("option", {
+        name: "ghe.example.com/acme/widgets",
+      }),
     ).toBeVisible();
     await expect(page.getByRole("option", { name: "acme/*" })).toHaveCount(0);
 
@@ -174,7 +178,9 @@ test.describe("mobile activity repository selector", () => {
     ).toBeVisible();
     await expect(page.getByText("undefined/undefined")).toHaveCount(0);
     await expect(
-      page.locator(".mobile-activity-card__event-count", { hasText: "2" }),
+      page.locator(".mobile-activity-card__event-count", {
+        hasText: "2",
+      }),
     ).toHaveCount(0);
   });
 });

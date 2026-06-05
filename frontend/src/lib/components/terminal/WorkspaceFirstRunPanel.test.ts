@@ -13,14 +13,19 @@ interface SetupArgs {
   >;
 }
 
-function setupConfig({ ghAuthed, ghAvailable = true, handlers = {} }: SetupArgs): void {
+function setupConfig({
+  ghAuthed,
+  ghAvailable = true,
+  handlers = {},
+}: SetupArgs): void {
   win.__middleman_config = {
     actions: {
       project: [
         {
           id: "add-existing",
           label: "Add Existing",
-          handler: handlers["add-existing"] ?? vi.fn().mockResolvedValue({ ok: true }),
+          handler:
+            handlers["add-existing"] ?? vi.fn().mockResolvedValue({ ok: true }),
         },
         {
           id: "clone",
@@ -95,7 +100,10 @@ describe("WorkspaceFirstRunPanel", () => {
 
   it("invokes the action handler when the user clicks", async () => {
     const handler = vi.fn().mockResolvedValue({ ok: true });
-    setupConfig({ ghAuthed: true, handlers: { "add-existing": handler } });
+    setupConfig({
+      ghAuthed: true,
+      handlers: { "add-existing": handler },
+    });
     render(WorkspaceFirstRunPanel);
 
     const button = screen.getByRole("button", {
@@ -115,7 +123,9 @@ describe("WorkspaceFirstRunPanel", () => {
     setupConfig({ ghAuthed: true, handlers: { clone: handler } });
     render(WorkspaceFirstRunPanel);
 
-    await fireEvent.click(screen.getByRole("button", { name: /Clone a repository/i }));
+    await fireEvent.click(
+      screen.getByRole("button", { name: /Clone a repository/i }),
+    );
     expect(await screen.findByText("Couldn't reach the remote")).toBeTruthy();
   });
 
@@ -133,7 +143,9 @@ describe("WorkspaceFirstRunPanel", () => {
     render(WorkspaceFirstRunPanel);
 
     await fireEvent.click(
-      screen.getByRole("button", { name: /Add an existing local repository/i }),
+      screen.getByRole("button", {
+        name: /Add an existing local repository/i,
+      }),
     );
     expect(await screen.findByText(/not available in this build/i)).toBeTruthy();
   });

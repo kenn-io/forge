@@ -77,7 +77,9 @@ describe("SelectDropdown", () => {
 
     expect(
       screen
-        .getByRole("combobox", { name: "Repository: acme/very-long-service" })
+        .getByRole("combobox", {
+          name: "Repository: acme/very-long-service",
+        })
         .textContent?.trim(),
     ).toBe("acme/very-long-service");
   });

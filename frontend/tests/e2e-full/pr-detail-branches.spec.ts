@@ -20,7 +20,11 @@ test.describe("PR detail branch info", () => {
     await expect(arrow).toBeVisible();
   });
 
-  test("click branch shows copied feedback", async ({ page, context, browserName }) => {
+  test("click branch shows copied feedback", async ({
+    page,
+    context,
+    browserName,
+  }) => {
     if (browserName === "chromium") {
       await context.grantPermissions(["clipboard-read", "clipboard-write"]);
     }
@@ -41,7 +45,9 @@ test.describe("PR detail branch info", () => {
       .toBe(true);
   });
 
-  test("reveals current approvers from full-stack review events", async ({ page }) => {
+  test("reveals current approvers from full-stack review events", async ({
+    page,
+  }) => {
     const trigger = page.getByRole("button", { name: "APPROVED (2)" });
     await expect(trigger).toBeVisible();
 

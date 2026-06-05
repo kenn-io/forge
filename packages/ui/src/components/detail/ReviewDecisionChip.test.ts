@@ -39,7 +39,9 @@ describe("ReviewDecisionChip", () => {
       },
     });
 
-    const trigger = screen.getByRole("button", { name: "APPROVED (2)" });
+    const trigger = screen.getByRole("button", {
+      name: "APPROVED (2)",
+    });
     await fireEvent.click(trigger);
 
     const popup = document.querySelector(".approval-popup");

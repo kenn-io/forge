@@ -28,6 +28,8 @@ describe("shouldIgnoreGlobalShortcutTarget", () => {
   });
 
   it("allows shortcuts from ordinary elements", () => {
-    expect(shouldIgnoreGlobalShortcutTarget(document.createElement("div"))).toBe(false);
+    expect(shouldIgnoreGlobalShortcutTarget(document.createElement("div"))).toBe(
+      false,
+    );
   });
 });

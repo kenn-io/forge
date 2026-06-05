@@ -764,35 +764,40 @@ test.describe("activity split view and detail drawers", () => {
     await mockActivityWithGheIssue(page);
 
     let detailGetCount = 0;
-    await page.route("**/api/v1/**/issues/github/acme/widgets/10**", async (route) => {
-      if (route.request().method() !== "GET") {
-        await route.fallback();
-        return;
-      }
-      const url = new URL(route.request().url());
-      if (!isGheIssueRoute(url) || providerItemRoute(url)?.number !== "10") {
-        await route.fallback();
-        return;
-      }
+    await page.route(
+      "**/api/v1/**/issues/github/acme/widgets/10**",
+      async (route) => {
+        if (route.request().method() !== "GET") {
+          await route.fallback();
+          return;
+        }
+        const url = new URL(route.request().url());
+        if (!isGheIssueRoute(url) || providerItemRoute(url)?.number !== "10") {
+          await route.fallback();
+          return;
+        }
 
-      detailGetCount++;
-      if (detailGetCount === 1) {
-        await new Promise((resolve) => setTimeout(resolve, 200));
-        await route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify(issueDetailFixture("ghe.example.com")),
-        });
-        return;
-      }
+        detailGetCount++;
+        if (detailGetCount === 1) {
+          await new Promise((resolve) => setTimeout(resolve, 200));
+          await route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify(issueDetailFixture("ghe.example.com")),
+          });
+          return;
+        }
 
-      await new Promise(() => {});
-    });
+        await new Promise(() => {});
+      },
+    );
 
     await page.goto("/?view=flat");
     await waitForActivityTable(page);
 
-    await page.locator(".activity-row", { hasText: "Fix Safari layout issue" }).click();
+    await page
+      .locator(".activity-row", { hasText: "Fix Safari layout issue" })
+      .click();
 
     const detail = page.locator(".activity-detail");
     await expect(detail.locator(".issue-detail")).toBeVisible({
@@ -833,7 +838,10 @@ test.describe("activity split view and detail drawers", () => {
         asyncSyncPosts.set(key, (asyncSyncPosts.get(key) ?? 0) + 1);
         await route.fulfill({ status: 202, body: "" });
         return;
-      } else if (route.request().method() === "POST" && detailRoute.suffix === "sync") {
+      } else if (
+        route.request().method() === "POST" &&
+        detailRoute.suffix === "sync"
+      ) {
         syncPosts.set(key, (syncPosts.get(key) ?? 0) + 1);
       } else {
         await route.fallback();
@@ -847,7 +855,9 @@ test.describe("activity split view and detail drawers", () => {
           issueDetailFixture(
             "ghe.example.com",
             issueNumber,
-            issueNumber === 10 ? "Fix Safari layout issue" : "Fix Firefox layout issue",
+            issueNumber === 10
+              ? "Fix Safari layout issue"
+              : "Fix Firefox layout issue",
           ),
         ),
       });
@@ -856,7 +866,9 @@ test.describe("activity split view and detail drawers", () => {
     await page.goto("/?view=flat");
     await waitForActivityTable(page);
 
-    await page.locator(".activity-row", { hasText: "Fix Safari layout issue" }).click();
+    await page
+      .locator(".activity-row", { hasText: "Fix Safari layout issue" })
+      .click();
     const detail = page.locator(".activity-detail");
     await expect(detail.locator(".issue-detail")).toBeVisible();
 
@@ -914,7 +926,9 @@ test.describe("activity split view and detail drawers", () => {
     await page.goto("/");
     await waitForActivityTable(page);
 
-    await page.locator(".activity-row", { hasText: "Fix Safari layout issue" }).click();
+    await page
+      .locator(".activity-row", { hasText: "Fix Safari layout issue" })
+      .click();
 
     await expect(page).toHaveURL(/selected=issue%3A10/);
     await expect(page).toHaveURL(/provider=github/);
@@ -925,7 +939,9 @@ test.describe("activity split view and detail drawers", () => {
     expect(seenHosts).not.toContain("github.com");
   });
 
-  test("PR tab handoff preserves selected Activity PR files tab", async ({ page }) => {
+  test("PR tab handoff preserves selected Activity PR files tab", async ({
+    page,
+  }) => {
     const pageErrors: string[] = [];
     page.on("pageerror", (error) => {
       pageErrors.push(error.message);
@@ -1027,7 +1043,9 @@ test.describe("activity split view and detail drawers", () => {
     await expect(detail.locator(".list-layout > .resize-handle")).toHaveCount(0);
   });
 
-  test("kanban drawer Files tab renders the file/commit sidebar", async ({ page }) => {
+  test("kanban drawer Files tab renders the file/commit sidebar", async ({
+    page,
+  }) => {
     await mockDiffForAllPRs(page, tinyDiff);
 
     await page.goto("/pulls/board");
@@ -1171,7 +1189,9 @@ test.describe("activity split view and detail drawers", () => {
     await expectDiffFileVisibleInScrollArea(diffArea, "src/file_11.go");
   });
 
-  test("issue split view scrolls internally to bottom of content", async ({ page }) => {
+  test("issue split view scrolls internally to bottom of content", async ({
+    page,
+  }) => {
     await page.goto("/");
     await waitForActivityTable(page);
 
@@ -1410,7 +1430,9 @@ test.describe("activity split view and detail drawers", () => {
     await expect(detail).toBeVisible();
     await expect(page.locator(".activity-split-resize-handle")).toBeHidden();
     await expect(page.locator(".activity-collapsed-strip")).toBeVisible();
-    await expect(page.locator("button[title='Expand Activity sidebar']")).toBeVisible();
+    await expect(
+      page.locator("button[title='Expand Activity sidebar']"),
+    ).toBeVisible();
     const collapsedBox = await rail.boundingBox();
     expect(collapsedBox).not.toBeNull();
     expect(collapsedBox!.width).toBeLessThan(40);
@@ -1443,7 +1465,11 @@ test.describe("activity split view and detail drawers", () => {
     await expect(page.locator(".activity-collapsed-strip")).toHaveCount(0);
     await expect(page.locator(".activity-table")).toBeVisible();
     await expect(
-      page.locator(".activity-row", { hasText: "Add widget caching layer" }).first(),
+      page
+        .locator(".activity-row", {
+          hasText: "Add widget caching layer",
+        })
+        .first(),
     ).toBeVisible();
   });
 
@@ -1709,7 +1735,11 @@ test.describe("activity split view and detail drawers", () => {
     let closeClicked = false;
     page.on("request", (req) => {
       const url = req.url();
-      if (closeClicked && url.includes("/api/v1/pulls") && url.includes("state=open")) {
+      if (
+        closeClicked &&
+        url.includes("/api/v1/pulls") &&
+        url.includes("state=open")
+      ) {
         openPullsRequestsAfterClose++;
       }
     });
@@ -1741,7 +1771,9 @@ test.describe("activity split view and detail drawers", () => {
     // dropped only widgets#1, not unrelated entries.
     await expect(
       page.locator(".kanban-card").filter({ hasText: "Add widget caching layer" }),
-    ).toHaveCount(0, { timeout: 10_000 });
+    ).toHaveCount(0, {
+      timeout: 10_000,
+    });
     await expect(
       page.locator(".kanban-card").filter({ hasText: "Refactor widget pipeline" }),
     ).toBeVisible();
@@ -1754,7 +1786,9 @@ test.describe("activity split view and detail drawers", () => {
 });
 
 test.describe("PR list tabs", () => {
-  test("outer PR-list tab bar remains singular and router-driven", async ({ page }) => {
+  test("outer PR-list tab bar remains singular and router-driven", async ({
+    page,
+  }) => {
     // Mock the diff so navigating to /files does not depend on real data.
     await mockDiffForAllPRs(page, tinyDiff);
 

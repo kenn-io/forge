@@ -129,7 +129,9 @@ describe("ApproveButton tooltips", () => {
     resolvePost({ data: { status: "approved" } });
 
     await waitFor(() => {
-      expect(screen.queryByRole("dialog", { name: "Approve pull request" })).toBeNull();
+      expect(
+        screen.queryByRole("dialog", { name: "Approve pull request" }),
+      ).toBeNull();
     });
   });
 
@@ -144,8 +146,8 @@ describe("ApproveButton tooltips", () => {
     await rerender({ owner: "acme", name: "widget", number: 2 });
 
     expect(screen.queryByRole("textbox")).toBeNull();
-    expect(screen.getByRole("button", { name: /approve/i }).getAttribute("title")).toBe(
-      "Open the approval form to submit a code review on this pull request",
-    );
+    expect(
+      screen.getByRole("button", { name: /approve/i }).getAttribute("title"),
+    ).toBe("Open the approval form to submit a code review on this pull request");
   });
 });

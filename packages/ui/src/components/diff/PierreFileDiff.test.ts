@@ -145,7 +145,12 @@ function makeFile(): DiffFile {
         new_start: 1,
         new_count: 2,
         lines: [
-          { type: "context", content: "line 1", old_num: 1, new_num: 1 },
+          {
+            type: "context",
+            content: "line 1",
+            old_num: 1,
+            new_num: 1,
+          },
           { type: "delete", content: "old line", old_num: 2 },
           { type: "add", content: "new line", new_num: 2 },
         ],
@@ -254,7 +259,8 @@ describe("PierreFileDiff", () => {
       if (hadCancelAnimationFrame) {
         globalThis.cancelAnimationFrame = originalCancelAnimationFrame;
       } else {
-        delete (globalThis as { cancelAnimationFrame?: unknown }).cancelAnimationFrame;
+        delete (globalThis as { cancelAnimationFrame?: unknown })
+          .cancelAnimationFrame;
       }
     }
   });

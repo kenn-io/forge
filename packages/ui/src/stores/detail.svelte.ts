@@ -405,7 +405,9 @@ export function createDetailStore(opts: DetailStoreOptions) {
         if (gen !== syncGeneration) return;
         if (requestError) {
           throw new Error(
-            requestError.detail ?? requestError.title ?? "failed to load pull request",
+            requestError.detail ??
+              requestError.title ??
+              "failed to load pull request",
           );
         }
         detail = data
@@ -611,7 +613,9 @@ export function createDetailStore(opts: DetailStoreOptions) {
       );
       if (requestError) {
         throw new Error(
-          requestError.detail ?? requestError.title ?? "failed to update kanban state",
+          requestError.detail ??
+            requestError.title ??
+            "failed to update kanban state",
         );
       }
     } catch (err) {
@@ -994,7 +998,9 @@ export function createDetailStore(opts: DetailStoreOptions) {
         });
         if (requestError) {
           throw new Error(
-            requestError.detail ?? requestError.title ?? "failed to star pull request",
+            requestError.detail ??
+              requestError.title ??
+              "failed to star pull request",
           );
         }
       }
@@ -1058,7 +1064,13 @@ export function createDetailStore(opts: DetailStoreOptions) {
     // (last_activity_at, comment_count) and the pulls list catch
     // up. Skip if the user navigated away mid-refresh.
     if (gen === syncGeneration) {
-      void syncDetail(owner, name, number, gen, currentDetailRef(owner, name, number));
+      void syncDetail(
+        owner,
+        name,
+        number,
+        gen,
+        currentDetailRef(owner, name, number),
+      );
     }
   }
 

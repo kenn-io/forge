@@ -34,7 +34,10 @@ describe("warnOnUnknownConclusions", () => {
 
   it("includes PR identifier in the log message when context is provided", () => {
     const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    warnOnUnknownConclusions([check("foo")], { repo: "a/b", number: 7 });
+    warnOnUnknownConclusions([check("foo")], {
+      repo: "a/b",
+      number: 7,
+    });
     expect(spy.mock.calls[0]?.[0] as string).toContain("a/b#7");
     spy.mockRestore();
   });

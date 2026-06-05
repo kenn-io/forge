@@ -69,12 +69,14 @@ test.describe("PR timeline filters", () => {
   test("renders seeded commit and system timeline events", async ({ page }) => {
     await openPRTimeline(page);
 
-    await expect(page.locator(".event-type", { hasText: "Force-pushed" })).toHaveCount(
-      2,
-    );
+    await expect(
+      page.locator(".event-type", { hasText: "Force-pushed" }),
+    ).toHaveCount(2);
     await expect(page.getByText("abc4444 -> def5555")).toBeVisible();
     await expect(page.getByText("abc9999 -> def7777")).toBeVisible();
-    await expect(page.locator(".event-type", { hasText: "Referenced" })).toHaveCount(3);
+    await expect(page.locator(".event-type", { hasText: "Referenced" })).toHaveCount(
+      3,
+    );
     await expect(page.getByText("Widget rendering broken on Safari")).toBeVisible();
     await expect(page.getByText("Title changed")).toBeVisible();
     await expect(
@@ -133,7 +135,9 @@ test.describe("PR timeline filters", () => {
     );
 
     await page.getByRole("button", { name: "Events" }).click();
-    await expect(page.getByText("Widget rendering broken on Safari")).not.toBeVisible();
+    await expect(
+      page.getByText("Widget rendering broken on Safari"),
+    ).not.toBeVisible();
     await expect(
       page.getByText('"Add widget cache" -> "Add widget caching layer"'),
     ).not.toBeVisible();
@@ -158,19 +162,28 @@ test.describe("PR timeline filters", () => {
     await openTimelineFilters(page);
 
     await page.getByRole("button", { name: "Events" }).click();
-    await expect(page.getByText("Widget rendering broken on Safari")).not.toBeVisible();
-    await expect(page.locator('button[title="Filter PR activity"]')).toContainText("1");
+    await expect(
+      page.getByText("Widget rendering broken on Safari"),
+    ).not.toBeVisible();
+    await expect(page.locator('button[title="Filter PR activity"]')).toContainText(
+      "1",
+    );
 
     await expect
       .poll(
-        async () => await page.evaluate((key) => localStorage.getItem(key), storageKey),
+        async () =>
+          await page.evaluate((key) => localStorage.getItem(key), storageKey),
       )
       .toContain('"showEvents":false');
 
     await page.reload();
     await page.locator(".pull-detail").waitFor({ state: "visible", timeout: 10_000 });
-    await expect(page.getByText("Widget rendering broken on Safari")).not.toBeVisible();
-    await expect(page.locator('button[title="Filter PR activity"]')).toContainText("1");
+    await expect(
+      page.getByText("Widget rendering broken on Safari"),
+    ).not.toBeVisible();
+    await expect(page.locator('button[title="Filter PR activity"]')).toContainText(
+      "1",
+    );
   });
 
   test("keeps commit rows when other event buckets are hidden", async ({ page }) => {

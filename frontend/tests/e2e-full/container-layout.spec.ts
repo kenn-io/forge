@@ -30,7 +30,9 @@ test.describe("container-aware layout", () => {
     await expect(page.getByRole("button", { name: "Sync" })).toBeVisible();
 
     const metrics = await page.evaluate(() => {
-      const headerRect = document.querySelector(".app-header")?.getBoundingClientRect();
+      const headerRect = document
+        .querySelector(".app-header")
+        ?.getBoundingClientRect();
       return {
         headerHeight: headerRect?.height ?? 0,
         viewportWidth: window.innerWidth,
@@ -51,7 +53,9 @@ test.describe("container-aware layout", () => {
     const header = page.locator(".app-header");
     await header.waitFor({ state: "visible", timeout: 10_000 });
 
-    await expect(page.locator(".nav-select")).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator(".nav-select")).toBeVisible({
+      timeout: 20_000,
+    });
     await expect(page.locator(".tab-group")).not.toBeAttached();
     await expect(page.getByRole("button", { name: "Sync" })).toBeVisible();
     await expect(page.locator(".sync-btn .sync-label")).not.toBeVisible();
@@ -85,7 +89,9 @@ test.describe("container-aware layout", () => {
     expect(navMenuStyle).toEqual(repoMenuStyle);
 
     const metrics = await page.evaluate(() => {
-      const headerRect = document.querySelector(".app-header")?.getBoundingClientRect();
+      const headerRect = document
+        .querySelector(".app-header")
+        ?.getBoundingClientRect();
       const syncRect = document.querySelector(".sync-btn")?.getBoundingClientRect();
       const themeRect = document
         .querySelector("button[title='Toggle theme']")
@@ -162,7 +168,9 @@ test.describe("container-aware layout", () => {
     await page.setViewportSize({ width: 1280, height: 720 });
 
     // Wait for the resize observer debounce (100ms) to settle.
-    await expect(page.locator(".tab-group")).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator(".tab-group")).toBeVisible({
+      timeout: 5_000,
+    });
     await expect(page.locator(".nav-select")).not.toBeAttached();
 
     const metrics = await page.evaluate(() => {

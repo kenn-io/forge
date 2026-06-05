@@ -48,7 +48,9 @@ describe("ActionButton", () => {
       },
     });
 
-    const button = screen.getByRole("button", { name: "Approve workflows" });
+    const button = screen.getByRole("button", {
+      name: "Approve workflows",
+    });
     expect(button.querySelector(".action-button__label")?.textContent).toBe(
       "Approve workflows",
     );

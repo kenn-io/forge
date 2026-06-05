@@ -45,7 +45,9 @@ test.describe.serial("PR description task list", () => {
     ).toBeChecked();
   });
 
-  test("drag handle reorders a task item and persists on reload", async ({ page }) => {
+  test("drag handle reorders a task item and persists on reload", async ({
+    page,
+  }) => {
     const body = page.locator(".body-section .markdown-body");
     const firstLabel = await body
       .locator('.task-list-item--interactive[data-task-index="0"]')
@@ -71,7 +73,9 @@ test.describe.serial("PR description task list", () => {
       await page.mouse.move(
         startX + ((targetX - startX) * i) / steps,
         startY + ((targetY - startY) * i) / steps,
-        { steps: 4 },
+        {
+          steps: 4,
+        },
       );
     }
     await page.mouse.up();

@@ -24,7 +24,9 @@ test.describe("PR-detail palette commands", () => {
     const approveRequest = page.waitForRequest(
       (req) =>
         req.method() === "POST" &&
-        /\/repos\/acme\/widgets\/pulls\/42\/approve$/.test(new URL(req.url()).pathname),
+        /\/repos\/acme\/widgets\/pulls\/42\/approve$/.test(
+          new URL(req.url()).pathname,
+        ),
     );
 
     await page.keyboard.press("Meta+K");

@@ -63,8 +63,8 @@ beforeAll(() => {
   }
   (globalThis as GlobalWithResizeObserver).ResizeObserver = ResizeObserverStub;
 
-  originalReplaceSync = (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet?.prototype
-    .replaceSync;
+  originalReplaceSync = (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet
+    ?.prototype.replaceSync;
   if ((globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet?.prototype) {
     (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet.prototype.replaceSync ??=
       function replaceSync(): void {};

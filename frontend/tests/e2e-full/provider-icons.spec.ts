@@ -30,15 +30,21 @@ test("provider icons disambiguate multi-provider repository views", async ({
     await expect(
       repoCards
         .filter({
-          has: page.getByRole("button", { name: /acme\s*\/\s*widgets/ }),
+          has: page.getByRole("button", {
+            name: /acme\s*\/\s*widgets/,
+          }),
         })
         .first(),
     ).toBeVisible();
-    await expect(repoCards.getByRole("img", { name: "GitHub" }).first()).toBeVisible();
+    await expect(
+      repoCards.getByRole("img", { name: "GitHub" }).first(),
+    ).toBeVisible();
     await expect(repoCards.getByRole("img", { name: "GitLab" })).toBeVisible();
 
     await page.goto(`${server.info.base_url}/settings`);
-    await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
+    await page
+      .locator(".settings-page")
+      .waitFor({ state: "visible", timeout: 10_000 });
     await expect(page.locator(".repo-row").getByRole("img")).toHaveCount(0);
 
     const addResponse = await api.post("/api/v1/repos/bulk", {
@@ -57,7 +63,9 @@ test("provider icons disambiguate multi-provider repository views", async ({
     expect(addResponse.ok()).toBe(true);
 
     await page.reload();
-    await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
+    await page
+      .locator(".settings-page")
+      .waitFor({ state: "visible", timeout: 10_000 });
     const repoRows = page.locator(".repo-row");
     await expect(repoRows.getByRole("img", { name: "GitHub" }).first()).toBeVisible();
     await expect(repoRows.getByRole("img", { name: "Forgejo" })).toBeVisible();

@@ -114,7 +114,8 @@ test.describe("detail action buttons", () => {
       const createResponse = await createResponsePromise;
       expect(createResponse.status()).toBe(202);
 
-      const createdWorkspace = (await createResponse.json()) as WorkspaceStatusResponse;
+      const createdWorkspace =
+        (await createResponse.json()) as WorkspaceStatusResponse;
       expect(createdWorkspace.platform_host).toBe("github.com");
       expect(createdWorkspace.item_type).toBe("issue");
       expect(createdWorkspace.item_number).toBe(10);
@@ -150,11 +151,11 @@ test.describe("detail action buttons", () => {
 
       await page.goto(`${server.info.base_url}/pulls/github/acme/widgets/1`);
 
-      await expect(page.getByRole("button", { name: "Approve workflows" })).toBeVisible(
-        {
-          timeout: 10_000,
-        },
-      );
+      await expect(
+        page.getByRole("button", { name: "Approve workflows" }),
+      ).toBeVisible({
+        timeout: 10_000,
+      });
     } finally {
       await server.stop();
     }
@@ -338,7 +339,9 @@ test.describe("detail action buttons", () => {
 
     await page.locator(".btn--workspace").click();
 
-    const dialog = page.getByRole("dialog", { name: "Branch Name Conflict" });
+    const dialog = page.getByRole("dialog", {
+      name: "Branch Name Conflict",
+    });
     await expect(dialog).toBeVisible();
     await expect(dialog).toContainText("middleman/issue-10");
     await expect(dialog.locator("#issue-workspace-branch-name")).toHaveValue(
@@ -449,7 +452,9 @@ test.describe("detail action buttons", () => {
 
     await page.locator(".btn--workspace").click();
 
-    const dialog = page.getByRole("dialog", { name: "Branch Name Conflict" });
+    const dialog = page.getByRole("dialog", {
+      name: "Branch Name Conflict",
+    });
     await expect(dialog).toBeVisible();
     await dialog.getByRole("button", { name: "Create New Branch" }).click();
 
@@ -615,7 +620,9 @@ test.describe("detail action buttons", () => {
 
     await page.locator(".actions-menu-popover .btn--approve").click();
     await expect(page.locator(".actions-menu-popover")).toBeVisible();
-    await expect(page.locator(".actions-menu-popover .approve-comment")).toBeVisible();
+    await expect(
+      page.locator(".actions-menu-popover .approve-comment"),
+    ).toBeVisible();
     await expect(page.locator(".actions-menu-popover .btn--green")).toHaveText(
       "Approve",
     );
@@ -723,7 +730,9 @@ test.describe("detail action buttons", () => {
     }
   });
 
-  test("draft pull request actions keep exactly the same height", async ({ page }) => {
+  test("draft pull request actions keep exactly the same height", async ({
+    page,
+  }) => {
     await page.goto("/pulls/github/acme/widgets/6");
     await expect(page.locator(".pull-detail")).toBeVisible();
 
@@ -737,7 +746,12 @@ test.describe("detail action buttons", () => {
     }
 
     const metrics = await page.evaluate(() => {
-      const selectors = [".btn--ready", ".btn--approve", ".btn--merge", ".btn--close"];
+      const selectors = [
+        ".btn--ready",
+        ".btn--approve",
+        ".btn--merge",
+        ".btn--close",
+      ];
       return selectors.map((selector) => {
         const element = document.querySelector(selector);
         if (!(element instanceof HTMLElement)) {
@@ -806,7 +820,9 @@ test.describe("detail action buttons", () => {
 
       await expect
         .poll(async () => {
-          const response = await apiContext.get("/api/v1/pulls/github/acme/widgets/6");
+          const response = await apiContext.get(
+            "/api/v1/pulls/github/acme/widgets/6",
+          );
           const detail = await response.json();
           return detail.merge_request.IsDraft;
         })

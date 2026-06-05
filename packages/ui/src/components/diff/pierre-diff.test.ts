@@ -33,7 +33,12 @@ ${patchBody}
         new_start: 1,
         new_count: 2,
         lines: [
-          { type: "context", content: "line 1", old_num: 1, new_num: 1 },
+          {
+            type: "context",
+            content: "line 1",
+            old_num: 1,
+            new_num: 1,
+          },
           { type: "delete", content: "old line", old_num: 2 },
           { type: "add", content: "new line", new_num: 2 },
         ],
@@ -111,7 +116,12 @@ ${patchBody}
         new_start: 1,
         new_count: 2,
         lines: [
-          { type: "context", content: "line 1", old_num: 1, new_num: 1 },
+          {
+            type: "context",
+            content: "line 1",
+            old_num: 1,
+            new_num: 1,
+          },
           { type: "delete", content: "old line", old_num: 2 },
           { type: "add", content: "new line", new_num: 2 },
         ],
@@ -143,7 +153,11 @@ describe("Pierre diff parsing", () => {
       "line 1\nold line\n",
       "sparse-old",
     );
-    const fullOld = pierreFileContents("src/foo.ts", "line 1\nold line\n", "full-old");
+    const fullOld = pierreFileContents(
+      "src/foo.ts",
+      "line 1\nold line\n",
+      "full-old",
+    );
     const full = parsePierreFileDiffWithContents(file, {
       oldFile: fullOld,
       newFile: pierreFileContents("src/foo.ts", "line 1\nnew line\n", "full-new"),

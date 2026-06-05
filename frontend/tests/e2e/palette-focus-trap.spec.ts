@@ -15,7 +15,9 @@ test.describe("palette focus trap", () => {
     // convention used elsewhere in the suite.
     await page.keyboard.press("Meta+K");
 
-    const dialog = page.getByRole("dialog", { name: "Command palette" });
+    const dialog = page.getByRole("dialog", {
+      name: "Command palette",
+    });
     await expect(dialog).toBeVisible();
 
     const input = page.locator(".palette-input");

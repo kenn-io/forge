@@ -6,7 +6,9 @@ test.beforeEach(async ({ page }) => {
   await mockApi(page);
 });
 
-test("workspaces route renders the terminal workspace list shell", async ({ page }) => {
+test("workspaces route renders the terminal workspace list shell", async ({
+  page,
+}) => {
   await page.goto("/workspaces");
   await expect(page.getByText("Select a workspace from the sidebar")).toBeVisible();
 });

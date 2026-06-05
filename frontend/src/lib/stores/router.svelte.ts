@@ -161,7 +161,9 @@ function inferLegacyEmbedProvider(platformHost: string): string {
   return platformHost.toLowerCase().includes("gitlab") ? "gitlab" : "github";
 }
 
-function splitRepoPath(repoPath: string): { owner: string; name: string } | undefined {
+function splitRepoPath(
+  repoPath: string,
+): { owner: string; name: string } | undefined {
   const pathParts = repoPath
     .replace(/^\/+|\/+$/g, "")
     .split("/")
@@ -430,7 +432,9 @@ if (configuredInitialRoute) {
   history.replaceState(null, "", basePrefix + configuredInitialRoute);
 }
 
-let route = $state<Route>(parseRoute(configuredInitialRoute ?? currentLocationPath()));
+let route = $state<Route>(
+  parseRoute(configuredInitialRoute ?? currentLocationPath()),
+);
 
 // Fire onRouteChange for the initial route after the module loads.
 // Deferred so the embedder has time to set up the callback.

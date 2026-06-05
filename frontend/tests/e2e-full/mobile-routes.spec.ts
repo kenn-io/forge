@@ -47,7 +47,9 @@ async function expectReadableFocusList(
       itemRect: compactRect(item),
       titleFontSize: fontSize(title),
       metaFontSize: fontSize(meta),
-      itemBounds: [...document.querySelectorAll(selector)].slice(0, 6).map(compactRect),
+      itemBounds: [...document.querySelectorAll(selector)]
+        .slice(0, 6)
+        .map(compactRect),
     };
   }, itemSelector);
 
@@ -142,7 +144,9 @@ test.describe("phone routes", () => {
     await expect(page.locator(".mobile-shell")).toBeVisible();
     await expect(page.locator(".mobile-tab--active")).toHaveText("Activity");
     await expect(page.locator(".mobile-topbar .mobile-app-icon")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Open desktop view" })).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Open desktop view" }),
+    ).toBeVisible();
     await expect(page.locator(".app-header")).toHaveCount(0);
     await expect(page.locator("footer")).toHaveCount(0);
 
@@ -186,7 +190,9 @@ test.describe("phone routes", () => {
       const metaItems = meta?.querySelectorAll("span") ?? [];
       const metaRect = meta?.getBoundingClientRect();
       const metaCountRect = metaItems[1]?.getBoundingClientRect();
-      const eventLabel = document.querySelector(".mobile-activity-event__body strong");
+      const eventLabel = document.querySelector(
+        ".mobile-activity-event__body strong",
+      );
       const eventAuthor = document.querySelector(".mobile-activity-event__body span");
       const eventTime = document.querySelector(".mobile-activity-event time");
       const mobileTitle = document.querySelector(".mobile-title");
@@ -207,7 +213,8 @@ test.describe("phone routes", () => {
       const cardRect = firstCard?.getBoundingClientRect();
       const buttonRect = firstButton?.getBoundingClientRect();
       const searchRect = search?.getBoundingClientRect();
-      const styleFor = (node: Element | null) => (node ? getComputedStyle(node) : null);
+      const styleFor = (node: Element | null) =>
+        node ? getComputedStyle(node) : null;
       const themeSample = document.createElement("div");
       themeSample.style.cssText = [
         "position:absolute",
@@ -279,8 +286,8 @@ test.describe("phone routes", () => {
         desktopIconPresent: Boolean(desktopIcon),
         appIconPresent: Boolean(appIcon),
         inboxBackground:
-          styleFor(document.querySelector(".mobile-activity-inbox"))?.backgroundColor ??
-          "",
+          styleFor(document.querySelector(".mobile-activity-inbox"))
+            ?.backgroundColor ?? "",
         cardBackground: styleFor(firstCard)?.backgroundColor ?? "",
         cardBorderColor: styleFor(firstCard)?.borderColor ?? "",
         cardRadius: styleFor(firstCard)?.borderRadius ?? "",
@@ -314,7 +321,9 @@ test.describe("phone routes", () => {
     expect(metrics.titleFontSize).toBeGreaterThanOrEqual(19);
     expect(metrics.metaFontSize).toBeGreaterThanOrEqual(15);
     expect(metrics.metaItemCount).toBe(2);
-    expect(Math.abs(metrics.metaRight - metrics.metaCountRight)).toBeLessThanOrEqual(1);
+    expect(Math.abs(metrics.metaRight - metrics.metaCountRight)).toBeLessThanOrEqual(
+      1,
+    );
     expect(metrics.eventLabelFontSize).toBeGreaterThanOrEqual(15);
     expect(metrics.eventAuthorFontSize).toBeGreaterThanOrEqual(14);
     expect(metrics.eventTimeFontSize).toBeGreaterThanOrEqual(14);
@@ -357,7 +366,9 @@ test.describe("phone routes", () => {
 
     await page.getByRole("combobox", { name: /Time range/ }).click();
     await page.getByRole("option", { name: "24h" }).click();
-    await expect(page.getByRole("combobox", { name: "Time range: 24h" })).toBeVisible();
+    await expect(
+      page.getByRole("combobox", { name: "Time range: 24h" }),
+    ).toBeVisible();
     await expect(page).toHaveURL(/range=24h/);
 
     const activityForRepo = page.waitForResponse((response) => {
@@ -399,7 +410,9 @@ test.describe("phone routes", () => {
     await expect(card).toBeVisible({ timeout: 10_000 });
 
     const repoLabel = card.locator(".mobile-activity-card__meta span").first();
-    const hideOrgToggle = page.getByRole("button", { name: "Hide org" });
+    const hideOrgToggle = page.getByRole("button", {
+      name: "Hide org",
+    });
     await expect(hideOrgToggle).toHaveAttribute("aria-pressed", "false");
     await expect(repoLabel).toHaveText("github.com/acme/widgets");
 
@@ -462,7 +475,9 @@ test.describe("phone routes", () => {
     ).toBeVisible();
 
     await page
-      .locator(".focus-layout .detail-tab", { hasText: "Files changed" })
+      .locator(".focus-layout .detail-tab", {
+        hasText: "Files changed",
+      })
       .click();
 
     await expect(page).toHaveURL(/\/focus\/pulls\/github\/acme\/widgets\/1\/files$/);
@@ -481,7 +496,9 @@ test.describe("phone routes", () => {
     ).toBeVisible();
 
     await page
-      .locator(".focus-layout .detail-tab", { hasText: "Files changed" })
+      .locator(".focus-layout .detail-tab", {
+        hasText: "Files changed",
+      })
       .click();
 
     await expectPathname(page, "/pulls/github/acme/widgets/1/files");

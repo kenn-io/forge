@@ -488,7 +488,11 @@ describe("DiffView", () => {
       const diff = makeDiffStore({
         getDiff: () => result,
         getVisibleDiffFiles: () => files,
-        getScrollTarget: () => ({ path: "b.ts", line: 2, side: "right" }),
+        getScrollTarget: () => ({
+          path: "b.ts",
+          line: 2,
+          side: "right",
+        }),
         consumeScrollTarget,
       });
 
@@ -569,7 +573,11 @@ describe("DiffView", () => {
       const diff = makeDiffStore({
         getDiff: () => result,
         getVisibleDiffFiles: () => files,
-        getScrollTarget: () => ({ path: "b.ts", line: 42, side: "right" }),
+        getScrollTarget: () => ({
+          path: "b.ts",
+          line: 42,
+          side: "right",
+        }),
         consumeScrollTarget,
       });
 
@@ -635,7 +643,11 @@ describe("DiffView", () => {
       const diff = makeDiffStore({
         getDiff: () => result,
         getVisibleDiffFiles: () => files,
-        getScrollTarget: () => ({ path: "b.ts", line: 42, side: "right" }),
+        getScrollTarget: () => ({
+          path: "b.ts",
+          line: 42,
+          side: "right",
+        }),
         consumeScrollTarget,
       });
 

@@ -83,7 +83,9 @@ describe("runAppStartup", () => {
     await flushMicrotasks();
 
     expect(stores.settings.setConfiguredRepos).toHaveBeenCalledWith(settings.repos);
-    expect(stores.settings.setTerminalSettings).toHaveBeenCalledWith(settings.terminal);
+    expect(stores.settings.setTerminalSettings).toHaveBeenCalledWith(
+      settings.terminal,
+    );
     expect(stores.activity.hydrateDefaults).toHaveBeenCalledWith(settings.activity);
     expect(onReady).toHaveBeenCalledTimes(1);
     expect(stores.sync.startPolling).toHaveBeenCalledTimes(1);

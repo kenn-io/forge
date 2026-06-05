@@ -16,7 +16,10 @@ const otherRouteRef = {
   repoPath: "octo/repo",
 };
 
-function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+function deferred<T>(): {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+} {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((done) => {
     resolve = done;
@@ -63,9 +66,9 @@ describe("label editing stores", () => {
       "/pulls/{provider}/{owner}/{name}/{number}/labels",
       expect.objectContaining({ body: { labels: ["triage"] } }),
     );
-    expect(store.getDetail()?.merge_request.labels?.map((item) => item.name)).toEqual([
-      "triage",
-    ]);
+    expect(store.getDetail()?.merge_request.labels?.map((item) => item.name)).toEqual(
+      ["triage"],
+    );
   });
 
   it("does not apply stale pull label responses after provider navigation", async () => {
@@ -93,7 +96,9 @@ describe("label editing stores", () => {
               Number: 1,
               labels: [
                 label(
-                  options.params?.path?.provider === "gitlab" ? "gitlab-label" : "bug",
+                  options.params?.path?.provider === "gitlab"
+                    ? "gitlab-label"
+                    : "bug",
                 ),
               ],
             },
@@ -114,9 +119,9 @@ describe("label editing stores", () => {
     await mutation;
 
     expect(store.getDetail()?.repo.provider).toBe("gitlab");
-    expect(store.getDetail()?.merge_request.labels?.map((item) => item.name)).toEqual([
-      "gitlab-label",
-    ]);
+    expect(store.getDetail()?.merge_request.labels?.map((item) => item.name)).toEqual(
+      ["gitlab-label"],
+    );
   });
 
   it("updates visible issue labels from the label mutation response", async () => {
@@ -183,7 +188,9 @@ describe("label editing stores", () => {
               Number: 2,
               labels: [
                 label(
-                  options.params?.path?.provider === "gitlab" ? "gitlab-label" : "bug",
+                  options.params?.path?.provider === "gitlab"
+                    ? "gitlab-label"
+                    : "bug",
                 ),
               ],
               UpdatedAt: "2026-05-15T12:00:00Z",

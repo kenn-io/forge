@@ -283,7 +283,10 @@ describe("WorkspaceTerminalView", () => {
   beforeEach(() => {
     delete window.__BASE_PATH__;
     localStorage.clear();
-    localStorage.setItem("middleman-workspace-active-tab:ws-1", "session:ws-1:helper");
+    localStorage.setItem(
+      "middleman-workspace-active-tab:ws-1",
+      "session:ws-1:helper",
+    );
     sockets = [];
     mocks.getWorkspaceRuntime.mockReset();
     mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithStaleSession());
@@ -410,7 +413,9 @@ describe("WorkspaceTerminalView", () => {
       },
     });
 
-    const helperTab = await screen.findByRole("tab", { name: /Helper/ });
+    const helperTab = await screen.findByRole("tab", {
+      name: /Helper/,
+    });
 
     expect(helperTab.getAttribute("aria-selected")).toBe("true");
     expect(container.querySelector(".workspace-stage.grid")).toBeNull();
@@ -492,7 +497,9 @@ describe("WorkspaceTerminalView", () => {
     );
 
     await fireEvent.click(screen.getByRole("button", { name: "Close Shell" }));
-    await fireEvent.click(await screen.findByRole("button", { name: "Stop session" }));
+    await fireEvent.click(
+      await screen.findByRole("button", { name: "Stop session" }),
+    );
 
     await waitFor(() =>
       expect(mocks.stopWorkspaceSession).toHaveBeenCalledWith("ws-1", "ws-1_shell_a"),
@@ -524,7 +531,9 @@ describe("WorkspaceTerminalView", () => {
     expect(screen.getByRole("tab", { name: /Helper/ })).toBeTruthy();
 
     await fireEvent.click(screen.getByRole("button", { name: "Rename Helper" }));
-    const reopenedInput = await screen.findByRole("textbox", { name: "Name" });
+    const reopenedInput = await screen.findByRole("textbox", {
+      name: "Name",
+    });
     await fireEvent.input(reopenedInput, {
       target: { value: "Review helper" },
     });
@@ -565,7 +574,9 @@ describe("WorkspaceTerminalView", () => {
   });
 
   it("renames a workflow tab by its opaque session key", async () => {
-    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithDuplicateWorkflowSessions());
+    mocks.getWorkspaceRuntime.mockResolvedValue(
+      runtimeWithDuplicateWorkflowSessions(),
+    );
 
     render(WorkspaceTerminalView, {
       props: {
@@ -605,8 +616,12 @@ describe("WorkspaceTerminalView", () => {
       },
     });
 
-    const helperTab = await screen.findByRole("tab", { name: /Helper/ });
-    const reviewerTab = await screen.findByRole("tab", { name: /Reviewer/ });
+    const helperTab = await screen.findByRole("tab", {
+      name: /Helper/,
+    });
+    const reviewerTab = await screen.findByRole("tab", {
+      name: /Reviewer/,
+    });
     const helperTabHost = helperTab.closest(".group-tab");
     expect(helperTabHost).toBeTruthy();
     const dataTransfer = fakeDataTransfer();
@@ -670,13 +685,17 @@ describe("WorkspaceTerminalView", () => {
     });
     await fireEvent.click(terminalButton);
     await waitFor(() =>
-      expect(sockets.some((socket) => socket.url.includes("ws-1_shell_a"))).toBe(true),
+      expect(sockets.some((socket) => socket.url.includes("ws-1_shell_a"))).toBe(
+        true,
+      ),
     );
 
     await fireEvent.click(screen.getByRole("button", { name: "Shell 2" }));
 
     await waitFor(() =>
-      expect(sockets.some((socket) => socket.url.includes("ws-1_shell_b"))).toBe(true),
+      expect(sockets.some((socket) => socket.url.includes("ws-1_shell_b"))).toBe(
+        true,
+      ),
     );
   });
 
@@ -699,13 +718,19 @@ describe("WorkspaceTerminalView", () => {
     });
     await fireEvent.click(terminalButton);
     await waitFor(() =>
-      expect(sockets.some((socket) => socket.url.includes("ws-1_shell_a"))).toBe(true),
+      expect(sockets.some((socket) => socket.url.includes("ws-1_shell_a"))).toBe(
+        true,
+      ),
     );
 
-    await fireEvent.click(screen.getByRole("button", { name: "Split terminal right" }));
+    await fireEvent.click(
+      screen.getByRole("button", { name: "Split terminal right" }),
+    );
 
     await waitFor(() =>
-      expect(sockets.some((socket) => socket.url.includes("ws-1_shell_b"))).toBe(true),
+      expect(sockets.some((socket) => socket.url.includes("ws-1_shell_b"))).toBe(
+        true,
+      ),
     );
     expect(screen.getByRole("button", { name: "Shell 2" })).toBeTruthy();
   });
@@ -739,10 +764,14 @@ describe("WorkspaceTerminalView", () => {
     );
     await waitFor(() => expect(screen.getByText("No terminals")).toBeTruthy());
 
-    await fireEvent.click(screen.getAllByRole("button", { name: "New terminal" })[0]!);
+    await fireEvent.click(
+      screen.getAllByRole("button", { name: "New terminal" })[0]!,
+    );
     freshRefresh.resolve(runtimeWithTerminalSession(relaunchedShellSession));
     await waitFor(() =>
-      expect(sockets.some((socket) => socket.url.includes("ws-1_shell_b"))).toBe(true),
+      expect(sockets.some((socket) => socket.url.includes("ws-1_shell_b"))).toBe(
+        true,
+      ),
     );
 
     staleRefresh.resolve(runtimeWithTerminalSession());

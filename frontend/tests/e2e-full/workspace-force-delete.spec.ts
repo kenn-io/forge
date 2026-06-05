@@ -89,7 +89,10 @@ test.describe("workspace force-delete", () => {
 
       await page.goto(`${isolatedServer.info.base_url}/terminal/${created.id}`);
 
-      await page.locator(".header-bar").getByRole("button", { name: "Delete" }).click();
+      await page
+        .locator(".header-bar")
+        .getByRole("button", { name: "Delete" })
+        .click();
 
       const dialog = page.getByRole("dialog", {
         name: "Force delete workspace?",

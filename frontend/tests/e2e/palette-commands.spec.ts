@@ -7,7 +7,9 @@ test.beforeEach(async ({ page }) => {
 });
 
 test.describe("palette command dispatch", () => {
-  test("'>' filters to commands; running Open settings navigates", async ({ page }) => {
+  test("'>' filters to commands; running Open settings navigates", async ({
+    page,
+  }) => {
     await page.goto("/pulls");
     await page.keyboard.press("Meta+K");
     await page.locator(".palette-input").fill(">settings");
@@ -34,7 +36,9 @@ test.describe("palette command dispatch", () => {
   }) => {
     await page.goto("/pulls");
     await page.keyboard.press("Meta+K");
-    const dialog = page.getByRole("dialog", { name: "Command palette" });
+    const dialog = page.getByRole("dialog", {
+      name: "Command palette",
+    });
     await expect(dialog).toBeVisible();
     await page.keyboard.press("Meta+P");
     await expect(dialog).toBeHidden();

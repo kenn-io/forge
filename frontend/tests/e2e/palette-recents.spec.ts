@@ -22,7 +22,9 @@ test("recents: select PR, close, reopen, see recent at top", async ({ page }) =>
   // palette to verify the chosen PR landed in the recents store.
   await page.goto("/pulls");
   await page.keyboard.press("Meta+K");
-  const reopenedDialog = page.getByRole("dialog", { name: "Command palette" });
+  const reopenedDialog = page.getByRole("dialog", {
+    name: "Command palette",
+  });
   const recents = reopenedDialog.locator(".palette-group", {
     hasText: "Recently used",
   });
@@ -42,7 +44,9 @@ test("recents: typing a query hides the Recently used section", async ({ page })
   await firstPRRow.click();
   await page.goto("/pulls");
   await page.keyboard.press("Meta+K");
-  const reopened = page.getByRole("dialog", { name: "Command palette" });
+  const reopened = page.getByRole("dialog", {
+    name: "Command palette",
+  });
   await expect(
     reopened.locator(".palette-group", { hasText: "Recently used" }),
   ).toBeVisible();

@@ -55,10 +55,12 @@ async function waitForWorkspaceReady(
 }
 
 async function terminalScreenSizeKey(page: Page): Promise<string> {
-  return await page.locator(".terminal-container .xterm-screen").evaluate((element) => {
-    const style = getComputedStyle(element);
-    return `${style.width}x${style.height}`;
-  });
+  return await page
+    .locator(".terminal-container .xterm-screen")
+    .evaluate((element) => {
+      const style = getComputedStyle(element);
+      return `${style.width}x${style.height}`;
+    });
 }
 
 test.beforeAll(async () => {
@@ -84,7 +86,10 @@ test("settings saves and reloads workspace terminal options", async ({ page }) =
   const letterSpacing = page.getByLabel("Letter spacing");
   const cursorBlink = page.getByLabel("Cursor blink");
   const renderer = page.getByLabel("Terminal renderer");
-  const saveButton = page.getByRole("button", { name: "Save", exact: true });
+  const saveButton = page.getByRole("button", {
+    name: "Save",
+    exact: true,
+  });
   await expect(input).toHaveValue("");
   await expect(fontSize).toHaveValue("14");
   await expect(scrollback).toHaveValue("1000");
@@ -177,14 +182,19 @@ test.describe("terminal options popover", () => {
 
       const createResponse = await workspaceApi.post(
         "/api/v1/issues/github/acme/widgets/10/workspace",
-        { data: {} },
+        {
+          data: {},
+        },
       );
       expect(createResponse.status()).toBe(202);
       const workspace = (await createResponse.json()) as WorkspaceStatusResponse;
       await waitForWorkspaceReady(workspaceApi, workspace.id);
 
       await page.addInitScript((workspaceId) => {
-        localStorage.setItem(`middleman-workspace-active-tab:${workspaceId}`, "shell");
+        localStorage.setItem(
+          `middleman-workspace-active-tab:${workspaceId}`,
+          "shell",
+        );
       }, workspace.id);
 
       await page.goto(`${workspaceServer.info.base_url}/terminal/${workspace.id}`);
@@ -197,15 +207,21 @@ test.describe("terminal options popover", () => {
         page.getByRole("dialog", { name: "Terminal options" }),
       ).toBeVisible();
       await page.getByLabel("Font size").fill("20");
-      await expect.poll(() => terminalScreenSizeKey(page)).not.toBe(initialScreenSize);
+      await expect
+        .poll(() => terminalScreenSizeKey(page))
+        .not.toBe(initialScreenSize);
 
       await page.keyboard.press("Escape");
-      await expect(page.getByRole("dialog", { name: "Terminal options" })).toBeHidden();
+      await expect(
+        page.getByRole("dialog", { name: "Terminal options" }),
+      ).toBeHidden();
       await expect.poll(() => terminalScreenSizeKey(page)).toBe(initialScreenSize);
 
       await page.getByRole("button", { name: "Terminal options" }).click();
       await page.getByLabel("Font size").fill("18");
-      await expect.poll(() => terminalScreenSizeKey(page)).not.toBe(initialScreenSize);
+      await expect
+        .poll(() => terminalScreenSizeKey(page))
+        .not.toBe(initialScreenSize);
       let releaseSettingsSave: (() => void) | undefined;
       await page.route("**/api/v1/settings", async (route) => {
         if (route.request().method() === "PUT" && releaseSettingsSave === undefined) {
@@ -244,7 +260,9 @@ test.describe("terminal options popover", () => {
         .toBe(18);
 
       await page.keyboard.press("Escape");
-      await expect.poll(() => terminalScreenSizeKey(page)).not.toBe(initialScreenSize);
+      await expect
+        .poll(() => terminalScreenSizeKey(page))
+        .not.toBe(initialScreenSize);
     } finally {
       await workspaceApi?.dispose();
       await workspaceServer?.stop();

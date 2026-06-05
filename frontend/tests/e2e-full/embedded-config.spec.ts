@@ -86,7 +86,9 @@ test.describe("embedded config", () => {
     // When embedded, /settings is not a valid route and falls
     // through to the activity page. The URL may still say /settings
     // but the activity feed should render instead.
-    await page.locator(".activity-feed").waitFor({ state: "visible", timeout: 10_000 });
+    await page
+      .locator(".activity-feed")
+      .waitFor({ state: "visible", timeout: 10_000 });
     await expect(page.locator(".settings-page")).not.toBeAttached();
   });
 });

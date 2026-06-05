@@ -111,7 +111,9 @@ describe("workspace-runtime api", () => {
     expect(workspaceSessionWebSocketPath("ws-1", "ws-1:helper")).toBe(
       "/ws/v1/workspaces/ws-1/runtime/sessions/ws-1%3Ahelper/terminal",
     );
-    expect(workspaceTmuxWebSocketPath("ws-1")).toBe("/ws/v1/workspaces/ws-1/terminal");
+    expect(workspaceTmuxWebSocketPath("ws-1")).toBe(
+      "/ws/v1/workspaces/ws-1/terminal",
+    );
   });
 
   it("includes the configured base path in runtime and websocket paths", async () => {
@@ -132,7 +134,9 @@ describe("workspace-runtime api", () => {
 
     await getWorkspaceRuntime("ws-1", fetchMock);
 
-    expect(fetchMock).toHaveBeenCalledWith("/middleman/api/v1/workspaces/ws-1/runtime");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/middleman/api/v1/workspaces/ws-1/runtime",
+    );
     expect(workspaceSessionWebSocketPath("ws-1", "ws-1:helper")).toBe(
       "/middleman/ws/v1/workspaces/ws-1/runtime/sessions/ws-1%3Ahelper/terminal",
     );

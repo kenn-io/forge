@@ -288,7 +288,9 @@ describe("provider-aware detail API routes", () => {
       workflowApprovalSync: false,
     });
 
-    expect(postPaths).toEqual(["/pulls/{provider}/{owner}/{name}/{number}/ci-refresh"]);
+    expect(postPaths).toEqual([
+      "/pulls/{provider}/{owner}/{name}/{number}/ci-refresh",
+    ]);
   });
 
   it("promotes CI refresh results that may need workflow approval to foreground PR sync", async () => {
@@ -324,7 +326,9 @@ describe("provider-aware detail API routes", () => {
       GET: vi.fn(async () => ({ data: pendingDetail })),
       POST: vi.fn(async (path: string) => {
         postPaths.push(path);
-        return { data: path.endsWith("/sync") ? syncedDetail : pendingDetail };
+        return {
+          data: path.endsWith("/sync") ? syncedDetail : pendingDetail,
+        };
       }),
       PUT: vi.fn(),
       DELETE: vi.fn(),
@@ -457,7 +461,9 @@ describe("provider-aware detail API routes", () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(postPaths).toEqual(["/pulls/{provider}/{owner}/{name}/{number}/sync/async"]);
+    expect(postPaths).toEqual([
+      "/pulls/{provider}/{owner}/{name}/{number}/sync/async",
+    ]);
   });
 
   it("loads issue detail through the provider item endpoint", async () => {

@@ -123,7 +123,9 @@ test("keybindings tour: palette, recents, reserved, cheatsheet, sidebar, modal i
 
   // ---- Step 10: open cheatsheet via ? -----------------------------------
   await page.keyboard.press("?");
-  const cheatsheet = page.getByRole("dialog", { name: "Keyboard shortcuts" });
+  const cheatsheet = page.getByRole("dialog", {
+    name: "Keyboard shortcuts",
+  });
   await expect(cheatsheet).toBeVisible();
   await expect(cheatsheet).toContainText(/Next pull request/i);
   await page.waitForTimeout(500);

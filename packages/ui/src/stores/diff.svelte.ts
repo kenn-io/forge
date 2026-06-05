@@ -1,4 +1,9 @@
-import type { DiffResult, FilePreview, FilesResult, CommitInfo } from "../api/types.js";
+import type {
+  DiffResult,
+  FilePreview,
+  FilesResult,
+  CommitInfo,
+} from "../api/types.js";
 import { createAPIClient } from "../api/generated/client.js";
 import {
   providerItemPath,
@@ -681,10 +686,13 @@ export function createDiffStore(opts?: DiffStoreOptions) {
 
     const filesPromise = (async () => {
       try {
-        const { data } = await apiClient.GET(providerItemPath("pulls", ref, "/files"), {
-          params: { path: { ...providerRouteParams(ref), number } },
-          signal: filesAc.signal,
-        });
+        const { data } = await apiClient.GET(
+          providerItemPath("pulls", ref, "/files"),
+          {
+            params: { path: { ...providerRouteParams(ref), number } },
+            signal: filesAc.signal,
+          },
+        );
         if (!filesLoadIsCurrent(filesAc)) return;
         if (!data) return;
         applyFilesResult(data);
@@ -745,13 +753,16 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     const { diffAc, filesAc } = startDiffLoad();
 
     try {
-      const { data, error, response } = await apiClient.GET("/workspaces/{id}/files", {
-        params: {
-          path: { id: workspaceID },
-          query: workspaceDiffQuery(base),
+      const { data, error, response } = await apiClient.GET(
+        "/workspaces/{id}/files",
+        {
+          params: {
+            path: { id: workspaceID },
+            query: workspaceDiffQuery(base),
+          },
+          signal: filesAc.signal,
         },
-        signal: filesAc.signal,
-      });
+      );
       if (!filesLoadIsCurrent(filesAc)) return;
       if (!data) {
         throw new Error(apiErrorMessage(error, `HTTP ${response.status}`));

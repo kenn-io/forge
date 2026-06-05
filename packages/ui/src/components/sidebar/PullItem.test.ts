@@ -67,7 +67,13 @@ describe("PullItem CI cluster", () => {
         url: "",
         app: "",
       },
-      { status: "in_progress", conclusion: "", name: "pe", url: "", app: "" },
+      {
+        status: "in_progress",
+        conclusion: "",
+        name: "pe",
+        url: "",
+        app: "",
+      },
     ];
     renderItem(mkPR({ CIChecksJSON: JSON.stringify(checks) }));
     expect(document.querySelector("[data-testid='ci-token-failed']")).not.toBeNull();
@@ -117,8 +123,12 @@ describe("PullItem CI cluster", () => {
 
   it("row button exposes 'CI unavailable:' through its accessible name for malformed CI", () => {
     renderItem(mkPR({ CIChecksJSON: "{not json", Title: "Sample PR" }));
-    const titleMatch = screen.getByRole("button", { name: /Sample PR/i });
-    const ciMatch = screen.getByRole("button", { name: /CI unavailable:/i });
+    const titleMatch = screen.getByRole("button", {
+      name: /Sample PR/i,
+    });
+    const ciMatch = screen.getByRole("button", {
+      name: /CI unavailable:/i,
+    });
     expect(ciMatch).toBe(titleMatch);
   });
 
@@ -145,10 +155,23 @@ describe("PullItem CI cluster", () => {
         url: "",
         app: "",
       },
-      { status: "in_progress", conclusion: "", name: "pe", url: "", app: "" },
+      {
+        status: "in_progress",
+        conclusion: "",
+        name: "pe",
+        url: "",
+        app: "",
+      },
     ];
-    renderItem(mkPR({ CIChecksJSON: JSON.stringify(checks), Title: "Sample PR" }));
-    const titleMatch = screen.getByRole("button", { name: /Sample PR/i });
+    renderItem(
+      mkPR({
+        CIChecksJSON: JSON.stringify(checks),
+        Title: "Sample PR",
+      }),
+    );
+    const titleMatch = screen.getByRole("button", {
+      name: /Sample PR/i,
+    });
     expect(screen.getByRole("button", { name: /1 failed/i })).toBe(titleMatch);
     expect(screen.getByRole("button", { name: /1 pending/i })).toBe(titleMatch);
     expect(screen.getByRole("button", { name: /2 passed/i })).toBe(titleMatch);

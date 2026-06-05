@@ -179,10 +179,14 @@ test.describe("threaded activity run collapse", () => {
     await page.goto("/?view=threaded");
 
     await expect(
-      page.locator(".event-row.collapsed-event", { hasText: "3 comments" }),
+      page.locator(".event-row.collapsed-event", {
+        hasText: "3 comments",
+      }),
     ).toHaveCount(1);
     await expect(
-      page.locator(".event-row.collapsed-event", { hasText: "3 reviews" }),
+      page.locator(".event-row.collapsed-event", {
+        hasText: "3 reviews",
+      }),
     ).toHaveCount(1);
   });
 

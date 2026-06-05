@@ -120,7 +120,9 @@ describe("RepoTypeahead", () => {
       expect(
         screen.getByRole("option", { name: /roborev-dev\/middleman/i }),
       ).toBeTruthy();
-      expect(screen.getByRole("option", { name: /roborev-dev\/worker/i })).toBeTruthy();
+      expect(
+        screen.getByRole("option", { name: /roborev-dev\/worker/i }),
+      ).toBeTruthy();
     });
   });
 
@@ -156,7 +158,9 @@ describe("RepoTypeahead", () => {
 
     await fireEvent.click(screen.getByRole("button", { name: /all repos/i }));
     await fireEvent.mouseDown(
-      screen.getByRole("option", { name: /github.com\/import-lab\/api/i }),
+      screen.getByRole("option", {
+        name: /github.com\/import-lab\/api/i,
+      }),
     );
     expect(onchange).toHaveBeenLastCalledWith("github.com/import-lab/api");
 
@@ -165,7 +169,9 @@ describe("RepoTypeahead", () => {
       onchange,
     });
     await fireEvent.mouseDown(
-      screen.getByRole("option", { name: /github.com\/import-lab\/web/i }),
+      screen.getByRole("option", {
+        name: /github.com\/import-lab\/web/i,
+      }),
     );
     expect(onchange).toHaveBeenLastCalledWith(
       "github.com/import-lab/api,github.com/import-lab/web",
@@ -241,10 +247,14 @@ describe("RepoTypeahead", () => {
 
     await waitFor(() => {
       expect(
-        screen.getByRole("option", { name: "github.com/import-lab/web" }),
+        screen.getByRole("option", {
+          name: "github.com/import-lab/web",
+        }),
       ).toBeTruthy();
       expect(
-        screen.queryByRole("option", { name: "github.com/import-lab/api" }),
+        screen.queryByRole("option", {
+          name: "github.com/import-lab/api",
+        }),
       ).toBeNull();
     });
   });
@@ -288,7 +298,9 @@ describe("RepoTypeahead", () => {
     // NOTE: owner row body mousedown should toggle EXPAND, not select. After collapse the leaves are gone.
     await waitFor(() => {
       expect(
-        screen.queryByRole("option", { name: "github.com/import-lab/api" }),
+        screen.queryByRole("option", {
+          name: "github.com/import-lab/api",
+        }),
       ).toBeNull();
     });
     expect(onchange).not.toHaveBeenCalled();
@@ -382,7 +394,9 @@ describe("RepoTypeahead", () => {
 
     await waitFor(() => {
       expect(
-        screen.queryByRole("option", { name: /roborev-dev\/middleman/i }),
+        screen.queryByRole("option", {
+          name: /roborev-dev\/middleman/i,
+        }),
       ).toBeNull();
       expect(onchange).toHaveBeenCalledWith(undefined);
     });
@@ -430,14 +444,18 @@ describe("RepoTypeahead", () => {
 
     await waitFor(() => {
       expect(
-        screen.queryByRole("option", { name: "github.com/import-lab/api" }),
+        screen.queryByRole("option", {
+          name: "github.com/import-lab/api",
+        }),
       ).toBeNull();
     });
 
     await fireEvent.keyDown(input, { key: "ArrowRight" });
     await waitFor(() => {
       expect(
-        screen.getByRole("option", { name: "github.com/import-lab/api" }),
+        screen.getByRole("option", {
+          name: "github.com/import-lab/api",
+        }),
       ).toBeTruthy();
     });
   });

@@ -6,7 +6,9 @@ test.beforeEach(async ({ page }) => {
   await mockApi(page);
 });
 
-test("design system page renders chip matrix with shared styles", async ({ page }) => {
+test("design system page renders chip matrix with shared styles", async ({
+  page,
+}) => {
   await page.goto("/design-system");
 
   await expect(page.getByRole("heading", { name: "Design system" })).toBeVisible();

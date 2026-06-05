@@ -39,7 +39,9 @@ export function parseActivitySelection(search: string): ActivitySelection | null
   const owner = pathParts.slice(0, -1).join("/");
 
   const detailTab: ActivityDetailTab =
-    itemType === "pr" && sp.get("selected_tab") === "files" ? "files" : "conversation";
+    itemType === "pr" && sp.get("selected_tab") === "files"
+      ? "files"
+      : "conversation";
 
   return {
     itemType,

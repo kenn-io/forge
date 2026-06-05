@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import { bulkAddRepos, previewRepos, removeRepo, updateSettings } from "./settings.js";
+import {
+  bulkAddRepos,
+  previewRepos,
+  removeRepo,
+  updateSettings,
+} from "./settings.js";
 
 describe("settings api", () => {
   beforeEach(() => {
@@ -88,7 +93,12 @@ describe("settings api", () => {
 
   it("posts bulk add requests", async () => {
     await bulkAddRepos([
-      { provider: "github", host: "github.com", owner: "acme", name: "api" },
+      {
+        provider: "github",
+        host: "github.com",
+        owner: "acme",
+        name: "api",
+      },
     ]);
 
     const request = vi.mocked(fetch).mock.calls[0]?.[0];
@@ -96,7 +106,14 @@ describe("settings api", () => {
     expect(new URL((request as Request).url).pathname).toBe("/api/v1/repos/bulk");
     expect((request as Request).method).toBe("POST");
     await expect((request as Request).clone().json()).resolves.toEqual({
-      repos: [{ provider: "github", host: "github.com", owner: "acme", name: "api" }],
+      repos: [
+        {
+          provider: "github",
+          host: "github.com",
+          owner: "acme",
+          name: "api",
+        },
+      ],
     });
   });
 
@@ -163,7 +180,10 @@ describe("settings api", () => {
     );
 
     await expect(
-      previewRepos("acme", "[", { provider: "github", host: "github.com" }),
+      previewRepos("acme", "[", {
+        provider: "github",
+        host: "github.com",
+      }),
     ).rejects.toThrow("invalid glob pattern");
   });
 });

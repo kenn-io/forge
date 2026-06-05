@@ -355,7 +355,9 @@ async function gotoPullDetail(page: Page, pr: typeof prA): Promise<void> {
 }
 
 test.describe("PR detail merge modal route reset", () => {
-  test("merge button is disabled when the PR has merge conflicts", async ({ page }) => {
+  test("merge button is disabled when the PR has merge conflicts", async ({
+    page,
+  }) => {
     await mockApi(page);
     await mockSettings(page);
 
@@ -489,7 +491,11 @@ test.describe("PR detail merge modal route reset", () => {
     // modal as soon as the props change.
     await page.evaluate(
       ([owner, name, number]) => {
-        window.history.pushState(null, "", `/pulls/github/${owner}/${name}/${number}`);
+        window.history.pushState(
+          null,
+          "",
+          `/pulls/github/${owner}/${name}/${number}`,
+        );
         window.dispatchEvent(new PopStateEvent("popstate"));
       },
       [prB.repo_owner, prB.repo_name, prB.Number] as const,
@@ -607,7 +613,11 @@ test.describe("PR detail merge modal route reset", () => {
 
     await page.evaluate(
       ([owner, name, number]) => {
-        window.history.pushState(null, "", `/pulls/github/${owner}/${name}/${number}`);
+        window.history.pushState(
+          null,
+          "",
+          `/pulls/github/${owner}/${name}/${number}`,
+        );
         window.dispatchEvent(new PopStateEvent("popstate"));
       },
       [prSquashOnly.repo_owner, prSquashOnly.repo_name, prSquashOnly.Number] as const,
@@ -669,7 +679,11 @@ test.describe("detail load-error banner", () => {
 
     await page.evaluate(
       ([owner, name, number]) => {
-        window.history.pushState(null, "", `/pulls/github/${owner}/${name}/${number}`);
+        window.history.pushState(
+          null,
+          "",
+          `/pulls/github/${owner}/${name}/${number}`,
+        );
         window.dispatchEvent(new PopStateEvent("popstate"));
       },
       [prB.repo_owner, prB.repo_name, prB.Number] as const,
@@ -719,7 +733,11 @@ test.describe("detail load-error banner", () => {
 
     await page.evaluate(
       ([owner, name, number]) => {
-        window.history.pushState(null, "", `/issues/github/${owner}/${name}/${number}`);
+        window.history.pushState(
+          null,
+          "",
+          `/issues/github/${owner}/${name}/${number}`,
+        );
         window.dispatchEvent(new PopStateEvent("popstate"));
       },
       [issueY.repo_owner, issueY.repo_name, issueY.Number] as const,
@@ -754,7 +772,11 @@ test.describe("PR detail stale-action gating", () => {
 
     await page.evaluate(
       ([owner, name, number]) => {
-        window.history.pushState(null, "", `/pulls/github/${owner}/${name}/${number}`);
+        window.history.pushState(
+          null,
+          "",
+          `/pulls/github/${owner}/${name}/${number}`,
+        );
         window.dispatchEvent(new PopStateEvent("popstate"));
       },
       [cleanPR.repo_owner, cleanPR.repo_name, cleanPR.Number] as const,
@@ -780,7 +802,11 @@ test.describe("PR detail stale-action gating", () => {
     // Trigger an in-place navigation to the slow PR via popstate.
     await page.evaluate(
       ([owner, name, number]) => {
-        window.history.pushState(null, "", `/pulls/github/${owner}/${name}/${number}`);
+        window.history.pushState(
+          null,
+          "",
+          `/pulls/github/${owner}/${name}/${number}`,
+        );
         window.dispatchEvent(new PopStateEvent("popstate"));
       },
       [prB.repo_owner, prB.repo_name, prB.Number] as const,
@@ -833,7 +859,11 @@ test.describe("PR detail stale-action gating", () => {
 
     await page.evaluate(
       ([owner, name, number]) => {
-        window.history.pushState(null, "", `/pulls/github/${owner}/${name}/${number}`);
+        window.history.pushState(
+          null,
+          "",
+          `/pulls/github/${owner}/${name}/${number}`,
+        );
         window.dispatchEvent(new PopStateEvent("popstate"));
       },
       [prB.repo_owner, prB.repo_name, prB.Number] as const,
@@ -867,7 +897,11 @@ test.describe("issue detail stale-action gating", () => {
 
     await page.evaluate(
       ([owner, name, number]) => {
-        window.history.pushState(null, "", `/issues/github/${owner}/${name}/${number}`);
+        window.history.pushState(
+          null,
+          "",
+          `/issues/github/${owner}/${name}/${number}`,
+        );
         window.dispatchEvent(new PopStateEvent("popstate"));
       },
       [issueY.repo_owner, issueY.repo_name, issueY.Number] as const,
@@ -921,7 +955,11 @@ test.describe("issue detail stale-action gating", () => {
 
     await page.evaluate(
       ([owner, name, number]) => {
-        window.history.pushState(null, "", `/issues/github/${owner}/${name}/${number}`);
+        window.history.pushState(
+          null,
+          "",
+          `/issues/github/${owner}/${name}/${number}`,
+        );
         window.dispatchEvent(new PopStateEvent("popstate"));
       },
       [issueY.repo_owner, issueY.repo_name, issueY.Number] as const,

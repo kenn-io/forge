@@ -72,7 +72,9 @@ function deferred(): {
   return { promise, resolve };
 }
 
-function deferredByNumber(numbers: number[]): Map<number, ReturnType<typeof deferred>> {
+function deferredByNumber(
+  numbers: number[],
+): Map<number, ReturnType<typeof deferred>> {
   return new Map(numbers.map((number) => [number, deferred()]));
 }
 
@@ -312,9 +314,15 @@ describe("comment draft persistence", () => {
     await waitFor(() => {
       expect(isCommentEditorDisabled()).toBe(false);
     });
-    expect(isCommentSubmitPending("pull", "octo", "repo", 2, "github.com")).toBe(false);
+    expect(isCommentSubmitPending("pull", "octo", "repo", 2, "github.com")).toBe(
+      false,
+    );
     expect(
-      (screen.getByRole("button", { name: "Comment" }) as HTMLButtonElement).disabled,
+      (
+        screen.getByRole("button", {
+          name: "Comment",
+        }) as HTMLButtonElement
+      ).disabled,
     ).toBe(false);
 
     submit.resolve();
@@ -363,7 +371,11 @@ describe("comment draft persistence", () => {
       false,
     );
     expect(
-      (screen.getByRole("button", { name: "Comment" }) as HTMLButtonElement).disabled,
+      (
+        screen.getByRole("button", {
+          name: "Comment",
+        }) as HTMLButtonElement
+      ).disabled,
     ).toBe(false);
 
     submit.resolve();
@@ -421,9 +433,15 @@ describe("comment draft persistence", () => {
     await waitFor(() => {
       expect(isCommentEditorDisabled()).toBe(true);
     });
-    expect(isCommentSubmitPending("pull", "octo", "repo", 1, "github.com")).toBe(true);
+    expect(isCommentSubmitPending("pull", "octo", "repo", 1, "github.com")).toBe(
+      true,
+    );
     expect(
-      (screen.getByRole("button", { name: "Posting…" }) as HTMLButtonElement).disabled,
+      (
+        screen.getByRole("button", {
+          name: "Posting…",
+        }) as HTMLButtonElement
+      ).disabled,
     ).toBe(true);
 
     submits.get(2)?.resolve();
@@ -443,7 +461,9 @@ describe("comment draft persistence", () => {
     await waitFor(() => {
       expect(isCommentEditorDisabled()).toBe(false);
     });
-    expect(isCommentSubmitPending("pull", "octo", "repo", 1, "github.com")).toBe(false);
+    expect(isCommentSubmitPending("pull", "octo", "repo", 1, "github.com")).toBe(
+      false,
+    );
   });
 
   it("keeps the original issue disabled when returning to it before its submit resolves", async () => {
@@ -487,9 +507,15 @@ describe("comment draft persistence", () => {
     await waitFor(() => {
       expect(isCommentEditorDisabled()).toBe(true);
     });
-    expect(isCommentSubmitPending("issue", "octo", "repo", 1, "github.com")).toBe(true);
+    expect(isCommentSubmitPending("issue", "octo", "repo", 1, "github.com")).toBe(
+      true,
+    );
     expect(
-      (screen.getByRole("button", { name: "Posting…" }) as HTMLButtonElement).disabled,
+      (
+        screen.getByRole("button", {
+          name: "Posting…",
+        }) as HTMLButtonElement
+      ).disabled,
     ).toBe(true);
 
     submits.get(2)?.resolve();
@@ -529,7 +555,9 @@ describe("comment draft persistence", () => {
     setCommentDraft("pull", "octo", "repo", 1, "draft review note");
     await waitForCommentButtonEnabled();
     await fireEvent.click(screen.getByRole("button", { name: "Comment" }));
-    expect(isCommentSubmitPending("pull", "octo", "repo", 1, "github.com")).toBe(true);
+    expect(isCommentSubmitPending("pull", "octo", "repo", 1, "github.com")).toBe(
+      true,
+    );
 
     firstRender.unmount();
     render(CommentBoxContextHarness, {
@@ -569,7 +597,9 @@ describe("comment draft persistence", () => {
     setCommentDraft("issue", "octo", "repo", 1, "draft issue note");
     await waitForCommentButtonEnabled();
     await fireEvent.click(screen.getByRole("button", { name: "Comment" }));
-    expect(isCommentSubmitPending("issue", "octo", "repo", 1, "github.com")).toBe(true);
+    expect(isCommentSubmitPending("issue", "octo", "repo", 1, "github.com")).toBe(
+      true,
+    );
 
     firstRender.unmount();
     render(CommentBoxContextHarness, {
@@ -697,7 +727,9 @@ describe("comment draft persistence", () => {
     await fireEvent.keyDown(getCommentEditor(), { key: "Enter" });
 
     await waitFor(() => {
-      expect(getCommentDraft("pull", "octo", "repo", 1, "github.com")).toBe("@alice ");
+      expect(getCommentDraft("pull", "octo", "repo", 1, "github.com")).toBe(
+        "@alice ",
+      );
     });
   });
 
@@ -714,7 +746,12 @@ describe("comment draft persistence", () => {
               title: "Polish mentions",
               state: "open",
             },
-            { kind: "issue", number: 17, title: "Mention bug", state: "open" },
+            {
+              kind: "issue",
+              number: 17,
+              title: "Mention bug",
+              state: "open",
+            },
           ],
         },
       },
@@ -758,7 +795,12 @@ describe("comment draft persistence", () => {
               title: "Polish mentions",
               state: "open",
             },
-            { kind: "issue", number: 17, title: "Mention bug", state: "open" },
+            {
+              kind: "issue",
+              number: 17,
+              title: "Mention bug",
+              state: "open",
+            },
           ],
         },
         onAutocompleteQuery: (query: Record<string, unknown> | undefined) => {

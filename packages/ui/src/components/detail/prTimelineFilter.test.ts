@@ -121,11 +121,17 @@ describe("prTimelineFilter", () => {
   });
 
   it("classifies event buckets", () => {
-    expect(timelineEventBucket(event({ EventType: "issue_comment" }))).toBe("messages");
+    expect(timelineEventBucket(event({ EventType: "issue_comment" }))).toBe(
+      "messages",
+    );
     expect(timelineEventBucket(event({ EventType: "review" }))).toBe("messages");
     expect(timelineEventBucket(event({ EventType: "commit" }))).toBe("commitDetails");
-    expect(timelineEventBucket(event({ EventType: "force_push" }))).toBe("forcePushes");
-    expect(timelineEventBucket(event({ EventType: "comment_deleted" }))).toBe("events");
+    expect(timelineEventBucket(event({ EventType: "force_push" }))).toBe(
+      "forcePushes",
+    );
+    expect(timelineEventBucket(event({ EventType: "comment_deleted" }))).toBe(
+      "events",
+    );
     expect(timelineEventBucket(event({ EventType: "cross_referenced" }))).toBe(
       "events",
     );

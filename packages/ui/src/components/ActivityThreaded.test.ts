@@ -4,7 +4,10 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import type { ActivityItem } from "../api/types.js";
 import ActivityThreaded from "./ActivityThreaded.svelte";
 
-function activityItem(id: string, overrides: Partial<ActivityItem> = {}): ActivityItem {
+function activityItem(
+  id: string,
+  overrides: Partial<ActivityItem> = {},
+): ActivityItem {
   return {
     id,
     cursor: id,
@@ -315,7 +318,8 @@ describe("ActivityThreaded collapse", () => {
         items: [
           branchActivityItem("force-1", {
             activity_type: "default_branch_force_push",
-            activity_url: "https://github.com/acme/widgets/compare/aaaaaaaa...bbbbbbbb",
+            activity_url:
+              "https://github.com/acme/widgets/compare/aaaaaaaa...bbbbbbbb",
             before_sha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             after_sha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
             body_preview:

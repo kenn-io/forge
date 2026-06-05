@@ -51,7 +51,10 @@ describe("DiffSummaryChip", () => {
       file("src/App.test.ts", 20, 8),
       file("mise.toml", 1, 1),
       file("bun.lock", 1, 1),
-      { ...file("src/api/generated/schema.ts", 2, 2), is_generated: true },
+      {
+        ...file("src/api/generated/schema.ts", 2, 2),
+        is_generated: true,
+      },
     ]);
 
     render(DiffSummaryChip, {
@@ -62,7 +65,9 @@ describe("DiffSummaryChip", () => {
       },
     });
 
-    await fireEvent.mouseEnter(screen.getByRole("button", { name: statLabel(74, 20) }));
+    await fireEvent.mouseEnter(
+      screen.getByRole("button", { name: statLabel(74, 20) }),
+    );
 
     const popover = await screen.findByRole("status");
     const labels = Array.from(
@@ -98,7 +103,9 @@ describe("DiffSummaryChip", () => {
       },
     });
 
-    await fireEvent.mouseEnter(screen.getByRole("button", { name: statLabel(60, 14) }));
+    await fireEvent.mouseEnter(
+      screen.getByRole("button", { name: statLabel(60, 14) }),
+    );
 
     const popover = await screen.findByRole("status");
     expect(within(popover).getByText("Code")).toBeTruthy();
@@ -126,10 +133,14 @@ describe("DiffSummaryChip", () => {
       },
     });
 
-    const trigger = screen.getByRole("button", { name: statLabel(4, 1) });
+    const trigger = screen.getByRole("button", {
+      name: statLabel(4, 1),
+    });
     await fireEvent.mouseEnter(trigger);
 
-    expect(await screen.findByText("Changed files are still refreshing.")).toBeTruthy();
+    expect(
+      await screen.findByText("Changed files are still refreshing."),
+    ).toBeTruthy();
     await fireEvent.mouseLeave(trigger);
     await fireEvent.mouseEnter(trigger);
 
@@ -164,7 +175,9 @@ describe("DiffSummaryChip", () => {
       },
     });
 
-    await fireEvent.mouseEnter(screen.getByRole("button", { name: statLabel(10, 0) }));
+    await fireEvent.mouseEnter(
+      screen.getByRole("button", { name: statLabel(10, 0) }),
+    );
     await rerender({
       additions: 5,
       deletions: 1,
@@ -201,7 +214,9 @@ describe("DiffSummaryChip", () => {
       },
     });
 
-    await fireEvent.mouseEnter(screen.getByRole("button", { name: statLabel(10, 0) }));
+    await fireEvent.mouseEnter(
+      screen.getByRole("button", { name: statLabel(10, 0) }),
+    );
     expect(await screen.findByText("Plans/docs")).toBeTruthy();
 
     await rerender({

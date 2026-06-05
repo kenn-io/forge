@@ -88,7 +88,9 @@ function devApiUrlPlugin(url: string): Plugin {
   };
 }
 
-export function resolveViteServerPort(argv: readonly string[] = process.argv): number {
+export function resolveViteServerPort(
+  argv: readonly string[] = process.argv,
+): number {
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (!arg) continue;

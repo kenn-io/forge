@@ -136,7 +136,9 @@ describe("RepoSettings", () => {
       },
     });
 
-    const trigger = screen.getByRole("button", { name: "Add repositories…" });
+    const trigger = screen.getByRole("button", {
+      name: "Add repositories…",
+    });
     await fireEvent.click(trigger);
 
     expect(screen.getByRole("dialog", { name: "Add repositories" })).toBeTruthy();
@@ -227,7 +229,9 @@ describe("RepoSettings", () => {
     });
 
     const input = screen.getByPlaceholderText("provider/owner/name");
-    await fireEvent.input(input, { target: { value: "github/acme/widget" } });
+    await fireEvent.input(input, {
+      target: { value: "github/acme/widget" },
+    });
     await fireEvent.click(screen.getByRole("button", { name: "Add" }));
     expect(mockAddRepo).toHaveBeenCalledWith("acme", "widget", {
       provider: "github",

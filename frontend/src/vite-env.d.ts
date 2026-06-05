@@ -231,11 +231,16 @@ interface Window {
   __MIDDLEMAN_DEV_API_URL__?: string;
   __MIDDLEMAN_FORCE_MOBILE_ROUTES__?: boolean;
   __middleman_config?: MiddlemanConfig;
-  __middleman_event_source_counts?: () => { created: number; closed: number };
+  __middleman_event_source_counts?: () => {
+    created: number;
+    closed: number;
+  };
   __middleman_notify_config_changed?: () => void;
   __middleman_update_workspace?: (data: WorkspaceData) => void;
   __middleman_navigate_to_route?: (route: string) => void;
-  __middleman_set_repo_filter?: (repo: { owner: string; name: string } | null) => void;
+  __middleman_set_repo_filter?: (
+    repo: { owner: string; name: string } | null,
+  ) => void;
   __middleman_update_selection?: (selection: {
     hostKey?: string | null;
     worktreeKey?: string | null;

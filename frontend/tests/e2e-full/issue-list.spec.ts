@@ -113,7 +113,9 @@ test.describe("issue list view", () => {
   });
 
   test("sidebar issue pills use the shared chip component", async ({ page }) => {
-    await expect(page.locator(".filter-bar .list-count-chip")).toHaveText(/^5 issues$/);
+    await expect(page.locator(".filter-bar .list-count-chip")).toHaveText(
+      /^5 issues$/,
+    );
 
     await mockLongIssueRepoSlug(page);
     await page.goto("/issues");
@@ -131,7 +133,9 @@ test.describe("issue list view", () => {
     await selectIssueState(page, "Closed");
 
     const countBadge = page.locator(".filter-bar .list-count-chip");
-    await expect(countBadge).toHaveText(/^1 issues?$/, { timeout: 5_000 });
+    await expect(countBadge).toHaveText(/^1 issues?$/, {
+      timeout: 5_000,
+    });
   });
 
   test("search filters by title", async ({ page }) => {

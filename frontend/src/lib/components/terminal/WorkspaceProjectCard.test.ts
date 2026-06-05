@@ -93,7 +93,9 @@ describe("WorkspaceProjectCard", () => {
     expect(screen.getByText("main")).toBeTruthy();
     expect(screen.getByText("This project has no worktrees yet.")).toBeTruthy();
     expect(
-      screen.getByRole("button", { name: /Create your first worktree/i }),
+      screen.getByRole("button", {
+        name: /Create your first worktree/i,
+      }),
     ).toBeTruthy();
   });
 
@@ -206,7 +208,9 @@ describe("WorkspaceProjectCard", () => {
     await screen.findByText("myrepo");
 
     await fireEvent.click(
-      screen.getByRole("button", { name: /Create your first worktree/i }),
+      screen.getByRole("button", {
+        name: /Create your first worktree/i,
+      }),
     );
     expect(newWorktreeHandler).toHaveBeenCalledWith({
       surface: "project-card",
@@ -242,7 +246,9 @@ describe("WorkspaceProjectCard", () => {
     render(WorkspaceProjectCard, { props: { projectId: "prj_1" } });
     await screen.findByText("myrepo");
     await fireEvent.click(
-      screen.getByRole("button", { name: /Create your first worktree/i }),
+      screen.getByRole("button", {
+        name: /Create your first worktree/i,
+      }),
     );
     expect(await screen.findByText("user cancelled the sheet")).toBeTruthy();
   });
@@ -261,7 +267,9 @@ describe("WorkspaceProjectCard", () => {
     render(WorkspaceProjectCard, { props: { projectId: "prj_1" } });
     await screen.findByText("myrepo");
     await fireEvent.click(
-      screen.getByRole("button", { name: /Create your first worktree/i }),
+      screen.getByRole("button", {
+        name: /Create your first worktree/i,
+      }),
     );
     expect(await screen.findByText(/not available in this build/i)).toBeTruthy();
   });

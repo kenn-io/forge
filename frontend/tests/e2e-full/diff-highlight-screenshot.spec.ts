@@ -88,15 +88,29 @@ const longLineDiff: DiffResult = withServerDiffData({
           new_count: 16,
           section: "jobs",
           lines: [
-            { type: "context", content: "jobs:", old_num: 10, new_num: 10 },
-            { type: "context", content: "  test:", old_num: 11, new_num: 11 },
+            {
+              type: "context",
+              content: "jobs:",
+              old_num: 10,
+              new_num: 10,
+            },
+            {
+              type: "context",
+              content: "  test:",
+              old_num: 11,
+              new_num: 11,
+            },
             {
               type: "context",
               content: "    runs-on: ubuntu-latest",
               old_num: 12,
               new_num: 12,
             },
-            { type: "delete", content: "    name: Run tests", old_num: 13 },
+            {
+              type: "delete",
+              content: "    name: Run tests",
+              old_num: 13,
+            },
             {
               type: "add",
               content:
@@ -192,7 +206,9 @@ function filesFromDiff(fixture: DiffResult): FilesResult {
 }
 
 test.describe("diff highlight backgrounds on horizontal scroll", () => {
-  test("line backgrounds cover the rendered Pierre content width", async ({ page }) => {
+  test("line backgrounds cover the rendered Pierre content width", async ({
+    page,
+  }) => {
     await page.route("**/api/v1/pulls/github/acme/widgets/1/files", async (route) => {
       await route.fulfill({
         status: 200,

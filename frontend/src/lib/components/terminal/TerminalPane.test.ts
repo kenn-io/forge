@@ -428,7 +428,9 @@ describe("TerminalPane", () => {
     }) as ClipboardEvent;
     Object.defineProperty(event, "clipboardData", {
       value: {
-        getData: vi.fn((type: string) => (type === "text/plain" ? "single line" : "")),
+        getData: vi.fn((type: string) =>
+          type === "text/plain" ? "single line" : "",
+        ),
       },
     });
 

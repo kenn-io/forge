@@ -310,7 +310,9 @@ test.describe("default branch activity", () => {
     await mockDefaultBranchActivity(page);
     await page.goto("/?view=flat");
 
-    const branchRows = page.locator(".activity-row", { hasText: "Branch" });
+    const branchRows = page.locator(".activity-row", {
+      hasText: "Branch",
+    });
     await expect(branchRows).toHaveCount(6);
     await expect(
       page.locator(".activity-row", {
@@ -358,7 +360,9 @@ test.describe("default branch activity", () => {
     ).toBeVisible();
     await expect(page.locator(".item-row", { hasText: "#0" })).toHaveCount(0);
     await expect(
-      page.locator(".event-row.collapsed-event", { hasText: "3 commits" }),
+      page.locator(".event-row.collapsed-event", {
+        hasText: "3 commits",
+      }),
     ).toHaveCount(0);
 
     const forcePushRow = page.locator(".branch-activity-row", {
@@ -382,7 +386,9 @@ test.describe("default branch activity", () => {
         await route.fulfill({
           status: 500,
           contentType: "application/json",
-          body: JSON.stringify({ title: "unexpected file preview request" }),
+          body: JSON.stringify({
+            title: "unexpected file preview request",
+          }),
         });
       },
     );
@@ -405,19 +411,28 @@ test.describe("default branch activity", () => {
       ),
     ).toHaveCount(1);
     const diffFile = page.locator('.diff-file[data-file-path="src/direct-main.ts"]');
-    await expect(diffFile.locator(".file-header")).toContainText("src/direct-main.ts");
+    await expect(diffFile.locator(".file-header")).toContainText(
+      "src/direct-main.ts",
+    );
     await expect(diffFile.locator(".pierre-diff-loading")).toBeHidden();
     await expect
       .poll(() =>
-        pierreDiffCount(diffFile, '[data-content] [data-line-type="change-addition"]'),
+        pierreDiffCount(
+          diffFile,
+          '[data-content] [data-line-type="change-addition"]',
+        ),
       )
       .toBe(2);
     await expect
       .poll(() => pierreDiffCount(diffFile, '[data-separator="line-info"]'))
       .toBeGreaterThanOrEqual(1);
-    await expect.poll(() => pierreDiffCount(diffFile, "[data-expand-button]")).toBe(0);
+    await expect
+      .poll(() => pierreDiffCount(diffFile, "[data-expand-button]"))
+      .toBe(0);
     await expect.poll(() => filePreviewRequests).toBe(0);
-    await expect.poll(() => page.evaluate(() => window.__middlemanOpenedURL)).toBe("");
+    await expect
+      .poll(() => page.evaluate(() => window.__middlemanOpenedURL))
+      .toBe("");
   });
 });
 
@@ -442,9 +457,9 @@ test.describe("mobile default branch activity", () => {
     await expect(branchCard).toBeVisible();
     await expect(branchCard).toContainText("Branch");
     await expect(branchCard).toContainText("6 events");
-    await expect(page.locator(".mobile-activity-card", { hasText: "#0" })).toHaveCount(
-      0,
-    );
+    await expect(
+      page.locator(".mobile-activity-card", { hasText: "#0" }),
+    ).toHaveCount(0);
 
     await branchCard
       .locator(".mobile-activity-event", {

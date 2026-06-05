@@ -225,7 +225,9 @@ describe("runApprovePR", () => {
       response: new Response("{}"),
     });
     const onError = vi.fn();
-    await expect(runApprovePR(buildInput({ client, onError }))).rejects.toThrow("boom");
+    await expect(runApprovePR(buildInput({ client, onError }))).rejects.toThrow(
+      "boom",
+    );
     expect(onError).toHaveBeenCalledWith("boom");
   });
 
@@ -456,9 +458,9 @@ describe("runApproveWorkflows", () => {
       response: new Response("{}"),
     });
     const onError = vi.fn();
-    await expect(runApproveWorkflows(buildInput({ client, onError }))).rejects.toThrow(
-      "no pending workflows",
-    );
+    await expect(
+      runApproveWorkflows(buildInput({ client, onError })),
+    ).rejects.toThrow("no pending workflows");
     expect(onError).toHaveBeenCalledWith("no pending workflows");
   });
 

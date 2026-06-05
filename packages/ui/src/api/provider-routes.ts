@@ -99,7 +99,10 @@ export function providerItemPath<S extends PullSuffix>(
   ref: ProviderRouteRef,
   suffix: S,
 ): PullPath<S>;
-export function providerItemPath(kind: "issues", ref: ProviderRouteRef): IssuePath<"">;
+export function providerItemPath(
+  kind: "issues",
+  ref: ProviderRouteRef,
+): IssuePath<"">;
 export function providerItemPath<S extends IssueSuffix>(
   kind: "issues",
   ref: ProviderRouteRef,

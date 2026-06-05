@@ -294,7 +294,9 @@ describe("GhosttyTerminalPane", () => {
   });
 
   it("sends browser multiline paste through ghostty bracketed paste handling", async () => {
-    const { container } = await renderStarted({ workspaceId: "ws-123" });
+    const { container } = await renderStarted({
+      workspaceId: "ws-123",
+    });
 
     socketAt(0).sent = [];
     const terminalContainer = container.querySelector(".terminal-container");
@@ -325,7 +327,9 @@ describe("GhosttyTerminalPane", () => {
   });
 
   it("leaves single-line browser paste for ghostty default handling", async () => {
-    const { container } = await renderStarted({ workspaceId: "ws-123" });
+    const { container } = await renderStarted({
+      workspaceId: "ws-123",
+    });
 
     socketAt(0).sent = [];
     const terminalContainer = container.querySelector(".terminal-container");
@@ -339,7 +343,9 @@ describe("GhosttyTerminalPane", () => {
     }) as ClipboardEvent;
     Object.defineProperty(event, "clipboardData", {
       value: {
-        getData: vi.fn((type: string) => (type === "text/plain" ? "single line" : "")),
+        getData: vi.fn((type: string) =>
+          type === "text/plain" ? "single line" : "",
+        ),
       },
     });
 

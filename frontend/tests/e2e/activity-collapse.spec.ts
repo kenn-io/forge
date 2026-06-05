@@ -125,7 +125,9 @@ test.describe("threaded activity collapse", () => {
 
     // In the narrow pane the control is icon-only: the button is present by
     // its accessible name, but its text label is hidden to avoid stacking.
-    const collapseBtn = page.getByRole("button", { name: "Collapse all" });
+    const collapseBtn = page.getByRole("button", {
+      name: "Collapse all",
+    });
     await expect(collapseBtn).toBeVisible();
     await expect(page.locator(".collapse-all-btn .collapse-all-label")).toBeHidden();
     await collapseBtn.click();

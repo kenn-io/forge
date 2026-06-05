@@ -4,7 +4,9 @@ import { STORES_KEY } from "../../context.js";
 import { createDiffStore } from "../../stores/diff.svelte.js";
 import DiffToolbar from "./DiffToolbar.svelte";
 
-function renderToolbar(options: { compact?: boolean; showRichPreview?: boolean } = {}) {
+function renderToolbar(
+  options: { compact?: boolean; showRichPreview?: boolean } = {},
+) {
   const diff = createDiffStore();
   render(DiffToolbar, {
     props: options,

@@ -8,7 +8,9 @@ describe("buildTerminalFontFamily", () => {
   it.each(["", "   "])(
     "uses the fallback stack when configured font is blank: %j",
     (configuredFont) => {
-      expect(buildTerminalFontFamily(configuredFont, defaultStack)).toBe(defaultStack);
+      expect(buildTerminalFontFamily(configuredFont, defaultStack)).toBe(
+        defaultStack,
+      );
     },
   );
 

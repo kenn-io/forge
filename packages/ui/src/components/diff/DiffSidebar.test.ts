@@ -138,7 +138,9 @@ describe("DiffSidebar", () => {
 
     await findTreeItem("docs/readme.md");
     await waitFor(() => {
-      expect(treeRoot()?.querySelector('[data-item-path="src/file-0.ts"]')).toBeNull();
+      expect(
+        treeRoot()?.querySelector('[data-item-path="src/file-0.ts"]'),
+      ).toBeNull();
     });
   });
 

@@ -72,7 +72,9 @@ describe("bucketForCheck", () => {
   });
 
   it("returns pending for unrecognised status with empty conclusion (step 6 fallback)", () => {
-    expect(bucketForCheck(check({ status: "weird", conclusion: "" }))).toBe("pending");
+    expect(bucketForCheck(check({ status: "weird", conclusion: "" }))).toBe(
+      "pending",
+    );
   });
 });
 
@@ -207,8 +209,8 @@ describe("parseCIChecks", () => {
   });
 
   it("safeDiagnosticText forwards locally-created CIChecksJSON shape errors intact", () => {
-    expect(safeDiagnosticText(new Error("CIChecksJSON: payload is not an array"))).toBe(
-      "CIChecksJSON: payload is not an array",
-    );
+    expect(
+      safeDiagnosticText(new Error("CIChecksJSON: payload is not an array")),
+    ).toBe("CIChecksJSON: payload is not an array");
   });
 });

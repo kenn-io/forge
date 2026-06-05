@@ -106,7 +106,9 @@ describe("WorkspaceListSidebar", () => {
       },
     });
 
-    render(WorkspaceListSidebar, { props: { selectedId: "ws-github" } });
+    render(WorkspaceListSidebar, {
+      props: { selectedId: "ws-github" },
+    });
 
     await screen.findByText("acme/widgets");
     expect(screen.getByRole("img", { name: "GitHub" })).toBeTruthy();
@@ -137,7 +139,9 @@ describe("WorkspaceListSidebar", () => {
       },
     });
 
-    render(WorkspaceListSidebar, { props: { selectedId: "ws-github" } });
+    render(WorkspaceListSidebar, {
+      props: { selectedId: "ws-github" },
+    });
 
     await screen.findByText("acme/widgets");
     expect(screen.queryByRole("img", { name: "GitHub" })).toBeNull();

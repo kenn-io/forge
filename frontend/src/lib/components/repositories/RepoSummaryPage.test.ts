@@ -655,7 +655,11 @@ describe("RepoSummaryPage", () => {
         "/issues/{provider}/{owner}/{name}",
         expect.objectContaining({
           params: {
-            path: { provider: "github", owner: "acme", name: "widgets" },
+            path: {
+              provider: "github",
+              owner: "acme",
+              name: "widgets",
+            },
           },
           body: {
             title: "Ship repo summaries",
@@ -814,15 +818,15 @@ describe("RepoSummaryPage", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
     await fireEvent.click(secondIssueButton);
-    expect((screen.getByPlaceholderText("Issue title") as HTMLInputElement).value).toBe(
-      "",
-    );
+    expect(
+      (screen.getByPlaceholderText("Issue title") as HTMLInputElement).value,
+    ).toBe("");
     await fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
     await fireEvent.click(firstIssueButton);
-    expect((screen.getByPlaceholderText("Issue title") as HTMLInputElement).value).toBe(
-      "Enterprise draft",
-    );
+    expect(
+      (screen.getByPlaceholderText("Issue title") as HTMLInputElement).value,
+    ).toBe("Enterprise draft");
     await fireEvent.submit(screen.getByRole("button", { name: "Create issue" }));
 
     await waitFor(() => {
@@ -900,9 +904,9 @@ describe("RepoSummaryPage", () => {
 
     await fireEvent.click(screen.getByRole("button", { name: "New issue" }));
 
-    expect((screen.getByPlaceholderText("Issue title") as HTMLInputElement).value).toBe(
-      "Draft issue title",
-    );
+    expect(
+      (screen.getByPlaceholderText("Issue title") as HTMLInputElement).value,
+    ).toBe("Draft issue title");
     expect(
       (
         screen.getByRole("textbox", {

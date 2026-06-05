@@ -365,7 +365,10 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       activeDetailLoad?.key === key &&
       activeDetailLoad.promise !== null
     ) {
-      activeDetailLoad.syncMode = strongerSyncMode(activeDetailLoad.syncMode, syncMode);
+      activeDetailLoad.syncMode = strongerSyncMode(
+        activeDetailLoad.syncMode,
+        syncMode,
+      );
       return activeDetailLoad.promise;
     }
 

@@ -15,7 +15,9 @@ test.describe("detail number link copy", () => {
     await page.goto("/pulls/github/acme/widgets/1");
     await page.locator(".pull-detail").waitFor({ state: "visible", timeout: 10_000 });
 
-    const numberButton = page.getByRole("button", { name: "Copy PR #1 link" });
+    const numberButton = page.getByRole("button", {
+      name: "Copy PR #1 link",
+    });
     await expect(numberButton).toHaveText("#1");
     await numberButton.click();
 
@@ -32,7 +34,9 @@ test.describe("detail number link copy", () => {
     await context.grantPermissions(["clipboard-read", "clipboard-write"]);
 
     await page.goto("/issues/github/acme/widgets/10");
-    await page.locator(".issue-detail").waitFor({ state: "visible", timeout: 10_000 });
+    await page
+      .locator(".issue-detail")
+      .waitFor({ state: "visible", timeout: 10_000 });
 
     const numberButton = page.getByRole("button", {
       name: "Copy issue #10 link",

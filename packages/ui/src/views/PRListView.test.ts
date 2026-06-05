@@ -36,7 +36,11 @@ class ResizeObserverMock {
 
   observe(): void {
     this.callback(
-      [{ contentRect: { width: observedWidth.value } } as ResizeObserverEntry],
+      [
+        {
+          contentRect: { width: observedWidth.value },
+        } as ResizeObserverEntry,
+      ],
       this as unknown as ResizeObserver,
     );
   }

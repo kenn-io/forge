@@ -465,7 +465,9 @@ describe("router navigation events", () => {
   afterEach(() => {
     delete (window as unknown as { __middleman_config?: unknown }).__middleman_config;
     (
-      window as unknown as { __middleman_notify_config_changed?: () => void }
+      window as unknown as {
+        __middleman_notify_config_changed?: () => void;
+      }
     ).__middleman_notify_config_changed?.();
   });
 
@@ -474,7 +476,9 @@ describe("router navigation events", () => {
       onNavigate: spy,
     };
     (
-      window as unknown as { __middleman_notify_config_changed?: () => void }
+      window as unknown as {
+        __middleman_notify_config_changed?: () => void;
+      }
     ).__middleman_notify_config_changed?.();
   }
 

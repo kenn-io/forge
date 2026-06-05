@@ -53,7 +53,9 @@ test.describe("routed item builders through the UI", () => {
     await page.locator(".issue-item").filter({ hasText: issueTitle }).first().click();
 
     await expectPathname(page, "/issues/github/acme/widgets/10");
-    await expect(page.locator(".issue-detail .detail-title")).toContainText(issueTitle);
+    await expect(page.locator(".issue-detail .detail-title")).toContainText(
+      issueTitle,
+    );
     await expect((await detailLoaded).ok()).toBe(true);
   });
 
@@ -79,7 +81,9 @@ test.describe("routed item builders through the UI", () => {
     await expect((await detailLoaded).ok()).toBe(true);
   });
 
-  test("focus issue list routes selected rows with platform_host", async ({ page }) => {
+  test("focus issue list routes selected rows with platform_host", async ({
+    page,
+  }) => {
     await page.goto("/focus/issues?repo=acme%2Fwidgets");
     await page
       .locator(".focus-list .issue-item")

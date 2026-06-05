@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vite-plus/test";
 import type { ActivityItem } from "../api/types.js";
 import { collapseActivityRuns, isCollapsedActivityRow } from "./activityRows.js";
-import { activityBranchKey, activityItemKey, activityRepoKey } from "./activityRows.js";
+import {
+  activityBranchKey,
+  activityItemKey,
+  activityRepoKey,
+} from "./activityRows.js";
 
 function item(id: string, activity_type: string, author: string): ActivityItem {
   return {
@@ -147,7 +151,9 @@ describe("collapseActivityRuns", () => {
     expect(rows).toHaveLength(1);
     expect(isCollapsedActivityRow(rows[0]!)).toBe(true);
     expect(
-      isCollapsedActivityRow(rows[0]!) ? rows[0].representative.branch_name : undefined,
+      isCollapsedActivityRow(rows[0]!)
+        ? rows[0].representative.branch_name
+        : undefined,
     ).toBe("main");
   });
 
@@ -183,7 +189,10 @@ describe("activityRepoKey / activityItemKey", () => {
 
   it("includes host so same identity on different hosts differs", () => {
     const a = activityRepoKey(base);
-    const b = activityRepoKey({ ...base, platformHost: "ghe.example.com" });
+    const b = activityRepoKey({
+      ...base,
+      platformHost: "ghe.example.com",
+    });
     expect(a).not.toBe(b);
   });
 

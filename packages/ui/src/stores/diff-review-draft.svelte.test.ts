@@ -152,7 +152,10 @@ describe("createDiffReviewDraftStore", () => {
         .mockReturnValueOnce(newLoad.promise),
     });
     const store = createDiffReviewDraftStore({ client });
-    const ref = providerRef({ provider: "github", platformHost: "github.com" });
+    const ref = providerRef({
+      provider: "github",
+      platformHost: "github.com",
+    });
 
     store.setContext(ref, 42, true, "old-head");
     await Promise.resolve();

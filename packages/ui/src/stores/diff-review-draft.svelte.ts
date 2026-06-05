@@ -184,7 +184,9 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
     try {
       const { data, error, response } = await apiClient.GET(
         providerItemPath("pulls", ref, "/review-draft"),
-        { params },
+        {
+          params,
+        },
       );
       if (!data) {
         throw new Error(apiErrorMessage(error, `HTTP ${response.status}`));
@@ -298,7 +300,10 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
     try {
       const { data, error, response } = await apiClient.POST(
         providerItemPath("pulls", ref, "/review-draft/publish"),
-        { params, body: { action, body } },
+        {
+          params,
+          body: { action, body },
+        },
       );
       if (!response.ok) {
         throw new Error(apiErrorMessage(error, `HTTP ${response.status}`));
@@ -343,7 +348,9 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
     try {
       const { error, response } = await apiClient.DELETE(
         providerItemPath("pulls", ref, "/review-draft"),
-        { params },
+        {
+          params,
+        },
       );
       if (!response.ok) {
         throw new Error(apiErrorMessage(error, `HTTP ${response.status}`));

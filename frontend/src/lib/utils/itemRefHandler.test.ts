@@ -38,7 +38,11 @@ async function clickItemRef(attributes: Record<string, string>): Promise<void> {
   }
   document.body.appendChild(anchor);
   anchor.dispatchEvent(
-    new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 }),
+    new MouseEvent("click", {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+    }),
   );
   await Promise.resolve();
   await Promise.resolve();

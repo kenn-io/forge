@@ -38,7 +38,9 @@ test("stack member navigation preserves the focus route with full-stack data", a
 
   await detail.getByTestId("stack-chip").click();
   await detail
-    .getByRole("button", { name: "#10 Auth: extract token refresh helper" })
+    .getByRole("button", {
+      name: "#10 Auth: extract token refresh helper",
+    })
     .click();
 
   await expect(page).toHaveURL(/\/focus\/pulls\/github\/acme\/tools\/10$/);
@@ -58,7 +60,9 @@ test("stack member navigation updates the activity drawer with full-stack data",
 
   await detail.getByTestId("stack-chip").click();
   await detail
-    .getByRole("button", { name: "#10 Auth: extract token refresh helper" })
+    .getByRole("button", {
+      name: "#10 Auth: extract token refresh helper",
+    })
     .click();
 
   await expect(page).toHaveURL(/selected=pr%3A10/);

@@ -152,12 +152,13 @@ test("lets wide PR detail panes opt into split conversation and files", async ({
   await page.setViewportSize({ width: 2200, height: 1000 });
   await page.goto("/pulls/github/acme/widgets/42");
 
-  await expect(page.locator(".detail-title")).toContainText(
-    "Add browser regression coverage",
-  );
+  await expect(page.locator(".detail-title")).toContainText("Add browser regression coverage");
   await expect(page.locator(".detail-split-layout")).toHaveCount(0);
 
-  const splitToggle = page.getByRole("button", { name: "Split view" });
+  const splitToggle = page.getByRole("button", {
+    name: "Split view",
+    exact: true,
+  });
   await expect(splitToggle).toBeVisible();
   await expect(splitToggle).toHaveAttribute("aria-pressed", "false");
 
@@ -165,9 +166,39 @@ test("lets wide PR detail panes opt into split conversation and files", async ({
 
   await expect(splitToggle).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator(".detail-split-layout")).toBeVisible();
-  await expect(page.locator(".detail-title")).toContainText(
-    "Add browser regression coverage",
-  );
+  await expect(page.locator(".detail-title")).toContainText("Add browser regression coverage");
   await expect(page.locator(".files-view")).toBeVisible();
   await expect(page.getByText("src/split-view.ts")).toBeVisible();
+
+  const conversationPane = page.locator(".detail-split-pane--conversation");
+  const resizeHandle = page.getByRole("button", { name: "Resize PR split view" });
+  await expect(conversationPane).toBeVisible();
+  await expect(resizeHandle).toBeVisible();
+  await expect(resizeHandle).toHaveCSS("cursor", "col-resize");
+
+  const before = await conversationPane.boundingBox();
+  const handleBox = await resizeHandle.boundingBox();
+  expect(before).not.toBeNull();
+  expect(handleBox).not.toBeNull();
+  if (!before || !handleBox) {
+    throw new Error("Expected split pane and resize handle to be measurable");
+  }
+
+  await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(
+    handleBox.x + handleBox.width / 2 + 240,
+    handleBox.y + handleBox.height / 2,
+  );
+  await page.mouse.up();
+
+  await expect
+    .poll(async () => {
+      const box = await conversationPane.boundingBox();
+      return box?.width ?? 0;
+    })
+    .toBeGreaterThan(before.width + 150);
+  await expect
+    .poll(async () => await page.evaluate(() => localStorage.getItem("pr-detail-split-ratio")))
+    .not.toBeNull();
 });

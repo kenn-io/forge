@@ -44,6 +44,20 @@ class ResizeObserverMock {
   disconnect(): void {}
 }
 
+function mockElementRect(): DOMRect {
+  return {
+    width: observedWidth.value,
+    height: 1000,
+    x: 0,
+    y: 0,
+    top: 0,
+    right: observedWidth.value,
+    bottom: 1000,
+    left: 0,
+    toJSON: () => ({}),
+  };
+}
+
 function renderPRListView(detailTab: "conversation" | "files" = "conversation") {
   const detailStore = {
     getDetail: () => null,
@@ -78,10 +92,12 @@ describe("PRListView split view", () => {
     localStorage.clear();
     observedWidth.value = minSplitViewWidth;
     vi.stubGlobal("ResizeObserver", ResizeObserverMock);
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(mockElementRect);
   });
 
   afterEach(() => {
     cleanup();
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
 
@@ -111,5 +127,36 @@ describe("PRListView split view", () => {
     expect(screen.getByTestId("pull-detail")).toBeTruthy();
     expect(screen.getByTestId("diff-files")).toBeTruthy();
     expect(localStorage.getItem("pr-detail-split-view")).toBe("1");
+  });
+
+  it("lets users resize wide split view panes", async () => {
+    observedWidth.value = 2200;
+
+    const { container } = renderPRListView();
+    await tick();
+
+    await fireEvent.click(screen.getByRole("button", { name: "Split view" }));
+    await tick();
+
+    const conversationPane = container.querySelector<HTMLElement>(
+      ".detail-split-pane--conversation",
+    );
+    expect(conversationPane).not.toBeNull();
+    expect(conversationPane!.style.flexBasis).toBe("1098px");
+
+    const resizeHandle = screen.getByRole("button", {
+      name: "Resize PR split view",
+    });
+    await fireEvent.mouseDown(resizeHandle, { clientX: 100 });
+    await fireEvent.mouseMove(window, { clientX: 340 });
+    await tick();
+
+    expect(conversationPane!.style.flexBasis).toBe("1338px");
+
+    await fireEvent.mouseUp(window, { clientX: 340 });
+    await tick();
+
+    expect(conversationPane!.style.flexBasis).toBe("1338px");
+    expect(localStorage.getItem("pr-detail-split-ratio")).toBe("0.6093");
   });
 });

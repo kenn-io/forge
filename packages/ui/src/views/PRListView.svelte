@@ -1,18 +1,20 @@
 <script module lang="ts">
   type DetailTab = "conversation" | "files";
 
-  const filesScrollPositions: Record<string, number> = Object.create(null) as Record<string, number>;
+  const filesScrollPositions: Record<string, number> = Object.create(null) as Record<
+    string,
+    number
+  >;
 </script>
 
 <script lang="ts">
   import { untrack } from "svelte";
-  import {
-    getNavigate, getSidebar, getStores,
-  } from "../context.js";
+  import { getNavigate, getSidebar, getStores } from "../context.js";
   import CollapsibleResizableSidebar from "../components/shared/CollapsibleResizableSidebar.svelte";
+  import SplitResizeHandle from "../components/shared/SplitResizeHandle.svelte";
+  import type { SplitResizeEvent } from "../components/shared/split-resize.js";
   import PullList from "../components/sidebar/PullList.svelte";
-  import PullDetail
-    from "../components/detail/PullDetail.svelte";
+  import PullDetail from "../components/detail/PullDetail.svelte";
   import DiffFilesLayout from "../components/diff/DiffFilesLayout.svelte";
   import type { ProviderCapabilities, PullDetail as PullDetailResponse } from "../api/types.js";
   import type { DetailSyncMode } from "../stores/detail.svelte.js";
@@ -31,8 +33,11 @@
   const navigate = getNavigate();
   const { detail: detailStore } = getStores();
   const splitViewStorageKey = "pr-detail-split-view";
+  const splitViewRatioStorageKey = "pr-detail-split-ratio";
   const regularConversationPanelWidth = 800 + 24 + 24;
   const minSplitViewWidth = regularConversationPanelWidth * 2;
+  const minSplitPaneWidth = 480;
+  const splitResizeHandleWidth = 4;
 
   const defaultProviderCapabilities: ProviderCapabilities = {
     read_repositories: true,
@@ -92,9 +97,17 @@
   let detailHost: HTMLDivElement | undefined = $state();
   let detailHostWidth = $state(0);
   let splitViewEnabled = $state(loadSplitViewPreference());
+  let committedSplitRatio = $state(loadSplitViewRatio());
+  let dragSplitWidth: number | null = $state(null);
+  let splitResizeStartWidth = 0;
 
   const splitViewAvailable = $derived(selectedPR !== null && detailHostWidth >= minSplitViewWidth);
   const splitViewActive = $derived(splitViewAvailable && splitViewEnabled);
+  const splitContentWidth = $derived(Math.max(0, detailHostWidth - splitResizeHandleWidth));
+  const splitConversationWidth = $derived.by(() => {
+    if (splitContentWidth <= 0) return 0;
+    return clampSplitPaneWidth(dragSplitWidth ?? splitContentWidth * committedSplitRatio);
+  });
 
   function safeGetItem(key: string): string | null {
     try {
@@ -116,9 +129,55 @@
     return safeGetItem(splitViewStorageKey) === "1";
   }
 
+  function loadSplitViewRatio(): number {
+    const stored = safeGetItem(splitViewRatioStorageKey);
+    if (stored === null || stored.trim() === "") return 0.5;
+    const value = Number(stored);
+    return Number.isFinite(value) ? clampSplitRatio(value) : 0.5;
+  }
+
   function setSplitViewEnabled(enabled: boolean): void {
     splitViewEnabled = enabled;
     safeSetItem(splitViewStorageKey, enabled ? "1" : "0");
+  }
+
+  function clampSplitRatio(ratio: number): number {
+    if (!Number.isFinite(ratio)) return 0.5;
+    return Math.max(0.2, Math.min(0.8, ratio));
+  }
+
+  function splitPaneBounds(): { min: number; max: number } {
+    const min = Math.min(minSplitPaneWidth, Math.max(0, splitContentWidth / 2));
+    return {
+      min,
+      max: Math.max(min, splitContentWidth - min),
+    };
+  }
+
+  function clampSplitPaneWidth(width: number): number {
+    const bounds = splitPaneBounds();
+    return Math.max(bounds.min, Math.min(bounds.max, width));
+  }
+
+  function handleSplitResizeStart(): void {
+    splitResizeStartWidth = splitConversationWidth;
+  }
+
+  function splitWidthFromResize(event: SplitResizeEvent): number {
+    return clampSplitPaneWidth(splitResizeStartWidth + event.deltaX);
+  }
+
+  function handleSplitResize(event: SplitResizeEvent): void {
+    dragSplitWidth = splitWidthFromResize(event);
+  }
+
+  function handleSplitResizeEnd(event: SplitResizeEvent): void {
+    const finalWidth = splitWidthFromResize(event);
+    const finalRatio =
+      splitContentWidth > 0 ? clampSplitRatio(finalWidth / splitContentWidth) : 0.5;
+    committedSplitRatio = finalRatio;
+    dragSplitWidth = null;
+    safeSetItem(splitViewRatioStorageKey, finalRatio.toFixed(4));
   }
 
   function filesScrollKey(): string | null {
@@ -149,9 +208,7 @@
     }
     if (selectedPR === null) return;
     navigate(
-      tab === "files"
-        ? buildPullRequestFilesRoute(selectedPR)
-        : buildPullRequestRoute(selectedPR),
+      tab === "files" ? buildPullRequestFilesRoute(selectedPR) : buildPullRequestRoute(selectedPR),
     );
   }
 
@@ -166,13 +223,16 @@
     detail: PullDetailResponse | null,
     ref: PullRequestRouteRef | null,
   ): boolean {
-    return !!detail && !!ref
-      && detail.repo_owner === ref.owner
-      && detail.repo_name === ref.name
-      && detail.merge_request.Number === ref.number
-      && canonicalProvider(detail.repo?.provider ?? "") === canonicalProvider(ref.provider)
-      && detail.repo?.platform_host === ref.platformHost
-      && detail.repo?.repo_path === ref.repoPath;
+    return (
+      !!detail &&
+      !!ref &&
+      detail.repo_owner === ref.owner &&
+      detail.repo_name === ref.name &&
+      detail.merge_request.Number === ref.number &&
+      canonicalProvider(detail.repo?.provider ?? "") === canonicalProvider(ref.provider) &&
+      detail.repo?.platform_host === ref.platformHost &&
+      detail.repo?.repo_path === ref.repoPath
+    );
   }
 
   const selectedDetail = $derived.by(() => {
@@ -185,17 +245,12 @@
     const ref = selectedPR;
     untrack(() => {
       if (detailMatchesSelected(detailStore.getDetail(), ref)) return;
-      void detailStore.loadDetail(
-        ref.owner,
-        ref.name,
-        ref.number,
-        {
-          sync: false,
-          provider: ref.provider,
-          platformHost: ref.platformHost,
-          repoPath: ref.repoPath,
-        },
-      );
+      void detailStore.loadDetail(ref.owner, ref.name, ref.number, {
+        sync: false,
+        provider: ref.provider,
+        platformHost: ref.platformHost,
+        repoPath: ref.repoPath,
+      });
     });
   });
 
@@ -232,11 +287,7 @@
   mainEmpty={selectedPR === null}
 >
   {#snippet sidebar()}
-    <PullList
-      getDetailTab={() => detailTab}
-      showSelectedDiffSidebar={false}
-      {sidebarWidth}
-    />
+    <PullList getDetailTab={() => detailTab} showSelectedDiffSidebar={false} {sidebarWidth} />
   {/snippet}
 
   {#if selectedPR !== null}
@@ -271,7 +322,11 @@
 
       {#if splitViewActive}
         <div class="detail-split-layout">
-          <section class="detail-split-pane" aria-label="Conversation">
+          <section
+            class="detail-split-pane detail-split-pane--conversation"
+            aria-label="Conversation"
+            style:flex-basis={`${Math.round(splitConversationWidth)}px`}
+          >
             <PullDetail
               owner={selectedPR.owner}
               name={selectedPR.name}
@@ -286,6 +341,13 @@
               onStackMemberNavigate={handleStackMemberNavigate}
             />
           </section>
+          <SplitResizeHandle
+            class="detail-split-resize-handle"
+            ariaLabel="Resize PR split view"
+            onResizeStart={handleSplitResizeStart}
+            onResize={handleSplitResize}
+            onResizeEnd={handleSplitResizeEnd}
+          />
           <section class="detail-split-pane detail-split-pane--files" aria-label="Files changed">
             {#key `${selectedPR.provider}/${selectedPR.platformHost ?? ""}/${selectedPR.repoPath}/${selectedPR.number}`}
               <DiffFilesLayout
@@ -339,9 +401,7 @@
   {:else}
     <div class="placeholder-content">
       <p class="placeholder-text">Select a PR</p>
-      <p class="placeholder-hint">
-        j/k to navigate &middot; 1/2 to switch views
-      </p>
+      <p class="placeholder-hint">j/k to navigate &middot; 1/2 to switch views</p>
     </div>
   {/if}
 </CollapsibleResizableSidebar>
@@ -387,7 +447,9 @@
     padding: 8px 16px;
     color: var(--text-secondary);
     border-bottom: 2px solid transparent;
-    transition: color 0.1s, border-color 0.1s;
+    transition:
+      color 0.1s,
+      border-color 0.1s;
   }
 
   .detail-tab:hover {
@@ -430,8 +492,7 @@
   }
 
   .detail-split-layout {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    display: flex;
     flex: 1;
     min-height: 0;
     min-width: 0;
@@ -445,8 +506,16 @@
     overflow: hidden;
   }
 
+  .detail-split-pane--conversation {
+    flex: 0 0 auto;
+  }
+
   .detail-split-pane--files {
-    border-left: 1px solid var(--border-default);
+    flex: 1 1 0;
+  }
+
+  :global(.detail-split-resize-handle) {
+    background: var(--border-default);
   }
 
   .detail-split-pane :global(.pull-detail-content) {

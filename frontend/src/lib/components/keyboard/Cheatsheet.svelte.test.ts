@@ -83,9 +83,7 @@ describe("Cheatsheet", () => {
   });
 
   it("renders the Commands section for actions without a binding", async () => {
-    registerScopedActions("test", [
-      action("test.cmd", "Test command", "global", null),
-    ]);
+    registerScopedActions("test", [action("test.cmd", "Test command", "global", null)]);
     const { rerender } = render(Cheatsheet, { props: {} });
     openCheatsheet();
     await rerender({});
@@ -125,16 +123,12 @@ describe("Cheatsheet", () => {
     const { rerender, container } = render(Cheatsheet, { props: {} });
     openCheatsheet();
     await rerender({});
-    expect(
-      screen.getByRole("dialog", { name: "Keyboard shortcuts" }),
-    ).not.toBeNull();
+    expect(screen.getByRole("dialog", { name: "Keyboard shortcuts" })).not.toBeNull();
     const backdrop = container.querySelector(".cheatsheet-backdrop");
     expect(backdrop).not.toBeNull();
     await fireEvent.click(backdrop!);
     await rerender({});
-    expect(
-      screen.queryByRole("dialog", { name: "Keyboard shortcuts" }),
-    ).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" })).toBeNull();
   });
 
   it("omits the Component shortcuts section when no entries exist", async () => {

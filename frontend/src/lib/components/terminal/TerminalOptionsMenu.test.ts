@@ -1,10 +1,4 @@
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 type TerminalSettings = {
@@ -82,9 +76,7 @@ describe("TerminalOptionsMenu", () => {
   });
 
   it("keeps the popover mounted while a save is in flight", async () => {
-    let resolveSave:
-      | ((settings: { terminal: TerminalSettings }) => void)
-      | undefined;
+    let resolveSave: ((settings: { terminal: TerminalSettings }) => void) | undefined;
     mockUpdateSettings.mockImplementation(
       () =>
         new Promise((resolve) => {
@@ -94,9 +86,7 @@ describe("TerminalOptionsMenu", () => {
 
     render(TerminalOptionsMenu);
 
-    await fireEvent.click(
-      screen.getByRole("button", { name: "Terminal options" }),
-    );
+    await fireEvent.click(screen.getByRole("button", { name: "Terminal options" }));
     await fireEvent.input(screen.getByLabelText("Font size"), {
       target: { value: "19" },
     });
@@ -107,9 +97,7 @@ describe("TerminalOptionsMenu", () => {
     });
 
     await fireEvent.keyDown(window, { key: "Escape" });
-    expect(
-      screen.getByRole("dialog", { name: "Terminal options" }),
-    ).toBeTruthy();
+    expect(screen.getByRole("dialog", { name: "Terminal options" })).toBeTruthy();
 
     resolveSave?.({
       terminal: {
@@ -123,9 +111,7 @@ describe("TerminalOptionsMenu", () => {
 
     await fireEvent.keyDown(window, { key: "Escape" });
     await waitFor(() => {
-      expect(
-        screen.queryByRole("dialog", { name: "Terminal options" }),
-      ).toBeNull();
+      expect(screen.queryByRole("dialog", { name: "Terminal options" })).toBeNull();
     });
     expect(currentTerminal.value.font_size).toBe(19);
   });

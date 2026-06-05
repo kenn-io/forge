@@ -12,14 +12,9 @@ type IssueRef = {
   number: number;
 };
 
-async function fetchPullDetail(
-  page: import("@playwright/test").Page,
-  pull: PullRef,
-) {
+async function fetchPullDetail(page: import("@playwright/test").Page, pull: PullRef) {
   return page.evaluate(async ({ owner, repo, number }) => {
-    const response = await fetch(
-      `/api/v1/pulls/github/${owner}/${repo}/${number}`,
-    );
+    const response = await fetch(`/api/v1/pulls/github/${owner}/${repo}/${number}`);
     return response.json();
   }, pull);
 }
@@ -29,9 +24,7 @@ async function fetchIssueDetail(
   issue: IssueRef,
 ) {
   return page.evaluate(async ({ owner, repo, number }) => {
-    const response = await fetch(
-      `/api/v1/issues/github/${owner}/${repo}/${number}`,
-    );
+    const response = await fetch(`/api/v1/issues/github/${owner}/${repo}/${number}`);
     return response.json();
   }, issue);
 }
@@ -148,9 +141,7 @@ test.describe("UTC maintainer flows", () => {
   }) => {
     const issue = closeReopenIssueTarget(browserName);
 
-    await page.goto(
-      `/issues/github/${issue.owner}/${issue.repo}/${issue.number}`,
-    );
+    await page.goto(`/issues/github/${issue.owner}/${issue.repo}/${issue.number}`);
     await expect(page.locator(".btn--close")).toBeVisible();
 
     await page.locator(".btn--close").click();

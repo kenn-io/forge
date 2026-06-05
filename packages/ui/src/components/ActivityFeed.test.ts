@@ -1,19 +1,9 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { ActivityItem } from "../api/types.js";
 import ActivityFeed from "./ActivityFeed.svelte";
 
-function activityItem(
-  id: string,
-  overrides: Partial<ActivityItem> = {},
-): ActivityItem {
+function activityItem(id: string, overrides: Partial<ActivityItem> = {}): ActivityItem {
   return {
     id,
     cursor: id,
@@ -82,8 +72,7 @@ vi.mock("../context.js", () => ({
       startActivityPolling: vi.fn(),
       stopActivityPolling: vi.fn(),
       getActivitySearch: () => "",
-      getEnabledEvents: () =>
-        new Set(["comment", "review", "commit", "force_push"]),
+      getEnabledEvents: () => new Set(["comment", "review", "commit", "force_push"]),
       getHideClosedMerged: () => false,
       getHideBots: () => false,
       getHideDefaultBranchActivity: () => hideDefaultBranchActivity.value,
@@ -221,9 +210,9 @@ describe("ActivityFeed compact mode", () => {
       },
     });
 
-    expect(
-      container.querySelectorAll(".activity-compact-row.selected"),
-    ).toHaveLength(2);
+    expect(container.querySelectorAll(".activity-compact-row.selected")).toHaveLength(
+      2,
+    );
   });
 
   it("hides the collapse-all control in flat mode", () => {
@@ -247,12 +236,8 @@ describe("ActivityFeed compact mode", () => {
     });
 
     const row = container.querySelector(".activity-compact-row");
-    expect(row?.querySelector(".chip--kind-pr")?.textContent?.trim()).toBe(
-      "PR",
-    );
-    expect(row?.querySelector(".chip--state-merged")?.textContent).toContain(
-      "Merged",
-    );
+    expect(row?.querySelector(".chip--kind-pr")?.textContent?.trim()).toBe("PR");
+    expect(row?.querySelector(".chip--state-merged")?.textContent).toContain("Merged");
     expect(row?.querySelector(".badge")).not.toBeNull();
     expect(row?.querySelector(".state-badge")).not.toBeNull();
   });

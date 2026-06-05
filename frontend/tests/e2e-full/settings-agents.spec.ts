@@ -5,10 +5,7 @@ import {
   test,
   type APIRequestContext,
 } from "@playwright/test";
-import {
-  startIsolatedE2EServer,
-  type IsolatedE2EServer,
-} from "./support/e2eServer";
+import { startIsolatedE2EServer, type IsolatedE2EServer } from "./support/e2eServer";
 
 let isolatedServer: IsolatedE2EServer | undefined;
 let api: APIRequestContext | undefined;
@@ -31,13 +28,9 @@ async function expandAgent(page: Page, name: string): Promise<void> {
   await page.getByRole("button", { name: `Edit ${name}` }).click();
 }
 
-test("settings preserves quoted empty workspace agent arguments", async ({
-  page,
-}) => {
+test("settings preserves quoted empty workspace agent arguments", async ({ page }) => {
   await page.goto(`${isolatedServer!.info.base_url}/settings`);
-  await page
-    .locator(".settings-page")
-    .waitFor({ state: "visible", timeout: 10_000 });
+  await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
 
   await expandAgent(page, "Codex");
   const argsInput = page.getByLabel("Codex arguments");
@@ -55,10 +48,7 @@ test("settings preserves quoted empty workspace agent arguments", async ({
   await saveButton.click();
   const saveResponse = await saveResponsePromise;
   const saveBody = await saveResponse.text();
-  expect(
-    saveResponse.status(),
-    `PUT /api/v1/settings failed: ${saveBody}`,
-  ).toBe(200);
+  expect(saveResponse.status(), `PUT /api/v1/settings failed: ${saveBody}`).toBe(200);
 
   await expect
     .poll(async () => {
@@ -74,9 +64,7 @@ test("settings preserves quoted empty workspace agent arguments", async ({
     .toEqual(["codex", ""]);
 
   await page.reload();
-  await page
-    .locator(".settings-page")
-    .waitFor({ state: "visible", timeout: 10_000 });
+  await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
   await expandAgent(page, "Codex");
   await expect(page.getByLabel("Codex arguments")).toHaveValue('""');
 });
@@ -101,15 +89,12 @@ test("settings preserves explicit default built-in agents during other saves", a
     },
   });
   const seedBody = await seedResponse.text();
-  expect(
-    seedResponse.status(),
-    `PUT /api/v1/settings seed failed: ${seedBody}`,
-  ).toBe(200);
+  expect(seedResponse.status(), `PUT /api/v1/settings seed failed: ${seedBody}`).toBe(
+    200,
+  );
 
   await page.goto(`${isolatedServer!.info.base_url}/settings`);
-  await page
-    .locator(".settings-page")
-    .waitFor({ state: "visible", timeout: 10_000 });
+  await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
 
   const saveButton = page.getByRole("button", {
     name: "Save workspace agents",
@@ -121,9 +106,7 @@ test("settings preserves explicit default built-in agents during other saves", a
   await expect(saveButton).toBeDisabled();
 
   await expandAgent(page, "Claude");
-  await page
-    .getByLabel("Claude arguments")
-    .fill("--permission-mode acceptEdits");
+  await page.getByLabel("Claude arguments").fill("--permission-mode acceptEdits");
   await expect(saveButton).toBeEnabled();
   const saveResponsePromise = page.waitForResponse(
     (response) =>
@@ -133,10 +116,7 @@ test("settings preserves explicit default built-in agents during other saves", a
   await saveButton.click();
   const saveResponse = await saveResponsePromise;
   const saveBody = await saveResponse.text();
-  expect(
-    saveResponse.status(),
-    `PUT /api/v1/settings failed: ${saveBody}`,
-  ).toBe(200);
+  expect(saveResponse.status(), `PUT /api/v1/settings failed: ${saveBody}`).toBe(200);
 
   await expect
     .poll(async () => {
@@ -146,8 +126,7 @@ test("settings preserves explicit default built-in agents during other saves", a
       };
       return {
         codex: settings.agents.find((agent) => agent.key === "codex")?.command,
-        claude: settings.agents.find((agent) => agent.key === "claude")
-          ?.command,
+        claude: settings.agents.find((agent) => agent.key === "claude")?.command,
       };
     })
     .toEqual({
@@ -176,15 +155,12 @@ test("settings preserves disabled built-in agents with empty commands", async ({
     },
   });
   const seedBody = await seedResponse.text();
-  expect(
-    seedResponse.status(),
-    `PUT /api/v1/settings seed failed: ${seedBody}`,
-  ).toBe(200);
+  expect(seedResponse.status(), `PUT /api/v1/settings seed failed: ${seedBody}`).toBe(
+    200,
+  );
 
   await page.goto(`${isolatedServer!.info.base_url}/settings`);
-  await page
-    .locator(".settings-page")
-    .waitFor({ state: "visible", timeout: 10_000 });
+  await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
 
   const saveButton = page.getByRole("button", {
     name: "Save workspace agents",
@@ -194,9 +170,7 @@ test("settings preserves disabled built-in agents with empty commands", async ({
   await expect(saveButton).toBeDisabled();
 
   await expandAgent(page, "Claude");
-  await page
-    .getByLabel("Claude arguments")
-    .fill("--permission-mode acceptEdits");
+  await page.getByLabel("Claude arguments").fill("--permission-mode acceptEdits");
   await expect(saveButton).toBeEnabled();
   const saveResponsePromise = page.waitForResponse(
     (response) =>
@@ -206,10 +180,7 @@ test("settings preserves disabled built-in agents with empty commands", async ({
   await saveButton.click();
   const saveResponse = await saveResponsePromise;
   const saveBody = await saveResponse.text();
-  expect(
-    saveResponse.status(),
-    `PUT /api/v1/settings failed: ${saveBody}`,
-  ).toBe(200);
+  expect(saveResponse.status(), `PUT /api/v1/settings failed: ${saveBody}`).toBe(200);
 
   await expect
     .poll(async () => {
@@ -228,8 +199,7 @@ test("settings preserves disabled built-in agents with empty commands", async ({
           command: codex.command ?? [],
           enabled: codex.enabled,
         },
-        claude: settings.agents.find((agent) => agent.key === "claude")
-          ?.command,
+        claude: settings.agents.find((agent) => agent.key === "claude")?.command,
       };
     })
     .toEqual({

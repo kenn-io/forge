@@ -30,10 +30,7 @@ function newStatusHeader(page: Page) {
   return page.locator(".repo-header", { hasText: "New" });
 }
 
-async function selectPullGrouping(
-  page: Page,
-  label: string | RegExp,
-): Promise<void> {
+async function selectPullGrouping(page: Page, label: string | RegExp): Promise<void> {
   const groupButton = page.locator(".group-btn", { hasText: label });
   if (await groupButton.isVisible()) {
     await groupButton.click();
@@ -76,9 +73,7 @@ test.describe("collapsible repo groups", () => {
 
     await expect(widgetsHeader(page)).toHaveAttribute("aria-expanded", "false");
     await expect(widgetsHeader(page)).toBeVisible();
-    await expect(widgetsHeader(page).locator(".repo-header__count")).toHaveText(
-      "4",
-    );
+    await expect(widgetsHeader(page).locator(".repo-header__count")).toHaveText("4");
 
     // Only acme/tools' PRs remain visible (tools#1 + stack #10/#11/#12).
     await expect(page.locator(".pull-item")).toHaveCount(4);
@@ -112,32 +107,19 @@ test.describe("collapsible repo groups", () => {
     await expect(page.locator(".pull-item")).toHaveCount(8);
   });
 
-  test("PR list — status groups collapse like repo groups", async ({
-    page,
-  }) => {
+  test("PR list — status groups collapse like repo groups", async ({ page }) => {
     await selectPullGrouping(page, "Status");
     await expect(newStatusHeader(page)).toBeVisible();
-    await expect(newStatusHeader(page)).toHaveAttribute(
-      "aria-expanded",
-      "true",
-    );
+    await expect(newStatusHeader(page)).toHaveAttribute("aria-expanded", "true");
 
     await newStatusHeader(page).click();
 
-    await expect(newStatusHeader(page)).toHaveAttribute(
-      "aria-expanded",
-      "false",
-    );
-    await expect(
-      newStatusHeader(page).locator(".repo-header__count"),
-    ).toHaveText("8");
+    await expect(newStatusHeader(page)).toHaveAttribute("aria-expanded", "false");
+    await expect(newStatusHeader(page).locator(".repo-header__count")).toHaveText("8");
     await expect(page.locator(".pull-item")).toHaveCount(0);
 
     await newStatusHeader(page).click();
-    await expect(newStatusHeader(page)).toHaveAttribute(
-      "aria-expanded",
-      "true",
-    );
+    await expect(newStatusHeader(page)).toHaveAttribute("aria-expanded", "true");
     await expect(page.locator(".pull-item")).toHaveCount(8);
   });
 
@@ -158,9 +140,7 @@ test.describe("collapsible repo groups", () => {
     await refreshedPage.close();
   });
 
-  test("collapse is independent across pulls and issues surfaces", async ({
-    page,
-  }) => {
+  test("collapse is independent across pulls and issues surfaces", async ({ page }) => {
     // Collapse acme/widgets on /pulls.
     await widgetsHeader(page).click();
     await expect(widgetsHeader(page)).toHaveAttribute("aria-expanded", "false");
@@ -174,9 +154,7 @@ test.describe("collapsible repo groups", () => {
     await expect(page.locator(".issue-item")).toHaveCount(5);
   });
 
-  test("issue list — collapse, expand, and persist acme/widgets", async ({
-    page,
-  }) => {
+  test("issue list — collapse, expand, and persist acme/widgets", async ({ page }) => {
     await page.goto("/issues");
     await waitForIssueList(page);
 
@@ -186,9 +164,7 @@ test.describe("collapsible repo groups", () => {
     // Collapse widgets: 2 issues remain (tools#5 and GitLab group/project#11).
     await widgetsHeader(page).click();
     await expect(widgetsHeader(page)).toHaveAttribute("aria-expanded", "false");
-    await expect(widgetsHeader(page).locator(".repo-header__count")).toHaveText(
-      "3",
-    );
+    await expect(widgetsHeader(page).locator(".repo-header__count")).toHaveText("3");
     await expect(page.locator(".issue-item")).toHaveCount(2);
 
     // Expand again: back to 5.

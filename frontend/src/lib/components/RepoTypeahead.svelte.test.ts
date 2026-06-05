@@ -1,12 +1,5 @@
 import { cleanup, render } from "@testing-library/svelte";
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import RepoTypeahead from "./RepoTypeahead.svelte";
 import {

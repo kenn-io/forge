@@ -239,11 +239,7 @@ function makeRateLimits() {
   };
 }
 
-async function fulfillJson(
-  route: Route,
-  body: unknown,
-  status = 200,
-): Promise<void> {
+async function fulfillJson(route: Route, body: unknown, status = 200): Promise<void> {
   await route.fulfill({
     status,
     contentType: "application/json",
@@ -278,10 +274,7 @@ function defaultPlatformHost(provider: string): string {
   }
 }
 
-function routePlatformHost(
-  provider: string,
-  hostSegment: string | undefined,
-): string {
+function routePlatformHost(provider: string, hostSegment: string | undefined): string {
   const host = decodePathSegment(hostSegment).trim();
   return host || defaultPlatformHost(provider);
 }
@@ -333,9 +326,7 @@ export async function mockApi(page: Page): Promise<void> {
       ((method === "GET" && !providerPrMatch[6]) ||
         (method === "POST" && providerPrMatch[6]?.startsWith("sync")))
     ) {
-      const prProvider = canonicalProvider(
-        decodePathSegment(providerPrMatch[2]),
-      );
+      const prProvider = canonicalProvider(decodePathSegment(providerPrMatch[2]));
       const platformHost = routePlatformHost(prProvider, providerPrMatch[1]);
       const prOwner = decodePathSegment(providerPrMatch[3]);
       const prName = decodePathSegment(providerPrMatch[4]);
@@ -374,9 +365,7 @@ export async function mockApi(page: Page): Promise<void> {
       const prNumber = parseInt(singlePrMatch[3]!, 10);
       const pr = localPulls.find(
         (p) =>
-          p.repo_owner === prOwner &&
-          p.repo_name === prName &&
-          p.Number === prNumber,
+          p.repo_owner === prOwner && p.repo_name === prName && p.Number === prNumber,
       );
       if (pr) {
         await fulfillJson(route, {
@@ -406,13 +395,8 @@ export async function mockApi(page: Page): Promise<void> {
       ((method === "GET" && !providerIssueMatch[6]) ||
         (method === "POST" && providerIssueMatch[6]?.startsWith("sync")))
     ) {
-      const issueProvider = canonicalProvider(
-        decodePathSegment(providerIssueMatch[2]),
-      );
-      const platformHost = routePlatformHost(
-        issueProvider,
-        providerIssueMatch[1],
-      );
+      const issueProvider = canonicalProvider(decodePathSegment(providerIssueMatch[2]));
+      const platformHost = routePlatformHost(issueProvider, providerIssueMatch[1]);
       const issueOwner = decodePathSegment(providerIssueMatch[3]);
       const issueName = decodePathSegment(providerIssueMatch[4]);
       const issueNumber = parseInt(providerIssueMatch[5]!, 10);
@@ -504,9 +488,7 @@ export async function mockApi(page: Page): Promise<void> {
       return;
     }
 
-    const singleRepoMatch = pathname.match(
-      /^\/api\/v1\/repos\/([^/]+)\/([^/]+)$/,
-    );
+    const singleRepoMatch = pathname.match(/^\/api\/v1\/repos\/([^/]+)\/([^/]+)$/);
     if (method === "GET" && singleRepoMatch) {
       const repo = repos.find(
         (r) => r.Owner === singleRepoMatch[1] && r.Name === singleRepoMatch[2],
@@ -562,9 +544,7 @@ export async function mockApi(page: Page): Promise<void> {
       const prNumber = parseInt(patchPrMatch[3]!, 10);
       const pr = localPulls.find(
         (p) =>
-          p.repo_owner === prOwner &&
-          p.repo_name === prName &&
-          p.Number === prNumber,
+          p.repo_owner === prOwner && p.repo_name === prName && p.Number === prNumber,
       );
       if (!pr) {
         await fulfillJson(route, { title: "Not found" }, 404);

@@ -196,10 +196,7 @@ export function applyThemeOverrides(
   }
   appliedVars.clear();
 
-  function apply(
-    map: Record<string, string>,
-    values: Record<string, string>,
-  ): void {
+  function apply(map: Record<string, string>, values: Record<string, string>): void {
     for (const [key, value] of Object.entries(values)) {
       const cssVar = map[key];
       if (cssVar) {

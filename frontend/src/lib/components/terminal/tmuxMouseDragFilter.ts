@@ -59,10 +59,7 @@ export function createTmuxMouseDragFilter(
     if (pendingDrag && isLeftButtonDrag(report)) {
       if (!pendingDrag.thresholdExceeded) {
         pendingDrag.bufferedReports.push(report.raw);
-        pendingDrag.thresholdExceeded = dragExceededThreshold(
-          pendingDrag,
-          report,
-        );
+        pendingDrag.thresholdExceeded = dragExceededThreshold(pendingDrag, report);
         if (!pendingDrag.thresholdExceeded) return "";
 
         const buffered = pendingDrag.bufferedReports.join("");
@@ -83,15 +80,10 @@ export function createTmuxMouseDragFilter(
     return report.raw;
   }
 
-  function dragExceededThreshold(
-    drag: PendingDrag,
-    report: SgrMouseReport,
-  ): boolean {
+  function dragExceededThreshold(drag: PendingDrag, report: SgrMouseReport): boolean {
     return (
-      Math.max(
-        Math.abs(report.x - drag.startX),
-        Math.abs(report.y - drag.startY),
-      ) > thresholdCells
+      Math.max(Math.abs(report.x - drag.startX), Math.abs(report.y - drag.startY)) >
+      thresholdCells
     );
   }
 
@@ -184,10 +176,7 @@ function isLeftButtonDown(report: SgrMouseReport): boolean {
 
 function isLeftButtonDrag(report: SgrMouseReport): boolean {
   return (
-    report.final === "M" &&
-    isMotion(report) &&
-    !isWheel(report) &&
-    button(report) === 0
+    report.final === "M" && isMotion(report) && !isWheel(report) && button(report) === 0
   );
 }
 

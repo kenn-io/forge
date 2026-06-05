@@ -32,10 +32,7 @@ const uiGeneratedSchema = path.resolve(
   process.cwd(),
   "../packages/ui/src/api/generated/schema.ts",
 );
-const uiApiTypes = path.resolve(
-  process.cwd(),
-  "../packages/ui/src/api/types.ts",
-);
+const uiApiTypes = path.resolve(process.cwd(), "../packages/ui/src/api/types.ts");
 const uiApiCsrf = path.resolve(process.cwd(), "../packages/ui/src/api/csrf.ts");
 const uiRoutes = path.resolve(process.cwd(), "../packages/ui/src/routes.ts");
 const uiStoreDetail = path.resolve(
@@ -91,9 +88,7 @@ function devApiUrlPlugin(url: string): Plugin {
   };
 }
 
-export function resolveViteServerPort(
-  argv: readonly string[] = process.argv,
-): number {
+export function resolveViteServerPort(argv: readonly string[] = process.argv): number {
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (!arg) continue;
@@ -212,12 +207,7 @@ const config = {
       return hostType === "js" ? { relative: true } : undefined;
     },
   },
-  plugins: [
-    healthcheckPlugin(),
-    devApiUrlPlugin(apiUrl),
-    svelte(),
-    svelteTesting(),
-  ],
+  plugins: [healthcheckPlugin(), devApiUrlPlugin(apiUrl), svelte(), svelteTesting()],
   resolve: {
     alias: [
       {

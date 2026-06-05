@@ -86,9 +86,7 @@ describe("itemRefHandler", () => {
         },
       },
     );
-    expect(mocks.navigate).toHaveBeenCalledWith(
-      "/pulls/github/acme/widgets/12",
-    );
+    expect(mocks.navigate).toHaveBeenCalledWith("/pulls/github/acme/widgets/12");
     expect(open).not.toHaveBeenCalled();
     expect(mocks.showFlash).not.toHaveBeenCalled();
   });
@@ -144,8 +142,7 @@ describe("itemRefHandler", () => {
       "data-repo-path": "group/project",
       "data-number": "10",
       "data-item-type": "issue",
-      "data-external-url":
-        "https://gitlab.example.com/group/project/-/issues/10",
+      "data-external-url": "https://gitlab.example.com/group/project/-/issues/10",
     });
 
     expect(mocks.post).toHaveBeenCalledWith(

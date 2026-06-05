@@ -1,8 +1,5 @@
 import { expect, test, type Browser, type Page } from "@playwright/test";
-import {
-  startIsolatedE2EServer,
-  type IsolatedE2EServer,
-} from "./support/e2eServer";
+import { startIsolatedE2EServer, type IsolatedE2EServer } from "./support/e2eServer";
 
 // Seeded data summary:
 //   open PRs (8): widgets#1, #2, #6, #7, tools#1, tools#10, #11, #12 (last three form a stack)
@@ -97,27 +94,20 @@ async function expectRepoChipToClipSafely(
     );
   }
 
-  const labelOverflow = await repoChip
-    .locator(".chip__label")
-    .evaluate((node) => ({
-      clientWidth: (node as HTMLElement).clientWidth,
-      scrollWidth: (node as HTMLElement).scrollWidth,
-    }));
+  const labelOverflow = await repoChip.locator(".chip__label").evaluate((node) => ({
+    clientWidth: (node as HTMLElement).clientWidth,
+    scrollWidth: (node as HTMLElement).scrollWidth,
+  }));
   expect(labelOverflow.scrollWidth).toBeGreaterThan(labelOverflow.clientWidth);
 }
 
-async function primeKanbanStateRows(
-  browser: Browser,
-  baseURL: string,
-): Promise<void> {
+async function primeKanbanStateRows(browser: Browser, baseURL: string): Promise<void> {
   const page = await browser.newPage({ baseURL });
   try {
     await page.goto("/pulls");
     await waitForPullList(page);
     await page.locator(".pull-item").first().click();
-    await page
-      .locator(".pull-detail")
-      .waitFor({ state: "visible", timeout: 5_000 });
+    await page.locator(".pull-detail").waitFor({ state: "visible", timeout: 5_000 });
   } finally {
     await page.close();
   }
@@ -155,12 +145,8 @@ test.describe("PR list view", () => {
 
     const headers = page.locator(".repo-header");
     await expect(headers).toHaveCount(1);
-    await expect(headers.first().locator(".repo-header__name")).toHaveText(
-      "Closed",
-    );
-    await expect(headers.first().locator(".repo-header__count")).toHaveText(
-      "4",
-    );
+    await expect(headers.first().locator(".repo-header__name")).toHaveText("Closed");
+    await expect(headers.first().locator(".repo-header__count")).toHaveText("4");
   });
 
   test("search filters PRs by title", async ({ page }) => {
@@ -171,19 +157,14 @@ test.describe("PR list view", () => {
     // matching item is already visible in the unfiltered list, so
     // we must wait on a condition that only becomes true after
     // the debounced search request completes.
-    await expect(page.locator(".filter-bar .list-count-chip")).toHaveText(
-      /^1 PRs?$/,
-      {
-        timeout: 5_000,
-      },
-    );
+    await expect(page.locator(".filter-bar .list-count-chip")).toHaveText(/^1 PRs?$/, {
+      timeout: 5_000,
+    });
 
     // Verify the single remaining item is the expected one.
     const items = page.locator(".pull-item");
     await expect(items).toHaveCount(1);
-    await expect(items.first().locator(".title")).toContainText(
-      "caching layer",
-    );
+    await expect(items.first().locator(".title")).toContainText("caching layer");
   });
 
   test("PR detail keeps the scrollbar on the pane edge", async ({ page }) => {
@@ -205,9 +186,7 @@ test.describe("PR list view", () => {
       el.appendChild(filler);
     });
 
-    const overflowY = await pullDetail.evaluate(
-      (el) => getComputedStyle(el).overflowY,
-    );
+    const overflowY = await pullDetail.evaluate((el) => getComputedStyle(el).overflowY);
     expect(["auto", "scroll"]).toContain(overflowY);
 
     const before = await pullDetail.evaluate((el) => ({
@@ -258,9 +237,7 @@ test.describe("PR list sidebar", () => {
     await server?.stop();
   });
 
-  test("sidebar status pills use the shared chip component", async ({
-    page,
-  }) => {
+  test("sidebar status pills use the shared chip component", async ({ page }) => {
     if (!server) {
       throw new Error("PR list sidebar e2e server was not started");
     }
@@ -268,15 +245,9 @@ test.describe("PR list sidebar", () => {
     await page.goto(`${server.info.base_url}/pulls`);
     await waitForPullList(page);
 
-    await expect(page.locator(".filter-bar .list-count-chip")).toHaveText(
-      /^8 PRs$/,
-    );
+    await expect(page.locator(".filter-bar .list-count-chip")).toHaveText(/^8 PRs$/);
     await selectPullGrouping(page, "All");
-    await expectPullReviewIndicator(
-      page,
-      "Add widget caching layer",
-      "PR approved",
-    );
+    await expectPullReviewIndicator(page, "Add widget caching layer", "PR approved");
     await expectPullReviewIndicator(
       page,
       "Fix race condition in event loop",

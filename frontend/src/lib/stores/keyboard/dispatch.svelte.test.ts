@@ -130,9 +130,7 @@ describe("dispatchKeydown — error handling", () => {
   });
 
   it("routes async handler rejections to flash with the Error message", async () => {
-    const flash = vi
-      .spyOn(flashModule, "showFlash")
-      .mockImplementation(() => {});
+    const flash = vi.spyOn(flashModule, "showFlash").mockImplementation(() => {});
     registerScopedActions("e", [
       {
         id: "fail",

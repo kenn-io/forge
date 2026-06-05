@@ -220,10 +220,7 @@ test.afterAll(async () => {
   );
   // Sanity: at least one should be a few KB. Empty webms mean video
   // capture didn't actually record anything.
-  const largest = sizes.reduce(
-    (acc, s) => (s.size > acc.size ? s : acc),
-    sizes[0]!,
-  );
+  const largest = sizes.reduce((acc, s) => (s.size > acc.size ? s : acc), sizes[0]!);
   if (largest.size < 1024) {
     throw new Error(
       `largest webm is ${largest.size} bytes (< 1024), video capture likely failed`,

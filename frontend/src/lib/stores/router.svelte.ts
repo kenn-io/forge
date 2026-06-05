@@ -121,14 +121,8 @@ function parseProviderNumberedPath(
 ): NumberedItemRef | undefined {
   if (parts.length < start + 4) return undefined;
   const provider = decodeRouteSegment(parts[start] ?? "")?.trim();
-  const owner = decodeRouteSegment(parts[start + 1] ?? "")?.replace(
-    /^\/+|\/+$/g,
-    "",
-  );
-  const name = decodeRouteSegment(parts[start + 2] ?? "")?.replace(
-    /^\/+|\/+$/g,
-    "",
-  );
+  const owner = decodeRouteSegment(parts[start + 1] ?? "")?.replace(/^\/+|\/+$/g, "");
+  const name = decodeRouteSegment(parts[start + 2] ?? "")?.replace(/^\/+|\/+$/g, "");
   const numberText = decodeRouteSegment(parts[start + 3] ?? "");
   if (!provider || !owner || !name || !numberText) return undefined;
 
@@ -167,9 +161,7 @@ function inferLegacyEmbedProvider(platformHost: string): string {
   return platformHost.toLowerCase().includes("gitlab") ? "gitlab" : "github";
 }
 
-function splitRepoPath(
-  repoPath: string,
-): { owner: string; name: string } | undefined {
+function splitRepoPath(repoPath: string): { owner: string; name: string } | undefined {
   const pathParts = repoPath
     .replace(/^\/+|\/+$/g, "")
     .split("/")
@@ -438,9 +430,7 @@ if (configuredInitialRoute) {
   history.replaceState(null, "", basePrefix + configuredInitialRoute);
 }
 
-let route = $state<Route>(
-  parseRoute(configuredInitialRoute ?? currentLocationPath()),
-);
+let route = $state<Route>(parseRoute(configuredInitialRoute ?? currentLocationPath()));
 
 // Fire onRouteChange for the initial route after the module loads.
 // Deferred so the embedder has time to set up the callback.
@@ -544,9 +534,7 @@ function buildRouteEvent(r: Route): MiddlemanNavigateEvent {
 }
 
 export function isWorkspacePage(page: Page): boolean {
-  return (
-    page === "workspaces" || page === "terminal" || isWorkspaceEmbedPage(page)
-  );
+  return page === "workspaces" || page === "terminal" || isWorkspaceEmbedPage(page);
 }
 
 export function isWorkspaceEmbedPage(page: Page): boolean {
@@ -565,9 +553,7 @@ export function isWorkspaceEmbedPage(page: Page): boolean {
 
 export function isMobilePage(page: Page): boolean {
   return (
-    page === "mobile-activity" ||
-    page === "mobile-pulls" ||
-    page === "mobile-issues"
+    page === "mobile-activity" || page === "mobile-pulls" || page === "mobile-issues"
   );
 }
 
@@ -649,8 +635,7 @@ export function setView(v: View): void {
 
 export function getTab(): Tab {
   if (route.page === "pulls" || route.page === "mobile-pulls") return "pulls";
-  if (route.page === "issues" || route.page === "mobile-issues")
-    return "issues";
+  if (route.page === "issues" || route.page === "mobile-issues") return "issues";
   return "pulls";
 }
 

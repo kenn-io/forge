@@ -101,8 +101,7 @@ function prForNumber(number: number, members = stackMembers) {
     HeadBranch:
       member?.base_branch === "main"
         ? "feat/base-schema"
-        : (member?.base_branch.replace("feat/", "feat/child-") ??
-          pr.HeadBranch),
+        : (member?.base_branch.replace("feat/", "feat/child-") ?? pr.HeadBranch),
     CIStatus: member?.ci_status ?? pr.CIStatus,
     ReviewDecision: member?.review_decision ?? pr.ReviewDecision,
     MergeableState: member?.mergeable_state ?? pr.MergeableState,
@@ -198,11 +197,7 @@ const stackMembers = [
 
 type StackMember = (typeof stackMembers)[number];
 
-async function fulfillJson(
-  route: Route,
-  body: unknown,
-  status = 200,
-): Promise<void> {
+async function fulfillJson(route: Route, body: unknown, status = 200): Promise<void> {
   await route.fulfill({
     status,
     contentType: "application/json",
@@ -378,10 +373,7 @@ async function mockStackedPR(
   });
 }
 
-async function emitPRDetailRefreshed(
-  page: Page,
-  number: number,
-): Promise<void> {
+async function emitPRDetailRefreshed(page: Page, number: number): Promise<void> {
   await page.evaluate(
     (ref) => {
       const eventSources = (
@@ -443,9 +435,7 @@ async function installMockEventSource(page: Page): Promise<void> {
   });
 }
 
-test("unstacked pull detail does not request stack context", async ({
-  page,
-}) => {
+test("unstacked pull detail does not request stack context", async ({ page }) => {
   let stackRequests = 0;
   page.on("request", (request) => {
     if (new URL(request.url()).pathname.endsWith("/stack")) {
@@ -461,9 +451,7 @@ test("unstacked pull detail does not request stack context", async ({
   expect(stackRequests).toBe(0);
 });
 
-test("stack status shares the PR detail expandable slot with CI", async ({
-  page,
-}) => {
+test("stack status shares the PR detail expandable slot with CI", async ({ page }) => {
   await page.setViewportSize({ width: 892, height: 998 });
   await mockStackedPR(page);
 
@@ -481,12 +469,8 @@ test("stack status shares the PR detail expandable slot with CI", async ({
   await expect(page.getByText("blocked by #101")).toBeVisible();
 
   const currentRow = page.locator(".stack-row--current");
-  const currentBadgesBox = await currentRow
-    .locator(".stack-badges")
-    .boundingBox();
-  const currentLinkBox = await currentRow
-    .locator(".stack-member-link")
-    .boundingBox();
+  const currentBadgesBox = await currentRow.locator(".stack-badges").boundingBox();
+  const currentLinkBox = await currentRow.locator(".stack-member-link").boundingBox();
   expect(currentBadgesBox).not.toBeNull();
   expect(currentLinkBox).not.toBeNull();
   const badgeCenterY = currentBadgesBox!.y + currentBadgesBox!.height / 2;
@@ -494,9 +478,7 @@ test("stack status shares the PR detail expandable slot with CI", async ({
   expect(Math.abs(badgeCenterY - linkCenterY)).toBeLessThanOrEqual(4);
   await expect(page.locator(".stack-member-meta")).toHaveCount(0);
   await expect(page.locator(".stack-base-name")).toHaveText("main");
-  await expect(page.locator(".stack-row--base .stack-member-link")).toHaveCount(
-    0,
-  );
+  await expect(page.locator(".stack-row--base .stack-member-link")).toHaveCount(0);
 
   const stackRows = page.locator(".stack-member-link");
   await expect(stackRows).toHaveText([
@@ -516,9 +498,7 @@ test("stack status shares the PR detail expandable slot with CI", async ({
   await expect(page.locator(".stack-base-name")).toHaveText("main");
 });
 
-test("stack status surfaces inherited downstack merge conflicts", async ({
-  page,
-}) => {
+test("stack status surfaces inherited downstack merge conflicts", async ({ page }) => {
   await mockStackedPR(page, {
     stackMembers: () => [
       { ...stackMembers[0]!, ci_status: "success", mergeable_state: "dirty" },
@@ -563,12 +543,8 @@ test("stack status follows refreshed detail stack data", async ({ page }) => {
   ];
   await emitPRDetailRefreshed(page, 102);
 
-  await expect(
-    page.getByRole("button", { name: /Stacked: 2\/2/i }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: /Stacked: 2\/7/i }),
-  ).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Stacked: 2\/2/i })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Stacked: 2\/7/i })).toHaveCount(0);
 
   currentStackMembers = [];
   await emitPRDetailRefreshed(page, 102);
@@ -626,15 +602,11 @@ test("stack member navigation updates the activity drawer selection", async ({
 
   await expect(page).toHaveURL(/selected=pr%3A101/);
   await expect(page).toHaveURL(/repo_path=acme%2Fwidgets/);
-  await expect(page.locator(".activity-detail")).toContainText(
-    "acme/widgets#101",
-  );
+  await expect(page.locator(".activity-detail")).toContainText("acme/widgets#101");
   await expect(page.getByText("7 PRs · current 1/7")).toBeVisible();
 });
 
-test("stack rail spans wrapped CI badges at narrow widths", async ({
-  page,
-}) => {
+test("stack rail spans wrapped CI badges at narrow widths", async ({ page }) => {
   await page.setViewportSize({ width: 319, height: 998 });
   await mockStackedPR(page);
 
@@ -643,13 +615,9 @@ test("stack rail spans wrapped CI badges at narrow widths", async ({
 
   const currentRow = page.locator(".stack-row--current");
   const currentRowBox = await currentRow.boundingBox();
-  const currentDotBox = await currentRow
-    .locator(".stack-dot--current")
-    .boundingBox();
+  const currentDotBox = await currentRow.locator(".stack-dot--current").boundingBox();
   const currentLineBox = await currentRow.locator(".stack-line").boundingBox();
-  const currentBadgesBox = await currentRow
-    .locator(".stack-badges")
-    .boundingBox();
+  const currentBadgesBox = await currentRow.locator(".stack-badges").boundingBox();
   expect(currentRowBox).not.toBeNull();
   expect(currentDotBox).not.toBeNull();
   expect(currentLineBox).not.toBeNull();
@@ -665,9 +633,7 @@ test("stack rail spans wrapped CI badges at narrow widths", async ({
     function collectRules(ruleList: CSSRuleList): string[] {
       return Array.from(ruleList).flatMap((rule) => {
         const nested =
-          "cssRules" in rule
-            ? collectRules((rule as CSSGroupingRule).cssRules)
-            : [];
+          "cssRules" in rule ? collectRules((rule as CSSGroupingRule).cssRules) : [];
         return [rule.cssText, ...nested];
       });
     }

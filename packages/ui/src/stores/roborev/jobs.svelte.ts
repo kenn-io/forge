@@ -1,14 +1,9 @@
 import type { RoborevClient } from "../../api/roborev/client.js";
-import type {
-  components,
-  operations,
-} from "../../api/roborev/generated/schema.js";
+import type { components, operations } from "../../api/roborev/generated/schema.js";
 
 type ReviewJob = components["schemas"]["ReviewJob"];
 type JobStats = components["schemas"]["JobStats"];
-type ListJobsQuery = NonNullable<
-  operations["list-jobs"]["parameters"]["query"]
->;
+type ListJobsQuery = NonNullable<operations["list-jobs"]["parameters"]["query"]>;
 
 export interface JobsStoreOptions {
   client: RoborevClient;
@@ -71,9 +66,7 @@ export function createJobsStore(opts: JobsStoreOptions) {
   function getElapsedSeconds(job: ReviewJob): number {
     if (!job.started_at) return -1;
     const start = new Date(job.started_at).getTime();
-    const end = job.finished_at
-      ? new Date(job.finished_at).getTime()
-      : Date.now();
+    const end = job.finished_at ? new Date(job.finished_at).getTime() : Date.now();
     return Math.max(0, Math.floor((end - start) / 1000));
   }
 
@@ -261,10 +254,7 @@ export function createJobsStore(opts: JobsStoreOptions) {
     eventSource.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        if (
-          data.type === "job.status_changed" ||
-          data.type === "review.completed"
-        ) {
+        if (data.type === "job.status_changed" || data.type === "review.completed") {
           void loadJobs();
         }
       } catch {

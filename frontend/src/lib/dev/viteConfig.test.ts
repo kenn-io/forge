@@ -9,14 +9,11 @@ import config, {
 
 describe("vite config", () => {
   it("aliases @middleman/ui to the workspace source tree", () => {
-    const aliases = Array.isArray(config.resolve?.alias)
-      ? config.resolve.alias
-      : [];
+    const aliases = Array.isArray(config.resolve?.alias) ? config.resolve.alias : [];
 
     const uiRootAlias = aliases.find(
       (alias) =>
-        alias.find instanceof RegExp &&
-        alias.find.source === "^@middleman\\/ui$",
+        alias.find instanceof RegExp && alias.find.source === "^@middleman\\/ui$",
     );
     const uiSubpathAlias = aliases.find(
       (alias) =>

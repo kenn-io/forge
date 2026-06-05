@@ -206,13 +206,9 @@ describe("ensureEmbeddedFrontend", () => {
         flag: "wx",
       },
     );
-    writeFileSync(
-      path.join(frontendDist, "assets", "app.js"),
-      "console.log('ok');",
-      {
-        flag: "wx",
-      },
-    );
+    writeFileSync(path.join(frontendDist, "assets", "app.js"), "console.log('ok');", {
+      flag: "wx",
+    });
     writeFileSync(path.join(embeddedDist, "stub.html"), "stub", { flag: "wx" });
 
     await ensureEmbeddedFrontend(dir);
@@ -223,9 +219,9 @@ describe("ensureEmbeddedFrontend", () => {
     await expect(
       readFile(path.join(embeddedDist, "assets", "app.js"), "utf8"),
     ).resolves.toContain("console.log");
-    await expect(
-      readFile(path.join(embeddedDist, "stub.html"), "utf8"),
-    ).resolves.toBe("ok\n");
+    await expect(readFile(path.join(embeddedDist, "stub.html"), "utf8")).resolves.toBe(
+      "ok\n",
+    );
   });
 
   it("refreshes embedded assets when frontend/dist is newer", async () => {
@@ -266,9 +262,9 @@ describe("ensureEmbeddedFrontend", () => {
     await expect(readFile(embeddedIndex, "utf8")).resolves.toContain(
       "<body>new</body>",
     );
-    await expect(
-      readFile(path.join(embeddedDist, "stub.html"), "utf8"),
-    ).resolves.toBe("ok\n");
+    await expect(readFile(path.join(embeddedDist, "stub.html"), "utf8")).resolves.toBe(
+      "ok\n",
+    );
   });
 
   it("rebuilds frontend/dist when frontend sources are newer", async () => {

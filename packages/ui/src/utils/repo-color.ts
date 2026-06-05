@@ -13,7 +13,6 @@ export function repoColor(repoName: string): string {
     hash = ((hash << 5) - hash + repoName.charCodeAt(i)) | 0;
   }
   const idx =
-    ((hash % ACCENT_COLORS.length) + ACCENT_COLORS.length) %
-    ACCENT_COLORS.length;
+    ((hash % ACCENT_COLORS.length) + ACCENT_COLORS.length) % ACCENT_COLORS.length;
   return ACCENT_COLORS[idx]!;
 }

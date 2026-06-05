@@ -1,12 +1,5 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 // Prevent RepoTypeahead from making real API calls in the test environment.
 vi.mock("../../api/runtime.js", () => ({
@@ -37,10 +30,7 @@ import { navigate } from "../../stores/router.svelte.ts";
 
 type MediaChangeCallback = (event: MediaQueryListEvent) => void;
 
-function mockMatchMedia(
-  matches: boolean,
-  listeners?: MediaChangeCallback[],
-): void {
+function mockMatchMedia(matches: boolean, listeners?: MediaChangeCallback[]): void {
   Object.defineProperty(window, "matchMedia", {
     configurable: true,
     writable: true,
@@ -189,12 +179,8 @@ describe("AppHeader", () => {
     initTheme();
     const { container } = render(AppHeader);
 
-    expect(
-      container.querySelector("button[title='Toggle theme'] svg"),
-    ).toBeTruthy();
-    expect(
-      container.querySelector("button[title='Settings'] svg"),
-    ).toBeTruthy();
+    expect(container.querySelector("button[title='Toggle theme'] svg")).toBeTruthy();
+    expect(container.querySelector("button[title='Settings'] svg")).toBeTruthy();
     expect(
       container.querySelector("button[title='Select repository'] svg"),
     ).toBeTruthy();
@@ -247,9 +233,7 @@ describe("AppHeader", () => {
     setSidebarCollapsed(true);
     const { container } = render(AppHeader);
 
-    expect(
-      container.querySelector("button[title='Expand sidebar'] svg"),
-    ).toBeTruthy();
+    expect(container.querySelector("button[title='Expand sidebar'] svg")).toBeTruthy();
   });
 
   it("opens selected Activity PR in PRs tab with files tab preserved", async () => {

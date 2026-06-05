@@ -80,12 +80,10 @@ describe("WorkspaceHome", () => {
     expect(screen.getByText("Improve workspace UX")).toBeTruthy();
     expect(screen.getByText("/tmp/widget")).toBeTruthy();
     expect(
-      (screen.getByRole("button", { name: "Codex" }) as HTMLButtonElement)
-        .disabled,
+      (screen.getByRole("button", { name: "Codex" }) as HTMLButtonElement).disabled,
     ).toBe(false);
     expect(
-      (screen.getByRole("button", { name: "Missing" }) as HTMLButtonElement)
-        .disabled,
+      (screen.getByRole("button", { name: "Missing" }) as HTMLButtonElement).disabled,
     ).toBe(true);
     expect(screen.queryByRole("button", { name: "Plain shell" })).toBeNull();
     expect(screen.queryByRole("button", { name: "shell" })).toBeNull();
@@ -95,13 +93,9 @@ describe("WorkspaceHome", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Shell" }));
     expect(onLaunch).toHaveBeenCalledWith("shell");
 
-    await fireEvent.click(
-      screen.getByRole("button", { name: /Codex\s+Running/ }),
-    );
+    await fireEvent.click(screen.getByRole("button", { name: /Codex\s+Running/ }));
     expect(onOpenSession).toHaveBeenCalledWith("ws-1:codex");
-    await fireEvent.click(
-      screen.getByRole("button", { name: /Shell\s+Running/ }),
-    );
+    await fireEvent.click(screen.getByRole("button", { name: /Shell\s+Running/ }));
     expect(onOpenSession).toHaveBeenCalledWith("ws-1:shell");
   });
 });

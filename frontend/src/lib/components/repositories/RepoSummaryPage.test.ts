@@ -1,18 +1,5 @@
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from "@testing-library/svelte";
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vite-plus/test";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 const mockGet = vi.fn();
 const mockPost = vi.fn();
@@ -198,9 +185,7 @@ describe("RepoSummaryPage", () => {
     const repoLink = screen.getByRole("link", {
       name: "Open acme/widgets on github.com",
     });
-    expect(repoLink.getAttribute("href")).toBe(
-      "https://github.com/acme/widgets",
-    );
+    expect(repoLink.getAttribute("href")).toBe("https://github.com/acme/widgets");
     expect(repoLink.getAttribute("target")).toBe("_blank");
     expect(screen.getAllByText("Open PRs").length).toBeGreaterThan(1);
     expect(screen.getByText("v2.8.1")).toBeTruthy();
@@ -409,9 +394,7 @@ describe("RepoSummaryPage", () => {
     expect(mockSetGlobalRepo).toHaveBeenCalledWith("github.com/acme/widgets");
     expect(mockNavigate).toHaveBeenCalledWith("/pulls");
 
-    await fireEvent.click(
-      screen.getByRole("button", { name: /2\s+Open issues/ }),
-    );
+    await fireEvent.click(screen.getByRole("button", { name: /2\s+Open issues/ }));
     expect(mockSetGlobalRepo).toHaveBeenCalledWith("github.com/acme/widgets");
     expect(mockNavigate).toHaveBeenCalledWith("/issues");
   });
@@ -494,17 +477,11 @@ describe("RepoSummaryPage", () => {
     expect(
       await screen.findByRole("button", { name: /acme\s*\/\s*fresh/ }),
     ).toBeTruthy();
-    expect(
-      screen.getByRole("button", { name: /acme\s*\/\s*stale/ }),
-    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: /acme\s*\/\s*stale/ })).toBeTruthy();
 
     await fireEvent.click(screen.getByRole("button", { name: "Stale" }));
-    expect(
-      screen.queryByRole("button", { name: /acme\s*\/\s*fresh/ }),
-    ).toBeNull();
-    expect(
-      screen.getByRole("button", { name: /acme\s*\/\s*stale/ }),
-    ).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /acme\s*\/\s*fresh/ })).toBeNull();
+    expect(screen.getByRole("button", { name: /acme\s*\/\s*stale/ })).toBeTruthy();
 
     await fireEvent.input(screen.getByPlaceholderText("Filter repositories"), {
       target: { value: "fresh" },
@@ -597,12 +574,9 @@ describe("RepoSummaryPage", () => {
     render(RepoSummaryPage);
 
     await screen.findByRole("button", { name: /acme\s*\/\s*stale/ });
+    expect(screen.queryByRole("button", { name: /acme\s*\/\s*fresh/ })).toBeNull();
     expect(
-      screen.queryByRole("button", { name: /acme\s*\/\s*fresh/ }),
-    ).toBeNull();
-    expect(
-      (screen.getByPlaceholderText("Filter repositories") as HTMLInputElement)
-        .value,
+      (screen.getByPlaceholderText("Filter repositories") as HTMLInputElement).value,
     ).toBe("stale");
     expect(screen.getByRole("button", { name: "Stale" }).className).toContain(
       "repo-page__filter--active",
@@ -674,9 +648,7 @@ describe("RepoSummaryPage", () => {
         target: { value: "Need a compact repo dashboard." },
       },
     );
-    await fireEvent.submit(
-      screen.getByRole("button", { name: "Create issue" }),
-    );
+    await fireEvent.submit(screen.getByRole("button", { name: "Create issue" }));
 
     await waitFor(() => {
       expect(mockPost).toHaveBeenCalledWith(
@@ -692,9 +664,7 @@ describe("RepoSummaryPage", () => {
         }),
       );
       expect(mockSetGlobalRepo).toHaveBeenCalledWith("github.com/acme/widgets");
-      expect(mockNavigate).toHaveBeenCalledWith(
-        "/issues/github/acme/widgets/27",
-      );
+      expect(mockNavigate).toHaveBeenCalledWith("/issues/github/acme/widgets/27");
     });
   });
 
@@ -757,9 +727,7 @@ describe("RepoSummaryPage", () => {
       error: undefined,
     });
     await waitFor(() => {
-      expect(mockNavigate).toHaveBeenCalledWith(
-        "/issues/github/acme/widgets/27",
-      );
+      expect(mockNavigate).toHaveBeenCalledWith("/issues/github/acme/widgets/27");
     });
   });
 
@@ -846,18 +814,16 @@ describe("RepoSummaryPage", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
     await fireEvent.click(secondIssueButton);
-    expect(
-      (screen.getByPlaceholderText("Issue title") as HTMLInputElement).value,
-    ).toBe("");
+    expect((screen.getByPlaceholderText("Issue title") as HTMLInputElement).value).toBe(
+      "",
+    );
     await fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
     await fireEvent.click(firstIssueButton);
-    expect(
-      (screen.getByPlaceholderText("Issue title") as HTMLInputElement).value,
-    ).toBe("Enterprise draft");
-    await fireEvent.submit(
-      screen.getByRole("button", { name: "Create issue" }),
+    expect((screen.getByPlaceholderText("Issue title") as HTMLInputElement).value).toBe(
+      "Enterprise draft",
     );
+    await fireEvent.submit(screen.getByRole("button", { name: "Create issue" }));
 
     await waitFor(() => {
       expect(mockPost).toHaveBeenCalledWith(
@@ -876,9 +842,7 @@ describe("RepoSummaryPage", () => {
           }),
         }),
       );
-      expect(mockSetGlobalRepo).toHaveBeenCalledWith(
-        "ghe.example.com/acme/widgets",
-      );
+      expect(mockSetGlobalRepo).toHaveBeenCalledWith("ghe.example.com/acme/widgets");
       expect(mockNavigate).toHaveBeenCalledWith(
         "/host/ghe.example.com/issues/github/acme/widgets/42",
       );
@@ -936,9 +900,9 @@ describe("RepoSummaryPage", () => {
 
     await fireEvent.click(screen.getByRole("button", { name: "New issue" }));
 
-    expect(
-      (screen.getByPlaceholderText("Issue title") as HTMLInputElement).value,
-    ).toBe("Draft issue title");
+    expect((screen.getByPlaceholderText("Issue title") as HTMLInputElement).value).toBe(
+      "Draft issue title",
+    );
     expect(
       (
         screen.getByRole("textbox", {

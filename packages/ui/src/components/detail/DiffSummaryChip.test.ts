@@ -58,26 +58,17 @@ describe("DiffSummaryChip", () => {
       props: {
         additions: 74,
         deletions: 20,
-        loadFiles: async () =>
-          new DiffSummaryFilesResult(false, await loadFiles()),
+        loadFiles: async () => new DiffSummaryFilesResult(false, await loadFiles()),
       },
     });
 
-    await fireEvent.mouseEnter(
-      screen.getByRole("button", { name: statLabel(74, 20) }),
-    );
+    await fireEvent.mouseEnter(screen.getByRole("button", { name: statLabel(74, 20) }));
 
     const popover = await screen.findByRole("status");
     const labels = Array.from(
       popover.querySelectorAll(".diff-summary-row > span:first-child"),
     ).map((label) => label.textContent);
-    expect(labels).toEqual([
-      "Plans/docs",
-      "Code",
-      "Tests",
-      "Other",
-      "Generated",
-    ]);
+    expect(labels).toEqual(["Plans/docs", "Code", "Tests", "Other", "Generated"]);
     expect(screen.getByText("Plans/docs")).toBeTruthy();
     expect(screen.queryByText("Total")).toBeNull();
     expect(rowText(popover, "Plans/docs")).toBe("Plans/docs +10 −2");
@@ -107,9 +98,7 @@ describe("DiffSummaryChip", () => {
       },
     });
 
-    await fireEvent.mouseEnter(
-      screen.getByRole("button", { name: statLabel(60, 14) }),
-    );
+    await fireEvent.mouseEnter(screen.getByRole("button", { name: statLabel(60, 14) }));
 
     const popover = await screen.findByRole("status");
     expect(within(popover).getByText("Code")).toBeTruthy();
@@ -140,9 +129,7 @@ describe("DiffSummaryChip", () => {
     const trigger = screen.getByRole("button", { name: statLabel(4, 1) });
     await fireEvent.mouseEnter(trigger);
 
-    expect(
-      await screen.findByText("Changed files are still refreshing."),
-    ).toBeTruthy();
+    expect(await screen.findByText("Changed files are still refreshing.")).toBeTruthy();
     await fireEvent.mouseLeave(trigger);
     await fireEvent.mouseEnter(trigger);
 
@@ -177,9 +164,7 @@ describe("DiffSummaryChip", () => {
       },
     });
 
-    await fireEvent.mouseEnter(
-      screen.getByRole("button", { name: statLabel(10, 0) }),
-    );
+    await fireEvent.mouseEnter(screen.getByRole("button", { name: statLabel(10, 0) }));
     await rerender({
       additions: 5,
       deletions: 1,
@@ -187,13 +172,9 @@ describe("DiffSummaryChip", () => {
       loadFiles,
     });
 
-    resolveFirst?.(
-      new DiffSummaryFilesResult(false, [file("docs/old.md", 10, 0)]),
-    );
+    resolveFirst?.(new DiffSummaryFilesResult(false, [file("docs/old.md", 10, 0)]));
     await waitFor(() => expect(loadFiles).toHaveBeenCalledTimes(2));
-    resolveSecond?.(
-      new DiffSummaryFilesResult(false, [file("src/new.ts", 5, 1)]),
-    );
+    resolveSecond?.(new DiffSummaryFilesResult(false, [file("src/new.ts", 5, 1)]));
 
     const popover = await screen.findByRole("status");
     expect(within(popover).getByText("Code")).toBeTruthy();
@@ -220,9 +201,7 @@ describe("DiffSummaryChip", () => {
       },
     });
 
-    await fireEvent.mouseEnter(
-      screen.getByRole("button", { name: statLabel(10, 0) }),
-    );
+    await fireEvent.mouseEnter(screen.getByRole("button", { name: statLabel(10, 0) }));
     expect(await screen.findByText("Plans/docs")).toBeTruthy();
 
     await rerender({

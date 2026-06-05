@@ -25,15 +25,13 @@ describe("diff summary categorization", () => {
       }),
     ).toBe("generated");
     expect(categorizeDiffFile(file("bun.lock", 1, 1))).toBe("generated");
-    expect(categorizeDiffFile(file("package-lock.json", 1, 1))).toBe(
-      "generated",
-    );
+    expect(categorizeDiffFile(file("package-lock.json", 1, 1))).toBe("generated");
   });
 
   it("honors explicit non-generated API metadata before filename heuristics", () => {
-    expect(
-      categorizeDiffFile({ ...file("bun.lock", 1, 1), is_generated: false }),
-    ).toBe("other");
+    expect(categorizeDiffFile({ ...file("bun.lock", 1, 1), is_generated: false })).toBe(
+      "other",
+    );
   });
 
   it("puts documentation and planning paths into plans/docs", () => {

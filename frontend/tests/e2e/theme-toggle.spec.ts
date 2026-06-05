@@ -12,16 +12,12 @@ test("renders mocked frontend data", async ({ page }) => {
   await expect(page.getByText("Add browser regression coverage")).toBeVisible();
   await expect(page.getByText("acme/widgets")).toBeVisible();
   await expect(page.getByRole("contentinfo").getByText("3 PRs")).toBeVisible();
-  await expect(
-    page.getByRole("contentinfo").getByText("1 repos"),
-  ).toBeVisible();
+  await expect(page.getByRole("contentinfo").getByText("1 repos")).toBeVisible();
 
   await page.getByRole("button", { name: "Issues" }).click();
 
   await expect(page.getByText("Theme toggle does not stick")).toBeVisible();
-  await expect(
-    page.getByRole("contentinfo").getByText("1 issues"),
-  ).toBeVisible();
+  await expect(page.getByRole("contentinfo").getByText("1 issues")).toBeVisible();
 });
 
 test("toggles dark mode from the header control", async ({ page }) => {

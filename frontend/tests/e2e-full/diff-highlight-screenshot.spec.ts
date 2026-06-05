@@ -192,29 +192,21 @@ function filesFromDiff(fixture: DiffResult): FilesResult {
 }
 
 test.describe("diff highlight backgrounds on horizontal scroll", () => {
-  test("line backgrounds cover the rendered Pierre content width", async ({
-    page,
-  }) => {
-    await page.route(
-      "**/api/v1/pulls/github/acme/widgets/1/files",
-      async (route) => {
-        await route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify(filesFromDiff(longLineDiff)),
-        });
-      },
-    );
-    await page.route(
-      "**/api/v1/pulls/github/acme/widgets/1/diff*",
-      async (route) => {
-        await route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify(longLineDiff),
-        });
-      },
-    );
+  test("line backgrounds cover the rendered Pierre content width", async ({ page }) => {
+    await page.route("**/api/v1/pulls/github/acme/widgets/1/files", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(filesFromDiff(longLineDiff)),
+      });
+    });
+    await page.route("**/api/v1/pulls/github/acme/widgets/1/diff*", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(longLineDiff),
+      });
+    });
 
     await page.goto("/pulls/github/acme/widgets/1/files");
     await page

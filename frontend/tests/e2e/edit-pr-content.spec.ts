@@ -18,9 +18,7 @@ test("edit title: click Edit, type, save", async ({ page }) => {
   await input.fill("Updated title text");
   await page.locator(".title-edit-save").click();
 
-  await expect(page.locator(".detail-title")).toContainText(
-    "Updated title text",
-  );
+  await expect(page.locator(".detail-title")).toContainText("Updated title text");
 });
 
 test("edit title: cancel with Escape", async ({ page }) => {
@@ -54,9 +52,7 @@ test("edit body: click Edit, type, save", async ({ page }) => {
   await textarea.fill("New description content");
   await page.locator(".body-edit .title-edit-save").click();
 
-  await expect(page.locator(".markdown-body")).toContainText(
-    "New description content",
-  );
+  await expect(page.locator(".markdown-body")).toContainText("New description content");
 });
 
 test("edit body: cancel preserves original", async ({ page }) => {
@@ -127,12 +123,8 @@ test("markdown tables keep compact columns readable", async ({ page }) => {
 
   await page.goto("/pulls/github/acme/widgets/42");
 
-  const taskHeader = page
-    .locator(".markdown-body th")
-    .filter({ hasText: "Task" });
-  const commitCell = page
-    .locator(".markdown-body td")
-    .filter({ hasText: "b2af4711" });
+  const taskHeader = page.locator(".markdown-body th").filter({ hasText: "Task" });
+  const commitCell = page.locator(".markdown-body td").filter({ hasText: "b2af4711" });
   await expect(taskHeader).toBeVisible();
   await expect(commitCell).toBeVisible();
   await expect(taskHeader).toHaveCSS("white-space", "nowrap");
@@ -143,9 +135,7 @@ test("markdown tables keep compact columns readable", async ({ page }) => {
   );
 });
 
-test("add description to empty-body PR shows add-description-btn", async ({
-  page,
-}) => {
+test("add description to empty-body PR shows add-description-btn", async ({ page }) => {
   // Override the GET route to return a PR with empty body.
   await page.route("**/api/v1/repos/acme/widgets/pulls/42", async (route) => {
     if (route.request().method() !== "GET") {
@@ -206,7 +196,5 @@ test("add description to empty-body PR shows add-description-btn", async ({
   await textarea.fill("Added a new description");
   await page.locator(".body-edit .title-edit-save").click();
 
-  await expect(page.locator(".markdown-body")).toContainText(
-    "Added a new description",
-  );
+  await expect(page.locator(".markdown-body")).toContainText("Added a new description");
 });

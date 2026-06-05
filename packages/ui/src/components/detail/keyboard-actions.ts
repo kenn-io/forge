@@ -300,9 +300,7 @@ export function canMarkReady(input: PRDetailActionInput): boolean {
 }
 
 function isStaleDraftRefreshSignal(message: string): boolean {
-  return (
-    message.includes("ready for review") && message.includes("404 Not Found")
-  );
+  return message.includes("ready for review") && message.includes("404 Not Found");
 }
 
 export async function runMarkReady(input: PRDetailActionInput): Promise<void> {
@@ -356,16 +354,10 @@ export async function runMarkReady(input: PRDetailActionInput): Promise<void> {
 // Approve pending workflows ------------------------------------------
 
 export function canApproveWorkflows(input: PRDetailActionInput): boolean {
-  return (
-    input.pr.State === "open" &&
-    input.viewerCan.approveWorkflows &&
-    !input.stale
-  );
+  return input.pr.State === "open" && input.viewerCan.approveWorkflows && !input.stale;
 }
 
-export async function runApproveWorkflows(
-  input: PRDetailActionInput,
-): Promise<void> {
+export async function runApproveWorkflows(input: PRDetailActionInput): Promise<void> {
   if (!canApproveWorkflows(input)) return;
   const { ref, number } = input;
   const { error: requestError } = await input.client.POST(

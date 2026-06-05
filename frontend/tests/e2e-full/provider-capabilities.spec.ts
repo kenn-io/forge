@@ -20,15 +20,9 @@ test.describe("provider capabilities", () => {
     const detail = page.locator(".issue-detail");
     await expect(detail).toBeVisible();
     await expect(detail.getByText("GitLab read-only issue")).toBeVisible();
-    await expect(
-      detail.getByText("GitLab read-only timeline comment"),
-    ).toBeVisible();
-    await expect(
-      detail.getByRole("button", { name: "Edit comment" }),
-    ).toHaveCount(0);
-    await expect(
-      detail.getByRole("button", { name: "Copy comment" }),
-    ).toBeVisible();
+    await expect(detail.getByText("GitLab read-only timeline comment")).toBeVisible();
+    await expect(detail.getByRole("button", { name: "Edit comment" })).toHaveCount(0);
+    await expect(detail.getByRole("button", { name: "Copy comment" })).toBeVisible();
 
     const response = await page.request.get(
       "/api/v1/host/gitlab.example.com/issues/gl/group/project/11",

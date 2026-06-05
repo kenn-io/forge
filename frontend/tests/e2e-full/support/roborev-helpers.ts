@@ -6,9 +6,7 @@ import { expect } from "@playwright/test";
 function readEnvFile(): Record<string, string> {
   const envPath = process.env["ROBOREV_ENV_FILE"];
   if (!envPath) {
-    throw new Error(
-      "ROBOREV_ENV_FILE not set — run via scripts/run-roborev-e2e.sh",
-    );
+    throw new Error("ROBOREV_ENV_FILE not set — run via scripts/run-roborev-e2e.sh");
   }
   const content = readFileSync(envPath, "utf-8");
   const env: Record<string, string> = {};
@@ -128,10 +126,7 @@ export async function assertSeededRoborevDaemon(): Promise<void> {
     );
   }
 
-  const total = SEEDED_STATUS_KEYS.reduce(
-    (sum, k) => sum + (counters[k] ?? 0),
-    0,
-  );
+  const total = SEEDED_STATUS_KEYS.reduce((sum, k) => sum + (counters[k] ?? 0), 0);
   // The seed creates exactly 74 jobs (bulk IDs 1-69 + mutation
   // fixtures 70-74). The rerun test re-enqueues job 73 in place
   // (no new ID), so total stays at 74 throughout. Allow a little

@@ -118,9 +118,7 @@ test("arrow-down past the visible window scrolls the highlighted row into view",
 
   const inView = await page.evaluate(() => {
     const listEl = document.querySelector<HTMLElement>(".palette-list");
-    const highlight = document.querySelector<HTMLElement>(
-      ".palette-row-highlight",
-    );
+    const highlight = document.querySelector<HTMLElement>(".palette-row-highlight");
     if (!listEl || !highlight) return null;
     const lr = listEl.getBoundingClientRect();
     const hr = highlight.getBoundingClientRect();

@@ -9,10 +9,7 @@ import {
   sortRows,
   type RepoImportRow,
 } from "./repoImportSelection.js";
-import {
-  repoImportProvider,
-  repoImportProviders,
-} from "./repoImportProviders.js";
+import { repoImportProvider, repoImportProviders } from "./repoImportProviders.js";
 
 const rows: RepoImportRow[] = [
   {
@@ -137,22 +134,20 @@ describe("repo import selection helpers", () => {
   });
 
   it("filters by owner/name, name, description, and status", () => {
-    expect(filterRows(rows, "HTTP", "all").map((row) => row.name)).toEqual([
-      "api",
+    expect(filterRows(rows, "HTTP", "all").map((row) => row.name)).toEqual(["api"]);
+    expect(filterRows(rows, "acme/worker", "all").map((row) => row.name)).toEqual([
+      "worker",
     ]);
-    expect(
-      filterRows(rows, "acme/worker", "all").map((row) => row.name),
-    ).toEqual(["worker"]);
-    expect(
-      filterRows(rows, "", "already-added").map((row) => row.name),
-    ).toEqual(["widget"]);
+    expect(filterRows(rows, "", "already-added").map((row) => row.name)).toEqual([
+      "widget",
+    ]);
     const selected = new Set([rowKey(rows[0]!)]);
-    expect(
-      filterRows(rows, "", "selected", selected).map((row) => row.name),
-    ).toEqual(["worker"]);
-    expect(
-      filterRows(rows, "", "unselected", selected).map((row) => row.name),
-    ).toEqual(["api", "empty"]);
+    expect(filterRows(rows, "", "selected", selected).map((row) => row.name)).toEqual([
+      "worker",
+    ]);
+    expect(filterRows(rows, "", "unselected", selected).map((row) => row.name)).toEqual(
+      ["api", "empty"],
+    );
   });
 
   it("filters private repositories and forks independently", () => {
@@ -176,19 +171,13 @@ describe("repo import selection helpers", () => {
 
   it("sorts deterministically with null pushed_at last", () => {
     expect(
-      sortRows(rows, { field: "pushed_at", direction: "desc" }).map(
-        (row) => row.name,
-      ),
+      sortRows(rows, { field: "pushed_at", direction: "desc" }).map((row) => row.name),
     ).toEqual(["api", "widget", "worker", "empty"]);
     expect(
-      sortRows(rows, { field: "pushed_at", direction: "asc" }).map(
-        (row) => row.name,
-      ),
+      sortRows(rows, { field: "pushed_at", direction: "asc" }).map((row) => row.name),
     ).toEqual(["worker", "widget", "api", "empty"]);
     expect(
-      sortRows(rows, { field: "name", direction: "asc" }).map(
-        (row) => row.name,
-      ),
+      sortRows(rows, { field: "name", direction: "asc" }).map((row) => row.name),
     ).toEqual(["api", "empty", "widget", "worker"]);
   });
 
@@ -199,9 +188,10 @@ describe("repo import selection helpers", () => {
       githubKey("empty"),
       githubKey("worker"),
     ]);
-    expect(
-      [...setAllVisible(selected, [rows[0]!, rows[3]!], false)].sort(),
-    ).toEqual([githubKey("api"), githubKey("empty")]);
+    expect([...setAllVisible(selected, [rows[0]!, rows[3]!], false)].sort()).toEqual([
+      githubKey("api"),
+      githubKey("empty"),
+    ]);
   });
 
   it("applies shift-click ranges with visible anchors", () => {
@@ -236,9 +226,10 @@ describe("repo import selection helpers", () => {
   it("returns selected rows for submit in full sorted order", () => {
     const sorted = sortRows(rows, { field: "name", direction: "asc" });
     const selected = new Set([githubKey("worker"), githubKey("api")]);
-    expect(
-      selectedRowsForSubmit(sorted, selected).map((row) => row.name),
-    ).toEqual(["api", "worker"]);
+    expect(selectedRowsForSubmit(sorted, selected).map((row) => row.name)).toEqual([
+      "api",
+      "worker",
+    ]);
     expect(
       selectedRowsForSubmit(sorted, selected, { hidePrivate: true }).map(
         (row) => row.name,

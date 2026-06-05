@@ -1,12 +1,5 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import WorkspaceProjectCard from "./WorkspaceProjectCard.svelte";
 
@@ -270,8 +263,6 @@ describe("WorkspaceProjectCard", () => {
     await fireEvent.click(
       screen.getByRole("button", { name: /Create your first worktree/i }),
     );
-    expect(
-      await screen.findByText(/not available in this build/i),
-    ).toBeTruthy();
+    expect(await screen.findByText(/not available in this build/i)).toBeTruthy();
   });
 });

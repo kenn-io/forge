@@ -43,9 +43,7 @@ describe("worstCaseRatio", () => {
   });
 
   it("returns -1 when all hosts unknown", () => {
-    const entries: HostBudgetEntry[] = [
-      { remaining: -1, limit: -1, known: false },
-    ];
+    const entries: HostBudgetEntry[] = [{ remaining: -1, limit: -1, known: false }];
     expect(worstCaseRatio(entries)).toBe(-1);
   });
 

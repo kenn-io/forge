@@ -66,8 +66,7 @@ async function waitForWorkspaceReady(
     }
     if (workspace.status === "error") {
       throw new Error(
-        workspace.error_message ??
-          `workspace ${workspaceId} failed to become ready`,
+        workspace.error_message ?? `workspace ${workspaceId} failed to become ready`,
       );
     }
     await new Promise((resolve) => setTimeout(resolve, 100));
@@ -115,8 +114,7 @@ test.describe("detail action buttons", () => {
       const createResponse = await createResponsePromise;
       expect(createResponse.status()).toBe(202);
 
-      const createdWorkspace =
-        (await createResponse.json()) as WorkspaceStatusResponse;
+      const createdWorkspace = (await createResponse.json()) as WorkspaceStatusResponse;
       expect(createdWorkspace.platform_host).toBe("github.com");
       expect(createdWorkspace.item_type).toBe("issue");
       expect(createdWorkspace.item_number).toBe(10);
@@ -124,9 +122,7 @@ test.describe("detail action buttons", () => {
         "middleman/issue-10-widget-rendering-broken-on-safari",
       );
 
-      await expect(page).toHaveURL(
-        new RegExp(`/terminal/${createdWorkspace.id}$`),
-      );
+      await expect(page).toHaveURL(new RegExp(`/terminal/${createdWorkspace.id}$`));
 
       const readyWorkspace = await waitForWorkspaceReady(
         apiContext,
@@ -154,11 +150,11 @@ test.describe("detail action buttons", () => {
 
       await page.goto(`${server.info.base_url}/pulls/github/acme/widgets/1`);
 
-      await expect(
-        page.getByRole("button", { name: "Approve workflows" }),
-      ).toBeVisible({
-        timeout: 10_000,
-      });
+      await expect(page.getByRole("button", { name: "Approve workflows" })).toBeVisible(
+        {
+          timeout: 10_000,
+        },
+      );
     } finally {
       await server.stop();
     }
@@ -243,9 +239,7 @@ test.describe("detail action buttons", () => {
     // when the URL has no platform_host query parameter.
     const syncResponse = await syncResponsePromise;
     expect(syncResponse.status()).toBe(202);
-    expect(new URL(syncResponse.url()).searchParams.has("platform_host")).toBe(
-      false,
-    );
+    expect(new URL(syncResponse.url()).searchParams.has("platform_host")).toBe(false);
 
     await page.locator(".btn--workspace").click();
     const createResponse = await createResponsePromise;
@@ -296,10 +290,7 @@ test.describe("detail action buttons", () => {
       "**/api/v1/issues/github/acme/widgets/10/workspace",
       async (route) => {
         payloads.push(
-          JSON.parse(route.request().postData() ?? "{}") as Record<
-            string,
-            unknown
-          >,
+          JSON.parse(route.request().postData() ?? "{}") as Record<string, unknown>,
         );
         if (payloads.length === 1) {
           await route.fulfill({
@@ -410,10 +401,7 @@ test.describe("detail action buttons", () => {
       "**/api/v1/issues/github/acme/widgets/10/workspace",
       async (route) => {
         payloads.push(
-          JSON.parse(route.request().postData() ?? "{}") as Record<
-            string,
-            unknown
-          >,
+          JSON.parse(route.request().postData() ?? "{}") as Record<string, unknown>,
         );
         if (payloads.length === 1) {
           await route.fulfill({
@@ -476,9 +464,7 @@ test.describe("detail action buttons", () => {
     await expect(page).toHaveURL(/\/terminal\/ws-issue-10$/);
   });
 
-  test("pull request actions use shared ActionButton component", async ({
-    page,
-  }) => {
+  test("pull request actions use shared ActionButton component", async ({ page }) => {
     await page.goto("/pulls");
     await page
       .locator(".pull-item")
@@ -555,9 +541,7 @@ test.describe("detail action buttons", () => {
     }
   });
 
-  test("conflicted pull request disables the merge action", async ({
-    page,
-  }) => {
+  test("conflicted pull request disables the merge action", async ({ page }) => {
     let isolatedServer: IsolatedE2EServer | null = null;
     try {
       isolatedServer = await startIsolatedE2EServer();
@@ -615,17 +599,13 @@ test.describe("detail action buttons", () => {
     await page.locator(".actions-menu-popover .btn--close").click();
 
     await expect(page.locator(".actions-menu-popover")).toHaveCount(0);
-    await expect(
-      page.locator(".primary-actions-wrap .action-error"),
-    ).toHaveText("backend down");
-    await expect(
-      page.locator(".primary-actions-wrap .action-error"),
-    ).toBeVisible();
+    await expect(page.locator(".primary-actions-wrap .action-error")).toHaveText(
+      "backend down",
+    );
+    await expect(page.locator(".primary-actions-wrap .action-error")).toBeVisible();
   });
 
-  test("approve form stays visible in the narrow actions menu", async ({
-    page,
-  }) => {
+  test("approve form stays visible in the narrow actions menu", async ({ page }) => {
     await page.setViewportSize({ width: 320, height: 720 });
     await page.goto("/pulls/github/acme/widgets/1");
     await expect(page.locator(".pull-detail")).toBeVisible();
@@ -635,9 +615,7 @@ test.describe("detail action buttons", () => {
 
     await page.locator(".actions-menu-popover .btn--approve").click();
     await expect(page.locator(".actions-menu-popover")).toBeVisible();
-    await expect(
-      page.locator(".actions-menu-popover .approve-comment"),
-    ).toBeVisible();
+    await expect(page.locator(".actions-menu-popover .approve-comment")).toBeVisible();
     await expect(page.locator(".actions-menu-popover .btn--green")).toHaveText(
       "Approve",
     );
@@ -697,9 +675,7 @@ test.describe("detail action buttons", () => {
 
       await expect
         .poll(async () => {
-          const response = await api!.get(
-            "/api/v1/pulls/github/acme/widgets/1",
-          );
+          const response = await api!.get("/api/v1/pulls/github/acme/widgets/1");
           expect(response.ok()).toBe(true);
           const detail = (await response.json()) as PullDetailResponse;
           return detail.events.some(
@@ -747,9 +723,7 @@ test.describe("detail action buttons", () => {
     }
   });
 
-  test("draft pull request actions keep exactly the same height", async ({
-    page,
-  }) => {
+  test("draft pull request actions keep exactly the same height", async ({ page }) => {
     await page.goto("/pulls/github/acme/widgets/6");
     await expect(page.locator(".pull-detail")).toBeVisible();
 
@@ -763,12 +737,7 @@ test.describe("detail action buttons", () => {
     }
 
     const metrics = await page.evaluate(() => {
-      const selectors = [
-        ".btn--ready",
-        ".btn--approve",
-        ".btn--merge",
-        ".btn--close",
-      ];
+      const selectors = [".btn--ready", ".btn--approve", ".btn--merge", ".btn--close"];
       return selectors.map((selector) => {
         const element = document.querySelector(selector);
         if (!(element instanceof HTMLElement)) {
@@ -837,9 +806,7 @@ test.describe("detail action buttons", () => {
 
       await expect
         .poll(async () => {
-          const response = await apiContext.get(
-            "/api/v1/pulls/github/acme/widgets/6",
-          );
+          const response = await apiContext.get("/api/v1/pulls/github/acme/widgets/6");
           const detail = await response.json();
           return detail.merge_request.IsDraft;
         })

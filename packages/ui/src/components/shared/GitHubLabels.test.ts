@@ -65,12 +65,8 @@ describe("GitHubLabels", () => {
       },
     });
 
-    expect(getComputedStyle(screen.getByText("light")).color).toBe(
-      "rgb(31, 35, 40)",
-    );
-    expect(getComputedStyle(screen.getByText("dark")).color).toBe(
-      "rgb(255, 255, 255)",
-    );
+    expect(getComputedStyle(screen.getByText("light")).color).toBe("rgb(31, 35, 40)");
+    expect(getComputedStyle(screen.getByText("dark")).color).toBe("rgb(255, 255, 255)");
   });
 
   it("chooses the better contrast text color for saturated mid-tone labels", () => {
@@ -81,9 +77,7 @@ describe("GitHubLabels", () => {
       },
     });
 
-    expect(getComputedStyle(screen.getByText("ready")).color).toBe(
-      "rgb(31, 35, 40)",
-    );
+    expect(getComputedStyle(screen.getByText("ready")).color).toBe("rgb(31, 35, 40)");
   });
 
   it("uses white text when it has better contrast than the dark foreground", () => {

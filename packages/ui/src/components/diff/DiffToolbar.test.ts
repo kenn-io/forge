@@ -1,18 +1,10 @@
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  within,
-} from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/svelte";
 import { afterEach, describe, expect, it } from "vite-plus/test";
 import { STORES_KEY } from "../../context.js";
 import { createDiffStore } from "../../stores/diff.svelte.js";
 import DiffToolbar from "./DiffToolbar.svelte";
 
-function renderToolbar(
-  options: { compact?: boolean; showRichPreview?: boolean } = {},
-) {
+function renderToolbar(options: { compact?: boolean; showRichPreview?: boolean } = {}) {
   const diff = createDiffStore();
   render(DiffToolbar, {
     props: options,
@@ -51,18 +43,14 @@ describe("DiffToolbar", () => {
     ]);
 
     expect(
-      screen
-        .getByRole("button", { name: "All (0)" })
-        .getAttribute("aria-pressed"),
+      screen.getByRole("button", { name: "All (0)" }).getAttribute("aria-pressed"),
     ).toBe("true");
 
     await fireEvent.click(screen.getByRole("button", { name: "Code (0)" }));
 
     expect(diff.getFileCategoryFilter()).toBe("code");
     expect(
-      screen
-        .getByRole("button", { name: "Code (0)" })
-        .getAttribute("aria-pressed"),
+      screen.getByRole("button", { name: "Code (0)" }).getAttribute("aria-pressed"),
     ).toBe("true");
   });
 
@@ -70,9 +58,7 @@ describe("DiffToolbar", () => {
     const { diff } = renderToolbar();
     expect(screen.queryByRole("switch", { name: "Word wrap" })).toBeNull();
 
-    await fireEvent.click(
-      screen.getByRole("button", { name: "More diff filters" }),
-    );
+    await fireEvent.click(screen.getByRole("button", { name: "More diff filters" }));
     const wordWrap = screen.getByRole("switch", { name: "Word wrap" });
 
     expect(diff.getWordWrap()).toBe(false);
@@ -88,9 +74,7 @@ describe("DiffToolbar", () => {
   it("toggles the side-by-side diff preference", async () => {
     const { diff } = renderToolbar();
 
-    await fireEvent.click(
-      screen.getByRole("button", { name: "More diff filters" }),
-    );
+    await fireEvent.click(screen.getByRole("button", { name: "More diff filters" }));
     const sideBySide = screen.getByRole("switch", {
       name: "Side-by-side diffs",
     });
@@ -114,9 +98,7 @@ describe("DiffToolbar", () => {
   it("hides rich preview controls when disabled", async () => {
     renderToolbar({ compact: true, showRichPreview: false });
 
-    await fireEvent.click(
-      screen.getByRole("button", { name: "More diff filters" }),
-    );
+    await fireEvent.click(screen.getByRole("button", { name: "More diff filters" }));
 
     expect(screen.queryByRole("switch", { name: "Rich preview" })).toBeNull();
   });
@@ -132,9 +114,7 @@ describe("DiffToolbar", () => {
       }),
     ).toBeNull();
 
-    await fireEvent.click(
-      screen.getByRole("button", { name: "More diff filters" }),
-    );
+    await fireEvent.click(screen.getByRole("button", { name: "More diff filters" }));
 
     const fileFilters = screen.getByRole("group", {
       name: "Filter changed files",

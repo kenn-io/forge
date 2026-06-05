@@ -96,20 +96,14 @@ test.describe("mobile activity repository selector", () => {
     ).toBeVisible();
     await expect(page.getByRole("option", { name: "acme/*" })).toHaveCount(0);
 
-    await page
-      .getByRole("option", { name: "ghe.example.com/acme/widgets" })
-      .click();
+    await page.getByRole("option", { name: "ghe.example.com/acme/widgets" }).click();
     await expect(
       page.getByRole("combobox", { name: "Repository: acme/widgets" }),
     ).toHaveText("acme/widgets");
-    await expect
-      .poll(() => activityRepos)
-      .toContain("ghe.example.com/acme/widgets");
+    await expect.poll(() => activityRepos).toContain("ghe.example.com/acme/widgets");
   });
 
-  test("groups and labels activity from nested repo identity", async ({
-    page,
-  }) => {
+  test("groups and labels activity from nested repo identity", async ({ page }) => {
     await mockMobileRepoSettings(page);
     await page.route("**/api/v1/activity**", async (route) => {
       await route.fulfill({

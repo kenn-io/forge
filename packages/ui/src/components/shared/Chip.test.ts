@@ -37,8 +37,6 @@ describe("Chip", () => {
     });
 
     const chip = screen.getByText("acme/widgets").closest(".chip");
-    expect(chip?.querySelector(".chip__label")?.textContent).toBe(
-      "acme/widgets",
-    );
+    expect(chip?.querySelector(".chip__label")?.textContent).toBe("acme/widgets");
   });
 });

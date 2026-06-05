@@ -80,9 +80,7 @@ export function buildRepoTree(options: readonly RepoTreeOption[]): HostNode[] {
     });
   }
 
-  const sorted = [...hosts.values()].sort((a, b) =>
-    a.label.localeCompare(b.label),
-  );
+  const sorted = [...hosts.values()].sort((a, b) => a.label.localeCompare(b.label));
   for (const host of sorted) {
     host.children.sort((a, b) => a.label.localeCompare(b.label));
     for (const owner of host.children) {

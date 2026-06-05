@@ -12,10 +12,7 @@ export interface DiffLineTotals {
   deletions: number;
 }
 
-export type DiffLineSummary = Record<
-  DiffSummaryCategory | "total",
-  DiffLineTotals
->;
+export type DiffLineSummary = Record<DiffSummaryCategory | "total", DiffLineTotals>;
 
 export class DiffSummaryFilesResult {
   constructor(

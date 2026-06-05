@@ -1,10 +1,4 @@
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import {
   afterEach,
   beforeEach,
@@ -61,9 +55,7 @@ describe("RepoTypeahead", () => {
     });
 
     await fireEvent.click(screen.getByRole("button", { name: /all repos/i }));
-    expect(
-      screen.queryByRole("option", { name: /import-lab\/api/i }),
-    ).toBeNull();
+    expect(screen.queryByRole("option", { name: /import-lab\/api/i })).toBeNull();
 
     settingsStore.setConfiguredRepos([
       {
@@ -78,9 +70,7 @@ describe("RepoTypeahead", () => {
     ]);
 
     await waitFor(() => {
-      expect(
-        screen.getByRole("option", { name: /import-lab\/api/i }),
-      ).toBeTruthy();
+      expect(screen.getByRole("option", { name: /import-lab\/api/i })).toBeTruthy();
     });
   });
 
@@ -130,9 +120,7 @@ describe("RepoTypeahead", () => {
       expect(
         screen.getByRole("option", { name: /roborev-dev\/middleman/i }),
       ).toBeTruthy();
-      expect(
-        screen.getByRole("option", { name: /roborev-dev\/worker/i }),
-      ).toBeTruthy();
+      expect(screen.getByRole("option", { name: /roborev-dev\/worker/i })).toBeTruthy();
     });
   });
 
@@ -333,9 +321,7 @@ describe("RepoTypeahead", () => {
     const leaf = screen.getByRole("option", {
       name: "github.com/import-lab/api",
     });
-    const checkbox = leaf.querySelector(
-      "input[type='checkbox']",
-    ) as HTMLInputElement;
+    const checkbox = leaf.querySelector("input[type='checkbox']") as HTMLInputElement;
     await fireEvent.mouseDown(checkbox);
     expect(onchange).toHaveBeenLastCalledWith("github.com/import-lab/api");
   });
@@ -494,9 +480,7 @@ describe("RepoTypeahead", () => {
     const leaf = screen.getByRole("option", {
       name: "github.com/import-lab/api",
     });
-    await waitFor(() =>
-      expect(leaf.classList.contains("highlighted")).toBe(true),
-    );
+    await waitFor(() => expect(leaf.classList.contains("highlighted")).toBe(true));
 
     // ArrowLeft on the leaf moves focus to its parent owner.
     await fireEvent.keyDown(input, { key: "ArrowLeft" });

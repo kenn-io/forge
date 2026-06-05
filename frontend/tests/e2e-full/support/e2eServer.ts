@@ -2,15 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
-import {
-  cp,
-  mkdir,
-  readFile,
-  readdir,
-  rm,
-  stat,
-  writeFile,
-} from "node:fs/promises";
+import { cp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
@@ -92,9 +84,7 @@ async function newestMtimeUnder(dir: string): Promise<number | null> {
   return newest;
 }
 
-async function newestFrontendSourceMtime(
-  rootDir: string,
-): Promise<number | null> {
+async function newestFrontendSourceMtime(rootDir: string): Promise<number | null> {
   const candidates = [
     path.join(rootDir, "frontend", "src"),
     path.join(rootDir, "frontend", "index.html"),
@@ -104,8 +94,7 @@ async function newestFrontendSourceMtime(
   ];
   let newest: number | null = null;
   for (const candidate of candidates) {
-    const mtime =
-      (await newestMtimeUnder(candidate)) ?? (await fileMtimeMs(candidate));
+    const mtime = (await newestMtimeUnder(candidate)) ?? (await fileMtimeMs(candidate));
     if (mtime !== null && (newest === null || mtime > newest)) {
       newest = mtime;
     }
@@ -154,10 +143,7 @@ export async function ensureEmbeddedFrontend(
 
   let frontendMtime = await newestMtimeUnder(frontendDist);
   const sourceMtime = await newestFrontendSourceMtime(rootDir);
-  if (
-    frontendMtime === null ||
-    (sourceMtime !== null && sourceMtime > frontendMtime)
-  ) {
+  if (frontendMtime === null || (sourceMtime !== null && sourceMtime > frontendMtime)) {
     const outcome = await tryBuildFrontend(frontendDir);
     if (outcome.kind === "ok") {
       frontendMtime = await newestMtimeUnder(frontendDist);
@@ -229,9 +215,7 @@ async function isServerReachable(baseURL: string): Promise<boolean> {
       { method: "GET", timeout: reachabilityTimeoutMs },
       (response) => {
         response.resume();
-        resolve(
-          (response.statusCode ?? 0) >= 200 && (response.statusCode ?? 0) < 300,
-        );
+        resolve((response.statusCode ?? 0) >= 200 && (response.statusCode ?? 0) < 300);
       },
     );
 
@@ -292,14 +276,7 @@ async function spawnServer(
 }> {
   await ensureEmbeddedFrontend();
 
-  const args = [
-    "run",
-    "./cmd/e2e-server",
-    "-port",
-    "0",
-    "-server-info-file",
-    infoFile,
-  ];
+  const args = ["run", "./cmd/e2e-server", "-port", "0", "-server-info-file", infoFile];
   if (options.defaultPlatformHost) {
     args.push("-default-platform-host", options.defaultPlatformHost);
   }

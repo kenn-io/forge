@@ -15,17 +15,12 @@ async function openActivityViewDropdown(page: Page) {
   return dropdown;
 }
 
-async function selectActivityViewItem(
-  page: Page,
-  label: string,
-): Promise<void> {
+async function selectActivityViewItem(page: Page, label: string): Promise<void> {
   const dropdown = await openActivityViewDropdown(page);
   await dropdown.locator(".filter-item", { hasText: label }).click();
 }
 
-async function captureWindowOpen(
-  page: Page,
-): Promise<() => Promise<string | null>> {
+async function captureWindowOpen(page: Page): Promise<() => Promise<string | null>> {
   // Intercept window.open before the click handler runs so we can assert
   // exactly what URL the row's link button would have opened.
   await page.evaluate(() => {
@@ -38,8 +33,7 @@ async function captureWindowOpen(
   });
   return () =>
     page.evaluate(
-      () =>
-        (globalThis as unknown as { __lastOpen?: string }).__lastOpen ?? null,
+      () => (globalThis as unknown as { __lastOpen?: string }).__lastOpen ?? null,
     );
 }
 

@@ -38,9 +38,7 @@ function providerHost(
   provider: string,
   platformHost: string | undefined,
 ): string | null {
-  return (
-    platformHost?.trim() || defaultHosts[canonicalProvider(provider)] || null
-  );
+  return platformHost?.trim() || defaultHosts[canonicalProvider(provider)] || null;
 }
 
 function encodeRepoPath(repoPath: string): string {
@@ -70,8 +68,7 @@ export function buildCanonicalProviderItemURL(
       itemPath = `/pulls/${number}`;
     }
   } else {
-    itemPath =
-      provider === "gitlab" ? `/-/issues/${number}` : `/issues/${number}`;
+    itemPath = provider === "gitlab" ? `/-/issues/${number}` : `/issues/${number}`;
   }
   return `https://${host}/${repoPath}${itemPath}`;
 }

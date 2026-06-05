@@ -22,8 +22,7 @@ test("provider icons disambiguate multi-provider repository views", async ({
     expect(summariesResponse.ok()).toBe(true);
     const summaries = (await summariesResponse.json()) as RepoSummary[];
     expect(
-      new Set(summaries.map((summary) => summary.repo.provider.toLowerCase()))
-        .size,
+      new Set(summaries.map((summary) => summary.repo.provider.toLowerCase())).size,
     ).toBeGreaterThan(1);
 
     await page.goto(`${server.info.base_url}/repos`);
@@ -35,15 +34,11 @@ test("provider icons disambiguate multi-provider repository views", async ({
         })
         .first(),
     ).toBeVisible();
-    await expect(
-      repoCards.getByRole("img", { name: "GitHub" }).first(),
-    ).toBeVisible();
+    await expect(repoCards.getByRole("img", { name: "GitHub" }).first()).toBeVisible();
     await expect(repoCards.getByRole("img", { name: "GitLab" })).toBeVisible();
 
     await page.goto(`${server.info.base_url}/settings`);
-    await page
-      .locator(".settings-page")
-      .waitFor({ state: "visible", timeout: 10_000 });
+    await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
     await expect(page.locator(".repo-row").getByRole("img")).toHaveCount(0);
 
     const addResponse = await api.post("/api/v1/repos/bulk", {
@@ -62,13 +57,9 @@ test("provider icons disambiguate multi-provider repository views", async ({
     expect(addResponse.ok()).toBe(true);
 
     await page.reload();
-    await page
-      .locator(".settings-page")
-      .waitFor({ state: "visible", timeout: 10_000 });
+    await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
     const repoRows = page.locator(".repo-row");
-    await expect(
-      repoRows.getByRole("img", { name: "GitHub" }).first(),
-    ).toBeVisible();
+    await expect(repoRows.getByRole("img", { name: "GitHub" }).first()).toBeVisible();
     await expect(repoRows.getByRole("img", { name: "Forgejo" })).toBeVisible();
   } finally {
     await api.dispose();

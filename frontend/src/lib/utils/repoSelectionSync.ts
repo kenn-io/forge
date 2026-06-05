@@ -6,9 +6,7 @@ import type { Route } from "../stores/router.svelte.ts";
 // when the selected item has no platformHost (which leaves the dropdown
 // without a stable match).
 export function globalRepoForSelectedRoute(route: Route): string | undefined {
-  let selected:
-    | { platformHost?: string | undefined; repoPath: string }
-    | undefined;
+  let selected: { platformHost?: string | undefined; repoPath: string } | undefined;
   if (route.page === "pulls" && "selected" in route && route.selected) {
     selected = route.selected;
   } else if (route.page === "issues" && route.selected) {

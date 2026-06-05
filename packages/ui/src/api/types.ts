@@ -2,10 +2,8 @@ import type { components, operations } from "./generated/schema.js";
 
 export type Repo = components["schemas"]["RepoResponse"];
 export type RepoSummary = components["schemas"]["RepoSummaryResponse"];
-export type RepoSummaryAuthor =
-  components["schemas"]["RepoSummaryAuthorResponse"];
-export type RepoSummaryIssue =
-  components["schemas"]["RepoSummaryIssueResponse"];
+export type RepoSummaryAuthor = components["schemas"]["RepoSummaryAuthorResponse"];
+export type RepoSummaryIssue = components["schemas"]["RepoSummaryIssueResponse"];
 export type RepoSummaryCommitPointResponse =
   components["schemas"]["RepoSummaryCommitPointResponse"];
 export type RepoSummaryReleaseResponse =
@@ -13,8 +11,7 @@ export type RepoSummaryReleaseResponse =
 export type PullRequest = components["schemas"]["MergeRequestResponse"];
 export type ProviderCapabilities =
   components["schemas"]["ProviderCapabilitiesResponse"];
-export type OperationAvailability =
-  components["schemas"]["OperationAvailability"];
+export type OperationAvailability = components["schemas"]["OperationAvailability"];
 export type RepoOperations = components["schemas"]["RepoOperations"];
 export type Issue = components["schemas"]["IssueResponse"];
 export type IssueEvent = components["schemas"]["IssueEvent"];
@@ -40,8 +37,7 @@ export type MergeParams = components["schemas"]["MergePRInputBody"];
 export type WorktreeLink = components["schemas"]["WorktreeLinkResponse"];
 export type LaunchTarget = components["schemas"]["LaunchTarget"];
 export type RuntimeSession = components["schemas"]["SessionInfo"];
-export type WorkspaceRuntime =
-  components["schemas"]["WorkspaceRuntimeResponse"];
+export type WorkspaceRuntime = components["schemas"]["WorkspaceRuntimeResponse"];
 
 export type Label = components["schemas"]["Label"];
 export type IssueLabel = Label;

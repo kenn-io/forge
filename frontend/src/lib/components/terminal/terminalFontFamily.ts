@@ -74,11 +74,7 @@ function isGenericFontFamily(family: string): boolean {
   return GENERIC_FONT_FAMILIES.has(normalizeFontFamily(family));
 }
 
-function appendUnique(
-  result: string[],
-  seen: Set<string>,
-  family: string,
-): void {
+function appendUnique(result: string[], seen: Set<string>, family: string): void {
   const key = normalizeFontFamily(family);
   if (seen.has(key)) return;
   seen.add(key);

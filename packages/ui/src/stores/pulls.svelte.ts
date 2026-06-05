@@ -233,8 +233,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
     number: number,
   ): KanbanStatus | undefined {
     const pr = pulls.find(
-      (p) =>
-        p.repo_owner === owner && p.repo_name === name && p.Number === number,
+      (p) => p.repo_owner === owner && p.repo_name === name && p.Number === number,
     );
     return pr?.KanbanStatus as KanbanStatus | undefined;
   }

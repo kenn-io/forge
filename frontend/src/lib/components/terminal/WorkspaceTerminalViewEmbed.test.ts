@@ -11,14 +11,7 @@
 // captured-fetch problem entirely.
 
 import { cleanup, render, screen, waitFor } from "@testing-library/svelte";
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 const mocks = vi.hoisted(() => ({
   runtimeClient: {
@@ -170,9 +163,7 @@ describe("WorkspaceTerminalView embed props", () => {
     // workspace payload resolves; this confirms the component reached
     // steady state rather than failing the load early.
     await waitFor(() =>
-      expect(screen.getAllByText("feature/embed-props").length).toBeGreaterThan(
-        0,
-      ),
+      expect(screen.getAllByText("feature/embed-props").length).toBeGreaterThan(0),
     );
 
     // The workspace-list column header reads "Workspaces"; with
@@ -187,9 +178,7 @@ describe("WorkspaceTerminalView embed props", () => {
     });
 
     await waitFor(() =>
-      expect(screen.getAllByText("feature/embed-props").length).toBeGreaterThan(
-        0,
-      ),
+      expect(screen.getAllByText("feature/embed-props").length).toBeGreaterThan(0),
     );
 
     expect(screen.queryByText("Workspaces")).not.toBeNull();
@@ -205,9 +194,7 @@ describe("WorkspaceTerminalView embed props", () => {
     });
 
     await waitFor(() =>
-      expect(screen.getAllByText("feature/embed-props").length).toBeGreaterThan(
-        0,
-      ),
+      expect(screen.getAllByText("feature/embed-props").length).toBeGreaterThan(0),
     );
 
     expect(screen.queryByRole("button", { name: "PR" })).toBeNull();
@@ -220,9 +207,7 @@ describe("WorkspaceTerminalView embed props", () => {
     });
 
     await waitFor(() =>
-      expect(screen.getAllByText("feature/embed-props").length).toBeGreaterThan(
-        0,
-      ),
+      expect(screen.getAllByText("feature/embed-props").length).toBeGreaterThan(0),
     );
 
     expect(screen.getByRole("button", { name: "PR" })).toBeTruthy();

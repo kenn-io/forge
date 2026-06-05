@@ -114,17 +114,14 @@ export function createSyncStore(opts: SyncStoreOptions) {
           : {};
       const { error } = await apiClient.POST("/sync", syncOptions);
       if (error) {
-        throw new Error(
-          error.detail ?? error.title ?? "failed to trigger sync",
-        );
+        throw new Error(error.detail ?? error.title ?? "failed to trigger sync");
       }
       await refreshSyncStatus();
     } catch (err) {
       status = {
         running: false,
         last_run_at: previous?.last_run_at ?? "",
-        last_error:
-          err instanceof Error ? err.message : "failed to trigger sync",
+        last_error: err instanceof Error ? err.message : "failed to trigger sync",
       };
       wasRunning = false;
       adjustPollingSpeed(false);

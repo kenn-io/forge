@@ -35,9 +35,7 @@ describe("globalRepoForSelectedRoute", () => {
       page: "issues",
       selected: issueSelected,
     };
-    expect(globalRepoForSelectedRoute(route)).toBe(
-      "gitlab.example.com/team/infra",
-    );
+    expect(globalRepoForSelectedRoute(route)).toBe("gitlab.example.com/team/infra");
   });
 
   it("returns platformHost/repoPath for a focus PR route", () => {
@@ -65,9 +63,7 @@ describe("globalRepoForSelectedRoute", () => {
       repoPath: "team/infra",
       number: 7,
     };
-    expect(globalRepoForSelectedRoute(route)).toBe(
-      "gitlab.example.com/team/infra",
-    );
+    expect(globalRepoForSelectedRoute(route)).toBe("gitlab.example.com/team/infra");
   });
 
   it("keeps nested repo paths intact", () => {

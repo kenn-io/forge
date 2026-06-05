@@ -181,9 +181,7 @@ describe("provider-aware detail API routes", () => {
       repoPath: "acme/widgets",
     });
 
-    expect(showFlash).toHaveBeenCalledWith(
-      "refresh PR CI: upstream unavailable",
-    );
+    expect(showFlash).toHaveBeenCalledWith("refresh PR CI: upstream unavailable");
     showFlash.mockRestore();
   });
 
@@ -290,9 +288,7 @@ describe("provider-aware detail API routes", () => {
       workflowApprovalSync: false,
     });
 
-    expect(postPaths).toEqual([
-      "/pulls/{provider}/{owner}/{name}/{number}/ci-refresh",
-    ]);
+    expect(postPaths).toEqual(["/pulls/{provider}/{owner}/{name}/{number}/ci-refresh"]);
   });
 
   it("promotes CI refresh results that may need workflow approval to foreground PR sync", async () => {
@@ -408,9 +404,7 @@ describe("provider-aware detail API routes", () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(postPaths).toEqual([
-      "/pulls/{provider}/{owner}/{name}/{number}/sync",
-    ]);
+    expect(postPaths).toEqual(["/pulls/{provider}/{owner}/{name}/{number}/sync"]);
     expect(store.getDetail()?.workflow_approval).toEqual({
       checked: true,
       required: true,
@@ -463,9 +457,7 @@ describe("provider-aware detail API routes", () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(postPaths).toEqual([
-      "/pulls/{provider}/{owner}/{name}/{number}/sync/async",
-    ]);
+    expect(postPaths).toEqual(["/pulls/{provider}/{owner}/{name}/{number}/sync/async"]);
   });
 
   it("loads issue detail through the provider item endpoint", async () => {

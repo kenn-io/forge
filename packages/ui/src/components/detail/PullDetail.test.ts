@@ -260,17 +260,12 @@ describe("PullDetail approvals", () => {
     await vi.advanceTimersByTimeAsync(15_000);
 
     expect(detailStore.refreshPendingCI).toHaveBeenCalledTimes(2);
-    expect(detailStore.refreshPendingCI).toHaveBeenCalledWith(
-      "acme",
-      "widget",
-      1,
-      {
-        provider: "github",
-        platformHost: "github.com",
-        repoPath: "acme/widget",
-        workflowApprovalSync: true,
-      },
-    );
+    expect(detailStore.refreshPendingCI).toHaveBeenCalledWith("acme", "widget", 1, {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+      workflowApprovalSync: true,
+    });
   });
 
   it("uses one shared expanded slot for CI and stack status", async () => {
@@ -366,9 +361,7 @@ describe("PullDetail approvals", () => {
     );
 
     expect(screen.queryByText("frontend / vp check")).toBeNull();
-    expect(
-      screen.getByText("3 PRs · current 2/3 · downstack CI failure"),
-    ).toBeTruthy();
+    expect(screen.getByText("3 PRs · current 2/3 · downstack CI failure")).toBeTruthy();
     expect(
       document.querySelector(".stack-row--current .stack-dot--current"),
     ).toBeTruthy();
@@ -382,9 +375,9 @@ describe("PullDetail approvals", () => {
       "#2 session storage",
       "#1 base schema",
     ]);
-    expect(
-      document.querySelector(".stack-base-name")?.textContent?.trim(),
-    ).toBe("main");
+    expect(document.querySelector(".stack-base-name")?.textContent?.trim()).toBe(
+      "main",
+    );
   });
 
   it("does not probe stack context for unstacked pull details", () => {
@@ -418,9 +411,7 @@ describe("PullDetail approvals", () => {
     const labelsAction = screen.getByRole("button", { name: "Labels" });
     await fireEvent.click(labelsAction);
 
-    expect(
-      await screen.findByRole("dialog", { name: "Edit labels" }),
-    ).toBeTruthy();
+    expect(await screen.findByRole("dialog", { name: "Edit labels" })).toBeTruthy();
 
     await fireEvent.click(labelsAction);
 
@@ -441,9 +432,7 @@ describe("PullDetail approvals", () => {
     await fireEvent.click(actionsTrigger);
     await fireEvent.click(getActionMenuLabelsButton());
 
-    expect(
-      await screen.findByRole("dialog", { name: "Edit labels" }),
-    ).toBeTruthy();
+    expect(await screen.findByRole("dialog", { name: "Edit labels" })).toBeTruthy();
     expect(document.querySelector(".actions-menu-popover")).toBeNull();
 
     await fireEvent.mouseDown(actionsTrigger);
@@ -472,9 +461,7 @@ describe("PullDetail approvals", () => {
 
     const labelsAction = getActionMenuLabelsButton();
     const labelsIcon = labelsAction.querySelector("svg");
-    const labelsItem = labelsAction.closest(
-      ".actions-menu-popover__item--labels",
-    );
+    const labelsItem = labelsAction.closest(".actions-menu-popover__item--labels");
 
     expect(labelsAction.classList.contains("action-button--sm")).toBe(true);
     expect(labelsAction.parentElement).toBe(labelsItem);

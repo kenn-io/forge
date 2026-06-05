@@ -45,11 +45,9 @@ async function dragResizeHandle(
 
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down();
-  await page.mouse.move(
-    box.x + box.width / 2 + deltaX,
-    box.y + box.height / 2,
-    { steps: 10 },
-  );
+  await page.mouse.move(box.x + box.width / 2 + deltaX, box.y + box.height / 2, {
+    steps: 10,
+  });
   await page.mouse.up();
 }
 
@@ -104,9 +102,7 @@ async function expectCompactFiltersAtMinimumWidth(
     clientWidth: node.clientWidth,
     scrollWidth: node.scrollWidth,
   }));
-  expect(filterMetrics.scrollWidth).toBeLessThanOrEqual(
-    filterMetrics.clientWidth,
-  );
+  expect(filterMetrics.scrollWidth).toBeLessThanOrEqual(filterMetrics.clientWidth);
 }
 
 async function expectCompactFiltersInNarrowViewport(
@@ -115,17 +111,13 @@ async function expectCompactFiltersInNarrowViewport(
   waitForList: (page: Page) => Promise<void>,
 ): Promise<void> {
   await page.setViewportSize({ width: 545, height: 954 });
-  const desktopPath = path.includes("?")
-    ? `${path}&desktop=1`
-    : `${path}?desktop=1`;
+  const desktopPath = path.includes("?") ? `${path}&desktop=1` : `${path}?desktop=1`;
   await page.goto(desktopPath);
   await waitForList(page);
 
   const sidebar = page.locator(".sidebar").first();
   const filterBar = sidebar.locator(".filter-bar").first();
-  await expect(
-    filterBar.getByRole("button", { name: "Filters" }),
-  ).toBeVisible();
+  await expect(filterBar.getByRole("button", { name: "Filters" })).toBeVisible();
   await expect(filterBar.locator(".state-toggle")).toBeHidden();
   await expect(filterBar.locator(".group-toggle")).toBeHidden();
 }
@@ -147,9 +139,7 @@ async function setPersistedSidebarWidth(
 }
 
 async function expectCompactFilterBar(filterBar: Locator): Promise<void> {
-  await expect(
-    filterBar.getByRole("button", { name: "Filters" }),
-  ).toBeVisible();
+  await expect(filterBar.getByRole("button", { name: "Filters" })).toBeVisible();
   await expect(filterBar.locator(".state-toggle")).toBeHidden();
   await expect(filterBar.locator(".group-toggle")).toBeHidden();
   await expectFastAnimation(filterBar.locator(".compact-filter-menu"));
@@ -171,9 +161,7 @@ async function expectExpandedFilterBar(filterBar: Locator): Promise<void> {
     clientWidth: node.clientWidth,
     scrollWidth: node.scrollWidth,
   }));
-  expect(filterMetrics.scrollWidth).toBeLessThanOrEqual(
-    filterMetrics.clientWidth,
-  );
+  expect(filterMetrics.scrollWidth).toBeLessThanOrEqual(filterMetrics.clientWidth);
 }
 
 async function expectFastAnimation(locator: Locator): Promise<void> {
@@ -306,16 +294,10 @@ test.describe("collapsible sidebar", () => {
   test("issue filters stay compact when a narrow viewport sidebar is opened", async ({
     page,
   }) => {
-    await expectCompactFiltersInNarrowViewport(
-      page,
-      "/issues",
-      waitForIssueList,
-    );
+    await expectCompactFiltersInNarrowViewport(page, "/issues", waitForIssueList);
   });
 
-  test("pull filters switch at the buffered 396px fit point", async ({
-    page,
-  }) => {
+  test("pull filters switch at the buffered 396px fit point", async ({ page }) => {
     await expectCompactFilterBar(
       await setPersistedSidebarWidth(page, "/pulls", 395, waitForPRList),
     );
@@ -324,9 +306,7 @@ test.describe("collapsible sidebar", () => {
     );
   });
 
-  test("issue filters switch at the buffered 373px fit point", async ({
-    page,
-  }) => {
+  test("issue filters switch at the buffered 373px fit point", async ({ page }) => {
     await expectCompactFilterBar(
       await setPersistedSidebarWidth(page, "/issues", 372, waitForIssueList),
     );
@@ -369,12 +349,9 @@ test.describe("collapsible sidebar", () => {
 
     let dropdown = await openCompactFilters(filterBar);
     await dropdown.locator(".filter-item", { hasText: "Closed" }).click();
-    await expect(filterBar.locator(".list-count-chip")).toHaveText(
-      /^1 issues?$/,
-      {
-        timeout: 5_000,
-      },
-    );
+    await expect(filterBar.locator(".list-count-chip")).toHaveText(/^1 issues?$/, {
+      timeout: 5_000,
+    });
 
     dropdown = await openCompactFilters(filterBar);
     await dropdown.locator(".filter-item", { hasText: "All" }).last().click();

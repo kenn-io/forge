@@ -1,8 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import {
-  startIsolatedE2EServer,
-  type IsolatedE2EServer,
-} from "./support/e2eServer";
+import { startIsolatedE2EServer, type IsolatedE2EServer } from "./support/e2eServer";
 
 // The e2e server seeds the Activity config with view_mode: "flat"
 // and time_range: "7d", so the flat table renders by default.
@@ -20,10 +17,7 @@ async function waitForTable(page: Page): Promise<void> {
     .waitFor({ state: "visible", timeout: 10_000 });
 }
 
-async function selectActivityFilterItem(
-  page: Page,
-  label: string,
-): Promise<void> {
+async function selectActivityFilterItem(page: Page, label: string): Promise<void> {
   await page.locator(".filter-btn").click();
   await page.locator(".filter-dropdown").waitFor({ state: "visible" });
   await page.locator(".filter-item", { hasText: label }).click();
@@ -92,9 +86,7 @@ test.describe("activity feed filters", () => {
   test("hide closed/merged removes those items", async ({ page }) => {
     // Verify closed/merged items exist initially.
     await expect(
-      page
-        .locator(".state-badge.state-closed, .state-badge.state-merged")
-        .first(),
+      page.locator(".state-badge.state-closed, .state-badge.state-merged").first(),
     ).toBeVisible();
 
     // Open filter dropdown and enable "Hide closed/merged".
@@ -145,12 +137,9 @@ test.describe("activity feed filters", () => {
     // feed has 14 items, so waiting for exactly the expected
     // match count proves the search completed.
     const rows = page.locator(".activity-row");
-    await expect(rows.first().locator(".item-title")).toContainText(
-      "caching layer",
-      {
-        timeout: 10_000,
-      },
-    );
+    await expect(rows.first().locator(".item-title")).toContainText("caching layer", {
+      timeout: 10_000,
+    });
 
     const count = await rows.count();
     expect(count).toBeGreaterThan(0);
@@ -160,9 +149,7 @@ test.describe("activity feed filters", () => {
     }
   });
 
-  test("combined: PRs + hide closed/merged shows only open PRs", async ({
-    page,
-  }) => {
+  test("combined: PRs + hide closed/merged shows only open PRs", async ({ page }) => {
     // Click PRs filter and wait for filtered DOM.
     await page.locator(".seg-btn", { hasText: "PRs" }).click();
     await expectAllBadges(page, "PR");
@@ -213,9 +200,7 @@ test.describe("activity UTC timestamp presentation", () => {
     await expect(page.locator(".activity-row").first()).toBeVisible();
 
     const payload = await page.evaluate(async () => {
-      const response = await fetch(
-        "/api/v1/activity?view_mode=flat&time_range=30d",
-      );
+      const response = await fetch("/api/v1/activity?view_mode=flat&time_range=30d");
       return response.json();
     });
     const prComment = payload.items.find(

@@ -25,12 +25,7 @@ export interface RepoMetric {
 }
 
 export type RepoFilter = "all" | "prs" | "issues" | "stale";
-export type RepoSort =
-  | "name"
-  | "open-prs"
-  | "open-issues"
-  | "activity"
-  | "stale";
+export type RepoSort = "name" | "open-prs" | "open-issues" | "activity" | "stale";
 
 export const staleReleaseCommitThreshold = 50;
 

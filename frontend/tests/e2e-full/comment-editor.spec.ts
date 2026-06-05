@@ -10,9 +10,7 @@ test.describe("comment editor autocomplete", () => {
       .first()
       .waitFor({ state: "visible", timeout: 10_000 });
     await page.locator(".pull-item").first().click();
-    await page
-      .locator(".pull-detail")
-      .waitFor({ state: "visible", timeout: 10_000 });
+    await page.locator(".pull-detail").waitFor({ state: "visible", timeout: 10_000 });
 
     const detail = page.locator(".pull-detail");
     const editor = detail.locator(".comment-editor-input").first();
@@ -50,9 +48,7 @@ test.describe("comment editor autocomplete", () => {
       .first()
       .waitFor({ state: "visible", timeout: 10_000 });
     await page.locator(".pull-item").first().click();
-    await page
-      .locator(".pull-detail")
-      .waitFor({ state: "visible", timeout: 10_000 });
+    await page.locator(".pull-detail").waitFor({ state: "visible", timeout: 10_000 });
 
     const detail = page.locator(".pull-detail");
     const editor = detail.locator(".comment-editor-input").first();
@@ -93,18 +89,14 @@ test.describe("comment editor autocomplete", () => {
     await expect(editor).toContainText("hello @alice world");
   });
 
-  test("focused comment editors suppress global view shortcuts", async ({
-    page,
-  }) => {
+  test("focused comment editors suppress global view shortcuts", async ({ page }) => {
     await page.goto("/pulls");
     await page
       .locator(".pull-item")
       .first()
       .waitFor({ state: "visible", timeout: 10_000 });
     await page.locator(".pull-item").first().click();
-    await page
-      .locator(".pull-detail")
-      .waitFor({ state: "visible", timeout: 10_000 });
+    await page.locator(".pull-detail").waitFor({ state: "visible", timeout: 10_000 });
 
     const detail = page.locator(".pull-detail");
     const editor = detail.locator(".comment-editor-input").first();
@@ -128,9 +120,7 @@ test.describe("comment editor autocomplete", () => {
     page,
   }) => {
     await page.goto("/pulls/github/acme/widgets/5");
-    await page
-      .locator(".pull-detail")
-      .waitFor({ state: "visible", timeout: 10_000 });
+    await page.locator(".pull-detail").waitFor({ state: "visible", timeout: 10_000 });
     await expect(page.getByText("Detail not yet loaded")).toHaveCount(0, {
       timeout: 10_000,
     });
@@ -167,9 +157,7 @@ test.describe("comment editor autocomplete", () => {
     page,
   }) => {
     await page.goto("/issues/github/acme/widgets/12");
-    await page
-      .locator(".issue-detail")
-      .waitFor({ state: "visible", timeout: 10_000 });
+    await page.locator(".issue-detail").waitFor({ state: "visible", timeout: 10_000 });
     await expect(page.getByText("Detail not yet loaded")).toHaveCount(0, {
       timeout: 10_000,
     });

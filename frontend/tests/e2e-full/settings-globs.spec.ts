@@ -4,10 +4,7 @@ import {
   test,
   type APIRequestContext,
 } from "@playwright/test";
-import {
-  startIsolatedE2EServer,
-  type IsolatedE2EServer,
-} from "./support/e2eServer";
+import { startIsolatedE2EServer, type IsolatedE2EServer } from "./support/e2eServer";
 
 type RepoSummary = {
   Platform: string;
@@ -38,9 +35,7 @@ test("settings shows glob match counts and refresh updates tracked repos", async
 }) => {
   await page.goto(`${isolatedServer!.info.base_url}/settings`);
 
-  await page
-    .locator(".settings-page")
-    .waitFor({ state: "visible", timeout: 10_000 });
+  await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
 
   const row = page.locator(".repo-row", { hasText: "roborev-dev/*" });
   await expect(row).toContainText("roborev-dev/*");
@@ -66,9 +61,7 @@ test("settings shows glob match counts and refresh updates tracked repos", async
   await expect(
     page.getByRole("option", { name: /roborev-dev\/middleman/ }),
   ).toBeVisible();
-  await expect(
-    page.getByRole("option", { name: /roborev-dev\/worker/ }),
-  ).toBeVisible();
+  await expect(page.getByRole("option", { name: /roborev-dev\/worker/ })).toBeVisible();
   await page.keyboard.press("Escape");
 
   await row.getByRole("button", { name: "Refresh" }).click();
@@ -95,18 +88,12 @@ test("settings shows glob match counts and refresh updates tracked repos", async
   });
 });
 
-test("settings imports a selected subset from a repository glob", async ({
-  page,
-}) => {
+test("settings imports a selected subset from a repository glob", async ({ page }) => {
   await page.goto(`${isolatedServer!.info.base_url}/settings`);
-  await page
-    .locator(".settings-page")
-    .waitFor({ state: "visible", timeout: 10_000 });
+  await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
 
   await page.getByRole("button", { name: "Add repositories…" }).click();
-  await expect(
-    page.getByRole("dialog", { name: "Add repositories" }),
-  ).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Add repositories" })).toBeVisible();
   await page.getByLabel("Repository pattern").fill("import-lab/*");
   await page.getByRole("button", { name: "Preview" }).click();
 
@@ -119,24 +106,18 @@ test("settings imports a selected subset from a repository glob", async ({
   await page.getByLabel("Filter repositories").fill("");
   await page.getByRole("button", { name: "Add selected repositories" }).click();
 
-  await expect(
-    page.getByRole("dialog", { name: "Add repositories" }),
-  ).toHaveCount(0);
-  await expect(
-    page.locator(".repo-row", { hasText: "import-lab/api" }),
-  ).toBeVisible();
-  await expect(
-    page.locator(".repo-row", { hasText: "import-lab/worker" }),
-  ).toHaveCount(0);
+  await expect(page.getByRole("dialog", { name: "Add repositories" })).toHaveCount(0);
+  await expect(page.locator(".repo-row", { hasText: "import-lab/api" })).toBeVisible();
+  await expect(page.locator(".repo-row", { hasText: "import-lab/worker" })).toHaveCount(
+    0,
+  );
 
   const selector = page.getByTitle("Select repository");
   await expect(selector).toBeVisible();
   await selector.click();
   const apiOption = page.getByRole("option", { name: /import-lab\/api/ });
   await expect(apiOption).toBeVisible();
-  await expect(
-    page.getByRole("option", { name: /import-lab\/worker/ }),
-  ).toHaveCount(0);
+  await expect(page.getByRole("option", { name: /import-lab\/worker/ })).toHaveCount(0);
   await apiOption.click();
   await expect(apiOption.locator("input[type='checkbox']")).toBeChecked();
   await page.keyboard.press("Escape");
@@ -286,9 +267,7 @@ test("repository import can hide forks and private repositories before adding", 
   });
 
   await page.goto(`${isolatedServer!.info.base_url}/settings`);
-  await page
-    .locator(".settings-page")
-    .waitFor({ state: "visible", timeout: 10_000 });
+  await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
 
   await page.getByRole("button", { name: "Add repositories…" }).click();
   const dialog = page.getByRole("dialog", { name: "Add repositories" });
@@ -306,9 +285,7 @@ test("repository import can hide forks and private repositories before adding", 
   await expect(dialog.getByText("import-lab/public-fork")).toHaveCount(0);
   await expect(dialog.getByText("Selected 1 of 1")).toBeVisible();
 
-  await dialog
-    .getByRole("button", { name: "Add selected repositories" })
-    .click();
+  await dialog.getByRole("button", { name: "Add selected repositories" }).click();
 
   await expect
     .poll(() => bulkRepos)
@@ -327,9 +304,7 @@ test("repository import previews and adds Forgejo and Gitea repositories through
   page,
 }) => {
   await page.goto(`${isolatedServer!.info.base_url}/settings`);
-  await page
-    .locator(".settings-page")
-    .waitFor({ state: "visible", timeout: 10_000 });
+  await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
   await page.getByRole("button", { name: "Add repositories…" }).click();
   const dialog = page.getByRole("dialog", { name: "Add repositories" });
 
@@ -337,20 +312,14 @@ test("repository import previews and adds Forgejo and Gitea repositories through
   await expect(dialog.getByLabel("Host")).toHaveValue("codeberg.org");
   await dialog.getByLabel("Repository pattern").fill("team/subgroup/service-*");
   await dialog.getByRole("button", { name: "Preview" }).click();
-  await expect(dialog.getByRole("alert")).toContainText(
-    "Format: owner/pattern",
-  );
+  await expect(dialog.getByRole("alert")).toContainText("Format: owner/pattern");
 
   await dialog.getByLabel("Repository pattern").fill("forge-lab/*");
   await dialog.getByRole("button", { name: "Preview" }).click();
   await expect(dialog.getByText("forge-lab/service")).toBeVisible();
   await expect(dialog.getByText("forge-lab/archived")).toHaveCount(0);
-  await dialog
-    .getByRole("button", { name: "Add selected repositories" })
-    .click();
-  await expect(
-    page.getByRole("dialog", { name: "Add repositories" }),
-  ).toHaveCount(0);
+  await dialog.getByRole("button", { name: "Add selected repositories" }).click();
+  await expect(page.getByRole("dialog", { name: "Add repositories" })).toHaveCount(0);
   await expect(
     page.locator(".repo-row", { hasText: "forge-lab/service" }),
   ).toBeVisible();
@@ -401,23 +370,15 @@ test("repository import previews and adds Forgejo and Gitea repositories through
   await giteaDialog.getByLabel("Repository pattern").fill("gitea-team/*");
   await giteaDialog.getByRole("button", { name: "Preview" }).click();
   await expect(giteaDialog.getByText("gitea-team/service")).toBeVisible();
-  await expect(
-    giteaDialog.getByText("gitea-team/private-service"),
-  ).toBeVisible();
+  await expect(giteaDialog.getByText("gitea-team/private-service")).toBeVisible();
   await expect(giteaDialog.getByText("gitea-team/archived")).toHaveCount(0);
 
   await giteaDialog.getByLabel("Hide private").check();
   await expect(giteaDialog.getByText("gitea-team/service")).toBeVisible();
-  await expect(giteaDialog.getByText("gitea-team/private-service")).toHaveCount(
-    0,
-  );
-  await giteaDialog
-    .getByRole("button", { name: "Add selected repositories" })
-    .click();
+  await expect(giteaDialog.getByText("gitea-team/private-service")).toHaveCount(0);
+  await giteaDialog.getByRole("button", { name: "Add selected repositories" }).click();
 
-  await expect(
-    page.getByRole("dialog", { name: "Add repositories" }),
-  ).toHaveCount(0);
+  await expect(page.getByRole("dialog", { name: "Add repositories" })).toHaveCount(0);
   await expect(
     page.locator(".repo-row", { hasText: "gitea-team/service" }),
   ).toBeVisible();
@@ -448,13 +409,9 @@ test("repository import previews and adds Forgejo and Gitea repositories through
     .toBe("service");
 });
 
-test("repository import traps keyboard focus inside the dialog", async ({
-  page,
-}) => {
+test("repository import traps keyboard focus inside the dialog", async ({ page }) => {
   await page.goto(`${isolatedServer!.info.base_url}/settings`);
-  await page
-    .locator(".settings-page")
-    .waitFor({ state: "visible", timeout: 10_000 });
+  await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
 
   await page.getByRole("button", { name: "Add repositories…" }).click();
   const dialog = page.getByRole("dialog", { name: "Add repositories" });
@@ -472,9 +429,7 @@ test("repository import clears stale preview results after failed preview", asyn
   page,
 }) => {
   await page.goto(`${isolatedServer!.info.base_url}/settings`);
-  await page
-    .locator(".settings-page")
-    .waitFor({ state: "visible", timeout: 10_000 });
+  await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
 
   await page.getByRole("button", { name: "Add repositories…" }).click();
   const dialog = page.getByRole("dialog", { name: "Add repositories" });
@@ -550,9 +505,7 @@ test("repository import ignores older preview responses", async ({ page }) => {
   });
 
   await page.goto(`${isolatedServer!.info.base_url}/settings`);
-  await page
-    .locator(".settings-page")
-    .waitFor({ state: "visible", timeout: 10_000 });
+  await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
   await page.getByRole("button", { name: "Add repositories…" }).click();
   const dialog = page.getByRole("dialog", { name: "Add repositories" });
 

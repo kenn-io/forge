@@ -47,9 +47,7 @@ async function expectReadableFocusList(
       itemRect: compactRect(item),
       titleFontSize: fontSize(title),
       metaFontSize: fontSize(meta),
-      itemBounds: [...document.querySelectorAll(selector)]
-        .slice(0, 6)
-        .map(compactRect),
+      itemBounds: [...document.querySelectorAll(selector)].slice(0, 6).map(compactRect),
     };
   }, itemSelector);
 
@@ -144,9 +142,7 @@ test.describe("phone routes", () => {
     await expect(page.locator(".mobile-shell")).toBeVisible();
     await expect(page.locator(".mobile-tab--active")).toHaveText("Activity");
     await expect(page.locator(".mobile-topbar .mobile-app-icon")).toBeVisible();
-    await expect(
-      page.getByRole("button", { name: "Open desktop view" }),
-    ).toBeVisible();
+    await expect(page.getByRole("button", { name: "Open desktop view" })).toBeVisible();
     await expect(page.locator(".app-header")).toHaveCount(0);
     await expect(page.locator("footer")).toHaveCount(0);
 
@@ -184,20 +180,14 @@ test.describe("phone routes", () => {
 
     const metrics = await page.evaluate(() => {
       const firstCard = document.querySelector(".mobile-activity-card");
-      const firstButton = document.querySelector(
-        ".mobile-activity-card button",
-      );
+      const firstButton = document.querySelector(".mobile-activity-card button");
       const title = document.querySelector(".mobile-activity-card__title");
       const meta = document.querySelector(".mobile-activity-card__meta");
       const metaItems = meta?.querySelectorAll("span") ?? [];
       const metaRect = meta?.getBoundingClientRect();
       const metaCountRect = metaItems[1]?.getBoundingClientRect();
-      const eventLabel = document.querySelector(
-        ".mobile-activity-event__body strong",
-      );
-      const eventAuthor = document.querySelector(
-        ".mobile-activity-event__body span",
-      );
+      const eventLabel = document.querySelector(".mobile-activity-event__body strong");
+      const eventAuthor = document.querySelector(".mobile-activity-event__body span");
       const eventTime = document.querySelector(".mobile-activity-event time");
       const mobileTitle = document.querySelector(".mobile-title");
       const mobileTab = document.querySelector(".mobile-tabs a");
@@ -217,8 +207,7 @@ test.describe("phone routes", () => {
       const cardRect = firstCard?.getBoundingClientRect();
       const buttonRect = firstButton?.getBoundingClientRect();
       const searchRect = search?.getBoundingClientRect();
-      const styleFor = (node: Element | null) =>
-        node ? getComputedStyle(node) : null;
+      const styleFor = (node: Element | null) => (node ? getComputedStyle(node) : null);
       const themeSample = document.createElement("div");
       themeSample.style.cssText = [
         "position:absolute",
@@ -290,8 +279,8 @@ test.describe("phone routes", () => {
         desktopIconPresent: Boolean(desktopIcon),
         appIconPresent: Boolean(appIcon),
         inboxBackground:
-          styleFor(document.querySelector(".mobile-activity-inbox"))
-            ?.backgroundColor ?? "",
+          styleFor(document.querySelector(".mobile-activity-inbox"))?.backgroundColor ??
+          "",
         cardBackground: styleFor(firstCard)?.backgroundColor ?? "",
         cardBorderColor: styleFor(firstCard)?.borderColor ?? "",
         cardRadius: styleFor(firstCard)?.borderRadius ?? "",
@@ -325,9 +314,7 @@ test.describe("phone routes", () => {
     expect(metrics.titleFontSize).toBeGreaterThanOrEqual(19);
     expect(metrics.metaFontSize).toBeGreaterThanOrEqual(15);
     expect(metrics.metaItemCount).toBe(2);
-    expect(
-      Math.abs(metrics.metaRight - metrics.metaCountRight),
-    ).toBeLessThanOrEqual(1);
+    expect(Math.abs(metrics.metaRight - metrics.metaCountRight)).toBeLessThanOrEqual(1);
     expect(metrics.eventLabelFontSize).toBeGreaterThanOrEqual(15);
     expect(metrics.eventAuthorFontSize).toBeGreaterThanOrEqual(14);
     expect(metrics.eventTimeFontSize).toBeGreaterThanOrEqual(14);
@@ -370,9 +357,7 @@ test.describe("phone routes", () => {
 
     await page.getByRole("combobox", { name: /Time range/ }).click();
     await page.getByRole("option", { name: "24h" }).click();
-    await expect(
-      page.getByRole("combobox", { name: "Time range: 24h" }),
-    ).toBeVisible();
+    await expect(page.getByRole("combobox", { name: "Time range: 24h" })).toBeVisible();
     await expect(page).toHaveURL(/range=24h/);
 
     const activityForRepo = page.waitForResponse((response) => {
@@ -394,9 +379,7 @@ test.describe("phone routes", () => {
     page,
   }) => {
     await page.addInitScript(() => {
-      if (
-        sessionStorage.getItem("middleman:test:mobile-hide-org:init") === "1"
-      ) {
+      if (sessionStorage.getItem("middleman:test:mobile-hide-org:init") === "1") {
         return;
       }
       localStorage.removeItem("middleman:hideOrgName");
@@ -433,22 +416,14 @@ test.describe("phone routes", () => {
     await expect(repoLabel).toHaveText("widgets");
   });
 
-  test("mobile activity card routes to a focused thread detail", async ({
-    page,
-  }) => {
+  test("mobile activity card routes to a focused thread detail", async ({ page }) => {
     await page.goto("/m?range=30d&view=threaded");
-    await expect(page.getByRole("button", { name: "Open thread" })).toHaveCount(
-      0,
-    );
-    await expect(
-      page.locator(".mobile-activity-card__button").first(),
-    ).toBeVisible();
+    await expect(page.getByRole("button", { name: "Open thread" })).toHaveCount(0);
+    await expect(page.locator(".mobile-activity-card__button").first()).toBeVisible();
 
     await page.locator(".mobile-activity-card__button").first().click();
 
-    await expect(page).toHaveURL(
-      /\/focus\/(?:host\/[^/]+\/)?(?:pulls|issues)\//,
-    );
+    await expect(page).toHaveURL(/\/focus\/(?:host\/[^/]+\/)?(?:pulls|issues)\//);
     await expect(page.locator(".focus-layout")).toBeVisible();
     await expect(
       page.locator(
@@ -465,18 +440,12 @@ test.describe("phone routes", () => {
     await page.goto("/");
     await expectPathname(page, "/");
     await expect(page.locator(".mobile-shell")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Open thread" })).toHaveCount(
-      0,
-    );
-    await expect(
-      page.locator(".mobile-activity-card__button").first(),
-    ).toBeVisible();
+    await expect(page.getByRole("button", { name: "Open thread" })).toHaveCount(0);
+    await expect(page.locator(".mobile-activity-card__button").first()).toBeVisible();
 
     await page.locator(".mobile-activity-card__button").first().click();
 
-    await expect(page).toHaveURL(
-      /\/focus\/(?:host\/[^/]+\/)?(?:pulls|issues)\//,
-    );
+    await expect(page).toHaveURL(/\/focus\/(?:host\/[^/]+\/)?(?:pulls|issues)\//);
     await expect(page.locator(".focus-layout")).toBeVisible();
     await expect(
       page.locator(
@@ -486,9 +455,7 @@ test.describe("phone routes", () => {
     await expect(page.locator(".mobile-shell")).toHaveCount(0);
   });
 
-  test("focused PR files tab stays on the phone detail route", async ({
-    page,
-  }) => {
+  test("focused PR files tab stays on the phone detail route", async ({ page }) => {
     await page.goto("/focus/pulls/github/acme/widgets/1");
     await expect(
       page.locator(".focus-layout .pull-detail .detail-title"),
@@ -498,9 +465,7 @@ test.describe("phone routes", () => {
       .locator(".focus-layout .detail-tab", { hasText: "Files changed" })
       .click();
 
-    await expect(page).toHaveURL(
-      /\/focus\/pulls\/github\/acme\/widgets\/1\/files$/,
-    );
+    await expect(page).toHaveURL(/\/focus\/pulls\/github\/acme\/widgets\/1\/files$/);
     await expect(page.locator(".focus-layout .files-layout")).toBeVisible();
     await expect(page.locator(".focus-layout .diff-view")).toBeVisible();
     await expect(page.locator(".mobile-shell")).toHaveCount(0);
@@ -548,9 +513,7 @@ test.describe("phone routes", () => {
     await expect(page.locator(".mobile-shell")).toHaveCount(0);
   });
 
-  test("phone users can opt out of automatic mobile redirect", async ({
-    page,
-  }) => {
+  test("phone users can opt out of automatic mobile redirect", async ({ page }) => {
     await page.goto("/?desktop=1");
 
     await expect(page).toHaveURL(/\/?desktop=1$/);
@@ -558,9 +521,7 @@ test.describe("phone routes", () => {
     await expect(page.locator(".mobile-shell")).toHaveCount(0);
   });
 
-  test("mobile PR and issue tabs use dedicated phone routes", async ({
-    page,
-  }) => {
+  test("mobile PR and issue tabs use dedicated phone routes", async ({ page }) => {
     await page.goto("/m/pulls");
     await expect(page.locator(".mobile-shell")).toBeVisible();
     await expect(page.locator(".mobile-tab--active")).toHaveText("PRs");
@@ -609,9 +570,7 @@ test.describe("high-density phone routes", () => {
       ]
         .map((control) => control.getBoundingClientRect())
         .map((rect) => ({ left: rect.left, right: rect.right }));
-      const search = document
-        .querySelector(".search-input")
-        ?.getBoundingClientRect();
+      const search = document.querySelector(".search-input")?.getBoundingClientRect();
       const firstOption = document
         .querySelector(".mobile-filter-dropdown .select-dropdown-option")
         ?.getBoundingClientRect();

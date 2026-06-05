@@ -47,15 +47,11 @@ describe("bucketForCheck", () => {
   });
 
   it("returns unknown for non-empty unrecognised conclusions", () => {
-    expect(bucketForCheck(check({ conclusion: "weird_new_state" }))).toBe(
-      "unknown",
-    );
+    expect(bucketForCheck(check({ conclusion: "weird_new_state" }))).toBe("unknown");
   });
 
   it("returns pending when status is non-active and conclusion is empty", () => {
-    expect(bucketForCheck(check({ status: "", conclusion: "" }))).toBe(
-      "pending",
-    );
+    expect(bucketForCheck(check({ status: "", conclusion: "" }))).toBe("pending");
     expect(bucketForCheck(check({ status: "completed", conclusion: "" }))).toBe(
       "pending",
     );
@@ -64,21 +60,19 @@ describe("bucketForCheck", () => {
   it("trusts the conclusion when status is an unrecognised non-completed value", () => {
     // status='weird' is not 'completed' and not active. The classifier
     // falls through to conclusion-based bucketing, NOT Pending.
-    expect(
-      bucketForCheck(check({ status: "weird", conclusion: "success" })),
-    ).toBe("passed");
-    expect(
-      bucketForCheck(check({ status: "weird", conclusion: "failure" })),
-    ).toBe("failed");
-    expect(
-      bucketForCheck(check({ status: "weird", conclusion: "skipped" })),
-    ).toBe("skipped");
+    expect(bucketForCheck(check({ status: "weird", conclusion: "success" }))).toBe(
+      "passed",
+    );
+    expect(bucketForCheck(check({ status: "weird", conclusion: "failure" }))).toBe(
+      "failed",
+    );
+    expect(bucketForCheck(check({ status: "weird", conclusion: "skipped" }))).toBe(
+      "skipped",
+    );
   });
 
   it("returns pending for unrecognised status with empty conclusion (step 6 fallback)", () => {
-    expect(bucketForCheck(check({ status: "weird", conclusion: "" }))).toBe(
-      "pending",
-    );
+    expect(bucketForCheck(check({ status: "weird", conclusion: "" }))).toBe("pending");
   });
 });
 
@@ -213,8 +207,8 @@ describe("parseCIChecks", () => {
   });
 
   it("safeDiagnosticText forwards locally-created CIChecksJSON shape errors intact", () => {
-    expect(
-      safeDiagnosticText(new Error("CIChecksJSON: payload is not an array")),
-    ).toBe("CIChecksJSON: payload is not an array");
+    expect(safeDiagnosticText(new Error("CIChecksJSON: payload is not an array"))).toBe(
+      "CIChecksJSON: payload is not an array",
+    );
   });
 });

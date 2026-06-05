@@ -3,16 +3,12 @@ import { expect, test } from "@playwright/test";
 test.setTimeout(60_000);
 
 test.describe("container-aware layout", () => {
-  test("narrow viewport shows dropdown and collapses sidebar", async ({
-    page,
-  }) => {
+  test("narrow viewport shows dropdown and collapses sidebar", async ({ page }) => {
     await page.setViewportSize({ width: 400, height: 600 });
     await page.goto("/pulls?desktop=1");
     // At narrow width the sidebar is auto-collapsed, so .pull-item
     // won't be visible. Wait for the app header instead.
-    await page
-      .locator(".app-header")
-      .waitFor({ state: "visible", timeout: 10_000 });
+    await page.locator(".app-header").waitFor({ state: "visible", timeout: 10_000 });
 
     // Narrow: dropdown navigation visible, tab group hidden.
     await expect(page.locator(".nav-select")).toBeVisible();
@@ -34,9 +30,7 @@ test.describe("container-aware layout", () => {
     await expect(page.getByRole("button", { name: "Sync" })).toBeVisible();
 
     const metrics = await page.evaluate(() => {
-      const headerRect = document
-        .querySelector(".app-header")
-        ?.getBoundingClientRect();
+      const headerRect = document.querySelector(".app-header")?.getBoundingClientRect();
       return {
         headerHeight: headerRect?.height ?? 0,
         viewportWidth: window.innerWidth,
@@ -46,14 +40,12 @@ test.describe("container-aware layout", () => {
     });
 
     expect(metrics.headerHeight).toBeGreaterThanOrEqual(76);
-    expect(
-      Math.max(metrics.documentWidth, metrics.bodyWidth),
-    ).toBeLessThanOrEqual(metrics.viewportWidth);
+    expect(Math.max(metrics.documentWidth, metrics.bodyWidth)).toBeLessThanOrEqual(
+      metrics.viewportWidth,
+    );
   });
 
-  test("medium viewport collapses page tabs and sync label", async ({
-    page,
-  }) => {
+  test("medium viewport collapses page tabs and sync label", async ({ page }) => {
     await page.setViewportSize({ width: 1024, height: 768 });
     await page.goto("/pulls/github/acme/widgets/1?desktop=1");
     const header = page.locator(".app-header");
@@ -93,12 +85,8 @@ test.describe("container-aware layout", () => {
     expect(navMenuStyle).toEqual(repoMenuStyle);
 
     const metrics = await page.evaluate(() => {
-      const headerRect = document
-        .querySelector(".app-header")
-        ?.getBoundingClientRect();
-      const syncRect = document
-        .querySelector(".sync-btn")
-        ?.getBoundingClientRect();
+      const headerRect = document.querySelector(".app-header")?.getBoundingClientRect();
+      const syncRect = document.querySelector(".sync-btn")?.getBoundingClientRect();
       const themeRect = document
         .querySelector("button[title='Toggle theme']")
         ?.getBoundingClientRect();
@@ -111,9 +99,7 @@ test.describe("container-aware layout", () => {
       return {
         headerRight: headerRect?.right ?? 0,
         headerHeight: headerRect?.height ?? 0,
-        navInLeftHeader: Boolean(
-          document.querySelector(".header-left .nav-select"),
-        ),
+        navInLeftHeader: Boolean(document.querySelector(".header-left .nav-select")),
         navLeft: navRect?.left ?? 0,
         repoRight: repoRect?.right ?? 0,
         syncHeight: syncRect?.height ?? 0,
@@ -129,21 +115,17 @@ test.describe("container-aware layout", () => {
     expect(metrics.headerHeight).toBeLessThanOrEqual(52);
     expect(metrics.navInLeftHeader).toBe(true);
     expect(metrics.navLeft - metrics.repoRight).toBeLessThanOrEqual(10);
-    expect(
-      Math.abs(metrics.syncHeight - metrics.themeHeight),
-    ).toBeLessThanOrEqual(1);
+    expect(Math.abs(metrics.syncHeight - metrics.themeHeight)).toBeLessThanOrEqual(1);
     expect(metrics.syncWidth).toBeLessThanOrEqual(42);
-    expect(
-      Math.max(metrics.documentWidth, metrics.bodyWidth),
-    ).toBeLessThanOrEqual(metrics.viewportWidth);
+    expect(Math.max(metrics.documentWidth, metrics.bodyWidth)).toBeLessThanOrEqual(
+      metrics.viewportWidth,
+    );
   });
 
   test("expanded mobile sidebar fits within the viewport", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 700 });
     await page.goto("/pulls?desktop=1");
-    await page
-      .locator(".app-header")
-      .waitFor({ state: "visible", timeout: 10_000 });
+    await page.locator(".app-header").waitFor({ state: "visible", timeout: 10_000 });
 
     await page.getByLabel("Expand sidebar").click();
     await expect(page.locator(".sidebar").first()).not.toHaveClass(
@@ -151,9 +133,7 @@ test.describe("container-aware layout", () => {
     );
 
     const metrics = await page.evaluate(() => {
-      const sidebarRect = document
-        .querySelector(".sidebar")
-        ?.getBoundingClientRect();
+      const sidebarRect = document.querySelector(".sidebar")?.getBoundingClientRect();
       return {
         viewportWidth: window.innerWidth,
         sidebarRight: sidebarRect?.right ?? 0,
@@ -165,18 +145,16 @@ test.describe("container-aware layout", () => {
 
     expect(metrics.sidebarWidth).toBeLessThanOrEqual(metrics.viewportWidth);
     expect(metrics.sidebarRight).toBeLessThanOrEqual(metrics.viewportWidth);
-    expect(
-      Math.max(metrics.documentWidth, metrics.bodyWidth),
-    ).toBeLessThanOrEqual(metrics.viewportWidth);
+    expect(Math.max(metrics.documentWidth, metrics.bodyWidth)).toBeLessThanOrEqual(
+      metrics.viewportWidth,
+    );
   });
 
   test("wide viewport shows tab group and hides dropdown", async ({ page }) => {
     // Start narrow, then go wide to verify transition.
     await page.setViewportSize({ width: 400, height: 600 });
     await page.goto("/pulls?desktop=1");
-    await page
-      .locator(".app-header")
-      .waitFor({ state: "visible", timeout: 10_000 });
+    await page.locator(".app-header").waitFor({ state: "visible", timeout: 10_000 });
 
     await expect(page.locator(".nav-select")).toBeVisible();
 
@@ -188,9 +166,7 @@ test.describe("container-aware layout", () => {
     await expect(page.locator(".nav-select")).not.toBeAttached();
 
     const metrics = await page.evaluate(() => {
-      const syncRect = document
-        .querySelector(".sync-btn")
-        ?.getBoundingClientRect();
+      const syncRect = document.querySelector(".sync-btn")?.getBoundingClientRect();
       const themeRect = document
         .querySelector("button[title='Toggle theme']")
         ?.getBoundingClientRect();
@@ -200,8 +176,6 @@ test.describe("container-aware layout", () => {
       };
     });
 
-    expect(
-      Math.abs(metrics.syncHeight - metrics.themeHeight),
-    ).toBeLessThanOrEqual(1);
+    expect(Math.abs(metrics.syncHeight - metrics.themeHeight)).toBeLessThanOrEqual(1);
   });
 });

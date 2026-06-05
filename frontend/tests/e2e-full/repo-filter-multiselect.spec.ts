@@ -34,9 +34,7 @@ test("repository selector filters dashboard lists by multiple selected repos", a
     "acme/tools",
   ]);
 
-  await expect(
-    page.getByText("Widget rendering broken on Safari"),
-  ).toBeVisible();
+  await expect(page.getByText("Widget rendering broken on Safari")).toBeVisible();
   await expect(page.getByText("Add dark mode support")).toBeVisible();
   await expect(page.getByText("Support config file loading")).toBeVisible();
   await expect(page.getByText("GitLab read-only issue")).toHaveCount(0);
@@ -132,9 +130,7 @@ test("repository selector cascades an owner group to all its repos", async ({
 
   // The group selection keeps acme's issues visible and excludes repos
   // outside the group, such as the GitLab read-only fixture.
-  await expect(
-    page.getByText("Widget rendering broken on Safari"),
-  ).toBeVisible();
+  await expect(page.getByText("Widget rendering broken on Safari")).toBeVisible();
   await expect(page.getByText("Support config file loading")).toBeVisible();
   await expect(page.getByText("GitLab read-only issue")).toHaveCount(0);
 });

@@ -26,9 +26,7 @@ describe("route item builders", () => {
     const ref = { ...githubWidgets, number: 42 };
 
     expect(buildPullRequestRoute(ref)).toBe("/pulls/github/acme/widgets/42");
-    expect(buildPullRequestFilesRoute(ref)).toBe(
-      "/pulls/github/acme/widgets/42/files",
-    );
+    expect(buildPullRequestFilesRoute(ref)).toBe("/pulls/github/acme/widgets/42/files");
   });
 
   it("builds issue routes with encoded platform hosts", () => {

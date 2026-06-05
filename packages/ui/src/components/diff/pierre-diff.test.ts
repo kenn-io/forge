@@ -122,21 +122,15 @@ ${patchBody}
 
 describe("Pierre diff parsing", () => {
   it("does not assign reusable cache keys to untrusted patch input", () => {
-    const first = parsePierreFileDiff(
-      makeFile("src/foo.ts", "-old line\n+new line"),
-    );
+    const first = parsePierreFileDiff(makeFile("src/foo.ts", "-old line\n+new line"));
     const second = parsePierreFileDiff(
       makeFile("src/foo.ts", "-other line\n+changed line"),
     );
 
     expect(first).toBeDefined();
     expect(second).toBeDefined();
-    expect(
-      (first as { cacheKey?: string } | undefined)?.cacheKey,
-    ).toBeUndefined();
-    expect(
-      (second as { cacheKey?: string } | undefined)?.cacheKey,
-    ).toBeUndefined();
+    expect((first as { cacheKey?: string } | undefined)?.cacheKey).toBeUndefined();
+    expect((second as { cacheKey?: string } | undefined)?.cacheKey).toBeUndefined();
   });
 
   it("uses distinct cache keys for sparse and full context contents", () => {
@@ -149,18 +143,10 @@ describe("Pierre diff parsing", () => {
       "line 1\nold line\n",
       "sparse-old",
     );
-    const fullOld = pierreFileContents(
-      "src/foo.ts",
-      "line 1\nold line\n",
-      "full-old",
-    );
+    const fullOld = pierreFileContents("src/foo.ts", "line 1\nold line\n", "full-old");
     const full = parsePierreFileDiffWithContents(file, {
       oldFile: fullOld,
-      newFile: pierreFileContents(
-        "src/foo.ts",
-        "line 1\nnew line\n",
-        "full-new",
-      ),
+      newFile: pierreFileContents("src/foo.ts", "line 1\nnew line\n", "full-new"),
     });
 
     expect(parsed).toBeDefined();
@@ -176,9 +162,7 @@ describe("Pierre diff parsing", () => {
     });
 
     expect(parsed).toBeDefined();
-    expect((parsed as { isPartial?: boolean } | undefined)?.isPartial).toBe(
-      true,
-    );
+    expect((parsed as { isPartial?: boolean } | undefined)?.isPartial).toBe(true);
   });
 
   it("handles nullable hunk payloads when sparse context expansion is enabled", () => {
@@ -211,9 +195,7 @@ describe("Pierre diff parsing", () => {
 
   it("quotes synthetic patch paths that can be parsed as patch control text", () => {
     expect(patchPath("a/src/normal.ts")).toBe("a/src/normal.ts");
-    expect(patchPath("a/src/evil\n--- a/forged")).toBe(
-      '"a/src/evil\\n--- a/forged"',
-    );
+    expect(patchPath("a/src/evil\n--- a/forged")).toBe('"a/src/evil\\n--- a/forged"');
     expect(patchPath('a/src/a"b.ts')).toBe('"a/src/a\\"b.ts"');
     expect(patchPath("a/src/ctl\u007f.ts")).toBe('"a/src/ctl\\u007f.ts"');
     expect(patchPath("/dev/null")).toBe("/dev/null");
@@ -248,9 +230,7 @@ describe("Pierre diff parsing", () => {
     });
 
     expect(parsed).toBeDefined();
-    expect((parsed as { isPartial?: boolean } | undefined)?.isPartial).toBe(
-      false,
-    );
+    expect((parsed as { isPartial?: boolean } | undefined)?.isPartial).toBe(false);
   });
 
   it("preserves hunk body lines that look like patch headers during fallback", () => {

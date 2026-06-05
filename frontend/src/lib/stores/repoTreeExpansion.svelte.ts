@@ -39,6 +39,4 @@ export function createRepoTreeExpansionStore() {
   return { isCollapsed, toggle };
 }
 
-export type RepoTreeExpansionStore = ReturnType<
-  typeof createRepoTreeExpansionStore
->;
+export type RepoTreeExpansionStore = ReturnType<typeof createRepoTreeExpansionStore>;

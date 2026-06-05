@@ -137,9 +137,7 @@ const issueY = {
   Body: "Body Y",
 };
 
-function detailEnvelopePR(
-  pr: typeof prA & { workspace?: { id: string } },
-): unknown {
+function detailEnvelopePR(pr: typeof prA & { workspace?: { id: string } }): unknown {
   return {
     merge_request: pr,
     repo: repoEnvelope(pr),
@@ -353,15 +351,11 @@ async function mockPullDetail(page: Page, pr: typeof prA): Promise<void> {
 }
 
 async function gotoPullDetail(page: Page, pr: typeof prA): Promise<void> {
-  await page.goto(
-    `/pulls/github/${pr.repo_owner}/${pr.repo_name}/${pr.Number}`,
-  );
+  await page.goto(`/pulls/github/${pr.repo_owner}/${pr.repo_name}/${pr.Number}`);
 }
 
 test.describe("PR detail merge modal route reset", () => {
-  test("merge button is disabled when the PR has merge conflicts", async ({
-    page,
-  }) => {
+  test("merge button is disabled when the PR has merge conflicts", async ({ page }) => {
     await mockApi(page);
     await mockSettings(page);
 
@@ -374,9 +368,7 @@ test.describe("PR detail merge modal route reset", () => {
 
     await gotoPullDetail(page, conflictedPR);
 
-    await expect(page.locator(".detail-title")).toContainText(
-      conflictedPR.Title,
-    );
+    await expect(page.locator(".detail-title")).toContainText(conflictedPR.Title);
     await expect(page.getByText("This branch has conflicts")).toBeVisible();
 
     const mergeButton = page.locator(".btn--merge").first();
@@ -484,9 +476,7 @@ test.describe("PR detail merge modal route reset", () => {
       });
     }
 
-    await page.goto(
-      `/pulls/github/${prA.repo_owner}/${prA.repo_name}/${prA.Number}`,
-    );
+    await page.goto(`/pulls/github/${prA.repo_owner}/${prA.repo_name}/${prA.Number}`);
     await expect(page.locator(".detail-title")).toContainText(prA.Title);
 
     // Open the merge modal for PR A.
@@ -499,11 +489,7 @@ test.describe("PR detail merge modal route reset", () => {
     // modal as soon as the props change.
     await page.evaluate(
       ([owner, name, number]) => {
-        window.history.pushState(
-          null,
-          "",
-          `/pulls/github/${owner}/${name}/${number}`,
-        );
+        window.history.pushState(null, "", `/pulls/github/${owner}/${name}/${number}`);
         window.dispatchEvent(new PopStateEvent("popstate"));
       },
       [prB.repo_owner, prB.repo_name, prB.Number] as const,
@@ -556,9 +542,7 @@ test.describe("PR detail merge modal route reset", () => {
       await route.fallback();
     });
 
-    await page.goto(
-      `/pulls/github/${prA.repo_owner}/${prA.repo_name}/${prA.Number}`,
-    );
+    await page.goto(`/pulls/github/${prA.repo_owner}/${prA.repo_name}/${prA.Number}`);
 
     await expect(page.locator(".detail-title")).toContainText(prA.Title);
     await expect(page.locator(".btn--merge")).toHaveCount(0);
@@ -617,31 +601,19 @@ test.describe("PR detail merge modal route reset", () => {
       await route.fallback();
     });
 
-    await page.goto(
-      `/pulls/github/${prA.repo_owner}/${prA.repo_name}/${prA.Number}`,
-    );
+    await page.goto(`/pulls/github/${prA.repo_owner}/${prA.repo_name}/${prA.Number}`);
     await expect(page.locator(".detail-title")).toContainText(prA.Title);
     await expect(page.locator(".btn--merge")).toBeVisible();
 
     await page.evaluate(
       ([owner, name, number]) => {
-        window.history.pushState(
-          null,
-          "",
-          `/pulls/github/${owner}/${name}/${number}`,
-        );
+        window.history.pushState(null, "", `/pulls/github/${owner}/${name}/${number}`);
         window.dispatchEvent(new PopStateEvent("popstate"));
       },
-      [
-        prSquashOnly.repo_owner,
-        prSquashOnly.repo_name,
-        prSquashOnly.Number,
-      ] as const,
+      [prSquashOnly.repo_owner, prSquashOnly.repo_name, prSquashOnly.Number] as const,
     );
 
-    await expect(page.locator(".detail-title")).toContainText(
-      prSquashOnly.Title,
-    );
+    await expect(page.locator(".detail-title")).toContainText(prSquashOnly.Title);
     await expect(page.locator(".btn--merge")).toHaveCount(0);
 
     releaseSquashSettings();
@@ -665,9 +637,7 @@ test.describe("PR detail merge modal route reset", () => {
 });
 
 test.describe("detail load-error banner", () => {
-  test("PR: failing route shows banner over the previous PR", async ({
-    page,
-  }) => {
+  test("PR: failing route shows banner over the previous PR", async ({ page }) => {
     await mockApi(page);
     await mockSettings(page);
 
@@ -694,18 +664,12 @@ test.describe("detail load-error banner", () => {
       await route.fallback();
     });
 
-    await page.goto(
-      `/pulls/github/${prA.repo_owner}/${prA.repo_name}/${prA.Number}`,
-    );
+    await page.goto(`/pulls/github/${prA.repo_owner}/${prA.repo_name}/${prA.Number}`);
     await expect(page.locator(".detail-title")).toContainText(prA.Title);
 
     await page.evaluate(
       ([owner, name, number]) => {
-        window.history.pushState(
-          null,
-          "",
-          `/pulls/github/${owner}/${name}/${number}`,
-        );
+        window.history.pushState(null, "", `/pulls/github/${owner}/${name}/${number}`);
         window.dispatchEvent(new PopStateEvent("popstate"));
       },
       [prB.repo_owner, prB.repo_name, prB.Number] as const,
@@ -755,11 +719,7 @@ test.describe("detail load-error banner", () => {
 
     await page.evaluate(
       ([owner, name, number]) => {
-        window.history.pushState(
-          null,
-          "",
-          `/issues/github/${owner}/${name}/${number}`,
-        );
+        window.history.pushState(null, "", `/issues/github/${owner}/${name}/${number}`);
         window.dispatchEvent(new PopStateEvent("popstate"));
       },
       [issueY.repo_owner, issueY.repo_name, issueY.Number] as const,
@@ -775,9 +735,7 @@ test.describe("detail load-error banner", () => {
 });
 
 test.describe("PR detail stale-action gating", () => {
-  test("conflict warning hides while a clean PR is loading", async ({
-    page,
-  }) => {
+  test("conflict warning hides while a clean PR is loading", async ({ page }) => {
     const conflictedPR = {
       ...prA,
       MergeableState: "dirty",
@@ -791,26 +749,18 @@ test.describe("PR detail stale-action gating", () => {
     await page.goto(
       `/pulls/github/${conflictedPR.repo_owner}/${conflictedPR.repo_name}/${conflictedPR.Number}`,
     );
-    await expect(page.locator(".detail-title")).toContainText(
-      conflictedPR.Title,
-    );
+    await expect(page.locator(".detail-title")).toContainText(conflictedPR.Title);
     await expect(page.getByText("This branch has conflicts")).toBeVisible();
 
     await page.evaluate(
       ([owner, name, number]) => {
-        window.history.pushState(
-          null,
-          "",
-          `/pulls/github/${owner}/${name}/${number}`,
-        );
+        window.history.pushState(null, "", `/pulls/github/${owner}/${name}/${number}`);
         window.dispatchEvent(new PopStateEvent("popstate"));
       },
       [cleanPR.repo_owner, cleanPR.repo_name, cleanPR.Number] as const,
     );
 
-    await expect(page.locator(".detail-title")).toContainText(
-      conflictedPR.Title,
-    );
+    await expect(page.locator(".detail-title")).toContainText(conflictedPR.Title);
     await expect(page.getByText("This branch has conflicts")).toHaveCount(0);
 
     release();
@@ -824,19 +774,13 @@ test.describe("PR detail stale-action gating", () => {
     const userMutations = recordUserMutations(page);
     const { release } = await setupHeldPR(page, prA, prB);
 
-    await page.goto(
-      `/pulls/github/${prA.repo_owner}/${prA.repo_name}/${prA.Number}`,
-    );
+    await page.goto(`/pulls/github/${prA.repo_owner}/${prA.repo_name}/${prA.Number}`);
     await expect(page.locator(".detail-title")).toContainText(prA.Title);
 
     // Trigger an in-place navigation to the slow PR via popstate.
     await page.evaluate(
       ([owner, name, number]) => {
-        window.history.pushState(
-          null,
-          "",
-          `/pulls/github/${owner}/${name}/${number}`,
-        );
+        window.history.pushState(null, "", `/pulls/github/${owner}/${name}/${number}`);
         window.dispatchEvent(new PopStateEvent("popstate"));
       },
       [prB.repo_owner, prB.repo_name, prB.Number] as const,
@@ -885,25 +829,17 @@ test.describe("PR detail stale-action gating", () => {
     await page.goto(
       `/pulls/github/${prWithWorkspace.repo_owner}/${prWithWorkspace.repo_name}/${prWithWorkspace.Number}`,
     );
-    await expect(page.locator(".detail-title")).toContainText(
-      prWithWorkspace.Title,
-    );
+    await expect(page.locator(".detail-title")).toContainText(prWithWorkspace.Title);
 
     await page.evaluate(
       ([owner, name, number]) => {
-        window.history.pushState(
-          null,
-          "",
-          `/pulls/github/${owner}/${name}/${number}`,
-        );
+        window.history.pushState(null, "", `/pulls/github/${owner}/${name}/${number}`);
         window.dispatchEvent(new PopStateEvent("popstate"));
       },
       [prB.repo_owner, prB.repo_name, prB.Number] as const,
     );
 
-    await expect(page.locator(".detail-title")).toContainText(
-      prWithWorkspace.Title,
-    );
+    await expect(page.locator(".detail-title")).toContainText(prWithWorkspace.Title);
 
     const openWs = page.locator("button.btn--workspace");
     await expect(openWs).toBeDisabled();
@@ -931,11 +867,7 @@ test.describe("issue detail stale-action gating", () => {
 
     await page.evaluate(
       ([owner, name, number]) => {
-        window.history.pushState(
-          null,
-          "",
-          `/issues/github/${owner}/${name}/${number}`,
-        );
+        window.history.pushState(null, "", `/issues/github/${owner}/${name}/${number}`);
         window.dispatchEvent(new PopStateEvent("popstate"));
       },
       [issueY.repo_owner, issueY.repo_name, issueY.Number] as const,
@@ -989,11 +921,7 @@ test.describe("issue detail stale-action gating", () => {
 
     await page.evaluate(
       ([owner, name, number]) => {
-        window.history.pushState(
-          null,
-          "",
-          `/issues/github/${owner}/${name}/${number}`,
-        );
+        window.history.pushState(null, "", `/issues/github/${owner}/${name}/${number}`);
         window.dispatchEvent(new PopStateEvent("popstate"));
       },
       [issueY.repo_owner, issueY.repo_name, issueY.Number] as const,

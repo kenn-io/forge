@@ -167,10 +167,7 @@ function filesFromDiff(fixture: DiffResult): FilesResult {
 // The activity feed test clicks "the first PR row", which could be any
 // PR from the seeded fixtures; a wildcard mock keeps the test
 // deterministic regardless of which PR is clicked.
-async function mockDiffForAllPRs(
-  page: Page,
-  fixture: DiffResult,
-): Promise<void> {
+async function mockDiffForAllPRs(page: Page, fixture: DiffResult): Promise<void> {
   await page.route("**/api/v1/pulls/github/*/*/*/files", async (route) => {
     await route.fulfill({
       status: 200,
@@ -262,24 +259,21 @@ async function mockIssueDetailForPlatformHost(
   expectedPlatformHost: string,
 ): Promise<string[]> {
   const seenHosts: string[] = [];
-  await page.route(
-    "**/api/v1/**/issues/github/acme/widgets/10**",
-    async (route) => {
-      const url = new URL(route.request().url());
-      const detailRoute = providerItemRoute(url);
-      if (detailRoute?.number !== "10") {
-        await route.fallback();
-        return;
-      }
-      const host = detailRoute.platformHost;
-      seenHosts.push(host);
-      await route.fulfill({
-        status: host === expectedPlatformHost ? 200 : 400,
-        contentType: "application/json",
-        body: JSON.stringify(issueDetailFixture(expectedPlatformHost)),
-      });
-    },
-  );
+  await page.route("**/api/v1/**/issues/github/acme/widgets/10**", async (route) => {
+    const url = new URL(route.request().url());
+    const detailRoute = providerItemRoute(url);
+    if (detailRoute?.number !== "10") {
+      await route.fallback();
+      return;
+    }
+    const host = detailRoute.platformHost;
+    seenHosts.push(host);
+    await route.fulfill({
+      status: host === expectedPlatformHost ? 200 : 400,
+      contentType: "application/json",
+      body: JSON.stringify(issueDetailFixture(expectedPlatformHost)),
+    });
+  });
   return seenHosts;
 }
 
@@ -404,9 +398,7 @@ function providerItemRoute(url: URL): {
   suffix: string;
 } | null {
   const parts = url.pathname.split("/").filter(Boolean).map(decodeURIComponent);
-  let index = parts.findIndex(
-    (part, i) => part === "api" && parts[i + 1] === "v1",
-  );
+  let index = parts.findIndex((part, i) => part === "api" && parts[i + 1] === "v1");
   if (index < 0) return null;
   index += 2;
 
@@ -473,9 +465,7 @@ async function openActivityPRSplit(page: Page): Promise<Locator> {
     .first();
   await prRow.click();
   const detail = page.locator(".activity-detail");
-  await expect(
-    page.locator(".activity-shell.activity-shell--split"),
-  ).toBeVisible();
+  await expect(page.locator(".activity-shell.activity-shell--split")).toBeVisible();
   await expect(detail).toBeVisible();
   return detail;
 }
@@ -488,9 +478,7 @@ async function openActivityIssueSplit(page: Page): Promise<Locator> {
     .first();
   await issueRow.click();
   const detail = page.locator(".activity-detail");
-  await expect(
-    page.locator(".activity-shell.activity-shell--split"),
-  ).toBeVisible();
+  await expect(page.locator(".activity-shell.activity-shell--split")).toBeVisible();
   await expect(detail).toBeVisible();
   return detail;
 }
@@ -512,8 +500,7 @@ async function expectDiffFileVisibleInScrollArea(
         const containerRect = container.getBoundingClientRect();
         const fileRect = file.getBoundingClientRect();
         return (
-          fileRect.bottom > containerRect.top &&
-          fileRect.top < containerRect.bottom
+          fileRect.bottom > containerRect.top && fileRect.top < containerRect.bottom
         );
       }, filePath);
     })
@@ -523,9 +510,7 @@ async function expectDiffFileVisibleInScrollArea(
 // TODO: Split this file once kanban drawer coverage moves to a dedicated
 // spec; it currently covers both the Activity split view and kanban drawer.
 test.describe("activity split view and detail drawers", () => {
-  test("PR split view shows diff when switching to Files tab", async ({
-    page,
-  }) => {
+  test("PR split view shows diff when switching to Files tab", async ({ page }) => {
     // Route-level mocks must be installed before navigation so the
     // diff store never sees a real backend response.
     await mockDiffForAllPRs(page, tinyDiff);
@@ -639,9 +624,7 @@ test.describe("activity split view and detail drawers", () => {
         hasText: "Add widget caching layer",
       }),
     ).toHaveCount(0);
-    await expect(detail.locator(".state-center .state-msg")).toContainText(
-      "Loading",
-    );
+    await expect(detail.locator(".state-center .state-msg")).toContainText("Loading");
 
     // The 1.5s delay above intentionally outlives the test; unroute
     // before teardown so pending route.fetch calls don't leak "Test
@@ -670,9 +653,7 @@ test.describe("activity split view and detail drawers", () => {
     const repoLabel = row.locator(".compact-meta > span").first();
     await expect(repoLabel).toHaveText("acme/widgets");
 
-    await page
-      .locator(".activity-feed .filter-btn", { hasText: "View" })
-      .click();
+    await page.locator(".activity-feed .filter-btn", { hasText: "View" }).click();
     await page
       .locator(".activity-feed .filter-dropdown .filter-item", {
         hasText: "Hide org name",
@@ -783,40 +764,35 @@ test.describe("activity split view and detail drawers", () => {
     await mockActivityWithGheIssue(page);
 
     let detailGetCount = 0;
-    await page.route(
-      "**/api/v1/**/issues/github/acme/widgets/10**",
-      async (route) => {
-        if (route.request().method() !== "GET") {
-          await route.fallback();
-          return;
-        }
-        const url = new URL(route.request().url());
-        if (!isGheIssueRoute(url) || providerItemRoute(url)?.number !== "10") {
-          await route.fallback();
-          return;
-        }
+    await page.route("**/api/v1/**/issues/github/acme/widgets/10**", async (route) => {
+      if (route.request().method() !== "GET") {
+        await route.fallback();
+        return;
+      }
+      const url = new URL(route.request().url());
+      if (!isGheIssueRoute(url) || providerItemRoute(url)?.number !== "10") {
+        await route.fallback();
+        return;
+      }
 
-        detailGetCount++;
-        if (detailGetCount === 1) {
-          await new Promise((resolve) => setTimeout(resolve, 200));
-          await route.fulfill({
-            status: 200,
-            contentType: "application/json",
-            body: JSON.stringify(issueDetailFixture("ghe.example.com")),
-          });
-          return;
-        }
+      detailGetCount++;
+      if (detailGetCount === 1) {
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(issueDetailFixture("ghe.example.com")),
+        });
+        return;
+      }
 
-        await new Promise(() => {});
-      },
-    );
+      await new Promise(() => {});
+    });
 
     await page.goto("/?view=flat");
     await waitForActivityTable(page);
 
-    await page
-      .locator(".activity-row", { hasText: "Fix Safari layout issue" })
-      .click();
+    await page.locator(".activity-row", { hasText: "Fix Safari layout issue" }).click();
 
     const detail = page.locator(".activity-detail");
     await expect(detail.locator(".issue-detail")).toBeVisible({
@@ -830,69 +806,57 @@ test.describe("activity split view and detail drawers", () => {
     await page.unrouteAll({ behavior: "ignoreErrors" });
   });
 
-  test("Activity issue switching avoids foreground sync fanout", async ({
-    page,
-  }) => {
+  test("Activity issue switching avoids foreground sync fanout", async ({ page }) => {
     await mockActivityWithTwoGheIssues(page);
 
     const detailGets = new Map<string, number>();
     const syncPosts = new Map<string, number>();
     const asyncSyncPosts = new Map<string, number>();
 
-    await page.route(
-      "**/api/v1/**/issues/github/acme/widgets/**",
-      async (route) => {
-        const url = new URL(route.request().url());
-        const detailRoute = providerItemRoute(url);
-        if (detailRoute === null || !isGheIssueRoute(url, detailRoute.suffix)) {
-          await route.fallback();
-          return;
-        }
+    await page.route("**/api/v1/**/issues/github/acme/widgets/**", async (route) => {
+      const url = new URL(route.request().url());
+      const detailRoute = providerItemRoute(url);
+      if (detailRoute === null || !isGheIssueRoute(url, detailRoute.suffix)) {
+        await route.fallback();
+        return;
+      }
 
-        const rawNumber = detailRoute.number;
-        const issueNumber = Number(rawNumber);
-        const key = rawNumber;
-        if (route.request().method() === "GET" && detailRoute.suffix === "") {
-          detailGets.set(key, (detailGets.get(key) ?? 0) + 1);
-        } else if (
-          route.request().method() === "POST" &&
-          detailRoute.suffix === "sync/async"
-        ) {
-          asyncSyncPosts.set(key, (asyncSyncPosts.get(key) ?? 0) + 1);
-          await route.fulfill({ status: 202, body: "" });
-          return;
-        } else if (
-          route.request().method() === "POST" &&
-          detailRoute.suffix === "sync"
-        ) {
-          syncPosts.set(key, (syncPosts.get(key) ?? 0) + 1);
-        } else {
-          await route.fallback();
-          return;
-        }
+      const rawNumber = detailRoute.number;
+      const issueNumber = Number(rawNumber);
+      const key = rawNumber;
+      if (route.request().method() === "GET" && detailRoute.suffix === "") {
+        detailGets.set(key, (detailGets.get(key) ?? 0) + 1);
+      } else if (
+        route.request().method() === "POST" &&
+        detailRoute.suffix === "sync/async"
+      ) {
+        asyncSyncPosts.set(key, (asyncSyncPosts.get(key) ?? 0) + 1);
+        await route.fulfill({ status: 202, body: "" });
+        return;
+      } else if (route.request().method() === "POST" && detailRoute.suffix === "sync") {
+        syncPosts.set(key, (syncPosts.get(key) ?? 0) + 1);
+      } else {
+        await route.fallback();
+        return;
+      }
 
-        await route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify(
-            issueDetailFixture(
-              "ghe.example.com",
-              issueNumber,
-              issueNumber === 10
-                ? "Fix Safari layout issue"
-                : "Fix Firefox layout issue",
-            ),
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(
+          issueDetailFixture(
+            "ghe.example.com",
+            issueNumber,
+            issueNumber === 10 ? "Fix Safari layout issue" : "Fix Firefox layout issue",
           ),
-        });
-      },
-    );
+        ),
+      });
+    });
 
     await page.goto("/?view=flat");
     await waitForActivityTable(page);
 
-    await page
-      .locator(".activity-row", { hasText: "Fix Safari layout issue" })
-      .click();
+    await page.locator(".activity-row", { hasText: "Fix Safari layout issue" }).click();
     const detail = page.locator(".activity-detail");
     await expect(detail.locator(".issue-detail")).toBeVisible();
 
@@ -921,9 +885,7 @@ test.describe("activity split view and detail drawers", () => {
     );
 
     const detail = page.locator(".activity-detail");
-    await expect(
-      page.locator(".activity-shell.activity-shell--split"),
-    ).toBeVisible();
+    await expect(page.locator(".activity-shell.activity-shell--split")).toBeVisible();
     await expect(detail.locator(".diff-view")).toBeVisible();
     await expect(detail.locator(".diff-file")).toHaveCount(1);
   });
@@ -931,42 +893,28 @@ test.describe("activity split view and detail drawers", () => {
   test("direct Activity issue URL restores split view with platform host", async ({
     page,
   }) => {
-    const seenHosts = await mockIssueDetailForPlatformHost(
-      page,
-      "ghe.example.com",
-    );
+    const seenHosts = await mockIssueDetailForPlatformHost(page, "ghe.example.com");
     await page.goto(
       "/?selected=issue:10&provider=github&platform_host=ghe.example.com&repo_path=acme%2Fwidgets",
     );
 
     const detail = page.locator(".activity-detail");
-    await expect(
-      page.locator(".activity-shell.activity-shell--split"),
-    ).toBeVisible();
+    await expect(page.locator(".activity-shell.activity-shell--split")).toBeVisible();
     await expect(detail.locator(".issue-detail")).toBeVisible();
     expect(seenHosts).toContain("ghe.example.com");
     expect(seenHosts).not.toContain("github.com");
     await expect(detail.locator(".list-layout > .sidebar")).toHaveCount(0);
-    await expect(detail.locator(".list-layout > .resize-handle")).toHaveCount(
-      0,
-    );
+    await expect(detail.locator(".list-layout > .resize-handle")).toHaveCount(0);
   });
 
-  test("Activity issue row selection preserves platform host", async ({
-    page,
-  }) => {
+  test("Activity issue row selection preserves platform host", async ({ page }) => {
     await mockActivityWithGheIssue(page);
-    const seenHosts = await mockIssueDetailForPlatformHost(
-      page,
-      "ghe.example.com",
-    );
+    const seenHosts = await mockIssueDetailForPlatformHost(page, "ghe.example.com");
 
     await page.goto("/");
     await waitForActivityTable(page);
 
-    await page
-      .locator(".activity-row", { hasText: "Fix Safari layout issue" })
-      .click();
+    await page.locator(".activity-row", { hasText: "Fix Safari layout issue" }).click();
 
     await expect(page).toHaveURL(/selected=issue%3A10/);
     await expect(page).toHaveURL(/provider=github/);
@@ -977,9 +925,7 @@ test.describe("activity split view and detail drawers", () => {
     expect(seenHosts).not.toContain("github.com");
   });
 
-  test("PR tab handoff preserves selected Activity PR files tab", async ({
-    page,
-  }) => {
+  test("PR tab handoff preserves selected Activity PR files tab", async ({ page }) => {
     const pageErrors: string[] = [];
     page.on("pageerror", (error) => {
       pageErrors.push(error.message);
@@ -1014,9 +960,7 @@ test.describe("activity split view and detail drawers", () => {
     );
   });
 
-  test("kanban drawer shows diff when switching to Files tab", async ({
-    page,
-  }) => {
+  test("kanban drawer shows diff when switching to Files tab", async ({ page }) => {
     await mockDiffForAllPRs(page, tinyDiff);
 
     await page.goto("/pulls/board");
@@ -1080,14 +1024,10 @@ test.describe("activity split view and detail drawers", () => {
     await expect(treeFileItem(fileSidebar, "src/handler.go")).toBeVisible();
     await expect(detail.locator(".stack-sidebar")).toHaveCount(0);
     await expect(detail.locator(".list-layout > .sidebar")).toHaveCount(0);
-    await expect(detail.locator(".list-layout > .resize-handle")).toHaveCount(
-      0,
-    );
+    await expect(detail.locator(".list-layout > .resize-handle")).toHaveCount(0);
   });
 
-  test("kanban drawer Files tab renders the file/commit sidebar", async ({
-    page,
-  }) => {
+  test("kanban drawer Files tab renders the file/commit sidebar", async ({ page }) => {
     await mockDiffForAllPRs(page, tinyDiff);
 
     await page.goto("/pulls/board");
@@ -1117,9 +1057,7 @@ test.describe("activity split view and detail drawers", () => {
     await expect(treeFileItem(sidebar, "src/handler.go")).toBeVisible();
   });
 
-  test("activity split view Files tab renders every diff file", async ({
-    page,
-  }) => {
+  test("activity split view Files tab renders every diff file", async ({ page }) => {
     // Regression guard for embedded PR diff rendering: multi-file PRs
     // must still render the full DiffView inside Activity detail even
     // though the drawer-specific file sidebar is not present.
@@ -1135,9 +1073,7 @@ test.describe("activity split view and detail drawers", () => {
 
     await expect(diffArea).toBeVisible();
     await expect(detail.locator(".diff-file")).toHaveCount(20);
-    await expect(
-      detail.locator('[data-file-path="src/file_5.go"]'),
-    ).toHaveCount(1);
+    await expect(detail.locator('[data-file-path="src/file_5.go"]')).toHaveCount(1);
   });
 
   test("activity split view shows detail close row on narrow viewports", async ({
@@ -1198,10 +1134,7 @@ test.describe("activity split view and detail drawers", () => {
   test("kanban drawer sidebar click waits for delayed diff file DOM", async ({
     page,
   }) => {
-    const releaseDiff = await mockDiffForAllPRsWithDelayedDiff(
-      page,
-      multiFileDiff,
-    );
+    const releaseDiff = await mockDiffForAllPRsWithDelayedDiff(page, multiFileDiff);
 
     await page.goto("/pulls/board");
     await page
@@ -1238,9 +1171,7 @@ test.describe("activity split view and detail drawers", () => {
     await expectDiffFileVisibleInScrollArea(diffArea, "src/file_11.go");
   });
 
-  test("issue split view scrolls internally to bottom of content", async ({
-    page,
-  }) => {
+  test("issue split view scrolls internally to bottom of content", async ({ page }) => {
     await page.goto("/");
     await waitForActivityTable(page);
 
@@ -1292,9 +1223,7 @@ test.describe("activity split view and detail drawers", () => {
     await expect(detail).toBeVisible();
   });
 
-  test("activity split view keeps activity in a resizable rail", async ({
-    page,
-  }) => {
+  test("activity split view keeps activity in a resizable rail", async ({ page }) => {
     await page.goto("/");
     await waitForActivityTable(page);
 
@@ -1325,10 +1254,7 @@ test.describe("activity split view and detail drawers", () => {
       handleBox!.y + handleBox!.height / 2,
     );
     await page.mouse.down();
-    await page.mouse.move(
-      handleBox!.x + 80,
-      handleBox!.y + handleBox!.height / 2,
-    );
+    await page.mouse.move(handleBox!.x + 80, handleBox!.y + handleBox!.height / 2);
     await page.mouse.up();
 
     const resizedRailBox = await rail.boundingBox();
@@ -1362,11 +1288,9 @@ test.describe("activity split view and detail drawers", () => {
       handleBox!.y + handleBox!.height / 2,
     );
     await page.mouse.down();
-    await page.mouse.move(
-      handleBox!.x + 140,
-      handleBox!.y + handleBox!.height / 2,
-      { steps: 10 },
-    );
+    await page.mouse.move(handleBox!.x + 140, handleBox!.y + handleBox!.height / 2, {
+      steps: 10,
+    });
     await page.mouse.up();
 
     const widenedBox = await rail.boundingBox();
@@ -1375,9 +1299,7 @@ test.describe("activity split view and detail drawers", () => {
     const widenedWidth = widenedBox!.width;
 
     await page.reload();
-    await expect(
-      page.locator(".activity-shell.activity-shell--split"),
-    ).toBeVisible();
+    await expect(page.locator(".activity-shell.activity-shell--split")).toBeVisible();
 
     // Before the fix the rail mounts at the hardcoded 360px default here.
     await expect
@@ -1420,10 +1342,7 @@ test.describe("activity split view and detail drawers", () => {
       handleBox!.y + handleBox!.height / 2,
     );
     await page.mouse.down();
-    await page.mouse.move(
-      handleBox!.x + 760,
-      handleBox!.y + handleBox!.height / 2,
-    );
+    await page.mouse.move(handleBox!.x + 760, handleBox!.y + handleBox!.height / 2);
     await page.mouse.up();
 
     const railBox = await rail.boundingBox();
@@ -1483,9 +1402,7 @@ test.describe("activity split view and detail drawers", () => {
 
     const rail = page.locator(".activity-pane");
     const detail = page.locator(".activity-detail");
-    const collapseButton = page.locator(
-      "button[title='Collapse Activity sidebar']",
-    );
+    const collapseButton = page.locator("button[title='Collapse Activity sidebar']");
     await expect(collapseButton).toBeVisible();
 
     await collapseButton.click();
@@ -1493,9 +1410,7 @@ test.describe("activity split view and detail drawers", () => {
     await expect(detail).toBeVisible();
     await expect(page.locator(".activity-split-resize-handle")).toBeHidden();
     await expect(page.locator(".activity-collapsed-strip")).toBeVisible();
-    await expect(
-      page.locator("button[title='Expand Activity sidebar']"),
-    ).toBeVisible();
+    await expect(page.locator("button[title='Expand Activity sidebar']")).toBeVisible();
     const collapsedBox = await rail.boundingBox();
     expect(collapsedBox).not.toBeNull();
     expect(collapsedBox!.width).toBeLessThan(40);
@@ -1522,17 +1437,13 @@ test.describe("activity split view and detail drawers", () => {
     await expect(detail).toBeVisible();
     await expect(page.locator(".activity-collapsed-strip")).toBeVisible();
 
-    await detail
-      .locator(".activity-detail-header .activity-rail-close")
-      .click();
+    await detail.locator(".activity-detail-header .activity-rail-close").click();
 
     await expect(page.locator(".activity-shell--split")).toHaveCount(0);
     await expect(page.locator(".activity-collapsed-strip")).toHaveCount(0);
     await expect(page.locator(".activity-table")).toBeVisible();
     await expect(
-      page
-        .locator(".activity-row", { hasText: "Add widget caching layer" })
-        .first(),
+      page.locator(".activity-row", { hasText: "Add widget caching layer" }).first(),
     ).toBeVisible();
   });
 
@@ -1586,18 +1497,14 @@ test.describe("activity split view and detail drawers", () => {
     await expect(filesTab).not.toHaveClass(/detail-tab--active/);
   });
 
-  test("activity split view highlights matching activity rows", async ({
-    page,
-  }) => {
+  test("activity split view highlights matching activity rows", async ({ page }) => {
     await page.goto("/");
     await waitForActivityTable(page);
 
     await openActivityPRSplit(page);
 
     const selectedRows = page.locator(".activity-compact-row.selected");
-    await expect(selectedRows.first()).toContainText(
-      "Add widget caching layer",
-    );
+    await expect(selectedRows.first()).toContainText("Add widget caching layer");
     await expect(selectedRows.first()).toContainText("PR");
   });
 
@@ -1786,17 +1693,14 @@ test.describe("activity split view and detail drawers", () => {
     // success. The detail load goes through the real backend (which
     // still shows widgets#1 as open), but the kanban board reads only
     // from the mocked /pulls endpoint.
-    await page.route(
-      "**/api/v1/pulls/github/*/*/*/github-state",
-      async (route) => {
-        pullsContainsWidgets1 = false;
-        await route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: "{}",
-        });
-      },
-    );
+    await page.route("**/api/v1/pulls/github/*/*/*/github-state", async (route) => {
+      pullsContainsWidgets1 = false;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: "{}",
+      });
+    });
 
     // Track calls to the open-filtered pulls endpoint that occur
     // after the close button is clicked. onPullsRefresh forwarding
@@ -1805,11 +1709,7 @@ test.describe("activity split view and detail drawers", () => {
     let closeClicked = false;
     page.on("request", (req) => {
       const url = req.url();
-      if (
-        closeClicked &&
-        url.includes("/api/v1/pulls") &&
-        url.includes("state=open")
-      ) {
+      if (closeClicked && url.includes("/api/v1/pulls") && url.includes("state=open")) {
         openPullsRequestsAfterClose++;
       }
     });
@@ -1840,14 +1740,10 @@ test.describe("activity split view and detail drawers", () => {
     // omits it. Other open cards remain visible — proves the refresh
     // dropped only widgets#1, not unrelated entries.
     await expect(
-      page
-        .locator(".kanban-card")
-        .filter({ hasText: "Add widget caching layer" }),
+      page.locator(".kanban-card").filter({ hasText: "Add widget caching layer" }),
     ).toHaveCount(0, { timeout: 10_000 });
     await expect(
-      page
-        .locator(".kanban-card")
-        .filter({ hasText: "Refactor widget pipeline" }),
+      page.locator(".kanban-card").filter({ hasText: "Refactor widget pipeline" }),
     ).toBeVisible();
 
     // At least one /api/v1/pulls?state=open request must have
@@ -1858,9 +1754,7 @@ test.describe("activity split view and detail drawers", () => {
 });
 
 test.describe("PR list tabs", () => {
-  test("outer PR-list tab bar remains singular and router-driven", async ({
-    page,
-  }) => {
+  test("outer PR-list tab bar remains singular and router-driven", async ({ page }) => {
     // Mock the diff so navigating to /files does not depend on real data.
     await mockDiffForAllPRs(page, tinyDiff);
 

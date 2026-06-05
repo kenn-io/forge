@@ -7,9 +7,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test.describe("palette command dispatch", () => {
-  test("'>' filters to commands; running Open settings navigates", async ({
-    page,
-  }) => {
+  test("'>' filters to commands; running Open settings navigates", async ({ page }) => {
     await page.goto("/pulls");
     await page.keyboard.press("Meta+K");
     await page.locator(".palette-input").fill(">settings");

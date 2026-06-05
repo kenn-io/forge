@@ -94,12 +94,10 @@ async function expectRepoChipToClipSafely(
     );
   }
 
-  const labelOverflow = await repoChip
-    .locator(".chip__label")
-    .evaluate((node) => ({
-      clientWidth: (node as HTMLElement).clientWidth,
-      scrollWidth: (node as HTMLElement).scrollWidth,
-    }));
+  const labelOverflow = await repoChip.locator(".chip__label").evaluate((node) => ({
+    clientWidth: (node as HTMLElement).clientWidth,
+    scrollWidth: (node as HTMLElement).scrollWidth,
+  }));
   expect(labelOverflow.scrollWidth).toBeGreaterThan(labelOverflow.clientWidth);
 }
 
@@ -114,12 +112,8 @@ test.describe("issue list view", () => {
     await expect(countBadge).toHaveText(/^5 issues$/);
   });
 
-  test("sidebar issue pills use the shared chip component", async ({
-    page,
-  }) => {
-    await expect(page.locator(".filter-bar .list-count-chip")).toHaveText(
-      /^5 issues$/,
-    );
+  test("sidebar issue pills use the shared chip component", async ({ page }) => {
+    await expect(page.locator(".filter-bar .list-count-chip")).toHaveText(/^5 issues$/);
 
     await mockLongIssueRepoSlug(page);
     await page.goto("/issues");
@@ -162,14 +156,8 @@ test.describe("issue list view", () => {
     }
   });
 
-  test("issue detail state chip preserves shared chip layout", async ({
-    page,
-  }) => {
-    await page
-      .locator(".issue-item")
-      .filter({ hasText: "Safari" })
-      .first()
-      .click();
+  test("issue detail state chip preserves shared chip layout", async ({ page }) => {
+    await page.locator(".issue-item").filter({ hasText: "Safari" }).first().click();
 
     const stateChip = page.locator(".issue-detail .issue-state-chip");
     await expect(stateChip).toBeVisible();
@@ -189,16 +177,10 @@ test.describe("issue list view", () => {
     expect(stateChipStyles.backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
   });
 
-  test("issue detail keeps the scrollbar on the pane edge", async ({
-    page,
-  }) => {
+  test("issue detail keeps the scrollbar on the pane edge", async ({ page }) => {
     // Open the Safari issue specifically. Matches widgets#10 on the
     // seeded fixture (max-width 800px centered layout).
-    await page
-      .locator(".issue-item")
-      .filter({ hasText: "Safari" })
-      .first()
-      .click();
+    await page.locator(".issue-item").filter({ hasText: "Safari" }).first().click();
 
     // IssueListView renders IssueDetail into .main-area, where
     // .issue-detail is the designated internal scroll container.
@@ -252,9 +234,7 @@ test.describe("issue list view", () => {
     expect(detailBox).not.toBeNull();
     expect(headerBox).not.toBeNull();
     if (areaBox !== null && detailBox !== null && headerBox !== null) {
-      const scrollportWidth = await issueDetail.evaluate(
-        (el) => el.clientWidth,
-      );
+      const scrollportWidth = await issueDetail.evaluate((el) => el.clientWidth);
       const scrollportCenter = detailBox.x + scrollportWidth / 2;
       const headerCenter = headerBox.x + headerBox.width / 2;
       // Allow small slack for sub-pixel layout differences.

@@ -67,9 +67,7 @@ test.describe("repository summaries", () => {
 
     await page.getByRole("button", { name: "Repos", exact: true }).click();
     await expect(page).toHaveURL(/\/repos$/);
-    await expect(page.getByPlaceholder("Filter repositories")).toHaveValue(
-      "acme",
-    );
+    await expect(page.getByPlaceholder("Filter repositories")).toHaveValue("acme");
     await expect(page.getByRole("button", { name: "Has issues" })).toHaveClass(
       /repo-page__filter--active/,
     );
@@ -113,21 +111,17 @@ test.describe("repository summaries", () => {
       }),
     ).toHaveAttribute("href", "https://github.com/acme/widgets");
 
-    await expect(
-      widgetsCard.getByRole("button", { name: "View PRs" }),
-    ).toHaveCount(0);
-    await expect(
-      widgetsCard.getByRole("button", { name: "View issues" }),
-    ).toHaveCount(0);
+    await expect(widgetsCard.getByRole("button", { name: "View PRs" })).toHaveCount(0);
+    await expect(widgetsCard.getByRole("button", { name: "View issues" })).toHaveCount(
+      0,
+    );
 
     await widgetsCard.getByRole("button", { name: /\d+\s+Open PRs/ }).click();
     await expect(page).toHaveURL(/\/pulls$/);
 
     await page.goto("/repos");
     await widgetsCard.waitFor({ state: "visible", timeout: 10_000 });
-    await widgetsCard
-      .getByRole("button", { name: /\d+\s+Open issues/ })
-      .click();
+    await widgetsCard.getByRole("button", { name: /\d+\s+Open issues/ }).click();
     await expect(page).toHaveURL(/\/issues$/);
 
     await page.goto("/repos");
@@ -138,9 +132,7 @@ test.describe("repository summaries", () => {
       name: "New issue in acme/widgets",
     });
     await expect(dialog).toBeVisible();
-    await dialog
-      .getByPlaceholder("Issue title")
-      .fill("Repo overview follow-up");
+    await dialog.getByPlaceholder("Issue title").fill("Repo overview follow-up");
 
     const bodyEditor = dialog.getByRole("textbox", {
       name: "Describe the problem, context, or follow-up work",

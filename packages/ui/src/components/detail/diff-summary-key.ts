@@ -6,10 +6,7 @@ export function buildDiffSummaryKey(
   number: number,
   detail: Pick<
     PullDetail,
-    | "platform_head_sha"
-    | "platform_base_sha"
-    | "diff_head_sha"
-    | "merge_base_sha"
+    "platform_head_sha" | "platform_base_sha" | "diff_head_sha" | "merge_base_sha"
   >,
   pr: Pick<PullRequest, "UpdatedAt" | "Additions" | "Deletions">,
 ): string {
@@ -20,10 +17,7 @@ export function buildDiffSummaryKey(
 function diffSummaryRevision(
   detail: Pick<
     PullDetail,
-    | "platform_head_sha"
-    | "platform_base_sha"
-    | "diff_head_sha"
-    | "merge_base_sha"
+    "platform_head_sha" | "platform_base_sha" | "diff_head_sha" | "merge_base_sha"
   >,
   pr: Pick<PullRequest, "UpdatedAt" | "Additions" | "Deletions">,
 ): string {

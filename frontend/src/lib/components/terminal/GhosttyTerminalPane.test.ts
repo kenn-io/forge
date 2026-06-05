@@ -1,13 +1,6 @@
 import { cleanup, render, waitFor } from "@testing-library/svelte";
 import type { ComponentProps } from "svelte";
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 const mockFit = vi.fn();
 const mockOpen = vi.fn();
@@ -102,7 +95,9 @@ describe("GhosttyTerminalPane", () => {
     mockOnData.mockReset();
     mockPaste.mockReset();
     mockPaste.mockImplementation((text: string) => {
-      const dataHandler = mockOnData.mock.calls[0]?.[0] as ((data: string) => void) | undefined;
+      const dataHandler = mockOnData.mock.calls[0]?.[0] as
+        | ((data: string) => void)
+        | undefined;
       dataHandler?.(`\x1b[200~${text}\x1b[201~`);
     });
     mockDispose.mockReset();
@@ -280,9 +275,7 @@ describe("GhosttyTerminalPane", () => {
 
     const sent = socketAt(0).sent[0];
     expect(sent).toBeInstanceOf(ArrayBuffer);
-    expect(Array.from(new Uint8Array(sent as ArrayBuffer))).toEqual([
-      0, 0xff, 0x1b,
-    ]);
+    expect(Array.from(new Uint8Array(sent as ArrayBuffer))).toEqual([0, 0xff, 0x1b]);
   });
 
   it("sends terminal ArrayBuffer payloads as raw WebSocket bytes", async () => {
@@ -297,9 +290,7 @@ describe("GhosttyTerminalPane", () => {
 
     const sent = socketAt(0).sent[0];
     expect(sent).toBeInstanceOf(ArrayBuffer);
-    expect(Array.from(new Uint8Array(sent as ArrayBuffer))).toEqual([
-      0x80, 0x81,
-    ]);
+    expect(Array.from(new Uint8Array(sent as ArrayBuffer))).toEqual([0x80, 0x81]);
   });
 
   it("sends browser multiline paste through ghostty bracketed paste handling", async () => {
@@ -328,7 +319,9 @@ describe("GhosttyTerminalPane", () => {
     expect(defaultAllowed).toBe(false);
     expect(laterPasteListener).not.toHaveBeenCalled();
     expect(mockPaste).toHaveBeenCalledWith("first[201~\nsecond\nthird");
-    expect(sentText(socketAt(0), 0)).toBe("\x1b[200~first[201~\nsecond\nthird\x1b[201~");
+    expect(sentText(socketAt(0), 0)).toBe(
+      "\x1b[200~first[201~\nsecond\nthird\x1b[201~",
+    );
   });
 
   it("leaves single-line browser paste for ghostty default handling", async () => {

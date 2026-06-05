@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import net from "node:net";
-import {
-  e2eReuseExistingServer,
-  getAvailablePort,
-  parseE2EPort,
-} from "./e2ePort";
+import { e2eReuseExistingServer, getAvailablePort, parseE2EPort } from "./e2ePort";
 
 describe("mock e2e port helpers", () => {
   it("parses explicit Playwright ports conservatively", () => {

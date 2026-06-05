@@ -93,19 +93,13 @@ type IssuePath<S extends IssueSuffix> =
   | `/issues/{provider}/{owner}/{name}/{number}${S}`
   | `/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}${S}`;
 
-export function providerItemPath(
-  kind: "pulls",
-  ref: ProviderRouteRef,
-): PullPath<"">;
+export function providerItemPath(kind: "pulls", ref: ProviderRouteRef): PullPath<"">;
 export function providerItemPath<S extends PullSuffix>(
   kind: "pulls",
   ref: ProviderRouteRef,
   suffix: S,
 ): PullPath<S>;
-export function providerItemPath(
-  kind: "issues",
-  ref: ProviderRouteRef,
-): IssuePath<"">;
+export function providerItemPath(kind: "issues", ref: ProviderRouteRef): IssuePath<"">;
 export function providerItemPath<S extends IssueSuffix>(
   kind: "issues",
   ref: ProviderRouteRef,

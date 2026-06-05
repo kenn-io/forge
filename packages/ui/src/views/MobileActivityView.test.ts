@@ -1,12 +1,5 @@
 import { cleanup, fireEvent, render } from "@testing-library/svelte";
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { ActivityItem } from "../api/types.js";
 import MobileActivityView from "./MobileActivityView.svelte";
 
@@ -67,8 +60,7 @@ vi.mock("../context.js", () => ({
       getActivityError: () => null,
       getTimeRange: () => "7d",
       getItemFilter: () => "all",
-      getEnabledEvents: () =>
-        new Set(["comment", "review", "commit", "force_push"]),
+      getEnabledEvents: () => new Set(["comment", "review", "commit", "force_push"]),
       getHideClosedMerged: () => false,
       getHideBots: () => false,
       getHideDefaultBranchActivity: () => false,
@@ -128,9 +120,7 @@ describe("MobileActivityView branch activity", () => {
       props: { onSelectItem },
     });
 
-    const repoLabel = container.querySelector(
-      ".mobile-activity-card__meta span",
-    );
+    const repoLabel = container.querySelector(".mobile-activity-card__meta span");
     expect(repoLabel?.textContent).toBe("github.com/acme/widgets");
   });
 
@@ -141,9 +131,7 @@ describe("MobileActivityView branch activity", () => {
       props: { onSelectItem },
     });
 
-    const repoLabel = container.querySelector(
-      ".mobile-activity-card__meta span",
-    );
+    const repoLabel = container.querySelector(".mobile-activity-card__meta span");
     expect(repoLabel?.textContent).toBe("widgets");
     expect(container.textContent).not.toContain("github.com/acme/widgets");
   });

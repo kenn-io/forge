@@ -21,9 +21,8 @@ describe("prefersReducedMotion", () => {
 
   it("returns false when matchMedia is unavailable (SSR)", () => {
     const orig = window.matchMedia;
-    (
-      window as { matchMedia: typeof window.matchMedia | undefined }
-    ).matchMedia = undefined;
+    (window as { matchMedia: typeof window.matchMedia | undefined }).matchMedia =
+      undefined;
     try {
       expect(prefersReducedMotion()).toBe(false);
     } finally {

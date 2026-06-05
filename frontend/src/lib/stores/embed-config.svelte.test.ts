@@ -192,10 +192,7 @@ describe("invokeAction", () => {
       },
     };
     invokeAction(action, { surface: "test", owner: "o", name: "n", number: 1 });
-    expect(spy).toHaveBeenCalledWith(
-      "Embedding action error:",
-      expect.any(Error),
-    );
+    expect(spy).toHaveBeenCalledWith("Embedding action error:", expect.any(Error));
     spy.mockRestore();
   });
 
@@ -208,10 +205,7 @@ describe("invokeAction", () => {
     };
     invokeAction(action, { surface: "test", owner: "o", name: "n", number: 1 });
     await vi.waitFor(() => {
-      expect(spy).toHaveBeenCalledWith(
-        "Embedding action error:",
-        expect.any(Error),
-      );
+      expect(spy).toHaveBeenCalledWith("Embedding action error:", expect.any(Error));
     });
     spy.mockRestore();
   });

@@ -79,15 +79,9 @@ describe("parsePaletteQuery", () => {
 });
 
 describe("groupResults", () => {
-  const commands = [
-    action("cmd.alpha", "Alpha command"),
-    action("cmd.beta", "Beta"),
-  ];
+  const commands = [action("cmd.alpha", "Alpha command"), action("cmd.beta", "Beta")];
   const pulls = [pull(1, "Fix bug"), pull(2, "Add feature")];
-  const issues = [
-    issue(10, "Crash on launch"),
-    issue(11, "Add feature request"),
-  ];
+  const issues = [issue(10, "Crash on launch"), issue(11, "Add feature request")];
 
   it("scope=command suppresses pulls and issues", () => {
     const out = groupResults({
@@ -163,12 +157,8 @@ describe("groupResults", () => {
     const manyCommands = Array.from({ length: 15 }, (_, i) =>
       action(`cmd.${i}`, `match-${i}`),
     );
-    const manyPulls = Array.from({ length: 15 }, (_, i) =>
-      pull(i, `match-${i}`),
-    );
-    const manyIssues = Array.from({ length: 15 }, (_, i) =>
-      issue(i, `match-${i}`),
-    );
+    const manyPulls = Array.from({ length: 15 }, (_, i) => pull(i, `match-${i}`));
+    const manyIssues = Array.from({ length: 15 }, (_, i) => issue(i, `match-${i}`));
     const out = groupResults({
       commands: manyCommands,
       pulls: manyPulls,

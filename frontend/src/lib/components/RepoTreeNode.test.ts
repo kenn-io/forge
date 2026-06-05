@@ -86,9 +86,9 @@ describe("RepoTreeNode", () => {
         onToggleSelect: vi.fn(),
       },
     });
-    expect(
-      screen.getByLabelText("Toggle acme").getAttribute("aria-expanded"),
-    ).toBe("true");
+    expect(screen.getByLabelText("Toggle acme").getAttribute("aria-expanded")).toBe(
+      "true",
+    );
     unmount();
 
     render(RepoTreeNode, {
@@ -105,9 +105,9 @@ describe("RepoTreeNode", () => {
         onToggleSelect: vi.fn(),
       },
     });
-    expect(
-      screen.getByLabelText("Toggle acme").getAttribute("aria-expanded"),
-    ).toBe("false");
+    expect(screen.getByLabelText("Toggle acme").getAttribute("aria-expanded")).toBe(
+      "false",
+    );
   });
 
   it("calls onToggleSelect when the checkbox is clicked", async () => {

@@ -19,9 +19,7 @@ interface MockMutation {
   response: { status: number; ok: boolean };
 }
 
-function providerRef(
-  overrides: Partial<ProviderRouteRef> = {},
-): ProviderRouteRef {
+function providerRef(overrides: Partial<ProviderRouteRef> = {}): ProviderRouteRef {
   return {
     provider: "forgejo",
     platformHost: "codeberg.org",

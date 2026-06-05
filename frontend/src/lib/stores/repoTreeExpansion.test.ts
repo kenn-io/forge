@@ -1,11 +1,4 @@
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { createRepoTreeExpansionStore } from "./repoTreeExpansion.svelte.js";
 
@@ -58,11 +51,9 @@ describe("createRepoTreeExpansionStore", () => {
   });
 
   it("keeps working in memory when setItem throws", () => {
-    const spy = vi
-      .spyOn(Storage.prototype, "setItem")
-      .mockImplementation(() => {
-        throw new Error("QuotaExceededError");
-      });
+    const spy = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("QuotaExceededError");
+    });
     const store = createRepoTreeExpansionStore();
     expect(() => store.toggle("github.com/acme")).not.toThrow();
     expect(store.isCollapsed("github.com/acme")).toBe(true);

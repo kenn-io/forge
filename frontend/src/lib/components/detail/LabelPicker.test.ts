@@ -47,9 +47,7 @@ describe("LabelPicker", () => {
     });
 
     expect(screen.queryByRole("menuitemcheckbox", { name: /bug/i })).toBeNull();
-    expect(
-      screen.getByRole("menuitemcheckbox", { name: /triage/i }),
-    ).toBeTruthy();
+    expect(screen.getByRole("menuitemcheckbox", { name: /triage/i })).toBeTruthy();
   });
 
   it("emits the toggled label name", async () => {
@@ -66,9 +64,7 @@ describe("LabelPicker", () => {
       },
     });
 
-    await fireEvent.click(
-      screen.getByRole("menuitemcheckbox", { name: /triage/i }),
-    );
+    await fireEvent.click(screen.getByRole("menuitemcheckbox", { name: /triage/i }));
 
     expect(onToggle).toHaveBeenCalledWith("triage");
   });

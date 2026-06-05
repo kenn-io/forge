@@ -20,12 +20,7 @@ describe("tmux mouse drag filter", () => {
   it("suppresses left-button drag reports until selection exceeds threshold", () => {
     const filter = createTmuxMouseDragFilter({ thresholdCells: 3 });
 
-    const output = collect(filter, [
-      mouseDown,
-      smallDrag,
-      thresholdDrag,
-      mouseUp,
-    ]);
+    const output = collect(filter, [mouseDown, smallDrag, thresholdDrag, mouseUp]);
 
     expect(output).toBe(mouseDown + mouseUp);
   });
@@ -50,9 +45,7 @@ describe("tmux mouse drag filter", () => {
   it("passes through non-mouse terminal data around suppressed drag reports", () => {
     const filter = createTmuxMouseDragFilter({ thresholdCells: 3 });
 
-    const output = filter.filter(
-      `paste:${mouseDown}x${smallDrag}y${mouseUp}:done`,
-    );
+    const output = filter.filter(`paste:${mouseDown}x${smallDrag}y${mouseUp}:done`);
 
     expect(output).toBe(`paste:${mouseDown}xy${mouseUp}:done`);
   });
@@ -75,8 +68,6 @@ describe("tmux mouse drag filter", () => {
     const wheelUp = "\x1b[<64;10;5M";
     const dragWithoutDown = "\x1b[<32;12;5M";
 
-    expect(filter.filter(wheelUp + dragWithoutDown)).toBe(
-      wheelUp + dragWithoutDown,
-    );
+    expect(filter.filter(wheelUp + dragWithoutDown)).toBe(wheelUp + dragWithoutDown);
   });
 });

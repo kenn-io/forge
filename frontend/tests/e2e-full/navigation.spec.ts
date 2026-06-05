@@ -19,9 +19,7 @@ test.describe("view navigation", () => {
     await page.goto("/");
 
     // Wait for the app to be ready (activity feed visible).
-    await page
-      .locator(".activity-feed")
-      .waitFor({ state: "visible", timeout: 10_000 });
+    await page.locator(".activity-feed").waitFor({ state: "visible", timeout: 10_000 });
 
     // Click PRs tab -> URL should contain /pulls, list renders.
     await page.locator(".view-tab", { hasText: "PRs" }).click();
@@ -45,9 +43,7 @@ test.describe("view navigation", () => {
     await expect(page).toHaveURL(/\/(?:\?.*)?$/);
     const basePath = new URL(page.url()).pathname.replace(/\?.*$/, "");
     expect(basePath).toBe("/");
-    await page
-      .locator(".activity-feed")
-      .waitFor({ state: "visible", timeout: 5_000 });
+    await page.locator(".activity-feed").waitFor({ state: "visible", timeout: 5_000 });
   });
 
   test("clicking a PR row opens the detail pane", async ({ page }) => {
@@ -61,9 +57,7 @@ test.describe("view navigation", () => {
     await page.locator(".pull-item").first().click();
 
     // Detail pane should now show the PR detail.
-    await page
-      .locator(".pull-detail")
-      .waitFor({ state: "visible", timeout: 10_000 });
+    await page.locator(".pull-detail").waitFor({ state: "visible", timeout: 10_000 });
   });
 
   test("clicking an issue row opens the detail pane", async ({ page }) => {
@@ -77,22 +71,16 @@ test.describe("view navigation", () => {
     await page.locator(".issue-item").first().click();
 
     // Detail pane should now show the issue detail.
-    await page
-      .locator(".issue-detail")
-      .waitFor({ state: "visible", timeout: 10_000 });
+    await page.locator(".issue-detail").waitFor({ state: "visible", timeout: 10_000 });
   });
 
-  test("settings button toggles back to the previous route", async ({
-    page,
-  }) => {
+  test("settings button toggles back to the previous route", async ({ page }) => {
     await page.goto("/pulls/github/acme/widgets/1/files");
     await expect(page).toHaveURL(/\/pulls\/github\/acme\/widgets\/1\/files$/);
 
     await page.getByTitle("Settings").click();
     await expect(page).toHaveURL(/\/settings$/);
-    await page
-      .locator(".settings-page")
-      .waitFor({ state: "visible", timeout: 10_000 });
+    await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
 
     await page.getByTitle("Settings").click();
     await expect(page).toHaveURL(/\/pulls\/github\/acme\/widgets\/1\/files$/);

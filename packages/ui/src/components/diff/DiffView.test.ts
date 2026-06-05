@@ -235,8 +235,7 @@ describe("DiffView", () => {
     const consumeScrollTarget = vi.fn();
     const scrollIntoView = vi.fn();
     const originalScrollIntoView = Element.prototype.scrollIntoView;
-    const originalGetBoundingClientRect =
-      Element.prototype.getBoundingClientRect;
+    const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
     Element.prototype.scrollIntoView = scrollIntoView;
     Element.prototype.getBoundingClientRect = function () {
       if (this instanceof HTMLElement && this.classList.contains("diff-area")) {
@@ -300,8 +299,7 @@ describe("DiffView", () => {
 
   it("normalizes legacy string scroll targets", async () => {
     const consumeScrollTarget = vi.fn();
-    const originalGetBoundingClientRect =
-      Element.prototype.getBoundingClientRect;
+    const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
     Element.prototype.getBoundingClientRect = function () {
       if (this instanceof HTMLElement && this.classList.contains("diff-area")) {
         return {
@@ -362,8 +360,7 @@ describe("DiffView", () => {
 
   it("keeps a scroll target pending until the file has layout", async () => {
     const consumeScrollTarget = vi.fn();
-    const originalGetBoundingClientRect =
-      Element.prototype.getBoundingClientRect;
+    const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
     let targetMeasurements = 0;
 
     Element.prototype.getBoundingClientRect = function () {
@@ -443,8 +440,7 @@ describe("DiffView", () => {
     const consumeScrollTarget = vi.fn();
     const focus = vi.fn();
     const originalFocus = HTMLElement.prototype.focus;
-    const originalGetBoundingClientRect =
-      Element.prototype.getBoundingClientRect;
+    const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
     HTMLElement.prototype.focus = focus;
     Element.prototype.getBoundingClientRect = function () {
       if (this instanceof HTMLElement && this.classList.contains("diff-area")) {
@@ -512,8 +508,7 @@ describe("DiffView", () => {
     const consumeScrollTarget = vi.fn();
     const focus = vi.fn();
     const originalFocus = HTMLElement.prototype.focus;
-    const originalGetBoundingClientRect =
-      Element.prototype.getBoundingClientRect;
+    const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
     HTMLElement.prototype.focus = focus;
     Element.prototype.getBoundingClientRect = function () {
       if (this instanceof HTMLElement && this.classList.contains("diff-area")) {
@@ -579,9 +574,7 @@ describe("DiffView", () => {
       });
 
       const { container } = renderDiffView(diff);
-      const file = container.querySelector<HTMLElement>(
-        '[data-file-path="b.ts"]',
-      );
+      const file = container.querySelector<HTMLElement>('[data-file-path="b.ts"]');
       const host = document.createElement("div");
       const shadowTarget = document.createElement("button");
       shadowTarget.dataset.diffPath = "b.ts";
@@ -601,8 +594,7 @@ describe("DiffView", () => {
 
   it("keeps a line scroll target pending until that line renders", async () => {
     const consumeScrollTarget = vi.fn();
-    const originalGetBoundingClientRect =
-      Element.prototype.getBoundingClientRect;
+    const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
     Element.prototype.getBoundingClientRect = function () {
       if (this instanceof HTMLElement && this.classList.contains("diff-area")) {
         return {
@@ -659,8 +651,7 @@ describe("DiffView", () => {
   it("consumes an unreachable line target after bounded retries", async () => {
     const consumeScrollTarget = vi.fn();
     const clearScrolling = vi.fn();
-    const originalGetBoundingClientRect =
-      Element.prototype.getBoundingClientRect;
+    const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
     let scrollTarget: DiffScrollTarget | null = {
       path: "b.ts",
       line: 42,

@@ -1,12 +1,5 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 const mockPost = vi.fn();
 const mockRefreshDetailOnly = vi.fn();
@@ -118,9 +111,7 @@ describe("ApproveWorkflowsButton", () => {
       },
     });
 
-    await fireEvent.click(
-      screen.getByRole("button", { name: /^approve workflows$/i }),
-    );
+    await fireEvent.click(screen.getByRole("button", { name: /^approve workflows$/i }));
 
     expect(screen.getByText("GitHub API error")).toBeTruthy();
     expect(mockRefreshDetailOnly).not.toHaveBeenCalled();

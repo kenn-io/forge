@@ -1,10 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-import {
-  getActionsByOwner,
-  getAllActions,
-  resetRegistry,
-} from "./registry.svelte.js";
+import { getActionsByOwner, getAllActions, resetRegistry } from "./registry.svelte.js";
 import { registerPRDetailActions } from "./pr-detail-actions.js";
 import type { PRDetailActionInput } from "../../../../../packages/ui/src/components/detail/keyboard-actions.js";
 import type { Context } from "./types.js";
@@ -68,9 +64,7 @@ describe("registerPRDetailActions", () => {
     registerPRDetailActions(() => null);
     const actions = getActionsByOwner("pr-detail-actions");
     for (const action of actions) {
-      await expect(
-        Promise.resolve(action.handler(ctx)),
-      ).resolves.toBeUndefined();
+      await expect(Promise.resolve(action.handler(ctx))).resolves.toBeUndefined();
     }
   });
 

@@ -1,8 +1,5 @@
 import type { Issue, IssueDetail, IssuesParams, Label } from "../api/types.js";
-import {
-  providerItemPath,
-  providerRouteParams,
-} from "../api/provider-routes.js";
+import { providerItemPath, providerRouteParams } from "../api/provider-routes.js";
 import type { MiddlemanClient } from "../types.js";
 
 export type IssueDetailSyncMode = boolean | "background";
@@ -330,8 +327,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     }
     return issueDetailRequestRef(owner, name, number, {
       provider,
-      platformHost:
-        issueDetail?.repo?.platform_host ?? selectedIssue?.platformHost,
+      platformHost: issueDetail?.repo?.platform_host ?? selectedIssue?.platformHost,
       repoPath,
     });
   }
@@ -369,10 +365,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       activeDetailLoad?.key === key &&
       activeDetailLoad.promise !== null
     ) {
-      activeDetailLoad.syncMode = strongerSyncMode(
-        activeDetailLoad.syncMode,
-        syncMode,
-      );
+      activeDetailLoad.syncMode = strongerSyncMode(activeDetailLoad.syncMode, syncMode);
       return activeDetailLoad.promise;
     }
 
@@ -402,9 +395,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
         );
         if (gen !== issueSyncGeneration) return;
         if (requestError) {
-          throw new Error(
-            apiErrorMessage(requestError, "failed to load issue"),
-          );
+          throw new Error(apiErrorMessage(requestError, "failed to load issue"));
         }
         issueDetail = data
           ? withPreservedLocalBody({
@@ -426,10 +417,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       const finalSyncMode = currentLoad.syncMode;
       if (gen === issueSyncGeneration && finalSyncMode === true) {
         void syncIssueDetail(owner, name, number, gen, requestRef);
-      } else if (
-        gen === issueSyncGeneration &&
-        finalSyncMode === "background"
-      ) {
+      } else if (gen === issueSyncGeneration && finalSyncMode === "background") {
         void enqueueBackgroundIssueSync(
           owner,
           name,
@@ -550,14 +538,11 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     expectedGen: number = issueSyncGeneration,
   ): Promise<void> {
     try {
-      const { data } = await apiClient.GET(
-        providerItemPath("issues", ref, ""),
-        {
-          params: {
-            path: { ...providerRouteParams(ref), number: ref.number },
-          },
+      const { data } = await apiClient.GET(providerItemPath("issues", ref, ""), {
+        params: {
+          path: { ...providerRouteParams(ref), number: ref.number },
         },
-      );
+      });
       // Re-check the generation after the awaited request: if the
       // selected issue changed mid-flight, dropping the assignment
       // keeps the new selection's data from being clobbered.
@@ -660,9 +645,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
         },
       );
       if (requestError) {
-        throw new Error(
-          apiErrorMessage(requestError, "failed to post comment"),
-        );
+        throw new Error(apiErrorMessage(requestError, "failed to post comment"));
       }
     } catch (err) {
       detailError = err instanceof Error ? err.message : String(err);
@@ -707,9 +690,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
         },
       );
       if (requestError) {
-        throw new Error(
-          apiErrorMessage(requestError, "failed to edit comment"),
-        );
+        throw new Error(apiErrorMessage(requestError, "failed to edit comment"));
       }
     } catch (err) {
       detailError = err instanceof Error ? err.message : String(err);
@@ -809,9 +790,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
         },
       );
       if (requestError) {
-        throw new Error(
-          apiErrorMessage(requestError, "failed to update issue"),
-        );
+        throw new Error(apiErrorMessage(requestError, "failed to update issue"));
       }
       succeeded = true;
       localBodyMatchesSent =
@@ -878,13 +857,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
         while (queuedIssueSaves.has(key)) {
           const next = queuedIssueSaves.get(key)!;
           queuedIssueSaves.delete(key);
-          await runIssueBodyPatch(
-            owner,
-            name,
-            number,
-            next.body,
-            next.routeRef,
-          );
+          await runIssueBodyPatch(owner, name, number, next.body, next.routeRef);
         }
       } finally {
         inflightIssueSaves.delete(key);
@@ -916,9 +889,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
           },
         });
         if (requestError) {
-          throw new Error(
-            apiErrorMessage(requestError, "failed to unstar issue"),
-          );
+          throw new Error(apiErrorMessage(requestError, "failed to unstar issue"));
         }
       } else {
         const { error: requestError } = await apiClient.PUT("/starred", {
@@ -933,9 +904,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
           },
         });
         if (requestError) {
-          throw new Error(
-            apiErrorMessage(requestError, "failed to star issue"),
-          );
+          throw new Error(apiErrorMessage(requestError, "failed to star issue"));
         }
       }
     } catch (err) {

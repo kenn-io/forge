@@ -1,12 +1,5 @@
 import { cleanup, render } from "@testing-library/svelte";
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import type { EventsStoreOptions } from "@middleman/ui/stores/events";
 import type { SyncStatus } from "@middleman/ui/api/types";

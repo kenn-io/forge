@@ -1,18 +1,5 @@
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from "@testing-library/svelte";
-import {
-  afterAll,
-  afterEach,
-  beforeAll,
-  describe,
-  expect,
-  it,
-} from "vite-plus/test";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vite-plus/test";
 import type { DiffFile as DiffFileType } from "../../api/types.js";
 import { STORES_KEY } from "../../context.js";
 import { createDiffStore } from "../../stores/diff.svelte.js";
@@ -35,8 +22,7 @@ let originalReplaceSync: unknown;
 
 beforeAll(() => {
   originalIntersectionObserverExisted = "IntersectionObserver" in globalThis;
-  originalIntersectionObserver = (globalThis as GlobalWithIO)
-    .IntersectionObserver;
+  originalIntersectionObserver = (globalThis as GlobalWithIO).IntersectionObserver;
   class IntersectionObserverStub {
     private readonly callback: IntersectionObserverCallback;
     root: Element | null = null;
@@ -69,8 +55,7 @@ beforeAll(() => {
   (globalThis as GlobalWithIO).IntersectionObserver = IntersectionObserverStub;
 
   originalResizeObserverExisted = "ResizeObserver" in globalThis;
-  originalResizeObserver = (globalThis as GlobalWithResizeObserver)
-    .ResizeObserver;
+  originalResizeObserver = (globalThis as GlobalWithResizeObserver).ResizeObserver;
   class ResizeObserverStub {
     observe(): void {}
     unobserve(): void {}
@@ -78,35 +63,29 @@ beforeAll(() => {
   }
   (globalThis as GlobalWithResizeObserver).ResizeObserver = ResizeObserverStub;
 
-  originalReplaceSync = (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet
-    ?.prototype.replaceSync;
+  originalReplaceSync = (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet?.prototype
+    .replaceSync;
   if ((globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet?.prototype) {
-    (
-      globalThis as GlobalWithCSSStyleSheet
-    ).CSSStyleSheet.prototype.replaceSync ??= function replaceSync(): void {};
+    (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet.prototype.replaceSync ??=
+      function replaceSync(): void {};
   }
 });
 
 afterAll(() => {
   if (originalIntersectionObserverExisted) {
-    (globalThis as GlobalWithIO).IntersectionObserver =
-      originalIntersectionObserver;
+    (globalThis as GlobalWithIO).IntersectionObserver = originalIntersectionObserver;
   } else {
     delete (globalThis as GlobalWithIO).IntersectionObserver;
   }
   if (originalResizeObserverExisted) {
-    (globalThis as GlobalWithResizeObserver).ResizeObserver =
-      originalResizeObserver;
+    (globalThis as GlobalWithResizeObserver).ResizeObserver = originalResizeObserver;
   } else {
     delete (globalThis as GlobalWithResizeObserver).ResizeObserver;
   }
   if ((globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet?.prototype) {
     if (originalReplaceSync) {
-      (
-        globalThis as GlobalWithCSSStyleSheet
-      ).CSSStyleSheet.prototype.replaceSync = originalReplaceSync as (
-        text: string,
-      ) => void;
+      (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet.prototype.replaceSync =
+        originalReplaceSync as (text: string) => void;
     } else {
       delete (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet.prototype
         .replaceSync;
@@ -278,9 +257,7 @@ function benchmarkLineCounts(): number[] {
     .map((part) => Number(part.trim()))
     .filter((value) => Number.isInteger(value) && value > 0);
   if (counts.length === 0) {
-    throw new Error(
-      `invalid DIFF_INLINE_COMMENT_BENCH_LINES=${JSON.stringify(raw)}`,
-    );
+    throw new Error(`invalid DIFF_INLINE_COMMENT_BENCH_LINES=${JSON.stringify(raw)}`);
   }
   return counts;
 }
@@ -291,12 +268,8 @@ const benchDescribe =
 benchDescribe("DiffFile inline comment opening benchmark", () => {
   it("measures opening and closing an inline composer by diff size", async () => {
     const results = [];
-    const samples = Number(
-      process.env.DIFF_INLINE_COMMENT_BENCH_SAMPLES ?? "7",
-    );
-    const warmups = Number(
-      process.env.DIFF_INLINE_COMMENT_BENCH_WARMUPS ?? "2",
-    );
+    const samples = Number(process.env.DIFF_INLINE_COMMENT_BENCH_SAMPLES ?? "7");
+    const warmups = Number(process.env.DIFF_INLINE_COMMENT_BENCH_WARMUPS ?? "2");
     const sizes = benchmarkLineCounts();
 
     for (const lineCount of sizes) {

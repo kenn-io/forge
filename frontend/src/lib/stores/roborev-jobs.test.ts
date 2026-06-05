@@ -1,21 +1,10 @@
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { createJobsStore } from "@middleman/ui";
 import type { components } from "@middleman/ui/api/roborev/schema";
 
 type ReviewJob = components["schemas"]["ReviewJob"];
 
-function makeJob(
-  id: number,
-  startedAt?: string,
-  finishedAt?: string,
-): ReviewJob {
+function makeJob(id: number, startedAt?: string, finishedAt?: string): ReviewJob {
   return {
     id,
     agent: "codex",

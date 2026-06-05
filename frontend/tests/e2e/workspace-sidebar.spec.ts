@@ -2,11 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import { mockApi } from "./support/mockApi";
 
-function workspaceRepoRef(
-  owner = "acme",
-  name = "widgets",
-  host = "github.com",
-) {
+function workspaceRepoRef(owner = "acme", name = "widgets", host = "github.com") {
   return {
     provider: "github",
     platform_host: host,
@@ -288,71 +284,63 @@ async function setupTerminalMocks(
     await route.fulfill({ status: 405 });
   });
 
-  await page.route(
-    `**/api/v1/workspaces/${ws.id}/runtime/sessions`,
-    async (route) => {
-      if (route.request().method() !== "POST") {
-        await route.fulfill({ status: 405 });
-        return;
-      }
-      const body = JSON.parse(route.request().postData() ?? "{}") as {
-        target_key?: string;
-      };
-      const target = runtime.launch_targets.find(
-        (candidate) => candidate.key === body.target_key,
-      );
-      if (!target || !target.available) {
-        await route.fulfill({
-          status: 400,
-          contentType: "application/json",
-          body: JSON.stringify({
-            detail: "launch target unavailable",
-          }),
-        });
-        return;
-      }
-      opts?.runtimeEvents?.launches.push(target.key);
-      let session = runtime.sessions.find(
-        (candidate) =>
-          candidate.target_key === target.key &&
-          ["running", "starting"].includes(candidate.status),
-      );
-      if (!session) {
-        const previous = runtime.sessions.find(
-          (candidate) => candidate.target_key === target.key,
-        );
-        session = {
-          key: previous?.key ?? `${ws.id}:${target.key}`,
-          workspace_id: ws.id,
-          target_key: target.key,
-          label: target.label,
-          kind: target.kind,
-          status: "running",
-          created_at: "2026-04-10T12:00:00Z",
-        };
-        runtime.sessions = [
-          ...runtime.sessions.filter(
-            (candidate) => candidate.key !== session.key,
-          ),
-          session,
-        ];
-      }
+  await page.route(`**/api/v1/workspaces/${ws.id}/runtime/sessions`, async (route) => {
+    if (route.request().method() !== "POST") {
+      await route.fulfill({ status: 405 });
+      return;
+    }
+    const body = JSON.parse(route.request().postData() ?? "{}") as {
+      target_key?: string;
+    };
+    const target = runtime.launch_targets.find(
+      (candidate) => candidate.key === body.target_key,
+    );
+    if (!target || !target.available) {
       await route.fulfill({
-        status: 200,
+        status: 400,
         contentType: "application/json",
-        body: JSON.stringify(session),
+        body: JSON.stringify({
+          detail: "launch target unavailable",
+        }),
       });
-    },
-  );
+      return;
+    }
+    opts?.runtimeEvents?.launches.push(target.key);
+    let session = runtime.sessions.find(
+      (candidate) =>
+        candidate.target_key === target.key &&
+        ["running", "starting"].includes(candidate.status),
+    );
+    if (!session) {
+      const previous = runtime.sessions.find(
+        (candidate) => candidate.target_key === target.key,
+      );
+      session = {
+        key: previous?.key ?? `${ws.id}:${target.key}`,
+        workspace_id: ws.id,
+        target_key: target.key,
+        label: target.label,
+        kind: target.kind,
+        status: "running",
+        created_at: "2026-04-10T12:00:00Z",
+      };
+      runtime.sessions = [
+        ...runtime.sessions.filter((candidate) => candidate.key !== session.key),
+        session,
+      ];
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(session),
+    });
+  });
 
   await page.route(
-    (url) =>
-      url.pathname.startsWith(`/api/v1/workspaces/${ws.id}/runtime/sessions/`),
+    (url) => url.pathname.startsWith(`/api/v1/workspaces/${ws.id}/runtime/sessions/`),
     async (route) => {
       const url = new URL(route.request().url());
-      const sessionKey = decodeURIComponent(
-        url.pathname.split("/").at(-1) ?? "",
-      );
+      const sessionKey = decodeURIComponent(url.pathname.split("/").at(-1) ?? "");
 
       if (route.request().method() === "PATCH") {
         const body = JSON.parse(route.request().postData() ?? "{}") as {
@@ -423,10 +411,7 @@ async function setupTerminalMocks(
         });
         return;
       }
-      if (
-        url.pathname.endsWith("/api/jobs") ||
-        url.pathname.includes("/api/jobs?")
-      ) {
+      if (url.pathname.endsWith("/api/jobs") || url.pathname.includes("/api/jobs?")) {
         await route.fulfill({
           status: 200,
           contentType: "application/json",
@@ -782,15 +767,11 @@ test.describe("terminal state icons", () => {
 
     const stateMessage = page.locator(".state-message.error");
     await expect(stateMessage).toContainText("Failed to load workspace (500)");
-    await expect(
-      stateMessage.getByLabel("Workspace load failed"),
-    ).toBeVisible();
+    await expect(stateMessage.getByLabel("Workspace load failed")).toBeVisible();
 
     await stateMessage.getByRole("button", { name: "Retry" }).click();
 
-    await expect(page.locator(".header-name")).toContainText(
-      "Add auth middleware",
-    );
+    await expect(page.locator(".header-name")).toContainText("Add auth middleware");
   });
 
   test("workspace setup error retries setup and recovers", async ({ page }) => {
@@ -831,16 +812,12 @@ test.describe("terminal state icons", () => {
 
     const stateMessage = page.locator(".state-message.error");
     await expect(stateMessage).toContainText("tmux bootstrap failed");
-    await expect(
-      stateMessage.getByLabel("Workspace setup failed"),
-    ).toBeVisible();
+    await expect(stateMessage.getByLabel("Workspace setup failed")).toBeVisible();
 
     await stateMessage.getByRole("button", { name: "Retry" }).click();
 
     expect(retryCalls).toBe(1);
-    await expect(page.locator(".header-name")).toContainText(
-      "Add auth middleware",
-    );
+    await expect(page.locator(".header-name")).toContainText("Add auth middleware");
   });
 
   test("workspace setup error can be deleted", async ({ page }) => {
@@ -894,10 +871,7 @@ test.describe("terminal state icons", () => {
 
     await page.goto("/terminal/ws-123");
 
-    await page
-      .locator(".header-bar")
-      .getByRole("button", { name: "Delete" })
-      .click();
+    await page.locator(".header-bar").getByRole("button", { name: "Delete" }).click();
 
     const dialog = page.getByRole("dialog", {
       name: "Force delete workspace?",
@@ -938,10 +912,7 @@ test.describe("terminal state icons", () => {
 
     await page.goto("/terminal/ws-123");
 
-    await page
-      .locator(".header-bar")
-      .getByRole("button", { name: "Delete" })
-      .click();
+    await page.locator(".header-bar").getByRole("button", { name: "Delete" }).click();
 
     const dialog = page.getByRole("dialog", {
       name: "Force delete workspace?",
@@ -1003,10 +974,7 @@ test.describe("terminal state icons", () => {
     // Closing the dialog restores focus to the trigger.
     await cancel.click();
     await expect(dialog).toBeHidden();
-    await expect(page.locator(".terminal-view")).not.toHaveAttribute(
-      "inert",
-      "",
-    );
+    await expect(page.locator(".terminal-view")).not.toHaveAttribute("inert", "");
     await expect(headerDelete).toBeFocused();
   });
 
@@ -1033,10 +1001,7 @@ test.describe("terminal state icons", () => {
 
     await page.goto("/terminal/ws-123");
 
-    await page
-      .locator(".header-bar")
-      .getByRole("button", { name: "Delete" })
-      .click();
+    await page.locator(".header-bar").getByRole("button", { name: "Delete" }).click();
 
     const dialog = page.getByRole("dialog", {
       name: "Force delete workspace?",
@@ -1089,10 +1054,7 @@ test.describe("terminal state icons", () => {
     // Kick off the DELETE, then immediately leave the workspace.
     // The DELETE handler in handleDelete is async, so this is the
     // exact race condition the post-await guard exists to handle.
-    await page
-      .locator(".header-bar")
-      .getByRole("button", { name: "Delete" })
-      .click();
+    await page.locator(".header-bar").getByRole("button", { name: "Delete" }).click();
     await page.evaluate(() => {
       history.pushState(null, "", "/workspaces");
       window.dispatchEvent(new PopStateEvent("popstate"));
@@ -1135,10 +1097,7 @@ test.describe("terminal state icons", () => {
 
     await page.goto("/terminal/ws-123");
 
-    await page
-      .locator(".header-bar")
-      .getByRole("button", { name: "Delete" })
-      .click();
+    await page.locator(".header-bar").getByRole("button", { name: "Delete" }).click();
 
     // A round-trip back to the same workspace would defeat an
     // id-only guard: the captured targetId matches the current
@@ -1186,10 +1145,7 @@ test.describe("terminal state icons", () => {
 
     await page.goto("/terminal/ws-123");
 
-    await page
-      .locator(".header-bar")
-      .getByRole("button", { name: "Delete" })
-      .click();
+    await page.locator(".header-bar").getByRole("button", { name: "Delete" }).click();
 
     // Without the post-await guard in handleDelete, the stale
     // 204 would call navigate("/workspaces") and the user would
@@ -1223,10 +1179,7 @@ test.describe("terminal state icons", () => {
 
     await page.goto("/terminal/ws-123");
 
-    await page
-      .locator(".header-bar")
-      .getByRole("button", { name: "Delete" })
-      .click();
+    await page.locator(".header-bar").getByRole("button", { name: "Delete" }).click();
 
     // Round-trip back to the same workspace before the 204 lands.
     // The generation token has advanced, but the workspace the
@@ -1285,9 +1238,7 @@ test.describe("workspace launch home", () => {
     await expect.poll(() => terminalSockets.length).toBe(0);
   });
 
-  test("does not attach restored runtime sessions until selected", async ({
-    page,
-  }) => {
+  test("does not attach restored runtime sessions until selected", async ({ page }) => {
     await setupTerminalMocks(page, {
       runtime: {
         ...workspaceRuntime,
@@ -1395,20 +1346,18 @@ test.describe("workspace launch home", () => {
       "aria-selected",
       "true",
     );
-    await expect(
-      workflow.getByRole("tab", { name: "Terminal" }),
-    ).toHaveAttribute("aria-selected", "false");
+    await expect(workflow.getByRole("tab", { name: "Terminal" })).toHaveAttribute(
+      "aria-selected",
+      "false",
+    );
 
-    await workflow
-      .getByRole("button", { name: "Move Codex to terminal" })
-      .click();
+    await workflow.getByRole("button", { name: "Move Codex to terminal" }).click();
 
-    await expect(
-      workflow.getByRole("tab", { name: "Terminal" }),
-    ).toHaveAttribute("aria-selected", "true");
-    await expect(
-      page.locator(".workflow-leaf .terminal-container"),
-    ).toBeVisible();
+    await expect(workflow.getByRole("tab", { name: "Terminal" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    await expect(page.locator(".workflow-leaf .terminal-container")).toBeVisible();
   });
 
   test("keeps a closed top-docked terminal reachable when terminal sessions exist", async ({
@@ -1448,16 +1397,12 @@ test.describe("workspace launch home", () => {
     });
     await expect(terminalTab).toBeVisible();
     await expect(terminalTab).toHaveAttribute("aria-selected", "false");
-    await expect(
-      page.locator(".workflow-leaf .terminal-container"),
-    ).toHaveCount(0);
+    await expect(page.locator(".workflow-leaf .terminal-container")).toHaveCount(0);
 
     await terminalTab.click();
 
     await expect(terminalTab).toHaveAttribute("aria-selected", "true");
-    await expect(
-      page.locator(".workflow-leaf .terminal-container"),
-    ).toBeVisible();
+    await expect(page.locator(".workflow-leaf .terminal-container")).toBeVisible();
   });
 
   test("applies a workflow preset that restores the Shell workflow tab", async ({
@@ -1488,9 +1433,7 @@ test.describe("workspace launch home", () => {
       "aria-selected",
       "true",
     );
-    await expect(
-      page.locator(".workflow-leaf .terminal-container"),
-    ).toBeVisible();
+    await expect(page.locator(".workflow-leaf .terminal-container")).toBeVisible();
   });
 
   test("workflow pane drops append in the center and split at the edge", async ({
@@ -1537,9 +1480,7 @@ test.describe("workspace launch home", () => {
     ).toBeVisible();
   });
 
-  test("saves updates applies and deletes workflow presets", async ({
-    page,
-  }) => {
+  test("saves updates applies and deletes workflow presets", async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.removeItem("middleman-workspace-terminal-layout:ws-123");
       localStorage.removeItem("middleman-workspace-layout-presets");
@@ -1587,9 +1528,7 @@ test.describe("workspace launch home", () => {
     await expect
       .poll(() =>
         page.evaluate(() => {
-          const raw = localStorage.getItem(
-            "middleman-workspace-layout-presets",
-          );
+          const raw = localStorage.getItem("middleman-workspace-layout-presets");
           const presets = raw ? JSON.parse(raw) : [];
           return presets.map((preset: { name: string }) => preset.name);
         }),
@@ -1614,9 +1553,7 @@ test.describe("workspace launch home", () => {
     await expect
       .poll(() =>
         page.evaluate(() => {
-          const raw = localStorage.getItem(
-            "middleman-workspace-layout-presets",
-          );
+          const raw = localStorage.getItem("middleman-workspace-layout-presets");
           const presets = raw ? JSON.parse(raw) : [];
           return presets[0]?.sessions.find(
             (session: { targetKey: string }) => session.targetKey === "codex",
@@ -1626,9 +1563,7 @@ test.describe("workspace launch home", () => {
       .toBe("Navigator");
 
     await page
-      .locator(
-        '.terminal-panel .panel-action[aria-label="Close terminal panel"]',
-      )
+      .locator('.terminal-panel .panel-action[aria-label="Close terminal panel"]')
       .click();
     await expect(page.locator(".terminal-panel.open")).toHaveCount(0);
     mocked.runtime.sessions = [];
@@ -1641,9 +1576,7 @@ test.describe("workspace launch home", () => {
       .getByRole("dialog", { name: "Workflow presets" })
       .getByRole("button", { name: "Review pair", exact: true })
       .click();
-    await expect
-      .poll(() => runtimeEvents.launches)
-      .toEqual(["codex", "plain_shell"]);
+    await expect.poll(() => runtimeEvents.launches).toEqual(["codex", "plain_shell"]);
     await expect
       .poll(() => runtimeEvents.renames)
       .toEqual([
@@ -1684,9 +1617,7 @@ test.describe("workspace launch home", () => {
     await expect
       .poll(() =>
         page.evaluate(() => {
-          const raw = localStorage.getItem(
-            "middleman-workspace-layout-presets",
-          );
+          const raw = localStorage.getItem("middleman-workspace-layout-presets");
           return raw ? JSON.parse(raw).length : 0;
         }),
       )
@@ -1883,9 +1814,7 @@ test.describe("workspace launch home", () => {
           }
           if (ArrayBuffer.isView(data)) {
             this.record.sent.push(
-              Array.from(
-                new Uint8Array(data.buffer, data.byteOffset, data.byteLength),
-              ),
+              Array.from(new Uint8Array(data.buffer, data.byteOffset, data.byteLength)),
             );
             return;
           }
@@ -1944,18 +1873,14 @@ test.describe("workspace launch home", () => {
           ).__middlemanRecordedTerminalSockets
             .flatMap((socket) => socket.sent)
             .map((frame) =>
-              Array.isArray(frame)
-                ? decoder.decode(new Uint8Array(frame))
-                : frame,
+              Array.isArray(frame) ? decoder.decode(new Uint8Array(frame)) : frame,
             );
         }),
       )
       .toContainEqual("first\nsecond\nthird");
   });
 
-  test("opens the plain shell from the bottom terminal panel", async ({
-    page,
-  }) => {
+  test("opens the plain shell from the bottom terminal panel", async ({ page }) => {
     const terminalSockets: string[] = [];
     page.on("websocket", (socket) => {
       terminalSockets.push(socket.url());
@@ -1985,10 +1910,7 @@ test.describe("workspace launch home", () => {
   }) => {
     const shellEnsures: string[] = [];
     page.on("request", (request) => {
-      if (
-        request.method() === "POST" &&
-        request.url().includes("/runtime/sessions")
-      ) {
+      if (request.method() === "POST" && request.url().includes("/runtime/sessions")) {
         shellEnsures.push(request.url());
       }
     });
@@ -2059,10 +1981,7 @@ test.describe("sidebar toggle behavior", () => {
     });
     const pulse = row.locator(".working-pulse");
     await expect(pulse).toBeVisible();
-    await expect(pulse).toHaveAttribute(
-      "title",
-      "Working (title): ⠴ t3code-b5014b03",
-    );
+    await expect(pulse).toHaveAttribute("title", "Working (title): ⠴ t3code-b5014b03");
     await expect(pulse).toHaveAttribute(
       "aria-label",
       "Working (title): ⠴ t3code-b5014b03",
@@ -2090,9 +2009,7 @@ test.describe("sidebar toggle behavior", () => {
     await page.goto("/terminal/ws-123");
 
     await expect.poll(() => listRequests).toBeGreaterThanOrEqual(1);
-    await expect
-      .poll(() => listRequests, { timeout: 6500 })
-      .toBeGreaterThanOrEqual(2);
+    await expect.poll(() => listRequests, { timeout: 6500 }).toBeGreaterThanOrEqual(2);
   });
 
   test("workspace list resize reclamps the right sidebar", async ({ page }) => {
@@ -2126,9 +2043,7 @@ test.describe("sidebar toggle behavior", () => {
     }
 
     await expect
-      .poll(async () =>
-        rightSidebar.evaluate((el) => el.getBoundingClientRect().width),
-      )
+      .poll(async () => rightSidebar.evaluate((el) => el.getBoundingClientRect().width))
       .toBeLessThan(initialRightSidebarWidth - 20);
 
     const resizedListWidth = await listSidebar.evaluate(
@@ -2147,9 +2062,7 @@ test.describe("sidebar toggle behavior", () => {
 
     const segControl = page.locator(".seg-control");
     await expect(segControl).toBeVisible();
-    await expect(
-      segControl.locator(".seg-btn", { hasText: "PR" }),
-    ).toBeVisible();
+    await expect(segControl.locator(".seg-btn", { hasText: "PR" })).toBeVisible();
     await expect(
       segControl.locator(".seg-btn", {
         hasText: "Reviews",
@@ -2157,9 +2070,7 @@ test.describe("sidebar toggle behavior", () => {
     ).toBeVisible();
   });
 
-  test("clicking PR segment opens sidebar with PR content", async ({
-    page,
-  }) => {
+  test("clicking PR segment opens sidebar with PR content", async ({ page }) => {
     await page.goto("/terminal/ws-123");
 
     const prBtn = page.locator(".seg-btn", {
@@ -2353,9 +2264,7 @@ test.describe("sidebar PR tab", () => {
     await setupTerminalMocks(page);
   });
 
-  test("PR tab loads PR detail for workspace with linked PR", async ({
-    page,
-  }) => {
+  test("PR tab loads PR detail for workspace with linked PR", async ({ page }) => {
     await page.goto("/terminal/ws-123");
 
     // Open PR tab
@@ -2368,9 +2277,7 @@ test.describe("sidebar PR tab", () => {
     );
   });
 
-  test("workspace without associated PR hides malformed PR tab", async ({
-    page,
-  }) => {
+  test("workspace without associated PR hides malformed PR tab", async ({ page }) => {
     const noLinkedPR = {
       ...testIssueWorkspace,
       associated_pr_number: null,
@@ -2398,9 +2305,7 @@ test.describe("workspace list bubble opens right sidebar", () => {
     });
   });
 
-  test("clicking PR bubble opens PR tab in the right sidebar", async ({
-    page,
-  }) => {
+  test("clicking PR bubble opens PR tab in the right sidebar", async ({ page }) => {
     await setupTerminalMocks(page);
     await page.goto("/terminal/ws-123");
 
@@ -2410,9 +2315,7 @@ test.describe("workspace list bubble opens right sidebar", () => {
     await page.locator(".workspace-list-sidebar .ws-row .item-bubble").click();
 
     await expect(page.locator(".right-sidebar")).toBeVisible();
-    await expect(page.locator(".seg-btn", { hasText: "PR" })).toHaveClass(
-      /\bactive\b/,
-    );
+    await expect(page.locator(".seg-btn", { hasText: "PR" })).toHaveClass(/\bactive\b/);
   });
 
   test("clicking issue bubble opens Issue tab for issue workspace", async ({
@@ -2433,9 +2336,7 @@ test.describe("workspace list bubble opens right sidebar", () => {
     );
   });
 
-  test("Enter keypress on PR bubble does not navigate row", async ({
-    page,
-  }) => {
+  test("Enter keypress on PR bubble does not navigate row", async ({ page }) => {
     await setupTerminalMocks(page);
     await page.goto("/terminal/ws-123");
 
@@ -2458,9 +2359,7 @@ test.describe("workspace list bubble opens right sidebar", () => {
 
     // The /workspaces route has no specific workspace selected
     // but still mounts the workspace list sidebar.
-    await expect(page.locator(".workspace-list-sidebar .ws-row")).toHaveCount(
-      1,
-    );
+    await expect(page.locator(".workspace-list-sidebar .ws-row")).toHaveCount(1);
     await expect(page.locator(".terminal-main .state-message")).toContainText(
       "Select a workspace from the sidebar",
     );
@@ -2471,13 +2370,9 @@ test.describe("workspace list bubble opens right sidebar", () => {
     // workspace, the sidebar stays populated rather than
     // emptying out, and the right sidebar opens to PR.
     await expect(page).toHaveURL(/\/terminal\/ws-123$/);
-    await expect(page.locator(".workspace-list-sidebar .ws-row")).toHaveCount(
-      1,
-    );
+    await expect(page.locator(".workspace-list-sidebar .ws-row")).toHaveCount(1);
     await expect(page.locator(".right-sidebar")).toBeVisible();
-    await expect(page.locator(".seg-btn", { hasText: "PR" })).toHaveClass(
-      /\bactive\b/,
-    );
+    await expect(page.locator(".seg-btn", { hasText: "PR" })).toHaveClass(/\bactive\b/);
   });
 
   test("clicking bubble for a different workspace from /terminal navigates and keeps sidebar populated", async ({
@@ -2519,25 +2414,20 @@ test.describe("workspace list bubble opens right sidebar", () => {
         }
         await route.fulfill({ status: 204 });
       });
-      await page.route(
-        `**/api/v1/workspaces/${ws.id}/runtime`,
-        async (route) => {
-          await route.fulfill({
-            status: 200,
-            contentType: "application/json",
-            body: JSON.stringify({
-              launch_targets: [],
-              sessions: [],
-            }),
-          });
-        },
-      );
+      await page.route(`**/api/v1/workspaces/${ws.id}/runtime`, async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            launch_targets: [],
+            sessions: [],
+          }),
+        });
+      });
     }
 
     await page.goto(`/terminal/${wsA.id}`);
-    await expect(page.locator(".workspace-list-sidebar .ws-row")).toHaveCount(
-      2,
-    );
+    await expect(page.locator(".workspace-list-sidebar .ws-row")).toHaveCount(2);
     await expect(page).toHaveURL(new RegExp(`/terminal/${wsA.id}$`));
 
     // Click the bubble for the other workspace.
@@ -2550,18 +2440,12 @@ test.describe("workspace list bubble opens right sidebar", () => {
     // Should route to the other workspace, sidebar stays full,
     // right sidebar opens to PR.
     await expect(page).toHaveURL(new RegExp(`/terminal/${wsB.id}$`));
-    await expect(page.locator(".workspace-list-sidebar .ws-row")).toHaveCount(
-      2,
-    );
+    await expect(page.locator(".workspace-list-sidebar .ws-row")).toHaveCount(2);
     await expect(page.locator(".right-sidebar")).toBeVisible();
-    await expect(page.locator(".seg-btn", { hasText: "PR" })).toHaveClass(
-      /\bactive\b/,
-    );
+    await expect(page.locator(".seg-btn", { hasText: "PR" })).toHaveClass(/\bactive\b/);
   });
 
-  test("clicking bubble does not bubble up to row navigation", async ({
-    page,
-  }) => {
+  test("clicking bubble does not bubble up to row navigation", async ({ page }) => {
     // The row click handler must skip when the event originates
     // inside the bubble. If it didn't, the row would navigate
     // before the bubble could open the right sidebar — leaving
@@ -2665,19 +2549,16 @@ test.describe("workspace list bubble opens right sidebar", () => {
         }
         await route.fulfill({ status: 204 });
       });
-      await page.route(
-        `**/api/v1/workspaces/${ws.id}/runtime`,
-        async (route) => {
-          await route.fulfill({
-            status: 200,
-            contentType: "application/json",
-            body: JSON.stringify({
-              launch_targets: [],
-              sessions: [],
-            }),
-          });
-        },
-      );
+      await page.route(`**/api/v1/workspaces/${ws.id}/runtime`, async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            launch_targets: [],
+            sessions: [],
+          }),
+        });
+      });
     }
 
     await page.goto("/workspaces");
@@ -2692,9 +2573,7 @@ test.describe("workspace list bubble opens right sidebar", () => {
         .locator(".diff-stats"),
     ).toHaveCount(1);
 
-    const bubbles = page.locator(
-      ".workspace-list-sidebar .ws-row .item-bubble",
-    );
+    const bubbles = page.locator(".workspace-list-sidebar .ws-row .item-bubble");
     const boxes: Array<{ right: number }> = [];
     for (let i = 0; i < list.length; i += 1) {
       const box = await bubbles.nth(i).boundingBox();
@@ -2712,9 +2591,7 @@ test.describe("workspace list bubble opens right sidebar", () => {
     expect(maxRight - minRight).toBeLessThanOrEqual(1);
   });
 
-  test("filters workspace rows by repo, title, and item number", async ({
-    page,
-  }) => {
+  test("filters workspace rows by repo, title, and item number", async ({ page }) => {
     const wsTitle = {
       ...testWorkspace,
       id: "ws-title",
@@ -2772,15 +2649,11 @@ test.describe("workspace list bubble opens right sidebar", () => {
 
     await filter.fill("huma");
     await expect(rows).toHaveCount(1);
-    await expect(rows.first()).toContainText(
-      "Migrate native HTTP surface to Huma v2",
-    );
+    await expect(rows.first()).toContainText("Migrate native HTTP surface to Huma v2");
 
     await filter.fill("kenn-platform");
     await expect(rows).toHaveCount(1);
-    await expect(rows.first()).toContainText(
-      "Hosted code fetch and caching strategy",
-    );
+    await expect(rows.first()).toContainText("Hosted code fetch and caching strategy");
 
     await filter.fill("#224");
     await expect(rows).toHaveCount(1);
@@ -2860,19 +2733,16 @@ test.describe("delayed-response navigation", () => {
       }
       await route.fulfill({ status: 204 });
     });
-    await page.route(
-      `**/api/v1/workspaces/${wsA.id}/runtime`,
-      async (route) => {
-        await route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify({
-            launch_targets: [],
-            sessions: [],
-          }),
-        });
-      },
-    );
+    await page.route(`**/api/v1/workspaces/${wsA.id}/runtime`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          launch_targets: [],
+          sessions: [],
+        }),
+      });
+    });
 
     // wsB — delayed. Resolved manually below so the test can
     // observe the in-place transition.
@@ -2892,20 +2762,17 @@ test.describe("delayed-response navigation", () => {
       }
       await route.fulfill({ status: 204 });
     });
-    await page.route(
-      `**/api/v1/workspaces/${wsB.id}/runtime`,
-      async (route) => {
-        await bDelay;
-        await route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify({
-            launch_targets: [],
-            sessions: [],
-          }),
-        });
-      },
-    );
+    await page.route(`**/api/v1/workspaces/${wsB.id}/runtime`, async (route) => {
+      await bDelay;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          launch_targets: [],
+          sessions: [],
+        }),
+      });
+    });
 
     await page.goto(`/terminal/${wsA.id}`);
 
@@ -2932,9 +2799,7 @@ test.describe("delayed-response navigation", () => {
     // While the URL points at B but the screen still shows A,
     // the Delete button must be disabled so a click can't
     // delete B while the user looks at A.
-    await expect(
-      page.locator(".terminal-main .header-btn.danger"),
-    ).toBeDisabled();
+    await expect(page.locator(".terminal-main .header-btn.danger")).toBeDisabled();
 
     // Release B's response — the UI should update in place to
     // wsB without ever rendering a "Loading..." flash.
@@ -2942,9 +2807,7 @@ test.describe("delayed-response navigation", () => {
     await expect(page.locator(".terminal-main .header-name")).toContainText(
       wsB.mr_title,
     );
-    await expect(
-      page.locator(".terminal-main .header-btn.danger"),
-    ).toBeEnabled();
+    await expect(page.locator(".terminal-main .header-btn.danger")).toBeEnabled();
   });
 
   test("terminal panel closes when navigating to a different workspace", async ({
@@ -3007,19 +2870,16 @@ test.describe("delayed-response navigation", () => {
         }
         await route.fulfill({ status: 204 });
       });
-      await page.route(
-        `**/api/v1/workspaces/${ws.id}/runtime`,
-        async (route) => {
-          await route.fulfill({
-            status: 200,
-            contentType: "application/json",
-            body: JSON.stringify({
-              ...workspaceRuntime,
-              sessions: [shellSession(ws.id)],
-            }),
-          });
-        },
-      );
+      await page.route(`**/api/v1/workspaces/${ws.id}/runtime`, async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            ...workspaceRuntime,
+            sessions: [shellSession(ws.id)],
+          }),
+        });
+      });
     }
 
     await page.goto(`/terminal/${wsA.id}`);
@@ -3040,9 +2900,9 @@ test.describe("delayed-response navigation", () => {
     // The panel must close so the previous workspace's shell
     // pane unmounts and its WebSocket tears down. Otherwise
     // keystrokes from B's session would be routed to A's shell.
-    await expect(
-      page.locator(".terminal-panel.open .terminal-container"),
-    ).toHaveCount(0);
+    await expect(page.locator(".terminal-panel.open .terminal-container")).toHaveCount(
+      0,
+    );
   });
 
   test("previous workspace's runtime sessions are not visible while B's runtime is loading", async ({
@@ -3106,19 +2966,16 @@ test.describe("delayed-response navigation", () => {
       }
       await route.fulfill({ status: 204 });
     });
-    await page.route(
-      `**/api/v1/workspaces/${wsA.id}/runtime`,
-      async (route) => {
-        await route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify({
-            ...workspaceRuntime,
-            sessions: [sessionA],
-          }),
-        });
-      },
-    );
+    await page.route(`**/api/v1/workspaces/${wsA.id}/runtime`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ...workspaceRuntime,
+          sessions: [sessionA],
+        }),
+      });
+    });
     // wsB: workspace GET is fast, runtime GET is held.
     await page.route(`**/api/v1/workspaces/${wsB.id}`, async (route) => {
       if (route.request().method() === "GET") {
@@ -3135,23 +2992,18 @@ test.describe("delayed-response navigation", () => {
     const bRuntimeDelay = new Promise<void>((resolve) => {
       releaseBRuntime = resolve;
     });
-    await page.route(
-      `**/api/v1/workspaces/${wsB.id}/runtime`,
-      async (route) => {
-        await bRuntimeDelay;
-        await route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify(workspaceRuntime),
-        });
-      },
-    );
+    await page.route(`**/api/v1/workspaces/${wsB.id}/runtime`, async (route) => {
+      await bRuntimeDelay;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(workspaceRuntime),
+      });
+    });
 
     await page.goto(`/terminal/${wsA.id}`);
     // A's session tab should be visible.
-    await expect(
-      page.locator(".workspace-stage .group-tab-panel"),
-    ).not.toHaveCount(0);
+    await expect(page.locator(".workspace-stage .group-tab-panel")).not.toHaveCount(0);
 
     await page
       .locator(".workspace-list-sidebar .ws-row", {
@@ -3174,9 +3026,7 @@ test.describe("delayed-response navigation", () => {
     releaseBRuntime();
 
     // Once B's runtime resolves, the loading state goes away.
-    await expect(page.locator(".workspace-stage .state-message")).toHaveCount(
-      0,
-    );
+    await expect(page.locator(".workspace-stage .state-message")).toHaveCount(0);
   });
 });
 
@@ -3203,9 +3053,7 @@ test.describe("issue workspace sidebar", () => {
 
     await expect(page.locator(".seg-btn", { hasText: "Issue" })).toBeVisible();
     await expect(page.locator(".seg-btn", { hasText: "PR" })).toHaveCount(0);
-    await expect(page.locator(".seg-btn", { hasText: "Reviews" })).toHaveCount(
-      0,
-    );
+    await expect(page.locator(".seg-btn", { hasText: "Reviews" })).toHaveCount(0);
   });
 
   test("issue segment opens issue detail for issue-backed workspaces", async ({
@@ -3306,9 +3154,7 @@ test.describe("issue workspace sidebar", () => {
 
     await expect(page.locator(".seg-btn", { hasText: "Issue" })).toBeVisible();
     await expect(page.locator(".seg-btn", { hasText: "PR" })).toBeVisible();
-    await expect(page.locator(".seg-btn", { hasText: "Reviews" })).toHaveCount(
-      0,
-    );
+    await expect(page.locator(".seg-btn", { hasText: "Reviews" })).toHaveCount(0);
   });
 
   test("issue workspace PR tab hides workspace create and open actions", async ({
@@ -3350,10 +3196,7 @@ test.describe("issue workspace sidebar", () => {
           instances.push(this);
         }
 
-        addEventListener(
-          type: string,
-          callback: (event: MessageEvent) => void,
-        ): void {
+        addEventListener(type: string, callback: (event: MessageEvent) => void): void {
           const bucket = this.listeners.get(type) ?? new Set();
           bucket.add(callback);
           this.listeners.set(type, bucket);
@@ -3362,9 +3205,8 @@ test.describe("issue workspace sidebar", () => {
         close(): void {}
       }
 
-      (
-        window as typeof window & { EventSource: typeof EventSource }
-      ).EventSource = FakeEventSource as unknown as typeof EventSource;
+      (window as typeof window & { EventSource: typeof EventSource }).EventSource =
+        FakeEventSource as unknown as typeof EventSource;
       (
         window as typeof window & {
           __emitWorkspaceStatus: (payload: { id: string }) => void;
@@ -3374,8 +3216,7 @@ test.describe("issue workspace sidebar", () => {
           data: JSON.stringify(payload),
         });
         for (const instance of instances) {
-          const listeners =
-            instance.listeners.get("workspace_status") ?? new Set();
+          const listeners = instance.listeners.get("workspace_status") ?? new Set();
           for (const listener of listeners) {
             listener(event);
           }
@@ -3474,9 +3315,7 @@ test.describe("sidebar Reviews tab", () => {
     ).toHaveText("v0.52.0");
   });
 
-  test("Reviews tab shows job list when roborev repo matches", async ({
-    page,
-  }) => {
+  test("Reviews tab shows job list when roborev repo matches", async ({ page }) => {
     await setupTerminalMocks(page);
     await page.goto("/terminal/ws-123");
 
@@ -3491,9 +3330,7 @@ test.describe("sidebar Reviews tab", () => {
     );
   });
 
-  test("Reviews tab shows empty state when no repo matches", async ({
-    page,
-  }) => {
+  test("Reviews tab shows empty state when no repo matches", async ({ page }) => {
     await setupTerminalMocks(page, {
       roborevRepos: { repos: [], total_count: 0 },
     });

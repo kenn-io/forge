@@ -1,12 +1,5 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import WorkspaceFirstRunPanel from "./WorkspaceFirstRunPanel.svelte";
 
@@ -20,19 +13,14 @@ interface SetupArgs {
   >;
 }
 
-function setupConfig({
-  ghAuthed,
-  ghAvailable = true,
-  handlers = {},
-}: SetupArgs): void {
+function setupConfig({ ghAuthed, ghAvailable = true, handlers = {} }: SetupArgs): void {
   win.__middleman_config = {
     actions: {
       project: [
         {
           id: "add-existing",
           label: "Add Existing",
-          handler:
-            handlers["add-existing"] ?? vi.fn().mockResolvedValue({ ok: true }),
+          handler: handlers["add-existing"] ?? vi.fn().mockResolvedValue({ ok: true }),
         },
         {
           id: "clone",
@@ -43,8 +31,7 @@ function setupConfig({
           id: "connect-github",
           label: "Connect GH",
           handler:
-            handlers["connect-github"] ??
-            vi.fn().mockResolvedValue({ ok: true }),
+            handlers["connect-github"] ?? vi.fn().mockResolvedValue({ ok: true }),
         },
       ],
     },
@@ -80,9 +67,7 @@ describe("WorkspaceFirstRunPanel", () => {
         name: /Add an existing local repository/i,
       }),
     ).toBeTruthy();
-    expect(
-      screen.getByRole("button", { name: /Clone a repository/i }),
-    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Clone a repository/i })).toBeTruthy();
     expect(
       screen.getByRole("button", {
         name: /Connect a GitHub repository/i,
@@ -98,9 +83,7 @@ describe("WorkspaceFirstRunPanel", () => {
       name: /Connect a GitHub repository/i,
     });
     expect((button as HTMLButtonElement).disabled).toBe(true);
-    expect(
-      screen.getByText("Run gh auth login to use this option."),
-    ).toBeTruthy();
+    expect(screen.getByText("Run gh auth login to use this option.")).toBeTruthy();
   });
 
   it("uses an install-gh recovery hint when gh is unavailable", () => {
@@ -132,9 +115,7 @@ describe("WorkspaceFirstRunPanel", () => {
     setupConfig({ ghAuthed: true, handlers: { clone: handler } });
     render(WorkspaceFirstRunPanel);
 
-    await fireEvent.click(
-      screen.getByRole("button", { name: /Clone a repository/i }),
-    );
+    await fireEvent.click(screen.getByRole("button", { name: /Clone a repository/i }));
     expect(await screen.findByText("Couldn't reach the remote")).toBeTruthy();
   });
 
@@ -154,9 +135,7 @@ describe("WorkspaceFirstRunPanel", () => {
     await fireEvent.click(
       screen.getByRole("button", { name: /Add an existing local repository/i }),
     );
-    expect(
-      await screen.findByText(/not available in this build/i),
-    ).toBeTruthy();
+    expect(await screen.findByText(/not available in this build/i)).toBeTruthy();
   });
 
   it("renders the tooling status block beneath the actions", () => {

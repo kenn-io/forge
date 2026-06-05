@@ -10,18 +10,14 @@ describe("WorkspaceEmbedEmptyState", () => {
     render(WorkspaceEmbedEmptyState, {
       props: { reason: "noSelection" },
     });
-    expect(
-      screen.getByText("Select a workspace from the sidebar"),
-    ).toBeTruthy();
+    expect(screen.getByText("Select a workspace from the sidebar")).toBeTruthy();
   });
 
   it("renders the noRepo message", () => {
     render(WorkspaceEmbedEmptyState, {
       props: { reason: "noRepo" },
     });
-    expect(
-      screen.getByText("Select a repository to see workspaces"),
-    ).toBeTruthy();
+    expect(screen.getByText("Select a repository to see workspaces")).toBeTruthy();
   });
 
   it("renders the noWorkspace message", () => {

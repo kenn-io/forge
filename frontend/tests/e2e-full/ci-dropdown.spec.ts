@@ -3,9 +3,7 @@ import { expect, test } from "@playwright/test";
 import { startIsolatedE2EServer } from "./support/e2eServer";
 
 test.describe("CI dropdown", () => {
-  test("failed CI refresh preserves stored pending status", async ({
-    page,
-  }) => {
+  test("failed CI refresh preserves stored pending status", async ({ page }) => {
     const server = await startIsolatedE2EServer();
     try {
       const seedResponse = await page.request.post(
@@ -27,9 +25,7 @@ test.describe("CI dropdown", () => {
         merge_request: { CIStatus: string; CIChecksJSON: string };
       };
       expect(refreshedDetail.merge_request.CIStatus).toBe("pending");
-      expect(refreshedDetail.merge_request.CIChecksJSON).toContain(
-        "in_progress",
-      );
+      expect(refreshedDetail.merge_request.CIChecksJSON).toContain("in_progress");
 
       const storedResponse = await page.request.get(
         `${server.info.base_url}/api/v1/pulls/github/acme/widgets/1`,
@@ -45,9 +41,7 @@ test.describe("CI dropdown", () => {
     }
   });
 
-  test("expanded pending CI checks trigger a detail sync refresh", async ({
-    page,
-  }) => {
+  test("expanded pending CI checks trigger a detail sync refresh", async ({ page }) => {
     const server = await startIsolatedE2EServer();
     try {
       await page.addInitScript(() => {
@@ -219,11 +213,7 @@ test.describe("CI dropdown", () => {
       "lint",
       "test",
     ]);
-    await expect(detail.locator(".ci-duration")).toHaveText([
-      "1m 30s",
-      "45s",
-      "2m",
-    ]);
+    await expect(detail.locator(".ci-duration")).toHaveText(["1m 30s", "45s", "2m"]);
     const roborevRow = detail.locator(".ci-row", { hasText: "roborev" });
     await expect(roborevRow).toHaveCount(1);
     expect(await roborevRow.evaluate((node) => node.tagName)).not.toBe("A");
@@ -240,18 +230,10 @@ test.describe("CI dropdown", () => {
       await page.goto(`${server.info.base_url}/pulls/github/acme/widgets/1`);
 
       const chip = page.locator(".pull-detail [data-testid='ci-chip']");
-      await expect(chip.locator("[data-testid='ci-token-failed']")).toHaveText(
-        /1/,
-      );
-      await expect(chip.locator("[data-testid='ci-token-pending']")).toHaveText(
-        /1/,
-      );
-      await expect(chip.locator("[data-testid='ci-token-passed']")).toHaveText(
-        /2/,
-      );
-      await expect(chip.locator("[data-testid='ci-token-skipped']")).toHaveText(
-        /1/,
-      );
+      await expect(chip.locator("[data-testid='ci-token-failed']")).toHaveText(/1/);
+      await expect(chip.locator("[data-testid='ci-token-pending']")).toHaveText(/1/);
+      await expect(chip.locator("[data-testid='ci-token-passed']")).toHaveText(/2/);
+      await expect(chip.locator("[data-testid='ci-token-skipped']")).toHaveText(/1/);
     } finally {
       await server.stop();
     }
@@ -300,9 +282,7 @@ test.describe("CI dropdown", () => {
 
       await page.goto(`${server.info.base_url}/pulls/github/acme/widgets/1`);
 
-      await expect(
-        page.locator(".pull-detail [data-testid='ci-chip']"),
-      ).toHaveCount(0);
+      await expect(page.locator(".pull-detail [data-testid='ci-chip']")).toHaveCount(0);
     } finally {
       await server.stop();
     }

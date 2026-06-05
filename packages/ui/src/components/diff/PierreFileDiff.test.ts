@@ -66,10 +66,7 @@ const pierre = (() => {
       events.push("expand");
       lastExpansion = { direction, expansionLineCount, hunkIndex };
     };
-    getLineIndex = (lineNumber: number): [number, number] => [
-      lineNumber,
-      lineNumber,
-    ];
+    getLineIndex = (lineNumber: number): [number, number] => [lineNumber, lineNumber];
     render = renderDiff;
     setOptions = (options?: FileDiffOptions<unknown>) => {
       lastOptions = options;
@@ -257,8 +254,7 @@ describe("PierreFileDiff", () => {
       if (hadCancelAnimationFrame) {
         globalThis.cancelAnimationFrame = originalCancelAnimationFrame;
       } else {
-        delete (globalThis as { cancelAnimationFrame?: unknown })
-          .cancelAnimationFrame;
+        delete (globalThis as { cancelAnimationFrame?: unknown }).cancelAnimationFrame;
       }
     }
   });

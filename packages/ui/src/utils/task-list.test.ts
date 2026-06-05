@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import {
-  listTaskItems,
-  moveTaskListItem,
-  toggleTaskListItem,
-} from "./task-list.js";
+import { listTaskItems, moveTaskListItem, toggleTaskListItem } from "./task-list.js";
 
 describe("listTaskItems", () => {
   it("returns an empty list for empty input", () => {
@@ -159,16 +155,12 @@ describe("toggleTaskListItem", () => {
 
   it("toggles only the targeted item and leaves others intact", () => {
     const src = "- [ ] first\n- [ ] second\n- [x] third";
-    expect(toggleTaskListItem(src, 1)).toBe(
-      "- [ ] first\n- [x] second\n- [x] third",
-    );
+    expect(toggleTaskListItem(src, 1)).toBe("- [ ] first\n- [x] second\n- [x] third");
   });
 
   it("preserves line content after the checkbox", () => {
     const src = "- [ ] item with **bold** and `code`";
-    expect(toggleTaskListItem(src, 0)).toBe(
-      "- [x] item with **bold** and `code`",
-    );
+    expect(toggleTaskListItem(src, 0)).toBe("- [x] item with **bold** and `code`");
   });
 
   it("ignores task-shaped lines inside fenced code blocks when counting", () => {
@@ -182,9 +174,7 @@ describe("toggleTaskListItem", () => {
     const out = toggleTaskListItem(src, 1);
     // index 1 is "outer two", not the fenced line
     expect(out).toBe(
-      ["- [ ] outer one", "```", "- [ ] fenced", "```", "- [x] outer two"].join(
-        "\n",
-      ),
+      ["- [ ] outer one", "```", "- [ ] fenced", "```", "- [x] outer two"].join("\n"),
     );
   });
 
@@ -199,9 +189,7 @@ describe("toggleTaskListItem", () => {
   });
 
   it("does not flip task-shaped lines inside indented code blocks", () => {
-    const src = ["    - [ ] in indented code block", "- [ ] real task"].join(
-      "\n",
-    );
+    const src = ["    - [ ] in indented code block", "- [ ] real task"].join("\n");
     // Index 0 is the real task on line 1, not the code-block line.
     expect(toggleTaskListItem(src, 0)).toBe(
       ["    - [ ] in indented code block", "- [x] real task"].join("\n"),
@@ -250,9 +238,7 @@ describe("moveTaskListItem", () => {
 
   it("preserves non-task content between task items", () => {
     const src = "- [ ] A\nsome prose\n- [ ] B\n- [ ] C";
-    expect(moveTaskListItem(src, 0, 2)).toBe(
-      "some prose\n- [ ] B\n- [ ] C\n- [ ] A",
-    );
+    expect(moveTaskListItem(src, 0, 2)).toBe("some prose\n- [ ] B\n- [ ] C\n- [ ] A");
   });
 
   it("skips fenced task-shaped lines when counting", () => {
@@ -336,9 +322,7 @@ describe("moveTaskListItem", () => {
   });
 
   it("rejects cross-hierarchy moves between different indent levels", () => {
-    const src = ["- [ ] outer", "  - [ ] inner", "- [ ] another outer"].join(
-      "\n",
-    );
+    const src = ["- [ ] outer", "  - [ ] inner", "- [ ] another outer"].join("\n");
     // inner (index 1, indent 2) onto outer (index 0, indent 0) —
     // different indents, refuse the move so we don't reparent it.
     expect(moveTaskListItem(src, 1, 0)).toBe(src);
@@ -358,12 +342,9 @@ describe("moveTaskListItem", () => {
     ].join("\n");
     // child A1 (index 1) to child B1 (index 3) — same indent.
     expect(moveTaskListItem(src, 1, 3)).toBe(
-      [
-        "- [ ] outer A",
-        "- [ ] outer B",
-        "  - [ ] child B1",
-        "  - [ ] child A1",
-      ].join("\n"),
+      ["- [ ] outer A", "- [ ] outer B", "  - [ ] child B1", "  - [ ] child A1"].join(
+        "\n",
+      ),
     );
   });
 
@@ -371,16 +352,11 @@ describe("moveTaskListItem", () => {
     // Markdown allows a list item's body to span blank-separated
     // paragraphs as long as continuation stays indented. moveTask
     // must drag the whole multi-paragraph item together.
-    const src = [
-      "- [ ] first",
-      "",
-      "  paragraph two of first",
-      "- [ ] second",
-    ].join("\n");
+    const src = ["- [ ] first", "", "  paragraph two of first", "- [ ] second"].join(
+      "\n",
+    );
     expect(moveTaskListItem(src, 0, 1)).toBe(
-      ["- [ ] second", "- [ ] first", "", "  paragraph two of first"].join(
-        "\n",
-      ),
+      ["- [ ] second", "- [ ] first", "", "  paragraph two of first"].join("\n"),
     );
   });
 

@@ -60,8 +60,7 @@ async function createIssueWorkspace(
     },
   );
   expect(createResponse.status()).toBe(202);
-  const createdWorkspace =
-    (await createResponse.json()) as WorkspaceStatusResponse;
+  const createdWorkspace = (await createResponse.json()) as WorkspaceStatusResponse;
   await waitForWorkspaceReady(api, createdWorkspace.id);
   return createdWorkspace;
 }
@@ -95,8 +94,7 @@ test.describe("workspace tab persistence", () => {
         },
       );
       expect(createResponse.status()).toBe(202);
-      const createdWorkspace =
-        (await createResponse.json()) as WorkspaceStatusResponse;
+      const createdWorkspace = (await createResponse.json()) as WorkspaceStatusResponse;
       await waitForWorkspaceReady(api, createdWorkspace.id);
 
       await page.goto(
@@ -142,10 +140,7 @@ test.describe("workspace tab persistence", () => {
       await tmuxTab.click();
       await expect(panes).toHaveCount(2);
       const reactivated = workflow.locator(".group-tab-panel.active");
-      await expect(reactivated).toHaveAttribute(
-        "data-test-tmux-id",
-        "preserved",
-      );
+      await expect(reactivated).toHaveAttribute("data-test-tmux-id", "preserved");
     } finally {
       await api?.dispose();
       await isolatedServer?.stop();
@@ -171,9 +166,7 @@ test.describe("workspace tab persistence", () => {
       const firstWorkspace = await createIssueWorkspace(api, 10);
       const secondWorkspace = await createIssueWorkspace(api, 11);
 
-      await page.goto(
-        `${isolatedServer.info.base_url}/terminal/${firstWorkspace.id}`,
-      );
+      await page.goto(`${isolatedServer.info.base_url}/terminal/${firstWorkspace.id}`);
 
       const workflow = page.getByRole("region", { name: "Workflow panes" });
       const homeTab = workflow.getByRole("tab", { name: "Home" });
@@ -184,14 +177,10 @@ test.describe("workspace tab persistence", () => {
       await workflow.getByRole("button", { name: "Shell" }).click();
       await expect(tmuxTab).toHaveAttribute("aria-selected", "true");
 
-      await page.goto(
-        `${isolatedServer.info.base_url}/terminal/${secondWorkspace.id}`,
-      );
+      await page.goto(`${isolatedServer.info.base_url}/terminal/${secondWorkspace.id}`);
       await expect(homeTab).toHaveAttribute("aria-selected", "true");
 
-      await page.goto(
-        `${isolatedServer.info.base_url}/terminal/${firstWorkspace.id}`,
-      );
+      await page.goto(`${isolatedServer.info.base_url}/terminal/${firstWorkspace.id}`);
       await expect(tmuxTab).toHaveAttribute("aria-selected", "true");
     } finally {
       await api?.dispose();
@@ -217,27 +206,19 @@ test.describe("workspace tab persistence", () => {
       });
 
       const workspace = await createIssueWorkspace(api, 12);
-      const workspaceResponse = await api.get(
-        `/api/v1/workspaces/${workspace.id}`,
-      );
+      const workspaceResponse = await api.get(`/api/v1/workspaces/${workspace.id}`);
       expect(workspaceResponse.ok()).toBe(true);
       const workspaceDetail =
         (await workspaceResponse.json()) as WorkspaceStatusResponse;
       expect(workspaceDetail.worktree_path).toBeTruthy();
       await writeFile(
         join(workspaceDetail.worktree_path!, "alpha.ts"),
-        Array.from({ length: 360 }, (_, index) => `alpha ${index + 1}`).join(
+        Array.from({ length: 360 }, (_, index) => `alpha ${index + 1}`).join("\n") +
           "\n",
-        ) + "\n",
       );
-      await writeFile(
-        join(workspaceDetail.worktree_path!, "beta_test.go"),
-        "beta\n",
-      );
+      await writeFile(join(workspaceDetail.worktree_path!, "beta_test.go"), "beta\n");
 
-      await page.goto(
-        `${isolatedServer.info.base_url}/terminal/${workspace.id}`,
-      );
+      await page.goto(`${isolatedServer.info.base_url}/terminal/${workspace.id}`);
 
       const workflow = page.getByRole("region", { name: "Workflow panes" });
       const panes = workflow.locator(".group-tab-panel");
@@ -253,21 +234,17 @@ test.describe("workspace tab persistence", () => {
           response.request().method() === "GET",
       );
       await page.locator(".seg-control .seg-btn", { hasText: "Diff" }).click();
+      await expect(page.locator(".right-sidebar .workspace-diff")).toBeVisible();
       await expect(
-        page.locator(".right-sidebar .workspace-diff"),
-      ).toBeVisible();
-      await expect(
-        page.locator(
-          ".right-sidebar .workspace-diff-scope .diff-scope-picker__label",
-        ),
+        page.locator(".right-sidebar .workspace-diff-scope .diff-scope-picker__label"),
       ).toBeHidden();
       const workspaceScopePicker = page.locator(
         ".right-sidebar .workspace-diff-scope .diff-scope-picker",
       );
       await expect(workspaceScopePicker.locator(".scope-pill")).toHaveCount(0);
-      await expect(
-        workspaceScopePicker.locator(".diff-scope-label"),
-      ).toHaveText("HEAD");
+      await expect(workspaceScopePicker.locator(".diff-scope-label")).toHaveText(
+        "HEAD",
+      );
       const scopeToggleMetrics = await page
         .locator(".right-sidebar .workspace-diff-scope .scope-toggle")
         .evaluate((toggle) => {
@@ -294,9 +271,7 @@ test.describe("workspace tab persistence", () => {
         .locator(".right-sidebar .workspace-diff-scope")
         .getByRole("button", { name: "Select commit range" })
         .click();
-      const commitMenu = page.locator(
-        ".right-sidebar .diff-scope-picker__menu",
-      );
+      const commitMenu = page.locator(".right-sidebar .diff-scope-picker__menu");
       await expect(commitMenu).toBeVisible();
       const commitMenuTopElement = await commitMenu.evaluate((menu) => {
         const rect = menu.getBoundingClientRect();
@@ -309,9 +284,7 @@ test.describe("workspace tab persistence", () => {
             typeof topElement?.className === "string"
               ? topElement.className
               : String(topElement?.className ?? ""),
-          insideCommitMenu: Boolean(
-            topElement?.closest(".diff-scope-picker__menu"),
-          ),
+          insideCommitMenu: Boolean(topElement?.closest(".diff-scope-picker__menu")),
         };
       });
       expect(commitMenuTopElement.insideCommitMenu).toBe(true);
@@ -331,9 +304,8 @@ test.describe("workspace tab persistence", () => {
         .poll(async () => {
           return await rightDiffHost.evaluate((host) => {
             return (
-              host.shadowRoot?.querySelectorAll(
-                "[data-gutter] [data-line-type]",
-              ).length ?? 0
+              host.shadowRoot?.querySelectorAll("[data-gutter] [data-line-type]")
+                .length ?? 0
             );
           });
         })
@@ -342,9 +314,8 @@ test.describe("workspace tab persistence", () => {
         .poll(async () => {
           return await rightDiffHost.evaluate((host) => {
             return (
-              host.shadowRoot
-                ?.querySelector("[data-gutter]")
-                ?.getBoundingClientRect().width ?? 0
+              host.shadowRoot?.querySelector("[data-gutter]")?.getBoundingClientRect()
+                .width ?? 0
             );
           });
         })
@@ -352,9 +323,7 @@ test.describe("workspace tab persistence", () => {
       const rightDiffArea = page.locator(".right-sidebar .diff-area");
       await expect
         .poll(async () =>
-          rightDiffArea.evaluate(
-            (area) => area.scrollHeight > area.clientHeight,
-          ),
+          rightDiffArea.evaluate((area) => area.scrollHeight > area.clientHeight),
         )
         .toBe(true);
       const beforePageDownScrollTop = await rightDiffArea.evaluate(
@@ -384,9 +353,9 @@ test.describe("workspace tab persistence", () => {
       ).toHaveCount(0);
       await expect(diffToolbar.locator(".file-list-toggle")).toHaveCount(0);
       await expect(diffToolbar.locator(".category-toggle")).toHaveCount(0);
-      await expect(
-        page.locator(".right-sidebar .workspace-diff-sidebar"),
-      ).toHaveCount(0);
+      await expect(page.locator(".right-sidebar .workspace-diff-sidebar")).toHaveCount(
+        0,
+      );
       await expect(
         page.locator(".right-sidebar .workspace-diff-resize-handle"),
       ).toHaveCount(0);
@@ -404,19 +373,13 @@ test.describe("workspace tab persistence", () => {
       await expect(
         fileJump.getByRole("searchbox", { name: "Jump to file" }),
       ).toBeFocused();
-      await expect(
-        fileJump.getByRole("option", { name: /alpha\.ts/ }),
-      ).toBeVisible();
+      await expect(fileJump.getByRole("option", { name: /alpha\.ts/ })).toBeVisible();
       const jumpGeometry = await fileJump.evaluate((menu) => {
         const menuRect = menu.getBoundingClientRect();
-        const sidebarRect = menu
-          .closest(".right-sidebar")
-          ?.getBoundingClientRect();
+        const sidebarRect = menu.closest(".right-sidebar")?.getBoundingClientRect();
         return {
           position: getComputedStyle(menu).position,
-          extendsLeftOfSidebar: sidebarRect
-            ? menuRect.left < sidebarRect.left
-            : false,
+          extendsLeftOfSidebar: sidebarRect ? menuRect.left < sidebarRect.left : false,
         };
       });
       expect(jumpGeometry.position).toBe("fixed");
@@ -442,9 +405,9 @@ test.describe("workspace tab persistence", () => {
       await diffToolbar.locator(".compact-more-btn").click();
       const compactMenu = page.locator(".right-sidebar .compact-menu");
       await expect(compactMenu).toBeVisible();
-      await expect(
-        compactMenu.getByRole("switch", { name: "File list" }),
-      ).toHaveCount(0);
+      await expect(compactMenu.getByRole("switch", { name: "File list" })).toHaveCount(
+        0,
+      );
       await compactMenu.getByRole("button", { name: "Code (1)" }).click();
       await expect(diffToolbar).toContainText("Code");
       await expect(alphaDiffFile).toBeVisible();
@@ -455,24 +418,22 @@ test.describe("workspace tab persistence", () => {
       await expect(homeTab).toHaveAttribute("aria-selected", "true");
 
       await workflow.getByRole("button", { name: "Shell" }).click();
-      await expect(
-        workflow.getByRole("tab", { name: "Shell" }),
-      ).toHaveAttribute("aria-selected", "true");
-      await expect(
-        page.locator(".right-sidebar .workspace-diff"),
-      ).toBeVisible();
+      await expect(workflow.getByRole("tab", { name: "Shell" })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
+      await expect(page.locator(".right-sidebar .workspace-diff")).toBeVisible();
       await expect(panes).toHaveCount(2);
 
-      await workflow
-        .locator(".group-tab-panel.active .terminal-container")
-        .click();
+      await workflow.locator(".group-tab-panel.active .terminal-container").click();
       for (const key of ["j", "k", "[", "]"]) {
         await page.keyboard.press(key);
       }
       await expect(page).toHaveURL(new RegExp(`/terminal/${workspace.id}$`));
-      await expect(
-        workflow.getByRole("tab", { name: "Shell" }),
-      ).toHaveAttribute("aria-selected", "true");
+      await expect(workflow.getByRole("tab", { name: "Shell" })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
       await expect(alphaDiffFile).toBeVisible();
     } finally {
       await api?.dispose();

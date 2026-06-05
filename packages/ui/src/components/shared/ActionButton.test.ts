@@ -52,9 +52,9 @@ describe("ActionButton", () => {
     expect(button.querySelector(".action-button__label")?.textContent).toBe(
       "Approve workflows",
     );
-    expect(
-      button.querySelector(".action-button__short-label")?.textContent,
-    ).toBe("Workflows");
+    expect(button.querySelector(".action-button__short-label")?.textContent).toBe(
+      "Workflows",
+    );
   });
 
   it("renders trailing content after responsive labels", () => {

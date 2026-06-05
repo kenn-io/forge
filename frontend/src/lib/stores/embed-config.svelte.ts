@@ -1,9 +1,7 @@
 import { setGlobalRepo } from "../stores/filter.svelte.js";
 
 // Bridge: repo filter (module-scope, not workspace-specific)
-window.__middleman_set_repo_filter = (
-  repo: { owner: string; name: string } | null,
-) => {
+window.__middleman_set_repo_filter = (repo: { owner: string; name: string } | null) => {
   setGlobalRepo(repo ? `${repo.owner}/${repo.name}` : undefined);
 };
 
@@ -30,9 +28,7 @@ export interface ProjectActionContext {
 export interface ProjectActionHook {
   id: string;
   label: string;
-  handler: (
-    context: ProjectActionContext,
-  ) => CommandResult | Promise<CommandResult>;
+  handler: (context: ProjectActionContext) => CommandResult | Promise<CommandResult>;
 }
 
 // Re-export ToolingStatus from the global ambient module so .svelte
@@ -143,9 +139,7 @@ export function getToolingStatus(): ToolingStatus | undefined {
   return readConfig()?.embed?.tooling;
 }
 
-export function getOnNavigate():
-  | ((event: MiddlemanNavigateEvent) => void)
-  | undefined {
+export function getOnNavigate(): ((event: MiddlemanNavigateEvent) => void) | undefined {
   return readConfig()?.onNavigate;
 }
 
@@ -215,9 +209,7 @@ export function getEmbedActivePlatformHost(): string | null {
   return value;
 }
 
-export function getOnLayoutChanged():
-  | MiddlemanConfig["onLayoutChanged"]
-  | undefined {
+export function getOnLayoutChanged(): MiddlemanConfig["onLayoutChanged"] | undefined {
   return readConfig()?.onLayoutChanged;
 }
 
@@ -284,8 +276,7 @@ export function initWorkspaceBridge(): void {
     const config = window.__middleman_config;
     if (!config?.workspace) return;
     const changingHost =
-      "hostKey" in selection &&
-      selection.hostKey !== config.workspace.selectedHostKey;
+      "hostKey" in selection && selection.hostKey !== config.workspace.selectedHostKey;
     const updated = { ...config.workspace };
     if ("hostKey" in selection) {
       updated.selectedHostKey = selection.hostKey ?? null;

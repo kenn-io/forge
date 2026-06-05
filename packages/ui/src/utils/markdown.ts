@@ -1,9 +1,5 @@
 import { Marked } from "marked";
-import type {
-  RendererObject,
-  TokenizerAndRendererExtension,
-  Tokens,
-} from "marked";
+import type { RendererObject, TokenizerAndRendererExtension, Tokens } from "marked";
 import DOMPurify from "dompurify";
 import { canonicalProvider } from "../api/provider-routes.js";
 import { itemReferenceAnchorAttributes } from "./item-reference.js";
@@ -30,15 +26,12 @@ type ItemRefToken = Tokens.Generic & {
   text: string;
 };
 
-function assertItemRefToken(
-  token: Tokens.Generic,
-): asserts token is ItemRefToken {
+function assertItemRefToken(token: Tokens.Generic): asserts token is ItemRefToken {
   if (
     token.type !== "itemRef" ||
     typeof token.raw !== "string" ||
     typeof token.provider !== "string" ||
-    (token.platformHost !== undefined &&
-      typeof token.platformHost !== "string") ||
+    (token.platformHost !== undefined && typeof token.platformHost !== "string") ||
     typeof token.owner !== "string" ||
     typeof token.name !== "string" ||
     typeof token.repoPath !== "string" ||
@@ -68,8 +61,7 @@ function itemRefExtension(repo?: RepoContext): TokenizerAndRendererExtension {
       // Bare: look for # preceded by start or non-word
       const bareIdx = src.search(/(^|[^\w])#\d/);
       const mrBareIdx = supportsBangMR ? src.search(/(^|[^\w])!\d/) : -1;
-      const adjusted =
-        bareIdx >= 0 && src[bareIdx] !== "#" ? bareIdx + 1 : bareIdx;
+      const adjusted = bareIdx >= 0 && src[bareIdx] !== "#" ? bareIdx + 1 : bareIdx;
       const adjustedMR =
         mrBareIdx >= 0 && src[mrBareIdx] !== "!" ? mrBareIdx + 1 : mrBareIdx;
       return [crossIdx, adjusted, adjustedMR]
@@ -99,8 +91,7 @@ function itemRefExtension(repo?: RepoContext): TokenizerAndRendererExtension {
           name,
           repoPath,
           number: parseInt(crossMatch[3]!, 10),
-          itemType:
-            marker === "!" ? "pr" : supportsBangMR ? "issue" : undefined,
+          itemType: marker === "!" ? "pr" : supportsBangMR ? "issue" : undefined,
           text: crossMatch[0],
         };
       }

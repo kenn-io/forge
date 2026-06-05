@@ -54,13 +54,7 @@ describe("terminal layout tree", () => {
       "split-a",
     );
 
-    const moved = splitSessionIntoPane(
-      root,
-      "leaf-a",
-      "ws-1_b",
-      "vertical",
-      "after",
-    );
+    const moved = splitSessionIntoPane(root, "leaf-a", "ws-1_b", "vertical", "after");
 
     expect(collectSessionKeys(moved)).toEqual(["ws-1_a", "ws-1_b"]);
     expect(countLeaves(moved)).toBe(2);

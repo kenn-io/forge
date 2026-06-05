@@ -1,10 +1,4 @@
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 const { mockUpdateSettings } = vi.hoisted(() => ({
@@ -304,9 +298,7 @@ describe("AgentSettings", () => {
       },
     });
 
-    await fireEvent.click(
-      screen.getByRole("button", { name: "Add custom agent" }),
-    );
+    await fireEvent.click(screen.getByRole("button", { name: "Add custom agent" }));
     await fireEvent.input(screen.getByLabelText("Custom agent key"), {
       target: { value: "review" },
     });

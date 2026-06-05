@@ -35,8 +35,7 @@ export function mapWorkflowNodeSessionKeys(
       ...node,
       tabs,
       activeTabKey:
-        typeof activeTabKey === "string" &&
-        node.activeTabKey.startsWith("session:")
+        typeof activeTabKey === "string" && node.activeTabKey.startsWith("session:")
           ? `session:${activeTabKey}`
           : tabs.includes(node.activeTabKey)
             ? node.activeTabKey

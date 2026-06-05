@@ -1,8 +1,7 @@
 import type { WorkflowTabKey } from "./terminal-layout";
 
 export const WORKFLOW_TAB_DRAG_MIME = "application/x-middleman-workflow-tab";
-export const RUNTIME_SESSION_DRAG_MIME =
-  "application/x-middleman-runtime-session";
+export const RUNTIME_SESSION_DRAG_MIME = "application/x-middleman-runtime-session";
 
 interface RuntimeSessionDragPayload {
   workspaceId: string;
@@ -71,8 +70,7 @@ export function readRuntimeSessionDrag(
   event: DragEvent,
   workspaceId: string,
 ): string | null {
-  const payload =
-    readRuntimeSessionDragPayload(event) ?? activeRuntimeSessionDrag;
+  const payload = readRuntimeSessionDragPayload(event) ?? activeRuntimeSessionDrag;
   if (!payload || payload.workspaceId !== workspaceId || !payload.sessionKey) {
     return null;
   }
@@ -83,8 +81,7 @@ export function readWorkflowTabDrag(
   event: DragEvent,
   workspaceId: string,
 ): WorkflowTabKey | null {
-  const workflowPayload =
-    readWorkflowTabDragPayload(event) ?? activeWorkflowTabDrag;
+  const workflowPayload = readWorkflowTabDragPayload(event) ?? activeWorkflowTabDrag;
   if (
     workflowPayload?.workspaceId === workspaceId &&
     isWorkflowTabKey(workflowPayload.tabKey)
@@ -104,9 +101,7 @@ export function isWorkflowTabKey(value: string): value is WorkflowTabKey {
   );
 }
 
-function readWorkflowTabDragPayload(
-  event: DragEvent,
-): WorkflowTabDragPayload | null {
+function readWorkflowTabDragPayload(event: DragEvent): WorkflowTabDragPayload | null {
   const payload = readTokenPayload(
     event,
     WORKFLOW_TAB_DRAG_MIME,

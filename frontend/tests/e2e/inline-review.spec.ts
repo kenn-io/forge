@@ -2,11 +2,7 @@ import { expect, test, type Page, type Route } from "@playwright/test";
 
 import { mockApi } from "./support/mockApi";
 
-async function fulfillJson(
-  route: Route,
-  body: unknown,
-  status = 200,
-): Promise<void> {
+async function fulfillJson(route: Route, body: unknown, status = 200): Promise<void> {
   await route.fulfill({
     status,
     contentType: "application/json",
@@ -344,10 +340,7 @@ async function mockInlineReviewAPI(
   provider = "github",
   platformHost = "github.com",
   filesResponse: typeof diffResponse = diffResponse,
-  onCreateDraft?: (body: {
-    body: string;
-    range: Record<string, unknown>;
-  }) => void,
+  onCreateDraft?: (body: { body: string; range: Record<string, unknown> }) => void,
   options: MockInlineReviewOptions = {},
 ): Promise<void> {
   let draftComments: Array<Record<string, unknown>> = [
@@ -358,9 +351,7 @@ async function mockInlineReviewAPI(
   const path = `/api/v1/pulls/${provider}/acme/widgets/42`;
 
   await page.route("**/api/v1/pulls", async (route) => {
-    await fulfillJson(route, [
-      pullListItem(capabilities, provider, platformHost),
-    ]);
+    await fulfillJson(route, [pullListItem(capabilities, provider, platformHost)]);
   });
   await page.route(`**${path}`, async (route) => {
     if (route.request().method() !== "GET") {
@@ -464,25 +455,19 @@ test("adds and publishes an inline draft review comment", async ({ page }) => {
   await page.goto("/pulls/github/acme/widgets/42");
   await page.getByRole("button", { name: "Files changed" }).click();
   await page.getByRole("button", { name: "Comment on new line 2" }).click();
-  await page
-    .getByPlaceholder("Leave a comment")
-    .fill("Please cover this line.");
+  await page.getByPlaceholder("Leave a comment").fill("Please cover this line.");
   await page.getByRole("button", { name: "Add comment" }).click();
 
   await expect(page.getByText("1 draft comment")).toBeVisible();
   await expect(page.locator(".inline-draft-comment")).toContainText(
     "Please cover this line.",
   );
-  await expect(
-    page.getByRole("button", { name: "Show full comment" }),
-  ).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Show full comment" })).toHaveCount(0);
   await page.getByRole("button", { name: "Publish review" }).click();
   await expect(page.getByText("1 draft comment")).toBeHidden();
 });
 
-test("keeps the draft review footer readable for long comments", async ({
-  page,
-}) => {
+test("keeps the draft review footer readable for long comments", async ({ page }) => {
   await page.setViewportSize({ width: 1000, height: 720 });
   const longDraftBody = [
     "so i'd recommend we use huma for this similar to what we do in middleman,",
@@ -519,15 +504,11 @@ test("keeps the draft review footer readable for long comments", async ({
   const draftList = page.locator(".draft-list");
   const draftBody = page.locator(".draft-body").first();
   await expect(draftBody).toContainText("so i'd recommend");
-  await expect(
-    page.getByRole("button", { name: "Show full comment" }),
-  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Show full comment" })).toBeVisible();
 
   await expect
     .poll(async () =>
-      draftList.evaluate(
-        (element) => element.scrollWidth <= element.clientWidth + 1,
-      ),
+      draftList.evaluate((element) => element.scrollWidth <= element.clientWidth + 1),
     )
     .toBe(true);
   await expect
@@ -610,9 +591,7 @@ test("keeps inline composer inside the visible diff pane on long lines", async (
   );
 });
 
-test("shows saved draft comments inline and jumps from the tray", async ({
-  page,
-}) => {
+test("shows saved draft comments inline and jumps from the tray", async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem("diff-word-wrap", "true");
   });
@@ -623,9 +602,7 @@ test("shows saved draft comments inline and jumps from the tray", async ({
   await page.getByRole("button", { name: "Comment on new line 2" }).click({
     modifiers: ["Shift"],
   });
-  await page
-    .getByPlaceholder("Leave a comment")
-    .fill("Please cover both lines.");
+  await page.getByPlaceholder("Leave a comment").fill("Please cover both lines.");
   await page.getByRole("button", { name: "Add comment" }).click();
 
   const inlineDraft = page.locator(".inline-draft-comment");
@@ -681,9 +658,7 @@ test("keeps remaining GitLab draft state visible after a partial publish", async
 
   await page.goto("/pulls/gitlab/acme/widgets/42/files");
   await page.getByRole("button", { name: "Comment on new line 2" }).click();
-  await page
-    .getByPlaceholder("Leave a comment")
-    .fill("Please cover this line.");
+  await page.getByPlaceholder("Leave a comment").fill("Please cover this line.");
   await page.getByRole("button", { name: "Add comment" }).click();
 
   const summary = page.getByPlaceholder("Review summary");
@@ -711,9 +686,9 @@ test("hides inline review controls when provider draft review is unsupported", a
 
   await page.goto("/pulls/github/acme/widgets/42");
   await page.getByRole("button", { name: "Files changed" }).click();
-  await expect(
-    page.getByRole("button", { name: "Comment on new line 2" }),
-  ).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Comment on new line 2" })).toHaveCount(
+    0,
+  );
 });
 
 test("resolves a published inline review thread from the timeline", async ({
@@ -734,9 +709,7 @@ test("shows published inline review context in conversation and jumps to the dif
 
   await page.goto("/pulls/github/acme/widgets/42");
 
-  await expect(page.getByLabel("Commented diff context")).toContainText(
-    "const b = 2;",
-  );
+  await expect(page.getByLabel("Commented diff context")).toContainText("const b = 2;");
   await page.getByRole("button", { name: "Jump to diff" }).click();
 
   await expect(page.getByRole("button", { name: /Files changed/ })).toHaveClass(
@@ -759,9 +732,7 @@ test("keeps published inline review context loaded after switching back from fil
 
   await page.getByRole("button", { name: "Conversation" }).click();
   await expect(page).toHaveURL(/\/pulls\/github\/acme\/widgets\/42$/);
-  await expect(page.getByLabel("Commented diff context")).toContainText(
-    "const b = 2;",
-  );
+  await expect(page.getByLabel("Commented diff context")).toContainText("const b = 2;");
   await expect(page.getByText("Loading diff")).toHaveCount(0);
 
   await page.getByRole("button", { name: "Files changed" }).click();
@@ -770,9 +741,7 @@ test("keeps published inline review context loaded after switching back from fil
   );
 });
 
-test("preserves PR detail scroll positions while switching tabs", async ({
-  page,
-}) => {
+test("preserves PR detail scroll positions while switching tabs", async ({ page }) => {
   await mockInlineReviewAPI(
     page,
     baseCapabilities,
@@ -797,9 +766,7 @@ test("preserves PR detail scroll positions while switching tabs", async ({
     element.dispatchEvent(new Event("scroll", { bubbles: true }));
   });
   await expect
-    .poll(async () =>
-      conversationScroller.evaluate((element) => element.scrollTop),
-    )
+    .poll(async () => conversationScroller.evaluate((element) => element.scrollTop))
     .toBeGreaterThan(350);
 
   await page.getByRole("button", { name: /Files changed/ }).click();
@@ -812,9 +779,7 @@ test("preserves PR detail scroll positions while switching tabs", async ({
 
   await page.getByRole("button", { name: "Conversation" }).click();
   await expect
-    .poll(async () =>
-      conversationScroller.evaluate((element) => element.scrollTop),
-    )
+    .poll(async () => conversationScroller.evaluate((element) => element.scrollTop))
     .toBeGreaterThan(350);
 
   await page.getByRole("button", { name: /Files changed/ }).click();
@@ -839,10 +804,7 @@ test("preserves PR detail scroll position after pushed refresh events", async ({
       }
 
       addEventListener(type: string, listener: Listener): void {
-        this.listeners.set(type, [
-          ...(this.listeners.get(type) ?? []),
-          listener,
-        ]);
+        this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener]);
       }
 
       removeEventListener(type: string, listener: Listener): void {
@@ -915,9 +877,7 @@ test("preserves PR detail scroll position after pushed refresh events", async ({
     element.dispatchEvent(new Event("scroll", { bubbles: true }));
   });
   await expect
-    .poll(async () =>
-      conversationScroller.evaluate((element) => element.scrollTop),
-    )
+    .poll(async () => conversationScroller.evaluate((element) => element.scrollTop))
     .toBeGreaterThan(350);
 
   const refreshResponse = page.waitForResponse(
@@ -935,9 +895,7 @@ test("preserves PR detail scroll position after pushed refresh events", async ({
   await refreshResponse;
 
   await expect
-    .poll(async () =>
-      conversationScroller.evaluate((element) => element.scrollTop),
-    )
+    .poll(async () => conversationScroller.evaluate((element) => element.scrollTop))
     .toBeGreaterThan(350);
 });
 

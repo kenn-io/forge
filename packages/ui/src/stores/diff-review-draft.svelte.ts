@@ -7,8 +7,7 @@ import {
 } from "../api/provider-routes.js";
 
 export type DiffReviewDraft = components["schemas"]["DiffReviewDraftResponse"];
-export type DiffReviewDraftComment =
-  components["schemas"]["DiffReviewDraftComment"];
+export type DiffReviewDraftComment = components["schemas"]["DiffReviewDraftComment"];
 export type DiffReviewLineRange = components["schemas"]["DiffReviewLineRange"];
 
 export interface DiffReviewDraftStoreOptions {
@@ -137,10 +136,7 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
     }
   }
 
-  function setRouteContext(
-    nextRef: ProviderRouteRef,
-    nextNumber: number,
-  ): void {
+  function setRouteContext(nextRef: ProviderRouteRef, nextNumber: number): void {
     const changed =
       !ref ||
       ref.provider !== nextRef.provider ||
@@ -260,11 +256,7 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
     storeWarning = null;
     try {
       const { error, response } = await apiClient.DELETE(
-        providerItemPath(
-          "pulls",
-          ref,
-          "/review-draft/comments/{draft_comment_id}",
-        ),
+        providerItemPath("pulls", ref, "/review-draft/comments/{draft_comment_id}"),
         {
           params: {
             path: {
@@ -431,6 +423,4 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
   };
 }
 
-export type DiffReviewDraftStore = ReturnType<
-  typeof createDiffReviewDraftStore
->;
+export type DiffReviewDraftStore = ReturnType<typeof createDiffReviewDraftStore>;

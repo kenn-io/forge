@@ -1,19 +1,5 @@
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from "@testing-library/svelte";
-import {
-  afterAll,
-  afterEach,
-  beforeAll,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 // jsdom does not ship IntersectionObserver; install a stub that reports the
 // observed element as visible immediately so the viewport-gated render effect
@@ -34,8 +20,7 @@ let originalReplaceSync: unknown;
 
 beforeAll(() => {
   originalIntersectionObserverExisted = "IntersectionObserver" in globalThis;
-  originalIntersectionObserver = (globalThis as GlobalWithIO)
-    .IntersectionObserver;
+  originalIntersectionObserver = (globalThis as GlobalWithIO).IntersectionObserver;
   class IntersectionObserverStub {
     private readonly callback: IntersectionObserverCallback;
     root: Element | null = null;
@@ -67,8 +52,7 @@ beforeAll(() => {
   (globalThis as GlobalWithIO).IntersectionObserver = IntersectionObserverStub;
 
   originalResizeObserverExisted = "ResizeObserver" in globalThis;
-  originalResizeObserver = (globalThis as GlobalWithResizeObserver)
-    .ResizeObserver;
+  originalResizeObserver = (globalThis as GlobalWithResizeObserver).ResizeObserver;
   class ResizeObserverStub {
     observe(): void {}
     unobserve(): void {}
@@ -76,35 +60,29 @@ beforeAll(() => {
   }
   (globalThis as GlobalWithResizeObserver).ResizeObserver = ResizeObserverStub;
 
-  originalReplaceSync = (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet
-    ?.prototype.replaceSync;
+  originalReplaceSync = (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet?.prototype
+    .replaceSync;
   if ((globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet?.prototype) {
-    (
-      globalThis as GlobalWithCSSStyleSheet
-    ).CSSStyleSheet.prototype.replaceSync ??= function replaceSync(): void {};
+    (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet.prototype.replaceSync ??=
+      function replaceSync(): void {};
   }
 });
 
 afterAll(() => {
   if (originalIntersectionObserverExisted) {
-    (globalThis as GlobalWithIO).IntersectionObserver =
-      originalIntersectionObserver;
+    (globalThis as GlobalWithIO).IntersectionObserver = originalIntersectionObserver;
   } else {
     delete (globalThis as GlobalWithIO).IntersectionObserver;
   }
   if (originalResizeObserverExisted) {
-    (globalThis as GlobalWithResizeObserver).ResizeObserver =
-      originalResizeObserver;
+    (globalThis as GlobalWithResizeObserver).ResizeObserver = originalResizeObserver;
   } else {
     delete (globalThis as GlobalWithResizeObserver).ResizeObserver;
   }
   if ((globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet?.prototype) {
     if (originalReplaceSync) {
-      (
-        globalThis as GlobalWithCSSStyleSheet
-      ).CSSStyleSheet.prototype.replaceSync = originalReplaceSync as (
-        text: string,
-      ) => void;
+      (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet.prototype.replaceSync =
+        originalReplaceSync as (text: string) => void;
     } else {
       delete (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet.prototype
         .replaceSync;
@@ -193,10 +171,7 @@ function renderDiffFile(
     owner?: string;
     draftComments?: DiffReviewDraftComment[];
     reviewThreads?: ReviewThread[];
-    createComment?: (
-      body: string,
-      range: DiffReviewLineRange,
-    ) => Promise<boolean>;
+    createComment?: (body: string, range: DiffReviewLineRange) => Promise<boolean>;
     canReplyToThreads?: boolean;
     replyToDiscussion?: (
       owner: string,
@@ -300,14 +275,10 @@ describe("DiffFile", () => {
     await waitFor(() => {
       const root = document.querySelector(".pierre-diff")?.shadowRoot;
       expect(
-        root?.querySelector(
-          '[data-diff-path="src/foo.ts"][data-diff-old-line="2"]',
-        ),
+        root?.querySelector('[data-diff-path="src/foo.ts"][data-diff-old-line="2"]'),
       ).toBeTruthy();
       expect(
-        root?.querySelector(
-          '[data-diff-path="src/foo.ts"][data-diff-new-line="2"]',
-        ),
+        root?.querySelector('[data-diff-path="src/foo.ts"][data-diff-new-line="2"]'),
       ).toBeTruthy();
     });
   });
@@ -325,8 +296,7 @@ describe("DiffFile", () => {
         return [];
       }
     }
-    (globalThis as GlobalWithIO).IntersectionObserver =
-      PendingIntersectionObserverStub;
+    (globalThis as GlobalWithIO).IntersectionObserver = PendingIntersectionObserverStub;
 
     try {
       renderDiffFile(makeFile());
@@ -677,9 +647,7 @@ describe("DiffFile", () => {
       expect(screen.getByText("Existing draft on this line")).toBeTruthy();
       const selectedDraftLine = document
         .querySelector(".pierre-diff")
-        ?.shadowRoot?.querySelector(
-          '[data-selected-line][data-diff-new-line="2"]',
-        );
+        ?.shadowRoot?.querySelector('[data-selected-line][data-diff-new-line="2"]');
       expect(selectedDraftLine).toBeTruthy();
     });
 
@@ -750,12 +718,8 @@ describe("DiffFile", () => {
       expect(screen.getByText("Published review note")).toBeTruthy();
     });
     expect(screen.getByText("File")).toBeTruthy();
-    const comment = document.querySelector(
-      "[data-review-thread-id='thread-1']",
-    );
-    expect(comment?.parentElement?.classList.contains("file-content")).toBe(
-      true,
-    );
+    const comment = document.querySelector("[data-review-thread-id='thread-1']");
+    expect(comment?.parentElement?.classList.contains("file-content")).toBe(true);
     expect(comment?.closest("[slot^='annotation-']")).toBeNull();
   });
 
@@ -817,12 +781,8 @@ describe("DiffFile", () => {
 
     expect(screen.getByText("File-level note")).toBeTruthy();
     expect(screen.getByText("File")).toBeTruthy();
-    const comment = document.querySelector(
-      "[data-review-thread-id='thread-file']",
-    );
-    expect(comment?.parentElement?.classList.contains("file-content")).toBe(
-      true,
-    );
+    const comment = document.querySelector("[data-review-thread-id='thread-file']");
+    expect(comment?.parentElement?.classList.contains("file-content")).toBe(true);
   });
 
   it("clears an open inline composer when review context changes", async () => {
@@ -880,10 +840,7 @@ describe("DiffFile", () => {
   });
 
   it("loads and expands hidden context from a single Pierre expander click", async () => {
-    const oldText = Array.from(
-      { length: 90 },
-      (_, index) => `shared ${index + 1}`,
-    );
+    const oldText = Array.from({ length: 90 }, (_, index) => `shared ${index + 1}`);
     const newText = [...oldText];
     oldText[1] = "old early";
     newText[1] = "new early";
@@ -962,9 +919,7 @@ describe("DiffFile", () => {
       const expandedLines = expandedContextLineTexts();
       expect(expandedLines.length).toBeGreaterThan(0);
       expect(expandedLines.every((line) => line.length > 0)).toBe(true);
-      expect(expandedLines.some((line) => line.includes("shared 10"))).toBe(
-        true,
-      );
+      expect(expandedLines.some((line) => line.includes("shared 10"))).toBe(true);
     });
     expect(loadFilePreview).toHaveBeenCalledWith(
       expect.any(String),
@@ -983,10 +938,7 @@ describe("DiffFile", () => {
   });
 
   it("continues expanding context after full file text is loaded", async () => {
-    const oldText = Array.from(
-      { length: 90 },
-      (_, index) => `shared ${index + 1}`,
-    );
+    const oldText = Array.from({ length: 90 }, (_, index) => `shared ${index + 1}`);
     const newText = [...oldText];
     oldText[1] = "old early";
     newText[1] = "new early";
@@ -1064,21 +1016,16 @@ describe("DiffFile", () => {
       const expandedLines = expandedContextLineTexts();
       expect(expandedLines.length).toBeGreaterThan(0);
       expect(expandedLines.every((line) => line.length > 0)).toBe(true);
-      expect(expandedLines.some((line) => line.includes("shared 10"))).toBe(
-        true,
-      );
+      expect(expandedLines.some((line) => line.includes("shared 10"))).toBe(true);
     });
 
     const nextExpandButton = await waitFor(() => {
       const buttons = Array.from(
         document
           .querySelector(".pierre-diff")
-          ?.shadowRoot?.querySelectorAll<HTMLElement>("[data-expand-button]") ??
-          [],
+          ?.shadowRoot?.querySelectorAll<HTMLElement>("[data-expand-button]") ?? [],
       );
-      const button = buttons.find(
-        (candidate) => candidate !== firstExpandButton,
-      );
+      const button = buttons.find((candidate) => candidate !== firstExpandButton);
       expect(button).toBeTruthy();
       return button!;
     });
@@ -1090,9 +1037,7 @@ describe("DiffFile", () => {
       expect(text).toContain("shared 50");
       const expandedLines = expandedContextLineTexts();
       expect(expandedLines.every((line) => line.length > 0)).toBe(true);
-      expect(expandedLines.some((line) => line.includes("shared 50"))).toBe(
-        true,
-      );
+      expect(expandedLines.some((line) => line.includes("shared 50"))).toBe(true);
     });
     expect(loadFilePreview).toHaveBeenCalledTimes(2);
   });

@@ -6,13 +6,9 @@ test.beforeEach(async ({ page }) => {
   await mockApi(page);
 });
 
-test("workspaces route renders the terminal workspace list shell", async ({
-  page,
-}) => {
+test("workspaces route renders the terminal workspace list shell", async ({ page }) => {
   await page.goto("/workspaces");
-  await expect(
-    page.getByText("Select a workspace from the sidebar"),
-  ).toBeVisible();
+  await expect(page.getByText("Select a workspace from the sidebar")).toBeVisible();
 });
 
 test("workspaces sidebar collapses and expands through the shared control", async ({
@@ -23,9 +19,7 @@ test("workspaces sidebar collapses and expands through the shared control", asyn
   const sidebar = page.locator(".sidebar").first();
   await expect(sidebar).toBeVisible();
 
-  await sidebar
-    .getByRole("button", { name: "Collapse Workspaces sidebar" })
-    .click();
+  await sidebar.getByRole("button", { name: "Collapse Workspaces sidebar" }).click();
   await expect(sidebar).toHaveClass(/sidebar--collapsed/);
 
   await sidebar.getByRole("button", { name: "Expand sidebar" }).click();
@@ -64,9 +58,7 @@ test("repo selector renders icon and still filters repos", async ({ page }) => {
   await expect(page.getByText("Add browser regression coverage")).toBeVisible();
 });
 
-test("hideHeader suppresses AppHeader on the workspaces page", async ({
-  page,
-}) => {
+test("hideHeader suppresses AppHeader on the workspaces page", async ({ page }) => {
   await page.addInitScript(() => {
     window.__middleman_config = {
       embed: { hideHeader: true },
@@ -416,9 +408,7 @@ test("full app reinitializes after navigating through an embed route", async ({
   await expect(page.locator("header.app-header")).toHaveCount(0);
   await expect
     .poll(async () =>
-      page.evaluate(
-        () => window.__middleman_event_source_counts?.().closed ?? 0,
-      ),
+      page.evaluate(() => window.__middleman_event_source_counts?.().closed ?? 0),
     )
     .toBeGreaterThanOrEqual(initialEventSources);
 
@@ -430,16 +420,12 @@ test("full app reinitializes after navigating through an embed route", async ({
   await expect.poll(() => settingsRequests).toBe(2);
   await expect
     .poll(async () =>
-      page.evaluate(
-        () => window.__middleman_event_source_counts?.().created ?? 0,
-      ),
+      page.evaluate(() => window.__middleman_event_source_counts?.().created ?? 0),
     )
     .toBeGreaterThan(initialEventSources);
   await expect
     .poll(async () =>
-      page.evaluate(
-        () => window.__middleman_event_source_counts?.().closed ?? 0,
-      ),
+      page.evaluate(() => window.__middleman_event_source_counts?.().closed ?? 0),
     )
     .toBeGreaterThanOrEqual(initialEventSources);
 });

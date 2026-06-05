@@ -43,9 +43,7 @@ test.describe.serial("Roborev", () => {
   // Group 1: Table and Data Display
   // -------------------------------------------------------
   test.describe("Table and Data Display", () => {
-    test("table loads with seeded jobs (first page, 50 rows)", async ({
-      page,
-    }) => {
+    test("table loads with seeded jobs (first page, 50 rows)", async ({ page }) => {
       await waitForReviewsReady(page);
       await waitForJobRows(page, 50);
       const count = await page.locator(".job-row").count();
@@ -65,9 +63,7 @@ test.describe.serial("Roborev", () => {
       await expect(firstRow.locator(".status-badge")).toContainText("done");
     });
 
-    test("status badges show correct classes for each status", async ({
-      page,
-    }) => {
+    test("status badges show correct classes for each status", async ({ page }) => {
       await waitForReviewsReady(page);
       await waitForJobRows(page, 10);
 
@@ -219,9 +215,7 @@ test.describe.serial("Roborev", () => {
   // Group 3: Filtering
   // -------------------------------------------------------
   test.describe("Filtering", () => {
-    test("status dropdown: select failed shows only failed jobs", async ({
-      page,
-    }) => {
+    test("status dropdown: select failed shows only failed jobs", async ({ page }) => {
       await waitForReviewsReady(page);
       await waitForJobRows(page, 10);
 
@@ -232,37 +226,25 @@ test.describe.serial("Roborev", () => {
       // This auto-retries both conditions, removing the brittle
       // waitForTimeout + count-then-iterate pattern that races against
       // re-renders under parallel load.
-      await expect(
-        page.locator(".status-badge.status-failed").first(),
-      ).toBeVisible({
+      await expect(page.locator(".status-badge.status-failed").first()).toBeVisible({
         timeout: 5_000,
       });
-      await expect(
-        page.locator(".status-badge:not(.status-failed)"),
-      ).toHaveCount(0);
+      await expect(page.locator(".status-badge:not(.status-failed)")).toHaveCount(0);
     });
 
-    test("status dropdown: select done shows only done jobs", async ({
-      page,
-    }) => {
+    test("status dropdown: select done shows only done jobs", async ({ page }) => {
       await waitForReviewsReady(page);
       await waitForJobRows(page, 10);
 
       await selectStatusFilter(page, "Done");
 
-      await expect(
-        page.locator(".status-badge.status-done").first(),
-      ).toBeVisible({
+      await expect(page.locator(".status-badge.status-done").first()).toBeVisible({
         timeout: 5_000,
       });
-      await expect(page.locator(".status-badge:not(.status-done)")).toHaveCount(
-        0,
-      );
+      await expect(page.locator(".status-badge:not(.status-done)")).toHaveCount(0);
     });
 
-    test("repo picker: select repo filters to that repo's jobs", async ({
-      page,
-    }) => {
+    test("repo picker: select repo filters to that repo's jobs", async ({ page }) => {
       await waitForReviewsReady(page);
       await waitForJobRows(page, 10);
 
@@ -306,9 +288,7 @@ test.describe.serial("Roborev", () => {
       await expandBtn.click();
 
       // Select feat/auth branch
-      const branchItem = page
-        .locator(".branch-item")
-        .filter({ hasText: "feat/auth" });
+      const branchItem = page.locator(".branch-item").filter({ hasText: "feat/auth" });
       await expect(branchItem).toBeVisible();
       await branchItem.click();
 
@@ -362,9 +342,7 @@ test.describe.serial("Roborev", () => {
       }).toPass({ timeout: 5_000 });
     });
 
-    test("reset each filter to default restores full list", async ({
-      page,
-    }) => {
+    test("reset each filter to default restores full list", async ({ page }) => {
       await waitForReviewsReady(page);
       await waitForJobRows(page, 10);
 
@@ -376,14 +354,10 @@ test.describe.serial("Roborev", () => {
 
       // Apply a filter and wait for it to take effect.
       await selectStatusFilter(page, "Failed");
-      await expect(
-        page.locator(".status-badge.status-failed").first(),
-      ).toBeVisible({
+      await expect(page.locator(".status-badge.status-failed").first()).toBeVisible({
         timeout: 5_000,
       });
-      await expect(
-        page.locator(".status-badge:not(.status-failed)"),
-      ).toHaveCount(0);
+      await expect(page.locator(".status-badge:not(.status-failed)")).toHaveCount(0);
       const filteredCount = await page.locator(".job-row").count();
       expect(filteredCount).toBeLessThan(baselineCount);
 
@@ -406,25 +380,17 @@ test.describe.serial("Roborev", () => {
       await waitForJobRows(page, 10);
 
       // Default sort is ID descending. Get first row ID.
-      const firstIdBefore = await page
-        .locator(".col-id .mono")
-        .first()
-        .textContent();
+      const firstIdBefore = await page.locator(".col-id .mono").first().textContent();
 
       // Click ID header to toggle to ascending
       const idHeader = page.locator("th.sortable").filter({ hasText: "ID" });
       await idHeader.click();
       await page.waitForTimeout(300);
 
-      const firstIdAfter = await page
-        .locator(".col-id .mono")
-        .first()
-        .textContent();
+      const firstIdAfter = await page.locator(".col-id .mono").first().textContent();
 
       // The first ID should now be a lower number (ascending)
-      expect(Number(firstIdAfter?.trim())).toBeLessThan(
-        Number(firstIdBefore?.trim()),
-      );
+      expect(Number(firstIdAfter?.trim())).toBeLessThan(Number(firstIdBefore?.trim()));
     });
 
     test("click Status header sorts by status", async ({ page }) => {
@@ -432,9 +398,7 @@ test.describe.serial("Roborev", () => {
       await waitForJobRows(page, 10);
 
       // Click Status header
-      const statusHeader = page
-        .locator("th.sortable")
-        .filter({ hasText: "Status" });
+      const statusHeader = page.locator("th.sortable").filter({ hasText: "Status" });
       await statusHeader.click();
       await page.waitForTimeout(300);
 
@@ -455,9 +419,7 @@ test.describe.serial("Roborev", () => {
       await waitForReviewsReady(page);
       await waitForJobRows(page, 10);
 
-      const elapsedHeader = page
-        .locator("th.sortable")
-        .filter({ hasText: "Elapsed" });
+      const elapsedHeader = page.locator("th.sortable").filter({ hasText: "Elapsed" });
       await elapsedHeader.click();
       await page.waitForTimeout(300);
 
@@ -491,9 +453,7 @@ test.describe.serial("Roborev", () => {
       await waitForJobRows(page, 10);
 
       // Sort by agent
-      const agentHeader = page
-        .locator("th.sortable")
-        .filter({ hasText: "Agent" });
+      const agentHeader = page.locator("th.sortable").filter({ hasText: "Agent" });
       await agentHeader.click();
       await page.waitForTimeout(300);
 
@@ -709,9 +669,7 @@ test.describe.serial("Roborev", () => {
       await expect(page).toHaveURL(/\/reviews$/);
     });
 
-    test("page reload preserves drawer state for valid jobId", async ({
-      page,
-    }) => {
+    test("page reload preserves drawer state for valid jobId", async ({ page }) => {
       await openDrawer(page, 72);
       await expect(page.locator(".drawer")).toBeVisible();
 
@@ -726,9 +684,7 @@ test.describe.serial("Roborev", () => {
   // Group 7: Keyboard Shortcuts
   // -------------------------------------------------------
   test.describe("Keyboard Shortcuts", () => {
-    test("j/k highlights table rows without opening drawer", async ({
-      page,
-    }) => {
+    test("j/k highlights table rows without opening drawer", async ({ page }) => {
       await waitForReviewsReady(page);
       await waitForJobRows(page, 10);
 
@@ -785,9 +741,7 @@ test.describe.serial("Roborev", () => {
       await page.keyboard.press("Shift+?");
       const modal = page.locator(".modal-backdrop");
       await expect(modal).toBeVisible();
-      await expect(page.locator(".modal-content")).toContainText(
-        "Keyboard Shortcuts",
-      );
+      await expect(page.locator(".modal-content")).toContainText("Keyboard Shortcuts");
 
       // Close with Escape
       await page.keyboard.press("Escape");
@@ -835,13 +789,9 @@ test.describe.serial("Roborev", () => {
       expect(text).toMatch(/Workers \d+\/\d+/);
     });
 
-    test("status strip connection indicator has connected class", async ({
-      page,
-    }) => {
+    test("status strip connection indicator has connected class", async ({ page }) => {
       await waitForReviewsReady(page);
-      const indicator = page.locator(
-        ".daemon-status .conn-indicator.connected",
-      );
+      const indicator = page.locator(".daemon-status .conn-indicator.connected");
       await expect(indicator).toBeVisible();
     });
   });
@@ -858,9 +808,7 @@ test.describe.serial("Roborev", () => {
       startDaemon();
     });
 
-    test("fresh load shows empty state with unreachable message", async ({
-      page,
-    }) => {
+    test("fresh load shows empty state with unreachable message", async ({ page }) => {
       await page.goto("/reviews");
       // Daemon was never available on this fresh page, so
       // ReviewsView shows the empty-state fallback.
@@ -871,9 +819,7 @@ test.describe.serial("Roborev", () => {
       await expect(emptyState).toContainText("not reachable");
     });
 
-    test("empty state does not render table or filter bar", async ({
-      page,
-    }) => {
+    test("empty state does not render table or filter bar", async ({ page }) => {
       await page.goto("/reviews");
       await expect(page.locator(".empty-state")).toBeVisible({
         timeout: 15_000,
@@ -896,9 +842,7 @@ test.describe.serial("Roborev", () => {
       await expect(retryBtn).toHaveText("Retry");
     });
 
-    test("retry button while daemon still down keeps empty state", async ({
-      page,
-    }) => {
+    test("retry button while daemon still down keeps empty state", async ({ page }) => {
       await page.goto("/reviews");
       await expect(page.locator(".empty-state")).toBeVisible({
         timeout: 15_000,
@@ -931,9 +875,7 @@ test.describe.serial("Roborev", () => {
       restartDaemon();
     });
 
-    test("click Retry in empty state loads table on same page", async ({
-      page,
-    }) => {
+    test("click Retry in empty state loads table on same page", async ({ page }) => {
       // Start with daemon stopped to get the empty state
       stopDaemon();
       await page.goto("/reviews");

@@ -1,9 +1,4 @@
-import type {
-  DiffResult,
-  FilePreview,
-  FilesResult,
-  CommitInfo,
-} from "../api/types.js";
+import type { DiffResult, FilePreview, FilesResult, CommitInfo } from "../api/types.js";
 import { createAPIClient } from "../api/generated/client.js";
 import {
   providerItemPath,
@@ -120,9 +115,7 @@ function loadCollapsedFiles(): Record<string, string[]> {
     if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed))
       return {};
     const result: Record<string, string[]> = {};
-    for (const [key, value] of Object.entries(
-      parsed as Record<string, unknown>,
-    )) {
+    for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
       if (Array.isArray(value) && value.every((v) => typeof v === "string")) {
         result[key] = value as string[];
       }
@@ -669,9 +662,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     identity: ProviderRouteRef,
   ): Promise<void> {
     const prChanged =
-      owner !== currentOwner ||
-      name !== currentName ||
-      number !== currentNumber;
+      owner !== currentOwner || name !== currentName || number !== currentNumber;
     currentOwner = owner;
     currentName = name;
     currentNumber = number;
@@ -690,13 +681,10 @@ export function createDiffStore(opts?: DiffStoreOptions) {
 
     const filesPromise = (async () => {
       try {
-        const { data } = await apiClient.GET(
-          providerItemPath("pulls", ref, "/files"),
-          {
-            params: { path: { ...providerRouteParams(ref), number } },
-            signal: filesAc.signal,
-          },
-        );
+        const { data } = await apiClient.GET(providerItemPath("pulls", ref, "/files"), {
+          params: { path: { ...providerRouteParams(ref), number } },
+          signal: filesAc.signal,
+        });
         if (!filesLoadIsCurrent(filesAc)) return;
         if (!data) return;
         applyFilesResult(data);
@@ -757,16 +745,13 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     const { diffAc, filesAc } = startDiffLoad();
 
     try {
-      const { data, error, response } = await apiClient.GET(
-        "/workspaces/{id}/files",
-        {
-          params: {
-            path: { id: workspaceID },
-            query: workspaceDiffQuery(base),
-          },
-          signal: filesAc.signal,
+      const { data, error, response } = await apiClient.GET("/workspaces/{id}/files", {
+        params: {
+          path: { id: workspaceID },
+          query: workspaceDiffQuery(base),
         },
-      );
+        signal: filesAc.signal,
+      });
       if (!filesLoadIsCurrent(filesAc)) return;
       if (!data) {
         throw new Error(apiErrorMessage(error, `HTTP ${response.status}`));
@@ -781,16 +766,13 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     }
 
     try {
-      const { data, error, response } = await apiClient.GET(
-        "/workspaces/{id}/diff",
-        {
-          params: {
-            path: { id: workspaceID },
-            query: workspaceDiffQuery(base),
-          },
-          signal: diffAc.signal,
+      const { data, error, response } = await apiClient.GET("/workspaces/{id}/diff", {
+        params: {
+          path: { id: workspaceID },
+          query: workspaceDiffQuery(base),
         },
-      );
+        signal: diffAc.signal,
+      });
       if (!diffLoadIsCurrent(diffAc)) return;
       if (!data) {
         throw new Error(apiErrorMessage(error, `HTTP ${response.status}`));
@@ -900,10 +882,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
 
   async function loadCommits(): Promise<void> {
     if (commits || commitsLoading) return;
-    if (
-      !currentWorkspaceID &&
-      (!currentOwner || !currentName || !currentNumber)
-    ) {
+    if (!currentWorkspaceID && (!currentOwner || !currentName || !currentNumber)) {
       return;
     }
 
@@ -981,12 +960,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     scope = { kind: "commit", sha };
     clearFilePreviewCache();
     if (currentOwner && currentName && currentNumber) {
-      void loadDiff(
-        currentOwner,
-        currentName,
-        currentNumber,
-        currentRouteRef(),
-      );
+      void loadDiff(currentOwner, currentName, currentNumber, currentRouteRef());
     } else if (currentWorkspaceID) {
       void loadWorkspaceDiff(
         currentWorkspaceID,
@@ -1001,17 +975,11 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     const fromIdx = commits.findIndex((c) => c.sha === fromSha);
     const toIdx = commits.findIndex((c) => c.sha === toSha);
     if (fromIdx === -1 || toIdx === -1) return;
-    const [older, newer] =
-      fromIdx > toIdx ? [fromSha, toSha] : [toSha, fromSha];
+    const [older, newer] = fromIdx > toIdx ? [fromSha, toSha] : [toSha, fromSha];
     scope = { kind: "range", fromSha: older, toSha: newer };
     clearFilePreviewCache();
     if (currentOwner && currentName && currentNumber) {
-      void loadDiff(
-        currentOwner,
-        currentName,
-        currentNumber,
-        currentRouteRef(),
-      );
+      void loadDiff(currentOwner, currentName, currentNumber, currentRouteRef());
     } else if (currentWorkspaceID) {
       void loadWorkspaceDiff(
         currentWorkspaceID,
@@ -1025,12 +993,7 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     scope = { kind: "head" };
     clearFilePreviewCache();
     if (currentOwner && currentName && currentNumber) {
-      void loadDiff(
-        currentOwner,
-        currentName,
-        currentNumber,
-        currentRouteRef(),
-      );
+      void loadDiff(currentOwner, currentName, currentNumber, currentRouteRef());
     } else if (currentWorkspaceID) {
       void loadWorkspaceDiff(
         currentWorkspaceID,

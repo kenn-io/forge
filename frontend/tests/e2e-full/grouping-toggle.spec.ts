@@ -36,10 +36,7 @@ async function selectActivityViewItem(
   await dropdown.locator(".filter-item", { hasText: label }).click();
 }
 
-async function selectPullGrouping(
-  page: Page,
-  label: string | RegExp,
-): Promise<void> {
+async function selectPullGrouping(page: Page, label: string | RegExp): Promise<void> {
   const groupButton = page.locator(".group-btn", { hasText: label });
   if (await groupButton.isVisible()) {
     await groupButton.click();
@@ -76,9 +73,7 @@ test.describe("grouping toggle", () => {
     await expect(page.locator(".repo-chip")).toHaveCount(0);
   });
 
-  test("PR list ungrouped shows repo badges and no headers", async ({
-    page,
-  }) => {
+  test("PR list ungrouped shows repo badges and no headers", async ({ page }) => {
     // Click "All" in group toggle.
     await selectPullGrouping(page, "All");
 
@@ -180,31 +175,25 @@ test.describe("grouping toggle", () => {
       .waitFor({ state: "visible", timeout: 5_000 });
 
     // Find all item rows whose ref is exactly "#1" (not #10, #11, etc.).
-    const refOnes = page
-      .locator(".item-row .item-ref")
-      .filter({ hasText: /^#1$/ });
+    const refOnes = page.locator(".item-row .item-ref").filter({ hasText: /^#1$/ });
     // There should be at least 2 (one for widgets, one for tools).
     const count = await refOnes.count();
     expect(count).toBeGreaterThanOrEqual(2);
   });
 
-  test("activity toggle hidden in flat mode, visible in threaded", async ({
-    page,
-  }) => {
+  test("activity toggle hidden in flat mode, visible in threaded", async ({ page }) => {
     await page.goto("/");
 
     // In flat mode (default), the view dropdown should not offer grouping.
     let dropdown = await openActivityViewDropdown(page);
-    await expect(
-      dropdown.locator(".filter-item", { hasText: /By repo/i }),
-    ).toHaveCount(0);
+    await expect(dropdown.locator(".filter-item", { hasText: /By repo/i })).toHaveCount(
+      0,
+    );
     await page.keyboard.press("Escape");
 
     // Switch to threaded mode.
     await selectActivityViewItem(page, "Threaded");
-    await page
-      .locator(".threaded-view")
-      .waitFor({ state: "visible", timeout: 10_000 });
+    await page.locator(".threaded-view").waitFor({ state: "visible", timeout: 10_000 });
 
     // Now grouping controls should be available from the view dropdown.
     dropdown = await openActivityViewDropdown(page);
@@ -234,9 +223,7 @@ test.describe("grouping toggle", () => {
     await expect(repoLabel).not.toHaveText("acme/widgets");
   });
 
-  test("activity threaded grouped headers respect hide org name", async ({
-    page,
-  }) => {
+  test("activity threaded grouped headers respect hide org name", async ({ page }) => {
     await page.goto("/");
 
     await selectActivityViewItem(page, "Threaded");
@@ -325,9 +312,7 @@ test.describe("grouping toggle", () => {
     });
   });
 
-  test("j/k navigation follows flat order in ungrouped mode", async ({
-    page,
-  }) => {
+  test("j/k navigation follows flat order in ungrouped mode", async ({ page }) => {
     // Switch to ungrouped.
     await selectPullGrouping(page, "All");
     await expect(page.locator(".repo-header")).toHaveCount(0, {
@@ -336,14 +321,8 @@ test.describe("grouping toggle", () => {
 
     // Capture the visible flat order of items.
     const allItems = page.locator(".pull-item");
-    const firstVisibleMeta = await allItems
-      .nth(0)
-      .locator(".meta-left")
-      .textContent();
-    const secondVisibleMeta = await allItems
-      .nth(1)
-      .locator(".meta-left")
-      .textContent();
+    const firstVisibleMeta = await allItems.nth(0).locator(".meta-left").textContent();
+    const secondVisibleMeta = await allItems.nth(1).locator(".meta-left").textContent();
 
     // Press j to select first item — should match the first visible item.
     await page.keyboard.press("j");

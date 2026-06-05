@@ -1,18 +1,5 @@
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from "@testing-library/svelte";
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vite-plus/test";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 const mocks = vi.hoisted(() => ({
   getWorkspaceRuntime: vi.fn(),
@@ -296,10 +283,7 @@ describe("WorkspaceTerminalView", () => {
   beforeEach(() => {
     delete window.__BASE_PATH__;
     localStorage.clear();
-    localStorage.setItem(
-      "middleman-workspace-active-tab:ws-1",
-      "session:ws-1:helper",
-    );
+    localStorage.setItem("middleman-workspace-active-tab:ws-1", "session:ws-1:helper");
     sockets = [];
     mocks.getWorkspaceRuntime.mockReset();
     mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithStaleSession());
@@ -384,9 +368,7 @@ describe("WorkspaceTerminalView", () => {
     expect(
       screen.getByRole("tab", { name: /Home/ }).getAttribute("aria-selected"),
     ).toBe("true");
-    expect(localStorage.getItem("middleman-workspace-active-tab:ws-1")).toBe(
-      "home",
-    );
+    expect(localStorage.getItem("middleman-workspace-active-tab:ws-1")).toBe("home");
   });
 
   it("shows a relaunched agent with the same key and a new generation", async () => {
@@ -410,9 +392,7 @@ describe("WorkspaceTerminalView", () => {
       }),
     );
 
-    await waitFor(() =>
-      expect(mocks.getWorkspaceRuntime).toHaveBeenCalledTimes(2),
-    );
+    await waitFor(() => expect(mocks.getWorkspaceRuntime).toHaveBeenCalledTimes(2));
     await waitFor(() =>
       expect(screen.getByRole("tab", { name: /Helper/ })).toBeTruthy(),
     );
@@ -483,9 +463,7 @@ describe("WorkspaceTerminalView", () => {
 
   it("uses an in-app modal when stopping a running shell", async () => {
     localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
-    mocks.getWorkspaceRuntime.mockResolvedValue(
-      runtimeWithTwoTerminalSessions(),
-    );
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTwoTerminalSessions());
     const confirm = vi.fn();
     vi.stubGlobal("confirm", confirm);
 
@@ -506,9 +484,7 @@ describe("WorkspaceTerminalView", () => {
 
     expect(confirm).not.toHaveBeenCalled();
     expect(mocks.stopWorkspaceSession).not.toHaveBeenCalled();
-    expect(
-      await screen.findByRole("dialog", { name: "Stop Shell?" }),
-    ).toBeTruthy();
+    expect(await screen.findByRole("dialog", { name: "Stop Shell?" })).toBeTruthy();
 
     await fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     await waitFor(() =>
@@ -516,15 +492,10 @@ describe("WorkspaceTerminalView", () => {
     );
 
     await fireEvent.click(screen.getByRole("button", { name: "Close Shell" }));
-    await fireEvent.click(
-      await screen.findByRole("button", { name: "Stop session" }),
-    );
+    await fireEvent.click(await screen.findByRole("button", { name: "Stop session" }));
 
     await waitFor(() =>
-      expect(mocks.stopWorkspaceSession).toHaveBeenCalledWith(
-        "ws-1",
-        "ws-1_shell_a",
-      ),
+      expect(mocks.stopWorkspaceSession).toHaveBeenCalledWith("ws-1", "ws-1_shell_a"),
     );
   });
 
@@ -539,14 +510,10 @@ describe("WorkspaceTerminalView", () => {
     });
 
     await screen.findByRole("tab", { name: /Helper/ });
-    await fireEvent.click(
-      screen.getByRole("button", { name: "Rename Helper" }),
-    );
+    await fireEvent.click(screen.getByRole("button", { name: "Rename Helper" }));
 
     expect(prompt).not.toHaveBeenCalled();
-    expect(
-      await screen.findByRole("dialog", { name: "Rename tab" }),
-    ).toBeTruthy();
+    expect(await screen.findByRole("dialog", { name: "Rename tab" })).toBeTruthy();
     const input = screen.getByRole("textbox", { name: "Name" });
     expect((input as HTMLInputElement).value).toBe("Helper");
 
@@ -556,9 +523,7 @@ describe("WorkspaceTerminalView", () => {
     );
     expect(screen.getByRole("tab", { name: /Helper/ })).toBeTruthy();
 
-    await fireEvent.click(
-      screen.getByRole("button", { name: "Rename Helper" }),
-    );
+    await fireEvent.click(screen.getByRole("button", { name: "Rename Helper" }));
     const reopenedInput = await screen.findByRole("textbox", { name: "Name" });
     await fireEvent.input(reopenedInput, {
       target: { value: "Review helper" },
@@ -600,9 +565,7 @@ describe("WorkspaceTerminalView", () => {
   });
 
   it("renames a workflow tab by its opaque session key", async () => {
-    mocks.getWorkspaceRuntime.mockResolvedValue(
-      runtimeWithDuplicateWorkflowSessions(),
-    );
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithDuplicateWorkflowSessions());
 
     render(WorkspaceTerminalView, {
       props: {
@@ -613,9 +576,7 @@ describe("WorkspaceTerminalView", () => {
     await screen.findByRole("tab", { name: /^Helper$/ });
     await screen.findByRole("tab", { name: /Helper 2/ });
 
-    await fireEvent.click(
-      screen.getByRole("button", { name: "Rename Helper" }),
-    );
+    await fireEvent.click(screen.getByRole("button", { name: "Rename Helper" }));
     const input = await screen.findByRole("textbox", { name: "Name" });
     expect((input as HTMLInputElement).value).toBe("Helper");
 
@@ -636,9 +597,7 @@ describe("WorkspaceTerminalView", () => {
   });
 
   it("shows a moving insertion slot while sorting workflow tabs", async () => {
-    mocks.getWorkspaceRuntime.mockResolvedValue(
-      runtimeWithTwoWorkflowSessions(),
-    );
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTwoWorkflowSessions());
 
     render(WorkspaceTerminalView, {
       props: {
@@ -659,16 +618,16 @@ describe("WorkspaceTerminalView", () => {
     });
 
     expect(screen.getByTestId("workflow-tab-drop-placeholder")).toBeTruthy();
-    expect(
-      reviewerTab.closest(".group-tab")?.classList.contains("dragging"),
-    ).toBe(true);
+    expect(reviewerTab.closest(".group-tab")?.classList.contains("dragging")).toBe(
+      true,
+    );
 
     await fireEvent.dragEnd(reviewerTab);
 
     expect(screen.queryByTestId("workflow-tab-drop-placeholder")).toBeNull();
-    expect(
-      reviewerTab.closest(".group-tab")?.classList.contains("dragging"),
-    ).toBe(false);
+    expect(reviewerTab.closest(".group-tab")?.classList.contains("dragging")).toBe(
+      false,
+    );
   });
 
   it("does not reopen the just-exited terminal from stale runtime data", async () => {
@@ -698,9 +657,7 @@ describe("WorkspaceTerminalView", () => {
 
   it("reconnects terminal panes when selecting another shell", async () => {
     localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
-    mocks.getWorkspaceRuntime.mockResolvedValue(
-      runtimeWithTwoTerminalSessions(),
-    );
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTwoTerminalSessions());
 
     render(WorkspaceTerminalView, {
       props: {
@@ -713,17 +670,13 @@ describe("WorkspaceTerminalView", () => {
     });
     await fireEvent.click(terminalButton);
     await waitFor(() =>
-      expect(
-        sockets.some((socket) => socket.url.includes("ws-1_shell_a")),
-      ).toBe(true),
+      expect(sockets.some((socket) => socket.url.includes("ws-1_shell_a"))).toBe(true),
     );
 
     await fireEvent.click(screen.getByRole("button", { name: "Shell 2" }));
 
     await waitFor(() =>
-      expect(
-        sockets.some((socket) => socket.url.includes("ws-1_shell_b")),
-      ).toBe(true),
+      expect(sockets.some((socket) => socket.url.includes("ws-1_shell_b"))).toBe(true),
     );
   });
 
@@ -746,29 +699,21 @@ describe("WorkspaceTerminalView", () => {
     });
     await fireEvent.click(terminalButton);
     await waitFor(() =>
-      expect(
-        sockets.some((socket) => socket.url.includes("ws-1_shell_a")),
-      ).toBe(true),
+      expect(sockets.some((socket) => socket.url.includes("ws-1_shell_a"))).toBe(true),
     );
 
-    await fireEvent.click(
-      screen.getByRole("button", { name: "Split terminal right" }),
-    );
+    await fireEvent.click(screen.getByRole("button", { name: "Split terminal right" }));
 
     await waitFor(() =>
-      expect(
-        sockets.some((socket) => socket.url.includes("ws-1_shell_b")),
-      ).toBe(true),
+      expect(sockets.some((socket) => socket.url.includes("ws-1_shell_b"))).toBe(true),
     );
     expect(screen.getByRole("button", { name: "Shell 2" })).toBeTruthy();
   });
 
   it("ignores older runtime responses after terminal cleanup refreshes", async () => {
     localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
-    const staleRefresh =
-      deferred<ReturnType<typeof runtimeWithTerminalSession>>();
-    const freshRefresh =
-      deferred<ReturnType<typeof runtimeWithTerminalSession>>();
+    const staleRefresh = deferred<ReturnType<typeof runtimeWithTerminalSession>>();
+    const freshRefresh = deferred<ReturnType<typeof runtimeWithTerminalSession>>();
     mocks.getWorkspaceRuntime
       .mockResolvedValueOnce(runtimeWithTerminalSession())
       .mockReturnValueOnce(staleRefresh.promise)
@@ -794,14 +739,10 @@ describe("WorkspaceTerminalView", () => {
     );
     await waitFor(() => expect(screen.getByText("No terminals")).toBeTruthy());
 
-    await fireEvent.click(
-      screen.getAllByRole("button", { name: "New terminal" })[0]!,
-    );
+    await fireEvent.click(screen.getAllByRole("button", { name: "New terminal" })[0]!);
     freshRefresh.resolve(runtimeWithTerminalSession(relaunchedShellSession));
     await waitFor(() =>
-      expect(
-        sockets.some((socket) => socket.url.includes("ws-1_shell_b")),
-      ).toBe(true),
+      expect(sockets.some((socket) => socket.url.includes("ws-1_shell_b"))).toBe(true),
     );
 
     staleRefresh.resolve(runtimeWithTerminalSession());
@@ -817,9 +758,7 @@ describe("WorkspaceTerminalView", () => {
 
   it("moves a workflow shell back into the terminal panel", async () => {
     localStorage.setItem("middleman-workspace-active-tab:ws-1", "home");
-    mocks.getWorkspaceRuntime.mockResolvedValue(
-      runtimeWithTwoTerminalSessions(),
-    );
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTwoTerminalSessions());
 
     render(WorkspaceTerminalView, {
       props: {
@@ -834,9 +773,7 @@ describe("WorkspaceTerminalView", () => {
     );
     await waitFor(() => expect(sockets).toHaveLength(1));
     expect(
-      screen
-        .getByRole("button", { name: "Focus Shell" })
-        .getAttribute("draggable"),
+      screen.getByRole("button", { name: "Focus Shell" }).getAttribute("draggable"),
     ).toBe("true");
     await fireEvent.click(
       screen.getByRole("button", { name: "Move Shell to workflow" }),

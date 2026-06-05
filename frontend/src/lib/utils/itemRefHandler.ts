@@ -65,9 +65,7 @@ async function resolveAndNavigate(
       if (response.status === 404) {
         showFlash(`Item ${owner}/${name}#${number} not found.`);
       } else {
-        showFlash(
-          `Failed to resolve ${owner}/${name}#${number}. Try again later.`,
-        );
+        showFlash(`Failed to resolve ${owner}/${name}#${number}. Try again later.`);
       }
       return;
     }

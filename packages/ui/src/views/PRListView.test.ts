@@ -1,13 +1,6 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
 import { tick } from "svelte";
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { NAVIGATE_KEY, SIDEBAR_KEY, STORES_KEY } from "../context.js";
 import type { PullRequestRouteRef } from "../routes.js";
 
@@ -51,9 +44,7 @@ class ResizeObserverMock {
   disconnect(): void {}
 }
 
-function renderPRListView(
-  detailTab: "conversation" | "files" = "conversation",
-) {
+function renderPRListView(detailTab: "conversation" | "files" = "conversation") {
   const detailStore = {
     getDetail: () => null,
     loadDetail: vi.fn(async () => undefined),

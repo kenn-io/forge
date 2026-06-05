@@ -1,11 +1,4 @@
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { createCollapsedReposStore } from "./collapsedRepos.svelte.js";
 
 const PULLS_KEY = "middleman:collapsedRepos:pulls";
@@ -120,11 +113,9 @@ describe("createCollapsedReposStore — error handling", () => {
   });
 
   it("keeps in-memory toggle working when setItem throws", () => {
-    const spy = vi
-      .spyOn(Storage.prototype, "setItem")
-      .mockImplementation(() => {
-        throw new Error("QuotaExceededError");
-      });
+    const spy = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("QuotaExceededError");
+    });
     const store = createCollapsedReposStore();
     expect(() => store.toggle("pulls", "acme/widgets")).not.toThrow();
     expect(store.isCollapsed("pulls", "acme/widgets")).toBe(true);
@@ -134,11 +125,9 @@ describe("createCollapsedReposStore — error handling", () => {
   });
 
   it("keeps in-memory toggle working when getItem throws at construction", () => {
-    const spy = vi
-      .spyOn(Storage.prototype, "getItem")
-      .mockImplementation(() => {
-        throw new Error("SecurityError");
-      });
+    const spy = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new Error("SecurityError");
+    });
     const store = createCollapsedReposStore();
     expect(store.isCollapsed("pulls", "acme/widgets")).toBe(false);
     spy.mockRestore();

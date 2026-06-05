@@ -15,8 +15,7 @@ export type WorkspaceRuntimeState = Omit<
 export type RuntimeFetch = typeof fetch;
 
 function basePath(): string {
-  const path =
-    typeof window !== "undefined" ? (window.__BASE_PATH__ ?? "/") : "/";
+  const path = typeof window !== "undefined" ? (window.__BASE_PATH__ ?? "/") : "/";
   return path.replace(/\/$/, "");
 }
 
@@ -64,14 +63,11 @@ export async function launchWorkspaceSession(
   targetKey: string,
   fetchFn: RuntimeFetch = fetch,
 ): Promise<RuntimeSession> {
-  const response = await fetchFn(
-    `${workspaceRuntimeURL(workspaceId)}/sessions`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ target_key: targetKey }),
-    },
-  );
+  const response = await fetchFn(`${workspaceRuntimeURL(workspaceId)}/sessions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ target_key: targetKey }),
+  });
   return readJSON<RuntimeSession>(
     response,
     `Launch session failed (${response.status})`,
@@ -91,10 +87,7 @@ export async function stopWorkspaceSession(
     },
   );
   if (!response.ok && response.status !== 204) {
-    await readJSON<unknown>(
-      response,
-      `Stop session failed (${response.status})`,
-    );
+    await readJSON<unknown>(response, `Stop session failed (${response.status})`);
   }
 }
 
@@ -130,7 +123,5 @@ export function workspaceSessionWebSocketPath(
 }
 
 export function workspaceTmuxWebSocketPath(workspaceId: string): string {
-  return (
-    `${wsBaseUrl()}/workspaces/${encodeURIComponent(workspaceId)}` + "/terminal"
-  );
+  return `${wsBaseUrl()}/workspaces/${encodeURIComponent(workspaceId)}` + "/terminal";
 }

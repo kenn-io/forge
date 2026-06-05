@@ -1,11 +1,4 @@
-import {
-  describe,
-  expect,
-  it,
-  beforeEach,
-  afterEach,
-  vi,
-} from "vite-plus/test";
+import { describe, expect, it, beforeEach, afterEach, vi } from "vite-plus/test";
 import {
   navigate,
   getRoute,
@@ -470,18 +463,16 @@ describe("router navigation events", () => {
   });
 
   afterEach(() => {
-    delete (window as unknown as { __middleman_config?: unknown })
-      .__middleman_config;
+    delete (window as unknown as { __middleman_config?: unknown }).__middleman_config;
     (
       window as unknown as { __middleman_notify_config_changed?: () => void }
     ).__middleman_notify_config_changed?.();
   });
 
   function installOnNavigate(spy: ReturnType<typeof vi.fn>): void {
-    (window as unknown as { __middleman_config?: unknown }).__middleman_config =
-      {
-        onNavigate: spy,
-      };
+    (window as unknown as { __middleman_config?: unknown }).__middleman_config = {
+      onNavigate: spy,
+    };
     (
       window as unknown as { __middleman_notify_config_changed?: () => void }
     ).__middleman_notify_config_changed?.();

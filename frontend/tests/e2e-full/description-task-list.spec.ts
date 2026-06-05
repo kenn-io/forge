@@ -13,20 +13,14 @@ if (chromiumBinary) {
 test.describe.serial("PR description task list", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/pulls/github/acme/widgets/1");
-    await page
-      .locator(".pull-detail")
-      .waitFor({ state: "visible", timeout: 15_000 });
-    await page
-      .locator(".body-section .markdown-body")
-      .waitFor({ state: "visible" });
+    await page.locator(".pull-detail").waitFor({ state: "visible", timeout: 15_000 });
+    await page.locator(".body-section .markdown-body").waitFor({ state: "visible" });
     // Give the page-load background sync time to settle so it can't
     // race with our optimistic click and clobber the local body.
     await page.waitForTimeout(1500);
   });
 
-  test("checkbox clicks toggle locally and persist on reload", async ({
-    page,
-  }) => {
+  test("checkbox clicks toggle locally and persist on reload", async ({ page }) => {
     const body = page.locator(".body-section .markdown-body");
     const cb0 = body.locator('input[type="checkbox"][data-task-index="0"]');
     const cb1 = body.locator('input[type="checkbox"][data-task-index="1"]');
@@ -51,9 +45,7 @@ test.describe.serial("PR description task list", () => {
     ).toBeChecked();
   });
 
-  test("drag handle reorders a task item and persists on reload", async ({
-    page,
-  }) => {
+  test("drag handle reorders a task item and persists on reload", async ({ page }) => {
     const body = page.locator(".body-section .markdown-body");
     const firstLabel = await body
       .locator('.task-list-item--interactive[data-task-index="0"]')
@@ -61,9 +53,7 @@ test.describe.serial("PR description task list", () => {
     expect(firstLabel ?? "").toMatch(/Cmd\+K/);
 
     const handle0 = body.locator('.task-drag-handle[data-task-index="0"]');
-    const item2 = body.locator(
-      '.task-list-item--interactive[data-task-index="2"]',
-    );
+    const item2 = body.locator('.task-list-item--interactive[data-task-index="2"]');
     const handleBox = await handle0.boundingBox();
     const targetBox = await item2.boundingBox();
     if (!handleBox || !targetBox) {

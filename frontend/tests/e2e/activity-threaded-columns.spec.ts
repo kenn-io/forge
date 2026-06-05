@@ -221,8 +221,8 @@ test.describe("threaded activity columns", () => {
 
     // Reload to verify the toggle persists via localStorage.
     await page.reload();
-    await expect(
-      page.locator(".item-row .repo-chip__label").first(),
-    ).toHaveText("widgets");
+    await expect(page.locator(".item-row .repo-chip__label").first()).toHaveText(
+      "widgets",
+    );
   });
 });

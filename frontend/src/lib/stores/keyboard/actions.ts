@@ -35,9 +35,7 @@ function stores(): StoreInstances {
 const always = (): boolean => true;
 
 const isBoardRoute = (ctx: Context): boolean =>
-  ctx.route.page === "pulls" &&
-  "view" in ctx.route &&
-  ctx.route.view === "board";
+  ctx.route.page === "pulls" && "view" in ctx.route && ctx.route.view === "board";
 
 const onPullsListNotBoard = (ctx: Context): boolean =>
   ctx.page === "pulls" && !ctx.isDiffView && !isBoardRoute(ctx);
@@ -146,9 +144,7 @@ function navigateToSelectedPR(): void {
   if (!sel) return;
   const tab = getDetailTab();
   const path =
-    tab === "files"
-      ? buildPullRequestFilesRoute(sel)
-      : buildPullRequestRoute(sel);
+    tab === "files" ? buildPullRequestFilesRoute(sel) : buildPullRequestRoute(sel);
   if (getSelectedPRFromRoute()) {
     replaceUrl(path);
   } else {

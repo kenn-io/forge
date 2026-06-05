@@ -1,8 +1,4 @@
-import type {
-  ActivityItem,
-  ActivityParams,
-  ActivitySettings,
-} from "../api/types.js";
+import type { ActivityItem, ActivityParams, ActivitySettings } from "../api/types.js";
 import type { MiddlemanClient } from "../types.js";
 
 export type TimeRange = "24h" | "7d" | "30d" | "90d";
@@ -222,9 +218,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
         params: { query: buildParams() },
       });
       if (requestError) {
-        throw new Error(
-          apiErrorMessage(requestError, "failed to load activity"),
-        );
+        throw new Error(apiErrorMessage(requestError, "failed to load activity"));
       }
       if (version !== requestVersion) return;
       items = data?.items ?? [];
@@ -288,9 +282,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
         params: { query: params },
       });
       if (requestError) {
-        throw new Error(
-          apiErrorMessage(requestError, "failed to poll activity"),
-        );
+        throw new Error(apiErrorMessage(requestError, "failed to poll activity"));
       }
       if (versionAtStart !== requestVersion) return;
       const resp = data;
@@ -340,9 +332,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     if (hasPR && !hasIssue) itemFilter = "prs";
     else if (hasIssue && !hasPR) itemFilter = "issues";
     else itemFilter = "all";
-    enabledEvents = new Set(
-      DEFAULT_EVENT_TYPES.filter((t) => filterTypes.includes(t)),
-    );
+    enabledEvents = new Set(DEFAULT_EVENT_TYPES.filter((t) => filterTypes.includes(t)));
   }
 
   function applyCollapsedFromURL(): void {
@@ -371,13 +361,11 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     if (sp.has("search")) searchQuery = sp.get("search") ?? undefined;
     if (sp.has("range")) {
       const rangeParam = sp.get("range");
-      if (rangeParam && rangeParam in RANGE_MS)
-        timeRange = rangeParam as TimeRange;
+      if (rangeParam && rangeParam in RANGE_MS) timeRange = rangeParam as TimeRange;
     }
     if (sp.has("view")) {
       const viewParam = sp.get("view");
-      if (viewParam === "flat" || viewParam === "threaded")
-        viewMode = viewParam;
+      if (viewParam === "flat" || viewParam === "threaded") viewMode = viewParam;
     }
     hideDefaultBranchActivity = sp.get("hide_branch") === "1";
     applyCollapsedFromURL();

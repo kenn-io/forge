@@ -1,15 +1,10 @@
 import type { RoborevClient } from "../../api/roborev/client.js";
-import type {
-  components,
-  operations,
-} from "../../api/roborev/generated/schema.js";
+import type { components, operations } from "../../api/roborev/generated/schema.js";
 
 type Review = components["schemas"]["Review"];
 type ReviewJob = components["schemas"]["ReviewJob"];
 type ReviewResponse = components["schemas"]["Response"];
-type ListJobsQuery = NonNullable<
-  operations["list-jobs"]["parameters"]["query"]
->;
+type ListJobsQuery = NonNullable<operations["list-jobs"]["parameters"]["query"]>;
 
 export interface ReviewStoreOptions {
   client: RoborevClient;

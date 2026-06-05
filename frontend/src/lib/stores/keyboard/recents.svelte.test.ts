@@ -45,10 +45,7 @@ describe("recents", () => {
   });
 
   it("version mismatch is treated as empty", () => {
-    localStorage.setItem(
-      RECENTS_KEY,
-      JSON.stringify({ version: 0, items: [] }),
-    );
+    localStorage.setItem(RECENTS_KEY, JSON.stringify({ version: 0, items: [] }));
     expect(readRecents().items).toHaveLength(0);
   });
 
@@ -69,9 +66,9 @@ describe("recents", () => {
     writeRecent("pr", ref(2));
     writeRecent("pr", ref(3));
     const items = readRecents().items;
-    expect(
-      items.map((item) => (item.ref as { number: number }).number),
-    ).toEqual([3, 2, 1]);
+    expect(items.map((item) => (item.ref as { number: number }).number)).toEqual([
+      3, 2, 1,
+    ]);
   });
 
   it("re-adding an item dedupes and moves it to the front", () => {
@@ -80,9 +77,9 @@ describe("recents", () => {
     writeRecent("pr", ref(1));
     const items = readRecents().items;
     expect(items).toHaveLength(2);
-    expect(
-      items.map((item) => (item.ref as { number: number }).number),
-    ).toEqual([1, 2]);
+    expect(items.map((item) => (item.ref as { number: number }).number)).toEqual([
+      1, 2,
+    ]);
   });
 
   it("treats different kinds with the same ref as distinct", () => {
@@ -99,19 +96,15 @@ describe("recents", () => {
     writeRecent("pr", ref(3));
     pruneRecents((item) => (item.ref as { number: number }).number !== 2);
     const items = readRecents().items;
-    expect(
-      items.map((item) => (item.ref as { number: number }).number),
-    ).toEqual([3, 1]);
+    expect(items.map((item) => (item.ref as { number: number }).number)).toEqual([
+      3, 1,
+    ]);
   });
 
   it("pruneStale drops items older than 30 days", () => {
     const now = new Date("2026-05-09T12:00:00Z");
-    const fresh = new Date(
-      now.getTime() - 1 * 24 * 60 * 60 * 1000,
-    ).toISOString();
-    const stale = new Date(
-      now.getTime() - 31 * 24 * 60 * 60 * 1000,
-    ).toISOString();
+    const fresh = new Date(now.getTime() - 1 * 24 * 60 * 60 * 1000).toISOString();
+    const stale = new Date(now.getTime() - 31 * 24 * 60 * 60 * 1000).toISOString();
     localStorage.setItem(
       RECENTS_KEY,
       JSON.stringify({
@@ -130,9 +123,7 @@ describe("recents", () => {
 
   it("pruneStale keeps items exactly at the 30-day boundary", () => {
     const now = new Date("2026-05-09T12:00:00Z");
-    const exactly30 = new Date(
-      now.getTime() - 30 * 24 * 60 * 60 * 1000,
-    ).toISOString();
+    const exactly30 = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
     localStorage.setItem(
       RECENTS_KEY,
       JSON.stringify({
@@ -295,10 +286,7 @@ describe("recents", () => {
   });
 
   it("items is treated as empty when items is not an array", () => {
-    localStorage.setItem(
-      RECENTS_KEY,
-      JSON.stringify({ version: 1, items: "nope" }),
-    );
+    localStorage.setItem(RECENTS_KEY, JSON.stringify({ version: 1, items: "nope" }));
     expect(readRecents()).toEqual({ version: 1, items: [] });
   });
 });

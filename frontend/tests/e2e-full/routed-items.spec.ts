@@ -22,29 +22,18 @@ async function expectPathname(page: Page, pathname: string): Promise<void> {
 }
 
 test.describe("routed item builders through the UI", () => {
-  test("selecting a PR row routes to its API-backed detail", async ({
-    page,
-  }) => {
+  test("selecting a PR row routes to its API-backed detail", async ({ page }) => {
     await page.goto("/pulls");
     await page
       .locator(".pull-item")
       .first()
       .waitFor({ state: "visible", timeout: 10_000 });
 
-    const detailLoaded = detailResponse(
-      page,
-      "/api/v1/pulls/github/acme/widgets/1",
-    );
-    await page
-      .locator(".pull-item")
-      .filter({ hasText: prTitle })
-      .first()
-      .click();
+    const detailLoaded = detailResponse(page, "/api/v1/pulls/github/acme/widgets/1");
+    await page.locator(".pull-item").filter({ hasText: prTitle }).first().click();
 
     await expectPathname(page, "/pulls/github/acme/widgets/1");
-    await expect(page.locator(".pull-detail .detail-title")).toContainText(
-      prTitle,
-    );
+    await expect(page.locator(".pull-detail .detail-title")).toContainText(prTitle);
     await expect((await detailLoaded).ok()).toBe(true);
   });
 
@@ -61,32 +50,21 @@ test.describe("routed item builders through the UI", () => {
       page,
       "/api/v1/issues/github/acme/widgets/10",
     );
-    await page
-      .locator(".issue-item")
-      .filter({ hasText: issueTitle })
-      .first()
-      .click();
+    await page.locator(".issue-item").filter({ hasText: issueTitle }).first().click();
 
     await expectPathname(page, "/issues/github/acme/widgets/10");
-    await expect(page.locator(".issue-detail .detail-title")).toContainText(
-      issueTitle,
-    );
+    await expect(page.locator(".issue-detail .detail-title")).toContainText(issueTitle);
     await expect((await detailLoaded).ok()).toBe(true);
   });
 
-  test("focus PR list routes selected rows to focus detail", async ({
-    page,
-  }) => {
+  test("focus PR list routes selected rows to focus detail", async ({ page }) => {
     await page.goto("/focus/mrs?repo=acme%2Fwidgets");
     await page
       .locator(".focus-list .pull-item")
       .first()
       .waitFor({ state: "visible", timeout: 10_000 });
 
-    const detailLoaded = detailResponse(
-      page,
-      "/api/v1/pulls/github/acme/widgets/1",
-    );
+    const detailLoaded = detailResponse(page, "/api/v1/pulls/github/acme/widgets/1");
     await page
       .locator(".focus-list .pull-item")
       .filter({ hasText: prTitle })
@@ -101,9 +79,7 @@ test.describe("routed item builders through the UI", () => {
     await expect((await detailLoaded).ok()).toBe(true);
   });
 
-  test("focus issue list routes selected rows with platform_host", async ({
-    page,
-  }) => {
+  test("focus issue list routes selected rows with platform_host", async ({ page }) => {
     await page.goto("/focus/issues?repo=acme%2Fwidgets");
     await page
       .locator(".focus-list .issue-item")
@@ -138,10 +114,7 @@ test.describe("routed item builders through the UI", () => {
       .first()
       .waitFor({ state: "visible", timeout: 10_000 });
 
-    const detailLoaded = detailResponse(
-      page,
-      "/api/v1/pulls/github/acme/widgets/1",
-    );
+    const detailLoaded = detailResponse(page, "/api/v1/pulls/github/acme/widgets/1");
     await page
       .locator(".focus-list .pull-item")
       .filter({ hasText: prTitle })
@@ -201,8 +174,6 @@ test.describe("routed item builders through the UI", () => {
     await expectPathname(page, "/pulls/github/acme/widgets/1");
     await expect(page.locator(".focus-layout")).toHaveCount(0);
     await expect(page.locator(".app-header")).toBeVisible();
-    await expect(page.locator(".pull-detail .detail-title")).toContainText(
-      prTitle,
-    );
+    await expect(page.locator(".pull-detail .detail-title")).toContainText(prTitle);
   });
 });

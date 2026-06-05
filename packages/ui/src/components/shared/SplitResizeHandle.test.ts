@@ -19,9 +19,7 @@ describe("SplitResizeHandle", () => {
       name: "Resize sidebar",
     });
     expect(handle.classList.contains("split-resize-handle")).toBe(true);
-    expect(handle.classList.contains("activity-split-resize-handle")).toBe(
-      true,
-    );
+    expect(handle.classList.contains("activity-split-resize-handle")).toBe(true);
     expect(handle.className).not.toContain(",");
   });
 
@@ -46,12 +44,8 @@ describe("SplitResizeHandle", () => {
     await fireEvent.mouseUp(window, { clientX: 150 });
 
     expect(onResizeStart).toHaveBeenCalledOnce();
-    expect(onResize).toHaveBeenCalledWith(
-      expect.objectContaining({ deltaX: 40 }),
-    );
-    expect(onResizeEnd).toHaveBeenCalledWith(
-      expect.objectContaining({ deltaX: 50 }),
-    );
+    expect(onResize).toHaveBeenCalledWith(expect.objectContaining({ deltaX: 40 }));
+    expect(onResizeEnd).toHaveBeenCalledWith(expect.objectContaining({ deltaX: 50 }));
   });
 
   it("reports arrow-key resize deltas", async () => {

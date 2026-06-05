@@ -15,10 +15,7 @@ async function openActivityViewDropdown(page: Page) {
   return dropdown;
 }
 
-async function selectActivityViewItem(
-  page: Page,
-  label: string,
-): Promise<void> {
+async function selectActivityViewItem(page: Page, label: string): Promise<void> {
   const dropdown = await openActivityViewDropdown(page);
   await dropdown.locator(".filter-item", { hasText: label }).click();
 }
@@ -49,9 +46,7 @@ test.describe("threaded activity collapse", () => {
 
     await page.getByRole("button", { name: "Collapse all" }).click();
     await expect(eventRows).toHaveCount(0);
-    await expect(
-      page.locator(".threaded-view .item-row").first(),
-    ).toBeVisible();
+    await expect(page.locator(".threaded-view .item-row").first()).toBeVisible();
 
     // The control flips to Expand all; clicking it brings event rows back.
     // The activity feed may refresh in the background during the full e2e suite,

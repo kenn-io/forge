@@ -68,9 +68,7 @@ export function buildFocusPullRequestRoute(ref: PullRequestRouteRef): string {
   return `/focus${buildProviderPullRequestRoute(providerRouteRef(ref))}`;
 }
 
-export function buildFocusPullRequestFilesRoute(
-  ref: PullRequestRouteRef,
-): string {
+export function buildFocusPullRequestFilesRoute(ref: PullRequestRouteRef): string {
   return `/focus${buildProviderPullRequestFilesRoute(providerRouteRef(ref))}`;
 }
 
@@ -88,9 +86,7 @@ export function buildRoutedItemRoute(
   options: { focus?: boolean } = {},
 ): string {
   if (ref.itemType === "pr") {
-    return options.focus
-      ? buildFocusPullRequestRoute(ref)
-      : buildPullRequestRoute(ref);
+    return options.focus ? buildFocusPullRequestRoute(ref) : buildPullRequestRoute(ref);
   }
   return options.focus ? buildFocusIssueRoute(ref) : buildIssueRoute(ref);
 }
@@ -131,10 +127,7 @@ function providerItemPath(
 function providerRouteParts(
   ref: ProviderRouteRef,
 ): ReturnType<typeof providerRouteParams> {
-  const repoPath = requireRouteText(ref.repoPath, "repoPath").replace(
-    /^\/+|\/+$/g,
-    "",
-  );
+  const repoPath = requireRouteText(ref.repoPath, "repoPath").replace(/^\/+|\/+$/g, "");
   const pathParts = repoPath.split("/").filter(Boolean);
   if (pathParts.length < 2) {
     throw new Error("missing route repoPath owner/name");

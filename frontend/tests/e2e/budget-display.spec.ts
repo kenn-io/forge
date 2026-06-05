@@ -15,9 +15,7 @@ test("status bar shows budget bars with known data", async ({ page }) => {
   await expect(bars.getByText("GQL")).toBeVisible();
 });
 
-test("budget bars show middleman count when budget enabled", async ({
-  page,
-}) => {
+test("budget bars show middleman count when budget enabled", async ({ page }) => {
   await page.goto("/pulls");
 
   const bars = page.locator(".budget-bars");
@@ -57,17 +55,14 @@ test("popover dismisses on click outside", async ({ page }) => {
   // avoid catching the opening click. Flush one animation frame so the
   // listener is registered before we click outside.
   await page.evaluate(
-    () =>
-      new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
+    () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
   );
 
   await page.locator(".app-main").click();
   await expect(page.locator(".budget-popover")).not.toBeVisible();
 });
 
-test("popover opens via keyboard (Enter) and closes via Escape", async ({
-  page,
-}) => {
+test("popover opens via keyboard (Enter) and closes via Escape", async ({ page }) => {
   await page.goto("/pulls");
 
   const bars = page.locator(".budget-bars");
@@ -91,9 +86,7 @@ test("popover opens via keyboard (Space)", async ({ page }) => {
   await expect(page.locator(".budget-popover")).toBeVisible();
 });
 
-test("mixed known/unknown hosts show worst-case from known only", async ({
-  page,
-}) => {
+test("mixed known/unknown hosts show worst-case from known only", async ({ page }) => {
   await page.route("**/api/v1/rate-limits", async (route) => {
     await route.fulfill({
       status: 200,
@@ -221,9 +214,7 @@ test("budget bars show unknown state when host not known", async ({ page }) => {
   await expect(bars.getByText("req/hr")).not.toBeVisible();
 });
 
-test("paused host shows red health dot and sync paused indicator", async ({
-  page,
-}) => {
+test("paused host shows red health dot and sync paused indicator", async ({ page }) => {
   await page.route("**/api/v1/rate-limits", async (route) => {
     await route.fulfill({
       status: 200,
@@ -335,9 +326,7 @@ test("paused multi-host shows red health dot in popover", async ({ page }) => {
   await expect(pausedDot).toHaveCSS("background-color", "rgb(248, 113, 113)");
 });
 
-test("GQL known but REST unknown still shows budget count", async ({
-  page,
-}) => {
+test("GQL known but REST unknown still shows budget count", async ({ page }) => {
   await page.route("**/api/v1/rate-limits", async (route) => {
     await route.fulfill({
       status: 200,

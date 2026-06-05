@@ -12,9 +12,7 @@ describe("renderMarkdown task lists", () => {
       repoPath: "acme/widgets",
     });
 
-    expect(html).toContain(
-      'class="item-ref" href="/issues/github/acme/widgets/12"',
-    );
+    expect(html).toContain('class="item-ref" href="/issues/github/acme/widgets/12"');
     expect(html).toContain('data-platform-host="github.com"');
     expect(html).toContain('data-owner="acme"');
     expect(html).toContain('data-name="widgets"');
@@ -77,9 +75,7 @@ describe("renderMarkdown task lists", () => {
       },
     );
 
-    expect(html.match(/data-number="10" data-item-type="issue"/g)).toHaveLength(
-      2,
-    );
+    expect(html.match(/data-number="10" data-item-type="issue"/g)).toHaveLength(2);
     expect(html.match(/data-number="10" data-item-type="pr"/g)).toHaveLength(2);
     expect(html).toContain(
       'data-external-url="https://gitlab.example.com/group/project/-/issues/10"',
@@ -135,13 +131,9 @@ describe("renderMarkdown task lists", () => {
   });
 
   it("renders enabled checkboxes with sequential indices when interactiveTasks is set", () => {
-    const html = renderMarkdown(
-      "- [ ] alpha\n- [x] beta\n- [ ] gamma",
-      undefined,
-      {
-        interactiveTasks: true,
-      },
-    );
+    const html = renderMarkdown("- [ ] alpha\n- [x] beta\n- [ ] gamma", undefined, {
+      interactiveTasks: true,
+    });
     expect(html).not.toContain('disabled=""');
     expect(html).toContain('data-task-index="0"');
     expect(html).toContain('data-task-index="1"');
@@ -180,12 +172,8 @@ describe("renderMarkdown task lists", () => {
     expect(html).toContain(
       '<li class="task-list-item task-list-item--interactive" data-task-index="0">',
     );
-    expect(html).toContain(
-      '<span class="task-drag-handle" data-task-index="0"',
-    );
-    expect(html).toContain(
-      '<span class="task-drag-handle" data-task-index="1"',
-    );
+    expect(html).toContain('<span class="task-drag-handle" data-task-index="0"');
+    expect(html).toContain('<span class="task-drag-handle" data-task-index="1"');
     expect(html).toContain('draggable="true"');
   });
 
@@ -248,15 +236,9 @@ describe("renderMarkdown task lists", () => {
     expect(html).toContain(
       '<li class="task-list-item task-list-item--interactive" data-task-index="2">',
     );
-    expect(html).toContain(
-      '<span class="task-drag-handle" data-task-index="0"',
-    );
-    expect(html).toContain(
-      '<span class="task-drag-handle" data-task-index="1"',
-    );
-    expect(html).toContain(
-      '<span class="task-drag-handle" data-task-index="2"',
-    );
+    expect(html).toContain('<span class="task-drag-handle" data-task-index="0"');
+    expect(html).toContain('<span class="task-drag-handle" data-task-index="1"');
+    expect(html).toContain('<span class="task-drag-handle" data-task-index="2"');
     // Sanity-check pairing: the outer <li> contains the nested <li>
     // in its inner content, and the outer's drag handle precedes
     // the outer's checkbox.

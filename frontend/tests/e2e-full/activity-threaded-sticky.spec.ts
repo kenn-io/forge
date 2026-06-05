@@ -15,10 +15,7 @@ async function openActivityViewDropdown(page: Page) {
   return dropdown;
 }
 
-async function selectActivityViewItem(
-  page: Page,
-  label: string,
-): Promise<void> {
+async function selectActivityViewItem(page: Page, label: string): Promise<void> {
   const dropdown = await openActivityViewDropdown(page);
   await dropdown.locator(".filter-item", { hasText: label }).click();
 }
@@ -43,9 +40,7 @@ test.describe("threaded activity sticky headers", () => {
   }) => {
     await gotoThreadedGrouped(page);
 
-    const columnHeaders = page.locator(
-      ".threaded-view .activity-column-headers",
-    );
+    const columnHeaders = page.locator(".threaded-view .activity-column-headers");
     await expect(columnHeaders).toBeVisible();
     const beforeBox = await columnHeaders.boundingBox();
     expect(beforeBox).not.toBeNull();

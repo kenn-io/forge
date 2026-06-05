@@ -1,11 +1,6 @@
 import type { DiffFile } from "../api/types.js";
 
-export type DiffFileCategory =
-  | "plansDocs"
-  | "generated"
-  | "code"
-  | "tests"
-  | "other";
+export type DiffFileCategory = "plansDocs" | "generated" | "code" | "tests" | "other";
 export type DiffFileCategoryFilter = DiffFileCategory | "all";
 export type DiffFileCategoryCounts = Record<DiffFileCategoryFilter, number>;
 type CategorizableDiffFile = Pick<DiffFile, "path"> & {
@@ -153,12 +148,10 @@ export function categorizeDiffFile(
   const parts = pathParts(path);
   const base = basename(path);
   const ext = extension(path);
-  const generatedMetadata =
-    typeof file === "string" ? undefined : file.is_generated;
+  const generatedMetadata = typeof file === "string" ? undefined : file.is_generated;
 
   if (generatedMetadata === true) return "generated";
-  if (generatedMetadata !== false && hasGeneratedSignal(base))
-    return "generated";
+  if (generatedMetadata !== false && hasGeneratedSignal(base)) return "generated";
   if (hasTestSignal(parts, base)) return "tests";
   if (hasDocsSignal(parts, base, ext)) return "plansDocs";
   if (codeExtensions.has(ext)) return "code";
@@ -173,9 +166,7 @@ export function filterDiffFilesByCategory(
   return files.filter((file) => categorizeDiffFile(file) === filter);
 }
 
-export function countDiffFilesByCategory(
-  files: DiffFile[],
-): DiffFileCategoryCounts {
+export function countDiffFilesByCategory(files: DiffFile[]): DiffFileCategoryCounts {
   const counts: DiffFileCategoryCounts = {
     plansDocs: 0,
     generated: 0,

@@ -22,7 +22,9 @@ describe("bracketed paste payloads", () => {
 
   it("strips terminal control bytes while preserving tabs and newlines", () => {
     expect(
-      sanitizeTerminalPasteText("one\t\n\x1b[201~\nmalicious-command\r\n\x9b200~\x07two"),
+      sanitizeTerminalPasteText(
+        "one\t\n\x1b[201~\nmalicious-command\r\n\x9b200~\x07two",
+      ),
     ).toBe("one\t\n[201~\nmalicious-command\r\n200~two");
   });
 
@@ -33,6 +35,8 @@ describe("bracketed paste payloads", () => {
   });
 
   it("builds raw sanitized payloads when bracketed paste mode is disabled", () => {
-    expect(createTerminalPastePayload("one\x1b[201~\ntwo", false)).toBe("one[201~\ntwo");
+    expect(createTerminalPastePayload("one\x1b[201~\ntwo", false)).toBe(
+      "one[201~\ntwo",
+    );
   });
 });

@@ -22,9 +22,7 @@ function pr(
 
 describe("PR status grouping", () => {
   it("classifies by kanban status instead of worktree presence", () => {
-    expect(classifyPR(pr(1, "reviewing", "2026-01-01T00:00:00Z"))).toBe(
-      "reviewing",
-    );
+    expect(classifyPR(pr(1, "reviewing", "2026-01-01T00:00:00Z"))).toBe("reviewing");
     expect(
       classifyPR(
         pr(2, "waiting", "2026-01-01T00:00:00Z", [

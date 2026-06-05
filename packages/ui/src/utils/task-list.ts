@@ -79,11 +79,7 @@ function walkTaskLines(lines: string[], visitor: TaskLineVisitor): void {
     // matching close-fence line can end the block; inside a list, the
     // same indent continues the list item and may legitimately open a
     // fence as part of the item's content.
-    if (
-      openFence === null &&
-      listIndent === null &&
-      isIndentedCodeStart(line)
-    ) {
+    if (openFence === null && listIndent === null && isIndentedCodeStart(line)) {
       continue;
     }
     const fenceMatch = line.match(FENCE_LINE);
@@ -239,11 +235,9 @@ export function moveTaskListItem(
   } else {
     insertAt = toStart;
   }
-  return [
-    ...without.slice(0, insertAt),
-    ...moved,
-    ...without.slice(insertAt),
-  ].join("\n");
+  return [...without.slice(0, insertAt), ...moved, ...without.slice(insertAt)].join(
+    "\n",
+  );
 }
 
 // Returns a new source string with the Nth task-list checkbox toggled.

@@ -41,9 +41,7 @@ export type PRDetailInputBuilder = (ctx: Context) => PRDetailActionInput | null;
  * the caller should invoke on teardown so the entries are removed and
  * hot reload doesn't accumulate duplicate registrations.
  */
-export function registerPRDetailActions(
-  getInput: PRDetailInputBuilder,
-): () => void {
+export function registerPRDetailActions(getInput: PRDetailInputBuilder): () => void {
   const wrap = (
     can: (input: PRDetailActionInput) => boolean,
     run: (input: PRDetailActionInput) => void | Promise<void>,

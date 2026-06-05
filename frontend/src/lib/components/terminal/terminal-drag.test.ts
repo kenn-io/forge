@@ -23,18 +23,15 @@ describe("terminal drag payloads", () => {
     expect(dragStart.dataTransfer?.getData("text/plain")).toBe(
       "Middleman terminal session",
     );
-    expect(
-      dragStart.dataTransfer?.getData(RUNTIME_SESSION_DRAG_MIME),
-    ).not.toContain("session-1");
-    expect(
-      dragStart.dataTransfer?.getData(RUNTIME_SESSION_DRAG_MIME),
-    ).not.toContain("workspace-1");
+    expect(dragStart.dataTransfer?.getData(RUNTIME_SESSION_DRAG_MIME)).not.toContain(
+      "session-1",
+    );
+    expect(dragStart.dataTransfer?.getData(RUNTIME_SESSION_DRAG_MIME)).not.toContain(
+      "workspace-1",
+    );
 
     expect(
-      readRuntimeSessionDrag(
-        fakeDragEvent({ exposeGetData: false }),
-        "workspace-1",
-      ),
+      readRuntimeSessionDrag(fakeDragEvent({ exposeGetData: false }), "workspace-1"),
     ).toBe("session-1");
   });
 
@@ -58,20 +55,18 @@ describe("terminal drag payloads", () => {
     expect(dragStart.dataTransfer?.getData("text/plain")).toBe(
       "Middleman workflow tab",
     );
-    expect(
-      dragStart.dataTransfer?.getData(WORKFLOW_TAB_DRAG_MIME),
-    ).not.toContain("session-1");
-    expect(
-      dragStart.dataTransfer?.getData(RUNTIME_SESSION_DRAG_MIME),
-    ).not.toContain("workspace-1");
+    expect(dragStart.dataTransfer?.getData(WORKFLOW_TAB_DRAG_MIME)).not.toContain(
+      "session-1",
+    );
+    expect(dragStart.dataTransfer?.getData(RUNTIME_SESSION_DRAG_MIME)).not.toContain(
+      "workspace-1",
+    );
     const chromeDragOver = fakeDragEvent({ exposeGetData: false });
 
     expect(readWorkflowTabDrag(chromeDragOver, "workspace-1")).toBe(
       "session:session-1",
     );
-    expect(readRuntimeSessionDrag(chromeDragOver, "workspace-1")).toBe(
-      "session-1",
-    );
+    expect(readRuntimeSessionDrag(chromeDragOver, "workspace-1")).toBe("session-1");
   });
 
   it("rejects active drags from another workspace", () => {
@@ -81,10 +76,7 @@ describe("terminal drag payloads", () => {
     });
 
     expect(
-      readRuntimeSessionDrag(
-        fakeDragEvent({ exposeGetData: false }),
-        "workspace-2",
-      ),
+      readRuntimeSessionDrag(fakeDragEvent({ exposeGetData: false }), "workspace-2"),
     ).toBeNull();
   });
 });

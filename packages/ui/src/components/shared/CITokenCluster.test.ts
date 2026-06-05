@@ -78,9 +78,7 @@ describe("CITokenCluster", () => {
     render(CITokenCluster, {
       props: { bucketed: bucketed({}), size: "default" },
     });
-    expect(document.querySelectorAll("[data-testid^='ci-token-']").length).toBe(
-      0,
-    );
+    expect(document.querySelectorAll("[data-testid^='ci-token-']").length).toBe(0);
   });
 
   it("token children are aria-hidden", () => {
@@ -156,8 +154,6 @@ describe("composeAriaLabel", () => {
   });
 
   it("omits zero buckets", () => {
-    expect(composeAriaLabel(bucketed({ passed: 3 }))).toBe(
-      "CI: 3 passed checks",
-    );
+    expect(composeAriaLabel(bucketed({ passed: 3 }))).toBe("CI: 3 passed checks");
   });
 });

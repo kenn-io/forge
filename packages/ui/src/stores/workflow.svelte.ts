@@ -73,8 +73,7 @@ export function groupByWorkflow(prs: PullRequest[]): WorkflowGroupEntry[] {
     if (items.length === 0) continue;
     items.sort(
       (a, b) =>
-        new Date(b.LastActivityAt).getTime() -
-        new Date(a.LastActivityAt).getTime(),
+        new Date(b.LastActivityAt).getTime() - new Date(a.LastActivityAt).getTime(),
     );
     result.push({
       group,

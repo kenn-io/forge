@@ -7,15 +7,11 @@ import { expect, test, type Page } from "@playwright/test";
 // Seed: acme/widgets and acme/tools on github.com (cmd/e2e-server).
 
 async function waitForPullDetail(page: Page): Promise<void> {
-  await page
-    .locator(".pull-detail")
-    .waitFor({ state: "visible", timeout: 10_000 });
+  await page.locator(".pull-detail").waitFor({ state: "visible", timeout: 10_000 });
 }
 
 async function waitForIssueDetail(page: Page): Promise<void> {
-  await page
-    .locator(".issue-detail")
-    .waitFor({ state: "visible", timeout: 10_000 });
+  await page.locator(".issue-detail").waitFor({ state: "visible", timeout: 10_000 });
 }
 
 test.describe("deep-link repo dropdown + sidebar sync", () => {
@@ -29,12 +25,9 @@ test.describe("deep-link repo dropdown + sidebar sync", () => {
     await page.goto("/pulls/github/acme/tools/1");
     await waitForPullDetail(page);
 
-    await expect(page.locator(".typeahead-value")).toHaveText(
-      "github.com/acme/tools",
-      {
-        timeout: 5_000,
-      },
-    );
+    await expect(page.locator(".typeahead-value")).toHaveText("github.com/acme/tools", {
+      timeout: 5_000,
+    });
 
     const repoHeaders = page.locator(".repo-header__name");
     await expect(repoHeaders).toHaveCount(1, { timeout: 5_000 });
@@ -77,12 +70,9 @@ test.describe("deep-link repo dropdown + sidebar sync", () => {
 
     await page.goto("/pulls/github/acme/tools/1");
     await waitForPullDetail(page);
-    await expect(page.locator(".typeahead-value")).toHaveText(
-      "github.com/acme/tools",
-      {
-        timeout: 5_000,
-      },
-    );
+    await expect(page.locator(".typeahead-value")).toHaveText("github.com/acme/tools", {
+      timeout: 5_000,
+    });
   });
 
   test("selecting an item from All repos keeps the all-repo filter", async ({

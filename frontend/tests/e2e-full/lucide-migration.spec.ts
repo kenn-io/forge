@@ -100,27 +100,22 @@ async function installWorkspaceRoutes(
     });
   });
 
-  await page.route(
-    `**/api/v1/workspaces/${workspace.id}/retry`,
-    async (route) => {
-      if (route.request().method() !== "POST") {
-        await route.fallback();
-        return;
-      }
+  await page.route(`**/api/v1/workspaces/${workspace.id}/retry`, async (route) => {
+    if (route.request().method() !== "POST") {
+      await route.fallback();
+      return;
+    }
 
-      await route.fulfill({
-        status: 202,
-        contentType: "application/json",
-        body: JSON.stringify(workspace),
-      });
-    },
-  );
+    await route.fulfill({
+      status: 202,
+      contentType: "application/json",
+      body: JSON.stringify(workspace),
+    });
+  });
 }
 
 test.describe("lucide migration", () => {
-  test("startup loading state renders the live spinner icon", async ({
-    page,
-  }) => {
+  test("startup loading state renders the live spinner icon", async ({ page }) => {
     let releaseSettings: () => void = () => {};
     const settingsGate = new Promise<void>((resolve) => {
       releaseSettings = resolve;
@@ -234,14 +229,10 @@ test.describe("lucide migration", () => {
 
     const stateMessage = page.locator(".state-message.error");
     await expect(stateMessage).toContainText("Failed to load workspace (500)");
-    await expect(
-      stateMessage.getByLabel("Workspace load failed"),
-    ).toBeVisible();
+    await expect(stateMessage.getByLabel("Workspace load failed")).toBeVisible();
 
     await stateMessage.getByRole("button", { name: "Retry" }).click();
-    await expect(page.locator(".header-name")).toContainText(
-      "Add auth middleware",
-    );
+    await expect(page.locator(".header-name")).toContainText("Add auth middleware");
   });
 
   test("workspace setup error shows the alert icon and retry recovers", async ({
@@ -268,13 +259,9 @@ test.describe("lucide migration", () => {
 
     const stateMessage = page.locator(".state-message.error");
     await expect(stateMessage).toContainText("tmux bootstrap failed");
-    await expect(
-      stateMessage.getByLabel("Workspace setup failed"),
-    ).toBeVisible();
+    await expect(stateMessage.getByLabel("Workspace setup failed")).toBeVisible();
 
     await stateMessage.getByRole("button", { name: "Retry" }).click();
-    await expect(page.locator(".header-name")).toContainText(
-      "Add auth middleware",
-    );
+    await expect(page.locator(".header-name")).toContainText("Add auth middleware");
   });
 });

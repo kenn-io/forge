@@ -1,11 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { createDiffStore } from "@middleman/ui/stores/diff";
 import type { DiffStoreOptions } from "@middleman/ui/stores/diff";
-import type {
-  DiffFile,
-  DiffResult,
-  FilesResult,
-} from "@middleman/ui/api/types";
+import type { DiffFile, DiffResult, FilesResult } from "@middleman/ui/api/types";
 
 const ownerRepoRef = {
   provider: "github",
@@ -46,11 +42,7 @@ function makeFilesResult(
   };
 }
 
-function makeDiffFile(
-  path: string,
-  additions: number,
-  deletions: number,
-): DiffFile {
+function makeDiffFile(path: string, additions: number, deletions: number): DiffFile {
   return {
     path,
     old_path: path,
@@ -130,9 +122,7 @@ describe("createDiffStore loadDiff", () => {
 
     await store.loadCommitDiff(ownerRepoRef, "abc123");
 
-    expect(calls).toEqual([
-      "/api/v1/repo/github/owner/repo/commits/abc123/diff",
-    ]);
+    expect(calls).toEqual(["/api/v1/repo/github/owner/repo/commits/abc123/diff"]);
     expect(store.getDiff()?.files[0]?.path).toBe("internal/cache.go");
   });
 
@@ -175,16 +165,8 @@ describe("createDiffStore loadDiff", () => {
 
   it("loads workspace files and the full workspace diff", async () => {
     const calls: string[] = [];
-    const files = makeFilesResult([
-      "src/app.go",
-      "src/app_test.go",
-      "docs/plan.md",
-    ]);
-    const diff = makeDiffResult([
-      "src/app.go",
-      "src/app_test.go",
-      "docs/plan.md",
-    ]);
+    const files = makeFilesResult(["src/app.go", "src/app_test.go", "docs/plan.md"]);
+    const diff = makeDiffResult(["src/app.go", "src/app_test.go", "docs/plan.md"]);
 
     vi.spyOn(globalThis, "fetch").mockImplementation(
       async (input: RequestInfo | URL) => {
@@ -259,16 +241,8 @@ describe("createDiffStore loadDiff", () => {
   });
 
   it("collapses and expands all visible files in workspace diffs", async () => {
-    const files = makeFilesResult([
-      "src/app.go",
-      "src/app_test.go",
-      "docs/plan.md",
-    ]);
-    const diff = makeDiffResult([
-      "src/app.go",
-      "src/app_test.go",
-      "docs/plan.md",
-    ]);
+    const files = makeFilesResult(["src/app.go", "src/app_test.go", "docs/plan.md"]);
+    const diff = makeDiffResult(["src/app.go", "src/app_test.go", "docs/plan.md"]);
 
     vi.spyOn(globalThis, "fetch").mockImplementation(
       async (input: RequestInfo | URL) => {
@@ -297,23 +271,15 @@ describe("createDiffStore loadDiff", () => {
 
     expect(store.areAllVisibleFilesCollapsed()).toBe(true);
     expect(store.isFileCollapsed("owner", "repo", 1, "src/app.go")).toBe(true);
-    expect(store.isFileCollapsed("owner", "repo", 1, "src/app_test.go")).toBe(
-      true,
-    );
-    expect(store.isFileCollapsed("owner", "repo", 1, "docs/plan.md")).toBe(
-      true,
-    );
+    expect(store.isFileCollapsed("owner", "repo", 1, "src/app_test.go")).toBe(true);
+    expect(store.isFileCollapsed("owner", "repo", 1, "docs/plan.md")).toBe(true);
 
     store.setFileCategoryFilter("tests");
     store.setAllVisibleFilesCollapsed(false);
 
     expect(store.isFileCollapsed("owner", "repo", 1, "src/app.go")).toBe(true);
-    expect(store.isFileCollapsed("owner", "repo", 1, "src/app_test.go")).toBe(
-      false,
-    );
-    expect(store.isFileCollapsed("owner", "repo", 1, "docs/plan.md")).toBe(
-      true,
-    );
+    expect(store.isFileCollapsed("owner", "repo", 1, "src/app_test.go")).toBe(false);
+    expect(store.isFileCollapsed("owner", "repo", 1, "docs/plan.md")).toBe(true);
   });
 
   it("loads commits for the active workspace diff", async () => {
@@ -363,10 +329,7 @@ describe("createDiffStore loadDiff", () => {
     await store.loadCommits();
 
     expect(calls).toContain("/api/v1/workspaces/ws-1/commits");
-    expect(store.getCommits()?.map((commit) => commit.sha)).toEqual([
-      "sha2",
-      "sha1",
-    ]);
+    expect(store.getCommits()?.map((commit) => commit.sha)).toEqual(["sha2", "sha1"]);
   });
 
   it("applies selected commit scope to workspace files and patch requests", async () => {
@@ -580,9 +543,7 @@ describe("createDiffStore loadDiff", () => {
           );
         }
         if (url.includes("/workspaces/ws-1/diff")) {
-          return Response.json(
-            url.includes("whitespace=hide") ? diffHidden : diffAll,
-          );
+          return Response.json(url.includes("whitespace=hide") ? diffHidden : diffAll);
         }
         return Response.json({}, { status: 404 });
       },
@@ -598,20 +559,14 @@ describe("createDiffStore loadDiff", () => {
 
     store.setHideWhitespace(true);
     await vi.waitFor(() => {
-      expect(store.getFileList()?.files.map((file) => file.path)).toEqual([
-        "a.ts",
-      ]);
+      expect(store.getFileList()?.files.map((file) => file.path)).toEqual(["a.ts"]);
     });
     await vi.waitFor(() => {
       expect(store.isDiffLoading()).toBe(false);
     });
 
-    expect(calls).toContain(
-      "/api/v1/workspaces/ws-1/files?base=head&whitespace=hide",
-    );
-    expect(calls).toContain(
-      "/api/v1/workspaces/ws-1/diff?base=head&whitespace=hide",
-    );
+    expect(calls).toContain("/api/v1/workspaces/ws-1/files?base=head&whitespace=hide");
+    expect(calls).toContain("/api/v1/workspaces/ws-1/diff?base=head&whitespace=hide");
   });
 
   it("scrolls to workspace files without reloading the diff", async () => {
@@ -646,9 +601,9 @@ describe("createDiffStore loadDiff", () => {
 
     expect(store.getActiveFile()).toBe("b.ts");
     expect(store.getScrollTarget()).toEqual({ path: "b.ts" });
-    expect(
-      calls.filter((url) => url.includes("/api/v1/workspaces/ws-1/diff")),
-    ).toEqual(["/api/v1/workspaces/ws-1/diff?base=head"]);
+    expect(calls.filter((url) => url.includes("/api/v1/workspaces/ws-1/diff"))).toEqual(
+      ["/api/v1/workspaces/ws-1/diff?base=head"],
+    );
   });
 
   it("uses the workspace diff whitespace count", async () => {
@@ -694,10 +649,7 @@ describe("createDiffStore loadDiff", () => {
               : input.url;
 
         if (url.includes("/workspaces/ws-1/files")) {
-          return Response.json(
-            { title: "workspace files failed" },
-            { status: 502 },
-          );
+          return Response.json({ title: "workspace files failed" }, { status: 502 });
         }
         return Response.json({}, { status: 404 });
       },
@@ -922,9 +874,7 @@ describe("createDiffStore loadDiff", () => {
     const loadP = store.loadDiff("owner", "repo", 1, ownerRepoRef);
 
     // Verify /diff request includes whitespace=hide query param.
-    expect(fetchedUrls.some((u) => u.includes("diff?whitespace=hide"))).toBe(
-      true,
-    );
+    expect(fetchedUrls.some((u) => u.includes("diff?whitespace=hide"))).toBe(true);
 
     // /files arrives first — shows unfiltered preview.
     resolveFiles();

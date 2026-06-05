@@ -1,10 +1,4 @@
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { compile } from "svelte/compiler";
 import {
   afterAll,
@@ -22,8 +16,7 @@ import type { DiffResult, PREvent } from "../../api/types.js";
 import type { DiffStore } from "../../stores/diff.svelte.js";
 
 const compiledCss =
-  compile(componentSource, { filename: "EventTimeline.svelte" }).css?.code ??
-  "";
+  compile(componentSource, { filename: "EventTimeline.svelte" }).css?.code ?? "";
 
 type GlobalWithResizeObserver = { ResizeObserver?: unknown };
 type GlobalWithCSSStyleSheet = {
@@ -37,8 +30,7 @@ let originalReplaceSync: unknown;
 
 beforeAll(() => {
   originalResizeObserverExisted = "ResizeObserver" in globalThis;
-  originalResizeObserver = (globalThis as GlobalWithResizeObserver)
-    .ResizeObserver;
+  originalResizeObserver = (globalThis as GlobalWithResizeObserver).ResizeObserver;
   class ResizeObserverStub {
     observe(): void {}
     unobserve(): void {}
@@ -46,29 +38,24 @@ beforeAll(() => {
   }
   (globalThis as GlobalWithResizeObserver).ResizeObserver = ResizeObserverStub;
 
-  originalReplaceSync = (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet
-    ?.prototype.replaceSync;
+  originalReplaceSync = (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet?.prototype
+    .replaceSync;
   if ((globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet?.prototype) {
-    (
-      globalThis as GlobalWithCSSStyleSheet
-    ).CSSStyleSheet.prototype.replaceSync ??= function replaceSync(): void {};
+    (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet.prototype.replaceSync ??=
+      function replaceSync(): void {};
   }
 });
 
 afterAll(() => {
   if (originalResizeObserverExisted) {
-    (globalThis as GlobalWithResizeObserver).ResizeObserver =
-      originalResizeObserver;
+    (globalThis as GlobalWithResizeObserver).ResizeObserver = originalResizeObserver;
   } else {
     delete (globalThis as GlobalWithResizeObserver).ResizeObserver;
   }
   if ((globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet?.prototype) {
     if (originalReplaceSync) {
-      (
-        globalThis as GlobalWithCSSStyleSheet
-      ).CSSStyleSheet.prototype.replaceSync = originalReplaceSync as (
-        text: string,
-      ) => void;
+      (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet.prototype.replaceSync =
+        originalReplaceSync as (text: string) => void;
     } else {
       delete (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet.prototype
         .replaceSync;
@@ -292,12 +279,8 @@ describe("EventTimeline", () => {
     ]);
 
     expect(cardStyle.getPropertyValue("background")).toBe("var(--bg-surface)");
-    expect(cardStyle.getPropertyValue("border")).toBe(
-      "1px solid var(--border-muted)",
-    );
-    expect(cardStyle.getPropertyValue("border-radius")).toBe(
-      "var(--radius-md)",
-    );
+    expect(cardStyle.getPropertyValue("border")).toBe("1px solid var(--border-muted)");
+    expect(cardStyle.getPropertyValue("border-radius")).toBe("var(--radius-md)");
     expect(bodyStyle.getPropertyValue("background")).toBe("");
     expect(bodyStyle.getPropertyValue("border")).toBe("");
     expect(bodyStyle.getPropertyValue("border-radius")).toBe("");
@@ -354,8 +337,7 @@ describe("EventTimeline", () => {
     expect(container.querySelectorAll(".thread-reply")).toHaveLength(3);
     expect(screen.getByRole("list", { name: "Threaded replies" })).toBeTruthy();
 
-    const threadText =
-      container.querySelector(".event-card")?.textContent ?? "";
+    const threadText = container.querySelector(".event-card")?.textContent ?? "";
     expect(threadText.indexOf("Main threaded comment")).toBeLessThan(
       threadText.indexOf("Newest threaded reply"),
     );
@@ -439,8 +421,7 @@ describe("EventTimeline", () => {
     await expectPierreTimelineText(/client\.publishThreads\(\);/);
     expect(container.querySelectorAll(".thread-reply")).toHaveLength(2);
 
-    const threadText =
-      container.querySelector(".event-card")?.textContent ?? "";
+    const threadText = container.querySelector(".event-card")?.textContent ?? "";
     expect(threadText.indexOf("This needs a named helper")).toBeLessThan(
       threadText.indexOf("Pushed an update"),
     );
@@ -475,15 +456,11 @@ describe("EventTimeline", () => {
 
     expect(container.querySelectorAll(".thread-reply")).toHaveLength(1);
 
-    await fireEvent.click(
-      screen.getByRole("button", { name: /hide 1 reply/i }),
-    );
+    await fireEvent.click(screen.getByRole("button", { name: /hide 1 reply/i }));
     expect(container.querySelectorAll(".thread-reply")).toHaveLength(0);
     expect(screen.getByRole("button", { name: /show 1 reply/i })).toBeTruthy();
 
-    await fireEvent.click(
-      screen.getByRole("button", { name: /show 1 reply/i }),
-    );
+    await fireEvent.click(screen.getByRole("button", { name: /show 1 reply/i }));
     expect(container.querySelectorAll(".thread-reply")).toHaveLength(1);
   });
 
@@ -504,16 +481,14 @@ describe("EventTimeline", () => {
     });
 
     expect(screen.getByText("abcdef1")).toBeTruthy();
-    expect(
-      document.querySelector(".commit-body-details")?.textContent?.trim(),
-    ).toBe("feat: add timeline filters\n\nLong body");
+    expect(document.querySelector(".commit-body-details")?.textContent?.trim()).toBe(
+      "feat: add timeline filters\n\nLong body",
+    );
     expect(screen.getByText("4h ago")).toBeTruthy();
     expect(document.querySelector(".event--compact")).toBeTruthy();
     expect(document.querySelector(".commit-title")).toBeNull();
     expect(
-      document
-        .querySelector(".commit-body-details")
-        ?.classList.contains("event-body"),
+      document.querySelector(".commit-body-details")?.classList.contains("event-body"),
     ).toBe(true);
     expect(
       document
@@ -539,9 +514,9 @@ describe("EventTimeline", () => {
     });
 
     expect(screen.getByText("abcdef1")).toBeTruthy();
-    expect(
-      document.querySelector(".commit-body-details")?.textContent?.trim(),
-    ).toBe("refactor: simplify worktree mapping application");
+    expect(document.querySelector(".commit-body-details")?.textContent?.trim()).toBe(
+      "refactor: simplify worktree mapping application",
+    );
     expect(document.querySelector(".commit-title")).toBeNull();
   });
 
@@ -895,18 +870,18 @@ describe("EventTimeline", () => {
     });
 
     const text = container.textContent ?? "";
-    expect(
-      text.indexOf("same timestamp natural second generation"),
-    ).toBeLessThan(text.indexOf("6666666 -> 9999999"));
+    expect(text.indexOf("same timestamp natural second generation")).toBeLessThan(
+      text.indexOf("6666666 -> 9999999"),
+    );
     expect(text.indexOf("6666666 -> 9999999")).toBeLessThan(
       text.indexOf("same timestamp reviewer note"),
     );
     expect(text.indexOf("same timestamp reviewer note")).toBeLessThan(
       text.indexOf("same timestamp natural first generation"),
     );
-    expect(
-      text.indexOf("same timestamp natural first generation"),
-    ).toBeLessThan(text.indexOf("3333333 -> 6666666"));
+    expect(text.indexOf("same timestamp natural first generation")).toBeLessThan(
+      text.indexOf("3333333 -> 6666666"),
+    );
   });
 
   it("keeps same-timestamp unrelated events outside force-push boundary buckets", () => {
@@ -957,9 +932,9 @@ describe("EventTimeline", () => {
     expect(text.indexOf("3333333 -> 6666666")).toBeLessThan(
       text.indexOf("same timestamp reviewer note between IDs"),
     );
-    expect(
-      text.indexOf("same timestamp reviewer note between IDs"),
-    ).toBeLessThan(text.indexOf("same timestamp original generation"));
+    expect(text.indexOf("same timestamp reviewer note between IDs")).toBeLessThan(
+      text.indexOf("same timestamp original generation"),
+    );
   });
 
   it("uses hidden force-push events to order visible commit generations", () => {
@@ -1181,9 +1156,7 @@ describe("EventTimeline", () => {
     const deletedChildren = Array.from(deletedHeader?.children ?? []);
     expect(deletedChildren).toHaveLength(3);
     expect(deletedChildren[0]?.classList.contains("event-author")).toBe(true);
-    expect(deletedChildren[1]?.classList.contains("system-event-summary")).toBe(
-      true,
-    );
+    expect(deletedChildren[1]?.classList.contains("system-event-summary")).toBe(true);
     expect(
       deletedChildren[1]?.classList.contains("system-event-summary--sentence"),
     ).toBe(true);
@@ -1310,9 +1283,7 @@ describe("EventTimeline", () => {
       },
     });
 
-    expect(
-      screen.getByText("No activity matches the current filters"),
-    ).toBeTruthy();
+    expect(screen.getByText("No activity matches the current filters")).toBeTruthy();
   });
 
   it("shows inline edit controls for editable issue comments", async () => {
@@ -1394,9 +1365,7 @@ describe("EventTimeline", () => {
       container.querySelector(".event-body-wrap--with-thread .event-actions"),
     ).toBeTruthy();
 
-    const threadedActions = findCompiledStyleRule(
-      ".event-body-wrap--with-thread",
-    );
+    const threadedActions = findCompiledStyleRule(".event-body-wrap--with-thread");
     expect(threadedActions.getPropertyValue("display")).toBe("flow-root");
 
     const threadedActionButtons = findCompiledStyleRule(
@@ -1531,16 +1500,12 @@ describe("EventTimeline", () => {
 
     expect(container.querySelector(".event-card--reply-inline")).toBeTruthy();
     expect(container.querySelector(".thread-controls--reply-only")).toBeNull();
-    expect(
-      container.querySelector(".thread-reply-action--inline"),
-    ).toBeTruthy();
+    expect(container.querySelector(".thread-reply-action--inline")).toBeTruthy();
 
     const inlineReplyCard = findCompiledStyleRule(".event-card--reply-inline");
     expect(inlineReplyCard.getPropertyValue("display")).toBe("flow-root");
 
-    const inlineReplyBody = findCompiledStyleRule(
-      ".event-body--with-inline-reply",
-    );
+    const inlineReplyBody = findCompiledStyleRule(".event-body--with-inline-reply");
     expect(inlineReplyBody.getPropertyValue("display")).toBe("block");
 
     const inlineReplyFloat = findCompiledStyleRule(
@@ -1556,9 +1521,7 @@ describe("EventTimeline", () => {
       ".event-body--with-inline-reply .thread-reply-action--inline",
     );
     expect(inlineReplyAction.getPropertyValue("display")).toBe("inline-flex");
-    expect(inlineReplyAction.getPropertyValue("color")).toBe(
-      "var(--text-secondary)",
-    );
+    expect(inlineReplyAction.getPropertyValue("color")).toBe("var(--text-secondary)");
 
     await fireEvent.click(screen.getByRole("button", { name: "Reply" }));
 

@@ -16,18 +16,10 @@ test.describe("pull list CI cluster", () => {
       await page.goto(`${server.info.base_url}/pulls`);
 
       const row = page.locator(".pull-item", { hasText: "#1" });
-      await expect(row.locator("[data-testid='ci-token-failed']")).toHaveText(
-        /1/,
-      );
-      await expect(row.locator("[data-testid='ci-token-pending']")).toHaveText(
-        /1/,
-      );
-      await expect(row.locator("[data-testid='ci-token-passed']")).toHaveText(
-        /2/,
-      );
-      await expect(row.locator("[data-testid='ci-token-skipped']")).toHaveText(
-        /1/,
-      );
+      await expect(row.locator("[data-testid='ci-token-failed']")).toHaveText(/1/);
+      await expect(row.locator("[data-testid='ci-token-pending']")).toHaveText(/1/);
+      await expect(row.locator("[data-testid='ci-token-passed']")).toHaveText(/2/);
+      await expect(row.locator("[data-testid='ci-token-skipped']")).toHaveText(/1/);
     } finally {
       await server.stop();
     }
@@ -46,9 +38,7 @@ test.describe("pull list CI cluster", () => {
       await page.goto(`${server.info.base_url}/pulls`);
 
       const row = page.locator(".pull-item", { hasText: "#1" });
-      await expect(
-        row.locator("[data-testid='ci-token-unavailable']"),
-      ).toBeVisible();
+      await expect(row.locator("[data-testid='ci-token-unavailable']")).toBeVisible();
 
       // Verify the accessible-name algorithm picks up the "CI unavailable:"
       // diagnostic from the sr-only span inside the .pull-item button. Using
@@ -63,9 +53,7 @@ test.describe("pull list CI cluster", () => {
     }
   });
 
-  test("renders no CI token cluster for rows without CI status", async ({
-    page,
-  }) => {
+  test("renders no CI token cluster for rows without CI status", async ({ page }) => {
     const server = await startIsolatedE2EServer();
     try {
       await page.goto(`${server.info.base_url}/pulls`);

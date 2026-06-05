@@ -42,9 +42,7 @@ test("stack member navigation preserves the focus route with full-stack data", a
     .click();
 
   await expect(page).toHaveURL(/\/focus\/pulls\/github\/acme\/tools\/10$/);
-  await expect(detail.locator(".stack-panel")).toContainText(
-    "3 PRs · current 1/3",
-  );
+  await expect(detail.locator(".stack-panel")).toContainText("3 PRs · current 1/3");
 });
 
 test("stack member navigation updates the activity drawer with full-stack data", async ({
@@ -68,7 +66,5 @@ test("stack member navigation updates the activity drawer with full-stack data",
   await expect(detail.locator(".activity-detail-header")).toContainText(
     "acme/tools#10",
   );
-  await expect(detail.locator(".stack-panel")).toContainText(
-    "3 PRs · current 1/3",
-  );
+  await expect(detail.locator(".stack-panel")).toContainText("3 PRs · current 1/3");
 });

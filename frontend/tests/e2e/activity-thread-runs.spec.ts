@@ -131,9 +131,7 @@ test.describe("threaded activity run collapse", () => {
     });
     await expect(collapsed).toHaveCount(1);
     await expect(collapsed.locator(".evt-review")).toBeVisible();
-    await expect(page.locator(".event-row:not(.collapsed-event)")).toHaveCount(
-      0,
-    );
+    await expect(page.locator(".event-row:not(.collapsed-event)")).toHaveCount(0);
   });
 
   test("collapses comments and reviews into separate runs by event type", async ({
@@ -207,8 +205,6 @@ test.describe("threaded activity run collapse", () => {
     await page.goto("/?view=threaded");
 
     await expect(page.locator(".event-row.collapsed-event")).toHaveCount(0);
-    await expect(page.locator(".event-row:not(.collapsed-event)")).toHaveCount(
-      2,
-    );
+    await expect(page.locator(".event-row:not(.collapsed-event)")).toHaveCount(2);
   });
 });

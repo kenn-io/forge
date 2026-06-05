@@ -36,17 +36,12 @@ export function isProblem(value: unknown): value is ProblemBody {
 // readProblem decodes a fetch Response body as a problem when the
 // response is not OK and the content-type is application/problem+json.
 // Returns null for ok responses, non-problem bodies, or parse failures.
-export async function readProblem(
-  response: Response,
-): Promise<ProblemBody | null> {
+export async function readProblem(response: Response): Promise<ProblemBody | null> {
   if (response.ok) {
     return null;
   }
   const ct = response.headers.get("content-type") ?? "";
-  if (
-    !ct.includes("application/problem+json") &&
-    !ct.includes("application/json")
-  ) {
+  if (!ct.includes("application/problem+json") && !ct.includes("application/json")) {
     return null;
   }
   let body: unknown;

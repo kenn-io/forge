@@ -104,9 +104,7 @@ export interface EventsStoreOptions {
    * would after a hard refresh.
    */
   onReconnectStale?: () => void;
-  onWorkspacePushedHeadChanged?: (
-    event: WorkspacePushedHeadChangedEvent,
-  ) => void;
+  onWorkspacePushedHeadChanged?: (event: WorkspacePushedHeadChangedEvent) => void;
   onWorkspacePRAssociated?: (event: WorkspacePRAssociatedEvent) => void;
   onWorkspacePRRefreshQueued?: (event: WorkspacePRRefreshQueuedEvent) => void;
   onPRDetailRefreshed?: (event: PRDetailRefreshedEvent) => void;

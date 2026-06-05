@@ -47,8 +47,7 @@ export function parseImportPattern(
   const pattern = rawPattern.trim();
   if (!owner) throw new Error("owner is required");
   if (!pattern) throw new Error("pattern is required");
-  if (/[*?[\]]/.test(owner))
-    throw new Error("glob syntax in owner is not supported");
+  if (/[*?[\]]/.test(owner)) throw new Error("glob syntax in owner is not supported");
   if (pattern.includes("/")) throw new Error("pattern must not contain /");
   return { owner, pattern };
 }
@@ -72,17 +71,13 @@ export function filterRows(
       (row.description ?? "").toLowerCase().includes(needle);
     if (!matchesText) return false;
     if (status === "selected") return selected.has(key);
-    if (status === "unselected")
-      return !row.already_configured && !selected.has(key);
+    if (status === "unselected") return !row.already_configured && !selected.has(key);
     if (status === "already-added") return row.already_configured;
     return true;
   });
 }
 
-export function sortRows(
-  rows: RepoImportRow[],
-  sort: SortState,
-): RepoImportRow[] {
+export function sortRows(rows: RepoImportRow[], sort: SortState): RepoImportRow[] {
   return rows
     .map((row, index) => ({ row, index }))
     .sort((left, right) => {
@@ -90,20 +85,13 @@ export function sortRows(
       if (sort.field === "name") {
         cmp = rowKey(left.row).localeCompare(rowKey(right.row));
       } else {
-        const leftTime = left.row.pushed_at
-          ? Date.parse(left.row.pushed_at)
-          : null;
-        const rightTime = right.row.pushed_at
-          ? Date.parse(right.row.pushed_at)
-          : null;
+        const leftTime = left.row.pushed_at ? Date.parse(left.row.pushed_at) : null;
+        const rightTime = right.row.pushed_at ? Date.parse(right.row.pushed_at) : null;
         if (leftTime === null && rightTime === null) cmp = 0;
         else if (leftTime === null) cmp = 1;
         else if (rightTime === null) cmp = -1;
         else
-          cmp =
-            sort.direction === "desc"
-              ? rightTime - leftTime
-              : leftTime - rightTime;
+          cmp = sort.direction === "desc" ? rightTime - leftTime : leftTime - rightTime;
       }
       if (sort.direction === "desc" && sort.field !== "pushed_at") cmp = -cmp;
       if (cmp !== 0) return cmp;
@@ -143,12 +131,9 @@ export function applyRangeSelection(input: {
   const anchorIndex = input.anchorKey
     ? input.visibleRows.findIndex((row) => rowKey(row) === input.anchorKey)
     : -1;
-  if (clickedIndex === -1)
-    return { selected: next, anchorKey: input.clickedKey };
-  const start =
-    anchorIndex === -1 ? clickedIndex : Math.min(anchorIndex, clickedIndex);
-  const end =
-    anchorIndex === -1 ? clickedIndex : Math.max(anchorIndex, clickedIndex);
+  if (clickedIndex === -1) return { selected: next, anchorKey: input.clickedKey };
+  const start = anchorIndex === -1 ? clickedIndex : Math.min(anchorIndex, clickedIndex);
+  const end = anchorIndex === -1 ? clickedIndex : Math.max(anchorIndex, clickedIndex);
   for (const row of input.visibleRows.slice(start, end + 1)) {
     if (row.already_configured) continue;
     const key = rowKey(row);

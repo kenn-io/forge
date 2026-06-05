@@ -29,10 +29,7 @@ function safeLockName(name: string): string {
   return trimmed.replace(/[^A-Za-z0-9._-]/g, "-");
 }
 
-export function exclusiveLockPath(
-  name: string,
-  rootDir: string = LOCK_ROOT,
-): string {
+export function exclusiveLockPath(name: string, rootDir: string = LOCK_ROOT): string {
   return path.join(rootDir, `${safeLockName(name)}.lock`);
 }
 

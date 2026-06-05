@@ -1,10 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import {
-  bulkAddRepos,
-  previewRepos,
-  removeRepo,
-  updateSettings,
-} from "./settings.js";
+import { bulkAddRepos, previewRepos, removeRepo, updateSettings } from "./settings.js";
 
 describe("settings api", () => {
   beforeEach(() => {
@@ -65,9 +60,7 @@ describe("settings api", () => {
 
     const request = vi.mocked(fetch).mock.calls[0]?.[0];
     expect(request).toBeInstanceOf(Request);
-    expect(new URL((request as Request).url).pathname).toBe(
-      "/api/v1/repos/preview",
-    );
+    expect(new URL((request as Request).url).pathname).toBe("/api/v1/repos/preview");
     expect((request as Request).method).toBe("POST");
     await expect((request as Request).clone().json()).resolves.toEqual({
       provider: "github",
@@ -100,14 +93,10 @@ describe("settings api", () => {
 
     const request = vi.mocked(fetch).mock.calls[0]?.[0];
     expect(request).toBeInstanceOf(Request);
-    expect(new URL((request as Request).url).pathname).toBe(
-      "/api/v1/repos/bulk",
-    );
+    expect(new URL((request as Request).url).pathname).toBe("/api/v1/repos/bulk");
     expect((request as Request).method).toBe("POST");
     await expect((request as Request).clone().json()).resolves.toEqual({
-      repos: [
-        { provider: "github", host: "github.com", owner: "acme", name: "api" },
-      ],
+      repos: [{ provider: "github", host: "github.com", owner: "acme", name: "api" }],
     });
   });
 
@@ -149,9 +138,7 @@ describe("settings api", () => {
     expect(request).toBeInstanceOf(Request);
     expect(new URL((request as Request).url).pathname).toBe("/api/v1/settings");
     expect((request as Request).method).toBe("PUT");
-    expect((request as Request).headers.get("Content-Type")).toBe(
-      "application/json",
-    );
+    expect((request as Request).headers.get("Content-Type")).toBe("application/json");
     await expect((request as Request).clone().json()).resolves.toEqual({
       agents: [
         {

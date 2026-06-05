@@ -60,23 +60,14 @@ export function reviewThreadStartLine(thread: ReviewThread): number {
 export function reviewThreadLineLabel(thread: ReviewThread): string {
   const start = reviewThreadStartLine(thread);
   const end = reviewThreadTargetLine(thread);
-  return start !== end
-    ? `${thread.path}:${start}-${end}`
-    : `${thread.path}:${end}`;
+  return start !== end ? `${thread.path}:${start}-${end}` : `${thread.path}:${end}`;
 }
 
-function lineNumberForSide(
-  line: DiffLine,
-  side: "left" | "right",
-): number | undefined {
+function lineNumberForSide(line: DiffLine, side: "left" | "right"): number | undefined {
   return side === "left" ? line.old_num : line.new_num;
 }
 
-function pathMatches(
-  thread: ReviewThread,
-  filePath: string,
-  oldPath: string,
-): boolean {
+function pathMatches(thread: ReviewThread, filePath: string, oldPath: string): boolean {
   return (
     thread.path === filePath ||
     thread.path === oldPath ||
@@ -96,9 +87,7 @@ export function reviewThreadContext(
   };
   if (!diff) return fallback;
 
-  const file = diff.files.find((item) =>
-    pathMatches(thread, item.path, item.old_path),
-  );
+  const file = diff.files.find((item) => pathMatches(thread, item.path, item.old_path));
   if (!file || file.is_binary) return fallback;
 
   const side = reviewThreadTargetSide(thread);
@@ -111,11 +100,7 @@ export function reviewThreadContext(
     const targetIndexes: number[] = [];
     for (let index = 0; index < hunk.lines.length; index++) {
       const lineNumber = lineNumberForSide(hunk.lines[index]!, side);
-      if (
-        lineNumber != null &&
-        lineNumber >= minLine &&
-        lineNumber <= maxLine
-      ) {
+      if (lineNumber != null && lineNumber >= minLine && lineNumber <= maxLine) {
         targetIndexes.push(index);
       }
     }
@@ -135,10 +120,7 @@ export function reviewThreadContext(
           oldNum: line.old_num,
           newNum: line.new_num,
           content: line.content,
-          target:
-            lineNumber != null &&
-            lineNumber >= minLine &&
-            lineNumber <= maxLine,
+          target: lineNumber != null && lineNumber >= minLine && lineNumber <= maxLine,
         };
       }),
     };

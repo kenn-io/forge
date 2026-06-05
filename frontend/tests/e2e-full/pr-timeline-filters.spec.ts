@@ -22,21 +22,15 @@ async function gotoWithWebKitRetry(page: Page, url: string): Promise<void> {
 
 async function openPRTimeline(page: Page): Promise<void> {
   await gotoWithWebKitRetry(page, "/pulls/github/acme/widgets/1");
-  await page
-    .locator(".pull-detail")
-    .waitFor({ state: "visible", timeout: 10_000 });
+  await page.locator(".pull-detail").waitFor({ state: "visible", timeout: 10_000 });
   await expect(page.getByText("feat: add cache store")).toBeVisible();
   await expect(page.getByText("Cache entries now expire")).toBeVisible();
-  await expect(
-    page.getByText("Widget rendering broken on Safari"),
-  ).toBeVisible();
+  await expect(page.getByText("Widget rendering broken on Safari")).toBeVisible();
 }
 
 async function openPRTimelinePath(page: Page, path: string): Promise<void> {
   await gotoWithWebKitRetry(page, path);
-  await page
-    .locator(".pull-detail")
-    .waitFor({ state: "visible", timeout: 10_000 });
+  await page.locator(".pull-detail").waitFor({ state: "visible", timeout: 10_000 });
 }
 
 async function openTimelineFilters(page: Page): Promise<void> {
@@ -48,10 +42,7 @@ function cacheCommitRow(page: Page) {
   return page.locator(".event--compact", { hasText: "abc1111" }).first();
 }
 
-async function expectTimelineTextOrder(
-  page: Page,
-  labels: string[],
-): Promise<void> {
+async function expectTimelineTextOrder(page: Page, labels: string[]): Promise<void> {
   const timeline = page.locator(".timeline");
   await expect(timeline).toBeVisible();
   for (const label of labels) {
@@ -78,17 +69,13 @@ test.describe("PR timeline filters", () => {
   test("renders seeded commit and system timeline events", async ({ page }) => {
     await openPRTimeline(page);
 
-    await expect(
-      page.locator(".event-type", { hasText: "Force-pushed" }),
-    ).toHaveCount(2);
+    await expect(page.locator(".event-type", { hasText: "Force-pushed" })).toHaveCount(
+      2,
+    );
     await expect(page.getByText("abc4444 -> def5555")).toBeVisible();
     await expect(page.getByText("abc9999 -> def7777")).toBeVisible();
-    await expect(
-      page.locator(".event-type", { hasText: "Referenced" }),
-    ).toHaveCount(3);
-    await expect(
-      page.getByText("Widget rendering broken on Safari"),
-    ).toBeVisible();
+    await expect(page.locator(".event-type", { hasText: "Referenced" })).toHaveCount(3);
+    await expect(page.getByText("Widget rendering broken on Safari")).toBeVisible();
     await expect(page.getByText("Title changed")).toBeVisible();
     await expect(
       page.getByText('"Add widget cache" -> "Add widget caching layer"'),
@@ -146,17 +133,13 @@ test.describe("PR timeline filters", () => {
     );
 
     await page.getByRole("button", { name: "Events" }).click();
-    await expect(
-      page.getByText("Widget rendering broken on Safari"),
-    ).not.toBeVisible();
+    await expect(page.getByText("Widget rendering broken on Safari")).not.toBeVisible();
     await expect(
       page.getByText('"Add widget cache" -> "Add widget caching layer"'),
     ).not.toBeVisible();
     await expect(page.getByText("develop -> main")).not.toBeVisible();
     await page.getByRole("button", { name: "Events" }).click();
-    await expect(
-      page.getByText("Widget rendering broken on Safari"),
-    ).toBeVisible();
+    await expect(page.getByText("Widget rendering broken on Safari")).toBeVisible();
 
     await page.getByRole("button", { name: "Force pushes" }).click();
     await expect(page.getByText("abc4444 -> def5555")).not.toBeVisible();
@@ -170,42 +153,27 @@ test.describe("PR timeline filters", () => {
     await expect(page.getByText("abc4444 -> def5555")).toBeVisible();
   });
 
-  test("persists timeline filter preferences in localStorage", async ({
-    page,
-  }) => {
+  test("persists timeline filter preferences in localStorage", async ({ page }) => {
     await openPRTimeline(page);
     await openTimelineFilters(page);
 
     await page.getByRole("button", { name: "Events" }).click();
-    await expect(
-      page.getByText("Widget rendering broken on Safari"),
-    ).not.toBeVisible();
-    await expect(
-      page.locator('button[title="Filter PR activity"]'),
-    ).toContainText("1");
+    await expect(page.getByText("Widget rendering broken on Safari")).not.toBeVisible();
+    await expect(page.locator('button[title="Filter PR activity"]')).toContainText("1");
 
     await expect
       .poll(
-        async () =>
-          await page.evaluate((key) => localStorage.getItem(key), storageKey),
+        async () => await page.evaluate((key) => localStorage.getItem(key), storageKey),
       )
       .toContain('"showEvents":false');
 
     await page.reload();
-    await page
-      .locator(".pull-detail")
-      .waitFor({ state: "visible", timeout: 10_000 });
-    await expect(
-      page.getByText("Widget rendering broken on Safari"),
-    ).not.toBeVisible();
-    await expect(
-      page.locator('button[title="Filter PR activity"]'),
-    ).toContainText("1");
+    await page.locator(".pull-detail").waitFor({ state: "visible", timeout: 10_000 });
+    await expect(page.getByText("Widget rendering broken on Safari")).not.toBeVisible();
+    await expect(page.locator('button[title="Filter PR activity"]')).toContainText("1");
   });
 
-  test("keeps commit rows when other event buckets are hidden", async ({
-    page,
-  }) => {
+  test("keeps commit rows when other event buckets are hidden", async ({ page }) => {
     await openPRTimeline(page);
     await openTimelineFilters(page);
 

@@ -85,17 +85,11 @@ test.describe("workspace force-delete", () => {
 
       // Drop an uncommitted file so the first DELETE hits the dirty
       // preflight on the workspace manager and returns 409.
-      await writeFile(
-        join(ready.worktree_path!, "demo-dirty.txt"),
-        "uncommitted\n",
-      );
+      await writeFile(join(ready.worktree_path!, "demo-dirty.txt"), "uncommitted\n");
 
       await page.goto(`${isolatedServer.info.base_url}/terminal/${created.id}`);
 
-      await page
-        .locator(".header-bar")
-        .getByRole("button", { name: "Delete" })
-        .click();
+      await page.locator(".header-bar").getByRole("button", { name: "Delete" }).click();
 
       const dialog = page.getByRole("dialog", {
         name: "Force delete workspace?",

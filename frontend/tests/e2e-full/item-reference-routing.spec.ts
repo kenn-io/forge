@@ -2,9 +2,7 @@ import { expect, test, type Page, type Response } from "@playwright/test";
 
 async function openPRTimeline(page: Page): Promise<void> {
   await page.goto("/pulls/github/acme/widgets/1");
-  await page
-    .locator(".pull-detail")
-    .waitFor({ state: "visible", timeout: 10_000 });
+  await page.locator(".pull-detail").waitFor({ state: "visible", timeout: 10_000 });
   await expect(page.locator(".pull-detail .detail-title")).toContainText(
     "Add widget caching layer",
   );
@@ -23,10 +21,7 @@ test.describe("item references through the full stack", () => {
   }) => {
     await openPRTimeline(page);
 
-    const response = resolveResponse(
-      page,
-      "/api/v1/repo/github/acme/tools/resolve/1",
-    );
+    const response = resolveResponse(page, "/api/v1/repo/github/acme/tools/resolve/1");
     await page.getByRole("link", { name: "Add CLI flag parser" }).click();
 
     await expect
@@ -44,10 +39,7 @@ test.describe("item references through the full stack", () => {
   }) => {
     await openPRTimeline(page);
 
-    const response = resolveResponse(
-      page,
-      "/api/v1/repo/github/other/repo/resolve/77",
-    );
+    const response = resolveResponse(page, "/api/v1/repo/github/other/repo/resolve/77");
     const popup = context.waitForEvent("page");
     await page.getByRole("link", { name: "External follow-up PR" }).click();
 

@@ -1,11 +1,4 @@
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import {
   localDateTimeLabel,
   localDateLabel,
@@ -43,9 +36,7 @@ describe("time helpers", () => {
       .spyOn(Date.prototype, "toLocaleString")
       .mockReturnValue("Apr 11, 2026, 8:00 AM");
 
-    expect(localDateTimeLabel("2026-04-11T12:00:00Z")).toBe(
-      "Apr 11, 2026, 8:00 AM",
-    );
+    expect(localDateTimeLabel("2026-04-11T12:00:00Z")).toBe("Apr 11, 2026, 8:00 AM");
     expect(spy).toHaveBeenCalledWith(undefined, {
       dateStyle: "medium",
       timeStyle: "short",

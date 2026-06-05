@@ -13,10 +13,7 @@ describe("runtime", () => {
       });
     });
 
-    const client = createRuntimeClient(
-      fetchMock,
-      "https://middleman.test/api/v1",
-    );
+    const client = createRuntimeClient(fetchMock, "https://middleman.test/api/v1");
     await client.GET("/activity", {
       params: { query: { types: ["comment", "review"] } },
     });

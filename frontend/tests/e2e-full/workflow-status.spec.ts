@@ -56,9 +56,7 @@ test("workflow status dropdown persists through API and database", async ({
     const statePath = `/api/v1/pulls/github/${target.owner}/${target.repo}/${target.number}/state`;
     const updateResponse = page.waitForResponse((response) => {
       const url = new URL(response.url());
-      return (
-        url.pathname === statePath && response.request().method() === "PUT"
-      );
+      return url.pathname === statePath && response.request().method() === "PUT";
     });
     await page.getByRole("option", { name: target.label, exact: true }).click();
     expect((await updateResponse).status()).toBe(200);

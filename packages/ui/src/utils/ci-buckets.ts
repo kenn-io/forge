@@ -2,12 +2,7 @@ import type { CICheck } from "../api/types.js";
 
 export type CIBucket = "failed" | "pending" | "passed" | "skipped" | "unknown";
 
-const ACTIVE_STATUSES = new Set([
-  "in_progress",
-  "queued",
-  "pending",
-  "waiting",
-]);
+const ACTIVE_STATUSES = new Set(["in_progress", "queued", "pending", "waiting"]);
 
 const FAILED_CONCLUSIONS = new Set([
   "failure",
@@ -131,7 +126,5 @@ export function parseCIChecks(json: string): ParsedCIChecks {
 // JSON.parse messages (which can embed input fragments) never reach the
 // DOM.
 export function safeDiagnosticText(error: Error): string {
-  return error.message.startsWith("CIChecksJSON: ")
-    ? error.message
-    : "Malformed JSON";
+  return error.message.startsWith("CIChecksJSON: ") ? error.message : "Malformed JSON";
 }

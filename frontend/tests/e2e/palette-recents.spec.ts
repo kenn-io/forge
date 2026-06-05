@@ -6,9 +6,7 @@ test.beforeEach(async ({ page }) => {
   await mockApi(page);
 });
 
-test("recents: select PR, close, reopen, see recent at top", async ({
-  page,
-}) => {
+test("recents: select PR, close, reopen, see recent at top", async ({ page }) => {
   await page.goto("/pulls");
   await page.keyboard.press("Meta+K");
   // Pick the first PR row from the Pull requests group. The exact PR
@@ -32,9 +30,7 @@ test("recents: select PR, close, reopen, see recent at top", async ({
   await expect(recents.locator(".palette-row").first()).toContainText(/#/);
 });
 
-test("recents: typing a query hides the Recently used section", async ({
-  page,
-}) => {
+test("recents: typing a query hides the Recently used section", async ({ page }) => {
   // Seed a recent by selecting a PR first.
   await page.goto("/pulls");
   await page.keyboard.press("Meta+K");

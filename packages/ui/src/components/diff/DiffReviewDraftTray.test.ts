@@ -42,9 +42,7 @@ describe("DiffReviewDraftTray", () => {
     ) as HTMLTextAreaElement;
 
     await fireEvent.input(summary, { target: { value: "Keep this summary" } });
-    await fireEvent.click(
-      screen.getByRole("button", { name: "Publish review" }),
-    );
+    await fireEvent.click(screen.getByRole("button", { name: "Publish review" }));
 
     expect(publish).toHaveBeenCalledWith("comment", "Keep this summary");
     expect(summary.value).toBe("Keep this summary");

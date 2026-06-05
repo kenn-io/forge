@@ -1,12 +1,5 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 const mockPost = vi.fn();
 const mockLoadDetail = vi.fn();
@@ -56,9 +49,7 @@ describe("ReadyForReviewButton", () => {
       },
     });
 
-    await fireEvent.click(
-      screen.getByRole("button", { name: /ready for review/i }),
-    );
+    await fireEvent.click(screen.getByRole("button", { name: /ready for review/i }));
 
     expect(mockLoadDetail).toHaveBeenCalledWith("wesm", "middleman", 141, {
       provider: "github",
@@ -88,9 +79,7 @@ describe("ReadyForReviewButton", () => {
       },
     });
 
-    await fireEvent.click(
-      screen.getByRole("button", { name: /ready for review/i }),
-    );
+    await fireEvent.click(screen.getByRole("button", { name: /ready for review/i }));
 
     expect(mockLoadDetail).toHaveBeenCalledWith("wesm", "middleman", 141, {
       provider: "github",

@@ -16,11 +16,7 @@ type TimelineEvent = {
   DedupeKey: string;
 };
 
-async function fulfillJson(
-  route: Route,
-  body: unknown,
-  status = 200,
-): Promise<void> {
+async function fulfillJson(route: Route, body: unknown, status = 200): Promise<void> {
   await route.fulfill({
     status,
     contentType: "application/json",
@@ -102,10 +98,7 @@ function issueDetail(commentBody: string, event: TimelineEvent) {
   };
 }
 
-async function editVisibleTimelineComment(
-  page: Page,
-  body: string,
-): Promise<void> {
+async function editVisibleTimelineComment(page: Page, body: string): Promise<void> {
   await page.getByText(/^Original /).hover();
   await page.getByRole("button", { name: "Edit comment" }).first().click();
   const editor = page.locator(".edit-panel .comment-editor-input");

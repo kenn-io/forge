@@ -225,9 +225,7 @@ describe("runApprovePR", () => {
       response: new Response("{}"),
     });
     const onError = vi.fn();
-    await expect(runApprovePR(buildInput({ client, onError }))).rejects.toThrow(
-      "boom",
-    );
+    await expect(runApprovePR(buildInput({ client, onError }))).rejects.toThrow("boom");
     expect(onError).toHaveBeenCalledWith("boom");
   });
 
@@ -313,9 +311,7 @@ describe("canMarkReady", () => {
   });
 
   it("returns false when viewer lacks markReady capability", () => {
-    expect(canMarkReady(buildInput({ isDraft: true, markReady: false }))).toBe(
-      false,
-    );
+    expect(canMarkReady(buildInput({ isDraft: true, markReady: false }))).toBe(false);
   });
 
   it("returns true for draft PR with markReady capability", () => {
@@ -340,9 +336,7 @@ describe("runMarkReady", () => {
     );
     expect(client.POST).toHaveBeenCalledTimes(1);
     const [path] = client.POST.mock.calls[0];
-    expect(path).toBe(
-      "/pulls/{provider}/{owner}/{name}/{number}/ready-for-review",
-    );
+    expect(path).toBe("/pulls/{provider}/{owner}/{name}/{number}/ready-for-review");
     expect(stores.detail.loadDetail).toHaveBeenCalledTimes(1);
     expect(stores.pulls.loadPulls).toHaveBeenCalledTimes(1);
     expect(onCompleted).toHaveBeenCalledTimes(1);
@@ -413,9 +407,7 @@ describe("canApproveWorkflows", () => {
   });
 
   it("returns false when viewer lacks approveWorkflows", () => {
-    expect(canApproveWorkflows(buildInput({ approveWorkflows: false }))).toBe(
-      false,
-    );
+    expect(canApproveWorkflows(buildInput({ approveWorkflows: false }))).toBe(false);
   });
 
   it("returns true for open PR with workflow capability", () => {
@@ -439,9 +431,7 @@ describe("runApproveWorkflows", () => {
     );
     expect(client.POST).toHaveBeenCalledTimes(1);
     const [path, init] = client.POST.mock.calls[0];
-    expect(path).toBe(
-      "/pulls/{provider}/{owner}/{name}/{number}/approve-workflows",
-    );
+    expect(path).toBe("/pulls/{provider}/{owner}/{name}/{number}/approve-workflows");
     expect(init).toEqual({
       params: {
         path: {
@@ -466,9 +456,9 @@ describe("runApproveWorkflows", () => {
       response: new Response("{}"),
     });
     const onError = vi.fn();
-    await expect(
-      runApproveWorkflows(buildInput({ client, onError })),
-    ).rejects.toThrow("no pending workflows");
+    await expect(runApproveWorkflows(buildInput({ client, onError }))).rejects.toThrow(
+      "no pending workflows",
+    );
     expect(onError).toHaveBeenCalledWith("no pending workflows");
   });
 

@@ -1,10 +1,4 @@
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 const mockRefreshSyncStatus = vi.fn();
@@ -68,9 +62,7 @@ describe("RepoSettings", () => {
     });
 
     expect(
-      screen.getByText(
-        (_, element) => element?.textContent === "roborev-dev/* (2)",
-      ),
+      screen.getByText((_, element) => element?.textContent === "roborev-dev/* (2)"),
     ).toBeTruthy();
     expect(screen.getByRole("button", { name: "Refresh" })).toBeTruthy();
   });
@@ -147,9 +139,7 @@ describe("RepoSettings", () => {
     const trigger = screen.getByRole("button", { name: "Add repositories…" });
     await fireEvent.click(trigger);
 
-    expect(
-      screen.getByRole("dialog", { name: "Add repositories" }),
-    ).toBeTruthy();
+    expect(screen.getByRole("dialog", { name: "Add repositories" })).toBeTruthy();
     expect(screen.getByLabelText("Repository pattern")).toBeTruthy();
 
     await fireEvent.click(screen.getByRole("button", { name: "Close" }));
@@ -313,9 +303,7 @@ describe("RepoSettings", () => {
       },
     });
 
-    await fireEvent.click(
-      screen.getByRole("button", { name: "Add repositories…" }),
-    );
+    await fireEvent.click(screen.getByRole("button", { name: "Add repositories…" }));
     await fireEvent.input(screen.getByLabelText("Repository pattern"), {
       target: { value: "acme/*" },
     });

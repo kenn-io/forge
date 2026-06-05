@@ -59,9 +59,7 @@ describe("buildRepoTree", () => {
     expect(owner.label).toBe("platform/frontend");
     expect(owner.id).toBe("gitlab.com/platform/frontend");
     expect(owner.children[0]!.label).toBe("web-ui");
-    expect(owner.children[0]!.value).toBe(
-      "gitlab.com/platform/frontend/web-ui",
-    );
+    expect(owner.children[0]!.value).toBe("gitlab.com/platform/frontend/web-ui");
   });
 
   it("separates hosts and sorts them by label", () => {
@@ -216,9 +214,9 @@ describe("visibleRows", () => {
     ]);
     // with only "api" selected, the owner is partial (not "checked"), proving
     // tri-state reflects hidden siblings too
-    expect(
-      nodeSelectionState(acme.node, new Set(["github.com/acme/api"])),
-    ).toBe("partial");
+    expect(nodeSelectionState(acme.node, new Set(["github.com/acme/api"]))).toBe(
+      "partial",
+    );
     // toggling the owner cascades to the entire subtree, including hidden repos
     expect(toggleSubtree(acme.node, ["github.com/acme/api"]).sort()).toEqual([
       "github.com/acme/api",
@@ -242,9 +240,7 @@ describe("visibleRows", () => {
     // node identity is still the leaf (value/id unchanged for selection)
     const teamA = rows.find((r) => r.displayLabel === "team-a/api")!;
     expect(teamA.node.kind).toBe("repo");
-    expect((teamA.node as { value: string }).value).toBe(
-      "github.com/team-a/api",
-    );
+    expect((teamA.node as { value: string }).value).toBe("github.com/team-a/api");
   });
 
   it("still flattens a genuinely single-repo owner under a filter", () => {
@@ -315,16 +311,12 @@ describe("selection helpers", () => {
       "github.com/acme/infra",
       "github.com/acme/web",
     ]);
-    expect(collectLeafValues(acme.children[0]!)).toEqual([
-      "github.com/acme/api",
-    ]);
+    expect(collectLeafValues(acme.children[0]!)).toEqual(["github.com/acme/api"]);
   });
 
   it("computes tri-state from the active set", () => {
     expect(nodeSelectionState(acme, new Set())).toBe("unchecked");
-    expect(nodeSelectionState(acme, new Set(["github.com/acme/api"]))).toBe(
-      "partial",
-    );
+    expect(nodeSelectionState(acme, new Set(["github.com/acme/api"]))).toBe("partial");
     expect(
       nodeSelectionState(
         acme,
@@ -346,17 +338,14 @@ describe("selection helpers", () => {
   });
 
   it("removes all subtree leaves when fully checked", () => {
-    const all = [
-      "github.com/acme/api",
-      "github.com/acme/web",
-      "github.com/acme/infra",
-    ];
+    const all = ["github.com/acme/api", "github.com/acme/web", "github.com/acme/infra"];
     expect(toggleSubtree(acme, all)).toEqual([]);
   });
 
   it("toggles a single leaf without touching siblings", () => {
-    expect(
-      toggleSubtree(acme.children[0]!, ["github.com/acme/web"]).sort(),
-    ).toEqual(["github.com/acme/api", "github.com/acme/web"]);
+    expect(toggleSubtree(acme.children[0]!, ["github.com/acme/web"]).sort()).toEqual([
+      "github.com/acme/api",
+      "github.com/acme/web",
+    ]);
   });
 });

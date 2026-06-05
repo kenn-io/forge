@@ -1,10 +1,4 @@
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import type { DiffFile, FilesResult } from "../../api/types.js";
 import { STORES_KEY } from "../../context.js";
@@ -18,10 +12,7 @@ if (!globalThis.CSS) {
 globalThis.CSS.escape ??= (value: string) =>
   value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 
-function makeFile(
-  path: string,
-  status: DiffFile["status"] = "modified",
-): DiffFile {
+function makeFile(path: string, status: DiffFile["status"] = "modified"): DiffFile {
   return {
     path,
     old_path: path,
@@ -88,9 +79,7 @@ describe("DiffSidebar", () => {
   });
 
   it("renders the Pierre file tree from diff files", async () => {
-    const consoleError = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => {});
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
     const files = [
       makeFile("src/app.ts", "modified"),
       makeFile("src/new.ts", "added"),
@@ -123,11 +112,7 @@ describe("DiffSidebar", () => {
   });
 
   it("preserves diff file order without folding case", async () => {
-    const files = [
-      makeFile("src/B.ts"),
-      makeFile("src/C.ts"),
-      makeFile("src/a.ts"),
-    ];
+    const files = [makeFile("src/B.ts"), makeFile("src/C.ts"), makeFile("src/a.ts")];
     renderSidebar(makeDiffStore(files));
 
     const wantedPaths = new Set(files.map((file) => file.path));
@@ -153,16 +138,12 @@ describe("DiffSidebar", () => {
 
     await findTreeItem("docs/readme.md");
     await waitFor(() => {
-      expect(
-        treeRoot()?.querySelector('[data-item-path="src/file-0.ts"]'),
-      ).toBeNull();
+      expect(treeRoot()?.querySelector('[data-item-path="src/file-0.ts"]')).toBeNull();
     });
   });
 
   it("scrolls the selected file tree row into view when active path changes", async () => {
-    const files = Array.from({ length: 12 }, (_, i) =>
-      makeFile(`src/file-${i}.ts`),
-    );
+    const files = Array.from({ length: 12 }, (_, i) => makeFile(`src/file-${i}.ts`));
     const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
     const scrolledPaths: string[] = [];
     HTMLElement.prototype.scrollIntoView = function scrollIntoView() {

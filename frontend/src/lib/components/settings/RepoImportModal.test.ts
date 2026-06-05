@@ -1,10 +1,4 @@
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import type { MockedFunction } from "vite-plus/test";
 import RepoImportModal from "./RepoImportModal.svelte";
@@ -315,9 +309,7 @@ describe("RepoImportModal", () => {
     close.focus();
     await fireEvent.keyDown(close, { key: "Tab", shiftKey: true });
 
-    expect(document.activeElement).toBe(
-      screen.getByRole("button", { name: "Cancel" }),
-    );
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Cancel" }));
   });
 
   it("ignores stale preview responses after input changes", async () => {

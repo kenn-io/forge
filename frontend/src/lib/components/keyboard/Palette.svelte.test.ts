@@ -18,11 +18,7 @@ import { resetModalStack } from "@middleman/ui/stores/keyboard/modal-stack";
 const noop = (): void => {};
 const trueWhen = (): boolean => true;
 
-function action(
-  id: string,
-  label = id,
-  scope: Action["scope"] = "global",
-): Action {
+function action(id: string, label = id, scope: Action["scope"] = "global"): Action {
   return {
     id,
     label,
@@ -68,9 +64,7 @@ describe("Palette", () => {
       .getByRole("dialog", { name: "Command palette" })
       .querySelector(".palette-preview");
     expect(preview).not.toBeNull();
-    expect(preview!.textContent ?? "").toContain(
-      "Highlight a result to preview it",
-    );
+    expect(preview!.textContent ?? "").toContain("Highlight a result to preview it");
   });
 
   it("preview reflects the highlighted command when results exist", async () => {
@@ -154,9 +148,7 @@ describe("Palette", () => {
     await fireEvent.keyDown(input!, { key: "Enter" });
     await rerender({});
     expect(ran).toBe(true);
-    expect(
-      screen.queryByRole("dialog", { name: "Command palette" }),
-    ).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Command palette" })).toBeNull();
   });
 
   it("clicking a command row runs its handler and closes the palette", async () => {
@@ -183,9 +175,7 @@ describe("Palette", () => {
     await fireEvent.click(row!);
     await rerender({});
     expect(ran).toBe(true);
-    expect(
-      screen.queryByRole("dialog", { name: "Command palette" }),
-    ).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Command palette" })).toBeNull();
   });
 
   it("renders no Recently used header when localStorage is empty", async () => {
@@ -193,9 +183,9 @@ describe("Palette", () => {
     openPalette();
     await rerender({});
     const dialog = screen.getByRole("dialog", { name: "Command palette" });
-    const headers = Array.from(
-      dialog.querySelectorAll(".palette-group-header"),
-    ).map((el) => el.textContent ?? "");
+    const headers = Array.from(dialog.querySelectorAll(".palette-group-header")).map(
+      (el) => el.textContent ?? "",
+    );
     expect(headers).not.toContain("Recently used");
   });
 
@@ -269,12 +259,11 @@ describe("Palette", () => {
     openPalette();
     await rerender({});
     const dialog = screen.getByRole("dialog", { name: "Command palette" });
-    const recentGroup = Array.from(
-      dialog.querySelectorAll(".palette-group"),
-    ).find((g) =>
-      (g.querySelector(".palette-group-header")?.textContent ?? "").includes(
-        "Recently used",
-      ),
+    const recentGroup = Array.from(dialog.querySelectorAll(".palette-group")).find(
+      (g) =>
+        (g.querySelector(".palette-group-header")?.textContent ?? "").includes(
+          "Recently used",
+        ),
     );
     expect(recentGroup).toBeTruthy();
     const row = recentGroup!.querySelector(".palette-row");

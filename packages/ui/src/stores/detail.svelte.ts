@@ -1,8 +1,5 @@
 import type { KanbanStatus, Label, PullDetail } from "../api/types.js";
-import {
-  providerItemPath,
-  providerRouteParams,
-} from "../api/provider-routes.js";
+import { providerItemPath, providerRouteParams } from "../api/provider-routes.js";
 import type { MiddlemanClient } from "../types.js";
 import { showFlash } from "./flash.svelte.js";
 
@@ -65,10 +62,7 @@ function syncIntentRank(mode: DetailSyncMode): number {
   return 0;
 }
 
-function strongerSyncMode(
-  a: DetailSyncMode,
-  b: DetailSyncMode,
-): DetailSyncMode {
+function strongerSyncMode(a: DetailSyncMode, b: DetailSyncMode): DetailSyncMode {
   return syncIntentRank(b) > syncIntentRank(a) ? b : a;
 }
 
@@ -186,11 +180,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
     };
   }
 
-  function isDetailShowing(
-    owner: string,
-    name: string,
-    number: number,
-  ): boolean {
+  function isDetailShowing(owner: string, name: string, number: number): boolean {
     return (
       detail !== null &&
       detail.repo_owner === owner &&
@@ -415,9 +405,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
         if (gen !== syncGeneration) return;
         if (requestError) {
           throw new Error(
-            requestError.detail ??
-              requestError.title ??
-              "failed to load pull request",
+            requestError.detail ?? requestError.title ?? "failed to load pull request",
           );
         }
         detail = data
@@ -441,9 +429,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
       if (gen === syncGeneration && finalSyncMode === true) {
         void syncDetail(owner, name, number, gen, requestRef);
       } else if (gen === syncGeneration && finalSyncMode === "background") {
-        if (
-          needsWorkflowApprovalSync(detail, currentLoad.workflowApprovalSync)
-        ) {
+        if (needsWorkflowApprovalSync(detail, currentLoad.workflowApprovalSync)) {
           void syncDetail(owner, name, number, gen, requestRef);
           return;
         }
@@ -551,9 +537,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
         );
         if (gen !== syncGeneration) return;
         if (requestError) {
-          showFlash(
-            apiErrorMessage(requestError, "Failed to refresh CI checks"),
-          );
+          showFlash(apiErrorMessage(requestError, "Failed to refresh CI checks"));
           return;
         }
         if (data) {
@@ -568,10 +552,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
             showFlash(warning);
           }
           if (
-            needsWorkflowApprovalSync(
-              detail,
-              identity.workflowApprovalSync ?? true,
-            )
+            needsWorkflowApprovalSync(detail, identity.workflowApprovalSync ?? true)
           ) {
             await syncDetail(owner, name, number, gen, ref);
           }
@@ -605,11 +586,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
     const prevDetailStatus = isDetailShowing(owner, name, number)
       ? (detail!.merge_request.KanbanStatus as KanbanStatus)
       : undefined;
-    const prevPullsStatus = pullsDep?.getPullKanbanStatus?.(
-      owner,
-      name,
-      number,
-    );
+    const prevPullsStatus = pullsDep?.getPullKanbanStatus?.(owner, name, number);
 
     if (prevDetailStatus !== undefined) {
       detail = {
@@ -634,18 +611,13 @@ export function createDetailStore(opts: DetailStoreOptions) {
       );
       if (requestError) {
         throw new Error(
-          requestError.detail ??
-            requestError.title ??
-            "failed to update kanban state",
+          requestError.detail ?? requestError.title ?? "failed to update kanban state",
         );
       }
     } catch (err) {
       if (seq === kanbanSeqByPR.get(key)) {
         storeError = err instanceof Error ? err.message : String(err);
-        if (
-          prevDetailStatus !== undefined &&
-          isDetailShowing(owner, name, number)
-        ) {
+        if (prevDetailStatus !== undefined && isDetailShowing(owner, name, number)) {
           detail = {
             ...detail!,
             merge_request: {
@@ -655,12 +627,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
           };
         }
         if (prevPullsStatus !== undefined) {
-          pullsDep?.optimisticKanbanUpdate?.(
-            owner,
-            name,
-            number,
-            prevPullsStatus,
-          );
+          pullsDep?.optimisticKanbanUpdate?.(owner, name, number, prevPullsStatus);
         }
         const reloads: Promise<void>[] = [];
         if (pullsDep) reloads.push(pullsDep.loadPulls());
@@ -1027,9 +994,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
         });
         if (requestError) {
           throw new Error(
-            requestError.detail ??
-              requestError.title ??
-              "failed to star pull request",
+            requestError.detail ?? requestError.title ?? "failed to star pull request",
           );
         }
       }
@@ -1093,13 +1058,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
     // (last_activity_at, comment_count) and the pulls list catch
     // up. Skip if the user navigated away mid-refresh.
     if (gen === syncGeneration) {
-      void syncDetail(
-        owner,
-        name,
-        number,
-        gen,
-        currentDetailRef(owner, name, number),
-      );
+      void syncDetail(owner, name, number, gen, currentDetailRef(owner, name, number));
     }
   }
 
@@ -1170,9 +1129,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
       );
       if (requestError) {
         throw new Error(
-          requestError.detail ??
-            requestError.title ??
-            "failed to reply to thread",
+          requestError.detail ?? requestError.title ?? "failed to reply to thread",
         );
       }
     } catch (err) {

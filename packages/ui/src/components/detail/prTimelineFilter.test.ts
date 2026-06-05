@@ -1,12 +1,5 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { PREvent } from "../../api/types.js";
 import PRTimelineFilter from "./PRTimelineFilter.svelte";
 import {
@@ -99,19 +92,14 @@ describe("prTimelineFilter", () => {
     localStorage.setItem("middleman-pr-timeline-filter", JSON.stringify([]));
     expect(loadPRTimelineFilter()).toEqual(DEFAULT_PR_TIMELINE_FILTER);
 
-    localStorage.setItem(
-      "middleman-pr-timeline-filter",
-      JSON.stringify("filter"),
-    );
+    localStorage.setItem("middleman-pr-timeline-filter", JSON.stringify("filter"));
     expect(loadPRTimelineFilter()).toEqual(DEFAULT_PR_TIMELINE_FILTER);
   });
 
   it("returns defaults when localStorage reads throw", () => {
-    const getItem = vi
-      .spyOn(Storage.prototype, "getItem")
-      .mockImplementation(() => {
-        throw new Error("storage unavailable");
-      });
+    const getItem = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new Error("storage unavailable");
+    });
 
     try {
       expect(loadPRTimelineFilter()).toEqual(DEFAULT_PR_TIMELINE_FILTER);
@@ -121,52 +109,32 @@ describe("prTimelineFilter", () => {
   });
 
   it("does not throw when localStorage writes throw", () => {
-    const setItem = vi
-      .spyOn(Storage.prototype, "setItem")
-      .mockImplementation(() => {
-        throw new Error("storage full");
-      });
+    const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("storage full");
+    });
 
     try {
-      expect(() =>
-        savePRTimelineFilter(DEFAULT_PR_TIMELINE_FILTER),
-      ).not.toThrow();
+      expect(() => savePRTimelineFilter(DEFAULT_PR_TIMELINE_FILTER)).not.toThrow();
     } finally {
       setItem.mockRestore();
     }
   });
 
   it("classifies event buckets", () => {
-    expect(timelineEventBucket(event({ EventType: "issue_comment" }))).toBe(
-      "messages",
-    );
-    expect(timelineEventBucket(event({ EventType: "review" }))).toBe(
-      "messages",
-    );
-    expect(timelineEventBucket(event({ EventType: "commit" }))).toBe(
-      "commitDetails",
-    );
-    expect(timelineEventBucket(event({ EventType: "force_push" }))).toBe(
-      "forcePushes",
-    );
-    expect(timelineEventBucket(event({ EventType: "comment_deleted" }))).toBe(
-      "events",
-    );
+    expect(timelineEventBucket(event({ EventType: "issue_comment" }))).toBe("messages");
+    expect(timelineEventBucket(event({ EventType: "review" }))).toBe("messages");
+    expect(timelineEventBucket(event({ EventType: "commit" }))).toBe("commitDetails");
+    expect(timelineEventBucket(event({ EventType: "force_push" }))).toBe("forcePushes");
+    expect(timelineEventBucket(event({ EventType: "comment_deleted" }))).toBe("events");
     expect(timelineEventBucket(event({ EventType: "cross_referenced" }))).toBe(
       "events",
     );
-    expect(timelineEventBucket(event({ EventType: "renamed_title" }))).toBe(
-      "events",
-    );
+    expect(timelineEventBucket(event({ EventType: "renamed_title" }))).toBe("events");
     expect(timelineEventBucket(event({ EventType: "base_ref_changed" }))).toBe(
       "events",
     );
-    expect(timelineEventBucket(event({ EventType: "assigned" }))).toBe(
-      "events",
-    );
-    expect(timelineEventBucket(event({ EventType: "unassigned" }))).toBe(
-      "events",
-    );
+    expect(timelineEventBucket(event({ EventType: "assigned" }))).toBe("events");
+    expect(timelineEventBucket(event({ EventType: "unassigned" }))).toBe("events");
   });
 
   it("keeps commit title rows when commit details are disabled", () => {
@@ -350,13 +318,9 @@ describe("PRTimelineFilter", () => {
 
     expect(screen.getByRole("button", { name: /messages/i })).toBeTruthy();
     expect(screen.getByRole("button", { name: /replies/i })).toBeTruthy();
-    expect(
-      screen.getByRole("button", { name: /commit details/i }),
-    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: /commit details/i })).toBeTruthy();
     expect(screen.getByRole("button", { name: /events/i })).toBeTruthy();
     expect(screen.getByRole("button", { name: /force pushes/i })).toBeTruthy();
-    expect(
-      screen.getByRole("button", { name: /hide bot activity/i }),
-    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: /hide bot activity/i })).toBeTruthy();
   });
 });

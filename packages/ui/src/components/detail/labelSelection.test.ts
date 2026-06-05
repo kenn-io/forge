@@ -9,14 +9,13 @@ const stale: Label = { name: "legacy", color: "999999" };
 
 describe("nextCatalogLabelNames", () => {
   it("drops assigned labels missing from the catalog when adding a label", () => {
-    expect(
-      nextCatalogLabelNames([bug, stale], [bug, triage], "triage"),
-    ).toEqual(["bug", "triage"]);
+    expect(nextCatalogLabelNames([bug, stale], [bug, triage], "triage")).toEqual([
+      "bug",
+      "triage",
+    ]);
   });
 
   it("drops assigned labels missing from the catalog when removing a label", () => {
-    expect(nextCatalogLabelNames([bug, stale], [bug, triage], "bug")).toEqual(
-      [],
-    );
+    expect(nextCatalogLabelNames([bug, stale], [bug, triage], "bug")).toEqual([]);
   });
 });

@@ -216,14 +216,7 @@ interface WorkspaceDetailContext {
 }
 
 interface MiddlemanNavigateEvent {
-  type:
-    | "pull"
-    | "issue"
-    | "activity"
-    | "repos"
-    | "board"
-    | "reviews"
-    | "workspaces";
+  type: "pull" | "issue" | "activity" | "repos" | "board" | "reviews" | "workspaces";
   owner?: string;
   name?: string;
   number?: number;
@@ -242,9 +235,7 @@ interface Window {
   __middleman_notify_config_changed?: () => void;
   __middleman_update_workspace?: (data: WorkspaceData) => void;
   __middleman_navigate_to_route?: (route: string) => void;
-  __middleman_set_repo_filter?: (
-    repo: { owner: string; name: string } | null,
-  ) => void;
+  __middleman_set_repo_filter?: (repo: { owner: string; name: string } | null) => void;
   __middleman_update_selection?: (selection: {
     hostKey?: string | null;
     worktreeKey?: string | null;

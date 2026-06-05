@@ -48,9 +48,7 @@ function isEarlierEvent(a: PREvent, b: PREvent): boolean {
 function reviewThreadID(event: PREvent): string | null {
   if (!("diff_thread" in event)) return null;
   const thread = event.diff_thread as { id?: unknown } | undefined;
-  return typeof thread?.id === "string" && thread.id.length > 0
-    ? thread.id
-    : null;
+  return typeof thread?.id === "string" && thread.id.length > 0 ? thread.id : null;
 }
 
 function timelineThreadID(event: PREvent): string | null {
@@ -103,10 +101,7 @@ function normalizeFilter(value: unknown): PRTimelineFilterState {
       persisted.showForcePushes,
       DEFAULT_PR_TIMELINE_FILTER.showForcePushes,
     ),
-    hideBots: booleanOrDefault(
-      persisted.hideBots,
-      DEFAULT_PR_TIMELINE_FILTER.hideBots,
-    ),
+    hideBots: booleanOrDefault(persisted.hideBots, DEFAULT_PR_TIMELINE_FILTER.hideBots),
   };
 }
 
@@ -122,10 +117,7 @@ export function loadPRTimelineFilter(): PRTimelineFilterState {
 
 export function savePRTimelineFilter(filter: PRTimelineFilterState): void {
   try {
-    localStorage.setItem(
-      PR_TIMELINE_FILTER_STORAGE_KEY,
-      JSON.stringify(filter),
-    );
+    localStorage.setItem(PR_TIMELINE_FILTER_STORAGE_KEY, JSON.stringify(filter));
   } catch {
     // localStorage can be unavailable in private browsing or embedded contexts.
   }
@@ -153,11 +145,7 @@ export function filterPREvents(
   return events.filter((event) => {
     const threadID = timelineThreadID(event);
     if (filter.hideBots && isBotAuthor(event.Author)) return false;
-    if (
-      !filter.showReplies &&
-      threadID &&
-      threadRoots.get(threadID)?.ID !== event.ID
-    ) {
+    if (!filter.showReplies && threadID && threadRoots.get(threadID)?.ID !== event.ID) {
       return false;
     }
     switch (timelineEventBucket(event)) {
@@ -173,9 +161,7 @@ export function filterPREvents(
   });
 }
 
-export function activePRTimelineFilterCount(
-  filter: PRTimelineFilterState,
-): number {
+export function activePRTimelineFilterCount(filter: PRTimelineFilterState): number {
   return [
     !filter.showMessages,
     !filter.showReplies,

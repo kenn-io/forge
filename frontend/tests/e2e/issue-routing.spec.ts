@@ -90,9 +90,7 @@ test.describe("issue route platform host", () => {
     await expect.poll(() => seenHosts).toContain("ghe.example.com");
   });
 
-  test("popstate preserves platform_host in detail requests", async ({
-    page,
-  }) => {
+  test("popstate preserves platform_host in detail requests", async ({ page }) => {
     const seenHosts = await mockIssueDetailAndTrackHosts(page);
 
     await page.goto("/issues");

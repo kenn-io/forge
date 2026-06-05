@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/svelte";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import type { DiffLineAnnotation, FileDiffOptions } from "@pierre/diffs";
 import type { DiffFile } from "../../api/types.js";
 

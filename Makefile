@@ -95,7 +95,7 @@ frontend-dev-bun: frontend-deps
 
 # Run TypeScript/Svelte lint and type checks
 frontend-check: frontend-deps
-	./node_modules/.bin/vp check frontend packages/ui '!packages/ui/src/api/generated/**' '!packages/ui/src/api/roborev/generated/**' --no-error-on-unmatched-pattern
+	./node_modules/.bin/vp run -w check
 
 # Prevent production frontend code from bypassing generated API clients
 frontend-api-client-check:
@@ -292,7 +292,7 @@ help:
 	@echo "  frontend       - Build frontend SPA with Vite+"
 	@echo "  frontend-dev   - Install deps and run Vite dev server, logging to tmp/logs/frontend-dev.log (honors MIDDLEMAN_CONFIG)"
 	@echo "  frontend-dev-bun - Install deps with Bun and run Vite+ dev server (honors MIDDLEMAN_CONFIG)"
-	@echo "  frontend-check - Run Vite+ format, lint, and type checks for frontend and packages/ui"
+	@echo "  frontend-check - Run Vite+ format, lint, type, and Svelte checks for frontend and packages/ui"
 	@echo "  frontend-api-client-check - Prevent manual /api/v1 frontend calls outside generated clients"
 	@echo "  font-size-token-check - Enforce --font-size design tokens in frontend styles"
 	@echo "  api-generate   - Regenerate checked-in OpenAPI and TS schema"

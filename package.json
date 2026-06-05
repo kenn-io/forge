@@ -1,9 +1,12 @@
 {
   "private": true,
   "type": "module",
-  "workspaces": ["frontend", "packages/*"],
+  "workspaces": [
+    "frontend",
+    "packages/*"
+  ],
   "scripts": {
-    "check": "vp check frontend packages/ui '!packages/ui/src/api/generated/**' '!packages/ui/src/api/roborev/generated/**' --no-error-on-unmatched-pattern",
+    "check": "vp check frontend packages/ui '!packages/ui/src/api/generated/**' '!packages/ui/src/api/roborev/generated/**' --no-error-on-unmatched-pattern && vp run -w svelte-check:frontend && vp run -w svelte-check:ui",
     "demo-workspace": "bun run --cwd frontend demo-workspace",
     "fmt": "vp fmt frontend packages/ui '!packages/ui/src/api/generated/**' '!packages/ui/src/api/roborev/generated/**' --no-error-on-unmatched-pattern",
     "fmt:check": "vp fmt --check frontend packages/ui '!packages/ui/src/api/generated/**' '!packages/ui/src/api/roborev/generated/**' --no-error-on-unmatched-pattern",
@@ -11,5 +14,6 @@
   },
   "devDependencies": {
     "vite-plus": "0.1.22"
-  }
+  },
+  "packageManager": "bun@1.3.14"
 }

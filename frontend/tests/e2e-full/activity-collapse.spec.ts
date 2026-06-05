@@ -22,21 +22,13 @@ async function selectActivityViewItem(page: Page, label: string): Promise<void> 
 
 async function gotoThreadedActivity(page: Page): Promise<void> {
   await page.goto("/");
-  await page
-    .locator(".activity-table .activity-row")
-    .first()
-    .waitFor({ state: "visible", timeout: 10_000 });
+  await page.locator(".activity-table .activity-row").first().waitFor({ state: "visible", timeout: 10_000 });
   await selectActivityViewItem(page, "Threaded");
-  await page
-    .locator(".threaded-view .item-row")
-    .first()
-    .waitFor({ state: "visible", timeout: 10_000 });
+  await page.locator(".threaded-view .item-row").first().waitFor({ state: "visible", timeout: 10_000 });
 }
 
 test.describe("threaded activity collapse", () => {
-  test("collapse all hides every event row and expand all restores them", async ({
-    page,
-  }) => {
+  test("collapse all hides every event row and expand all restores them", async ({ page }) => {
     await gotoThreadedActivity(page);
 
     const eventRows = page.locator(".threaded-view .event-row");
@@ -55,9 +47,7 @@ test.describe("threaded activity collapse", () => {
     await expect(eventRows.first()).toBeVisible();
   });
 
-  test("a single caret expands only its own item after collapse all", async ({
-    page,
-  }) => {
+  test("a single caret expands only its own item after collapse all", async ({ page }) => {
     await gotoThreadedActivity(page);
 
     const eventRows = page.locator(".threaded-view .event-row");
@@ -67,11 +57,7 @@ test.describe("threaded activity collapse", () => {
     await page.getByRole("button", { name: "Collapse all" }).click();
     await expect(eventRows).toHaveCount(0);
 
-    await page
-      .locator(".threaded-view .item-row")
-      .first()
-      .locator(".thread-caret")
-      .click();
+    await page.locator(".threaded-view .item-row").first().locator(".thread-caret").click();
 
     // Only the clicked item's events reappear; the rest stay collapsed.
     await expect(eventRows.first()).toBeVisible();

@@ -1,10 +1,4 @@
-import {
-  getRoute,
-  getPage,
-  getDetailTab,
-  isDiffView,
-  getSelectedPRFromRoute,
-} from "../router.svelte.js";
+import { getRoute, getPage, getDetailTab, isDiffView, getSelectedPRFromRoute } from "../router.svelte.js";
 import type { Context } from "./types.js";
 import type { PullSelection } from "@middleman/ui/stores/pulls";
 import type { IssueSelection } from "@middleman/ui/stores/issues";

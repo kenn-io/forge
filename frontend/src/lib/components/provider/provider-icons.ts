@@ -1,10 +1,4 @@
-import {
-  siForgejo,
-  siGitea,
-  siGithub,
-  siGitlab,
-  type SimpleIcon,
-} from "simple-icons";
+import { siForgejo, siGitea, siGithub, siGitlab, type SimpleIcon } from "simple-icons";
 
 export const providerIcons: Record<string, SimpleIcon> = {
   forgejo: siForgejo,

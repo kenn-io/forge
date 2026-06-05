@@ -3,14 +3,10 @@ import { expect, test } from "@playwright/test";
 import { startIsolatedE2EServer } from "./support/e2eServer";
 
 test.describe("pull list CI cluster", () => {
-  test("renders compact tokens from the live list payload (mixed state)", async ({
-    page,
-  }) => {
+  test("renders compact tokens from the live list payload (mixed state)", async ({ page }) => {
     const server = await startIsolatedE2EServer();
     try {
-      const seed = await page.request.post(
-        `${server.info.base_url}/__e2e/pr-ci-state/mixed`,
-      );
+      const seed = await page.request.post(`${server.info.base_url}/__e2e/pr-ci-state/mixed`);
       expect(seed.ok()).toBe(true);
 
       await page.goto(`${server.info.base_url}/pulls`);
@@ -25,14 +21,10 @@ test.describe("pull list CI cluster", () => {
     }
   });
 
-  test("renders the unavailable token when CIChecksJSON is malformed", async ({
-    page,
-  }) => {
+  test("renders the unavailable token when CIChecksJSON is malformed", async ({ page }) => {
     const server = await startIsolatedE2EServer();
     try {
-      const seed = await page.request.post(
-        `${server.info.base_url}/__e2e/pr-ci-state/malformed`,
-      );
+      const seed = await page.request.post(`${server.info.base_url}/__e2e/pr-ci-state/malformed`);
       expect(seed.ok()).toBe(true);
 
       await page.goto(`${server.info.base_url}/pulls`);

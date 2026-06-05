@@ -6,11 +6,7 @@ type NextFunction = (err?: unknown) => void;
 const healthResponse = JSON.stringify({ status: "ok" });
 const healthPaths = new Set(["/healthz", "/livez"]);
 
-function handleHealthcheck(
-  req: IncomingMessage,
-  res: ServerResponse,
-  next: NextFunction,
-) {
+function handleHealthcheck(req: IncomingMessage, res: ServerResponse, next: NextFunction) {
   const pathname = new URL(req.url ?? "/", "http://127.0.0.1").pathname;
   if (!healthPaths.has(pathname)) {
     next();

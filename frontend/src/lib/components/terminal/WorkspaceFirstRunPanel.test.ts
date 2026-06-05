@@ -8,24 +8,17 @@ const win = window as any;
 interface SetupArgs {
   ghAuthed: boolean;
   ghAvailable?: boolean;
-  handlers?: Partial<
-    Record<string, (ctx: unknown) => CommandResult | Promise<CommandResult>>
-  >;
+  handlers?: Partial<Record<string, (ctx: unknown) => CommandResult | Promise<CommandResult>>>;
 }
 
-function setupConfig({
-  ghAuthed,
-  ghAvailable = true,
-  handlers = {},
-}: SetupArgs): void {
+function setupConfig({ ghAuthed, ghAvailable = true, handlers = {} }: SetupArgs): void {
   win.__middleman_config = {
     actions: {
       project: [
         {
           id: "add-existing",
           label: "Add Existing",
-          handler:
-            handlers["add-existing"] ?? vi.fn().mockResolvedValue({ ok: true }),
+          handler: handlers["add-existing"] ?? vi.fn().mockResolvedValue({ ok: true }),
         },
         {
           id: "clone",
@@ -35,8 +28,7 @@ function setupConfig({
         {
           id: "connect-github",
           label: "Connect GH",
-          handler:
-            handlers["connect-github"] ?? vi.fn().mockResolvedValue({ ok: true }),
+          handler: handlers["connect-github"] ?? vi.fn().mockResolvedValue({ ok: true }),
         },
       ],
     },
@@ -123,9 +115,7 @@ describe("WorkspaceFirstRunPanel", () => {
     setupConfig({ ghAuthed: true, handlers: { clone: handler } });
     render(WorkspaceFirstRunPanel);
 
-    await fireEvent.click(
-      screen.getByRole("button", { name: /Clone a repository/i }),
-    );
+    await fireEvent.click(screen.getByRole("button", { name: /Clone a repository/i }));
     expect(await screen.findByText("Couldn't reach the remote")).toBeTruthy();
   });
 

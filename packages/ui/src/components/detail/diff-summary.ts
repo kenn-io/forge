@@ -1,8 +1,5 @@
 import type { DiffFile } from "../../api/types.js";
-import {
-  categorizeDiffFile,
-  type DiffFileCategory,
-} from "../../utils/diff-categories.js";
+import { categorizeDiffFile, type DiffFileCategory } from "../../utils/diff-categories.js";
 
 export { categorizeDiffFile };
 export type DiffSummaryCategory = DiffFileCategory;

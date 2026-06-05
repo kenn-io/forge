@@ -29,20 +29,17 @@ describe("provider-aware detail API routes", () => {
       repoPath: "Group/SubGroup/Project",
     } as never);
 
-    expect(client.GET).toHaveBeenCalledWith(
-      "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}",
-      {
-        params: {
-          path: {
-            provider: "gitlab",
-            platform_host: "gitlab.example.com:8443",
-            owner: "Group/SubGroup",
-            name: "Project",
-            number: 12,
-          },
+    expect(client.GET).toHaveBeenCalledWith("/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}", {
+      params: {
+        path: {
+          provider: "gitlab",
+          platform_host: "gitlab.example.com:8443",
+          owner: "Group/SubGroup",
+          name: "Project",
+          number: 12,
         },
       },
-    );
+    });
   });
 
   it("refreshes pending PR CI through the provider CI endpoint", async () => {
@@ -137,9 +134,7 @@ describe("provider-aware detail API routes", () => {
       repoPath: "acme/widgets",
     });
 
-    expect(showFlash).toHaveBeenCalledWith(
-      "Could not refresh CI checks; showing last known status.",
-    );
+    expect(showFlash).toHaveBeenCalledWith("Could not refresh CI checks; showing last known status.");
     showFlash.mockRestore();
   });
 
@@ -254,9 +249,7 @@ describe("provider-aware detail API routes", () => {
         Number: 1,
         State: "open",
         CIStatus: "pending",
-        CIChecksJSON: JSON.stringify([
-          { name: "build", status: "in_progress", conclusion: "" },
-        ]),
+        CIChecksJSON: JSON.stringify([{ name: "build", status: "in_progress", conclusion: "" }]),
         CIHadPending: true,
       },
       workflow_approval: { checked: false, required: false, count: 0 },
@@ -288,9 +281,7 @@ describe("provider-aware detail API routes", () => {
       workflowApprovalSync: false,
     });
 
-    expect(postPaths).toEqual([
-      "/pulls/{provider}/{owner}/{name}/{number}/ci-refresh",
-    ]);
+    expect(postPaths).toEqual(["/pulls/{provider}/{owner}/{name}/{number}/ci-refresh"]);
   });
 
   it("promotes CI refresh results that may need workflow approval to foreground PR sync", async () => {
@@ -309,9 +300,7 @@ describe("provider-aware detail API routes", () => {
         Number: 1,
         State: "open",
         CIStatus: "pending",
-        CIChecksJSON: JSON.stringify([
-          { name: "build", status: "in_progress", conclusion: "" },
-        ]),
+        CIChecksJSON: JSON.stringify([{ name: "build", status: "in_progress", conclusion: "" }]),
         CIHadPending: true,
       },
       workflow_approval: { checked: false, required: false, count: 0 },
@@ -375,9 +364,7 @@ describe("provider-aware detail API routes", () => {
         Number: 1,
         State: "open",
         CIStatus: "pending",
-        CIChecksJSON: JSON.stringify([
-          { name: "build", status: "in_progress", conclusion: "" },
-        ]),
+        CIChecksJSON: JSON.stringify([{ name: "build", status: "in_progress", conclusion: "" }]),
         CIHadPending: true,
       },
       workflow_approval: { checked: false, required: false, count: 0 },
@@ -432,9 +419,7 @@ describe("provider-aware detail API routes", () => {
         Number: 1,
         State: "open",
         CIStatus: "pending",
-        CIChecksJSON: JSON.stringify([
-          { name: "build", status: "in_progress", conclusion: "" },
-        ]),
+        CIChecksJSON: JSON.stringify([{ name: "build", status: "in_progress", conclusion: "" }]),
         CIHadPending: false,
       },
       workflow_approval: { checked: false, required: false, count: 0 },
@@ -461,9 +446,7 @@ describe("provider-aware detail API routes", () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(postPaths).toEqual([
-      "/pulls/{provider}/{owner}/{name}/{number}/sync/async",
-    ]);
+    expect(postPaths).toEqual(["/pulls/{provider}/{owner}/{name}/{number}/sync/async"]);
   });
 
   it("loads issue detail through the provider item endpoint", async () => {
@@ -489,19 +472,16 @@ describe("provider-aware detail API routes", () => {
       repoPath: "Group/SubGroup/Project",
     } as never);
 
-    expect(client.GET).toHaveBeenCalledWith(
-      "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}",
-      {
-        params: {
-          path: {
-            provider: "gitlab",
-            platform_host: "gitlab.example.com:8443",
-            owner: "Group/SubGroup",
-            name: "Project",
-            number: 7,
-          },
+    expect(client.GET).toHaveBeenCalledWith("/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}", {
+      params: {
+        path: {
+          provider: "gitlab",
+          platform_host: "gitlab.example.com:8443",
+          owner: "Group/SubGroup",
+          name: "Project",
+          number: 7,
         },
       },
-    );
+    });
   });
 });

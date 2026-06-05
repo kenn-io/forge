@@ -5,9 +5,7 @@ import { composeAriaLabel } from "./CITokenCluster.svelte";
 import type { CIBucketedChecks } from "../../utils/ci-buckets.js";
 
 function bucketed(
-  counts: Partial<
-    Record<"failed" | "pending" | "passed" | "skipped" | "unknown", number>
-  >,
+  counts: Partial<Record<"failed" | "pending" | "passed" | "skipped" | "unknown", number>>,
 ): CIBucketedChecks {
   const make = (n: number) =>
     Array.from({ length: n }, () => ({
@@ -148,9 +146,7 @@ describe("CITokenCluster", () => {
 
 describe("composeAriaLabel", () => {
   it("uses singular for 1, plural for others", () => {
-    expect(composeAriaLabel(bucketed({ failed: 1, pending: 5 }))).toBe(
-      "CI: 1 failed check, 5 pending checks",
-    );
+    expect(composeAriaLabel(bucketed({ failed: 1, pending: 5 }))).toBe("CI: 1 failed check, 5 pending checks");
   });
 
   it("omits zero buckets", () => {

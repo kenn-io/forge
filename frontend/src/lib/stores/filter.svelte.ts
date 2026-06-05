@@ -8,17 +8,13 @@ export function parseRepoFilterValue(repo: string | undefined): string[] {
 }
 
 export function serializeRepoFilterValue(repos: string[]): string | undefined {
-  const unique = Array.from(
-    new Set(repos.map((repo) => repo.trim()).filter((repo) => repo !== "")),
-  );
+  const unique = Array.from(new Set(repos.map((repo) => repo.trim()).filter((repo) => repo !== "")));
   return unique.length > 0 ? unique.join(",") : undefined;
 }
 
 function loadPersistedRepo(): string | undefined {
   try {
-    return serializeRepoFilterValue(
-      parseRepoFilterValue(localStorage.getItem(STORAGE_KEY) || undefined),
-    );
+    return serializeRepoFilterValue(parseRepoFilterValue(localStorage.getItem(STORAGE_KEY) || undefined));
   } catch {
     return undefined;
   }
@@ -44,10 +40,7 @@ export function setGlobalRepo(repo: string | undefined): void {
   }
 }
 
-export function applyConfigRepo(
-  repo: { owner: string; name: string } | undefined,
-  hideSelector: boolean,
-): void {
+export function applyConfigRepo(repo: { owner: string; name: string } | undefined, hideSelector: boolean): void {
   if (hideSelector) {
     if (repo) {
       filterRepo = `${repo.owner}/${repo.name}`;

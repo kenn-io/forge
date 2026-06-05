@@ -10,9 +10,7 @@ export interface AppStartupDeps {
 
 const SETTINGS_STARTUP_TIMEOUT_MS = 8_000;
 
-async function loadSettingsWithTimeout(
-  getSettings: () => Promise<Settings>,
-): Promise<Settings> {
+async function loadSettingsWithTimeout(getSettings: () => Promise<Settings>): Promise<Settings> {
   let timeout: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([

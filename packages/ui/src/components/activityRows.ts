@@ -12,9 +12,7 @@ export interface CollapsedActivityRun {
 
 export type ActivityRow = ActivityItem | CollapsedActivityRun;
 
-export function isCollapsedActivityRow(
-  row: ActivityRow,
-): row is CollapsedActivityRun {
+export function isCollapsedActivityRow(row: ActivityRow): row is CollapsedActivityRun {
   return "kind" in row && row.kind === "collapsed";
 }
 
@@ -27,9 +25,7 @@ export function isDefaultBranchForcePushActivity(item: ActivityItem): boolean {
 }
 
 export function isDefaultBranchActivity(item: ActivityItem): boolean {
-  return (
-    isDefaultBranchCommitActivity(item) || isDefaultBranchForcePushActivity(item)
-  );
+  return isDefaultBranchCommitActivity(item) || isDefaultBranchForcePushActivity(item);
 }
 
 export function shortSha(sha: string | undefined): string {
@@ -51,19 +47,8 @@ function activityRunAuthor(item: ActivityItem): string {
 
 function activityRunGroupKey(item: ActivityItem): string | null {
   const author = activityRunAuthor(item);
-  if (
-    item.activity_type === "commit" ||
-    item.activity_type === "comment" ||
-    item.activity_type === "review"
-  ) {
-    return [
-      "item",
-      item.activity_type,
-      repoKeyForItem(item),
-      item.item_type,
-      item.item_number,
-      author,
-    ].join("|");
+  if (item.activity_type === "commit" || item.activity_type === "comment" || item.activity_type === "review") {
+    return ["item", item.activity_type, repoKeyForItem(item), item.item_type, item.item_number, author].join("|");
   }
 
   if (isDefaultBranchCommitActivity(item)) {
@@ -129,14 +114,10 @@ export function activityRepoKey(ref: ActivityRepoKeyRef): string {
   return `${ref.provider}|${ref.platformHost}|${ref.owner}/${ref.name}`;
 }
 
-export function activityItemKey(
-  ref: ActivityRepoKeyRef & { itemType: string; itemNumber: number },
-): string {
+export function activityItemKey(ref: ActivityRepoKeyRef & { itemType: string; itemNumber: number }): string {
   return `${activityRepoKey(ref)}:${ref.itemType}:${ref.itemNumber}`;
 }
 
-export function activityBranchKey(
-  ref: ActivityRepoKeyRef & { branchName: string },
-): string {
+export function activityBranchKey(ref: ActivityRepoKeyRef & { branchName: string }): string {
   return `${activityRepoKey(ref)}:branch:${ref.branchName}`;
 }

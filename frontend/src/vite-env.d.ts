@@ -68,10 +68,7 @@ interface MiddlemanConfig {
     hoverCardsEnabled?: boolean;
     tooling?: ToolingStatus;
   };
-  onLayoutChanged?: (layout: {
-    sidebar: { width: number };
-    pinnedPanel: { width: number; visible: boolean };
-  }) => void;
+  onLayoutChanged?: (layout: { sidebar: { width: number }; pinnedPanel: { width: number; visible: boolean } }) => void;
   onNavigate?: (event: MiddlemanNavigateEvent) => void;
   onRouteChange?: (event: MiddlemanNavigateEvent) => void;
 }
@@ -203,10 +200,7 @@ interface CommandResult {
 }
 
 interface WorkspaceCommandHandler {
-  (
-    command: string,
-    payload: Record<string, unknown>,
-  ): CommandResult | Promise<CommandResult>;
+  (command: string, payload: Record<string, unknown>): CommandResult | Promise<CommandResult>;
 }
 
 interface WorkspaceDetailContext {
@@ -238,13 +232,8 @@ interface Window {
   __middleman_notify_config_changed?: () => void;
   __middleman_update_workspace?: (data: WorkspaceData) => void;
   __middleman_navigate_to_route?: (route: string) => void;
-  __middleman_set_repo_filter?: (
-    repo: { owner: string; name: string } | null,
-  ) => void;
-  __middleman_update_selection?: (selection: {
-    hostKey?: string | null;
-    worktreeKey?: string | null;
-  }) => void;
+  __middleman_set_repo_filter?: (repo: { owner: string; name: string } | null) => void;
+  __middleman_update_selection?: (selection: { hostKey?: string | null; worktreeKey?: string | null }) => void;
   __middleman_update_host_state?: (
     hostKey: string,
     patch: {

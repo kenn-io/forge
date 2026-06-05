@@ -2,11 +2,7 @@ import { cleanup, render } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import ShortcutHelpModal from "./ShortcutHelpModal.svelte";
-import {
-  getStackDepth,
-  getTopFrame,
-  resetModalStack,
-} from "../../stores/keyboard/modal-stack.svelte.js";
+import { getStackDepth, getTopFrame, resetModalStack } from "../../stores/keyboard/modal-stack.svelte.js";
 
 describe("ShortcutHelpModal modal frame integration", () => {
   beforeEach(() => {

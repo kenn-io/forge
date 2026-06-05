@@ -1,14 +1,9 @@
 import { expect, test } from "@playwright/test";
 
 test.describe("comment editor autocomplete", () => {
-  test("PR comment editor preserves IME composition without accepting a suggestion", async ({
-    page,
-  }) => {
+  test("PR comment editor preserves IME composition without accepting a suggestion", async ({ page }) => {
     await page.goto("/pulls");
-    await page
-      .locator(".pull-item")
-      .first()
-      .waitFor({ state: "visible", timeout: 10_000 });
+    await page.locator(".pull-item").first().waitFor({ state: "visible", timeout: 10_000 });
     await page.locator(".pull-item").first().click();
     await page.locator(".pull-detail").waitFor({ state: "visible", timeout: 10_000 });
 
@@ -39,14 +34,9 @@ test.describe("comment editor autocomplete", () => {
     await editor.dispatchEvent("compositionend");
   });
 
-  test("PR comment editor inserts autocomplete at the active caret position", async ({
-    page,
-  }) => {
+  test("PR comment editor inserts autocomplete at the active caret position", async ({ page }) => {
     await page.goto("/pulls");
-    await page
-      .locator(".pull-item")
-      .first()
-      .waitFor({ state: "visible", timeout: 10_000 });
+    await page.locator(".pull-item").first().waitFor({ state: "visible", timeout: 10_000 });
     await page.locator(".pull-item").first().click();
     await page.locator(".pull-detail").waitFor({ state: "visible", timeout: 10_000 });
 
@@ -79,9 +69,7 @@ test.describe("comment editor autocomplete", () => {
     // commits against an out-of-date range and leaves the trigger chars
     // behind. Waiting for the filtered option ensures currentProps has been
     // swapped to the latest update before we commit.
-    await expect(
-      page.locator(".comment-editor-option").filter({ hasText: "@alice" }),
-    ).toBeVisible({
+    await expect(page.locator(".comment-editor-option").filter({ hasText: "@alice" })).toBeVisible({
       timeout: 10_000,
     });
     await editor.press("Enter");
@@ -91,10 +79,7 @@ test.describe("comment editor autocomplete", () => {
 
   test("focused comment editors suppress global view shortcuts", async ({ page }) => {
     await page.goto("/pulls");
-    await page
-      .locator(".pull-item")
-      .first()
-      .waitFor({ state: "visible", timeout: 10_000 });
+    await page.locator(".pull-item").first().waitFor({ state: "visible", timeout: 10_000 });
     await page.locator(".pull-item").first().click();
     await page.locator(".pull-detail").waitFor({ state: "visible", timeout: 10_000 });
 
@@ -116,9 +101,7 @@ test.describe("comment editor autocomplete", () => {
     await expect(detail).toBeVisible();
   });
 
-  test("PR comment editor accepts @ mention and submits end-to-end", async ({
-    page,
-  }) => {
+  test("PR comment editor accepts @ mention and submits end-to-end", async ({ page }) => {
     await page.goto("/pulls/github/acme/widgets/5");
     await page.locator(".pull-detail").waitFor({ state: "visible", timeout: 10_000 });
     await expect(page.getByText("Detail not yet loaded")).toHaveCount(0, {
@@ -134,9 +117,7 @@ test.describe("comment editor autocomplete", () => {
     await editor.click();
     await page.keyboard.type("<script>alert('x')</script> @a");
 
-    const aliceOption = page
-      .locator(".comment-editor-option")
-      .filter({ hasText: "@alice" });
+    const aliceOption = page.locator(".comment-editor-option").filter({ hasText: "@alice" });
     await expect(aliceOption).toBeVisible({ timeout: 10_000 });
     await aliceOption.dispatchEvent("pointerdown");
     await expect(editor).toContainText("@alice");
@@ -153,13 +134,9 @@ test.describe("comment editor autocomplete", () => {
     await expect(page.getByText("Select a PR")).toHaveCount(0);
   });
 
-  test("issue comment editor accepts # reference and submits end-to-end", async ({
-    page,
-  }) => {
+  test("issue comment editor accepts # reference and submits end-to-end", async ({ page }) => {
     await page.goto("/issues/github/acme/widgets/12");
-    await page
-      .locator(".issue-detail")
-      .waitFor({ state: "visible", timeout: 10_000 });
+    await page.locator(".issue-detail").waitFor({ state: "visible", timeout: 10_000 });
     await expect(page.getByText("Detail not yet loaded")).toHaveCount(0, {
       timeout: 10_000,
     });

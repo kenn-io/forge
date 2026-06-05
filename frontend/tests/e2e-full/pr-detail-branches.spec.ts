@@ -20,11 +20,7 @@ test.describe("PR detail branch info", () => {
     await expect(arrow).toBeVisible();
   });
 
-  test("click branch shows copied feedback", async ({
-    page,
-    context,
-    browserName,
-  }) => {
+  test("click branch shows copied feedback", async ({ page, context, browserName }) => {
     if (browserName === "chromium") {
       await context.grantPermissions(["clipboard-read", "clipboard-write"]);
     }
@@ -38,16 +34,13 @@ test.describe("PR detail branch info", () => {
       .poll(async () =>
         headBtn.evaluate(
           (element) =>
-            element.classList.contains("branch-name-btn--copied") &&
-            element.getAttribute("title") === "Copied!",
+            element.classList.contains("branch-name-btn--copied") && element.getAttribute("title") === "Copied!",
         ),
       )
       .toBe(true);
   });
 
-  test("reveals current approvers from full-stack review events", async ({
-    page,
-  }) => {
+  test("reveals current approvers from full-stack review events", async ({ page }) => {
     const trigger = page.getByRole("button", { name: "APPROVED (2)" });
     await expect(trigger).toBeVisible();
 
@@ -112,9 +105,7 @@ test.describe("PR detail branch info", () => {
 
     const popover = page.locator(".diff-summary-popover");
     await expect(popover).toBeVisible();
-    await expect(popover).toContainText(
-      /Plans\/docs\s+\+10\s+−2[\s\S]*Code\s+\+180\s+−20[\s\S]*Tests\s+\+49\s+−7/,
-    );
+    await expect(popover).toContainText(/Plans\/docs\s+\+10\s+−2[\s\S]*Code\s+\+180\s+−20[\s\S]*Tests\s+\+49\s+−7/);
     await expect(popover).not.toContainText("Other");
   });
 });
@@ -124,16 +115,8 @@ test("diff summary uses real files after the PR head advances", async ({ page })
   try {
     await page.addInitScript(() => {
       const realSetInterval = window.setInterval;
-      window.setInterval = ((
-        handler: TimerHandler,
-        timeout?: number,
-        ...args: unknown[]
-      ) =>
-        realSetInterval(
-          handler,
-          timeout === 60_000 ? 100 : timeout,
-          ...args,
-        )) as typeof window.setInterval;
+      window.setInterval = ((handler: TimerHandler, timeout?: number, ...args: unknown[]) =>
+        realSetInterval(handler, timeout === 60_000 ? 100 : timeout, ...args)) as typeof window.setInterval;
     });
     await page.goto(`${server.info.base_url}/pulls/github/acme/widgets/1`);
     await page.locator(".pull-detail").waitFor({ state: "visible", timeout: 10_000 });
@@ -149,16 +132,11 @@ test("diff summary uses real files after the PR head advances", async ({ page })
     await expect(popover).not.toContainText("Tests");
     const initialSummary = await popover.textContent();
 
-    const response = await page.request.post(
-      `${server.info.base_url}/__e2e/pr-diff-summary/advance-head`,
-    );
+    const response = await page.request.post(`${server.info.base_url}/__e2e/pr-diff-summary/advance-head`);
     expect(response.ok()).toBe(true);
     const advanced = (await response.json()) as { head_sha: string };
 
-    await expect(trigger).toHaveAttribute(
-      "aria-describedby",
-      new RegExp(advanced.head_sha.slice(0, 10)),
-    );
+    await expect(trigger).toHaveAttribute("aria-describedby", new RegExp(advanced.head_sha.slice(0, 10)));
     await expect(popover).toContainText(/Plans\/docs\s+\+\d+\s+−\d+/);
     await expect(popover).toContainText(/Tests\s+\+\d+\s+−\d+/);
     await expect(popover).not.toHaveText(initialSummary ?? "");

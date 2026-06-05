@@ -1,11 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 import type { ActivityItem } from "../api/types.js";
 import { collapseActivityRuns, isCollapsedActivityRow } from "./activityRows.js";
-import {
-  activityBranchKey,
-  activityItemKey,
-  activityRepoKey,
-} from "./activityRows.js";
+import { activityBranchKey, activityItemKey, activityRepoKey } from "./activityRows.js";
 
 function item(id: string, activity_type: string, author: string): ActivityItem {
   return {
@@ -25,12 +21,7 @@ function item(id: string, activity_type: string, author: string): ActivityItem {
   } as ActivityItem;
 }
 
-function branchItem(
-  id: string,
-  activity_type: string,
-  author: string,
-  branchName = "main",
-): ActivityItem {
+function branchItem(id: string, activity_type: string, author: string, branchName = "main"): ActivityItem {
   return {
     ...item(id, activity_type, author),
     item_type: "",
@@ -71,11 +62,7 @@ describe("collapseActivityRuns", () => {
 
     expect(rows).toHaveLength(1);
     expect(isCollapsedActivityRow(rows[0]!)).toBe(true);
-    expect(
-      isCollapsedActivityRow(rows[0]!)
-        ? rows[0].representative.activity_type
-        : undefined,
-    ).toBe("comment");
+    expect(isCollapsedActivityRow(rows[0]!) ? rows[0].representative.activity_type : undefined).toBe("comment");
   });
 
   it("collapses consecutive reviews from the same author", () => {
@@ -87,11 +74,7 @@ describe("collapseActivityRuns", () => {
 
     expect(rows).toHaveLength(1);
     expect(isCollapsedActivityRow(rows[0]!)).toBe(true);
-    expect(
-      isCollapsedActivityRow(rows[0]!)
-        ? rows[0].representative.activity_type
-        : undefined,
-    ).toBe("review");
+    expect(isCollapsedActivityRow(rows[0]!) ? rows[0].representative.activity_type : undefined).toBe("review");
   });
 
   it("does not merge runs of different event types", () => {
@@ -135,9 +118,7 @@ describe("collapseActivityRuns", () => {
 
     expect(rows).toHaveLength(3);
     expect(isCollapsedActivityRow(rows[0]!)).toBe(true);
-    expect(!isCollapsedActivityRow(rows[1]!) && rows[1]!.activity_type).toBe(
-      "force_push",
-    );
+    expect(!isCollapsedActivityRow(rows[1]!) && rows[1]!.activity_type).toBe("force_push");
     expect(isCollapsedActivityRow(rows[2]!)).toBe(true);
   });
 
@@ -150,11 +131,7 @@ describe("collapseActivityRuns", () => {
 
     expect(rows).toHaveLength(1);
     expect(isCollapsedActivityRow(rows[0]!)).toBe(true);
-    expect(
-      isCollapsedActivityRow(rows[0]!)
-        ? rows[0].representative.branch_name
-        : undefined,
-    ).toBe("main");
+    expect(isCollapsedActivityRow(rows[0]!) ? rows[0].representative.branch_name : undefined).toBe("main");
   });
 
   it("does not collapse branch commits across branches", () => {

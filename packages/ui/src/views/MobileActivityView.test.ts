@@ -3,10 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 import type { ActivityItem } from "../api/types.js";
 import MobileActivityView from "./MobileActivityView.svelte";
 
-function branchActivityItem(
-  id: string,
-  overrides: Partial<ActivityItem> = {},
-): ActivityItem {
+function branchActivityItem(id: string, overrides: Partial<ActivityItem> = {}): ActivityItem {
   return {
     id,
     cursor: id,
@@ -33,8 +30,7 @@ function branchActivityItem(
       name: "widgets",
       repo_path: "acme/widgets",
     },
-    activity_url:
-      "https://github.com/acme/widgets/commit/a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+    activity_url: "https://github.com/acme/widgets/commit/a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
     ...overrides,
   } as ActivityItem;
 }

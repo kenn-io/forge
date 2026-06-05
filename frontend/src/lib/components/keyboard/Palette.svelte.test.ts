@@ -2,15 +2,8 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it } from "vite-plus/test";
 
 import Palette from "./Palette.svelte";
-import {
-  closePalette,
-  openPalette,
-  resetPaletteState,
-} from "../../stores/keyboard/palette-state.svelte.js";
-import {
-  registerScopedActions,
-  resetRegistry,
-} from "../../stores/keyboard/registry.svelte.js";
+import { closePalette, openPalette, resetPaletteState } from "../../stores/keyboard/palette-state.svelte.js";
+import { registerScopedActions, resetRegistry } from "../../stores/keyboard/registry.svelte.js";
 import { RECENTS_KEY } from "../../stores/keyboard/recents.svelte.js";
 import type { Action } from "../../stores/keyboard/types.js";
 import { resetModalStack } from "@middleman/ui/stores/keyboard/modal-stack";
@@ -62,9 +55,7 @@ describe("Palette", () => {
     const { rerender } = render(Palette, { props: {} });
     openPalette();
     await rerender({});
-    const preview = screen
-      .getByRole("dialog", { name: "Command palette" })
-      .querySelector(".palette-preview");
+    const preview = screen.getByRole("dialog", { name: "Command palette" }).querySelector(".palette-preview");
     expect(preview).not.toBeNull();
     expect(preview!.textContent ?? "").toContain("Highlight a result to preview it");
   });
@@ -77,9 +68,7 @@ describe("Palette", () => {
     const { rerender } = render(Palette, { props: {} });
     openPalette();
     await rerender({});
-    const preview = screen
-      .getByRole("dialog", { name: "Command palette" })
-      .querySelector(".palette-preview");
+    const preview = screen.getByRole("dialog", { name: "Command palette" }).querySelector(".palette-preview");
     expect(preview).not.toBeNull();
     const text = preview!.textContent ?? "";
     expect(text).toContain("First Action");
@@ -195,9 +184,7 @@ describe("Palette", () => {
     const dialog = screen.getByRole("dialog", {
       name: "Command palette",
     });
-    const headers = Array.from(dialog.querySelectorAll(".palette-group-header")).map(
-      (el) => el.textContent ?? "",
-    );
+    const headers = Array.from(dialog.querySelectorAll(".palette-group-header")).map((el) => el.textContent ?? "");
     expect(headers).not.toContain("Recently used");
   });
 
@@ -229,18 +216,16 @@ describe("Palette", () => {
     const dialog = screen.getByRole("dialog", {
       name: "Command palette",
     });
-    const headersBefore = Array.from(
-      dialog.querySelectorAll(".palette-group-header"),
-    ).map((el) => el.textContent ?? "");
+    const headersBefore = Array.from(dialog.querySelectorAll(".palette-group-header")).map(
+      (el) => el.textContent ?? "",
+    );
     expect(headersBefore).toContain("Recently used");
 
     const input = dialog.querySelector(".palette-input");
     expect(input).not.toBeNull();
     await fireEvent.input(input!, { target: { value: "x" } });
     await rerender({});
-    const headersAfter = Array.from(
-      dialog.querySelectorAll(".palette-group-header"),
-    ).map((el) => el.textContent ?? "");
+    const headersAfter = Array.from(dialog.querySelectorAll(".palette-group-header")).map((el) => el.textContent ?? "");
     expect(headersAfter).not.toContain("Recently used");
   });
 
@@ -275,11 +260,8 @@ describe("Palette", () => {
     const dialog = screen.getByRole("dialog", {
       name: "Command palette",
     });
-    const recentGroup = Array.from(dialog.querySelectorAll(".palette-group")).find(
-      (g) =>
-        (g.querySelector(".palette-group-header")?.textContent ?? "").includes(
-          "Recently used",
-        ),
+    const recentGroup = Array.from(dialog.querySelectorAll(".palette-group")).find((g) =>
+      (g.querySelector(".palette-group-header")?.textContent ?? "").includes("Recently used"),
     );
     expect(recentGroup).toBeTruthy();
     const row = recentGroup!.querySelector(".palette-row");
@@ -295,8 +277,6 @@ describe("Palette", () => {
     expect(persisted.items).toBeTruthy();
     expect(persisted.items[0].kind).toBe("pr");
     expect(persisted.items[0].ref.number).toBe(42);
-    expect(Date.parse(persisted.items[0].lastSelectedAt)).toBeGreaterThan(
-      Date.parse(seedAt),
-    );
+    expect(Date.parse(persisted.items[0].lastSelectedAt)).toBeGreaterThan(Date.parse(seedAt));
   });
 });

@@ -11,10 +11,7 @@ import { startIsolatedE2EServer, type IsolatedE2EServer } from "./support/e2eSer
 //   bot authors: 2 (dependabot[bot] on PR#7 and issue#13)
 
 async function waitForTable(page: Page): Promise<void> {
-  await page
-    .locator(".activity-table .activity-row")
-    .first()
-    .waitFor({ state: "visible", timeout: 10_000 });
+  await page.locator(".activity-table .activity-row").first().waitFor({ state: "visible", timeout: 10_000 });
 }
 
 async function selectActivityFilterItem(page: Page, label: string): Promise<void> {
@@ -85,9 +82,7 @@ test.describe("activity feed filters", () => {
 
   test("hide closed/merged removes those items", async ({ page }) => {
     // Verify closed/merged items exist initially.
-    await expect(
-      page.locator(".state-badge.state-closed, .state-badge.state-merged").first(),
-    ).toBeVisible();
+    await expect(page.locator(".state-badge.state-closed, .state-badge.state-merged").first()).toBeVisible();
 
     // Open filter dropdown and enable "Hide closed/merged".
     await selectActivityFilterItem(page, "Hide closed/merged");
@@ -193,9 +188,7 @@ test.describe("activity UTC timestamp presentation", () => {
     await waitForTable(page);
   });
 
-  test("activity API timestamps stay UTC and render as local dates", async ({
-    page,
-  }) => {
+  test("activity API timestamps stay UTC and render as local dates", async ({ page }) => {
     await selectActivityFilterItem(page, "30d");
     await expect(page.locator(".activity-row").first()).toBeVisible();
 
@@ -204,15 +197,8 @@ test.describe("activity UTC timestamp presentation", () => {
       return response.json();
     });
     const prComment = payload.items.find(
-      (item: {
-        item_title: string;
-        author: string;
-        created_at: string;
-        activity_type: string;
-      }) =>
-        item.item_title === "Add widget caching layer" &&
-        item.author === "carol" &&
-        item.activity_type === "comment",
+      (item: { item_title: string; author: string; created_at: string; activity_type: string }) =>
+        item.item_title === "Add widget caching layer" && item.author === "carol" && item.activity_type === "comment",
     );
 
     expect(prComment).toBeTruthy();

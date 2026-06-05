@@ -1,7 +1,4 @@
-import {
-  getOrCreateWorkerPoolSingleton,
-  type WorkerPoolManager,
-} from "@pierre/diffs/worker";
+import { getOrCreateWorkerPoolSingleton, type WorkerPoolManager } from "@pierre/diffs/worker";
 
 export function getPierreDiffWorkerPool(): WorkerPoolManager | undefined {
   if (typeof Worker === "undefined") return undefined;
@@ -18,19 +15,7 @@ export function getPierreDiffWorkerPool(): WorkerPoolManager | undefined {
       theme: { dark: "pierre-dark", light: "pierre-light" },
       lineDiffType: "word",
       tokenizeMaxLineLength: 2_000,
-      langs: [
-        "bash",
-        "css",
-        "go",
-        "html",
-        "javascript",
-        "json",
-        "markdown",
-        "sql",
-        "toml",
-        "typescript",
-        "yaml",
-      ],
+      langs: ["bash", "css", "go", "html", "javascript", "json", "markdown", "sql", "toml", "typescript", "yaml"],
     },
   });
 }

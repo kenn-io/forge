@@ -11,17 +11,12 @@ async function expectPathname(page: Page, pathname: string): Promise<void> {
   await expect.poll(() => new URL(page.url()).pathname).toBe(pathname);
 }
 
-async function expectReadableFocusList(
-  page: Page,
-  itemSelector: string,
-): Promise<void> {
+async function expectReadableFocusList(page: Page, itemSelector: string): Promise<void> {
   await expect(page.locator(itemSelector).first()).toBeVisible();
 
   const metrics = await page.evaluate((selector) => {
-    const fontSize = (node: Element | null): number =>
-      node ? Number.parseFloat(getComputedStyle(node).fontSize) : 0;
-    const rect = (node: Element | null): DOMRect | null =>
-      node?.getBoundingClientRect() ?? null;
+    const fontSize = (node: Element | null): number => (node ? Number.parseFloat(getComputedStyle(node).fontSize) : 0);
+    const rect = (node: Element | null): DOMRect | null => node?.getBoundingClientRect() ?? null;
     const compactRect = (node: Element | null) => {
       const r = rect(node);
       return r ? { left: r.left, right: r.right, height: r.height } : null;
@@ -47,9 +42,7 @@ async function expectReadableFocusList(
       itemRect: compactRect(item),
       titleFontSize: fontSize(title),
       metaFontSize: fontSize(meta),
-      itemBounds: [...document.querySelectorAll(selector)]
-        .slice(0, 6)
-        .map(compactRect),
+      itemBounds: [...document.querySelectorAll(selector)].slice(0, 6).map(compactRect),
     };
   }, itemSelector);
 
@@ -71,9 +64,7 @@ async function expectReadableFocusList(
 
 async function expectReadableDetail(page: Page): Promise<void> {
   await expect(
-    page.locator(
-      ".focus-layout .pull-detail .detail-title, .focus-layout .issue-detail .detail-title",
-    ),
+    page.locator(".focus-layout .pull-detail .detail-title, .focus-layout .issue-detail .detail-title"),
   ).toBeVisible();
 
   const metrics = await page.evaluate(() => {
@@ -92,12 +83,7 @@ async function expectReadableDetail(page: Page): Promise<void> {
     const overflowingVisible = [...document.querySelectorAll(".focus-layout *")]
       .filter((el) => {
         const r = el.getBoundingClientRect();
-        return (
-          r.width > 0 &&
-          r.height > 0 &&
-          r.left < window.innerWidth &&
-          r.right > window.innerWidth + 0.5
-        );
+        return r.width > 0 && r.height > 0 && r.left < window.innerWidth && r.right > window.innerWidth + 0.5;
       })
       .map((el) => el.className?.toString() || el.tagName.toLowerCase());
 
@@ -107,9 +93,7 @@ async function expectReadableDetail(page: Page): Promise<void> {
       detailTypeToken: tokenValue(detail, "--detail-mobile-type-body"),
       detailHitTarget: tokenValue(detail, "--detail-mobile-hit-target"),
       mobileTypeToken: tokenValue(layout, "--mobile-type-body"),
-      rootFontSize: Number.parseFloat(
-        getComputedStyle(document.documentElement).fontSize,
-      ),
+      rootFontSize: Number.parseFloat(getComputedStyle(document.documentElement).fontSize),
       titleFontSize: fontSize(".detail-title"),
       metaFontSize: fontSize(".meta-item"),
       bodyFontSize: fontSize(".pull-detail, .issue-detail"),
@@ -135,18 +119,14 @@ async function expectReadableDetail(page: Page): Promise<void> {
 }
 
 test.describe("phone routes", () => {
-  test("phone viewport visiting desktop root renders mobile activity without changing URL", async ({
-    page,
-  }) => {
+  test("phone viewport visiting desktop root renders mobile activity without changing URL", async ({ page }) => {
     await page.goto("/");
 
     await expectPathname(page, "/");
     await expect(page.locator(".mobile-shell")).toBeVisible();
     await expect(page.locator(".mobile-tab--active")).toHaveText("Activity");
     await expect(page.locator(".mobile-topbar .mobile-app-icon")).toBeVisible();
-    await expect(
-      page.getByRole("button", { name: "Open desktop view" }),
-    ).toBeVisible();
+    await expect(page.getByRole("button", { name: "Open desktop view" })).toBeVisible();
     await expect(page.locator(".app-header")).toHaveCount(0);
     await expect(page.locator("footer")).toHaveCount(0);
 
@@ -166,16 +146,12 @@ test.describe("phone routes", () => {
     expect(metrics.searchRight).toBeLessThanOrEqual(metrics.viewportWidth);
   });
 
-  test("mobile activity uses a phone-first inbox rather than the desktop threaded list", async ({
-    page,
-  }) => {
+  test("mobile activity uses a phone-first inbox rather than the desktop threaded list", async ({ page }) => {
     await page.goto("/m?range=30d&view=threaded");
 
     await expect(page.locator(".mobile-shell")).toBeVisible();
     await expect(page.locator(".mobile-activity-inbox")).toBeVisible();
-    await expect(
-      page.getByRole("heading", { name: "What needs attention?" }),
-    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: "What needs attention?" })).toBeVisible();
     await expect(page.getByText("Readable threads first")).toHaveCount(0);
     await expect(page.getByLabel("Activity type")).toBeVisible();
     await expect(page.getByLabel("Time range")).toBeVisible();
@@ -190,9 +166,7 @@ test.describe("phone routes", () => {
       const metaItems = meta?.querySelectorAll("span") ?? [];
       const metaRect = meta?.getBoundingClientRect();
       const metaCountRect = metaItems[1]?.getBoundingClientRect();
-      const eventLabel = document.querySelector(
-        ".mobile-activity-event__body strong",
-      );
+      const eventLabel = document.querySelector(".mobile-activity-event__body strong");
       const eventAuthor = document.querySelector(".mobile-activity-event__body span");
       const eventTime = document.querySelector(".mobile-activity-event time");
       const mobileTitle = document.querySelector(".mobile-title");
@@ -200,21 +174,14 @@ test.describe("phone routes", () => {
       const desktopButton = document.querySelector(".mobile-desktop-link");
       const desktopIcon = document.querySelector(".mobile-desktop-link svg");
       const appIcon = document.querySelector(".mobile-app-icon");
-      const typeSelect = document.querySelector(
-        ".mobile-filter-dropdown button[aria-label^='Activity type']",
-      );
-      const rangeSelect = document.querySelector(
-        ".mobile-filter-dropdown button[aria-label^='Time range']",
-      );
-      const repoSelect = document.querySelector(
-        ".mobile-filter-dropdown button[aria-label^='Repository']",
-      );
+      const typeSelect = document.querySelector(".mobile-filter-dropdown button[aria-label^='Activity type']");
+      const rangeSelect = document.querySelector(".mobile-filter-dropdown button[aria-label^='Time range']");
+      const repoSelect = document.querySelector(".mobile-filter-dropdown button[aria-label^='Repository']");
       const search = document.querySelector(".search-input");
       const cardRect = firstCard?.getBoundingClientRect();
       const buttonRect = firstButton?.getBoundingClientRect();
       const searchRect = search?.getBoundingClientRect();
-      const styleFor = (node: Element | null) =>
-        node ? getComputedStyle(node) : null;
+      const styleFor = (node: Element | null) => (node ? getComputedStyle(node) : null);
       const themeSample = document.createElement("div");
       themeSample.style.cssText = [
         "position:absolute",
@@ -256,19 +223,13 @@ test.describe("phone routes", () => {
       return {
         viewportWidth: window.innerWidth,
         documentWidth: document.documentElement.scrollWidth,
-        mobileTypeToken: getComputedStyle(
-          document.querySelector(".mobile-shell") ?? document.documentElement,
-        )
+        mobileTypeToken: getComputedStyle(document.querySelector(".mobile-shell") ?? document.documentElement)
           .getPropertyValue("--mobile-type-body")
           .trim(),
-        titleTypeToken: getComputedStyle(
-          document.querySelector(".mobile-shell") ?? document.documentElement,
-        )
+        titleTypeToken: getComputedStyle(document.querySelector(".mobile-shell") ?? document.documentElement)
           .getPropertyValue("--mobile-type-title")
           .trim(),
-        rootFontSize: Number.parseFloat(
-          getComputedStyle(document.documentElement).fontSize,
-        ),
+        rootFontSize: Number.parseFloat(getComputedStyle(document.documentElement).fontSize),
         cardHeight: cardRect?.height ?? 0,
         touchTargetHeight: buttonRect?.height ?? 0,
         titleFontSize: fontSize(title),
@@ -285,15 +246,11 @@ test.describe("phone routes", () => {
         desktopButtonRect: compactRect(desktopButton),
         desktopIconPresent: Boolean(desktopIcon),
         appIconPresent: Boolean(appIcon),
-        inboxBackground:
-          styleFor(document.querySelector(".mobile-activity-inbox"))
-            ?.backgroundColor ?? "",
+        inboxBackground: styleFor(document.querySelector(".mobile-activity-inbox"))?.backgroundColor ?? "",
         cardBackground: styleFor(firstCard)?.backgroundColor ?? "",
         cardBorderColor: styleFor(firstCard)?.borderColor ?? "",
         cardRadius: styleFor(firstCard)?.borderRadius ?? "",
-        searchBackground:
-          styleFor(document.querySelector(".mobile-activity-search"))
-            ?.backgroundColor ?? "",
+        searchBackground: styleFor(document.querySelector(".mobile-activity-search"))?.backgroundColor ?? "",
         themeBgPrimary: getComputedStyle(themeSample).backgroundColor,
         themeBgSurface: getComputedStyle(surfaceSample).backgroundColor,
         themeBgInset: getComputedStyle(insetSample).backgroundColor,
@@ -321,9 +278,7 @@ test.describe("phone routes", () => {
     expect(metrics.titleFontSize).toBeGreaterThanOrEqual(19);
     expect(metrics.metaFontSize).toBeGreaterThanOrEqual(15);
     expect(metrics.metaItemCount).toBe(2);
-    expect(Math.abs(metrics.metaRight - metrics.metaCountRight)).toBeLessThanOrEqual(
-      1,
-    );
+    expect(Math.abs(metrics.metaRight - metrics.metaCountRight)).toBeLessThanOrEqual(1);
     expect(metrics.eventLabelFontSize).toBeGreaterThanOrEqual(15);
     expect(metrics.eventAuthorFontSize).toBeGreaterThanOrEqual(14);
     expect(metrics.eventTimeFontSize).toBeGreaterThanOrEqual(14);
@@ -341,54 +296,37 @@ test.describe("phone routes", () => {
     expect(metrics.typeSelectFontSize).toBeGreaterThanOrEqual(15);
     expect(metrics.rangeSelectFontSize).toBeGreaterThanOrEqual(15);
     expect(metrics.repoSelectFontSize).toBeGreaterThanOrEqual(15);
-    for (const bounds of [
-      metrics.typeSelectRect,
-      metrics.rangeSelectRect,
-      metrics.repoSelectRect,
-    ]) {
+    for (const bounds of [metrics.typeSelectRect, metrics.rangeSelectRect, metrics.repoSelectRect]) {
       expect(bounds?.left ?? 0).toBeGreaterThanOrEqual(0);
       expect(bounds?.right ?? 0).toBeLessThanOrEqual(metrics.viewportWidth);
     }
   });
 
-  test("mobile activity filters can narrow by type, range, and repository", async ({
-    page,
-  }) => {
+  test("mobile activity filters can narrow by type, range, and repository", async ({ page }) => {
     await page.goto("/m?range=30d&view=threaded");
     await expect(page.locator(".mobile-activity-inbox")).toBeVisible();
 
     await page.getByRole("combobox", { name: /Activity type/ }).click();
     await page.getByRole("option", { name: "PRs" }).click();
-    await expect(
-      page.getByRole("combobox", { name: "Activity type: PRs" }),
-    ).toBeVisible();
+    await expect(page.getByRole("combobox", { name: "Activity type: PRs" })).toBeVisible();
     await expect(page).toHaveURL(/types=new_pr/);
 
     await page.getByRole("combobox", { name: /Time range/ }).click();
     await page.getByRole("option", { name: "24h" }).click();
-    await expect(
-      page.getByRole("combobox", { name: "Time range: 24h" }),
-    ).toBeVisible();
+    await expect(page.getByRole("combobox", { name: "Time range: 24h" })).toBeVisible();
     await expect(page).toHaveURL(/range=24h/);
 
     const activityForRepo = page.waitForResponse((response) => {
       const url = response.url();
-      return (
-        url.includes("/api/v1/activity") &&
-        url.includes("repo=github.com%2Facme%2Fwidgets")
-      );
+      return url.includes("/api/v1/activity") && url.includes("repo=github.com%2Facme%2Fwidgets");
     });
     await page.getByRole("combobox", { name: /Repository/ }).click();
     await page.getByRole("option", { name: "github.com/acme/widgets" }).click();
-    await expect(
-      page.getByRole("combobox", { name: "Repository: acme/widgets" }),
-    ).toBeVisible();
+    await expect(page.getByRole("combobox", { name: "Repository: acme/widgets" })).toBeVisible();
     await activityForRepo;
   });
 
-  test("mobile activity hide-org toggle updates card repo labels and persists", async ({
-    page,
-  }) => {
+  test("mobile activity hide-org toggle updates card repo labels and persists", async ({ page }) => {
     await page.addInitScript(() => {
       if (sessionStorage.getItem("middleman:test:mobile-hide-org:init") === "1") {
         return;
@@ -439,17 +377,13 @@ test.describe("phone routes", () => {
     await expect(page).toHaveURL(/\/focus\/(?:host\/[^/]+\/)?(?:pulls|issues)\//);
     await expect(page.locator(".focus-layout")).toBeVisible();
     await expect(
-      page.locator(
-        ".focus-layout .pull-detail .detail-title, .focus-layout .issue-detail .detail-title",
-      ),
+      page.locator(".focus-layout .pull-detail .detail-title, .focus-layout .issue-detail .detail-title"),
     ).toBeVisible();
     await expectReadableDetail(page);
     await expect(page.locator(".mobile-shell")).toHaveCount(0);
   });
 
-  test("canonical activity phone presentation opens thread detail", async ({
-    page,
-  }) => {
+  test("canonical activity phone presentation opens thread detail", async ({ page }) => {
     await page.goto("/");
     await expectPathname(page, "/");
     await expect(page.locator(".mobile-shell")).toBeVisible();
@@ -461,18 +395,14 @@ test.describe("phone routes", () => {
     await expect(page).toHaveURL(/\/focus\/(?:host\/[^/]+\/)?(?:pulls|issues)\//);
     await expect(page.locator(".focus-layout")).toBeVisible();
     await expect(
-      page.locator(
-        ".focus-layout .pull-detail .detail-title, .focus-layout .issue-detail .detail-title",
-      ),
+      page.locator(".focus-layout .pull-detail .detail-title, .focus-layout .issue-detail .detail-title"),
     ).toBeVisible();
     await expect(page.locator(".mobile-shell")).toHaveCount(0);
   });
 
   test("focused PR files tab stays on the phone detail route", async ({ page }) => {
     await page.goto("/focus/pulls/github/acme/widgets/1");
-    await expect(
-      page.locator(".focus-layout .pull-detail .detail-title"),
-    ).toBeVisible();
+    await expect(page.locator(".focus-layout .pull-detail .detail-title")).toBeVisible();
 
     await page
       .locator(".focus-layout .detail-tab", {
@@ -486,14 +416,10 @@ test.describe("phone routes", () => {
     await expect(page.locator(".mobile-shell")).toHaveCount(0);
   });
 
-  test("phone canonical PR files tab stays on the canonical detail route", async ({
-    page,
-  }) => {
+  test("phone canonical PR files tab stays on the canonical detail route", async ({ page }) => {
     await page.goto("/pulls/github/acme/widgets/1");
     await expectPathname(page, "/pulls/github/acme/widgets/1");
-    await expect(
-      page.locator(".focus-layout .pull-detail .detail-title"),
-    ).toBeVisible();
+    await expect(page.locator(".focus-layout .pull-detail .detail-title")).toBeVisible();
 
     await page
       .locator(".focus-layout .detail-tab", {
@@ -507,9 +433,7 @@ test.describe("phone routes", () => {
     await expect(page.locator(".mobile-shell")).toHaveCount(0);
   });
 
-  test("phone canonical PR files deep link renders focus presentation without changing URL", async ({
-    page,
-  }) => {
+  test("phone canonical PR files deep link renders focus presentation without changing URL", async ({ page }) => {
     await page.goto("/pulls/github/acme/widgets/1/files");
 
     await expectPathname(page, "/pulls/github/acme/widgets/1/files");
@@ -518,15 +442,11 @@ test.describe("phone routes", () => {
     await expect(page.locator(".mobile-shell")).toHaveCount(0);
   });
 
-  test("phone canonical issue deep link renders focus presentation without changing URL", async ({
-    page,
-  }) => {
+  test("phone canonical issue deep link renders focus presentation without changing URL", async ({ page }) => {
     await page.goto("/issues/github/acme/widgets/10");
 
     await expectPathname(page, "/issues/github/acme/widgets/10");
-    await expect(
-      page.locator(".focus-layout .issue-detail .detail-title"),
-    ).toBeVisible();
+    await expect(page.locator(".focus-layout .issue-detail .detail-title")).toBeVisible();
     await expect(page.locator(".mobile-shell")).toHaveCount(0);
   });
 
@@ -561,9 +481,7 @@ test.describe("high-density phone routes", () => {
     userAgent: pixel7.userAgent,
   });
 
-  test("mobile activity sizing stays rem-based and readable on high-density Android displays", async ({
-    page,
-  }) => {
+  test("mobile activity sizing stays rem-based and readable on high-density Android displays", async ({ page }) => {
     await page.goto("/m?range=30d&view=threaded");
 
     await expect(page.locator(".mobile-shell")).toBeVisible();
@@ -581,9 +499,7 @@ test.describe("high-density phone routes", () => {
       const tokenValue = (node: Element | null, name: string): string =>
         node ? getComputedStyle(node).getPropertyValue(name).trim() : "";
       const filterControls = [
-        ...document.querySelectorAll(
-          ".mobile-activity-filter-grid .select-dropdown-trigger, .mobile-filter-toggle",
-        ),
+        ...document.querySelectorAll(".mobile-activity-filter-grid .select-dropdown-trigger, .mobile-filter-toggle"),
       ]
         .map((control) => control.getBoundingClientRect())
         .map((rect) => ({ left: rect.left, right: rect.right }));
@@ -599,12 +515,8 @@ test.describe("high-density phone routes", () => {
         activityTypeToken: tokenValue(inbox, "--mobile-type-body"),
         densityScale: tokenValue(inbox, "--mobile-device-density-scale"),
         bodyFontSize: fontSize(".mobile-activity-inbox"),
-        filterFontSize: fontSize(
-          ".mobile-activity-filter-grid .select-dropdown-trigger",
-        ),
-        filterOptionFontSize: fontSize(
-          ".mobile-filter-dropdown .select-dropdown-option",
-        ),
+        filterFontSize: fontSize(".mobile-activity-filter-grid .select-dropdown-trigger"),
+        filterOptionFontSize: fontSize(".mobile-filter-dropdown .select-dropdown-option"),
         filterOptionHeight: firstOption?.height ?? 0,
         tabFontSize: fontSize(".mobile-tabs a"),
         searchHeight: search?.height ?? 0,

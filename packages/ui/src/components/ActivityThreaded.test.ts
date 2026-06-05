@@ -4,10 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import type { ActivityItem } from "../api/types.js";
 import ActivityThreaded from "./ActivityThreaded.svelte";
 
-function activityItem(
-  id: string,
-  overrides: Partial<ActivityItem> = {},
-): ActivityItem {
+function activityItem(id: string, overrides: Partial<ActivityItem> = {}): ActivityItem {
   return {
     id,
     cursor: id,
@@ -34,10 +31,7 @@ function activityItem(
   };
 }
 
-function branchActivityItem(
-  id: string,
-  overrides: Partial<ActivityItem> = {},
-): ActivityItem {
+function branchActivityItem(id: string, overrides: Partial<ActivityItem> = {}): ActivityItem {
   return activityItem(id, {
     activity_type: "default_branch_commit",
     author: "alice",
@@ -51,8 +45,7 @@ function branchActivityItem(
     item_title: "",
     item_type: "",
     item_url: "",
-    activity_url:
-      "https://github.com/acme/widgets/commit/a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+    activity_url: "https://github.com/acme/widgets/commit/a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
     ...overrides,
   });
 }
@@ -109,9 +102,7 @@ describe("ActivityThreaded collapse", () => {
     expect(caret).not.toBeNull();
     await fireEvent.click(caret!);
     expect(toggleThreadItem).toHaveBeenCalledTimes(1);
-    expect(toggleThreadItem).toHaveBeenCalledWith(
-      "github|github.com|acme/widgets:pr:1",
-    );
+    expect(toggleThreadItem).toHaveBeenCalledWith("github|github.com|acme/widgets:pr:1");
     expect(onSelectItem).not.toHaveBeenCalled();
   });
 
@@ -253,9 +244,9 @@ describe("ActivityThreaded collapse", () => {
     expect(authorCell?.textContent?.trim()).toBe("prauthor");
 
     // Expanded event rows still attribute each event to its own actor.
-    const eventAuthors = Array.from(
-      container.querySelectorAll(".event-row .event-author"),
-    ).map((el) => el.textContent?.trim());
+    const eventAuthors = Array.from(container.querySelectorAll(".event-row .event-author")).map((el) =>
+      el.textContent?.trim(),
+    );
     expect(eventAuthors).toEqual(["Bob Example", "Alice Example"]);
   });
 
@@ -318,12 +309,10 @@ describe("ActivityThreaded collapse", () => {
         items: [
           branchActivityItem("force-1", {
             activity_type: "default_branch_force_push",
-            activity_url:
-              "https://github.com/acme/widgets/compare/aaaaaaaa...bbbbbbbb",
+            activity_url: "https://github.com/acme/widgets/compare/aaaaaaaa...bbbbbbbb",
             before_sha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             after_sha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-            body_preview:
-              "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa -> bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            body_preview: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa -> bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
             commit_sha: "",
           }),
         ],

@@ -4,13 +4,10 @@ export type Repo = components["schemas"]["RepoResponse"];
 export type RepoSummary = components["schemas"]["RepoSummaryResponse"];
 export type RepoSummaryAuthor = components["schemas"]["RepoSummaryAuthorResponse"];
 export type RepoSummaryIssue = components["schemas"]["RepoSummaryIssueResponse"];
-export type RepoSummaryCommitPointResponse =
-  components["schemas"]["RepoSummaryCommitPointResponse"];
-export type RepoSummaryReleaseResponse =
-  components["schemas"]["RepoSummaryReleaseResponse"];
+export type RepoSummaryCommitPointResponse = components["schemas"]["RepoSummaryCommitPointResponse"];
+export type RepoSummaryReleaseResponse = components["schemas"]["RepoSummaryReleaseResponse"];
 export type PullRequest = components["schemas"]["MergeRequestResponse"];
-export type ProviderCapabilities =
-  components["schemas"]["ProviderCapabilitiesResponse"];
+export type ProviderCapabilities = components["schemas"]["ProviderCapabilitiesResponse"];
 export type OperationAvailability = components["schemas"]["OperationAvailability"];
 export type RepoOperations = components["schemas"]["RepoOperations"];
 export type Issue = components["schemas"]["IssueResponse"];
@@ -23,13 +20,9 @@ export type RateLimitHostStatus = components["schemas"]["RateLimitHostStatus"];
 export type RateLimitsResponse = components["schemas"]["RateLimitsResponse"];
 export type ActivityItem = components["schemas"]["ActivityItemResponse"];
 export type ActivityResponse = components["schemas"]["ActivityResponse"];
-export type CommentAutocompleteResponse =
-  components["schemas"]["CommentAutocompleteResponse"];
-export type CommentAutocompleteReference =
-  components["schemas"]["CommentAutocompleteReference"];
-export type ActivityParams = NonNullable<
-  operations["list-activity"]["parameters"]["query"]
->;
+export type CommentAutocompleteResponse = components["schemas"]["CommentAutocompleteResponse"];
+export type CommentAutocompleteReference = components["schemas"]["CommentAutocompleteReference"];
+export type ActivityParams = NonNullable<operations["list-activity"]["parameters"]["query"]>;
 export type PullsParams = operations["list-pulls"]["parameters"]["query"];
 export type IssuesParams = operations["list-issues"]["parameters"]["query"];
 export type MergeParams = components["schemas"]["MergePRInputBody"];

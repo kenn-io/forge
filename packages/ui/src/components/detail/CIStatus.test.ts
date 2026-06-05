@@ -63,9 +63,7 @@ describe("CIStatus", () => {
     });
 
     // One pending row should render with an animated spinner wrapper.
-    const pendingSection = document.querySelector(
-      "[data-testid='ci-section-pending']",
-    );
+    const pendingSection = document.querySelector("[data-testid='ci-section-pending']");
     expect(pendingSection).not.toBeNull();
     expect(pendingSection!.querySelectorAll(".ci-row")).toHaveLength(1);
     expect(pendingSection!.querySelector(".spin")).not.toBeNull();
@@ -89,9 +87,7 @@ describe("CIStatus", () => {
       },
     });
 
-    const pendingSection = document.querySelector(
-      "[data-testid='ci-section-pending']",
-    );
+    const pendingSection = document.querySelector("[data-testid='ci-section-pending']");
     expect(pendingSection).not.toBeNull();
     expect(pendingSection!.querySelectorAll(".ci-row")).toHaveLength(1);
     expect(pendingSection!.querySelector(".spin")).not.toBeNull();
@@ -163,18 +159,10 @@ describe("CIStatus", () => {
         checksJSON: JSON.stringify(checks),
       },
     });
-    expect(
-      document.querySelector("[data-testid='ci-token-failed']")!.textContent,
-    ).toContain("1");
-    expect(
-      document.querySelector("[data-testid='ci-token-pending']")!.textContent,
-    ).toContain("1");
-    expect(
-      document.querySelector("[data-testid='ci-token-passed']")!.textContent,
-    ).toContain("2");
-    expect(
-      document.querySelector("[data-testid='ci-token-skipped']")!.textContent,
-    ).toContain("1");
+    expect(document.querySelector("[data-testid='ci-token-failed']")!.textContent).toContain("1");
+    expect(document.querySelector("[data-testid='ci-token-pending']")!.textContent).toContain("1");
+    expect(document.querySelector("[data-testid='ci-token-passed']")!.textContent).toContain("2");
+    expect(document.querySelector("[data-testid='ci-token-skipped']")!.textContent).toContain("1");
   });
 
   it("hides the chip when there are zero checks and CIStatus is empty", () => {
@@ -218,19 +206,13 @@ describe("CIStatus", () => {
       props: { ...chipBaseProps, checksJSON: "{not json" },
     });
     await rerender({ ...chipBaseProps, checksJSON: "{not json" });
-    expect(
-      spy.mock.calls.filter(
-        (c) => typeof c[0] === "string" && c[0].includes("Malformed"),
-      ),
-    ).toHaveLength(1);
+    expect(spy.mock.calls.filter((c) => typeof c[0] === "string" && c[0].includes("Malformed"))).toHaveLength(1);
     spy.mockRestore();
   });
 
   it("fires unknown warning at most once per distinct conclusion via console.warn", async () => {
     const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const checks = JSON.stringify([
-      { status: "completed", conclusion: "weird_state" },
-    ]);
+    const checks = JSON.stringify([{ status: "completed", conclusion: "weird_state" }]);
     const { rerender } = render(CIStatus, {
       props: { ...chipBaseProps, prKey: "A", checksJSON: checks },
     });
@@ -240,10 +222,7 @@ describe("CIStatus", () => {
       checksJSON: checks,
     });
     expect(
-      spy.mock.calls.filter(
-        (c) =>
-          typeof c[0] === "string" && c[0].includes("Unrecognised CI conclusion"),
-      ),
+      spy.mock.calls.filter((c) => typeof c[0] === "string" && c[0].includes("Unrecognised CI conclusion")),
     ).toHaveLength(1);
     spy.mockRestore();
   });
@@ -253,9 +232,7 @@ describe("CIStatus", () => {
     render(CIStatus, {
       props: {
         ...chipBaseProps,
-        checksJSON: JSON.stringify([
-          mkCheck({ name: "weird-only", conclusion: "mystery_state" }),
-        ]),
+        checksJSON: JSON.stringify([mkCheck({ name: "weird-only", conclusion: "mystery_state" })]),
       },
     });
     expect(document.querySelector("[data-testid='ci-token-unknown']")).not.toBeNull();
@@ -264,10 +241,7 @@ describe("CIStatus", () => {
     expect(document.querySelector("[data-testid='ci-token-passed']")).toBeNull();
     expect(document.querySelector("[data-testid='ci-token-skipped']")).toBeNull();
     expect(
-      spy.mock.calls.filter(
-        (c) =>
-          typeof c[0] === "string" && c[0].includes("Unrecognised CI conclusion"),
-      ),
+      spy.mock.calls.filter((c) => typeof c[0] === "string" && c[0].includes("Unrecognised CI conclusion")),
     ).toHaveLength(1);
     spy.mockRestore();
   });
@@ -279,20 +253,14 @@ describe("CIStatus", () => {
       props: {
         ...chipBaseProps,
         expanded: true,
-        checksJSON: JSON.stringify([
-          mkCheck({ duration_seconds: 30 }),
-          mkCheck({ duration_seconds: 90 }),
-        ]),
+        checksJSON: JSON.stringify([mkCheck({ duration_seconds: 30 }), mkCheck({ duration_seconds: 90 })]),
       },
     });
-    expect(document.querySelector(".ci-summary")!.textContent).toMatch(
-      /2 checks · longest 1m 30s/,
-    );
+    expect(document.querySelector(".ci-summary")!.textContent).toMatch(/2 checks · longest 1m 30s/);
   });
 
   it("dropdown renders five sections in fixed order when all non-zero", () => {
-    const c = (conclusion: string, status = "completed") =>
-      mkCheck({ status, conclusion });
+    const c = (conclusion: string, status = "completed") => mkCheck({ status, conclusion });
     render(CIStatus, {
       props: {
         ...chipBaseProps,
@@ -309,13 +277,7 @@ describe("CIStatus", () => {
     const headings = Array.from(document.querySelectorAll(".ci-section-heading")).map(
       (h) => h.textContent?.trim() ?? "",
     );
-    expect(headings).toEqual([
-      "Failed (1)",
-      "Pending (1)",
-      "Unknown (1)",
-      "Passed (1)",
-      "Skipped (1)",
-    ]);
+    expect(headings).toEqual(["Failed (1)", "Pending (1)", "Unknown (1)", "Passed (1)", "Skipped (1)"]);
   });
 
   it("dropdown hides zero-count sections", () => {
@@ -330,9 +292,7 @@ describe("CIStatus", () => {
     expect(document.querySelector("[data-testid='ci-section-pending']")).toBeNull();
     expect(document.querySelector("[data-testid='ci-section-unknown']")).toBeNull();
     expect(document.querySelector("[data-testid='ci-section-skipped']")).toBeNull();
-    expect(
-      document.querySelector("[data-testid='ci-section-passed']"),
-    ).not.toBeNull();
+    expect(document.querySelector("[data-testid='ci-section-passed']")).not.toBeNull();
   });
 
   it("Passed section shows first 8 + Show 1 more toggle when count > 8", async () => {
@@ -380,9 +340,7 @@ describe("CIStatus", () => {
         checksJSON: JSON.stringify(checks),
       },
     });
-    await fireEvent.click(
-      screen.getByRole("button", { name: /Show 1 more passed/i }),
-    );
+    await fireEvent.click(screen.getByRole("button", { name: /Show 1 more passed/i }));
     expect(document.querySelectorAll(".ci-row")).toHaveLength(9);
     await rerender({
       ...chipBaseProps,
@@ -403,14 +361,10 @@ describe("CIStatus", () => {
       props: {
         ...chipBaseProps,
         expanded: true,
-        checksJSON: JSON.stringify([
-          mkCheck({ status: "in_progress", conclusion: "" }),
-        ]),
+        checksJSON: JSON.stringify([mkCheck({ status: "in_progress", conclusion: "" })]),
       },
     });
-    const pendingSection = document.querySelector(
-      "[data-testid='ci-section-pending']",
-    )!;
+    const pendingSection = document.querySelector("[data-testid='ci-section-pending']")!;
     expect(pendingSection.querySelector(".spin")).toBeNull();
     expect(pendingSection.querySelector(".ci-row svg")).not.toBeNull();
   });

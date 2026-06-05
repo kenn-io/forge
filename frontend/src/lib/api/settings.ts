@@ -1,9 +1,6 @@
 import type { Settings } from "@middleman/ui/api/types";
 import type { components } from "@middleman/ui/api/schema";
-import {
-  providerRepoPath,
-  providerRouteParams,
-} from "@middleman/ui/api/provider-routes";
+import { providerRepoPath, providerRouteParams } from "@middleman/ui/api/provider-routes";
 
 import { apiErrorMessage, client } from "./runtime.js";
 
@@ -11,10 +8,7 @@ type UpdateSettingsRequest = components["schemas"]["UpdateSettingsRequest"];
 export type RepoPreviewResponse = components["schemas"]["RepoPreviewResponse"];
 export type RepoPreviewRow = components["schemas"]["RepoPreviewRow"];
 
-function requestErrorMessage(
-  error: { detail?: string; title?: string } | undefined,
-  fallback: string,
-): string {
+function requestErrorMessage(error: { detail?: string; title?: string } | undefined, fallback: string): string {
   return apiErrorMessage(error, fallback);
 }
 
@@ -50,9 +44,7 @@ function normalizeUpdateRequest(settings: {
 export async function getSettings(): Promise<Settings> {
   const { data, error, response } = await client.GET("/settings");
   if (!data) {
-    throw new Error(
-      requestErrorMessage(error, `GET /settings -> ${response.status}`),
-    );
+    throw new Error(requestErrorMessage(error, `GET /settings -> ${response.status}`));
   }
   return data;
 }
@@ -66,18 +58,12 @@ export async function updateSettings(settings: {
     body: normalizeUpdateRequest(settings),
   });
   if (!data) {
-    throw new Error(
-      requestErrorMessage(error, `PUT /settings -> ${response.status}`),
-    );
+    throw new Error(requestErrorMessage(error, `PUT /settings -> ${response.status}`));
   }
   return data;
 }
 
-export async function addRepo(
-  owner: string,
-  name: string,
-  options: RepoRequestOptions,
-): Promise<Settings> {
+export async function addRepo(owner: string, name: string, options: RepoRequestOptions): Promise<Settings> {
   const { data, error, response } = await client.POST("/repos", {
     body: { ...options, owner, name },
   });
@@ -87,11 +73,7 @@ export async function addRepo(
   return data;
 }
 
-export async function removeRepo(
-  owner: string,
-  name: string,
-  options: RepoRequestOptions,
-): Promise<void> {
+export async function removeRepo(owner: string, name: string, options: RepoRequestOptions): Promise<void> {
   const ref = {
     provider: options.provider,
     platformHost: options.host,
@@ -103,20 +85,11 @@ export async function removeRepo(
     params: { path: providerRouteParams(ref) },
   });
   if (!response.ok) {
-    throw new Error(
-      requestErrorMessage(
-        error,
-        `DELETE /repos/{owner}/{name} -> ${response.status}`,
-      ),
-    );
+    throw new Error(requestErrorMessage(error, `DELETE /repos/{owner}/{name} -> ${response.status}`));
   }
 }
 
-export async function refreshRepo(
-  owner: string,
-  name: string,
-  options: RepoRequestOptions,
-): Promise<Settings> {
+export async function refreshRepo(owner: string, name: string, options: RepoRequestOptions): Promise<Settings> {
   const ref = {
     provider: options.provider,
     platformHost: options.host,
@@ -124,19 +97,11 @@ export async function refreshRepo(
     name,
     repoPath: `${owner}/${name}`,
   };
-  const { data, error, response } = await client.POST(
-    providerRepoPath(ref, "/refresh"),
-    {
-      params: { path: providerRouteParams(ref) },
-    },
-  );
+  const { data, error, response } = await client.POST(providerRepoPath(ref, "/refresh"), {
+    params: { path: providerRouteParams(ref) },
+  });
   if (!data) {
-    throw new Error(
-      requestErrorMessage(
-        error,
-        `POST /repos/{owner}/{name}/refresh -> ${response.status}`,
-      ),
-    );
+    throw new Error(requestErrorMessage(error, `POST /repos/{owner}/{name}/refresh -> ${response.status}`));
   }
   return data;
 }
@@ -150,9 +115,7 @@ export async function previewRepos(
     body: { ...options, owner, pattern },
   });
   if (!data) {
-    throw new Error(
-      requestErrorMessage(error, `POST /repos/preview -> ${response.status}`),
-    );
+    throw new Error(requestErrorMessage(error, `POST /repos/preview -> ${response.status}`));
   }
   return data;
 }
@@ -164,9 +127,7 @@ export async function bulkAddRepos(repos: RepoInput[]): Promise<Settings> {
     },
   });
   if (!data) {
-    throw new Error(
-      requestErrorMessage(error, `POST /repos/bulk -> ${response.status}`),
-    );
+    throw new Error(requestErrorMessage(error, `POST /repos/bulk -> ${response.status}`));
   }
   return data;
 }

@@ -25,9 +25,7 @@ interface StackContext {
   members: StackMember[];
 }
 
-function member(
-  overrides: Partial<StackMember> & Pick<StackMember, "number" | "position">,
-): StackMember {
+function member(overrides: Partial<StackMember> & Pick<StackMember, "number" | "position">): StackMember {
   return {
     number: overrides.number,
     title: `PR ${overrides.number}`,
@@ -107,10 +105,7 @@ describe("StackStatus", () => {
       initialStack: stack({
         size: 2,
         health: "healthy",
-        members: [
-          member({ number: 1, position: 1 }),
-          member({ number: 2, position: 2 }),
-        ],
+        members: [member({ number: 1, position: 1 }), member({ number: 2, position: 2 })],
       }),
     });
 
@@ -149,8 +144,6 @@ describe("StackStatus", () => {
       }),
     ).toBeTruthy();
     expect(screen.getAllByText("× Conflicts")).toHaveLength(2);
-    expect(
-      screen.getByText(/3 PRs . current 2\/3 . downstack conflict/),
-    ).toBeTruthy();
+    expect(screen.getByText(/3 PRs . current 2\/3 . downstack conflict/)).toBeTruthy();
   });
 });

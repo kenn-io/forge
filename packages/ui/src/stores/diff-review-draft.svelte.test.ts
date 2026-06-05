@@ -146,10 +146,7 @@ describe("createDiffReviewDraftStore", () => {
     const oldLoad = deferred<MockDraftLoad>();
     const newLoad = deferred<MockDraftLoad>();
     const client = mockClient({
-      GET: vi
-        .fn()
-        .mockReturnValueOnce(oldLoad.promise)
-        .mockReturnValueOnce(newLoad.promise),
+      GET: vi.fn().mockReturnValueOnce(oldLoad.promise).mockReturnValueOnce(newLoad.promise),
     });
     const store = createDiffReviewDraftStore({ client });
     const ref = providerRef({
@@ -213,10 +210,7 @@ describe("createDiffReviewDraftStore", () => {
   it("ignores an older same-PR load after publish refreshes the draft", async () => {
     const staleLoad = deferred<MockDraftLoad>();
     const client = mockClient({
-      GET: vi
-        .fn()
-        .mockReturnValueOnce(staleLoad.promise)
-        .mockResolvedValueOnce(draftLoad()),
+      GET: vi.fn().mockReturnValueOnce(staleLoad.promise).mockResolvedValueOnce(draftLoad()),
     });
     const store = createDiffReviewDraftStore({ client });
 

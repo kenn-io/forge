@@ -40,8 +40,5 @@ export const repoImportProviders: RepoImportProvider[] = [
 ];
 
 export function repoImportProvider(id: string): RepoImportProvider {
-  return (
-    repoImportProviders.find((provider) => provider.id === id) ??
-    defaultRepoImportProvider
-  );
+  return repoImportProviders.find((provider) => provider.id === id) ?? defaultRepoImportProvider;
 }

@@ -48,9 +48,7 @@ describe("ApproveButton tooltips", () => {
     renderApproveButton();
 
     const trigger = screen.getByRole("button", { name: /approve/i });
-    expect(trigger.getAttribute("title")).toBe(
-      "Open the approval form to submit a code review on this pull request",
-    );
+    expect(trigger.getAttribute("title")).toBe("Open the approval form to submit a code review on this pull request");
   });
 
   it("expanded submit button carries the actual submit-review tooltip", async () => {
@@ -58,12 +56,8 @@ describe("ApproveButton tooltips", () => {
 
     await fireEvent.click(screen.getByRole("button", { name: /approve/i }));
 
-    const submit = screen.getByTitle(
-      "Submit an approving code review on this pull request",
-    );
-    expect(submit.getAttribute("title")).toBe(
-      "Submit an approving code review on this pull request",
-    );
+    const submit = screen.getByTitle("Submit an approving code review on this pull request");
+    expect(submit.getAttribute("title")).toBe("Submit an approving code review on this pull request");
   });
 
   it("keeps the approval trigger stable while opening the approval popover", async () => {
@@ -114,9 +108,7 @@ describe("ApproveButton tooltips", () => {
     await fireEvent.input(screen.getByRole("textbox"), {
       target: { value: "lgtm" },
     });
-    await fireEvent.click(
-      screen.getByTitle("Submit an approving code review on this pull request"),
-    );
+    await fireEvent.click(screen.getByTitle("Submit an approving code review on this pull request"));
 
     await waitFor(() => {
       expect(trigger.hasAttribute("disabled")).toBe(true);
@@ -129,9 +121,7 @@ describe("ApproveButton tooltips", () => {
     resolvePost({ data: { status: "approved" } });
 
     await waitFor(() => {
-      expect(
-        screen.queryByRole("dialog", { name: "Approve pull request" }),
-      ).toBeNull();
+      expect(screen.queryByRole("dialog", { name: "Approve pull request" })).toBeNull();
     });
   });
 
@@ -146,8 +136,8 @@ describe("ApproveButton tooltips", () => {
     await rerender({ owner: "acme", name: "widget", number: 2 });
 
     expect(screen.queryByRole("textbox")).toBeNull();
-    expect(
-      screen.getByRole("button", { name: /approve/i }).getAttribute("title"),
-    ).toBe("Open the approval form to submit a code review on this pull request");
+    expect(screen.getByRole("button", { name: /approve/i }).getAttribute("title")).toBe(
+      "Open the approval form to submit a code review on this pull request",
+    );
   });
 });

@@ -1,7 +1,4 @@
-import {
-  providerRouteParams,
-  type ProviderRouteRef as APIProviderRouteRef,
-} from "./api/provider-routes.js";
+import { providerRouteParams, type ProviderRouteRef as APIProviderRouteRef } from "./api/provider-routes.js";
 
 export type RepositoryRouteRef = {
   provider: string;
@@ -25,9 +22,7 @@ export type PullRequestRouteRef = NumberedRouteItemRef;
 
 export type IssueRouteRef = NumberedRouteItemRef;
 
-export type RoutedItemRef =
-  | (PullRequestRouteRef & { itemType: "pr" })
-  | (IssueRouteRef & { itemType: "issue" });
+export type RoutedItemRef = (PullRequestRouteRef & { itemType: "pr" }) | (IssueRouteRef & { itemType: "issue" });
 
 export type FocusListRouteRef = {
   itemType: "mrs" | "issues";
@@ -42,15 +37,11 @@ export function buildPullRequestFilesRoute(ref: PullRequestRouteRef): string {
   return buildProviderPullRequestFilesRoute(providerRouteRef(ref));
 }
 
-export function buildProviderPullRequestRoute(
-  ref: ProviderRouteRef & { number: number },
-): string {
+export function buildProviderPullRequestRoute(ref: ProviderRouteRef & { number: number }): string {
   return providerItemPath("pulls", ref);
 }
 
-export function buildProviderPullRequestFilesRoute(
-  ref: ProviderRouteRef & { number: number },
-): string {
+export function buildProviderPullRequestFilesRoute(ref: ProviderRouteRef & { number: number }): string {
   return `${providerItemPath("pulls", ref)}/files`;
 }
 
@@ -58,9 +49,7 @@ export function buildIssueRoute(ref: IssueRouteRef): string {
   return buildProviderIssueRoute(providerRouteRef(ref));
 }
 
-export function buildProviderIssueRoute(
-  ref: ProviderRouteRef & { number: number },
-): string {
+export function buildProviderIssueRoute(ref: ProviderRouteRef & { number: number }): string {
   return providerItemPath("issues", ref);
 }
 
@@ -81,14 +70,9 @@ export function buildFocusListRoute(ref: FocusListRouteRef): string {
   return ref.repo ? `${route}?repo=${encodeURIComponent(ref.repo)}` : route;
 }
 
-export function buildRoutedItemRoute(
-  ref: RoutedItemRef,
-  options: { focus?: boolean } = {},
-): string {
+export function buildRoutedItemRoute(ref: RoutedItemRef, options: { focus?: boolean } = {}): string {
   if (ref.itemType === "pr") {
-    return options.focus
-      ? buildFocusPullRequestRoute(ref)
-      : buildPullRequestRoute(ref);
+    return options.focus ? buildFocusPullRequestRoute(ref) : buildPullRequestRoute(ref);
   }
   return options.focus ? buildFocusIssueRoute(ref) : buildIssueRoute(ref);
 }
@@ -100,9 +84,7 @@ function requireRouteText(value: string, field: string): string {
   return value;
 }
 
-function providerRouteRef(
-  ref: NumberedRouteItemRef,
-): ProviderRouteRef & { number: number } {
+function providerRouteRef(ref: NumberedRouteItemRef): ProviderRouteRef & { number: number } {
   return {
     provider: ref.provider,
     platformHost: ref.platformHost,
@@ -111,10 +93,7 @@ function providerRouteRef(
   };
 }
 
-function providerItemPath(
-  kind: "pulls" | "issues",
-  ref: ProviderRouteRef & { number: number },
-): string {
+function providerItemPath(kind: "pulls" | "issues", ref: ProviderRouteRef & { number: number }): string {
   const routeRef = providerRouteParts(ref);
   const encodedProvider = encodeURIComponent(routeRef.provider);
   const encodedOwner = encodeURIComponent(routeRef.owner);
@@ -126,13 +105,8 @@ function providerItemPath(
   return `/${kind}/${encodedProvider}/${encodedOwner}/${encodedName}/${encodedNumber}`;
 }
 
-function providerRouteParts(
-  ref: ProviderRouteRef,
-): ReturnType<typeof providerRouteParams> {
-  const repoPath = requireRouteText(ref.repoPath, "repoPath").replace(
-    /^\/+|\/+$/g,
-    "",
-  );
+function providerRouteParts(ref: ProviderRouteRef): ReturnType<typeof providerRouteParams> {
+  const repoPath = requireRouteText(ref.repoPath, "repoPath").replace(/^\/+|\/+$/g, "");
   const pathParts = repoPath.split("/").filter(Boolean);
   if (pathParts.length < 2) {
     throw new Error("missing route repoPath owner/name");

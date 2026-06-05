@@ -1,13 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-  type Mock,
-} from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vite-plus/test";
 
 import type { Repo } from "@middleman/ui/api/types";
 import { createSettingsStore } from "@middleman/ui/stores/settings";
@@ -28,9 +20,7 @@ vi.mock("../api/runtime.js", () => ({
   },
 }));
 
-const getRepos = client.GET as unknown as Mock<
-  () => Promise<{ data: Repo[]; error: undefined }>
->;
+const getRepos = client.GET as unknown as Mock<() => Promise<{ data: Repo[]; error: undefined }>>;
 
 describe("RepoTypeahead", () => {
   beforeEach(() => {
@@ -117,12 +107,8 @@ describe("RepoTypeahead", () => {
     await fireEvent.click(screen.getByRole("button", { name: /all repos/i }));
 
     await waitFor(() => {
-      expect(
-        screen.getByRole("option", { name: /roborev-dev\/middleman/i }),
-      ).toBeTruthy();
-      expect(
-        screen.getByRole("option", { name: /roborev-dev\/worker/i }),
-      ).toBeTruthy();
+      expect(screen.getByRole("option", { name: /roborev-dev\/middleman/i })).toBeTruthy();
+      expect(screen.getByRole("option", { name: /roborev-dev\/worker/i })).toBeTruthy();
     });
   });
 
@@ -173,9 +159,7 @@ describe("RepoTypeahead", () => {
         name: /github.com\/import-lab\/web/i,
       }),
     );
-    expect(onchange).toHaveBeenLastCalledWith(
-      "github.com/import-lab/api,github.com/import-lab/web",
-    );
+    expect(onchange).toHaveBeenLastCalledWith("github.com/import-lab/api,github.com/import-lab/web");
   });
 
   it("selecting an owner row selects all repos beneath it", async () => {
@@ -209,9 +193,7 @@ describe("RepoTypeahead", () => {
       .querySelector("input[type='checkbox']") as HTMLInputElement;
     await fireEvent.mouseDown(ownerCheckbox);
 
-    expect(onchange).toHaveBeenLastCalledWith(
-      "github.com/import-lab/api,github.com/import-lab/web",
-    );
+    expect(onchange).toHaveBeenLastCalledWith("github.com/import-lab/api,github.com/import-lab/web");
   });
 
   it("filters to matching leaves while keeping their owner visible", async () => {
@@ -287,14 +269,10 @@ describe("RepoTypeahead", () => {
     await fireEvent.click(screen.getByRole("button", { name: /all repos/i }));
 
     // leaves visible initially
-    expect(
-      screen.getByRole("option", { name: "github.com/import-lab/api" }),
-    ).toBeTruthy();
+    expect(screen.getByRole("option", { name: "github.com/import-lab/api" })).toBeTruthy();
     // click the owner row body (its caret button has aria-label "Toggle import-lab";
     // click the row <li> itself, not the caret) -> collapses, hides leaves, selects nothing
-    await fireEvent.mouseDown(
-      screen.getByRole("option", { name: "github.com/import-lab" }),
-    );
+    await fireEvent.mouseDown(screen.getByRole("option", { name: "github.com/import-lab" }));
     // NOTE: owner row body mousedown should toggle EXPAND, not select. After collapse the leaves are gone.
     await waitFor(() => {
       expect(
@@ -385,9 +363,7 @@ describe("RepoTypeahead", () => {
     );
 
     await waitFor(() => {
-      expect(
-        screen.getByRole("option", { name: /roborev-dev\/middleman/i }),
-      ).toBeTruthy();
+      expect(screen.getByRole("option", { name: /roborev-dev\/middleman/i })).toBeTruthy();
     });
 
     settingsStore.setConfiguredRepos([]);
@@ -434,9 +410,7 @@ describe("RepoTypeahead", () => {
     const input = screen.getByPlaceholderText("Filter repos...");
 
     // leaves visible by default
-    expect(
-      screen.getByRole("option", { name: "github.com/import-lab/api" }),
-    ).toBeTruthy();
+    expect(screen.getByRole("option", { name: "github.com/import-lab/api" })).toBeTruthy();
 
     // move highlight onto the owner row (index 1) and collapse it
     await fireEvent.keyDown(input, { key: "ArrowDown" });
@@ -507,11 +481,9 @@ describe("RepoTypeahead", () => {
         name: "github.com/import-lab",
       });
       expect(owner.classList.contains("highlighted")).toBe(true);
-      expect(
-        screen
-          .getByRole("option", { name: "github.com/import-lab/api" })
-          .classList.contains("highlighted"),
-      ).toBe(false);
+      expect(screen.getByRole("option", { name: "github.com/import-lab/api" }).classList.contains("highlighted")).toBe(
+        false,
+      );
     });
   });
 
@@ -547,8 +519,6 @@ describe("RepoTypeahead", () => {
     await fireEvent.keyDown(input, { key: "ArrowDown" });
     await fireEvent.keyDown(input, { key: " " });
 
-    expect(onchange).toHaveBeenLastCalledWith(
-      "github.com/import-lab/api,github.com/import-lab/web",
-    );
+    expect(onchange).toHaveBeenLastCalledWith("github.com/import-lab/api,github.com/import-lab/web");
   });
 });

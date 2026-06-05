@@ -135,8 +135,6 @@ describe("activity store default-branch visibility", () => {
 
     next.setHideDefaultBranchActivity(false);
     next.syncToURL();
-    expect(new URLSearchParams(window.location.search).has("hide_branch")).toBe(
-      false,
-    );
+    expect(new URLSearchParams(window.location.search).has("hide_branch")).toBe(false);
   });
 });

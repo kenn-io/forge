@@ -149,18 +149,14 @@ test("keybindings tour: palette, recents, reserved, cheatsheet, sidebar, modal i
   // .sidebar--collapsed. Capture the initial collapsed-ness, toggle once,
   // and verify the state flipped.
   const sidebar = page.locator(".sidebar").first();
-  const wasCollapsed = await sidebar
-    .evaluate((el) => el.classList.contains("sidebar--collapsed"))
-    .catch(() => false);
+  const wasCollapsed = await sidebar.evaluate((el) => el.classList.contains("sidebar--collapsed")).catch(() => false);
   await page.keyboard.press("Meta+[");
   await page.waitForTimeout(400);
   // After toggle the sidebar element may have been swapped between the
   // expanded `aside.sidebar` and the collapsed `aside.sidebar.sidebar--collapsed`,
   // so re-query and re-check the class.
   const sidebarAfter = page.locator(".sidebar").first();
-  const isCollapsedAfter = await sidebarAfter.evaluate((el) =>
-    el.classList.contains("sidebar--collapsed"),
-  );
+  const isCollapsedAfter = await sidebarAfter.evaluate((el) => el.classList.contains("sidebar--collapsed"));
   expect(isCollapsedAfter).toBe(!wasCollapsed);
   // Toggle back so the rest of the recording shows the expanded layout
   // (purely cosmetic — the assertion above is the actual proof).
@@ -217,15 +213,11 @@ test.afterAll(async () => {
     throw new Error(`expected at least one webm under ${root}, found none`);
   }
   const sizes = webms.map((p) => ({ p, size: fs.statSync(p).size }));
-  console.log(
-    `keybindings-tour video files:\n${sizes.map((s) => `  ${s.p} (${s.size} bytes)`).join("\n")}`,
-  );
+  console.log(`keybindings-tour video files:\n${sizes.map((s) => `  ${s.p} (${s.size} bytes)`).join("\n")}`);
   // Sanity: at least one should be a few KB. Empty webms mean video
   // capture didn't actually record anything.
   const largest = sizes.reduce((acc, s) => (s.size > acc.size ? s : acc), sizes[0]!);
   if (largest.size < 1024) {
-    throw new Error(
-      `largest webm is ${largest.size} bytes (< 1024), video capture likely failed`,
-    );
+    throw new Error(`largest webm is ${largest.size} bytes (< 1024), video capture likely failed`);
   }
 });

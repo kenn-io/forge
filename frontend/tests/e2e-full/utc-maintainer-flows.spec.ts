@@ -19,10 +19,7 @@ async function fetchPullDetail(page: import("@playwright/test").Page, pull: Pull
   }, pull);
 }
 
-async function fetchIssueDetail(
-  page: import("@playwright/test").Page,
-  issue: IssueRef,
-) {
+async function fetchIssueDetail(page: import("@playwright/test").Page, issue: IssueRef) {
   return page.evaluate(async ({ owner, repo, number }) => {
     const response = await fetch(`/api/v1/issues/github/${owner}/${repo}/${number}`);
     return response.json();
@@ -90,10 +87,7 @@ function expectUTCString(value: string | null): void {
 }
 
 test.describe("UTC maintainer flows", () => {
-  test("closing and reopening a pull request keeps API timestamps canonical UTC", async ({
-    page,
-    browserName,
-  }) => {
+  test("closing and reopening a pull request keeps API timestamps canonical UTC", async ({ page, browserName }) => {
     const pull = closeReopenPullTarget(browserName);
 
     await page.goto(`/pulls/github/${pull.owner}/${pull.repo}/${pull.number}`);
@@ -114,10 +108,7 @@ test.describe("UTC maintainer flows", () => {
     expect(reopened.merge_request.ClosedAt).toBeNull();
   });
 
-  test("merging a pull request stores UTC timestamps and updates the detail view", async ({
-    page,
-    browserName,
-  }) => {
+  test("merging a pull request stores UTC timestamps and updates the detail view", async ({ page, browserName }) => {
     const pull = mergeTarget(browserName);
 
     await page.goto(`/pulls/github/${pull.owner}/${pull.repo}/${pull.number}`);
@@ -135,10 +126,7 @@ test.describe("UTC maintainer flows", () => {
     expectUTCString(merged.merge_request.MergedAt);
   });
 
-  test("closing and reopening an issue keeps API timestamps canonical UTC", async ({
-    page,
-    browserName,
-  }) => {
+  test("closing and reopening an issue keeps API timestamps canonical UTC", async ({ page, browserName }) => {
     const issue = closeReopenIssueTarget(browserName);
 
     await page.goto(`/issues/github/${issue.owner}/${issue.repo}/${issue.number}`);

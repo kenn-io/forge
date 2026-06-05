@@ -133,9 +133,7 @@ ${patchBody}
 describe("Pierre diff parsing", () => {
   it("does not assign reusable cache keys to untrusted patch input", () => {
     const first = parsePierreFileDiff(makeFile("src/foo.ts", "-old line\n+new line"));
-    const second = parsePierreFileDiff(
-      makeFile("src/foo.ts", "-other line\n+changed line"),
-    );
+    const second = parsePierreFileDiff(makeFile("src/foo.ts", "-other line\n+changed line"));
 
     expect(first).toBeDefined();
     expect(second).toBeDefined();
@@ -148,16 +146,8 @@ describe("Pierre diff parsing", () => {
     const parsed = parsePierreFileDiff(file, {
       enableDemandContextExpansion: true,
     });
-    const sparseOld = pierreFileContents(
-      "src/foo.ts",
-      "line 1\nold line\n",
-      "sparse-old",
-    );
-    const fullOld = pierreFileContents(
-      "src/foo.ts",
-      "line 1\nold line\n",
-      "full-old",
-    );
+    const sparseOld = pierreFileContents("src/foo.ts", "line 1\nold line\n", "sparse-old");
+    const fullOld = pierreFileContents("src/foo.ts", "line 1\nold line\n", "full-old");
     const full = parsePierreFileDiffWithContents(file, {
       oldFile: fullOld,
       newFile: pierreFileContents("src/foo.ts", "line 1\nnew line\n", "full-new"),
@@ -223,9 +213,7 @@ describe("Pierre diff parsing", () => {
 
     const patched = diffFileWithPatch(file);
 
-    expect(patched.patch).toContain(
-      'diff --git "a/src/evil\\n--- a/forged.ts" "b/src/evil\\n--- a/forged.ts"',
-    );
+    expect(patched.patch).toContain('diff --git "a/src/evil\\n--- a/forged.ts" "b/src/evil\\n--- a/forged.ts"');
     expect(patched.patch).not.toContain("\n--- a/forged.ts");
   });
 
@@ -248,9 +236,7 @@ describe("Pierre diff parsing", () => {
   });
 
   it("preserves hunk body lines that look like patch headers during fallback", () => {
-    const parsed = parsePierreFileDiff(
-      makeGitQuotedPathFile("--- body deletion\n+++ body addition"),
-    );
+    const parsed = parsePierreFileDiff(makeGitQuotedPathFile("--- body deletion\n+++ body addition"));
 
     expect(parsed).toBeDefined();
     expect(parsed?.deletionLines).toContain("-- body deletion\n");

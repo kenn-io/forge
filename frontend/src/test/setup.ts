@@ -25,10 +25,7 @@ function createMemoryStorage(): Storage {
 
 const storage = createMemoryStorage();
 
-if (
-  typeof globalThis.localStorage === "undefined" ||
-  typeof globalThis.localStorage.getItem !== "function"
-) {
+if (typeof globalThis.localStorage === "undefined" || typeof globalThis.localStorage.getItem !== "function") {
   Object.defineProperty(globalThis, "localStorage", {
     configurable: true,
     writable: true,

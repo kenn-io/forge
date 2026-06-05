@@ -5,9 +5,7 @@ test.describe("app startup", () => {
   // path can complete and the app can finish booting.
   test.setTimeout(20_000);
 
-  test("startup recovers and loads data when /api/v1/settings stalls past the timeout", async ({
-    page,
-  }) => {
+  test("startup recovers and loads data when /api/v1/settings stalls past the timeout", async ({ page }) => {
     let settingsRequests = 0;
     let pullsRequested = false;
     let issuesRequested = false;

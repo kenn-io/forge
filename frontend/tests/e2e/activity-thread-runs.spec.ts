@@ -88,9 +88,7 @@ async function mockActivity(page: Page, items: unknown[]): Promise<void> {
 }
 
 test.describe("threaded activity run collapse", () => {
-  test("collapses a run of three or more reviews from the same author", async ({
-    page,
-  }) => {
+  test("collapses a run of three or more reviews from the same author", async ({ page }) => {
     await mockSettings(page);
     await mockActivity(page, [
       prEvent({
@@ -134,9 +132,7 @@ test.describe("threaded activity run collapse", () => {
     await expect(page.locator(".event-row:not(.collapsed-event)")).toHaveCount(0);
   });
 
-  test("collapses comments and reviews into separate runs by event type", async ({
-    page,
-  }) => {
+  test("collapses comments and reviews into separate runs by event type", async ({ page }) => {
     await mockSettings(page);
     await mockActivity(page, [
       prEvent({

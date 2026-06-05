@@ -7,10 +7,7 @@ import { startIsolatedE2EServer, type IsolatedE2EServer } from "./support/e2eSer
 
 async function waitForPullList(page: Page): Promise<void> {
   // Wait for at least one PR item to appear (data loaded).
-  await page
-    .locator(".pull-item")
-    .first()
-    .waitFor({ state: "visible", timeout: 10_000 });
+  await page.locator(".pull-item").first().waitFor({ state: "visible", timeout: 10_000 });
 }
 
 async function selectPullState(page: Page, label: string): Promise<void> {
@@ -21,10 +18,7 @@ async function selectPullState(page: Page, label: string): Promise<void> {
   }
 
   await page.getByRole("button", { name: "Filters" }).click();
-  await page
-    .locator(".filter-dropdown .filter-item", { hasText: label })
-    .first()
-    .click();
+  await page.locator(".filter-dropdown .filter-item", { hasText: label }).first().click();
 }
 
 async function selectPullGrouping(page: Page, label: string): Promise<void> {
@@ -35,10 +29,7 @@ async function selectPullGrouping(page: Page, label: string): Promise<void> {
   }
 
   await page.getByRole("button", { name: "Filters" }).click();
-  await page
-    .locator(".filter-dropdown .filter-item", { hasText: label })
-    .last()
-    .click();
+  await page.locator(".filter-dropdown .filter-item", { hasText: label }).last().click();
 }
 
 const longRepoName = "widgets-with-an-extremely-long-repository-name";
@@ -46,9 +37,7 @@ const longRepoPath = `acme/${longRepoName}`;
 
 async function mockLongPullRepoSlug(page: Page): Promise<void> {
   await page.route(
-    (url) =>
-      url.pathname.endsWith("/api/v1/pulls") &&
-      url.searchParams.get("state") === "open",
+    (url) => url.pathname.endsWith("/api/v1/pulls") && url.searchParams.get("state") === "open",
     async (route) => {
       const response = await route.fetch();
       const pulls = (await response.json()) as Array<{
@@ -89,9 +78,7 @@ async function expectRepoChipToClipSafely(
   expect(chipBox).not.toBeNull();
   expect(itemBox).not.toBeNull();
   if (chipBox !== null && itemBox !== null) {
-    expect(chipBox.x + chipBox.width).toBeLessThanOrEqual(
-      itemBox.x + itemBox.width + 1,
-    );
+    expect(chipBox.x + chipBox.width).toBeLessThanOrEqual(itemBox.x + itemBox.width + 1);
   }
 
   const labelOverflow = await repoChip.locator(".chip__label").evaluate((node) => ({
@@ -101,10 +88,7 @@ async function expectRepoChipToClipSafely(
   expect(labelOverflow.scrollWidth).toBeGreaterThan(labelOverflow.clientWidth);
 }
 
-async function primeKanbanStateRows(
-  browser: Browser,
-  baseURL: string,
-): Promise<void> {
+async function primeKanbanStateRows(browser: Browser, baseURL: string): Promise<void> {
   const page = await browser.newPage({ baseURL });
   try {
     await page.goto("/pulls");
@@ -116,11 +100,7 @@ async function primeKanbanStateRows(
   }
 }
 
-async function expectPullReviewIndicator(
-  page: Page,
-  title: string,
-  label: string,
-): Promise<void> {
+async function expectPullReviewIndicator(page: Page, title: string, label: string): Promise<void> {
   const item = page.locator(".pull-item", { hasText: title });
   await expect(item.locator(`[aria-label='${label}']`)).toBeVisible();
 }
@@ -136,9 +116,7 @@ test.describe("PR list view", () => {
     await expect(countBadge).toHaveText(/^8 PRs$/);
   });
 
-  test("closed state shows closed and merged PRs with correct count", async ({
-    page,
-  }) => {
+  test("closed state shows closed and merged PRs with correct count", async ({ page }) => {
     await selectPullState(page, "Closed");
 
     const countBadge = page.locator(".filter-bar .list-count-chip");
@@ -160,12 +138,9 @@ test.describe("PR list view", () => {
     // matching item is already visible in the unfiltered list, so
     // we must wait on a condition that only becomes true after
     // the debounced search request completes.
-    await expect(page.locator(".filter-bar .list-count-chip")).toHaveText(
-      /^1 PRs?$/,
-      {
-        timeout: 5_000,
-      },
-    );
+    await expect(page.locator(".filter-bar .list-count-chip")).toHaveText(/^1 PRs?$/, {
+      timeout: 5_000,
+    });
 
     // Verify the single remaining item is the expected one.
     const items = page.locator(".pull-item");
@@ -174,11 +149,7 @@ test.describe("PR list view", () => {
   });
 
   test("PR detail keeps the scrollbar on the pane edge", async ({ page }) => {
-    await page
-      .locator(".pull-item")
-      .filter({ hasText: "caching layer" })
-      .first()
-      .click();
+    await page.locator(".pull-item").filter({ hasText: "caching layer" }).first().click();
 
     const pullDetail = page.locator(".pull-detail");
     await expect(pullDetail).toBeVisible();
@@ -192,9 +163,7 @@ test.describe("PR list view", () => {
       el.appendChild(filler);
     });
 
-    const overflowY = await pullDetail.evaluate(
-      (el) => getComputedStyle(el).overflowY,
-    );
+    const overflowY = await pullDetail.evaluate((el) => getComputedStyle(el).overflowY);
     expect(["auto", "scroll"]).toContain(overflowY);
 
     const before = await pullDetail.evaluate((el) => ({
@@ -224,9 +193,7 @@ test.describe("PR list view", () => {
       const scrollportWidth = await pullDetail.evaluate((el) => el.clientWidth);
       const scrollportCenter = detailBox.x + scrollportWidth / 2;
       const headerCenter = headerBox.x + headerBox.width / 2;
-      expect(
-        Math.abs(detailBox.x + detailBox.width - (areaBox.x + areaBox.width)),
-      ).toBeLessThan(2);
+      expect(Math.abs(detailBox.x + detailBox.width - (areaBox.x + areaBox.width))).toBeLessThan(2);
       expect(Math.abs(headerCenter - scrollportCenter)).toBeLessThan(2);
       expect(headerBox.width).toBeLessThanOrEqual(800);
     }
@@ -256,11 +223,7 @@ test.describe("PR list sidebar", () => {
     await expect(page.locator(".filter-bar .list-count-chip")).toHaveText(/^8 PRs$/);
     await selectPullGrouping(page, "All");
     await expectPullReviewIndicator(page, "Add widget caching layer", "PR approved");
-    await expectPullReviewIndicator(
-      page,
-      "Fix race condition in event loop",
-      "Changes requested",
-    );
+    await expectPullReviewIndicator(page, "Fix race condition in event loop", "Changes requested");
 
     const firstItem = page.locator(".pull-item").first();
     const repoChip = firstItem.locator(".repo-chip");

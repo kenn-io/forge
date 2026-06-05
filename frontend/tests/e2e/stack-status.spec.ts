@@ -222,16 +222,12 @@ async function mockStackedPR(
       return;
     }
 
-    const detailMatch = pathname.match(
-      /^\/api\/v1\/pulls\/github\/acme\/widgets\/(\d+)$/,
-    );
+    const detailMatch = pathname.match(/^\/api\/v1\/pulls\/github\/acme\/widgets\/(\d+)$/);
     if (method === "GET" && detailMatch) {
       const number = Number(detailMatch[1]!);
       const currentStackMembers = options.stackMembers?.() ?? stackMembers;
       const detailPR = prForNumber(number, currentStackMembers);
-      const member = currentStackMembers.find(
-        (candidate) => candidate.number === number,
-      );
+      const member = currentStackMembers.find((candidate) => candidate.number === number);
       await fulfillJson(route, {
         merge_request: detailPR,
         repo: repoRef(),
@@ -267,15 +263,11 @@ async function mockStackedPR(
       return;
     }
 
-    const stackMatch = pathname.match(
-      /^\/api\/v1\/pulls\/github\/acme\/widgets\/(\d+)\/stack$/,
-    );
+    const stackMatch = pathname.match(/^\/api\/v1\/pulls\/github\/acme\/widgets\/(\d+)\/stack$/);
     if (method === "GET" && stackMatch) {
       const number = Number(stackMatch[1]!);
       const currentStackMembers = options.stackMembers?.() ?? stackMembers;
-      const member = currentStackMembers.find(
-        (candidate) => candidate.number === number,
-      );
+      const member = currentStackMembers.find((candidate) => candidate.number === number);
       await options.stackResponseDelays?.get(number);
       if (!member) {
         await fulfillJson(route, { error: "PR is not part of a stack" }, 404);
@@ -451,9 +443,7 @@ test("unstacked pull detail does not request stack context", async ({ page }) =>
   expect(stackRequests).toBe(0);
 });
 
-test("stack status shares the PR detail expandable slot with CI", async ({
-  page,
-}) => {
+test("stack status shares the PR detail expandable slot with CI", async ({ page }) => {
   await page.setViewportSize({ width: 892, height: 998 });
   await mockStackedPR(page);
 
@@ -465,9 +455,7 @@ test("stack status shares the PR detail expandable slot with CI", async ({
   await page.getByTestId("stack-chip").click();
 
   await expect(page.getByText("frontend / vp check")).toBeHidden();
-  await expect(
-    page.getByText("7 PRs · current 2/7 · downstack CI failure"),
-  ).toBeVisible();
+  await expect(page.getByText("7 PRs · current 2/7 · downstack CI failure")).toBeVisible();
   await expect(page.getByText("blocked by #101")).toBeVisible();
 
   const currentRow = page.locator(".stack-row--current");
@@ -500,9 +488,7 @@ test("stack status shares the PR detail expandable slot with CI", async ({
   await expect(page.locator(".stack-base-name")).toHaveText("main");
 });
 
-test("stack status surfaces inherited downstack merge conflicts", async ({
-  page,
-}) => {
+test("stack status surfaces inherited downstack merge conflicts", async ({ page }) => {
   await mockStackedPR(page, {
     stackMembers: () => [
       {
@@ -529,9 +515,7 @@ test("stack status surfaces inherited downstack merge conflicts", async ({
   ).toBeVisible();
 
   await page.getByTestId("stack-chip").click();
-  await expect(
-    page.getByText("7 PRs · current 2/7 · downstack conflict"),
-  ).toBeVisible();
+  await expect(page.getByText("7 PRs · current 2/7 · downstack conflict")).toBeVisible();
   await expect(page.getByText("× Conflicts")).toHaveCount(2);
 });
 
@@ -564,9 +548,7 @@ test("stack status follows refreshed detail stack data", async ({ page }) => {
   await expect(page.getByTestId("stack-chip")).toHaveCount(0);
 });
 
-test("stack status stays rendered while navigating to a stack member", async ({
-  page,
-}) => {
+test("stack status stays rendered while navigating to a stack member", async ({ page }) => {
   let releaseStackResponse: () => void = () => {};
   const delayedStackResponse = new Promise<void>((resolve) => {
     releaseStackResponse = resolve;
@@ -577,9 +559,7 @@ test("stack status stays rendered while navigating to a stack member", async ({
 
   await page.goto("/pulls/github/acme/widgets/102");
   await page.getByTestId("stack-chip").click();
-  await expect(
-    page.getByText("7 PRs · current 2/7 · downstack CI failure"),
-  ).toBeVisible();
+  await expect(page.getByText("7 PRs · current 2/7 · downstack CI failure")).toBeVisible();
 
   await page.getByRole("button", { name: "#101 base schema" }).click();
 
@@ -601,14 +581,10 @@ test("stack member navigation preserves focus routes", async ({ page }) => {
   await expect(page.getByText("7 PRs · current 1/7")).toBeVisible();
 });
 
-test("stack member navigation updates the activity drawer selection", async ({
-  page,
-}) => {
+test("stack member navigation updates the activity drawer selection", async ({ page }) => {
   await mockStackedPR(page);
 
-  await page.goto(
-    "/?selected=pr:102&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets",
-  );
+  await page.goto("/?selected=pr:102&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets");
   await page.locator(".activity-detail").getByTestId("stack-chip").click();
   await page.getByRole("button", { name: "#101 base schema" }).click();
 
@@ -644,8 +620,7 @@ test("stack rail spans wrapped CI badges at narrow widths", async ({ page }) => 
   const containerQueryEvidence = await page.evaluate(() => {
     function collectRules(ruleList: CSSRuleList): string[] {
       return Array.from(ruleList).flatMap((rule) => {
-        const nested =
-          "cssRules" in rule ? collectRules((rule as CSSGroupingRule).cssRules) : [];
+        const nested = "cssRules" in rule ? collectRules((rule as CSSGroupingRule).cssRules) : [];
         return [rule.cssText, ...nested];
       });
     }
@@ -659,13 +634,9 @@ test("stack rail spans wrapped CI badges at narrow widths", async ({ page }) => 
     return {
       hasExpectedContainerRule: rules.some(
         (rule) =>
-          rule.includes("@container pull-detail") &&
-          rule.includes("max-width: 440px") &&
-          rule.includes(".stack-row"),
+          rule.includes("@container pull-detail") && rule.includes("max-width: 440px") && rule.includes(".stack-row"),
       ),
-      hasMalformedRule: rules.some((rule) =>
-        rule.includes("@frontend/src/lib/stores/container.svelte.ts"),
-      ),
+      hasMalformedRule: rules.some((rule) => rule.includes("@frontend/src/lib/stores/container.svelte.ts")),
     };
   });
   expect(containerQueryEvidence).toEqual({

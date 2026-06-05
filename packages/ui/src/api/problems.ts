@@ -13,9 +13,7 @@ export type ProblemBody = components["schemas"]["ProblemError"];
 // the union without manual sync.
 export type ProblemCode = ProblemBody["code"];
 
-export const ProblemCodes = Object.fromEntries(
-  problemErrorCodeValues.map((code) => [code, code]),
-) as {
+export const ProblemCodes = Object.fromEntries(problemErrorCodeValues.map((code) => [code, code])) as {
   readonly [K in ProblemCode]: K;
 };
 

@@ -6,16 +6,12 @@ test.beforeEach(async ({ page }) => {
   await mockApi(page);
 });
 
-test("workspaces route renders the terminal workspace list shell", async ({
-  page,
-}) => {
+test("workspaces route renders the terminal workspace list shell", async ({ page }) => {
   await page.goto("/workspaces");
   await expect(page.getByText("Select a workspace from the sidebar")).toBeVisible();
 });
 
-test("workspaces sidebar collapses and expands through the shared control", async ({
-  page,
-}) => {
+test("workspaces sidebar collapses and expands through the shared control", async ({ page }) => {
   await page.goto("/workspaces");
 
   const sidebar = page.locator(".sidebar").first();
@@ -97,136 +93,115 @@ test("workspace bridge methods are registered on startup", async ({ page }) => {
   });
 });
 
-test("provider-explicit embed detail route uses provider in detail request", async ({
-  page,
-}) => {
+test("provider-explicit embed detail route uses provider in detail request", async ({ page }) => {
   const detailRequest = page.waitForRequest(
     (request) =>
       request.method() === "GET" &&
-      new URL(request.url()).pathname ===
-        "/api/v1/host/git.example.com/issues/gitlab/group/project/7",
+      new URL(request.url()).pathname === "/api/v1/host/git.example.com/issues/gitlab/group/project/7",
   );
-  await page.route(
-    "**/api/v1/host/git.example.com/issues/gitlab/group/project/7",
-    async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({
-          issue: {
-            ID: 7,
-            RepoID: 7,
-            GitHubID: 7007,
-            Number: 7,
-            URL: "https://git.example.com/group/project/-/issues/7",
-            Title: "Provider-explicit GitLab issue",
-            Author: "marius",
-            State: "open",
-            Body: "",
-            CommentCount: 0,
-            LabelsJSON: "[]",
-            CreatedAt: "2026-03-28T14:00:00Z",
-            UpdatedAt: "2026-03-30T14:00:00Z",
-            LastActivityAt: "2026-03-30T14:00:00Z",
-            ClosedAt: null,
-            Starred: false,
-          },
-          repo: {
-            provider: "gitlab",
-            platform_host: "git.example.com",
-            owner: "group",
-            name: "project",
-            repo_path: "group/project",
-          },
-          events: [],
+  await page.route("**/api/v1/host/git.example.com/issues/gitlab/group/project/7", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        issue: {
+          ID: 7,
+          RepoID: 7,
+          GitHubID: 7007,
+          Number: 7,
+          URL: "https://git.example.com/group/project/-/issues/7",
+          Title: "Provider-explicit GitLab issue",
+          Author: "marius",
+          State: "open",
+          Body: "",
+          CommentCount: 0,
+          LabelsJSON: "[]",
+          CreatedAt: "2026-03-28T14:00:00Z",
+          UpdatedAt: "2026-03-30T14:00:00Z",
+          LastActivityAt: "2026-03-30T14:00:00Z",
+          ClosedAt: null,
+          Starred: false,
+        },
+        repo: {
+          provider: "gitlab",
           platform_host: "git.example.com",
-          repo_owner: "group",
-          repo_name: "project",
-          detail_loaded: true,
-          detail_fetched_at: "2026-03-30T14:00:00Z",
-        }),
-      });
-    },
-  );
+          owner: "group",
+          name: "project",
+          repo_path: "group/project",
+        },
+        events: [],
+        platform_host: "git.example.com",
+        repo_owner: "group",
+        repo_name: "project",
+        detail_loaded: true,
+        detail_fetched_at: "2026-03-30T14:00:00Z",
+      }),
+    });
+  });
 
-  await page.goto(
-    "/workspaces/embed/detail/gitlab/issue/git.example.com/group/project/7",
-  );
+  await page.goto("/workspaces/embed/detail/gitlab/issue/git.example.com/group/project/7");
 
   await detailRequest;
   await expect(page.getByText("Provider-explicit GitLab issue")).toBeVisible();
 });
 
-test("nested repo_path embed detail route loads matching detail content", async ({
-  page,
-}) => {
+test("nested repo_path embed detail route loads matching detail content", async ({ page }) => {
   const detailRequest = page.waitForRequest(
     (request) =>
       request.method() === "GET" &&
-      new URL(request.url()).pathname ===
-        "/api/v1/host/git.example.com/issues/gitlab/group%2Fsubgroup/project/7",
+      new URL(request.url()).pathname === "/api/v1/host/git.example.com/issues/gitlab/group%2Fsubgroup/project/7",
   );
-  await page.route(
-    "**/api/v1/host/git.example.com/issues/gitlab/group%2Fsubgroup/project/7",
-    async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({
-          issue: {
-            ID: 7,
-            RepoID: 7,
-            GitHubID: 7007,
-            Number: 7,
-            URL: "https://git.example.com/group/subgroup/project/-/issues/7",
-            Title: "Nested GitLab issue",
-            Author: "marius",
-            State: "open",
-            Body: "",
-            CommentCount: 0,
-            LabelsJSON: "[]",
-            CreatedAt: "2026-03-28T14:00:00Z",
-            UpdatedAt: "2026-03-30T14:00:00Z",
-            LastActivityAt: "2026-03-30T14:00:00Z",
-            ClosedAt: null,
-            Starred: false,
-          },
-          repo: {
-            provider: "gitlab",
-            platform_host: "git.example.com",
-            owner: "group/subgroup",
-            name: "project",
-            repo_path: "group/subgroup/project",
-          },
-          events: [],
+  await page.route("**/api/v1/host/git.example.com/issues/gitlab/group%2Fsubgroup/project/7", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        issue: {
+          ID: 7,
+          RepoID: 7,
+          GitHubID: 7007,
+          Number: 7,
+          URL: "https://git.example.com/group/subgroup/project/-/issues/7",
+          Title: "Nested GitLab issue",
+          Author: "marius",
+          State: "open",
+          Body: "",
+          CommentCount: 0,
+          LabelsJSON: "[]",
+          CreatedAt: "2026-03-28T14:00:00Z",
+          UpdatedAt: "2026-03-30T14:00:00Z",
+          LastActivityAt: "2026-03-30T14:00:00Z",
+          ClosedAt: null,
+          Starred: false,
+        },
+        repo: {
+          provider: "gitlab",
           platform_host: "git.example.com",
-          repo_owner: "group/subgroup",
-          repo_name: "project",
-          detail_loaded: true,
-          detail_fetched_at: "2026-03-30T14:00:00Z",
-        }),
-      });
-    },
-  );
+          owner: "group/subgroup",
+          name: "project",
+          repo_path: "group/subgroup/project",
+        },
+        events: [],
+        platform_host: "git.example.com",
+        repo_owner: "group/subgroup",
+        repo_name: "project",
+        detail_loaded: true,
+        detail_fetched_at: "2026-03-30T14:00:00Z",
+      }),
+    });
+  });
 
-  await page.goto(
-    "/workspaces/embed/detail/gitlab/issue/git.example.com/7" +
-      "?repo_path=group%2Fsubgroup%2Fproject",
-  );
+  await page.goto("/workspaces/embed/detail/gitlab/issue/git.example.com/7" + "?repo_path=group%2Fsubgroup%2Fproject");
 
   await detailRequest;
   await expect(page.getByText("Nested GitLab issue")).toBeVisible();
 });
 
-test("embed initialRoute opens detail surface without full app chrome", async ({
-  page,
-}) => {
+test("embed initialRoute opens detail surface without full app chrome", async ({ page }) => {
   await page.addInitScript(() => {
     window.__middleman_config = {
       embed: {
-        initialRoute:
-          "/workspaces/embed/detail/gitlab/issue/git.example.com/7" +
-          "?repo_path=group%2Fproject",
+        initialRoute: "/workspaces/embed/detail/gitlab/issue/git.example.com/7" + "?repo_path=group%2Fproject",
       },
     };
   });
@@ -234,51 +209,47 @@ test("embed initialRoute opens detail surface without full app chrome", async ({
   const detailRequest = page.waitForRequest(
     (request) =>
       request.method() === "GET" &&
-      new URL(request.url()).pathname ===
-        "/api/v1/host/git.example.com/issues/gitlab/group/project/7",
+      new URL(request.url()).pathname === "/api/v1/host/git.example.com/issues/gitlab/group/project/7",
   );
-  await page.route(
-    "**/api/v1/host/git.example.com/issues/gitlab/group/project/7",
-    async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({
-          issue: {
-            ID: 7,
-            RepoID: 7,
-            GitHubID: 7007,
-            Number: 7,
-            URL: "https://git.example.com/group/project/-/issues/7",
-            Title: "Initial route GitLab issue",
-            Author: "marius",
-            State: "open",
-            Body: "",
-            CommentCount: 0,
-            LabelsJSON: "[]",
-            CreatedAt: "2026-03-28T14:00:00Z",
-            UpdatedAt: "2026-03-30T14:00:00Z",
-            LastActivityAt: "2026-03-30T14:00:00Z",
-            ClosedAt: null,
-            Starred: false,
-          },
-          repo: {
-            provider: "gitlab",
-            platform_host: "git.example.com",
-            owner: "group",
-            name: "project",
-            repo_path: "group/project",
-          },
-          events: [],
+  await page.route("**/api/v1/host/git.example.com/issues/gitlab/group/project/7", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        issue: {
+          ID: 7,
+          RepoID: 7,
+          GitHubID: 7007,
+          Number: 7,
+          URL: "https://git.example.com/group/project/-/issues/7",
+          Title: "Initial route GitLab issue",
+          Author: "marius",
+          State: "open",
+          Body: "",
+          CommentCount: 0,
+          LabelsJSON: "[]",
+          CreatedAt: "2026-03-28T14:00:00Z",
+          UpdatedAt: "2026-03-30T14:00:00Z",
+          LastActivityAt: "2026-03-30T14:00:00Z",
+          ClosedAt: null,
+          Starred: false,
+        },
+        repo: {
+          provider: "gitlab",
           platform_host: "git.example.com",
-          repo_owner: "group",
-          repo_name: "project",
-          detail_loaded: true,
-          detail_fetched_at: "2026-03-30T14:00:00Z",
-        }),
-      });
-    },
-  );
+          owner: "group",
+          name: "project",
+          repo_path: "group/project",
+        },
+        events: [],
+        platform_host: "git.example.com",
+        repo_owner: "group",
+        repo_name: "project",
+        detail_loaded: true,
+        detail_fetched_at: "2026-03-30T14:00:00Z",
+      }),
+    });
+  });
 
   await page.goto("/");
 
@@ -290,9 +261,7 @@ test("embed initialRoute opens detail surface without full app chrome", async ({
   await expect(page.getByText("Initial route GitLab issue")).toBeVisible();
 });
 
-test("full app initializes after navigating away from an initial embed route", async ({
-  page,
-}) => {
+test("full app initializes after navigating away from an initial embed route", async ({ page }) => {
   await page.route("**/api/v1/settings", async (route) => {
     await route.fulfill({
       status: 200,
@@ -331,9 +300,7 @@ test("full app initializes after navigating away from an initial embed route", a
   await page.goto("/");
   await expect(page.locator("header.app-header")).toHaveCount(0);
 
-  const pullsResponse = page.waitForResponse(
-    (response) => new URL(response.url()).pathname === "/api/v1/pulls",
-  );
+  const pullsResponse = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/v1/pulls");
   await page.evaluate(() => {
     window.__middleman_navigate_to_route?.("/pulls");
   });
@@ -343,9 +310,7 @@ test("full app initializes after navigating away from an initial embed route", a
   await expect(page.locator("header.app-header")).toBeVisible();
 });
 
-test("full app reinitializes after navigating through an embed route", async ({
-  page,
-}) => {
+test("full app reinitializes after navigating through an embed route", async ({ page }) => {
   let settingsRequests = 0;
   await page.addInitScript(() => {
     const OriginalEventSource = window.EventSource;
@@ -398,9 +363,7 @@ test("full app reinitializes after navigating through an embed route", async ({
   await page.goto("/pulls");
   await expect(page.locator("header.app-header")).toBeVisible();
   await expect.poll(() => settingsRequests).toBe(1);
-  const initialEventSources = await page.evaluate(
-    () => window.__middleman_event_source_counts?.().created ?? 0,
-  );
+  const initialEventSources = await page.evaluate(() => window.__middleman_event_source_counts?.().created ?? 0);
   expect(initialEventSources).toBeGreaterThan(0);
 
   await page.evaluate(() => {
@@ -409,9 +372,7 @@ test("full app reinitializes after navigating through an embed route", async ({
   await expect(page).toHaveURL(/\/workspaces\/embed\/list$/);
   await expect(page.locator("header.app-header")).toHaveCount(0);
   await expect
-    .poll(async () =>
-      page.evaluate(() => window.__middleman_event_source_counts?.().closed ?? 0),
-    )
+    .poll(async () => page.evaluate(() => window.__middleman_event_source_counts?.().closed ?? 0))
     .toBeGreaterThanOrEqual(initialEventSources);
 
   await page.evaluate(() => {
@@ -421,13 +382,9 @@ test("full app reinitializes after navigating through an embed route", async ({
   await expect(page.locator("header.app-header")).toBeVisible();
   await expect.poll(() => settingsRequests).toBe(2);
   await expect
-    .poll(async () =>
-      page.evaluate(() => window.__middleman_event_source_counts?.().created ?? 0),
-    )
+    .poll(async () => page.evaluate(() => window.__middleman_event_source_counts?.().created ?? 0))
     .toBeGreaterThan(initialEventSources);
   await expect
-    .poll(async () =>
-      page.evaluate(() => window.__middleman_event_source_counts?.().closed ?? 0),
-    )
+    .poll(async () => page.evaluate(() => window.__middleman_event_source_counts?.().closed ?? 0))
     .toBeGreaterThanOrEqual(initialEventSources);
 });

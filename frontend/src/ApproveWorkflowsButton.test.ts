@@ -47,9 +47,7 @@ describe("ApproveWorkflowsButton", () => {
       },
     });
 
-    expect(
-      screen.getByRole("button", { name: /approve workflows \(2\)/i }),
-    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: /approve workflows \(2\)/i })).toBeTruthy();
   });
 
   it("posts to approve-workflows and refreshes detail without sync", async () => {
@@ -69,23 +67,18 @@ describe("ApproveWorkflowsButton", () => {
       },
     });
 
-    await fireEvent.click(
-      screen.getByRole("button", { name: /approve workflows \(2\)/i }),
-    );
+    await fireEvent.click(screen.getByRole("button", { name: /approve workflows \(2\)/i }));
 
-    expect(mockPost).toHaveBeenCalledWith(
-      "/pulls/{provider}/{owner}/{name}/{number}/approve-workflows",
-      {
-        params: {
-          path: {
-            provider: "github",
-            owner: "acme",
-            name: "widget",
-            number: 7,
-          },
+    expect(mockPost).toHaveBeenCalledWith("/pulls/{provider}/{owner}/{name}/{number}/approve-workflows", {
+      params: {
+        path: {
+          provider: "github",
+          owner: "acme",
+          name: "widget",
+          number: 7,
         },
       },
-    );
+    });
     expect(mockRefreshDetailOnly).toHaveBeenCalledWith("acme", "widget", 7, {
       provider: "github",
       platformHost: "github.com",
@@ -111,9 +104,7 @@ describe("ApproveWorkflowsButton", () => {
       },
     });
 
-    await fireEvent.click(
-      screen.getByRole("button", { name: /^approve workflows$/i }),
-    );
+    await fireEvent.click(screen.getByRole("button", { name: /^approve workflows$/i }));
 
     expect(screen.getByText("GitHub API error")).toBeTruthy();
     expect(mockRefreshDetailOnly).not.toHaveBeenCalled();

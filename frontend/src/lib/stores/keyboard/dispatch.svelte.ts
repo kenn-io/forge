@@ -18,10 +18,7 @@ const SCOPE_SPECIFICITY: Record<Action["scope"], number> = {
   global: 10,
 };
 
-export function dispatchKeydown(
-  event: KeyboardEvent,
-  contextProvider: () => Context,
-): void {
+export function dispatchKeydown(event: KeyboardEvent, contextProvider: () => Context): void {
   const stack = getStack();
   if (stack.length > 0) {
     const modalCtx = contextProvider();
@@ -44,11 +41,7 @@ export function dispatchKeydown(
   const editable = shouldIgnoreGlobalShortcutTarget(event.target);
   const ctx = contextProvider();
   const matchingActions = getAllActions().filter(
-    (a) =>
-      a.binding !== null &&
-      matches(a.binding, event) &&
-      a.when(ctx) &&
-      (!editable || hasModifier(a.binding)),
+    (a) => a.binding !== null && matches(a.binding, event) && a.when(ctx) && (!editable || hasModifier(a.binding)),
   );
   if (matchingActions.length === 0) return;
 

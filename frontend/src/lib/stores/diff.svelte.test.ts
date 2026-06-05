@@ -102,21 +102,14 @@ describe("createDiffStore loadDiff", () => {
     const calls: string[] = [];
     const diff = makeDiffResult(["internal/cache.go"]);
 
-    vi.spyOn(globalThis, "fetch").mockImplementation(
-      async (input: RequestInfo | URL) => {
-        const url =
-          typeof input === "string"
-            ? input
-            : input instanceof URL
-              ? input.href
-              : input.url;
-        calls.push(url);
-        if (url.includes("/repo/github/owner/repo/commits/abc123/diff")) {
-          return Response.json(diff);
-        }
-        return Response.json({}, { status: 404 });
-      },
-    );
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      calls.push(url);
+      if (url.includes("/repo/github/owner/repo/commits/abc123/diff")) {
+        return Response.json(diff);
+      }
+      return Response.json({}, { status: 404 });
+    });
 
     const store = createDiffStore({ client: testClient() });
 
@@ -131,24 +124,17 @@ describe("createDiffStore loadDiff", () => {
     const diffAll = makeDiffResult(["a.ts", "b.ts"]);
     const diffHidden = makeDiffResult(["a.ts"]);
 
-    vi.spyOn(globalThis, "fetch").mockImplementation(
-      async (input: RequestInfo | URL) => {
-        const url =
-          typeof input === "string"
-            ? input
-            : input instanceof URL
-              ? input.href
-              : input.url;
-        calls.push(url);
-        if (url.includes("whitespace=hide")) {
-          return Response.json(diffHidden);
-        }
-        if (url.includes("/repo/github/owner/repo/commits/abc123/diff")) {
-          return Response.json(diffAll);
-        }
-        return Response.json({}, { status: 404 });
-      },
-    );
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      calls.push(url);
+      if (url.includes("whitespace=hide")) {
+        return Response.json(diffHidden);
+      }
+      if (url.includes("/repo/github/owner/repo/commits/abc123/diff")) {
+        return Response.json(diffAll);
+      }
+      return Response.json({}, { status: 404 });
+    });
 
     const store = createDiffStore({ client: testClient() });
 
@@ -158,9 +144,7 @@ describe("createDiffStore loadDiff", () => {
     await vi.waitFor(() => {
       expect(store.getDiff()?.files).toHaveLength(1);
     });
-    expect(calls).toContain(
-      "/api/v1/repo/github/owner/repo/commits/abc123/diff?whitespace=hide",
-    );
+    expect(calls).toContain("/api/v1/repo/github/owner/repo/commits/abc123/diff?whitespace=hide");
   });
 
   it("loads workspace files and the full workspace diff", async () => {
@@ -168,24 +152,17 @@ describe("createDiffStore loadDiff", () => {
     const files = makeFilesResult(["src/app.go", "src/app_test.go", "docs/plan.md"]);
     const diff = makeDiffResult(["src/app.go", "src/app_test.go", "docs/plan.md"]);
 
-    vi.spyOn(globalThis, "fetch").mockImplementation(
-      async (input: RequestInfo | URL) => {
-        const url =
-          typeof input === "string"
-            ? input
-            : input instanceof URL
-              ? input.href
-              : input.url;
-        calls.push(url);
-        if (url.includes("/workspaces/ws-1/files")) {
-          return Response.json(files);
-        }
-        if (url.includes("/workspaces/ws-1/diff")) {
-          return Response.json(diff);
-        }
-        return Response.json({}, { status: 404 });
-      },
-    );
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      calls.push(url);
+      if (url.includes("/workspaces/ws-1/files")) {
+        return Response.json(files);
+      }
+      if (url.includes("/workspaces/ws-1/diff")) {
+        return Response.json(diff);
+      }
+      return Response.json({}, { status: 404 });
+    });
 
     const store = createDiffStore({ client: testClient() });
 
@@ -213,24 +190,17 @@ describe("createDiffStore loadDiff", () => {
     const files = makeFilesResult(["src/app.go"]);
     const diff = makeDiffResult(["src/app.go"]);
 
-    vi.spyOn(globalThis, "fetch").mockImplementation(
-      async (input: RequestInfo | URL) => {
-        const url =
-          typeof input === "string"
-            ? input
-            : input instanceof URL
-              ? input.href
-              : input.url;
-        calls.push(url);
-        if (url.includes("/workspaces/ws-1/files")) {
-          return Response.json(files);
-        }
-        if (url.includes("/workspaces/ws-1/diff")) {
-          return Response.json(diff);
-        }
-        return Response.json({}, { status: 404 });
-      },
-    );
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      calls.push(url);
+      if (url.includes("/workspaces/ws-1/files")) {
+        return Response.json(files);
+      }
+      if (url.includes("/workspaces/ws-1/diff")) {
+        return Response.json(diff);
+      }
+      return Response.json({}, { status: 404 });
+    });
 
     const store = createDiffStore({ client: testClient() });
 
@@ -244,23 +214,16 @@ describe("createDiffStore loadDiff", () => {
     const files = makeFilesResult(["src/app.go", "src/app_test.go", "docs/plan.md"]);
     const diff = makeDiffResult(["src/app.go", "src/app_test.go", "docs/plan.md"]);
 
-    vi.spyOn(globalThis, "fetch").mockImplementation(
-      async (input: RequestInfo | URL) => {
-        const url =
-          typeof input === "string"
-            ? input
-            : input instanceof URL
-              ? input.href
-              : input.url;
-        if (url.includes("/workspaces/ws-1/files")) {
-          return Response.json(files);
-        }
-        if (url.includes("/workspaces/ws-1/diff")) {
-          return Response.json(diff);
-        }
-        return Response.json({}, { status: 404 });
-      },
-    );
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("/workspaces/ws-1/files")) {
+        return Response.json(files);
+      }
+      if (url.includes("/workspaces/ws-1/diff")) {
+        return Response.json(diff);
+      }
+      return Response.json({}, { status: 404 });
+    });
 
     const store = createDiffStore({ client: testClient() });
     await store.loadWorkspaceDiff("ws-1", "head");
@@ -287,42 +250,35 @@ describe("createDiffStore loadDiff", () => {
     const files = makeFilesResult(["src/app.go"]);
     const diff = makeDiffResult(["src/app.go"]);
 
-    vi.spyOn(globalThis, "fetch").mockImplementation(
-      async (input: RequestInfo | URL) => {
-        const url =
-          typeof input === "string"
-            ? input
-            : input instanceof URL
-              ? input.href
-              : input.url;
-        calls.push(url);
-        if (url.includes("/workspaces/ws-1/commits")) {
-          return Response.json({
-            commits: [
-              {
-                sha: "sha2",
-                message: "second",
-                author_name: "Alice",
-                authored_at: "2026-01-01T00:00:00Z",
-              },
-              {
-                sha: "sha1",
-                message: "first",
-                author_name: "Alice",
-                authored_at: "2026-01-01T00:00:00Z",
-              },
-            ],
-          });
-        }
-        if (url.includes("/workspaces/ws-1/files")) {
-          return Response.json(files);
-        }
-        if (url.includes("/workspaces/ws-1/diff")) {
-          return Response.json(diff);
-        }
-        return Response.json({}, { status: 404 });
-      },
-    );
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      calls.push(url);
+      if (url.includes("/workspaces/ws-1/commits")) {
+        return Response.json({
+          commits: [
+            {
+              sha: "sha2",
+              message: "second",
+              author_name: "Alice",
+              authored_at: "2026-01-01T00:00:00Z",
+            },
+            {
+              sha: "sha1",
+              message: "first",
+              author_name: "Alice",
+              authored_at: "2026-01-01T00:00:00Z",
+            },
+          ],
+        });
+      }
+      if (url.includes("/workspaces/ws-1/files")) {
+        return Response.json(files);
+      }
+      if (url.includes("/workspaces/ws-1/diff")) {
+        return Response.json(diff);
+      }
+      return Response.json({}, { status: 404 });
+    });
 
     const store = createDiffStore({ client: testClient() });
     await store.loadWorkspaceDiff("ws-1", "head");
@@ -337,42 +293,35 @@ describe("createDiffStore loadDiff", () => {
     const files = makeFilesResult(["src/app.go"]);
     const diff = makeDiffResult(["src/app.go"]);
 
-    vi.spyOn(globalThis, "fetch").mockImplementation(
-      async (input: RequestInfo | URL) => {
-        const url =
-          typeof input === "string"
-            ? input
-            : input instanceof URL
-              ? input.href
-              : input.url;
-        calls.push(url);
-        if (url.includes("/workspaces/ws-1/commits")) {
-          return Response.json({
-            commits: [
-              {
-                sha: "sha2",
-                message: "second",
-                author_name: "Alice",
-                authored_at: "2026-01-01T00:00:00Z",
-              },
-              {
-                sha: "sha1",
-                message: "first",
-                author_name: "Alice",
-                authored_at: "2026-01-01T00:00:00Z",
-              },
-            ],
-          });
-        }
-        if (url.includes("/workspaces/ws-1/files")) {
-          return Response.json(files);
-        }
-        if (url.includes("/workspaces/ws-1/diff")) {
-          return Response.json(diff);
-        }
-        return Response.json({}, { status: 404 });
-      },
-    );
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      calls.push(url);
+      if (url.includes("/workspaces/ws-1/commits")) {
+        return Response.json({
+          commits: [
+            {
+              sha: "sha2",
+              message: "second",
+              author_name: "Alice",
+              authored_at: "2026-01-01T00:00:00Z",
+            },
+            {
+              sha: "sha1",
+              message: "first",
+              author_name: "Alice",
+              authored_at: "2026-01-01T00:00:00Z",
+            },
+          ],
+        });
+      }
+      if (url.includes("/workspaces/ws-1/files")) {
+        return Response.json(files);
+      }
+      if (url.includes("/workspaces/ws-1/diff")) {
+        return Response.json(diff);
+      }
+      return Response.json({}, { status: 404 });
+    });
 
     const store = createDiffStore({ client: testClient() });
     await store.loadWorkspaceDiff("ws-1", "merge-target");
@@ -381,12 +330,8 @@ describe("createDiffStore loadDiff", () => {
     store.selectCommit("sha2");
 
     await vi.waitFor(() => {
-      expect(calls).toContain(
-        "/api/v1/workspaces/ws-1/files?base=merge-target&commit=sha2",
-      );
-      expect(calls).toContain(
-        "/api/v1/workspaces/ws-1/diff?base=merge-target&commit=sha2",
-      );
+      expect(calls).toContain("/api/v1/workspaces/ws-1/files?base=merge-target&commit=sha2");
+      expect(calls).toContain("/api/v1/workspaces/ws-1/diff?base=merge-target&commit=sha2");
     });
   });
 
@@ -395,48 +340,41 @@ describe("createDiffStore loadDiff", () => {
     const files = makeFilesResult(["src/app.go"]);
     const diff = makeDiffResult(["src/app.go"]);
 
-    vi.spyOn(globalThis, "fetch").mockImplementation(
-      async (input: RequestInfo | URL) => {
-        const url =
-          typeof input === "string"
-            ? input
-            : input instanceof URL
-              ? input.href
-              : input.url;
-        calls.push(url);
-        if (url.includes("/workspaces/ws-1/commits")) {
-          return Response.json({
-            commits: [
-              {
-                sha: "sha3",
-                message: "third",
-                author_name: "Alice",
-                authored_at: "2026-01-01T00:00:00Z",
-              },
-              {
-                sha: "sha2",
-                message: "second",
-                author_name: "Alice",
-                authored_at: "2026-01-01T00:00:00Z",
-              },
-              {
-                sha: "sha1",
-                message: "first",
-                author_name: "Alice",
-                authored_at: "2026-01-01T00:00:00Z",
-              },
-            ],
-          });
-        }
-        if (url.includes("/workspaces/ws-1/files")) {
-          return Response.json(files);
-        }
-        if (url.includes("/workspaces/ws-1/diff")) {
-          return Response.json(diff);
-        }
-        return Response.json({}, { status: 404 });
-      },
-    );
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      calls.push(url);
+      if (url.includes("/workspaces/ws-1/commits")) {
+        return Response.json({
+          commits: [
+            {
+              sha: "sha3",
+              message: "third",
+              author_name: "Alice",
+              authored_at: "2026-01-01T00:00:00Z",
+            },
+            {
+              sha: "sha2",
+              message: "second",
+              author_name: "Alice",
+              authored_at: "2026-01-01T00:00:00Z",
+            },
+            {
+              sha: "sha1",
+              message: "first",
+              author_name: "Alice",
+              authored_at: "2026-01-01T00:00:00Z",
+            },
+          ],
+        });
+      }
+      if (url.includes("/workspaces/ws-1/files")) {
+        return Response.json(files);
+      }
+      if (url.includes("/workspaces/ws-1/diff")) {
+        return Response.json(diff);
+      }
+      return Response.json({}, { status: 404 });
+    });
 
     const store = createDiffStore({ client: testClient() });
     await store.loadWorkspaceDiff("ws-1", "merge-target");
@@ -445,12 +383,8 @@ describe("createDiffStore loadDiff", () => {
     store.selectRange("sha3", "sha2");
 
     await vi.waitFor(() => {
-      expect(calls).toContain(
-        "/api/v1/workspaces/ws-1/files?base=merge-target&from=sha2&to=sha3",
-      );
-      expect(calls).toContain(
-        "/api/v1/workspaces/ws-1/diff?base=merge-target&from=sha2&to=sha3",
-      );
+      expect(calls).toContain("/api/v1/workspaces/ws-1/files?base=merge-target&from=sha2&to=sha3");
+      expect(calls).toContain("/api/v1/workspaces/ws-1/diff?base=merge-target&from=sha2&to=sha3");
     });
   });
 
@@ -459,42 +393,35 @@ describe("createDiffStore loadDiff", () => {
     const files = makeFilesResult(["src/app.go"]);
     const diff = makeDiffResult(["src/app.go"]);
 
-    vi.spyOn(globalThis, "fetch").mockImplementation(
-      async (input: RequestInfo | URL) => {
-        const url =
-          typeof input === "string"
-            ? input
-            : input instanceof URL
-              ? input.href
-              : input.url;
-        calls.push(url);
-        if (url.includes("/workspaces/ws-1/commits")) {
-          return Response.json({
-            commits: [
-              {
-                sha: "sha2",
-                message: "second",
-                author_name: "Alice",
-                authored_at: "2026-01-01T00:00:00Z",
-              },
-              {
-                sha: "sha1",
-                message: "first",
-                author_name: "Alice",
-                authored_at: "2026-01-01T00:00:00Z",
-              },
-            ],
-          });
-        }
-        if (url.includes("/workspaces/ws-1/files")) {
-          return Response.json(files);
-        }
-        if (url.includes("/workspaces/ws-1/diff")) {
-          return Response.json(diff);
-        }
-        return Response.json({}, { status: 404 });
-      },
-    );
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      calls.push(url);
+      if (url.includes("/workspaces/ws-1/commits")) {
+        return Response.json({
+          commits: [
+            {
+              sha: "sha2",
+              message: "second",
+              author_name: "Alice",
+              authored_at: "2026-01-01T00:00:00Z",
+            },
+            {
+              sha: "sha1",
+              message: "first",
+              author_name: "Alice",
+              authored_at: "2026-01-01T00:00:00Z",
+            },
+          ],
+        });
+      }
+      if (url.includes("/workspaces/ws-1/files")) {
+        return Response.json(files);
+      }
+      if (url.includes("/workspaces/ws-1/diff")) {
+        return Response.json(diff);
+      }
+      return Response.json({}, { status: 404 });
+    });
 
     const store = createDiffStore({ client: testClient() });
     await store.loadWorkspaceDiff("ws-1", "merge-target");
@@ -503,20 +430,14 @@ describe("createDiffStore loadDiff", () => {
     store.selectCommit("sha2");
 
     await vi.waitFor(() => {
-      expect(calls).toContain(
-        "/api/v1/workspaces/ws-1/files?base=merge-target&commit=sha2",
-      );
+      expect(calls).toContain("/api/v1/workspaces/ws-1/files?base=merge-target&commit=sha2");
     });
 
     calls.length = 0;
     await store.loadWorkspaceDiff("ws-1", "merge-target", true);
 
-    expect(calls).toContain(
-      "/api/v1/workspaces/ws-1/files?base=merge-target&commit=sha2",
-    );
-    expect(calls).toContain(
-      "/api/v1/workspaces/ws-1/diff?base=merge-target&commit=sha2",
-    );
+    expect(calls).toContain("/api/v1/workspaces/ws-1/files?base=merge-target&commit=sha2");
+    expect(calls).toContain("/api/v1/workspaces/ws-1/diff?base=merge-target&commit=sha2");
     expect(store.getScope()).toEqual({ kind: "commit", sha: "sha2" });
   });
 
@@ -527,37 +448,23 @@ describe("createDiffStore loadDiff", () => {
     const diffAll = makeDiffResult(["a.ts", "whitespace.ts"]);
     const diffHidden = makeDiffResult(["a.ts"]);
 
-    vi.spyOn(globalThis, "fetch").mockImplementation(
-      async (input: RequestInfo | URL) => {
-        const url =
-          typeof input === "string"
-            ? input
-            : input instanceof URL
-              ? input.href
-              : input.url;
-        calls.push(url);
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      calls.push(url);
 
-        if (url.includes("/workspaces/ws-1/files")) {
-          return Response.json(
-            url.includes("whitespace=hide") ? filesHidden : filesAll,
-          );
-        }
-        if (url.includes("/workspaces/ws-1/diff")) {
-          return Response.json(
-            url.includes("whitespace=hide") ? diffHidden : diffAll,
-          );
-        }
-        return Response.json({}, { status: 404 });
-      },
-    );
+      if (url.includes("/workspaces/ws-1/files")) {
+        return Response.json(url.includes("whitespace=hide") ? filesHidden : filesAll);
+      }
+      if (url.includes("/workspaces/ws-1/diff")) {
+        return Response.json(url.includes("whitespace=hide") ? diffHidden : diffAll);
+      }
+      return Response.json({}, { status: 404 });
+    });
 
     const store = createDiffStore({ client: testClient() });
     await store.loadWorkspaceDiff("ws-1", "head");
 
-    expect(store.getFileList()?.files.map((file) => file.path)).toEqual([
-      "a.ts",
-      "whitespace.ts",
-    ]);
+    expect(store.getFileList()?.files.map((file) => file.path)).toEqual(["a.ts", "whitespace.ts"]);
 
     store.setHideWhitespace(true);
     await vi.waitFor(() => {
@@ -567,9 +474,7 @@ describe("createDiffStore loadDiff", () => {
       expect(store.isDiffLoading()).toBe(false);
     });
 
-    expect(calls).toContain(
-      "/api/v1/workspaces/ws-1/files?base=head&whitespace=hide",
-    );
+    expect(calls).toContain("/api/v1/workspaces/ws-1/files?base=head&whitespace=hide");
     expect(calls).toContain("/api/v1/workspaces/ws-1/diff?base=head&whitespace=hide");
   });
 
@@ -578,25 +483,18 @@ describe("createDiffStore loadDiff", () => {
     const files = makeFilesResult(["a.ts", "b.ts"]);
     const diff = makeDiffResult(["a.ts", "b.ts"]);
 
-    vi.spyOn(globalThis, "fetch").mockImplementation(
-      async (input: RequestInfo | URL) => {
-        const url =
-          typeof input === "string"
-            ? input
-            : input instanceof URL
-              ? input.href
-              : input.url;
-        calls.push(url);
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      calls.push(url);
 
-        if (url.includes("/workspaces/ws-1/files")) {
-          return Response.json(files);
-        }
-        if (url.includes("/workspaces/ws-1/diff")) {
-          return Response.json(diff);
-        }
-        return Response.json({}, { status: 404 });
-      },
-    );
+      if (url.includes("/workspaces/ws-1/files")) {
+        return Response.json(files);
+      }
+      if (url.includes("/workspaces/ws-1/diff")) {
+        return Response.json(diff);
+      }
+      return Response.json({}, { status: 404 });
+    });
 
     const store = createDiffStore({ client: testClient() });
     await store.loadWorkspaceDiff("ws-1", "head");
@@ -605,9 +503,9 @@ describe("createDiffStore loadDiff", () => {
 
     expect(store.getActiveFile()).toBe("b.ts");
     expect(store.getScrollTarget()).toEqual({ path: "b.ts" });
-    expect(
-      calls.filter((url) => url.includes("/api/v1/workspaces/ws-1/diff")),
-    ).toEqual(["/api/v1/workspaces/ws-1/diff?base=head"]);
+    expect(calls.filter((url) => url.includes("/api/v1/workspaces/ws-1/diff"))).toEqual([
+      "/api/v1/workspaces/ws-1/diff?base=head",
+    ]);
   });
 
   it("uses the workspace diff whitespace count", async () => {
@@ -617,24 +515,17 @@ describe("createDiffStore loadDiff", () => {
     const diff = makeDiffResult(["a.ts", "whitespace.ts"]);
     diff.whitespace_only_count = 7;
 
-    vi.spyOn(globalThis, "fetch").mockImplementation(
-      async (input: RequestInfo | URL) => {
-        const url =
-          typeof input === "string"
-            ? input
-            : input instanceof URL
-              ? input.href
-              : input.url;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
 
-        if (url.includes("/workspaces/ws-1/files")) {
-          return Response.json(files);
-        }
-        if (url.includes("/workspaces/ws-1/diff")) {
-          return Response.json(diff);
-        }
-        return Response.json({}, { status: 404 });
-      },
-    );
+      if (url.includes("/workspaces/ws-1/files")) {
+        return Response.json(files);
+      }
+      if (url.includes("/workspaces/ws-1/diff")) {
+        return Response.json(diff);
+      }
+      return Response.json({}, { status: 404 });
+    });
 
     const store = createDiffStore({ client: testClient() });
     await store.loadWorkspaceDiff("ws-1", "head");
@@ -643,21 +534,14 @@ describe("createDiffStore loadDiff", () => {
   });
 
   it("clears workspace diff loading when the file list fails", async () => {
-    vi.spyOn(globalThis, "fetch").mockImplementation(
-      async (input: RequestInfo | URL) => {
-        const url =
-          typeof input === "string"
-            ? input
-            : input instanceof URL
-              ? input.href
-              : input.url;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
 
-        if (url.includes("/workspaces/ws-1/files")) {
-          return Response.json({ title: "workspace files failed" }, { status: 502 });
-        }
-        return Response.json({}, { status: 404 });
-      },
-    );
+      if (url.includes("/workspaces/ws-1/files")) {
+        return Response.json({ title: "workspace files failed" }, { status: 502 });
+      }
+      return Response.json({}, { status: 404 });
+    });
 
     const store = createDiffStore({ client: testClient() });
     await store.loadWorkspaceDiff("ws-1", "head");
@@ -676,36 +560,29 @@ describe("createDiffStore loadDiff", () => {
     let resolveFilesB: () => void = () => {};
     let resolveDiffB: () => void = () => {};
 
-    vi.spyOn(globalThis, "fetch").mockImplementation(
-      async (input: RequestInfo | URL) => {
-        const url =
-          typeof input === "string"
-            ? input
-            : input instanceof URL
-              ? input.href
-              : input.url;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
 
-        // PR A fetches resolve immediately.
-        if (url.includes("/1/files")) {
-          return Response.json(filesA);
-        }
-        if (url.includes("/1/diff")) {
-          return Response.json(diffA);
-        }
-        // PR B: both deferred so we control timing explicitly.
-        if (url.includes("/2/files")) {
-          return new Promise((resolve) => {
-            resolveFilesB = () => resolve(Response.json(filesB));
-          });
-        }
-        if (url.includes("/2/diff")) {
-          return new Promise((resolve) => {
-            resolveDiffB = () => resolve(Response.json(diffB));
-          });
-        }
-        return Response.json({}, { status: 404 });
-      },
-    );
+      // PR A fetches resolve immediately.
+      if (url.includes("/1/files")) {
+        return Response.json(filesA);
+      }
+      if (url.includes("/1/diff")) {
+        return Response.json(diffA);
+      }
+      // PR B: both deferred so we control timing explicitly.
+      if (url.includes("/2/files")) {
+        return new Promise((resolve) => {
+          resolveFilesB = () => resolve(Response.json(filesB));
+        });
+      }
+      if (url.includes("/2/diff")) {
+        return new Promise((resolve) => {
+          resolveDiffB = () => resolve(Response.json(diffB));
+        });
+      }
+      return Response.json({}, { status: 404 });
+    });
 
     const store = createDiffStore({ client: testClient() });
 
@@ -745,41 +622,34 @@ describe("createDiffStore loadDiff", () => {
     let diffAAborted = false;
     let filesAAborted = false;
 
-    vi.spyOn(globalThis, "fetch").mockImplementation(
-      async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url =
-          typeof input === "string"
-            ? input
-            : input instanceof URL
-              ? input.href
-              : input.url;
-        const signal = input instanceof Request ? input.signal : init?.signal;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      const signal = input instanceof Request ? input.signal : init?.signal;
 
-        if (url.includes("/1/files")) {
-          return new Promise((_resolve, reject) => {
-            signal?.addEventListener("abort", () => {
-              filesAAborted = true;
-              reject(new DOMException("Aborted", "AbortError"));
-            });
+      if (url.includes("/1/files")) {
+        return new Promise((_resolve, reject) => {
+          signal?.addEventListener("abort", () => {
+            filesAAborted = true;
+            reject(new DOMException("Aborted", "AbortError"));
           });
-        }
-        if (url.includes("/1/diff")) {
-          return new Promise((_resolve, reject) => {
-            signal?.addEventListener("abort", () => {
-              diffAAborted = true;
-              reject(new DOMException("Aborted", "AbortError"));
-            });
+        });
+      }
+      if (url.includes("/1/diff")) {
+        return new Promise((_resolve, reject) => {
+          signal?.addEventListener("abort", () => {
+            diffAAborted = true;
+            reject(new DOMException("Aborted", "AbortError"));
           });
-        }
-        if (url.includes("/2/files")) {
-          return Response.json(filesB);
-        }
-        if (url.includes("/2/diff")) {
-          return Response.json(diffB);
-        }
-        return Response.json({}, { status: 404 });
-      },
-    );
+        });
+      }
+      if (url.includes("/2/files")) {
+        return Response.json(filesB);
+      }
+      if (url.includes("/2/diff")) {
+        return Response.json(diffB);
+      }
+      return Response.json({}, { status: 404 });
+    });
 
     const store = createDiffStore({ client: testClient() });
 
@@ -798,26 +668,19 @@ describe("createDiffStore loadDiff", () => {
     const diff = makeDiffResult(["a.ts"]);
     let resolveDiff: () => void = () => {};
 
-    vi.spyOn(globalThis, "fetch").mockImplementation(
-      async (input: RequestInfo | URL) => {
-        const url =
-          typeof input === "string"
-            ? input
-            : input instanceof URL
-              ? input.href
-              : input.url;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
 
-        if (url.includes("/files")) {
-          return Response.json({ detail: "server error" }, { status: 500 });
-        }
-        if (url.includes("/diff")) {
-          return new Promise((resolve) => {
-            resolveDiff = () => resolve(Response.json(diff));
-          });
-        }
-        return Response.json({}, { status: 404 });
-      },
-    );
+      if (url.includes("/files")) {
+        return Response.json({ detail: "server error" }, { status: 500 });
+      }
+      if (url.includes("/diff")) {
+        return new Promise((resolve) => {
+          resolveDiff = () => resolve(Response.json(diff));
+        });
+      }
+      return Response.json({}, { status: 404 });
+    });
 
     const store = createDiffStore({ client: testClient() });
     const loadP = store.loadDiff("owner", "repo", 1, ownerRepoRef);
@@ -848,29 +711,22 @@ describe("createDiffStore loadDiff", () => {
     let resolveFiles: () => void = () => {};
     let resolveDiff: () => void = () => {};
 
-    vi.spyOn(globalThis, "fetch").mockImplementation(
-      async (input: RequestInfo | URL) => {
-        const url =
-          typeof input === "string"
-            ? input
-            : input instanceof URL
-              ? input.href
-              : input.url;
-        fetchedUrls.push(url);
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      fetchedUrls.push(url);
 
-        if (url.includes("/files")) {
-          return new Promise((resolve) => {
-            resolveFiles = () => resolve(Response.json(filesResult));
-          });
-        }
-        if (url.includes("/diff")) {
-          return new Promise((resolve) => {
-            resolveDiff = () => resolve(Response.json(diffResult));
-          });
-        }
-        return Response.json({}, { status: 404 });
-      },
-    );
+      if (url.includes("/files")) {
+        return new Promise((resolve) => {
+          resolveFiles = () => resolve(Response.json(filesResult));
+        });
+      }
+      if (url.includes("/diff")) {
+        return new Promise((resolve) => {
+          resolveDiff = () => resolve(Response.json(diffResult));
+        });
+      }
+      return Response.json({}, { status: 404 });
+    });
 
     // Enable whitespace hiding before loading.
     localStorage.setItem("diff-hide-whitespace", "true");
@@ -898,28 +754,21 @@ describe("createDiffStore loadDiff", () => {
     const filesResult = makeFilesResult(["a.ts", "b.ts"]);
     const diffAll = makeDiffResult(["a.ts", "b.ts"]);
 
-    vi.spyOn(globalThis, "fetch").mockImplementation(
-      async (input: RequestInfo | URL) => {
-        const url =
-          typeof input === "string"
-            ? input
-            : input instanceof URL
-              ? input.href
-              : input.url;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
 
-        if (url.includes("/files")) {
-          return Response.json(filesResult);
+      if (url.includes("/files")) {
+        return Response.json(filesResult);
+      }
+      if (url.includes("/diff")) {
+        if (url.includes("whitespace=hide")) {
+          // Whitespace-filtered diff request fails.
+          return Response.json({ detail: "server error" }, { status: 500 });
         }
-        if (url.includes("/diff")) {
-          if (url.includes("whitespace=hide")) {
-            // Whitespace-filtered diff request fails.
-            return Response.json({ detail: "server error" }, { status: 500 });
-          }
-          return Response.json(diffAll);
-        }
-        return Response.json({}, { status: 404 });
-      },
-    );
+        return Response.json(diffAll);
+      }
+      return Response.json({}, { status: 404 });
+    });
 
     const store = createDiffStore({ client: testClient() });
     await store.loadDiff("owner", "repo", 1, ownerRepoRef);
@@ -939,24 +788,17 @@ describe("createDiffStore loadDiff", () => {
   it("clears file list when /diff fails so sidebar shows no stale files", async () => {
     const filesResult = makeFilesResult(["a.ts", "b.ts"]);
 
-    vi.spyOn(globalThis, "fetch").mockImplementation(
-      async (input: RequestInfo | URL) => {
-        const url =
-          typeof input === "string"
-            ? input
-            : input instanceof URL
-              ? input.href
-              : input.url;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
 
-        if (url.includes("/files")) {
-          return Response.json(filesResult);
-        }
-        if (url.includes("/diff")) {
-          return Response.json({ detail: "server error" }, { status: 500 });
-        }
-        return Response.json({}, { status: 404 });
-      },
-    );
+      if (url.includes("/files")) {
+        return Response.json(filesResult);
+      }
+      if (url.includes("/diff")) {
+        return Response.json({ detail: "server error" }, { status: 500 });
+      }
+      return Response.json({}, { status: 404 });
+    });
 
     const store = createDiffStore({ client: testClient() });
     await store.loadDiff("owner", "repo", 1, ownerRepoRef);
@@ -970,27 +812,20 @@ describe("createDiffStore loadDiff", () => {
     const filesResult = makeFilesResult(["a.ts"]);
     let resolveFiles: () => void = () => {};
 
-    vi.spyOn(globalThis, "fetch").mockImplementation(
-      async (input: RequestInfo | URL) => {
-        const url =
-          typeof input === "string"
-            ? input
-            : input instanceof URL
-              ? input.href
-              : input.url;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
 
-        if (url.includes("/files")) {
-          return new Promise((resolve) => {
-            resolveFiles = () => resolve(Response.json(filesResult));
-          });
-        }
-        if (url.includes("/diff")) {
-          // /diff fails immediately.
-          return Response.json({ detail: "server error" }, { status: 500 });
-        }
-        return Response.json({}, { status: 404 });
-      },
-    );
+      if (url.includes("/files")) {
+        return new Promise((resolve) => {
+          resolveFiles = () => resolve(Response.json(filesResult));
+        });
+      }
+      if (url.includes("/diff")) {
+        // /diff fails immediately.
+        return Response.json({ detail: "server error" }, { status: 500 });
+      }
+      return Response.json({}, { status: 404 });
+    });
 
     const store = createDiffStore({ client: testClient() });
     const loadP = store.loadDiff("owner", "repo", 1, ownerRepoRef);
@@ -1005,29 +840,22 @@ describe("createDiffStore loadDiff", () => {
   });
 
   it("normalizes null files from API to empty array", async () => {
-    vi.spyOn(globalThis, "fetch").mockImplementation(
-      async (input: RequestInfo | URL) => {
-        const url =
-          typeof input === "string"
-            ? input
-            : input instanceof URL
-              ? input.href
-              : input.url;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
 
-        if (url.includes("/files")) {
-          // API returns files: null (Go nil slice serialization).
-          return Response.json({ stale: false, files: null });
-        }
-        if (url.includes("/diff")) {
-          return Response.json({
-            stale: false,
-            whitespace_only_count: 0,
-            files: null,
-          });
-        }
-        return Response.json({}, { status: 404 });
-      },
-    );
+      if (url.includes("/files")) {
+        // API returns files: null (Go nil slice serialization).
+        return Response.json({ stale: false, files: null });
+      }
+      if (url.includes("/diff")) {
+        return Response.json({
+          stale: false,
+          whitespace_only_count: 0,
+          files: null,
+        });
+      }
+      return Response.json({}, { status: 404 });
+    });
 
     const store = createDiffStore({ client: testClient() });
     await store.loadDiff("owner", "repo", 1, ownerRepoRef);
@@ -1039,31 +867,19 @@ describe("createDiffStore loadDiff", () => {
   });
 
   it("filters loaded diff and file list by selected file category", async () => {
-    const result = makeDiffResult([
-      "docs/review-plan.md",
-      "src/App.svelte",
-      "src/App.test.ts",
-      "bun.lock",
-    ]);
+    const result = makeDiffResult(["docs/review-plan.md", "src/App.svelte", "src/App.test.ts", "bun.lock"]);
 
-    vi.spyOn(globalThis, "fetch").mockImplementation(
-      async (input: RequestInfo | URL) => {
-        const url =
-          typeof input === "string"
-            ? input
-            : input instanceof URL
-              ? input.href
-              : input.url;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
 
-        if (url.includes("/files")) {
-          return Response.json({ stale: false, files: result.files });
-        }
-        if (url.includes("/diff")) {
-          return Response.json(result);
-        }
-        return Response.json({}, { status: 404 });
-      },
-    );
+      if (url.includes("/files")) {
+        return Response.json({ stale: false, files: result.files });
+      }
+      if (url.includes("/diff")) {
+        return Response.json(result);
+      }
+      return Response.json({}, { status: 404 });
+    });
 
     const store = createDiffStore({ client: testClient() });
     await store.loadDiff("owner", "repo", 1, ownerRepoRef);
@@ -1086,11 +902,7 @@ describe("createDiffStore loadDiff", () => {
 
     store.setFileCategoryFilter("tests");
 
-    expect(store.getVisibleDiffFiles().map((file) => file.path)).toEqual([
-      "src/App.test.ts",
-    ]);
-    expect(store.getVisibleFileList()?.files.map((file) => file.path)).toEqual([
-      "src/App.test.ts",
-    ]);
+    expect(store.getVisibleDiffFiles().map((file) => file.path)).toEqual(["src/App.test.ts"]);
+    expect(store.getVisibleFileList()?.files.map((file) => file.path)).toEqual(["src/App.test.ts"]);
   });
 });

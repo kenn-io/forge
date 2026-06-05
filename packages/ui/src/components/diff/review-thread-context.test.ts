@@ -1,11 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import type { DiffResult, PREvent } from "../../api/types.js";
-import {
-  reviewThreadContext,
-  reviewThreadsFromEvents,
-  type ReviewThread,
-} from "./review-thread-context.js";
+import { reviewThreadContext, reviewThreadsFromEvents, type ReviewThread } from "./review-thread-context.js";
 
 function makeThread(overrides: Partial<ReviewThread> = {}): ReviewThread {
   return {

@@ -13,10 +13,7 @@ function lockRootSuffix(): string {
   }
 }
 
-const LOCK_ROOT = path.join(
-  os.tmpdir(),
-  `middleman-playwright-locks-${lockRootSuffix()}`,
-);
+const LOCK_ROOT = path.join(os.tmpdir(), `middleman-playwright-locks-${lockRootSuffix()}`);
 export type ExclusiveLockOptions = {
   rootDir?: string;
 };
@@ -194,21 +191,15 @@ async function ensureLockRoot(rootDir: string): Promise<void> {
     throw new Error(`lock root is not a safe directory: ${rootDir}`);
   }
   if (typeof process.getuid === "function" && info.uid !== process.getuid()) {
-    throw new Error(
-      `lock root is owned by uid ${info.uid}, expected ${process.getuid()}`,
-    );
+    throw new Error(`lock root is owned by uid ${info.uid}, expected ${process.getuid()}`);
   }
   await chmod(rootDir, 0o700);
 }
 
 function spawnLockProcess(lockPath: string): ChildProcess {
-  return spawn(
-    process.execPath,
-    ["--input-type=module", "-e", lockWorkerScript(), lockPath, lockMetadata()],
-    {
-      stdio: ["pipe", "pipe", "pipe"],
-    },
-  );
+  return spawn(process.execPath, ["--input-type=module", "-e", lockWorkerScript(), lockPath, lockMetadata()], {
+    stdio: ["pipe", "pipe", "pipe"],
+  });
 }
 
 async function waitForLockProcess(child: ChildProcess): Promise<void> {
@@ -241,11 +232,7 @@ async function waitForLockProcess(child: ChildProcess): Promise<void> {
         return;
       }
       cleanup();
-      reject(
-        new Error(
-          `lock helper exited before acquiring lock (code=${code}, signal=${signal}): ${stderr.trim()}`,
-        ),
-      );
+      reject(new Error(`lock helper exited before acquiring lock (code=${code}, signal=${signal}): ${stderr.trim()}`));
     };
 
     child.stdout?.on("data", onStdout);

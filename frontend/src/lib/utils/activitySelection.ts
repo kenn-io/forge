@@ -39,9 +39,7 @@ export function parseActivitySelection(search: string): ActivitySelection | null
   const owner = pathParts.slice(0, -1).join("/");
 
   const detailTab: ActivityDetailTab =
-    itemType === "pr" && sp.get("selected_tab") === "files"
-      ? "files"
-      : "conversation";
+    itemType === "pr" && sp.get("selected_tab") === "files" ? "files" : "conversation";
 
   return {
     itemType,
@@ -78,16 +76,11 @@ export function buildActivitySelectionSearch(
   return sp;
 }
 
-export function activitySelectionToRoute(
-  selection: ActivitySelection | null,
-  destination: Destination,
-): string | null {
+export function activitySelectionToRoute(selection: ActivitySelection | null, destination: Destination): string | null {
   if (!selection) return null;
   if (destination === "pulls") {
     if (selection.itemType !== "pr") return null;
-    return selection.detailTab === "files"
-      ? buildPullRequestFilesRoute(selection)
-      : buildPullRequestRoute(selection);
+    return selection.detailTab === "files" ? buildPullRequestFilesRoute(selection) : buildPullRequestRoute(selection);
   }
 
   if (selection.itemType !== "issue") return null;

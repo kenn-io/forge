@@ -22,22 +22,14 @@ async function selectActivityViewItem(page: Page, label: string): Promise<void> 
 
 async function gotoThreadedGrouped(page: Page): Promise<void> {
   await page.goto("/");
-  await page
-    .locator(".activity-table .activity-row")
-    .first()
-    .waitFor({ state: "visible", timeout: 10_000 });
+  await page.locator(".activity-table .activity-row").first().waitFor({ state: "visible", timeout: 10_000 });
   await selectActivityViewItem(page, "Threaded");
   await page.keyboard.press("Escape");
-  await page
-    .locator(".threaded-view .repo-header")
-    .first()
-    .waitFor({ state: "visible", timeout: 10_000 });
+  await page.locator(".threaded-view .repo-header").first().waitFor({ state: "visible", timeout: 10_000 });
 }
 
 test.describe("threaded activity sticky headers", () => {
-  test("column header stays visible after scrolling and aligns with later sections", async ({
-    page,
-  }) => {
+  test("column header stays visible after scrolling and aligns with later sections", async ({ page }) => {
     await gotoThreadedGrouped(page);
 
     const columnHeaders = page.locator(".threaded-view .activity-column-headers");
@@ -83,9 +75,7 @@ test.describe("threaded activity sticky headers", () => {
     expect(Math.abs(chipBox.x - headerBox.x)).toBeLessThan(4);
   });
 
-  test("each repo header is bounded to its own section instead of stacking", async ({
-    page,
-  }) => {
+  test("each repo header is bounded to its own section instead of stacking", async ({ page }) => {
     await gotoThreadedGrouped(page);
 
     const repoHeaders = page.locator(".threaded-view .repo-header");
@@ -102,12 +92,8 @@ test.describe("threaded activity sticky headers", () => {
     // After scrolling mid-list, only ONE repo header can be "stuck" at the
     // sticky top. If sections were display: contents, two sticky headers
     // would both pin at the same y and visibly overlap.
-    const boxes = await Promise.all(
-      Array.from({ length: count }, (_, i) => repoHeaders.nth(i).boundingBox()),
-    );
-    const yValues = boxes
-      .filter((b): b is NonNullable<typeof b> => b !== null)
-      .map((b) => Math.round(b.y));
+    const boxes = await Promise.all(Array.from({ length: count }, (_, i) => repoHeaders.nth(i).boundingBox()));
+    const yValues = boxes.filter((b): b is NonNullable<typeof b> => b !== null).map((b) => Math.round(b.y));
     const distinct = new Set(yValues);
     expect(distinct.size).toBe(yValues.length);
   });

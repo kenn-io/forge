@@ -1,11 +1,6 @@
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 
-import {
-  pushModalFrame,
-  getTopFrame,
-  getStackDepth,
-  resetModalStack,
-} from "./modal-stack.svelte.js";
+import { pushModalFrame, getTopFrame, getStackDepth, resetModalStack } from "./modal-stack.svelte.js";
 
 describe("modal stack", () => {
   beforeEach(() => resetModalStack());

@@ -1,10 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import {
-  bulkAddRepos,
-  previewRepos,
-  removeRepo,
-  updateSettings,
-} from "./settings.js";
+import { bulkAddRepos, previewRepos, removeRepo, updateSettings } from "./settings.js";
 
 describe("settings api", () => {
   beforeEach(() => {
@@ -51,9 +46,7 @@ describe("settings api", () => {
 
     const request = vi.mocked(fetch).mock.calls[0]?.[0];
     expect(request).toBeInstanceOf(Request);
-    expect(new URL((request as Request).url).pathname).toBe(
-      "/api/v1/repo/github/acme/widgets-%3F",
-    );
+    expect(new URL((request as Request).url).pathname).toBe("/api/v1/repo/github/acme/widgets-%3F");
     expect((request as Request).method).toBe("DELETE");
   });
 

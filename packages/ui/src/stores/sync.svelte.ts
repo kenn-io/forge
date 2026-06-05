@@ -108,10 +108,7 @@ export function createSyncStore(opts: SyncStoreOptions) {
 
     try {
       const priorityRepos = parsePriorityRepos(getPriorityRepos());
-      const syncOptions =
-        priorityRepos.length > 0
-          ? { params: { query: { priority_repo: priorityRepos } } }
-          : {};
+      const syncOptions = priorityRepos.length > 0 ? { params: { query: { priority_repo: priorityRepos } } } : {};
       const { error } = await apiClient.POST("/sync", syncOptions);
       if (error) {
         throw new Error(error.detail ?? error.title ?? "failed to trigger sync");

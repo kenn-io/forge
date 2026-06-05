@@ -7,22 +7,14 @@ import {
   openCheatsheet,
   resetCheatsheetState,
 } from "../../stores/keyboard/cheatsheet-state.svelte.js";
-import {
-  registerScopedActions,
-  resetRegistry,
-} from "../../stores/keyboard/registry.svelte.js";
+import { registerScopedActions, resetRegistry } from "../../stores/keyboard/registry.svelte.js";
 import type { Action } from "../../stores/keyboard/types.js";
 import { resetModalStack } from "@middleman/ui/stores/keyboard/modal-stack";
 
 const noop = (): void => {};
 const trueWhen = (): boolean => true;
 
-function action(
-  id: string,
-  label: string,
-  scope: Action["scope"],
-  binding: Action["binding"],
-): Action {
+function action(id: string, label: string, scope: Action["scope"], binding: Action["binding"]): Action {
   return {
     id,
     label,
@@ -36,10 +28,7 @@ function action(
 
 function sectionByHeader(dialog: Element, header: string): Element | undefined {
   return Array.from(dialog.querySelectorAll(".cheatsheet-section")).find(
-    (section) =>
-      (
-        section.querySelector(".cheatsheet-section-header")?.textContent ?? ""
-      ).trim() === header,
+    (section) => (section.querySelector(".cheatsheet-section-header")?.textContent ?? "").trim() === header,
   );
 }
 
@@ -89,9 +78,7 @@ describe("Cheatsheet", () => {
   });
 
   it("renders the Commands section for actions without a binding", async () => {
-    registerScopedActions("test", [
-      action("test.cmd", "Test command", "global", null),
-    ]);
+    registerScopedActions("test", [action("test.cmd", "Test command", "global", null)]);
     const { rerender } = render(Cheatsheet, { props: {} });
     openCheatsheet();
     await rerender({});

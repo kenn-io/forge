@@ -7,9 +7,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test.describe("palette command dispatch", () => {
-  test("'>' filters to commands; running Open settings navigates", async ({
-    page,
-  }) => {
+  test("'>' filters to commands; running Open settings navigates", async ({ page }) => {
     await page.goto("/pulls");
     await page.keyboard.press("Meta+K");
     await page.locator(".palette-input").fill(">settings");
@@ -17,9 +15,7 @@ test.describe("palette command dispatch", () => {
     await expect(page).toHaveURL(/\/settings/);
   });
 
-  test("typing a single character in the search input does not fire global j", async ({
-    page,
-  }) => {
+  test("typing a single character in the search input does not fire global j", async ({ page }) => {
     await page.goto("/pulls");
     // Wait for the PR list to render so .pr-list-row.selected has a
     // chance to appear if the j shortcut leaks through.
@@ -31,9 +27,7 @@ test.describe("palette command dispatch", () => {
     expect(after).toBe(before);
   });
 
-  test("Cmd+P inside the palette closes it instead of opening browser print", async ({
-    page,
-  }) => {
+  test("Cmd+P inside the palette closes it instead of opening browser print", async ({ page }) => {
     await page.goto("/pulls");
     await page.keyboard.press("Meta+K");
     const dialog = page.getByRole("dialog", {

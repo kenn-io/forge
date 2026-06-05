@@ -29,9 +29,7 @@ const pierre = (() => {
     const didRender = renderResults.shift() ?? true;
     events.push(`render:${String(didRender)}`);
     if (didRender && props?.fileContainer) {
-      const root =
-        props.fileContainer.shadowRoot ??
-        props.fileContainer.attachShadow({ mode: "open" });
+      const root = props.fileContainer.shadowRoot ?? props.fileContainer.attachShadow({ mode: "open" });
       root.innerHTML = `
         <pre data-diff-type="unified">
           <div data-separator data-expand-index="0">
@@ -57,11 +55,7 @@ const pierre = (() => {
       lastOptions = options;
     }
     cleanUp = cleanUp;
-    expandHunk = (
-      hunkIndex: number,
-      direction: unknown,
-      expansionLineCount?: number,
-    ) => {
+    expandHunk = (hunkIndex: number, direction: unknown, expansionLineCount?: number) => {
       counts.expand += 1;
       events.push("expand");
       lastExpansion = { direction, expansionLineCount, hunkIndex };
@@ -253,14 +247,12 @@ describe("PierreFileDiff", () => {
       if (hadRequestAnimationFrame) {
         globalThis.requestAnimationFrame = originalRequestAnimationFrame;
       } else {
-        delete (globalThis as { requestAnimationFrame?: unknown })
-          .requestAnimationFrame;
+        delete (globalThis as { requestAnimationFrame?: unknown }).requestAnimationFrame;
       }
       if (hadCancelAnimationFrame) {
         globalThis.cancelAnimationFrame = originalCancelAnimationFrame;
       } else {
-        delete (globalThis as { cancelAnimationFrame?: unknown })
-          .cancelAnimationFrame;
+        delete (globalThis as { cancelAnimationFrame?: unknown }).cancelAnimationFrame;
       }
     }
   });

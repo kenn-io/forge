@@ -162,31 +162,15 @@ export function createEventsStore(opts: EventsStoreOptions = {}) {
       "workspace_pushed_head_changed",
       opts.onWorkspacePushedHeadChanged,
     );
-    addJSONListener<WorkspacePRAssociatedEvent>(
-      source,
-      "workspace_pr_associated",
-      opts.onWorkspacePRAssociated,
-    );
+    addJSONListener<WorkspacePRAssociatedEvent>(source, "workspace_pr_associated", opts.onWorkspacePRAssociated);
     addJSONListener<WorkspacePRRefreshQueuedEvent>(
       source,
       "workspace_pr_refresh_queued",
       opts.onWorkspacePRRefreshQueued,
     );
-    addJSONListener<PRDetailRefreshedEvent>(
-      source,
-      "pr_detail_refreshed",
-      opts.onPRDetailRefreshed,
-    );
-    addJSONListener<PRCIRefreshQueuedEvent>(
-      source,
-      "pr_ci_refresh_queued",
-      opts.onPRCIRefreshQueued,
-    );
-    addJSONListener<PRCIRefreshedEvent>(
-      source,
-      "pr_ci_refreshed",
-      opts.onPRCIRefreshed,
-    );
+    addJSONListener<PRDetailRefreshedEvent>(source, "pr_detail_refreshed", opts.onPRDetailRefreshed);
+    addJSONListener<PRCIRefreshQueuedEvent>(source, "pr_ci_refresh_queued", opts.onPRCIRefreshQueued);
+    addJSONListener<PRCIRefreshedEvent>(source, "pr_ci_refreshed", opts.onPRCIRefreshed);
   }
 
   function disconnect(): void {
@@ -203,11 +187,7 @@ export function createEventsStore(opts: EventsStoreOptions = {}) {
   return { connect, disconnect, isConnected };
 }
 
-function addJSONListener<T>(
-  source: EventSource,
-  eventName: string,
-  callback: ((event: T) => void) | undefined,
-): void {
+function addJSONListener<T>(source: EventSource, eventName: string, callback: ((event: T) => void) | undefined): void {
   source.addEventListener(eventName, (ev) => {
     if (!callback) return;
     const payload = decodeEventPayload(ev);

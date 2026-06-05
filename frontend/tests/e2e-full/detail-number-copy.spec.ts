@@ -1,15 +1,9 @@
 import { expect, test } from "@playwright/test";
 
 test.describe("detail number link copy", () => {
-  test.skip(
-    ({ browserName }) => browserName !== "chromium",
-    "Clipboard read assertions require Chromium permissions",
-  );
+  test.skip(({ browserName }) => browserName !== "chromium", "Clipboard read assertions require Chromium permissions");
 
-  test("copies the PR GitHub link from the detail number", async ({
-    page,
-    context,
-  }) => {
+  test("copies the PR GitHub link from the detail number", async ({ page, context }) => {
     await context.grantPermissions(["clipboard-read", "clipboard-write"]);
 
     await page.goto("/pulls/github/acme/widgets/1");
@@ -27,16 +21,11 @@ test.describe("detail number link copy", () => {
     await expect(numberButton).toHaveAttribute("title", "Copied!");
   });
 
-  test("copies the issue GitHub link from the detail number", async ({
-    page,
-    context,
-  }) => {
+  test("copies the issue GitHub link from the detail number", async ({ page, context }) => {
     await context.grantPermissions(["clipboard-read", "clipboard-write"]);
 
     await page.goto("/issues/github/acme/widgets/10");
-    await page
-      .locator(".issue-detail")
-      .waitFor({ state: "visible", timeout: 10_000 });
+    await page.locator(".issue-detail").waitFor({ state: "visible", timeout: 10_000 });
 
     const numberButton = page.getByRole("button", {
       name: "Copy issue #10 link",

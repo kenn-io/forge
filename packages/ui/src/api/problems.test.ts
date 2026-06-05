@@ -1,12 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import {
-  isProblem,
-  problemCapability,
-  problemRetryAfter,
-  ProblemCodes,
-  readProblem,
-} from "./problems";
+import { isProblem, problemCapability, problemRetryAfter, ProblemCodes, readProblem } from "./problems";
 
 describe("isProblem", () => {
   it("accepts a body with a known code", () => {
@@ -36,10 +30,7 @@ describe("isProblem", () => {
 });
 
 describe("readProblem", () => {
-  function jsonResponse(
-    body: unknown,
-    init: ResponseInit & { contentType?: string } = {},
-  ): Response {
+  function jsonResponse(body: unknown, init: ResponseInit & { contentType?: string } = {}): Response {
     const headers = new Headers(init.headers);
     headers.set("content-type", init.contentType ?? "application/problem+json");
     return new Response(JSON.stringify(body), {

@@ -98,10 +98,7 @@ interface CommandResult {
 }
 
 interface WorkspaceCommandHandler {
-  (
-    command: string,
-    payload: Record<string, unknown>,
-  ): CommandResult | Promise<CommandResult>;
+  (command: string, payload: Record<string, unknown>): CommandResult | Promise<CommandResult>;
 }
 
 interface WorkspaceDetailContext {

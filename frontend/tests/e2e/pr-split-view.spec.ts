@@ -148,15 +148,11 @@ test.beforeEach(async ({ page }) => {
   await mockSplitViewPR(page);
 });
 
-test("lets wide PR detail panes opt into split conversation and files", async ({
-  page,
-}) => {
+test("lets wide PR detail panes opt into split conversation and files", async ({ page }) => {
   await page.setViewportSize({ width: 2200, height: 1000 });
   await page.goto("/pulls/github/acme/widgets/42");
 
-  await expect(page.locator(".detail-title")).toContainText(
-    "Add browser regression coverage",
-  );
+  await expect(page.locator(".detail-title")).toContainText("Add browser regression coverage");
   await expect(page.locator(".detail-split-layout")).toHaveCount(0);
 
   const splitToggle = page.getByRole("button", { name: "Split view" });
@@ -167,9 +163,7 @@ test("lets wide PR detail panes opt into split conversation and files", async ({
 
   await expect(splitToggle).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator(".detail-split-layout")).toBeVisible();
-  await expect(page.locator(".detail-title")).toContainText(
-    "Add browser regression coverage",
-  );
+  await expect(page.locator(".detail-title")).toContainText("Add browser regression coverage");
   await expect(page.locator(".files-view")).toBeVisible();
   await expect(page.getByText("src/split-view.ts")).toBeVisible();
 });

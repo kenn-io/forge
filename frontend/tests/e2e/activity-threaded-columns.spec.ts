@@ -127,9 +127,7 @@ async function mockActivity(page: Page, items: unknown[]): Promise<void> {
 }
 
 test.describe("threaded activity columns", () => {
-  test("item row author column shows the PR author, not the latest actor", async ({
-    page,
-  }) => {
+  test("item row author column shows the PR author, not the latest actor", async ({ page }) => {
     await mockSettings(page);
     // Two events on the same PR opened by "alice": her opening event and a
     // newer review by "bob". The threaded row attributes the item to its
@@ -164,9 +162,7 @@ test.describe("threaded activity columns", () => {
     await expect(authorCell).toHaveText("alice");
   });
 
-  test("branch commit row shows the commit author in the author column", async ({
-    page,
-  }) => {
+  test("branch commit row shows the commit author in the author column", async ({ page }) => {
     await mockSettings(page);
     await mockActivity(page, [
       branchCommit({
@@ -186,9 +182,7 @@ test.describe("threaded activity columns", () => {
     await expect(row.locator(".cell--type")).toHaveText("Commit");
   });
 
-  test("hide-org toggle swaps the repo chip between owner/name and bare name", async ({
-    page,
-  }) => {
+  test("hide-org toggle swaps the repo chip between owner/name and bare name", async ({ page }) => {
     await mockSettings(page);
     await mockActivity(page, [
       itemEvent({
@@ -221,8 +215,6 @@ test.describe("threaded activity columns", () => {
 
     // Reload to verify the toggle persists via localStorage.
     await page.reload();
-    await expect(page.locator(".item-row .repo-chip__label").first()).toHaveText(
-      "widgets",
-    );
+    await expect(page.locator(".item-row .repo-chip__label").first()).toHaveText("widgets");
   });
 });

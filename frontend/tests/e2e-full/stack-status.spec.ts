@@ -1,8 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test("stack status renders a passive base row from the full-stack API", async ({
-  page,
-}) => {
+test("stack status renders a passive base row from the full-stack API", async ({ page }) => {
   await page.goto("/pulls/github/acme/tools/11");
 
   const detail = page.locator(".pull-detail");
@@ -28,9 +26,7 @@ test("stack status renders a passive base row from the full-stack API", async ({
   await expect(page).toHaveURL(/\/pulls\/github\/acme\/tools\/11$/);
 });
 
-test("stack member navigation preserves the focus route with full-stack data", async ({
-  page,
-}) => {
+test("stack member navigation preserves the focus route with full-stack data", async ({ page }) => {
   await page.goto("/focus/pulls/github/acme/tools/11");
 
   const detail = page.locator(".pull-detail");
@@ -47,12 +43,8 @@ test("stack member navigation preserves the focus route with full-stack data", a
   await expect(detail.locator(".stack-panel")).toContainText("3 PRs · current 1/3");
 });
 
-test("stack member navigation updates the activity drawer with full-stack data", async ({
-  page,
-}) => {
-  await page.goto(
-    "/?selected=pr:11&provider=github&platform_host=github.com&repo_path=acme%2Ftools",
-  );
+test("stack member navigation updates the activity drawer with full-stack data", async ({ page }) => {
+  await page.goto("/?selected=pr:11&provider=github&platform_host=github.com&repo_path=acme%2Ftools");
 
   const detail = page.locator(".activity-detail");
   await expect(detail).toBeVisible();
@@ -67,8 +59,6 @@ test("stack member navigation updates the activity drawer with full-stack data",
 
   await expect(page).toHaveURL(/selected=pr%3A10/);
   await expect(page).toHaveURL(/repo_path=acme%2Ftools/);
-  await expect(detail.locator(".activity-detail-header")).toContainText(
-    "acme/tools#10",
-  );
+  await expect(detail.locator(".activity-detail-header")).toContainText("acme/tools#10");
   await expect(detail.locator(".stack-panel")).toContainText("3 PRs · current 1/3");
 });

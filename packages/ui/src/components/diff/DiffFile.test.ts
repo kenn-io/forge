@@ -60,11 +60,9 @@ beforeAll(() => {
   }
   (globalThis as GlobalWithResizeObserver).ResizeObserver = ResizeObserverStub;
 
-  originalReplaceSync = (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet
-    ?.prototype.replaceSync;
+  originalReplaceSync = (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet?.prototype.replaceSync;
   if ((globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet?.prototype) {
-    (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet.prototype.replaceSync ??=
-      function replaceSync(): void {};
+    (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet.prototype.replaceSync ??= function replaceSync(): void {};
   }
 });
 
@@ -81,11 +79,11 @@ afterAll(() => {
   }
   if ((globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet?.prototype) {
     if (originalReplaceSync) {
-      (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet.prototype.replaceSync =
-        originalReplaceSync as (text: string) => void;
+      (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet.prototype.replaceSync = originalReplaceSync as (
+        text: string,
+      ) => void;
     } else {
-      delete (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet.prototype
-        .replaceSync;
+      delete (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet.prototype.replaceSync;
     }
   }
 });
@@ -93,10 +91,7 @@ afterAll(() => {
 import DiffFile from "./DiffFile.svelte";
 import type { DiffFile as DiffFileType, FilePreview } from "../../api/types.js";
 import { STORES_KEY } from "../../context.js";
-import type {
-  DiffReviewDraftComment,
-  DiffReviewLineRange,
-} from "../../stores/diff-review-draft.svelte.js";
+import type { DiffReviewDraftComment, DiffReviewLineRange } from "../../stores/diff-review-draft.svelte.js";
 import { createDiffStore } from "../../stores/diff.svelte.js";
 import type { ReviewThread } from "./review-thread-context.js";
 
@@ -235,8 +230,7 @@ function renderDiffFile(
           diff,
           diffReviewDraft,
           detail: {
-            replyToDiscussion:
-              options.replyToDiscussion ?? (() => Promise.resolve(true)),
+            replyToDiscussion: options.replyToDiscussion ?? (() => Promise.resolve(true)),
           },
         },
       ],
@@ -279,12 +273,8 @@ describe("DiffFile", () => {
 
     await waitFor(() => {
       const root = document.querySelector(".pierre-diff")?.shadowRoot;
-      expect(
-        root?.querySelector('[data-diff-path="src/foo.ts"][data-diff-old-line="2"]'),
-      ).toBeTruthy();
-      expect(
-        root?.querySelector('[data-diff-path="src/foo.ts"][data-diff-new-line="2"]'),
-      ).toBeTruthy();
+      expect(root?.querySelector('[data-diff-path="src/foo.ts"][data-diff-old-line="2"]')).toBeTruthy();
+      expect(root?.querySelector('[data-diff-path="src/foo.ts"][data-diff-new-line="2"]')).toBeTruthy();
     });
   });
 
@@ -301,8 +291,7 @@ describe("DiffFile", () => {
         return [];
       }
     }
-    (globalThis as GlobalWithIO).IntersectionObserver =
-      PendingIntersectionObserverStub;
+    (globalThis as GlobalWithIO).IntersectionObserver = PendingIntersectionObserverStub;
 
     try {
       renderDiffFile(makeFile());
@@ -411,19 +400,13 @@ describe("DiffFile", () => {
     await fireEvent.click(button, { shiftKey: options.shiftKey });
   }
 
-  async function keyboardActivateLineCommentButton(
-    line: number,
-    side: "left" | "right",
-  ): Promise<void> {
+  async function keyboardActivateLineCommentButton(line: number, side: "left" | "right"): Promise<void> {
     const button = await findLineCommentButton(line, side);
     button.focus();
     await fireEvent.click(button);
   }
 
-  async function findLineCommentButton(
-    line: number,
-    side: "left" | "right",
-  ): Promise<HTMLButtonElement> {
+  async function findLineCommentButton(line: number, side: "left" | "right"): Promise<HTMLButtonElement> {
     const sideLabel = side === "left" ? "old" : "new";
     return await waitFor(() => {
       const element = document
@@ -437,18 +420,14 @@ describe("DiffFile", () => {
   }
 
   function selectedPierreLines(): NodeListOf<Element> | undefined {
-    return document
-      .querySelector(".pierre-diff")
-      ?.shadowRoot?.querySelectorAll("[data-selected-line]");
+    return document.querySelector(".pierre-diff")?.shadowRoot?.querySelectorAll("[data-selected-line]");
   }
 
   function expandedContextLineTexts(): string[] {
     return Array.from(
       document
         .querySelector(".pierre-diff")
-        ?.shadowRoot?.querySelectorAll<HTMLElement>(
-          "[data-content] [data-line-type='context-expanded']",
-        ) ?? [],
+        ?.shadowRoot?.querySelectorAll<HTMLElement>("[data-content] [data-line-type='context-expanded']") ?? [],
     ).map((line) => line.textContent?.trim() ?? "");
   }
 
@@ -701,13 +680,7 @@ describe("DiffFile", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Reply" }));
 
     await waitFor(() => {
-      expect(replyToDiscussion).toHaveBeenCalledWith(
-        expect.any(String),
-        "n",
-        1,
-        "thread-1",
-        "Follow-up reply",
-      );
+      expect(replyToDiscussion).toHaveBeenCalledWith(expect.any(String), "n", 1, "thread-1", "Follow-up reply");
     });
   });
 
@@ -923,10 +896,7 @@ describe("DiffFile", () => {
     const loadFilePreview = vi
       .spyOn(diff, "loadFilePreview")
       .mockImplementation(async (_owner, _name, _number, path, side) => {
-        return textPreview(
-          path,
-          side === "old" ? oldText.join("\n") : newText.join("\n"),
-        );
+        return textPreview(path, side === "old" ? oldText.join("\n") : newText.join("\n"));
       });
 
     const expandButton = await waitFor(() => {
@@ -940,8 +910,7 @@ describe("DiffFile", () => {
     await fireEvent.click(expandButton);
 
     await waitFor(() => {
-      const text =
-        document.querySelector(".pierre-diff")?.shadowRoot?.textContent ?? "";
+      const text = document.querySelector(".pierre-diff")?.shadowRoot?.textContent ?? "";
       expect(text).toContain("shared 10");
       expect(text).toContain("@@ -77,3 +77,3 @@ lateContext");
       const expandedLines = expandedContextLineTexts();
@@ -949,20 +918,8 @@ describe("DiffFile", () => {
       expect(expandedLines.every((line) => line.length > 0)).toBe(true);
       expect(expandedLines.some((line) => line.includes("shared 10"))).toBe(true);
     });
-    expect(loadFilePreview).toHaveBeenCalledWith(
-      expect.any(String),
-      "n",
-      1,
-      "src/context.ts",
-      "old",
-    );
-    expect(loadFilePreview).toHaveBeenCalledWith(
-      expect.any(String),
-      "n",
-      1,
-      "src/context.ts",
-      "new",
-    );
+    expect(loadFilePreview).toHaveBeenCalledWith(expect.any(String), "n", 1, "src/context.ts", "old");
+    expect(loadFilePreview).toHaveBeenCalledWith(expect.any(String), "n", 1, "src/context.ts", "new");
   });
 
   it("continues expanding context after full file text is loaded", async () => {
@@ -1041,10 +998,7 @@ describe("DiffFile", () => {
     const loadFilePreview = vi
       .spyOn(diff, "loadFilePreview")
       .mockImplementation(async (_owner, _name, _number, path, side) => {
-        return textPreview(
-          path,
-          side === "old" ? oldText.join("\n") : newText.join("\n"),
-        );
+        return textPreview(path, side === "old" ? oldText.join("\n") : newText.join("\n"));
       });
 
     const firstExpandButton = await waitFor(() => {
@@ -1057,8 +1011,7 @@ describe("DiffFile", () => {
     await fireEvent.click(firstExpandButton);
 
     await waitFor(() => {
-      const text =
-        document.querySelector(".pierre-diff")?.shadowRoot?.textContent ?? "";
+      const text = document.querySelector(".pierre-diff")?.shadowRoot?.textContent ?? "";
       expect(text).toContain("shared 10");
       expect(text).not.toContain("shared 50");
       const expandedLines = expandedContextLineTexts();
@@ -1069,9 +1022,7 @@ describe("DiffFile", () => {
 
     const nextExpandButton = await waitFor(() => {
       const buttons = Array.from(
-        document
-          .querySelector(".pierre-diff")
-          ?.shadowRoot?.querySelectorAll<HTMLElement>("[data-expand-button]") ?? [],
+        document.querySelector(".pierre-diff")?.shadowRoot?.querySelectorAll<HTMLElement>("[data-expand-button]") ?? [],
       );
       const button = buttons.find((candidate) => candidate !== firstExpandButton);
       expect(button).toBeTruthy();
@@ -1080,8 +1031,7 @@ describe("DiffFile", () => {
     await fireEvent.click(nextExpandButton);
 
     await waitFor(() => {
-      const text =
-        document.querySelector(".pierre-diff")?.shadowRoot?.textContent ?? "";
+      const text = document.querySelector(".pierre-diff")?.shadowRoot?.textContent ?? "";
       expect(text).toContain("shared 50");
       const expandedLines = expandedContextLineTexts();
       expect(expandedLines.every((line) => line.length > 0)).toBe(true);

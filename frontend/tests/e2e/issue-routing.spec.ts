@@ -60,33 +60,26 @@ async function mockIssueDetailAndTrackHosts(page: Page): Promise<string[]> {
       }),
     });
   });
-  await page.route(
-    /\/api\/v1\/repos\/acme\/widgets\/issues\/7(?:[/?]|$)/,
-    async (route) => {
-      const url = new URL(route.request().url());
-      seenHosts.push(url.searchParams.get("platform_host") ?? "");
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify(mirrorIssueDetail),
-      });
-    },
-  );
+  await page.route(/\/api\/v1\/repos\/acme\/widgets\/issues\/7(?:[/?]|$)/, async (route) => {
+    const url = new URL(route.request().url());
+    seenHosts.push(url.searchParams.get("platform_host") ?? "");
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(mirrorIssueDetail),
+    });
+  });
 
   return seenHosts;
 }
 
 test.describe("issue route platform host", () => {
-  test("direct issue load preserves platform_host in detail requests", async ({
-    page,
-  }) => {
+  test("direct issue load preserves platform_host in detail requests", async ({ page }) => {
     const seenHosts = await mockIssueDetailAndTrackHosts(page);
 
     await page.goto("/host/ghe.example.com/issues/github/acme/widgets/7");
 
-    await expect(page.locator(".issue-detail .detail-title")).toContainText(
-      "Mirror host issue",
-    );
+    await expect(page.locator(".issue-detail .detail-title")).toContainText("Mirror host issue");
     await expect.poll(() => seenHosts).toContain("ghe.example.com");
   });
 
@@ -95,17 +88,11 @@ test.describe("issue route platform host", () => {
 
     await page.goto("/issues");
     await page.evaluate(() => {
-      window.history.pushState(
-        null,
-        "",
-        "/host/ghe.example.com/issues/github/acme/widgets/7",
-      );
+      window.history.pushState(null, "", "/host/ghe.example.com/issues/github/acme/widgets/7");
       window.dispatchEvent(new PopStateEvent("popstate"));
     });
 
-    await expect(page.locator(".issue-detail .detail-title")).toContainText(
-      "Mirror host issue",
-    );
+    await expect(page.locator(".issue-detail .detail-title")).toContainText("Mirror host issue");
     await expect.poll(() => seenHosts).toContain("ghe.example.com");
   });
 });
@@ -167,16 +154,13 @@ async function mockAssignedIssueDetail(page: Page): Promise<void> {
       }),
     });
   });
-  await page.route(
-    "**/api/v1/host/ghe.example.com/issues/github/acme/widgets/12",
-    async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify(assignedIssueDetail),
-      });
-    },
-  );
+  await page.route("**/api/v1/host/ghe.example.com/issues/github/acme/widgets/12", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(assignedIssueDetail),
+    });
+  });
 }
 
 test.describe("issue detail assignees", () => {
@@ -185,9 +169,7 @@ test.describe("issue detail assignees", () => {
 
     await page.goto("/host/ghe.example.com/issues/github/acme/widgets/12");
 
-    await expect(page.locator(".issue-detail .detail-title")).toContainText(
-      "Issue with assignees",
-    );
+    await expect(page.locator(".issue-detail .detail-title")).toContainText("Issue with assignees");
     const metaRow = page.locator(".issue-detail .meta-row");
     await expect(metaRow).toContainText("Assigned: alice, bob");
   });

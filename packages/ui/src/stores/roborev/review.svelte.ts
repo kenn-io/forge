@@ -58,11 +58,7 @@ export function createReviewStore(opts: ReviewStoreOptions) {
 
       // Extract job metadata: prefer standalone fetch,
       // fall back to the review's nested job object.
-      if (
-        jobSettled[0]?.status === "fulfilled" &&
-        !jobSettled[0].value.error &&
-        jobSettled[0].value.data?.jobs?.[0]
-      ) {
+      if (jobSettled[0]?.status === "fulfilled" && !jobSettled[0].value.error && jobSettled[0].value.data?.jobs?.[0]) {
         selectedJob = jobSettled[0].value.data.jobs[0];
       }
 

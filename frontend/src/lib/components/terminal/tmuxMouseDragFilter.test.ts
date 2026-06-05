@@ -9,10 +9,7 @@ const largeDrag = "\x1b[<32;14;5M";
 const laterDrag = "\x1b[<32;15;5M";
 const mouseUp = "\x1b[<0;14;5m";
 
-function collect(
-  filter: ReturnType<typeof createTmuxMouseDragFilter>,
-  input: string[],
-): string {
+function collect(filter: ReturnType<typeof createTmuxMouseDragFilter>, input: string[]): string {
   return input.map((chunk) => filter.filter(chunk)).join("");
 }
 
@@ -28,18 +25,9 @@ describe("tmux mouse drag filter", () => {
   it("flushes buffered drag reports once selection exceeds threshold", () => {
     const filter = createTmuxMouseDragFilter({ thresholdCells: 3 });
 
-    const output = collect(filter, [
-      mouseDown,
-      smallDrag,
-      thresholdDrag,
-      largeDrag,
-      laterDrag,
-      mouseUp,
-    ]);
+    const output = collect(filter, [mouseDown, smallDrag, thresholdDrag, largeDrag, laterDrag, mouseUp]);
 
-    expect(output).toBe(
-      mouseDown + smallDrag + thresholdDrag + largeDrag + laterDrag + mouseUp,
-    );
+    expect(output).toBe(mouseDown + smallDrag + thresholdDrag + largeDrag + laterDrag + mouseUp);
   });
 
   it("passes through non-mouse terminal data around suppressed drag reports", () => {

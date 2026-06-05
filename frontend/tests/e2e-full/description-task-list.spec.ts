@@ -37,21 +37,13 @@ test.describe.serial("PR description task list", () => {
     const reloadedBody = page.locator(".body-section .markdown-body");
     await reloadedBody.waitFor({ state: "visible" });
 
-    await expect(
-      reloadedBody.locator('input[type="checkbox"][data-task-index="0"]'),
-    ).toBeChecked();
-    await expect(
-      reloadedBody.locator('input[type="checkbox"][data-task-index="1"]'),
-    ).toBeChecked();
+    await expect(reloadedBody.locator('input[type="checkbox"][data-task-index="0"]')).toBeChecked();
+    await expect(reloadedBody.locator('input[type="checkbox"][data-task-index="1"]')).toBeChecked();
   });
 
-  test("drag handle reorders a task item and persists on reload", async ({
-    page,
-  }) => {
+  test("drag handle reorders a task item and persists on reload", async ({ page }) => {
     const body = page.locator(".body-section .markdown-body");
-    const firstLabel = await body
-      .locator('.task-list-item--interactive[data-task-index="0"]')
-      .textContent();
+    const firstLabel = await body.locator('.task-list-item--interactive[data-task-index="0"]').textContent();
     expect(firstLabel ?? "").toMatch(/Cmd\+K/);
 
     const handle0 = body.locator('.task-drag-handle[data-task-index="0"]');
@@ -70,13 +62,9 @@ test.describe.serial("PR description task list", () => {
     await page.mouse.down();
     const steps = 8;
     for (let i = 1; i <= steps; i++) {
-      await page.mouse.move(
-        startX + ((targetX - startX) * i) / steps,
-        startY + ((targetY - startY) * i) / steps,
-        {
-          steps: 4,
-        },
-      );
+      await page.mouse.move(startX + ((targetX - startX) * i) / steps, startY + ((targetY - startY) * i) / steps, {
+        steps: 4,
+      });
     }
     await page.mouse.up();
 
@@ -88,19 +76,13 @@ test.describe.serial("PR description task list", () => {
     // The originally-first item ("Cmd+K …") now sits at index 2 after
     // the drag; the originally-second item ("Tab/Shift+Tab …") is now
     // at index 0.
-    const slot0 = await reloadedBody
-      .locator('.task-list-item--interactive[data-task-index="0"]')
-      .textContent();
-    const slot2 = await reloadedBody
-      .locator('.task-list-item--interactive[data-task-index="2"]')
-      .textContent();
+    const slot0 = await reloadedBody.locator('.task-list-item--interactive[data-task-index="0"]').textContent();
+    const slot2 = await reloadedBody.locator('.task-list-item--interactive[data-task-index="2"]').textContent();
     expect(slot0 ?? "").toMatch(/Tab\/Shift\+Tab/);
     expect(slot2 ?? "").toMatch(/Cmd\+K/);
   });
 
-  test("queued body save wins when an older PATCH finishes after a newer click", async ({
-    page,
-  }) => {
+  test("queued body save wins when an older PATCH finishes after a newer click", async ({ page }) => {
     // Hold the first PATCH response so we can queue a newer body
     // while it's in flight. This exercises the single-flight body-
     // save queue: out-of-order responses must NOT clobber the
@@ -176,14 +158,10 @@ test.describe.serial("PR description task list", () => {
     await page.reload();
     const reloadedBody = page.locator(".body-section .markdown-body");
     await reloadedBody.waitFor({ state: "visible" });
-    await expect(
-      reloadedBody.locator('input[type="checkbox"][data-task-index="0"]'),
-    ).toBeChecked({
+    await expect(reloadedBody.locator('input[type="checkbox"][data-task-index="0"]')).toBeChecked({
       checked: !cb0Initial,
     });
-    await expect(
-      reloadedBody.locator('input[type="checkbox"][data-task-index="1"]'),
-    ).toBeChecked({
+    await expect(reloadedBody.locator('input[type="checkbox"][data-task-index="1"]')).toBeChecked({
       checked: !cb1Initial,
     });
   });

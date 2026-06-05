@@ -2,9 +2,7 @@ import { expect, test } from "@playwright/test";
 import { startIsolatedE2EServerWithOptions } from "./support/e2eServer";
 
 test.describe("repository summaries", () => {
-  test("hides a configured non-github default host in repo labels", async ({
-    page,
-  }) => {
+  test("hides a configured non-github default host in repo labels", async ({ page }) => {
     const server = await startIsolatedE2EServerWithOptions({
       defaultPlatformHost: "ghe.example.com",
     });
@@ -41,26 +39,14 @@ test.describe("repository summaries", () => {
 
     await page.getByPlaceholder("Filter repositories").fill("acme");
     await page.getByRole("button", { name: "Has issues" }).click();
-    await page
-      .locator(".repo-page__sort-dropdown")
-      .getByRole("button", { name: "Name" })
-      .click();
-    await page
-      .locator(".filter-dropdown")
-      .getByRole("button", { name: "Open issues" })
-      .click();
+    await page.locator(".repo-page__sort-dropdown").getByRole("button", { name: "Name" }).click();
+    await page.locator(".filter-dropdown").getByRole("button", { name: "Open issues" }).click();
 
     const repoCards = page.locator(".repo-card");
     await expect(repoCards).toHaveCount(2);
-    await expect(
-      repoCards.nth(0).getByRole("button", { name: /acme\s*\/\s*widgets/ }),
-    ).toBeVisible();
-    await expect(
-      repoCards.nth(1).getByRole("button", { name: /acme\s*\/\s*tools/ }),
-    ).toBeVisible();
-    await expect(
-      page.getByRole("button", { name: /acme\s*\/\s*archived/ }),
-    ).toHaveCount(0);
+    await expect(repoCards.nth(0).getByRole("button", { name: /acme\s*\/\s*widgets/ })).toBeVisible();
+    await expect(repoCards.nth(1).getByRole("button", { name: /acme\s*\/\s*tools/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: /acme\s*\/\s*archived/ })).toHaveCount(0);
 
     await page.getByRole("button", { name: "PRs", exact: true }).click();
     await expect(page).toHaveURL(/\/pulls$/);
@@ -68,25 +54,13 @@ test.describe("repository summaries", () => {
     await page.getByRole("button", { name: "Repos", exact: true }).click();
     await expect(page).toHaveURL(/\/repos$/);
     await expect(page.getByPlaceholder("Filter repositories")).toHaveValue("acme");
-    await expect(page.getByRole("button", { name: "Has issues" })).toHaveClass(
-      /repo-page__filter--active/,
-    );
-    await expect(
-      page
-        .locator(".repo-page__sort-dropdown")
-        .getByRole("button", { name: "Open issues" }),
-    ).toBeVisible();
+    await expect(page.getByRole("button", { name: "Has issues" })).toHaveClass(/repo-page__filter--active/);
+    await expect(page.locator(".repo-page__sort-dropdown").getByRole("button", { name: "Open issues" })).toBeVisible();
 
     await expect(repoCards).toHaveCount(2);
-    await expect(
-      repoCards.nth(0).getByRole("button", { name: /acme\s*\/\s*widgets/ }),
-    ).toBeVisible();
-    await expect(
-      repoCards.nth(1).getByRole("button", { name: /acme\s*\/\s*tools/ }),
-    ).toBeVisible();
-    await expect(
-      page.getByRole("button", { name: /acme\s*\/\s*archived/ }),
-    ).toHaveCount(0);
+    await expect(repoCards.nth(0).getByRole("button", { name: /acme\s*\/\s*widgets/ })).toBeVisible();
+    await expect(repoCards.nth(1).getByRole("button", { name: /acme\s*\/\s*tools/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: /acme\s*\/\s*archived/ })).toHaveCount(0);
   });
 
   test("shows repo stats and can create an issue", async ({ page }) => {
@@ -111,12 +85,8 @@ test.describe("repository summaries", () => {
       }),
     ).toHaveAttribute("href", "https://github.com/acme/widgets");
 
-    await expect(widgetsCard.getByRole("button", { name: "View PRs" })).toHaveCount(
-      0,
-    );
-    await expect(
-      widgetsCard.getByRole("button", { name: "View issues" }),
-    ).toHaveCount(0);
+    await expect(widgetsCard.getByRole("button", { name: "View PRs" })).toHaveCount(0);
+    await expect(widgetsCard.getByRole("button", { name: "View issues" })).toHaveCount(0);
 
     await widgetsCard.getByRole("button", { name: /\d+\s+Open PRs/ }).click();
     await expect(page).toHaveURL(/\/pulls$/);
@@ -152,9 +122,7 @@ test.describe("repository summaries", () => {
       state: "visible",
       timeout: 10_000,
     });
-    await expect(page.locator(".issue-detail")).toContainText(
-      "Repo overview follow-up",
-    );
+    await expect(page.locator(".issue-detail")).toContainText("Repo overview follow-up");
     await expect(
       page.locator(".issue-detail .label-pill", {
         hasText: "created-from-repos",

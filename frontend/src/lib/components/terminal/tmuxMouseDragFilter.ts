@@ -24,9 +24,7 @@ export interface TmuxMouseDragFilter {
   filter(data: string): string;
 }
 
-export function createTmuxMouseDragFilter(
-  options: TmuxMouseDragFilterOptions = {},
-): TmuxMouseDragFilter {
+export function createTmuxMouseDragFilter(options: TmuxMouseDragFilterOptions = {}): TmuxMouseDragFilter {
   const thresholdCells = options.thresholdCells ?? DEFAULT_THRESHOLD_CELLS;
   let pendingDrag: PendingDrag | null = null;
 
@@ -70,9 +68,7 @@ export function createTmuxMouseDragFilter(
     }
 
     if (pendingDrag && isMouseRelease(report)) {
-      const output = pendingDrag.thresholdExceeded
-        ? pendingDrag.bufferedReports.join("") + report.raw
-        : report.raw;
+      const output = pendingDrag.thresholdExceeded ? pendingDrag.bufferedReports.join("") + report.raw : report.raw;
       pendingDrag = null;
       return output;
     }
@@ -81,10 +77,7 @@ export function createTmuxMouseDragFilter(
   }
 
   function dragExceededThreshold(drag: PendingDrag, report: SgrMouseReport): boolean {
-    return (
-      Math.max(Math.abs(report.x - drag.startX), Math.abs(report.y - drag.startY)) >
-      thresholdCells
-    );
+    return Math.max(Math.abs(report.x - drag.startX), Math.abs(report.y - drag.startY)) > thresholdCells;
   }
 
   return { filter };
@@ -122,10 +115,7 @@ function parseReports(input: string): {
   return { parts };
 }
 
-function parseReportAt(
-  input: string,
-  start: number,
-): { report: SgrMouseReport; end: number } | null {
+function parseReportAt(input: string, start: number): { report: SgrMouseReport; end: number } | null {
   let cursor = start + SGR_MOUSE_PREFIX.length;
   const fields: number[] = [];
 
@@ -166,21 +156,11 @@ function isDigit(value: string): boolean {
 }
 
 function isLeftButtonDown(report: SgrMouseReport): boolean {
-  return (
-    report.final === "M" &&
-    !isMotion(report) &&
-    !isWheel(report) &&
-    button(report) === 0
-  );
+  return report.final === "M" && !isMotion(report) && !isWheel(report) && button(report) === 0;
 }
 
 function isLeftButtonDrag(report: SgrMouseReport): boolean {
-  return (
-    report.final === "M" &&
-    isMotion(report) &&
-    !isWheel(report) &&
-    button(report) === 0
-  );
+  return report.final === "M" && isMotion(report) && !isWheel(report) && button(report) === 0;
 }
 
 function isMouseRelease(report: SgrMouseReport): boolean {

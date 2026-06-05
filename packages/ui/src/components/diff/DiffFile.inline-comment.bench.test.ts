@@ -63,11 +63,9 @@ beforeAll(() => {
   }
   (globalThis as GlobalWithResizeObserver).ResizeObserver = ResizeObserverStub;
 
-  originalReplaceSync = (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet
-    ?.prototype.replaceSync;
+  originalReplaceSync = (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet?.prototype.replaceSync;
   if ((globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet?.prototype) {
-    (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet.prototype.replaceSync ??=
-      function replaceSync(): void {};
+    (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet.prototype.replaceSync ??= function replaceSync(): void {};
   }
 });
 
@@ -84,11 +82,11 @@ afterAll(() => {
   }
   if ((globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet?.prototype) {
     if (originalReplaceSync) {
-      (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet.prototype.replaceSync =
-        originalReplaceSync as (text: string) => void;
+      (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet.prototype.replaceSync = originalReplaceSync as (
+        text: string,
+      ) => void;
     } else {
-      delete (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet.prototype
-        .replaceSync;
+      delete (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet.prototype.replaceSync;
     }
   }
 });
@@ -117,10 +115,7 @@ function makeLargeFile(lineCount: number): DiffFileType {
     "+++ b/src/large.ts",
     `@@ -1,1 +1,${lineCount + 1} @@`,
     " export function render() {",
-    ...Array.from(
-      { length: lineCount },
-      (_, index) => `+  renderLine(${index}, "value-${index}");`,
-    ),
+    ...Array.from({ length: lineCount }, (_, index) => `+  renderLine(${index}, "value-${index}");`),
   ];
 
   return {
@@ -150,8 +145,7 @@ function renderDiffFile(file: DiffFileType) {
     getComments: () => [],
     isSubmitting: () => false,
     getError: () => null,
-    createComment: (_body: string, _range: DiffReviewLineRange) =>
-      Promise.resolve(true),
+    createComment: (_body: string, _range: DiffReviewLineRange) => Promise.resolve(true),
     deleteComment: () => Promise.resolve(true),
   };
 
@@ -198,9 +192,7 @@ async function findLineTarget(line: number): Promise<HTMLElement> {
     () => {
       const target = document
         .querySelector(".pierre-diff")
-        ?.shadowRoot?.querySelector<HTMLElement>(
-          `[data-column-number="${line}"][data-line-type="change-addition"]`,
-        );
+        ?.shadowRoot?.querySelector<HTMLElement>(`[data-column-number="${line}"][data-line-type="change-addition"]`);
       expect(target).toBeTruthy();
       return target!;
     },
@@ -242,10 +234,7 @@ async function openAndCloseComposer(line: number): Promise<number> {
 
 function percentile(values: number[], p: number): number {
   const sorted = [...values].sort((a, b) => a - b);
-  const index = Math.min(
-    sorted.length - 1,
-    Math.max(0, Math.ceil((p / 100) * sorted.length) - 1),
-  );
+  const index = Math.min(sorted.length - 1, Math.max(0, Math.ceil((p / 100) * sorted.length) - 1));
   return sorted[index] ?? 0;
 }
 
@@ -262,8 +251,7 @@ function benchmarkLineCounts(): number[] {
   return counts;
 }
 
-const benchDescribe =
-  process.env.RUN_DIFF_INLINE_COMMENT_BENCH === "1" ? describe : describe.skip;
+const benchDescribe = process.env.RUN_DIFF_INLINE_COMMENT_BENCH === "1" ? describe : describe.skip;
 
 benchDescribe("DiffFile inline comment opening benchmark", () => {
   it("measures opening and closing an inline composer by diff size", async () => {

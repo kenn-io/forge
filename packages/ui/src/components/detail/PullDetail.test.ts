@@ -1,13 +1,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import type { PullDetail } from "../../api/types.js";
-import {
-  ACTIONS_KEY,
-  API_CLIENT_KEY,
-  NAVIGATE_KEY,
-  STORES_KEY,
-  UI_CONFIG_KEY,
-} from "../../context.js";
+import { ACTIONS_KEY, API_CLIENT_KEY, NAVIGATE_KEY, STORES_KEY, UI_CONFIG_KEY } from "../../context.js";
 import PullDetailComponent from "./PullDetail.svelte";
 
 const capabilities = {
@@ -28,11 +22,7 @@ const capabilities = {
   label_mutation: false,
 };
 
-function reviewEvent(
-  author: string,
-  summary = "APPROVED",
-  createdAt = "2026-05-01T12:00:00Z",
-) {
+function reviewEvent(author: string, summary = "APPROVED", createdAt = "2026-05-01T12:00:00Z") {
   return {
     ID: Math.floor(Math.random() * 1_000_000),
     MergeRequestID: 1,
@@ -189,9 +179,7 @@ function renderPullDetail(
 }
 
 function getActionMenuLabelsButton(): HTMLButtonElement {
-  const button = document.querySelector<HTMLButtonElement>(
-    ".actions-menu-popover .btn--labels",
-  );
+  const button = document.querySelector<HTMLButtonElement>(".actions-menu-popover .btn--labels");
   if (button === null) {
     throw new Error("actions menu Labels button not found");
   }
@@ -367,25 +355,15 @@ describe("PullDetail approvals", () => {
     );
 
     expect(screen.queryByText("frontend / vp check")).toBeNull();
-    expect(
-      screen.getByText("3 PRs · current 2/3 · downstack CI failure"),
-    ).toBeTruthy();
-    expect(
-      document.querySelector(".stack-row--current .stack-dot--current"),
-    ).toBeTruthy();
+    expect(screen.getByText("3 PRs · current 2/3 · downstack CI failure")).toBeTruthy();
+    expect(document.querySelector(".stack-row--current .stack-dot--current")).toBeTruthy();
     expect(screen.getByText("blocked by #1")).toBeTruthy();
 
-    const stackLinks = Array.from(
-      document.querySelectorAll<HTMLButtonElement>(".stack-member-link"),
-    ).map((button) => button.textContent?.trim());
-    expect(stackLinks).toEqual([
-      "#3 UI polish",
-      "#2 session storage",
-      "#1 base schema",
-    ]);
-    expect(document.querySelector(".stack-base-name")?.textContent?.trim()).toBe(
-      "main",
+    const stackLinks = Array.from(document.querySelectorAll<HTMLButtonElement>(".stack-member-link")).map((button) =>
+      button.textContent?.trim(),
     );
+    expect(stackLinks).toEqual(["#3 UI polish", "#2 session storage", "#1 base schema"]);
+    expect(document.querySelector(".stack-base-name")?.textContent?.trim()).toBe("main");
   });
 
   it("does not probe stack context for unstacked pull details", () => {
@@ -514,13 +492,7 @@ describe("PullDetail approvals", () => {
     },
   ];
 
-  for (const {
-    name,
-    mergeableState,
-    checks,
-    requiredWarning,
-    behindWarning,
-  } of warningCases) {
+  for (const { name, mergeableState, checks, requiredWarning, behindWarning } of warningCases) {
     it(name, () => {
       const detail = pullDetail();
       detail.merge_request.MergeableState = mergeableState;
@@ -529,9 +501,7 @@ describe("PullDetail approvals", () => {
 
       renderPullDetail(detail);
 
-      const requiredStatusWarning = screen.queryByText(
-        "Required status checks have not passed.",
-      );
+      const requiredStatusWarning = screen.queryByText("Required status checks have not passed.");
       const behindBranchWarning = screen.queryByText(
         "This branch is behind the base branch and may need to be updated.",
       );

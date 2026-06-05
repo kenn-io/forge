@@ -5,10 +5,7 @@ import type { Action, CheatsheetEntry } from "./types.js";
 let actionsByOwner = $state<Map<string, Action[]>>(new Map());
 let cheatsheetByOwner = $state<Map<string, CheatsheetEntry[]>>(new Map());
 
-export function registerScopedActions(
-  ownerId: string,
-  actions: Action[],
-): () => void {
+export function registerScopedActions(ownerId: string, actions: Action[]): () => void {
   const registered = [...actions];
   // Reads of actionsByOwner inside the registration helpers must not be
   // tracked: callers wire this through $effect (App.svelte registers default
@@ -34,9 +31,7 @@ function assertNoConflicts(map: Map<string, Action[]>): void {
   for (const [owner, list] of map) {
     for (const action of list) {
       if (action.binding === null) continue;
-      const bindings = Array.isArray(action.binding)
-        ? action.binding
-        : [action.binding];
+      const bindings = Array.isArray(action.binding) ? action.binding : [action.binding];
       for (const b of bindings) {
         const key = `${b.key}|${b.ctrlOrMeta ?? false}|${b.shift ?? false}|${b.alt ?? false}|${action.scope}|${action.priority}`;
         const prior = seen.get(key);
@@ -56,16 +51,11 @@ function assertNoConflicts(map: Map<string, Action[]>): void {
   }
 }
 
-export function registerCheatsheetEntries(
-  ownerId: string,
-  entries: CheatsheetEntry[],
-): () => void {
+export function registerCheatsheetEntries(ownerId: string, entries: CheatsheetEntry[]): () => void {
   const registered = [...entries];
   // Same effect-tracking concern as registerScopedActions above: callers
   // register from inside $effect on mount.
-  cheatsheetByOwner = untrack(() =>
-    new Map(cheatsheetByOwner).set(ownerId, registered),
-  );
+  cheatsheetByOwner = untrack(() => new Map(cheatsheetByOwner).set(ownerId, registered));
   return () => {
     untrack(() => {
       if (cheatsheetByOwner.get(ownerId) === registered) {

@@ -9,9 +9,7 @@ type RepoSummary = {
   };
 };
 
-test("provider icons disambiguate multi-provider repository views", async ({
-  page,
-}) => {
+test("provider icons disambiguate multi-provider repository views", async ({ page }) => {
   const server = await startIsolatedE2EServer();
   const api = await playwrightRequest.newContext({
     baseURL: server.info.base_url,
@@ -21,9 +19,7 @@ test("provider icons disambiguate multi-provider repository views", async ({
     const summariesResponse = await api.get("/api/v1/repos/summary");
     expect(summariesResponse.ok()).toBe(true);
     const summaries = (await summariesResponse.json()) as RepoSummary[];
-    expect(
-      new Set(summaries.map((summary) => summary.repo.provider.toLowerCase())).size,
-    ).toBeGreaterThan(1);
+    expect(new Set(summaries.map((summary) => summary.repo.provider.toLowerCase())).size).toBeGreaterThan(1);
 
     await page.goto(`${server.info.base_url}/repos`);
     const repoCards = page.locator(".repo-card");
@@ -36,15 +32,11 @@ test("provider icons disambiguate multi-provider repository views", async ({
         })
         .first(),
     ).toBeVisible();
-    await expect(
-      repoCards.getByRole("img", { name: "GitHub" }).first(),
-    ).toBeVisible();
+    await expect(repoCards.getByRole("img", { name: "GitHub" }).first()).toBeVisible();
     await expect(repoCards.getByRole("img", { name: "GitLab" })).toBeVisible();
 
     await page.goto(`${server.info.base_url}/settings`);
-    await page
-      .locator(".settings-page")
-      .waitFor({ state: "visible", timeout: 10_000 });
+    await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
     await expect(page.locator(".repo-row").getByRole("img")).toHaveCount(0);
 
     const addResponse = await api.post("/api/v1/repos/bulk", {
@@ -63,9 +55,7 @@ test("provider icons disambiguate multi-provider repository views", async ({
     expect(addResponse.ok()).toBe(true);
 
     await page.reload();
-    await page
-      .locator(".settings-page")
-      .waitFor({ state: "visible", timeout: 10_000 });
+    await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
     const repoRows = page.locator(".repo-row");
     await expect(repoRows.getByRole("img", { name: "GitHub" }).first()).toBeVisible();
     await expect(repoRows.getByRole("img", { name: "Forgejo" })).toBeVisible();

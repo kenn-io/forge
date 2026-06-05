@@ -1,8 +1,4 @@
-import {
-  canonicalProvider,
-  providerRepoPath,
-  providerRouteParams,
-} from "@middleman/ui/api/provider-routes";
+import { canonicalProvider, providerRepoPath, providerRouteParams } from "@middleman/ui/api/provider-routes";
 import { client } from "../api/runtime.js";
 import { navigate, buildItemRoute } from "../stores/router.svelte.js";
 import { showFlash } from "../stores/flash.svelte.js";
@@ -47,17 +43,13 @@ async function resolveAndNavigate(
 ): Promise<void> {
   try {
     const ref = { provider, platformHost, owner, name, repoPath };
-    const itemTypeHint =
-      canonicalProvider(provider) === "gitlab" ? itemType : undefined;
-    const { data, error, response } = await client.POST(
-      providerRepoPath(ref, "/resolve/{number}"),
-      {
-        params: {
-          path: { ...providerRouteParams(ref), number },
-          ...(itemTypeHint && { query: { item_type: itemTypeHint } }),
-        },
+    const itemTypeHint = canonicalProvider(provider) === "gitlab" ? itemType : undefined;
+    const { data, error, response } = await client.POST(providerRepoPath(ref, "/resolve/{number}"), {
+      params: {
+        path: { ...providerRouteParams(ref), number },
+        ...(itemTypeHint && { query: { item_type: itemTypeHint } }),
       },
-    );
+    });
 
     if (thisRequestId !== requestId) return;
 
@@ -76,9 +68,7 @@ async function resolveAndNavigate(
         window.open(safeExternalUrl, "_blank", "noopener,noreferrer");
         return;
       }
-      showFlash(
-        `${owner}/${name} is not tracked. Add it in Settings to navigate here.`,
-      );
+      showFlash(`${owner}/${name} is not tracked. Add it in Settings to navigate here.`);
       return;
     }
 
@@ -111,9 +101,7 @@ function handleClick(e: MouseEvent): void {
   const repoPath = anchor.dataset.repoPath;
   const numberStr = anchor.dataset.number;
   const itemType =
-    anchor.dataset.itemType === "pr" || anchor.dataset.itemType === "issue"
-      ? anchor.dataset.itemType
-      : undefined;
+    anchor.dataset.itemType === "pr" || anchor.dataset.itemType === "issue" ? anchor.dataset.itemType : undefined;
   const externalUrl = anchor.dataset.externalUrl;
   if (!provider || !owner || !name || !repoPath || !numberStr) return;
 

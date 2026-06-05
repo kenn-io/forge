@@ -26,9 +26,7 @@ describe("route item builders", () => {
     const ref = { ...githubWidgets, number: 42 };
 
     expect(buildPullRequestRoute(ref)).toBe("/pulls/github/acme/widgets/42");
-    expect(buildPullRequestFilesRoute(ref)).toBe(
-      "/pulls/github/acme/widgets/42/files",
-    );
+    expect(buildPullRequestFilesRoute(ref)).toBe("/pulls/github/acme/widgets/42/files");
   });
 
   it("builds issue routes with encoded platform hosts", () => {
@@ -94,9 +92,7 @@ describe("route item builders", () => {
     ).toBe("/focus/host/ghe.example.com/issues/github/acme/widgets/7");
     expect(buildFocusListRoute({ itemType: "mrs" })).toBe("/focus/mrs");
     expect(buildFocusListRoute({ itemType: "issues" })).toBe("/focus/issues");
-    expect(buildFocusListRoute({ itemType: "mrs", repo: "acme/widgets" })).toBe(
-      "/focus/mrs?repo=acme%2Fwidgets",
-    );
+    expect(buildFocusListRoute({ itemType: "mrs", repo: "acme/widgets" })).toBe("/focus/mrs?repo=acme%2Fwidgets");
   });
 
   it("builds routed item routes for normal and focus surfaces", () => {
@@ -113,12 +109,8 @@ describe("route item builders", () => {
     } as const;
 
     expect(buildRoutedItemRoute(pr)).toBe("/pulls/github/acme/widgets/42");
-    expect(buildRoutedItemRoute(issue)).toBe(
-      "/host/ghe.example.com/issues/github/acme/widgets/7",
-    );
-    expect(buildRoutedItemRoute(pr, { focus: true })).toBe(
-      "/focus/pulls/github/acme/widgets/42",
-    );
+    expect(buildRoutedItemRoute(issue)).toBe("/host/ghe.example.com/issues/github/acme/widgets/7");
+    expect(buildRoutedItemRoute(pr, { focus: true })).toBe("/focus/pulls/github/acme/widgets/42");
     expect(buildRoutedItemRoute(issue, { focus: true })).toBe(
       "/focus/host/ghe.example.com/issues/github/acme/widgets/7",
     );

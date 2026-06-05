@@ -1,9 +1,7 @@
 import { setGlobalRepo } from "../stores/filter.svelte.js";
 
 // Bridge: repo filter (module-scope, not workspace-specific)
-window.__middleman_set_repo_filter = (
-  repo: { owner: string; name: string } | null,
-) => {
+window.__middleman_set_repo_filter = (repo: { owner: string; name: string } | null) => {
   setGlobalRepo(repo ? `${repo.owner}/${repo.name}` : undefined);
 };
 
@@ -83,21 +81,15 @@ export function getThemeMode(): "light" | "dark" | "system" | undefined {
   return readConfig()?.theme?.mode;
 }
 
-export function getThemeColors():
-  | NonNullable<NonNullable<MiddlemanConfig["theme"]>["colors"]>
-  | undefined {
+export function getThemeColors(): NonNullable<NonNullable<MiddlemanConfig["theme"]>["colors"]> | undefined {
   return readConfig()?.theme?.colors;
 }
 
-export function getThemeFonts():
-  | NonNullable<NonNullable<MiddlemanConfig["theme"]>["fonts"]>
-  | undefined {
+export function getThemeFonts(): NonNullable<NonNullable<MiddlemanConfig["theme"]>["fonts"]> | undefined {
   return readConfig()?.theme?.fonts;
 }
 
-export function getThemeRadii():
-  | NonNullable<NonNullable<MiddlemanConfig["theme"]>["radii"]>
-  | undefined {
+export function getThemeRadii(): NonNullable<NonNullable<MiddlemanConfig["theme"]>["radii"]> | undefined {
   return readConfig()?.theme?.radii;
 }
 
@@ -141,15 +133,11 @@ export function getToolingStatus(): ToolingStatus | undefined {
   return readConfig()?.embed?.tooling;
 }
 
-export function getOnNavigate():
-  | ((event: MiddlemanNavigateEvent) => void)
-  | undefined {
+export function getOnNavigate(): ((event: MiddlemanNavigateEvent) => void) | undefined {
   return readConfig()?.onNavigate;
 }
 
-export function getOnRouteChange():
-  | ((event: MiddlemanNavigateEvent) => void)
-  | undefined {
+export function getOnRouteChange(): ((event: MiddlemanNavigateEvent) => void) | undefined {
   return readConfig()?.onRouteChange;
 }
 
@@ -175,12 +163,7 @@ export async function invokeProjectAction(
 ): Promise<CommandResult> {
   try {
     const result = await action.handler(context);
-    if (
-      result &&
-      typeof result === "object" &&
-      "ok" in result &&
-      typeof result.ok === "boolean"
-    ) {
+    if (result && typeof result === "object" && "ok" in result && typeof result.ok === "boolean") {
       return result;
     }
     return { ok: true };
@@ -244,10 +227,7 @@ export function getOnWorkspaceCommand(): WorkspaceCommandHandler | undefined {
   return readConfig()?.onWorkspaceCommand;
 }
 
-export async function emitWorkspaceCommand(
-  command: string,
-  payload: Record<string, unknown>,
-): Promise<CommandResult> {
+export async function emitWorkspaceCommand(command: string, payload: Record<string, unknown>): Promise<CommandResult> {
   const handler = getOnWorkspaceCommand();
   if (!handler) {
     return { ok: true };
@@ -273,15 +253,10 @@ export function initWorkspaceBridge(): void {
       window.__middleman_notify_config_changed?.();
     }
   };
-  window.__middleman_update_selection = (selection: {
-    hostKey?: string | null;
-    worktreeKey?: string | null;
-  }) => {
+  window.__middleman_update_selection = (selection: { hostKey?: string | null; worktreeKey?: string | null }) => {
     const config = window.__middleman_config;
     if (!config?.workspace) return;
-    const changingHost =
-      "hostKey" in selection &&
-      selection.hostKey !== config.workspace.selectedHostKey;
+    const changingHost = "hostKey" in selection && selection.hostKey !== config.workspace.selectedHostKey;
     const updated = { ...config.workspace };
     if ("hostKey" in selection) {
       updated.selectedHostKey = selection.hostKey ?? null;

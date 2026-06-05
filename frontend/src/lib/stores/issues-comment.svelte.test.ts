@@ -154,9 +154,7 @@ describe("createIssuesStore submitIssueComment", () => {
 
     // User navigates to a different issue before the refresh resolves.
     await store.loadIssueDetail("octo", "repo", 2, issueRef);
-    expect((store.getIssueDetail() as unknown as MockIssueDetail)?.issue.Number).toBe(
-      2,
-    );
+    expect((store.getIssueDetail() as unknown as MockIssueDetail)?.issue.Number).toBe(2);
 
     // Now release the in-flight refresh — it must be discarded.
     refreshResolve({ data: detailA });
@@ -164,9 +162,7 @@ describe("createIssuesStore submitIssueComment", () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    expect((store.getIssueDetail() as unknown as MockIssueDetail)?.issue.Number).toBe(
-      2,
-    );
+    expect((store.getIssueDetail() as unknown as MockIssueDetail)?.issue.Number).toBe(2);
   });
 
   it("discards stale syncIssueDetail responses after posting a comment", async () => {

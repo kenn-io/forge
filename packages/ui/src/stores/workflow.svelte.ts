@@ -2,13 +2,7 @@ import type { KanbanStatus, PullRequest } from "../api/types.js";
 
 export type WorkflowGroup = KanbanStatus | "closed";
 
-export const workflowGroupOrder: WorkflowGroup[] = [
-  "new",
-  "reviewing",
-  "waiting",
-  "awaiting_merge",
-  "closed",
-];
+export const workflowGroupOrder: WorkflowGroup[] = ["new", "reviewing", "waiting", "awaiting_merge", "closed"];
 
 export const workflowGroupLabels: Record<WorkflowGroup, string> = {
   new: "New",
@@ -25,12 +19,7 @@ export interface WorkflowGroupEntry {
 }
 
 function normalizeKanbanStatus(status: string | undefined): WorkflowGroup {
-  if (
-    status === "new" ||
-    status === "reviewing" ||
-    status === "waiting" ||
-    status === "awaiting_merge"
-  ) {
+  if (status === "new" || status === "reviewing" || status === "waiting" || status === "awaiting_merge") {
     return status;
   }
   return "new";
@@ -71,10 +60,7 @@ export function groupByWorkflow(prs: PullRequest[]): WorkflowGroupEntry[] {
   for (const group of workflowGroupOrder) {
     const items = buckets.get(group)!;
     if (items.length === 0) continue;
-    items.sort(
-      (a, b) =>
-        new Date(b.LastActivityAt).getTime() - new Date(a.LastActivityAt).getTime(),
-    );
+    items.sort((a, b) => new Date(b.LastActivityAt).getTime() - new Date(a.LastActivityAt).getTime());
     result.push({
       group,
       label: workflowGroupLabels[group],

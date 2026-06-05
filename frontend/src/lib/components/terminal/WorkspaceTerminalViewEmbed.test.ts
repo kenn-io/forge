@@ -162,9 +162,7 @@ describe("WorkspaceTerminalView embed props", () => {
     // Wait for the header branch element that only renders once the
     // workspace payload resolves; this confirms the component reached
     // steady state rather than failing the load early.
-    await waitFor(() =>
-      expect(screen.getAllByText("feature/embed-props").length).toBeGreaterThan(0),
-    );
+    await waitFor(() => expect(screen.getAllByText("feature/embed-props").length).toBeGreaterThan(0));
 
     // The workspace-list column header reads "Workspaces"; with
     // hideWorkspaceList the entire column is skipped so the heading
@@ -177,9 +175,7 @@ describe("WorkspaceTerminalView embed props", () => {
       props: { workspaceId: "ws-1" },
     });
 
-    await waitFor(() =>
-      expect(screen.getAllByText("feature/embed-props").length).toBeGreaterThan(0),
-    );
+    await waitFor(() => expect(screen.getAllByText("feature/embed-props").length).toBeGreaterThan(0));
 
     expect(screen.queryByText("Workspaces")).not.toBeNull();
   });
@@ -193,9 +189,7 @@ describe("WorkspaceTerminalView embed props", () => {
       },
     });
 
-    await waitFor(() =>
-      expect(screen.getAllByText("feature/embed-props").length).toBeGreaterThan(0),
-    );
+    await waitFor(() => expect(screen.getAllByText("feature/embed-props").length).toBeGreaterThan(0));
 
     expect(screen.queryByRole("button", { name: "PR" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Reviews" })).toBeNull();
@@ -206,9 +200,7 @@ describe("WorkspaceTerminalView embed props", () => {
       props: { workspaceId: "ws-1" },
     });
 
-    await waitFor(() =>
-      expect(screen.getAllByText("feature/embed-props").length).toBeGreaterThan(0),
-    );
+    await waitFor(() => expect(screen.getAllByText("feature/embed-props").length).toBeGreaterThan(0));
 
     expect(screen.getByRole("button", { name: "PR" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Reviews" })).toBeTruthy();

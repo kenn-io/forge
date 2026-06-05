@@ -22,9 +22,7 @@ test("? opens the cheatsheet and shows j/k under On this view", async ({ page })
 test("Escape closes the cheatsheet", async ({ page }) => {
   await page.goto("/pulls");
   await page.keyboard.press("?");
-  await expect(
-    page.getByRole("dialog", { name: "Keyboard shortcuts" }),
-  ).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Keyboard shortcuts" })).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog", { name: "Keyboard shortcuts" })).toBeHidden();
 });

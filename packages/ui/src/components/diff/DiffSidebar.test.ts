@@ -9,8 +9,7 @@ import PierreFileTree from "./PierreFileTree.svelte";
 if (!globalThis.CSS) {
   globalThis.CSS = {} as typeof CSS;
 }
-globalThis.CSS.escape ??= (value: string) =>
-  value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+globalThis.CSS.escape ??= (value: string) => value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 
 function makeFile(path: string, status: DiffFile["status"] = "modified"): DiffFile {
   return {
@@ -33,10 +32,7 @@ function makeFilesResult(files: DiffFile[]): FilesResult {
   };
 }
 
-function makeDiffStore(
-  files: DiffFile[],
-  overrides: Partial<DiffStore> = {},
-): DiffStore {
+function makeDiffStore(files: DiffFile[], overrides: Partial<DiffStore> = {}): DiffStore {
   const fileList = makeFilesResult(files);
   return {
     getVisibleFileList: () => fileList,
@@ -88,27 +84,17 @@ describe("DiffSidebar", () => {
 
     renderSidebar(makeDiffStore(files));
 
-    expect(
-      (await findTreeItem("src/app.ts")).getAttribute("data-item-git-status"),
-    ).toBe("modified");
-    expect(
-      (await findTreeItem("src/new.ts")).getAttribute("data-item-git-status"),
-    ).toBe("added");
-    expect(
-      (await findTreeItem("docs/old.md")).getAttribute("data-item-git-status"),
-    ).toBe("deleted");
+    expect((await findTreeItem("src/app.ts")).getAttribute("data-item-git-status")).toBe("modified");
+    expect((await findTreeItem("src/new.ts")).getAttribute("data-item-git-status")).toBe("added");
+    expect((await findTreeItem("docs/old.md")).getAttribute("data-item-git-status")).toBe("deleted");
     const modifiedItem = await findTreeItem("src/app.ts");
     const visibleStatusSections = Array.from(
-      modifiedItem.querySelectorAll(
-        "[data-item-section='git'], [data-item-section='decoration']",
-      ),
+      modifiedItem.querySelectorAll("[data-item-section='git'], [data-item-section='decoration']"),
     )
       .map((node) => node.textContent?.trim())
       .filter(Boolean);
     expect(visibleStatusSections).toEqual(["M"]);
-    expect(consoleError).not.toHaveBeenCalledWith(
-      expect.stringContaining("effect_update_depth_exceeded"),
-    );
+    expect(consoleError).not.toHaveBeenCalledWith(expect.stringContaining("effect_update_depth_exceeded"));
   });
 
   it("preserves diff file order without folding case", async () => {
@@ -117,9 +103,7 @@ describe("DiffSidebar", () => {
 
     const wantedPaths = new Set(files.map((file) => file.path));
     await waitFor(() => {
-      const renderedPaths = Array.from(
-        treeRoot()?.querySelectorAll<HTMLElement>("[data-item-path]") ?? [],
-      )
+      const renderedPaths = Array.from(treeRoot()?.querySelectorAll<HTMLElement>("[data-item-path]") ?? [])
         .map((item) => item.dataset.itemPath ?? "")
         .filter((path) => wantedPaths.has(path));
       expect(renderedPaths).toEqual(["src/B.ts", "src/C.ts", "src/a.ts"]);
@@ -127,9 +111,7 @@ describe("DiffSidebar", () => {
   });
 
   it("filters both visible rows and tree status data without rebuilding in a loop", async () => {
-    const files = Array.from({ length: 11 }, (_, i) =>
-      makeFile(i === 10 ? "docs/readme.md" : `src/file-${i}.ts`),
-    );
+    const files = Array.from({ length: 11 }, (_, i) => makeFile(i === 10 ? "docs/readme.md" : `src/file-${i}.ts`));
     renderSidebar(makeDiffStore(files));
 
     await fireEvent.input(screen.getByPlaceholderText("Filter files..."), {
@@ -138,9 +120,7 @@ describe("DiffSidebar", () => {
 
     await findTreeItem("docs/readme.md");
     await waitFor(() => {
-      expect(
-        treeRoot()?.querySelector('[data-item-path="src/file-0.ts"]'),
-      ).toBeNull();
+      expect(treeRoot()?.querySelector('[data-item-path="src/file-0.ts"]')).toBeNull();
     });
   });
 

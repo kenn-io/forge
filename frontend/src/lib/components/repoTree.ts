@@ -109,14 +109,10 @@ export interface VisibleRowsOptions {
   query?: string;
 }
 
-export function visibleRows(
-  tree: readonly HostNode[],
-  { isCollapsed, query }: VisibleRowsOptions,
-): VisibleRow[] {
+export function visibleRows(tree: readonly HostNode[], { isCollapsed, query }: VisibleRowsOptions): VisibleRow[] {
   const q = query?.trim().toLowerCase() ?? "";
   const filtering = q !== "";
-  const matches = (leaf: RepoLeaf) =>
-    !filtering || leaf.value.toLowerCase().includes(q);
+  const matches = (leaf: RepoLeaf) => !filtering || leaf.value.toLowerCase().includes(q);
 
   // Prune to the owners/hosts that still have a matching leaf, but keep a
   // reference to the ORIGINAL (unpruned) node alongside the matching leaves.
@@ -196,10 +192,7 @@ export function collectLeafValues(node: RepoTreeNodeData): string[] {
   return values;
 }
 
-export function nodeSelectionState(
-  node: RepoTreeNodeData,
-  active: ReadonlySet<string>,
-): SelectionState {
+export function nodeSelectionState(node: RepoTreeNodeData, active: ReadonlySet<string>): SelectionState {
   const leaves = collectLeafValues(node);
   if (leaves.length === 0) return "unchecked";
   let selected = 0;
@@ -209,10 +202,7 @@ export function nodeSelectionState(
   return "partial";
 }
 
-export function toggleSubtree(
-  node: RepoTreeNodeData,
-  activeValues: readonly string[],
-): string[] {
+export function toggleSubtree(node: RepoTreeNodeData, activeValues: readonly string[]): string[] {
   const leaves = collectLeafValues(node);
   if (nodeSelectionState(node, new Set(activeValues)) === "checked") {
     const remove = new Set(leaves);

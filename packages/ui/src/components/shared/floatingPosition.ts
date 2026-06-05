@@ -26,9 +26,7 @@ export function floatingPopoverStyle({
   constrainWidth = false,
 }: FloatingPopoverInput): string {
   const availableWidth = Math.max(0, viewportWidth - edgeGap * 2);
-  const width = constrainWidth
-    ? Math.min(maxWidth ?? availableWidth, availableWidth)
-    : (popoverWidth ?? 0);
+  const width = constrainWidth ? Math.min(maxWidth ?? availableWidth, availableWidth) : (popoverWidth ?? 0);
   const left = clamp(
     align === "end" ? trigger.right - width : trigger.left,
     edgeGap,
@@ -57,22 +55,14 @@ interface FloatingTopInput {
   triggerGap: number;
 }
 
-function floatingTop({
-  trigger,
-  popoverHeight,
-  viewportHeight,
-  edgeGap,
-  triggerGap,
-}: FloatingTopInput): number {
+function floatingTop({ trigger, popoverHeight, viewportHeight, edgeGap, triggerGap }: FloatingTopInput): number {
   const below = trigger.bottom + triggerGap;
   if (popoverHeight === undefined || viewportHeight === undefined) {
     return below;
   }
 
   const above = trigger.top - popoverHeight - triggerGap;
-  return below + popoverHeight > viewportHeight - edgeGap
-    ? Math.max(edgeGap, above)
-    : below;
+  return below + popoverHeight > viewportHeight - edgeGap ? Math.max(edgeGap, above) : below;
 }
 
 function clamp(value: number, min: number, max: number): number {

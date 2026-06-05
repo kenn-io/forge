@@ -100,8 +100,7 @@ describe("defaultActions", () => {
         }) as never,
     );
     const events: OpenLabelPickerDetail[] = [];
-    const listener = (event: Event) =>
-      events.push((event as CustomEvent<OpenLabelPickerDetail>).detail);
+    const listener = (event: Event) => events.push((event as CustomEvent<OpenLabelPickerDetail>).detail);
     window.addEventListener(OPEN_LABEL_PICKER_EVENT, listener);
     try {
       const context = ctx("pulls", { selectedPR: selected });
@@ -131,8 +130,7 @@ describe("defaultActions", () => {
         }) as never,
     );
     const events: OpenLabelPickerDetail[] = [];
-    const listener = (event: Event) =>
-      events.push((event as CustomEvent<OpenLabelPickerDetail>).detail);
+    const listener = (event: Event) => events.push((event as CustomEvent<OpenLabelPickerDetail>).detail);
     window.addEventListener(OPEN_LABEL_PICKER_EVENT, listener);
     try {
       const context = ctx("issues", { selectedIssue: selected });

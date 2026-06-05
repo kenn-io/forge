@@ -66,46 +66,30 @@ describe("label editing stores", () => {
       "/pulls/{provider}/{owner}/{name}/{number}/labels",
       expect.objectContaining({ body: { labels: ["triage"] } }),
     );
-    expect(store.getDetail()?.merge_request.labels?.map((item) => item.name)).toEqual(
-      ["triage"],
-    );
+    expect(store.getDetail()?.merge_request.labels?.map((item) => item.name)).toEqual(["triage"]);
   });
 
   it("does not apply stale pull label responses after provider navigation", async () => {
     const put = deferred<{ data: { labels: Label[] } }>();
     const client = {
-      GET: vi.fn(
-        async (
-          _path: string,
-          options: { params?: { path?: { provider?: string } } },
-        ) => ({
-          data: {
-            repo_owner: "octo",
-            repo_name: "repo",
-            repo: {
-              provider: options.params?.path?.provider ?? "github",
-              platform_host:
-                options.params?.path?.provider === "gitlab"
-                  ? "gitlab.example"
-                  : "github.com",
-              owner: "octo",
-              name: "repo",
-              repo_path: "octo/repo",
-            },
-            merge_request: {
-              Number: 1,
-              labels: [
-                label(
-                  options.params?.path?.provider === "gitlab"
-                    ? "gitlab-label"
-                    : "bug",
-                ),
-              ],
-            },
-            events: [],
+      GET: vi.fn(async (_path: string, options: { params?: { path?: { provider?: string } } }) => ({
+        data: {
+          repo_owner: "octo",
+          repo_name: "repo",
+          repo: {
+            provider: options.params?.path?.provider ?? "github",
+            platform_host: options.params?.path?.provider === "gitlab" ? "gitlab.example" : "github.com",
+            owner: "octo",
+            name: "repo",
+            repo_path: "octo/repo",
           },
-        }),
-      ),
+          merge_request: {
+            Number: 1,
+            labels: [label(options.params?.path?.provider === "gitlab" ? "gitlab-label" : "bug")],
+          },
+          events: [],
+        },
+      })),
       POST: vi.fn(async () => ({ data: undefined })),
       PUT: vi.fn(async () => put.promise),
       DELETE: vi.fn(),
@@ -119,9 +103,7 @@ describe("label editing stores", () => {
     await mutation;
 
     expect(store.getDetail()?.repo.provider).toBe("gitlab");
-    expect(store.getDetail()?.merge_request.labels?.map((item) => item.name)).toEqual(
-      ["gitlab-label"],
-    );
+    expect(store.getDetail()?.merge_request.labels?.map((item) => item.name)).toEqual(["gitlab-label"]);
   });
 
   it("updates visible issue labels from the label mutation response", async () => {
@@ -158,47 +140,31 @@ describe("label editing stores", () => {
       "/issues/{provider}/{owner}/{name}/{number}/labels",
       expect.objectContaining({ body: { labels: ["triage"] } }),
     );
-    expect(store.getIssueDetail()?.issue.labels?.map((item) => item.name)).toEqual([
-      "triage",
-    ]);
+    expect(store.getIssueDetail()?.issue.labels?.map((item) => item.name)).toEqual(["triage"]);
   });
 
   it("does not apply stale issue label responses after provider navigation", async () => {
     const put = deferred<{ data: { labels: Label[] } }>();
     const client = {
-      GET: vi.fn(
-        async (
-          _path: string,
-          options: { params?: { path?: { provider?: string } } },
-        ) => ({
-          data: {
-            repo_owner: "octo",
-            repo_name: "repo",
-            repo: {
-              provider: options.params?.path?.provider ?? "github",
-              platform_host:
-                options.params?.path?.provider === "gitlab"
-                  ? "gitlab.example"
-                  : "github.com",
-              owner: "octo",
-              name: "repo",
-              repo_path: "octo/repo",
-            },
-            issue: {
-              Number: 2,
-              labels: [
-                label(
-                  options.params?.path?.provider === "gitlab"
-                    ? "gitlab-label"
-                    : "bug",
-                ),
-              ],
-              UpdatedAt: "2026-05-15T12:00:00Z",
-            },
-            events: [],
+      GET: vi.fn(async (_path: string, options: { params?: { path?: { provider?: string } } }) => ({
+        data: {
+          repo_owner: "octo",
+          repo_name: "repo",
+          repo: {
+            provider: options.params?.path?.provider ?? "github",
+            platform_host: options.params?.path?.provider === "gitlab" ? "gitlab.example" : "github.com",
+            owner: "octo",
+            name: "repo",
+            repo_path: "octo/repo",
           },
-        }),
-      ),
+          issue: {
+            Number: 2,
+            labels: [label(options.params?.path?.provider === "gitlab" ? "gitlab-label" : "bug")],
+            UpdatedAt: "2026-05-15T12:00:00Z",
+          },
+          events: [],
+        },
+      })),
       POST: vi.fn(async () => ({ data: undefined })),
       PUT: vi.fn(async () => put.promise),
       DELETE: vi.fn(),
@@ -212,8 +178,6 @@ describe("label editing stores", () => {
     await mutation;
 
     expect(store.getIssueDetail()?.repo.provider).toBe("gitlab");
-    expect(store.getIssueDetail()?.issue.labels?.map((item) => item.name)).toEqual([
-      "gitlab-label",
-    ]);
+    expect(store.getIssueDetail()?.issue.labels?.map((item) => item.name)).toEqual(["gitlab-label"]);
   });
 });

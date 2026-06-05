@@ -6,9 +6,7 @@ test.beforeEach(async ({ page }) => {
   await mockApi(page);
 });
 
-test("design system page renders chip matrix with shared styles", async ({
-  page,
-}) => {
+test("design system page renders chip matrix with shared styles", async ({ page }) => {
   await page.goto("/design-system");
 
   await expect(page.getByRole("heading", { name: "Design system" })).toBeVisible();
@@ -106,14 +104,8 @@ test("design system page renders chip matrix with shared styles", async ({
 });
 
 test("chip descenders render without clipping", async ({ page }, testInfo) => {
-  test.skip(
-    process.env.MIDDLEMAN_VISUAL_E2E !== "1",
-    "Set MIDDLEMAN_VISUAL_E2E=1 to run chip visual snapshots.",
-  );
-  test.skip(
-    testInfo.project.name !== "chromium",
-    "Chip visual snapshot is Chromium-only.",
-  );
+  test.skip(process.env.MIDDLEMAN_VISUAL_E2E !== "1", "Set MIDDLEMAN_VISUAL_E2E=1 to run chip visual snapshots.");
+  test.skip(testInfo.project.name !== "chromium", "Chip visual snapshot is Chromium-only.");
 
   await page.goto("/design-system");
   const descenderChip = page.getByTestId("descender-chip");
@@ -122,9 +114,7 @@ test("chip descenders render without clipping", async ({ page }, testInfo) => {
   await expect(descenderChip).toHaveScreenshot("chip-descenders.png");
 });
 
-test("design system page ignores list keyboard navigation shortcuts", async ({
-  page,
-}) => {
+test("design system page ignores list keyboard navigation shortcuts", async ({ page }) => {
   await page.goto("/design-system");
   await expect(page.getByRole("heading", { name: "Design system" })).toBeVisible();
 

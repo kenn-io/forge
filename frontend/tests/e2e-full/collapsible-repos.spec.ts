@@ -5,17 +5,11 @@ import { expect, test, type Page } from "@playwright/test";
 // Open issues (5): widgets#10, #11, #13, tools#5, group/project#11
 
 async function waitForPullList(page: Page): Promise<void> {
-  await page
-    .locator(".pull-item")
-    .first()
-    .waitFor({ state: "visible", timeout: 10_000 });
+  await page.locator(".pull-item").first().waitFor({ state: "visible", timeout: 10_000 });
 }
 
 async function waitForIssueList(page: Page): Promise<void> {
-  await page
-    .locator(".issue-item")
-    .first()
-    .waitFor({ state: "visible", timeout: 10_000 });
+  await page.locator(".issue-item").first().waitFor({ state: "visible", timeout: 10_000 });
 }
 
 function widgetsHeader(page: Page) {
@@ -38,10 +32,7 @@ async function selectPullGrouping(page: Page, label: string | RegExp): Promise<v
   }
 
   await page.getByRole("button", { name: "Filters" }).click();
-  await page
-    .locator(".filter-dropdown .filter-item", { hasText: label })
-    .last()
-    .click();
+  await page.locator(".filter-dropdown .filter-item", { hasText: label }).last().click();
 }
 
 test.describe("collapsible repo groups", () => {
@@ -56,9 +47,7 @@ test.describe("collapsible repo groups", () => {
     await waitForPullList(page);
   });
 
-  test("PR list — default expanded shows every PR and both headers", async ({
-    page,
-  }) => {
+  test("PR list — default expanded shows every PR and both headers", async ({ page }) => {
     await expect(widgetsHeader(page)).toBeVisible();
     await expect(toolsHeader(page)).toBeVisible();
     await expect(widgetsHeader(page)).toHaveAttribute("aria-expanded", "true");
@@ -66,9 +55,7 @@ test.describe("collapsible repo groups", () => {
     await expect(page.locator(".pull-item")).toHaveCount(8);
   });
 
-  test("PR list — collapsing acme/widgets hides its items, keeps header and count", async ({
-    page,
-  }) => {
+  test("PR list — collapsing acme/widgets hides its items, keeps header and count", async ({ page }) => {
     await widgetsHeader(page).click();
 
     await expect(widgetsHeader(page)).toHaveAttribute("aria-expanded", "false");
@@ -81,9 +68,7 @@ test.describe("collapsible repo groups", () => {
     await expect(toolsHeader(page)).toHaveAttribute("aria-expanded", "true");
   });
 
-  test("PR list — expanding acme/widgets again restores its items", async ({
-    page,
-  }) => {
+  test("PR list — expanding acme/widgets again restores its items", async ({ page }) => {
     await widgetsHeader(page).click();
     await expect(page.locator(".pull-item")).toHaveCount(4);
 
@@ -92,9 +77,7 @@ test.describe("collapsible repo groups", () => {
     await expect(page.locator(".pull-item")).toHaveCount(8);
   });
 
-  test("PR list — keyboard activation via Enter and Space toggles collapse", async ({
-    page,
-  }) => {
+  test("PR list — keyboard activation via Enter and Space toggles collapse", async ({ page }) => {
     // Focus the widgets header directly.
     await widgetsHeader(page).focus();
     await page.keyboard.press("Enter");
@@ -115,9 +98,7 @@ test.describe("collapsible repo groups", () => {
     await newStatusHeader(page).click();
 
     await expect(newStatusHeader(page)).toHaveAttribute("aria-expanded", "false");
-    await expect(newStatusHeader(page).locator(".repo-header__count")).toHaveText(
-      "8",
-    );
+    await expect(newStatusHeader(page).locator(".repo-header__count")).toHaveText("8");
     await expect(page.locator(".pull-item")).toHaveCount(0);
 
     await newStatusHeader(page).click();
@@ -133,18 +114,13 @@ test.describe("collapsible repo groups", () => {
     await refreshedPage.goto("/pulls");
     await waitForPullList(refreshedPage);
 
-    await expect(widgetsHeader(refreshedPage)).toHaveAttribute(
-      "aria-expanded",
-      "false",
-    );
+    await expect(widgetsHeader(refreshedPage)).toHaveAttribute("aria-expanded", "false");
     await expect(refreshedPage.locator(".pull-item")).toHaveCount(4);
 
     await refreshedPage.close();
   });
 
-  test("collapse is independent across pulls and issues surfaces", async ({
-    page,
-  }) => {
+  test("collapse is independent across pulls and issues surfaces", async ({ page }) => {
     // Collapse acme/widgets on /pulls.
     await widgetsHeader(page).click();
     await expect(widgetsHeader(page)).toHaveAttribute("aria-expanded", "false");
@@ -158,9 +134,7 @@ test.describe("collapsible repo groups", () => {
     await expect(page.locator(".issue-item")).toHaveCount(5);
   });
 
-  test("issue list — collapse, expand, and persist acme/widgets", async ({
-    page,
-  }) => {
+  test("issue list — collapse, expand, and persist acme/widgets", async ({ page }) => {
     await page.goto("/issues");
     await waitForIssueList(page);
 
@@ -183,10 +157,7 @@ test.describe("collapsible repo groups", () => {
     const refreshedPage = await page.context().newPage();
     await refreshedPage.goto("/issues");
     await waitForIssueList(refreshedPage);
-    await expect(widgetsHeader(refreshedPage)).toHaveAttribute(
-      "aria-expanded",
-      "false",
-    );
+    await expect(widgetsHeader(refreshedPage)).toHaveAttribute("aria-expanded", "false");
     await expect(refreshedPage.locator(".issue-item")).toHaveCount(2);
 
     await refreshedPage.close();

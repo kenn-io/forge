@@ -69,26 +69,18 @@ test.describe("PR timeline filters", () => {
   test("renders seeded commit and system timeline events", async ({ page }) => {
     await openPRTimeline(page);
 
-    await expect(
-      page.locator(".event-type", { hasText: "Force-pushed" }),
-    ).toHaveCount(2);
+    await expect(page.locator(".event-type", { hasText: "Force-pushed" })).toHaveCount(2);
     await expect(page.getByText("abc4444 -> def5555")).toBeVisible();
     await expect(page.getByText("abc9999 -> def7777")).toBeVisible();
-    await expect(page.locator(".event-type", { hasText: "Referenced" })).toHaveCount(
-      3,
-    );
+    await expect(page.locator(".event-type", { hasText: "Referenced" })).toHaveCount(3);
     await expect(page.getByText("Widget rendering broken on Safari")).toBeVisible();
     await expect(page.getByText("Title changed")).toBeVisible();
-    await expect(
-      page.getByText('"Add widget cache" -> "Add widget caching layer"'),
-    ).toBeVisible();
+    await expect(page.getByText('"Add widget cache" -> "Add widget caching layer"')).toBeVisible();
     await expect(page.getByText("Base changed")).toBeVisible();
     await expect(page.getByText("develop -> main")).toBeVisible();
   });
 
-  test("orders force-push commit generations through the seeded timeline", async ({
-    page,
-  }) => {
+  test("orders force-push commit generations through the seeded timeline", async ({ page }) => {
     await openPRTimeline(page);
 
     await expectTimelineTextOrder(page, [
@@ -104,9 +96,7 @@ test.describe("PR timeline filters", () => {
     ]);
   });
 
-  test("orders fresh-import force-push commits without the old anchor commit", async ({
-    page,
-  }) => {
+  test("orders fresh-import force-push commits without the old anchor commit", async ({ page }) => {
     await openPRTimelinePath(page, "/pulls/github/acme/widgets/2");
 
     await expectTimelineTextOrder(page, [
@@ -116,31 +106,21 @@ test.describe("PR timeline filters", () => {
     ]);
   });
 
-  test("keeps commit rows while hiding and restoring system event buckets", async ({
-    page,
-  }) => {
+  test("keeps commit rows while hiding and restoring system event buckets", async ({ page }) => {
     await openPRTimeline(page);
     await openTimelineFilters(page);
     const commitRow = cacheCommitRow(page);
 
     await page.getByRole("button", { name: "Commit details" }).click();
-    await expect(commitRow.locator(".commit-title")).toHaveText(
-      "feat: add cache store",
-    );
+    await expect(commitRow.locator(".commit-title")).toHaveText("feat: add cache store");
     await expect(commitRow.locator(".commit-body-details")).toHaveCount(0);
     await page.getByRole("button", { name: "Commit details" }).click();
     await expect(commitRow.locator(".commit-title")).toHaveCount(0);
-    await expect(commitRow.locator(".commit-body-details")).toContainText(
-      "Cache entries now expire",
-    );
+    await expect(commitRow.locator(".commit-body-details")).toContainText("Cache entries now expire");
 
     await page.getByRole("button", { name: "Events" }).click();
-    await expect(
-      page.getByText("Widget rendering broken on Safari"),
-    ).not.toBeVisible();
-    await expect(
-      page.getByText('"Add widget cache" -> "Add widget caching layer"'),
-    ).not.toBeVisible();
+    await expect(page.getByText("Widget rendering broken on Safari")).not.toBeVisible();
+    await expect(page.getByText('"Add widget cache" -> "Add widget caching layer"')).not.toBeVisible();
     await expect(page.getByText("develop -> main")).not.toBeVisible();
     await page.getByRole("button", { name: "Events" }).click();
     await expect(page.getByText("Widget rendering broken on Safari")).toBeVisible();
@@ -162,28 +142,17 @@ test.describe("PR timeline filters", () => {
     await openTimelineFilters(page);
 
     await page.getByRole("button", { name: "Events" }).click();
-    await expect(
-      page.getByText("Widget rendering broken on Safari"),
-    ).not.toBeVisible();
-    await expect(page.locator('button[title="Filter PR activity"]')).toContainText(
-      "1",
-    );
+    await expect(page.getByText("Widget rendering broken on Safari")).not.toBeVisible();
+    await expect(page.locator('button[title="Filter PR activity"]')).toContainText("1");
 
     await expect
-      .poll(
-        async () =>
-          await page.evaluate((key) => localStorage.getItem(key), storageKey),
-      )
+      .poll(async () => await page.evaluate((key) => localStorage.getItem(key), storageKey))
       .toContain('"showEvents":false');
 
     await page.reload();
     await page.locator(".pull-detail").waitFor({ state: "visible", timeout: 10_000 });
-    await expect(
-      page.getByText("Widget rendering broken on Safari"),
-    ).not.toBeVisible();
-    await expect(page.locator('button[title="Filter PR activity"]')).toContainText(
-      "1",
-    );
+    await expect(page.getByText("Widget rendering broken on Safari")).not.toBeVisible();
+    await expect(page.locator('button[title="Filter PR activity"]')).toContainText("1");
   });
 
   test("keeps commit rows when other event buckets are hidden", async ({ page }) => {
@@ -196,12 +165,8 @@ test.describe("PR timeline filters", () => {
     await page.getByRole("button", { name: "Force pushes" }).click();
     const commitRow = cacheCommitRow(page);
 
-    await expect(commitRow.locator(".commit-title")).toHaveText(
-      "feat: add cache store",
-    );
+    await expect(commitRow.locator(".commit-title")).toHaveText("feat: add cache store");
     await expect(commitRow.locator(".commit-body-details")).toHaveCount(0);
-    await expect(
-      page.getByText("No activity matches the current filters"),
-    ).not.toBeVisible();
+    await expect(page.getByText("No activity matches the current filters")).not.toBeVisible();
   });
 });

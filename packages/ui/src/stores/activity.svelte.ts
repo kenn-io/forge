@@ -5,17 +5,9 @@ export type TimeRange = "24h" | "7d" | "30d" | "90d";
 export type ViewMode = "flat" | "threaded";
 export type ItemFilter = "all" | "prs" | "issues";
 
-export const DEFAULT_EVENT_TYPES = [
-  "comment",
-  "review",
-  "commit",
-  "force_push",
-] as const;
+export const DEFAULT_EVENT_TYPES = ["comment", "review", "commit", "force_push"] as const;
 
-export const DEFAULT_BRANCH_ACTIVITY_TYPES = [
-  "default_branch_commit",
-  "default_branch_force_push",
-] as const;
+export const DEFAULT_BRANCH_ACTIVITY_TYPES = ["default_branch_commit", "default_branch_force_push"] as const;
 
 const RANGE_MS: Record<TimeRange, number> = {
   "24h": 24 * 60 * 60 * 1000,
@@ -30,10 +22,7 @@ export interface ActivityStoreOptions {
   getBasePath?: () => string;
 }
 
-function apiErrorMessage(
-  error: { detail?: string; title?: string },
-  fallback: string,
-): string {
+function apiErrorMessage(error: { detail?: string; title?: string }, fallback: string): string {
   return error.detail ?? error.title ?? fallback;
 }
 
@@ -332,9 +321,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     if (hasPR && !hasIssue) itemFilter = "prs";
     else if (hasIssue && !hasPR) itemFilter = "issues";
     else itemFilter = "all";
-    enabledEvents = new Set(
-      DEFAULT_EVENT_TYPES.filter((t) => filterTypes.includes(t)),
-    );
+    enabledEvents = new Set(DEFAULT_EVENT_TYPES.filter((t) => filterTypes.includes(t)));
   }
 
   function applyCollapsedFromURL(): void {

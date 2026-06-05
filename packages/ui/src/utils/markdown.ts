@@ -36,9 +36,7 @@ function assertItemRefToken(token: Tokens.Generic): asserts token is ItemRefToke
     typeof token.name !== "string" ||
     typeof token.repoPath !== "string" ||
     typeof token.number !== "number" ||
-    (token.itemType !== undefined &&
-      token.itemType !== "pr" &&
-      token.itemType !== "issue") ||
+    (token.itemType !== undefined && token.itemType !== "pr" && token.itemType !== "issue") ||
     typeof token.text !== "string"
   ) {
     throw new Error("Unexpected itemRef token shape");
@@ -62,16 +60,10 @@ function itemRefExtension(repo?: RepoContext): TokenizerAndRendererExtension {
       const bareIdx = src.search(/(^|[^\w])#\d/);
       const mrBareIdx = supportsBangMR ? src.search(/(^|[^\w])!\d/) : -1;
       const adjusted = bareIdx >= 0 && src[bareIdx] !== "#" ? bareIdx + 1 : bareIdx;
-      const adjustedMR =
-        mrBareIdx >= 0 && src[mrBareIdx] !== "!" ? mrBareIdx + 1 : mrBareIdx;
-      return [crossIdx, adjusted, adjustedMR]
-        .filter((idx) => idx >= 0)
-        .sort((a, b) => a - b)[0];
+      const adjustedMR = mrBareIdx >= 0 && src[mrBareIdx] !== "!" ? mrBareIdx + 1 : mrBareIdx;
+      return [crossIdx, adjusted, adjustedMR].filter((idx) => idx >= 0).sort((a, b) => a - b)[0];
     },
-    tokenizer(
-      this: { lexer: { state: { inLink: boolean } } },
-      src: string,
-    ): ItemRefToken | undefined {
+    tokenizer(this: { lexer: { state: { inLink: boolean } } }, src: string): ItemRefToken | undefined {
       if (this.lexer.state.inLink || !repo) return undefined;
 
       const crossMatch = src.match(/^([\w.-]+(?:\/[\w.-]+)+)([#!])(\d+)(?!\w)/);
@@ -223,8 +215,7 @@ const taskListRenderer: RendererObject = {
     const inner = this.parser.parse(token.tokens);
     renderState.itemStack.pop();
     if (!token.task) return `<li>${inner}</li>\n`;
-    const interactive =
-      renderState.interactiveTasks && renderState.blockquoteDepth === 0;
+    const interactive = renderState.interactiveTasks && renderState.blockquoteDepth === 0;
     if (!interactive) {
       return `<li class="task-list-item">${inner}</li>\n`;
     }
@@ -247,9 +238,7 @@ const taskListRenderer: RendererObject = {
 };
 
 function getMarked(repo?: RepoContext): Marked {
-  const key = repo
-    ? `${repo.provider}/${repo.platformHost ?? ""}/${repo.repoPath}`
-    : "";
+  const key = repo ? `${repo.provider}/${repo.platformHost ?? ""}/${repo.repoPath}` : "";
   let instance = markedCache.get(key);
   if (!instance) {
     instance = new Marked({ breaks: true, gfm: true });
@@ -262,16 +251,10 @@ function getMarked(repo?: RepoContext): Marked {
   return instance;
 }
 
-export function renderMarkdown(
-  raw: string,
-  repo?: RepoContext,
-  opts: RenderMarkdownOpts = {},
-): string {
+export function renderMarkdown(raw: string, repo?: RepoContext, opts: RenderMarkdownOpts = {}): string {
   if (!raw) return "";
   const interactiveTasks = !!opts.interactiveTasks;
-  const repoKey = repo
-    ? `${repo.provider}/${repo.platformHost ?? ""}/${repo.repoPath}`
-    : "";
+  const repoKey = repo ? `${repo.provider}/${repo.platformHost ?? ""}/${repo.repoPath}` : "";
   const key = `${repoKey}\0${interactiveTasks ? 1 : 0}\0${raw}`;
   const cached = htmlCache.get(key);
   if (cached !== undefined) return cached;

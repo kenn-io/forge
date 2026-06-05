@@ -1,13 +1,6 @@
-import type {
-  LaunchTarget,
-  RuntimeSession,
-  WorkspaceRuntime,
-} from "@middleman/ui/api/types";
+import type { LaunchTarget, RuntimeSession, WorkspaceRuntime } from "@middleman/ui/api/types";
 
-export type WorkspaceRuntimeState = Omit<
-  WorkspaceRuntime,
-  "launch_targets" | "sessions"
-> & {
+export type WorkspaceRuntimeState = Omit<WorkspaceRuntime, "launch_targets" | "sessions"> & {
   launch_targets: LaunchTarget[];
   sessions: RuntimeSession[];
 };
@@ -47,10 +40,7 @@ export async function getWorkspaceRuntime(
   fetchFn: RuntimeFetch = fetch,
 ): Promise<WorkspaceRuntimeState> {
   const response = await fetchFn(workspaceRuntimeURL(workspaceId));
-  const runtime = await readJSON<WorkspaceRuntime>(
-    response,
-    `GET workspace runtime failed (${response.status})`,
-  );
+  const runtime = await readJSON<WorkspaceRuntime>(response, `GET workspace runtime failed (${response.status})`);
   return {
     ...runtime,
     launch_targets: runtime.launch_targets ?? [],
@@ -68,10 +58,7 @@ export async function launchWorkspaceSession(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ target_key: targetKey }),
   });
-  return readJSON<RuntimeSession>(
-    response,
-    `Launch session failed (${response.status})`,
-  );
+  return readJSON<RuntimeSession>(response, `Launch session failed (${response.status})`);
 }
 
 export async function stopWorkspaceSession(
@@ -79,13 +66,10 @@ export async function stopWorkspaceSession(
   sessionKey: string,
   fetchFn: RuntimeFetch = fetch,
 ): Promise<void> {
-  const response = await fetchFn(
-    `${workspaceRuntimeURL(workspaceId)}/sessions/${encodeURIComponent(sessionKey)}`,
-    {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-    },
-  );
+  const response = await fetchFn(`${workspaceRuntimeURL(workspaceId)}/sessions/${encodeURIComponent(sessionKey)}`, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+  });
   if (!response.ok && response.status !== 204) {
     await readJSON<unknown>(response, `Stop session failed (${response.status})`);
   }
@@ -97,24 +81,15 @@ export async function renameWorkspaceSession(
   label: string,
   fetchFn: RuntimeFetch = fetch,
 ): Promise<RuntimeSession> {
-  const response = await fetchFn(
-    `${workspaceRuntimeURL(workspaceId)}/sessions/${encodeURIComponent(sessionKey)}`,
-    {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ label }),
-    },
-  );
-  return readJSON<RuntimeSession>(
-    response,
-    `Rename session failed (${response.status})`,
-  );
+  const response = await fetchFn(`${workspaceRuntimeURL(workspaceId)}/sessions/${encodeURIComponent(sessionKey)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ label }),
+  });
+  return readJSON<RuntimeSession>(response, `Rename session failed (${response.status})`);
 }
 
-export function workspaceSessionWebSocketPath(
-  workspaceId: string,
-  sessionKey: string,
-): string {
+export function workspaceSessionWebSocketPath(workspaceId: string, sessionKey: string): string {
   return (
     `${wsBaseUrl()}/workspaces/${encodeURIComponent(workspaceId)}` +
     `/runtime/sessions/${encodeURIComponent(sessionKey)}` +

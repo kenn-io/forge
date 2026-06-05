@@ -12,12 +12,7 @@ type TerminalSettings = {
   renderer: "xterm" | "ghostty-web";
 };
 
-const {
-  currentTerminal,
-  defaultTerminal,
-  mockSetTerminalSettings,
-  mockUpdateSettings,
-} = vi.hoisted(() => {
+const { currentTerminal, defaultTerminal, mockSetTerminalSettings, mockUpdateSettings } = vi.hoisted(() => {
   const defaults: TerminalSettings = {
     font_family: "",
     font_size: 14,

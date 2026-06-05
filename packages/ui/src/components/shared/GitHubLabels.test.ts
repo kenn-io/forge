@@ -58,17 +58,12 @@ describe("GitHubLabels", () => {
     render(GitHubLabels, {
       props: {
         mode: "full",
-        labels: [
-          makeLabel({ name: "light", color: "fef2c0" }),
-          makeLabel({ name: "dark", color: "0f172a" }),
-        ],
+        labels: [makeLabel({ name: "light", color: "fef2c0" }), makeLabel({ name: "dark", color: "0f172a" })],
       },
     });
 
     expect(getComputedStyle(screen.getByText("light")).color).toBe("rgb(31, 35, 40)");
-    expect(getComputedStyle(screen.getByText("dark")).color).toBe(
-      "rgb(255, 255, 255)",
-    );
+    expect(getComputedStyle(screen.getByText("dark")).color).toBe("rgb(255, 255, 255)");
   });
 
   it("chooses the better contrast text color for saturated mid-tone labels", () => {
@@ -90,9 +85,7 @@ describe("GitHubLabels", () => {
       },
     });
 
-    expect(getComputedStyle(screen.getByText("success")).color).toBe(
-      "rgb(255, 255, 255)",
-    );
+    expect(getComputedStyle(screen.getByText("success")).color).toBe("rgb(255, 255, 255)");
   });
 
   it("renders nothing for null, undefined, and empty label inputs", () => {

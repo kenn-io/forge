@@ -121,24 +121,14 @@ describe("prTimelineFilter", () => {
   });
 
   it("classifies event buckets", () => {
-    expect(timelineEventBucket(event({ EventType: "issue_comment" }))).toBe(
-      "messages",
-    );
+    expect(timelineEventBucket(event({ EventType: "issue_comment" }))).toBe("messages");
     expect(timelineEventBucket(event({ EventType: "review" }))).toBe("messages");
     expect(timelineEventBucket(event({ EventType: "commit" }))).toBe("commitDetails");
-    expect(timelineEventBucket(event({ EventType: "force_push" }))).toBe(
-      "forcePushes",
-    );
-    expect(timelineEventBucket(event({ EventType: "comment_deleted" }))).toBe(
-      "events",
-    );
-    expect(timelineEventBucket(event({ EventType: "cross_referenced" }))).toBe(
-      "events",
-    );
+    expect(timelineEventBucket(event({ EventType: "force_push" }))).toBe("forcePushes");
+    expect(timelineEventBucket(event({ EventType: "comment_deleted" }))).toBe("events");
+    expect(timelineEventBucket(event({ EventType: "cross_referenced" }))).toBe("events");
     expect(timelineEventBucket(event({ EventType: "renamed_title" }))).toBe("events");
-    expect(timelineEventBucket(event({ EventType: "base_ref_changed" }))).toBe(
-      "events",
-    );
+    expect(timelineEventBucket(event({ EventType: "base_ref_changed" }))).toBe("events");
     expect(timelineEventBucket(event({ EventType: "assigned" }))).toBe("events");
     expect(timelineEventBucket(event({ EventType: "unassigned" }))).toBe("events");
   });

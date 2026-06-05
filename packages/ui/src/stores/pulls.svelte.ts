@@ -1,9 +1,5 @@
 import type { KanbanStatus, PullRequest } from "../api/types.js";
-import {
-  providerItemPath,
-  providerRouteParams,
-  type ProviderRouteRef,
-} from "../api/provider-routes.js";
+import { providerItemPath, providerRouteParams, type ProviderRouteRef } from "../api/provider-routes.js";
 import type { MiddlemanClient } from "../types.js";
 
 export type FetchPullResult =
@@ -37,10 +33,7 @@ export interface PullsStoreOptions {
   getView?: () => "list" | "board";
 }
 
-function apiErrorMessage(
-  error: { detail?: string; title?: string },
-  fallback: string,
-): string {
+function apiErrorMessage(error: { detail?: string; title?: string }, fallback: string): string {
   return error.detail ?? error.title ?? fallback;
 }
 
@@ -143,10 +136,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
       return;
     }
     const idx = list.findIndex(
-      (pr) =>
-        (pr.repo_owner ?? "") === sel.owner &&
-        (pr.repo_name ?? "") === sel.name &&
-        pr.Number === sel.number,
+      (pr) => (pr.repo_owner ?? "") === sel.owner && (pr.repo_name ?? "") === sel.name && pr.Number === sel.number,
     );
     const next = list[idx + 1];
     if (next !== undefined) {
@@ -166,10 +156,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
       return;
     }
     const idx = list.findIndex(
-      (pr) =>
-        (pr.repo_owner ?? "") === sel.owner &&
-        (pr.repo_name ?? "") === sel.name &&
-        pr.Number === sel.number,
+      (pr) => (pr.repo_owner ?? "") === sel.owner && (pr.repo_name ?? "") === sel.name && pr.Number === sel.number,
     );
     if (idx > 0) {
       const prev = list[idx - 1];
@@ -212,14 +199,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
   }
 
   function selectPRFromPull(pr: PullRequest): void {
-    selectPR(
-      pr.repo.owner,
-      pr.repo.name,
-      pr.Number,
-      pr.repo.provider,
-      pr.repo.platform_host,
-      pr.repo.repo_path,
-    );
+    selectPR(pr.repo.owner, pr.repo.name, pr.Number, pr.repo.provider, pr.repo.platform_host, pr.repo.repo_path);
   }
 
   function clearSelection(): void {
@@ -227,37 +207,19 @@ export function createPullsStore(opts: PullsStoreOptions) {
   }
 
   /** Returns the current kanban status for a PR. */
-  function getPullKanbanStatus(
-    owner: string,
-    name: string,
-    number: number,
-  ): KanbanStatus | undefined {
-    const pr = pulls.find(
-      (p) => p.repo_owner === owner && p.repo_name === name && p.Number === number,
-    );
+  function getPullKanbanStatus(owner: string, name: string, number: number): KanbanStatus | undefined {
+    const pr = pulls.find((p) => p.repo_owner === owner && p.repo_name === name && p.Number === number);
     return pr?.KanbanStatus as KanbanStatus | undefined;
   }
 
   /** Optimistically update a single PR's kanban status. */
-  function optimisticKanbanUpdate(
-    owner: string,
-    name: string,
-    number: number,
-    status: KanbanStatus,
-  ): void {
+  function optimisticKanbanUpdate(owner: string, name: string, number: number, status: KanbanStatus): void {
     pulls = pulls.map((pr) =>
-      pr.repo_owner === owner && pr.repo_name === name && pr.Number === number
-        ? { ...pr, KanbanStatus: status }
-        : pr,
+      pr.repo_owner === owner && pr.repo_name === name && pr.Number === number ? { ...pr, KanbanStatus: status } : pr,
     );
   }
 
-  async function togglePRStar(
-    owner: string,
-    name: string,
-    number: number,
-    currentlyStarred: boolean,
-  ): Promise<void> {
+  async function togglePRStar(owner: string, name: string, number: number, currentlyStarred: boolean): Promise<void> {
     try {
       if (currentlyStarred) {
         const { error } = await apiClient.DELETE("/starred", {
@@ -299,14 +261,11 @@ export function createPullsStore(opts: PullsStoreOptions) {
   ): Promise<FetchPullResult> {
     const ref = identity;
     try {
-      const { data, error, response } = await apiClient.GET(
-        providerItemPath("pulls", ref, ""),
-        {
-          params: {
-            path: { ...providerRouteParams(ref), number },
-          },
+      const { data, error, response } = await apiClient.GET(providerItemPath("pulls", ref, ""), {
+        params: {
+          path: { ...providerRouteParams(ref), number },
         },
-      );
+      });
       if (error || !data) {
         if (response?.status === 404) {
           return { status: "not-found" };

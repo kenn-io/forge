@@ -9,10 +9,8 @@ const projectGet = vi.fn();
 const worktreesGet = vi.fn();
 
 vi.mock("../../api/runtime.ts", () => ({
-  apiErrorMessage: (
-    error: { detail?: string; title?: string } | undefined,
-    fallback: string,
-  ) => error?.detail ?? error?.title ?? fallback,
+  apiErrorMessage: (error: { detail?: string; title?: string } | undefined, fallback: string) =>
+    error?.detail ?? error?.title ?? fallback,
   client: {
     GET: vi.fn((path: string, options) => {
       if (path === "/projects/{project_id}") {
@@ -128,9 +126,7 @@ describe("WorkspaceProjectCard", () => {
 
     render(WorkspaceProjectCard, { props: { projectId: "prj_1" } });
 
-    expect(
-      await screen.findByText("gitlab.example.com / group/subgroup / project"),
-    ).toBeTruthy();
+    expect(await screen.findByText("gitlab.example.com / group/subgroup / project")).toBeTruthy();
   });
 
   it("renders provider brand icon beside platform identity when platform is present", async () => {
@@ -170,9 +166,7 @@ describe("WorkspaceProjectCard", () => {
     render(WorkspaceProjectCard, { props: { projectId: "prj_1" } });
     await screen.findByText("feature-x");
     expect(screen.getByText("/tmp/myrepo-worktrees/feature-x")).toBeTruthy();
-    expect(
-      screen.getByRole("button", { name: /Create another worktree/i }),
-    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Create another worktree/i })).toBeTruthy();
   });
 
   it("renders an error and a retry button when the project fetch fails", async () => {

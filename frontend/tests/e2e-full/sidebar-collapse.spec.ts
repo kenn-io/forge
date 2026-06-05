@@ -1,23 +1,15 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
 async function waitForPRList(page: Page): Promise<void> {
-  await page
-    .locator(".pull-item")
-    .first()
-    .waitFor({ state: "visible", timeout: 10_000 });
+  await page.locator(".pull-item").first().waitFor({ state: "visible", timeout: 10_000 });
 }
 
 async function waitForIssueList(page: Page): Promise<void> {
-  await page
-    .locator(".issue-item")
-    .first()
-    .waitFor({ state: "visible", timeout: 10_000 });
+  await page.locator(".issue-item").first().waitFor({ state: "visible", timeout: 10_000 });
 }
 
 async function sidebarWidth(sidebar: Locator): Promise<number> {
-  return Math.round(
-    await sidebar.evaluate((node) => node.getBoundingClientRect().width),
-  );
+  return Math.round(await sidebar.evaluate((node) => node.getBoundingClientRect().width));
 }
 
 function collapseToggle(sidebar: Locator): Locator {
@@ -32,11 +24,7 @@ function sidebarResizeHandle(page: Page): Locator {
   return page.getByRole("button", { name: "Resize sidebar" });
 }
 
-async function dragResizeHandle(
-  page: Page,
-  handle: Locator,
-  deltaX: number,
-): Promise<void> {
+async function dragResizeHandle(page: Page, handle: Locator, deltaX: number): Promise<void> {
   const box = await handle.boundingBox();
   expect(box).not.toBeNull();
   if (!box) {
@@ -71,9 +59,7 @@ async function expectResizedSidebar(
   await page.reload();
   await waitForList(page);
 
-  await expect
-    .poll(async () => sidebarWidth(page.locator(".sidebar").first()))
-    .toBe(420);
+  await expect.poll(async () => sidebarWidth(page.locator(".sidebar").first())).toBe(420);
 }
 
 async function expectCompactFiltersAtMinimumWidth(
@@ -170,11 +156,7 @@ async function expectFastAnimation(locator: Locator): Promise<void> {
       .animationDuration.split(",")
       .map((value) => value.trim())
       .filter(Boolean)
-      .map((value) =>
-        value.endsWith("ms")
-          ? Number.parseFloat(value)
-          : Number.parseFloat(value) * 1000,
-      );
+      .map((value) => (value.endsWith("ms") ? Number.parseFloat(value) : Number.parseFloat(value) * 1000));
     return Math.max(...durations);
   });
   expect(durationMs).toBeGreaterThan(0);
@@ -263,67 +245,42 @@ test.describe("collapsible sidebar", () => {
     await expect(sidebar).not.toHaveClass(/sidebar--collapsed/);
   });
 
-  test("sidebar can be resized on pulls and keeps the new width after reload", async ({
-    page,
-  }) => {
+  test("sidebar can be resized on pulls and keeps the new width after reload", async ({ page }) => {
     await expectResizedSidebar(page, "/pulls", waitForPRList);
   });
 
-  test("sidebar can be resized on issues and keeps the new width after reload", async ({
-    page,
-  }) => {
+  test("sidebar can be resized on issues and keeps the new width after reload", async ({ page }) => {
     await expectResizedSidebar(page, "/issues", waitForIssueList);
   });
 
-  test("pull filters collapse into a compact menu when sidebar is tight", async ({
-    page,
-  }) => {
+  test("pull filters collapse into a compact menu when sidebar is tight", async ({ page }) => {
     await expectCompactFiltersAtMinimumWidth(page, "/pulls", waitForPRList);
   });
 
-  test("issue filters collapse into a compact menu when sidebar is tight", async ({
-    page,
-  }) => {
+  test("issue filters collapse into a compact menu when sidebar is tight", async ({ page }) => {
     await expectCompactFiltersAtMinimumWidth(page, "/issues", waitForIssueList);
   });
 
-  test("pull filters stay compact when a narrow viewport sidebar is opened", async ({
-    page,
-  }) => {
+  test("pull filters stay compact when a narrow viewport sidebar is opened", async ({ page }) => {
     await expectCompactFiltersInNarrowViewport(page, "/pulls", waitForPRList);
   });
 
-  test("issue filters stay compact when a narrow viewport sidebar is opened", async ({
-    page,
-  }) => {
+  test("issue filters stay compact when a narrow viewport sidebar is opened", async ({ page }) => {
     await expectCompactFiltersInNarrowViewport(page, "/issues", waitForIssueList);
   });
 
   test("pull filters switch at the buffered 396px fit point", async ({ page }) => {
-    await expectCompactFilterBar(
-      await setPersistedSidebarWidth(page, "/pulls", 395, waitForPRList),
-    );
-    await expectExpandedFilterBar(
-      await setPersistedSidebarWidth(page, "/pulls", 396, waitForPRList),
-    );
+    await expectCompactFilterBar(await setPersistedSidebarWidth(page, "/pulls", 395, waitForPRList));
+    await expectExpandedFilterBar(await setPersistedSidebarWidth(page, "/pulls", 396, waitForPRList));
   });
 
   test("issue filters switch at the buffered 373px fit point", async ({ page }) => {
-    await expectCompactFilterBar(
-      await setPersistedSidebarWidth(page, "/issues", 372, waitForIssueList),
-    );
-    await expectExpandedFilterBar(
-      await setPersistedSidebarWidth(page, "/issues", 373, waitForIssueList),
-    );
+    await expectCompactFilterBar(await setPersistedSidebarWidth(page, "/issues", 372, waitForIssueList));
+    await expectExpandedFilterBar(await setPersistedSidebarWidth(page, "/issues", 373, waitForIssueList));
   });
 
   test("pull compact filters update state and grouping", async ({ page }) => {
-    const filterBar = await setPersistedSidebarWidth(
-      page,
-      "/pulls",
-      395,
-      waitForPRList,
-    );
+    const filterBar = await setPersistedSidebarWidth(page, "/pulls", 395, waitForPRList);
     await expectCompactFilterBar(filterBar);
 
     let dropdown = await openCompactFilters(filterBar);
@@ -341,12 +298,7 @@ test.describe("collapsible sidebar", () => {
   });
 
   test("issue compact filters update state and grouping", async ({ page }) => {
-    const filterBar = await setPersistedSidebarWidth(
-      page,
-      "/issues",
-      372,
-      waitForIssueList,
-    );
+    const filterBar = await setPersistedSidebarWidth(page, "/issues", 372, waitForIssueList);
     await expectCompactFilterBar(filterBar);
 
     let dropdown = await openCompactFilters(filterBar);

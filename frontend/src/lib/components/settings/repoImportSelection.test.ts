@@ -80,12 +80,7 @@ describe("repo import selection helpers", () => {
   });
 
   it("keeps Forgejo and Gitea owner patterns non-nested", () => {
-    expect(repoImportProviders.map((provider) => provider.id)).toEqual([
-      "github",
-      "gitlab",
-      "forgejo",
-      "gitea",
-    ]);
+    expect(repoImportProviders.map((provider) => provider.id)).toEqual(["github", "gitlab", "forgejo", "gitea"]);
     expect(repoImportProvider("forgejo")).toMatchObject({
       defaultHost: "codeberg.org",
       allowNestedOwner: false,
@@ -96,28 +91,18 @@ describe("repo import selection helpers", () => {
       allowNestedOwner: false,
       ownerPatternPlaceholder: "owner/pattern",
     });
-    expect(() =>
-      parseImportPattern(
-        "team/subgroup/project-*",
-        repoImportProvider("forgejo").allowNestedOwner,
-      ),
-    ).toThrow("Format: owner/pattern");
-    expect(() =>
-      parseImportPattern(
-        "team/subgroup/project-*",
-        repoImportProvider("gitea").allowNestedOwner,
-      ),
-    ).toThrow("Format: owner/pattern");
+    expect(() => parseImportPattern("team/subgroup/project-*", repoImportProvider("forgejo").allowNestedOwner)).toThrow(
+      "Format: owner/pattern",
+    );
+    expect(() => parseImportPattern("team/subgroup/project-*", repoImportProvider("gitea").allowNestedOwner)).toThrow(
+      "Format: owner/pattern",
+    );
   });
 
   it("rejects malformed patterns before the API call", () => {
-    expect(() => parseImportPattern("acme/widgets/extra")).toThrow(
-      "Format: owner/pattern",
-    );
+    expect(() => parseImportPattern("acme/widgets/extra")).toThrow("Format: owner/pattern");
     expect(() => parseImportPattern("acme/widgets/extra", true)).not.toThrow();
-    expect(() => parseImportPattern("acme*/widgets")).toThrow(
-      "glob syntax in owner is not supported",
-    );
+    expect(() => parseImportPattern("acme*/widgets")).toThrow("glob syntax in owner is not supported");
     expect(() => parseImportPattern("acme/")).toThrow("pattern is required");
   });
 
@@ -135,32 +120,24 @@ describe("repo import selection helpers", () => {
 
   it("filters by owner/name, name, description, and status", () => {
     expect(filterRows(rows, "HTTP", "all").map((row) => row.name)).toEqual(["api"]);
-    expect(filterRows(rows, "acme/worker", "all").map((row) => row.name)).toEqual([
-      "worker",
-    ]);
-    expect(filterRows(rows, "", "already-added").map((row) => row.name)).toEqual([
-      "widget",
-    ]);
+    expect(filterRows(rows, "acme/worker", "all").map((row) => row.name)).toEqual(["worker"]);
+    expect(filterRows(rows, "", "already-added").map((row) => row.name)).toEqual(["widget"]);
     const selected = new Set([rowKey(rows[0]!)]);
-    expect(filterRows(rows, "", "selected", selected).map((row) => row.name)).toEqual(
-      ["worker"],
-    );
-    expect(
-      filterRows(rows, "", "unselected", selected).map((row) => row.name),
-    ).toEqual(["api", "empty"]);
+    expect(filterRows(rows, "", "selected", selected).map((row) => row.name)).toEqual(["worker"]);
+    expect(filterRows(rows, "", "unselected", selected).map((row) => row.name)).toEqual(["api", "empty"]);
   });
 
   it("filters private repositories and forks independently", () => {
-    expect(
-      filterRows(rows, "", "all", new Set(), { hidePrivate: true }).map(
-        (row) => row.name,
-      ),
-    ).toEqual(["worker", "empty", "widget"]);
-    expect(
-      filterRows(rows, "", "all", new Set(), { hideForks: true }).map(
-        (row) => row.name,
-      ),
-    ).toEqual(["worker", "api", "empty"]);
+    expect(filterRows(rows, "", "all", new Set(), { hidePrivate: true }).map((row) => row.name)).toEqual([
+      "worker",
+      "empty",
+      "widget",
+    ]);
+    expect(filterRows(rows, "", "all", new Set(), { hideForks: true }).map((row) => row.name)).toEqual([
+      "worker",
+      "api",
+      "empty",
+    ]);
     expect(
       filterRows(rows, "", "all", new Set(), {
         hidePrivate: true,
@@ -170,26 +147,29 @@ describe("repo import selection helpers", () => {
   });
 
   it("sorts deterministically with null pushed_at last", () => {
-    expect(
-      sortRows(rows, { field: "pushed_at", direction: "desc" }).map(
-        (row) => row.name,
-      ),
-    ).toEqual(["api", "widget", "worker", "empty"]);
-    expect(
-      sortRows(rows, { field: "pushed_at", direction: "asc" }).map((row) => row.name),
-    ).toEqual(["worker", "widget", "api", "empty"]);
-    expect(
-      sortRows(rows, { field: "name", direction: "asc" }).map((row) => row.name),
-    ).toEqual(["api", "empty", "widget", "worker"]);
+    expect(sortRows(rows, { field: "pushed_at", direction: "desc" }).map((row) => row.name)).toEqual([
+      "api",
+      "widget",
+      "worker",
+      "empty",
+    ]);
+    expect(sortRows(rows, { field: "pushed_at", direction: "asc" }).map((row) => row.name)).toEqual([
+      "worker",
+      "widget",
+      "api",
+      "empty",
+    ]);
+    expect(sortRows(rows, { field: "name", direction: "asc" }).map((row) => row.name)).toEqual([
+      "api",
+      "empty",
+      "widget",
+      "worker",
+    ]);
   });
 
   it("selects and deselects all visible selectable rows", () => {
     const selected = setAllVisible(new Set<string>(), rows, true);
-    expect([...selected].sort()).toEqual([
-      githubKey("api"),
-      githubKey("empty"),
-      githubKey("worker"),
-    ]);
+    expect([...selected].sort()).toEqual([githubKey("api"), githubKey("empty"), githubKey("worker")]);
     expect([...setAllVisible(selected, [rows[0]!, rows[3]!], false)].sort()).toEqual([
       githubKey("api"),
       githubKey("empty"),
@@ -205,11 +185,7 @@ describe("repo import selection helpers", () => {
       clickedKey: githubKey("worker"),
       checked: true,
     });
-    expect([...result.selected].sort()).toEqual([
-      githubKey("api"),
-      githubKey("empty"),
-      githubKey("worker"),
-    ]);
+    expect([...result.selected].sort()).toEqual([githubKey("api"), githubKey("empty"), githubKey("worker")]);
     expect(result.anchorKey).toBe(githubKey("worker"));
   });
 
@@ -228,10 +204,7 @@ describe("repo import selection helpers", () => {
   it("returns selected rows for submit in full sorted order", () => {
     const sorted = sortRows(rows, { field: "name", direction: "asc" });
     const selected = new Set([githubKey("worker"), githubKey("api")]);
-    expect(selectedRowsForSubmit(sorted, selected).map((row) => row.name)).toEqual([
-      "api",
-      "worker",
-    ]);
+    expect(selectedRowsForSubmit(sorted, selected).map((row) => row.name)).toEqual(["api", "worker"]);
     expect(
       selectedRowsForSubmit(sorted, selected, {
         hidePrivate: true,

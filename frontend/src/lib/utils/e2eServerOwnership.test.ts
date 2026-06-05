@@ -1,12 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
-import {
-  copyFileSync,
-  linkSync,
-  mkdirSync,
-  mkdtempSync,
-  utimesSync,
-  writeFileSync,
-} from "node:fs";
+import { copyFileSync, linkSync, mkdirSync, mkdtempSync, utimesSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { readFile, stat } from "node:fs/promises";
 import os from "node:os";
@@ -18,12 +11,7 @@ const { stopE2EServer } = e2eServerModule;
 
 const originalEnv = { ...process.env };
 
-function writeFakeBun(
-  binDir: string,
-  frontendDir: string,
-  body: string,
-  windowsBody?: string,
-): void {
+function writeFakeBun(binDir: string, frontendDir: string, body: string, windowsBody?: string): void {
   if (process.platform === "win32") {
     const bunPath = path.join(binDir, "bun.exe");
     try {
@@ -202,13 +190,9 @@ describe("ensureEmbeddedFrontend", () => {
     mkdirSync(path.join(frontendDist, "assets"), { recursive: true });
     mkdirSync(embeddedDist, { recursive: true });
 
-    writeFileSync(
-      path.join(frontendDist, "index.html"),
-      "<html><body>ok</body></html>",
-      {
-        flag: "wx",
-      },
-    );
+    writeFileSync(path.join(frontendDist, "index.html"), "<html><body>ok</body></html>", {
+      flag: "wx",
+    });
     writeFileSync(path.join(frontendDist, "assets", "app.js"), "console.log('ok');", {
       flag: "wx",
     });
@@ -218,15 +202,9 @@ describe("ensureEmbeddedFrontend", () => {
 
     await ensureEmbeddedFrontend(dir);
 
-    await expect(
-      readFile(path.join(embeddedDist, "index.html"), "utf8"),
-    ).resolves.toContain("<body>ok</body>");
-    await expect(
-      readFile(path.join(embeddedDist, "assets", "app.js"), "utf8"),
-    ).resolves.toContain("console.log");
-    await expect(
-      readFile(path.join(embeddedDist, "stub.html"), "utf8"),
-    ).resolves.toBe("ok\n");
+    await expect(readFile(path.join(embeddedDist, "index.html"), "utf8")).resolves.toContain("<body>ok</body>");
+    await expect(readFile(path.join(embeddedDist, "assets", "app.js"), "utf8")).resolves.toContain("console.log");
+    await expect(readFile(path.join(embeddedDist, "stub.html"), "utf8")).resolves.toBe("ok\n");
   });
 
   it("refreshes embedded assets when frontend/dist is newer", async () => {
@@ -264,12 +242,8 @@ describe("ensureEmbeddedFrontend", () => {
 
     await ensureEmbeddedFrontend(dir);
 
-    await expect(readFile(embeddedIndex, "utf8")).resolves.toContain(
-      "<body>new</body>",
-    );
-    await expect(
-      readFile(path.join(embeddedDist, "stub.html"), "utf8"),
-    ).resolves.toBe("ok\n");
+    await expect(readFile(embeddedIndex, "utf8")).resolves.toContain("<body>new</body>");
+    await expect(readFile(path.join(embeddedDist, "stub.html"), "utf8")).resolves.toBe("ok\n");
   });
 
   it("rebuilds frontend/dist when frontend sources are newer", async () => {
@@ -323,9 +297,7 @@ describe("ensureEmbeddedFrontend", () => {
     const restorePath = prependExecutablePath(binDir);
     try {
       await ensureEmbeddedFrontend(dir);
-      await expect(readFile(embeddedIndex, "utf8")).resolves.toContain(
-        "<body>rebuilt</body>",
-      );
+      await expect(readFile(embeddedIndex, "utf8")).resolves.toContain("<body>rebuilt</body>");
     } finally {
       restorePath();
     }
@@ -383,9 +355,7 @@ describe("ensureEmbeddedFrontend", () => {
 
     const restorePath = prependExecutablePath(binDir);
     try {
-      await expect(ensureEmbeddedFrontend(dir)).rejects.toThrow(
-        /frontend build failed/,
-      );
+      await expect(ensureEmbeddedFrontend(dir)).rejects.toThrow(/frontend build failed/);
     } finally {
       restorePath();
     }
@@ -433,9 +403,7 @@ describe("ensureEmbeddedFrontend", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
       await ensureEmbeddedFrontend(dir);
-      await expect(readFile(embeddedIndex, "utf8")).resolves.toContain(
-        "<body>existing dist</body>",
-      );
+      await expect(readFile(embeddedIndex, "utf8")).resolves.toContain("<body>existing dist</body>");
       expect(warnSpy).toHaveBeenCalled();
     } finally {
       restorePath();

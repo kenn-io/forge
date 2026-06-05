@@ -18,9 +18,7 @@ describe("DiffStats", () => {
 
     const stats = screen.getByLabelText("2781 additions, 216 deletions");
     expect(stats.textContent).toBe("+2.78k −216");
-    expect(stats.querySelector(".diff-stats__add")?.textContent?.trim()).toBe(
-      "+2.78k",
-    );
+    expect(stats.querySelector(".diff-stats__add")?.textContent?.trim()).toBe("+2.78k");
     expect(stats.querySelector(".diff-stats__del")?.textContent?.trim()).toBe("−216");
   });
 
@@ -35,15 +33,7 @@ describe("DiffStats", () => {
 
     const stats = screen.getByLabelText("0 additions, 1 deletion");
     expect(stats.textContent).toBe("+0 −1");
-    expect(
-      stats
-        .querySelector(".diff-stats__add")
-        ?.classList.contains("diff-stats__value--dim"),
-    ).toBe(true);
-    expect(
-      stats
-        .querySelector(".diff-stats__del")
-        ?.classList.contains("diff-stats__value--dim"),
-    ).toBe(false);
+    expect(stats.querySelector(".diff-stats__add")?.classList.contains("diff-stats__value--dim")).toBe(true);
+    expect(stats.querySelector(".diff-stats__del")?.classList.contains("diff-stats__value--dim")).toBe(false);
   });
 });

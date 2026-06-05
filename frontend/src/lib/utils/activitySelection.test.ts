@@ -17,9 +17,7 @@ const githubWidgets = {
 describe("activity selection URL state", () => {
   it("parses PR conversation selection", () => {
     expect(
-      parseActivitySelection(
-        "?selected=pr:1&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets",
-      ),
+      parseActivitySelection("?selected=pr:1&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets"),
     ).toEqual({
       itemType: "pr",
       ...githubWidgets,
@@ -30,9 +28,7 @@ describe("activity selection URL state", () => {
 
   it("parses search strings without a leading question mark", () => {
     expect(
-      parseActivitySelection(
-        "selected=issue:10&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets",
-      ),
+      parseActivitySelection("selected=issue:10&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets"),
     ).toEqual({
       itemType: "issue",
       ...githubWidgets,
@@ -161,9 +157,7 @@ describe("activity selection URL state", () => {
       detailTab: "files",
     };
 
-    expect(activitySelectionToRoute(pr, "pulls")).toBe(
-      "/pulls/github/acme/widgets/1/files",
-    );
+    expect(activitySelectionToRoute(pr, "pulls")).toBe("/pulls/github/acme/widgets/1/files");
     expect(activitySelectionToRoute(pr, "issues")).toBeNull();
   });
 
@@ -176,9 +170,7 @@ describe("activity selection URL state", () => {
       detailTab: "conversation",
     };
 
-    expect(activitySelectionToRoute(issue, "issues")).toBe(
-      "/host/ghe.example.com/issues/github/acme/widgets/10",
-    );
+    expect(activitySelectionToRoute(issue, "issues")).toBe("/host/ghe.example.com/issues/github/acme/widgets/10");
     expect(activitySelectionToRoute(issue, "pulls")).toBeNull();
   });
 

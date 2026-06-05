@@ -5,10 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { afterEach, describe, expect, it } from "vite-plus/test";
-import {
-  acquireExclusiveLock,
-  exclusiveLockPath,
-} from "../../../tests/e2e-full/support/exclusiveLock";
+import { acquireExclusiveLock, exclusiveLockPath } from "../../../tests/e2e-full/support/exclusiveLock";
 
 async function delay(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
@@ -82,11 +79,7 @@ describe("exclusive e2e lock", () => {
     const root = path.join(os.tmpdir(), `middleman-lock-link-${process.pid}`);
     tempRoots.push(root);
     await rm(root, { force: true, recursive: true });
-    await symlink(
-      target,
-      root,
-      process.platform === "win32" ? "junction" : undefined,
-    );
+    await symlink(target, root, process.platform === "win32" ? "junction" : undefined);
 
     await expect(
       acquireExclusiveLock("workspace-tmux", {

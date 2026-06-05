@@ -54,9 +54,7 @@ test("popover dismisses on click outside", async ({ page }) => {
   // Popover attaches its outside-click listener via setTimeout(0) to
   // avoid catching the opening click. Flush one animation frame so the
   // listener is registered before we click outside.
-  await page.evaluate(
-    () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
-  );
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
 
   await page.locator(".app-main").click();
   await expect(page.locator(".budget-popover")).not.toBeVisible();
@@ -86,9 +84,7 @@ test("popover opens via keyboard (Space)", async ({ page }) => {
   await expect(page.locator(".budget-popover")).toBeVisible();
 });
 
-test("mixed known/unknown hosts show worst-case from known only", async ({
-  page,
-}) => {
+test("mixed known/unknown hosts show worst-case from known only", async ({ page }) => {
   await page.route("**/api/v1/rate-limits", async (route) => {
     await route.fulfill({
       status: 200,
@@ -216,9 +212,7 @@ test("budget bars show unknown state when host not known", async ({ page }) => {
   await expect(bars.getByText("req/hr")).not.toBeVisible();
 });
 
-test("paused host shows red health dot and sync paused indicator", async ({
-  page,
-}) => {
+test("paused host shows red health dot and sync paused indicator", async ({ page }) => {
   await page.route("**/api/v1/rate-limits", async (route) => {
     await route.fulfill({
       status: 200,
@@ -372,9 +366,7 @@ test("GQL known but REST unknown still shows budget count", async ({ page }) => 
   await expect(bars.getByText("10 req/hr")).toBeVisible();
 });
 
-test("stale host excluded from compact bars, fresh host drives ratio", async ({
-  page,
-}) => {
+test("stale host excluded from compact bars, fresh host drives ratio", async ({ page }) => {
   await page.route("**/api/v1/rate-limits", async (route) => {
     await route.fulfill({
       status: 200,

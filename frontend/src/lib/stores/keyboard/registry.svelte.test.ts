@@ -80,23 +80,15 @@ describe("conflict assertion", () => {
   beforeEach(() => resetRegistry());
 
   it("throws when two actions share (binding, scope, priority)", () => {
-    const collide: Action[] = [
-      { ...action("a.one"), binding: { key: "k", ctrlOrMeta: true } },
-    ];
-    const collide2: Action[] = [
-      { ...action("a.two"), binding: { key: "k", ctrlOrMeta: true } },
-    ];
+    const collide: Action[] = [{ ...action("a.one"), binding: { key: "k", ctrlOrMeta: true } }];
+    const collide2: Action[] = [{ ...action("a.two"), binding: { key: "k", ctrlOrMeta: true } }];
     registerScopedActions("o1", collide);
     expect(() => registerScopedActions("o2", collide2)).toThrow(/conflict/i);
   });
 
   it("allows different scopes with the same binding", () => {
-    registerScopedActions("o1", [
-      { ...action("a", "view-pulls"), binding: { key: "j" } },
-    ]);
-    registerScopedActions("o2", [
-      { ...action("b", "view-issues"), binding: { key: "j" } },
-    ]);
+    registerScopedActions("o1", [{ ...action("a", "view-pulls"), binding: { key: "j" } }]);
+    registerScopedActions("o2", [{ ...action("b", "view-issues"), binding: { key: "j" } }]);
     expect(getAllActions()).toHaveLength(2);
   });
 });

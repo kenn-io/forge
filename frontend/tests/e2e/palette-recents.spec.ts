@@ -13,10 +13,7 @@ test("recents: select PR, close, reopen, see recent at top", async ({ page }) =>
   // depends on the mock data render order, so we don't lock to a specific
   // title — only that some PR row exists in that group.
   const dialog = page.getByRole("dialog", { name: "Command palette" });
-  const firstPRRow = dialog
-    .locator(".palette-group", { hasText: "Pull requests" })
-    .locator(".palette-row")
-    .first();
+  const firstPRRow = dialog.locator(".palette-group", { hasText: "Pull requests" }).locator(".palette-row").first();
   await firstPRRow.click();
   // The click navigates to the PR detail. Go back to /pulls and reopen the
   // palette to verify the chosen PR landed in the recents store.
@@ -37,23 +34,16 @@ test("recents: typing a query hides the Recently used section", async ({ page })
   await page.goto("/pulls");
   await page.keyboard.press("Meta+K");
   const dialog = page.getByRole("dialog", { name: "Command palette" });
-  const firstPRRow = dialog
-    .locator(".palette-group", { hasText: "Pull requests" })
-    .locator(".palette-row")
-    .first();
+  const firstPRRow = dialog.locator(".palette-group", { hasText: "Pull requests" }).locator(".palette-row").first();
   await firstPRRow.click();
   await page.goto("/pulls");
   await page.keyboard.press("Meta+K");
   const reopened = page.getByRole("dialog", {
     name: "Command palette",
   });
-  await expect(
-    reopened.locator(".palette-group", { hasText: "Recently used" }),
-  ).toBeVisible();
+  await expect(reopened.locator(".palette-group", { hasText: "Recently used" })).toBeVisible();
   // Typing a query should hide the recents section so the search results
   // own the empty/non-empty rendering paths.
   await reopened.locator(".palette-input").fill("a");
-  await expect(
-    reopened.locator(".palette-group", { hasText: "Recently used" }),
-  ).toBeHidden();
+  await expect(reopened.locator(".palette-group", { hasText: "Recently used" })).toBeHidden();
 });

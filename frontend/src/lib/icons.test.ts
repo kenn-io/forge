@@ -38,10 +38,7 @@ describe("icons barrel", () => {
         },
       });
 
-      expect(
-        container.querySelector("svg"),
-        `${name} should render an svg`,
-      ).toBeTruthy();
+      expect(container.querySelector("svg"), `${name} should render an svg`).toBeTruthy();
       unmount();
     }
   });

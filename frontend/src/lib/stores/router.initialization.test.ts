@@ -34,9 +34,7 @@ describe("router initialization", () => {
   it("uses embed initialRoute before the first app render", async () => {
     window.__middleman_config = {
       embed: {
-        initialRoute:
-          "/workspaces/embed/detail/gitlab/pr/git.example.com/42" +
-          "?repo_path=group%2Fproject",
+        initialRoute: "/workspaces/embed/detail/gitlab/pr/git.example.com/42" + "?repo_path=group%2Fproject",
       },
     };
     const { getRoute } = await importRouterAt("/");
@@ -52,8 +50,7 @@ describe("router initialization", () => {
       number: 42,
     });
     expect(window.location.pathname + window.location.search).toBe(
-      "/workspaces/embed/detail/gitlab/pr/git.example.com/42" +
-        "?repo_path=group%2Fproject",
+      "/workspaces/embed/detail/gitlab/pr/git.example.com/42" + "?repo_path=group%2Fproject",
     );
   });
 

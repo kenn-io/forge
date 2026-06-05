@@ -77,9 +77,7 @@ async function mockMobileRepoSettings(page: Page): Promise<string[]> {
 test.use({ ...devices["iPhone 13"] });
 
 test.describe("mobile activity repository selector", () => {
-  test("uses host-qualified concrete repos and excludes glob rows", async ({
-    page,
-  }) => {
+  test("uses host-qualified concrete repos and excludes glob rows", async ({ page }) => {
     const activityRepos = await mockMobileRepoSettings(page);
 
     await page.goto("/m?range=30d&view=threaded");
@@ -90,9 +88,7 @@ test.describe("mobile activity repository selector", () => {
 
     await repoSelect.click();
     await expect(page.getByRole("option", { name: "All repos" })).toBeVisible();
-    await expect(
-      page.getByRole("option", { name: "github.com/acme/widgets" }),
-    ).toBeVisible();
+    await expect(page.getByRole("option", { name: "github.com/acme/widgets" })).toBeVisible();
     await expect(
       page.getByRole("option", {
         name: "ghe.example.com/acme/widgets",
@@ -101,9 +97,7 @@ test.describe("mobile activity repository selector", () => {
     await expect(page.getByRole("option", { name: "acme/*" })).toHaveCount(0);
 
     await page.getByRole("option", { name: "ghe.example.com/acme/widgets" }).click();
-    await expect(
-      page.getByRole("combobox", { name: "Repository: acme/widgets" }),
-    ).toHaveText("acme/widgets");
+    await expect(page.getByRole("combobox", { name: "Repository: acme/widgets" })).toHaveText("acme/widgets");
     await expect.poll(() => activityRepos).toContain("ghe.example.com/acme/widgets");
   });
 
@@ -194,10 +188,7 @@ test.describe("mobile PR status grouping", () => {
 
     await page.getByRole("button", { name: "Status" }).click();
 
-    await expect(page.locator(".workflow-group .group-header")).toHaveText([
-      "New",
-      "Reviewing",
-    ]);
+    await expect(page.locator(".workflow-group .group-header")).toHaveText(["New", "Reviewing"]);
     await expect(page.getByText("Needs Worktree")).toHaveCount(0);
   });
 });

@@ -1,10 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-import {
-  getActionsByOwner,
-  getAllActions,
-  resetRegistry,
-} from "./registry.svelte.js";
+import { getActionsByOwner, getAllActions, resetRegistry } from "./registry.svelte.js";
 import { registerPRDetailActions } from "./pr-detail-actions.js";
 import type { PRDetailActionInput } from "../../../../../packages/ui/src/components/detail/keyboard-actions.js";
 import type { Context } from "./types.js";
@@ -13,9 +9,7 @@ const ctx = {} as Context;
 
 const expectedIds = ["pr.approve", "pr.ready", "pr.approveWorkflows"];
 
-function buildOpenApprovableInput(
-  overrides: Partial<PRDetailActionInput> = {},
-): PRDetailActionInput {
+function buildOpenApprovableInput(overrides: Partial<PRDetailActionInput> = {}): PRDetailActionInput {
   const stores = {
     pulls: { loadPulls: vi.fn().mockResolvedValue(undefined) },
     detail: {
@@ -75,9 +69,7 @@ describe("registerPRDetailActions", () => {
   it("pr.approve.when() is true when the input PR is approvable", () => {
     const input = buildOpenApprovableInput();
     registerPRDetailActions(() => input);
-    const approve = getActionsByOwner("pr-detail-actions").find(
-      (a) => a.id === "pr.approve",
-    );
+    const approve = getActionsByOwner("pr-detail-actions").find((a) => a.id === "pr.approve");
     expect(approve?.when(ctx)).toBe(true);
   });
 
@@ -86,17 +78,13 @@ describe("registerPRDetailActions", () => {
       pr: { State: "open", IsDraft: true, MergeableState: "clean" },
     });
     registerPRDetailActions(() => draftInput);
-    const ready = getActionsByOwner("pr-detail-actions").find(
-      (a) => a.id === "pr.ready",
-    );
+    const ready = getActionsByOwner("pr-detail-actions").find((a) => a.id === "pr.ready");
     expect(ready?.when(ctx)).toBe(true);
 
     resetRegistry();
     const nonDraftInput = buildOpenApprovableInput();
     registerPRDetailActions(() => nonDraftInput);
-    const readyOnNonDraft = getActionsByOwner("pr-detail-actions").find(
-      (a) => a.id === "pr.ready",
-    );
+    const readyOnNonDraft = getActionsByOwner("pr-detail-actions").find((a) => a.id === "pr.ready");
     expect(readyOnNonDraft?.when(ctx)).toBe(false);
   });
 
@@ -110,9 +98,7 @@ describe("registerPRDetailActions", () => {
       },
     });
     registerPRDetailActions(() => input);
-    const approve = getActionsByOwner("pr-detail-actions").find(
-      (a) => a.id === "pr.approve",
-    );
+    const approve = getActionsByOwner("pr-detail-actions").find((a) => a.id === "pr.approve");
     expect(approve?.when(ctx)).toBe(false);
   });
 
@@ -121,9 +107,7 @@ describe("registerPRDetailActions", () => {
       pr: { State: "closed", IsDraft: false, MergeableState: "clean" },
     });
     registerPRDetailActions(() => input);
-    const approve = getActionsByOwner("pr-detail-actions").find(
-      (a) => a.id === "pr.approve",
-    );
+    const approve = getActionsByOwner("pr-detail-actions").find((a) => a.id === "pr.approve");
     expect(approve?.when(ctx)).toBe(false);
   });
 

@@ -11,10 +11,8 @@ vi.mock("../../api/runtime.js", () => ({
     GET: (...args: unknown[]) => mockGet(...args),
     POST: (...args: unknown[]) => mockPost(...args),
   },
-  apiErrorMessage: (
-    error: { detail?: string; title?: string } | undefined,
-    fallback: string,
-  ) => error?.detail ?? error?.title ?? fallback,
+  apiErrorMessage: (error: { detail?: string; title?: string } | undefined, fallback: string) =>
+    error?.detail ?? error?.title ?? fallback,
 }));
 
 vi.mock("../../stores/router.svelte.js", () => ({
@@ -27,8 +25,7 @@ vi.mock("../../stores/filter.svelte.js", () => ({
 
 vi.mock("@middleman/ui", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@middleman/ui")>();
-  const { default: MockCommentEditor } =
-    await import("../../../test/MockCommentEditor.svelte");
+  const { default: MockCommentEditor } = await import("../../../test/MockCommentEditor.svelte");
   return {
     ...actual,
     CommentEditor: MockCommentEditor,
@@ -191,9 +188,7 @@ describe("RepoSummaryPage", () => {
     expect(screen.getByText("v2.8.1")).toBeTruthy();
     expect(screen.getByText("8 commits")).toBeTruthy();
     expect(screen.getByText("Investigate repo summary card")).toBeTruthy();
-    expect(screen.getByTitle("alice").getAttribute("src")).toContain(
-      "https://github.com/alice.png?size=40",
-    );
+    expect(screen.getByTitle("alice").getAttribute("src")).toContain("https://github.com/alice.png?size=40");
     expect(screen.getByRole("button", { name: "Release v2.8.0" })).toBeTruthy();
 
     const commitDot = screen.getByRole("button", {
@@ -474,9 +469,7 @@ describe("RepoSummaryPage", () => {
 
     render(RepoSummaryPage);
 
-    expect(
-      await screen.findByRole("button", { name: /acme\s*\/\s*fresh/ }),
-    ).toBeTruthy();
+    expect(await screen.findByRole("button", { name: /acme\s*\/\s*fresh/ })).toBeTruthy();
     expect(screen.getByRole("button", { name: /acme\s*\/\s*stale/ })).toBeTruthy();
 
     await fireEvent.click(screen.getByRole("button", { name: "Stale" }));
@@ -575,12 +568,8 @@ describe("RepoSummaryPage", () => {
 
     await screen.findByRole("button", { name: /acme\s*\/\s*stale/ });
     expect(screen.queryByRole("button", { name: /acme\s*\/\s*fresh/ })).toBeNull();
-    expect(
-      (screen.getByPlaceholderText("Filter repositories") as HTMLInputElement).value,
-    ).toBe("stale");
-    expect(screen.getByRole("button", { name: "Stale" }).className).toContain(
-      "repo-page__filter--active",
-    );
+    expect((screen.getByPlaceholderText("Filter repositories") as HTMLInputElement).value).toBe("stale");
+    expect(screen.getByRole("button", { name: "Stale" }).className).toContain("repo-page__filter--active");
   });
 
   it("creates an issue from a repo card and navigates to it", async () => {
@@ -701,9 +690,7 @@ describe("RepoSummaryPage", () => {
       ],
       error: undefined,
     });
-    let resolvePost:
-      | ((value: { data: { Number: number }; error: undefined }) => void)
-      | undefined;
+    let resolvePost: ((value: { data: { Number: number }; error: undefined }) => void) | undefined;
     mockPost.mockImplementation(
       () =>
         new Promise((resolve) => {
@@ -818,15 +805,11 @@ describe("RepoSummaryPage", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
     await fireEvent.click(secondIssueButton);
-    expect(
-      (screen.getByPlaceholderText("Issue title") as HTMLInputElement).value,
-    ).toBe("");
+    expect((screen.getByPlaceholderText("Issue title") as HTMLInputElement).value).toBe("");
     await fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
     await fireEvent.click(firstIssueButton);
-    expect(
-      (screen.getByPlaceholderText("Issue title") as HTMLInputElement).value,
-    ).toBe("Enterprise draft");
+    expect((screen.getByPlaceholderText("Issue title") as HTMLInputElement).value).toBe("Enterprise draft");
     await fireEvent.submit(screen.getByRole("button", { name: "Create issue" }));
 
     await waitFor(() => {
@@ -847,9 +830,7 @@ describe("RepoSummaryPage", () => {
         }),
       );
       expect(mockSetGlobalRepo).toHaveBeenCalledWith("ghe.example.com/acme/widgets");
-      expect(mockNavigate).toHaveBeenCalledWith(
-        "/host/ghe.example.com/issues/github/acme/widgets/42",
-      );
+      expect(mockNavigate).toHaveBeenCalledWith("/host/ghe.example.com/issues/github/acme/widgets/42");
     });
   });
 
@@ -904,9 +885,7 @@ describe("RepoSummaryPage", () => {
 
     await fireEvent.click(screen.getByRole("button", { name: "New issue" }));
 
-    expect(
-      (screen.getByPlaceholderText("Issue title") as HTMLInputElement).value,
-    ).toBe("Draft issue title");
+    expect((screen.getByPlaceholderText("Issue title") as HTMLInputElement).value).toBe("Draft issue title");
     expect(
       (
         screen.getByRole("textbox", {

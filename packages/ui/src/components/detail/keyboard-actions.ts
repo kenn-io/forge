@@ -153,20 +153,13 @@
  */
 
 import type { PullRequest } from "../../api/types.js";
-import {
-  providerItemPath,
-  providerRouteParams,
-  type ProviderRouteRef,
-} from "../../api/provider-routes.js";
+import { providerItemPath, providerRouteParams, type ProviderRouteRef } from "../../api/provider-routes.js";
 import type { MiddlemanClient } from "../../types.js";
 import type { DetailStore } from "../../stores/detail.svelte.js";
 import type { PullsStore } from "../../stores/pulls.svelte.js";
 
 /** Subset of the loaded PR sufficient for canX/runX decisions. */
-export type PRDetailActionPR = Pick<
-  PullRequest,
-  "State" | "IsDraft" | "MergeableState"
->;
+export type PRDetailActionPR = Pick<PullRequest, "State" | "IsDraft" | "MergeableState">;
 
 /** Capabilities a viewer needs to invoke each PR-detail action. */
 export interface PRDetailViewerCan {
@@ -232,10 +225,7 @@ function hasMergeConflicts(pr: PRDetailActionPR): boolean {
   return pr.State === "open" && pr.MergeableState === "dirty";
 }
 
-function describeError(
-  err: { detail?: string; title?: string } | undefined,
-  fallback: string,
-): string {
+function describeError(err: { detail?: string; title?: string } | undefined, fallback: string): string {
   return err?.detail ?? err?.title ?? fallback;
 }
 
@@ -249,13 +239,10 @@ export async function runApprovePR(input: PRDetailActionInput): Promise<void> {
   if (!canApprovePR(input)) return;
   const { ref, number } = input;
   const body = (input.approveCommentBody ?? "").trim();
-  const { error } = await input.client.POST(
-    providerItemPath("pulls", ref, "/approve"),
-    {
-      params: { path: { ...providerRouteParams(ref), number } },
-      body: { body },
-    },
-  );
+  const { error } = await input.client.POST(providerItemPath("pulls", ref, "/approve"), {
+    params: { path: { ...providerRouteParams(ref), number } },
+    body: { body },
+  });
   if (error) {
     const msg = describeError(error, "failed to approve pull request");
     input.onError?.(msg);
@@ -291,12 +278,7 @@ export function runOpenMerge(input: PRDetailActionInput): void {
 // Mark draft PR ready for review -------------------------------------
 
 export function canMarkReady(input: PRDetailActionInput): boolean {
-  return (
-    input.pr.State === "open" &&
-    input.pr.IsDraft === true &&
-    input.viewerCan.markReady &&
-    !input.stale
-  );
+  return input.pr.State === "open" && input.pr.IsDraft === true && input.viewerCan.markReady && !input.stale;
 }
 
 function isStaleDraftRefreshSignal(message: string): boolean {
@@ -308,16 +290,11 @@ export async function runMarkReady(input: PRDetailActionInput): Promise<void> {
   const { ref, number } = input;
   let mutationError: Error | null = null;
   try {
-    const { error } = await input.client.POST(
-      providerItemPath("pulls", ref, "/ready-for-review"),
-      {
-        params: { path: { ...providerRouteParams(ref), number } },
-      },
-    );
+    const { error } = await input.client.POST(providerItemPath("pulls", ref, "/ready-for-review"), {
+      params: { path: { ...providerRouteParams(ref), number } },
+    });
     if (error) {
-      throw new Error(
-        describeError(error, "failed to mark pull request ready for review"),
-      );
+      throw new Error(describeError(error, "failed to mark pull request ready for review"));
     }
   } catch (err) {
     mutationError = err instanceof Error ? err : new Error(String(err));
@@ -354,20 +331,15 @@ export async function runMarkReady(input: PRDetailActionInput): Promise<void> {
 // Approve pending workflows ------------------------------------------
 
 export function canApproveWorkflows(input: PRDetailActionInput): boolean {
-  return (
-    input.pr.State === "open" && input.viewerCan.approveWorkflows && !input.stale
-  );
+  return input.pr.State === "open" && input.viewerCan.approveWorkflows && !input.stale;
 }
 
 export async function runApproveWorkflows(input: PRDetailActionInput): Promise<void> {
   if (!canApproveWorkflows(input)) return;
   const { ref, number } = input;
-  const { error: requestError } = await input.client.POST(
-    providerItemPath("pulls", ref, "/approve-workflows"),
-    {
-      params: { path: { ...providerRouteParams(ref), number } },
-    },
-  );
+  const { error: requestError } = await input.client.POST(providerItemPath("pulls", ref, "/approve-workflows"), {
+    params: { path: { ...providerRouteParams(ref), number } },
+  });
   if (requestError) {
     const msg = describeError(requestError, "failed to approve workflows");
     input.onError?.(msg);

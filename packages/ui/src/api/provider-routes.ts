@@ -94,48 +94,24 @@ type IssuePath<S extends IssueSuffix> =
   | `/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}${S}`;
 
 export function providerItemPath(kind: "pulls", ref: ProviderRouteRef): PullPath<"">;
-export function providerItemPath<S extends PullSuffix>(
-  kind: "pulls",
-  ref: ProviderRouteRef,
-  suffix: S,
-): PullPath<S>;
-export function providerItemPath(
-  kind: "issues",
-  ref: ProviderRouteRef,
-): IssuePath<"">;
-export function providerItemPath<S extends IssueSuffix>(
-  kind: "issues",
-  ref: ProviderRouteRef,
-  suffix: S,
-): IssuePath<S>;
-export function providerItemPath(
-  kind: "pulls" | "issues",
-  ref: ProviderRouteRef,
-  suffix = "",
-): string {
+export function providerItemPath<S extends PullSuffix>(kind: "pulls", ref: ProviderRouteRef, suffix: S): PullPath<S>;
+export function providerItemPath(kind: "issues", ref: ProviderRouteRef): IssuePath<"">;
+export function providerItemPath<S extends IssueSuffix>(kind: "issues", ref: ProviderRouteRef, suffix: S): IssuePath<S>;
+export function providerItemPath(kind: "pulls" | "issues", ref: ProviderRouteRef, suffix = ""): string {
   if (shouldUseHostRoute(ref)) {
     return `/host/{platform_host}/${kind}/{provider}/{owner}/{name}/{number}${suffix}`;
   }
   return `/${kind}/{provider}/{owner}/{name}/{number}${suffix}`;
 }
 
-type RepoSuffix =
-  | ""
-  | "/comment-autocomplete"
-  | "/commits/{sha}/diff"
-  | "/labels"
-  | "/refresh"
-  | "/resolve/{number}";
+type RepoSuffix = "" | "/comment-autocomplete" | "/commits/{sha}/diff" | "/labels" | "/refresh" | "/resolve/{number}";
 
 type RepoPath<S extends RepoSuffix> =
   | `/repo/{provider}/{owner}/{name}${S}`
   | `/host/{platform_host}/repo/{provider}/{owner}/{name}${S}`;
 
 export function providerRepoPath(ref: ProviderRouteRef): RepoPath<"">;
-export function providerRepoPath<S extends RepoSuffix>(
-  ref: ProviderRouteRef,
-  suffix: S,
-): RepoPath<S>;
+export function providerRepoPath<S extends RepoSuffix>(ref: ProviderRouteRef, suffix: S): RepoPath<S>;
 export function providerRepoPath(ref: ProviderRouteRef, suffix = ""): string {
   if (shouldUseHostRoute(ref)) {
     return `/host/{platform_host}/repo/{provider}/{owner}/{name}${suffix}`;
@@ -148,14 +124,8 @@ type CollectionPath<K extends CollectionKind> =
   | `/${K}/{provider}/{owner}/{name}`
   | `/host/{platform_host}/${K}/{provider}/{owner}/{name}`;
 
-export function providerCollectionPath<K extends CollectionKind>(
-  kind: K,
-  ref: ProviderRouteRef,
-): CollectionPath<K>;
-export function providerCollectionPath(
-  kind: CollectionKind,
-  ref: ProviderRouteRef,
-): string {
+export function providerCollectionPath<K extends CollectionKind>(kind: K, ref: ProviderRouteRef): CollectionPath<K>;
+export function providerCollectionPath(kind: CollectionKind, ref: ProviderRouteRef): string {
   if (shouldUseHostRoute(ref)) {
     return `/host/{platform_host}/${kind}/{provider}/{owner}/{name}`;
   }

@@ -78,9 +78,7 @@ describe("globalRepoForSelectedRoute", () => {
         number: 17,
       },
     };
-    expect(globalRepoForSelectedRoute(route)).toBe(
-      "gitlab.example.com/Group/SubGroup/Project.Special",
-    );
+    expect(globalRepoForSelectedRoute(route)).toBe("gitlab.example.com/Group/SubGroup/Project.Special");
   });
 
   it("returns undefined for a pulls list route without a selection", () => {

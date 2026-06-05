@@ -1,9 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
-import {
-  warnOnMalformedCIChecksJSON,
-  warnOnUnknownConclusions,
-  __resetCIWarnings,
-} from "./ci-buckets-warn.js";
+import { warnOnMalformedCIChecksJSON, warnOnUnknownConclusions, __resetCIWarnings } from "./ci-buckets-warn.js";
 import type { CICheck } from "../api/types.js";
 
 const check = (conclusion: string): CICheck => ({
@@ -118,10 +114,7 @@ describe("warnOnMalformedCIChecksJSON", () => {
     // intact rather than collapsing to a generic category.
     vi.stubEnv("DEV", false);
     const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    warnOnMalformedCIChecksJSON(
-      "[1, 2]",
-      new Error("CIChecksJSON: element 0 is not an object"),
-    );
+    warnOnMalformedCIChecksJSON("[1, 2]", new Error("CIChecksJSON: element 0 is not an object"));
     const message = spy.mock.calls[0]?.[0] as string;
     expect(message).toContain("CIChecksJSON: element 0 is not an object");
     spy.mockRestore();

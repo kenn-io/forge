@@ -36,9 +36,7 @@ export function kanbanDragPayloadFromPull(pr: PullRequest): KanbanDragPayload {
   };
 }
 
-export function providerRouteRefFromKanbanDragPayload(
-  payload: KanbanDragPayload,
-): ProviderRouteRef {
+export function providerRouteRefFromKanbanDragPayload(payload: KanbanDragPayload): ProviderRouteRef {
   return {
     provider: requireText(payload.provider, "provider"),
     platformHost: requireText(payload.platformHost, "platformHost"),

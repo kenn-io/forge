@@ -32,13 +32,7 @@ describe("terminal layout tree", () => {
   });
 
   it("clamps split ratios", () => {
-    const root = splitPane(
-      createLeaf("ws-1_a", "leaf-a"),
-      "leaf-a",
-      "ws-1_b",
-      "vertical",
-      "split-a",
-    );
+    const root = splitPane(createLeaf("ws-1_a", "leaf-a"), "leaf-a", "ws-1_b", "vertical", "split-a");
 
     const updated = updateSplitRatio(root, "split-a", 0.98);
 
@@ -46,13 +40,7 @@ describe("terminal layout tree", () => {
   });
 
   it("moves an existing session into another pane as a split", () => {
-    const root = splitPane(
-      createLeaf("ws-1_a", "leaf-a"),
-      "leaf-a",
-      "ws-1_b",
-      "horizontal",
-      "split-a",
-    );
+    const root = splitPane(createLeaf("ws-1_a", "leaf-a"), "leaf-a", "ws-1_b", "horizontal", "split-a");
 
     const moved = splitSessionIntoPane(root, "leaf-a", "ws-1_b", "vertical", "after");
 

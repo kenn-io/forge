@@ -35,10 +35,7 @@ const targets: Record<BrowserName, StatusTarget> = {
   },
 };
 
-test("workflow status dropdown persists through API and database", async ({
-  page,
-  browserName,
-}) => {
+test("workflow status dropdown persists through API and database", async ({ page, browserName }) => {
   const target = targets[browserName as BrowserName] ?? targets.chromium;
   const server = await startIsolatedE2EServer();
 
@@ -47,9 +44,7 @@ test("workflow status dropdown persists through API and database", async ({
     await page.goto(`${server.info.base_url}${detailPath}`);
     await expect(page.locator(".pull-detail")).toBeVisible();
 
-    const trigger = page
-      .locator(".kanban-select--header .select-dropdown-trigger")
-      .first();
+    const trigger = page.locator(".kanban-select--header .select-dropdown-trigger").first();
     await expect(trigger).toHaveText("New");
 
     await trigger.click();
@@ -71,9 +66,7 @@ test("workflow status dropdown persists through API and database", async ({
 
     await page.reload();
     await expect(page.locator(".pull-detail")).toBeVisible();
-    await expect(
-      page.locator(".kanban-select--header .select-dropdown-trigger").first(),
-    ).toHaveText(target.label);
+    await expect(page.locator(".kanban-select--header .select-dropdown-trigger").first()).toHaveText(target.label);
   } finally {
     await server.stop();
   }

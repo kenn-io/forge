@@ -26,21 +26,15 @@ async function captureWindowOpen(page: Page): Promise<() => Promise<string | nul
   await page.evaluate(() => {
     delete (globalThis as unknown as { __lastOpen?: string }).__lastOpen;
     window.open = ((url: string) => {
-      (globalThis as unknown as { __lastOpen?: string }).__lastOpen =
-        typeof url === "string" ? url : String(url);
+      (globalThis as unknown as { __lastOpen?: string }).__lastOpen = typeof url === "string" ? url : String(url);
       return null;
     }) as typeof window.open;
   });
-  return () =>
-    page.evaluate(
-      () => (globalThis as unknown as { __lastOpen?: string }).__lastOpen ?? null,
-    );
+  return () => page.evaluate(() => (globalThis as unknown as { __lastOpen?: string }).__lastOpen ?? null);
 }
 
 test.describe("activity row link button", () => {
-  test("flat row link button opens activity URL without triggering row select", async ({
-    page,
-  }) => {
+  test("flat row link button opens activity URL without triggering row select", async ({ page }) => {
     await page.goto("/");
     const firstRow = page.locator(".activity-table .activity-row").first();
     await firstRow.waitFor({ state: "visible", timeout: 10_000 });
@@ -60,19 +54,12 @@ test.describe("activity row link button", () => {
     await expect(page.locator(".activity-drawer")).toHaveCount(0);
   });
 
-  test("threaded item row link button opens item URL without expanding the item", async ({
-    page,
-  }) => {
+  test("threaded item row link button opens item URL without expanding the item", async ({ page }) => {
     await page.goto("/");
-    await page
-      .locator(".activity-table .activity-row")
-      .first()
-      .waitFor({ state: "visible", timeout: 10_000 });
+    await page.locator(".activity-table .activity-row").first().waitFor({ state: "visible", timeout: 10_000 });
     await selectActivityViewItem(page, "Threaded");
     await page.keyboard.press("Escape");
-    const itemRow = page
-      .locator(".threaded-view .item-row:not(.branch-activity-row)")
-      .first();
+    const itemRow = page.locator(".threaded-view .item-row:not(.branch-activity-row)").first();
     await itemRow.waitFor({ state: "visible", timeout: 10_000 });
 
     const lastOpen = await captureWindowOpen(page);

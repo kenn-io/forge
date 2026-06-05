@@ -184,13 +184,9 @@ async function fetchDaemonJSON(url: string): Promise<Record<string, unknown>> {
     }
     body = (await res.json()) as Record<string, unknown>;
   } catch (err) {
-    throw new Error(
-      `roborev daemon at ${url} is not reachable (${String(err)}). ` +
-        wrongDaemonHint(),
-      {
-        cause: err,
-      },
-    );
+    throw new Error(`roborev daemon at ${url} is not reachable (${String(err)}). ` + wrongDaemonHint(), {
+      cause: err,
+    });
   }
   return body;
 }

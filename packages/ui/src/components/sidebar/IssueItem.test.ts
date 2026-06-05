@@ -27,9 +27,7 @@ function renderItem(issue: Issue): void {
       showRepo: false,
       onclick: () => {},
     },
-    context: new Map<symbol, unknown>([
-      [STORES_KEY, { issues: { toggleIssueStar: vi.fn() } }],
-    ]),
+    context: new Map<symbol, unknown>([[STORES_KEY, { issues: { toggleIssueStar: vi.fn() } }]]),
   });
 }
 

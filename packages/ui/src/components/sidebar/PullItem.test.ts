@@ -104,13 +104,8 @@ describe("PullItem CI cluster", () => {
   it("renders unavailable token when CIChecksJSON is malformed without leaking the raw payload via title or accessible name", () => {
     const sentinel = "supersecret_sentinel_xyz";
     renderItem(mkPR({ CIChecksJSON: `{"x":"${sentinel}",`, Title: "Sample PR" }));
-    expect(
-      document.querySelector("[data-testid='ci-token-unavailable']"),
-    ).not.toBeNull();
-    const titleAttr =
-      document
-        .querySelector("[data-testid='ci-token-unavailable']")
-        ?.getAttribute("title") ?? "";
+    expect(document.querySelector("[data-testid='ci-token-unavailable']")).not.toBeNull();
+    const titleAttr = document.querySelector("[data-testid='ci-token-unavailable']")?.getAttribute("title") ?? "";
     expect(titleAttr).not.toContain(sentinel);
     expect(titleAttr).toMatch(/CI unavailable:/i);
     const button = screen.getByRole("button", { name: /Sample PR/i });
@@ -184,11 +179,7 @@ describe("PullItem CI cluster", () => {
     renderItem(mkPR({ CIChecksJSON: "{not json", Number: 1 }));
     cleanup();
     renderItem(mkPR({ CIChecksJSON: "{not json", Number: 1 }));
-    expect(
-      spy.mock.calls.filter(
-        (c) => typeof c[0] === "string" && c[0].includes("Malformed"),
-      ),
-    ).toHaveLength(1);
+    expect(spy.mock.calls.filter((c) => typeof c[0] === "string" && c[0].includes("Malformed"))).toHaveLength(1);
     spy.mockRestore();
   });
 

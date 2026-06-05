@@ -52,12 +52,7 @@ export type WorkspaceCommandCallback = (
 ) => WorkspaceCommandResult | Promise<WorkspaceCommandResult>;
 
 export interface MiddlemanEvent {
-  type:
-    | "pr-selected"
-    | "issue-selected"
-    | "pr-state-changed"
-    | "sync-completed"
-    | "detail-loaded";
+  type: "pr-selected" | "issue-selected" | "pr-state-changed" | "sync-completed" | "detail-loaded";
   owner?: string;
   name?: string;
   number?: number;

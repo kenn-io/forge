@@ -1,20 +1,14 @@
 import { expect, test } from "@playwright/test";
 
 test.describe("provider capabilities", () => {
-  test("PR detail shows locked state only for providers that support it", async ({
-    page,
-  }) => {
+  test("PR detail shows locked state only for providers that support it", async ({ page }) => {
     await page.goto("/pulls/github/acme/widgets/1");
 
     await expect(page.locator(".pull-detail")).toBeVisible();
-    await expect(
-      page.locator(".chips-row").getByText("Locked", { exact: true }),
-    ).toBeVisible();
+    await expect(page.locator(".chips-row").getByText("Locked", { exact: true })).toBeVisible();
   });
 
-  test("GitLab issue detail hides timeline edit controls when comments are read-only", async ({
-    page,
-  }) => {
+  test("GitLab issue detail hides timeline edit controls when comments are read-only", async ({ page }) => {
     await page.goto("/host/gitlab.example.com/issues/gitlab/group/project/11");
 
     const detail = page.locator(".issue-detail");
@@ -24,9 +18,7 @@ test.describe("provider capabilities", () => {
     await expect(detail.getByRole("button", { name: "Edit comment" })).toHaveCount(0);
     await expect(detail.getByRole("button", { name: "Copy comment" })).toBeVisible();
 
-    const response = await page.request.get(
-      "/api/v1/host/gitlab.example.com/issues/gl/group/project/11",
-    );
+    const response = await page.request.get("/api/v1/host/gitlab.example.com/issues/gl/group/project/11");
     expect(response.ok()).toBeTruthy();
     const body = await response.json();
     expect(body.repo.capabilities).toMatchObject({

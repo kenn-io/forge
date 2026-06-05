@@ -1,10 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 async function waitForIssueList(page: Page): Promise<void> {
-  await page
-    .locator(".issue-item")
-    .first()
-    .waitFor({ state: "visible", timeout: 10_000 });
+  await page.locator(".issue-item").first().waitFor({ state: "visible", timeout: 10_000 });
 }
 
 async function selectRepo(page: Page, name: string): Promise<void> {
@@ -14,9 +11,7 @@ async function selectRepo(page: Page, name: string): Promise<void> {
   await expect(option.locator("input[type='checkbox']")).toBeChecked();
 }
 
-test("repository selector filters dashboard lists by multiple selected repos", async ({
-  page,
-}) => {
+test("repository selector filters dashboard lists by multiple selected repos", async ({ page }) => {
   await page.goto("/issues");
   await waitForIssueList(page);
 
@@ -29,19 +24,16 @@ test("repository selector filters dashboard lists by multiple selected repos", a
   await page.keyboard.press("Escape");
 
   await expect(selector.locator(".typeahead-value")).toHaveText("2 repos");
-  await expect(page.locator(".repo-header__name")).toHaveText([
-    "acme/widgets",
-    "acme/tools",
-  ]);
+  await expect(page.locator(".repo-header__name")).toHaveText(["acme/widgets", "acme/tools"]);
 
   await expect(page.getByText("Widget rendering broken on Safari")).toBeVisible();
   await expect(page.getByText("Add dark mode support")).toBeVisible();
   await expect(page.getByText("Support config file loading")).toBeVisible();
   await expect(page.getByText("GitLab read-only issue")).toHaveCount(0);
 
-  await expect(
-    page.evaluate(() => localStorage.getItem("middleman-filter-repo")),
-  ).resolves.toBe("github.com/acme/widgets,github.com/acme/tools");
+  await expect(page.evaluate(() => localStorage.getItem("middleman-filter-repo"))).resolves.toBe(
+    "github.com/acme/widgets,github.com/acme/tools",
+  );
 });
 
 test("keyboard navigation survives a real checkbox click", async ({ page }) => {
@@ -83,9 +75,7 @@ test("keyboard navigation survives a real checkbox click", async ({ page }) => {
   await expect(page.locator(".typeahead-list")).toHaveCount(0);
 });
 
-test("flattened single-repo owner shows the owner/repo path, not a bare repo name", async ({
-  page,
-}) => {
+test("flattened single-repo owner shows the owner/repo path, not a bare repo name", async ({ page }) => {
   // gitlab.example.com/group has one repo "project", so it auto-flattens to a
   // single row. That row must read "group/project" (visible text) to stay
   // distinguishable from a same-named repo under another owner, while its
@@ -104,9 +94,7 @@ test("flattened single-repo owner shows the owner/repo path, not a bare repo nam
   await expect(row.locator(".repo-tree-label")).toHaveText("group/project");
 });
 
-test("repository selector cascades an owner group to all its repos", async ({
-  page,
-}) => {
+test("repository selector cascades an owner group to all its repos", async ({ page }) => {
   await page.goto("/issues");
   await waitForIssueList(page);
 
@@ -127,9 +115,7 @@ test("repository selector cascades an owner group to all its repos", async ({
 
   await page.keyboard.press("Escape");
 
-  const stored = await page.evaluate(() =>
-    localStorage.getItem("middleman-filter-repo"),
-  );
+  const stored = await page.evaluate(() => localStorage.getItem("middleman-filter-repo"));
   expect(stored).toContain("github.com/acme/widgets");
   expect(stored).toContain("github.com/acme/tools");
   expect(stored).toContain("github.com/acme/archived");

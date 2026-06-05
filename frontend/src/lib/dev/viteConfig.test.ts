@@ -12,21 +12,14 @@ describe("vite config", () => {
     const aliases = Array.isArray(config.resolve?.alias) ? config.resolve.alias : [];
 
     const uiRootAlias = aliases.find(
-      (alias) =>
-        alias.find instanceof RegExp && alias.find.source === "^@middleman\\/ui$",
+      (alias) => alias.find instanceof RegExp && alias.find.source === "^@middleman\\/ui$",
     );
     const uiSubpathAlias = aliases.find(
-      (alias) =>
-        alias.find instanceof RegExp &&
-        alias.find.source === "^@middleman\\/ui\\/api\\/client$",
+      (alias) => alias.find instanceof RegExp && alias.find.source === "^@middleman\\/ui\\/api\\/client$",
     );
 
-    expect(uiRootAlias?.replacement).toBe(
-      path.resolve(process.cwd(), "../packages/ui/src/index.ts"),
-    );
-    expect(uiSubpathAlias?.replacement).toBe(
-      path.resolve(process.cwd(), "../packages/ui/src/api/generated/client.ts"),
-    );
+    expect(uiRootAlias?.replacement).toBe(path.resolve(process.cwd(), "../packages/ui/src/index.ts"));
+    expect(uiSubpathAlias?.replacement).toBe(path.resolve(process.cwd(), "../packages/ui/src/api/generated/client.ts"));
   });
 
   it("pins the dev server host to IPv4 loopback", () => {
@@ -92,8 +85,7 @@ describe("vite config", () => {
     expect(resolveViteAllowedHosts({})).toBeUndefined();
     expect(
       resolveViteAllowedHosts({
-        MIDDLEMAN_VITE_ALLOWED_HOSTS:
-          "mariuss-macbook-pro.emperor-gopher.ts.net, another.ts.net",
+        MIDDLEMAN_VITE_ALLOWED_HOSTS: "mariuss-macbook-pro.emperor-gopher.ts.net, another.ts.net",
       }),
     ).toEqual(["mariuss-macbook-pro.emperor-gopher.ts.net", "another.ts.net"]);
   });

@@ -1,10 +1,4 @@
-import {
-  expect,
-  type Page,
-  request as playwrightRequest,
-  test,
-  type APIRequestContext,
-} from "@playwright/test";
+import { expect, type Page, request as playwrightRequest, test, type APIRequestContext } from "@playwright/test";
 import { startIsolatedE2EServer, type IsolatedE2EServer } from "./support/e2eServer";
 
 let isolatedServer: IsolatedE2EServer | undefined;
@@ -28,9 +22,7 @@ async function expandAgent(page: Page, name: string): Promise<void> {
   await page.getByRole("button", { name: `Edit ${name}` }).click();
 }
 
-test("settings preserves quoted empty workspace agent arguments", async ({
-  page,
-}) => {
+test("settings preserves quoted empty workspace agent arguments", async ({ page }) => {
   await page.goto(`${isolatedServer!.info.base_url}/settings`);
   await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
 
@@ -43,9 +35,7 @@ test("settings preserves quoted empty workspace agent arguments", async ({
   await argsInput.fill('""');
   await expect(saveButton).toBeEnabled();
   const saveResponsePromise = page.waitForResponse(
-    (response) =>
-      response.url().endsWith("/api/v1/settings") &&
-      response.request().method() === "PUT",
+    (response) => response.url().endsWith("/api/v1/settings") && response.request().method() === "PUT",
   );
   await saveButton.click();
   const saveResponse = await saveResponsePromise;
@@ -71,9 +61,7 @@ test("settings preserves quoted empty workspace agent arguments", async ({
   await expect(page.getByLabel("Codex arguments")).toHaveValue('""');
 });
 
-test("settings preserves explicit default built-in agents during other saves", async ({
-  page,
-}) => {
+test("settings preserves explicit default built-in agents during other saves", async ({ page }) => {
   if (!api) {
     throw new Error("settings agents API context not initialized");
   }
@@ -91,9 +79,7 @@ test("settings preserves explicit default built-in agents during other saves", a
     },
   });
   const seedBody = await seedResponse.text();
-  expect(seedResponse.status(), `PUT /api/v1/settings seed failed: ${seedBody}`).toBe(
-    200,
-  );
+  expect(seedResponse.status(), `PUT /api/v1/settings seed failed: ${seedBody}`).toBe(200);
 
   await page.goto(`${isolatedServer!.info.base_url}/settings`);
   await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
@@ -111,9 +97,7 @@ test("settings preserves explicit default built-in agents during other saves", a
   await page.getByLabel("Claude arguments").fill("--permission-mode acceptEdits");
   await expect(saveButton).toBeEnabled();
   const saveResponsePromise = page.waitForResponse(
-    (response) =>
-      response.url().endsWith("/api/v1/settings") &&
-      response.request().method() === "PUT",
+    (response) => response.url().endsWith("/api/v1/settings") && response.request().method() === "PUT",
   );
   await saveButton.click();
   const saveResponse = await saveResponsePromise;
@@ -137,9 +121,7 @@ test("settings preserves explicit default built-in agents during other saves", a
     });
 });
 
-test("settings preserves disabled built-in agents with empty commands", async ({
-  page,
-}) => {
+test("settings preserves disabled built-in agents with empty commands", async ({ page }) => {
   if (!api) {
     throw new Error("settings agents API context not initialized");
   }
@@ -157,9 +139,7 @@ test("settings preserves disabled built-in agents with empty commands", async ({
     },
   });
   const seedBody = await seedResponse.text();
-  expect(seedResponse.status(), `PUT /api/v1/settings seed failed: ${seedBody}`).toBe(
-    200,
-  );
+  expect(seedResponse.status(), `PUT /api/v1/settings seed failed: ${seedBody}`).toBe(200);
 
   await page.goto(`${isolatedServer!.info.base_url}/settings`);
   await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
@@ -175,9 +155,7 @@ test("settings preserves disabled built-in agents with empty commands", async ({
   await page.getByLabel("Claude arguments").fill("--permission-mode acceptEdits");
   await expect(saveButton).toBeEnabled();
   const saveResponsePromise = page.waitForResponse(
-    (response) =>
-      response.url().endsWith("/api/v1/settings") &&
-      response.request().method() === "PUT",
+    (response) => response.url().endsWith("/api/v1/settings") && response.request().method() === "PUT",
   );
   await saveButton.click();
   const saveResponse = await saveResponsePromise;

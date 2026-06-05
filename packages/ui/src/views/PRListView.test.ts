@@ -96,9 +96,7 @@ describe("PRListView split view", () => {
     await tick();
 
     expect(screen.queryByRole("button", { name: "Split view" })).toBeNull();
-    expect(screen.getByTestId("pull-detail").textContent).toContain(
-      "Conversation acme/widgets#12",
-    );
+    expect(screen.getByTestId("pull-detail").textContent).toContain("Conversation acme/widgets#12");
     expect(screen.queryByTestId("diff-files")).toBeNull();
   });
 

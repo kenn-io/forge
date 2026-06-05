@@ -91,9 +91,7 @@ test("palette is vertically centered in the viewport", async ({ page }) => {
   expect(Math.abs(dialogCenterY - viewportCenterY)).toBeLessThan(8);
 });
 
-test("arrow-down past the visible window scrolls the highlighted row into view", async ({
-  page,
-}) => {
+test("arrow-down past the visible window scrolls the highlighted row into view", async ({ page }) => {
   await page.goto("/pulls");
   await page.keyboard.press("Meta+K");
 

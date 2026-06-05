@@ -126,7 +126,5 @@ export function parseCIChecks(json: string): ParsedCIChecks {
 // JSON.parse messages (which can embed input fragments) never reach the
 // DOM.
 export function safeDiagnosticText(error: Error): string {
-  return error.message.startsWith("CIChecksJSON: ")
-    ? error.message
-    : "Malformed JSON";
+  return error.message.startsWith("CIChecksJSON: ") ? error.message : "Malformed JSON";
 }

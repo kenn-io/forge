@@ -1,12 +1,5 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from "vite-plus/test";
-import {
-  navigate,
-  getRoute,
-  getDetailTab,
-  isDiffView,
-  getSelectedPRFromRoute,
-  getPage,
-} from "./router.svelte.js";
+import { navigate, getRoute, getDetailTab, isDiffView, getSelectedPRFromRoute, getPage } from "./router.svelte.js";
 
 const prRoute = "/pulls/github/acme/widgets/42";
 const prFilesRoute = "/pulls/github/acme/widgets/42/files";
@@ -142,16 +135,12 @@ describe("router basic routes", () => {
   });
 
   it("does not parse old query-param pull detail routes", () => {
-    navigate(
-      "/pulls/detail?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=42",
-    );
+    navigate("/pulls/detail?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=42");
     expect(getRoute()).toEqual({ page: "pulls", view: "list" });
   });
 
   it("parses provider pull routes with escaped nested repo paths", () => {
-    navigate(
-      "/host/gitlab.example.com%3A8443/pulls/gitlab/Group%2FSubGroup%2FSubGroup%202/My_Project.v2/12",
-    );
+    navigate("/host/gitlab.example.com%3A8443/pulls/gitlab/Group%2FSubGroup%2FSubGroup%202/My_Project.v2/12");
 
     expect(getRoute()).toEqual({
       page: "pulls",
@@ -199,9 +188,7 @@ describe("router basic routes", () => {
   });
 
   it("parses provider pull files routes with escaped nested repo paths", () => {
-    navigate(
-      "/host/gitlab.example.com%3A8443/pulls/gitlab/Group%2FSubGroup%2FSubGroup%202/My_Project.v2/12/files",
-    );
+    navigate("/host/gitlab.example.com%3A8443/pulls/gitlab/Group%2FSubGroup%2FSubGroup%202/My_Project.v2/12/files");
 
     expect(getRoute()).toEqual({
       page: "pulls",
@@ -239,16 +226,12 @@ describe("router basic routes", () => {
   });
 
   it("does not parse old query-param issue detail routes", () => {
-    navigate(
-      "/issues/detail?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=42",
-    );
+    navigate("/issues/detail?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=42");
     expect(getRoute()).toEqual({ page: "issues" });
   });
 
   it("parses provider issue routes with special characters in repo paths", () => {
-    navigate(
-      "/host/gitlab.example.test%3A8443/issues/gitlab/Team%20One%2FSub%20Team/project%2B%231/7",
-    );
+    navigate("/host/gitlab.example.test%3A8443/issues/gitlab/Team%20One%2FSub%20Team/project%2B%231/7");
 
     expect(getRoute()).toEqual({
       page: "issues",
@@ -285,9 +268,7 @@ describe("router basic routes", () => {
   });
 
   it("does not parse old query-param focus detail routes", () => {
-    navigate(
-      "/focus/pr?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=42",
-    );
+    navigate("/focus/pr?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=42");
     expect(getRoute()).toEqual({ page: "activity" });
   });
 
@@ -322,9 +303,7 @@ describe("router embed-workspace routes", () => {
   });
 
   it("parses /workspaces/embed/detail/:provider/pr/:host/:number with repo_path", () => {
-    navigate(
-      "/workspaces/embed/detail/github/pr/github.com/42?repo_path=acme%2Fwidgets",
-    );
+    navigate("/workspaces/embed/detail/github/pr/github.com/42?repo_path=acme%2Fwidgets");
     expect(getRoute()).toEqual({
       page: "embed-workspace-detail",
       provider: "github",
@@ -338,9 +317,7 @@ describe("router embed-workspace routes", () => {
   });
 
   it("parses legacy /workspaces/embed/detail/:type/:host/:owner/:name/:number", () => {
-    navigate(
-      "/workspaces/embed/detail/issue/gitlab.example.com/acme/widgets/7?tab=issue",
-    );
+    navigate("/workspaces/embed/detail/issue/gitlab.example.com/acme/widgets/7?tab=issue");
     expect(getRoute()).toEqual({
       page: "embed-workspace-detail",
       provider: "gitlab",
@@ -369,9 +346,7 @@ describe("router embed-workspace routes", () => {
   });
 
   it("parses legacy provider-explicit detail path without repo_path", () => {
-    navigate(
-      "/workspaces/embed/detail/github/pr/github.com/acme/widgets/42?branch=main",
-    );
+    navigate("/workspaces/embed/detail/github/pr/github.com/acme/widgets/42?branch=main");
     expect(getRoute()).toEqual({
       page: "embed-workspace-detail",
       provider: "github",
@@ -405,9 +380,7 @@ describe("router embed-workspace routes", () => {
   });
 
   it("ignores unknown tab values on the detail route", () => {
-    navigate(
-      "/workspaces/embed/detail/github/pr/github.com/1?repo_path=o%2Fn&tab=garbage",
-    );
+    navigate("/workspaces/embed/detail/github/pr/github.com/1?repo_path=o%2Fn&tab=garbage");
     const route = getRoute();
     expect(route).toEqual({
       page: "embed-workspace-detail",

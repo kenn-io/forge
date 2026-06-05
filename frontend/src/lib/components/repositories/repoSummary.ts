@@ -7,10 +7,7 @@ import type {
   RepoSummaryReleaseResponse,
 } from "@middleman/ui/api/types";
 
-export type RepoSummaryCard = Omit<
-  RepoSummary,
-  "active_authors" | "recent_issues" | "commit_timeline" | "releases"
-> & {
+export type RepoSummaryCard = Omit<RepoSummary, "active_authors" | "recent_issues" | "commit_timeline" | "releases"> & {
   active_authors: RepoSummaryAuthor[];
   recent_issues: RepoSummaryIssue[];
   commit_timeline: RepoSummaryCommitPointResponse[];
@@ -72,11 +69,7 @@ export function repoKey(summary: {
   return `${summary.owner}/${summary.name}`;
 }
 
-export function repoStateKey(summary: {
-  platform_host: string;
-  owner: string;
-  name: string;
-}): string {
+export function repoStateKey(summary: { platform_host: string; owner: string; name: string }): string {
   return `${summary.platform_host}/${summary.owner}/${summary.name}`;
 }
 
@@ -101,23 +94,16 @@ export function shortDateLabel(dateStr: string): string {
   }).format(new Date(dateStr));
 }
 
-export function displayReleaseName(
-  release: RepoSummaryReleaseResponse | undefined,
-): string {
+export function displayReleaseName(release: RepoSummaryReleaseResponse | undefined): string {
   if (!release) return "No release";
   return release.tag_name || release.name || "Release";
 }
 
 export function isStaleRelease(summary: RepoSummaryCard): boolean {
-  return (
-    summary.latest_release !== undefined &&
-    (summary.commits_since_release ?? 0) >= staleReleaseCommitThreshold
-  );
+  return summary.latest_release !== undefined && (summary.commits_since_release ?? 0) >= staleReleaseCommitThreshold;
 }
 
-export function normalizeSummaries(
-  data: RepoSummary[] | null | undefined,
-): RepoSummaryCard[] {
+export function normalizeSummaries(data: RepoSummary[] | null | undefined): RepoSummaryCard[] {
   return (data ?? []).map((summary) => {
     if (!summary.repo) {
       throw new Error("repo summary missing provider repo identity");

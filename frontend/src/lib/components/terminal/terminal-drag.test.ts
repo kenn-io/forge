@@ -20,19 +20,11 @@ describe("terminal drag payloads", () => {
       workspaceId: "workspace-1",
       sessionKey: "session-1",
     });
-    expect(dragStart.dataTransfer?.getData("text/plain")).toBe(
-      "Middleman terminal session",
-    );
-    expect(dragStart.dataTransfer?.getData(RUNTIME_SESSION_DRAG_MIME)).not.toContain(
-      "session-1",
-    );
-    expect(dragStart.dataTransfer?.getData(RUNTIME_SESSION_DRAG_MIME)).not.toContain(
-      "workspace-1",
-    );
+    expect(dragStart.dataTransfer?.getData("text/plain")).toBe("Middleman terminal session");
+    expect(dragStart.dataTransfer?.getData(RUNTIME_SESSION_DRAG_MIME)).not.toContain("session-1");
+    expect(dragStart.dataTransfer?.getData(RUNTIME_SESSION_DRAG_MIME)).not.toContain("workspace-1");
 
-    expect(
-      readRuntimeSessionDrag(fakeDragEvent({ exposeGetData: false }), "workspace-1"),
-    ).toBe("session-1");
+    expect(readRuntimeSessionDrag(fakeDragEvent({ exposeGetData: false }), "workspace-1")).toBe("session-1");
   });
 
   it("expires token-backed drop payloads after active drag state clears", () => {
@@ -52,20 +44,12 @@ describe("terminal drag payloads", () => {
       workspaceId: "workspace-1",
       tabKey: "session:session-1",
     });
-    expect(dragStart.dataTransfer?.getData("text/plain")).toBe(
-      "Middleman workflow tab",
-    );
-    expect(dragStart.dataTransfer?.getData(WORKFLOW_TAB_DRAG_MIME)).not.toContain(
-      "session-1",
-    );
-    expect(dragStart.dataTransfer?.getData(RUNTIME_SESSION_DRAG_MIME)).not.toContain(
-      "workspace-1",
-    );
+    expect(dragStart.dataTransfer?.getData("text/plain")).toBe("Middleman workflow tab");
+    expect(dragStart.dataTransfer?.getData(WORKFLOW_TAB_DRAG_MIME)).not.toContain("session-1");
+    expect(dragStart.dataTransfer?.getData(RUNTIME_SESSION_DRAG_MIME)).not.toContain("workspace-1");
     const chromeDragOver = fakeDragEvent({ exposeGetData: false });
 
-    expect(readWorkflowTabDrag(chromeDragOver, "workspace-1")).toBe(
-      "session:session-1",
-    );
+    expect(readWorkflowTabDrag(chromeDragOver, "workspace-1")).toBe("session:session-1");
     expect(readRuntimeSessionDrag(chromeDragOver, "workspace-1")).toBe("session-1");
   });
 
@@ -75,9 +59,7 @@ describe("terminal drag payloads", () => {
       sessionKey: "session-1",
     });
 
-    expect(
-      readRuntimeSessionDrag(fakeDragEvent({ exposeGetData: false }), "workspace-2"),
-    ).toBeNull();
+    expect(readRuntimeSessionDrag(fakeDragEvent({ exposeGetData: false }), "workspace-2")).toBeNull();
   });
 });
 

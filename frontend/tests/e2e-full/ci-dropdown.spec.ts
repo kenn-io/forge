@@ -6,14 +6,10 @@ test.describe("CI dropdown", () => {
   test("failed CI refresh preserves stored pending status", async ({ page }) => {
     const server = await startIsolatedE2EServer();
     try {
-      const seedResponse = await page.request.post(
-        `${server.info.base_url}/__e2e/pr-ci-state/pending`,
-      );
+      const seedResponse = await page.request.post(`${server.info.base_url}/__e2e/pr-ci-state/pending`);
       expect(seedResponse.ok()).toBe(true);
 
-      const failResponse = await page.request.post(
-        `${server.info.base_url}/__e2e/pr-ci-state/fail-refresh`,
-      );
+      const failResponse = await page.request.post(`${server.info.base_url}/__e2e/pr-ci-state/fail-refresh`);
       expect(failResponse.ok()).toBe(true);
 
       const refreshResponse = await page.request.post(
@@ -29,9 +25,7 @@ test.describe("CI dropdown", () => {
       expect(refreshedDetail.merge_request.CIStatus).toBe("pending");
       expect(refreshedDetail.merge_request.CIChecksJSON).toContain("in_progress");
 
-      const storedResponse = await page.request.get(
-        `${server.info.base_url}/api/v1/pulls/github/acme/widgets/1`,
-      );
+      const storedResponse = await page.request.get(`${server.info.base_url}/api/v1/pulls/github/acme/widgets/1`);
       expect(storedResponse.ok()).toBe(true);
       const storedDetail = (await storedResponse.json()) as {
         merge_request: { CIStatus: string; CIChecksJSON: string };
@@ -43,28 +37,16 @@ test.describe("CI dropdown", () => {
     }
   });
 
-  test("expanded pending CI checks trigger a detail sync refresh", async ({
-    page,
-  }) => {
+  test("expanded pending CI checks trigger a detail sync refresh", async ({ page }) => {
     const server = await startIsolatedE2EServer();
     try {
       await page.addInitScript(() => {
         const realSetInterval = window.setInterval;
-        window.setInterval = ((
-          handler: TimerHandler,
-          timeout?: number,
-          ...args: unknown[]
-        ) =>
-          realSetInterval(
-            handler,
-            timeout === 15_000 ? 100 : timeout,
-            ...args,
-          )) as typeof window.setInterval;
+        window.setInterval = ((handler: TimerHandler, timeout?: number, ...args: unknown[]) =>
+          realSetInterval(handler, timeout === 15_000 ? 100 : timeout, ...args)) as typeof window.setInterval;
       });
 
-      const seedResponse = await page.request.post(
-        `${server.info.base_url}/__e2e/pr-ci-state/pending`,
-      );
+      const seedResponse = await page.request.post(`${server.info.base_url}/__e2e/pr-ci-state/pending`);
       expect(seedResponse.ok()).toBe(true);
       await expect(seedResponse.json()).resolves.toEqual({
         status: "pending",
@@ -73,8 +55,7 @@ test.describe("CI dropdown", () => {
       const backgroundSync = page.waitForResponse((response) => {
         const url = new URL(response.url());
         return (
-          response.request().method() === "POST" &&
-          url.pathname === "/api/v1/pulls/github/acme/widgets/1/sync/async"
+          response.request().method() === "POST" && url.pathname === "/api/v1/pulls/github/acme/widgets/1/sync/async"
         );
       });
 
@@ -90,35 +71,23 @@ test.describe("CI dropdown", () => {
       const firstRefresh = page.waitForResponse((response) => {
         const url = new URL(response.url());
         return (
-          response.request().method() === "POST" &&
-          url.pathname === "/api/v1/pulls/github/acme/widgets/1/ci-refresh"
+          response.request().method() === "POST" && url.pathname === "/api/v1/pulls/github/acme/widgets/1/ci-refresh"
         );
       });
       await pendingChip.click();
       await firstRefresh;
       await expect(detail.locator(".ci-row .spin").first()).toBeVisible();
-      await expect(detail.locator(".ci-row .spin svg").first()).toHaveAttribute(
-        "width",
-        "14",
-      );
+      await expect(detail.locator(".ci-row .spin svg").first()).toHaveAttribute("width", "14");
 
-      const successResponse = await page.request.post(
-        `${server.info.base_url}/__e2e/pr-ci-state/success`,
-      );
+      const successResponse = await page.request.post(`${server.info.base_url}/__e2e/pr-ci-state/success`);
       expect(successResponse.ok()).toBe(true);
       await expect(successResponse.json()).resolves.toEqual({
         status: "success",
       });
 
-      await expect(
-        page
-          .locator(".pull-detail")
-          .getByRole("button", { name: /CI: \d+ passed checks?/i }),
-      ).toBeVisible();
+      await expect(page.locator(".pull-detail").getByRole("button", { name: /CI: \d+ passed checks?/i })).toBeVisible();
 
-      const detailResponse = await page.request.get(
-        `${server.info.base_url}/api/v1/pulls/github/acme/widgets/1`,
-      );
+      const detailResponse = await page.request.get(`${server.info.base_url}/api/v1/pulls/github/acme/widgets/1`);
       expect(detailResponse.ok()).toBe(true);
       const storedDetail = (await detailResponse.json()) as {
         merge_request: { CIStatus: string; CIChecksJSON: string };
@@ -158,9 +127,7 @@ test.describe("CI dropdown", () => {
     }
   });
 
-  test("expanded CI checks stay below chip without stretching sibling chips", async ({
-    page,
-  }) => {
+  test("expanded CI checks stay below chip without stretching sibling chips", async ({ page }) => {
     await page.goto("/pulls/github/acme/widgets/1");
 
     const detail = page.locator(".pull-detail");
@@ -215,12 +182,7 @@ test.describe("CI dropdown", () => {
     expect(expandedLabelsBox!.y).toBe(labelsBox!.y);
     expect(expandedActionRowBox!.y).toBeGreaterThan(actionRowBox!.y);
 
-    await expect(detail.locator(".ci-name")).toHaveText([
-      "roborev",
-      "build",
-      "lint",
-      "test",
-    ]);
+    await expect(detail.locator(".ci-name")).toHaveText(["roborev", "build", "lint", "test"]);
     await expect(detail.locator(".ci-duration")).toHaveText(["1m 30s", "45s", "2m"]);
     const roborevRow = detail.locator(".ci-row", {
       hasText: "roborev",
@@ -232,9 +194,7 @@ test.describe("CI dropdown", () => {
   test("mixed-state chip renders all bucket tokens", async ({ page }) => {
     const server = await startIsolatedE2EServer();
     try {
-      const seed = await page.request.post(
-        `${server.info.base_url}/__e2e/pr-ci-state/mixed`,
-      );
+      const seed = await page.request.post(`${server.info.base_url}/__e2e/pr-ci-state/mixed`);
       expect(seed.ok()).toBe(true);
 
       await page.goto(`${server.info.base_url}/pulls/github/acme/widgets/1`);
@@ -249,14 +209,10 @@ test.describe("CI dropdown", () => {
     }
   });
 
-  test("malformed CIChecksJSON renders the unavailable chip with focus-visible popover", async ({
-    page,
-  }) => {
+  test("malformed CIChecksJSON renders the unavailable chip with focus-visible popover", async ({ page }) => {
     const server = await startIsolatedE2EServer();
     try {
-      const seed = await page.request.post(
-        `${server.info.base_url}/__e2e/pr-ci-state/malformed`,
-      );
+      const seed = await page.request.post(`${server.info.base_url}/__e2e/pr-ci-state/malformed`);
       expect(seed.ok()).toBe(true);
 
       await page.goto(`${server.info.base_url}/pulls/github/acme/widgets/1`);
@@ -266,9 +222,7 @@ test.describe("CI dropdown", () => {
       await expect(chip).toHaveAttribute("aria-disabled", "true");
       await expect(chip).toHaveAttribute("title", /CI unavailable:/i);
 
-      const popover = page.locator(
-        ".pull-detail [data-testid='ci-unavailable-popover']",
-      );
+      const popover = page.locator(".pull-detail [data-testid='ci-unavailable-popover']");
       // Popover is in the DOM but hidden until the chip is focused.
       await expect(popover).toHaveCSS("visibility", "hidden");
       await chip.focus();
@@ -280,34 +234,24 @@ test.describe("CI dropdown", () => {
     }
   });
 
-  test("CIStatus set but CIChecksJSON empty hides the chip (transient sync state)", async ({
-    page,
-  }) => {
+  test("CIStatus set but CIChecksJSON empty hides the chip (transient sync state)", async ({ page }) => {
     const server = await startIsolatedE2EServer();
     try {
-      const seed = await page.request.post(
-        `${server.info.base_url}/__e2e/pr-ci-state/status-only`,
-      );
+      const seed = await page.request.post(`${server.info.base_url}/__e2e/pr-ci-state/status-only`);
       expect(seed.ok()).toBe(true);
 
       await page.goto(`${server.info.base_url}/pulls/github/acme/widgets/1`);
 
-      await expect(page.locator(".pull-detail [data-testid='ci-chip']")).toHaveCount(
-        0,
-      );
+      await expect(page.locator(".pull-detail [data-testid='ci-chip']")).toHaveCount(0);
     } finally {
       await server.stop();
     }
   });
 
-  test("dropdown shows summary header, five sections, show-N-more toggle", async ({
-    page,
-  }) => {
+  test("dropdown shows summary header, five sections, show-N-more toggle", async ({ page }) => {
     const server = await startIsolatedE2EServer();
     try {
-      const seed = await page.request.post(
-        `${server.info.base_url}/__e2e/pr-ci-state/dropdown-mixed`,
-      );
+      const seed = await page.request.post(`${server.info.base_url}/__e2e/pr-ci-state/dropdown-mixed`);
       expect(seed.ok()).toBe(true);
 
       await page.goto(`${server.info.base_url}/pulls/github/acme/widgets/1`);

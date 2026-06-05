@@ -7,13 +7,7 @@ import type { StoreInstances } from "@middleman/ui";
 
 export type { KeySpec, StoreInstances };
 
-export type ScopeTag =
-  | "global"
-  | "view-pulls"
-  | "view-issues"
-  | "detail"
-  | "detail-pr"
-  | "detail-issue";
+export type ScopeTag = "global" | "view-pulls" | "view-issues" | "detail" | "detail-pr" | "detail-issue";
 
 export interface Context {
   page: ReturnType<typeof getPage>;

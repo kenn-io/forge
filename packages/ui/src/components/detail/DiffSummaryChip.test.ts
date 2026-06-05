@@ -1,11 +1,4 @@
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-  within,
-} from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import type { DiffFile } from "../../api/types.js";
 import DiffSummaryChip from "./DiffSummaryChip.svelte";
@@ -26,8 +19,8 @@ function file(path: string, additions: number, deletions: number): DiffFile {
 }
 
 function rowText(popover: HTMLElement, label: string): string {
-  const row = Array.from(popover.querySelectorAll(".diff-summary-row")).find(
-    (candidate) => candidate.textContent?.includes(label),
+  const row = Array.from(popover.querySelectorAll(".diff-summary-row")).find((candidate) =>
+    candidate.textContent?.includes(label),
   );
   expect(row).toBeTruthy();
   return row?.textContent?.replace(/\s+/g, " ").trim() ?? "";
@@ -65,14 +58,12 @@ describe("DiffSummaryChip", () => {
       },
     });
 
-    await fireEvent.mouseEnter(
-      screen.getByRole("button", { name: statLabel(74, 20) }),
-    );
+    await fireEvent.mouseEnter(screen.getByRole("button", { name: statLabel(74, 20) }));
 
     const popover = await screen.findByRole("status");
-    const labels = Array.from(
-      popover.querySelectorAll(".diff-summary-row > span:first-child"),
-    ).map((label) => label.textContent);
+    const labels = Array.from(popover.querySelectorAll(".diff-summary-row > span:first-child")).map(
+      (label) => label.textContent,
+    );
     expect(labels).toEqual(["Plans/docs", "Code", "Tests", "Other", "Generated"]);
     expect(screen.getByText("Plans/docs")).toBeTruthy();
     expect(screen.queryByText("Total")).toBeNull();
@@ -95,17 +86,12 @@ describe("DiffSummaryChip", () => {
         deletions: 14,
         loadFiles: vi.fn(
           async () =>
-            new DiffSummaryFilesResult(false, [
-              file("src/App.svelte", 40, 6),
-              file("src/App.test.ts", 20, 8),
-            ]),
+            new DiffSummaryFilesResult(false, [file("src/App.svelte", 40, 6), file("src/App.test.ts", 20, 8)]),
         ),
       },
     });
 
-    await fireEvent.mouseEnter(
-      screen.getByRole("button", { name: statLabel(60, 14) }),
-    );
+    await fireEvent.mouseEnter(screen.getByRole("button", { name: statLabel(60, 14) }));
 
     const popover = await screen.findByRole("status");
     expect(within(popover).getByText("Code")).toBeTruthy();
@@ -121,9 +107,7 @@ describe("DiffSummaryChip", () => {
     const loadFiles = vi
       .fn()
       .mockResolvedValueOnce(new DiffSummaryFilesResult(true, []))
-      .mockResolvedValueOnce(
-        new DiffSummaryFilesResult(false, [file("src/App.svelte", 4, 1)]),
-      );
+      .mockResolvedValueOnce(new DiffSummaryFilesResult(false, [file("src/App.svelte", 4, 1)]));
 
     render(DiffSummaryChip, {
       props: {
@@ -138,9 +122,7 @@ describe("DiffSummaryChip", () => {
     });
     await fireEvent.mouseEnter(trigger);
 
-    expect(
-      await screen.findByText("Changed files are still refreshing."),
-    ).toBeTruthy();
+    expect(await screen.findByText("Changed files are still refreshing.")).toBeTruthy();
     await fireEvent.mouseLeave(trigger);
     await fireEvent.mouseEnter(trigger);
 
@@ -175,9 +157,7 @@ describe("DiffSummaryChip", () => {
       },
     });
 
-    await fireEvent.mouseEnter(
-      screen.getByRole("button", { name: statLabel(10, 0) }),
-    );
+    await fireEvent.mouseEnter(screen.getByRole("button", { name: statLabel(10, 0) }));
     await rerender({
       additions: 5,
       deletions: 1,
@@ -198,12 +178,8 @@ describe("DiffSummaryChip", () => {
   it("reloads immediately when the summary key changes while open", async () => {
     const loadFiles = vi
       .fn()
-      .mockResolvedValueOnce(
-        new DiffSummaryFilesResult(false, [file("docs/old.md", 10, 0)]),
-      )
-      .mockResolvedValueOnce(
-        new DiffSummaryFilesResult(false, [file("src/new.ts", 5, 1)]),
-      );
+      .mockResolvedValueOnce(new DiffSummaryFilesResult(false, [file("docs/old.md", 10, 0)]))
+      .mockResolvedValueOnce(new DiffSummaryFilesResult(false, [file("src/new.ts", 5, 1)]));
 
     const { rerender } = render(DiffSummaryChip, {
       props: {
@@ -214,9 +190,7 @@ describe("DiffSummaryChip", () => {
       },
     });
 
-    await fireEvent.mouseEnter(
-      screen.getByRole("button", { name: statLabel(10, 0) }),
-    );
+    await fireEvent.mouseEnter(screen.getByRole("button", { name: statLabel(10, 0) }));
     expect(await screen.findByText("Plans/docs")).toBeTruthy();
 
     await rerender({

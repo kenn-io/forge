@@ -273,15 +273,9 @@ describe("createEventsStore event dispatch", () => {
         number: 42,
       }),
     );
-    expect(onPRCIRefreshQueued).toHaveBeenCalledWith(
-      expect.objectContaining({ head_sha: "2222222", priority: "low" }),
-    );
-    expect(onPRCIRefreshed).toHaveBeenCalledWith(
-      expect.objectContaining({ refreshed_at: "2026-05-20T14:15:20Z" }),
-    );
-    expect(onWorkspacePRAssociated).toHaveBeenCalledWith(
-      expect.objectContaining({ issue_number: 7, pr_number: 42 }),
-    );
+    expect(onPRCIRefreshQueued).toHaveBeenCalledWith(expect.objectContaining({ head_sha: "2222222", priority: "low" }));
+    expect(onPRCIRefreshed).toHaveBeenCalledWith(expect.objectContaining({ refreshed_at: "2026-05-20T14:15:20Z" }));
+    expect(onWorkspacePRAssociated).toHaveBeenCalledWith(expect.objectContaining({ issue_number: 7, pr_number: 42 }));
   });
 
   it("swallows malformed pushed-head refresh event frames", () => {

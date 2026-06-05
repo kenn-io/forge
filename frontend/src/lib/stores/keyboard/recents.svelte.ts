@@ -30,9 +30,7 @@ function safeSet(value: RecentsState): void {
   }
 }
 
-function isPersistedItem(
-  value: unknown,
-): value is { kind: unknown; ref: unknown; lastSelectedAt: unknown } {
+function isPersistedItem(value: unknown): value is { kind: unknown; ref: unknown; lastSelectedAt: unknown } {
   return typeof value === "object" && value !== null;
 }
 
@@ -45,10 +43,7 @@ function normalizeTimestamp(value: unknown): string {
   return Number.isNaN(Date.parse(value)) ? EPOCH : value;
 }
 
-function isValidRoutedItemRef(
-  kind: "pr" | "issue",
-  value: unknown,
-): value is RoutedItemRef {
+function isValidRoutedItemRef(kind: "pr" | "issue", value: unknown): value is RoutedItemRef {
   if (typeof value !== "object" || value === null) return false;
   const r = value as Record<string, unknown>;
   if (r.itemType !== kind) return false;
@@ -115,9 +110,7 @@ function dedupeKey(kind: "pr" | "issue", ref: RoutedItemRef): string {
 export function writeRecent(kind: "pr" | "issue", ref: RoutedItemRef): void {
   const state = readRecents();
   const key = dedupeKey(kind, ref);
-  const filtered = state.items.filter(
-    (item) => dedupeKey(item.kind, item.ref) !== key,
-  );
+  const filtered = state.items.filter((item) => dedupeKey(item.kind, item.ref) !== key);
   filtered.unshift({
     kind,
     ref,

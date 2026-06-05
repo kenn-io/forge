@@ -4,9 +4,7 @@ import { STORES_KEY } from "../../context.js";
 import { createDiffStore } from "../../stores/diff.svelte.js";
 import DiffToolbar from "./DiffToolbar.svelte";
 
-function renderToolbar(
-  options: { compact?: boolean; showRichPreview?: boolean } = {},
-) {
+function renderToolbar(options: { compact?: boolean; showRichPreview?: boolean } = {}) {
   const diff = createDiffStore();
   render(DiffToolbar, {
     props: options,
@@ -35,25 +33,14 @@ describe("DiffToolbar", () => {
     )
       .getAllByRole("button")
       .map((button) => button.textContent?.replace(/\s+/g, " ").trim());
-    expect(labels).toEqual([
-      "Plans/docs (0)",
-      "Code (0)",
-      "Tests (0)",
-      "Other (0)",
-      "Generated (0)",
-      "All (0)",
-    ]);
+    expect(labels).toEqual(["Plans/docs (0)", "Code (0)", "Tests (0)", "Other (0)", "Generated (0)", "All (0)"]);
 
-    expect(
-      screen.getByRole("button", { name: "All (0)" }).getAttribute("aria-pressed"),
-    ).toBe("true");
+    expect(screen.getByRole("button", { name: "All (0)" }).getAttribute("aria-pressed")).toBe("true");
 
     await fireEvent.click(screen.getByRole("button", { name: "Code (0)" }));
 
     expect(diff.getFileCategoryFilter()).toBe("code");
-    expect(
-      screen.getByRole("button", { name: "Code (0)" }).getAttribute("aria-pressed"),
-    ).toBe("true");
+    expect(screen.getByRole("button", { name: "Code (0)" }).getAttribute("aria-pressed")).toBe("true");
   });
 
   it("toggles the word wrap preference", async () => {
@@ -121,9 +108,7 @@ describe("DiffToolbar", () => {
     const fileFilters = screen.getByRole("group", {
       name: "Filter changed files",
     });
-    await fireEvent.click(
-      within(fileFilters).getByRole("button", { name: "Code (0)" }),
-    );
+    await fireEvent.click(within(fileFilters).getByRole("button", { name: "Code (0)" }));
 
     expect(diff.getFileCategoryFilter()).toBe("code");
     expect(screen.getAllByText("Code").length).toBeGreaterThan(0);

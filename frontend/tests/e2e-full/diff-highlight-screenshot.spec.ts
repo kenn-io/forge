@@ -1,10 +1,5 @@
 import { expect, test } from "@playwright/test";
-import type {
-  DiffFile,
-  DiffLine,
-  DiffResult,
-  FilesResult,
-} from "@middleman/ui/api/types";
+import type { DiffFile, DiffLine, DiffResult, FilesResult } from "@middleman/ui/api/types";
 
 type DiffFixtureFile = Omit<DiffFile, "patch"> & { patch?: string };
 type DiffFixture = Omit<DiffResult, "files"> & {
@@ -23,14 +18,9 @@ function patchRange(start: number, count: number): string {
 
 function patchForFile(file: DiffFixtureFile): string {
   if (file.is_binary || file.hunks.length === 0) return "";
-  const oldPath =
-    file.status === "added" ? "/dev/null" : `a/${file.old_path || file.path}`;
+  const oldPath = file.status === "added" ? "/dev/null" : `a/${file.old_path || file.path}`;
   const newPath = file.status === "deleted" ? "/dev/null" : `b/${file.path}`;
-  const lines = [
-    `diff --git a/${file.old_path || file.path} b/${file.path}`,
-    `--- ${oldPath}`,
-    `+++ ${newPath}`,
-  ];
+  const lines = [`diff --git a/${file.old_path || file.path} b/${file.path}`, `--- ${oldPath}`, `+++ ${newPath}`];
   for (const hunk of file.hunks) {
     lines.push(
       `@@ -${patchRange(hunk.old_start, hunk.old_count)} +${patchRange(hunk.new_start, hunk.new_count)} @@${hunk.section ? ` ${hunk.section}` : ""}`,
@@ -113,8 +103,7 @@ const longLineDiff: DiffResult = withServerDiffData({
             },
             {
               type: "add",
-              content:
-                "    name: Run tests with cross-browser coverage on multiple platforms and architectures",
+              content: "    name: Run tests with cross-browser coverage on multiple platforms and architectures",
               new_num: 13,
             },
             {
@@ -206,9 +195,7 @@ function filesFromDiff(fixture: DiffResult): FilesResult {
 }
 
 test.describe("diff highlight backgrounds on horizontal scroll", () => {
-  test("line backgrounds cover the rendered Pierre content width", async ({
-    page,
-  }) => {
+  test("line backgrounds cover the rendered Pierre content width", async ({ page }) => {
     await page.route("**/api/v1/pulls/github/acme/widgets/1/files", async (route) => {
       await route.fulfill({
         status: 200,
@@ -225,10 +212,7 @@ test.describe("diff highlight backgrounds on horizontal scroll", () => {
     });
 
     await page.goto("/pulls/github/acme/widgets/1/files");
-    await page
-      .locator(".diff-file")
-      .first()
-      .waitFor({ state: "visible", timeout: 10_000 });
+    await page.locator(".diff-file").first().waitFor({ state: "visible", timeout: 10_000 });
 
     // Wait for syntax highlighting on both add and delete lines — highlighting
     // is incremental so we need both row types ready before asserting widths.
@@ -237,11 +221,7 @@ test.describe("diff highlight backgrounds on horizontal scroll", () => {
       .poll(
         async () => {
           return await diffHost.evaluate((host) => {
-            return Boolean(
-              host.shadowRoot?.querySelector(
-                '[data-content] [data-line-type="change-addition"]',
-              ),
-            );
+            return Boolean(host.shadowRoot?.querySelector('[data-content] [data-line-type="change-addition"]'));
           });
         },
         { timeout: 10_000 },
@@ -251,11 +231,7 @@ test.describe("diff highlight backgrounds on horizontal scroll", () => {
       .poll(
         async () => {
           return await diffHost.evaluate((host) => {
-            return Boolean(
-              host.shadowRoot?.querySelector(
-                '[data-content] [data-line-type="change-deletion"]',
-              ),
-            );
+            return Boolean(host.shadowRoot?.querySelector('[data-content] [data-line-type="change-deletion"]'));
           });
         },
         { timeout: 10_000 },
@@ -290,12 +266,12 @@ test.describe("diff highlight backgrounds on horizontal scroll", () => {
         };
       }
       const contentWidth = content.getBoundingClientRect().width;
-      const adds = [
-        ...content.querySelectorAll('[data-line-type="change-addition"]'),
-      ].map((r) => r.getBoundingClientRect().width);
-      const dels = [
-        ...content.querySelectorAll('[data-line-type="change-deletion"]'),
-      ].map((r) => r.getBoundingClientRect().width);
+      const adds = [...content.querySelectorAll('[data-line-type="change-addition"]')].map(
+        (r) => r.getBoundingClientRect().width,
+      );
+      const dels = [...content.querySelectorAll('[data-line-type="change-deletion"]')].map(
+        (r) => r.getBoundingClientRect().width,
+      );
       return { contentWidth, addWidths: adds, delWidths: dels };
     });
 

@@ -19,10 +19,7 @@ let activeRuntimeSessionDragToken: string | null = null;
 let activeWorkflowTabDragToken: string | null = null;
 let dragTokenSequence = 0;
 
-export function startRuntimeSessionDrag(
-  event: DragEvent,
-  payload: RuntimeSessionDragPayload,
-): void {
+export function startRuntimeSessionDrag(event: DragEvent, payload: RuntimeSessionDragPayload): void {
   const token = newDragToken();
   activeRuntimeSessionDrag = payload;
   activeRuntimeSessionDragToken = token;
@@ -35,17 +32,12 @@ export function startRuntimeSessionDrag(
   }
 }
 
-export function startWorkflowTabDrag(
-  event: DragEvent,
-  payload: WorkflowTabDragPayload,
-): void {
+export function startWorkflowTabDrag(event: DragEvent, payload: WorkflowTabDragPayload): void {
   const token = newDragToken();
   activeWorkflowTabDrag = payload;
   activeWorkflowTabDragToken = token;
   const sessionKey = sessionKeyForTab(payload.tabKey);
-  activeRuntimeSessionDrag = sessionKey
-    ? { workspaceId: payload.workspaceId, sessionKey }
-    : null;
+  activeRuntimeSessionDrag = sessionKey ? { workspaceId: payload.workspaceId, sessionKey } : null;
   activeRuntimeSessionDragToken = activeRuntimeSessionDrag ? token : null;
   writeDragToken(event, WORKFLOW_TAB_DRAG_MIME, token);
   if (activeRuntimeSessionDrag) {
@@ -66,10 +58,7 @@ export function clearActiveTerminalDrag(): void {
   activeWorkflowTabDragToken = null;
 }
 
-export function readRuntimeSessionDrag(
-  event: DragEvent,
-  workspaceId: string,
-): string | null {
+export function readRuntimeSessionDrag(event: DragEvent, workspaceId: string): string | null {
   const payload = readRuntimeSessionDragPayload(event) ?? activeRuntimeSessionDrag;
   if (!payload || payload.workspaceId !== workspaceId || !payload.sessionKey) {
     return null;
@@ -77,15 +66,9 @@ export function readRuntimeSessionDrag(
   return payload.sessionKey;
 }
 
-export function readWorkflowTabDrag(
-  event: DragEvent,
-  workspaceId: string,
-): WorkflowTabKey | null {
+export function readWorkflowTabDrag(event: DragEvent, workspaceId: string): WorkflowTabKey | null {
   const workflowPayload = readWorkflowTabDragPayload(event) ?? activeWorkflowTabDrag;
-  if (
-    workflowPayload?.workspaceId === workspaceId &&
-    isWorkflowTabKey(workflowPayload.tabKey)
-  ) {
+  if (workflowPayload?.workspaceId === workspaceId && isWorkflowTabKey(workflowPayload.tabKey)) {
     return workflowPayload.tabKey;
   }
   const sessionKey = readRuntimeSessionDrag(event, workspaceId);
@@ -93,21 +76,11 @@ export function readWorkflowTabDrag(
 }
 
 export function isWorkflowTabKey(value: string): value is WorkflowTabKey {
-  return (
-    value === "home" ||
-    value === "shell" ||
-    value === "terminal" ||
-    value.startsWith("session:")
-  );
+  return value === "home" || value === "shell" || value === "terminal" || value.startsWith("session:");
 }
 
 function readWorkflowTabDragPayload(event: DragEvent): WorkflowTabDragPayload | null {
-  const payload = readTokenPayload(
-    event,
-    WORKFLOW_TAB_DRAG_MIME,
-    activeWorkflowTabDragToken,
-    activeWorkflowTabDrag,
-  );
+  const payload = readTokenPayload(event, WORKFLOW_TAB_DRAG_MIME, activeWorkflowTabDragToken, activeWorkflowTabDrag);
   if (!payload?.workspaceId || !payload.tabKey) return null;
   if (!isWorkflowTabKey(payload.tabKey)) return null;
   return {
@@ -116,9 +89,7 @@ function readWorkflowTabDragPayload(event: DragEvent): WorkflowTabDragPayload | 
   };
 }
 
-function readRuntimeSessionDragPayload(
-  event: DragEvent,
-): RuntimeSessionDragPayload | null {
+function readRuntimeSessionDragPayload(event: DragEvent): RuntimeSessionDragPayload | null {
   const payload = readTokenPayload(
     event,
     RUNTIME_SESSION_DRAG_MIME,

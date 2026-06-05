@@ -11,19 +11,11 @@ const warnedUnknown = new Set<string>();
 const warnedMalformed = new Set<string>();
 
 function truncateConclusion(c: string): string {
-  return c.length > UNKNOWN_CONCLUSION_DISPLAY_MAX
-    ? `${c.slice(0, UNKNOWN_CONCLUSION_DISPLAY_MAX)}…`
-    : c;
+  return c.length > UNKNOWN_CONCLUSION_DISPLAY_MAX ? `${c.slice(0, UNKNOWN_CONCLUSION_DISPLAY_MAX)}…` : c;
 }
 
-export function warnOnUnknownConclusions(
-  unknown: CICheck[],
-  context?: { repo?: string; number?: number },
-): void {
-  const id =
-    context?.repo && context?.number !== undefined
-      ? `${context.repo}#${context.number}`
-      : "";
+export function warnOnUnknownConclusions(unknown: CICheck[], context?: { repo?: string; number?: number }): void {
+  const id = context?.repo && context?.number !== undefined ? `${context.repo}#${context.number}` : "";
   const idPrefix = id ? `[${id}] ` : "";
   for (const c of unknown) {
     const display = truncateConclusion(c.conclusion);
@@ -54,10 +46,7 @@ export function warnOnMalformedCIChecksJSON(
   error: Error,
   context?: { repo?: string; number?: number },
 ): void {
-  const id =
-    context?.repo && context?.number !== undefined
-      ? `${context.repo}#${context.number}`
-      : "";
+  const id = context?.repo && context?.number !== undefined ? `${context.repo}#${context.number}` : "";
   // Dedupe by raw payload bytes. Bounded by the number of distinct
   // malformed payloads ever seen, which is one or two in practice.
   const key = `${id}|${raw}`;
@@ -70,17 +59,11 @@ export function warnOnMalformedCIChecksJSON(
   // preview of the malformed input.
   // Dev: also log error.message and a 64-char input preview. Dev builds
   // are not the privacy boundary.
-  const safeLabel = error.message.startsWith("CIChecksJSON: ")
-    ? error.message
-    : "Malformed JSON";
+  const safeLabel = error.message.startsWith("CIChecksJSON: ") ? error.message : "Malformed JSON";
   if (isDevMode()) {
     const previewClause = `\nPreview: ${raw.slice(0, DEV_PAYLOAD_PREVIEW_MAX)}${raw.length > DEV_PAYLOAD_PREVIEW_MAX ? "…" : ""}`;
-    console.warn(
-      `${idPrefix}Malformed CIChecksJSON: ${error.message} (length=${raw.length})${previewClause}`,
-    );
+    console.warn(`${idPrefix}Malformed CIChecksJSON: ${error.message} (length=${raw.length})${previewClause}`);
   } else {
-    console.warn(
-      `${idPrefix}Malformed CIChecksJSON: ${safeLabel} (length=${raw.length})`,
-    );
+    console.warn(`${idPrefix}Malformed CIChecksJSON: ${safeLabel} (length=${raw.length})`);
   }
 }

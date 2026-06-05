@@ -1,11 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import {
-  budgetColor,
-  worstCaseRatio,
-  aggregateBudget,
-  formatCompact,
-  type HostBudgetEntry,
-} from "./budget-utils";
+import { budgetColor, worstCaseRatio, aggregateBudget, formatCompact, type HostBudgetEntry } from "./budget-utils";
 
 describe("budgetColor", () => {
   it("returns green when above 20%", () => {

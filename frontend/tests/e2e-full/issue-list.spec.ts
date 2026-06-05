@@ -9,10 +9,7 @@ import { expect, test, type Page } from "@playwright/test";
 //   group/project#11: open, ada, "GitLab read-only issue"
 
 async function waitForIssueList(page: Page): Promise<void> {
-  await page
-    .locator(".issue-item")
-    .first()
-    .waitFor({ state: "visible", timeout: 10_000 });
+  await page.locator(".issue-item").first().waitFor({ state: "visible", timeout: 10_000 });
 }
 
 async function selectIssueState(page: Page, label: string): Promise<void> {
@@ -23,10 +20,7 @@ async function selectIssueState(page: Page, label: string): Promise<void> {
   }
 
   await page.getByRole("button", { name: "Filters" }).click();
-  await page
-    .locator(".filter-dropdown .filter-item", { hasText: label })
-    .first()
-    .click();
+  await page.locator(".filter-dropdown .filter-item", { hasText: label }).first().click();
 }
 
 async function selectIssueGrouping(page: Page, label: string): Promise<void> {
@@ -37,10 +31,7 @@ async function selectIssueGrouping(page: Page, label: string): Promise<void> {
   }
 
   await page.getByRole("button", { name: "Filters" }).click();
-  await page
-    .locator(".filter-dropdown .filter-item", { hasText: label })
-    .last()
-    .click();
+  await page.locator(".filter-dropdown .filter-item", { hasText: label }).last().click();
 }
 
 const longRepoName = "widgets-with-an-extremely-long-repository-name";
@@ -89,9 +80,7 @@ async function expectRepoChipToClipSafely(
   expect(chipBox).not.toBeNull();
   expect(itemBox).not.toBeNull();
   if (chipBox !== null && itemBox !== null) {
-    expect(chipBox.x + chipBox.width).toBeLessThanOrEqual(
-      itemBox.x + itemBox.width + 1,
-    );
+    expect(chipBox.x + chipBox.width).toBeLessThanOrEqual(itemBox.x + itemBox.width + 1);
   }
 
   const labelOverflow = await repoChip.locator(".chip__label").evaluate((node) => ({
@@ -113,9 +102,7 @@ test.describe("issue list view", () => {
   });
 
   test("sidebar issue pills use the shared chip component", async ({ page }) => {
-    await expect(page.locator(".filter-bar .list-count-chip")).toHaveText(
-      /^5 issues$/,
-    );
+    await expect(page.locator(".filter-bar .list-count-chip")).toHaveText(/^5 issues$/);
 
     await mockLongIssueRepoSlug(page);
     await page.goto("/issues");
@@ -143,12 +130,9 @@ test.describe("issue list view", () => {
     await input.fill("Safari");
 
     // Wait for the filtered result to appear (replaces fixed sleep).
-    await expect(page.locator(".filter-bar .list-count-chip")).toHaveText(
-      /^1 issues?$/,
-      {
-        timeout: 5_000,
-      },
-    );
+    await expect(page.locator(".filter-bar .list-count-chip")).toHaveText(/^1 issues?$/, {
+      timeout: 5_000,
+    });
 
     const items = page.locator(".issue-item");
     const count = await items.count();
@@ -206,9 +190,7 @@ test.describe("issue list view", () => {
 
     // .issue-detail owns vertical scroll (overflow-y: auto in the
     // component style).
-    const overflowY = await issueDetail.evaluate(
-      (el) => getComputedStyle(el).overflowY,
-    );
+    const overflowY = await issueDetail.evaluate((el) => getComputedStyle(el).overflowY);
     expect(["auto", "scroll"]).toContain(overflowY);
 
     const before = await issueDetail.evaluate((el) => ({
@@ -242,9 +224,7 @@ test.describe("issue list view", () => {
       const scrollportCenter = detailBox.x + scrollportWidth / 2;
       const headerCenter = headerBox.x + headerBox.width / 2;
       // Allow small slack for sub-pixel layout differences.
-      expect(
-        Math.abs(detailBox.x + detailBox.width - (areaBox.x + areaBox.width)),
-      ).toBeLessThan(2);
+      expect(Math.abs(detailBox.x + detailBox.width - (areaBox.x + areaBox.width))).toBeLessThan(2);
       expect(Math.abs(headerCenter - scrollportCenter)).toBeLessThan(2);
       expect(headerBox.width).toBeLessThanOrEqual(800);
     }

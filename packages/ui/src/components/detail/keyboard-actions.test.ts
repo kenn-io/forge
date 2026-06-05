@@ -86,8 +86,7 @@ interface BuildOpts {
 }
 
 function buildInput(opts: BuildOpts = {}): PRDetailActionInput {
-  const client = (opts.client ??
-    fakeClient()) as unknown as PRDetailActionInput["client"];
+  const client = (opts.client ?? fakeClient()) as unknown as PRDetailActionInput["client"];
   const stores = opts.stores ?? fakeStores();
   return {
     pr: {
@@ -211,9 +210,7 @@ describe("runApprovePR", () => {
       }),
     );
     const [path, init] = client.POST.mock.calls[0];
-    expect(path).toBe(
-      "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/approve",
-    );
+    expect(path).toBe("/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/approve");
     expect(init.params.path.platform_host).toBe("ghe.example.com");
   });
 
@@ -225,9 +222,7 @@ describe("runApprovePR", () => {
       response: new Response("{}"),
     });
     const onError = vi.fn();
-    await expect(runApprovePR(buildInput({ client, onError }))).rejects.toThrow(
-      "boom",
-    );
+    await expect(runApprovePR(buildInput({ client, onError }))).rejects.toThrow("boom");
     expect(onError).toHaveBeenCalledWith("boom");
   });
 
@@ -458,9 +453,7 @@ describe("runApproveWorkflows", () => {
       response: new Response("{}"),
     });
     const onError = vi.fn();
-    await expect(
-      runApproveWorkflows(buildInput({ client, onError })),
-    ).rejects.toThrow("no pending workflows");
+    await expect(runApproveWorkflows(buildInput({ client, onError }))).rejects.toThrow("no pending workflows");
     expect(onError).toHaveBeenCalledWith("no pending workflows");
   });
 

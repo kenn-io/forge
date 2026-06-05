@@ -51,12 +51,8 @@ describe("ActionButton", () => {
     const button = screen.getByRole("button", {
       name: "Approve workflows",
     });
-    expect(button.querySelector(".action-button__label")?.textContent).toBe(
-      "Approve workflows",
-    );
-    expect(button.querySelector(".action-button__short-label")?.textContent).toBe(
-      "Workflows",
-    );
+    expect(button.querySelector(".action-button__label")?.textContent).toBe("Approve workflows");
+    expect(button.querySelector(".action-button__short-label")?.textContent).toBe("Workflows");
   });
 
   it("renders trailing content after responsive labels", () => {
@@ -71,9 +67,7 @@ describe("ActionButton", () => {
     });
 
     const button = screen.getByRole("button", { name: "Merge" });
-    const labelsAndTrailing = Array.from(button.children).map(
-      (child) => child.textContent,
-    );
+    const labelsAndTrailing = Array.from(button.children).map((child) => child.textContent);
     expect(labelsAndTrailing).toEqual(["Merge", "Merge", "v"]);
   });
 });

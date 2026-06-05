@@ -40,10 +40,7 @@ export function parsePaletteQuery(input: string): ParsedQuery {
 }
 
 function matchAction(action: Action, needle: string): boolean {
-  return (
-    action.id.toLowerCase().includes(needle) ||
-    action.label.toLowerCase().includes(needle)
-  );
+  return action.id.toLowerCase().includes(needle) || action.label.toLowerCase().includes(needle);
 }
 
 function matchPull(pull: PullRequest, needle: string): boolean {
@@ -73,15 +70,9 @@ export function groupResults(input: GroupResultsInput): GroupedResults {
   const needle = parsed.query.toLowerCase();
   const allMatch = needle.length === 0;
 
-  const filteredCommands = allMatch
-    ? commands.slice(0, GROUP_CAP)
-    : filterCap(commands, (a) => matchAction(a, needle));
-  const filteredPulls = allMatch
-    ? pulls.slice(0, GROUP_CAP)
-    : filterCap(pulls, (p) => matchPull(p, needle));
-  const filteredIssues = allMatch
-    ? issues.slice(0, GROUP_CAP)
-    : filterCap(issues, (i) => matchIssue(i, needle));
+  const filteredCommands = allMatch ? commands.slice(0, GROUP_CAP) : filterCap(commands, (a) => matchAction(a, needle));
+  const filteredPulls = allMatch ? pulls.slice(0, GROUP_CAP) : filterCap(pulls, (p) => matchPull(p, needle));
+  const filteredIssues = allMatch ? issues.slice(0, GROUP_CAP) : filterCap(issues, (i) => matchIssue(i, needle));
 
   switch (parsed.scope) {
     case "command":

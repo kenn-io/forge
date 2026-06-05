@@ -60,9 +60,7 @@ describe("AgentSettings", () => {
     await fireEvent.input(screen.getByLabelText("Codex arguments"), {
       target: { value: "--full-auto" },
     });
-    await fireEvent.click(
-      screen.getByRole("button", { name: "Save workspace agents" }),
-    );
+    await fireEvent.click(screen.getByRole("button", { name: "Save workspace agents" }));
 
     await waitFor(() => {
       expect(mockUpdateSettings).toHaveBeenCalledWith({
@@ -110,9 +108,7 @@ describe("AgentSettings", () => {
     await fireEvent.input(screen.getByLabelText("Codex arguments"), {
       target: { value: '""' },
     });
-    await fireEvent.click(
-      screen.getByRole("button", { name: "Save workspace agents" }),
-    );
+    await fireEvent.click(screen.getByRole("button", { name: "Save workspace agents" }));
 
     await waitFor(() => {
       expect(mockUpdateSettings).toHaveBeenCalledWith({
@@ -193,9 +189,7 @@ describe("AgentSettings", () => {
     await fireEvent.input(screen.getByLabelText("Claude arguments"), {
       target: { value: "--permission-mode acceptEdits" },
     });
-    await fireEvent.click(
-      screen.getByRole("button", { name: "Save workspace agents" }),
-    );
+    await fireEvent.click(screen.getByRole("button", { name: "Save workspace agents" }));
 
     await waitFor(() => {
       expect(mockUpdateSettings).toHaveBeenCalledWith({
@@ -254,9 +248,7 @@ describe("AgentSettings", () => {
     await fireEvent.input(screen.getByLabelText("Claude arguments"), {
       target: { value: "--permission-mode acceptEdits" },
     });
-    await fireEvent.click(
-      screen.getByRole("button", { name: "Save workspace agents" }),
-    );
+    await fireEvent.click(screen.getByRole("button", { name: "Save workspace agents" }));
 
     await waitFor(() => {
       expect(mockUpdateSettings).toHaveBeenCalledWith({
@@ -311,9 +303,7 @@ describe("AgentSettings", () => {
     await fireEvent.input(screen.getByLabelText("Review Agent arguments"), {
       target: { value: "--strict" },
     });
-    await fireEvent.click(
-      screen.getByRole("button", { name: "Save workspace agents" }),
-    );
+    await fireEvent.click(screen.getByRole("button", { name: "Save workspace agents" }));
 
     await waitFor(() => {
       expect(mockUpdateSettings).toHaveBeenCalledWith({

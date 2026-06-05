@@ -19,16 +19,12 @@ export type ReviewThreadContext = {
   outdated: boolean;
 };
 
-export function reviewThreadsFromEvents(
-  events: PREvent[] | null | undefined,
-): ReviewThread[] {
+export function reviewThreadsFromEvents(events: PREvent[] | null | undefined): ReviewThread[] {
   const threads: ReviewThread[] = [];
   const seen = new Set<string>();
 
   for (const event of events ?? []) {
-    const thread =
-      event.diff_thread ??
-      (event as PREvent & { DiffThread?: ReviewThread }).DiffThread;
+    const thread = event.diff_thread ?? (event as PREvent & { DiffThread?: ReviewThread }).DiffThread;
     if (!thread || seen.has(thread.id)) continue;
     seen.add(thread.id);
     threads.push(thread);
@@ -42,9 +38,7 @@ export function reviewThreadTargetSide(thread: ReviewThread): "left" | "right" {
 }
 
 export function reviewThreadStartSide(thread: ReviewThread): "left" | "right" {
-  return thread.start_side?.toLowerCase() === "left"
-    ? "left"
-    : reviewThreadTargetSide(thread);
+  return thread.start_side?.toLowerCase() === "left" ? "left" : reviewThreadTargetSide(thread);
 }
 
 export function reviewThreadTargetLine(thread: ReviewThread): number {
@@ -63,18 +57,11 @@ export function reviewThreadLineLabel(thread: ReviewThread): string {
   return start !== end ? `${thread.path}:${start}-${end}` : `${thread.path}:${end}`;
 }
 
-function lineNumberForSide(
-  line: DiffLine,
-  side: "left" | "right",
-): number | undefined {
+function lineNumberForSide(line: DiffLine, side: "left" | "right"): number | undefined {
   return side === "left" ? line.old_num : line.new_num;
 }
 
-function pathMatches(
-  thread: ReviewThread,
-  filePath: string,
-  oldPath: string,
-): boolean {
+function pathMatches(thread: ReviewThread, filePath: string, oldPath: string): boolean {
   return (
     thread.path === filePath ||
     thread.path === oldPath ||
@@ -82,10 +69,7 @@ function pathMatches(
   );
 }
 
-export function reviewThreadContext(
-  diff: DiffResult | null | undefined,
-  thread: ReviewThread,
-): ReviewThreadContext {
+export function reviewThreadContext(diff: DiffResult | null | undefined, thread: ReviewThread): ReviewThreadContext {
   const fallback: ReviewThreadContext = {
     path: thread.path,
     lineLabel: reviewThreadLineLabel(thread),
@@ -94,9 +78,7 @@ export function reviewThreadContext(
   };
   if (!diff) return fallback;
 
-  const file = diff.files.find((item) =>
-    pathMatches(thread, item.path, item.old_path),
-  );
+  const file = diff.files.find((item) => pathMatches(thread, item.path, item.old_path));
   if (!file || file.is_binary) return fallback;
 
   const side = reviewThreadTargetSide(thread);
@@ -129,8 +111,7 @@ export function reviewThreadContext(
           oldNum: line.old_num,
           newNum: line.new_num,
           content: line.content,
-          target:
-            lineNumber != null && lineNumber >= minLine && lineNumber <= maxLine,
+          target: lineNumber != null && lineNumber >= minLine && lineNumber <= maxLine,
         };
       }),
     };

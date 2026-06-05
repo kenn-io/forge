@@ -1,12 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 import type { RepoSummary } from "@middleman/ui/api/types";
 
-import {
-  defaultProviderCapabilities,
-  normalizeSummaries,
-  repoKey,
-  shouldShowPlatformHost,
-} from "./repoSummary.js";
+import { defaultProviderCapabilities, normalizeSummaries, repoKey, shouldShowPlatformHost } from "./repoSummary.js";
 
 describe("repo summary labels", () => {
   it("hides github.com when it is the default platform host", () => {

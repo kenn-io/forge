@@ -26,16 +26,12 @@ export interface RepoVisibilityFilters {
 }
 
 export function rowKey(
-  row: Pick<RepoImportRow, "provider" | "platform_host" | "repo_path"> &
-    Partial<Pick<RepoImportRow, "owner" | "name">>,
+  row: Pick<RepoImportRow, "provider" | "platform_host" | "repo_path"> & Partial<Pick<RepoImportRow, "owner" | "name">>,
 ): string {
   return `${row.provider.toLowerCase()}/${row.platform_host.toLowerCase()}/${row.repo_path.toLowerCase()}`;
 }
 
-export function parseImportPattern(
-  input: string,
-  allowNestedOwner = false,
-): { owner: string; pattern: string } {
+export function parseImportPattern(input: string, allowNestedOwner = false): { owner: string; pattern: string } {
   const trimmed = input.trim();
   const parts = trimmed.split("/");
   if (parts.length < 2 || (!allowNestedOwner && parts.length !== 2)) {
@@ -86,15 +82,11 @@ export function sortRows(rows: RepoImportRow[], sort: SortState): RepoImportRow[
         cmp = rowKey(left.row).localeCompare(rowKey(right.row));
       } else {
         const leftTime = left.row.pushed_at ? Date.parse(left.row.pushed_at) : null;
-        const rightTime = right.row.pushed_at
-          ? Date.parse(right.row.pushed_at)
-          : null;
+        const rightTime = right.row.pushed_at ? Date.parse(right.row.pushed_at) : null;
         if (leftTime === null && rightTime === null) cmp = 0;
         else if (leftTime === null) cmp = 1;
         else if (rightTime === null) cmp = -1;
-        else
-          cmp =
-            sort.direction === "desc" ? rightTime - leftTime : leftTime - rightTime;
+        else cmp = sort.direction === "desc" ? rightTime - leftTime : leftTime - rightTime;
       }
       if (sort.direction === "desc" && sort.field !== "pushed_at") cmp = -cmp;
       if (cmp !== 0) return cmp;
@@ -105,11 +97,7 @@ export function sortRows(rows: RepoImportRow[], sort: SortState): RepoImportRow[
     .map(({ row }) => row);
 }
 
-export function setAllVisible(
-  selected: Set<string>,
-  visibleRows: RepoImportRow[],
-  checked: boolean,
-): Set<string> {
+export function setAllVisible(selected: Set<string>, visibleRows: RepoImportRow[], checked: boolean): Set<string> {
   const next = new Set(selected);
   for (const row of visibleRows) {
     if (row.already_configured) continue;
@@ -128,15 +116,10 @@ export function applyRangeSelection(input: {
   checked: boolean;
 }): { selected: Set<string>; anchorKey: string } {
   const next = new Set(input.selected);
-  const clickedIndex = input.visibleRows.findIndex(
-    (row) => rowKey(row) === input.clickedKey,
-  );
-  const anchorIndex = input.anchorKey
-    ? input.visibleRows.findIndex((row) => rowKey(row) === input.anchorKey)
-    : -1;
+  const clickedIndex = input.visibleRows.findIndex((row) => rowKey(row) === input.clickedKey);
+  const anchorIndex = input.anchorKey ? input.visibleRows.findIndex((row) => rowKey(row) === input.anchorKey) : -1;
   if (clickedIndex === -1) return { selected: next, anchorKey: input.clickedKey };
-  const start =
-    anchorIndex === -1 ? clickedIndex : Math.min(anchorIndex, clickedIndex);
+  const start = anchorIndex === -1 ? clickedIndex : Math.min(anchorIndex, clickedIndex);
   const end = anchorIndex === -1 ? clickedIndex : Math.max(anchorIndex, clickedIndex);
   for (const row of input.visibleRows.slice(start, end + 1)) {
     if (row.already_configured) continue;

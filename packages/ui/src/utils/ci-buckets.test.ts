@@ -19,20 +19,11 @@ describe("bucketForCheck", () => {
   });
 
   it("pending status takes precedence over conclusion", () => {
-    expect(
-      bucketForCheck(check({ status: "in_progress", conclusion: "failure" })),
-    ).toBe("pending");
+    expect(bucketForCheck(check({ status: "in_progress", conclusion: "failure" }))).toBe("pending");
   });
 
   it("returns failed for known failure conclusions", () => {
-    for (const conclusion of [
-      "failure",
-      "cancelled",
-      "timed_out",
-      "action_required",
-      "stale",
-      "startup_failure",
-    ]) {
+    for (const conclusion of ["failure", "cancelled", "timed_out", "action_required", "stale", "startup_failure"]) {
       expect(bucketForCheck(check({ conclusion }))).toBe("failed");
     }
   });
@@ -52,29 +43,19 @@ describe("bucketForCheck", () => {
 
   it("returns pending when status is non-active and conclusion is empty", () => {
     expect(bucketForCheck(check({ status: "", conclusion: "" }))).toBe("pending");
-    expect(bucketForCheck(check({ status: "completed", conclusion: "" }))).toBe(
-      "pending",
-    );
+    expect(bucketForCheck(check({ status: "completed", conclusion: "" }))).toBe("pending");
   });
 
   it("trusts the conclusion when status is an unrecognised non-completed value", () => {
     // status='weird' is not 'completed' and not active. The classifier
     // falls through to conclusion-based bucketing, NOT Pending.
-    expect(bucketForCheck(check({ status: "weird", conclusion: "success" }))).toBe(
-      "passed",
-    );
-    expect(bucketForCheck(check({ status: "weird", conclusion: "failure" }))).toBe(
-      "failed",
-    );
-    expect(bucketForCheck(check({ status: "weird", conclusion: "skipped" }))).toBe(
-      "skipped",
-    );
+    expect(bucketForCheck(check({ status: "weird", conclusion: "success" }))).toBe("passed");
+    expect(bucketForCheck(check({ status: "weird", conclusion: "failure" }))).toBe("failed");
+    expect(bucketForCheck(check({ status: "weird", conclusion: "skipped" }))).toBe("skipped");
   });
 
   it("returns pending for unrecognised status with empty conclusion (step 6 fallback)", () => {
-    expect(bucketForCheck(check({ status: "weird", conclusion: "" }))).toBe(
-      "pending",
-    );
+    expect(bucketForCheck(check({ status: "weird", conclusion: "" }))).toBe("pending");
   });
 });
 
@@ -209,8 +190,8 @@ describe("parseCIChecks", () => {
   });
 
   it("safeDiagnosticText forwards locally-created CIChecksJSON shape errors intact", () => {
-    expect(
-      safeDiagnosticText(new Error("CIChecksJSON: payload is not an array")),
-    ).toBe("CIChecksJSON: payload is not an array");
+    expect(safeDiagnosticText(new Error("CIChecksJSON: payload is not an array"))).toBe(
+      "CIChecksJSON: payload is not an array",
+    );
   });
 });

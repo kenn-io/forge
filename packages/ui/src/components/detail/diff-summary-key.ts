@@ -4,10 +4,7 @@ export function buildDiffSummaryKey(
   owner: string,
   name: string,
   number: number,
-  detail: Pick<
-    PullDetail,
-    "platform_head_sha" | "platform_base_sha" | "diff_head_sha" | "merge_base_sha"
-  >,
+  detail: Pick<PullDetail, "platform_head_sha" | "platform_base_sha" | "diff_head_sha" | "merge_base_sha">,
   pr: Pick<PullRequest, "UpdatedAt" | "Additions" | "Deletions">,
 ): string {
   const revision = diffSummaryRevision(detail, pr);
@@ -15,10 +12,7 @@ export function buildDiffSummaryKey(
 }
 
 function diffSummaryRevision(
-  detail: Pick<
-    PullDetail,
-    "platform_head_sha" | "platform_base_sha" | "diff_head_sha" | "merge_base_sha"
-  >,
+  detail: Pick<PullDetail, "platform_head_sha" | "platform_base_sha" | "diff_head_sha" | "merge_base_sha">,
   pr: Pick<PullRequest, "UpdatedAt" | "Additions" | "Deletions">,
 ): string {
   if (detail.diff_head_sha && detail.merge_base_sha) {

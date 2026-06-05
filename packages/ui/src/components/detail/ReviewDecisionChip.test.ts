@@ -3,11 +3,7 @@ import { afterEach, describe, expect, it } from "vite-plus/test";
 import type { PREvent } from "../../api/types.js";
 import ReviewDecisionChip from "./ReviewDecisionChip.svelte";
 
-function reviewEvent(
-  author: string,
-  summary = "APPROVED",
-  createdAt = "2026-05-01T12:00:00Z",
-): PREvent {
+function reviewEvent(author: string, summary = "APPROVED", createdAt = "2026-05-01T12:00:00Z"): PREvent {
   return {
     ID: Math.floor(Math.random() * 1_000_000),
     MergeRequestID: 1,

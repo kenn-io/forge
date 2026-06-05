@@ -1,9 +1,4 @@
-import {
-  getThemeMode,
-  getThemeColors,
-  getThemeFonts,
-  getThemeRadii,
-} from "./embed-config.svelte.js";
+import { getThemeMode, getThemeColors, getThemeFonts, getThemeRadii } from "./embed-config.svelte.js";
 
 const THEME_KEY = "middleman-theme";
 
@@ -64,10 +59,7 @@ function storedTheme(): string | null {
 
 function applyDarkClass(isDarkMode: boolean): void {
   document.documentElement.classList.toggle("dark", isDarkMode);
-  document.documentElement.style.setProperty(
-    "color-scheme",
-    isDarkMode ? "dark" : "light",
-  );
+  document.documentElement.style.setProperty("color-scheme", isDarkMode ? "dark" : "light");
 }
 
 export function initTheme(): void {

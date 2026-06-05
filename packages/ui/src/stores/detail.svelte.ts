@@ -27,17 +27,8 @@ export interface DetailStoreOptions {
   getPage?: () => string;
   pulls?: {
     loadPulls: (params?: unknown) => Promise<void>;
-    optimisticKanbanUpdate?: (
-      owner: string,
-      name: string,
-      number: number,
-      status: KanbanStatus,
-    ) => void;
-    getPullKanbanStatus?: (
-      owner: string,
-      name: string,
-      number: number,
-    ) => KanbanStatus | undefined;
+    optimisticKanbanUpdate?: (owner: string, name: string, number: number, status: KanbanStatus) => void;
+    getPullKanbanStatus?: (owner: string, name: string, number: number) => KanbanStatus | undefined;
   };
   sync?: {
     subscribeSyncComplete: (cb: () => void) => () => void;
@@ -45,10 +36,7 @@ export interface DetailStoreOptions {
   };
 }
 
-function apiErrorMessage(
-  error: { detail?: string; title?: string },
-  fallback: string,
-): string {
+function apiErrorMessage(error: { detail?: string; title?: string }, fallback: string): string {
   return error.detail ?? error.title ?? fallback;
 }
 
@@ -66,10 +54,7 @@ function strongerSyncMode(a: DetailSyncMode, b: DetailSyncMode): DetailSyncMode 
   return syncIntentRank(b) > syncIntentRank(a) ? b : a;
 }
 
-function needsWorkflowApprovalSync(
-  detail: PullDetail | null,
-  enabled: boolean,
-): boolean {
+function needsWorkflowApprovalSync(detail: PullDetail | null, enabled: boolean): boolean {
   if (!enabled || !detail) return false;
   const pr = detail.merge_request;
   return Boolean(
@@ -239,11 +224,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
     );
   }
 
-  function currentDetailRef(
-    owner: string,
-    name: string,
-    number: number,
-  ): DetailRequestRef {
+  function currentDetailRef(owner: string, name: string, number: number): DetailRequestRef {
     if (!detail?.repo?.provider || !detail.repo.repo_path) {
       throw new Error("pull detail missing provider repo identity");
     }
@@ -300,14 +281,11 @@ export function createDetailStore(opts: DetailStoreOptions) {
     const ref = detailRequestRef(owner, name, number, identity);
     syncing = true;
     try {
-      const { data, error: requestError } = await apiClient.POST(
-        providerItemPath("pulls", ref, "/sync"),
-        {
-          params: {
-            path: { ...providerRouteParams(ref), number: ref.number },
-          },
+      const { data, error: requestError } = await apiClient.POST(providerItemPath("pulls", ref, "/sync"), {
+        params: {
+          path: { ...providerRouteParams(ref), number: ref.number },
         },
-      );
+      });
       if (gen !== syncGeneration) return;
       if (requestError) {
         throw new Error(apiErrorMessage(requestError, "sync failed"));
@@ -346,12 +324,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
     unsavedLocalBody = null;
   }
 
-  async function loadDetail(
-    owner: string,
-    name: string,
-    number: number,
-    options: DetailRequestOptions,
-  ): Promise<void> {
+  async function loadDetail(owner: string, name: string, number: number, options: DetailRequestOptions): Promise<void> {
     const syncMode = options.sync ?? true;
     const requestRef = detailRequestRef(owner, name, number, options);
     // Dedup by item identity only. A second caller with a different
@@ -391,24 +364,17 @@ export function createDetailStore(opts: DetailStoreOptions) {
     detailLoaded = false;
     const promise = (async () => {
       try {
-        const { data, error: requestError } = await apiClient.GET(
-          providerItemPath("pulls", requestRef, ""),
-          {
-            params: {
-              path: {
-                ...providerRouteParams(requestRef),
-                number: requestRef.number,
-              },
+        const { data, error: requestError } = await apiClient.GET(providerItemPath("pulls", requestRef, ""), {
+          params: {
+            path: {
+              ...providerRouteParams(requestRef),
+              number: requestRef.number,
             },
           },
-        );
+        });
         if (gen !== syncGeneration) return;
         if (requestError) {
-          throw new Error(
-            requestError.detail ??
-              requestError.title ??
-              "failed to load pull request",
-          );
+          throw new Error(requestError.detail ?? requestError.title ?? "failed to load pull request");
         }
         detail = data
           ? withPreservedLocalBody({
@@ -435,14 +401,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
           void syncDetail(owner, name, number, gen, requestRef);
           return;
         }
-        void enqueueBackgroundDetailSync(
-          owner,
-          name,
-          number,
-          gen,
-          detail?.detail_fetched_at,
-          requestRef,
-        );
+        void enqueueBackgroundDetailSync(owner, name, number, gen, detail?.detail_fetched_at, requestRef);
       }
     })();
     currentLoad.promise = promise;
@@ -460,23 +419,13 @@ export function createDetailStore(opts: DetailStoreOptions) {
     const ref = detailRequestRef(owner, name, number, identity);
     syncing = true;
     try {
-      const { error: requestError } = await apiClient.POST(
-        providerItemPath("pulls", ref, "/sync/async"),
-        {
-          params: {
-            path: { ...providerRouteParams(ref), number: ref.number },
-          },
+      const { error: requestError } = await apiClient.POST(providerItemPath("pulls", ref, "/sync/async"), {
+        params: {
+          path: { ...providerRouteParams(ref), number: ref.number },
         },
-      );
+      });
       if (requestError) return;
-      await refreshAfterBackgroundDetailSync(
-        owner,
-        name,
-        number,
-        gen,
-        previousFetchedAt,
-        identity,
-      );
+      await refreshAfterBackgroundDetailSync(owner, name, number, gen, previousFetchedAt, identity);
     } finally {
       if (gen === syncGeneration) syncing = false;
       void syncDep?.refreshSyncStatus?.();
@@ -529,14 +478,11 @@ export function createDetailStore(opts: DetailStoreOptions) {
     const promise = (async () => {
       syncing = true;
       try {
-        const { data, error: requestError } = await apiClient.POST(
-          providerItemPath("pulls", ref, "/ci-refresh"),
-          {
-            params: {
-              path: { ...providerRouteParams(ref), number: ref.number },
-            },
+        const { data, error: requestError } = await apiClient.POST(providerItemPath("pulls", ref, "/ci-refresh"), {
+          params: {
+            path: { ...providerRouteParams(ref), number: ref.number },
           },
-        );
+        });
         if (gen !== syncGeneration) return;
         if (requestError) {
           showFlash(apiErrorMessage(requestError, "Failed to refresh CI checks"));
@@ -553,9 +499,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
           if (warning) {
             showFlash(warning);
           }
-          if (
-            needsWorkflowApprovalSync(detail, identity.workflowApprovalSync ?? true)
-          ) {
+          if (needsWorkflowApprovalSync(detail, identity.workflowApprovalSync ?? true)) {
             await syncDetail(owner, name, number, gen, ref);
           }
         }
@@ -574,12 +518,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
     return promise;
   }
 
-  async function updateKanbanState(
-    owner: string,
-    name: string,
-    number: number,
-    status: KanbanStatus,
-  ): Promise<void> {
+  async function updateKanbanState(owner: string, name: string, number: number, status: KanbanStatus): Promise<void> {
     const ref = currentDetailRef(owner, name, number);
     const key = prKey(ref);
     const seq = (kanbanSeqByPR.get(key) ?? 0) + 1;
@@ -602,21 +541,14 @@ export function createDetailStore(opts: DetailStoreOptions) {
     pullsDep?.optimisticKanbanUpdate?.(owner, name, number, status);
 
     try {
-      const { error: requestError } = await apiClient.PUT(
-        providerItemPath("pulls", ref, "/state"),
-        {
-          params: {
-            path: { ...providerRouteParams(ref), number },
-          },
-          body: { status },
+      const { error: requestError } = await apiClient.PUT(providerItemPath("pulls", ref, "/state"), {
+        params: {
+          path: { ...providerRouteParams(ref), number },
         },
-      );
+        body: { status },
+      });
       if (requestError) {
-        throw new Error(
-          requestError.detail ??
-            requestError.title ??
-            "failed to update kanban state",
-        );
+        throw new Error(requestError.detail ?? requestError.title ?? "failed to update kanban state");
       }
     } catch (err) {
       if (seq === kanbanSeqByPR.get(key)) {
@@ -655,22 +587,14 @@ export function createDetailStore(opts: DetailStoreOptions) {
     }
   }
 
-  async function setPullLabels(
-    owner: string,
-    name: string,
-    number: number,
-    labels: string[],
-  ): Promise<Label[]> {
+  async function setPullLabels(owner: string, name: string, number: number, labels: string[]): Promise<Label[]> {
     const ref = currentDetailRef(owner, name, number);
-    const { data, error: requestError } = await apiClient.PUT(
-      providerItemPath("pulls", ref, "/labels"),
-      {
-        params: {
-          path: { ...providerRouteParams(ref), number },
-        },
-        body: { labels },
+    const { data, error: requestError } = await apiClient.PUT(providerItemPath("pulls", ref, "/labels"), {
+      params: {
+        path: { ...providerRouteParams(ref), number },
       },
-    );
+      body: { labels },
+    });
     if (requestError) {
       const message = apiErrorMessage(requestError, "failed to update labels");
       storeError = message;
@@ -717,15 +641,12 @@ export function createDetailStore(opts: DetailStoreOptions) {
     };
 
     try {
-      const { data, error: requestError } = await apiClient.PATCH(
-        providerItemPath("pulls", ref, ""),
-        {
-          params: {
-            path: { ...providerRouteParams(ref), number },
-          },
-          body: fields,
+      const { data, error: requestError } = await apiClient.PATCH(providerItemPath("pulls", ref, ""), {
+        params: {
+          path: { ...providerRouteParams(ref), number },
         },
-      );
+        body: fields,
+      });
       if (requestError) {
         throw new Error(apiErrorMessage(requestError, "failed to update PR"));
       }
@@ -836,15 +757,12 @@ export function createDetailStore(opts: DetailStoreOptions) {
     // host doesn't replace the new repo's detail.
     let localBodyMatchesSent = false;
     try {
-      const { data, error: requestError } = await apiClient.PATCH(
-        providerItemPath("pulls", ref, ""),
-        {
-          params: {
-            path: { ...providerRouteParams(ref), number },
-          },
-          body: { body },
+      const { data, error: requestError } = await apiClient.PATCH(providerItemPath("pulls", ref, ""), {
+        params: {
+          path: { ...providerRouteParams(ref), number },
         },
-      );
+        body: { body },
+      });
       if (requestError) {
         throw new Error(apiErrorMessage(requestError, "failed to update PR"));
       }
@@ -901,13 +819,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
       repoPath: string;
     },
   ): Promise<void> {
-    const key = saveQueueKey(
-      routeRef.provider,
-      routeRef.platformHost,
-      owner,
-      name,
-      number,
-    );
+    const key = saveQueueKey(routeRef.provider, routeRef.platformHost, owner, name, number);
     queuedSaves.set(key, { body, routeRef });
     const existing = inflightSaves.get(key);
     if (existing) return existing;
@@ -926,12 +838,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
     return flight;
   }
 
-  function startDetailPolling(
-    owner: string,
-    name: string,
-    number: number,
-    identity: DetailRequestOptions,
-  ): void {
+  function startDetailPolling(owner: string, name: string, number: number, identity: DetailRequestOptions): void {
     const ref = detailRequestRef(owner, name, number, identity);
     stopDetailPolling();
     detailPollHandle = setInterval(() => {
@@ -981,11 +888,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
           },
         });
         if (requestError) {
-          throw new Error(
-            requestError.detail ??
-              requestError.title ??
-              "failed to unstar pull request",
-          );
+          throw new Error(requestError.detail ?? requestError.title ?? "failed to unstar pull request");
         }
       } else {
         const { error: requestError } = await apiClient.PUT("/starred", {
@@ -997,11 +900,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
           },
         });
         if (requestError) {
-          throw new Error(
-            requestError.detail ??
-              requestError.title ??
-              "failed to star pull request",
-          );
+          throw new Error(requestError.detail ?? requestError.title ?? "failed to star pull request");
         }
       }
     } catch (err) {
@@ -1020,28 +919,18 @@ export function createDetailStore(opts: DetailStoreOptions) {
     await refreshPullsIfActive();
   }
 
-  async function submitComment(
-    owner: string,
-    name: string,
-    number: number,
-    body: string,
-  ): Promise<void> {
+  async function submitComment(owner: string, name: string, number: number, body: string): Promise<void> {
     const ref = currentDetailRef(owner, name, number);
     storeError = null;
     try {
-      const { error: requestError } = await apiClient.POST(
-        providerItemPath("pulls", ref, "/comments"),
-        {
-          params: {
-            path: { ...providerRouteParams(ref), number },
-          },
-          body: { body },
+      const { error: requestError } = await apiClient.POST(providerItemPath("pulls", ref, "/comments"), {
+        params: {
+          path: { ...providerRouteParams(ref), number },
         },
-      );
+        body: { body },
+      });
       if (requestError) {
-        throw new Error(
-          requestError.detail ?? requestError.title ?? "failed to post comment",
-        );
+        throw new Error(requestError.detail ?? requestError.title ?? "failed to post comment");
       }
     } catch (err) {
       storeError = err instanceof Error ? err.message : String(err);
@@ -1053,24 +942,12 @@ export function createDetailStore(opts: DetailStoreOptions) {
     syncing = false;
     // Silent refresh: avoid flipping loading flag, which would
     // unmount the detail tree and reset scroll position.
-    await refreshDetail(
-      owner,
-      name,
-      number,
-      syncGeneration,
-      currentDetailRef(owner, name, number),
-    );
+    await refreshDetail(owner, name, number, syncGeneration, currentDetailRef(owner, name, number));
     // Pull authoritative state from GitHub so PR row metadata
     // (last_activity_at, comment_count) and the pulls list catch
     // up. Skip if the user navigated away mid-refresh.
     if (gen === syncGeneration) {
-      void syncDetail(
-        owner,
-        name,
-        number,
-        gen,
-        currentDetailRef(owner, name, number),
-      );
+      void syncDetail(owner, name, number, gen, currentDetailRef(owner, name, number));
     }
   }
 
@@ -1084,35 +961,24 @@ export function createDetailStore(opts: DetailStoreOptions) {
     const ref = currentDetailRef(owner, name, number);
     storeError = null;
     try {
-      const { error: requestError } = await apiClient.PATCH(
-        providerItemPath("pulls", ref, "/comments/{comment_id}"),
-        {
-          params: {
-            path: {
-              ...providerRouteParams(ref),
-              number,
-              comment_id: commentID,
-            },
+      const { error: requestError } = await apiClient.PATCH(providerItemPath("pulls", ref, "/comments/{comment_id}"), {
+        params: {
+          path: {
+            ...providerRouteParams(ref),
+            number,
+            comment_id: commentID,
           },
-          body: { body },
         },
-      );
+        body: { body },
+      });
       if (requestError) {
-        throw new Error(
-          requestError.detail ?? requestError.title ?? "failed to edit comment",
-        );
+        throw new Error(requestError.detail ?? requestError.title ?? "failed to edit comment");
       }
     } catch (err) {
       storeError = err instanceof Error ? err.message : String(err);
       return false;
     }
-    await refreshDetail(
-      owner,
-      name,
-      number,
-      syncGeneration,
-      currentDetailRef(owner, name, number),
-    );
+    await refreshDetail(owner, name, number, syncGeneration, currentDetailRef(owner, name, number));
     return true;
   }
 
@@ -1140,21 +1006,13 @@ export function createDetailStore(opts: DetailStoreOptions) {
         },
       );
       if (requestError) {
-        throw new Error(
-          requestError.detail ?? requestError.title ?? "failed to reply to thread",
-        );
+        throw new Error(requestError.detail ?? requestError.title ?? "failed to reply to thread");
       }
     } catch (err) {
       storeError = err instanceof Error ? err.message : String(err);
       return false;
     }
-    await refreshDetail(
-      owner,
-      name,
-      number,
-      syncGeneration,
-      currentDetailRef(owner, name, number),
-    );
+    await refreshDetail(owner, name, number, syncGeneration, currentDetailRef(owner, name, number));
     return true;
   }
 

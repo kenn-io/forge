@@ -12,8 +12,7 @@ function event(id: string, number: number, type: string, created: string): unkno
     created_at: created,
     item_number: number,
     item_state: "open",
-    item_title:
-      number === 42 ? "Add browser regression coverage" : "Refactor theme system",
+    item_title: number === 42 ? "Add browser regression coverage" : "Refactor theme system",
     item_type: "pr",
     item_url: `https://github.com/acme/widgets/pull/${number}`,
     platform_host: "github.com",
@@ -86,9 +85,7 @@ async function mockActivity(page: Page): Promise<void> {
 }
 
 test.describe("threaded activity collapse", () => {
-  test("collapses, drills into one item, and persists across reload", async ({
-    page,
-  }) => {
+  test("collapses, drills into one item, and persists across reload", async ({ page }) => {
     await mockActivity(page);
     await page.goto("/?view=threaded");
 
@@ -112,9 +109,7 @@ test.describe("threaded activity collapse", () => {
     await expect(page.locator(".event-row")).toHaveCount(0);
   });
 
-  test("collapse control works while the side detail pane is open", async ({
-    page,
-  }) => {
+  test("collapse control works while the side detail pane is open", async ({ page }) => {
     await mockActivity(page);
     await page.goto("/?view=threaded");
 

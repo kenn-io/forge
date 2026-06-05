@@ -19,10 +19,7 @@ export function parsePierreFileDiff(
 ): FileDiffMetadata | undefined {
   const patchedFile = diffFileWithPatch(file);
   if (!patchedFile.patch) return undefined;
-  if (
-    options.enableDemandContextExpansion &&
-    canBuildSparsePatchContents(patchedFile)
-  ) {
+  if (options.enableDemandContextExpansion && canBuildSparsePatchContents(patchedFile)) {
     const contents = sparsePatchContents(patchedFile);
     return processPatchWithContext(patchedFile, contents);
   }
@@ -36,11 +33,7 @@ export function parsePierreFileDiffWithContents(
   return processPatchWithContext(diffFileWithPatch(file), contents);
 }
 
-export function pierreFileContents(
-  name: string,
-  contents: string,
-  cacheIdentity: string,
-): FileContents {
+export function pierreFileContents(name: string, contents: string, cacheIdentity: string): FileContents {
   return {
     name,
     contents,
@@ -64,16 +57,8 @@ function processPatchWithContext(
   if (safePatch === file.patch) return parsePatchOnly(file);
   return (
     tryProcessPatch(safePatch, {
-      oldFile: fileContentsWithName(
-        contents.oldFile,
-        safePierreFileName(file, "old"),
-        "safe-old",
-      ),
-      newFile: fileContentsWithName(
-        contents.newFile,
-        safePierreFileName(file, "new"),
-        "safe-new",
-      ),
+      oldFile: fileContentsWithName(contents.oldFile, safePierreFileName(file, "old"), "safe-old"),
+      newFile: fileContentsWithName(contents.newFile, safePierreFileName(file, "new"), "safe-new"),
     }) ?? parsePatchOnly({ ...file, patch: safePatch })
   );
 }
@@ -122,8 +107,7 @@ function safePierrePatch(file: DiffFile): string {
         return line;
       }
       if (!inHeader) return line;
-      if (line.startsWith("diff --git "))
-        return `diff --git a/${oldName} b/${newName}`;
+      if (line.startsWith("diff --git ")) return `diff --git a/${oldName} b/${newName}`;
       if (line === "--- /dev/null") return line;
       if (line === "+++ /dev/null") return line;
       if (line.startsWith("--- ")) return `--- a/${oldName}`;
@@ -153,10 +137,7 @@ function synthesizePatch(file: DiffFile): string {
   ].join("\n");
 }
 
-function patchLine(line: {
-  type: "context" | "add" | "delete";
-  content: string;
-}): string {
+function patchLine(line: { type: "context" | "add" | "delete"; content: string }): string {
   const prefix = line.type === "add" ? "+" : line.type === "delete" ? "-" : " ";
   return `${prefix}${line.content}`;
 }
@@ -164,10 +145,7 @@ function patchLine(line: {
 export function patchPath(path: string): string {
   if (path === "/dev/null" || !needsPatchPathQuote(path)) return path;
   return JSON.stringify(path)
-    .replace(
-      /[\u007f-\u009f]/gu,
-      (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, "0")}`,
-    )
+    .replace(/[\u007f-\u009f]/gu, (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, "0")}`)
     .replace(/\u2028/g, "\\u2028")
     .replace(/\u2029/g, "\\u2029");
 }
@@ -198,10 +176,7 @@ function safePierreFileName(file: DiffFile, side: "old" | "new"): string {
 
 function canBuildSparsePatchContents(file: DiffFile): boolean {
   for (const hunk of file.hunks ?? []) {
-    if (
-      !lineRangeFits(hunk.old_start, hunk.old_count) ||
-      !lineRangeFits(hunk.new_start, hunk.new_count)
-    ) {
+    if (!lineRangeFits(hunk.old_start, hunk.old_count) || !lineRangeFits(hunk.new_start, hunk.new_count)) {
       return false;
     }
 
@@ -224,11 +199,7 @@ function lineRangeFits(start: number, count: number): boolean {
 }
 
 function lineNumberFits(lineNumber: number): boolean {
-  return (
-    Number.isSafeInteger(lineNumber) &&
-    lineNumber >= 1 &&
-    lineNumber <= maxSparseContextLine
-  );
+  return Number.isSafeInteger(lineNumber) && lineNumber >= 1 && lineNumber <= maxSparseContextLine;
 }
 
 function sparsePatchContents(file: DiffFile): {
@@ -240,10 +211,7 @@ function sparsePatchContents(file: DiffFile): {
 
   for (const hunk of file.hunks ?? []) {
     for (const line of hunk.lines) {
-      if (
-        (line.type === "context" || line.type === "delete") &&
-        line.old_num != null
-      ) {
+      if ((line.type === "context" || line.type === "delete") && line.old_num != null) {
         oldLines[line.old_num - 1] = line.content;
       }
       if ((line.type === "context" || line.type === "add") && line.new_num != null) {
@@ -255,11 +223,7 @@ function sparsePatchContents(file: DiffFile): {
   const newContents = joinSparseLines(newLines);
 
   return {
-    oldFile: pierreFileContents(
-      file.old_path || file.path,
-      oldContents,
-      "sparse-old",
-    ),
+    oldFile: pierreFileContents(file.old_path || file.path, oldContents, "sparse-old"),
     newFile: pierreFileContents(file.path, newContents, "sparse-new"),
   };
 }
@@ -269,27 +233,15 @@ function joinSparseLines(lines: string[]): string {
   return lines.map((line) => line ?? "").join("\n");
 }
 
-function fileContentsWithName(
-  file: FileContents,
-  name: string,
-  cacheIdentity: string,
-): FileContents {
+function fileContentsWithName(file: FileContents, name: string, cacheIdentity: string): FileContents {
   return {
     ...file,
     name,
-    cacheKey: fileContentsCacheKey(
-      name,
-      file.contents,
-      `${cacheIdentity}:${file.cacheKey ?? ""}`,
-    ),
+    cacheKey: fileContentsCacheKey(name, file.contents, `${cacheIdentity}:${file.cacheKey ?? ""}`),
   };
 }
 
-function fileContentsCacheKey(
-  name: string,
-  contents: string,
-  cacheIdentity: string,
-): string {
+function fileContentsCacheKey(name: string, contents: string, cacheIdentity: string): string {
   let hash = 0x811c9dc5;
   const seed = `${cacheIdentity}\0${name}\0${contents.length}\0${contents}`;
   for (let index = 0; index < seed.length; index += 1) {

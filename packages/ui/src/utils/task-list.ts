@@ -50,11 +50,7 @@ function isIndentedCodeStart(line: string): boolean {
   return false;
 }
 
-type TaskLineVisitor = (
-  match: RegExpMatchArray,
-  lineIndex: number,
-  taskIndex: number,
-) => void;
+type TaskLineVisitor = (match: RegExpMatchArray, lineIndex: number, taskIndex: number) => void;
 
 // Walks `lines` and invokes `visitor` for every task-list line that
 // the markdown renderer would treat as such. Skips lines inside
@@ -190,11 +186,7 @@ function findTaskBlockEnd(lines: string[], start: number): number {
 // moved item carries its continuation lines and nested sub-tasks
 // with it. If either index is out of range, or they're equal, the
 // source is returned unchanged.
-export function moveTaskListItem(
-  source: string,
-  fromIndex: number,
-  toIndex: number,
-): string {
+export function moveTaskListItem(source: string, fromIndex: number, toIndex: number): string {
   if (!source) return source;
   if (fromIndex === toIndex) return source;
   if (fromIndex < 0 || toIndex < 0) return source;
@@ -214,10 +206,7 @@ export function moveTaskListItem(
   // markdown structure — the moved block keeps its original indent
   // and would reparent or orphan itself. Only same-indent moves
   // (true siblings under the same parent list) are allowed.
-  if (
-    leadingWhitespaceCount(lines[fromStart]!) !==
-    leadingWhitespaceCount(lines[toStart]!)
-  ) {
+  if (leadingWhitespaceCount(lines[fromStart]!) !== leadingWhitespaceCount(lines[toStart]!)) {
     return source;
   }
   // Refuse no-ops: dragging a task onto something inside its own
@@ -235,9 +224,7 @@ export function moveTaskListItem(
   } else {
     insertAt = toStart;
   }
-  return [...without.slice(0, insertAt), ...moved, ...without.slice(insertAt)].join(
-    "\n",
-  );
+  return [...without.slice(0, insertAt), ...moved, ...without.slice(insertAt)].join("\n");
 }
 
 // Returns a new source string with the Nth task-list checkbox toggled.

@@ -9,9 +9,7 @@ export function parseE2EPort(value: string | undefined): number | null {
   return parsed;
 }
 
-export function e2eReuseExistingServer(
-  env: Record<string, string | undefined> = process.env,
-): boolean {
+export function e2eReuseExistingServer(env: Record<string, string | undefined> = process.env): boolean {
   switch (env.PLAYWRIGHT_REUSE_EXISTING_SERVER?.trim().toLowerCase()) {
     case "1":
     case "true":

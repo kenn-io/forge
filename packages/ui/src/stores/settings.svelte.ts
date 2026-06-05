@@ -33,9 +33,7 @@ export function createSettingsStore() {
     return terminalSettings.font_family;
   }
 
-  function setTerminalFontFamily(
-    fontFamily: TerminalSettings["font_family"] | null | undefined,
-  ): void {
+  function setTerminalFontFamily(fontFamily: TerminalSettings["font_family"] | null | undefined): void {
     terminalSettings = {
       ...terminalSettings,
       font_family: fontFamily ?? "",
@@ -70,9 +68,7 @@ export function createSettingsStore() {
     return terminalSettings.renderer;
   }
 
-  function setTerminalRenderer(
-    renderer: TerminalSettings["renderer"] | null | undefined,
-  ): void {
+  function setTerminalRenderer(renderer: TerminalSettings["renderer"] | null | undefined): void {
     terminalSettings = {
       ...terminalSettings,
       renderer: renderer === "ghostty-web" ? "ghostty-web" : "xterm",

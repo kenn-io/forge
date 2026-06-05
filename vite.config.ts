@@ -5,7 +5,7 @@ export default defineConfig({
     "*": "vp check --fix",
   },
   fmt: {
-    printWidth: 86,
+    printWidth: 120,
     sortImports: false,
   },
   lint: {

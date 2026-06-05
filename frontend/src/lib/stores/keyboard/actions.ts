@@ -1,9 +1,4 @@
-import {
-  getDetailTab,
-  getSelectedPRFromRoute,
-  navigate,
-  replaceUrl,
-} from "../router.svelte.js";
+import { getDetailTab, getSelectedPRFromRoute, navigate, replaceUrl } from "../router.svelte.js";
 import { isSidebarToggleEnabled, toggleSidebar } from "../sidebar.svelte.js";
 import { toggleTheme } from "../theme.svelte.js";
 import { toggleCheatsheet } from "./cheatsheet-state.svelte.js";
@@ -12,10 +7,7 @@ import {
   openLabelPickerFor,
   type OpenLabelPickerDetail,
 } from "../../../../../packages/ui/src/components/detail/labelPickerCommand.js";
-import {
-  buildPullRequestFilesRoute,
-  buildPullRequestRoute,
-} from "@middleman/ui/routes";
+import { buildPullRequestFilesRoute, buildPullRequestRoute } from "@middleman/ui/routes";
 import type { StoreInstances } from "@middleman/ui";
 import type { Action, Context } from "./types.js";
 
@@ -37,8 +29,7 @@ const always = (): boolean => true;
 const isBoardRoute = (ctx: Context): boolean =>
   ctx.route.page === "pulls" && "view" in ctx.route && ctx.route.view === "board";
 
-const onPullsListNotBoard = (ctx: Context): boolean =>
-  ctx.page === "pulls" && !ctx.isDiffView && !isBoardRoute(ctx);
+const onPullsListNotBoard = (ctx: Context): boolean => ctx.page === "pulls" && !ctx.isDiffView && !isBoardRoute(ctx);
 
 const onIssuesList = (ctx: Context): boolean => ctx.page === "issues";
 
@@ -61,10 +52,7 @@ function hasLabelEditingCapability(detail: LabelEditableDetail): boolean {
   return Boolean(caps?.read_labels && caps.label_mutation);
 }
 
-function labelEditableDetailMatches(
-  detail: LabelEditableDetail,
-  selection: LabelEditableSelection,
-): boolean {
+function labelEditableDetailMatches(detail: LabelEditableDetail, selection: LabelEditableSelection): boolean {
   return (
     detail.repo_owner === selection.owner &&
     detail.repo_name === selection.name &&
@@ -143,8 +131,7 @@ function navigateToSelectedPR(): void {
   const sel = stores().pulls.getSelectedPR();
   if (!sel) return;
   const tab = getDetailTab();
-  const path =
-    tab === "files" ? buildPullRequestFilesRoute(sel) : buildPullRequestRoute(sel);
+  const path = tab === "files" ? buildPullRequestFilesRoute(sel) : buildPullRequestRoute(sel);
   if (getSelectedPRFromRoute()) {
     replaceUrl(path);
   } else {
@@ -223,8 +210,7 @@ export const defaultActions: Action[] = [
     scope: "view-pulls",
     binding: { key: "Escape" },
     priority: 0,
-    when: (ctx) =>
-      (ctx.page === "pulls" || ctx.page === "issues") && !isBoardRoute(ctx),
+    when: (ctx) => (ctx.page === "pulls" || ctx.page === "issues") && !isBoardRoute(ctx),
     handler: (ctx) => {
       if (ctx.page === "issues") {
         navigate("/issues");

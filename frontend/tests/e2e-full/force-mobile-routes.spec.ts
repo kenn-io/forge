@@ -4,9 +4,7 @@ async function expectPathname(page: Page, pathname: string): Promise<void> {
   await expect.poll(() => new URL(page.url()).pathname).toBe(pathname);
 }
 
-test("force-mobile flag renders canonical issue route with focus presentation", async ({
-  page,
-}) => {
+test("force-mobile flag renders canonical issue route with focus presentation", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.addInitScript(() => {
     (

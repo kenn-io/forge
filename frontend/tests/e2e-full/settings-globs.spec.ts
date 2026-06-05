@@ -1,9 +1,4 @@
-import {
-  expect,
-  request as playwrightRequest,
-  test,
-  type APIRequestContext,
-} from "@playwright/test";
+import { expect, request as playwrightRequest, test, type APIRequestContext } from "@playwright/test";
 import { startIsolatedE2EServer, type IsolatedE2EServer } from "./support/e2eServer";
 
 type RepoSummary = {
@@ -30,9 +25,7 @@ test.afterEach(async () => {
   isolatedServer = undefined;
 });
 
-test("settings shows glob match counts and refresh updates tracked repos", async ({
-  page,
-}) => {
+test("settings shows glob match counts and refresh updates tracked repos", async ({ page }) => {
   await page.goto(`${isolatedServer!.info.base_url}/settings`);
 
   await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
@@ -58,12 +51,8 @@ test("settings shows glob match counts and refresh updates tracked repos", async
   const selector = page.getByTitle("Select repository");
   await expect(selector).toBeVisible();
   await selector.click();
-  await expect(
-    page.getByRole("option", { name: /roborev-dev\/middleman/ }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("option", { name: /roborev-dev\/worker/ }),
-  ).toBeVisible();
+  await expect(page.getByRole("option", { name: /roborev-dev\/middleman/ })).toBeVisible();
+  await expect(page.getByRole("option", { name: /roborev-dev\/worker/ })).toBeVisible();
   await page.keyboard.press("Escape");
 
   await row.getByRole("button", { name: "Refresh" }).click();
@@ -90,9 +79,7 @@ test("settings shows glob match counts and refresh updates tracked repos", async
   });
 });
 
-test("settings imports a selected subset from a repository glob", async ({
-  page,
-}) => {
+test("settings imports a selected subset from a repository glob", async ({ page }) => {
   await page.goto(`${isolatedServer!.info.base_url}/settings`);
   await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
 
@@ -111,12 +98,8 @@ test("settings imports a selected subset from a repository glob", async ({
   await page.getByRole("button", { name: "Add selected repositories" }).click();
 
   await expect(page.getByRole("dialog", { name: "Add repositories" })).toHaveCount(0);
-  await expect(
-    page.locator(".repo-row", { hasText: "import-lab/api" }),
-  ).toBeVisible();
-  await expect(
-    page.locator(".repo-row", { hasText: "import-lab/worker" }),
-  ).toHaveCount(0);
+  await expect(page.locator(".repo-row", { hasText: "import-lab/api" })).toBeVisible();
+  await expect(page.locator(".repo-row", { hasText: "import-lab/worker" })).toHaveCount(0);
 
   const selector = page.getByTitle("Select repository");
   await expect(selector).toBeVisible();
@@ -125,9 +108,7 @@ test("settings imports a selected subset from a repository glob", async ({
     name: /import-lab\/api/,
   });
   await expect(apiOption).toBeVisible();
-  await expect(page.getByRole("option", { name: /import-lab\/worker/ })).toHaveCount(
-    0,
-  );
+  await expect(page.getByRole("option", { name: /import-lab\/worker/ })).toHaveCount(0);
   await apiOption.click();
   await expect(apiOption.locator("input[type='checkbox']")).toBeChecked();
   await page.keyboard.press("Escape");
@@ -176,9 +157,7 @@ test("settings imports a selected subset from a repository glob", async ({
     .toBe("");
 });
 
-test("repository import can hide forks and private repositories before adding", async ({
-  page,
-}) => {
+test("repository import can hide forks and private repositories before adding", async ({ page }) => {
   let bulkRepos:
     | Array<{
         provider: string;
@@ -312,9 +291,7 @@ test("repository import can hide forks and private repositories before adding", 
     ]);
 });
 
-test("repository import previews and adds Forgejo and Gitea repositories through the API", async ({
-  page,
-}) => {
+test("repository import previews and adds Forgejo and Gitea repositories through the API", async ({ page }) => {
   await page.goto(`${isolatedServer!.info.base_url}/settings`);
   await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
   await page.getByRole("button", { name: "Add repositories…" }).click();
@@ -332,9 +309,7 @@ test("repository import previews and adds Forgejo and Gitea repositories through
   await expect(dialog.getByText("forge-lab/archived")).toHaveCount(0);
   await dialog.getByRole("button", { name: "Add selected repositories" }).click();
   await expect(page.getByRole("dialog", { name: "Add repositories" })).toHaveCount(0);
-  await expect(
-    page.locator(".repo-row", { hasText: "forge-lab/service" }),
-  ).toBeVisible();
+  await expect(page.locator(".repo-row", { hasText: "forge-lab/service" })).toBeVisible();
 
   if (!api) throw new Error("settings-globs API context not initialized");
   let settingsResponse = await api.get("/api/v1/settings");
@@ -364,10 +339,7 @@ test("repository import previews and adds Forgejo and Gitea repositories through
       const repos = (await response.json()) as RepoSummary[];
       return repos
         .filter(
-          (repo) =>
-            repo.Platform === "forgejo" &&
-            repo.PlatformHost === "codeberg.org" &&
-            repo.Owner === "forge-lab",
+          (repo) => repo.Platform === "forgejo" && repo.PlatformHost === "codeberg.org" && repo.Owner === "forge-lab",
         )
         .map((repo) => repo.Name)
         .sort()
@@ -390,14 +362,10 @@ test("repository import previews and adds Forgejo and Gitea repositories through
   await giteaDialog.getByLabel("Hide private").check();
   await expect(giteaDialog.getByText("gitea-team/service")).toBeVisible();
   await expect(giteaDialog.getByText("gitea-team/private-service")).toHaveCount(0);
-  await giteaDialog
-    .getByRole("button", { name: "Add selected repositories" })
-    .click();
+  await giteaDialog.getByRole("button", { name: "Add selected repositories" }).click();
 
   await expect(page.getByRole("dialog", { name: "Add repositories" })).toHaveCount(0);
-  await expect(
-    page.locator(".repo-row", { hasText: "gitea-team/service" }),
-  ).toBeVisible();
+  await expect(page.locator(".repo-row", { hasText: "gitea-team/service" })).toBeVisible();
 
   settingsResponse = await api.get("/api/v1/settings");
   settings = (await settingsResponse.json()) as typeof settings;
@@ -441,9 +409,7 @@ test("repository import traps keyboard focus inside the dialog", async ({ page }
   await expect(dialog.getByRole("button", { name: "Close" })).toBeFocused();
 });
 
-test("repository import clears stale preview results after failed preview", async ({
-  page,
-}) => {
+test("repository import clears stale preview results after failed preview", async ({ page }) => {
   await page.goto(`${isolatedServer!.info.base_url}/settings`);
   await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
 
@@ -455,9 +421,7 @@ test("repository import clears stale preview results after failed preview", asyn
 
   await dialog.getByLabel("Repository pattern").fill("bad-owner/[invalid");
   await dialog.getByRole("button", { name: "Preview" }).click();
-  await expect(
-    dialog.getByText(/invalid glob pattern|GitHub API error|glob syntax/),
-  ).toBeVisible();
+  await expect(dialog.getByText(/invalid glob pattern|GitHub API error|glob syntax/)).toBeVisible();
   await expect(dialog.getByText("roborev-dev/middleman")).toHaveCount(0);
 });
 

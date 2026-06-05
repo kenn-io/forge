@@ -1,7 +1,4 @@
-import {
-  getUIConfig,
-  getSidebarWidth as getEmbeddedSidebarWidth,
-} from "./embed-config.svelte.js";
+import { getUIConfig, getSidebarWidth as getEmbeddedSidebarWidth } from "./embed-config.svelte.js";
 
 const STORAGE_KEY = "middleman-sidebar";
 const WIDTH_STORAGE_KEY = "middleman-sidebar-width";

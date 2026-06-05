@@ -13,9 +13,7 @@ if (chromiumBinary) {
 test.describe.serial("issue description task list", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/issues/github/acme/widgets/11");
-    await page
-      .locator(".issue-detail")
-      .waitFor({ state: "visible", timeout: 15_000 });
+    await page.locator(".issue-detail").waitFor({ state: "visible", timeout: 15_000 });
     await page.locator(".body-section .markdown-body").waitFor({ state: "visible" });
     // Give the page-load background sync time to settle so it can't
     // race with our optimistic click and clobber the local body.
@@ -32,21 +30,13 @@ test.describe.serial("issue description task list", () => {
     const patchRoute = /\/api\/v1\/issues\/[^/]+\/[^/]+\/[^/]+\/11$/;
     const persisted = page.waitForResponse(
       (resp) => {
-        if (
-          resp.request().method() !== "PATCH" ||
-          !patchRoute.test(resp.url()) ||
-          !resp.ok()
-        ) {
+        if (resp.request().method() !== "PATCH" || !patchRoute.test(resp.url()) || !resp.ok()) {
           return false;
         }
         const body = resp.request().postData() ?? "";
         return (
-          body.includes(
-            `${checkboxMarker(cb0Expected)} System preference detected on first launch`,
-          ) &&
-          body.includes(
-            `${checkboxMarker(cb1Expected)} Manual toggle in settings overrides system`,
-          )
+          body.includes(`${checkboxMarker(cb0Expected)} System preference detected on first launch`) &&
+          body.includes(`${checkboxMarker(cb1Expected)} Manual toggle in settings overrides system`)
         );
       },
       { timeout: 5_000 },
@@ -62,25 +52,17 @@ test.describe.serial("issue description task list", () => {
     const reloadedBody = page.locator(".body-section .markdown-body");
     await reloadedBody.waitFor({ state: "visible" });
 
-    await expect(
-      reloadedBody.locator('input[type="checkbox"][data-task-index="0"]'),
-    ).toBeChecked({
+    await expect(reloadedBody.locator('input[type="checkbox"][data-task-index="0"]')).toBeChecked({
       checked: cb0Expected,
     });
-    await expect(
-      reloadedBody.locator('input[type="checkbox"][data-task-index="1"]'),
-    ).toBeChecked({
+    await expect(reloadedBody.locator('input[type="checkbox"][data-task-index="1"]')).toBeChecked({
       checked: cb1Expected,
     });
   });
 
-  test("drag handle reorders a task item and persists on reload", async ({
-    page,
-  }) => {
+  test("drag handle reorders a task item and persists on reload", async ({ page }) => {
     const body = page.locator(".body-section .markdown-body");
-    const firstLabel = await body
-      .locator('.task-list-item--interactive[data-task-index="0"]')
-      .textContent();
+    const firstLabel = await body.locator('.task-list-item--interactive[data-task-index="0"]').textContent();
     expect(firstLabel ?? "").toMatch(/System preference/);
 
     const handle0 = body.locator('.task-drag-handle[data-task-index="0"]');
@@ -99,13 +81,9 @@ test.describe.serial("issue description task list", () => {
     await page.mouse.down();
     const steps = 8;
     for (let i = 1; i <= steps; i++) {
-      await page.mouse.move(
-        startX + ((targetX - startX) * i) / steps,
-        startY + ((targetY - startY) * i) / steps,
-        {
-          steps: 4,
-        },
-      );
+      await page.mouse.move(startX + ((targetX - startX) * i) / steps, startY + ((targetY - startY) * i) / steps, {
+        steps: 4,
+      });
     }
     await page.mouse.up();
 
@@ -117,19 +95,13 @@ test.describe.serial("issue description task list", () => {
     // The originally-first item ("System preference …") now sits at
     // index 2 after the drag; the originally-second item ("Manual
     // toggle …") is now at index 0.
-    const slot0 = await reloadedBody
-      .locator('.task-list-item--interactive[data-task-index="0"]')
-      .textContent();
-    const slot2 = await reloadedBody
-      .locator('.task-list-item--interactive[data-task-index="2"]')
-      .textContent();
+    const slot0 = await reloadedBody.locator('.task-list-item--interactive[data-task-index="0"]').textContent();
+    const slot2 = await reloadedBody.locator('.task-list-item--interactive[data-task-index="2"]').textContent();
     expect(slot0 ?? "").toMatch(/Manual toggle/);
     expect(slot2 ?? "").toMatch(/System preference/);
   });
 
-  test("queued body save wins when an older PATCH finishes after a newer click", async ({
-    page,
-  }) => {
+  test("queued body save wins when an older PATCH finishes after a newer click", async ({ page }) => {
     // Hold the first PATCH response so we can queue a newer body
     // while it's in flight. Mirrors the PR test — verifies the
     // single-flight body-save queue for the issue path.
@@ -189,14 +161,10 @@ test.describe.serial("issue description task list", () => {
     await page.reload();
     const reloadedBody = page.locator(".body-section .markdown-body");
     await reloadedBody.waitFor({ state: "visible" });
-    await expect(
-      reloadedBody.locator('input[type="checkbox"][data-task-index="0"]'),
-    ).toBeChecked({
+    await expect(reloadedBody.locator('input[type="checkbox"][data-task-index="0"]')).toBeChecked({
       checked: !cb0Initial,
     });
-    await expect(
-      reloadedBody.locator('input[type="checkbox"][data-task-index="1"]'),
-    ).toBeChecked({
+    await expect(reloadedBody.locator('input[type="checkbox"][data-task-index="1"]')).toBeChecked({
       checked: !cb1Initial,
     });
   });

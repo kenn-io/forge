@@ -3,13 +3,7 @@ import type { RepoFilter, RepoSort } from "./repoSummary.js";
 const storageKey = "middleman:repoSummaryFilters";
 
 const validFilters = new Set<RepoFilter>(["all", "prs", "issues", "stale"]);
-const validSorts = new Set<RepoSort>([
-  "name",
-  "open-prs",
-  "open-issues",
-  "activity",
-  "stale",
-]);
+const validSorts = new Set<RepoSort>(["name", "open-prs", "open-issues", "activity", "stale"]);
 
 export interface RepoSummaryFilters {
   searchQuery: string;
@@ -38,9 +32,7 @@ function normalizeFilters(value: unknown): RepoSummaryFilters {
   const candidate = value as Partial<RepoSummaryFilters>;
   return {
     searchQuery:
-      typeof candidate.searchQuery === "string"
-        ? candidate.searchQuery
-        : defaultRepoSummaryFilters.searchQuery,
+      typeof candidate.searchQuery === "string" ? candidate.searchQuery : defaultRepoSummaryFilters.searchQuery,
     activeFilter:
       candidate.activeFilter && validFilters.has(candidate.activeFilter)
         ? candidate.activeFilter

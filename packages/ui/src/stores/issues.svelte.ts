@@ -39,10 +39,7 @@ export interface IssuesStoreOptions {
   };
 }
 
-function apiErrorMessage(
-  error: { detail?: string; title?: string },
-  fallback: string,
-): string {
+function apiErrorMessage(error: { detail?: string; title?: string }, fallback: string): string {
   return error.detail ?? error.title ?? fallback;
 }
 
@@ -56,10 +53,7 @@ function syncIntentRank(mode: IssueDetailSyncMode): number {
   return 0;
 }
 
-function strongerSyncMode(
-  a: IssueDetailSyncMode,
-  b: IssueDetailSyncMode,
-): IssueDetailSyncMode {
+function strongerSyncMode(a: IssueDetailSyncMode, b: IssueDetailSyncMode): IssueDetailSyncMode {
   return syncIntentRank(b) > syncIntentRank(a) ? b : a;
 }
 
@@ -279,11 +273,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     return unsavedLocalBody !== null;
   }
 
-  function currentIssuePlatformHost(
-    owner: string,
-    name: string,
-    number: number,
-  ): string | undefined {
+  function currentIssuePlatformHost(owner: string, name: string, number: number): string | undefined {
     if (
       issueDetail &&
       issueDetail.repo_owner === owner &&
@@ -315,11 +305,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     );
   }
 
-  function currentIssueDetailRef(
-    owner: string,
-    name: string,
-    number: number,
-  ): IssueDetailRequestRef {
+  function currentIssueDetailRef(owner: string, name: string, number: number): IssueDetailRequestRef {
     const provider = issueDetail?.repo?.provider ?? selectedIssue?.provider;
     const repoPath = issueDetail?.repo?.repo_path ?? selectedIssue?.repoPath;
     if (!provider || !repoPath) {
@@ -360,15 +346,8 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     // sync mode joins the in-flight load and may promote the sync
     // intent if its requested mode is stronger.
     const key = `${requestRef.provider}:${requestRef.platformHost}:${requestRef.repoPath}/${number}`;
-    if (
-      detailLoading &&
-      activeDetailLoad?.key === key &&
-      activeDetailLoad.promise !== null
-    ) {
-      activeDetailLoad.syncMode = strongerSyncMode(
-        activeDetailLoad.syncMode,
-        syncMode,
-      );
+    if (detailLoading && activeDetailLoad?.key === key && activeDetailLoad.promise !== null) {
+      activeDetailLoad.syncMode = strongerSyncMode(activeDetailLoad.syncMode, syncMode);
       return activeDetailLoad.promise;
     }
 
@@ -385,17 +364,14 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     detailError = null;
     const promise = (async () => {
       try {
-        const { data, error: requestError } = await apiClient.GET(
-          providerItemPath("issues", requestRef, ""),
-          {
-            params: {
-              path: {
-                ...providerRouteParams(requestRef),
-                number: requestRef.number,
-              },
+        const { data, error: requestError } = await apiClient.GET(providerItemPath("issues", requestRef, ""), {
+          params: {
+            path: {
+              ...providerRouteParams(requestRef),
+              number: requestRef.number,
             },
           },
-        );
+        });
         if (gen !== issueSyncGeneration) return;
         if (requestError) {
           throw new Error(apiErrorMessage(requestError, "failed to load issue"));
@@ -421,14 +397,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       if (gen === issueSyncGeneration && finalSyncMode === true) {
         void syncIssueDetail(owner, name, number, gen, requestRef);
       } else if (gen === issueSyncGeneration && finalSyncMode === "background") {
-        void enqueueBackgroundIssueSync(
-          owner,
-          name,
-          number,
-          gen,
-          issueDetail?.detail_fetched_at,
-          requestRef,
-        );
+        void enqueueBackgroundIssueSync(owner, name, number, gen, issueDetail?.detail_fetched_at, requestRef);
       }
     })();
     currentLoad.promise = promise;
@@ -445,26 +414,16 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   ): Promise<void> {
     detailSyncing = true;
     try {
-      const { error: requestError } = await apiClient.POST(
-        providerItemPath("issues", requestRef, "/sync/async"),
-        {
-          params: {
-            path: {
-              ...providerRouteParams(requestRef),
-              number: requestRef.number,
-            },
+      const { error: requestError } = await apiClient.POST(providerItemPath("issues", requestRef, "/sync/async"), {
+        params: {
+          path: {
+            ...providerRouteParams(requestRef),
+            number: requestRef.number,
           },
         },
-      );
+      });
       if (requestError) return;
-      await refreshAfterBackgroundIssueSync(
-        owner,
-        name,
-        number,
-        gen,
-        previousFetchedAt,
-        requestRef,
-      );
+      await refreshAfterBackgroundIssueSync(owner, name, number, gen, previousFetchedAt, requestRef);
     } finally {
       if (gen === issueSyncGeneration) detailSyncing = false;
       void syncDep?.refreshSyncStatus?.();
@@ -500,14 +459,11 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   ): Promise<void> {
     detailSyncing = true;
     try {
-      const { data, error: requestError } = await apiClient.POST(
-        providerItemPath("issues", ref, "/sync"),
-        {
-          params: {
-            path: { ...providerRouteParams(ref), number: ref.number },
-          },
+      const { data, error: requestError } = await apiClient.POST(providerItemPath("issues", ref, "/sync"), {
+        params: {
+          path: { ...providerRouteParams(ref), number: ref.number },
         },
-      );
+      });
       if (gen !== issueSyncGeneration) return;
       if (requestError) {
         throw new Error(apiErrorMessage(requestError, "sync failed"));
@@ -593,22 +549,14 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     unsavedLocalBody = null;
   }
 
-  async function setIssueLabels(
-    owner: string,
-    name: string,
-    number: number,
-    labels: string[],
-  ): Promise<Label[]> {
+  async function setIssueLabels(owner: string, name: string, number: number, labels: string[]): Promise<Label[]> {
     const ref = currentIssueDetailRef(owner, name, number);
-    const { data, error: requestError } = await apiClient.PUT(
-      providerItemPath("issues", ref, "/labels"),
-      {
-        params: {
-          path: { ...providerRouteParams(ref), number },
-        },
-        body: { labels },
+    const { data, error: requestError } = await apiClient.PUT(providerItemPath("issues", ref, "/labels"), {
+      params: {
+        path: { ...providerRouteParams(ref), number },
       },
-    );
+      body: { labels },
+    });
     if (requestError) {
       const message = apiErrorMessage(requestError, "failed to update labels");
       detailError = message;
@@ -628,25 +576,17 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     return nextLabels;
   }
 
-  async function submitIssueComment(
-    owner: string,
-    name: string,
-    number: number,
-    body: string,
-  ): Promise<void> {
+  async function submitIssueComment(owner: string, name: string, number: number, body: string): Promise<void> {
     const ref = currentIssueDetailRef(owner, name, number);
 
     detailError = null;
     try {
-      const { error: requestError } = await apiClient.POST(
-        providerItemPath("issues", ref, "/comments"),
-        {
-          params: {
-            path: { ...providerRouteParams(ref), number },
-          },
-          body: { body },
+      const { error: requestError } = await apiClient.POST(providerItemPath("issues", ref, "/comments"), {
+        params: {
+          path: { ...providerRouteParams(ref), number },
         },
-      );
+        body: { body },
+      });
       if (requestError) {
         throw new Error(apiErrorMessage(requestError, "failed to post comment"));
       }
@@ -679,19 +619,16 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
 
     detailError = null;
     try {
-      const { error: requestError } = await apiClient.PATCH(
-        providerItemPath("issues", ref, "/comments/{comment_id}"),
-        {
-          params: {
-            path: {
-              ...providerRouteParams(ref),
-              number,
-              comment_id: commentID,
-            },
+      const { error: requestError } = await apiClient.PATCH(providerItemPath("issues", ref, "/comments/{comment_id}"), {
+        params: {
+          path: {
+            ...providerRouteParams(ref),
+            number,
+            comment_id: commentID,
           },
-          body: { body },
         },
-      );
+        body: { body },
+      });
       if (requestError) {
         throw new Error(apiErrorMessage(requestError, "failed to edit comment"));
       }
@@ -717,11 +654,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     body: string,
   ): void {
     if (!issueDetail) return;
-    if (
-      issueDetail.repo_owner !== owner ||
-      issueDetail.repo_name !== name ||
-      issueDetail.issue.Number !== number
-    ) {
+    if (issueDetail.repo_owner !== owner || issueDetail.repo_name !== name || issueDetail.issue.Number !== number) {
       return;
     }
     unsavedLocalBody = { provider, platformHost, owner, name, number };
@@ -780,18 +713,15 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     // that happens to share owner/name/number.
     let localBodyMatchesSent = false;
     try {
-      const { data, error: requestError } = await apiClient.PATCH(
-        providerItemPath("issues", ref, ""),
-        {
-          params: {
-            path: {
-              ...providerRouteParams(ref),
-              number,
-            },
+      const { data, error: requestError } = await apiClient.PATCH(providerItemPath("issues", ref, ""), {
+        params: {
+          path: {
+            ...providerRouteParams(ref),
+            number,
           },
-          body: { body },
         },
-      );
+        body: { body },
+      });
       if (requestError) {
         throw new Error(apiErrorMessage(requestError, "failed to update issue"));
       }
@@ -845,13 +775,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       repoPath: string;
     },
   ): Promise<void> {
-    const key = issueSaveQueueKey(
-      routeRef.provider,
-      routeRef.platformHost,
-      owner,
-      name,
-      number,
-    );
+    const key = issueSaveQueueKey(routeRef.provider, routeRef.platformHost, owner, name, number);
     queuedIssueSaves.set(key, { body, routeRef });
     const existing = inflightIssueSaves.get(key);
     if (existing) return existing;
@@ -921,12 +845,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       issueDetail.repo_name === name &&
       issueDetail.issue.Number === number
     ) {
-      await loadIssueDetail(
-        owner,
-        name,
-        number,
-        currentIssueDetailRef(owner, name, number),
-      );
+      await loadIssueDetail(owner, name, number, currentIssueDetailRef(owner, name, number));
     }
   }
 
@@ -966,8 +885,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
         (i.repo_owner ?? "") === selectedIssue!.owner &&
         (i.repo_name ?? "") === selectedIssue!.name &&
         i.Number === selectedIssue!.number &&
-        (!selectedIssue!.platformHost ||
-          i.platform_host === selectedIssue!.platformHost),
+        (!selectedIssue!.platformHost || i.platform_host === selectedIssue!.platformHost),
     );
     if (idx < list.length - 1) {
       const next = list[idx + 1];
@@ -1006,8 +924,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
         (i.repo_owner ?? "") === selectedIssue!.owner &&
         (i.repo_name ?? "") === selectedIssue!.name &&
         i.Number === selectedIssue!.number &&
-        (!selectedIssue!.platformHost ||
-          i.platform_host === selectedIssue!.platformHost),
+        (!selectedIssue!.platformHost || i.platform_host === selectedIssue!.platformHost),
     );
     if (idx > 0) {
       const prev = list[idx - 1];

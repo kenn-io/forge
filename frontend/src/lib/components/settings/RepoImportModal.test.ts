@@ -148,9 +148,7 @@ describe("RepoImportModal", () => {
     await fireEvent.input(screen.getByLabelText("Filter repositories"), {
       target: { value: "" },
     });
-    await fireEvent.click(
-      screen.getByRole("button", { name: "Add selected repositories" }),
-    );
+    await fireEvent.click(screen.getByRole("button", { name: "Add selected repositories" }));
 
     await waitFor(() =>
       expect(bulk).toHaveBeenCalledWith([
@@ -220,9 +218,7 @@ describe("RepoImportModal", () => {
     expect(screen.queryByText("acme/widget")).toBeNull();
     expect(screen.getByText("Selected 2 of 2")).toBeTruthy();
 
-    await fireEvent.click(
-      screen.getByRole("button", { name: "Add selected repositories" }),
-    );
+    await fireEvent.click(screen.getByRole("button", { name: "Add selected repositories" }));
 
     await waitFor(() =>
       expect(bulk).toHaveBeenCalledWith([
@@ -273,9 +269,7 @@ describe("RepoImportModal", () => {
       target: { value: "team/subgroup/project-*" },
     });
     await fireEvent.click(screen.getByRole("button", { name: "Preview" }));
-    expect((await screen.findByRole("alert")).textContent).toContain(
-      "Format: owner/pattern",
-    );
+    expect((await screen.findByRole("alert")).textContent).toContain("Format: owner/pattern");
     expect(preview).not.toHaveBeenCalled();
 
     await fireEvent.change(provider, { target: { value: "gitea" } });
@@ -311,15 +305,11 @@ describe("RepoImportModal", () => {
     close.focus();
     await fireEvent.keyDown(close, { key: "Tab", shiftKey: true });
 
-    expect(document.activeElement).toBe(
-      screen.getByRole("button", { name: "Cancel" }),
-    );
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Cancel" }));
   });
 
   it("ignores stale preview responses after input changes", async () => {
-    let resolveFirst: (
-      value: Awaited<ReturnType<typeof previewRepos>>,
-    ) => void = () => {};
+    let resolveFirst: (value: Awaited<ReturnType<typeof previewRepos>>) => void = () => {};
     preview.mockReturnValueOnce(
       new Promise((resolve) => {
         resolveFirst = resolve;
@@ -371,9 +361,7 @@ describe("RepoImportModal", () => {
     });
     await fireEvent.click(screen.getByRole("button", { name: "Preview" }));
 
-    expect((await screen.findByRole("alert")).textContent).toContain(
-      "GitHub API error: boom",
-    );
+    expect((await screen.findByRole("alert")).textContent).toContain("GitHub API error: boom");
     expect(screen.queryByText("acme/api")).toBeNull();
   });
 });

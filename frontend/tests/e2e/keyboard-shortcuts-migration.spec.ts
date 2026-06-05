@@ -21,9 +21,6 @@ test.describe("migrated global shortcuts", () => {
     const sidebar = page.locator("[data-test='sidebar']");
     const wasCollapsed = (await sidebar.getAttribute("data-collapsed")) === "true";
     await page.keyboard.press("Meta+BracketLeft");
-    await expect(sidebar).toHaveAttribute(
-      "data-collapsed",
-      (!wasCollapsed).toString(),
-    );
+    await expect(sidebar).toHaveAttribute("data-collapsed", (!wasCollapsed).toString());
   });
 });

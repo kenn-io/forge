@@ -1,9 +1,5 @@
 import { canonicalProvider } from "../api/provider-routes.js";
-import {
-  buildIssueRoute,
-  buildRoutedItemRoute,
-  type RepositoryRouteRef,
-} from "../routes.js";
+import { buildIssueRoute, buildRoutedItemRoute, type RepositoryRouteRef } from "../routes.js";
 
 export type ItemReferenceType = "pr" | "issue";
 
@@ -34,10 +30,7 @@ const defaultHosts: Record<string, string> = {
   gitlab: "gitlab.com",
 };
 
-function providerHost(
-  provider: string,
-  platformHost: string | undefined,
-): string | null {
+function providerHost(provider: string, platformHost: string | undefined): string | null {
   return platformHost?.trim() || defaultHosts[canonicalProvider(provider)] || null;
 }
 
@@ -50,9 +43,7 @@ function encodeRepoPath(repoPath: string): string {
     .join("/");
 }
 
-export function buildCanonicalProviderItemURL(
-  ref: ResolvableItemReference,
-): string | undefined {
+export function buildCanonicalProviderItemURL(ref: ResolvableItemReference): string | undefined {
   const host = providerHost(ref.provider, ref.platformHost);
   const repoPath = encodeRepoPath(ref.repoPath);
   if (!host || !repoPath) return undefined;
@@ -83,9 +74,7 @@ export function buildItemReferenceHref(ref: ResolvableItemReference): string {
   return buildIssueRoute(ref);
 }
 
-export function itemReferenceDataAttributes(
-  ref: ResolvableItemReference,
-): ItemReferenceDataAttributes {
+export function itemReferenceDataAttributes(ref: ResolvableItemReference): ItemReferenceDataAttributes {
   const externalUrl = ref.externalUrl ?? buildCanonicalProviderItemURL(ref);
   return {
     "data-provider": ref.provider,
@@ -105,9 +94,7 @@ export function itemReferenceDataAttributes(
   };
 }
 
-export function buildItemReferenceLink(
-  ref: ResolvableItemReference,
-): ItemReferenceLink {
+export function buildItemReferenceLink(ref: ResolvableItemReference): ItemReferenceLink {
   return {
     href: buildItemReferenceHref(ref),
     dataAttributes: itemReferenceDataAttributes(ref),
@@ -115,17 +102,10 @@ export function buildItemReferenceLink(
 }
 
 function escapeAttribute(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
+  return value.replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 }
 
-export function itemReferenceAnchorAttributes(
-  ref: ResolvableItemReference,
-  className = "item-ref",
-): string {
+export function itemReferenceAnchorAttributes(ref: ResolvableItemReference, className = "item-ref"): string {
   const link = buildItemReferenceLink(ref);
   const attrs: Array<[string, string | undefined]> = [
     ["class", className],

@@ -11,14 +11,7 @@ export interface JobsStoreOptions {
   onError?: (msg: string) => void;
 }
 
-type SortColumn =
-  | "id"
-  | "status"
-  | "verdict"
-  | "agent"
-  | "elapsed"
-  | "job_type"
-  | "enqueued_at";
+type SortColumn = "id" | "status" | "verdict" | "agent" | "elapsed" | "job_type" | "enqueued_at";
 type SortDirection = "asc" | "desc";
 
 export function createJobsStore(opts: JobsStoreOptions) {

@@ -456,11 +456,7 @@ describe("DiffView", () => {
           toJSON: () => ({}),
         } as DOMRect;
       }
-      if (
-        this instanceof HTMLElement &&
-        this.dataset.diffPath === "b.ts" &&
-        this.dataset.diffNewLine === "2"
-      ) {
+      if (this instanceof HTMLElement && this.dataset.diffPath === "b.ts" && this.dataset.diffNewLine === "2") {
         const diffArea = document.querySelector(".diff-area") as HTMLDivElement;
         const top = 460 - diffArea.scrollTop;
         return {
@@ -528,11 +524,7 @@ describe("DiffView", () => {
           toJSON: () => ({}),
         } as DOMRect;
       }
-      if (
-        this instanceof HTMLElement &&
-        this.dataset.diffPath === "b.ts" &&
-        this.dataset.diffNewLine === "42"
-      ) {
+      if (this instanceof HTMLElement && this.dataset.diffPath === "b.ts" && this.dataset.diffNewLine === "42") {
         const diffArea = document.querySelector(".diff-area") as HTMLDivElement;
         const top = 460 - diffArea.scrollTop;
         return {

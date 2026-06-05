@@ -69,14 +69,8 @@ describe("SplitResizeHandle", () => {
     await fireEvent.keyDown(handle, { key: "ArrowRight" });
 
     expect(onResizeStart).toHaveBeenCalledTimes(2);
-    expect(onResize).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({ deltaX: -32 }),
-    );
-    expect(onResize).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({ deltaX: 32 }),
-    );
+    expect(onResize).toHaveBeenNthCalledWith(1, expect.objectContaining({ deltaX: -32 }));
+    expect(onResize).toHaveBeenNthCalledWith(2, expect.objectContaining({ deltaX: 32 }));
     expect(onResizeEnd).toHaveBeenCalledTimes(2);
   });
 });

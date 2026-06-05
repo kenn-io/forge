@@ -37,9 +37,7 @@ describe("DiffReviewDraftTray", () => {
 
   it("keeps review summary text when publishing fails", async () => {
     const { publish } = renderTray(false);
-    const summary = screen.getByPlaceholderText(
-      "Review summary",
-    ) as HTMLTextAreaElement;
+    const summary = screen.getByPlaceholderText("Review summary") as HTMLTextAreaElement;
 
     await fireEvent.input(summary, {
       target: { value: "Keep this summary" },

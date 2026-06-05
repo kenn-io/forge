@@ -1,22 +1,13 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { compile } from "svelte/compiler";
-import {
-  afterAll,
-  afterEach,
-  beforeAll,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vite-plus/test";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vite-plus/test";
 import componentSource from "./EventTimeline.svelte?raw";
 import EventTimeline from "./EventTimeline.svelte";
 import { STORES_KEY } from "../../context.js";
 import type { DiffResult, PREvent } from "../../api/types.js";
 import type { DiffStore } from "../../stores/diff.svelte.js";
 
-const compiledCss =
-  compile(componentSource, { filename: "EventTimeline.svelte" }).css?.code ?? "";
+const compiledCss = compile(componentSource, { filename: "EventTimeline.svelte" }).css?.code ?? "";
 
 type GlobalWithResizeObserver = { ResizeObserver?: unknown };
 type GlobalWithCSSStyleSheet = {
@@ -38,11 +29,9 @@ beforeAll(() => {
   }
   (globalThis as GlobalWithResizeObserver).ResizeObserver = ResizeObserverStub;
 
-  originalReplaceSync = (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet
-    ?.prototype.replaceSync;
+  originalReplaceSync = (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet?.prototype.replaceSync;
   if ((globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet?.prototype) {
-    (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet.prototype.replaceSync ??=
-      function replaceSync(): void {};
+    (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet.prototype.replaceSync ??= function replaceSync(): void {};
   }
 });
 
@@ -54,11 +43,11 @@ afterAll(() => {
   }
   if ((globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet?.prototype) {
     if (originalReplaceSync) {
-      (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet.prototype.replaceSync =
-        originalReplaceSync as (text: string) => void;
+      (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet.prototype.replaceSync = originalReplaceSync as (
+        text: string,
+      ) => void;
     } else {
-      delete (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet.prototype
-        .replaceSync;
+      delete (globalThis as GlobalWithCSSStyleSheet).CSSStyleSheet.prototype.replaceSync;
     }
   }
 });
@@ -170,10 +159,7 @@ function makeDiffStore(overrides: Partial<DiffStore> = {}): DiffStore {
   } as unknown as DiffStore;
 }
 
-function findCompiledStyleRule(
-  selector: string,
-  exclude: string[] = [],
-): CSSStyleDeclaration {
+function findCompiledStyleRule(selector: string, exclude: string[] = []): CSSStyleDeclaration {
   const style = document.createElement("style");
   style.textContent = compiledCss;
   document.head.appendChild(style);
@@ -281,15 +267,10 @@ describe("EventTimeline", () => {
     expect(body!.classList.contains("event-card")).toBe(false);
 
     const cardStyle = findCompiledStyleRule(".event-card");
-    const bodyStyle = findCompiledStyleRule(".event-body", [
-      ".event-body-wrap",
-      ".markdown-body",
-    ]);
+    const bodyStyle = findCompiledStyleRule(".event-body", [".event-body-wrap", ".markdown-body"]);
 
     expect(cardStyle.getPropertyValue("background")).toBe("var(--bg-surface)");
-    expect(cardStyle.getPropertyValue("border")).toBe(
-      "1px solid var(--border-muted)",
-    );
+    expect(cardStyle.getPropertyValue("border")).toBe("1px solid var(--border-muted)");
     expect(cardStyle.getPropertyValue("border-radius")).toBe("var(--radius-md)");
     expect(bodyStyle.getPropertyValue("background")).toBe("");
     expect(bodyStyle.getPropertyValue("border")).toBe("");
@@ -348,15 +329,9 @@ describe("EventTimeline", () => {
     expect(screen.getByRole("list", { name: "Threaded replies" })).toBeTruthy();
 
     const threadText = container.querySelector(".event-card")?.textContent ?? "";
-    expect(threadText.indexOf("Main threaded comment")).toBeLessThan(
-      threadText.indexOf("Newest threaded reply"),
-    );
-    expect(threadText.indexOf("Newest threaded reply")).toBeLessThan(
-      threadText.indexOf("Middle threaded reply"),
-    );
-    expect(threadText.indexOf("Middle threaded reply")).toBeLessThan(
-      threadText.indexOf("Oldest threaded reply"),
-    );
+    expect(threadText.indexOf("Main threaded comment")).toBeLessThan(threadText.indexOf("Newest threaded reply"));
+    expect(threadText.indexOf("Newest threaded reply")).toBeLessThan(threadText.indexOf("Middle threaded reply"));
+    expect(threadText.indexOf("Middle threaded reply")).toBeLessThan(threadText.indexOf("Oldest threaded reply"));
   });
 
   it("renders positioned discussion threads with the same root and reply ordering", async () => {
@@ -432,9 +407,7 @@ describe("EventTimeline", () => {
     expect(container.querySelectorAll(".thread-reply")).toHaveLength(2);
 
     const threadText = container.querySelector(".event-card")?.textContent ?? "";
-    expect(threadText.indexOf("This needs a named helper")).toBeLessThan(
-      threadText.indexOf("Pushed an update"),
-    );
+    expect(threadText.indexOf("This needs a named helper")).toBeLessThan(threadText.indexOf("Pushed an update"));
     expect(threadText.indexOf("Pushed an update")).toBeLessThan(
       threadText.indexOf("The wrapper should stay close to the call site"),
     );
@@ -497,16 +470,10 @@ describe("EventTimeline", () => {
     expect(screen.getByText("4h ago")).toBeTruthy();
     expect(document.querySelector(".event--compact")).toBeTruthy();
     expect(document.querySelector(".commit-title")).toBeNull();
-    expect(
-      document
-        .querySelector(".commit-body-details")
-        ?.classList.contains("event-body"),
-    ).toBe(true);
-    expect(
-      document
-        .querySelector(".event-header--compact")
-        ?.lastElementChild?.classList.contains("event-time"),
-    ).toBe(true);
+    expect(document.querySelector(".commit-body-details")?.classList.contains("event-body")).toBe(true);
+    expect(document.querySelector(".event-header--compact")?.lastElementChild?.classList.contains("event-time")).toBe(
+      true,
+    );
   });
 
   it("expands single-line commit messages when commit details are shown", () => {
@@ -553,11 +520,9 @@ describe("EventTimeline", () => {
     expect(screen.getByText("feat: add timeline filters")).toBeTruthy();
     expect(screen.getByText("4h ago")).toBeTruthy();
     expect(screen.queryByText("Long body")).toBeNull();
-    expect(
-      document
-        .querySelector(".event-header--compact")
-        ?.lastElementChild?.classList.contains("event-time"),
-    ).toBe(true);
+    expect(document.querySelector(".event-header--compact")?.lastElementChild?.classList.contains("event-time")).toBe(
+      true,
+    );
   });
 
   it("renders force pushes as boundaries between commit generations", () => {
@@ -610,18 +575,10 @@ describe("EventTimeline", () => {
     });
 
     const text = container.textContent ?? "";
-    expect(text.indexOf("new C3 after rebase")).toBeLessThan(
-      text.indexOf("ccccccc -> fffffff"),
-    );
-    expect(text.indexOf("new C2 after rebase")).toBeLessThan(
-      text.indexOf("ccccccc -> fffffff"),
-    );
-    expect(text.indexOf("ccccccc -> fffffff")).toBeLessThan(
-      text.indexOf("old C3 before rebase"),
-    );
-    expect(text.indexOf("ccccccc -> fffffff")).toBeLessThan(
-      text.indexOf("old C2 before rebase"),
-    );
+    expect(text.indexOf("new C3 after rebase")).toBeLessThan(text.indexOf("ccccccc -> fffffff"));
+    expect(text.indexOf("new C2 after rebase")).toBeLessThan(text.indexOf("ccccccc -> fffffff"));
+    expect(text.indexOf("ccccccc -> fffffff")).toBeLessThan(text.indexOf("old C3 before rebase"));
+    expect(text.indexOf("ccccccc -> fffffff")).toBeLessThan(text.indexOf("old C2 before rebase"));
   });
 
   it("keeps later commits in chronological order after force-push generations", () => {
@@ -674,18 +631,10 @@ describe("EventTimeline", () => {
     });
 
     const text = container.textContent ?? "";
-    expect(text.indexOf("follow-up after force push")).toBeLessThan(
-      text.indexOf("comment after force push"),
-    );
-    expect(text.indexOf("comment after force push")).toBeLessThan(
-      text.indexOf("new head after rebase"),
-    );
-    expect(text.indexOf("new head after rebase")).toBeLessThan(
-      text.indexOf("ccccccc -> fffffff"),
-    );
-    expect(text.indexOf("ccccccc -> fffffff")).toBeLessThan(
-      text.indexOf("old head before rebase"),
-    );
+    expect(text.indexOf("follow-up after force push")).toBeLessThan(text.indexOf("comment after force push"));
+    expect(text.indexOf("comment after force push")).toBeLessThan(text.indexOf("new head after rebase"));
+    expect(text.indexOf("new head after rebase")).toBeLessThan(text.indexOf("ccccccc -> fffffff"));
+    expect(text.indexOf("ccccccc -> fffffff")).toBeLessThan(text.indexOf("old head before rebase"));
   });
 
   it("keeps consecutive force pushes between their commit generations", () => {
@@ -741,18 +690,10 @@ describe("EventTimeline", () => {
     });
 
     const text = container.textContent ?? "";
-    expect(text.indexOf("second generation head")).toBeLessThan(
-      text.indexOf("6666666 -> 9999999"),
-    );
-    expect(text.indexOf("6666666 -> 9999999")).toBeLessThan(
-      text.indexOf("first generation head"),
-    );
-    expect(text.indexOf("first generation head")).toBeLessThan(
-      text.indexOf("3333333 -> 6666666"),
-    );
-    expect(text.indexOf("3333333 -> 6666666")).toBeLessThan(
-      text.indexOf("original generation head"),
-    );
+    expect(text.indexOf("second generation head")).toBeLessThan(text.indexOf("6666666 -> 9999999"));
+    expect(text.indexOf("6666666 -> 9999999")).toBeLessThan(text.indexOf("first generation head"));
+    expect(text.indexOf("first generation head")).toBeLessThan(text.indexOf("3333333 -> 6666666"));
+    expect(text.indexOf("3333333 -> 6666666")).toBeLessThan(text.indexOf("original generation head"));
   });
 
   it("keeps consecutive same-timestamp force pushes between their commit generations", () => {
@@ -808,18 +749,10 @@ describe("EventTimeline", () => {
     });
 
     const text = container.textContent ?? "";
-    expect(text.indexOf("same timestamp second generation head")).toBeLessThan(
-      text.indexOf("6666666 -> 9999999"),
-    );
-    expect(text.indexOf("6666666 -> 9999999")).toBeLessThan(
-      text.indexOf("same timestamp first generation head"),
-    );
-    expect(text.indexOf("same timestamp first generation head")).toBeLessThan(
-      text.indexOf("3333333 -> 6666666"),
-    );
-    expect(text.indexOf("3333333 -> 6666666")).toBeLessThan(
-      text.indexOf("same timestamp original generation head"),
-    );
+    expect(text.indexOf("same timestamp second generation head")).toBeLessThan(text.indexOf("6666666 -> 9999999"));
+    expect(text.indexOf("6666666 -> 9999999")).toBeLessThan(text.indexOf("same timestamp first generation head"));
+    expect(text.indexOf("same timestamp first generation head")).toBeLessThan(text.indexOf("3333333 -> 6666666"));
+    expect(text.indexOf("3333333 -> 6666666")).toBeLessThan(text.indexOf("same timestamp original generation head"));
   });
 
   it("preserves natural same-timestamp ordering for unrelated timeline events", () => {
@@ -882,18 +815,12 @@ describe("EventTimeline", () => {
     });
 
     const text = container.textContent ?? "";
-    expect(text.indexOf("same timestamp natural second generation")).toBeLessThan(
-      text.indexOf("6666666 -> 9999999"),
-    );
-    expect(text.indexOf("6666666 -> 9999999")).toBeLessThan(
-      text.indexOf("same timestamp reviewer note"),
-    );
+    expect(text.indexOf("same timestamp natural second generation")).toBeLessThan(text.indexOf("6666666 -> 9999999"));
+    expect(text.indexOf("6666666 -> 9999999")).toBeLessThan(text.indexOf("same timestamp reviewer note"));
     expect(text.indexOf("same timestamp reviewer note")).toBeLessThan(
       text.indexOf("same timestamp natural first generation"),
     );
-    expect(text.indexOf("same timestamp natural first generation")).toBeLessThan(
-      text.indexOf("3333333 -> 6666666"),
-    );
+    expect(text.indexOf("same timestamp natural first generation")).toBeLessThan(text.indexOf("3333333 -> 6666666"));
   });
 
   it("keeps same-timestamp unrelated events outside force-push boundary buckets", () => {
@@ -938,12 +865,10 @@ describe("EventTimeline", () => {
     });
 
     const text = container.textContent ?? "";
-    expect(
-      text.indexOf("same timestamp generated commit below comment ID"),
-    ).toBeLessThan(text.indexOf("3333333 -> 6666666"));
-    expect(text.indexOf("3333333 -> 6666666")).toBeLessThan(
-      text.indexOf("same timestamp reviewer note between IDs"),
+    expect(text.indexOf("same timestamp generated commit below comment ID")).toBeLessThan(
+      text.indexOf("3333333 -> 6666666"),
     );
+    expect(text.indexOf("3333333 -> 6666666")).toBeLessThan(text.indexOf("same timestamp reviewer note between IDs"));
     expect(text.indexOf("same timestamp reviewer note between IDs")).toBeLessThan(
       text.indexOf("same timestamp original generation"),
     );
@@ -988,9 +913,7 @@ describe("EventTimeline", () => {
     });
 
     const text = container.textContent ?? "";
-    expect(text.indexOf("visible new generation head")).toBeLessThan(
-      text.indexOf("visible old generation head"),
-    );
+    expect(text.indexOf("visible new generation head")).toBeLessThan(text.indexOf("visible old generation head"));
     expect(screen.queryByText("3333333 -> 6666666")).toBeNull();
   });
 
@@ -1029,12 +952,8 @@ describe("EventTimeline", () => {
     });
 
     const text = container.textContent ?? "";
-    expect(text.indexOf("fresh import new head")).toBeLessThan(
-      text.indexOf("3333333 -> 6666666"),
-    );
-    expect(text.indexOf("fresh import earlier current commit")).toBeLessThan(
-      text.indexOf("3333333 -> 6666666"),
-    );
+    expect(text.indexOf("fresh import new head")).toBeLessThan(text.indexOf("3333333 -> 6666666"));
+    expect(text.indexOf("fresh import earlier current commit")).toBeLessThan(text.indexOf("3333333 -> 6666666"));
   });
 
   it("orders fallback force-push boundaries after earlier anchored boundaries", () => {
@@ -1091,18 +1010,10 @@ describe("EventTimeline", () => {
     });
 
     const text = container.textContent ?? "";
-    expect(text.indexOf("fallback second generation head")).toBeLessThan(
-      text.indexOf("8888888 -> 9999999"),
-    );
-    expect(text.indexOf("8888888 -> 9999999")).toBeLessThan(
-      text.indexOf("anchored first generation head"),
-    );
-    expect(text.indexOf("anchored first generation head")).toBeLessThan(
-      text.indexOf("3333333 -> 6666666"),
-    );
-    expect(text.indexOf("3333333 -> 6666666")).toBeLessThan(
-      text.indexOf("anchored original generation head"),
-    );
+    expect(text.indexOf("fallback second generation head")).toBeLessThan(text.indexOf("8888888 -> 9999999"));
+    expect(text.indexOf("8888888 -> 9999999")).toBeLessThan(text.indexOf("anchored first generation head"));
+    expect(text.indexOf("anchored first generation head")).toBeLessThan(text.indexOf("3333333 -> 6666666"));
+    expect(text.indexOf("3333333 -> 6666666")).toBeLessThan(text.indexOf("anchored original generation head"));
   });
 
   it("renders system events as compact rows", () => {
@@ -1169,9 +1080,7 @@ describe("EventTimeline", () => {
     expect(deletedChildren).toHaveLength(3);
     expect(deletedChildren[0]?.classList.contains("event-author")).toBe(true);
     expect(deletedChildren[1]?.classList.contains("system-event-summary")).toBe(true);
-    expect(
-      deletedChildren[1]?.classList.contains("system-event-summary--sentence"),
-    ).toBe(true);
+    expect(deletedChildren[1]?.classList.contains("system-event-summary--sentence")).toBe(true);
     expect(deletedChildren[2]?.classList.contains("event-time")).toBe(true);
     expect(screen.getByText("Title changed")).toBeTruthy();
     expect(screen.getByText("Base changed")).toBeTruthy();
@@ -1226,9 +1135,7 @@ describe("EventTimeline", () => {
     assert(link.getAttribute("data-name")).toBe("kit");
     assert(link.getAttribute("data-repo-path")).toBe("kenn-io/kit");
     assert(link.getAttribute("data-number")).toBe("1");
-    assert(link.getAttribute("data-external-url")).toBe(
-      "https://github.com/kenn-io/kit/pull/1",
-    );
+    assert(link.getAttribute("data-external-url")).toBe("https://github.com/kenn-io/kit/pull/1");
     assert(screen.getByText("2h ago")).toBeTruthy();
   });
 
@@ -1254,9 +1161,7 @@ describe("EventTimeline", () => {
     const link = screen.getByRole("link", {
       name: "external reference",
     });
-    expect(link.getAttribute("href")).toBe(
-      "https://github.com/kenn-io/middleman/pull/377",
-    );
+    expect(link.getAttribute("href")).toBe("https://github.com/kenn-io/middleman/pull/377");
     expect(link.classList.contains("item-ref")).toBe(false);
     expect(link.getAttribute("target")).toBe("_blank");
     expect(link.getAttribute("rel")).toBe("noopener noreferrer");
@@ -1375,16 +1280,12 @@ describe("EventTimeline", () => {
 
     expect(screen.getByText("src/review.ts:10-11")).toBeTruthy();
     await expectPierreTimelineText(/client\.publishThreads\(\);/);
-    expect(
-      container.querySelector(".event-body-wrap--with-thread .event-actions"),
-    ).toBeTruthy();
+    expect(container.querySelector(".event-body-wrap--with-thread .event-actions")).toBeTruthy();
 
     const threadedActions = findCompiledStyleRule(".event-body-wrap--with-thread");
     expect(threadedActions.getPropertyValue("display")).toBe("flow-root");
 
-    const threadedActionButtons = findCompiledStyleRule(
-      ".event-body-wrap--with-thread .event-actions",
-    );
+    const threadedActionButtons = findCompiledStyleRule(".event-body-wrap--with-thread .event-actions");
     expect(threadedActionButtons.getPropertyValue("position")).toBe("static");
     expect(threadedActionButtons.getPropertyValue("float")).toBe("right");
 
@@ -1525,18 +1426,12 @@ describe("EventTimeline", () => {
     const inlineReplyBody = findCompiledStyleRule(".event-body--with-inline-reply");
     expect(inlineReplyBody.getPropertyValue("display")).toBe("block");
 
-    const inlineReplyFloat = findCompiledStyleRule(
-      ".event-body--with-inline-reply .thread-reply-inline-float",
-    );
+    const inlineReplyFloat = findCompiledStyleRule(".event-body--with-inline-reply .thread-reply-inline-float");
     expect(inlineReplyFloat.getPropertyValue("float")).toBe("right");
     expect(inlineReplyFloat.getPropertyValue("clear")).toBe("right");
-    expect(inlineReplyFloat.getPropertyValue("margin-left")).toBe(
-      "var(--focus-detail-space-sm, 0.77rem)",
-    );
+    expect(inlineReplyFloat.getPropertyValue("margin-left")).toBe("var(--focus-detail-space-sm, 0.77rem)");
 
-    const inlineReplyAction = findCompiledStyleRule(
-      ".event-body--with-inline-reply .thread-reply-action--inline",
-    );
+    const inlineReplyAction = findCompiledStyleRule(".event-body--with-inline-reply .thread-reply-action--inline");
     expect(inlineReplyAction.getPropertyValue("display")).toBe("inline-flex");
     expect(inlineReplyAction.getPropertyValue("color")).toBe("var(--text-secondary)");
 
@@ -1619,8 +1514,6 @@ describe("EventTimeline", () => {
     });
 
     expect(screen.getByText("Outdated")).toBeTruthy();
-    expect(
-      screen.getByText("Diff context is no longer present in the loaded diff."),
-    ).toBeTruthy();
+    expect(screen.getByText("Diff context is no longer present in the loaded diff.")).toBeTruthy();
   });
 });

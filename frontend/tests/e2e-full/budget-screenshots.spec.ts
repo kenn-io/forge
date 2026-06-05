@@ -23,11 +23,7 @@ test("capture budget display dark mode screenshots", async ({ page }) => {
   const html = page.locator("html");
   await expect(html).toHaveClass(/dark/);
   const bgPrimary = await page.evaluate(() =>
-    window
-      .getComputedStyle(document.documentElement)
-      .getPropertyValue("--bg-primary")
-      .trim()
-      .toLowerCase(),
+    window.getComputedStyle(document.documentElement).getPropertyValue("--bg-primary").trim().toLowerCase(),
   );
   // Token must be present and not light-theme value.
   expect(bgPrimary).toBeTruthy();

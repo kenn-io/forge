@@ -59,15 +59,7 @@
             "type": "integer"
           }
         },
-        "required": [
-          "agent",
-          "total",
-          "passed",
-          "failed",
-          "errors",
-          "pass_rate",
-          "median_duration_secs"
-        ],
+        "required": ["agent", "total", "passed", "failed", "errors", "pass_rate", "median_duration_secs"],
         "type": "object"
       },
       "BranchWithCount": {
@@ -580,16 +572,7 @@
             "type": "integer"
           }
         },
-        "required": [
-          "total",
-          "queued",
-          "running",
-          "done",
-          "failed",
-          "canceled",
-          "applied",
-          "rebased"
-        ],
+        "required": ["total", "queued", "running", "done", "failed", "canceled", "applied", "rebased"],
         "type": "object"
       },
       "RepoSummary": {
@@ -775,15 +758,7 @@
             "type": "integer"
           }
         },
-        "required": [
-          "id",
-          "job_id",
-          "agent",
-          "prompt",
-          "output",
-          "created_at",
-          "closed"
-        ],
+        "required": ["id", "job_id", "agent", "prompt", "output", "created_at", "closed"],
         "type": "object"
       },
       "ReviewJob": {
@@ -985,15 +960,7 @@
             "$ref": "#/components/schemas/VerdictStats"
           }
         },
-        "required": [
-          "since",
-          "overview",
-          "verdicts",
-          "agents",
-          "duration",
-          "job_types",
-          "failures"
-        ],
+        "required": ["since", "overview", "verdicts", "agents", "duration", "job_types", "failures"],
         "type": "object"
       },
       "VerdictStats": {
@@ -1024,14 +991,7 @@
             "type": "integer"
           }
         },
-        "required": [
-          "total",
-          "passed",
-          "failed",
-          "addressed",
-          "pass_rate",
-          "resolution_rate"
-        ],
+        "required": ["total", "passed", "failed", "addressed", "pass_rate", "resolution_rate"],
         "type": "object"
       }
     }

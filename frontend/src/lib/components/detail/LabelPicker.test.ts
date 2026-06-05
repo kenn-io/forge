@@ -18,10 +18,7 @@ describe("LabelPicker", () => {
   it("filters catalog labels and marks assigned labels checked", async () => {
     render(LabelPicker, {
       props: {
-        catalogLabels: [
-          label("bug", "Broken behavior"),
-          label("triage", "Needs review"),
-        ],
+        catalogLabels: [label("bug", "Broken behavior"), label("triage", "Needs review")],
         selectedLabels: [label("bug")],
         syncing: false,
         pendingLabel: null,
@@ -31,16 +28,8 @@ describe("LabelPicker", () => {
       },
     });
 
-    expect(
-      screen
-        .getByRole("menuitemcheckbox", { name: /bug/i })
-        .getAttribute("aria-checked"),
-    ).toBe("true");
-    expect(
-      screen
-        .getByRole("menuitemcheckbox", { name: /triage/i })
-        .getAttribute("aria-checked"),
-    ).toBe("false");
+    expect(screen.getByRole("menuitemcheckbox", { name: /bug/i }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByRole("menuitemcheckbox", { name: /triage/i }).getAttribute("aria-checked")).toBe("false");
 
     await fireEvent.input(screen.getByLabelText("Filter labels"), {
       target: { value: "tri" },
@@ -84,9 +73,7 @@ describe("LabelPicker", () => {
       },
     });
 
-    await fireEvent.click(
-      screen.getByRole("button", { name: "Clear selected labels" }),
-    );
+    await fireEvent.click(screen.getByRole("button", { name: "Clear selected labels" }));
 
     expect(onClear).toHaveBeenCalledOnce();
   });

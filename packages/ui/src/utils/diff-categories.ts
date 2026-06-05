@@ -102,12 +102,7 @@ function extension(path: string): string {
 function hasTestSignal(parts: string[], base: string): boolean {
   return (
     parts.some(
-      (part) =>
-        part === "test" ||
-        part === "tests" ||
-        part === "__tests__" ||
-        part === "e2e" ||
-        part === "spec",
+      (part) => part === "test" || part === "tests" || part === "__tests__" || part === "e2e" || part === "spec",
     ) ||
     base.includes(".test.") ||
     base.includes(".spec.") ||
@@ -122,28 +117,17 @@ function hasDocsSignal(parts: string[], base: string, ext: string): boolean {
   return (
     parts.some((part) => docsDirectoryNames.has(part)) ||
     docsExtensions.has(ext) ||
-    [
-      "changelog",
-      "code_of_conduct",
-      "contributing",
-      "license",
-      "notice",
-      "readme",
-      "security",
-    ].some((name) => base === name || base.startsWith(`${name}.`))
+    ["changelog", "code_of_conduct", "contributing", "license", "notice", "readme", "security"].some(
+      (name) => base === name || base.startsWith(`${name}.`),
+    )
   );
 }
 
 function hasGeneratedSignal(base: string): boolean {
-  return (
-    generatedBasenames.has(base) ||
-    generatedSuffixes.some((suffix) => base.endsWith(suffix))
-  );
+  return generatedBasenames.has(base) || generatedSuffixes.some((suffix) => base.endsWith(suffix));
 }
 
-export function categorizeDiffFile(
-  file: string | CategorizableDiffFile,
-): DiffFileCategory {
+export function categorizeDiffFile(file: string | CategorizableDiffFile): DiffFileCategory {
   const path = typeof file === "string" ? file : file.path;
   const parts = pathParts(path);
   const base = basename(path);
@@ -158,10 +142,7 @@ export function categorizeDiffFile(
   return "other";
 }
 
-export function filterDiffFilesByCategory(
-  files: DiffFile[],
-  filter: DiffFileCategoryFilter,
-): DiffFile[] {
+export function filterDiffFilesByCategory(files: DiffFile[], filter: DiffFileCategoryFilter): DiffFile[] {
   if (filter === "all") return files;
   return files.filter((file) => categorizeDiffFile(file) === filter);
 }

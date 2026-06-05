@@ -286,9 +286,7 @@ describe("TerminalPane", () => {
     expect(fitAddon.fit).toHaveBeenCalled();
     expect(terminal.clearTextureAtlas).not.toHaveBeenCalled();
     expect(terminal.refresh).toHaveBeenCalledWith(0, 23);
-    expect(mockSockets[0]!.sent).toContain(
-      JSON.stringify({ type: "resize", cols: 80, rows: 24 }),
-    );
+    expect(mockSockets[0]!.sent).toContain(JSON.stringify({ type: "resize", cols: 80, rows: 24 }));
   });
 
   it("uses ghostty-web when selected", async () => {
@@ -310,9 +308,7 @@ describe("TerminalPane", () => {
 
     xtermOnDataHandlers[0]!("\x1b[<0;10;5M\x1b[<32;12;5M\x1b[<0;12;5m");
 
-    expect(sentText(mockSockets[0]!, mockSockets[0]!.sent.length - 1)).toBe(
-      "\x1b[<0;10;5M\x1b[<0;12;5m",
-    );
+    expect(sentText(mockSockets[0]!, mockSockets[0]!.sent.length - 1)).toBe("\x1b[<0;10;5M\x1b[<0;12;5m");
   });
 
   it("does not update drag filter state while disconnected", async () => {
@@ -333,8 +329,7 @@ describe("TerminalPane", () => {
   it("does not attach xterm sessions with unavailable initial status", async () => {
     render(TerminalPane, {
       props: {
-        websocketPath:
-          "/api/v1/workspaces/ws-123/runtime/sessions/ws-123%3Ahelper/terminal",
+        websocketPath: "/api/v1/workspaces/ws-123/runtime/sessions/ws-123%3Ahelper/terminal",
         reconnectOnExit: false,
         initialStatus: "error",
       },
@@ -343,9 +338,7 @@ describe("TerminalPane", () => {
     await waitFor(() => expect(xtermTerminalCtor).toHaveBeenCalled());
 
     expect(mockSockets).toHaveLength(0);
-    expect(xtermInstances[0]!.write).toHaveBeenCalledWith(
-      expect.stringContaining("[Session unavailable]"),
-    );
+    expect(xtermInstances[0]!.write).toHaveBeenCalledWith(expect.stringContaining("[Session unavailable]"));
   });
 
   it("sends browser multiline paste as one bracketed paste payload", async () => {
@@ -367,9 +360,7 @@ describe("TerminalPane", () => {
     }) as ClipboardEvent;
     Object.defineProperty(event, "clipboardData", {
       value: {
-        getData: vi.fn((type: string) =>
-          type === "text/plain" ? "first\x1b[201~\nsecond\nthird" : "",
-        ),
+        getData: vi.fn((type: string) => (type === "text/plain" ? "first\x1b[201~\nsecond\nthird" : "")),
       },
     });
 
@@ -377,9 +368,7 @@ describe("TerminalPane", () => {
 
     expect(defaultAllowed).toBe(false);
     expect(laterPasteListener).not.toHaveBeenCalled();
-    expect(sentText(mockSockets[0]!, 0)).toBe(
-      "\x1b[200~first[201~\nsecond\nthird\x1b[201~",
-    );
+    expect(sentText(mockSockets[0]!, 0)).toBe("\x1b[200~first[201~\nsecond\nthird\x1b[201~");
   });
 
   it("sends browser multiline paste raw when bracketed paste is disabled", async () => {
@@ -398,9 +387,7 @@ describe("TerminalPane", () => {
     }) as ClipboardEvent;
     Object.defineProperty(event, "clipboardData", {
       value: {
-        getData: vi.fn((type: string) =>
-          type === "text/plain" ? "first\nsecond\nthird" : "",
-        ),
+        getData: vi.fn((type: string) => (type === "text/plain" ? "first\nsecond\nthird" : "")),
       },
     });
 
@@ -428,9 +415,7 @@ describe("TerminalPane", () => {
     }) as ClipboardEvent;
     Object.defineProperty(event, "clipboardData", {
       value: {
-        getData: vi.fn((type: string) =>
-          type === "text/plain" ? "single line" : "",
-        ),
+        getData: vi.fn((type: string) => (type === "text/plain" ? "single line" : "")),
       },
     });
 

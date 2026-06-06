@@ -182,6 +182,19 @@ test("design system page renders panel and typeahead examples", async ({ page })
   await expect(panelDemo).toBeVisible();
   await expect(panelDemo.locator(".tabbed-panel-tab-tool")).toHaveCount(0);
   await expect(page.getByTestId("design-system-panel-overview")).toBeVisible();
+  const selectedTabMetrics = await panelDemo
+    .locator('[data-tabbed-panel-tab-key="overview"]')
+    .evaluate((tab) => {
+      const styles = getComputedStyle(tab);
+      return {
+        borderBottomWidth: styles.borderBottomWidth,
+        marginBottom: styles.marginBottom,
+      };
+    });
+  expect(selectedTabMetrics).toEqual({
+    borderBottomWidth: "0px",
+    marginBottom: "-1px",
+  });
   const splitMetrics = await panelDemo
     .locator('[aria-label="Resize design system panel split"]')
     .evaluate((divider) => {

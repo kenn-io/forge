@@ -708,7 +708,6 @@
     background: var(--bg-surface);
     color: var(--text-primary);
     margin-bottom: -1px;
-    border-bottom: 1px solid var(--bg-surface);
   }
 
   .tabbed-panel-tab.active::before {

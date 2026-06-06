@@ -345,7 +345,8 @@
       display: "flex",
       alignItems: "center",
       padding: "0 10px",
-      border: "1px solid color-mix(in srgb, var(--accent-blue) 72%, transparent)",
+      border:
+        "var(--chrome-border-width) solid color-mix(in srgb, var(--accent-blue) 72%, transparent)",
       borderRadius: "4px",
       background: "var(--bg-surface)",
       color: "var(--text-primary)",
@@ -624,7 +625,7 @@
   }
 
   .tabbed-panel-split-divider {
-    flex: 0 0 3px;
+    flex: 0 0 var(--chrome-pane-divider-width);
     appearance: none;
     border: 0;
     padding: 0;
@@ -671,7 +672,7 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    border: 1px solid var(--border-default);
+    border: var(--chrome-border-width) solid var(--border-default);
     border-top: 0;
     background: var(--bg-surface);
   }
@@ -691,7 +692,7 @@
     position: absolute;
     inset: auto 0 0 0;
     z-index: 1;
-    height: 1px;
+    height: var(--chrome-border-width);
     background: var(--border-muted);
     pointer-events: none;
   }
@@ -713,7 +714,7 @@
     flex-shrink: 0;
     min-width: 0;
     max-width: 220px;
-    border-right: 1px solid var(--border-muted);
+    border-right: var(--chrome-border-width) solid var(--border-muted);
     color: var(--text-muted);
     transition:
       transform 150ms cubic-bezier(0.16, 1, 0.3, 1),
@@ -726,14 +727,14 @@
     z-index: 2;
     background: var(--bg-surface);
     color: var(--text-primary);
-    margin-bottom: -1px;
+    margin-bottom: calc(-1 * var(--chrome-border-width));
   }
 
   .tabbed-panel-tab.active::before {
     content: "";
     position: absolute;
     inset: 0 0 auto 0;
-    height: 2px;
+    height: var(--chrome-active-accent-width);
     background: var(--accent-blue);
     pointer-events: none;
   }
@@ -856,7 +857,7 @@
     width: var(--dragged-tab-width, 112px);
     min-width: 72px;
     height: 30px;
-    border-right: 1px solid var(--border-muted);
+    border-right: var(--chrome-border-width) solid var(--border-muted);
     background: color-mix(in srgb, var(--accent-blue) 7%, transparent);
     animation: tab-placeholder-in 140ms cubic-bezier(0.16, 1, 0.3, 1);
     pointer-events: none;
@@ -866,10 +867,12 @@
     content: "";
     position: absolute;
     inset: 4px 5px;
-    border: 1px dashed color-mix(in srgb, var(--accent-blue) 62%, transparent);
+    border: var(--chrome-border-width) dashed
+      color-mix(in srgb, var(--accent-blue) 62%, transparent);
     border-radius: 4px;
     background: color-mix(in srgb, var(--accent-blue) 13%, transparent);
-    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-blue) 10%, transparent);
+    box-shadow: inset 0 0 0 var(--chrome-border-width)
+      color-mix(in srgb, var(--accent-blue) 10%, transparent);
   }
 
   .tab-drop-placeholder::after {
@@ -877,18 +880,19 @@
     position: absolute;
     top: 4px;
     bottom: 4px;
-    width: 2px;
+    width: var(--chrome-active-accent-width);
     border-radius: 999px;
     background: var(--accent-blue);
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-blue) 24%, transparent);
+    box-shadow: 0 0 0 var(--chrome-border-width)
+      color-mix(in srgb, var(--accent-blue) 24%, transparent);
   }
 
   .tab-drop-placeholder.before::after {
-    left: 3px;
+    left: var(--chrome-pane-divider-width);
   }
 
   .tab-drop-placeholder.after::after {
-    right: 3px;
+    right: var(--chrome-pane-divider-width);
   }
 
   .tabbed-panel-body {
@@ -919,13 +923,15 @@
     position: absolute;
     z-index: 4;
     inset: 0;
-    border: 1px solid color-mix(in srgb, var(--accent-blue) 44%, transparent);
+    border: var(--chrome-border-width) solid
+      color-mix(in srgb, var(--accent-blue) 44%, transparent);
     opacity: 0;
     pointer-events: none;
     background: color-mix(in srgb, var(--accent-blue) 14%, transparent);
     -webkit-backdrop-filter: blur(3px) saturate(1.05);
     backdrop-filter: blur(3px) saturate(1.05);
-    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-blue) 18%, transparent);
+    box-shadow: inset 0 0 0 var(--chrome-border-width)
+      color-mix(in srgb, var(--accent-blue) 18%, transparent);
     transition:
       opacity 90ms ease,
       inset 90ms ease;
@@ -940,7 +946,7 @@
     right: 0;
     bottom: 50%;
     left: 0;
-    border-width: 0 0 2px;
+    border-width: 0 0 var(--chrome-active-accent-width);
     border-bottom-color: var(--accent-blue);
   }
 
@@ -949,7 +955,7 @@
     right: 0;
     bottom: 0;
     left: 50%;
-    border-width: 0 0 0 2px;
+    border-width: 0 0 0 var(--chrome-active-accent-width);
     border-left-color: var(--accent-blue);
   }
 
@@ -958,7 +964,7 @@
     right: 0;
     bottom: 0;
     left: 0;
-    border-width: 2px 0 0;
+    border-width: var(--chrome-active-accent-width) 0 0;
     border-top-color: var(--accent-blue);
   }
 
@@ -967,7 +973,7 @@
     right: 50%;
     bottom: 0;
     left: 0;
-    border-width: 0 2px 0 0;
+    border-width: 0 var(--chrome-active-accent-width) 0 0;
     border-right-color: var(--accent-blue);
   }
 

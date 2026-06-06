@@ -413,7 +413,7 @@
   }
 
   .split-divider {
-    flex: 0 0 3px;
+    flex: 0 0 var(--chrome-pane-divider-width);
     appearance: none;
     border: 0;
     padding: 0;
@@ -437,11 +437,8 @@
     flex-direction: column;
     overflow: hidden;
     background: #0d1117;
-    border: 1px solid var(--border-muted);
-  }
-
-  .terminal-leaf.active {
-    border-color: color-mix(in srgb, var(--accent-blue) 60%, var(--border-muted));
+    border: var(--chrome-border-width) solid var(--border-muted);
+    border-top: 0;
   }
 
   .terminal-leaf.trim-right {
@@ -466,9 +463,13 @@
     justify-content: space-between;
     height: 26px;
     flex-shrink: 0;
-    border-bottom: 1px solid var(--border-muted);
+    border-bottom: var(--chrome-border-width) solid var(--border-muted);
     background: var(--bg-inset);
     cursor: grab;
+  }
+
+  .terminal-leaf.active .leaf-header {
+    box-shadow: inset 0 var(--chrome-active-accent-width) 0 var(--accent-blue);
   }
 
   .leaf-title {
@@ -566,13 +567,14 @@
     position: absolute;
     z-index: 4;
     inset: 0;
-    border: 1px solid color-mix(in srgb, var(--accent-blue) 44%, transparent);
+    border: var(--chrome-border-width) solid
+      color-mix(in srgb, var(--accent-blue) 44%, transparent);
     opacity: 0;
     pointer-events: none;
     background: color-mix(in srgb, var(--accent-blue) 14%, transparent);
     -webkit-backdrop-filter: blur(3px) saturate(1.05);
     backdrop-filter: blur(3px) saturate(1.05);
-    box-shadow: inset 0 0 0 1px
+    box-shadow: inset 0 0 0 var(--chrome-border-width)
       color-mix(in srgb, var(--accent-blue) 18%, transparent);
     transition:
       opacity 90ms ease,
@@ -588,7 +590,7 @@
     right: 0;
     bottom: 50%;
     left: 0;
-    border-width: 0 0 2px;
+    border-width: 0 0 var(--chrome-active-accent-width);
     border-bottom-color: var(--accent-blue);
   }
 
@@ -597,7 +599,7 @@
     right: 0;
     bottom: 0;
     left: 50%;
-    border-width: 0 0 0 2px;
+    border-width: 0 0 0 var(--chrome-active-accent-width);
     border-left-color: var(--accent-blue);
   }
 
@@ -606,7 +608,7 @@
     right: 0;
     bottom: 0;
     left: 0;
-    border-width: 2px 0 0;
+    border-width: var(--chrome-active-accent-width) 0 0;
     border-top-color: var(--accent-blue);
   }
 
@@ -615,7 +617,7 @@
     right: 50%;
     bottom: 0;
     left: 0;
-    border-width: 0 2px 0 0;
+    border-width: 0 var(--chrome-active-accent-width) 0 0;
     border-right-color: var(--accent-blue);
   }
 </style>

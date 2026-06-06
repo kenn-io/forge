@@ -281,7 +281,7 @@
   .terminal-panel {
     flex-shrink: 0;
     min-height: 30px;
-    border-top: 1px solid var(--border-default);
+    border-top: var(--chrome-border-width) solid var(--border-default);
     background: var(--bg-surface);
     color: var(--text-primary);
   }
@@ -302,10 +302,10 @@
 
   .panel-resizer {
     position: absolute;
-    top: -4px;
+    top: calc(-1 * var(--chrome-dock-resize-hit-outset));
     left: 0;
     right: 0;
-    height: 7px;
+    height: var(--chrome-dock-resize-hit-size);
     border: 0;
     background: transparent;
     cursor: row-resize;
@@ -317,8 +317,8 @@
     position: absolute;
     left: 0;
     right: 0;
-    top: 2px;
-    height: 3px;
+    top: var(--chrome-dock-resize-stripe-offset);
+    height: var(--chrome-pane-divider-width);
     background: var(--border-default);
   }
 
@@ -333,7 +333,7 @@
     justify-content: space-between;
     height: 30px;
     flex-shrink: 0;
-    border-bottom: 1px solid var(--border-muted);
+    border-bottom: var(--chrome-border-width) solid var(--border-muted);
     background: var(--bg-inset);
   }
 
@@ -383,7 +383,7 @@
     justify-content: center;
     width: 23px;
     height: 22px;
-    border: 1px solid transparent;
+    border: var(--chrome-border-width) solid transparent;
     border-radius: 3px;
     background: transparent;
     color: var(--text-muted);
@@ -424,7 +424,7 @@
   .terminal-selector {
     min-width: 0;
     overflow: auto;
-    border-left: 1px solid var(--border-default);
+    border-left: var(--chrome-border-width) solid var(--border-default);
     background: var(--bg-surface);
     padding: 4px;
   }
@@ -492,7 +492,7 @@
   .empty-action {
     height: 24px;
     padding: 0 8px;
-    border: 1px solid var(--border-default);
+    border: var(--chrome-border-width) solid var(--border-default);
     border-radius: 3px;
     background: var(--bg-surface);
     color: var(--text-primary);

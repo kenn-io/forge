@@ -15,6 +15,12 @@
   --bg-inset: #ecedf2;
   --border-default: #d8dae2;
   --border-muted: #e4e6ec;
+  --chrome-border-width: 1px;
+  --chrome-active-accent-width: 2px;
+  --chrome-pane-divider-width: 3px;
+  --chrome-dock-resize-hit-size: 7px;
+  --chrome-dock-resize-hit-outset: 4px;
+  --chrome-dock-resize-stripe-offset: 2px;
   --text-primary: #181b24;
   --text-secondary: #555b6e;
   --text-muted: #878ea0;

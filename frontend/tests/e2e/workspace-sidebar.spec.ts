@@ -2023,13 +2023,26 @@ test.describe("workspace launch home", () => {
       const tree = document.querySelector(".terminal-panel.bottom.open .terminal-tree");
       const selector = document.querySelector(".terminal-panel.bottom.open .terminal-selector");
       const split = document.querySelector(".terminal-panel.bottom.open .terminal-split");
+      const activeHeader = document.querySelector(".terminal-panel.bottom.open .terminal-leaf.active .leaf-header");
+      const activeLeaf = activeHeader?.closest(".terminal-leaf");
       const firstLeaf = document.querySelector(".terminal-panel.bottom.open .terminal-leaf");
       const firstViewport = firstLeaf?.querySelector(".xterm-viewport");
       const secondLeaf = document.querySelector(
         ".terminal-panel.bottom.open .terminal-split.horizontal > .split-child.second > .terminal-leaf",
       );
       const divider = document.querySelector(".terminal-panel.bottom.open .terminal-split.horizontal > .split-divider");
-      if (!body || !tree || !selector || !split || !firstLeaf || !firstViewport || !secondLeaf || !divider) {
+      if (
+        !body ||
+        !tree ||
+        !selector ||
+        !split ||
+        !activeHeader ||
+        !activeLeaf ||
+        !firstLeaf ||
+        !firstViewport ||
+        !secondLeaf ||
+        !divider
+      ) {
         throw new Error("Missing bottom terminal split layout");
       }
 
@@ -2045,7 +2058,12 @@ test.describe("workspace launch home", () => {
       const firstViewportStyles = getComputedStyle(firstViewport);
       const secondLeafStyles = getComputedStyle(secondLeaf);
       const dividerStyles = getComputedStyle(divider);
+      const activeLeafStyles = getComputedStyle(activeLeaf);
+      const activeHeaderStyles = getComputedStyle(activeHeader);
       return {
+        activeHeaderBoxShadow: activeHeaderStyles.boxShadow,
+        activeLeftBorderUsesAccent: activeLeafStyles.borderLeftColor === "rgb(37, 99, 235)",
+        activeLeafBorderTopWidth: activeLeafStyles.borderTopWidth,
         firstLeafBorderRight: firstLeafStyles.borderRightWidth,
         firstLeafToSplitLeft: Math.round(firstLeafRect.left - splitRect.left),
         firstLeafToSplitTop: Math.round(firstLeafRect.top - splitRect.top),
@@ -2069,6 +2087,9 @@ test.describe("workspace launch home", () => {
       };
     });
     expect(splitMetrics).toEqual({
+      activeHeaderBoxShadow: "rgb(37, 99, 235) 0px 2px 0px 0px inset",
+      activeLeafBorderTopWidth: "0px",
+      activeLeftBorderUsesAccent: false,
       firstLeafBorderRight: "0px",
       firstLeafToSplitLeft: 0,
       firstLeafToSplitTop: 0,
@@ -2085,6 +2106,59 @@ test.describe("workspace launch home", () => {
       treeToBodyTop: 0,
       treeToSelector: 0,
     });
+
+    const readHeaderMetrics = () =>
+      page.evaluate(() =>
+        Array.from(document.querySelectorAll(".terminal-panel.bottom.open .terminal-leaf")).map((leaf) => {
+          const header = leaf.querySelector(".leaf-header");
+          const label = leaf.querySelector(".leaf-label")?.textContent ?? "";
+          if (!header) {
+            throw new Error("Missing terminal leaf header");
+          }
+          const headerRect = header.getBoundingClientRect();
+          const leafRect = leaf.getBoundingClientRect();
+          return {
+            active: leaf.classList.contains("active"),
+            headerBoxShadow: getComputedStyle(header).boxShadow,
+            headerHeight: Math.round(headerRect.height),
+            headerTop: Math.round(headerRect.top),
+            label,
+            leafTop: Math.round(leafRect.top),
+          };
+        }),
+      );
+    const beforeSwitch = await readHeaderMetrics();
+    const inactiveTitle = page.locator(".terminal-panel.bottom.open .terminal-leaf:not(.active) .leaf-title");
+    await expect(inactiveTitle).toHaveCount(1);
+    await inactiveTitle.click();
+    const afterSwitch = await readHeaderMetrics();
+    expect(
+      afterSwitch.map(({ headerHeight, headerTop, label, leafTop }) => ({
+        headerHeight,
+        headerTop,
+        label,
+        leafTop,
+      })),
+    ).toEqual(
+      beforeSwitch.map(({ headerHeight, headerTop, label, leafTop }) => ({
+        headerHeight,
+        headerTop,
+        label,
+        leafTop,
+      })),
+    );
+    expect(afterSwitch).toMatchObject([
+      {
+        active: true,
+        headerBoxShadow: "rgb(37, 99, 235) 0px 2px 0px 0px inset",
+        label: "Shell",
+      },
+      {
+        active: false,
+        headerBoxShadow: "none",
+        label: "Shell 2",
+      },
+    ]);
   });
 });
 

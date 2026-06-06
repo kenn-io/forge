@@ -2030,6 +2030,31 @@ test.describe("sidebar toggle behavior", () => {
 
     // Sidebar should now be visible
     await expect(page.locator(".right-sidebar")).toBeVisible();
+    const workflowPanelMetrics = await page.evaluate(() => {
+      const handle = document.querySelector(".sidebar-resize-handle");
+      const tabPanel = document.querySelector(".workspace-stage .tabbed-panel-tab-panel.active");
+      const workspaceHome = document.querySelector(".workspace-stage .workspace-home");
+      if (!handle || !tabPanel || !workspaceHome) {
+        throw new Error("Missing handle, active panel, or workspace home");
+      }
+
+      const handleRect = handle.getBoundingClientRect();
+      const panelRect = tabPanel.getBoundingClientRect();
+      const homeRect = workspaceHome.getBoundingClientRect();
+      const panelStyles = getComputedStyle(tabPanel);
+      return {
+        handleWidth: Math.round(handleRect.width),
+        homeToPanelRight: Math.round(panelRect.right - homeRect.right),
+        homeToSplitter: Math.round(handleRect.left - homeRect.right),
+        panelOverflowY: panelStyles.overflowY,
+      };
+    });
+    expect(workflowPanelMetrics).toEqual({
+      handleWidth: 4,
+      homeToPanelRight: 0,
+      homeToSplitter: 1,
+      panelOverflowY: "hidden",
+    });
     // PR button should be active
     await expect(prBtn).toHaveClass(/active/);
   });

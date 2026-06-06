@@ -26,6 +26,7 @@
     renderTab: Snippet<[string, boolean]>;
     tabIcon?: Snippet<[TabbedPanelDescriptor]> | undefined;
     tabActions?: Snippet<[TabbedPanelDescriptor]> | undefined;
+    scrollPanels?: boolean;
     tablistLabel?: string;
     leafLabel?: string;
     resizeLabel?: string;
@@ -56,6 +57,7 @@
     renderTab,
     tabIcon = undefined,
     tabActions = undefined,
+    scrollPanels = false,
     tablistLabel = "Panel group tabs",
     leafLabel = "Panel group",
     resizeLabel = "Resize panel split",
@@ -503,7 +505,10 @@
         <div
           class={[
             "tabbed-panel-tab-panel",
-            { active: node.activeTabKey === tabKey },
+            {
+              active: node.activeTabKey === tabKey,
+              scrollable: scrollPanels,
+            },
           ]}
         >
           {@render renderTab(tabKey, node.activeTabKey === tabKey)}
@@ -534,6 +539,7 @@
         {renderTab}
         {tabIcon}
         {tabActions}
+        {scrollPanels}
         {tablistLabel}
         {leafLabel}
         {resizeLabel}
@@ -563,6 +569,7 @@
         {renderTab}
         {tabIcon}
         {tabActions}
+        {scrollPanels}
         {tablistLabel}
         {leafLabel}
         {resizeLabel}
@@ -670,13 +677,23 @@
   }
 
   .tabbed-panel-tabs {
+    position: relative;
     display: flex;
     align-items: stretch;
     min-height: 30px;
-    border-bottom: 1px solid var(--border-muted);
     background: var(--bg-inset);
     overflow-x: auto;
     scrollbar-width: none;
+  }
+
+  .tabbed-panel-tabs::after {
+    content: "";
+    position: absolute;
+    inset: auto 0 0 0;
+    z-index: 1;
+    height: 1px;
+    background: var(--border-muted);
+    pointer-events: none;
   }
 
   .tabbed-panel-tabs.drag-sorting {
@@ -690,6 +707,7 @@
 
   .tabbed-panel-tab {
     position: relative;
+    z-index: 0;
     display: inline-flex;
     align-items: center;
     flex-shrink: 0;
@@ -705,6 +723,7 @@
   }
 
   .tabbed-panel-tab.active {
+    z-index: 2;
     background: var(--bg-surface);
     color: var(--text-primary);
     margin-bottom: -1px;
@@ -883,6 +902,10 @@
     position: absolute;
     inset: 0;
     visibility: hidden;
+    overflow: hidden;
+  }
+
+  .tabbed-panel-tab-panel.scrollable {
     overflow-x: hidden;
     overflow-y: auto;
     scrollbar-gutter: stable;

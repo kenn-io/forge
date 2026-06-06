@@ -129,6 +129,7 @@
     {node}
     {tabs}
     {activeTabKey}
+    scrollPanels={true}
     tablistLabel="Design system panel tabs"
     leafLabel="Design system panel group"
     dropTargetsLabel="Design system panel drop targets"

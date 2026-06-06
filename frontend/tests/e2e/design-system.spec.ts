@@ -186,14 +186,32 @@ test("design system page renders panel and typeahead examples", async ({ page })
     .locator('[data-tabbed-panel-tab-key="overview"]')
     .evaluate((tab) => {
       const styles = getComputedStyle(tab);
+      const tabBar = tab.parentElement;
+      if (!tabBar) {
+        throw new Error("Missing tab bar for selected tab");
+      }
+      const tabBarStyles = getComputedStyle(tabBar);
+      const tabBarDividerStyles = getComputedStyle(tabBar, "::after");
+      const tabRect = tab.getBoundingClientRect();
+      const tabBarRect = tabBar.getBoundingClientRect();
       return {
         borderBottomWidth: styles.borderBottomWidth,
         marginBottom: styles.marginBottom,
+        tabAfterContent: getComputedStyle(tab, "::after").content,
+        tabBarBorderBottomWidth: tabBarStyles.borderBottomWidth,
+        tabBarDividerHeight: tabBarDividerStyles.height,
+        tabExtendsBelowBar: Math.round(tabRect.bottom - tabBarRect.bottom),
+        zIndex: styles.zIndex,
       };
     });
   expect(selectedTabMetrics).toEqual({
     borderBottomWidth: "0px",
     marginBottom: "-1px",
+    tabAfterContent: "none",
+    tabBarBorderBottomWidth: "0px",
+    tabBarDividerHeight: "1px",
+    tabExtendsBelowBar: 1,
+    zIndex: "2",
   });
   const splitMetrics = await panelDemo
     .locator('[aria-label="Resize design system panel split"]')

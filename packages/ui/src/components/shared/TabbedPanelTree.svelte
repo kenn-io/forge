@@ -86,6 +86,7 @@
   }
 
   function startTabDrag(event: DragEvent, tab: TabbedPanelDescriptor): void {
+    if (!tabDragEnabled()) return;
     if (onStartTabDrag) {
       onStartTabDrag(event, tab);
     } else {
@@ -94,7 +95,7 @@
     draggedTabKey = tab.key;
     const sourceEl =
       event.currentTarget instanceof HTMLElement
-        ? (event.currentTarget.closest(".group-tab") ?? event.currentTarget)
+        ? (event.currentTarget.closest(".tabbed-panel-tab") ?? event.currentTarget)
         : null;
     draggedTabWidth = sourceEl ? Math.round(sourceEl.getBoundingClientRect().width) : 112;
     setTabDragImage(event, tab, draggedTabWidth);
@@ -111,14 +112,6 @@
     return tabbedPanelSplitEdgeFromPoint(rect, event.clientX, event.clientY);
   }
 
-  function handleDragOver(event: DragEvent): void {
-    if (readDraggedTab(event) === null) return;
-    event.preventDefault();
-    if (event.dataTransfer) {
-      event.dataTransfer.dropEffect = "move";
-    }
-  }
-
   function tabSortPlacementFromEvent(event: DragEvent): "before" | "after" {
     const target = event.currentTarget;
     if (!(target instanceof HTMLElement)) return "before";
@@ -127,6 +120,7 @@
   }
 
   function handleTabDragOver(event: DragEvent, targetTabKey: string): void {
+    if (!canSortTabs()) return;
     const sourceTabKey = readDraggedTab(event);
     if (sourceTabKey === null) return;
     event.preventDefault();
@@ -147,12 +141,15 @@
   function handleTabStripDragOver(event: DragEvent): void {
     const sourceTabKey = readDraggedTab(event);
     if (sourceTabKey === null) return;
+    const target = event.target;
+    const overTab = target instanceof HTMLElement && target.closest(".tabbed-panel-tab");
+    if (overTab && !canSortTabs()) return;
+    if (!overTab && !onAppendTabToLeaf) return;
     event.preventDefault();
     if (event.dataTransfer) {
       event.dataTransfer.dropEffect = "move";
     }
-    const target = event.target;
-    if (target instanceof HTMLElement && target.closest(".group-tab")) {
+    if (overTab) {
       return;
     }
     const tablist = event.currentTarget;
@@ -163,11 +160,18 @@
   }
 
   function handleSplitDragOver(event: DragEvent): void {
-    handleDragOver(event);
-    if (event.defaultPrevented) {
-      dropTargetsVisible = true;
-      activeSplitEdge = splitEdgeFromEvent(event);
+    const sourceTabKey = readDraggedTab(event);
+    if (sourceTabKey === null) return;
+    const edge = splitEdgeFromEvent(event);
+    if ((edge === null && !onAppendTabToLeaf) || (edge !== null && !onSplitTab)) {
+      return;
     }
+    event.preventDefault();
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = "move";
+    }
+    dropTargetsVisible = true;
+    activeSplitEdge = onSplitTab ? edge : null;
   }
 
   function hideDropTargets(): void {
@@ -243,6 +247,7 @@
     targetTabKey: string,
     placement: "before" | "after",
   ): void {
+    if (!canSortTabs()) return;
     if (sourceTabKey === targetTabKey) return;
     if (node.type !== "leaf") return;
     if (placement === "before") {
@@ -261,6 +266,7 @@
   }
 
   function dropOnTab(event: DragEvent, targetTabKey: string): void {
+    if (!canSortTabs()) return;
     const sourceTabKey = readDraggedTab(event);
     if (sourceTabKey === null || sourceTabKey === targetTabKey) return;
     event.preventDefault();
@@ -276,10 +282,12 @@
   function dropIntoLeaf(event: DragEvent, leafID: string): void {
     const sourceTabKey = readDraggedTab(event);
     if (sourceTabKey === null) return;
-    event.preventDefault();
     if (tabSortPreview) {
+      event.preventDefault();
       moveTabToSortPlacement(sourceTabKey, tabSortPreview.targetTabKey, tabSortPreview.placement);
     } else {
+      if (!onAppendTabToLeaf) return;
+      event.preventDefault();
       onAppendTabToLeaf?.(sourceTabKey, leafID);
     }
     finishTabDrag();
@@ -289,6 +297,10 @@
     const sourceTabKey = readDraggedTab(event);
     const edge = splitEdgeFromEvent(event);
     if (sourceTabKey === null) return;
+    if ((edge === null && !onAppendTabToLeaf) || (edge !== null && !onSplitTab)) {
+      finishTabDrag();
+      return;
+    }
     event.preventDefault();
     if (edge === null) {
       onAppendTabToLeaf?.(sourceTabKey, leafID);
@@ -378,12 +390,20 @@
     window.addEventListener("pointermove", onPointerMove);
     window.addEventListener("pointerup", onPointerUp, { once: true });
   }
+
+  function tabDragEnabled(): boolean {
+    return Boolean(onStartTabDrag || onMoveTabBefore || onAppendTabToLeaf || onSplitTab);
+  }
+
+  function canSortTabs(): boolean {
+    return Boolean(onMoveTabBefore);
+  }
 </script>
 
 {#if node.type === "leaf"}
-  <section class="workflow-leaf tabbed-panel-leaf" aria-label={leafLabel}>
+  <section class="tabbed-panel-leaf" aria-label={leafLabel}>
     <div
-      class={["group-tabs", { "drag-sorting": draggedTabKey !== null }]}
+      class={["tabbed-panel-tabs", { "drag-sorting": draggedTabKey !== null }]}
       role="tablist"
       tabindex="-1"
       aria-label={tablistLabel}
@@ -396,15 +416,15 @@
         {#if tab}
           {#if showTabPlaceholder(tab.key, "before")}
             <div
-              class="tab-drop-placeholder before"
+              class="tab-drop-placeholder tabbed-panel-tab-drop-placeholder before"
               style={tabPlaceholderStyle()}
-              data-testid="workflow-tab-drop-placeholder"
+              data-testid="tabbed-panel-tab-drop-placeholder"
               aria-hidden="true"
             ></div>
           {/if}
           <div
             class={[
-              "group-tab",
+              "tabbed-panel-tab",
               {
                 active: node.activeTabKey === tab.key,
                 dragging: draggedTabKey === tab.key,
@@ -414,13 +434,12 @@
             ]}
             role="presentation"
             data-tabbed-panel-tab-key={tab.key}
-            data-workflow-tab-key={tab.key}
             ondragover={(event) => handleTabDragOver(event, tab.key)}
             ondrop={(event) => dropOnTab(event, tab.key)}
           >
             <button
-              class="group-tab-button"
-              draggable="true"
+              class="tabbed-panel-tab-button"
+              draggable={tabDragEnabled()}
               ondragstart={(event) => startTabDrag(event, tab)}
               ondragend={finishTabDrag}
               ondblclick={() => onTabDoubleClick?.(tab.key)}
@@ -429,13 +448,16 @@
               onclick={() => onSelectTab?.(tab.key)}
             >
               {#if tabIcon}
-                <span class="tab-icon" aria-hidden="true">
+                <span class="tabbed-panel-tab-icon" aria-hidden="true">
                   {@render tabIcon(tab)}
                 </span>
               {/if}
-              <span class="tab-label">{tab.label}</span>
+              <span class="tabbed-panel-tab-label">{tab.label}</span>
               {#if tab.status}
-                <span class={["status-dot", statusClass(tab)]} title={tab.status}></span>
+                <span
+                  class={["tabbed-panel-status-dot", statusClass(tab)]}
+                  title={tab.status}
+                ></span>
               {/if}
             </button>
             {#if tabActions}
@@ -444,9 +466,9 @@
           </div>
           {#if showTabPlaceholder(tab.key, "after")}
             <div
-              class="tab-drop-placeholder after"
+              class="tab-drop-placeholder tabbed-panel-tab-drop-placeholder after"
               style={tabPlaceholderStyle()}
-              data-testid="workflow-tab-drop-placeholder"
+              data-testid="tabbed-panel-tab-drop-placeholder"
               aria-hidden="true"
             ></div>
           {/if}
@@ -454,7 +476,7 @@
       {/each}
     </div>
     <div
-      class={["group-body", { "show-drop-targets": dropTargetsVisible }]}
+      class={["tabbed-panel-body", { "show-drop-targets": dropTargetsVisible }]}
       role="group"
       aria-label={dropTargetsLabel}
       ondragover={handleSplitDragOver}
@@ -462,13 +484,18 @@
       ondrop={(event) => dropSplit(event, node.id)}
     >
       {#each node.tabs as tabKey (tabKey)}
-        <div class={["group-tab-panel", { active: node.activeTabKey === tabKey }]}>
+        <div
+          class={[
+            "tabbed-panel-tab-panel",
+            { active: node.activeTabKey === tabKey },
+          ]}
+        >
           {@render renderTab(tabKey, node.activeTabKey === tabKey)}
         </div>
       {/each}
       <div
         class={[
-          "split-preview",
+          "tabbed-panel-split-preview",
           activeSplitEdge,
           { active: dropTargetsVisible && activeSplitEdge !== null },
         ]}
@@ -479,10 +506,10 @@
 {:else}
   <div
     bind:this={splitEl}
-    class={["workflow-split", "tabbed-panel-split", node.direction]}
+    class={["tabbed-panel-split", node.direction]}
     style={`--first-ratio: ${node.ratio}; --second-ratio: ${1 - node.ratio};`}
   >
-    <div class="split-child first">
+    <div class="tabbed-panel-split-child first">
       <Self
         {dragScope}
         node={node.first}
@@ -506,8 +533,12 @@
         {onClearDrag}
       />
     </div>
-    <button class="split-divider" aria-label={resizeLabel} onpointerdown={startResize}></button>
-    <div class="split-child second">
+    <button
+      class="tabbed-panel-split-divider"
+      aria-label={resizeLabel}
+      onpointerdown={startResize}
+    ></button>
+    <div class="tabbed-panel-split-child second">
       <Self
         {dragScope}
         node={node.second}
@@ -535,41 +566,41 @@
 {/if}
 
 <style>
-  .workflow-split,
-  .workflow-leaf {
+  .tabbed-panel-split,
+  .tabbed-panel-leaf {
     min-width: 0;
     min-height: 0;
     height: 100%;
   }
 
-  .workflow-split {
+  .tabbed-panel-split {
     display: flex;
     overflow: hidden;
   }
 
-  .workflow-split.horizontal {
+  .tabbed-panel-split.horizontal {
     flex-direction: row;
   }
 
-  .workflow-split.vertical {
+  .tabbed-panel-split.vertical {
     flex-direction: column;
   }
 
-  .split-child {
+  .tabbed-panel-split-child {
     min-width: 0;
     min-height: 0;
     overflow: hidden;
   }
 
-  .split-child.first {
+  .tabbed-panel-split-child.first {
     flex: var(--first-ratio) 1 0;
   }
 
-  .split-child.second {
+  .tabbed-panel-split-child.second {
     flex: var(--second-ratio) 1 0;
   }
 
-  .split-divider {
+  .tabbed-panel-split-divider {
     flex: 0 0 5px;
     border: 0;
     background: var(--bg-primary);
@@ -577,32 +608,32 @@
     position: relative;
   }
 
-  .workflow-split.vertical > .split-divider {
+  .tabbed-panel-split.vertical > .tabbed-panel-split-divider {
     cursor: row-resize;
   }
 
-  .split-divider::before {
+  .tabbed-panel-split-divider::before {
     content: "";
     position: absolute;
     inset: 0 2px;
     background: var(--border-default);
   }
 
-  .workflow-split.vertical > .split-divider::before {
+  .tabbed-panel-split.vertical > .tabbed-panel-split-divider::before {
     inset: 2px 0;
   }
 
-  .split-divider:hover::before,
-  .split-divider:focus-visible::before {
+  .tabbed-panel-split-divider:hover::before,
+  .tabbed-panel-split-divider:focus-visible::before {
     background: var(--accent-blue);
   }
 
-  .split-divider:focus-visible {
+  .tabbed-panel-split-divider:focus-visible {
     outline: 2px solid var(--accent-blue);
     outline-offset: -2px;
   }
 
-  .workflow-leaf {
+  .tabbed-panel-leaf {
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -610,7 +641,7 @@
     background: var(--bg-surface);
   }
 
-  .group-tabs {
+  .tabbed-panel-tabs {
     display: flex;
     align-items: stretch;
     min-height: 30px;
@@ -620,16 +651,16 @@
     scrollbar-width: none;
   }
 
-  .group-tabs.drag-sorting {
+  .tabbed-panel-tabs.drag-sorting {
     cursor: grabbing;
   }
 
-  .group-tabs::-webkit-scrollbar {
+  .tabbed-panel-tabs::-webkit-scrollbar {
     width: 0;
     height: 0;
   }
 
-  .group-tab {
+  .tabbed-panel-tab {
     position: relative;
     display: inline-flex;
     align-items: center;
@@ -642,17 +673,17 @@
       transform 150ms cubic-bezier(0.16, 1, 0.3, 1),
       opacity 120ms ease,
       background-color 120ms ease,
-      color 120ms ease;
+    color 120ms ease;
   }
 
-  .group-tab.active {
+  .tabbed-panel-tab.active {
     background: var(--bg-surface);
     color: var(--text-primary);
     margin-bottom: -1px;
     border-bottom: 1px solid var(--bg-surface);
   }
 
-  .group-tab.active::before {
+  .tabbed-panel-tab.active::before {
     content: "";
     position: absolute;
     inset: 0 0 auto 0;
@@ -661,19 +692,19 @@
     pointer-events: none;
   }
 
-  .group-tab.dragging {
+  .tabbed-panel-tab.dragging {
     opacity: 0.34;
     transform: translateY(-4px) scale(0.96);
     background: color-mix(in srgb, var(--accent-blue) 10%, var(--bg-surface));
     box-shadow: 0 8px 22px rgb(0 0 0 / 18%);
   }
 
-  .group-tab.sort-target:not(.dragging) {
+  .tabbed-panel-tab.sort-target:not(.dragging) {
     color: var(--text-primary);
     background: color-mix(in srgb, var(--accent-blue) 9%, transparent);
   }
 
-  .group-tab-button {
+  .tabbed-panel-tab-button {
     display: inline-flex;
     align-items: center;
     gap: 6px;
@@ -689,34 +720,34 @@
     cursor: grab;
   }
 
-  .group-tabs.drag-sorting .group-tab-button {
+  .tabbed-panel-tabs.drag-sorting .tabbed-panel-tab-button {
     cursor: grabbing;
   }
 
-  .group-tab-button:hover,
-  .group-tab-button:focus-visible {
+  .tabbed-panel-tab-button:hover,
+  .tabbed-panel-tab-button:focus-visible {
     color: var(--text-primary);
     outline: none;
   }
 
-  .tab-icon {
+  .tabbed-panel-tab-icon {
     display: inline-flex;
     color: var(--text-muted);
     flex-shrink: 0;
   }
 
-  .group-tab.active .tab-icon {
+  .tabbed-panel-tab.active .tabbed-panel-tab-icon {
     color: var(--accent-blue);
   }
 
-  .tab-label {
+  .tabbed-panel-tab-label {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .status-dot {
+  .tabbed-panel-status-dot {
     width: 6px;
     height: 6px;
     border-radius: 999px;
@@ -724,27 +755,27 @@
     flex-shrink: 0;
   }
 
-  .status-dot.running {
+  .tabbed-panel-status-dot.running {
     background: var(--accent-green);
   }
 
-  .status-dot.starting {
+  .tabbed-panel-status-dot.starting {
     background: var(--accent-amber);
   }
 
-  .status-dot.success {
+  .tabbed-panel-status-dot.success {
     background: var(--accent-green);
   }
 
-  .status-dot.warning {
+  .tabbed-panel-status-dot.warning {
     background: var(--accent-amber);
   }
 
-  .status-dot.danger {
+  .tabbed-panel-status-dot.danger {
     background: var(--accent-red);
   }
 
-  .tab-tool {
+  .tabbed-panel-tab :global(.tabbed-panel-tab-tool) {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -758,13 +789,13 @@
     opacity: 0;
   }
 
-  .group-tab:hover .tab-tool,
-  .tab-tool:focus-visible {
+  .tabbed-panel-tab:hover :global(.tabbed-panel-tab-tool),
+  .tabbed-panel-tab :global(.tabbed-panel-tab-tool:focus-visible) {
     opacity: 1;
   }
 
-  .tab-tool:hover,
-  .tab-tool:focus-visible {
+  .tabbed-panel-tab :global(.tabbed-panel-tab-tool:hover),
+  .tabbed-panel-tab :global(.tabbed-panel-tab-tool:focus-visible) {
     background: var(--bg-surface-hover);
     color: var(--text-primary);
     outline: none;
@@ -814,24 +845,24 @@
     right: 3px;
   }
 
-  .group-body {
+  .tabbed-panel-body {
     position: relative;
     flex: 1;
     min-height: 0;
     overflow: hidden;
   }
 
-  .group-tab-panel {
+  .tabbed-panel-tab-panel {
     position: absolute;
     inset: 0;
     visibility: hidden;
   }
 
-  .group-tab-panel.active {
+  .tabbed-panel-tab-panel.active {
     visibility: visible;
   }
 
-  .split-preview {
+  .tabbed-panel-split-preview {
     position: absolute;
     z-index: 4;
     inset: 0;
@@ -847,11 +878,11 @@
       inset 90ms ease;
   }
 
-  .group-body.show-drop-targets .split-preview.active {
+  .tabbed-panel-body.show-drop-targets .tabbed-panel-split-preview.active {
     opacity: 1;
   }
 
-  .split-preview.top {
+  .tabbed-panel-split-preview.top {
     top: 0;
     right: 0;
     bottom: 50%;
@@ -860,7 +891,7 @@
     border-bottom-color: var(--accent-blue);
   }
 
-  .split-preview.right {
+  .tabbed-panel-split-preview.right {
     top: 0;
     right: 0;
     bottom: 0;
@@ -869,7 +900,7 @@
     border-left-color: var(--accent-blue);
   }
 
-  .split-preview.bottom {
+  .tabbed-panel-split-preview.bottom {
     top: 50%;
     right: 0;
     bottom: 0;
@@ -878,7 +909,7 @@
     border-top-color: var(--accent-blue);
   }
 
-  .split-preview.left {
+  .tabbed-panel-split-preview.left {
     top: 0;
     right: 50%;
     bottom: 0;

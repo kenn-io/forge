@@ -1291,7 +1291,7 @@ test.describe("workspace launch home", () => {
     await workflow.getByRole("button", { name: "Move Codex to terminal" }).click();
 
     await expect(workflow.getByRole("tab", { name: "Terminal" })).toHaveAttribute("aria-selected", "true");
-    await expect(page.locator(".workflow-leaf .terminal-container")).toBeVisible();
+    await expect(page.locator(".tabbed-panel-leaf .terminal-container")).toBeVisible();
   });
 
   test("keeps a closed top-docked terminal reachable when terminal sessions exist", async ({ page }) => {
@@ -1326,12 +1326,12 @@ test.describe("workspace launch home", () => {
     });
     await expect(terminalTab).toBeVisible();
     await expect(terminalTab).toHaveAttribute("aria-selected", "false");
-    await expect(page.locator(".workflow-leaf .terminal-container")).toHaveCount(0);
+    await expect(page.locator(".tabbed-panel-leaf .terminal-container")).toHaveCount(0);
 
     await terminalTab.click();
 
     await expect(terminalTab).toHaveAttribute("aria-selected", "true");
-    await expect(page.locator(".workflow-leaf .terminal-container")).toBeVisible();
+    await expect(page.locator(".tabbed-panel-leaf .terminal-container")).toBeVisible();
   });
 
   test("applies a workflow preset that restores the Shell workflow tab", async ({ page }) => {
@@ -1354,7 +1354,7 @@ test.describe("workspace launch home", () => {
       name: "Workflow panes",
     });
     await expect(workflow.getByRole("tab", { name: "Shell" })).toHaveAttribute("aria-selected", "true");
-    await expect(page.locator(".workflow-leaf .terminal-container")).toBeVisible();
+    await expect(page.locator(".tabbed-panel-leaf .terminal-container")).toBeVisible();
   });
 
   test("workflow pane drops append in the center and split at the edge", async ({ page }) => {
@@ -1367,12 +1367,12 @@ test.describe("workspace launch home", () => {
 
     await page.goto("/terminal/ws-123");
 
-    await expect(page.locator(".workflow-leaf")).toHaveCount(2);
+    await expect(page.locator(".tabbed-panel-leaf")).toHaveCount(2);
     await dragWorkflowTabToGroup(page, "Reviewer", 0, "center");
-    await expect(page.locator(".workflow-leaf")).toHaveCount(1);
+    await expect(page.locator(".tabbed-panel-leaf")).toHaveCount(1);
     await expect(
       page
-        .locator(".workflow-leaf")
+        .locator(".tabbed-panel-leaf")
         .first()
         .getByRole("tab", { name: /Reviewer/ }),
     ).toBeVisible();
@@ -1382,12 +1382,12 @@ test.describe("workspace launch home", () => {
     }, workflowDragLayout());
     await page.reload();
 
-    await expect(page.locator(".workflow-leaf")).toHaveCount(2);
+    await expect(page.locator(".tabbed-panel-leaf")).toHaveCount(2);
     await dragWorkflowTabToGroup(page, "Reviewer", 0, "left-edge");
-    await expect(page.locator(".workflow-leaf")).toHaveCount(2);
+    await expect(page.locator(".tabbed-panel-leaf")).toHaveCount(2);
     await expect(
       page
-        .locator(".workflow-leaf")
+        .locator(".tabbed-panel-leaf")
         .first()
         .getByRole("tab", { name: /Reviewer/ }),
     ).toBeVisible();
@@ -2828,7 +2828,7 @@ test.describe("delayed-response navigation", () => {
 
     await page.goto(`/terminal/${wsA.id}`);
     // A's session tab should be visible.
-    await expect(page.locator(".workspace-stage .group-tab-panel")).not.toHaveCount(0);
+    await expect(page.locator(".workspace-stage .tabbed-panel-tab-panel")).not.toHaveCount(0);
 
     await page
       .locator(".workspace-list-sidebar .ws-row", {

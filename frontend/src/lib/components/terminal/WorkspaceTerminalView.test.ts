@@ -418,7 +418,11 @@ describe("WorkspaceTerminalView", () => {
     const shellTab = await screen.findByRole("tab", { name: /Shell/ });
 
     expect(shellTab.getAttribute("aria-selected")).toBe("true");
-    await waitFor(() => expect(container.querySelector(".group-tab-panel.active .terminal-container")).toBeTruthy());
+    await waitFor(() =>
+      expect(
+        container.querySelector(".tabbed-panel-tab-panel.active .terminal-container"),
+      ).toBeTruthy(),
+    );
   });
 
   it("closes a terminal-panel shell when its terminal exits", async () => {
@@ -573,13 +577,9 @@ describe("WorkspaceTerminalView", () => {
       },
     });
 
-    const helperTab = await screen.findByRole("tab", {
-      name: /Helper/,
-    });
-    const reviewerTab = await screen.findByRole("tab", {
-      name: /Reviewer/,
-    });
-    const helperTabHost = helperTab.closest(".group-tab");
+    const helperTab = await screen.findByRole("tab", { name: /Helper/ });
+    const reviewerTab = await screen.findByRole("tab", { name: /Reviewer/ });
+    const helperTabHost = helperTab.closest(".tabbed-panel-tab");
     expect(helperTabHost).toBeTruthy();
     const dataTransfer = fakeDataTransfer();
 
@@ -589,13 +589,17 @@ describe("WorkspaceTerminalView", () => {
       dataTransfer,
     });
 
-    expect(screen.getByTestId("workflow-tab-drop-placeholder")).toBeTruthy();
-    expect(reviewerTab.closest(".group-tab")?.classList.contains("dragging")).toBe(true);
+    expect(screen.getByTestId("tabbed-panel-tab-drop-placeholder")).toBeTruthy();
+    expect(reviewerTab.closest(".tabbed-panel-tab")?.classList.contains("dragging")).toBe(
+      true,
+    );
 
     await fireEvent.dragEnd(reviewerTab);
 
-    expect(screen.queryByTestId("workflow-tab-drop-placeholder")).toBeNull();
-    expect(reviewerTab.closest(".group-tab")?.classList.contains("dragging")).toBe(false);
+    expect(screen.queryByTestId("tabbed-panel-tab-drop-placeholder")).toBeNull();
+    expect(reviewerTab.closest(".tabbed-panel-tab")?.classList.contains("dragging")).toBe(
+      false,
+    );
   });
 
   it("does not reopen the just-exited terminal from stale runtime data", async () => {

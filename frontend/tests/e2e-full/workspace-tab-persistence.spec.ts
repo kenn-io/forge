@@ -77,10 +77,8 @@ test.describe("workspace tab persistence", () => {
 
       await page.goto(`${isolatedServer.info.base_url}/terminal/${createdWorkspace.id}`);
 
-      const workflow = page.getByRole("region", {
-        name: "Workflow panes",
-      });
-      const panes = workflow.locator(".group-tab-panel");
+      const workflow = page.getByRole("region", { name: "Workflow panes" });
+      const panes = workflow.locator(".tabbed-panel-tab-panel");
       const homeTab = workflow.getByRole("tab", { name: "Home" });
       const tmuxTab = workflow.getByRole("tab", { name: "Shell" });
 
@@ -96,7 +94,7 @@ test.describe("workspace tab persistence", () => {
       // the DOM, with Shell marked active.
       await expect(panes).toHaveCount(2);
       await expect(tmuxTab).toHaveAttribute("aria-selected", "true");
-      const tmuxPane = workflow.locator(".group-tab-panel.active");
+      const tmuxPane = workflow.locator(".tabbed-panel-tab-panel.active");
       await expect(tmuxPane).toHaveCount(1);
 
       // Mark the shell pane so we can later confirm it's the same
@@ -109,13 +107,15 @@ test.describe("workspace tab persistence", () => {
       await homeTab.click();
       await expect(homeTab).toHaveAttribute("aria-selected", "true");
       await expect(panes).toHaveCount(2);
-      await expect(workflow.locator('.group-tab-panel[data-test-tmux-id="preserved"]')).toHaveCount(1);
+      await expect(
+        workflow.locator('.tabbed-panel-tab-panel[data-test-tmux-id="preserved"]'),
+      ).toHaveCount(1);
 
       // Switch back to Shell: must be the same DOM element, not a
       // freshly mounted one.
       await tmuxTab.click();
       await expect(panes).toHaveCount(2);
-      const reactivated = workflow.locator(".group-tab-panel.active");
+      const reactivated = workflow.locator(".tabbed-panel-tab-panel.active");
       await expect(reactivated).toHaveAttribute("data-test-tmux-id", "preserved");
     } finally {
       await api?.dispose();
@@ -192,10 +192,8 @@ test.describe("workspace tab persistence", () => {
 
       await page.goto(`${isolatedServer.info.base_url}/terminal/${workspace.id}`);
 
-      const workflow = page.getByRole("region", {
-        name: "Workflow panes",
-      });
-      const panes = workflow.locator(".group-tab-panel");
+      const workflow = page.getByRole("region", { name: "Workflow panes" });
+      const panes = workflow.locator(".tabbed-panel-tab-panel");
       const homeTab = workflow.getByRole("tab", { name: "Home" });
 
       await expect(homeTab).toHaveAttribute("aria-selected", "true");
@@ -340,7 +338,7 @@ test.describe("workspace tab persistence", () => {
       await expect(page.locator(".right-sidebar .workspace-diff")).toBeVisible();
       await expect(panes).toHaveCount(2);
 
-      await workflow.locator(".group-tab-panel.active .terminal-container").click();
+      await workflow.locator(".tabbed-panel-tab-panel.active .terminal-container").click();
       for (const key of ["j", "k", "[", "]"]) {
         await page.keyboard.press(key);
       }

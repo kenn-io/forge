@@ -63,9 +63,11 @@ describe("TabbedPanelTree", () => {
     expect(screen.getByTestId("panel-detail").dataset.active).toBe("true");
     expect(screen.getByTestId("panel-feed").dataset.active).toBe("false");
     expect(screen.getByTestId("icon-detail")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Action Detail" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Action Detail" }).className).toContain(
+      "tabbed-panel-tab-tool",
+    );
     expect(
-      screen.getByRole("tab", { name: /Feed/ }).querySelector(".status-dot.running"),
+      screen.getByRole("tab", { name: /Feed/ }).querySelector(".tabbed-panel-status-dot.running"),
     ).toBeTruthy();
   });
 
@@ -77,11 +79,13 @@ describe("TabbedPanelTree", () => {
     render(TabbedPanelTreeTestHarness, {
       props: {
         node: leafNode(),
+        onMoveTabBefore: vi.fn(),
+        onAppendTabToLeaf: vi.fn(),
       },
     });
     const dataTransfer = fakeDataTransfer();
     const detailTab = screen.getByRole("tab", { name: /Detail/ });
-    const feedHost = screen.getByRole("tab", { name: /Feed/ }).closest(".group-tab");
+    const feedHost = screen.getByRole("tab", { name: /Feed/ }).closest(".tabbed-panel-tab");
     expect(feedHost).toBeTruthy();
 
     await fireEvent.dragStart(detailTab, { dataTransfer });
@@ -90,12 +94,12 @@ describe("TabbedPanelTree", () => {
       dataTransfer,
     });
 
-    expect(screen.getByTestId("workflow-tab-drop-placeholder")).toBeTruthy();
-    expect(detailTab.closest(".group-tab")?.classList.contains("dragging")).toBe(true);
+    expect(screen.getByTestId("tabbed-panel-tab-drop-placeholder")).toBeTruthy();
+    expect(detailTab.closest(".tabbed-panel-tab")?.classList.contains("dragging")).toBe(true);
 
     await fireEvent.dragEnd(detailTab);
 
-    expect(screen.queryByTestId("workflow-tab-drop-placeholder")).toBeNull();
+    expect(screen.queryByTestId("tabbed-panel-tab-drop-placeholder")).toBeNull();
   });
 
   it("moves tab state before a target tab", () => {
@@ -130,7 +134,7 @@ describe("TabbedPanelTree", () => {
     });
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
       function rectForElement(this: HTMLElement): DOMRect {
-        const width = this.classList.contains("workflow-split") ? 1000 : 100;
+        const width = this.classList.contains("tabbed-panel-split") ? 1000 : 100;
         return {
           width,
           height: 600,

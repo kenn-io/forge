@@ -63,6 +63,8 @@
   {/snippet}
 
   {#snippet tabActions(tab)}
-    <button class="tab-tool" type="button" aria-label={`Action ${tab.label}`}> A </button>
+    <button class="tabbed-panel-tab-tool" type="button" aria-label={`Action ${tab.label}`}>
+      A
+    </button>
   {/snippet}
 </TabbedPanelTree>

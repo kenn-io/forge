@@ -131,7 +131,7 @@
     {@const tabKey = workflowTabFrom(tab.key)}
     {#if isRenamable(tab)}
       <button
-        class="tab-tool"
+        class="tabbed-panel-tab-tool"
         title="Rename"
         aria-label={`Rename ${tab.label}`}
         onclick={() => onRenameTab?.(tabKey)}
@@ -141,7 +141,7 @@
     {/if}
     {#if isMovableToTerminal(tab)}
       <button
-        class="tab-tool"
+        class="tabbed-panel-tab-tool"
         title="Move to terminal"
         aria-label={`Move ${tab.label} to terminal`}
         onclick={() => onMoveTabToTerminal?.(tabKey)}
@@ -151,7 +151,7 @@
     {/if}
     {#if isClosable(tab)}
       <button
-        class="tab-tool"
+        class="tabbed-panel-tab-tool"
         title="Close"
         aria-label={`Close ${tab.label}`}
         onclick={() => onCloseTab?.(tabKey)}

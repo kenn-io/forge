@@ -23,22 +23,49 @@
       eyebrow: string;
       title: string;
       body: string;
+      details?: string[];
     }
   > = {
     overview: {
       eyebrow: "PR #442",
       title: "Resizable split view",
       body: "Conversation and files stay side by side with a persisted divider.",
+      details: [
+        "Conversation",
+        "Files",
+        "Checks",
+        "Review threads",
+        "Merge queue",
+        "Release notes",
+      ],
     },
     activity: {
       eyebrow: "Workspace",
       title: "Review activity",
       body: "New comments, CI updates, and review decisions land in one panel.",
+      details: [
+        "09:42 Review requested",
+        "10:15 CI started",
+        "10:21 Lint passed",
+        "10:24 Unit tests passed",
+        "10:27 E2E tests passed",
+        "10:31 Comment added",
+        "10:40 Changes requested",
+        "11:03 Fix pushed",
+        "11:12 Review approved",
+      ],
     },
     terminal: {
       eyebrow: "Shell",
       title: "Local session",
       body: "A compact terminal surface can live beside PR context.",
+      details: [
+        "$ git status",
+        "$ bun run lint",
+        "$ bun run typecheck",
+        "$ git diff --stat",
+        "$ gh pr checks",
+      ],
     },
   };
 
@@ -121,6 +148,13 @@
         <p>{copy?.eyebrow ?? tabKey}</p>
         <h3>{copy?.title ?? tabKey}</h3>
         <span>{copy?.body ?? ""}</span>
+        {#if copy?.details}
+          <ul>
+            {#each copy.details as detail (detail)}
+              <li>{detail}</li>
+            {/each}
+          </ul>
+        {/if}
       </article>
     {/snippet}
 
@@ -140,7 +174,7 @@
   }
 
   .panel-surface {
-    height: 100%;
+    min-height: 100%;
     padding: 18px;
     display: grid;
     align-content: start;
@@ -175,6 +209,25 @@
     font-size: var(--font-size-md);
     line-height: 1.45;
     max-width: 42ch;
+  }
+
+  .panel-surface ul {
+    display: grid;
+    gap: 7px;
+    margin: 4px 0 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .panel-surface li {
+    padding: 7px 8px;
+    border: 1px solid var(--border-muted);
+    border-radius: 4px;
+    color: var(--text-secondary);
+    background: color-mix(in srgb, var(--bg-primary) 36%, transparent);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-sm);
+    line-height: 1.25;
   }
 
   .tab-initial {

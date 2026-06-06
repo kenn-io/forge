@@ -884,6 +884,9 @@
     position: absolute;
     inset: 0;
     visibility: hidden;
+    overflow-x: hidden;
+    overflow-y: auto;
+    scrollbar-gutter: stable;
   }
 
   .tabbed-panel-tab-panel.active {

@@ -216,6 +216,29 @@ test("design system page renders panel and typeahead examples", async ({ page })
 
   await panelDemo.getByRole("tab", { name: /Activity/ }).click();
   await expect(page.getByTestId("design-system-panel-activity")).toBeVisible();
+  const activityScrollMetrics = await page
+    .getByTestId("design-system-panel-activity")
+    .evaluate((article) => {
+      const panel = article.parentElement;
+      if (!panel) {
+        throw new Error("Missing tab panel for activity article");
+      }
+      panel.scrollTop = 0;
+      const styles = getComputedStyle(panel);
+      const before = panel.scrollTop;
+      panel.scrollTop = 48;
+      return {
+        overflowY: styles.overflowY,
+        scrollHeight: panel.scrollHeight,
+        clientHeight: panel.clientHeight,
+        scrollTopChanged: panel.scrollTop > before,
+      };
+    });
+  expect(activityScrollMetrics.overflowY).toBe("auto");
+  expect(activityScrollMetrics.scrollHeight).toBeGreaterThan(
+    activityScrollMetrics.clientHeight,
+  );
+  expect(activityScrollMetrics.scrollTopChanged).toBe(true);
 
   await dragDesignSystemPanelTab(page, "terminal", "overview");
   await expect(panelDemo.locator(".tabbed-panel-leaf")).toHaveCount(1);

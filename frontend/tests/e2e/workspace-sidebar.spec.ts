@@ -1357,6 +1357,51 @@ test.describe("workspace launch home", () => {
     await expect(page.locator(".tabbed-panel-leaf .terminal-container")).toBeVisible();
   });
 
+  test("renders workflow panes flush with the workspace stage", async ({ page }) => {
+    await setupTerminalMocks(page, {
+      runtime: workflowDragRuntime(),
+    });
+    await page.addInitScript((layout) => {
+      localStorage.setItem("middleman-workspace-terminal-layout:ws-123", JSON.stringify(layout));
+    }, workflowDragLayout());
+
+    await page.goto("/terminal/ws-123");
+    await expect(page.locator(".tabbed-panel-split")).toBeVisible();
+
+    const metrics = await page.evaluate(() => {
+      const stage = document.querySelector(".workspace-stage");
+      const split = document.querySelector(".workspace-stage .tabbed-panel-split");
+      if (!stage || !split) {
+        throw new Error("Missing workflow stage or split panel");
+      }
+
+      const stageRect = stage.getBoundingClientRect();
+      const splitRect = split.getBoundingClientRect();
+      const stageStyles = getComputedStyle(stage);
+
+      return {
+        padding: [
+          stageStyles.paddingTop,
+          stageStyles.paddingRight,
+          stageStyles.paddingBottom,
+          stageStyles.paddingLeft,
+        ],
+        delta: {
+          left: splitRect.left - stageRect.left,
+          top: splitRect.top - stageRect.top,
+          right: stageRect.right - splitRect.right,
+          bottom: stageRect.bottom - splitRect.bottom,
+        },
+      };
+    });
+
+    expect(metrics.padding).toEqual(["0px", "0px", "0px", "0px"]);
+    expect(Math.abs(metrics.delta.left)).toBeLessThanOrEqual(0.5);
+    expect(Math.abs(metrics.delta.top)).toBeLessThanOrEqual(0.5);
+    expect(Math.abs(metrics.delta.right)).toBeLessThanOrEqual(0.5);
+    expect(Math.abs(metrics.delta.bottom)).toBeLessThanOrEqual(0.5);
+  });
+
   test("workflow pane drops append in the center and split at the edge", async ({ page }) => {
     await setupTerminalMocks(page, {
       runtime: workflowDragRuntime(),

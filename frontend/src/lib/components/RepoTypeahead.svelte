@@ -25,14 +25,17 @@
   interface Props {
     selected: string | undefined;
     onchange: (repo: string | undefined) => void;
+    initialOpen?: boolean;
   }
 
-  let { selected, onchange }: Props = $props();
+  let { selected, onchange, initialOpen = false }: Props = $props();
 
   const stores = getStores();
 
-  onMount(() =>
-    registerCheatsheetEntries("repo-typeahead", [
+  onMount(() => {
+    if (initialOpen) open = true;
+
+    return registerCheatsheetEntries("repo-typeahead", [
       {
         id: "repo-typeahead.next",
         label: "Next repo",
@@ -57,8 +60,8 @@
         binding: { key: " " },
         scope: "view-pulls",
       },
-    ]),
-  );
+    ]);
+  });
 
   let fetchedRepos = $state<Repo[]>([]);
   let reposLoading = $state(false);

@@ -158,7 +158,7 @@
     }
     const tablist = event.currentTarget;
     tabSortPreview =
-      tablist instanceof HTMLElement
+      canSortTabs() && tablist instanceof HTMLElement
         ? sortPreviewFromPoint(tablist, sourceTabKey, event.clientX)
         : null;
   }
@@ -300,7 +300,7 @@
   function dropIntoLeaf(event: DragEvent, leafID: string): void {
     const sourceTabKey = readDraggedTab(event);
     if (sourceTabKey === null) return;
-    if (tabSortPreview) {
+    if (tabSortPreview && canSortTabs()) {
       event.preventDefault();
       moveTabToSortPlacement(sourceTabKey, tabSortPreview.targetTabKey, tabSortPreview.placement);
     } else {
@@ -646,25 +646,25 @@
 
   :global(.tabbed-panel-split.horizontal
       > .tabbed-panel-split-child.first
-      > .tabbed-panel-leaf) {
+      .tabbed-panel-leaf) {
     border-right: 0;
   }
 
   :global(.tabbed-panel-split.horizontal
       > .tabbed-panel-split-child.second
-      > .tabbed-panel-leaf) {
+      .tabbed-panel-leaf) {
     border-left: 0;
   }
 
   :global(.tabbed-panel-split.vertical
       > .tabbed-panel-split-child.first
-      > .tabbed-panel-leaf) {
+      .tabbed-panel-leaf) {
     border-bottom: 0;
   }
 
   :global(.tabbed-panel-split.vertical
       > .tabbed-panel-split-child.second
-      > .tabbed-panel-leaf) {
+      .tabbed-panel-leaf) {
     border-top: 0;
   }
 

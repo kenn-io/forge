@@ -1,9 +1,9 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 import { mockApi } from "./support/mockApi";
 
 async function dragDesignSystemPanelTab(
-  page: import("@playwright/test").Page,
+  page: Page,
   sourceTabKey: string,
   targetTabKey: string,
 ): Promise<void> {
@@ -35,7 +35,7 @@ async function dragDesignSystemPanelTab(
       );
 
       const rect = target.getBoundingClientRect();
-      const clientX = rect.left + rect.width / 2;
+      const clientX = rect.left + Math.max(1, rect.width * 0.25);
       const clientY = rect.top + rect.height / 2;
       target.dispatchEvent(
         new DragEvent("dragover", {
@@ -64,6 +64,73 @@ async function dragDesignSystemPanelTab(
       );
     },
     { sourceTabKey, targetTabKey },
+  );
+}
+
+async function dragDesignSystemPanelTabToPanelEdge(
+  page: Page,
+  sourceTabKey: string,
+  targetPanelTestID: string,
+  edge: "right" | "bottom",
+): Promise<void> {
+  await page.evaluate(
+    ({ sourceTabKey, targetPanelTestID, edge }) => {
+      const demo = document.querySelector(
+        '[data-testid="design-system-tabbed-panel-demo"]',
+      );
+      const source = demo?.querySelector(
+        `[data-tabbed-panel-tab-key="${sourceTabKey}"] [role="tab"]`,
+      );
+      const targetPanel = demo?.querySelector(
+        `[data-testid="${targetPanelTestID}"]`,
+      );
+      const target = targetPanel?.closest(".tabbed-panel-body");
+      if (!(source instanceof HTMLElement)) {
+        throw new Error(`Missing panel tab: ${sourceTabKey}`);
+      }
+      if (!(target instanceof HTMLElement)) {
+        throw new Error(`Missing panel body: ${targetPanelTestID}`);
+      }
+
+      const transfer = new DataTransfer();
+      source.dispatchEvent(
+        new DragEvent("dragstart", {
+          bubbles: true,
+          cancelable: true,
+          dataTransfer: transfer,
+        }),
+      );
+
+      const rect = target.getBoundingClientRect();
+      const clientX = edge === "right" ? rect.right - 1 : rect.left + rect.width / 2;
+      const clientY = edge === "bottom" ? rect.bottom - 1 : rect.top + rect.height / 2;
+      target.dispatchEvent(
+        new DragEvent("dragover", {
+          bubbles: true,
+          cancelable: true,
+          clientX,
+          clientY,
+          dataTransfer: transfer,
+        }),
+      );
+      target.dispatchEvent(
+        new DragEvent("drop", {
+          bubbles: true,
+          cancelable: true,
+          clientX,
+          clientY,
+          dataTransfer: transfer,
+        }),
+      );
+      source.dispatchEvent(
+        new DragEvent("dragend", {
+          bubbles: true,
+          cancelable: true,
+          dataTransfer: transfer,
+        }),
+      );
+    },
+    { sourceTabKey, targetPanelTestID, edge },
   );
 }
 
@@ -271,8 +338,55 @@ test("design system page renders panel and typeahead examples", async ({ page })
   );
   expect(activityScrollMetrics.scrollTopChanged).toBe(true);
 
+  const rootFirstChild = panelDemo.locator(".tabbed-panel-split-child.first").first();
+  const rootDivider = panelDemo.locator('[aria-label="Resize design system panel split"]').first();
+  const beforeResize = await rootFirstChild.boundingBox();
+  const dividerBox = await rootDivider.boundingBox();
+  if (!beforeResize || !dividerBox) {
+    throw new Error("Missing split geometry for resize assertion");
+  }
+  await page.mouse.move(
+    dividerBox.x + dividerBox.width / 2,
+    dividerBox.y + dividerBox.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    dividerBox.x - 90,
+    dividerBox.y + dividerBox.height / 2,
+  );
+  await page.mouse.up();
+  await expect
+    .poll(async () => (await rootFirstChild.boundingBox())?.width ?? 0)
+    .toBeLessThan(beforeResize.width - 24);
+
+  await dragDesignSystemPanelTabToPanelEdge(
+    page,
+    "activity",
+    "design-system-panel-overview",
+    "right",
+  );
+  await expect(panelDemo.locator(".tabbed-panel-leaf")).toHaveCount(3);
+  await expect(page.getByTestId("design-system-panel-activity")).toBeVisible();
+  const nestedSplitMetrics = await page
+    .getByTestId("design-system-panel-activity")
+    .evaluate((article) => {
+      const leaf = article.closest(".tabbed-panel-leaf");
+      if (!leaf) {
+        throw new Error("Missing nested split leaf");
+      }
+      const styles = getComputedStyle(leaf);
+      return {
+        borderLeftWidth: styles.borderLeftWidth,
+        borderRightWidth: styles.borderRightWidth,
+      };
+    });
+  expect(nestedSplitMetrics).toEqual({
+    borderLeftWidth: "0px",
+    borderRightWidth: "0px",
+  });
+
   await dragDesignSystemPanelTab(page, "terminal", "overview");
-  await expect(panelDemo.locator(".tabbed-panel-leaf")).toHaveCount(1);
+  await expect(panelDemo.locator(".tabbed-panel-leaf")).toHaveCount(2);
   await expect(page.getByTestId("design-system-panel-terminal")).toBeVisible();
   await expect(
     panelDemo.locator('[data-tabbed-panel-tab-key="terminal"] [role="tab"]'),
@@ -286,14 +400,24 @@ test("design system page renders panel and typeahead examples", async ({ page })
 
   const typeaheadDemo = page.getByTestId("design-system-typeahead-demo");
   await expect(typeaheadDemo).toBeVisible();
+  const openTypeahead = typeaheadDemo.getByTestId("typeahead-open");
+  await expect(
+    openTypeahead.getByRole("textbox", { name: "Filter repos" }),
+  ).toBeVisible();
+  await expect(
+    openTypeahead.getByRole("option", { name: /acme\/widgets/ }),
+  ).toBeVisible();
 
-  await typeaheadDemo.getByRole("button", { name: /All repos/ }).click();
-  const input = page.getByRole("textbox", { name: "Filter repos" });
+  const defaultTypeahead = typeaheadDemo.getByTestId("typeahead-default");
+  await defaultTypeahead.getByRole("button", { name: /All repos/ }).click();
+  const input = defaultTypeahead.getByRole("textbox", { name: "Filter repos" });
   await expect(input).toBeVisible();
   await input.fill("widgets");
   await expect(
-    page.getByRole("option", { name: /acme\/widgets/ }),
+    defaultTypeahead.getByRole("option", { name: /acme\/widgets/ }),
   ).toBeVisible();
+  await input.fill("does-not-exist");
+  await expect(defaultTypeahead.getByText("No matching repos")).toBeVisible();
 });
 
 test("chip descenders render without clipping", async ({ page }, testInfo) => {

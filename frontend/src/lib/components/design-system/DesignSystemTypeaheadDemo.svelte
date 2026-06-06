@@ -1,16 +1,44 @@
 <script lang="ts">
+  import { getStores } from "@middleman/ui";
+  import type { ConfigRepo } from "@middleman/ui/api/types";
   import RepoTypeahead from "../RepoTypeahead.svelte";
 
+  const stores = getStores();
+
   let blankSelection = $state<string | undefined>(undefined);
-  let repoSelection = $state<string | undefined>("github.com/acme/widgets");
+  let repoSelection = $state<string | undefined>(undefined);
+  let repoSelectionChanged = $state(false);
+
+  const configuredRepoSelection = $derived.by(() => {
+    const repo = stores?.settings?.getConfiguredRepos?.().find((entry) => !entry.is_glob);
+    return repo ? repoValue(repo) : undefined;
+  });
+
+  const selectedRepo = $derived(
+    repoSelectionChanged ? repoSelection : configuredRepoSelection,
+  );
+
+  function repoValue(repo: ConfigRepo): string {
+    const path = repo.repo_path || `${repo.owner}/${repo.name}`;
+    return `${repo.platform_host}/${path}`;
+  }
 
   function displaySelection(value: string | undefined): string {
     return value ?? "All repos";
   }
+
+  function updateRepoSelection(value: string | undefined): void {
+    repoSelectionChanged = true;
+    repoSelection = value;
+  }
 </script>
 
 <div class="typeahead-demo-grid" data-testid="design-system-typeahead-demo">
-  <section class="typeahead-example" aria-labelledby="typeahead-empty-title">
+  <section
+    class="typeahead-example"
+    aria-labelledby="typeahead-empty-title"
+    data-testid="typeahead-default"
+  >
     <div class="example-copy">
       <h3 id="typeahead-empty-title">Default trigger</h3>
       <p>{displaySelection(blankSelection)}</p>
@@ -21,14 +49,34 @@
     />
   </section>
 
-  <section class="typeahead-example" aria-labelledby="typeahead-selected-title">
+  <section
+    class="typeahead-example"
+    aria-labelledby="typeahead-selected-title"
+    data-testid="typeahead-selected"
+  >
     <div class="example-copy">
       <h3 id="typeahead-selected-title">Selected repo</h3>
-      <p>{displaySelection(repoSelection)}</p>
+      <p>{displaySelection(selectedRepo)}</p>
     </div>
     <RepoTypeahead
-      selected={repoSelection}
-      onchange={(repo) => (repoSelection = repo)}
+      selected={selectedRepo}
+      onchange={updateRepoSelection}
+    />
+  </section>
+
+  <section
+    class="typeahead-example open-state"
+    aria-labelledby="typeahead-open-title"
+    data-testid="typeahead-open"
+  >
+    <div class="example-copy">
+      <h3 id="typeahead-open-title">Open dropdown</h3>
+      <p>{displaySelection(selectedRepo)}</p>
+    </div>
+    <RepoTypeahead
+      selected={selectedRepo}
+      onchange={updateRepoSelection}
+      initialOpen={true}
     />
   </section>
 </div>
@@ -38,6 +86,7 @@
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 16px;
+    align-items: start;
   }
 
   .typeahead-example {
@@ -50,6 +99,11 @@
     grid-template-columns: minmax(0, 1fr) minmax(180px, 260px);
     gap: 14px;
     align-items: center;
+  }
+
+  .typeahead-example.open-state {
+    min-height: 148px;
+    align-items: start;
   }
 
   .example-copy {

@@ -119,21 +119,65 @@ describe("TabbedPanelTree", () => {
     const filesTab = screen.getByRole("tab", { name: /Files/ });
     const feedHost = screen.getByRole("tab", { name: /Feed/ }).closest(".tabbed-panel-tab");
     expect(feedHost).toBeTruthy();
+    vi.spyOn(feedHost!, "getBoundingClientRect").mockReturnValue({
+      width: 120,
+      height: 30,
+      x: 100,
+      y: 0,
+      top: 0,
+      right: 220,
+      bottom: 30,
+      left: 100,
+      toJSON: () => ({}),
+    });
 
     await fireEvent.dragStart(filesTab, { dataTransfer });
     await fireEvent.dragOver(feedHost!, {
-      clientX: -1,
+      clientX: 210,
       dataTransfer,
     });
 
     expect(screen.getByTestId("tabbed-panel-tab-drop-placeholder")).toBeTruthy();
 
     await fireEvent.drop(feedHost!, {
-      clientX: -1,
+      clientX: 210,
       dataTransfer,
     });
 
     expect(onMoveTabBefore).toHaveBeenCalledWith("files", "detail");
+
+    await fireEvent.dragEnd(filesTab);
+  });
+
+  it("appends from empty tab-strip space when sorting is disabled", async () => {
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    });
+    const onAppendTabToLeaf = vi.fn();
+    render(TabbedPanelTreeTestHarness, {
+      props: {
+        node: splitNode(),
+        onAppendTabToLeaf,
+      },
+    });
+    const dataTransfer = fakeDataTransfer();
+    const filesTab = screen.getByRole("tab", { name: /Files/ });
+    const targetTablist = screen.getAllByRole("tablist", { name: "Test panel tabs" })[0];
+    expect(targetTablist).toBeTruthy();
+
+    await fireEvent.dragStart(filesTab, { dataTransfer });
+    await fireEvent.dragOver(targetTablist!, {
+      clientX: 500,
+      dataTransfer,
+    });
+    await fireEvent.drop(targetTablist!, {
+      clientX: 500,
+      dataTransfer,
+    });
+
+    expect(screen.queryByTestId("tabbed-panel-tab-drop-placeholder")).toBeNull();
+    expect(onAppendTabToLeaf).toHaveBeenCalledWith("files", "leaf-1");
 
     await fireEvent.dragEnd(filesTab);
   });

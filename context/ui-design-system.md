@@ -96,6 +96,24 @@ Intent:
 
 Use it between resizable panes. Pass a specific accessible label such as `Resize Activity rail` or `Resize file tree`.
 
+### TabbedPanelTree
+
+Use `TabbedPanelTree` for VS Code-like panel workspaces: tab groups that can
+reorder tabs, drag tabs into another group, split a group horizontally or
+vertically, and resize split panes.
+
+Intent:
+
+- one shared interaction model for draggable, tabbed, splittable panel groups
+- let callers provide arbitrary panel content, tab icons, and tab action buttons
+- keep dedicated sidebar resizing on `SplitResizeHandle` instead of forcing
+  every two-pane layout into a tabbed workspace model
+
+Use it when a surface needs multiple interchangeable panels or future panes
+inside a draggable workspace. Do not use it for simple fixed sidebars,
+single-purpose drawers, or file-tree/content splits where `SplitResizeHandle`
+or a narrower layout primitive is enough.
+
 ### SelectDropdown
 
 Use `SelectDropdown` for single-value selection controls in the UI.

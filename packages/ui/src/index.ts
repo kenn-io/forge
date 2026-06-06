@@ -101,6 +101,36 @@ export { default as FilterDropdown } from "./components/shared/FilterDropdown.sv
 export { default as SelectDropdown } from "./components/shared/SelectDropdown.svelte";
 export { default as SplitResizeHandle } from "./components/shared/SplitResizeHandle.svelte";
 export type { SplitResizeEvent } from "./components/shared/split-resize.js";
+export { default as TabbedPanelTree } from "./components/shared/TabbedPanelTree.svelte";
+export {
+  clearActiveTabbedPanelDrag,
+  readTabbedPanelTabDrag,
+  startTabbedPanelTabDrag,
+} from "./components/shared/tabbed-panel-drag.js";
+export type { TabbedPanelTabDragPayload } from "./components/shared/tabbed-panel-drag.js";
+export {
+  activateTabbedPanelTab,
+  appendTabbedPanelTabToLeaf,
+  clampTabbedPanelRatio,
+  collectTabbedPanelTabKeys,
+  createTabbedPanelLeaf,
+  findTabbedPanelLeafByTab,
+  firstTabbedPanelLeaf,
+  moveTabbedPanelTabBefore,
+  normalizeTabbedPanelTree,
+  splitTabbedPanelTabIntoLeaf,
+  tabbedPanelSplitEdgeFromPoint,
+  tabbedPanelSplitPlacementForEdge,
+  updateTabbedPanelSplitRatio,
+} from "./components/shared/tabbed-panel-layout.js";
+export type {
+  TabbedPanelDescriptor,
+  TabbedPanelDirection,
+  TabbedPanelLeaf,
+  TabbedPanelNode,
+  TabbedPanelSplit,
+  TabbedPanelSplitEdge,
+} from "./components/shared/tabbed-panel-layout.js";
 export { default as WorkspaceRightSidebar } from "./components/workspace/WorkspaceRightSidebar.svelte";
 export { default as WorkspaceDiffPanel } from "./components/workspace/WorkspaceDiffPanel.svelte";
 export { default as DiffSidebar } from "./components/diff/DiffSidebar.svelte";

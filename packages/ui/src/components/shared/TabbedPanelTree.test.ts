@@ -1,0 +1,164 @@
+import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import TabbedPanelTreeTestHarness from "./TabbedPanelTreeTestHarness.svelte";
+import {
+  appendTabbedPanelTabToLeaf,
+  moveTabbedPanelTabBefore,
+  splitTabbedPanelTabIntoLeaf,
+  type TabbedPanelNode,
+} from "./tabbed-panel-layout";
+
+function fakeDataTransfer(): DataTransfer {
+  const data = new Map<string, string>();
+  return {
+    dropEffect: "none",
+    effectAllowed: "none",
+    getData: (type: string) => data.get(type) ?? "",
+    setData: (type: string, value: string) => {
+      data.set(type, value);
+    },
+    setDragImage: vi.fn(),
+  } as unknown as DataTransfer;
+}
+
+function leafNode(): TabbedPanelNode {
+  return {
+    type: "leaf",
+    id: "leaf-1",
+    tabs: ["feed", "detail"],
+    activeTabKey: "detail",
+  };
+}
+
+function splitNode(): TabbedPanelNode {
+  return {
+    type: "split",
+    id: "split-1",
+    direction: "horizontal",
+    ratio: 0.4,
+    first: leafNode(),
+    second: {
+      type: "leaf",
+      id: "leaf-2",
+      tabs: ["files"],
+      activeTabKey: "files",
+    },
+  };
+}
+
+describe("TabbedPanelTree", () => {
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("renders arbitrary tab content, icons, status, and actions", () => {
+    render(TabbedPanelTreeTestHarness, {
+      props: { node: leafNode() },
+    });
+
+    const detailTab = screen.getByRole("tab", { name: /Detail/ });
+    expect(detailTab.getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByTestId("panel-detail").dataset.active).toBe("true");
+    expect(screen.getByTestId("panel-feed").dataset.active).toBe("false");
+    expect(screen.getByTestId("icon-detail")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Action Detail" })).toBeTruthy();
+    expect(
+      screen.getByRole("tab", { name: /Feed/ }).querySelector(".status-dot.running"),
+    ).toBeTruthy();
+  });
+
+  it("shows a moving insertion slot while sorting tabs", async () => {
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    });
+    render(TabbedPanelTreeTestHarness, {
+      props: {
+        node: leafNode(),
+      },
+    });
+    const dataTransfer = fakeDataTransfer();
+    const detailTab = screen.getByRole("tab", { name: /Detail/ });
+    const feedHost = screen.getByRole("tab", { name: /Feed/ }).closest(".group-tab");
+    expect(feedHost).toBeTruthy();
+
+    await fireEvent.dragStart(detailTab, { dataTransfer });
+    await fireEvent.dragOver(feedHost!, {
+      clientX: -1,
+      dataTransfer,
+    });
+
+    expect(screen.getByTestId("workflow-tab-drop-placeholder")).toBeTruthy();
+    expect(detailTab.closest(".group-tab")?.classList.contains("dragging")).toBe(true);
+
+    await fireEvent.dragEnd(detailTab);
+
+    expect(screen.queryByTestId("workflow-tab-drop-placeholder")).toBeNull();
+  });
+
+  it("moves tab state before a target tab", () => {
+    const next = moveTabbedPanelTabBefore(leafNode(), "detail", "feed");
+
+    expect(next).toEqual({
+      type: "leaf",
+      id: "leaf-1",
+      tabs: ["detail", "feed"],
+      activeTabKey: "feed",
+    });
+  });
+
+  it("keeps tab state intact when move targets are stale", () => {
+    const node = splitNode();
+
+    expect(moveTabbedPanelTabBefore(node, "detail", "missing")).toBe(node);
+    expect(appendTabbedPanelTabToLeaf(node, "detail", "missing")).toBe(node);
+    expect(splitTabbedPanelTabIntoLeaf(node, "detail", "missing", "horizontal", "after")).toBe(
+      node,
+    );
+  });
+
+  it("reports split ratio changes from the divider", async () => {
+    Object.defineProperty(HTMLElement.prototype, "setPointerCapture", {
+      configurable: true,
+      value: vi.fn(),
+    });
+    Object.defineProperty(HTMLElement.prototype, "releasePointerCapture", {
+      configurable: true,
+      value: vi.fn(),
+    });
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+      function rectForElement(this: HTMLElement): DOMRect {
+        const width = this.classList.contains("workflow-split") ? 1000 : 100;
+        return {
+          width,
+          height: 600,
+          x: 0,
+          y: 0,
+          top: 0,
+          right: width,
+          bottom: 600,
+          left: 0,
+          toJSON: () => ({}),
+        };
+      },
+    );
+    const onRatioChange = vi.fn();
+    render(TabbedPanelTreeTestHarness, {
+      props: {
+        node: splitNode(),
+        onRatioChange,
+      },
+    });
+
+    const divider = screen.getByRole("button", {
+      name: "Resize test split",
+    });
+    await fireEvent.pointerDown(divider, { clientX: 400, pointerId: 1 });
+    window.dispatchEvent(new MouseEvent("pointermove", { clientX: 700, bubbles: true }));
+    window.dispatchEvent(new MouseEvent("pointerup", { clientX: 700, bubbles: true }));
+
+    expect(onRatioChange).toHaveBeenCalledWith("split-1", 0.7);
+  });
+});

@@ -1,5 +1,7 @@
 <script lang="ts">
   import { Chip } from "@middleman/ui";
+  import DesignSystemTabbedPanelDemo from "./DesignSystemTabbedPanelDemo.svelte";
+  import DesignSystemTypeaheadDemo from "./DesignSystemTypeaheadDemo.svelte";
 
   type ChipSize = "sm" | "md";
 
@@ -31,10 +33,40 @@
       <p class="eyebrow">Shared primitives</p>
       <h1>Design system</h1>
       <p class="intro">
-        Validation surface for shared chip geometry, tone variants, casing, and
-        interactive states.
+        Validation surface for shared primitives used across maintainer
+        workflows.
       </p>
     </header>
+
+    <section class="card" aria-labelledby="tabbed-panel-title">
+      <div class="section-header">
+        <div>
+          <p class="section-kicker">TabbedPanelTree</p>
+          <h2 id="tabbed-panel-title">Tabbed workspace panels</h2>
+        </div>
+        <p class="section-copy">
+          Neutral panel workspace with draggable tabs, split drops, and
+          resizable panes.
+        </p>
+      </div>
+
+      <DesignSystemTabbedPanelDemo />
+    </section>
+
+    <section class="card" aria-labelledby="typeahead-title">
+      <div class="section-header">
+        <div>
+          <p class="section-kicker">RepoTypeahead</p>
+          <h2 id="typeahead-title">Typeahead dropdown states</h2>
+        </div>
+        <p class="section-copy">
+          Repository picker states using the configured repo tree and shared
+          dropdown row treatment.
+        </p>
+      </div>
+
+      <DesignSystemTypeaheadDemo />
+    </section>
 
     <section class="card" aria-labelledby="chip-variants-title">
       <div class="section-header">

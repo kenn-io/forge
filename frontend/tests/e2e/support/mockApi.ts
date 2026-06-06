@@ -7,9 +7,11 @@ const defaultProviderCapabilities = {
   read_comments: true,
   read_releases: true,
   read_ci: true,
+  read_labels: true,
   comment_mutation: true,
   state_mutation: true,
   merge_mutation: true,
+  label_mutation: true,
   review_mutation: true,
   workflow_approval: true,
   ready_for_review: true,
@@ -18,7 +20,25 @@ const defaultProviderCapabilities = {
   review_thread_resolution: false,
   read_review_threads: false,
   native_multiline_ranges: false,
+  thread_reply: false,
+  thread_resolve: false,
   supported_review_actions: [],
+};
+
+const defaultOperationAvailability = { available: true };
+
+const defaultRepoOperations = {
+  add_comment: defaultOperationAvailability,
+  add_label: defaultOperationAvailability,
+  approve_workflow: defaultOperationAvailability,
+  close_issue: defaultOperationAvailability,
+  close_pr: defaultOperationAvailability,
+  mark_ready_for_review: defaultOperationAvailability,
+  merge_pr: defaultOperationAvailability,
+  remove_label: defaultOperationAvailability,
+  reopen_issue: defaultOperationAvailability,
+  reopen_pr: defaultOperationAvailability,
+  submit_review: defaultOperationAvailability,
 };
 
 function repoRef(owner: string, name: string, platformHost: string) {
@@ -166,13 +186,24 @@ const repos = [
     ID: 1,
     Owner: "acme",
     Name: "widgets",
+    Platform: "github",
+    PlatformHost: "github.com",
     AllowSquashMerge: true,
     AllowMergeCommit: true,
     AllowRebaseMerge: true,
+    BackfillIssueComplete: true,
+    BackfillIssueCompletedAt: "2026-03-30T14:00:30Z",
+    BackfillIssuePage: 1,
+    BackfillPRComplete: true,
+    BackfillPRCompletedAt: "2026-03-30T14:00:30Z",
+    BackfillPRPage: 1,
+    ViewerCanMerge: true,
     LastSyncStartedAt: "2026-03-30T14:00:00Z",
     LastSyncCompletedAt: "2026-03-30T14:00:30Z",
     LastSyncError: "",
     CreatedAt: "2026-03-01T00:00:00Z",
+    capabilities: defaultProviderCapabilities,
+    operations: defaultRepoOperations,
   },
 ];
 

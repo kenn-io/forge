@@ -103,6 +103,35 @@ test("design system page renders chip matrix with shared styles", async ({ page 
   expect(styles[5].cursor).toBe("pointer");
 });
 
+test("design system page renders panel and typeahead examples", async ({ page }) => {
+  await page.goto("/design-system");
+
+  await expect(
+    page.getByRole("heading", { name: "Tabbed workspace panels" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Typeahead dropdown states" }),
+  ).toBeVisible();
+
+  const panelDemo = page.getByTestId("design-system-tabbed-panel-demo");
+  await expect(panelDemo).toBeVisible();
+  await expect(page.getByTestId("design-system-panel-overview")).toBeVisible();
+
+  await panelDemo.getByRole("tab", { name: /Activity/ }).click();
+  await expect(page.getByTestId("design-system-panel-activity")).toBeVisible();
+
+  const typeaheadDemo = page.getByTestId("design-system-typeahead-demo");
+  await expect(typeaheadDemo).toBeVisible();
+
+  await typeaheadDemo.getByRole("button", { name: /All repos/ }).click();
+  const input = page.getByRole("textbox", { name: "Filter repos" });
+  await expect(input).toBeVisible();
+  await input.fill("widgets");
+  await expect(
+    page.getByRole("option", { name: /acme\/widgets/ }),
+  ).toBeVisible();
+});
+
 test("chip descenders render without clipping", async ({ page }, testInfo) => {
   test.skip(process.env.MIDDLEMAN_VISUAL_E2E !== "1", "Set MIDDLEMAN_VISUAL_E2E=1 to run chip visual snapshots.");
   test.skip(testInfo.project.name !== "chromium", "Chip visual snapshot is Chromium-only.");

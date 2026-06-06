@@ -128,16 +128,6 @@
       <span class="tab-initial">{tab.label.slice(0, 1)}</span>
     {/snippet}
 
-    {#snippet tabActions(tab)}
-      <button
-        class="tabbed-panel-tab-tool"
-        type="button"
-        aria-label={`Focus ${tab.label}`}
-        onclick={() => selectTab(tab.key)}
-      >
-        <span aria-hidden="true">*</span>
-      </button>
-    {/snippet}
   </TabbedPanelTree>
 </div>
 

@@ -636,11 +636,36 @@
     outline: none;
   }
 
+  :global(.tabbed-panel-split.horizontal
+      > .tabbed-panel-split-child.first
+      > .tabbed-panel-leaf) {
+    border-right: 0;
+  }
+
+  :global(.tabbed-panel-split.horizontal
+      > .tabbed-panel-split-child.second
+      > .tabbed-panel-leaf) {
+    border-left: 0;
+  }
+
+  :global(.tabbed-panel-split.vertical
+      > .tabbed-panel-split-child.first
+      > .tabbed-panel-leaf) {
+    border-bottom: 0;
+  }
+
+  :global(.tabbed-panel-split.vertical
+      > .tabbed-panel-split-child.second
+      > .tabbed-panel-leaf) {
+    border-top: 0;
+  }
+
   .tabbed-panel-leaf {
     display: flex;
     flex-direction: column;
     overflow: hidden;
     border: 1px solid var(--border-default);
+    border-top: 0;
     background: var(--bg-surface);
   }
 

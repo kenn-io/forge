@@ -180,7 +180,39 @@ test("design system page renders panel and typeahead examples", async ({ page })
 
   const panelDemo = page.getByTestId("design-system-tabbed-panel-demo");
   await expect(panelDemo).toBeVisible();
+  await expect(panelDemo.locator(".tabbed-panel-tab-tool")).toHaveCount(0);
   await expect(page.getByTestId("design-system-panel-overview")).toBeVisible();
+  const splitMetrics = await panelDemo
+    .locator('[aria-label="Resize design system panel split"]')
+    .evaluate((divider) => {
+      const split = divider.closest(".tabbed-panel-split");
+      const firstLeaf = split?.querySelector(
+        ".tabbed-panel-split-child.first > .tabbed-panel-leaf",
+      );
+      const secondLeaf = split?.querySelector(
+        ".tabbed-panel-split-child.second > .tabbed-panel-leaf",
+      );
+      const dividerBox = divider.getBoundingClientRect();
+      const dividerStyles = getComputedStyle(divider);
+      const firstLeafStyles = firstLeaf ? getComputedStyle(firstLeaf) : null;
+      const secondLeafStyles = secondLeaf ? getComputedStyle(secondLeaf) : null;
+      return {
+        dividerWidth: Math.round(dividerBox.width),
+        dividerPaddingInline: `${dividerStyles.paddingLeft}/${dividerStyles.paddingRight}`,
+        firstLeafBorderTop: firstLeafStyles?.borderTopWidth,
+        firstLeafBorderRight: firstLeafStyles?.borderRightWidth,
+        secondLeafBorderTop: secondLeafStyles?.borderTopWidth,
+        secondLeafBorderLeft: secondLeafStyles?.borderLeftWidth,
+      };
+    });
+  expect(splitMetrics).toEqual({
+    dividerWidth: 3,
+    dividerPaddingInline: "0px/0px",
+    firstLeafBorderTop: "0px",
+    firstLeafBorderRight: "0px",
+    secondLeafBorderTop: "0px",
+    secondLeafBorderLeft: "0px",
+  });
 
   await panelDemo.getByRole("tab", { name: /Activity/ }).click();
   await expect(page.getByTestId("design-system-panel-activity")).toBeVisible();

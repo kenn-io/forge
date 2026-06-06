@@ -123,6 +123,7 @@
     if (!canSortTabs()) return;
     const sourceTabKey = readDraggedTab(event);
     if (sourceTabKey === null) return;
+    adoptDraggedTab(sourceTabKey);
     event.preventDefault();
     event.stopPropagation();
     if (event.dataTransfer) {
@@ -145,6 +146,7 @@
     const overTab = target instanceof HTMLElement && target.closest(".tabbed-panel-tab");
     if (overTab && !canSortTabs()) return;
     if (!overTab && !onAppendTabToLeaf) return;
+    adoptDraggedTab(sourceTabKey);
     event.preventDefault();
     if (event.dataTransfer) {
       event.dataTransfer.dropEffect = "move";
@@ -183,6 +185,20 @@
     tabSortPreview = null;
   }
 
+  function adoptDraggedTab(sourceTabKey: string): void {
+    if (draggedTabKey !== sourceTabKey) {
+      draggedTabKey = sourceTabKey;
+    }
+  }
+
+  function clearExternalTabDragState(): void {
+    if (draggedTabKey !== null && node.type === "leaf" && !node.tabs.includes(draggedTabKey)) {
+      clearTabDragState();
+      return;
+    }
+    clearTabSortPreview();
+  }
+
   function clearTabDragState(): void {
     draggedTabKey = null;
     draggedTabWidth = 112;
@@ -214,7 +230,7 @@
     if (current instanceof HTMLElement && next instanceof Node && current.contains(next)) {
       return;
     }
-    clearTabSortPreview();
+    clearExternalTabDragState();
   }
 
   function sortPreviewFromPoint(
@@ -601,36 +617,23 @@
   }
 
   .tabbed-panel-split-divider {
-    flex: 0 0 5px;
+    flex: 0 0 3px;
+    appearance: none;
     border: 0;
-    background: var(--bg-primary);
+    padding: 0;
+    background: var(--border-muted);
     cursor: col-resize;
-    position: relative;
+    flex-shrink: 0;
   }
 
   .tabbed-panel-split.vertical > .tabbed-panel-split-divider {
     cursor: row-resize;
   }
 
-  .tabbed-panel-split-divider::before {
-    content: "";
-    position: absolute;
-    inset: 0 2px;
-    background: var(--border-default);
-  }
-
-  .tabbed-panel-split.vertical > .tabbed-panel-split-divider::before {
-    inset: 2px 0;
-  }
-
-  .tabbed-panel-split-divider:hover::before,
-  .tabbed-panel-split-divider:focus-visible::before {
-    background: var(--accent-blue);
-  }
-
+  .tabbed-panel-split-divider:hover,
   .tabbed-panel-split-divider:focus-visible {
-    outline: 2px solid var(--accent-blue);
-    outline-offset: -2px;
+    background: var(--accent-blue);
+    outline: none;
   }
 
   .tabbed-panel-leaf {

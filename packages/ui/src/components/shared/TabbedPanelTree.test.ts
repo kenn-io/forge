@@ -102,6 +102,42 @@ describe("TabbedPanelTree", () => {
     expect(screen.queryByTestId("tabbed-panel-tab-drop-placeholder")).toBeNull();
   });
 
+  it("previews and drops tabs into another split leaf", async () => {
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    });
+    const onMoveTabBefore = vi.fn();
+    render(TabbedPanelTreeTestHarness, {
+      props: {
+        node: splitNode(),
+        onMoveTabBefore,
+        onAppendTabToLeaf: vi.fn(),
+      },
+    });
+    const dataTransfer = fakeDataTransfer();
+    const filesTab = screen.getByRole("tab", { name: /Files/ });
+    const feedHost = screen.getByRole("tab", { name: /Feed/ }).closest(".tabbed-panel-tab");
+    expect(feedHost).toBeTruthy();
+
+    await fireEvent.dragStart(filesTab, { dataTransfer });
+    await fireEvent.dragOver(feedHost!, {
+      clientX: -1,
+      dataTransfer,
+    });
+
+    expect(screen.getByTestId("tabbed-panel-tab-drop-placeholder")).toBeTruthy();
+
+    await fireEvent.drop(feedHost!, {
+      clientX: -1,
+      dataTransfer,
+    });
+
+    expect(onMoveTabBefore).toHaveBeenCalledWith("files", "detail");
+
+    await fireEvent.dragEnd(filesTab);
+  });
+
   it("moves tab state before a target tab", () => {
     const next = moveTabbedPanelTabBefore(leafNode(), "detail", "feed");
 

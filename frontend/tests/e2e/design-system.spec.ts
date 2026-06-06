@@ -2,6 +2,71 @@ import { expect, test } from "@playwright/test";
 
 import { mockApi } from "./support/mockApi";
 
+async function dragDesignSystemPanelTab(
+  page: import("@playwright/test").Page,
+  sourceTabKey: string,
+  targetTabKey: string,
+): Promise<void> {
+  await page.evaluate(
+    ({ sourceTabKey, targetTabKey }) => {
+      const demo = document.querySelector(
+        '[data-testid="design-system-tabbed-panel-demo"]',
+      );
+      const source = demo?.querySelector(
+        `[data-tabbed-panel-tab-key="${sourceTabKey}"] [role="tab"]`,
+      );
+      const target = demo?.querySelector(
+        `[data-tabbed-panel-tab-key="${targetTabKey}"]`,
+      );
+      if (!(source instanceof HTMLElement)) {
+        throw new Error(`Missing panel tab: ${sourceTabKey}`);
+      }
+      if (!(target instanceof HTMLElement)) {
+        throw new Error(`Missing panel tab: ${targetTabKey}`);
+      }
+
+      const transfer = new DataTransfer();
+      source.dispatchEvent(
+        new DragEvent("dragstart", {
+          bubbles: true,
+          cancelable: true,
+          dataTransfer: transfer,
+        }),
+      );
+
+      const rect = target.getBoundingClientRect();
+      const clientX = rect.left + rect.width / 2;
+      const clientY = rect.top + rect.height / 2;
+      target.dispatchEvent(
+        new DragEvent("dragover", {
+          bubbles: true,
+          cancelable: true,
+          clientX,
+          clientY,
+          dataTransfer: transfer,
+        }),
+      );
+      target.dispatchEvent(
+        new DragEvent("drop", {
+          bubbles: true,
+          cancelable: true,
+          clientX,
+          clientY,
+          dataTransfer: transfer,
+        }),
+      );
+      source.dispatchEvent(
+        new DragEvent("dragend", {
+          bubbles: true,
+          cancelable: true,
+          dataTransfer: transfer,
+        }),
+      );
+    },
+    { sourceTabKey, targetTabKey },
+  );
+}
+
 test.beforeEach(async ({ page }) => {
   await mockApi(page);
 });
@@ -119,6 +184,19 @@ test("design system page renders panel and typeahead examples", async ({ page })
 
   await panelDemo.getByRole("tab", { name: /Activity/ }).click();
   await expect(page.getByTestId("design-system-panel-activity")).toBeVisible();
+
+  await dragDesignSystemPanelTab(page, "terminal", "overview");
+  await expect(panelDemo.locator(".tabbed-panel-leaf")).toHaveCount(1);
+  await expect(page.getByTestId("design-system-panel-terminal")).toBeVisible();
+  await expect(
+    panelDemo.locator('[data-tabbed-panel-tab-key="terminal"] [role="tab"]'),
+  ).toHaveAttribute("aria-selected", "true");
+  const tabOrder = await panelDemo
+    .locator("[data-tabbed-panel-tab-key]")
+    .evaluateAll((tabs) =>
+      tabs.map((tab) => tab.getAttribute("data-tabbed-panel-tab-key")),
+    );
+  expect(tabOrder).toEqual(["terminal", "overview", "activity"]);
 
   const typeaheadDemo = page.getByTestId("design-system-typeahead-demo");
   await expect(typeaheadDemo).toBeVisible();

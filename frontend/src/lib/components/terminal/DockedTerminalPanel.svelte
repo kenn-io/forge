@@ -297,6 +297,7 @@
     position: relative;
     display: flex;
     flex-direction: column;
+    border-top: 0;
   }
 
   .panel-resizer {
@@ -316,9 +317,9 @@
     position: absolute;
     left: 0;
     right: 0;
-    top: 3px;
-    height: 1px;
-    background: transparent;
+    top: 2px;
+    height: 3px;
+    background: var(--border-default);
   }
 
   .panel-resizer:hover::before,
@@ -417,7 +418,6 @@
   .terminal-tree {
     min-width: 0;
     min-height: 0;
-    padding: 6px;
     overflow: hidden;
   }
 

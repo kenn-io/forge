@@ -20,12 +20,22 @@
   } from "./terminal-drag";
   import { workspaceSessionWebSocketPath } from "../../api/workspace-runtime.js";
 
+  interface BorderTrim {
+    top?: boolean;
+    right?: boolean;
+    bottom?: boolean;
+    left?: boolean;
+  }
+
+  type BorderEdge = keyof BorderTrim;
+
   interface Props {
     workspaceId: string;
     node: PaneNode;
     sessions: RuntimeSession[];
     displayLabels: Record<string, string>;
     activeSessionKey: string | null;
+    borderTrim?: BorderTrim | undefined;
     onSelect?: ((sessionKey: string) => void) | undefined;
     onClose?: ((session: RuntimeSession) => void) | undefined;
     onRename?: ((session: RuntimeSession) => void) | undefined;
@@ -48,6 +58,7 @@
     sessions,
     displayLabels,
     activeSessionKey,
+    borderTrim = {},
     onSelect,
     onClose,
     onRename,
@@ -172,6 +183,44 @@
     window.addEventListener("pointermove", onPointerMove);
     window.addEventListener("pointerup", onPointerUp, { once: true });
   }
+
+  function inheritTrim(target: BorderTrim, edge: BorderEdge): void {
+    if (borderTrim[edge]) {
+      target[edge] = true;
+    }
+  }
+
+  function firstChildTrim(direction: SplitDirection): BorderTrim {
+    if (direction === "horizontal") {
+      const trim: BorderTrim = { right: true };
+      inheritTrim(trim, "top");
+      inheritTrim(trim, "bottom");
+      inheritTrim(trim, "left");
+      return trim;
+    }
+
+    const trim: BorderTrim = { bottom: true };
+    inheritTrim(trim, "top");
+    inheritTrim(trim, "right");
+    inheritTrim(trim, "left");
+    return trim;
+  }
+
+  function secondChildTrim(direction: SplitDirection): BorderTrim {
+    if (direction === "horizontal") {
+      const trim: BorderTrim = { left: true };
+      inheritTrim(trim, "top");
+      inheritTrim(trim, "right");
+      inheritTrim(trim, "bottom");
+      return trim;
+    }
+
+    const trim: BorderTrim = { top: true };
+    inheritTrim(trim, "right");
+    inheritTrim(trim, "bottom");
+    inheritTrim(trim, "left");
+    return trim;
+  }
 </script>
 
 {#if node.type === "leaf"}
@@ -182,6 +231,10 @@
       {
         active: activeSessionKey === node.sessionKey,
         "single-session": sessions.length <= 1,
+        "trim-top": borderTrim.top,
+        "trim-right": borderTrim.right,
+        "trim-bottom": borderTrim.bottom,
+        "trim-left": borderTrim.left,
       },
     ]}
   >
@@ -289,6 +342,7 @@
         {sessions}
         {displayLabels}
         {activeSessionKey}
+        borderTrim={firstChildTrim(node.direction)}
         {onSelect}
         {onClose}
         {onRename}
@@ -310,6 +364,7 @@
         {sessions}
         {displayLabels}
         {activeSessionKey}
+        borderTrim={secondChildTrim(node.direction)}
         {onSelect}
         {onClose}
         {onRename}
@@ -358,36 +413,23 @@
   }
 
   .split-divider {
-    flex: 0 0 5px;
+    flex: 0 0 3px;
+    appearance: none;
     border: 0;
-    background: transparent;
+    padding: 0;
+    background: var(--border-muted);
     cursor: col-resize;
-    position: relative;
+    flex-shrink: 0;
   }
 
   .terminal-split.vertical > .split-divider {
     cursor: row-resize;
   }
 
-  .split-divider::before {
-    content: "";
-    position: absolute;
-    inset: 0 2px;
-    background: var(--border-default);
-  }
-
-  .terminal-split.vertical > .split-divider::before {
-    inset: 2px 0;
-  }
-
-  .split-divider:hover::before,
-  .split-divider:focus-visible::before {
-    background: var(--accent-blue);
-  }
-
+  .split-divider:hover,
   .split-divider:focus-visible {
-    outline: 2px solid var(--accent-blue);
-    outline-offset: -2px;
+    background: var(--accent-blue);
+    outline: none;
   }
 
   .terminal-leaf {
@@ -400,6 +442,22 @@
 
   .terminal-leaf.active {
     border-color: color-mix(in srgb, var(--accent-blue) 60%, var(--border-muted));
+  }
+
+  .terminal-leaf.trim-right {
+    border-right: 0;
+  }
+
+  .terminal-leaf.trim-left {
+    border-left: 0;
+  }
+
+  .terminal-leaf.trim-bottom {
+    border-bottom: 0;
+  }
+
+  .terminal-leaf.trim-top {
+    border-top: 0;
   }
 
   .leaf-header {

@@ -1866,6 +1866,35 @@ test.describe("workspace launch home", () => {
       .click();
 
     await expect(page.locator(".terminal-panel.open .terminal-container")).toBeVisible();
+    const dividerMetrics = await page.evaluate(() => {
+      const panel = document.querySelector(".terminal-panel.bottom.open");
+      const resizer = document.querySelector(".terminal-panel.bottom.open .panel-resizer");
+      const stage = document.querySelector(".workspace-stage");
+      if (!panel || !resizer || !stage) {
+        throw new Error("Missing bottom dock panel, resizer, or workspace stage");
+      }
+
+      const panelRect = panel.getBoundingClientRect();
+      const resizerRect = resizer.getBoundingClientRect();
+      const stageRect = stage.getBoundingClientRect();
+      const panelStyles = getComputedStyle(panel);
+      const resizerStyles = getComputedStyle(resizer);
+      const stripeStyles = getComputedStyle(resizer, "::before");
+      return {
+        panelBorderTop: panelStyles.borderTopWidth,
+        resizerCursor: resizerStyles.cursor,
+        resizerHeight: Math.round(resizerRect.height),
+        stageToPanel: Math.round(panelRect.top - stageRect.bottom),
+        stripeHeight: stripeStyles.height,
+      };
+    });
+    expect(dividerMetrics).toEqual({
+      panelBorderTop: "0px",
+      resizerCursor: "row-resize",
+      resizerHeight: 7,
+      stageToPanel: 0,
+      stripeHeight: "3px",
+    });
     await expect
       .poll(() => terminalSockets.some((url) => url.includes("/runtime/sessions/ws-123%3Aplain_shell/terminal")))
       .toBe(true);
@@ -1905,6 +1934,157 @@ test.describe("workspace launch home", () => {
 
     await expect.poll(() => shellEnsures.length).toBe(1);
     await expect(page.locator(".terminal-panel.open .terminal-container")).toBeVisible();
+  });
+
+  test("renders bottom terminal split panes flush with consistent dividers", async ({ page }) => {
+    const splitTree = {
+      type: "split",
+      id: "terminal-split-root",
+      direction: "horizontal",
+      ratio: 0.5,
+      first: {
+        type: "leaf",
+        id: "terminal-left",
+        sessionKey: "ws-123:plain_shell",
+      },
+      second: {
+        type: "leaf",
+        id: "terminal-right",
+        sessionKey: "ws-123:shell_2",
+      },
+    };
+    await setupTerminalMocks(page, {
+      runtime: {
+        ...workspaceRuntime,
+        sessions: [
+          {
+            key: "ws-123:plain_shell",
+            workspace_id: "ws-123",
+            target_key: "plain_shell",
+            label: "Shell",
+            kind: "plain_shell",
+            status: "running",
+            created_at: "2026-04-10T12:00:00Z",
+          },
+          {
+            key: "ws-123:shell_2",
+            workspace_id: "ws-123",
+            target_key: "plain_shell",
+            label: "Shell 2",
+            kind: "plain_shell",
+            status: "running",
+            created_at: "2026-04-10T12:00:00Z",
+          },
+        ],
+      },
+    });
+    await page.addInitScript((tree) => {
+      localStorage.setItem(
+        "middleman-workspace-terminal-layout:ws-123",
+        JSON.stringify({
+          version: 1,
+          open: true,
+          dock: "bottom",
+          height: 300,
+          activeSessionKey: "ws-123:shell_2",
+          tree,
+          terminalGroups: [
+            {
+              id: "terminal-group",
+              activeSessionKey: "ws-123:shell_2",
+              tree,
+            },
+          ],
+          activeTerminalGroupID: "terminal-group",
+          sessionRegions: {
+            "ws-123:plain_shell": "terminal",
+            "ws-123:shell_2": "terminal",
+          },
+          workflowMode: "tabs",
+          workflowTree: {
+            type: "leaf",
+            id: "workflow-root",
+            tabs: ["home"],
+            activeTabKey: "home",
+          },
+          activeWorkflowLeafID: "workflow-root",
+          recentWorkflowLeafIDs: ["workflow-root"],
+          customSessionLabels: {},
+        }),
+      );
+    }, splitTree);
+
+    await page.goto("/terminal/ws-123");
+    await expect(page.locator(".terminal-panel.open .terminal-leaf")).toHaveCount(2);
+    await expect(page.locator(".terminal-panel.open .xterm-viewport")).toHaveCount(2);
+
+    const splitMetrics = await page.evaluate(() => {
+      const body = document.querySelector(".terminal-panel.bottom.open .panel-body");
+      const tree = document.querySelector(".terminal-panel.bottom.open .terminal-tree");
+      const selector = document.querySelector(".terminal-panel.bottom.open .terminal-selector");
+      const split = document.querySelector(".terminal-panel.bottom.open .terminal-split");
+      const firstLeaf = document.querySelector(".terminal-panel.bottom.open .terminal-leaf");
+      const firstViewport = firstLeaf?.querySelector(".xterm-viewport");
+      const secondLeaf = document.querySelector(
+        ".terminal-panel.bottom.open .terminal-split.horizontal > .split-child.second > .terminal-leaf",
+      );
+      const divider = document.querySelector(".terminal-panel.bottom.open .terminal-split.horizontal > .split-divider");
+      if (!body || !tree || !selector || !split || !firstLeaf || !firstViewport || !secondLeaf || !divider) {
+        throw new Error("Missing bottom terminal split layout");
+      }
+
+      const bodyRect = body.getBoundingClientRect();
+      const treeRect = tree.getBoundingClientRect();
+      const selectorRect = selector.getBoundingClientRect();
+      const splitRect = split.getBoundingClientRect();
+      const firstLeafRect = firstLeaf.getBoundingClientRect();
+      const firstViewportRect = firstViewport.getBoundingClientRect();
+      const dividerRect = divider.getBoundingClientRect();
+      const treeStyles = getComputedStyle(tree);
+      const firstLeafStyles = getComputedStyle(firstLeaf);
+      const firstViewportStyles = getComputedStyle(firstViewport);
+      const secondLeafStyles = getComputedStyle(secondLeaf);
+      const dividerStyles = getComputedStyle(divider);
+      return {
+        firstLeafBorderRight: firstLeafStyles.borderRightWidth,
+        firstLeafToSplitLeft: Math.round(firstLeafRect.left - splitRect.left),
+        firstLeafToSplitTop: Math.round(firstLeafRect.top - splitRect.top),
+        firstViewportBackground: firstViewportStyles.backgroundColor,
+        firstViewportToLeafRight: Math.round(firstLeafRect.right - firstViewportRect.right),
+        secondLeafBorderLeft: secondLeafStyles.borderLeftWidth,
+        splitToTreeBottom: Math.round(treeRect.bottom - splitRect.bottom),
+        splitToTreeLeft: Math.round(splitRect.left - treeRect.left),
+        splitToTreeTop: Math.round(splitRect.top - treeRect.top),
+        splitterBackgroundVisible: dividerStyles.backgroundColor !== "rgba(0, 0, 0, 0)",
+        splitterHitWidth: Math.round(dividerRect.width),
+        treePadding: [
+          treeStyles.paddingTop,
+          treeStyles.paddingRight,
+          treeStyles.paddingBottom,
+          treeStyles.paddingLeft,
+        ],
+        treeToBodyLeft: Math.round(treeRect.left - bodyRect.left),
+        treeToBodyTop: Math.round(treeRect.top - bodyRect.top),
+        treeToSelector: Math.round(selectorRect.left - treeRect.right),
+      };
+    });
+    expect(splitMetrics).toEqual({
+      firstLeafBorderRight: "0px",
+      firstLeafToSplitLeft: 0,
+      firstLeafToSplitTop: 0,
+      firstViewportBackground: "rgb(13, 17, 23)",
+      firstViewportToLeafRight: 0,
+      secondLeafBorderLeft: "0px",
+      splitToTreeBottom: 0,
+      splitToTreeLeft: 0,
+      splitToTreeTop: 0,
+      splitterBackgroundVisible: true,
+      splitterHitWidth: 3,
+      treePadding: ["0px", "0px", "0px", "0px"],
+      treeToBodyLeft: 0,
+      treeToBodyTop: 0,
+      treeToSelector: 0,
+    });
   });
 });
 

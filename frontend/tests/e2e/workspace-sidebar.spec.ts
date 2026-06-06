@@ -1369,17 +1369,29 @@ test.describe("workspace launch home", () => {
     await expect(page.locator(".tabbed-panel-split")).toBeVisible();
 
     const metrics = await page.evaluate(() => {
+      const titleBar = document.querySelector(".header-bar");
+      const toolbar = document.querySelector(".workspace-toolbar");
       const stage = document.querySelector(".workspace-stage");
       const split = document.querySelector(".workspace-stage .tabbed-panel-split");
-      if (!stage || !split) {
-        throw new Error("Missing workflow stage or split panel");
+      const firstLeaf = document.querySelector(".workspace-stage .tabbed-panel-leaf");
+      if (!titleBar || !toolbar || !stage || !split || !firstLeaf) {
+        throw new Error("Missing workflow header, stage, or split panel");
       }
 
+      const titleBarRect = titleBar.getBoundingClientRect();
+      const toolbarRect = toolbar.getBoundingClientRect();
       const stageRect = stage.getBoundingClientRect();
       const splitRect = split.getBoundingClientRect();
+      const firstLeafRect = firstLeaf.getBoundingClientRect();
+      const titleBarStyles = getComputedStyle(titleBar);
+      const toolbarStyles = getComputedStyle(toolbar);
       const stageStyles = getComputedStyle(stage);
 
       return {
+        titleBorderLeft: titleBarStyles.borderLeftWidth,
+        toolbarBorderLeft: toolbarStyles.borderLeftWidth,
+        titleToToolbarLeft: toolbarRect.left - titleBarRect.left,
+        toolbarToFirstLeafLeft: firstLeafRect.left - toolbarRect.left,
         padding: [
           stageStyles.paddingTop,
           stageStyles.paddingRight,
@@ -1395,11 +1407,36 @@ test.describe("workspace launch home", () => {
       };
     });
 
+    expect(metrics.titleBorderLeft).toBe("1px");
+    expect(metrics.toolbarBorderLeft).toBe("1px");
+    expect(Math.abs(metrics.titleToToolbarLeft)).toBeLessThanOrEqual(0.5);
+    expect(Math.abs(metrics.toolbarToFirstLeafLeft)).toBeLessThanOrEqual(0.5);
     expect(metrics.padding).toEqual(["0px", "0px", "0px", "0px"]);
     expect(Math.abs(metrics.delta.left)).toBeLessThanOrEqual(0.5);
     expect(Math.abs(metrics.delta.top)).toBeLessThanOrEqual(0.5);
     expect(Math.abs(metrics.delta.right)).toBeLessThanOrEqual(0.5);
     expect(Math.abs(metrics.delta.bottom)).toBeLessThanOrEqual(0.5);
+  });
+
+  test("shows one Workspaces option in the compact page menu on terminal routes", async ({ page }) => {
+    await page.setViewportSize({ width: 1000, height: 720 });
+    await setupTerminalMocks(page, {
+      runtime: workflowDragRuntime(),
+    });
+
+    await page.goto("/terminal/ws-123");
+
+    const pageSelect = page.getByRole("combobox", {
+      name: "Page: Workspaces",
+    });
+    await expect(pageSelect).toBeVisible();
+    await pageSelect.click();
+
+    const workspaceOption = page.getByRole("option", {
+      name: "Workspaces",
+    });
+    await expect(workspaceOption).toHaveCount(1);
+    await expect(workspaceOption).toHaveAttribute("aria-selected", "true");
   });
 
   test("workflow pane drops append in the center and split at the edge", async ({ page }) => {

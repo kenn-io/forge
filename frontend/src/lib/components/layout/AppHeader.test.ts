@@ -1,12 +1,21 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
+const mockedContainerSize = vi.hoisted(() => ({
+  value: "wide" as "narrow" | "medium" | "wide",
+}));
+
 // Prevent RepoTypeahead from making real API calls in the test environment.
 vi.mock("../../api/runtime.js", () => ({
   client: {
     GET: () => Promise.resolve({ data: [], error: undefined }),
   },
   apiErrorMessage: () => "",
+}));
+
+vi.mock("../../stores/container.svelte.js", () => ({
+  getContainerSize: () => mockedContainerSize.value,
+  isNarrow: () => mockedContainerSize.value === "narrow",
 }));
 
 // AppHeader reads sync state from the @middleman/ui context.
@@ -55,6 +64,7 @@ describe("AppHeader", () => {
     localStorage.clear();
     mockMatchMedia(false);
     setSidebarCollapsed(false);
+    mockedContainerSize.value = "wide";
   });
 
   afterEach(() => {
@@ -64,6 +74,7 @@ describe("AppHeader", () => {
     document.documentElement.classList.remove("dark");
     localStorage.clear();
     setSidebarCollapsed(false);
+    mockedContainerSize.value = "wide";
   });
 
   it("toggles the root dark class when the theme button is clicked", async () => {
@@ -226,6 +237,25 @@ describe("AppHeader", () => {
     const { container } = render(AppHeader);
 
     expect(container.querySelector("button[title='Expand sidebar'] svg")).toBeTruthy();
+  });
+
+  it("shows one Workspaces option in the compact nav on terminal routes", async () => {
+    initTheme();
+    mockedContainerSize.value = "medium";
+    navigate("/terminal/ws-123");
+    render(AppHeader);
+
+    const pageSelect = screen.getByRole("combobox", {
+      name: "Page: Workspaces",
+    });
+    await fireEvent.click(pageSelect);
+
+    const workspaceOptions = screen.getAllByRole("option", {
+      name: "Workspaces",
+    });
+
+    expect(workspaceOptions).toHaveLength(1);
+    expect(workspaceOptions[0]?.getAttribute("aria-selected")).toBe("true");
   });
 
   it("opens selected Activity PR in PRs tab with files tab preserved", async () => {

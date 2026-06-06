@@ -89,9 +89,6 @@
     if (getPage() === "design-system") {
       options.push({ value: "design-system", label: "Design system" });
     }
-    if (getPage() === "terminal") {
-      options.push({ value: "terminal", label: "Workspaces" });
-    }
     if (!isEmbedded() && getPage() === "settings") {
       options.push({ value: "settings", label: "Settings" });
     }
@@ -101,6 +98,8 @@
   const compactNavValue = $derived(
     getPage() === "pulls" && getView() === "board"
       ? "board"
+      : getPage() === "terminal"
+        ? "workspaces"
       : getPage(),
   );
 
@@ -144,9 +143,8 @@
     else if (value === "issues") navigateTab("issues");
     else if (value === "board") navigateTab("board");
     else if (value === "reviews") navigateTab("reviews");
-    else if (value === "workspaces" || value === "terminal") {
-      navigateTab("workspaces");
-    } else if (value === "settings") navigateTab("settings");
+    else if (value === "workspaces") navigateTab("workspaces");
+    else if (value === "settings") navigateTab("settings");
     else if (value === "design-system") navigateTab("design-system");
   }
 </script>

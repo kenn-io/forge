@@ -302,7 +302,7 @@ func TestAPISyncIssuePersistsAssigneesFromProvider(t *testing.T) {
 		User:      &gh.User{Login: &author},
 		CreatedAt: &createdAt,
 		UpdatedAt: &updatedAt,
-		Assignees: []*gh.User{{Login: gh.String("alice")}, {Login: gh.String("bob")}},
+		Assignees: []*gh.User{{Login: gh.Ptr("alice")}, {Login: gh.Ptr("bob")}},
 	}}
 
 	require.NoError(syncer.SyncIssue(ctx, "acme", "widget", issueNumber))

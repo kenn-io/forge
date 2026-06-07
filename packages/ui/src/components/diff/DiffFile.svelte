@@ -104,6 +104,7 @@
     | { kind: "thread"; id: string; thread: ReviewThread; canReply: boolean }
     | { kind: "composer"; id: string; range: DiffReviewLineRange };
   const mountedAnnotations = new Set<MountedAnnotation>();
+  let annotationMountsEnabled = false;
 
   let selectedRange = $state<SelectedLineRange | null>(null);
   let composerRange = $state<DiffReviewLineRange | null>(null);
@@ -159,6 +160,7 @@
   });
 
   onMount(() => {
+    annotationMountsEnabled = true;
     let observer: IntersectionObserver | undefined;
     // Guard for jsdom / SSR-ish test environments where IntersectionObserver
     // is not provided — treat the file as visible so rendering still runs.
@@ -174,6 +176,7 @@
     }
 
     return () => {
+      annotationMountsEnabled = false;
       observer?.disconnect();
       clearMountedAnnotations();
     };
@@ -408,6 +411,19 @@
     target.className = "pierre-annotation-host";
     const context = new Map([[STORES_KEY, stores]]);
     const metadata = annotation.metadata;
+    queueMicrotask(() => {
+      if (!annotationMountsEnabled || !target.isConnected) return;
+      const component = mountAnnotationComponent(target, metadata, context);
+      trackMountedAnnotation(target, component);
+    });
+    return target;
+  }
+
+  function mountAnnotationComponent(
+    target: HTMLElement,
+    metadata: DiffAnnotation,
+    context: Map<unknown, unknown>,
+  ): object {
     const component = metadata.kind === "draft"
       ? mount(DiffReviewDraftInlineComment, {
         target,
@@ -429,8 +445,7 @@
           props: { range: metadata.range, onclose: closeComposer },
           context,
         });
-    trackMountedAnnotation(target, component);
-    return target;
+    return component;
   }
 
   function renderUnknownAnnotation(annotation: DiffLineAnnotation<unknown>): HTMLElement {

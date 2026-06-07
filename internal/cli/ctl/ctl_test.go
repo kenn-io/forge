@@ -419,7 +419,7 @@ func TestMiddlemanctlCommandsUseRealAPIAndSQLite(t *testing.T) {
 	starredOut := runMiddleman(t, ts.URL, "--output", "jsonl", "pulls", "--starred")
 	starredLines := strings.Split(strings.TrimSpace(starredOut), "\n")
 	require.Len(starredLines, 1)
-	assert.Equal(float64(1), jsonNumberField(t, starredLines[0]))
+	assert.InDelta(float64(1), jsonNumberField(t, starredLines[0]), 0)
 	assert.True(jsonBoolField(t, starredLines[0], "starred", "Starred"))
 
 	apiListOut := runMiddleman(t, ts.URL, "--output", "jsonl", "api", "list")

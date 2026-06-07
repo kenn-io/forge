@@ -2,7 +2,7 @@
   import MessageSquareReplyIcon from "@lucide/svelte/icons/message-square-reply";
   import SendIcon from "@lucide/svelte/icons/send";
   import XIcon from "@lucide/svelte/icons/x";
-  import { onMount, tick } from "svelte";
+  import { tick } from "svelte";
   import type { ReviewThread } from "./review-thread-context.js";
   import { reviewThreadLineLabel } from "./review-thread-context.js";
   import ActionButton from "../shared/ActionButton.svelte";
@@ -25,20 +25,19 @@
   let replyBody = $state("");
   let submitting = $state(false);
   let error = $state<string | null>(null);
-  let threadEl: HTMLDivElement | undefined = $state();
   let textareaEl: HTMLTextAreaElement | undefined = $state();
   let panelWidth = $state<string | undefined>();
 
-  onMount(() => {
+  function setupThreadLayout(node: HTMLDivElement): { destroy: () => void } {
     let animationFrame = 0;
     const scheduleLayout = () => {
       if (animationFrame) cancelAnimationFrame(animationFrame);
       animationFrame = requestAnimationFrame(() => {
         animationFrame = 0;
-        updatePanelWidth();
+        updatePanelWidth(node);
       });
     };
-    const container = threadEl ? layoutContainer(threadEl) : null;
+    const container = layoutContainer(node);
     const resizeObserver = typeof ResizeObserver !== "undefined"
       ? new ResizeObserver(scheduleLayout)
       : undefined;
@@ -46,17 +45,39 @@
       container.addEventListener("scroll", scheduleLayout, { passive: true });
       resizeObserver?.observe(container);
     }
-    if (threadEl) resizeObserver?.observe(threadEl);
+    resizeObserver?.observe(node);
     window.addEventListener("resize", scheduleLayout);
     scheduleLayout();
 
-    return () => {
-      if (animationFrame) cancelAnimationFrame(animationFrame);
-      container?.removeEventListener("scroll", scheduleLayout);
-      window.removeEventListener("resize", scheduleLayout);
-      resizeObserver?.disconnect();
+    return {
+      destroy: () => {
+        if (animationFrame) cancelAnimationFrame(animationFrame);
+        container?.removeEventListener("scroll", scheduleLayout);
+        window.removeEventListener("resize", scheduleLayout);
+        resizeObserver?.disconnect();
+      },
     };
-  });
+  }
+
+  function updatePanelWidth(element: HTMLElement): void {
+    const container = layoutContainer(element);
+    if (!container) {
+      panelWidth = undefined;
+      return;
+    }
+    const containerRect = container.getBoundingClientRect();
+    const threadRect = element.getBoundingClientRect();
+    const available = Math.floor(containerRect.right - threadRect.left - 12);
+    panelWidth = available > 0 ? `${available}px` : undefined;
+  }
+
+  function layoutContainer(element: HTMLElement): HTMLElement | null {
+    const root = element.getRootNode();
+    if (root instanceof ShadowRoot && root.host instanceof HTMLElement) {
+      return root.host.closest(".file-content") ?? root.host.closest(".diff-area");
+    }
+    return element.closest(".file-content") ?? element.closest(".diff-area");
+  }
 
   function startReply(): void {
     replying = true;
@@ -90,27 +111,6 @@
       submitting = false;
     }
   }
-
-  function updatePanelWidth(): void {
-    if (!threadEl) return;
-    const container = layoutContainer(threadEl);
-    if (!container) {
-      panelWidth = undefined;
-      return;
-    }
-    const containerRect = container.getBoundingClientRect();
-    const threadRect = threadEl.getBoundingClientRect();
-    const available = Math.floor(containerRect.right - threadRect.left - 12);
-    panelWidth = available > 0 ? `${available}px` : undefined;
-  }
-
-  function layoutContainer(element: HTMLElement): HTMLElement | null {
-    const root = element.getRootNode();
-    if (root instanceof ShadowRoot && root.host instanceof HTMLElement) {
-      return root.host.closest(".file-content") ?? root.host.closest(".diff-area");
-    }
-    return element.closest(".file-content") ?? element.closest(".diff-area");
-  }
 </script>
 
 <div
@@ -118,7 +118,7 @@
   class:inline-review-thread--file-level={fileLevel}
   class:inline-review-thread--idle-reply={canReply && !thread.resolved && !replying}
   data-review-thread-id={thread.id}
-  bind:this={threadEl}
+  use:setupThreadLayout
   style:--inline-review-thread-width={panelWidth}
   tabindex="-1"
 >

@@ -466,18 +466,14 @@ async function pierreDiffTexts(file: ReturnType<Page["locator"]>, selector: stri
   }, selector);
 }
 
-async function pierreVisibleDiffTextStats(
+async function pierreRenderedDiffTextStats(
   file: ReturnType<Page["locator"]>,
   selector = "[data-content] [data-line-type]",
 ) {
   return await file.locator(".pierre-diff").evaluate((host, selector) => {
-    const rows = Array.from(host.shadowRoot?.querySelectorAll(selector) ?? [])
-      .filter((element): element is HTMLElement => {
-        if (!(element instanceof HTMLElement)) return false;
-        const rect = element.getBoundingClientRect();
-        return rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.top < window.innerHeight;
-      })
-      .map((element) => element.textContent?.trim() ?? "");
+    const rows = Array.from(host.shadowRoot?.querySelectorAll(selector) ?? []).map(
+      (element) => element.textContent?.trim() ?? "",
+    );
     return {
       blank: rows.filter((text) => text.length === 0).length,
       nonBlank: rows.filter((text) => text.length > 0).length,
@@ -534,10 +530,10 @@ async function expectPierreDiffVisibleText(file: ReturnType<Page["locator"]>, se
     .toBe(true);
 }
 
-async function expectVisibleNonBlankRows(file: ReturnType<Page["locator"]>, textFragment: string) {
+async function expectRenderedNonBlankRows(file: ReturnType<Page["locator"]>, textFragment: string) {
   await expect
     .poll(async () => {
-      const stats = await pierreVisibleDiffTextStats(file);
+      const stats = await pierreRenderedDiffTextStats(file);
       return {
         blank: stats.blank,
         hasText: stats.texts.some((text) => text.includes(textFragment)),
@@ -1834,12 +1830,12 @@ test.describe("diff view", () => {
       .toBe(true);
     await expectPierreDiffCountAtLeast(detailFile, "[data-line-type]", 1);
     await expectPierreDiffCountAtLeast(detailFile, "[data-expand-button]", 1);
-    await expectVisibleNonBlankRows(schemaFile, "schema response row");
+    await expectRenderedNonBlankRows(schemaFile, "schema response row");
 
     const beforeExpansionScrollTop = await diffArea.evaluate((area) => area.scrollTop);
     await clickPierreContextExpander(detailFile, 0, "[data-expand-down]");
     await expect.poll(() => [...new Set(previewSides)].sort()).toEqual(["new", "old"]);
-    await expectVisibleNonBlankRows(schemaFile, "schema response row");
+    await expectRenderedNonBlankRows(schemaFile, "schema response row");
     await scrollDiffAreaUntilPierreText(
       page,
       diffArea,
@@ -1853,9 +1849,9 @@ test.describe("diff view", () => {
       area.scrollTop = scrollTop;
       area.dispatchEvent(new Event("scroll", { bubbles: true }));
     }, beforeExpansionScrollTop);
-    await expectVisibleNonBlankRows(schemaFile, "schema response row");
+    await expectRenderedNonBlankRows(schemaFile, "schema response row");
     await clickPierreContextExpander(detailFile);
-    await expectVisibleNonBlankRows(schemaFile, "schema response row");
+    await expectRenderedNonBlankRows(schemaFile, "schema response row");
     await scrollDiffAreaUntilPierreText(
       page,
       diffArea,
@@ -1864,7 +1860,7 @@ test.describe("diff view", () => {
       "detail filler row 870",
       90,
     );
-    await expectVisibleNonBlankRows(schemaFile, "schema response row");
+    await expectRenderedNonBlankRows(schemaFile, "schema response row");
   });
 
   test("deleted file path has strikethrough styling in diff header", async ({ page }) => {

@@ -44,7 +44,7 @@ hooks = [
     name = "script regression tests",
     language = "system",
     entry = "make script-tests",
-    files = "^scripts/.*\\.(mjs|ts|sh)$",
+    files = "^(scripts/.*\\.(mjs|ts|sh)|frontend/scripts/.*\\.ts)$",
     pass_filenames = false,
     priority = 0,
   },

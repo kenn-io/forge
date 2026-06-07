@@ -3,12 +3,13 @@ import { constants } from "node:fs";
 import { mkdir, open, readFile } from "node:fs/promises";
 import { dirname, isAbsolute, resolve } from "node:path";
 
+import { planE2ERuns } from "./e2e-run-plan";
+
 const outputFile = process.env.MIDDLEMAN_E2E_OUTPUT_FILE ?? "../tmp/e2e.log";
 const displayFile = isAbsolute(outputFile) ? outputFile : resolve(outputFile);
 const basePlaywrightArgs = ["test", "--config=playwright-e2e.config.ts"];
 const requestedArgs = process.argv.slice(2);
-const defaultProjectRuns = [["--project=chromium"], ["--project=firefox"], ["--project=webkit"]];
-const runs = requestedArgs.length === 0 ? defaultProjectRuns : [requestedArgs];
+const runs = planE2ERuns(requestedArgs);
 
 function timestamp(): string {
   return new Date().toISOString().replace(/\.\d{3}Z$/, "Z");

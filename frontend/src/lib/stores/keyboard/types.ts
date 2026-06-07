@@ -16,6 +16,7 @@ export interface Context {
   selectedIssue: IssueSelection | null;
   isDiffView: boolean;
   detailTab: DetailTab;
+  sidebarTargetAvailable: boolean;
 }
 
 export interface PreviewBlock {

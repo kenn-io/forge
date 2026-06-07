@@ -34,6 +34,7 @@ const onPullsListNotBoard = (ctx: Context): boolean => ctx.page === "pulls" && !
 const onIssuesList = (ctx: Context): boolean => ctx.page === "issues";
 
 function hasSidebarShortcutTarget(ctx: Context): boolean {
+  if (!ctx.sidebarTargetAvailable) return false;
   switch (ctx.route.page) {
     case "pulls":
       return ctx.route.view === "list";

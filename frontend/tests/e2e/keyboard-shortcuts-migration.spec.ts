@@ -63,4 +63,39 @@ test.describe("migrated global shortcuts", () => {
       .toBe(true);
     await expect(expandButton).toBeVisible();
   });
+
+  test("Cmd+[ is reserved on compact PR list without toggling persisted sidebar state", async ({ page }) => {
+    await page.setViewportSize({ width: 480, height: 800 });
+    await page.goto("/pulls");
+
+    await expect(page.locator(".sidebar")).toHaveCount(0);
+    await page.evaluate(() => {
+      localStorage.removeItem("middleman-sidebar");
+      const state = window as Window & {
+        __middleman_last_bracket_default_prevented?: boolean | null;
+      };
+      state.__middleman_last_bracket_default_prevented = null;
+      window.addEventListener("keydown", (event) => {
+        if ((event.metaKey || event.ctrlKey) && event.key === "[") {
+          state.__middleman_last_bracket_default_prevented = event.defaultPrevented;
+        }
+      });
+    });
+
+    await page.keyboard.press("Meta+BracketLeft");
+
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            (
+              window as Window & {
+                __middleman_last_bracket_default_prevented?: boolean | null;
+              }
+            ).__middleman_last_bracket_default_prevented,
+        ),
+      )
+      .toBe(true);
+    await expect.poll(() => page.evaluate(() => localStorage.getItem("middleman-sidebar"))).toBeNull();
+  });
 });

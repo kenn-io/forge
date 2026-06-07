@@ -16,6 +16,7 @@ const ctx: Context = {
   selectedIssue: null,
   isDiffView: false,
   detailTab: "conversation",
+  sidebarTargetAvailable: true,
 };
 
 const event = (init: Partial<KeyboardEvent>) =>

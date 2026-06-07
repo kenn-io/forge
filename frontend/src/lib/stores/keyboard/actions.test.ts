@@ -16,6 +16,7 @@ function ctx(page: Context["page"], overrides: Partial<Context> = {}): Context {
     selectedIssue: null,
     isDiffView: false,
     detailTab: "conversation",
+    sidebarTargetAvailable: true,
     ...overrides,
   };
 }
@@ -196,6 +197,15 @@ describe("defaultActions", () => {
       }),
     );
     expect(isSidebarCollapsed()).toBe(true);
+    setSidebarCollapsed(false);
+    const compactPulls = ctx("pulls", {
+      route: { page: "pulls", view: "list" } as never,
+      sidebarTargetAvailable: false,
+    });
+    expect(action!.when(compactPulls)).toBe(true);
+    expect(visible(compactPulls)).toBe(false);
+    action!.handler(compactPulls);
+    expect(isSidebarCollapsed()).toBe(false);
     expect(
       action!.when(
         ctx("pulls", {

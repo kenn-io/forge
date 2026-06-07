@@ -291,6 +291,8 @@ func TestAPISyncIssuePersistsAssigneesFromProvider(t *testing.T) {
 	state := "open"
 	url := "https://github.com/acme/widget/issues/7"
 	author := "octocat"
+	alice := "alice"
+	bob := "bob"
 	createdAt := gh.Timestamp{Time: now}
 	updatedAt := gh.Timestamp{Time: now}
 	providerClient.Issues["acme/widget"] = []*gh.Issue{{
@@ -302,7 +304,7 @@ func TestAPISyncIssuePersistsAssigneesFromProvider(t *testing.T) {
 		User:      &gh.User{Login: &author},
 		CreatedAt: &createdAt,
 		UpdatedAt: &updatedAt,
-		Assignees: []*gh.User{{Login: gh.Ptr("alice")}, {Login: gh.Ptr("bob")}},
+		Assignees: []*gh.User{{Login: &alice}, {Login: &bob}},
 	}}
 
 	require.NoError(syncer.SyncIssue(ctx, "acme", "widget", issueNumber))

@@ -24,21 +24,40 @@ test.describe.serial("PR description task list", () => {
     const body = page.locator(".body-section .markdown-body");
     const cb0 = body.locator('input[type="checkbox"][data-task-index="0"]');
     const cb1 = body.locator('input[type="checkbox"][data-task-index="1"]');
+    const cb0Expected = !(await cb0.isChecked());
+    const cb1Expected = !(await cb1.isChecked());
+    const checkboxMarker = (checked: boolean) => (checked ? "[x]" : "[ ]");
+    const patchRoute = /\/api\/v1\/pulls\/[^/]+\/[^/]+\/[^/]+\/1$/;
+    const persisted = page.waitForResponse(
+      (resp) => {
+        if (resp.request().method() !== "PATCH" || !patchRoute.test(resp.url()) || !resp.ok()) {
+          return false;
+        }
+        const body = resp.request().postData() ?? "";
+        return (
+          body.includes(`${checkboxMarker(cb0Expected)} Cmd+K opens palette, focus lands in the search input`) &&
+          body.includes(`${checkboxMarker(cb1Expected)} Tab/Shift+Tab cycles within the palette dialog only`)
+        );
+      },
+      { timeout: 5_000 },
+    );
 
-    await expect(cb0).not.toBeChecked();
     await cb0.click();
-    await expect(cb0).toBeChecked();
+    await expect(cb0).toBeChecked({ checked: cb0Expected });
     await cb1.click();
-    await expect(cb1).toBeChecked();
+    await expect(cb1).toBeChecked({ checked: cb1Expected });
 
-    // Allow the debounced PATCH (~400ms) to land.
-    await page.waitForTimeout(900);
+    await persisted;
     await page.reload();
     const reloadedBody = page.locator(".body-section .markdown-body");
     await reloadedBody.waitFor({ state: "visible" });
 
-    await expect(reloadedBody.locator('input[type="checkbox"][data-task-index="0"]')).toBeChecked();
-    await expect(reloadedBody.locator('input[type="checkbox"][data-task-index="1"]')).toBeChecked();
+    await expect(reloadedBody.locator('input[type="checkbox"][data-task-index="0"]')).toBeChecked({
+      checked: cb0Expected,
+    });
+    await expect(reloadedBody.locator('input[type="checkbox"][data-task-index="1"]')).toBeChecked({
+      checked: cb1Expected,
+    });
   });
 
   test("drag handle reorders a task item and persists on reload", async ({ page }) => {

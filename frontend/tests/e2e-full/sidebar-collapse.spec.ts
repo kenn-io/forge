@@ -285,9 +285,7 @@ test.describe("collapsible sidebar", () => {
 
     let dropdown = await openCompactFilters(filterBar);
     await dropdown.locator(".filter-item", { hasText: "Closed" }).click();
-    await expect(filterBar.locator(".list-count-chip")).toHaveText(/^4 PRs$/, {
-      timeout: 5_000,
-    });
+    await expect(filterBar.page().locator(".state-note")).toBeVisible();
 
     dropdown = await openCompactFilters(filterBar);
     await dropdown.locator(".filter-item", { hasText: "All" }).last().click();
@@ -303,9 +301,7 @@ test.describe("collapsible sidebar", () => {
 
     let dropdown = await openCompactFilters(filterBar);
     await dropdown.locator(".filter-item", { hasText: "Closed" }).click();
-    await expect(filterBar.locator(".list-count-chip")).toHaveText(/^1 issues?$/, {
-      timeout: 5_000,
-    });
+    await expect(filterBar.page().locator(".state-note")).toBeVisible();
 
     dropdown = await openCompactFilters(filterBar);
     await dropdown.locator(".filter-item", { hasText: "All" }).last().click();

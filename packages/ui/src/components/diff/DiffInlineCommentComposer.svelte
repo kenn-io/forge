@@ -136,6 +136,11 @@
     font-size: var(--font-size-md);
   }
 
+  textarea:focus {
+    border-color: var(--border-muted);
+    outline: none;
+  }
+
   .composer-error {
     margin-top: 6px;
     color: var(--accent-red);

@@ -437,10 +437,14 @@ function treeFileItem(pageOrLocator: Page | ReturnType<Page["locator"]>, path: s
   return pageOrLocator.locator(`.diff-file-tree [data-item-path="${cssString(path)}"]`);
 }
 
-async function clickTreeFileItem(pageOrLocator: Page | ReturnType<Page["locator"]>, path: string) {
+async function clickTreeFileItem(pageOrLocator: Page | ReturnType<Page["locator"]>, path: string): Promise<void> {
   const item = treeFileItem(pageOrLocator, path);
   await expect(item).toBeVisible();
-  await item.evaluate((button: HTMLElement) => button.click());
+  await item.scrollIntoViewIfNeeded();
+  await item.click({ timeout: 2_000 }).catch(async () => {
+    await item.evaluate((node) => (node as HTMLElement).click());
+  });
+  await expect(item).toHaveAttribute("aria-selected", "true");
 }
 
 const diffAdditionsSelector = '[data-content] [data-line-type="change-addition"]';

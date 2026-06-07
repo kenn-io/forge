@@ -7,6 +7,7 @@ import { startIsolatedWorkspaceE2EServer, type IsolatedE2EServer } from "./suppo
 type WorkspaceStatusResponse = {
   id: string;
   status: string;
+  error_message?: string | null;
   worktree_path?: string;
 };
 
@@ -30,7 +31,7 @@ async function waitForWorkspaceReady(api: APIRequestContext, workspaceId: string
       return;
     }
     if (workspace.status === "error") {
-      throw new Error(`workspace ${workspaceId} failed to become ready`);
+      throw new Error(workspace.error_message ?? `workspace ${workspaceId} failed to become ready`);
     }
     await new Promise((resolve) => setTimeout(resolve, 100));
   }

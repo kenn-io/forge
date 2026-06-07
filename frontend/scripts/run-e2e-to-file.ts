@@ -3,9 +3,12 @@ import { constants } from "node:fs";
 import { mkdir, open, readFile } from "node:fs/promises";
 import { dirname, isAbsolute, resolve } from "node:path";
 
-const outputFile = process.env.MIDDLEMAN_E2E_OUTPUT_FILE ?? "test-results/e2e.log";
+const outputFile = process.env.MIDDLEMAN_E2E_OUTPUT_FILE ?? "../tmp/e2e.log";
 const displayFile = isAbsolute(outputFile) ? outputFile : resolve(outputFile);
-const playwrightArgs = ["test", "--config=playwright-e2e.config.ts", ...process.argv.slice(2)];
+const basePlaywrightArgs = ["test", "--config=playwright-e2e.config.ts"];
+const requestedArgs = process.argv.slice(2);
+const defaultProjectRuns = [["--project=chromium"], ["--project=firefox"], ["--project=webkit"]];
+const runs = requestedArgs.length === 0 ? defaultProjectRuns : [requestedArgs];
 
 function timestamp(): string {
   return new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
@@ -15,21 +18,33 @@ await mkdir(dirname(outputFile), { recursive: true });
 
 const logFile = await open(outputFile, constants.O_CREAT | constants.O_TRUNC | constants.O_WRONLY, 0o666);
 await logFile.write(
-  `[${timestamp()}] bun run test:e2e\n` + `argv: ${JSON.stringify(["playwright", ...playwrightArgs])}\n\n`,
+  `[${timestamp()}] bun run test:e2e\n` +
+    runs.map((args) => `argv: ${JSON.stringify(["playwright", ...basePlaywrightArgs, ...args])}`).join("\n") +
+    "\n\n",
 );
 
 let status = 1;
 try {
-  const child = spawn("playwright", playwrightArgs, {
-    stdio: ["ignore", logFile.fd, logFile.fd],
-  });
+  status = 0;
+  for (const args of runs) {
+    const playwrightArgs = [...basePlaywrightArgs, ...args];
+    await logFile.write(`[${timestamp()}] playwright ${playwrightArgs.join(" ")}\n\n`);
+    const child = spawn("playwright", playwrightArgs, {
+      stdio: ["ignore", logFile.fd, logFile.fd],
+    });
 
-  status = await new Promise<number>((resolve, reject) => {
-    child.on("error", reject);
-    child.on("close", (code) => resolve(code ?? 1));
-  });
+    const runStatus = await new Promise<number>((resolve, reject) => {
+      child.on("error", reject);
+      child.on("close", (code) => resolve(code ?? 1));
+    });
+    await logFile.write(`\n[${timestamp()}] exit ${runStatus}: playwright ${playwrightArgs.join(" ")}\n\n`);
+    if (runStatus !== 0) {
+      status = runStatus;
+    }
+  }
 } catch (error) {
   await logFile.write(`${error instanceof Error ? error.message : String(error)}\n`);
+  status = 1;
 } finally {
   await logFile.close();
 }

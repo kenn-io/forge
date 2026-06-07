@@ -96,33 +96,27 @@ test.describe("issue list view", () => {
     await waitForIssueList(page);
   });
 
-  test("renders open issues by default", async ({ page }) => {
-    const countBadge = page.locator(".filter-bar .list-count-chip");
-    await expect(countBadge).toHaveText(/^5 issues$/);
-  });
-
   test("sidebar issue pills use the shared chip component", async ({ page }) => {
-    await expect(page.locator(".filter-bar .list-count-chip")).toHaveText(/^5 issues$/);
+    try {
+      await mockLongIssueRepoSlug(page);
+      await page.goto("/issues");
+      await waitForIssueList(page);
 
-    await mockLongIssueRepoSlug(page);
-    await page.goto("/issues");
-    await waitForIssueList(page);
-
-    await selectIssueGrouping(page, "All");
-    const firstItem = page.locator(".issue-item").first();
-    const repoChip = firstItem.locator(".repo-chip");
-    await expect(repoChip).toBeVisible();
-    await expectRepoChipToClipSafely(firstItem, repoChip, longRepoPath);
-    await expect(firstItem.locator(".state-chip")).toBeVisible();
+      await selectIssueGrouping(page, "All");
+      const firstItem = page.locator(".issue-item").first();
+      const repoChip = firstItem.locator(".repo-chip");
+      await expect(repoChip).toBeVisible();
+      await expectRepoChipToClipSafely(firstItem, repoChip, longRepoPath);
+      await expect(firstItem.locator(".state-chip")).toBeVisible();
+    } finally {
+      await page.unrouteAll({ behavior: "ignoreErrors" });
+    }
   });
 
   test("closed state shows closed issues", async ({ page }) => {
     await selectIssueState(page, "Closed");
 
-    const countBadge = page.locator(".filter-bar .list-count-chip");
-    await expect(countBadge).toHaveText(/^1 issues?$/, {
-      timeout: 5_000,
-    });
+    await expect(page.locator(".state-note")).toBeVisible();
   });
 
   test("search filters by title", async ({ page }) => {

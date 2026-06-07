@@ -15,16 +15,24 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ROBOREV_REF="${ROBOREV_REF:-main}"
 ROBOREV_PORT="${ROBOREV_PORT:-17373}"
-DB_PATH="$(mktemp /tmp/roborev-e2e-XXXXXX.db)"
-ENV_FILE="$(mktemp /tmp/roborev-env-XXXXXX)"
+TMP_ROOT="$REPO_ROOT/tmp/roborev-e2e"
+mkdir -p "$TMP_ROOT"
+DB_PATH="$(mktemp "$TMP_ROOT/reviews.XXXXXX")"
+ENV_FILE="$(mktemp "$TMP_ROOT/env.XXXXXX")"
+FAILED=0
 
 cleanup() {
   echo "--- cleanup ---"
+  if [ "$FAILED" -ne 0 ]; then
+    cd "$REPO_ROOT/tests/integration" && \
+      docker compose --env-file "$ENV_FILE" logs --no-color 2>/dev/null || true
+  fi
   cd "$REPO_ROOT/tests/integration" && \
     docker compose --env-file "$ENV_FILE" down -v 2>/dev/null || true
   rm -f "$DB_PATH" "${DB_PATH}-wal" "${DB_PATH}-shm" "$ENV_FILE"
 }
 trap cleanup EXIT
+trap 'FAILED=1' ERR
 
 # 1. Build frontend + e2e server (unless SKIP_BUILD=1)
 if [ "${SKIP_BUILD:-}" != "1" ]; then

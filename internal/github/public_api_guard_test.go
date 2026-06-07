@@ -44,17 +44,19 @@ func TestPublicGitHubAPIGuardTransportAllowsOtherHosts(t *testing.T) {
 }
 
 func TestNewClientBlocksPublicGitHubAPIInDefaultTests(t *testing.T) {
+	require := require.New(t)
+
 	client, err := NewClient("fake-token", "github.com", nil, nil)
-	require.NoError(t, err)
+	require.NoError(err)
 	live, ok := client.(*liveClient)
-	require.True(t, ok)
+	require.True(ok)
 	req, err := http.NewRequest(http.MethodGet, "https://api.github.com/rate_limit", nil)
-	require.NoError(t, err)
+	require.NoError(err)
 
 	resp, err := live.httpClient.Do(req)
 
-	require.ErrorIs(t, err, ErrPublicGitHubAPIBlocked)
-	require.Nil(t, resp)
+	require.ErrorIs(err, ErrPublicGitHubAPIBlocked)
+	require.Nil(resp)
 }
 
 func TestNewGraphQLFetcherBlocksPublicGitHubAPIInDefaultTests(t *testing.T) {

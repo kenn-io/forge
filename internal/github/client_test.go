@@ -766,13 +766,15 @@ func TestMarkPullRequestReadyForReviewReturnsTypedStaleStateError(t *testing.T) 
 // transport's behavior is exercised exhaustively in etag_transport_test.go;
 // this test guards against the constructor silently dropping the wrap.
 func TestNewClientWiresETagTransport(t *testing.T) {
+	require := require.New(t)
+
 	c, err := NewClient("fake-token", "", nil, nil)
-	require.NoError(t, err)
+	require.NoError(err)
 	lc, ok := c.(*liveClient)
-	require.Truef(t, ok, "expected *liveClient, got %T", c)
+	require.Truef(ok, "expected *liveClient, got %T", c)
 	transport := lc.gh.Client().Transport
 	guard, ok := transport.(publicGitHubAPIGuardTransport)
-	require.Truef(t, ok, "expected publicGitHubAPIGuardTransport at top of transport chain, got %T", transport)
+	require.Truef(ok, "expected publicGitHubAPIGuardTransport at top of transport chain, got %T", transport)
 	_, ok = guard.base.(*etagTransport)
-	require.Truef(t, ok, "expected *etagTransport under public GitHub guard, got %T", guard.base)
+	require.Truef(ok, "expected *etagTransport under public GitHub guard, got %T", guard.base)
 }

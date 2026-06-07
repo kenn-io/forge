@@ -22,12 +22,14 @@ import (
 	gitcmd "go.kenn.io/kit/git/cmd"
 	"go.kenn.io/middleman/internal/config"
 	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/middleman/internal/gitclone"
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/platform"
 	"go.kenn.io/middleman/internal/server"
 	"go.kenn.io/middleman/internal/stacks"
 	"go.kenn.io/middleman/internal/testutil"
 	"go.kenn.io/middleman/internal/web"
+	"go.kenn.io/middleman/internal/workspace"
 )
 
 // defaultRoborevEndpoint is the address the e2e server points the
@@ -575,6 +577,7 @@ func run(
 	if err != nil {
 		return fmt.Errorf("setup diff repo: %w", err)
 	}
+	e2eWorktreeDir := filepath.Join(tmpDir, "worktrees")
 
 	repos := []config.Repo{
 		{Owner: "acme", Name: "widgets"},
@@ -888,9 +891,10 @@ func run(
 		database, syncer, diffRepo.Manager, assets, cfg, cfgPath,
 		server.ServerOptions{
 			Clones:      diffRepo.Manager,
-			WorktreeDir: filepath.Join(tmpDir, "worktrees"),
+			WorktreeDir: e2eWorktreeDir,
 		},
 	)
+	defer cleanupE2EWorkspaces(database, diffRepo.Manager, e2eWorktreeDir, cfg.TmuxCommand())
 	rootHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost &&
 			r.URL.Path == "/__e2e/pr-workflow-approval/required" {
@@ -1349,4 +1353,37 @@ func patchFixturePRSHAs(fc *testutil.FixtureClient, owner, repo string, number i
 		return
 	}
 	fc.UpdatePullRequestSHAs(owner, repo, number, headSHA, baseSHA)
+}
+
+func cleanupE2EWorkspaces(
+	database *db.DB,
+	clones *gitclone.Manager,
+	worktreeDir string,
+	tmuxCmd []string,
+) {
+	if database == nil || worktreeDir == "" {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	manager := workspace.NewManager(database, worktreeDir)
+	manager.SetTmuxCommand(tmuxCmd)
+	if clones != nil {
+		manager.SetClones(clones)
+	}
+	workspaces, err := manager.ListSummaries(ctx)
+	if err != nil {
+		slog.Warn("e2e workspace cleanup list failed", "err", err)
+		return
+	}
+	for _, summary := range workspaces {
+		if _, err := manager.Delete(ctx, summary.ID, true, nil); err != nil {
+			slog.Warn(
+				"e2e workspace cleanup delete failed",
+				"workspace_id", summary.ID,
+				"err", err,
+			)
+		}
+	}
 }

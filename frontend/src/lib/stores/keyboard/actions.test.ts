@@ -72,15 +72,16 @@ describe("defaultActions", () => {
     ]);
   });
 
-  it("cheatsheet.open binds ? with shift so the dispatcher matches the real keystroke", () => {
-    // `?` is Shift+/ on a US keyboard. The dispatcher's matcher treats
-    // omitted `shift` as `false`, so without an explicit `shift: true`
-    // a real `?` press (event.shiftKey === true) would never fire the
-    // action — Playwright's keyboard.press synthesizes the char and hides
-    // this in e2e tests.
+  it("cheatsheet.open binds shifted slash variants so the dispatcher matches the real keystroke", () => {
+    // Browsers disagree on whether Shift+/ arrives as `?` or `/`.
+    // The dispatcher's matcher treats omitted `shift` as `false`, so both
+    // variants need an explicit `shift: true`.
     const cheatsheet = defaultActions.find((a) => a.id === "cheatsheet.open");
     expect(cheatsheet).toBeDefined();
-    expect(cheatsheet!.binding).toEqual({ key: "?", shift: true });
+    expect(cheatsheet!.binding).toEqual([
+      { key: "?", shift: true },
+      { key: "/", shift: true },
+    ]);
   });
 
   it("dispatches Edit labels from PR detail context", () => {

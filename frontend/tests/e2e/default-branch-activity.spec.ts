@@ -401,6 +401,8 @@ test.describe("default branch activity", () => {
 });
 
 test.describe("mobile default branch activity", () => {
+  test.skip(({ browserName }) => browserName === "firefox", "Firefox does not support Playwright mobile emulation");
+
   test.use({
     deviceScaleFactor: devices["iPhone 13"].deviceScaleFactor,
     hasTouch: devices["iPhone 13"].hasTouch,

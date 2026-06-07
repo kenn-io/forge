@@ -16,6 +16,38 @@ type TimelineEvent = {
   DedupeKey: string;
 };
 
+const mockRepo = {
+  provider: "github",
+  platform_host: "github.com",
+  repo_path: "acme/widgets",
+  owner: "acme",
+  name: "widgets",
+  capabilities: {
+    read_repositories: true,
+    read_merge_requests: true,
+    read_issues: true,
+    read_comments: true,
+    read_releases: true,
+    read_ci: true,
+    read_labels: true,
+    comment_mutation: true,
+    state_mutation: true,
+    merge_mutation: true,
+    label_mutation: true,
+    review_mutation: true,
+    workflow_approval: true,
+    ready_for_review: true,
+    issue_mutation: true,
+    review_draft_mutation: false,
+    review_thread_resolution: false,
+    read_review_threads: false,
+    native_multiline_ranges: false,
+    thread_reply: false,
+    thread_resolve: false,
+    supported_review_actions: [],
+  },
+};
+
 async function fulfillJson(route: Route, body: unknown, status = 200): Promise<void> {
   await route.fulfill({
     status,
@@ -55,11 +87,14 @@ function prDetail(commentBody: string, event: TimelineEvent) {
       repo_owner: "acme",
       repo_name: "widgets",
       platform_host: "github.com",
+      repo: mockRepo,
       worktree_links: [],
     },
     events: [{ ...event, Body: commentBody }],
+    repo: mockRepo,
     repo_owner: "acme",
     repo_name: "widgets",
+    platform_host: "github.com",
     detail_loaded: true,
     detail_fetched_at: "2026-03-30T14:00:00Z",
     worktree_links: [],
@@ -88,8 +123,10 @@ function issueDetail(commentBody: string, event: TimelineEvent) {
       platform_host: "github.com",
       repo_owner: "acme",
       repo_name: "widgets",
+      repo: mockRepo,
     },
     events: [{ ...event, Body: commentBody }],
+    repo: mockRepo,
     platform_host: "github.com",
     repo_owner: "acme",
     repo_name: "widgets",
@@ -129,7 +166,7 @@ test("edits a pull request timeline comment", async ({ page }) => {
     DedupeKey: "comment-9101",
   };
 
-  await page.route(/\/api\/v1\/repos\/acme\/widgets\/pulls\/42(?:[/?]|$)/, async (route) => {
+  await page.route(/\/api\/v1\/pulls\/github\/acme\/widgets\/42(?:[/?]|$)/, async (route) => {
     if (route.request().method() !== "GET") {
       await route.fallback();
       return;
@@ -170,7 +207,7 @@ test("edits an issue timeline comment", async ({ page }) => {
     DedupeKey: "issue-comment-9202",
   };
 
-  await page.route(/\/api\/v1\/repos\/acme\/widgets\/issues\/7(?:[/?]|$)/, async (route) => {
+  await page.route(/\/api\/v1\/issues\/github\/acme\/widgets\/7(?:[/?]|$)/, async (route) => {
     if (route.request().method() !== "GET") {
       await route.fallback();
       return;

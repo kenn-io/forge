@@ -92,9 +92,9 @@ test("keybindings tour: palette, recents, reserved, cheatsheet, sidebar, modal i
   );
   await page.waitForTimeout(500);
 
-  // ---- Step 6: click a PR row -> /pulls/detail ---------------------------
+  // ---- Step 6: click a PR row -> provider-aware PR detail ----------------
   await pullsGroup.locator(".palette-row").nth(0).click();
-  await expect(page).toHaveURL(/\/pulls\/detail/);
+  await expect(page).toHaveURL(/\/pulls\/github\/acme\/widgets\/\d+/);
   await page.waitForTimeout(800);
 
   // ---- Step 7: recents — go back, reopen palette, see the chosen PR ------
@@ -122,7 +122,8 @@ test("keybindings tour: palette, recents, reserved, cheatsheet, sidebar, modal i
   await page.waitForTimeout(400);
 
   // ---- Step 10: open cheatsheet via ? -----------------------------------
-  await page.keyboard.press("?");
+  await page.locator("main.app-main").click();
+  await page.keyboard.press("Shift+/");
   const cheatsheet = page.getByRole("dialog", {
     name: "Keyboard shortcuts",
   });

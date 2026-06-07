@@ -179,6 +179,11 @@
         }
         break;
       case "/":
+        if (e.shiftKey) {
+          e.preventDefault();
+          helpOpen = !helpOpen;
+          break;
+        }
         if (!drawerOpen && !daemonDown) {
           e.preventDefault();
           const searchInput = document.querySelector(

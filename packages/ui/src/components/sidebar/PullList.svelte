@@ -341,6 +341,7 @@
     <p class="state-note">Showing items closed after middleman began tracking them</p>
   {/if}
   <div
+    data-test="pr-list"
     class="list-body"
     class:list-body--diff-focus={isDiffFocus}
     class:list-body--diff-focus-worktree={isDiffFocus && isSelectedActiveWorktree}

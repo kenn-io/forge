@@ -24,7 +24,7 @@ type ModalOpener = {
 };
 
 async function openMergeModal(page: Page): Promise<void> {
-  await page.goto("/pulls/detail?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=42");
+  await page.goto("/pulls/github/acme/widgets/42");
   // Wait for the PR detail to render before clicking Merge.
   await expect(page.locator(".detail-title")).toContainText("Add browser regression coverage");
   const mergeButton = page.locator(".btn--merge").first();

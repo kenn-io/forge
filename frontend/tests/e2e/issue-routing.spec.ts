@@ -69,6 +69,14 @@ async function mockIssueDetailAndTrackHosts(page: Page): Promise<string[]> {
       body: JSON.stringify(mirrorIssueDetail),
     });
   });
+  await page.route("**/api/v1/host/ghe.example.com/issues/github/acme/widgets/7", async (route) => {
+    seenHosts.push("ghe.example.com");
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(mirrorIssueDetail),
+    });
+  });
 
   return seenHosts;
 }

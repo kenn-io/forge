@@ -1,10 +1,16 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator } from "@playwright/test";
 
 import { mockApi } from "./support/mockApi";
 
 test.beforeEach(async ({ page }) => {
   await mockApi(page);
 });
+
+function paletteGroup(dialog: Locator, name: string): Locator {
+  return dialog.locator(
+    `xpath=.//div[contains(concat(' ', normalize-space(@class), ' '), ' palette-group ')][.//div[contains(concat(' ', normalize-space(@class), ' '), ' palette-group-header ') and normalize-space()="${name}"]]`,
+  );
+}
 
 test("recents: select PR, close, reopen, see recent at top", async ({ page }) => {
   await page.goto("/pulls");
@@ -13,7 +19,7 @@ test("recents: select PR, close, reopen, see recent at top", async ({ page }) =>
   // depends on the mock data render order, so we don't lock to a specific
   // title — only that some PR row exists in that group.
   const dialog = page.getByRole("dialog", { name: "Command palette" });
-  const firstPRRow = dialog.locator(".palette-group", { hasText: "Pull requests" }).locator(".palette-row").first();
+  const firstPRRow = paletteGroup(dialog, "Pull requests").locator(".palette-row").first();
   await firstPRRow.click();
   // The click navigates to the PR detail. Go back to /pulls and reopen the
   // palette to verify the chosen PR landed in the recents store.
@@ -34,7 +40,7 @@ test("recents: typing a query hides the Recently used section", async ({ page })
   await page.goto("/pulls");
   await page.keyboard.press("Meta+K");
   const dialog = page.getByRole("dialog", { name: "Command palette" });
-  const firstPRRow = dialog.locator(".palette-group", { hasText: "Pull requests" }).locator(".palette-row").first();
+  const firstPRRow = paletteGroup(dialog, "Pull requests").locator(".palette-row").first();
   await firstPRRow.click();
   await page.goto("/pulls");
   await page.keyboard.press("Meta+K");

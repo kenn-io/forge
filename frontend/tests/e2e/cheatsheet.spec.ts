@@ -1,13 +1,18 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { mockApi } from "./support/mockApi";
 
 test.beforeEach(async ({ page }) => {
   await mockApi(page);
 });
 
+async function focusAppBody(page: Page): Promise<void> {
+  await page.locator("main").click({ position: { x: 520, y: 260 } });
+}
+
 test("? opens the cheatsheet and shows j/k under On this view", async ({ page }) => {
   await page.goto("/pulls");
-  await page.keyboard.press("?");
+  await focusAppBody(page);
+  await page.keyboard.press("Shift+/");
   const sheet = page.getByRole("dialog", {
     name: "Keyboard shortcuts",
   });
@@ -21,7 +26,8 @@ test("? opens the cheatsheet and shows j/k under On this view", async ({ page })
 
 test("Escape closes the cheatsheet", async ({ page }) => {
   await page.goto("/pulls");
-  await page.keyboard.press("?");
+  await focusAppBody(page);
+  await page.keyboard.press("Shift+/");
   await expect(page.getByRole("dialog", { name: "Keyboard shortcuts" })).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog", { name: "Keyboard shortcuts" })).toBeHidden();

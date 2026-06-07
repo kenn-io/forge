@@ -2,6 +2,40 @@ import { expect, test } from "@playwright/test";
 
 import { mockApi } from "./support/mockApi";
 
+const mockCapabilities = {
+  read_repositories: true,
+  read_merge_requests: true,
+  read_issues: true,
+  read_comments: true,
+  read_releases: true,
+  read_ci: true,
+  read_labels: true,
+  comment_mutation: true,
+  state_mutation: true,
+  merge_mutation: true,
+  label_mutation: true,
+  review_mutation: true,
+  workflow_approval: true,
+  ready_for_review: true,
+  issue_mutation: true,
+  review_draft_mutation: false,
+  review_thread_resolution: false,
+  read_review_threads: false,
+  native_multiline_ranges: false,
+  thread_reply: false,
+  thread_resolve: false,
+  supported_review_actions: [],
+};
+
+const mockRepo = {
+  provider: "github",
+  platform_host: "github.com",
+  repo_path: "acme/widgets",
+  owner: "acme",
+  name: "widgets",
+  capabilities: mockCapabilities,
+};
+
 test.beforeEach(async ({ page }) => {
   await mockApi(page);
 });
@@ -62,7 +96,7 @@ test("edit body: cancel preserves original", async ({ page }) => {
 });
 
 test("markdown tables keep compact columns readable", async ({ page }) => {
-  await page.route("**/api/v1/repos/acme/widgets/pulls/42", async (route) => {
+  await page.route("**/api/v1/pulls/github/acme/widgets/42", async (route) => {
     if (route.request().method() !== "GET") {
       await route.fallback();
       return;
@@ -104,10 +138,13 @@ test("markdown tables keep compact columns readable", async ({ page }) => {
           repo_owner: "acme",
           repo_name: "widgets",
           platform_host: "github.com",
+          repo: mockRepo,
           worktree_links: [],
         },
         repo_owner: "acme",
         repo_name: "widgets",
+        platform_host: "github.com",
+        repo: mockRepo,
         detail_loaded: true,
         detail_fetched_at: "2026-03-30T14:00:00Z",
         worktree_links: [],
@@ -128,7 +165,7 @@ test("markdown tables keep compact columns readable", async ({ page }) => {
 
 test("add description to empty-body PR shows add-description-btn", async ({ page }) => {
   // Override the GET route to return a PR with empty body.
-  await page.route("**/api/v1/repos/acme/widgets/pulls/42", async (route) => {
+  await page.route("**/api/v1/pulls/github/acme/widgets/42", async (route) => {
     if (route.request().method() !== "GET") {
       await route.fallback();
       return;
@@ -165,10 +202,14 @@ test("add description to empty-body PR shows add-description-btn", async ({ page
           Starred: false,
           repo_owner: "acme",
           repo_name: "widgets",
+          platform_host: "github.com",
+          repo: mockRepo,
           worktree_links: [],
         },
         repo_owner: "acme",
         repo_name: "widgets",
+        platform_host: "github.com",
+        repo: mockRepo,
         detail_loaded: true,
         detail_fetched_at: "2026-03-30T14:00:00Z",
         worktree_links: [],

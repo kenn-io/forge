@@ -75,6 +75,8 @@
   {#if !isCollapsed && !hideSidebar}
     <aside
       class="sidebar"
+      data-test="sidebar"
+      data-collapsed="false"
       style={`width: ${sidebarOnly || !hasMain ? "100%" : `${currentWidth}px`}`}
     >
       {@render sidebar()}
@@ -88,7 +90,7 @@
       />
     {/if}
   {:else if !hideSidebar && showCollapsedStrip}
-    <aside class="sidebar sidebar--collapsed">
+    <aside class="sidebar sidebar--collapsed" data-test="sidebar" data-collapsed="true">
       <LeftSidebarToggle
         state="collapsed"
         label="sidebar"

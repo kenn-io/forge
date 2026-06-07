@@ -266,7 +266,10 @@ export const defaultActions: Action[] = [
     // as `false`, so the binding must declare it explicitly to fire from a
     // real keystroke (Playwright's keyboard.press synthesizes the char and
     // hides this in tests).
-    binding: { key: "?", shift: true },
+    binding: [
+      { key: "?", shift: true },
+      { key: "/", shift: true },
+    ],
     priority: 0,
     // The reviews page renders roborev's UI, which owns its own `?`-bound
     // help modal. Letting the middleman cheatsheet also fire on `?` opens

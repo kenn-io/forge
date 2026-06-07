@@ -335,6 +335,19 @@ function matchesRouteIdentity(
   );
 }
 
+function pullDetailResponse(pr: (typeof pulls)[number]) {
+  return {
+    merge_request: pr,
+    repo: pr.repo,
+    repo_owner: pr.repo_owner,
+    repo_name: pr.repo_name,
+    platform_host: pr.platform_host,
+    detail_loaded: true,
+    detail_fetched_at: "2026-03-30T14:00:00Z",
+    worktree_links: pr.worktree_links,
+  };
+}
+
 export async function mockApi(page: Page): Promise<void> {
   // Deep-clone so mutations (e.g. PATCH) don't leak between tests.
   const localPulls: typeof pulls = JSON.parse(JSON.stringify(pulls));
@@ -371,18 +384,62 @@ export async function mockApi(page: Page): Promise<void> {
         }),
       );
       if (pr) {
-        await fulfillJson(route, {
-          merge_request: pr,
-          repo_owner: pr.repo_owner,
-          repo_name: pr.repo_name,
-          platform_host: pr.platform_host,
-          detail_loaded: true,
-          detail_fetched_at: "2026-03-30T14:00:00Z",
-          worktree_links: pr.worktree_links,
-        });
+        await fulfillJson(route, pullDetailResponse(pr));
       } else {
         await fulfillJson(route, { error: "Not found" }, 404);
       }
+      return;
+    }
+
+    if (providerPrMatch && method === "PATCH" && !providerPrMatch[6]) {
+      const prProvider = canonicalProvider(decodePathSegment(providerPrMatch[2]));
+      const platformHost = routePlatformHost(prProvider, providerPrMatch[1]);
+      const prOwner = decodePathSegment(providerPrMatch[3]);
+      const prName = decodePathSegment(providerPrMatch[4]);
+      const prNumber = parseInt(providerPrMatch[5]!, 10);
+      const pr = localPulls.find((p) =>
+        matchesRouteIdentity(p, {
+          provider: prProvider,
+          platformHost,
+          owner: prOwner,
+          name: prName,
+          number: prNumber,
+        }),
+      );
+      if (!pr) {
+        await fulfillJson(route, { title: "Not found" }, 404);
+        return;
+      }
+      const reqBody = JSON.parse((await route.request().postData()) ?? "{}");
+      if (reqBody.title !== undefined) pr.Title = reqBody.title;
+      if (reqBody.body !== undefined) pr.Body = reqBody.body;
+      await fulfillJson(route, pullDetailResponse(pr));
+      return;
+    }
+
+    const approvePrMatch = pathname.match(
+      /^\/api\/v1(?:\/host\/([^/]+))?\/pulls\/([^/]+)\/([^/]+)\/([^/]+)\/(\d+)\/approve$/,
+    );
+    if (approvePrMatch && method === "POST") {
+      const prProvider = canonicalProvider(decodePathSegment(approvePrMatch[2]));
+      const platformHost = routePlatformHost(prProvider, approvePrMatch[1]);
+      const prOwner = decodePathSegment(approvePrMatch[3]);
+      const prName = decodePathSegment(approvePrMatch[4]);
+      const prNumber = parseInt(approvePrMatch[5]!, 10);
+      const pr = localPulls.find((p) =>
+        matchesRouteIdentity(p, {
+          provider: prProvider,
+          platformHost,
+          owner: prOwner,
+          name: prName,
+          number: prNumber,
+        }),
+      );
+      if (!pr) {
+        await fulfillJson(route, { title: "Not found" }, 404);
+        return;
+      }
+      await fulfillJson(route, { status: "approved" });
       return;
     }
 
@@ -393,14 +450,7 @@ export async function mockApi(page: Page): Promise<void> {
       const prNumber = parseInt(singlePrMatch[3]!, 10);
       const pr = localPulls.find((p) => p.repo_owner === prOwner && p.repo_name === prName && p.Number === prNumber);
       if (pr) {
-        await fulfillJson(route, {
-          merge_request: pr,
-          repo_owner: pr.repo_owner,
-          repo_name: pr.repo_name,
-          detail_loaded: true,
-          detail_fetched_at: "2026-03-30T14:00:00Z",
-          worktree_links: pr.worktree_links,
-        });
+        await fulfillJson(route, pullDetailResponse(pr));
       } else {
         await fulfillJson(route, { error: "Not found" }, 404);
       }
@@ -439,6 +489,7 @@ export async function mockApi(page: Page): Promise<void> {
       }
       await fulfillJson(route, {
         issue,
+        repo: issue.repo,
         events: [],
         platform_host: issue.platform_host,
         repo_owner: issue.repo_owner,
@@ -464,6 +515,7 @@ export async function mockApi(page: Page): Promise<void> {
       }
       await fulfillJson(route, {
         issue,
+        repo: issue.repo,
         events: [],
         platform_host: issue.platform_host,
         repo_owner: issue.repo_owner,
@@ -501,6 +553,27 @@ export async function mockApi(page: Page): Promise<void> {
 
     if (method === "GET" && pathname === "/api/v1/repos") {
       await fulfillJson(route, repos);
+      return;
+    }
+
+    const providerRepoMatch = pathname.match(/^\/api\/v1(?:\/host\/([^/]+))?\/repo\/([^/]+)\/([^/]+)\/([^/]+)$/);
+    if (method === "GET" && providerRepoMatch) {
+      const repoProvider = canonicalProvider(decodePathSegment(providerRepoMatch[2]));
+      const platformHost = routePlatformHost(repoProvider, providerRepoMatch[1]);
+      const repoOwner = decodePathSegment(providerRepoMatch[3]);
+      const repoName = decodePathSegment(providerRepoMatch[4]);
+      const repo = repos.find(
+        (r) =>
+          canonicalProvider(r.Platform) === repoProvider &&
+          r.PlatformHost === platformHost &&
+          r.Owner === repoOwner &&
+          r.Name === repoName,
+      );
+      if (!repo) {
+        await fulfillJson(route, { error: "Not found" }, 404);
+        return;
+      }
+      await fulfillJson(route, repo);
       return;
     }
 
@@ -562,14 +635,7 @@ export async function mockApi(page: Page): Promise<void> {
       const reqBody = JSON.parse((await route.request().postData()) ?? "{}");
       if (reqBody.title !== undefined) pr.Title = reqBody.title;
       if (reqBody.body !== undefined) pr.Body = reqBody.body;
-      await fulfillJson(route, {
-        merge_request: pr,
-        repo_owner: pr.repo_owner,
-        repo_name: pr.repo_name,
-        detail_loaded: true,
-        detail_fetched_at: "2026-03-30T14:00:00Z",
-        worktree_links: pr.worktree_links,
-      });
+      await fulfillJson(route, pullDetailResponse(pr));
       return;
     }
 

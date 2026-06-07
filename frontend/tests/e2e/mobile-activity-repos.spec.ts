@@ -97,7 +97,9 @@ test.describe("mobile activity repository selector", () => {
     await expect(page.getByRole("option", { name: "acme/*" })).toHaveCount(0);
 
     await page.getByRole("option", { name: "ghe.example.com/acme/widgets" }).click();
-    await expect(page.getByRole("combobox", { name: "Repository: acme/widgets" })).toHaveText("acme/widgets");
+    await expect(page.getByRole("combobox", { name: "Repository: ghe.example.com/acme/widgets" })).toHaveText(
+      "ghe.example.com/acme/widgets",
+    );
     await expect.poll(() => activityRepos).toContain("ghe.example.com/acme/widgets");
   });
 

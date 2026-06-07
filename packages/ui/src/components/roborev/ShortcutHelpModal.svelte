@@ -23,12 +23,12 @@
 </script>
 
 {#if open}
-  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <div
     class="modal-backdrop"
     onclick={onclose}
     onkeydown={handleKeydown}
     role="dialog"
+    aria-label="Keyboard Shortcuts"
     tabindex="-1"
   >
     <div

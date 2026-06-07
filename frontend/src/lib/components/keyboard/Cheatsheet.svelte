@@ -145,15 +145,12 @@
       if (e.key !== "Tab") return;
       const els = focusable();
       if (els.length === 0) return;
-      const first = els[0]!;
-      const last = els[els.length - 1]!;
-      if (e.shiftKey && document.activeElement === first) {
-        last.focus();
-        e.preventDefault();
-      } else if (!e.shiftKey && document.activeElement === last) {
-        first.focus();
-        e.preventDefault();
-      }
+      const currentIndex = els.findIndex((el) => el === document.activeElement);
+      const nextIndex = e.shiftKey
+        ? (currentIndex <= 0 ? els.length - 1 : currentIndex - 1)
+        : (currentIndex < 0 || currentIndex === els.length - 1 ? 0 : currentIndex + 1);
+      els[nextIndex]?.focus();
+      e.preventDefault();
     }
     const el = dialogEl;
     el.addEventListener("keydown", trap);

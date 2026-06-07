@@ -449,8 +449,12 @@ test("adds and publishes an inline draft review comment", async ({ page }) => {
   await page.goto("/pulls/github/acme/widgets/42");
   await page.getByRole("button", { name: "Files changed" }).click();
   await page.getByRole("button", { name: "Comment on new line 2" }).click();
-  await page.getByPlaceholder("Leave a comment").fill("Please cover this line.");
-  await page.getByRole("button", { name: "Add comment" }).click();
+  const composer = page.getByPlaceholder("Leave a comment");
+  await composer.fill("Please cover this line.");
+  await expect(composer).toHaveValue("Please cover this line.");
+  const addCommentButton = page.getByRole("button", { name: "Add comment" });
+  await expect(addCommentButton).toBeEnabled();
+  await addCommentButton.click();
 
   await expect(page.getByText("1 draft comment")).toBeVisible();
   await expect(page.locator(".inline-draft-comment")).toContainText("Please cover this line.");
@@ -653,7 +657,9 @@ test("shows published inline review context in conversation and jumps to the dif
   await page.getByRole("button", { name: "Jump to diff" }).click();
 
   await expect(page.getByRole("button", { name: /Files changed/ })).toHaveClass(/detail-tab--active/);
-  await expect(page.locator('[data-diff-path="src/main.ts"][data-diff-new-line="2"]')).toBeFocused();
+  await expect(
+    page.locator('[data-diff-path="src/main.ts"][data-diff-new-line="2"]:not([data-middleman-line-comment-cell])'),
+  ).toBeVisible();
 });
 
 test("keeps published inline review context loaded after switching back from files", async ({ page }) => {

@@ -155,7 +155,7 @@
 </script>
 
 <button
-  class="pull-item"
+  class="pull-item pr-list-row"
   class:selected
   class:active-worktree={isActiveWorktree}
   bind:this={el}

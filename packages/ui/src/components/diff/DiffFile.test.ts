@@ -463,7 +463,11 @@ describe("DiffFile", () => {
     });
 
     await clickLineCommentButton(2, "right");
-    expect(screen.getByPlaceholderText("Leave a comment")).toBeTruthy();
+    const textarea = screen.getByPlaceholderText("Leave a comment");
+    expect(textarea).toBeTruthy();
+    await waitFor(() => {
+      expect(textarea).toBe(document.activeElement);
+    });
     await waitFor(() => {
       expect(selectedPierreLines()).toHaveLength(4);
     });

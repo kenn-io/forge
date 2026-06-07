@@ -1,7 +1,7 @@
 <script lang="ts">
   import SendIcon from "@lucide/svelte/icons/send";
   import XIcon from "@lucide/svelte/icons/x";
-  import { onMount, tick } from "svelte";
+  import { tick } from "svelte";
   import type { DiffReviewLineRange } from "../../stores/diff-review-draft.svelte.js";
   import { getStores } from "../../context.js";
   import ActionButton from "../shared/ActionButton.svelte";
@@ -20,16 +20,42 @@
   const submitting = $derived(diffReviewDraft.isSubmitting());
   const error = $derived(diffReviewDraft.getError());
 
-  onMount(() => {
+  function setupTextarea(node: HTMLTextAreaElement) {
+    textareaEl = node;
+    let destroyed = false;
+    let focusFrame = 0;
+    let focusTimeout: ReturnType<typeof setTimeout> | undefined;
+
+    function focusTextarea(): void {
+      if (destroyed || !node.isConnected || node.disabled) return;
+      node.focus({ preventScroll: true });
+    }
+
     void tick().then(() => {
-      textareaEl?.focus({ preventScroll: true });
+      focusTextarea();
       scheduleAutosizeTextarea();
+      focusFrame = requestAnimationFrame(() => {
+        focusFrame = requestAnimationFrame(() => {
+          focusFrame = 0;
+          focusTextarea();
+        });
+      });
+      focusTimeout = setTimeout(() => {
+        focusTimeout = undefined;
+        focusTextarea();
+      }, 50);
     });
 
-    return () => {
-      if (autosizeFrame) cancelAnimationFrame(autosizeFrame);
+    return {
+      destroy(): void {
+        destroyed = true;
+        if (textareaEl === node) textareaEl = undefined;
+        if (focusFrame) cancelAnimationFrame(focusFrame);
+        if (focusTimeout !== undefined) clearTimeout(focusTimeout);
+        if (autosizeFrame) cancelAnimationFrame(autosizeFrame);
+      },
     };
-  });
+  }
 
   function autosizeTextarea(): void {
     if (!textareaEl) return;
@@ -63,6 +89,7 @@
 
 <div class="inline-composer">
   <textarea
+    use:setupTextarea
     bind:this={textareaEl}
     bind:value={body}
     placeholder="Leave a comment"

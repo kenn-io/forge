@@ -437,13 +437,17 @@ function treeFileItem(pageOrLocator: Page | ReturnType<Page["locator"]>, path: s
   return pageOrLocator.locator(`.diff-file-tree [data-item-path="${cssString(path)}"]`);
 }
 
+async function clickVisibleTarget(target: Locator): Promise<void> {
+  await expect(target).toBeVisible({ timeout: 10_000 });
+  await target.scrollIntoViewIfNeeded();
+  const box = await target.boundingBox();
+  expect(box).not.toBeNull();
+  await target.page().mouse.click(box!.x + box!.width / 2, box!.y + box!.height / 2);
+}
+
 async function clickTreeFileItem(pageOrLocator: Page | ReturnType<Page["locator"]>, path: string): Promise<void> {
   const item = treeFileItem(pageOrLocator, path);
-  await expect(item).toBeVisible();
-  await item.scrollIntoViewIfNeeded();
-  await item.click({ timeout: 2_000 }).catch(async () => {
-    await item.evaluate((node) => (node as HTMLElement).click());
-  });
+  await clickVisibleTarget(item);
   await expect(item).toHaveAttribute("aria-selected", "true");
 }
 
@@ -596,8 +600,7 @@ async function clickPierreContextExpander(
     .filter({ visible: true })
     .nth(separatorIndex);
   const expander = separator.locator(buttonSelector).filter({ visible: true }).first();
-  await expect(expander).toBeVisible();
-  await expander.evaluate((button: HTMLElement) => button.click());
+  await clickVisibleTarget(expander);
 }
 
 async function expectPierreDarkBackgroundMatchesAppSurface(file: ReturnType<Page["locator"]>) {
@@ -920,7 +923,7 @@ async function selectPierreReviewLine(file: Locator, line: number, side: "left" 
   ].join(",");
   const target = file.locator(`.pierre-diff ${selector}`).first();
   await expect(target).toBeVisible({ timeout: 10_000 });
-  await target.locator("[data-middleman-line-comment-button]").click();
+  await clickVisibleTarget(target.locator("[data-middleman-line-comment-button]"));
 }
 
 // --- Functional tests ---

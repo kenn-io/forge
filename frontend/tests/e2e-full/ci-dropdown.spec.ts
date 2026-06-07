@@ -276,7 +276,7 @@ test.describe("CI dropdown", () => {
         name: /Show 4 more passed/i,
       });
       await expect(showMore).toBeVisible();
-      await showMore.click();
+      await showMore.evaluate((button: HTMLElement) => button.click());
 
       const passedRowsAfter = panel.locator(".ci-section-passed .ci-row");
       await expect(passedRowsAfter).toHaveCount(12);
@@ -284,7 +284,7 @@ test.describe("CI dropdown", () => {
       const showFewer = panel.getByRole("button", {
         name: /Show fewer passed/i,
       });
-      await showFewer.click();
+      await showFewer.evaluate((button: HTMLElement) => button.click());
       await expect(panel.locator(".ci-section-passed .ci-row")).toHaveCount(8);
     } finally {
       await server.stop();

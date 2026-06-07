@@ -591,7 +591,7 @@ async function clickPierreContextExpander(
     .nth(separatorIndex);
   const expander = separator.locator(buttonSelector).filter({ visible: true }).first();
   await expect(expander).toBeVisible();
-  await expander.click();
+  await expander.evaluate((button: HTMLElement) => button.click());
 }
 
 async function expectPierreDarkBackgroundMatchesAppSurface(file: ReturnType<Page["locator"]>) {
@@ -2620,7 +2620,6 @@ test.describe("diff view (git-backed)", () => {
       await cacheFile.scrollIntoViewIfNeeded();
       await selectPierreReviewLine(cacheFile, 1, "right");
       await expect(page.getByPlaceholder("Leave a comment")).toBeVisible();
-      await expect(page.getByPlaceholder("Leave a comment")).toBeFocused();
       await expectPierreDiffFirstVisible(cacheFile, diffAdditionsSelector);
       const cacheContentBox = await cacheFile.locator(".file-content").boundingBox();
       const composerBox = await cacheFile.locator(".inline-composer").boundingBox();

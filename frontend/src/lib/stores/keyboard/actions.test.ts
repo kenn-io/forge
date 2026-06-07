@@ -156,4 +156,35 @@ describe("defaultActions", () => {
     expect(cheatsheet!.when(ctx("pulls"))).toBe(true);
     expect(cheatsheet!.when(ctx("issues"))).toBe(true);
   });
+
+  it("sidebar.toggle only fires on pages with a sidebar target", () => {
+    const action = defaultActions.find((a) => a.id === "sidebar.toggle");
+    expect(action).toBeDefined();
+
+    expect(action!.when(ctx("activity"))).toBe(false);
+    expect(action!.when(ctx("repos"))).toBe(false);
+    expect(
+      action!.when(
+        ctx("pulls", {
+          route: { page: "pulls", view: "list" } as never,
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      action!.when(
+        ctx("pulls", {
+          route: { page: "pulls", view: "board" } as never,
+        }),
+      ),
+    ).toBe(false);
+    expect(action!.when(ctx("issues"))).toBe(true);
+    expect(action!.when(ctx("workspaces"))).toBe(true);
+    expect(
+      action!.when(
+        ctx("terminal", {
+          route: { page: "terminal", workspaceId: "1" } as never,
+        }),
+      ),
+    ).toBe(true);
+  });
 });

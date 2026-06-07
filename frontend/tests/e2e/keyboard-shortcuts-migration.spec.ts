@@ -23,4 +23,21 @@ test.describe("migrated global shortcuts", () => {
     await page.keyboard.press("Meta+BracketLeft");
     await expect(sidebar).toHaveAttribute("data-collapsed", (!wasCollapsed).toString());
   });
+
+  test("Cmd+[ stays inactive on Activity where no sidebar target exists", async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem("middleman-sidebar", "collapsed");
+    });
+    await page.goto("/");
+
+    const expandButton = page.getByRole("button", {
+      name: "Expand sidebar",
+    });
+    await expect(expandButton).toBeVisible();
+    await expect(page.locator("header kbd[aria-label$='-[']")).toHaveCount(0);
+
+    await page.keyboard.press("Meta+BracketLeft");
+
+    await expect(expandButton).toBeVisible();
+  });
 });

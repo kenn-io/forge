@@ -33,6 +33,19 @@ const onPullsListNotBoard = (ctx: Context): boolean => ctx.page === "pulls" && !
 
 const onIssuesList = (ctx: Context): boolean => ctx.page === "issues";
 
+function hasSidebarShortcutTarget(ctx: Context): boolean {
+  switch (ctx.route.page) {
+    case "pulls":
+      return ctx.route.view === "list";
+    case "issues":
+    case "workspaces":
+    case "terminal":
+      return true;
+    default:
+      return false;
+  }
+}
+
 type LabelEditableSelection = Omit<OpenLabelPickerDetail, "itemType">;
 
 type LabelEditableDetail = {
@@ -243,7 +256,7 @@ export const defaultActions: Action[] = [
     scope: "global",
     binding: { key: "[", ctrlOrMeta: true },
     priority: 0,
-    when: () => isSidebarToggleEnabled(),
+    when: (ctx) => isSidebarToggleEnabled() && hasSidebarShortcutTarget(ctx),
     handler: () => toggleSidebar(),
   },
   {

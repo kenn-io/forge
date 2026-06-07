@@ -258,6 +258,16 @@ describe("AppHeader", () => {
     expect(workspaceOptions[0]?.getAttribute("aria-selected")).toBe("true");
   });
 
+  it("does not show the collapsed sidebar shortcut hint on Activity", () => {
+    initTheme();
+    navigate("/");
+    setSidebarCollapsed(true);
+    const { container } = render(AppHeader);
+
+    expect(container.querySelector("button[title='Expand sidebar']")).toBeTruthy();
+    expect(container.querySelector("kbd[aria-label]")).toBeNull();
+  });
+
   it("opens selected Activity PR in PRs tab with files tab preserved", async () => {
     initTheme();
     navigate("/?selected=pr:1&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&selected_tab=files");

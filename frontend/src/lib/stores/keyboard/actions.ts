@@ -256,8 +256,11 @@ export const defaultActions: Action[] = [
     scope: "global",
     binding: { key: "[", ctrlOrMeta: true },
     priority: 0,
-    when: (ctx) => isSidebarToggleEnabled() && hasSidebarShortcutTarget(ctx),
-    handler: () => toggleSidebar(),
+    when: () => isSidebarToggleEnabled(),
+    visible: (ctx) => isSidebarToggleEnabled() && hasSidebarShortcutTarget(ctx),
+    handler: (ctx) => {
+      if (hasSidebarShortcutTarget(ctx)) toggleSidebar();
+    },
   },
   {
     id: "palette.open",

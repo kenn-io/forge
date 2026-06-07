@@ -13,6 +13,7 @@
     getAllActions,
     getAllCheatsheetEntries,
   } from "../../stores/keyboard/registry.svelte.js";
+  import { isActionVisible } from "../../stores/keyboard/visibility.js";
   import type {
     Action,
     CheatsheetEntry,
@@ -46,7 +47,7 @@
   // unit tests drive grouping without standing up the full app context.
   const visibleActions = $derived<Action[]>(
     stores
-      ? getAllActions().filter((a) => a.when(buildContext(stores)))
+      ? getAllActions().filter((a) => isActionVisible(a, buildContext(stores)))
       : getAllActions(),
   );
 

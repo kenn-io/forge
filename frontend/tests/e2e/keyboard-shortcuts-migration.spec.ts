@@ -24,7 +24,7 @@ test.describe("migrated global shortcuts", () => {
     await expect(sidebar).toHaveAttribute("data-collapsed", (!wasCollapsed).toString());
   });
 
-  test("Cmd+[ stays inactive on Activity where no sidebar target exists", async ({ page }) => {
+  test("Cmd+[ is reserved on Activity without toggling the sidebar", async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.setItem("middleman-sidebar", "collapsed");
     });
@@ -35,9 +35,32 @@ test.describe("migrated global shortcuts", () => {
     });
     await expect(expandButton).toBeVisible();
     await expect(page.locator("header kbd[aria-label$='-[']")).toHaveCount(0);
+    await page.evaluate(() => {
+      const state = window as Window & {
+        __middleman_last_bracket_default_prevented?: boolean | null;
+      };
+      state.__middleman_last_bracket_default_prevented = null;
+      window.addEventListener("keydown", (event) => {
+        if ((event.metaKey || event.ctrlKey) && event.key === "[") {
+          state.__middleman_last_bracket_default_prevented = event.defaultPrevented;
+        }
+      });
+    });
 
     await page.keyboard.press("Meta+BracketLeft");
 
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            (
+              window as Window & {
+                __middleman_last_bracket_default_prevented?: boolean | null;
+              }
+            ).__middleman_last_bracket_default_prevented,
+        ),
+      )
+      .toBe(true);
     await expect(expandButton).toBeVisible();
   });
 });

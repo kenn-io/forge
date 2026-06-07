@@ -18,6 +18,7 @@
   import { buildContext } from "../../stores/keyboard/context.svelte.js";
   import { handleCommandResult } from "../../stores/keyboard/dispatch.svelte.js";
   import { getAllActions } from "../../stores/keyboard/registry.svelte.js";
+  import { isActionVisible } from "../../stores/keyboard/visibility.js";
   import {
     groupResults,
     parsePaletteQuery,
@@ -70,7 +71,7 @@
       return getAllActions();
     }
     const ctx = buildContext(stores);
-    return getAllActions().filter((a) => a.when(ctx));
+    return getAllActions().filter((a) => isActionVisible(a, ctx));
   });
   const grouped = $derived(
     groupResults({

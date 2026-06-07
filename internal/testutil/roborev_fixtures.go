@@ -465,14 +465,16 @@ func seedRoborevMutationFixtures(tx *sql.Tx) error {
 		`INSERT INTO review_jobs
 		 (id, repo_id, commit_id, git_ref, branch,
 		  agent, model, status,
-		  enqueued_at, started_at, finished_at, job_type)
+		  enqueued_at, started_at, finished_at, job_type,
+		  token_usage)
 		 VALUES (74, 2, 74, ?, 'feat/api', 'claude',
 		         'claude-sonnet-4-6', 'done', ?, ?, ?,
-		         'review')`,
+		         'review', ?)`,
 		fmt.Sprintf("%08x", 0xaa000000+74),
 		enq74.Format(roborevTimeFmt),
 		started74.Format(roborevTimeFmt),
 		started74.Format(roborevTimeFmt),
+		`{"total_output_tokens":28800,"peak_context_tokens":118000,"cost_usd":0.42,"has_cost":true}`,
 	)
 	if err != nil {
 		return fmt.Errorf("insert mutation job 74: %w", err)

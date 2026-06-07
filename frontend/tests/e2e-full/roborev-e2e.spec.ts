@@ -59,6 +59,8 @@ test.describe.serial("Roborev", () => {
       await expect(firstRow.locator(".col-id")).toContainText("74");
       await expect(firstRow.locator(".col-agent")).toContainText("claude");
       await expect(firstRow.locator(".status-badge")).toContainText("done");
+      await expect(page.locator("th").filter({ hasText: "Cost" })).toBeVisible();
+      await expect(firstRow.locator(".col-cost")).toHaveText("~$0.42");
     });
 
     test("status badges show correct classes for each status", async ({ page }) => {

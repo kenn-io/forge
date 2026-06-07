@@ -186,10 +186,7 @@ test("lets wide PR detail panes opt into split conversation and files", async ({
 
   await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2);
   await page.mouse.down();
-  await page.mouse.move(
-    handleBox.x + handleBox.width / 2 + 240,
-    handleBox.y + handleBox.height / 2,
-  );
+  await page.mouse.move(handleBox.x + handleBox.width / 2 + 240, handleBox.y + handleBox.height / 2);
   await page.mouse.up();
 
   await expect

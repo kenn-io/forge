@@ -142,9 +142,7 @@ describe("PRListView split view", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Split view" }));
     await tick();
 
-    const conversationPane = container.querySelector<HTMLElement>(
-      ".detail-split-pane--conversation",
-    );
+    const conversationPane = container.querySelector<HTMLElement>(".detail-split-pane--conversation");
     expect(conversationPane).not.toBeNull();
     expect(conversationPane!.style.flexBasis).toBe("1098px");
 

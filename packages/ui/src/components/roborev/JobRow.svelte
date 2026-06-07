@@ -31,6 +31,26 @@
     return `${hrs}h ${remMins}m`;
   }
 
+  function formatCost(tokenUsage: string | undefined): string {
+    if (!tokenUsage) return "--";
+    try {
+      const usage: unknown = JSON.parse(tokenUsage);
+      if (
+        typeof usage !== "object" ||
+        usage === null ||
+        !("has_cost" in usage) ||
+        !("cost_usd" in usage) ||
+        usage.has_cost !== true ||
+        typeof usage.cost_usd !== "number"
+      ) {
+        return "--";
+      }
+      return `~$${usage.cost_usd.toFixed(2)}`;
+    } catch {
+      return "--";
+    }
+  }
+
   function shortRef(ref: string): string {
     if (ref.length > 10) return ref.slice(0, 8);
     return ref;
@@ -78,6 +98,9 @@
   </td>
   <td class="col-elapsed mono">
     {formatElapsed(job)}
+  </td>
+  <td class="col-cost mono">
+    {formatCost(job.token_usage)}
   </td>
   <td class="col-type">{job.job_type}</td>
   <td class="col-queued" title={job.enqueued_at}>
@@ -191,6 +214,12 @@
 
   .col-elapsed {
     width: 80px;
+    color: var(--text-secondary);
+    text-align: right;
+  }
+
+  .col-cost {
+    width: 72px;
     color: var(--text-secondary);
     text-align: right;
   }

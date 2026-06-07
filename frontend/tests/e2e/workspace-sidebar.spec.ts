@@ -82,6 +82,7 @@ const roborevJobs = {
       agentic: false,
       prompt_prebuilt: false,
       retry_count: 0,
+      token_usage: '{"total_output_tokens":28800,"peak_context_tokens":118000,"cost_usd":0.42,"has_cost":true}',
     },
   ],
   has_more: false,
@@ -3118,6 +3119,8 @@ test.describe("sidebar Reviews tab", () => {
     // Job list should render the mock job
     await expect(page.locator(".right-sidebar .job-row")).toBeVisible();
     await expect(page.locator(".right-sidebar .job-row")).toContainText("Add auth middleware");
+    await expect(page.locator(".right-sidebar .job-table thead")).toContainText("Cost");
+    await expect(page.locator(".right-sidebar .job-row")).toContainText("~$0.42");
   });
 
   test("Reviews tab shows empty state when no repo matches", async ({ page }) => {

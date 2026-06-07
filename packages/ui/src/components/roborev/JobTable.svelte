@@ -36,6 +36,11 @@
       sortable: true,
     },
     {
+      key: "id",
+      label: "Cost",
+      sortable: false,
+    },
+    {
       key: "job_type",
       label: "Type",
       sortable: true,

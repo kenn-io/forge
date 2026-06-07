@@ -23,13 +23,13 @@ changepoint commit forward:
 | Contributor | Commits | Affiliation |
 |-------------|--------:|-------------|
 | Marius van Niekerk | 232 | Kenn Software |
-| Wes McKinney | 139 | Kenn Software |
+| Wes McKinney | 141 | Kenn Software |
 | Phillip Cloud | 54 | Kenn Software |
 | Andy Hadjigeorgiou | 2 | external |
 | Christophe Dervieux | 1 | external |
 | Eric Dill | 1 | external |
 
-Wes, Marius, and Phillip are all part of Kenn Software (425 of 429 commits). The
+Wes, Marius, and Phillip are all part of Kenn Software (427 of 431 commits). The
 four external commits (Andy ×2, Christophe ×1, Eric ×1) all predate the
 changepoint commit `4b28941c`.
 

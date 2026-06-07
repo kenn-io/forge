@@ -437,6 +437,12 @@ function treeFileItem(pageOrLocator: Page | ReturnType<Page["locator"]>, path: s
   return pageOrLocator.locator(`.diff-file-tree [data-item-path="${cssString(path)}"]`);
 }
 
+async function clickTreeFileItem(pageOrLocator: Page | ReturnType<Page["locator"]>, path: string) {
+  const item = treeFileItem(pageOrLocator, path);
+  await expect(item).toBeVisible();
+  await item.evaluate((button: HTMLElement) => button.click());
+}
+
 const diffAdditionsSelector = '[data-content] [data-line-type="change-addition"]';
 const diffDeletionsSelector = '[data-content] [data-line-type="change-deletion"]';
 const diffContextSelector = '[data-content] [data-line-type="context"]';
@@ -1086,7 +1092,7 @@ test.describe("diff view", () => {
     const diffArea = page.locator(".diff-area");
     await expect.poll(() => mainArea.evaluate((el) => Math.round(el.scrollTop))).toBe(0);
 
-    await treeFileItem(page, "src/pkg9/file_45.go").click();
+    await clickTreeFileItem(page, "src/pkg9/file_45.go");
 
     await expect(page.locator('[data-file-path="src/pkg9/file_45.go"]')).toBeVisible();
     await expect.poll(() => diffArea.evaluate((el) => Math.round(el.scrollTop))).toBeGreaterThan(0);
@@ -1099,7 +1105,7 @@ test.describe("diff view", () => {
     await waitForDiffLoaded(page);
     await waitForSidebarFilesLoaded(page);
 
-    await treeFileItem(page, "src/pkg9/file_49.go").click();
+    await clickTreeFileItem(page, "src/pkg9/file_49.go");
     await expect(page.locator('[data-file-path="src/pkg9/file_49.go"]')).toBeVisible();
 
     const earlierFile = page.locator('[data-file-path="src/pkg5/file_25.go"]');
@@ -1120,7 +1126,7 @@ test.describe("diff view", () => {
 
     const diffArea = page.locator(".diff-area");
 
-    await treeFileItem(page, "src/pkg8/file_40.go").click();
+    await clickTreeFileItem(page, "src/pkg8/file_40.go");
     await expect(page.locator('[data-file-path="src/pkg8/file_40.go"]')).toBeVisible();
     const firstJumpTop = await diffArea.evaluate((area) => Math.round(area.scrollTop));
 
@@ -1135,7 +1141,7 @@ test.describe("diff view", () => {
       .poll(async () => diffArea.evaluate((area) => Math.round(area.scrollTop)))
       .toBeGreaterThan(afterPageDownTop - 10);
 
-    await treeFileItem(page, "src/pkg8/file_41.go").click();
+    await clickTreeFileItem(page, "src/pkg8/file_41.go");
     await expect(page.locator('[data-file-path="src/pkg8/file_41.go"]')).toBeVisible();
     const secondJumpTop = await diffArea.evaluate((area) => Math.round(area.scrollTop));
 
@@ -1322,7 +1328,7 @@ test.describe("diff view", () => {
     await expectPierreDiffFirstVisible(handlerFile, diffAdditionsSelector);
     await expect(handlerFile.locator(".diff-text-preview")).toHaveCount(0);
 
-    await treeFileItem(page, "assets/logo.png").click();
+    await clickTreeFileItem(page, "assets/logo.png");
     await expect(page.locator(".diff-image-preview img[alt='assets/logo.png']")).toBeVisible();
   });
 
@@ -1370,7 +1376,7 @@ test.describe("diff view", () => {
 
     await openDiffFilterMenu(page);
     await page.getByRole("switch", { name: "Rich preview" }).click();
-    await treeFileItem(page, "assets/logo.png").click();
+    await clickTreeFileItem(page, "assets/logo.png");
 
     const image = page.locator(".diff-image-preview img[alt='assets/logo.png']");
     await expect(image).toHaveAttribute("src", `data:image/png;base64,${firstLogo}`);
@@ -1380,7 +1386,7 @@ test.describe("diff view", () => {
     await openDiffFilterMenu(page);
     await page.getByRole("switch", { name: "Hide whitespace changes" }).click();
     await expect.poll(() => diffFetchCount).toBeGreaterThan(initialDiffFetchCount);
-    await treeFileItem(page, "assets/logo.png").click();
+    await clickTreeFileItem(page, "assets/logo.png");
 
     await expect.poll(() => previewFetchCount).toBe(2);
     await expect(image).toHaveAttribute("src", `data:image/png;base64,${secondLogo}`);
@@ -1807,7 +1813,7 @@ test.describe("diff view", () => {
     const schemaFile = page.locator('[data-file-path="src/api/generated/schema.ts"]');
     const detailFile = page.locator('[data-file-path="src/components/detail/PullDetail.svelte"]');
 
-    await treeFileItem(page, "src/components/detail/PullDetail.svelte").click();
+    await clickTreeFileItem(page, "src/components/detail/PullDetail.svelte");
     await expect(detailFile).toBeInViewport();
     await diffArea.evaluate((area) => {
       area.scrollTop = Math.max(0, area.scrollTop - 220);

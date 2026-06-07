@@ -1,0 +1,43 @@
+Middleman
+Copyright (c) 2026 Kenn Software LLC
+
+This software is made available under the Elastic License 2.0.
+See the LICENSE file for the full license text.
+
+For purposes of the Elastic License 2.0, the licensor is Kenn Software LLC.
+
+A commercial license is available for uses not permitted under the Elastic
+License 2.0 (for example, providing Middleman to third parties as a hosted or
+managed service). For commercial licensing, contact Kenn Software LLC at
+info@kenn.io.
+
+-------------------------------------------------------------------------------
+
+Prior license
+
+Middleman was originally distributed under the MIT License. All contributions
+made up to and including commit 4b28941c ("Use Vite+ for frontend tooling")
+remain available under the MIT License set out below. Contributions made after
+that commit are licensed under the Elastic License 2.0.
+
+MIT License
+
+Copyright (c) 2026 Wes McKinney and middleman contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

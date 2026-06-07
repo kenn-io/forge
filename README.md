@@ -388,4 +388,18 @@ prek install
 
 ## License
 
-MIT
+Middleman is source-available software, licensed under the
+[Elastic License 2.0](LICENSE) (ELv2).
+
+You can use, copy, modify, and redistribute it for free. The main restriction is
+that you may not provide Middleman to third parties as a hosted or managed
+service that gives users access to a substantial set of its features. You also
+may not remove the project's licensing or copyright notices. The
+[LICENSE](LICENSE) file is the authoritative text; this paragraph is a
+non-binding summary.
+
+Contributions made before the relicense remain available under the MIT License;
+see the [NOTICE](NOTICE) file.
+
+A commercial license is available for uses not permitted by ELv2. For commercial
+licensing, contact [Kenn Software](https://kenn.io) at info@kenn.io.

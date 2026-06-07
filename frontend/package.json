@@ -2,6 +2,7 @@
   "name": "middleman-frontend",
   "version": "0.1.0",
   "private": true,
+  "license": "Elastic-2.0",
   "type": "module",
   "scripts": {
     "dev": "vp dev",

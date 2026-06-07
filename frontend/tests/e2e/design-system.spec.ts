@@ -2,22 +2,12 @@ import { expect, test, type Page } from "@playwright/test";
 
 import { mockApi } from "./support/mockApi";
 
-async function dragDesignSystemPanelTab(
-  page: Page,
-  sourceTabKey: string,
-  targetTabKey: string,
-): Promise<void> {
+async function dragDesignSystemPanelTab(page: Page, sourceTabKey: string, targetTabKey: string): Promise<void> {
   await page.evaluate(
     ({ sourceTabKey, targetTabKey }) => {
-      const demo = document.querySelector(
-        '[data-testid="design-system-tabbed-panel-demo"]',
-      );
-      const source = demo?.querySelector(
-        `[data-tabbed-panel-tab-key="${sourceTabKey}"] [role="tab"]`,
-      );
-      const target = demo?.querySelector(
-        `[data-tabbed-panel-tab-key="${targetTabKey}"]`,
-      );
+      const demo = document.querySelector('[data-testid="design-system-tabbed-panel-demo"]');
+      const source = demo?.querySelector(`[data-tabbed-panel-tab-key="${sourceTabKey}"] [role="tab"]`);
+      const target = demo?.querySelector(`[data-tabbed-panel-tab-key="${targetTabKey}"]`);
       if (!(source instanceof HTMLElement)) {
         throw new Error(`Missing panel tab: ${sourceTabKey}`);
       }
@@ -75,15 +65,9 @@ async function dragDesignSystemPanelTabToPanelEdge(
 ): Promise<void> {
   await page.evaluate(
     ({ sourceTabKey, targetPanelTestID, edge }) => {
-      const demo = document.querySelector(
-        '[data-testid="design-system-tabbed-panel-demo"]',
-      );
-      const source = demo?.querySelector(
-        `[data-tabbed-panel-tab-key="${sourceTabKey}"] [role="tab"]`,
-      );
-      const targetPanel = demo?.querySelector(
-        `[data-testid="${targetPanelTestID}"]`,
-      );
+      const demo = document.querySelector('[data-testid="design-system-tabbed-panel-demo"]');
+      const source = demo?.querySelector(`[data-tabbed-panel-tab-key="${sourceTabKey}"] [role="tab"]`);
+      const targetPanel = demo?.querySelector(`[data-testid="${targetPanelTestID}"]`);
       const target = targetPanel?.closest(".tabbed-panel-body");
       if (!(source instanceof HTMLElement)) {
         throw new Error(`Missing panel tab: ${sourceTabKey}`);
@@ -238,39 +222,33 @@ test("design system page renders chip matrix with shared styles", async ({ page 
 test("design system page renders panel and typeahead examples", async ({ page }) => {
   await page.goto("/design-system");
 
-  await expect(
-    page.getByRole("heading", { name: "Tabbed workspace panels" }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("heading", { name: "Typeahead dropdown states" }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Tabbed workspace panels" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Typeahead dropdown states" })).toBeVisible();
 
   const panelDemo = page.getByTestId("design-system-tabbed-panel-demo");
   await expect(panelDemo).toBeVisible();
   await expect(panelDemo.locator(".tabbed-panel-tab-tool")).toHaveCount(0);
   await expect(page.getByTestId("design-system-panel-overview")).toBeVisible();
-  const selectedTabMetrics = await panelDemo
-    .locator('[data-tabbed-panel-tab-key="overview"]')
-    .evaluate((tab) => {
-      const styles = getComputedStyle(tab);
-      const tabBar = tab.parentElement;
-      if (!tabBar) {
-        throw new Error("Missing tab bar for selected tab");
-      }
-      const tabBarStyles = getComputedStyle(tabBar);
-      const tabBarDividerStyles = getComputedStyle(tabBar, "::after");
-      const tabRect = tab.getBoundingClientRect();
-      const tabBarRect = tabBar.getBoundingClientRect();
-      return {
-        borderBottomWidth: styles.borderBottomWidth,
-        marginBottom: styles.marginBottom,
-        tabAfterContent: getComputedStyle(tab, "::after").content,
-        tabBarBorderBottomWidth: tabBarStyles.borderBottomWidth,
-        tabBarDividerHeight: tabBarDividerStyles.height,
-        tabExtendsBelowBar: Math.round(tabRect.bottom - tabBarRect.bottom),
-        zIndex: styles.zIndex,
-      };
-    });
+  const selectedTabMetrics = await panelDemo.locator('[data-tabbed-panel-tab-key="overview"]').evaluate((tab) => {
+    const styles = getComputedStyle(tab);
+    const tabBar = tab.parentElement;
+    if (!tabBar) {
+      throw new Error("Missing tab bar for selected tab");
+    }
+    const tabBarStyles = getComputedStyle(tabBar);
+    const tabBarDividerStyles = getComputedStyle(tabBar, "::after");
+    const tabRect = tab.getBoundingClientRect();
+    const tabBarRect = tabBar.getBoundingClientRect();
+    return {
+      borderBottomWidth: styles.borderBottomWidth,
+      marginBottom: styles.marginBottom,
+      tabAfterContent: getComputedStyle(tab, "::after").content,
+      tabBarBorderBottomWidth: tabBarStyles.borderBottomWidth,
+      tabBarDividerHeight: tabBarDividerStyles.height,
+      tabExtendsBelowBar: Math.round(tabRect.bottom - tabBarRect.bottom),
+      zIndex: styles.zIndex,
+    };
+  });
   expect(selectedTabMetrics).toEqual({
     borderBottomWidth: "0px",
     marginBottom: "-1px",
@@ -284,12 +262,8 @@ test("design system page renders panel and typeahead examples", async ({ page })
     .locator('[aria-label="Resize design system panel split"]')
     .evaluate((divider) => {
       const split = divider.closest(".tabbed-panel-split");
-      const firstLeaf = split?.querySelector(
-        ".tabbed-panel-split-child.first > .tabbed-panel-leaf",
-      );
-      const secondLeaf = split?.querySelector(
-        ".tabbed-panel-split-child.second > .tabbed-panel-leaf",
-      );
+      const firstLeaf = split?.querySelector(".tabbed-panel-split-child.first > .tabbed-panel-leaf");
+      const secondLeaf = split?.querySelector(".tabbed-panel-split-child.second > .tabbed-panel-leaf");
       const dividerBox = divider.getBoundingClientRect();
       const dividerStyles = getComputedStyle(divider);
       const firstLeafStyles = firstLeaf ? getComputedStyle(firstLeaf) : null;
@@ -314,28 +288,24 @@ test("design system page renders panel and typeahead examples", async ({ page })
 
   await panelDemo.getByRole("tab", { name: /Activity/ }).click();
   await expect(page.getByTestId("design-system-panel-activity")).toBeVisible();
-  const activityScrollMetrics = await page
-    .getByTestId("design-system-panel-activity")
-    .evaluate((article) => {
-      const panel = article.parentElement;
-      if (!panel) {
-        throw new Error("Missing tab panel for activity article");
-      }
-      panel.scrollTop = 0;
-      const styles = getComputedStyle(panel);
-      const before = panel.scrollTop;
-      panel.scrollTop = 48;
-      return {
-        overflowY: styles.overflowY,
-        scrollHeight: panel.scrollHeight,
-        clientHeight: panel.clientHeight,
-        scrollTopChanged: panel.scrollTop > before,
-      };
-    });
+  const activityScrollMetrics = await page.getByTestId("design-system-panel-activity").evaluate((article) => {
+    const panel = article.parentElement;
+    if (!panel) {
+      throw new Error("Missing tab panel for activity article");
+    }
+    panel.scrollTop = 0;
+    const styles = getComputedStyle(panel);
+    const before = panel.scrollTop;
+    panel.scrollTop = 48;
+    return {
+      overflowY: styles.overflowY,
+      scrollHeight: panel.scrollHeight,
+      clientHeight: panel.clientHeight,
+      scrollTopChanged: panel.scrollTop > before,
+    };
+  });
   expect(activityScrollMetrics.overflowY).toBe("auto");
-  expect(activityScrollMetrics.scrollHeight).toBeGreaterThan(
-    activityScrollMetrics.clientHeight,
-  );
+  expect(activityScrollMetrics.scrollHeight).toBeGreaterThan(activityScrollMetrics.clientHeight);
   expect(activityScrollMetrics.scrollTopChanged).toBe(true);
 
   const rootFirstChild = panelDemo.locator(".tabbed-panel-split-child.first").first();
@@ -345,41 +315,26 @@ test("design system page renders panel and typeahead examples", async ({ page })
   if (!beforeResize || !dividerBox) {
     throw new Error("Missing split geometry for resize assertion");
   }
-  await page.mouse.move(
-    dividerBox.x + dividerBox.width / 2,
-    dividerBox.y + dividerBox.height / 2,
-  );
+  await page.mouse.move(dividerBox.x + dividerBox.width / 2, dividerBox.y + dividerBox.height / 2);
   await page.mouse.down();
-  await page.mouse.move(
-    dividerBox.x - 90,
-    dividerBox.y + dividerBox.height / 2,
-  );
+  await page.mouse.move(dividerBox.x - 90, dividerBox.y + dividerBox.height / 2);
   await page.mouse.up();
-  await expect
-    .poll(async () => (await rootFirstChild.boundingBox())?.width ?? 0)
-    .toBeLessThan(beforeResize.width - 24);
+  await expect.poll(async () => (await rootFirstChild.boundingBox())?.width ?? 0).toBeLessThan(beforeResize.width - 24);
 
-  await dragDesignSystemPanelTabToPanelEdge(
-    page,
-    "activity",
-    "design-system-panel-overview",
-    "right",
-  );
+  await dragDesignSystemPanelTabToPanelEdge(page, "activity", "design-system-panel-overview", "right");
   await expect(panelDemo.locator(".tabbed-panel-leaf")).toHaveCount(3);
   await expect(page.getByTestId("design-system-panel-activity")).toBeVisible();
-  const nestedSplitMetrics = await page
-    .getByTestId("design-system-panel-activity")
-    .evaluate((article) => {
-      const leaf = article.closest(".tabbed-panel-leaf");
-      if (!leaf) {
-        throw new Error("Missing nested split leaf");
-      }
-      const styles = getComputedStyle(leaf);
-      return {
-        borderLeftWidth: styles.borderLeftWidth,
-        borderRightWidth: styles.borderRightWidth,
-      };
-    });
+  const nestedSplitMetrics = await page.getByTestId("design-system-panel-activity").evaluate((article) => {
+    const leaf = article.closest(".tabbed-panel-leaf");
+    if (!leaf) {
+      throw new Error("Missing nested split leaf");
+    }
+    const styles = getComputedStyle(leaf);
+    return {
+      borderLeftWidth: styles.borderLeftWidth,
+      borderRightWidth: styles.borderRightWidth,
+    };
+  });
   expect(nestedSplitMetrics).toEqual({
     borderLeftWidth: "0px",
     borderRightWidth: "0px",
@@ -388,34 +343,27 @@ test("design system page renders panel and typeahead examples", async ({ page })
   await dragDesignSystemPanelTab(page, "terminal", "overview");
   await expect(panelDemo.locator(".tabbed-panel-leaf")).toHaveCount(2);
   await expect(page.getByTestId("design-system-panel-terminal")).toBeVisible();
-  await expect(
-    panelDemo.locator('[data-tabbed-panel-tab-key="terminal"] [role="tab"]'),
-  ).toHaveAttribute("aria-selected", "true");
+  await expect(panelDemo.locator('[data-tabbed-panel-tab-key="terminal"] [role="tab"]')).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
   const tabOrder = await panelDemo
     .locator("[data-tabbed-panel-tab-key]")
-    .evaluateAll((tabs) =>
-      tabs.map((tab) => tab.getAttribute("data-tabbed-panel-tab-key")),
-    );
+    .evaluateAll((tabs) => tabs.map((tab) => tab.getAttribute("data-tabbed-panel-tab-key")));
   expect(tabOrder).toEqual(["terminal", "overview", "activity"]);
 
   const typeaheadDemo = page.getByTestId("design-system-typeahead-demo");
   await expect(typeaheadDemo).toBeVisible();
   const openTypeahead = typeaheadDemo.getByTestId("typeahead-open");
-  await expect(
-    openTypeahead.getByRole("textbox", { name: "Filter repos" }),
-  ).toBeVisible();
-  await expect(
-    openTypeahead.getByRole("option", { name: /acme\/widgets/ }),
-  ).toBeVisible();
+  await expect(openTypeahead.getByRole("textbox", { name: "Filter repos" })).toBeVisible();
+  await expect(openTypeahead.getByRole("option", { name: /acme\/widgets/ })).toBeVisible();
 
   const defaultTypeahead = typeaheadDemo.getByTestId("typeahead-default");
   await defaultTypeahead.getByRole("button", { name: /All repos/ }).click();
   const input = defaultTypeahead.getByRole("textbox", { name: "Filter repos" });
   await expect(input).toBeVisible();
   await input.fill("widgets");
-  await expect(
-    defaultTypeahead.getByRole("option", { name: /acme\/widgets/ }),
-  ).toBeVisible();
+  await expect(defaultTypeahead.getByRole("option", { name: /acme\/widgets/ })).toBeVisible();
   await input.fill("does-not-exist");
   await expect(defaultTypeahead.getByText("No matching repos")).toBeVisible();
 });

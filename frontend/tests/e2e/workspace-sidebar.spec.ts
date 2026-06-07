@@ -1392,12 +1392,7 @@ test.describe("workspace launch home", () => {
         toolbarBorderLeft: toolbarStyles.borderLeftWidth,
         titleToToolbarLeft: toolbarRect.left - titleBarRect.left,
         toolbarToFirstLeafLeft: firstLeafRect.left - toolbarRect.left,
-        padding: [
-          stageStyles.paddingTop,
-          stageStyles.paddingRight,
-          stageStyles.paddingBottom,
-          stageStyles.paddingLeft,
-        ],
+        padding: [stageStyles.paddingTop, stageStyles.paddingRight, stageStyles.paddingBottom, stageStyles.paddingLeft],
         delta: {
           left: splitRect.left - stageRect.left,
           top: splitRect.top - stageRect.top,
@@ -2075,12 +2070,7 @@ test.describe("workspace launch home", () => {
         splitToTreeTop: Math.round(splitRect.top - treeRect.top),
         splitterBackgroundVisible: dividerStyles.backgroundColor !== "rgba(0, 0, 0, 0)",
         splitterHitWidth: Math.round(dividerRect.width),
-        treePadding: [
-          treeStyles.paddingTop,
-          treeStyles.paddingRight,
-          treeStyles.paddingBottom,
-          treeStyles.paddingLeft,
-        ],
+        treePadding: [treeStyles.paddingTop, treeStyles.paddingRight, treeStyles.paddingBottom, treeStyles.paddingLeft],
         treeToBodyLeft: Math.round(treeRect.left - bodyRect.left),
         treeToBodyTop: Math.round(treeRect.top - bodyRect.top),
         treeToSelector: Math.round(selectorRect.left - treeRect.right),

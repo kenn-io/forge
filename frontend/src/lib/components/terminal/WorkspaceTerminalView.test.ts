@@ -419,9 +419,7 @@ describe("WorkspaceTerminalView", () => {
 
     expect(shellTab.getAttribute("aria-selected")).toBe("true");
     await waitFor(() =>
-      expect(
-        container.querySelector(".tabbed-panel-tab-panel.active .terminal-container"),
-      ).toBeTruthy(),
+      expect(container.querySelector(".tabbed-panel-tab-panel.active .terminal-container")).toBeTruthy(),
     );
   });
 
@@ -590,16 +588,12 @@ describe("WorkspaceTerminalView", () => {
     });
 
     expect(screen.getByTestId("tabbed-panel-tab-drop-placeholder")).toBeTruthy();
-    expect(reviewerTab.closest(".tabbed-panel-tab")?.classList.contains("dragging")).toBe(
-      true,
-    );
+    expect(reviewerTab.closest(".tabbed-panel-tab")?.classList.contains("dragging")).toBe(true);
 
     await fireEvent.dragEnd(reviewerTab);
 
     expect(screen.queryByTestId("tabbed-panel-tab-drop-placeholder")).toBeNull();
-    expect(reviewerTab.closest(".tabbed-panel-tab")?.classList.contains("dragging")).toBe(
-      false,
-    );
+    expect(reviewerTab.closest(".tabbed-panel-tab")?.classList.contains("dragging")).toBe(false);
   });
 
   it("does not reopen the just-exited terminal from stale runtime data", async () => {

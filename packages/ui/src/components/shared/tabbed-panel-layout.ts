@@ -91,23 +91,15 @@ export function firstTabbedPanelLeaf(node: TabbedPanelNode | null): TabbedPanelL
   return firstTabbedPanelLeaf(node.first) ?? firstTabbedPanelLeaf(node.second);
 }
 
-export function findTabbedPanelLeafByTab(
-  node: TabbedPanelNode | null,
-  tabKey: string,
-): TabbedPanelLeaf | null {
+export function findTabbedPanelLeafByTab(node: TabbedPanelNode | null, tabKey: string): TabbedPanelLeaf | null {
   if (!node) return null;
   if (node.type === "leaf") {
     return node.tabs.includes(tabKey) ? node : null;
   }
-  return (
-    findTabbedPanelLeafByTab(node.first, tabKey) ?? findTabbedPanelLeafByTab(node.second, tabKey)
-  );
+  return findTabbedPanelLeafByTab(node.first, tabKey) ?? findTabbedPanelLeafByTab(node.second, tabKey);
 }
 
-export function activateTabbedPanelTab(
-  node: TabbedPanelNode | null,
-  tabKey: string,
-): TabbedPanelNode | null {
+export function activateTabbedPanelTab(node: TabbedPanelNode | null, tabKey: string): TabbedPanelNode | null {
   if (!node) return null;
   if (node.type === "leaf") {
     return node.tabs.includes(tabKey) ? { ...node, activeTabKey: tabKey } : node;
@@ -189,9 +181,7 @@ export function normalizeTabbedPanelTree(
   availableTabKeys: readonly string[],
   fallbackTabKey = availableTabKeys[0] ?? "panel",
 ): TabbedPanelNode {
-  const available = uniqueTabbedPanelTabs(
-    availableTabKeys.length > 0 ? [...availableTabKeys] : [fallbackTabKey],
-  );
+  const available = uniqueTabbedPanelTabs(availableTabKeys.length > 0 ? [...availableTabKeys] : [fallbackTabKey]);
   const validTabs = new Set<string>(available);
   let tree = pruneTabbedPanelNode(node, validTabs);
   if (!tree) {
@@ -216,10 +206,7 @@ function uniqueTabbedPanelTabs(tabs: string[]): string[] {
   return unique;
 }
 
-function findTabbedPanelLeafByID(
-  node: TabbedPanelNode | null,
-  leafID: string,
-): TabbedPanelLeaf | null {
+function findTabbedPanelLeafByID(node: TabbedPanelNode | null, leafID: string): TabbedPanelLeaf | null {
   if (!node) return null;
   if (node.type === "leaf") {
     return node.id === leafID ? node : null;
@@ -227,10 +214,7 @@ function findTabbedPanelLeafByID(
   return findTabbedPanelLeafByID(node.first, leafID) ?? findTabbedPanelLeafByID(node.second, leafID);
 }
 
-function pruneTabbedPanelNode(
-  node: TabbedPanelNode | null,
-  validTabs: ReadonlySet<string>,
-): TabbedPanelNode | null {
+function pruneTabbedPanelNode(node: TabbedPanelNode | null, validTabs: ReadonlySet<string>): TabbedPanelNode | null {
   if (!node) return null;
   if (node.type === "leaf") {
     const tabs = uniqueTabbedPanelTabs(node.tabs.filter((tab) => validTabs.has(tab)));
@@ -253,10 +237,7 @@ function pruneTabbedPanelNode(
   };
 }
 
-function removeTabbedPanelTab(
-  node: TabbedPanelNode | null,
-  tabKey: string,
-): TabbedPanelNode | null {
+function removeTabbedPanelTab(node: TabbedPanelNode | null, tabKey: string): TabbedPanelNode | null {
   if (!node) return null;
   if (node.type === "leaf") {
     if (!node.tabs.includes(tabKey)) return node;
@@ -284,11 +265,7 @@ function insertTabbedPanelTabBefore(
   if (node.type === "leaf") {
     const targetIndex = node.tabs.indexOf(targetTabKey);
     if (targetIndex < 0) return node;
-    const tabs = [
-      ...node.tabs.slice(0, targetIndex),
-      sourceTabKey,
-      ...node.tabs.slice(targetIndex),
-    ];
+    const tabs = [...node.tabs.slice(0, targetIndex), sourceTabKey, ...node.tabs.slice(targetIndex)];
     return {
       ...node,
       tabs: uniqueTabbedPanelTabs(tabs),

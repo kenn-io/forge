@@ -107,9 +107,7 @@ test.describe("workspace tab persistence", () => {
       await homeTab.click();
       await expect(homeTab).toHaveAttribute("aria-selected", "true");
       await expect(panes).toHaveCount(2);
-      await expect(
-        workflow.locator('.tabbed-panel-tab-panel[data-test-tmux-id="preserved"]'),
-      ).toHaveCount(1);
+      await expect(workflow.locator('.tabbed-panel-tab-panel[data-test-tmux-id="preserved"]')).toHaveCount(1);
 
       // Switch back to Shell: must be the same DOM element, not a
       // freshly mounted one.

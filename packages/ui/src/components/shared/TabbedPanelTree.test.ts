@@ -63,12 +63,8 @@ describe("TabbedPanelTree", () => {
     expect(screen.getByTestId("panel-detail").dataset.active).toBe("true");
     expect(screen.getByTestId("panel-feed").dataset.active).toBe("false");
     expect(screen.getByTestId("icon-detail")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Action Detail" }).className).toContain(
-      "tabbed-panel-tab-tool",
-    );
-    expect(
-      screen.getByRole("tab", { name: /Feed/ }).querySelector(".tabbed-panel-status-dot.running"),
-    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Action Detail" }).className).toContain("tabbed-panel-tab-tool");
+    expect(screen.getByRole("tab", { name: /Feed/ }).querySelector(".tabbed-panel-status-dot.running")).toBeTruthy();
   });
 
   it("shows a moving insertion slot while sorting tabs", async () => {
@@ -198,9 +194,7 @@ describe("TabbedPanelTree", () => {
 
     expect(moveTabbedPanelTabBefore(node, "detail", "missing")).toBe(node);
     expect(appendTabbedPanelTabToLeaf(node, "detail", "missing")).toBe(node);
-    expect(splitTabbedPanelTabIntoLeaf(node, "detail", "missing", "horizontal", "after")).toBe(
-      node,
-    );
+    expect(splitTabbedPanelTabIntoLeaf(node, "detail", "missing", "horizontal", "after")).toBe(node);
   });
 
   it("reports split ratio changes from the divider", async () => {

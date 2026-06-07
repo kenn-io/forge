@@ -84,7 +84,7 @@
   let fileEl: HTMLDivElement | undefined = $state();
   let inViewport = $state(false);
   type MountedAnnotation = {
-    component: object;
+    component?: object;
     observer?: MutationObserver;
     target: HTMLElement;
   };
@@ -409,22 +409,23 @@
   function renderAnnotation(annotation: DiffLineAnnotation<DiffAnnotation>): HTMLElement {
     const target = document.createElement("div");
     target.className = "pierre-annotation-host";
-    const context = new Map([[STORES_KEY, stores]]);
-    const metadata = annotation.metadata;
+    const mounted: MountedAnnotation = { target };
+    mountedAnnotations.add(mounted);
     queueMicrotask(() => {
-      if (!annotationMountsEnabled || !target.isConnected) return;
-      const component = mountAnnotationComponent(target, metadata, context);
-      trackMountedAnnotation(target, component);
+      if (!mountedAnnotations.has(mounted)) return;
+      if (!annotationMountsEnabled || !target.isConnected) {
+        mountedAnnotations.delete(mounted);
+        return;
+      }
+      mounted.component = mountAnnotationComponent(target, annotation.metadata);
+      observeMountedAnnotation(mounted);
     });
     return target;
   }
 
-  function mountAnnotationComponent(
-    target: HTMLElement,
-    metadata: DiffAnnotation,
-    context: Map<unknown, unknown>,
-  ): object {
-    const component = metadata.kind === "draft"
+  function mountAnnotationComponent(target: HTMLElement, metadata: DiffAnnotation): object {
+    const context = new Map([[STORES_KEY, stores]]);
+    return metadata.kind === "draft"
       ? mount(DiffReviewDraftInlineComment, {
         target,
         props: { comment: metadata.comment },
@@ -445,32 +446,29 @@
           props: { range: metadata.range, onclose: closeComposer },
           context,
         });
-    return component;
   }
 
   function renderUnknownAnnotation(annotation: DiffLineAnnotation<unknown>): HTMLElement {
     return renderAnnotation(annotation as DiffLineAnnotation<DiffAnnotation>);
   }
 
-  function trackMountedAnnotation(target: HTMLElement, component: object): void {
-    const mounted: MountedAnnotation = { component, target };
-    mountedAnnotations.add(mounted);
+  function observeMountedAnnotation(mounted: MountedAnnotation): void {
     const cleanUp = () => {
       if (!mountedAnnotations.delete(mounted)) return;
       mounted.observer?.disconnect();
-      void unmount(component);
+      if (mounted.component) void unmount(mounted.component);
     };
     if (typeof MutationObserver === "undefined") return;
     mounted.observer = new MutationObserver(() => {
-      if (!target.isConnected) cleanUp();
+      if (!mounted.target.isConnected) cleanUp();
     });
     queueMicrotask(() => {
       if (!mountedAnnotations.has(mounted)) return;
-      if (!target.isConnected) {
+      if (!mounted.target.isConnected) {
         cleanUp();
         return;
       }
-      const root = target.getRootNode();
+      const root = mounted.target.getRootNode();
       const observedRoot = root instanceof ShadowRoot || root instanceof Document
         ? root
         : document;
@@ -482,7 +480,7 @@
     for (const mounted of mountedAnnotations) {
       mountedAnnotations.delete(mounted);
       mounted.observer?.disconnect();
-      void unmount(mounted.component);
+      if (mounted.component) void unmount(mounted.component);
     }
   }
 

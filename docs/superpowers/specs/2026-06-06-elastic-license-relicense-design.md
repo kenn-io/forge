@@ -200,10 +200,11 @@ publishing requirement; license-scanning tooling resolves the SPDX id correctly.
 
 - `LICENSE` first line is `Elastic License 2.0`; file `sha256` equals
   `48255018b41fc0e965b1115af7e6779bc218bb8a6747d561da800d5022622aa2`.
-- No MIT references remain on the *forward* license surfaces. `NOTICE` (which
-  intentionally retains the MIT text) and `docs/` are excluded:
-  `rg -ni "\bMIT\b" -g '!docs/**' -g '!NOTICE' -g '!node_modules/**'` returns no
-  matches (LICENSE is ELv2, README §License is ELv2, source has none).
+- The only remaining MIT references are intentional: the retained MIT text in
+  `NOTICE`, the prior-license pointer in `README.md`, and historical mentions in
+  `docs/`. `LICENSE` is now ELv2 and no source file mentions MIT. Concretely,
+  `rg -ni "\bMIT\b" -g '!docs/**' -g '!NOTICE' -g '!README.md' -g '!node_modules/**'`
+  returns no matches.
 - `NOTICE` exists with the content above (ELv2 attribution + retained MIT text +
   changepoint statement).
 - README §License renders the new content; links resolve (`LICENSE`, `NOTICE`,

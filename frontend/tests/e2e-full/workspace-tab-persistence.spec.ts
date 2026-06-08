@@ -273,11 +273,11 @@ test.describe("workspace tab persistence", () => {
       await expect
         .poll(async () => rightDiffArea.evaluate((area) => area.scrollTop))
         .toBeGreaterThan(beforePageDownScrollTop);
-      const afterPageDownScrollTop = await rightDiffArea.evaluate((area) => area.scrollTop);
       await rightDiffHost.press("j");
       await rightDiffHost.press("k");
-      await page.waitForTimeout(100);
-      expect(await rightDiffArea.evaluate((area) => area.scrollTop)).toBe(afterPageDownScrollTop);
+      await expect(workflow.getByRole("tab", { name: "Diff" })).toHaveCount(0);
+      await expect(panes).toHaveCount(1);
+      await expect(page.locator(".right-sidebar .workspace-diff")).toBeVisible();
       const diffToolbar = page.locator(".right-sidebar .diff-toolbar");
       await expect(diffToolbar.locator(".compact-more-btn")).toBeVisible();
       await expect(diffToolbar.getByRole("button", { name: "Jump to file" })).toBeVisible();

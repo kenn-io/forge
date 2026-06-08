@@ -438,11 +438,7 @@ function treeFileItem(pageOrLocator: Page | ReturnType<Page["locator"]>, path: s
 }
 
 async function clickVisibleTarget(target: Locator): Promise<void> {
-  await expect(target).toBeVisible({ timeout: 10_000 });
-  await target.scrollIntoViewIfNeeded();
-  const box = await target.boundingBox();
-  expect(box).not.toBeNull();
-  await target.page().mouse.click(box!.x + box!.width / 2, box!.y + box!.height / 2);
+  await target.click({ timeout: 10_000 });
 }
 
 async function clickTreeFileItem(pageOrLocator: Page | ReturnType<Page["locator"]>, path: string): Promise<void> {

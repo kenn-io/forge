@@ -41,41 +41,75 @@ func (m *PRMonitor) RunOnce(
 			continue
 		}
 
-		prNumber, ok, detectErr := m.detectAssociatedPR(ctx, &ws)
-		if detectErr != nil {
+		update, changed, refreshErr := m.refreshWorkspaceAssociation(ctx, &ws)
+		if refreshErr != nil {
 			slog.Warn(
-				"workspace PR monitor git inspection failed",
+				"workspace PR monitor association refresh failed",
 				"workspace_id", ws.ID,
 				"path", ws.WorktreePath,
-				"err", detectErr,
-			)
-			continue
-		}
-		if !ok {
-			continue
-		}
-
-		changed, err := m.db.SetWorkspaceAssociatedPRNumberIfNull(
-			ctx, ws.ID, prNumber,
-		)
-		if err != nil {
-			slog.Warn(
-				"workspace PR monitor persistence failed",
-				"workspace_id", ws.ID,
-				"pr_number", prNumber,
-				"err", err,
+				"err", refreshErr,
 			)
 			continue
 		}
 		if changed {
-			updates = append(updates, PRAssociationUpdate{
-				WorkspaceID: ws.ID,
-				PRNumber:    prNumber,
-			})
+			updates = append(updates, update)
 		}
 	}
 
 	return updates, nil
+}
+
+// RefreshWorkspaceAssociation refreshes PR association for one workspace and
+// returns errors that would be best-effort in the background monitor loop.
+func (m *PRMonitor) RefreshWorkspaceAssociation(
+	ctx context.Context,
+	workspaceID string,
+) (PRAssociationUpdate, bool, error) {
+	ws, err := m.db.GetWorkspace(ctx, workspaceID)
+	if err != nil {
+		return PRAssociationUpdate{}, false, fmt.Errorf("get workspace: %w", err)
+	}
+	if ws == nil {
+		return PRAssociationUpdate{}, false, fmt.Errorf(
+			"workspace %q not found", workspaceID,
+		)
+	}
+	return m.refreshWorkspaceAssociation(ctx, ws)
+}
+
+func (m *PRMonitor) refreshWorkspaceAssociation(
+	ctx context.Context,
+	ws *Workspace,
+) (PRAssociationUpdate, bool, error) {
+	if !workspacePRMonitorEligible(ws) {
+		return PRAssociationUpdate{}, false, nil
+	}
+
+	prNumber, ok, err := m.detectAssociatedPR(ctx, ws)
+	if err != nil {
+		return PRAssociationUpdate{}, false, fmt.Errorf(
+			"detect associated PR: %w", err,
+		)
+	}
+	if !ok {
+		return PRAssociationUpdate{}, false, nil
+	}
+
+	changed, err := m.db.SetWorkspaceAssociatedPRNumberIfNull(
+		ctx, ws.ID, prNumber,
+	)
+	if err != nil {
+		return PRAssociationUpdate{}, false, fmt.Errorf(
+			"set associated PR: %w", err,
+		)
+	}
+	if !changed {
+		return PRAssociationUpdate{}, false, nil
+	}
+	return PRAssociationUpdate{
+		WorkspaceID: ws.ID,
+		PRNumber:    prNumber,
+	}, true, nil
 }
 
 func workspacePRMonitorEligible(ws *Workspace) bool {

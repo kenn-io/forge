@@ -4578,12 +4578,14 @@ func (s *Server) refreshWorkspace(
 	}
 
 	if s.workspacePRMonitor != nil {
-		updates, err := s.workspacePRMonitor.RunOnce(ctx)
+		update, changed, err := s.workspacePRMonitor.RefreshWorkspaceAssociation(
+			ctx, input.ID,
+		)
 		if err != nil {
 			return nil, problemInternal("refresh workspace PR association: " + err.Error())
 		}
-		for i := range updates {
-			s.broadcastWorkspaceStatus(updates[i].WorkspaceID)
+		if changed {
+			s.broadcastWorkspaceStatus(update.WorkspaceID)
 			s.hub.Broadcast(Event{Type: "data_changed", Data: struct{}{}})
 		}
 	}

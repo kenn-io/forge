@@ -23035,6 +23035,79 @@ func TestWorkspaceManualRefreshDiscoversAndSyncsAssociatedPR(t *testing.T) {
 	assert.Equal(headSHA, pr.PlatformHeadSHA)
 }
 
+func TestWorkspaceManualRefreshReturnsAssociationInspectionError(t *testing.T) {
+	t.Parallel()
+
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+
+	now := time.Now().UTC().Truncate(time.Second)
+	issueID := int64(7001)
+	issueTitle := "Track workspace association"
+	issueState := "open"
+	issueBody := "issue body"
+	issueURL := "https://github.com/acme/widget/issues/7"
+	author := "alice"
+	intPointer := func(value int) *int { return &value }
+	mock := &mockGH{
+		getIssueFn: func(context.Context, string, string, int) (*gh.Issue, error) {
+			return &gh.Issue{
+				ID:        &issueID,
+				Number:    intPointer(7),
+				Title:     &issueTitle,
+				Body:      &issueBody,
+				State:     &issueState,
+				HTMLURL:   &issueURL,
+				User:      &gh.User{Login: &author},
+				CreatedAt: &gh.Timestamp{Time: now},
+				UpdatedAt: &gh.Timestamp{Time: now},
+			}, nil
+		},
+		listOpenPullRequestsFn: func(context.Context, string, string) ([]*gh.PullRequest, error) {
+			return nil, nil
+		},
+	}
+	fixture := setupWorkspaceServerFixtureWithMockHostAndOptions(
+		t, nil, mock, "github.com",
+		ServerOptions{
+			PtyOwnerInProcess:                  true,
+			DisableWorkspaceBackgroundMonitors: true,
+		},
+	)
+
+	seedIssue(t, fixture.database, "acme", "widget", 7, "open")
+	createRR := doJSON(
+		t,
+		fixture.server,
+		http.MethodPost,
+		"/api/v1/issues/gh/acme/widget/7/workspace",
+		map[string]string{},
+	)
+	require.Equal(http.StatusAccepted, createRR.Code, createRR.Body.String())
+
+	var created rawWorkspaceStatusResponse
+	require.NoError(json.NewDecoder(createRR.Body).Decode(&created))
+	ready := waitForWorkspaceReady(t, ctx, fixture.client, created.ID)
+	require.NoError(os.RemoveAll(ready.WorktreePath))
+
+	refreshRR := doJSON(
+		t,
+		fixture.server,
+		http.MethodPost,
+		"/api/v1/workspaces/"+created.ID+"/refresh",
+		nil,
+	)
+	require.Equal(
+		http.StatusInternalServerError, refreshRR.Code, refreshRR.Body.String(),
+	)
+
+	var problem rawProblemDetail
+	require.NoError(json.NewDecoder(refreshRR.Body).Decode(&problem))
+	assert.Equal("internalError", problem.Code)
+	assert.Contains(problem.Detail, "refresh workspace PR association")
+}
+
 func readEventMatching(
 	t *testing.T,
 	ch <-chan RecordedEvent,

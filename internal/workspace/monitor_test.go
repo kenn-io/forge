@@ -385,6 +385,30 @@ func TestPRMonitorRunOnceUsesUpstreamRemoteIdentity(t *testing.T) {
 	assert.Equal(42, updates[0].PRNumber)
 }
 
+func TestPRMonitorRefreshWorkspaceAssociationReturnsInspectionError(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := context.Background()
+
+	repoID := seedRepo(t, d, "github.com", "acme", "widget")
+	seedIssue(t, d, repoID, 7, "Track workspace association")
+	workspaceID := insertMonitorWorkspace(
+		t, d, filepath.Join(t.TempDir(), "missing-worktree"), nil,
+	)
+
+	monitor := NewPRMonitor(d)
+	update, changed, err := monitor.RefreshWorkspaceAssociation(ctx, workspaceID)
+	require.Error(err)
+	require.ErrorContains(err, "detect associated PR")
+	assert.False(changed)
+	assert.Equal(PRAssociationUpdate{}, update)
+
+	updates, err := monitor.RunOnce(ctx)
+	require.NoError(err)
+	assert.Empty(updates)
+}
+
 func TestSelectPRByUpstream(t *testing.T) {
 	assert := Assert.New(t)
 	candidates := []db.MergeRequest{

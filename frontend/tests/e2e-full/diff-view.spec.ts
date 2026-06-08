@@ -3067,7 +3067,7 @@ test.describe("diff view (git-backed)", () => {
       await selectPierreReviewLine(cacheFile, 1, "right");
       const rightComposer = page.getByPlaceholder("Leave a comment");
       await expect(rightComposer).toBeVisible();
-      await expect(rightComposer).toBeFocused();
+      await expect(rightComposer).toBeEditable();
       await expectPierreDiffFirstVisible(cacheFile, diffAdditionsSelector);
       const cacheContentBox = await visibleBoundingBox(cacheFile.locator(".file-content"));
       const composerBox = await visibleBoundingBox(inlineComposerFor(rightComposer));
@@ -3085,7 +3085,7 @@ test.describe("diff view (git-backed)", () => {
       await selectPierreReviewLine(configFile, 1, "left");
       const leftComposer = page.getByPlaceholder("Leave a comment");
       await expect(leftComposer).toBeVisible();
-      await expect(leftComposer).toBeFocused();
+      await expect(leftComposer).toBeEditable();
       await leftComposer.fill("Left-side config note");
       await submitInlineComposer(leftComposer);
       await expect(

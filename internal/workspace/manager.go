@@ -1497,13 +1497,13 @@ func (m *Manager) workspaceCleanupGitDir(
 			return baseDir, ok, nil
 		}
 		if ok {
-			tracked, err := gitDirTracksWorktreePath(
+			owned, err := gitDirOwnsCleanupWorktree(
 				ctx, baseDir, ws.WorktreePath,
 			)
 			if err != nil {
 				return "", false, err
 			}
-			if tracked {
+			if owned {
 				return baseDir, true, nil
 			}
 		}
@@ -1521,19 +1521,57 @@ func (m *Manager) workspaceCleanupGitDir(
 			return "", false, err
 		}
 		if ready {
-			tracked, err := gitDirTracksWorktreePath(
+			owned, err := gitDirOwnsCleanupWorktree(
 				ctx, cloneDir, ws.WorktreePath,
 			)
 			if err != nil {
 				return "", false, err
 			}
-			if tracked {
+			if owned {
 				return cloneDir, true, nil
 			}
 		}
 	}
 
 	return "", false, nil
+}
+
+func gitDirOwnsCleanupWorktree(
+	ctx context.Context, gitDir, worktreePath string,
+) (bool, error) {
+	if strings.TrimSpace(worktreePath) == "" {
+		return false, nil
+	}
+	info, err := os.Stat(worktreePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return gitDirTracksWorktreePath(ctx, gitDir, worktreePath)
+		}
+		return false, fmt.Errorf("stat workspace path: %w", err)
+	}
+	if !info.IsDir() {
+		return false, nil
+	}
+
+	commonDir, err := worktreeCommonGitDir(ctx, worktreePath)
+	if err != nil {
+		if isGitWorktreeAbsent(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	candidateDir, err := canonicalFilesystemPath(gitDir)
+	if err != nil {
+		return false, fmt.Errorf("resolve git dir: %w", err)
+	}
+	actualDir, err := canonicalFilesystemPath(commonDir)
+	if err != nil {
+		return false, fmt.Errorf("resolve workspace git common dir: %w", err)
+	}
+	if actualDir != candidateDir {
+		return false, nil
+	}
+	return gitDirOwnsLinkedWorktree(ctx, gitDir, worktreePath)
 }
 
 func gitDirOwnsLinkedWorktree(

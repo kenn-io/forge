@@ -1256,6 +1256,58 @@ func TestCleanupDoesNotTrustReplacementCloneAtWorkspacePath(t *testing.T) {
 	assert.True(branchExists)
 }
 
+func TestCleanupDoesNotTrustStaleLocalBaseRegistrationForReplacementClone(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	const branch = "middleman/pr-42"
+	localRepo, remote := setupLocalWorktreeBaseWithRemoteForWorkspaceGitTest(
+		t, "feature/thing",
+	)
+	worktreePath := filepath.Join(t.TempDir(), "workspace")
+	runWorkspaceTestGit(
+		t, localRepo,
+		"worktree", "add", worktreePath, "-b", branch, "HEAD",
+	)
+	require.NoError(os.RemoveAll(worktreePath))
+	runWorkspaceTestGit(t, t.TempDir(), "clone", remote, worktreePath)
+	runWorkspaceTestGit(
+		t, worktreePath, "remote", "set-url", "origin",
+		"https://github.com/acme/widget.git",
+	)
+	runWorkspaceTestGit(t, worktreePath, "branch", branch, "HEAD")
+
+	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr.SetWorktreeBasePathResolver(func(
+		context.Context, string, string, string, string,
+	) (string, bool, error) {
+		return localRepo, true, nil
+	})
+	ws := &Workspace{
+		ID:              "ws-stale-local-base-replaced-clone",
+		Platform:        "github",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		ItemType:        db.WorkspaceItemTypePullRequest,
+		ItemNumber:      42,
+		GitHeadRef:      "feature/thing",
+		WorkspaceBranch: branch,
+		WorktreePath:    worktreePath,
+	}
+
+	gitDir, ok, err := mgr.workspaceCleanupGitDir(t.Context(), ws)
+
+	require.NoError(err)
+	assert.False(ok)
+	assert.Empty(gitDir)
+	branchExists, err := localBranchExists(t.Context(), worktreePath, branch)
+	require.NoError(err)
+	assert.True(branchExists)
+	_, err = os.Stat(worktreePath)
+	require.NoError(err)
+}
+
 func TestCleanupIgnoresInvalidConfiguredBaseWhenWorktreeAbsent(t *testing.T) {
 	require := require.New(t)
 

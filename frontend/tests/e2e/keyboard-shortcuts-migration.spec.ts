@@ -35,6 +35,23 @@ test.describe("migrated global shortcuts", () => {
     });
     await expect(expandButton).toBeVisible();
     await expect(page.locator("header kbd[aria-label$='-[']")).toHaveCount(0);
+
+    await page.locator("main.app-main").click();
+    await page.keyboard.press("Meta+K");
+    const palette = page.getByRole("dialog", { name: "Command palette" });
+    await expect(palette).toBeVisible();
+    await expect(palette.getByText("Toggle sidebar", { exact: true })).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    await expect(palette).toBeHidden();
+
+    await page.locator("main.app-main").click();
+    await page.keyboard.press("Shift+/");
+    const cheatsheet = page.getByRole("dialog", { name: "Keyboard shortcuts" });
+    await expect(cheatsheet).toBeVisible();
+    await expect(cheatsheet.getByText("Toggle sidebar", { exact: true })).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    await expect(cheatsheet).toBeHidden();
+
     await page.evaluate(() => {
       const state = window as Window & {
         __middleman_last_bracket_default_prevented?: boolean | null;

@@ -2628,14 +2628,16 @@ test.describe("diff view (git-backed)", () => {
       const cacheFile = page.locator('[data-file-path="internal/cache.go"]');
       await cacheFile.scrollIntoViewIfNeeded();
       await selectPierreReviewLine(cacheFile, 1, "right");
-      await expect(page.getByPlaceholder("Leave a comment")).toBeVisible();
+      const rightComposer = page.getByPlaceholder("Leave a comment");
+      await expect(rightComposer).toBeVisible();
+      await expect(rightComposer).toBeFocused();
       await expectPierreDiffFirstVisible(cacheFile, diffAdditionsSelector);
       const cacheContentBox = await cacheFile.locator(".file-content").boundingBox();
       const composerBox = await cacheFile.locator(".inline-composer").boundingBox();
       expect(cacheContentBox).not.toBeNull();
       expect(composerBox).not.toBeNull();
       expect(composerBox!.x + composerBox!.width).toBeLessThanOrEqual(cacheContentBox!.x + cacheContentBox!.width + 1);
-      await page.getByPlaceholder("Leave a comment").fill("Right-side cache note");
+      await rightComposer.fill("Right-side cache note");
       await page.getByRole("button", { name: "Add comment" }).click();
       await expect(
         page.locator(".inline-draft-comment", {
@@ -2646,8 +2648,10 @@ test.describe("diff view (git-backed)", () => {
       const configFile = page.locator('[data-file-path="config.yaml"]');
       await configFile.scrollIntoViewIfNeeded();
       await selectPierreReviewLine(configFile, 1, "left");
-      await expect(page.getByPlaceholder("Leave a comment")).toBeVisible();
-      await page.getByPlaceholder("Leave a comment").fill("Left-side config note");
+      const leftComposer = page.getByPlaceholder("Leave a comment");
+      await expect(leftComposer).toBeVisible();
+      await expect(leftComposer).toBeFocused();
+      await leftComposer.fill("Left-side config note");
       await page.getByRole("button", { name: "Add comment" }).click();
       await expect(
         page.locator(".inline-draft-comment", {

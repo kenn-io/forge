@@ -3226,6 +3226,33 @@ test.describe("issue workspace sidebar", () => {
     await expect(page.locator(".seg-btn", { hasText: "Reviews" })).toHaveCount(0);
   });
 
+  test("manual refresh rechecks issue workspace PR association", async ({ page }) => {
+    let refreshRequests = 0;
+
+    await setupTerminalMocks(page, {
+      workspace: testIssueWorkspace,
+    });
+    await page.route("**/api/v1/workspaces/ws-issue-7/refresh", async (route) => {
+      refreshRequests += 1;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(testIssueWorkspaceWithAssociatedPR),
+      });
+    });
+    await page.goto("/terminal/ws-issue-7");
+
+    await expect(page.locator(".seg-btn", { hasText: "Issue" })).toBeVisible();
+    await expect(page.locator(".seg-btn", { hasText: "PR" })).toHaveCount(0);
+
+    const refreshButton = page.locator(".header-right .seg-control + .header-icon-btn");
+    await expect(refreshButton).toHaveAttribute("aria-label", "Refresh workspace details");
+    await refreshButton.click();
+
+    await expect.poll(() => refreshRequests).toBe(1);
+    await expect(page.locator(".seg-btn", { hasText: "PR" })).toBeVisible();
+  });
+
   test("issue segment opens issue detail for issue-backed workspaces", async ({ page }) => {
     await setupTerminalMocks(page, {
       workspace: testIssueWorkspace,

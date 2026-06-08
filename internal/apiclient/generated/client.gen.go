@@ -2625,6 +2625,9 @@ type ClientInterface interface {
 	// GetWorkspaceFiles request
 	GetWorkspaceFiles(ctx context.Context, id string, params *GetWorkspaceFilesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// RefreshWorkspace request
+	RefreshWorkspace(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// RetryWorkspace request
 	RetryWorkspace(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -4759,6 +4762,18 @@ func (c *Client) GetWorkspaceDiff(ctx context.Context, id string, params *GetWor
 
 func (c *Client) GetWorkspaceFiles(ctx context.Context, id string, params *GetWorkspaceFilesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetWorkspaceFilesRequest(c.Server, id, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RefreshWorkspace(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRefreshWorkspaceRequest(c.Server, id)
 	if err != nil {
 		return nil, err
 	}
@@ -13068,6 +13083,40 @@ func NewGetWorkspaceFilesRequest(server string, id string, params *GetWorkspaceF
 	return req, nil
 }
 
+// NewRefreshWorkspaceRequest generates requests for RefreshWorkspace
+func NewRefreshWorkspaceRequest(server string, id string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/workspaces/%s/refresh", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewRetryWorkspaceRequest generates requests for RetryWorkspace
 func NewRetryWorkspaceRequest(server string, id string) (*http.Request, error) {
 	var err error
@@ -13798,6 +13847,9 @@ type ClientWithResponsesInterface interface {
 
 	// GetWorkspaceFilesWithResponse request
 	GetWorkspaceFilesWithResponse(ctx context.Context, id string, params *GetWorkspaceFilesParams, reqEditors ...RequestEditorFn) (*GetWorkspaceFilesResponse, error)
+
+	// RefreshWorkspaceWithResponse request
+	RefreshWorkspaceWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*RefreshWorkspaceResponse, error)
 
 	// RetryWorkspaceWithResponse request
 	RetryWorkspaceWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*RetryWorkspaceResponse, error)
@@ -16695,6 +16747,29 @@ func (r GetWorkspaceFilesResponse) StatusCode() int {
 	return 0
 }
 
+type RefreshWorkspaceResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *WorkspaceResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r RefreshWorkspaceResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RefreshWorkspaceResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type RetryWorkspaceResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
@@ -18341,6 +18416,15 @@ func (c *ClientWithResponses) GetWorkspaceFilesWithResponse(ctx context.Context,
 		return nil, err
 	}
 	return ParseGetWorkspaceFilesResponse(rsp)
+}
+
+// RefreshWorkspaceWithResponse request returning *RefreshWorkspaceResponse
+func (c *ClientWithResponses) RefreshWorkspaceWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*RefreshWorkspaceResponse, error) {
+	rsp, err := c.RefreshWorkspace(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRefreshWorkspaceResponse(rsp)
 }
 
 // RetryWorkspaceWithResponse request returning *RetryWorkspaceResponse
@@ -22391,6 +22475,39 @@ func ParseGetWorkspaceFilesResponse(rsp *http.Response) (*GetWorkspaceFilesRespo
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest FilesResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRefreshWorkspaceResponse parses an HTTP response from a RefreshWorkspaceWithResponse call
+func ParseRefreshWorkspaceResponse(rsp *http.Response) (*RefreshWorkspaceResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RefreshWorkspaceResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WorkspaceResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

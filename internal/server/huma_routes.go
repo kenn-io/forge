@@ -488,6 +488,10 @@ type retryWorkspaceInput struct {
 	ID string `path:"id"`
 }
 
+type refreshWorkspaceInput struct {
+	ID string `path:"id"`
+}
+
 type getWorkspaceRuntimeInput struct {
 	ID string `path:"id"`
 }
@@ -534,6 +538,8 @@ type getWorkspaceRuntimeOutput = bodyOutput[workspaceRuntimeResponse]
 type workspaceRuntimeSessionOutput = bodyOutput[localruntime.SessionInfo]
 
 type createWorkspaceOutput = acceptedBodyOutput[workspaceResponse]
+
+type refreshWorkspaceOutput = bodyOutput[workspaceResponse]
 
 type workspaceDiffRequest struct {
 	Summary           *db.WorkspaceSummary
@@ -716,6 +722,13 @@ func (s *Server) registerAPI(api huma.API) {
 		Summary:       "Retry workspace",
 		Tags:          []string{"Workspaces"},
 	}, s.retryWorkspace)
+	huma.Register(api, huma.Operation{
+		OperationID: "refresh-workspace",
+		Method:      http.MethodPost,
+		Path:        "/workspaces/{id}/refresh",
+		Summary:     "Refresh workspace",
+		Tags:        []string{"Workspaces"},
+	}, s.refreshWorkspace)
 	huma.Register(api, huma.Operation{
 		OperationID: "get-workspace-runtime",
 		Method:      http.MethodGet,
@@ -4509,6 +4522,178 @@ func (s *Server) getWorkspace(
 	return &getWorkspaceOutput{
 		Body: s.toWorkspaceResponse(ctx, summary),
 	}, nil
+}
+
+func (s *Server) refreshWorkspace(
+	ctx context.Context, input *refreshWorkspaceInput,
+) (*refreshWorkspaceOutput, error) {
+	if s.workspaces == nil {
+		return nil, problemServiceUnavailable("workspace manager not configured")
+	}
+	if s.syncer == nil {
+		return nil, problemServiceUnavailable("syncer not configured")
+	}
+
+	summary, err := s.workspaces.GetSummary(ctx, input.ID)
+	if err != nil {
+		return nil, problemInternal("get workspace failed")
+	}
+	if summary == nil {
+		return nil, problemNotFound(
+			CodeWorkspaceNotFound, "workspace not found", nil,
+		)
+	}
+
+	provider := strings.TrimSpace(summary.Platform)
+	if provider == "" {
+		provider = string(platform.KindGitHub)
+	}
+	repo, err := s.lookupRepoByProviderRoute(
+		ctx, provider, summary.PlatformHost, summary.RepoOwner, summary.RepoName,
+	)
+	if err != nil {
+		return nil, providerRouteLookupError(err)
+	}
+	kind := repoProviderKind(*repo)
+	host := repoProviderHost(*repo)
+
+	switch summary.ItemType {
+	case db.WorkspaceItemTypeIssue:
+		if err := s.refreshWorkspaceIssue(
+			ctx, kind, host, repo.Owner, repo.Name, summary.ItemNumber,
+		); err != nil {
+			return nil, err
+		}
+	case db.WorkspaceItemTypePullRequest:
+		// The PR detail sync runs after the repo index refresh below so the
+		// workspace response reflects the latest indexed PR row and diff.
+	default:
+		return nil, problemInternal("workspace has unsupported item type")
+	}
+
+	if err := s.refreshWorkspaceRepoIndex(
+		ctx, kind, host, repo.Owner, repo.Name,
+	); err != nil {
+		return nil, err
+	}
+
+	if s.workspacePRMonitor != nil {
+		updates, err := s.workspacePRMonitor.RunOnce(ctx)
+		if err != nil {
+			return nil, problemInternal("refresh workspace PR association: " + err.Error())
+		}
+		for i := range updates {
+			s.broadcastWorkspaceStatus(updates[i].WorkspaceID)
+			s.hub.Broadcast(Event{Type: "data_changed", Data: struct{}{}})
+		}
+	}
+
+	refreshed, err := s.workspaces.GetSummary(ctx, input.ID)
+	if err != nil {
+		return nil, problemInternal("get workspace failed")
+	}
+	if refreshed == nil {
+		return nil, problemNotFound(
+			CodeWorkspaceNotFound, "workspace not found", nil,
+		)
+	}
+	if prNumber, ok := workspaceAssociatedPRNumber(refreshed); ok {
+		if err := s.refreshWorkspacePullRequest(
+			ctx, kind, host, repo.Owner, repo.Name, prNumber,
+		); err != nil {
+			return nil, err
+		}
+		refreshed, err = s.workspaces.GetSummary(ctx, input.ID)
+		if err != nil {
+			return nil, problemInternal("get workspace failed")
+		}
+		if refreshed == nil {
+			return nil, problemNotFound(
+				CodeWorkspaceNotFound, "workspace not found", nil,
+			)
+		}
+	}
+
+	resp := s.toWorkspaceResponse(ctx, refreshed)
+	s.hub.Broadcast(Event{Type: "workspace_status", Data: resp})
+	s.hub.Broadcast(Event{Type: "data_changed", Data: struct{}{}})
+	return &refreshWorkspaceOutput{Body: resp}, nil
+}
+
+func workspaceAssociatedPRNumber(summary *db.WorkspaceSummary) (int, bool) {
+	if summary == nil {
+		return 0, false
+	}
+	if summary.ItemType == db.WorkspaceItemTypePullRequest {
+		return summary.ItemNumber, summary.ItemNumber > 0
+	}
+	if summary.AssociatedPRNumber == nil {
+		return 0, false
+	}
+	return *summary.AssociatedPRNumber, *summary.AssociatedPRNumber > 0
+}
+
+func (s *Server) refreshWorkspaceRepoIndex(
+	ctx context.Context,
+	kind platform.Kind,
+	host, owner, name string,
+) error {
+	err := s.syncer.SyncRepoOnProvider(ctx, kind, host, owner, name)
+	if err == nil {
+		return nil
+	}
+	if strings.Contains(err.Error(), "is not tracked") {
+		return problemForbidden(err.Error(), nil)
+	}
+	return providerCallProblemWithDetail(
+		err, string(kind), host, "sync repo: "+err.Error(),
+	)
+}
+
+func (s *Server) refreshWorkspaceIssue(
+	ctx context.Context,
+	kind platform.Kind,
+	host, owner, name string,
+	number int,
+) error {
+	err := s.syncer.SyncIssueOnProvider(ctx, kind, host, owner, name, number)
+	if err == nil {
+		return nil
+	}
+	if strings.Contains(err.Error(), "is not tracked") {
+		return problemForbidden(err.Error(), nil)
+	}
+	return providerCallProblemWithDetail(
+		err, string(kind), host, "sync issue: "+err.Error(),
+	)
+}
+
+func (s *Server) refreshWorkspacePullRequest(
+	ctx context.Context,
+	kind platform.Kind,
+	host, owner, name string,
+	number int,
+) error {
+	var diffErr *ghclient.DiffSyncError
+	err := s.syncer.SyncMROnProvider(ctx, kind, host, owner, name, number)
+	if err != nil && !errors.As(err, &diffErr) {
+		if strings.Contains(err.Error(), "is not tracked") {
+			return problemForbidden(err.Error(), nil)
+		}
+		return providerCallProblemWithDetail(
+			err, string(kind), host, "sync PR: "+err.Error(),
+		)
+	}
+	if diffErr != nil {
+		slog.Warn("diff sync failed during workspace refresh",
+			"owner", owner,
+			"name", name,
+			"number", number,
+			"code", diffErr.Code,
+			"err", diffErr.Err,
+		)
+	}
+	return nil
 }
 
 func (s *Server) getWorkspaceCommits(

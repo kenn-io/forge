@@ -50,6 +50,7 @@
     associatedPRNumber: number | null;
     branch: string;
     roborevBaseUrl: string;
+    refreshToken?: number;
   }
 
   let {
@@ -65,6 +66,7 @@
     associatedPRNumber,
     branch,
     roborevBaseUrl,
+    refreshToken = 0,
   }: Props = $props();
 
   const parentStores = getStores();
@@ -278,45 +280,51 @@
 
 <div class="right-sidebar-content">
   {#if activeTab === "diff"}
-    <WorkspaceDiffPanel
-      {workspaceID}
-      {provider}
-      {platformHost}
-      {repoOwner}
-      {repoName}
-      {repoPath}
-      itemNumber={ownerItemNumber}
-      active={activeTab === "diff"}
-    />
+    {#key `diff:${workspaceID}:${refreshToken}`}
+      <WorkspaceDiffPanel
+        {workspaceID}
+        {provider}
+        {platformHost}
+        {repoOwner}
+        {repoName}
+        {repoPath}
+        itemNumber={ownerItemNumber}
+        active={activeTab === "diff"}
+      />
+    {/key}
   {:else if activeTab === "pr"}
     {#if hasPR}
-      <div class="pr-scroll">
-        <PullDetail
-          {provider}
-          {platformHost}
-          owner={repoOwner}
-          name={repoName}
-          {repoPath}
-          number={associatedPRNumber ?? 0}
-          hideTabs={true}
-          hideWorkspaceAction={true}
-        />
-      </div>
+      {#key `pr:${provider}:${platformHost ?? ""}:${repoPath}:${associatedPRNumber ?? 0}:${refreshToken}`}
+        <div class="pr-scroll">
+          <PullDetail
+            {provider}
+            {platformHost}
+            owner={repoOwner}
+            name={repoName}
+            {repoPath}
+            number={associatedPRNumber ?? 0}
+            hideTabs={true}
+            hideWorkspaceAction={true}
+          />
+        </div>
+      {/key}
     {:else}
       <div class="empty-state">No linked PR</div>
     {/if}
   {:else if activeTab === "issue"}
     {#if hasIssue}
-      <div class="pr-scroll">
-        <IssueDetail
-          {provider}
-          {platformHost}
-          owner={repoOwner}
-          name={repoName}
-          {repoPath}
-          number={ownerItemNumber}
-        />
-      </div>
+      {#key `issue:${provider}:${platformHost ?? ""}:${repoPath}:${ownerItemNumber}:${refreshToken}`}
+        <div class="pr-scroll">
+          <IssueDetail
+            {provider}
+            {platformHost}
+            owner={repoOwner}
+            name={repoName}
+            {repoPath}
+            number={ownerItemNumber}
+          />
+        </div>
+      {/key}
     {:else}
       <div class="empty-state">No linked issue</div>
     {/if}

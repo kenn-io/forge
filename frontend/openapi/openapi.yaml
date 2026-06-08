@@ -8962,6 +8962,31 @@ paths:
       summary: Get workspace files
       tags:
         - Workspaces
+  /workspaces/{id}/refresh:
+    post:
+      operationId: refresh-workspace
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Refresh workspace
+      tags:
+        - Workspaces
   /workspaces/{id}/retry:
     post:
       operationId: retry-workspace

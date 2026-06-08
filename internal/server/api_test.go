@@ -17122,6 +17122,18 @@ func setupWorkspaceServerFixtureWithHostAndOptions(
 	platformHost string,
 	options ServerOptions,
 ) workspaceServerFixture {
+	return setupWorkspaceServerFixtureWithMockHostAndOptions(
+		t, cfg, &mockGH{}, platformHost, options,
+	)
+}
+
+func setupWorkspaceServerFixtureWithMockHostAndOptions(
+	t *testing.T,
+	cfg *config.Config,
+	mock *mockGH,
+	platformHost string,
+	options ServerOptions,
+) workspaceServerFixture {
 	t.Helper()
 
 	if testing.Short() {
@@ -17170,7 +17182,6 @@ func setupWorkspaceServerFixtureWithHostAndOptions(
 
 	clones := gitclone.New(bareDir, nil)
 	worktreeDir := filepath.Join(dir, "worktrees")
-	mock := &mockGH{}
 	repos := []ghclient.RepoRef{
 		{Owner: "acme", Name: "widget", PlatformHost: platformHost},
 	}
@@ -22872,6 +22883,152 @@ func TestWorkspaceMonitorPassBroadcastsInvalidationEvents(t *testing.T) {
 	assert.Equal("workspace_status", status.Type)
 	assert.Equal(map[string]string{"id": created.ID}, status.Data)
 	assert.Equal("data_changed", changed.Type)
+}
+
+func TestWorkspaceManualRefreshDiscoversAndSyncsAssociatedPR(t *testing.T) {
+	t.Parallel()
+
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+
+	var headRef string
+	var headSHA string
+	now := time.Now().UTC().Truncate(time.Second)
+	issueID := int64(7001)
+	prID := int64(42001)
+	issueTitle := "Track workspace association"
+	issueState := "open"
+	issueBody := "issue body"
+	issueURL := "https://github.com/acme/widget/issues/7"
+	prTitleFromList := "Indexed PR title"
+	prTitleFromDetail := "Fresh PR detail title"
+	prState := "open"
+	prBody := "fresh body"
+	prURL := "https://github.com/acme/widget/pull/42"
+	baseRef := "main"
+	baseSHA := "base-sha"
+	author := "alice"
+	cloneURL := "https://github.com/acme/widget.git"
+	intPointer := func(value int) *int { return &value }
+	mock := &mockGH{
+		getIssueFn: func(context.Context, string, string, int) (*gh.Issue, error) {
+			return &gh.Issue{
+				ID:        &issueID,
+				Number:    intPointer(7),
+				Title:     &issueTitle,
+				Body:      &issueBody,
+				State:     &issueState,
+				HTMLURL:   &issueURL,
+				User:      &gh.User{Login: &author},
+				CreatedAt: &gh.Timestamp{Time: now},
+				UpdatedAt: &gh.Timestamp{Time: now},
+			}, nil
+		},
+		listOpenPullRequestsFn: func(context.Context, string, string) ([]*gh.PullRequest, error) {
+			return []*gh.PullRequest{{
+				ID:        &prID,
+				Number:    intPointer(42),
+				Title:     &prTitleFromList,
+				State:     &prState,
+				HTMLURL:   &prURL,
+				User:      &gh.User{Login: &author},
+				CreatedAt: &gh.Timestamp{Time: now},
+				UpdatedAt: &gh.Timestamp{Time: now},
+				Head: &gh.PullRequestBranch{
+					Ref:  &headRef,
+					SHA:  &headSHA,
+					Repo: &gh.Repository{CloneURL: &cloneURL},
+				},
+				Base: &gh.PullRequestBranch{Ref: &baseRef, SHA: &baseSHA},
+			}}, nil
+		},
+		getPullRequestFn: func(context.Context, string, string, int) (*gh.PullRequest, error) {
+			return &gh.PullRequest{
+				ID:        &prID,
+				Number:    intPointer(42),
+				Title:     &prTitleFromDetail,
+				Body:      &prBody,
+				State:     &prState,
+				HTMLURL:   &prURL,
+				User:      &gh.User{Login: &author},
+				CreatedAt: &gh.Timestamp{Time: now},
+				UpdatedAt: &gh.Timestamp{Time: now},
+				Head: &gh.PullRequestBranch{
+					Ref:  &headRef,
+					SHA:  &headSHA,
+					Repo: &gh.Repository{CloneURL: &cloneURL},
+				},
+				Base: &gh.PullRequestBranch{Ref: &baseRef, SHA: &baseSHA},
+			}, nil
+		},
+	}
+	fixture := setupWorkspaceServerFixtureWithMockHostAndOptions(
+		t, nil, mock, "github.com",
+		ServerOptions{
+			PtyOwnerInProcess:                  true,
+			DisableWorkspaceBackgroundMonitors: true,
+		},
+	)
+
+	seedIssue(t, fixture.database, "acme", "widget", 7, "open")
+	createRR := doJSON(
+		t,
+		fixture.server,
+		http.MethodPost,
+		"/api/v1/issues/gh/acme/widget/7/workspace",
+		map[string]string{},
+	)
+	require.Equal(http.StatusAccepted, createRR.Code, createRR.Body.String())
+
+	var created rawWorkspaceStatusResponse
+	require.NoError(json.NewDecoder(createRR.Body).Decode(&created))
+	ready := waitForWorkspaceReady(t, ctx, fixture.client, created.ID)
+	require.NoError(os.WriteFile(
+		filepath.Join(ready.WorktreePath, "feature.txt"),
+		[]byte("feature\n"),
+		0o644,
+	))
+	runGit(t, ready.WorktreePath, "add", ".")
+	runGit(t, ready.WorktreePath, "commit", "-m", "feature commit")
+	runGit(t, ready.WorktreePath, "push", "-u", "origin", ready.GitHeadRef)
+	runGit(
+		t, ready.WorktreePath,
+		"remote", "set-url", "origin", "git@github.com:acme/widget.git",
+	)
+	headRef = ready.GitHeadRef
+	headSHA = testGitSHA(t, ready.WorktreePath, "HEAD")
+
+	refreshRR := doJSON(
+		t,
+		fixture.server,
+		http.MethodPost,
+		"/api/v1/workspaces/"+created.ID+"/refresh",
+		nil,
+	)
+	require.Equal(http.StatusOK, refreshRR.Code, refreshRR.Body.String())
+
+	var refreshed rawWorkspaceStatusResponse
+	require.NoError(json.NewDecoder(refreshRR.Body).Decode(&refreshed))
+	require.NotNil(refreshed.AssociatedPRNumber)
+	assert.Equal(42, *refreshed.AssociatedPRNumber)
+
+	stored, err := fixture.database.GetWorkspace(ctx, created.ID)
+	require.NoError(err)
+	require.NotNil(stored)
+	require.NotNil(stored.AssociatedPRNumber)
+	assert.Equal(42, *stored.AssociatedPRNumber)
+
+	repo, err := fixture.database.GetRepoByHostOwnerName(
+		ctx, "github.com", "acme", "widget",
+	)
+	require.NoError(err)
+	require.NotNil(repo)
+	pr, err := fixture.database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 42)
+	require.NoError(err)
+	require.NotNil(pr)
+	assert.Equal(prTitleFromDetail, pr.Title)
+	assert.Equal(headSHA, pr.PlatformHeadSHA)
 }
 
 func readEventMatching(

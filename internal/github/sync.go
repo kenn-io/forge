@@ -6846,6 +6846,28 @@ func (s *Syncer) IsTrackedRepoOnHost(owner, name, host string) bool {
 	return s.isTrackedRepoOnHost(owner, name, host)
 }
 
+// SyncRepoOnProvider performs the index sync for one configured repository.
+// It is used by manual refresh paths that need fresh PR discovery before they
+// can act on a specific item number.
+func (s *Syncer) SyncRepoOnProvider(
+	ctx context.Context,
+	kind platform.Kind,
+	host, owner, name string,
+) error {
+	repo, ok := s.trackedRepoByIdentity(kind, owner, name, host)
+	if !ok {
+		host = repoHost(RepoRef{Platform: kind, PlatformHost: host})
+		return fmt.Errorf(
+			"repo %s/%s on %s/%s is not tracked",
+			owner, name, kind, host,
+		)
+	}
+	repo.Owner = owner
+	repo.Name = name
+	repo.PlatformHost = repoHost(repo)
+	return s.syncRepo(ctx, repo)
+}
+
 // SyncMR fetches fresh data for a single MR from GitHub and updates the DB.
 // Unlike the periodic sync, this always does a full fetch (details, timeline, CI).
 // Returns an error if the repo is not in the configured repo list.

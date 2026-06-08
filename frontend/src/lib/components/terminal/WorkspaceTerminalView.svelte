@@ -68,7 +68,11 @@
     WorkspaceRightSidebar,
     type SplitResizeEvent,
   } from "@middleman/ui";
-  import { AlertIcon, SpinnerIcon } from "../../icons.ts";
+  import {
+    AlertIcon,
+    RefreshIcon,
+    SpinnerIcon,
+  } from "../../icons.ts";
   import { apiErrorMessage, client } from "../../api/runtime.js";
 
   interface Workspace {
@@ -147,6 +151,8 @@
   let loadError = $state<string | null>(null);
   let actionError = $state<string | null>(null);
   let retryingSetup = $state(false);
+  let refreshingWorkspace = $state(false);
+  let sidebarRefreshToken = $state(0);
   let forcePromptMessage = $state<string | null>(null);
   let forcePromptForId = $state<string | null>(null);
   let forceDeleting = $state(false);
@@ -1860,6 +1866,44 @@
     }
   }
 
+  async function handleRefreshWorkspace(): Promise<void> {
+    if (!workspace || refreshingWorkspace || actionsBlocked) return;
+
+    const id = workspace.id;
+    refreshingWorkspace = true;
+    actionError = null;
+    try {
+      const { data, error, response } = await client.POST(
+        "/workspaces/{id}/refresh",
+        {
+          params: { path: { id } },
+        },
+      );
+      if (id !== workspaceId) return;
+      if (!data) {
+        actionError = apiErrorMessage(
+          error,
+          `Refresh failed (${response.status})`,
+        );
+        return;
+      }
+      workspace = data as Workspace;
+      syncSidebarTabForWorkspace(workspace);
+      sidebarRefreshToken += 1;
+      if (workspace.status === "ready") {
+        void fetchRuntime();
+      }
+    } catch (err) {
+      if (id !== workspaceId) return;
+      actionError =
+        err instanceof Error
+          ? err.message
+          : "Refresh failed";
+    } finally {
+      refreshingWorkspace = false;
+    }
+  }
+
   async function handleDelete(
     triggerEl: HTMLElement | null = null,
   ): Promise<void> {
@@ -2300,6 +2344,29 @@
                   </button>
                 {/if}
               </div>
+              <button
+                class="header-btn header-icon-btn"
+                disabled={actionsBlocked || refreshingWorkspace}
+                title="Refresh workspace details"
+                aria-label="Refresh workspace details"
+                onclick={() => void handleRefreshWorkspace()}
+              >
+                {#if refreshingWorkspace}
+                  <SpinnerIcon
+                    class="header-icon spinning"
+                    size="14"
+                    strokeWidth="2.2"
+                    aria-hidden="true"
+                  />
+                {:else}
+                  <RefreshIcon
+                    class="header-icon"
+                    size="14"
+                    strokeWidth="2.2"
+                    aria-hidden="true"
+                  />
+                {/if}
+              </button>
             {/if}
             <button
               class="header-btn danger"
@@ -2528,6 +2595,7 @@
                 associatedPRNumber={getWorkspacePRNumber(workspace)}
                 branch={workspace.git_head_ref}
                 roborevBaseUrl={basePath + "/api/roborev"}
+                refreshToken={sidebarRefreshToken}
               />
             </div>
           {/if}
@@ -2870,13 +2938,34 @@
       border-color 80ms ease;
   }
 
-  .header-btn:hover {
+  .header-icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    padding: 0;
+  }
+
+  :global(.header-icon) {
+    display: block;
+  }
+
+  :global(.header-icon.spinning) {
+    animation: spin 0.8s linear infinite;
+  }
+
+  .header-btn:hover:not(:disabled) {
     background: var(--bg-surface-hover);
     color: var(--text-primary);
     border-color: color-mix(in srgb, var(--text-muted) 40%, var(--border-default));
   }
 
-  .header-btn.danger:hover {
+  .header-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
+
+  .header-btn.danger:hover:not(:disabled) {
     background: var(--accent-red);
     color: #fff;
     border-color: var(--accent-red);

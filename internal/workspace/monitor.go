@@ -105,20 +105,6 @@ func (m *PRMonitor) detectAssociatedPR(
 	if currentBranch == "" {
 		return 0, false, nil
 	}
-	// Skip while the workspace is still on its managed issue branch:
-	// no associated PR can exist yet. The bare-form fallback only
-	// applies when the workspace pre-dates the slug feature (empty
-	// GitHeadRef); otherwise a user who hand-checks-out the legacy
-	// bare branch name on a slug-style workspace would silently
-	// suppress PR detection for an unrelated branch.
-	managedBranch := ws.GitHeadRef
-	if managedBranch == "" {
-		managedBranch = issueWorkspaceBranch(ws.ItemNumber)
-	}
-	if currentBranch == managedBranch {
-		return 0, false, nil
-	}
-
 	candidates, err := m.db.ListMergeRequests(ctx, db.ListMergeRequestsOpts{
 		PlatformHost: ws.PlatformHost,
 		RepoOwner:    ws.RepoOwner,

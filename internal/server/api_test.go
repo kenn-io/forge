@@ -22736,26 +22736,6 @@ func prepareIssueWorkspaceAssociationFixture(
 	require.NoError(err)
 	require.NotNil(repo)
 
-	now := time.Now().UTC().Truncate(time.Second)
-	mr := &db.MergeRequest{
-		RepoID:         repo.ID,
-		PlatformID:     7000,
-		Number:         42,
-		URL:            "https://github.com/acme/widget/pull/42",
-		Title:          "Workspace monitor association",
-		Author:         "alice",
-		State:          "open",
-		HeadBranch:     "issue-feature-7",
-		BaseBranch:     "main",
-		CIStatus:       "success",
-		ReviewDecision: "APPROVED",
-		CreatedAt:      now,
-		UpdatedAt:      now,
-		LastActivityAt: now,
-	}
-	_, err = fixture.database.UpsertMergeRequest(ctx, mr)
-	require.NoError(err)
-
 	createRR := doJSON(
 		t,
 		fixture.server,
@@ -22770,8 +22750,39 @@ func prepareIssueWorkspaceAssociationFixture(
 	require.NotEmpty(created.ID)
 
 	ready := waitForWorkspaceReady(t, ctx, fixture.client, created.ID)
-	runGit(t, ready.WorktreePath, "checkout", "-b", "issue-feature-7")
-	mr.PlatformHeadSHA = testGitSHA(t, ready.WorktreePath, "HEAD")
+	require.NoError(os.WriteFile(
+		filepath.Join(ready.WorktreePath, "feature.txt"),
+		[]byte("feature\n"),
+		0o644,
+	))
+	runGit(t, ready.WorktreePath, "add", ".")
+	runGit(t, ready.WorktreePath, "commit", "-m", "feature commit")
+	runGit(t, ready.WorktreePath, "push", "-u", "origin", ready.GitHeadRef)
+	runGit(
+		t, ready.WorktreePath,
+		"remote", "set-url", "origin", "git@github.com:acme/widget.git",
+	)
+
+	now := time.Now().UTC().Truncate(time.Second)
+	headSHA := testGitSHA(t, ready.WorktreePath, "HEAD")
+	mr := &db.MergeRequest{
+		RepoID:           repo.ID,
+		PlatformID:       7000,
+		Number:           42,
+		URL:              "https://github.com/acme/widget/pull/42",
+		Title:            "Workspace monitor association",
+		Author:           "alice",
+		State:            "open",
+		HeadBranch:       ready.GitHeadRef,
+		HeadRepoCloneURL: "https://github.com/acme/widget.git",
+		PlatformHeadSHA:  headSHA,
+		BaseBranch:       "main",
+		CIStatus:         "success",
+		ReviewDecision:   "APPROVED",
+		CreatedAt:        now,
+		UpdatedAt:        now,
+		LastActivityAt:   now,
+	}
 	_, err = fixture.database.UpsertMergeRequest(ctx, mr)
 	require.NoError(err)
 

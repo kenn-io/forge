@@ -235,6 +235,47 @@ func TestPRMonitorRunOnceSkipsSyntheticIssueBranch(t *testing.T) {
 	assert.Nil(ws.AssociatedPRNumber)
 }
 
+func TestPRMonitorRunOnceAssociatesPRFromManagedIssueBranch(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := context.Background()
+
+	repoID := seedRepo(t, d, "github.com", "acme", "widget")
+	seedIssue(t, d, repoID, 7, "Track workspace association")
+	seedMRWithHeadRepo(
+		t, d, repoID, 42,
+		"middleman/issue-7", "https://github.com/acme/widget.git",
+	)
+
+	worktreePath := setupMonitorRepo(t)
+	runWorkspaceTestGit(t, worktreePath, "checkout", "-b", "middleman/issue-7")
+	require.NoError(os.WriteFile(
+		filepath.Join(worktreePath, "feature.txt"), []byte("feature\n"), 0o644,
+	))
+	runWorkspaceTestGit(t, worktreePath, "add", ".")
+	runWorkspaceTestGit(t, worktreePath, "commit", "-m", "feature commit")
+	runWorkspaceTestGit(t, worktreePath, "push", "-u", "origin", "middleman/issue-7")
+	runWorkspaceTestGit(
+		t, worktreePath,
+		"remote", "set-url", "origin", "git@github.com:acme/widget.git",
+	)
+	insertMonitorWorkspace(t, d, worktreePath, nil)
+
+	monitor := NewPRMonitor(d)
+	updates, err := monitor.RunOnce(ctx)
+	require.NoError(err)
+	require.Len(updates, 1)
+	assert.Equal("ws-issue", updates[0].WorkspaceID)
+	assert.Equal(42, updates[0].PRNumber)
+
+	ws, err := d.GetWorkspace(ctx, "ws-issue")
+	require.NoError(err)
+	require.NotNil(ws)
+	require.NotNil(ws.AssociatedPRNumber)
+	assert.Equal(42, *ws.AssociatedPRNumber)
+}
+
 func TestPRMonitorRunOnceAssociatesPRWhenSlugWorkspaceCheckedOutToBareBranch(t *testing.T) {
 	// Regression: a slug-style workspace (GitHeadRef = the slugged
 	// branch) checked out to the legacy bare-form branch

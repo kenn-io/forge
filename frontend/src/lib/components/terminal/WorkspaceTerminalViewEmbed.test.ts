@@ -19,11 +19,16 @@ const mocks = vi.hoisted(() => ({
     POST: vi.fn(),
     DELETE: vi.fn(),
   },
+  showFlash: vi.fn(),
 }));
 
 vi.mock("../../api/runtime.js", () => ({
   client: mocks.runtimeClient,
   apiErrorMessage: (_err: unknown, fallback: string) => fallback,
+}));
+
+vi.mock("../../stores/flash.svelte.js", () => ({
+  showFlash: mocks.showFlash,
 }));
 
 vi.mock("../../api/workspace-runtime.js", () => ({
@@ -127,6 +132,7 @@ describe("WorkspaceTerminalView embed props", () => {
     mocks.runtimeClient.GET.mockReset();
     mocks.runtimeClient.POST.mockReset();
     mocks.runtimeClient.DELETE.mockReset();
+    mocks.showFlash.mockReset();
     mocks.runtimeClient.GET.mockResolvedValue({
       data: readyWorkspaceData,
       error: undefined,
@@ -244,5 +250,31 @@ describe("WorkspaceTerminalView embed props", () => {
     expect(mocks.runtimeClient.POST).toHaveBeenCalledWith("/workspaces/{id}/refresh", {
       params: { path: { id: "ws-1" } },
     });
+  });
+
+  it("shows a flash when workspace detail refresh fails", async () => {
+    mocks.runtimeClient.GET.mockResolvedValue({
+      data: readyIssueWorkspaceData,
+      error: undefined,
+      response: { status: 200 },
+    });
+    mocks.runtimeClient.POST.mockResolvedValue({
+      data: undefined,
+      error: { detail: "temporarily unavailable" },
+      response: { status: 503 },
+    });
+
+    render(WorkspaceTerminalView, {
+      props: {
+        workspaceId: "ws-1",
+        hideWorkspaceList: true,
+      },
+    });
+
+    await waitFor(() => expect(screen.getAllByText("feature/embed-props").length).toBeGreaterThan(0));
+
+    await fireEvent.click(screen.getByRole("button", { name: "Refresh workspace details" }));
+
+    await waitFor(() => expect(mocks.showFlash).toHaveBeenCalledWith("Refresh failed (503)"));
   });
 });

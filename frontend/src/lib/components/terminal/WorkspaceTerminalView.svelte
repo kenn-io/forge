@@ -74,6 +74,7 @@
     SpinnerIcon,
   } from "../../icons.ts";
   import { apiErrorMessage, client } from "../../api/runtime.js";
+  import { showFlash } from "../../stores/flash.svelte.js";
 
   interface Workspace {
     id: string;
@@ -1881,10 +1882,12 @@
       );
       if (id !== workspaceId) return;
       if (!data) {
-        actionError = apiErrorMessage(
+        const message = apiErrorMessage(
           error,
           `Refresh failed (${response.status})`,
         );
+        actionError = message;
+        showFlash(message);
         return;
       }
       workspace = data as Workspace;
@@ -1895,10 +1898,12 @@
       }
     } catch (err) {
       if (id !== workspaceId) return;
-      actionError =
+      const message =
         err instanceof Error
           ? err.message
           : "Refresh failed";
+      actionError = message;
+      showFlash(message);
     } finally {
       refreshingWorkspace = false;
     }

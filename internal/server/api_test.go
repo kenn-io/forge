@@ -22766,6 +22766,8 @@ func prepareIssueWorkspaceAssociationFixture(
 		[]byte("feature\n"),
 		0o644,
 	))
+	runGit(t, ready.WorktreePath, "config", "user.email", "test@test.com")
+	runGit(t, ready.WorktreePath, "config", "user.name", "Test")
 	runGit(t, ready.WorktreePath, "add", ".")
 	runGit(t, ready.WorktreePath, "commit", "-m", "feature commit")
 	runGit(t, ready.WorktreePath, "push", "-u", "origin", ready.GitHeadRef)
@@ -22989,6 +22991,8 @@ func TestWorkspaceManualRefreshDiscoversAndSyncsAssociatedPR(t *testing.T) {
 		[]byte("feature\n"),
 		0o644,
 	))
+	runGit(t, ready.WorktreePath, "config", "user.email", "test@test.com")
+	runGit(t, ready.WorktreePath, "config", "user.name", "Test")
 	runGit(t, ready.WorktreePath, "add", ".")
 	runGit(t, ready.WorktreePath, "commit", "-m", "feature commit")
 	runGit(t, ready.WorktreePath, "push", "-u", "origin", ready.GitHeadRef)

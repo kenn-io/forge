@@ -684,7 +684,9 @@ func TestValidateWorktreeBasePathAcceptsLoopbackHTTPOrigin(t *testing.T) {
 	)
 
 	require.NoError(err)
-	require.Equal(localRepo, got)
+	canonicalLocalRepo, err := filepath.EvalSymlinks(localRepo)
+	require.NoError(err)
+	require.Equal(canonicalLocalRepo, got)
 }
 
 func TestValidateWorktreeBasePathAcceptsSCPStyleSSHOrigin(t *testing.T) {
@@ -701,24 +703,47 @@ func TestValidateWorktreeBasePathAcceptsSCPStyleSSHOrigin(t *testing.T) {
 	)
 
 	require.NoError(err)
-	require.Equal(localRepo, got)
+	canonicalLocalRepo, err := filepath.EvalSymlinks(localRepo)
+	require.NoError(err)
+	require.Equal(canonicalLocalRepo, got)
 }
 
-func TestValidateWorktreeBasePathRejectsSymlinkPath(t *testing.T) {
+func TestValidateWorktreeBasePathCanonicalizesSymlinkPath(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 
 	localRepo := setupLocalWorktreeBaseForWorkspaceGitTest(t, "feature/thing")
-	linkPath := filepath.Join(t.TempDir(), "repo-link")
-	require.NoError(os.Symlink(localRepo, linkPath))
+	canonicalLocalRepo, err := filepath.EvalSymlinks(localRepo)
+	require.NoError(err)
+	parentLink := filepath.Join(t.TempDir(), "parent-link")
+	require.NoError(os.Symlink(filepath.Dir(localRepo), parentLink))
+	tests := []struct {
+		name string
+		path string
+	}{
+		{
+			name: "final component",
+			path: func() string {
+				linkPath := filepath.Join(t.TempDir(), "repo-link")
+				require.NoError(os.Symlink(localRepo, linkPath))
+				return linkPath
+			}(),
+		},
+		{
+			name: "parent component",
+			path: filepath.Join(parentLink, filepath.Base(localRepo)),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ValidateWorktreeBasePath(
+				t.Context(), tt.path, "github.com", "acme", "widget",
+			)
 
-	got, err := ValidateWorktreeBasePath(
-		t.Context(), linkPath, "github.com", "acme", "widget",
-	)
-
-	require.Empty(got)
-	require.Error(err)
-	assert.Contains(err.Error(), "symbolic link")
+			require.NoError(err)
+			assert.Equal(canonicalLocalRepo, got)
+		})
+	}
 }
 
 func TestValidateWorktreeBasePathRejectsAdditionalOriginURLs(t *testing.T) {
@@ -784,7 +809,9 @@ func TestValidateWorktreeBasePathAcceptsSingleBranchOriginFetchRefspec(t *testin
 	)
 
 	require.NoError(err)
-	require.Equal(localRepo, got)
+	canonicalLocalRepo, err := filepath.EvalSymlinks(localRepo)
+	require.NoError(err)
+	require.Equal(canonicalLocalRepo, got)
 }
 
 func TestValidateWorktreeBasePathRejectsBareRepositories(t *testing.T) {

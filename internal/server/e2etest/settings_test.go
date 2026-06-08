@@ -352,12 +352,14 @@ func TestRepoConfigAPIE2EUpdatesWorktreeBasePath(t *testing.T) {
 	require.NoError(json.NewDecoder(updateResp.Body).Decode(&updated))
 	require.Len(updated.Repos, 1)
 	require.NotNil(updated.Repos[0].WorktreeBasePath)
-	assert.Equal(localRepo, *updated.Repos[0].WorktreeBasePath)
+	canonicalLocalRepo, err := filepath.EvalSymlinks(localRepo)
+	require.NoError(err)
+	assert.Equal(canonicalLocalRepo, *updated.Repos[0].WorktreeBasePath)
 
 	cfgAfterUpdate, err := config.Load(cfgPath)
 	require.NoError(err)
 	require.Len(cfgAfterUpdate.Repos, 1)
-	assert.Equal(localRepo, cfgAfterUpdate.Repos[0].WorktreeBasePath)
+	assert.Equal(canonicalLocalRepo, cfgAfterUpdate.Repos[0].WorktreeBasePath)
 
 	clearResp := doServerJSON(
 		t, ts.Client(), http.MethodPut,
@@ -488,6 +490,104 @@ name = "widget"
 	require.NoError(err)
 	require.NotNil(stored)
 	assert.Equal("feature/thing", stored.WorkspaceBranch)
+
+	canonicalWorktreePath, err := filepath.EvalSymlinks(ready.WorktreePath)
+	require.NoError(err)
+	listOutput := string(runSettingsGitOutput(
+		t, localRepo, "worktree", "list", "--porcelain",
+	))
+	assert.Contains(listOutput, "worktree "+canonicalWorktreePath)
+}
+
+func TestRepoConfigAPIE2EWorkspaceCreationUsesFallbackBranchWhenPreferredCheckedOut(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	localRepo, remote, platformHost := setupSettingsLocalGitRepo(t)
+	require.NoError(os.WriteFile(cfgPath, []byte(`
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[tmux]
+command = ["sh", "-c", "exit 0"]
+
+[[repos]]
+platform_host = "`+platformHost+`"
+owner = "acme"
+name = "widget"
+`), 0o644))
+	cfg, err := config.Load(cfgPath)
+	require.NoError(err)
+
+	database := dbtest.Open(t)
+	repoID, err := database.UpsertRepo(
+		t.Context(), db.GitHubRepoIdentity(platformHost, "acme", "widget"),
+	)
+	require.NoError(err)
+	seedSettingsWorkspaceMR(t, database, repoID, 42, "feature/thing")
+
+	syncer := github.NewSyncer(
+		map[string]github.Client{"github.com": &mockGH{}},
+		database, nil,
+		[]github.RepoRef{{Owner: "acme", Name: "widget", PlatformHost: platformHost}},
+		time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+
+	srv := server.NewWithConfig(
+		database, syncer, nil, nil, cfg, cfgPath,
+		server.ServerOptions{WorktreeDir: filepath.Join(dir, "workspaces")},
+	)
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	runSettingsGit(
+		t, localRepo,
+		"push", remote, "HEAD:refs/heads/feature/thing",
+	)
+	runSettingsGit(t, remote, "update-server-info")
+	runSettingsGit(t, localRepo, "fetch", "--prune", "origin")
+	runSettingsGit(
+		t, localRepo, "checkout", "-B",
+		"feature/thing", "refs/remotes/origin/feature/thing",
+	)
+
+	client, err := generated.NewClientWithResponses(ts.URL + "/api/v1")
+	require.NoError(err)
+	updateResp, err := client.UpdateRepoWorktreeBaseOnHostWithResponse(
+		t.Context(), platformHost, "github", "acme", "widget",
+		generated.RepoWorktreeBaseRequest{WorktreeBasePath: localRepo},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, updateResp.StatusCode(), string(updateResp.Body))
+	createResp, err := client.CreateWorkspaceWithResponse(
+		t.Context(),
+		generated.CreateWorkspaceInputBody{
+			PlatformHost: platformHost,
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     42,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, createResp.StatusCode(), string(createResp.Body))
+	require.NotNil(createResp.JSON202)
+
+	ready := waitForSettingsWorkspaceReady(t, client, createResp.JSON202.Id)
+	assert.Equal("ready", ready.Status)
+	assert.Equal("feature/thing", ready.GitHeadRef)
+	stored, err := database.GetWorkspace(t.Context(), ready.Id)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Equal("middleman/pr-42", stored.WorkspaceBranch)
+	assert.Equal("middleman/pr-42", strings.TrimSpace(string(runSettingsGitOutput(
+		t, ready.WorktreePath, "branch", "--show-current",
+	))))
 
 	canonicalWorktreePath, err := filepath.EvalSymlinks(ready.WorktreePath)
 	require.NoError(err)

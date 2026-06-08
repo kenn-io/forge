@@ -622,14 +622,14 @@ func ValidateWorktreeBasePath(
 	if err != nil {
 		return "", fmt.Errorf("resolve path: %w", err)
 	}
-	if linkInfo, err := os.Lstat(abs); err != nil {
+	evaluated, err := filepath.EvalSymlinks(abs)
+	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return "", fmt.Errorf("path does not exist: %s", abs)
 		}
-		return "", fmt.Errorf("lstat path: %w", err)
-	} else if linkInfo.Mode()&os.ModeSymlink != 0 {
-		return "", fmt.Errorf("path must not be a symbolic link: %s", abs)
+		return "", fmt.Errorf("resolve symbolic links: %w", err)
 	}
+	abs = evaluated
 	stat, err := os.Stat(abs)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {

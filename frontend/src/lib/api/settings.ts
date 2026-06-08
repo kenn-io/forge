@@ -124,20 +124,12 @@ export async function updateRepoWorktreeBasePath(
     name,
     repoPath: `${owner}/${name}`,
   };
-  const { data, error, response } = await client.PUT(
-    providerRepoPath(ref, "/worktree-base"),
-    {
-      params: { path: providerRouteParams(ref) },
-      body: { worktree_base_path: worktreeBasePath },
-    },
-  );
+  const { data, error, response } = await client.PUT(providerRepoPath(ref, "/worktree-base"), {
+    params: { path: providerRouteParams(ref) },
+    body: { worktree_base_path: worktreeBasePath },
+  });
   if (!data) {
-    throw new Error(
-      requestErrorMessage(
-        error,
-        `PUT /repos/{owner}/{name}/worktree-base -> ${response.status}`,
-      ),
-    );
+    throw new Error(requestErrorMessage(error, `PUT /repos/{owner}/{name}/worktree-base -> ${response.status}`));
   }
   return data;
 }

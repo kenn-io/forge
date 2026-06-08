@@ -21,13 +21,7 @@ vi.mock("../../api/settings.js", () => ({
   bulkAddRepos: vi.fn(),
 }));
 
-import {
-  addRepo,
-  bulkAddRepos,
-  previewRepos,
-  refreshRepo,
-  updateRepoWorktreeBasePath,
-} from "../../api/settings.js";
+import { addRepo, bulkAddRepos, previewRepos, refreshRepo, updateRepoWorktreeBasePath } from "../../api/settings.js";
 import RepoSettings from "./RepoSettings.svelte";
 
 const mockAddRepo = vi.mocked(addRepo);
@@ -299,10 +293,9 @@ describe("RepoSettings", () => {
       },
     });
 
-    await fireEvent.input(
-      screen.getByPlaceholderText("Optional local repository path"),
-      { target: { value: "/Users/acme/api" } },
-    );
+    await fireEvent.input(screen.getByPlaceholderText("Optional local repository path"), {
+      target: { value: "/Users/acme/api" },
+    });
     await fireEvent.click(screen.getByRole("button", { name: "Save worktree base for acme/api" }));
 
     expect(mockUpdateRepoWorktreeBasePath).toHaveBeenCalledWith(

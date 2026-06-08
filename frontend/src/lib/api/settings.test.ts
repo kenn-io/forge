@@ -1,11 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import {
-  bulkAddRepos,
-  previewRepos,
-  removeRepo,
-  updateRepoWorktreeBasePath,
-  updateSettings,
-} from "./settings.js";
+import { bulkAddRepos, previewRepos, removeRepo, updateRepoWorktreeBasePath, updateSettings } from "./settings.js";
 
 describe("settings api", () => {
   beforeEach(() => {
@@ -168,16 +162,19 @@ describe("settings api", () => {
   });
 
   it("updates a repo worktree base path", async () => {
-    await updateRepoWorktreeBasePath("acme", "widgets", {
-      provider: "github",
-      host: "github.com",
-    }, "/Users/acme/widgets");
+    await updateRepoWorktreeBasePath(
+      "acme",
+      "widgets",
+      {
+        provider: "github",
+        host: "github.com",
+      },
+      "/Users/acme/widgets",
+    );
 
     const request = vi.mocked(fetch).mock.calls[0]?.[0];
     expect(request).toBeInstanceOf(Request);
-    expect(new URL((request as Request).url).pathname).toBe(
-      "/api/v1/repo/github/acme/widgets/worktree-base",
-    );
+    expect(new URL((request as Request).url).pathname).toBe("/api/v1/repo/github/acme/widgets/worktree-base");
     expect((request as Request).method).toBe("PUT");
     await expect((request as Request).clone().json()).resolves.toEqual({
       worktree_base_path: "/Users/acme/widgets",

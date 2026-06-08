@@ -438,7 +438,28 @@ function treeFileItem(pageOrLocator: Page | ReturnType<Page["locator"]>, path: s
 }
 
 async function clickVisibleTarget(target: Locator): Promise<void> {
-  await target.click({ timeout: 10_000 });
+  await expect
+    .poll(
+      async () => {
+        try {
+          return await target.evaluate((element) => {
+            if (!(element instanceof HTMLElement)) return false;
+            const rect = element.getBoundingClientRect();
+            const style = getComputedStyle(element);
+            if (rect.width <= 0 || rect.height <= 0 || style.display === "none" || style.visibility === "hidden") {
+              return false;
+            }
+            element.scrollIntoView({ block: "center", inline: "center" });
+            element.click();
+            return true;
+          });
+        } catch {
+          return false;
+        }
+      },
+      { timeout: 10_000 },
+    )
+    .toBe(true);
 }
 
 async function clickTreeFileItem(pageOrLocator: Page | ReturnType<Page["locator"]>, path: string): Promise<void> {

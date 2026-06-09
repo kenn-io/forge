@@ -382,6 +382,77 @@ func TestRuntimeLaunchStripsReloadedAndImplicitTokenEnvsE2E(t *testing.T) {
 	assert.Equal("unset\nunset\nunset\nunset\nvisible\n", data)
 }
 
+// equivalentCloneTokenChainReloadConfig points two providers at one
+// self-hosted host. The forgejo repo's token_env repeats its platform fallback
+// (env:SHARED -> env:SHARED) while gitlab resolves to a plain env:SHARED. Both
+// name the same token, so the per-host clone-token reload check must compare
+// canonical chains and keep the reload valid rather than flag a host conflict.
+const equivalentCloneTokenChainReloadConfig = `
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[platforms]]
+type = "forgejo"
+host = "code.example.com"
+token_env = "SHARED"
+
+[[platforms]]
+type = "gitlab"
+host = "code.example.com"
+token_env = "SHARED"
+
+[[repos]]
+owner = "acme"
+name = "widget"
+platform = "forgejo"
+platform_host = "code.example.com"
+token_env = "SHARED"
+`
+
+func TestEquivalentCloneTokenChainsReloadStaysValidE2E(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	dir := t.TempDir()
+
+	cfgPath := filepath.Join(dir, "config.toml")
+	require.NoError(os.WriteFile(cfgPath, []byte(`
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "widget"
+`), 0o644))
+	cfg, err := config.Load(cfgPath)
+	require.NoError(err)
+
+	database := dbtest.Open(t)
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": &mockGH{}},
+		database, nil, nil, time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	srv := server.NewWithConfig(
+		database, syncer, nil, nil, cfg, cfgPath, server.ServerOptions{},
+	)
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	httpServer := httptest.NewServer(srv)
+	t.Cleanup(httpServer.Close)
+
+	stream := streamTokenRotationConfigEvents(t, srv, httpServer)
+	defer stream.Close()
+
+	writeConfigTomlAtomically(t, cfgPath, equivalentCloneTokenChainReloadConfig)
+
+	ev := waitForTokenRotationConfigEvent(t, stream, 3*time.Second)
+	assert.True(ev.Valid, "reload error: %s", ev.Error)
+	assert.Empty(ev.Error)
+}
+
 func collectStartupTokenSource(
 	t *testing.T,
 	cfg *config.Config,

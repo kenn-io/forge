@@ -15036,6 +15036,135 @@ func TestAPIGetFilesAndDiffMarkGeneratedFilesE2E(t *testing.T) {
 	assert.False(requireWorkspaceDiffFile(t, *diffResp.JSON200.Files, "src.ts").IsGenerated)
 }
 
+// countingTokenFileSource wraps a managed token-file source and records how
+// many times the credential is resolved. Local-read endpoints must never
+// resolve it, so the count stays at zero even after the file is emptied.
+type countingTokenFileSource struct {
+	inner *tokenauth.ManagedSource
+	calls atomic.Int64
+}
+
+func (s *countingTokenFileSource) Token(ctx context.Context) (string, error) {
+	s.calls.Add(1)
+	return s.inner.Token(ctx)
+}
+
+func (s *countingTokenFileSource) Invalidate() { s.inner.Invalidate() }
+
+func (s *countingTokenFileSource) Descriptor() tokenauth.Descriptor {
+	return s.inner.Descriptor()
+}
+
+// TestAPILocalReadEndpointsServeDuringTokenRotationE2E proves that an
+// already-cloned repo keeps serving diff, files, file-preview, and commits
+// after its host token file is emptied mid-rotation. Those endpoints only run
+// local git reads, so they must never resolve the credential; if they did, the
+// briefly empty file would surface a missing-token error and break commit and
+// diff views for repos that are already on disk.
+func TestAPILocalReadEndpointsServeDuringTokenRotationE2E(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := t.Context()
+
+	dir := t.TempDir()
+	database := dbtest.Open(t)
+
+	bareDir := filepath.Join(dir, "clones")
+	bare := filepath.Join(bareDir, "github.com", "acme", "widget.git")
+	require.NoError(os.MkdirAll(filepath.Dir(bare), 0o755))
+
+	work := filepath.Join(dir, "work")
+	runGit(t, dir, "init", "--bare", "--initial-branch=main", bare)
+	runGit(t, dir, "clone", bare, work)
+	runGit(t, work, "config", "user.email", "test@test.com")
+	runGit(t, work, "config", "user.name", "Test")
+
+	require.NoError(os.WriteFile(filepath.Join(work, "base.txt"), []byte("base\n"), 0o644))
+	runGit(t, work, "add", ".")
+	runGit(t, work, "commit", "-m", "base commit")
+	runGit(t, work, "push", "origin", "main")
+	mergeBase := testGitSHA(t, work, "HEAD")
+
+	runGit(t, work, "checkout", "-b", "feature")
+	require.NoError(os.WriteFile(filepath.Join(work, "feature.txt"), []byte("feature\n"), 0o644))
+	runGit(t, work, "add", ".")
+	runGit(t, work, "commit", "-m", "feature commit")
+	runGit(t, work, "push", "origin", "feature")
+	headSHA := testGitSHA(t, work, "HEAD")
+
+	// A token-file source modeling the credential that was valid when the
+	// clone was created. Rotation empties the file before the reads below.
+	tokenPath := filepath.Join(dir, "github-token")
+	require.NoError(os.WriteFile(tokenPath, []byte("ghp_local_rotation_token\n"), 0o600))
+	source := &countingTokenFileSource{
+		inner: tokenauth.NewManagedSource(tokenauth.Descriptor{
+			Key: tokenauth.Key{Platform: string(platform.KindGitHub), Host: "github.com"},
+			Candidates: []tokenauth.Candidate{
+				{Kind: tokenauth.SourceKindFile, FilePath: tokenPath},
+			},
+		}, tokenauth.Options{}),
+	}
+
+	clones := gitclone.New(bareDir, map[string]tokenauth.Source{"github.com": source})
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": &mockGH{}},
+		database, nil, defaultTestRepos, time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{Clones: clones})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	client := setupTestClient(t, srv)
+
+	seedPR(t, database, "acme", "widget", 1)
+	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	require.NoError(database.UpdateDiffSHAs(ctx, repoID, 1, headSHA, mergeBase, mergeBase))
+
+	// Rotation in progress: the token file is briefly empty. Any attempt to
+	// resolve it now fails, so the local-read endpoints below must not try.
+	require.NoError(os.WriteFile(tokenPath, []byte("\n"), 0o600))
+
+	commitsResp, err := client.HTTP.GetPullCommitsWithResponse(ctx, "gh", "acme", "widget", 1)
+	require.NoError(err)
+	require.Equal(http.StatusOK, commitsResp.StatusCode(), string(commitsResp.Body))
+	require.NotNil(commitsResp.JSON200)
+	require.Len(*commitsResp.JSON200.Commits, 1)
+	assert.Equal(headSHA, (*commitsResp.JSON200.Commits)[0].Sha)
+
+	diffResp, err := client.HTTP.GetPullDiffWithResponse(ctx, "gh", "acme", "widget", 1, nil)
+	require.NoError(err)
+	require.Equal(http.StatusOK, diffResp.StatusCode(), string(diffResp.Body))
+	require.NotNil(diffResp.JSON200)
+	require.Len(*diffResp.JSON200.Files, 1)
+
+	filesResp, err := client.HTTP.GetPullFilesWithResponse(ctx, "gh", "acme", "widget", 1)
+	require.NoError(err)
+	require.Equal(http.StatusOK, filesResp.StatusCode(), string(filesResp.Body))
+	require.NotNil(filesResp.JSON200)
+	require.Len(*filesResp.JSON200.Files, 1)
+
+	previewPath := "feature.txt"
+	previewResp, err := client.HTTP.GetPullFilePreviewWithResponse(
+		ctx, "gh", "acme", "widget", 1,
+		&generated.GetPullFilePreviewParams{Path: &previewPath},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, previewResp.StatusCode(), string(previewResp.Body))
+	require.NotNil(previewResp.JSON200)
+	assert.Equal(previewPath, previewResp.JSON200.Path)
+	decoded, err := base64.StdEncoding.DecodeString(previewResp.JSON200.Content)
+	require.NoError(err)
+	assert.Equal("feature\n", string(decoded))
+
+	// The local-read endpoints above never resolved the rotated-out token.
+	assert.Zero(source.calls.Load())
+
+	// Sanity: resolving the emptied file really does fail, so the zero count
+	// means the reads skipped the source rather than finding a usable token.
+	_, err = source.Token(ctx)
+	require.ErrorIs(err, tokenauth.ErrMissingToken)
+}
+
 func TestSetActiveWorktreeKey(t *testing.T) {
 	assert := Assert.New(t)
 	srv, _ := setupTestServer(t)

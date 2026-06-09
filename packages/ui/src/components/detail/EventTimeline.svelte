@@ -1355,27 +1355,7 @@
   }
 
   .event-card--compact {
-    background: transparent;
-    border-color: transparent;
-    border-radius: var(--radius-sm);
-    padding: 0.38rem var(--focus-detail-space-xs, 0.62rem);
-    margin-top: 0.12rem;
-    margin-bottom: 0.12rem;
-  }
-
-  .event-card--compact:hover {
-    background: var(--bg-surface-hover);
-    border-color: var(--border-muted);
-  }
-
-  .event--compact .event-rail {
-    padding-top: 0.76rem;
-  }
-
-  .event--compact .dot {
-    width: 0.65rem;
-    height: 0.65rem;
-    box-shadow: 0 0 0 0.18rem var(--bg-primary);
+    padding: var(--focus-detail-space-xs, 0.54rem) var(--focus-detail-space-sm, 0.77rem);
   }
 
   .event-header {
@@ -1396,9 +1376,9 @@
 
   .event-type {
     font-size: var(--font-size-xs);
-    font-weight: 650;
+    font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0;
+    letter-spacing: 0.04em;
   }
 
   .event-author {

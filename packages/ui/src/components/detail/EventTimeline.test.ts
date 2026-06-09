@@ -259,25 +259,6 @@ describe("EventTimeline", () => {
     expect(dot?.getAttribute("style")).toContain("var(--accent-purple)");
   });
 
-  it("renders compact lifecycle rows without boxed card chrome", () => {
-    render(EventTimeline, {
-      props: {
-        events: [
-          makeEvent({
-            EventType: "merged",
-            Summary: "merged this",
-          }),
-        ],
-      },
-    });
-
-    expect(document.querySelector(".event-card--compact")).toBeTruthy();
-    const compactCardStyle = findCompiledStyleRule(".event-card--compact");
-    expect(compactCardStyle.getPropertyValue("background")).toBe("transparent");
-    expect(compactCardStyle.getPropertyValue("border-color")).toBe("transparent");
-    expect(compactCardStyle.getPropertyValue("border-radius")).toBe("var(--radius-sm)");
-  });
-
   it("collapses duplicate merge lifecycle rows into the single authored transition", () => {
     render(EventTimeline, {
       props: {

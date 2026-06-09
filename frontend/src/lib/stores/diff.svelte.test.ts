@@ -406,6 +406,66 @@ describe("createDiffStore loadDiff", () => {
     expect(store.getScope()).toEqual({ kind: "commit", sha: "sha2" });
   });
 
+  it("resets workspace commit scope when refresh removes the selected commit", async () => {
+    const calls: string[] = [];
+    const commitResponses = [
+      [
+        {
+          sha: "sha2",
+          message: "second",
+          author_name: "Alice",
+          authored_at: "2026-01-01T00:00:00Z",
+        },
+      ],
+      [
+        {
+          sha: "sha3",
+          message: "third",
+          author_name: "Alice",
+          authored_at: "2026-01-02T00:00:00Z",
+        },
+      ],
+    ];
+    const files = makeFilesResult(["src/app.go"]);
+    const diff = makeDiffResult(["src/app.go"]);
+
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      calls.push(url);
+      if (url.includes("/workspaces/ws-1/commits")) {
+        return Response.json({
+          commits: commitResponses.shift() ?? [],
+        });
+      }
+      if (url.includes("/workspaces/ws-1/files")) {
+        return Response.json(files);
+      }
+      if (url.includes("/workspaces/ws-1/diff")) {
+        return Response.json(diff);
+      }
+      return Response.json({}, { status: 404 });
+    });
+
+    const store = createDiffStore({ client: testClient() });
+    await store.loadWorkspaceDiff("ws-1", "merge-target");
+    await store.loadCommits();
+    store.selectCommit("sha2");
+
+    await vi.waitFor(() => {
+      expect(calls).toContain("/api/v1/workspaces/ws-1/diff?base=merge-target&commit=sha2");
+    });
+
+    calls.length = 0;
+    await store.loadWorkspaceDiff("ws-1", "merge-target", false, { refreshCommits: true });
+
+    expect(calls).toContain("/api/v1/workspaces/ws-1/commits");
+    expect(calls).toContain("/api/v1/workspaces/ws-1/files?base=merge-target");
+    expect(calls).toContain("/api/v1/workspaces/ws-1/diff?base=merge-target");
+    expect(calls.some((url) => url.includes("commit=sha2"))).toBe(false);
+    expect(store.getCommits()?.map((commit) => commit.sha)).toEqual(["sha3"]);
+    expect(store.getScope()).toEqual({ kind: "head" });
+  });
+
   it("applies selected range scope to workspace files and patch requests", async () => {
     const calls: string[] = [];
     const files = makeFilesResult(["src/app.go"]);

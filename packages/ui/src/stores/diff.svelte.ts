@@ -559,6 +559,16 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     commitsError = null;
   }
 
+  function resetScopeIfMissingFromLoadedCommits(): void {
+    if (!commits || scope.kind === "head") return;
+    const hasCommit = (sha: string) => commits?.some((commit) => commit.sha === sha) ?? false;
+    const scopeStillExists =
+      scope.kind === "commit" ? hasCommit(scope.sha) : hasCommit(scope.fromSha) && hasCommit(scope.toSha);
+    if (scopeStillExists) return;
+    scope = { kind: "head" };
+    clearFilePreviewCache();
+  }
+
   function startDiffLoad(): {
     diffAc: AbortController;
     filesAc: AbortController;
@@ -702,7 +712,11 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     if (workspaceScopeChanged) {
       resetDiffScopeState();
     }
-    const commitsPromise = shouldRefreshCommits ? loadCommits({ force: true }) : undefined;
+    if (shouldRefreshCommits) {
+      await loadCommits({ force: true });
+      if (currentWorkspaceID !== workspaceID || currentWorkspaceBase !== base) return;
+      resetScopeIfMissingFromLoadedCommits();
+    }
 
     const { diffAc, filesAc } = startDiffLoad();
 
@@ -745,7 +759,6 @@ export function createDiffStore(opts?: DiffStoreOptions) {
     } finally {
       finishDiffLoad(diffAc);
     }
-    await commitsPromise;
   }
 
   async function loadCommitDiff(identity: ProviderRouteRef, sha: string): Promise<void> {

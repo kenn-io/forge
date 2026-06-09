@@ -354,6 +354,10 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     else if (hasIssue && !hasPR) itemFilter = "issues";
     else itemFilter = "all";
     enabledEvents = new Set(DEFAULT_EVENT_TYPES.filter((t) => filterTypes.includes(t)));
+    // URLs written before the event toggles governed default-branch types can
+    // list default_branch_commit while commit is deselected; rebuild so the
+    // request matches the filter state the dropdown shows.
+    filterTypes = buildActivityFilterTypes(itemFilter, enabledEvents, hideDefaultBranchActivity);
   }
 
   function applyCollapsedFromURL(): void {

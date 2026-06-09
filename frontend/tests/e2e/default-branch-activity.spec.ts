@@ -349,6 +349,22 @@ test.describe("default branch activity", () => {
     ).toBeVisible();
   });
 
+  test("legacy URL with stale default-branch commit types hides commit rows on load", async ({ page }) => {
+    await mockDefaultBranchActivity(page);
+    // URLs written before the fix kept default_branch_commit in the types
+    // param even with commit deselected; hydration must normalize it away.
+    await page.goto(
+      "/?view=flat&types=new_pr,new_issue,default_branch_commit,default_branch_force_push,comment,review,force_push",
+    );
+
+    await expect(page.locator(".activity-row", { hasText: "aaaaaaa -> bbbbbbb" })).toBeVisible();
+    await expect(
+      page.locator(".activity-row", {
+        hasText: "Ship direct main commit",
+      }),
+    ).toHaveCount(0);
+  });
+
   test("deselecting Force pushes hides default-branch force pushes", async ({ page }) => {
     await mockDefaultBranchActivity(page);
     await page.goto("/?view=flat");

@@ -179,6 +179,41 @@ describe("buildActivityFilterTypes", () => {
   });
 });
 
+describe("activity store URL hydration", () => {
+  it("normalizes legacy URLs that kept default-branch commits while commit was deselected", () => {
+    window.history.replaceState(
+      null,
+      "",
+      "/?types=new_pr,new_issue,default_branch_commit,default_branch_force_push,comment,review,force_push",
+    );
+    const s = makeStore();
+    s.initializeFromMount();
+    expect(s.getActivityFilterTypes()).toEqual([
+      "new_pr",
+      "new_issue",
+      "default_branch_force_push",
+      "comment",
+      "review",
+      "force_push",
+    ]);
+    expect(new URLSearchParams(window.location.search).get("types")).toBe(
+      "new_pr,new_issue,default_branch_force_push,comment,review,force_push",
+    );
+  });
+
+  it("normalizes a legacy all-selected types list back to no filter", () => {
+    window.history.replaceState(
+      null,
+      "",
+      "/?types=new_pr,new_issue,default_branch_commit,default_branch_force_push,comment,review,commit,force_push",
+    );
+    const s = makeStore();
+    s.initializeFromMount();
+    expect(s.getActivityFilterTypes()).toEqual([]);
+    expect(new URLSearchParams(window.location.search).has("types")).toBe(false);
+  });
+});
+
 describe("activity store default-branch visibility", () => {
   it("shows default-branch activity by default and persists the hide flag", () => {
     const s = makeStore();

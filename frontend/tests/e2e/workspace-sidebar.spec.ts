@@ -159,6 +159,12 @@ type RuntimeEvents = {
  * priority (Playwright uses LIFO route matching).
  */
 type WorkspaceFixture = typeof testWorkspace | typeof testIssueWorkspace | typeof testIssueWorkspaceWithAssociatedPR;
+type WorkspaceCommitFixture = {
+  sha: string;
+  message: string;
+  author_name: string;
+  authored_at: string;
+};
 
 async function setupTerminalMocks(
   page: import("@playwright/test").Page,
@@ -181,6 +187,7 @@ async function setupTerminalMocks(
     };
     diffRequests?: string[];
     commitRequests?: string[];
+    workspaceCommitResponses?: WorkspaceCommitFixture[][];
     runtime?: WorkspaceRuntime;
     runtimeEvents?: RuntimeEvents;
   },
@@ -191,6 +198,25 @@ async function setupTerminalMocks(
   const rrStatus = opts?.roborevStatus ?? roborevStatus;
   const detailResponses = [...(opts?.workspaceDetailResponses ?? [])];
   const deleteResponses = [...(opts?.workspaceDeleteResponses ?? [])];
+  const commitResponses = [
+    ...(opts?.workspaceCommitResponses ?? [
+      [
+        {
+          sha: "sha2",
+          message: "second commit",
+          author_name: "Alice",
+          authored_at: "2026-01-01T00:00:00Z",
+        },
+        {
+          sha: "sha1",
+          message: "first commit",
+          author_name: "Alice",
+          authored_at: "2026-01-01T00:00:00Z",
+        },
+      ],
+    ]),
+  ];
+  let commitResponseIndex = 0;
   const runtime = JSON.parse(JSON.stringify(opts?.runtime ?? workspaceRuntime)) as WorkspaceRuntime;
 
   // Register catch-all first — later routes override.
@@ -296,24 +322,13 @@ async function setupTerminalMocks(
 
   await page.route(`**/api/v1/workspaces/${ws.id}/commits`, async (route) => {
     opts?.commitRequests?.push(route.request().url());
+    const commits = commitResponses[Math.min(commitResponseIndex, commitResponses.length - 1)] ?? [];
+    commitResponseIndex += 1;
     await route.fulfill({
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({
-        commits: [
-          {
-            sha: "sha2",
-            message: "second commit",
-            author_name: "Alice",
-            authored_at: "2026-01-01T00:00:00Z",
-          },
-          {
-            sha: "sha1",
-            message: "first commit",
-            author_name: "Alice",
-            authored_at: "2026-01-01T00:00:00Z",
-          },
-        ],
+        commits,
       }),
     });
   });
@@ -707,7 +722,7 @@ function hasWorkspaceDiffRequest(
   requests: string[],
   expected: {
     base: string;
-    commit?: string;
+    commit?: string | null;
   },
 ): boolean {
   return requests.some((requestURL) => {
@@ -715,7 +730,10 @@ function hasWorkspaceDiffRequest(
     return (
       url.pathname === "/api/v1/workspaces/ws-123/diff" &&
       url.searchParams.get("base") === expected.base &&
-      (expected.commit === undefined || url.searchParams.get("commit") === expected.commit)
+      (expected.commit === undefined ||
+        (expected.commit === null
+          ? !url.searchParams.has("commit") && !url.searchParams.has("from") && !url.searchParams.has("to")
+          : url.searchParams.get("commit") === expected.commit))
     );
   });
 }
@@ -851,6 +869,58 @@ test.describe("terminal state icons", () => {
 
     await expect.poll(() => hasWorkspaceDiffRequest(diffRequests, { base: "merge-target", commit: "sha2" })).toBe(true);
     await expect.poll(() => commitRequests.length).toBeGreaterThan(0);
+    await expect(page.getByRole("button", { name: "Compare with merge target" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+
+  test("refresh clears workspace diff commit selection when the commit disappears", async ({ page }) => {
+    const diffRequests: string[] = [];
+    const commitRequests: string[] = [];
+    await setupTerminalMocks(page, {
+      diffRequests,
+      commitRequests,
+      workspaceCommitResponses: [
+        [
+          {
+            sha: "sha2",
+            message: "second commit",
+            author_name: "Alice",
+            authored_at: "2026-01-01T00:00:00Z",
+          },
+        ],
+        [
+          {
+            sha: "sha3",
+            message: "third commit",
+            author_name: "Alice",
+            authored_at: "2026-01-02T00:00:00Z",
+          },
+        ],
+      ],
+    });
+
+    await page.goto("/terminal/ws-123");
+    await page.locator(".seg-btn", { hasText: "Diff" }).click();
+
+    await page.getByRole("button", { name: "Compare with merge target" }).click();
+    await expect.poll(() => hasWorkspaceDiffRequest(diffRequests, { base: "merge-target" })).toBe(true);
+
+    const scopeTrigger = page.getByRole("button", { name: /Select commit range/ });
+    await scopeTrigger.click();
+    await page.getByRole("button", { name: /second commit/ }).click();
+    await expect.poll(() => hasWorkspaceDiffRequest(diffRequests, { base: "merge-target", commit: "sha2" })).toBe(true);
+    await expect(scopeTrigger).toHaveAccessibleName(/Select commit range: sha2/);
+
+    diffRequests.length = 0;
+    commitRequests.length = 0;
+    await page.getByRole("button", { name: "Refresh workspace details" }).click();
+
+    await expect.poll(() => commitRequests.length).toBeGreaterThan(0);
+    await expect.poll(() => hasWorkspaceDiffRequest(diffRequests, { base: "merge-target", commit: null })).toBe(true);
+    expect(diffRequests.some((requestURL) => new URL(requestURL).searchParams.get("commit") === "sha2")).toBe(false);
+    await expect(scopeTrigger).toHaveAccessibleName(/Select commit range: HEAD/);
     await expect(page.getByRole("button", { name: "Compare with merge target" })).toHaveAttribute(
       "aria-pressed",
       "true",

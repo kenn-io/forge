@@ -20,6 +20,7 @@ import (
 	"github.com/BurntSushi/toml"
 	platformpkg "go.kenn.io/middleman/internal/platform"
 	"go.kenn.io/middleman/internal/procutil"
+	"go.kenn.io/middleman/internal/tokenauth"
 )
 
 const (
@@ -61,12 +62,14 @@ type Repo struct {
 	Platform     string `toml:"platform,omitempty" json:"platform,omitempty"`
 	PlatformHost string `toml:"platform_host,omitempty" json:"platform_host,omitempty"`
 	TokenEnv     string `toml:"token_env,omitempty" json:"token_env,omitempty"`
+	TokenFile    string `toml:"token_file,omitempty" json:"token_file,omitempty"`
 }
 
 type PlatformConfig struct {
-	Type     string `toml:"type" json:"type"`
-	Host     string `toml:"host" json:"host"`
-	TokenEnv string `toml:"token_env,omitempty" json:"token_env,omitempty"`
+	Type      string `toml:"type" json:"type"`
+	Host      string `toml:"host" json:"host"`
+	TokenEnv  string `toml:"token_env,omitempty" json:"token_env,omitempty"`
+	TokenFile string `toml:"token_file,omitempty" json:"token_file,omitempty"`
 }
 
 func (r Repo) FullName() string {
@@ -771,6 +774,7 @@ func Load(path string) (*Config, error) {
 		cfg.BasePath = bp
 	}
 
+	cfg.normalizeTokenFilePaths(filepath.Dir(path))
 	return cfg, cfg.Validate()
 }
 
@@ -797,6 +801,7 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("config: platforms[%d]: %w", i, err)
 		}
 		p.TokenEnv = strings.TrimSpace(p.TokenEnv)
+		p.TokenFile = strings.TrimSpace(p.TokenFile)
 	}
 	if err := c.validatePlatforms(); err != nil {
 		return err
@@ -811,6 +816,8 @@ func (c *Config) Validate() error {
 		if err := c.Repos[i].normalize(c.DefaultPlatformHost); err != nil {
 			return fmt.Errorf("config: repos[%d]: %w", i, err)
 		}
+		c.Repos[i].TokenEnv = strings.TrimSpace(c.Repos[i].TokenEnv)
+		c.Repos[i].TokenFile = strings.TrimSpace(c.Repos[i].TokenFile)
 	}
 
 	// Reject duplicate repository identities.
@@ -826,20 +833,17 @@ func (c *Config) Validate() error {
 		seen[key] = display
 	}
 
-	// Reject conflicting token_env for the same host. Compare
-	// effective env name: empty TokenEnv means "use platform token
-	// config", with github_token_env as the GitHub default.
-	hostToken := make(map[string]string, len(c.Repos))
+	// Reject conflicting token source descriptors for the same host.
+	// Empty repo-level fields mean "use platform/default token sources".
+	hostToken := make(map[string]tokenauth.Descriptor, len(c.Repos))
 	for _, r := range c.Repos {
 		key := r.PlatformOrDefault() + "\x00" + r.PlatformHostOrDefault()
-		effective := c.effectiveTokenEnvForPlatformHost(
-			r.PlatformOrDefault(), r.PlatformHostOrDefault(), r.TokenEnv,
-		)
+		effective := c.ResolveRepoTokenSource(r)
 		if prev, ok := hostToken[key]; ok {
-			if prev != effective {
+			if !prev.EqualSource(effective) {
 				return fmt.Errorf(
-					"config: conflicting token_env for %s host %q: %q vs %q",
-					r.PlatformOrDefault(), r.PlatformHostOrDefault(), prev, effective,
+					"config: conflicting token source for %s host %q (conflicting token_env): %s vs %s",
+					r.PlatformOrDefault(), r.PlatformHostOrDefault(), prev.SafeString(), effective.SafeString(),
 				)
 			}
 		} else {
@@ -1011,20 +1015,33 @@ func (c *Config) Validate() error {
 }
 
 func (c *Config) validatePlatforms() error {
-	seen := make(map[string]string, len(c.Platforms))
+	seen := make(map[string]tokenauth.Descriptor, len(c.Platforms))
 	for _, p := range c.Platforms {
 		key := p.Type + "\x00" + p.Host
 		display := p.Type + "/" + p.Host
+		desc := tokenauth.Descriptor{Key: tokenauth.Key{Platform: p.Type, Host: p.Host}}
+		if p.TokenFile != "" {
+			desc.Candidates = append(desc.Candidates, tokenauth.Candidate{
+				Kind:     tokenauth.SourceKindFile,
+				FilePath: p.TokenFile,
+			})
+		}
+		if p.TokenEnv != "" {
+			desc.Candidates = append(desc.Candidates, tokenauth.Candidate{
+				Kind:    tokenauth.SourceKindEnv,
+				EnvName: p.TokenEnv,
+			})
+		}
 		if prev, ok := seen[key]; ok {
-			if prev == p.TokenEnv {
+			if prev.EqualSource(desc) {
 				return fmt.Errorf("config: duplicate platform %q", display)
 			}
 			return fmt.Errorf(
-				"config: conflicting token_env for platform %q: %q vs %q",
-				display, prev, p.TokenEnv,
+				"config: conflicting token source for platform %q (conflicting token_env): %s vs %s",
+				display, prev.SafeString(), desc.SafeString(),
 			)
 		}
-		seen[key] = p.TokenEnv
+		seen[key] = desc
 	}
 	return nil
 }
@@ -1177,24 +1194,117 @@ func (c *Config) ResolveRepoToken(r Repo) string {
 	)
 }
 
-func (c *Config) effectiveTokenEnvForPlatformHost(
-	platform, host, repoTokenEnv string,
-) string {
+func (c *Config) ResolveRepoTokenSource(r Repo) tokenauth.Descriptor {
+	if c == nil {
+		return tokenauth.Descriptor{}
+	}
+	return c.TokenSourceForPlatformHost(
+		r.PlatformOrDefault(), r.PlatformHostOrDefault(), r.TokenEnv, r.TokenFile,
+	)
+}
+
+type ProviderTokenSource struct {
+	Descriptor tokenauth.Descriptor
+	Required   bool
+}
+
+func (c *Config) ProviderTokenSources() []ProviderTokenSource {
+	if c == nil {
+		return nil
+	}
+	seen := make(map[tokenauth.Key]struct{}, len(c.Repos)+len(c.Platforms)+1)
+	out := make([]ProviderTokenSource, 0, len(c.Repos)+len(c.Platforms)+1)
+	add := func(desc tokenauth.Descriptor, required bool) {
+		if desc.Key.Host == "" {
+			return
+		}
+		if _, ok := seen[desc.Key]; ok {
+			return
+		}
+		if !required && len(desc.Candidates) == 0 {
+			return
+		}
+		seen[desc.Key] = struct{}{}
+		out = append(out, ProviderTokenSource{
+			Descriptor: desc,
+			Required:   required,
+		})
+	}
+	for _, repo := range c.Repos {
+		add(c.ResolveRepoTokenSource(repo), true)
+	}
+	for _, p := range c.Platforms {
+		add(c.TokenSourceForPlatformHost(p.Type, p.Host, "", ""), false)
+	}
+	add(c.TokenSourceForPlatformHost(
+		defaultPlatform, platformpkg.DefaultGitHubHost, "", "",
+	), false)
+	return out
+}
+
+func (c *Config) TokenSourceForPlatformHost(
+	platform, host, repoTokenEnv, repoTokenFile string,
+) tokenauth.Descriptor {
+	if c == nil {
+		return tokenauth.Descriptor{}
+	}
+	p, err := normalizePlatform(platform)
+	if err != nil {
+		return tokenauth.Descriptor{}
+	}
+	h, err := normalizePlatformHost(p, host)
+	if err != nil {
+		return tokenauth.Descriptor{}
+	}
+	desc := tokenauth.Descriptor{Key: tokenauth.Key{Platform: p, Host: h}}
+	if repoTokenFile != "" {
+		desc.Candidates = append(desc.Candidates, tokenauth.Candidate{
+			Kind:     tokenauth.SourceKindFile,
+			FilePath: repoTokenFile,
+		})
+	}
 	if repoTokenEnv != "" {
-		return repoTokenEnv
+		desc.Candidates = append(desc.Candidates, tokenauth.Candidate{
+			Kind:    tokenauth.SourceKindEnv,
+			EnvName: repoTokenEnv,
+		})
 	}
 	for _, pc := range c.Platforms {
-		if pc.Type == platform && pc.Host == host && pc.TokenEnv != "" {
-			return pc.TokenEnv
+		if pc.Type == p && pc.Host == h {
+			if pc.TokenFile != "" {
+				desc.Candidates = append(desc.Candidates, tokenauth.Candidate{
+					Kind:     tokenauth.SourceKindFile,
+					FilePath: pc.TokenFile,
+				})
+			}
+			if pc.TokenEnv != "" {
+				desc.Candidates = append(desc.Candidates, tokenauth.Candidate{
+					Kind:    tokenauth.SourceKindEnv,
+					EnvName: pc.TokenEnv,
+				})
+			}
+			break
 		}
 	}
-	if defaultTokenEnv, ok := defaultTokenEnvForPlatformHost(platform, host); ok {
-		return defaultTokenEnv
+	if defaultTokenEnv, ok := defaultTokenEnvForPlatformHost(p, h); ok {
+		desc.Candidates = append(desc.Candidates, tokenauth.Candidate{
+			Kind:    tokenauth.SourceKindEnv,
+			EnvName: defaultTokenEnv,
+		})
 	}
-	if platform == defaultPlatform {
-		return c.GitHubTokenEnv
+	if p == defaultPlatform {
+		if c.GitHubTokenEnv != "" {
+			desc.Candidates = append(desc.Candidates, tokenauth.Candidate{
+				Kind:    tokenauth.SourceKindEnv,
+				EnvName: c.GitHubTokenEnv,
+			})
+		}
+		desc.Candidates = append(desc.Candidates, tokenauth.Candidate{
+			Kind: tokenauth.SourceKindGitHubCLI,
+			Host: h,
+		})
 	}
-	return ""
+	return desc
 }
 
 func defaultTokenEnvForPlatformHost(platform, host string) (string, bool) {
@@ -1215,31 +1325,69 @@ func (c *Config) TokenEnvNames() []string {
 	if c == nil {
 		return nil
 	}
-	names := make([]string, 0, 1+len(c.Repos))
+	names := make([]string, 0, 1+len(c.Repos)+len(c.Platforms))
 	if c.GitHubTokenEnv != "" {
 		names = appendTokenEnvName(names, c.GitHubTokenEnv)
 	}
 	for _, p := range c.Platforms {
-		if p.TokenEnv != "" {
-			names = appendTokenEnvName(names, p.TokenEnv)
-		}
+		names = appendTokenEnvNamesFromDescriptor(
+			names,
+			c.TokenSourceForPlatformHost(p.Type, p.Host, "", ""),
+		)
 	}
 	for _, r := range c.Repos {
-		names = appendTokenEnvName(
+		names = appendTokenEnvNamesFromDescriptor(
 			names,
-			c.effectiveTokenEnvForPlatformHost(
+			c.TokenSourceForPlatformHost(
 				r.PlatformOrDefault(),
 				r.PlatformHostOrDefault(),
+				"",
 				"",
 			),
 		)
 	}
 	for _, r := range c.Repos {
-		if r.TokenEnv != "" {
-			names = appendTokenEnvName(names, r.TokenEnv)
+		names = appendTokenEnvNamesFromDescriptor(names, c.ResolveRepoTokenSource(r))
+	}
+	return names
+}
+
+func appendTokenEnvNamesFromDescriptor(
+	names []string,
+	desc tokenauth.Descriptor,
+) []string {
+	for _, candidate := range desc.Candidates {
+		if candidate.Kind == tokenauth.SourceKindEnv {
+			names = appendTokenEnvName(names, candidate.EnvName)
 		}
 	}
 	return names
+}
+
+func (c *Config) normalizeTokenFilePaths(configDir string) {
+	for i := range c.Platforms {
+		c.Platforms[i].TokenFile = normalizeTokenFilePath(configDir, c.Platforms[i].TokenFile)
+	}
+	for i := range c.Repos {
+		c.Repos[i].TokenFile = normalizeTokenFilePath(configDir, c.Repos[i].TokenFile)
+	}
+}
+
+func normalizeTokenFilePath(configDir, raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	if raw == "~" {
+		return homeDir()
+	}
+	if suffix, ok := strings.CutPrefix(raw, "~/"); ok {
+		return filepath.Join(homeDir(), suffix)
+	}
+	if filepath.IsAbs(raw) {
+		return filepath.Clean(raw)
+	}
+	return filepath.Clean(filepath.Join(configDir, raw))
 }
 
 func appendTokenEnvName(names []string, name string) []string {
@@ -1264,19 +1412,28 @@ const ghAuthExecTimeout = 5 * time.Second
 func ghAuthTokenForHost(host string) string {
 	ctx, cancel := context.WithTimeout(context.Background(), ghAuthExecTimeout)
 	defer cancel()
+	token, _ := GitHubCLITokenForHost(ctx, host)
+	return token
+}
 
+func GitHubCLITokenForHost(ctx context.Context, host string) (string, error) {
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, ghAuthExecTimeout)
+		defer cancel()
+	}
 	out, stderr, err := runGHAuthToken(ctx, "--hostname", host)
 	if err == nil {
-		return strings.TrimSpace(string(out))
+		return strings.TrimSpace(string(out)), nil
 	}
 	if host == platformpkg.DefaultGitHubHost &&
 		isUnsupportedHostnameFlag(err, stderr) {
 		out, _, err = runGHAuthToken(ctx)
 		if err == nil {
-			return strings.TrimSpace(string(out))
+			return strings.TrimSpace(string(out)), nil
 		}
 	}
-	return ""
+	return "", nil
 }
 
 // runGHAuthToken invokes `gh auth token` with the given extra args

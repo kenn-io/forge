@@ -1102,6 +1102,47 @@ func TestManagerLaunchPassesStripEnvVarsToPtyOwner(t *testing.T) {
 	assert.Equal([]string{"WORKSPACE_TOKEN"}, backend.startedStripEnvVars)
 }
 
+func TestManagerUpdateStripEnvVarsPreservesPreviousNamesForFutureLaunches(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := context.Background()
+	backend := newFakeRuntimePtyOwner()
+	agent := helperTarget("codex", "exit")
+	mgr := NewManager(Options{
+		Targets:         []LaunchTarget{agent},
+		PtyOwnerRuntime: backend,
+		StripEnvVars:    []string{"OLD_TOKEN"},
+	})
+	t.Cleanup(mgr.Shutdown)
+
+	mgr.UpdateStripEnvVars([]string{"NEW_TOKEN", "NEW_TOKEN"})
+	_, err := mgr.Launch(ctx, "ws-1", t.TempDir(), "codex")
+	require.NoError(err)
+
+	assert.Equal([]string{"OLD_TOKEN", "NEW_TOKEN"}, backend.startedStripEnvVars)
+}
+
+func TestManagerUpdateTargetsAndStripEnvVarsPreservesPreviousNames(t *testing.T) {
+	assert := Assert.New(t)
+	oldAgent := helperTarget("old", "exit")
+	newAgent := helperTarget("new", "exit")
+	mgr := NewManager(Options{
+		Targets:      []LaunchTarget{oldAgent},
+		StripEnvVars: []string{"OLD_TOKEN"},
+	})
+	t.Cleanup(mgr.Shutdown)
+
+	mgr.UpdateTargetsAndStripEnvVars(
+		[]LaunchTarget{newAgent},
+		[]string{"NEW_TOKEN", "NEW_TOKEN"},
+	)
+
+	targets := mgr.LaunchTargets()
+	assert.Len(targets, 1)
+	assert.Equal("new", targets[0].Key)
+	assert.Equal([]string{"OLD_TOKEN", "NEW_TOKEN"}, mgr.currentStripEnvVars())
+}
+
 func TestManagerLaunchCommandDoesNotWrapWhenConfigDisabled(t *testing.T) {
 	assert := Assert.New(t)
 	agent := helperTarget("codex", "sleep")

@@ -12,6 +12,7 @@ import (
 	"go.kenn.io/middleman/internal/configwatch"
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/middleman/internal/tokenauth"
 )
 
 // configChangedEvent is the payload broadcast on the SSE "config.changed"
@@ -38,18 +39,16 @@ type configChangedEvent struct {
 // to detect drift that the watcher cannot fix without a restart.
 type startupConfigSnapshot struct {
 	SyncInterval        string
-	GitHubTokenEnv      string
 	DefaultPlatformHost string
 	Host                string
 	Port                int
 	BasePath            string
 	DataDir             string
 	SyncBudgetPerHour   int
-	Platforms           []config.PlatformConfig
+	ProviderHosts       []tokenauth.Key
 	Roborev             config.Roborev
 	Tmux                config.Tmux
 	Shell               config.Shell
-	TokenEnvNames       []string
 }
 
 func snapshotStartupConfig(cfg *config.Config) startupConfigSnapshot {
@@ -58,14 +57,13 @@ func snapshotStartupConfig(cfg *config.Config) startupConfigSnapshot {
 	}
 	snap := startupConfigSnapshot{
 		SyncInterval:        cfg.SyncInterval,
-		GitHubTokenEnv:      cfg.GitHubTokenEnv,
 		DefaultPlatformHost: cfg.DefaultPlatformHost,
 		Host:                cfg.Host,
 		Port:                cfg.Port,
 		BasePath:            cfg.BasePath,
 		DataDir:             cfg.DataDir,
 		SyncBudgetPerHour:   cfg.SyncBudgetPerHour,
-		Platforms:           slices.Clone(cfg.Platforms),
+		ProviderHosts:       startupProviderHosts(cfg),
 		Roborev:             cfg.Roborev,
 	}
 	snap.Tmux.Command = slices.Clone(cfg.Tmux.Command)
@@ -74,9 +72,37 @@ func snapshotStartupConfig(cfg *config.Config) startupConfigSnapshot {
 		snap.Tmux.AgentSessions = &v
 	}
 	snap.Shell.Command = slices.Clone(cfg.Shell.Command)
-	snap.TokenEnvNames = cfg.TokenEnvNames()
-	slices.Sort(snap.TokenEnvNames)
 	return snap
+}
+
+func startupProviderHosts(cfg *config.Config) []tokenauth.Key {
+	if cfg == nil {
+		return nil
+	}
+	seen := make(map[tokenauth.Key]struct{}, len(cfg.Platforms)+len(cfg.Repos)+1)
+	out := make([]tokenauth.Key, 0, len(cfg.Platforms)+len(cfg.Repos)+1)
+	add := func(platformName, host string) {
+		key := tokenauth.Key{Platform: platformName, Host: host}
+		if _, ok := seen[key]; ok {
+			return
+		}
+		seen[key] = struct{}{}
+		out = append(out, key)
+	}
+	for _, p := range cfg.Platforms {
+		add(p.Type, p.Host)
+	}
+	for _, r := range cfg.Repos {
+		add(r.PlatformOrDefault(), r.PlatformHostOrDefault())
+	}
+	add(string(platform.KindGitHub), platform.DefaultGitHubHost)
+	slices.SortFunc(out, func(a, b tokenauth.Key) int {
+		if cmp := strings.Compare(a.Platform, b.Platform); cmp != 0 {
+			return cmp
+		}
+		return strings.Compare(a.Host, b.Host)
+	})
+	return out
 }
 
 func (s startupConfigSnapshot) restartRequiredFor(cfg *config.Config) bool {
@@ -157,6 +183,28 @@ func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
 			Error: sanitizeConfigError(err, s.cfgPath),
 		}
 	}
+	if err := validateReloadCloneTokenSources(newCfg); err != nil {
+		slog.Warn(
+			"config reload failed clone token validation; keeping last-known-good",
+			"path", s.cfgPath,
+			"err", err,
+		)
+		return configChangedEvent{
+			Valid: false,
+			Error: sanitizeConfigError(err, s.cfgPath),
+		}
+	}
+	if err := s.validateReloadProviderTokenSources(ctx, newCfg); err != nil {
+		slog.Warn(
+			"config reload failed provider token validation; keeping last-known-good",
+			"path", s.cfgPath,
+			"err", err,
+		)
+		return configChangedEvent{
+			Valid: false,
+			Error: sanitizeConfigError(err, s.cfgPath),
+		}
+	}
 
 	s.cfgMu.Lock()
 	if s.cfg == nil {
@@ -171,6 +219,8 @@ func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
 	}
 	s.cfgMu.Unlock()
 
+	s.updateRuntimeStripEnvVars(newCfg)
+	s.updateTokenSourcesForReload(newCfg)
 	restartRequired := s.bootCfgSnapshot.restartRequiredFor(newCfg)
 
 	// Resolve the new repo set against the boot-time registry. Repos
@@ -193,6 +243,7 @@ func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
 	// Apply hot-reloadable fields. Repos and Platforms are deep-copied
 	// so subsequent in-memory mutations from the Settings UI cannot
 	// surprise the file's last view.
+	s.cfg.GitHubTokenEnv = newCfg.GitHubTokenEnv
 	s.cfg.Repos = slices.Clone(newCfg.Repos)
 	s.cfg.Platforms = slices.Clone(newCfg.Platforms)
 	s.cfg.Activity = newCfg.Activity
@@ -214,6 +265,72 @@ func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
 		"restart_required", restartRequired,
 	)
 	return configChangedEvent{Valid: true, RestartRequired: restartRequired}
+}
+
+func (s *Server) updateTokenSourcesForReload(cfg *config.Config) {
+	if s.tokenSources == nil || cfg == nil {
+		return
+	}
+	updateIfKnown := func(desc tokenauth.Descriptor) {
+		if _, ok := s.tokenSources.Get(desc.Key); !ok {
+			return
+		}
+		s.tokenSources.Upsert(desc)
+	}
+	for _, plan := range cfg.ProviderTokenSources() {
+		updateIfKnown(plan.Descriptor)
+	}
+}
+
+func (s *Server) validateReloadProviderTokenSources(
+	ctx context.Context,
+	cfg *config.Config,
+) error {
+	if s.tokenSources == nil || cfg == nil {
+		return nil
+	}
+	for _, plan := range cfg.ProviderTokenSources() {
+		if !plan.Required {
+			continue
+		}
+		desc := plan.Descriptor
+		if _, ok := s.tokenSources.Get(desc.Key); !ok {
+			continue
+		}
+		if _, err := s.tokenSources.ProbeToken(ctx, desc); err != nil {
+			label := fmt.Sprintf("%s host %s", desc.Key.Platform, desc.Key.Host)
+			return fmt.Errorf(
+				"no token for %s via %s: %w", label, desc.SafeString(), err,
+			)
+		}
+	}
+	return nil
+}
+
+func validateReloadCloneTokenSources(cfg *config.Config) error {
+	if cfg == nil {
+		return nil
+	}
+	plans := cfg.ProviderTokenSources()
+	byHost := make(map[string]string, len(plans))
+	for _, plan := range plans {
+		desc := plan.Descriptor
+		if desc.Key.Host == "" {
+			continue
+		}
+		sourceID := desc.SafeString()
+		if existing, ok := byHost[desc.Key.Host]; ok {
+			if existing != sourceID {
+				return fmt.Errorf(
+					"host %s is configured with different clone token sources; use identical tokens or separate hosts",
+					desc.Key.Host,
+				)
+			}
+			continue
+		}
+		byHost[desc.Key.Host] = sourceID
+	}
+	return nil
 }
 
 // resolveReposForReload walks the reloaded repo list and asks the syncer
@@ -300,5 +417,5 @@ func sanitizeConfigError(err error, cfgPath string) string {
 	if cfgPath != "" {
 		msg = strings.ReplaceAll(msg, cfgPath, "config.toml")
 	}
-	return msg
+	return tokenauth.RedactKnownSecrets(msg)
 }

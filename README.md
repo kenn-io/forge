@@ -95,6 +95,10 @@ export MIDDLEMAN_GITHUB_TOKEN=ghp_your_token_here
 
 If you use the [GitHub CLI](https://cli.github.com/), middleman will use `gh auth token` automatically -- no env var needed.
 
+For token rotation without restarting middleman, configure `token_file` on a
+repo or provider entry and replace that file atomically when the token changes.
+Middleman reads token files on demand and trims surrounding whitespace.
+
 On first run, middleman creates a default config at `~/.config/middleman/config.toml` and serves the UI at **http://localhost:8091**. Add repositories from the Settings page, or edit the config file directly:
 
 ```toml
@@ -145,8 +149,8 @@ All fields are optional. Repos can be added in the config file or through the Se
 
 ### Provider Hosts
 
-Add `platform_host` and optionally `token_env` to repos hosted on a GitHub
-Enterprise instance:
+Add `platform_host` and optionally `token_env` or `token_file` to repos hosted
+on a GitHub Enterprise instance:
 
 ```toml
 [[repos]]
@@ -156,13 +160,43 @@ platform_host = "github.corp.example.com"
 token_env = "GHE_TOKEN"
 ```
 
-Tokens are looked up by `(provider, host)`. Each distinct host can use a
-separate token env var, so `github.com`, a GitHub Enterprise host, `gitlab.com`,
-`codeberg.org`, and a private Gitea host do not share credentials unless you
-explicitly point them at the same env var. Repos without `platform_host` default
-to that provider's public host: `github.com`, `gitlab.com`, `codeberg.org`, or
-`gitea.com`. Set `default_platform_host` when you want another host to be hidden
-as the implied repository host in the UI.
+Tokens can come from `token_file`, `token_env`, exact public-host defaults, or
+the GitHub CLI fallback. Use `token_file` when you need rotation without
+restarting Middleman: write the new token to a temporary file, then atomically
+rename it over the configured path. Middleman reads token files on demand and
+trims surrounding whitespace.
+
+For a repo or platform entry, `token_file` is checked before `token_env`; empty
+token files and empty env vars are treated as absent so the next configured
+fallback can supply a token. Public-host defaults are:
+
+- GitHub `github.com`: `github_token_env`, defaulting to
+  `MIDDLEMAN_GITHUB_TOKEN`, then GitHub CLI fallback.
+- GitLab `gitlab.com`: no implicit default env var; configure `token_env` or
+  `token_file`.
+- Forgejo `codeberg.org`: `MIDDLEMAN_FORGEJO_TOKEN`.
+- Gitea `gitea.com`: `MIDDLEMAN_GITEA_TOKEN`.
+
+Tokens are looked up by `(provider, host)`. Each distinct provider host can use
+a separate token source, so `github.com`, a GitHub Enterprise host,
+`gitlab.com`, `codeberg.org`, and a private Gitea host do not share API
+credentials unless you explicitly point them at the same source. Repos without
+`platform_host` default to that provider's public host: `github.com`,
+`gitlab.com`, `codeberg.org`, or `gitea.com`. Set `default_platform_host` when
+you want another host to be hidden as the implied repository host in the UI.
+
+Git clone credentials are selected by URL host. If two provider kinds use the
+same hostname, they must resolve to the same effective token source or use
+separate hostnames.
+
+Example provider-level token file:
+
+```toml
+[[platforms]]
+type = "gitlab"
+host = "gitlab.com"
+token_file = "~/.config/middleman/tokens/gitlab.com"
+```
 
 Minimum read access is enough for sync: repository metadata, pull or merge
 requests, issues, comments, commits, tags, releases, and CI/status data. Enable

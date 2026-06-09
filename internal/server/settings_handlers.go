@@ -392,9 +392,15 @@ func (s *Server) refreshRuntimeTargetsLocked() {
 		return
 	}
 	tmuxCmd := s.cfg.TmuxCommand()
-	s.runtime.UpdateTargets(localruntime.ResolveLaunchTargets(
-		s.cfg.Agents, tmuxCmd, nil,
-	))
+	targets := localruntime.ResolveLaunchTargets(s.cfg.Agents, tmuxCmd, nil)
+	s.runtime.UpdateTargetsAndStripEnvVars(targets, s.cfg.TokenEnvNames())
+}
+
+func (s *Server) updateRuntimeStripEnvVars(cfg *config.Config) {
+	if s.runtime == nil || cfg == nil {
+		return
+	}
+	s.runtime.UpdateStripEnvVars(cfg.TokenEnvNames())
 }
 
 func (s *Server) addConfiguredRepo(

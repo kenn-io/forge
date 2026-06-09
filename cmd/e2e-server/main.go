@@ -28,6 +28,7 @@ import (
 	"go.kenn.io/middleman/internal/server"
 	"go.kenn.io/middleman/internal/stacks"
 	"go.kenn.io/middleman/internal/testutil"
+	"go.kenn.io/middleman/internal/tokenauth"
 	"go.kenn.io/middleman/internal/web"
 	"go.kenn.io/middleman/internal/workspace"
 )
@@ -82,6 +83,18 @@ type e2eServerInfo struct {
 	BaseURL    string `json:"base_url"`
 	PID        int    `json:"pid"`
 	ConfigPath string `json:"config_path"`
+}
+
+type staticTokenSource string
+
+func (s staticTokenSource) Token(context.Context) (string, error) {
+	return string(s), nil
+}
+
+func (s staticTokenSource) Invalidate() {}
+
+func (s staticTokenSource) Descriptor() tokenauth.Descriptor {
+	return tokenauth.Descriptor{Key: tokenauth.Key{Platform: "github", Host: "github.com"}}
 }
 
 type e2eStaticProvider struct {
@@ -876,7 +889,9 @@ func run(
 	)
 
 	// Wire GraphQL fetcher so GQL rate data appears in the endpoint.
-	gqlFetcher := ghclient.NewGraphQLFetcher("fake-token", "github.com", gqlRT, budget)
+	gqlFetcher := ghclient.NewGraphQLFetcher(
+		staticTokenSource("fake-token"), "github.com", gqlRT, budget,
+	)
 	syncer.SetFetchers(map[string]*ghclient.GraphQLFetcher{
 		"github.com":        gqlFetcher,
 		defaultPlatformHost: gqlFetcher,

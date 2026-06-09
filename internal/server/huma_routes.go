@@ -25,6 +25,7 @@ import (
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/platform"
 	"go.kenn.io/middleman/internal/platform/gitealike"
+	"go.kenn.io/middleman/internal/tokenauth"
 	"go.kenn.io/middleman/internal/workspace"
 	"go.kenn.io/middleman/internal/workspace/localruntime"
 )
@@ -5686,6 +5687,9 @@ func (s *Server) getReadyRuntimeWorkspace(
 
 func workspaceRuntimeLaunchError(err error) error {
 	msg := err.Error()
+	if errors.Is(err, tokenauth.ErrMissingToken) {
+		return problemBadRequest(CodeBadRequest, msg, nil)
+	}
 	if strings.Contains(msg, "target not found") {
 		return problemNotFound(CodeNotFound, msg, nil)
 	}

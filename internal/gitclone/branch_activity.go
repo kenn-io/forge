@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os/exec"
 	"slices"
 	"strconv"
 	"strings"
@@ -105,8 +104,7 @@ func (m *Manager) IsAncestor(
 	if err == nil {
 		return true, nil
 	}
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+	if code, ok := gitExitCode(err); ok && code == 1 {
 		return false, nil
 	}
 	return false, fmt.Errorf("check ancestor %s..%s: %w", ancestor, descendant, err)

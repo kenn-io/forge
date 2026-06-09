@@ -85,7 +85,7 @@ func TestForgejoContainerSync(t *testing.T) {
 
 	client, err := platformforgejo.NewClient(
 		manifest.Host,
-		manifest.Token,
+		testTokenSource(manifest.Token),
 		platformforgejo.WithBaseURLForTesting(manifest.BaseURL),
 		platformforgejo.WithForegroundTimeoutForTesting(time.Minute),
 	)
@@ -114,7 +114,7 @@ func TestGiteaContainerSync(t *testing.T) {
 
 	client, err := platformgitea.NewClient(
 		manifest.Host,
-		manifest.Token,
+		testTokenSource(manifest.Token),
 		platformgitea.WithBaseURLForTesting(manifest.BaseURL),
 		platformgitea.WithForegroundTimeoutForTesting(time.Minute),
 	)

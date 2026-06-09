@@ -28,6 +28,7 @@ import (
 	"go.kenn.io/middleman/internal/ptyowner"
 	ptyownerruntime "go.kenn.io/middleman/internal/ptyowner/runtime"
 	"go.kenn.io/middleman/internal/telemetry"
+	"go.kenn.io/middleman/internal/tokenauth"
 	"go.kenn.io/middleman/internal/workspace"
 	"go.kenn.io/middleman/internal/workspace/localruntime"
 )
@@ -76,6 +77,7 @@ type ServerOptions struct {
 	PtyOwnerCommand                    []string
 	PtyOwnerInProcess                  bool
 	Telemetry                          telemetry.Client
+	TokenSources                       *tokenauth.SourceSet
 }
 
 type shutdownDeadline struct {
@@ -146,6 +148,7 @@ type Server struct {
 	telemetry                   telemetry.Client
 	cfg                         *config.Config
 	cfgPath                     string
+	tokenSources                *tokenauth.SourceSet
 	cfgMu                       sync.Mutex
 	configReloadMu              sync.Mutex
 	// bootCfgSnapshot freezes the subset of config fields that are
@@ -505,6 +508,7 @@ func newServer(
 		telemetry:              options.Telemetry,
 		cfg:                    cfg,
 		cfgPath:                cfgPath,
+		tokenSources:           options.TokenSources,
 		bootCfgSnapshot:        snapshotStartupConfig(cfg),
 		options:                options,
 		now:                    time.Now,

@@ -10,6 +10,7 @@ import (
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/config"
+	"go.kenn.io/middleman/internal/tokenauth"
 )
 
 // TestCollectProviderTokensInvokesGHWithHostnameForEnterprise wires the
@@ -65,11 +66,16 @@ name = "widget"
 	cfg, err := config.Load(configPath)
 	require.NoError(err)
 
-	tokens, err := collectProviderTokens(cfg)
+	set := tokenauth.NewSourceSet(tokenauth.Options{
+		GitHubCLI: config.GitHubCLITokenForHost,
+	})
+	sources, err := collectProviderTokenSources(t.Context(), cfg, set)
 	require.NoError(err)
 
 	key := providerHostKey("github", "ghe.example.com")
-	assert.Equal(fakeToken, tokens[key],
+	got, err := sources[key].Token(t.Context())
+	require.NoError(err)
+	assert.Equal(fakeToken, got,
 		"GHE provider key should resolve to the gh-supplied host token")
 
 	data, err := os.ReadFile(argvPath)
@@ -84,4 +90,45 @@ name = "widget"
 		"expected gh auth token --hostname ghe.example.com invocation; got: %v",
 		invocations,
 	)
+}
+
+func TestCollectProviderTokenSourcesReadsRotatedTokenFile(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	tokenPath := filepath.Join(t.TempDir(), "token")
+	require.NoError(os.WriteFile(tokenPath, []byte("first\n"), 0o600))
+	cfg := &config.Config{
+		GitHubTokenEnv: "MIDDLEMAN_GITHUB_TOKEN",
+		SyncInterval:   "5m",
+		Host:           "127.0.0.1",
+		Port:           8091,
+		BasePath:       "/",
+		Activity: config.Activity{
+			ViewMode:  "flat",
+			TimeRange: "7d",
+		},
+		Repos: []config.Repo{{
+			Owner:        "acme",
+			Name:         "widget",
+			Platform:     "github",
+			PlatformHost: "github.com",
+			TokenFile:    tokenPath,
+		}},
+	}
+	require.NoError(cfg.Validate())
+
+	set := tokenauth.NewSourceSet(tokenauth.Options{})
+	sources, err := collectProviderTokenSources(t.Context(), cfg, set)
+	require.NoError(err)
+	src := sources[providerHostKey("github", "github.com")]
+
+	first, err := src.Token(t.Context())
+	require.NoError(err)
+	require.NoError(os.WriteFile(tokenPath, []byte("second\n"), 0o600))
+	second, err := src.Token(t.Context())
+	require.NoError(err)
+
+	assert.Equal("first", first)
+	assert.Equal("second", second)
 }

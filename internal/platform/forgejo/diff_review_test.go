@@ -54,7 +54,7 @@ func TestPublishDiffReviewDraftCreatesForgejoReview(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewClient("codeberg.test", "token", WithBaseURLForTesting(server.URL))
+	client, err := NewClient("codeberg.test", testTokenSource("token"), WithBaseURLForTesting(server.URL))
 	require.NoError(err)
 	result, err := client.PublishDiffReviewDraft(context.Background(), platform.RepoRef{
 		Owner: "acme",
@@ -113,7 +113,7 @@ func TestListMergeRequestReviewThreadsReadsForgejoReviewComments(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewClient("codeberg.test", "token", WithBaseURLForTesting(server.URL))
+	client, err := NewClient("codeberg.test", testTokenSource("token"), WithBaseURLForTesting(server.URL))
 	require.NoError(err)
 	threads, err := client.ListMergeRequestReviewThreads(context.Background(), platform.RepoRef{
 		Owner: "acme",

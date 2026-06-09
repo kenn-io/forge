@@ -36,7 +36,7 @@ events must be scoped by persisted repo ID or full provider identity.
 
 ## Provider Hosts And Tokens
 
-Each configured provider host may have its own token env var.
+Each configured provider host may have its own token source.
 
 - Legacy GitHub config still defaults to `github` on `github.com`.
 - GitLab public config defaults to `gitlab.com`.
@@ -46,18 +46,26 @@ Each configured provider host may have its own token env var.
 - A missing token should fail only the provider host that needs it.
 
 Provider clients must be registered by `(platform, platform_host)`. Provider
-startup builds host-scoped rate trackers, budgets, clone tokens, GitHub GraphQL
-fetchers where applicable, and a `platform.Registry`. A third provider should
-add metadata, a factory, and an implementation; it should not masquerade as
-GitHub, GitLab, Forgejo, or Gitea.
+startup builds host-scoped rate trackers, budgets, clone token sources, GitHub
+GraphQL fetchers where applicable, and a `platform.Registry`. A third provider
+should add metadata, a factory, and an implementation; it should not masquerade
+as GitHub, GitLab, Forgejo, or Gitea.
 
-Token lookup is also scoped by `(provider, platform_host)`. A repo-level
-`token_env` overrides that repo. Otherwise the configured `[[platforms]]`
-entry for the same provider/host wins, then the provider public-host default is
-used where supported: `MIDDLEMAN_GITHUB_TOKEN`, `MIDDLEMAN_GITLAB_TOKEN`,
-`MIDDLEMAN_FORGEJO_TOKEN`, or `MIDDLEMAN_GITEA_TOKEN`. Do not let a token for
-one provider host leak into another host with the same hostname string under a
-different provider kind.
+Token lookup is also scoped by `(provider, platform_host)`. Lookup checks repo
+`token_file`, repo `token_env`, platform `token_file`, platform `token_env`,
+then exact public-host defaults. GitHub `github.com` uses `github_token_env`,
+which defaults to `MIDDLEMAN_GITHUB_TOKEN`, then the GitHub CLI fallback. GitLab
+`gitlab.com` has no implicit default env var. Forgejo `codeberg.org` uses
+`MIDDLEMAN_FORGEJO_TOKEN`, and Gitea `gitea.com` uses `MIDDLEMAN_GITEA_TOKEN`.
+Token files are read lazily so atomic replacement rotates credentials without
+rebuilding provider clients. Provider token caches and auth transports must stay
+keyed by `(platform, platform_host)`.
+
+Git clone credentials are selected by URL host. Startup must reject same-host
+provider entries unless their effective clone token-source descriptors match
+before passing a host-keyed source map to the clone manager. Do not let a token
+for one provider host leak into another host with the same hostname string under
+a different provider kind.
 
 Minimum read scope should cover repository metadata, merge requests or pull
 requests, issues, comments, commits, tags, releases, and CI/status data. Write

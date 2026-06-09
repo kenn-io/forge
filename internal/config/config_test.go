@@ -1,6 +1,7 @@
 package config
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -11,6 +12,7 @@ import (
 
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/middleman/internal/tokenauth"
 )
 
 func writeConfig(t *testing.T, content string) string {
@@ -823,6 +825,178 @@ name = "ibis"
 	assert.Empty(cfg.Repos[1].PlatformHost)
 	assert.Equal("github.com", cfg.Repos[1].PlatformHostOrDefault())
 	assert.Empty(cfg.Repos[1].TokenEnv)
+}
+
+func TestLoadTokenFilePathsAreNormalized(t *testing.T) {
+	assert := Assert.New(t)
+	dir := t.TempDir()
+	home := filepath.Join(dir, "home")
+	require.NoError(t, os.MkdirAll(home, 0o755))
+	t.Setenv("HOME", home)
+	cfgPath := filepath.Join(dir, "config", "config.toml")
+	require.NoError(t, os.MkdirAll(filepath.Dir(cfgPath), 0o755))
+	require.NoError(t, os.WriteFile(cfgPath, []byte(`
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+
+[[platforms]]
+type = "gitlab"
+host = "gitlab.com"
+token_file = "tokens/gitlab"
+
+[[repos]]
+owner = "acme"
+name = "widget"
+platform = "github"
+token_file = "~/tokens/github"
+`), 0o600))
+
+	cfg, err := Load(cfgPath)
+	require.NoError(t, err)
+
+	assert.Equal(filepath.Join(filepath.Dir(cfgPath), "tokens", "gitlab"), cfg.Platforms[0].TokenFile)
+	assert.Equal(filepath.Join(home, "tokens", "github"), cfg.Repos[0].TokenFile)
+}
+
+func TestConfigTokenSourceDescriptorPrecedence(t *testing.T) {
+	assert := Assert.New(t)
+	cfg := &Config{
+		GitHubTokenEnv: "MIDDLEMAN_GITHUB_TOKEN",
+		Platforms: []PlatformConfig{{
+			Type: "gitlab", Host: "gitlab.com", TokenFile: "/platform/file", TokenEnv: "PLATFORM_TOKEN",
+		}},
+	}
+
+	desc := cfg.TokenSourceForPlatformHost("gitlab", "gitlab.com", "REPO_TOKEN", "/repo/file")
+
+	require.Len(t, desc.Candidates, 4)
+	assert.Equal(tokenauth.SourceKindFile, desc.Candidates[0].Kind)
+	assert.Equal("/repo/file", desc.Candidates[0].FilePath)
+	assert.Equal(tokenauth.SourceKindEnv, desc.Candidates[1].Kind)
+	assert.Equal("REPO_TOKEN", desc.Candidates[1].EnvName)
+	assert.Equal(tokenauth.SourceKindFile, desc.Candidates[2].Kind)
+	assert.Equal("/platform/file", desc.Candidates[2].FilePath)
+	assert.Equal(tokenauth.SourceKindEnv, desc.Candidates[3].Kind)
+	assert.Equal("PLATFORM_TOKEN", desc.Candidates[3].EnvName)
+}
+
+func TestConfigProviderTokenSourcesPlansEffectiveDescriptors(t *testing.T) {
+	assert := Assert.New(t)
+	cfg := &Config{
+		GitHubTokenEnv: "MIDDLEMAN_GITHUB_TOKEN",
+		Platforms: []PlatformConfig{
+			{Type: "github", Host: "github.com", TokenEnv: "PLATFORM_GITHUB_TOKEN"},
+			{Type: "gitlab", Host: "gitlab.com"},
+			{Type: "forgejo", Host: "codeberg.org", TokenEnv: "PLATFORM_FORGEJO_TOKEN"},
+		},
+		Repos: []Repo{
+			{
+				Owner:        "acme",
+				Name:         "widget",
+				Platform:     "github",
+				PlatformHost: "github.com",
+				TokenEnv:     "REPO_GITHUB_TOKEN",
+			},
+			{
+				Owner:        "gitlab-org",
+				Name:         "example",
+				Platform:     "gitlab",
+				PlatformHost: "gitlab.com",
+			},
+		},
+	}
+
+	plans := cfg.ProviderTokenSources()
+
+	require.Len(t, plans, 3)
+	assert.True(plans[0].Required)
+	assert.Equal(tokenauth.Key{Platform: "github", Host: "github.com"}, plans[0].Descriptor.Key)
+	assert.Equal("REPO_GITHUB_TOKEN", plans[0].Descriptor.Candidates[0].EnvName)
+	assert.Equal("PLATFORM_GITHUB_TOKEN", plans[0].Descriptor.Candidates[1].EnvName)
+	assert.True(plans[1].Required)
+	assert.Equal(tokenauth.Key{Platform: "gitlab", Host: "gitlab.com"}, plans[1].Descriptor.Key)
+	assert.Empty(plans[1].Descriptor.Candidates)
+	assert.False(plans[2].Required)
+	assert.Equal(tokenauth.Key{Platform: "forgejo", Host: "codeberg.org"}, plans[2].Descriptor.Key)
+	assert.Equal("PLATFORM_FORGEJO_TOKEN", plans[2].Descriptor.Candidates[0].EnvName)
+}
+
+func TestConfigProviderTokenSourcesIncludesOptionalDefaultGitHub(t *testing.T) {
+	assert := Assert.New(t)
+	cfg := &Config{GitHubTokenEnv: "MIDDLEMAN_GITHUB_TOKEN"}
+
+	plans := cfg.ProviderTokenSources()
+
+	require.Len(t, plans, 1)
+	assert.False(plans[0].Required)
+	assert.Equal(tokenauth.Key{Platform: "github", Host: "github.com"}, plans[0].Descriptor.Key)
+	require.Len(t, plans[0].Descriptor.Candidates, 2)
+	assert.Equal(tokenauth.SourceKindEnv, plans[0].Descriptor.Candidates[0].Kind)
+	assert.Equal("MIDDLEMAN_GITHUB_TOKEN", plans[0].Descriptor.Candidates[0].EnvName)
+	assert.Equal(tokenauth.SourceKindGitHubCLI, plans[0].Descriptor.Candidates[1].Kind)
+	assert.Equal("github.com", plans[0].Descriptor.Candidates[1].Host)
+}
+
+func TestValidateRejectsConflictingTokenSources(t *testing.T) {
+	assert := Assert.New(t)
+	cfg := &Config{
+		GitHubTokenEnv: "MIDDLEMAN_GITHUB_TOKEN",
+		Repos: []Repo{
+			{Owner: "acme", Name: "one", Platform: "github", PlatformHost: "ghe.example.com", TokenFile: "/tokens/a"},
+			{Owner: "acme", Name: "two", Platform: "github", PlatformHost: "ghe.example.com", TokenFile: "/tokens/b"},
+		},
+	}
+
+	err := cfg.Validate()
+	require.Error(t, err)
+	assert.Contains(err.Error(), "conflicting token source")
+	assert.NotContains(err.Error(), "ghp_")
+}
+
+func TestValidateAllowsRepoTokenEnvMatchingPlatformFallback(t *testing.T) {
+	path := writeConfig(t, `
+[[platforms]]
+type = "gitlab"
+host = "gitlab.com"
+token_env = "GITLAB_SHARED_TOKEN"
+
+[[repos]]
+platform = "gitlab"
+owner = "group"
+name = "explicit"
+token_env = "GITLAB_SHARED_TOKEN"
+
+[[repos]]
+platform = "gitlab"
+owner = "group"
+name = "fallback"
+`)
+
+	_, err := Load(path)
+	require.NoError(t, err)
+}
+
+func TestSaveRoundTripTokenFile(t *testing.T) {
+	assert := Assert.New(t)
+	path := filepath.Join(t.TempDir(), "config.toml")
+	cfg := &Config{
+		SyncInterval:        defaultSyncInterval,
+		GitHubTokenEnv:      defaultGitHubTokenEnv,
+		DefaultPlatformHost: defaultPlatformHost,
+		Host:                defaultHost,
+		Port:                defaultPort,
+		Platforms: []PlatformConfig{{
+			Type: "gitlab", Host: "gitlab.com", TokenFile: "/tokens/gitlab",
+		}},
+		Repos: []Repo{{
+			Owner: "acme", Name: "widget", Platform: "gitlab", PlatformHost: "gitlab.com", TokenFile: "/tokens/repo",
+		}},
+	}
+
+	require.NoError(t, cfg.Save(path))
+	loaded, err := Load(path)
+	require.NoError(t, err)
+	assert.Equal("/tokens/gitlab", loaded.Platforms[0].TokenFile)
+	assert.Equal("/tokens/repo", loaded.Repos[0].TokenFile)
 }
 
 func TestLoadPlatformConfigGitLabToken(t *testing.T) {
@@ -2505,6 +2679,28 @@ func TestTokenEnvNamesIncludesImplicitPublicForgeTokenEnvs(t *testing.T) {
 	)
 }
 
+func TestTokenEnvNamesIncludesImplicitPublicForgeTokenEnvsFromPlatformOnly(t *testing.T) {
+	cfg := &Config{
+		GitHubTokenEnv: "WORK_GH_BOT_TOKEN",
+		Platforms: []PlatformConfig{
+			{Type: "forgejo", Host: "codeberg.org"},
+			{Type: "gitea", Host: "gitea.com"},
+			{Type: "forgejo", Host: "forgejo.example.com"},
+			{Type: "gitea", Host: "gitea.internal.example"},
+		},
+	}
+
+	Assert.Equal(
+		t,
+		[]string{
+			"WORK_GH_BOT_TOKEN",
+			"MIDDLEMAN_FORGEJO_TOKEN",
+			"MIDDLEMAN_GITEA_TOKEN",
+		},
+		cfg.TokenEnvNames(),
+	)
+}
+
 func TestTokenEnvNamesIncludesFallbackProviderDefaultsForRepoTokenEnv(t *testing.T) {
 	cfg := &Config{
 		GitHubTokenEnv: "WORK_GH_BOT_TOKEN",
@@ -2602,7 +2798,7 @@ func TestGhAuthTokenForHostReturnsEmptyWhenBinaryMissing(t *testing.T) {
 	Assert.Empty(t, ghAuthTokenForHost("github.com"))
 }
 
-func TestGhAuthTokenForHostTimesOut(t *testing.T) {
+func TestGitHubCLITokenForHostTimesOutWithoutCallerDeadline(t *testing.T) {
 	// Fake gh sleeps longer than the timeout, so the helper must
 	// return "" once the context expires.
 	setFakeGHCLIScript(t, fakeGHCLIOptions{
@@ -2611,9 +2807,10 @@ func TestGhAuthTokenForHostTimesOut(t *testing.T) {
 	})
 
 	start := time.Now()
-	got := ghAuthTokenForHost("github.com")
+	got, err := GitHubCLITokenForHost(context.Background(), "github.com")
 	elapsed := time.Since(start)
 
+	require.NoError(t, err)
 	Assert.Empty(t, got)
 	Assert.Less(
 		t, elapsed, ghAuthExecTimeout+2*time.Second,

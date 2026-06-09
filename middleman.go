@@ -17,6 +17,7 @@ import (
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/server"
 	"go.kenn.io/middleman/internal/stacks"
+	"go.kenn.io/middleman/internal/tokenauth"
 	"go.kenn.io/middleman/internal/web"
 )
 
@@ -68,38 +69,73 @@ func uniqueHosts(repos []Repo) []string {
 	return hosts
 }
 
-// resolveHostTokens builds a map of host -> token. When
-// resolveToken is set it is called once per host with ctx;
-// otherwise staticToken is used for all hosts. ctx lets
-// callers bound slow or hung token providers.
-func resolveHostTokens(
+// resolveHostTokenSources builds a map of host -> runtime token source. When
+// resolveToken is set the source calls it per token request, allowing embedded
+// callers to rotate credentials without rebuilding the instance.
+func resolveHostTokenSources(
 	ctx context.Context,
 	hosts []string,
 	staticToken string,
 	resolveToken func(ctx context.Context, host string) (string, error),
-) (map[string]string, error) {
-	tokens := make(map[string]string, len(hosts))
+) (map[string]tokenauth.Source, error) {
+	sources := make(map[string]tokenauth.Source, len(hosts))
 	for _, host := range hosts {
-		if resolveToken != nil {
-			tok, err := resolveToken(ctx, host)
-			if err != nil {
-				return nil, fmt.Errorf(
-					"middleman: resolve token for %s: %w",
-					host, err,
-				)
-			}
-			tokens[host] = tok
-		} else {
-			tokens[host] = staticToken
+		source := embedTokenSource{
+			host:         host,
+			staticToken:  staticToken,
+			resolveToken: resolveToken,
 		}
-		if tokens[host] == "" {
-			return nil, fmt.Errorf(
-				"middleman: token is required (empty for host %s)",
-				host,
+		if _, err := source.Token(ctx); err != nil {
+			return nil, err
+		}
+		sources[host] = source
+	}
+	return sources, nil
+}
+
+type embedTokenSource struct {
+	host         string
+	staticToken  string
+	resolveToken func(ctx context.Context, host string) (string, error)
+}
+
+func (s embedTokenSource) Token(ctx context.Context) (string, error) {
+	token := s.staticToken
+	if s.resolveToken != nil {
+		resolved, err := s.resolveToken(ctx, s.host)
+		if err != nil {
+			return "", fmt.Errorf(
+				"middleman: resolve token for %s: %w",
+				s.host, err,
 			)
 		}
+		token = resolved
 	}
-	return tokens, nil
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return "", fmt.Errorf(
+			"%w for github host %s via %s",
+			tokenauth.ErrMissingToken, s.host, s.Descriptor().SafeString(),
+		)
+	}
+	tokenauth.RegisterKnownSecret(token)
+	return token, nil
+}
+
+func (s embedTokenSource) Invalidate() {}
+
+func (s embedTokenSource) Descriptor() tokenauth.Descriptor {
+	kind := tokenauth.SourceKind("embedded_static")
+	if s.resolveToken != nil {
+		kind = tokenauth.SourceKind("embedded_resolver")
+	}
+	return tokenauth.Descriptor{
+		Key: tokenauth.Key{Platform: "github", Host: s.host},
+		Candidates: []tokenauth.Candidate{{
+			Kind: kind,
+			Host: s.host,
+		}},
+	}
 }
 
 // EmbedHooks provides lifecycle callbacks for embedded consumers.
@@ -162,7 +198,9 @@ type Options struct {
 	Token string
 	// ResolveToken returns a GitHub token for the given platform
 	// host (e.g. "github.com"). Preferred over Token for
-	// embedded use cases that need per-host auth.
+	// embedded use cases that need per-host auth or runtime token
+	// rotation. It is called during startup validation and again
+	// when provider or clone operations need a token.
 	ResolveToken func(ctx context.Context, host string) (string, error)
 	// DataDir is the directory for middleman state. Required if
 	// DBPath is not set.
@@ -259,8 +297,8 @@ func NewWithContext(
 		)
 	}
 
-	// Build per-host tokens.
-	hostTokens, err := resolveHostTokens(
+	// Build per-host token sources.
+	hostSources, err := resolveHostTokenSources(
 		ctx, hosts, opts.Token, opts.ResolveToken,
 	)
 	if err != nil {
@@ -302,7 +340,7 @@ func NewWithContext(
 			)
 		}
 		gh, cErr := ghclient.NewClient(
-			hostTokens[host], host, rt, budgets[rateKey],
+			hostSources[host], host, rt, budgets[rateKey],
 		)
 		if cErr != nil {
 			database.Close()
@@ -332,7 +370,7 @@ func NewWithContext(
 	var cloneMgr *gitclone.Manager
 	if opts.DataDir != "" {
 		cloneDir := filepath.Join(opts.DataDir, "clones")
-		cloneMgr = gitclone.New(cloneDir, hostTokens)
+		cloneMgr = gitclone.New(cloneDir, hostSources)
 	}
 
 	syncer := ghclient.NewSyncer(
@@ -350,7 +388,7 @@ func NewWithContext(
 			database, "github", host, "graphql",
 		)
 		fetchers[host] = ghclient.NewGraphQLFetcher(
-			hostTokens[host], host, gqlRT, budgets[rateKey],
+			hostSources[host], host, gqlRT, budgets[rateKey],
 		)
 	}
 	syncer.SetFetchers(fetchers)

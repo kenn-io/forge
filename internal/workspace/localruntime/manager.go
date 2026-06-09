@@ -339,7 +339,7 @@ func (m *Manager) Launch(
 		Status:      SessionStatusStarting,
 		CreatedAt:   time.Now().UTC(),
 		TmuxSession: launch.TmuxSession,
-	}, launch.Command, cwd, m.stripEnvVars)
+	}, launch.Command, cwd, m.currentStripEnvVars())
 	if err != nil {
 		if launch.TmuxCreated {
 			_ = m.killTmuxSession(ctx, launch.TmuxSession)
@@ -543,7 +543,7 @@ func (m *Manager) restoreRuntimeSession(
 			return commandErr
 		}
 		started, err = m.startOwnedSession(
-			ctx, info, command, "", m.stripEnvVars,
+			ctx, info, command, "", m.currentStripEnvVars(),
 		)
 	}
 	if err != nil {
@@ -611,6 +611,30 @@ func (m *Manager) LaunchTargets() []LaunchTarget {
 }
 
 func (m *Manager) UpdateTargets(targets []LaunchTarget) {
+	next, nextList := cloneLaunchTargetSet(targets)
+
+	m.mu.Lock()
+	m.targets = next
+	m.targetsList = nextList
+	m.mu.Unlock()
+}
+
+func (m *Manager) UpdateTargetsAndStripEnvVars(
+	targets []LaunchTarget,
+	names []string,
+) {
+	next, nextList := cloneLaunchTargetSet(targets)
+
+	m.mu.Lock()
+	m.targets = next
+	m.targetsList = nextList
+	m.stripEnvVars = dedupeStrings(append(slices.Clone(m.stripEnvVars), names...))
+	m.mu.Unlock()
+}
+
+func cloneLaunchTargetSet(
+	targets []LaunchTarget,
+) (map[string]LaunchTarget, []LaunchTarget) {
 	next := make(map[string]LaunchTarget, len(targets))
 	nextList := make([]LaunchTarget, 0, len(targets))
 	for _, target := range targets {
@@ -618,11 +642,19 @@ func (m *Manager) UpdateTargets(targets []LaunchTarget) {
 		next[target.Key] = cloned
 		nextList = append(nextList, cloneTarget(cloned))
 	}
+	return next, nextList
+}
 
+func (m *Manager) UpdateStripEnvVars(names []string) {
 	m.mu.Lock()
-	m.targets = next
-	m.targetsList = nextList
+	m.stripEnvVars = dedupeStrings(append(slices.Clone(m.stripEnvVars), names...))
 	m.mu.Unlock()
+}
+
+func (m *Manager) currentStripEnvVars() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return slices.Clone(m.stripEnvVars)
 }
 
 func (m *Manager) ListSessions(workspaceID string) []SessionInfo {
@@ -1209,7 +1241,7 @@ func (m *Manager) shellLaunchCommand(
 
 	tmuxSession := tmuxSessionName(workspaceID, sessionKey)
 	paneEnv := tmuxShellEnvPolicy.paneEnvironment(
-		os.Environ(), resolvedCommand, m.stripEnvVars,
+		os.Environ(), resolvedCommand, m.currentStripEnvVars(),
 	)
 	prepared, err := tmuxLauncher{
 		TmuxCommand: tmuxCommand,
@@ -1362,7 +1394,7 @@ func (m *Manager) launchCommand(
 	tmuxSession := tmuxSessionName(workspaceID, sessionKey)
 
 	paneEnv := tmuxAgentEnvPolicy.paneEnvironment(
-		os.Environ(), resolvedAgentCommand, m.stripEnvVars,
+		os.Environ(), resolvedAgentCommand, m.currentStripEnvVars(),
 	)
 	prepared, err := tmuxLauncher{
 		TmuxCommand: tmuxCommand,

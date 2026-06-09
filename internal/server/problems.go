@@ -15,13 +15,16 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/middleman/internal/tokenauth"
 )
 
 // ProblemCode is the machine-readable error code carried on the wire.
@@ -132,9 +135,25 @@ func (p *ProblemError) Error() string {
 		return "<nil problem>"
 	}
 	if p.Detail != "" {
-		return p.Detail
+		return tokenauth.RedactKnownSecrets(p.Detail)
 	}
 	return string(p.Code)
+}
+
+type problemErrorJSON ProblemError
+
+func (p *ProblemError) MarshalJSON() ([]byte, error) {
+	if p == nil {
+		return []byte("null"), nil
+	}
+	safe := *p
+	safe.Type = tokenauth.RedactKnownSecrets(safe.Type)
+	safe.Title = tokenauth.RedactKnownSecrets(safe.Title)
+	safe.Detail = tokenauth.RedactKnownSecrets(safe.Detail)
+	safe.Instance = tokenauth.RedactKnownSecrets(safe.Instance)
+	safe.Errors = sanitizeProblemErrors(safe.Errors)
+	safe.Details = sanitizeProblemDetails(safe.Details)
+	return json.Marshal(problemErrorJSON(safe))
 }
 
 // GetStatus satisfies huma.StatusError.
@@ -206,10 +225,68 @@ func newProblem(status int, code ProblemCode, detail string, details map[string]
 	return &ProblemError{
 		Status:  status,
 		Title:   titleForStatus(status),
-		Detail:  detail,
+		Detail:  tokenauth.RedactKnownSecrets(detail),
 		Code:    code,
-		Details: details,
+		Details: sanitizeProblemDetails(details),
 	}
+}
+
+func sanitizeProblemDetails(details map[string]any) map[string]any {
+	if len(details) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(details))
+	for key, value := range details {
+		out[tokenauth.RedactKnownSecrets(key)] = sanitizeProblemValue(value)
+	}
+	return out
+}
+
+func sanitizeProblemValue(value any) any {
+	switch typed := value.(type) {
+	case nil:
+		return nil
+	case string:
+		return tokenauth.RedactKnownSecrets(typed)
+	case error:
+		return tokenauth.RedactKnownSecrets(typed.Error())
+	case fmt.Stringer:
+		return tokenauth.RedactKnownSecrets(typed.String())
+	case []string:
+		out := make([]string, len(typed))
+		for i, item := range typed {
+			out[i] = tokenauth.RedactKnownSecrets(item)
+		}
+		return out
+	case []any:
+		out := make([]any, len(typed))
+		for i, item := range typed {
+			out[i] = sanitizeProblemValue(item)
+		}
+		return out
+	case map[string]any:
+		return sanitizeProblemDetails(typed)
+	default:
+		return value
+	}
+}
+
+func sanitizeProblemErrors(errors []*huma.ErrorDetail) []*huma.ErrorDetail {
+	if len(errors) == 0 {
+		return nil
+	}
+	out := make([]*huma.ErrorDetail, 0, len(errors))
+	for _, detail := range errors {
+		if detail == nil {
+			continue
+		}
+		safe := *detail
+		safe.Location = tokenauth.RedactKnownSecrets(safe.Location)
+		safe.Message = tokenauth.RedactKnownSecrets(safe.Message)
+		safe.Value = sanitizeProblemValue(safe.Value)
+		out = append(out, &safe)
+	}
+	return out
 }
 
 // problemBadRequest returns a 400 with the supplied code (defaults to
@@ -375,6 +452,12 @@ func providerCallProblemWithDetail(
 	if err == nil {
 		return nil
 	}
+	if errors.Is(err, tokenauth.ErrMissingToken) {
+		if detail == "" {
+			detail = err.Error()
+		}
+		return problemBadRequest(CodeBadRequest, detail, nil)
+	}
 	var pe *platform.Error
 	if errors.As(err, &pe) {
 		if mapped := mapPlatformError(err); mapped != nil {
@@ -398,6 +481,9 @@ func mapPlatformError(err error) huma.StatusError {
 	}
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return nil
+	}
+	if errors.Is(err, tokenauth.ErrMissingToken) {
+		return problemBadRequest(CodeBadRequest, err.Error(), nil)
 	}
 	var pe *platform.Error
 	if !errors.As(err, &pe) {
@@ -466,7 +552,7 @@ func init() {
 		}
 		p := newProblem(status, codeForStatus(status), msg, nil)
 		if len(details) > 0 {
-			p.Errors = details
+			p.Errors = sanitizeProblemErrors(details)
 		}
 		return p
 	}

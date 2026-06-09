@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -22,6 +23,7 @@ import (
 	"go.kenn.io/middleman/internal/server"
 	"go.kenn.io/middleman/internal/testutil"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
+	"go.kenn.io/middleman/internal/tokenauth"
 )
 
 func TestMain(m *testing.M) {
@@ -31,6 +33,86 @@ func TestMain(m *testing.M) {
 		}
 	}
 	os.Exit(m.Run())
+}
+
+func TestConfigureLoggingRedactsTokens(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	orig := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(orig) })
+	var buf bytes.Buffer
+
+	closeLog, err := configureLogging(&buf)
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(closeLog()) })
+
+	slog.Error(
+		"request failed with ghp_message_secret",
+		"err", errors.New("https://x-access-token:ghp_error_secret@github.com/acme/widgets.git failed"),
+		"token", "plain-provider-secret",
+	)
+
+	out := buf.String()
+	require.NotEmpty(out)
+	for _, secret := range []string{
+		"ghp_message_secret",
+		"ghp_error_secret",
+		"plain-provider-secret",
+		"x-access-token",
+	} {
+		assert.NotContains(out, secret)
+	}
+	assert.Contains(out, "[REDACTED]")
+}
+
+func TestConfigureLoggingRedactsTokensInConfiguredLogFile(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	orig := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(orig) })
+	var stderr bytes.Buffer
+	logFile := filepath.Join(t.TempDir(), "middleman.log")
+	t.Setenv("MIDDLEMAN_LOG_FILE", logFile)
+
+	closeLog, err := configureLogging(&stderr)
+	require.NoError(err)
+
+	slog.Error(
+		"request failed with glpat-message-secret",
+		"err", errors.New("https://oauth2:glpat_url_secret@gitlab.example.com/acme/widgets.git failed"),
+		"authorization", "Bearer plain-provider-secret",
+	)
+	require.NoError(closeLog())
+
+	fileOut, err := os.ReadFile(logFile)
+	require.NoError(err)
+	for _, out := range []string{stderr.String(), string(fileOut)} {
+		require.NotEmpty(out)
+		for _, secret := range []string{
+			"glpat-message-secret",
+			"glpat_url_secret",
+			"plain-provider-secret",
+			"oauth2",
+		} {
+			assert.NotContains(out, secret)
+		}
+		assert.Contains(out, "[REDACTED]")
+	}
+}
+
+func mainTestTokenSource(
+	t *testing.T,
+	platformName, host, envName, token string,
+) tokenauth.Source {
+	t.Helper()
+	t.Setenv(envName, token)
+	return tokenauth.NewManagedSource(tokenauth.Descriptor{
+		Key: tokenauth.Key{Platform: platformName, Host: host},
+		Candidates: []tokenauth.Candidate{{
+			Kind:    tokenauth.SourceKindEnv,
+			EnvName: envName,
+		}},
+	}, tokenauth.Options{})
 }
 
 func TestResolveStartupReposExpandsConfiguredGlobs(t *testing.T) {
@@ -163,6 +245,67 @@ func TestValidateProviderHostKeysAllowsMixedProvidersOnSameHostWithSameToken(t *
 	require.NoError(t, err)
 }
 
+func TestValidateProviderHostKeysRejectsMixedProviderSourcesOnSameHost(t *testing.T) {
+	assert := Assert.New(t)
+	host := "code.example.com"
+	err := validateProviderHostKeys(map[string]tokenauth.Source{
+		providerHostKey("github", host): tokenauth.NewManagedSource(
+			tokenauth.Descriptor{
+				Key: tokenauth.Key{Platform: "github", Host: host},
+				Candidates: []tokenauth.Candidate{{
+					Kind:    tokenauth.SourceKindEnv,
+					EnvName: "GITHUB_TOKEN",
+				}},
+			},
+			tokenauth.Options{},
+		),
+		providerHostKey("gitlab", host): tokenauth.NewManagedSource(
+			tokenauth.Descriptor{
+				Key: tokenauth.Key{Platform: "gitlab", Host: host},
+				Candidates: []tokenauth.Candidate{{
+					Kind:    tokenauth.SourceKindEnv,
+					EnvName: "GITLAB_TOKEN",
+				}},
+			},
+			tokenauth.Options{},
+		),
+	})
+
+	require.Error(t, err)
+	assert.Contains(err.Error(), host)
+}
+
+func TestValidateProviderHostKeysAllowsMixedProviderSourcesOnSameHostWithSameDescriptor(t *testing.T) {
+	host := "code.example.com"
+	githubSource := tokenauth.NewManagedSource(
+		tokenauth.Descriptor{
+			Key: tokenauth.Key{Platform: "github", Host: host},
+			Candidates: []tokenauth.Candidate{{
+				Kind:    tokenauth.SourceKindEnv,
+				EnvName: "SHARED_TOKEN",
+			}},
+		},
+		tokenauth.Options{},
+	)
+	gitlabSource := tokenauth.NewManagedSource(
+		tokenauth.Descriptor{
+			Key: tokenauth.Key{Platform: "gitlab", Host: host},
+			Candidates: []tokenauth.Candidate{{
+				Kind:    tokenauth.SourceKindEnv,
+				EnvName: "SHARED_TOKEN",
+			}},
+		},
+		tokenauth.Options{},
+	)
+
+	err := validateProviderHostKeys(map[string]tokenauth.Source{
+		providerHostKey("github", host): githubSource,
+		providerHostKey("gitlab", host): gitlabSource,
+	})
+
+	require.NoError(t, err)
+}
+
 func TestDefaultProviderFactoriesRegisterForgejoAndGitea(t *testing.T) {
 	factories := defaultProviderFactories()
 
@@ -202,9 +345,13 @@ func TestBuildProviderStartupKeepsForgeProviderHostsDistinct(t *testing.T) {
 	startup, err := buildProviderStartup(
 		database,
 		&config.Config{SyncBudgetPerHour: 200},
-		map[string]string{
-			providerHostKey(string(platform.KindForgejo), "codeberg.org"):    "codeberg-token",
-			providerHostKey(string(platform.KindGitea), "gitea.example.com"): "gitea-token",
+		map[string]tokenauth.Source{
+			providerHostKey(string(platform.KindForgejo), "codeberg.org"): mainTestTokenSource(
+				t, string(platform.KindForgejo), "codeberg.org", "FORGEJO_TEST_TOKEN", "codeberg-token",
+			),
+			providerHostKey(string(platform.KindGitea), "gitea.example.com"): mainTestTokenSource(
+				t, string(platform.KindGitea), "gitea.example.com", "GITEA_TEST_TOKEN", "gitea-token",
+			),
 		},
 		factories,
 	)
@@ -215,13 +362,35 @@ func TestBuildProviderStartupKeepsForgeProviderHostsDistinct(t *testing.T) {
 	require.Len(forgejoCalls, 1)
 	require.Len(giteaCalls, 1)
 	assert.Equal("codeberg.org", forgejoCalls[0].host)
-	assert.Equal("codeberg-token", forgejoCalls[0].token)
+	forgejoFactoryToken, err := forgejoCalls[0].tokenSource.Token(t.Context())
+	require.NoError(err)
+	assert.Equal("codeberg-token", forgejoFactoryToken)
 	assert.Equal("gitea.example.com", giteaCalls[0].host)
-	assert.Equal("gitea-token", giteaCalls[0].token)
+	giteaFactoryToken, err := giteaCalls[0].tokenSource.Token(t.Context())
+	require.NoError(err)
+	assert.Equal("gitea-token", giteaFactoryToken)
 	assert.NotSame(forgejoCalls[0].rateTracker, giteaCalls[0].rateTracker)
 	assert.NotSame(forgejoCalls[0].budget, giteaCalls[0].budget)
-	assert.Equal("codeberg-token", startup.cloneTokens["codeberg.org"])
-	assert.Equal("gitea-token", startup.cloneTokens["gitea.example.com"])
+	forgejoCloneSource := startup.cloneAuth["codeberg.org"]
+	giteaCloneSource := startup.cloneAuth["gitea.example.com"]
+	require.NotNil(forgejoCloneSource)
+	require.NotNil(giteaCloneSource)
+	forgejoToken, err := forgejoCloneSource.Token(t.Context())
+	require.NoError(err)
+	giteaToken, err := giteaCloneSource.Token(t.Context())
+	require.NoError(err)
+	assert.Equal("codeberg-token", forgejoToken)
+	assert.Equal("gitea-token", giteaToken)
+	assert.Same(
+		forgejoCalls[0].tokenSource,
+		startup.cloneSources[tokenauth.Key{Platform: string(platform.KindForgejo), Host: "codeberg.org"}],
+	)
+	assert.Same(forgejoCalls[0].tokenSource, forgejoCloneSource)
+	assert.Same(
+		giteaCalls[0].tokenSource,
+		startup.cloneSources[tokenauth.Key{Platform: string(platform.KindGitea), Host: "gitea.example.com"}],
+	)
+	assert.Same(giteaCalls[0].tokenSource, giteaCloneSource)
 
 	forgejoReader, err := startup.registry.RepositoryReader(platform.KindForgejo, "codeberg.org")
 	require.NoError(err)
@@ -241,12 +410,18 @@ func TestBuildProviderStartupUsesRegisteredFactoryForFutureProvider(t *testing.T
 	startup, err := buildProviderStartup(
 		database,
 		&config.Config{},
-		map[string]string{providerHostKey("codeberg", "codeberg.org"): "codeberg-token"},
+		map[string]tokenauth.Source{
+			providerHostKey("codeberg", "codeberg.org"): mainTestTokenSource(
+				t, "codeberg", "codeberg.org", "CODEBERG_TEST_TOKEN", "codeberg-token",
+			),
+		},
 		map[string]providerFactory{
 			"codeberg": func(input providerFactoryInput) (providerFactoryOutput, error) {
 				called = true
 				assert.Equal("codeberg.org", input.host)
-				assert.Equal("codeberg-token", input.token)
+				token, err := input.tokenSource.Token(t.Context())
+				require.NoError(err)
+				assert.Equal("codeberg-token", token)
 				return providerFactoryOutput{
 					provider: mainTestRepositoryReader{
 						kind: platform.Kind("codeberg"),
@@ -258,7 +433,15 @@ func TestBuildProviderStartupUsesRegisteredFactoryForFutureProvider(t *testing.T
 	)
 	require.NoError(err)
 	assert.True(called)
-	assert.Equal("codeberg-token", startup.cloneTokens["codeberg.org"])
+	src := startup.cloneAuth["codeberg.org"]
+	require.NotNil(src)
+	token, err := src.Token(t.Context())
+	require.NoError(err)
+	assert.Equal("codeberg-token", token)
+	assert.Same(
+		src,
+		startup.cloneSources[tokenauth.Key{Platform: "codeberg", Host: "codeberg.org"}],
+	)
 
 	reader, err := startup.registry.RepositoryReader(platform.Kind("codeberg"), "codeberg.org")
 	require.NoError(err)

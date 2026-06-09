@@ -33,25 +33,25 @@ func (m *mockClient) ListPullRequestTimelineEvents(
 }
 
 func TestNewClientReturnsNonNil(t *testing.T) {
-	c, err := NewClient("fake-token", "", nil, nil)
+	c, err := NewClient(testTokenSource("fake-token"), "", nil, nil)
 	require.NoError(t, err)
 	require.NotNil(t, c)
 }
 
 func TestNewClientEnterprise(t *testing.T) {
-	c, err := NewClient("test-token", "github.mycompany.com", nil, nil)
+	c, err := NewClient(testTokenSource("test-token"), "github.mycompany.com", nil, nil)
 	require.NoError(t, err)
 	require.NotNil(t, c)
 }
 
 func TestNewClientGitHubDotCom(t *testing.T) {
-	c, err := NewClient("test-token", "github.com", nil, nil)
+	c, err := NewClient(testTokenSource("test-token"), "github.com", nil, nil)
 	require.NoError(t, err)
 	require.NotNil(t, c)
 }
 
 func TestNewClientEmptyHost(t *testing.T) {
-	c, err := NewClient("test-token", "", nil, nil)
+	c, err := NewClient(testTokenSource("test-token"), "", nil, nil)
 	require.NoError(t, err)
 	require.NotNil(t, c)
 }
@@ -768,7 +768,7 @@ func TestMarkPullRequestReadyForReviewReturnsTypedStaleStateError(t *testing.T) 
 func TestNewClientWiresETagTransport(t *testing.T) {
 	require := require.New(t)
 
-	c, err := NewClient("fake-token", "", nil, nil)
+	c, err := NewClient(testTokenSource("fake-token"), "", nil, nil)
 	require.NoError(err)
 	lc, ok := c.(*liveClient)
 	require.Truef(ok, "expected *liveClient, got %T", c)

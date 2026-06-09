@@ -286,7 +286,9 @@ func TestAPIRepoResponseIncludesOperationsGraphQLPauseDoesNotBlockREST(t *testin
 		nil,
 	)
 	syncer.SetFetchers(map[string]*ghclient.GraphQLFetcher{
-		"github.com": ghclient.NewGraphQLFetcher("fake-token", "github.com", gqlRT, nil),
+		"github.com": ghclient.NewGraphQLFetcher(
+			testTokenSource("fake-token"), "github.com", gqlRT, nil,
+		),
 	})
 	t.Cleanup(syncer.Stop)
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})

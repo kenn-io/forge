@@ -1,0 +1,97 @@
+package tokenauth
+
+import (
+	"fmt"
+	"slices"
+	"strings"
+)
+
+type SourceKind string
+
+const (
+	SourceKindEnv       SourceKind = "env"
+	SourceKindFile      SourceKind = "file"
+	SourceKindGitHubCLI SourceKind = "github_cli"
+)
+
+type Key struct {
+	Platform string
+	Host     string
+}
+
+func (k Key) String() string {
+	return k.Platform + "\x00" + k.Host
+}
+
+type Candidate struct {
+	Kind     SourceKind
+	EnvName  string
+	FilePath string
+	Host     string
+}
+
+func (c Candidate) SafeString() string {
+	switch c.Kind {
+	case SourceKindEnv:
+		return fmt.Sprintf("env:%s", c.EnvName)
+	case SourceKindFile:
+		return fmt.Sprintf("file:%s", c.FilePath)
+	case SourceKindGitHubCLI:
+		return fmt.Sprintf("github_cli:%s", c.Host)
+	default:
+		return string(c.Kind)
+	}
+}
+
+type Descriptor struct {
+	Key        Key
+	Candidates []Candidate
+}
+
+func (d Descriptor) EqualSource(other Descriptor) bool {
+	return d.Key == other.Key &&
+		slices.Equal(
+			canonicalCandidates(d.Candidates),
+			canonicalCandidates(other.Candidates),
+		)
+}
+
+func (d Descriptor) SafeString() string {
+	if len(d.Candidates) == 0 {
+		return "none"
+	}
+	var out strings.Builder
+	out.WriteString(d.Candidates[0].SafeString())
+	for _, c := range d.Candidates[1:] {
+		out.WriteString(" -> ")
+		out.WriteString(c.SafeString())
+	}
+	return out.String()
+}
+
+func canonicalCandidates(candidates []Candidate) []Candidate {
+	out := make([]Candidate, 0, len(candidates))
+	seen := make(map[Candidate]struct{}, len(candidates))
+	for _, candidate := range candidates {
+		candidate = canonicalCandidate(candidate)
+		if _, ok := seen[candidate]; ok {
+			continue
+		}
+		seen[candidate] = struct{}{}
+		out = append(out, candidate)
+	}
+	return out
+}
+
+func canonicalCandidate(candidate Candidate) Candidate {
+	switch candidate.Kind {
+	case SourceKindEnv:
+		return Candidate{Kind: candidate.Kind, EnvName: candidate.EnvName}
+	case SourceKindFile:
+		return Candidate{Kind: candidate.Kind, FilePath: candidate.FilePath}
+	case SourceKindGitHubCLI:
+		return Candidate{Kind: candidate.Kind, Host: candidate.Host}
+	default:
+		return candidate
+	}
+}

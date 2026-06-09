@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -15,6 +16,7 @@ import (
 	gitcmd "go.kenn.io/kit/git/cmd"
 	gitremote "go.kenn.io/kit/git/remote"
 	"go.kenn.io/middleman/internal/procutil"
+	"go.kenn.io/middleman/internal/tokenauth"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -32,8 +34,8 @@ var ErrNotFound = errors.New("git object not found")
 
 // Manager manages bare git clones for diff computation.
 type Manager struct {
-	baseDir string            // directory to store clones
-	tokens  map[string]string // host -> token (e.g., "github.com" -> "ghp_...")
+	baseDir      string                      // directory to store clones
+	tokenSources map[string]tokenauth.Source // host -> token source
 
 	// ensureSF deduplicates concurrent EnsureClone calls for the same
 	// (host, owner, name). Without it, callers like the periodic syncer,
@@ -44,10 +46,10 @@ type Manager struct {
 }
 
 // New creates a Manager that stores bare clones under baseDir.
-// tokens maps each host (e.g., "github.com") to its auth token.
+// tokenSources maps each host (e.g., "github.com") to its auth token source.
 // A nil or empty map means all operations proceed without auth.
-func New(baseDir string, tokens map[string]string) *Manager {
-	return &Manager{baseDir: baseDir, tokens: tokens}
+func New(baseDir string, tokenSources map[string]tokenauth.Source) *Manager {
+	return &Manager{baseDir: baseDir, tokenSources: tokenSources}
 }
 
 // ClonePath returns the filesystem path for a repo's bare clone.
@@ -230,7 +232,7 @@ func (m *Manager) cloneBare(
 		if err := os.RemoveAll(clonePath); err != nil {
 			return nil, fmt.Errorf("cleanup partial clone: %w", err)
 		}
-		return m.git(ctx, host, "", "clone", "--bare", remoteURL, clonePath)
+		return m.gitCloneBare(ctx, host, clonePath, remoteURL)
 	})
 	if err != nil {
 		return fmt.Errorf("git clone --bare: %w", err)
@@ -330,38 +332,158 @@ func (m *Manager) git(
 func (m *Manager) gitWithInput(
 	ctx context.Context, host, dir string, input []byte, args ...string,
 ) ([]byte, error) {
-	runner := m.gitRunner(host)
+	return m.gitWithInputAuthRetryCleanup(ctx, host, dir, input, nil, args...)
+}
+
+func (m *Manager) gitCloneBare(
+	ctx context.Context, host, clonePath, remoteURL string,
+) ([]byte, error) {
+	return m.gitWithInputAuthRetryCleanup(
+		ctx, host, "", nil,
+		func() error {
+			if err := os.RemoveAll(clonePath); err != nil {
+				return fmt.Errorf("cleanup partial clone before auth retry: %w", err)
+			}
+			return nil
+		},
+		"clone", "--bare", remoteURL, clonePath,
+	)
+}
+
+func (m *Manager) gitWithInputAuthRetryCleanup(
+	ctx context.Context,
+	host, dir string,
+	input []byte,
+	cleanupBeforeAuthRetry func() error,
+	args ...string,
+) ([]byte, error) {
+	out, stderr, err := m.runGit(ctx, host, dir, input, args...)
+	if err == nil {
+		return out, nil
+	}
+	wrapped := wrapGitError(err, stderr)
+	if isAuthGitError(wrapped) && m.invalidateTokenSource(host) {
+		if cleanupBeforeAuthRetry != nil {
+			if err := cleanupBeforeAuthRetry(); err != nil {
+				return nil, err
+			}
+		}
+		out, stderr, err = m.runGit(ctx, host, dir, input, args...)
+		if err == nil {
+			return out, nil
+		}
+		wrapped = wrapGitError(err, stderr)
+	}
+	return nil, wrapped
+}
+
+func (m *Manager) runGit(
+	ctx context.Context, host, dir string, input []byte, args ...string,
+) ([]byte, []byte, error) {
+	runner, err := m.gitRunner(ctx, host)
+	if err != nil {
+		return nil, nil, err
+	}
 	var stdin io.Reader
 	if input != nil {
 		stdin = bytes.NewReader(input)
 	}
 	release, err := procutil.TryAcquire(ctx, "git subprocess capacity")
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer release()
-	out, stderr, err := runner.Run(ctx, dir, stdin, args...)
-	if err != nil {
-		msg := string(stderr)
-		if isNotFoundError(msg) {
-			return nil, fmt.Errorf("%w: %s", ErrNotFound, msg)
-		}
-		return nil, fmt.Errorf("%w: %s", err, msg)
-	}
-	return out, nil
+	return runner.Run(ctx, dir, stdin, args...)
 }
 
-func (m *Manager) gitRunner(host string) gitcmd.Runner {
+func wrapGitError(err error, stderr []byte) error {
+	msg := tokenauth.RedactKnownSecrets(string(stderr))
+	if isNotFoundError(msg) {
+		return fmt.Errorf("%w: %s", ErrNotFound, msg)
+	}
+	errMsg := tokenauth.RedactKnownSecrets(err.Error())
+	wrapped := gitCommandError{
+		message: errMsg + ": " + msg,
+		cause:   safeGitErrorCause(err),
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		wrapped.exitCode = exitErr.ExitCode()
+		wrapped.hasExitCode = true
+	}
+	return wrapped
+}
+
+type gitCommandError struct {
+	message     string
+	cause       error
+	exitCode    int
+	hasExitCode bool
+}
+
+func (e gitCommandError) Error() string {
+	return e.message
+}
+
+func (e gitCommandError) Unwrap() error {
+	return e.cause
+}
+
+func (e gitCommandError) ExitCode() (int, bool) {
+	return e.exitCode, e.hasExitCode
+}
+
+func safeGitErrorCause(err error) error {
+	switch {
+	case errors.Is(err, context.Canceled):
+		return context.Canceled
+	case errors.Is(err, context.DeadlineExceeded):
+		return context.DeadlineExceeded
+	case errors.Is(err, tokenauth.ErrMissingToken):
+		return tokenauth.ErrMissingToken
+	default:
+		return nil
+	}
+}
+
+func gitExitCode(err error) (int, bool) {
+	var exitErr interface {
+		ExitCode() (int, bool)
+	}
+	if errors.As(err, &exitErr) {
+		return exitErr.ExitCode()
+	}
+	return 0, false
+}
+
+func (m *Manager) invalidateTokenSource(host string) bool {
+	source := m.tokenSources[host]
+	if source == nil {
+		return false
+	}
+	source.Invalidate()
+	return true
+}
+
+func (m *Manager) gitRunner(ctx context.Context, host string) (gitcmd.Runner, error) {
 	// Middleman relies on kit's automation defaults here: inherited GIT_*
 	// variables are stripped, global/system config is ignored, and terminal
 	// prompts are disabled. Clone/fetch still uses middleman's subprocess
 	// limiter above because it shares capacity with the rest of the app.
 	runner := gitcmd.New()
-	if token := m.tokens[host]; token != "" {
+	source := m.tokenSources[host]
+	if source == nil {
+		return runner, nil
+	}
+	token, err := source.Token(ctx)
+	if err != nil {
+		return runner, fmt.Errorf("resolve git token for host %s: %w", host, err)
+	}
+	if token != "" {
 		// GitHub's smart HTTP endpoint expects Basic auth credentials.
 		runner = runner.WithBasicAuth("x-access-token", token)
 	}
-	return runner
+	return runner, nil
 }
 
 // isNotFoundError checks if git stderr indicates a missing object or ref.
@@ -372,4 +494,14 @@ func isNotFoundError(stderr string) bool {
 		strings.Contains(s, "not a valid object name") ||
 		strings.Contains(s, "not a valid commit name") ||
 		strings.Contains(s, "does not exist")
+}
+
+func isAuthGitError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "authentication failed") ||
+		strings.Contains(msg, "could not read username") ||
+		strings.Contains(msg, "terminal prompts disabled")
 }

@@ -12,7 +12,7 @@ import (
 	"time"
 
 	gh "github.com/google/go-github/v84/github"
-	"golang.org/x/oauth2"
+	"go.kenn.io/middleman/internal/tokenauth"
 )
 
 type ForcePushEvent struct {
@@ -174,35 +174,38 @@ func graphQLEndpointForHost(platformHost string) string {
 }
 
 // NewClient creates a GitHub Client authenticated with the given
-// token. platformHost selects the API endpoint: "" or "github.com"
+// token source. platformHost selects the API endpoint: "" or "github.com"
 // uses the public API; any other value creates an Enterprise
 // client. rateTracker and budget may be nil.
 func NewClient(
-	token string,
+	source tokenauth.Source,
 	platformHost string,
 	rateTracker *RateTracker,
 	budget *SyncBudget,
 ) (Client, error) {
-	ts := oauth2.StaticTokenSource(
-		&oauth2.Token{AccessToken: token},
-	)
-	tc := oauth2.NewClient(context.Background(), ts)
-	et := &etagTransport{base: tc.Transport}
+	authRT := tokenauth.AuthTransport{
+		Source:              source,
+		Base:                http.DefaultTransport,
+		SetHeader:           tokenauth.BearerAuthHeader,
+		RetryOnUnauthorized: true,
+		AllowedOrigin:       restAPIOriginForHost(platformHost),
+	}
+	et := &etagTransport{base: authRT}
 	var transport http.RoundTripper = et
 	if budget != nil {
-		transport = &budgetTransport{base: et, budget: budget}
+		transport = &budgetTransport{base: transport, budget: budget}
 	}
-	tc.Transport = wrapPublicGitHubAPIGuard(transport)
+	httpClient := &http.Client{Transport: wrapPublicGitHubAPIGuard(transport)}
 
 	var ghClient *gh.Client
 	if platformHost == "" || platformHost == "github.com" {
-		ghClient = gh.NewClient(tc)
+		ghClient = gh.NewClient(httpClient)
 	} else {
 		baseURL := "https://" + platformHost + "/api/v3/"
 		uploadURL := "https://" + platformHost +
 			"/api/uploads/"
 		var err error
-		ghClient, err = gh.NewClient(tc).
+		ghClient, err = gh.NewClient(httpClient).
 			WithEnterpriseURLs(baseURL, uploadURL)
 		if err != nil {
 			return nil, fmt.Errorf(
@@ -212,12 +215,19 @@ func NewClient(
 	}
 	return &liveClient{
 		gh:              ghClient,
-		httpClient:      tc,
+		httpClient:      httpClient,
 		rateTracker:     rateTracker,
 		platformHost:    platformHost,
 		graphQLEndpoint: graphQLEndpointForHost(platformHost),
 		etag:            et,
 	}, nil
+}
+
+func restAPIOriginForHost(platformHost string) string {
+	if platformHost == "" || platformHost == "github.com" {
+		return "https://api.github.com"
+	}
+	return "https://" + platformHost
 }
 
 type liveClient struct {

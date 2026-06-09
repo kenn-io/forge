@@ -145,12 +145,12 @@ func (m *Manager) ensureCloneNow(
 	// On an existing clone, also re-verify the stored origin URL
 	// belongs to the expected host: catches a clone whose config
 	// was rewritten after creation.
-	if out, err := m.git(ctx, host, clonePath, "config", "--get", "remote.origin.url"); err == nil {
+	if out, err := m.git(ctx, clonePath, "config", "--get", "remote.origin.url"); err == nil {
 		if err := validateRemoteURLIdentity(host, owner, name, strings.TrimSpace(string(out))); err != nil {
 			return err
 		}
 	}
-	m.ensureRefspecs(ctx, host, clonePath)
+	m.ensureRefspecs(ctx, clonePath)
 	return m.fetch(ctx, host, clonePath)
 }
 
@@ -178,13 +178,13 @@ func defaultRefspecs() []string {
 // support was in place, including vanilla `git clone --bare` output with
 // no configured fetch refspec at all.
 func (m *Manager) ensureRefspecs(
-	ctx context.Context, host, clonePath string,
+	ctx context.Context, clonePath string,
 ) {
 	// `git config --get-all` exits 1 with no output when the key is unset.
 	// Treat any read failure as "no existing refspecs" and fall through to
 	// the add loop, which is idempotent on its own and will log its own
 	// warnings if the add commands fail for a real reason.
-	out, _ := m.git(ctx, host, clonePath,
+	out, _ := m.git(ctx, clonePath,
 		"config", "--get-all", "remote.origin.fetch")
 	existing := make(map[string]bool)
 	for line := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n") {
@@ -194,7 +194,7 @@ func (m *Manager) ensureRefspecs(
 	}
 	if existing[legacyBranchRefspec] {
 		if _, err := m.git(
-			ctx, host, clonePath,
+			ctx, clonePath,
 			"config", "--fixed-value", "--unset-all",
 			"remote.origin.fetch", legacyBranchRefspec,
 		); err != nil {
@@ -208,7 +208,7 @@ func (m *Manager) ensureRefspecs(
 		if existing[refspec] {
 			continue
 		}
-		if _, err := m.git(ctx, host, clonePath,
+		if _, err := m.git(ctx, clonePath,
 			"config", "--add", "remote.origin.fetch", refspec); err != nil {
 			slog.Warn("failed to add refspec to existing clone",
 				"path", clonePath, "refspec", refspec, "err", err)
@@ -242,7 +242,7 @@ func (m *Manager) cloneBare(
 	// pull refs. git clone --bare does not install a default refspec.
 	// On failure, remove the partial clone so the next call retries.
 	for _, refspec := range defaultRefspecs() {
-		if _, err := m.git(ctx, host, clonePath,
+		if _, err := m.git(ctx, clonePath,
 			"config", "--add", "remote.origin.fetch", refspec); err != nil {
 			os.RemoveAll(clonePath)
 			return fmt.Errorf("add fetch refspec %q: %w", refspec, err)
@@ -260,7 +260,7 @@ func (m *Manager) fetch(
 	// GitHub's smart-HTTP endpoint sporadically returns 5xx on /info/refs.
 	// Retry inline so a transient blip does not drop the entire sync cycle.
 	_, err := retryTransient(ctx, "git fetch", func() ([]byte, error) {
-		return m.git(ctx, host, clonePath, "fetch", "--prune", "origin")
+		return m.gitNetworked(ctx, host, clonePath, nil, "fetch", "--prune", "origin")
 	})
 	if err != nil {
 		return fmt.Errorf("git fetch: %w", err)
@@ -270,7 +270,7 @@ func (m *Manager) fetch(
 	// Failure is non-fatal — bare clone still works — but retrying
 	// reduces stale-HEAD noise across sync cycles.
 	_, setHeadErr := retryTransient(ctx, "git remote set-head", func() ([]byte, error) {
-		return m.git(ctx, host, clonePath, "remote", "set-head", "origin", "-a")
+		return m.gitNetworked(ctx, host, clonePath, nil, "remote", "set-head", "origin", "-a")
 	})
 	if setHeadErr != nil {
 		slog.Warn("failed to repair origin HEAD",
@@ -288,7 +288,7 @@ func (m *Manager) RevParse(
 	if err != nil {
 		return "", err
 	}
-	out, err := m.git(ctx, host, clonePath, "rev-parse", "--verify", ref)
+	out, err := m.git(ctx, clonePath, "rev-parse", "--verify", ref)
 	if err != nil {
 		return "", fmt.Errorf("git rev-parse %s: %w", ref, err)
 	}
@@ -303,14 +303,13 @@ func (m *Manager) MergeBase(
 	if err != nil {
 		return "", err
 	}
-	out, err := m.git(ctx, host, clonePath, "merge-base", sha1, sha2)
+	out, err := m.git(ctx, clonePath, "merge-base", sha1, sha2)
 	if err != nil {
 		return "", fmt.Errorf("git merge-base %s %s: %w", sha1, sha2, err)
 	}
 	return strings.TrimSpace(string(out)), nil
 }
 
-// git runs a git command with auth configured for the given host.
 func validateRemoteURLHost(expectedHost, remoteURL string) error {
 	return gitremote.ValidateRemoteHost(expectedHost, remoteURL)
 }
@@ -323,23 +322,34 @@ func validateRemoteURLIdentity(expectedHost, owner, name, remoteURL string) erro
 	}, remoteURL)
 }
 
+// git runs a local git command against an already-cloned bare repo and
+// returns its stdout. Local reads (diff, log, rev-parse, merge-base,
+// cat-file, config) never contact the remote, so they run without resolving
+// or attaching a credential. Decoupling them from the token source keeps
+// commit and diff views working during token rotation, when a token file can
+// be briefly missing and resolving it would otherwise error. Networked
+// operations go through gitNetworked instead.
 func (m *Manager) git(
-	ctx context.Context, host, dir string, args ...string,
+	ctx context.Context, dir string, args ...string,
 ) ([]byte, error) {
-	return m.gitWithInput(ctx, host, dir, nil, args...)
+	return m.gitWithInput(ctx, dir, nil, args...)
 }
 
 func (m *Manager) gitWithInput(
-	ctx context.Context, host, dir string, input []byte, args ...string,
+	ctx context.Context, dir string, input []byte, args ...string,
 ) ([]byte, error) {
-	return m.gitWithInputAuthRetryCleanup(ctx, host, dir, input, nil, args...)
+	out, stderr, err := runGitCommand(ctx, newGitRunner(), dir, input, args...)
+	if err != nil {
+		return nil, wrapGitError(err, stderr)
+	}
+	return out, nil
 }
 
 func (m *Manager) gitCloneBare(
 	ctx context.Context, host, clonePath, remoteURL string,
 ) ([]byte, error) {
-	return m.gitWithInputAuthRetryCleanup(
-		ctx, host, "", nil,
+	return m.gitNetworked(
+		ctx, host, "",
 		func() error {
 			if err := os.RemoveAll(clonePath); err != nil {
 				return fmt.Errorf("cleanup partial clone before auth retry: %w", err)
@@ -350,14 +360,19 @@ func (m *Manager) gitCloneBare(
 	)
 }
 
-func (m *Manager) gitWithInputAuthRetryCleanup(
+// gitNetworked runs a git command that contacts the remote (clone, fetch,
+// remote set-head). It resolves the host credential and attaches it, then on
+// an authentication failure invalidates the source and retries once — the
+// recovery path when a token rotates or expires mid-operation.
+// cleanupBeforeAuthRetry, when set, runs between attempts; clone uses it to
+// sweep the partial destination git refuses to overwrite.
+func (m *Manager) gitNetworked(
 	ctx context.Context,
 	host, dir string,
-	input []byte,
 	cleanupBeforeAuthRetry func() error,
 	args ...string,
 ) ([]byte, error) {
-	out, stderr, err := m.runGit(ctx, host, dir, input, args...)
+	out, stderr, err := m.runGitAuthed(ctx, host, dir, args...)
 	if err == nil {
 		return out, nil
 	}
@@ -368,7 +383,7 @@ func (m *Manager) gitWithInputAuthRetryCleanup(
 				return nil, err
 			}
 		}
-		out, stderr, err = m.runGit(ctx, host, dir, input, args...)
+		out, stderr, err = m.runGitAuthed(ctx, host, dir, args...)
 		if err == nil {
 			return out, nil
 		}
@@ -377,13 +392,25 @@ func (m *Manager) gitWithInputAuthRetryCleanup(
 	return nil, wrapped
 }
 
-func (m *Manager) runGit(
-	ctx context.Context, host, dir string, input []byte, args ...string,
+// runGitAuthed builds a runner with the host credential attached and runs the
+// command. Networked git has no stdin, so it takes no input.
+func (m *Manager) runGitAuthed(
+	ctx context.Context, host, dir string, args ...string,
 ) ([]byte, []byte, error) {
-	runner, err := m.gitRunner(ctx, host)
+	runner, err := m.gitRunnerAuthed(ctx, host)
 	if err != nil {
 		return nil, nil, err
 	}
+	return runGitCommand(ctx, runner, dir, nil, args...)
+}
+
+// runGitCommand runs git in dir with the given runner, bounded by the shared
+// subprocess limiter. The limiter covers every git invocation — local reads
+// and networked clone/fetch alike — because they all draw on the same process
+// capacity as the rest of the app.
+func runGitCommand(
+	ctx context.Context, runner gitcmd.Runner, dir string, input []byte, args ...string,
+) ([]byte, []byte, error) {
 	var stdin io.Reader
 	if input != nil {
 		stdin = bytes.NewReader(input)
@@ -465,12 +492,18 @@ func (m *Manager) invalidateTokenSource(host string) bool {
 	return true
 }
 
-func (m *Manager) gitRunner(ctx context.Context, host string) (gitcmd.Runner, error) {
-	// Middleman relies on kit's automation defaults here: inherited GIT_*
-	// variables are stripped, global/system config is ignored, and terminal
-	// prompts are disabled. Clone/fetch still uses middleman's subprocess
-	// limiter above because it shares capacity with the rest of the app.
-	runner := gitcmd.New()
+// newGitRunner returns a runner with kit's automation defaults: inherited
+// GIT_* variables are stripped, global/system config is ignored, and terminal
+// prompts are disabled.
+func newGitRunner() gitcmd.Runner {
+	return gitcmd.New()
+}
+
+// gitRunnerAuthed returns a runner with the host's token attached for
+// networked operations. With no source configured for the host it returns the
+// plain runner.
+func (m *Manager) gitRunnerAuthed(ctx context.Context, host string) (gitcmd.Runner, error) {
+	runner := newGitRunner()
 	source := m.tokenSources[host]
 	if source == nil {
 		return runner, nil

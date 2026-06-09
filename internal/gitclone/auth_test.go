@@ -31,7 +31,7 @@ func (s *mutableTestTokenSource) Descriptor() tokenauth.Descriptor {
 	return tokenauth.Descriptor{Key: tokenauth.Key{Platform: "test", Host: "github.com"}}
 }
 
-func TestGitRunnerReadsTokenSourceForEachCommand(t *testing.T) {
+func TestGitNetworkedResolvesTokenSourceForEachCall(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	dir := t.TempDir()
@@ -58,10 +58,10 @@ done
 	source := &mutableTestTokenSource{token: "first-token"}
 	mgr := New(t.TempDir(), map[string]tokenauth.Source{"github.com": source})
 
-	_, err := mgr.git(t.Context(), "github.com", "", "status")
+	_, err := mgr.gitNetworked(t.Context(), "github.com", "", nil, "fetch")
 	require.NoError(err)
 	source.token = "second-token"
-	_, err = mgr.git(t.Context(), "github.com", "", "status")
+	_, err = mgr.gitNetworked(t.Context(), "github.com", "", nil, "fetch")
 	require.NoError(err)
 
 	data, err := os.ReadFile(capturePath)
@@ -78,7 +78,7 @@ done
 	}, credentials)
 }
 
-func TestGitRunnerReadsTokenFileSourceForEachCommand(t *testing.T) {
+func TestGitNetworkedResolvesTokenFileSourceForEachCall(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	dir := t.TempDir()
@@ -113,10 +113,10 @@ done
 	}, tokenauth.Options{})
 	mgr := New(t.TempDir(), map[string]tokenauth.Source{"github.com": source})
 
-	_, err := mgr.git(t.Context(), "github.com", "", "status")
+	_, err := mgr.gitNetworked(t.Context(), "github.com", "", nil, "fetch")
 	require.NoError(err)
 	require.NoError(os.WriteFile(tokenPath, []byte("second-token\n"), 0o600))
-	_, err = mgr.git(t.Context(), "github.com", "", "status")
+	_, err = mgr.gitNetworked(t.Context(), "github.com", "", nil, "fetch")
 	require.NoError(err)
 
 	data, err := os.ReadFile(capturePath)
@@ -169,7 +169,7 @@ fi
 	source := &mutableTestTokenSource{token: "first-token"}
 	mgr := New(t.TempDir(), map[string]tokenauth.Source{"github.com": source})
 
-	_, err := mgr.git(t.Context(), "github.com", "", "fetch", "origin")
+	_, err := mgr.gitNetworked(t.Context(), "github.com", "", nil, "fetch", "origin")
 	require.NoError(err)
 
 	data, err := os.ReadFile(capturePath)
@@ -262,7 +262,7 @@ echo complete > "$dest/complete"
 	assert.FileExists(filepath.Join(clonePath, "complete"))
 }
 
-func TestGitWithInputRedactsTokenFromGitStderr(t *testing.T) {
+func TestGitNetworkedRedactsTokenFromGitStderr(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	dir := t.TempDir()
@@ -277,7 +277,7 @@ exit 128
 	source := &mutableTestTokenSource{token: "first-token"}
 	mgr := New(t.TempDir(), map[string]tokenauth.Source{"github.com": source})
 
-	_, err := mgr.git(t.Context(), "github.com", "", "fetch", "origin")
+	_, err := mgr.gitNetworked(t.Context(), "github.com", "", nil, "fetch", "origin")
 	require.Error(err)
 
 	assert.NotContains(err.Error(), "ghp_stderr_secret")
@@ -321,4 +321,50 @@ func TestWrapGitErrorPreservesMissingTokenIdentity(t *testing.T) {
 	assert.NotContains(err.Error(), "ghp_missing_secret")
 	assert.NotContains(err.Error(), "x-access-token")
 	assert.Contains(err.Error(), "[REDACTED]")
+}
+
+// failingTokenSource never resolves a token, standing in for a token file that
+// is briefly missing or empty mid-rotation. It counts how often the resolver
+// was consulted so a test can assert local reads never touch it.
+type failingTokenSource struct {
+	calls int
+}
+
+func (s *failingTokenSource) Token(context.Context) (string, error) {
+	s.calls++
+	return "", tokenauth.ErrMissingToken
+}
+
+func (s *failingTokenSource) Invalidate() {}
+
+func (s *failingTokenSource) Descriptor() tokenauth.Descriptor {
+	return tokenauth.Descriptor{Key: tokenauth.Key{Platform: "test", Host: "github.com"}}
+}
+
+// TestLocalReadSkipsTokenSourceDuringRotation verifies a local read against an
+// already-cloned repo (rev-parse) succeeds even when the host's token source
+// cannot resolve a credential. Local git never contacts the remote, so it must
+// not depend on a live token — otherwise a token file briefly missing during
+// rotation would break commit and diff views.
+func TestLocalReadSkipsTokenSourceDuringRotation(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	dir := t.TempDir()
+	gitPath := filepath.Join(dir, "git")
+	require.NoError(os.WriteFile(gitPath, []byte(
+		"#!/bin/sh\necho deadbeefdeadbeefdeadbeefdeadbeefdeadbeef\n",
+	), 0o755))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	source := &failingTokenSource{}
+	clonesDir := t.TempDir()
+	mgr := New(clonesDir, map[string]tokenauth.Source{"github.com": source})
+	clonePath, err := mgr.ClonePath("github.com", "acme", "widgets")
+	require.NoError(err)
+	require.NoError(os.MkdirAll(clonePath, 0o755))
+
+	sha, err := mgr.RevParse(t.Context(), "github.com", "acme", "widgets", "HEAD")
+	require.NoError(err)
+	assert.Equal("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", sha)
+	assert.Zero(source.calls, "local read must not resolve the token source")
 }

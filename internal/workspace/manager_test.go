@@ -1381,6 +1381,52 @@ func TestCleanupFallsBackToManagedCloneWhenConfiguredBaseInvalid(t *testing.T) {
 	assert.False(exists)
 }
 
+func TestCleanupUsesProviderScopedManagedClone(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	const branch = "middleman/pr-99"
+	const host = "forge.example.com"
+	cloneBaseDir := t.TempDir()
+	clones := gitclone.New(cloneBaseDir, nil)
+	cloneDir, err := clones.ClonePathInNamespace(
+		workspaceCloneNamespace("gitlab"), host, "acme", "widget",
+	)
+	require.NoError(err)
+	require.NoError(os.MkdirAll(filepath.Dir(cloneDir), 0o755))
+	runWorkspaceTestGit(
+		t, cloneBaseDir, "clone", "--bare",
+		setupLocalWorktreeBaseForWorkspaceGitTest(t, "feature/thing"),
+		cloneDir,
+	)
+	worktreePath := filepath.Join(t.TempDir(), "workspace")
+	runWorkspaceTestGit(
+		t, cloneDir, "worktree", "add", worktreePath, "-b", branch, "HEAD",
+	)
+	require.NoError(os.RemoveAll(worktreePath))
+
+	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr.SetClones(clones)
+	ws := &Workspace{
+		ID:              "ws-cleanup-provider-scoped-managed",
+		Platform:        "gitlab",
+		PlatformHost:    host,
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		ItemType:        db.WorkspaceItemTypePullRequest,
+		ItemNumber:      99,
+		GitHeadRef:      "feature/thing",
+		WorkspaceBranch: branch,
+		WorktreePath:    worktreePath,
+	}
+
+	require.NoError(mgr.cleanupWorkspaceArtifactsForDelete(t.Context(), ws))
+
+	exists, err := localBranchExists(t.Context(), cloneDir, branch)
+	require.NoError(err)
+	assert.False(exists)
+}
+
 func TestCleanupSkipsReplacedWorktreeFromWrongRepo(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
@@ -1613,6 +1659,43 @@ func TestLocalBaseExistingPRBranchIsNotDeletedOnCleanup(t *testing.T) {
 	exists, err := localBranchExists(t.Context(), localRepo, branch)
 	require.NoError(err)
 	assert.True(exists)
+}
+
+func TestLocalBaseExistingPRBranchPreservesUpstream(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	const branch = "feature/thing"
+	localRepo := setupLocalWorktreeBaseForWorkspaceGitTest(t, branch)
+	runWorkspaceTestGit(t, localRepo, "branch", branch, "refs/remotes/origin/"+branch)
+	runWorkspaceTestGit(t, localRepo, "config", "branch."+branch+".remote", "upstream")
+	runWorkspaceTestGit(t, localRepo, "config", "branch."+branch+".merge", "refs/heads/main")
+	mgr := NewManager(openTestDB(t), t.TempDir())
+	ws := &Workspace{
+		ID:              "ws-existing-local-pr-branch-upstream",
+		Platform:        "github",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		ItemType:        db.WorkspaceItemTypePullRequest,
+		ItemNumber:      42,
+		GitHeadRef:      branch,
+		WorkspaceBranch: workspaceBranchUnknown,
+		WorktreePath:    filepath.Join(t.TempDir(), "worktree"),
+		TmuxSession:     "ws-existing-local-pr-branch-upstream",
+		Status:          "ready",
+	}
+
+	managedBranch, err := mgr.addWorktreeLocked(t.Context(), localRepo, true, ws)
+
+	require.NoError(err)
+	assert.Empty(managedBranch)
+	remote, err := gitConfigValue(t.Context(), localRepo, "branch."+branch+".remote")
+	require.NoError(err)
+	assert.Equal("upstream", remote)
+	mergeRef, err := gitConfigValue(t.Context(), localRepo, "branch."+branch+".merge")
+	require.NoError(err)
+	assert.Equal("refs/heads/main", mergeRef)
 }
 
 func TestAddPreferredWorktreeHeadRepoRouting(t *testing.T) {

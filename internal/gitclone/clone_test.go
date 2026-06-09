@@ -71,6 +71,27 @@ func TestEnsureClone(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestEnsureCloneInNamespacePartitionsStorage(t *testing.T) {
+	remote, _ := setupTestRepo(t)
+	clonesDir := t.TempDir()
+	mgr := New(clonesDir, nil)
+
+	ctx := t.Context()
+	err := mgr.EnsureCloneInNamespace(
+		ctx, "gitlab", "github.com", "testowner", "testrepo", remote,
+	)
+	require.NoError(t, err)
+
+	namespacedPath := filepath.Join(
+		clonesDir, "gitlab", "github.com", "testowner", "testrepo.git",
+	)
+	assert.DirExists(t, namespacedPath)
+	defaultPath := filepath.Join(
+		clonesDir, "github.com", "testowner", "testrepo.git",
+	)
+	assert.NoDirExists(t, defaultPath)
+}
+
 // TestEnsureCloneShortCircuitsCanceledContext verifies that a caller
 // with an already-canceled context does not start any clone work. The
 // pre-check exists so a canceled caller cannot trigger background

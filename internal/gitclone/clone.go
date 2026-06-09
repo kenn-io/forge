@@ -55,23 +55,59 @@ func New(baseDir string, tokenSources map[string]tokenauth.Source) *Manager {
 // ClonePath returns the filesystem path for a repo's bare clone.
 // Path is partitioned by host: {baseDir}/{host}/{owner}/{name}.git
 func (m *Manager) ClonePath(host, owner, name string) (string, error) {
+	return m.ClonePathInNamespace("", host, owner, name)
+}
+
+// ClonePathInNamespace returns the filesystem path for a repo's bare clone
+// inside an additional storage namespace. The namespace is only a local
+// partition; host validation and git authentication still use host.
+func (m *Manager) ClonePathInNamespace(
+	namespace, host, owner, name string,
+) (string, error) {
+	namespace = strings.TrimSpace(namespace)
+	if namespace != "" {
+		if err := validateCloneNamespace(namespace); err != nil {
+			return "", err
+		}
+		return clonePath(filepath.Join(m.baseDir, namespace), host, owner, name)
+	}
+	return clonePath(m.baseDir, host, owner, name)
+}
+
+func clonePath(baseDir, host, owner, name string) (string, error) {
 	if host == "" && owner == "" {
 		// Preserve local fixture clones at {baseDir}/{name}.git while
 		// still using kit's path validator for the repository name.
-		if _, err := gitremote.ClonePath(m.baseDir, gitremote.Identity{
+		if _, err := gitremote.ClonePath(baseDir, gitremote.Identity{
 			Host:  "local",
 			Owner: "fixture",
 			Name:  name,
 		}); err != nil {
 			return "", err
 		}
-		return filepath.Join(m.baseDir, name+".git"), nil
+		return filepath.Join(baseDir, name+".git"), nil
 	}
-	return gitremote.ClonePath(m.baseDir, gitremote.Identity{
+	return gitremote.ClonePath(baseDir, gitremote.Identity{
 		Host:  host,
 		Owner: owner,
 		Name:  name,
 	})
+}
+
+func validateCloneNamespace(namespace string) error {
+	if namespace == "." || namespace == ".." {
+		return fmt.Errorf("unsafe clone namespace %q", namespace)
+	}
+	for _, r := range namespace {
+		if (r >= 'a' && r <= 'z') ||
+			(r >= 'A' && r <= 'Z') ||
+			(r >= '0' && r <= '9') ||
+			r == '.' || r == '_' || r == '-' {
+			continue
+		}
+		return fmt.Errorf("unsafe clone namespace %q", namespace)
+	}
+	return nil
 }
 
 // EnsureClone creates or fetches a bare clone for the given repo.
@@ -92,6 +128,15 @@ func (m *Manager) ClonePath(host, owner, name string) (string, error) {
 func (m *Manager) EnsureClone(
 	ctx context.Context, host, owner, name, remoteURL string,
 ) error {
+	return m.EnsureCloneInNamespace(ctx, "", host, owner, name, remoteURL)
+}
+
+// EnsureCloneInNamespace creates or fetches a bare clone in a local storage
+// namespace while still validating and authenticating against host.
+func (m *Manager) EnsureCloneInNamespace(
+	ctx context.Context, namespace, host, owner, name, remoteURL string,
+) error {
+	namespace = strings.TrimSpace(namespace)
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -104,16 +149,18 @@ func (m *Manager) EnsureClone(
 	if err := validateRemoteURLIdentity(host, owner, name, remoteURL); err != nil {
 		return err
 	}
-	if _, err := m.ClonePath(host, owner, name); err != nil {
+	if _, err := m.ClonePathInNamespace(namespace, host, owner, name); err != nil {
 		return err
 	}
-	key := ensureCloneKey(host, owner, name)
+	key := ensureCloneKey(namespace, host, owner, name)
 	ch := m.ensureSF.DoChan(key, func() (any, error) {
 		opCtx, cancel := context.WithTimeout(
 			context.WithoutCancel(ctx), ensureCloneTimeout,
 		)
 		defer cancel()
-		return nil, m.ensureCloneNow(opCtx, host, owner, name, remoteURL)
+		return nil, m.ensureCloneNowInNamespace(
+			opCtx, namespace, host, owner, name, remoteURL,
+		)
 	})
 	select {
 	case res := <-ch:
@@ -123,18 +170,18 @@ func (m *Manager) EnsureClone(
 	}
 }
 
-func ensureCloneKey(host, owner, name string) string {
-	return host + "\x00" + owner + "\x00" + name
+func ensureCloneKey(namespace, host, owner, name string) string {
+	return namespace + "\x00" + host + "\x00" + owner + "\x00" + name
 }
 
 // ensureCloneNow is the unshared inner: it decides whether to create a
 // fresh bare clone or refresh an existing one. Always called from
 // inside the singleflight slot opened by EnsureClone, which has
 // already validated the caller's remoteURL.
-func (m *Manager) ensureCloneNow(
-	ctx context.Context, host, owner, name, remoteURL string,
+func (m *Manager) ensureCloneNowInNamespace(
+	ctx context.Context, namespace, host, owner, name, remoteURL string,
 ) error {
-	clonePath, err := m.ClonePath(host, owner, name)
+	clonePath, err := m.ClonePathInNamespace(namespace, host, owner, name)
 	if err != nil {
 		return err
 	}

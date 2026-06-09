@@ -386,6 +386,14 @@ func newWorkspaceID() (string, error) {
 	return hex.EncodeToString(idBytes), nil
 }
 
+func workspaceCloneNamespace(platform string) string {
+	platform = strings.ToLower(strings.TrimSpace(platform))
+	if platform == "" || platform == "github" {
+		return ""
+	}
+	return platform
+}
+
 func (m *Manager) issueBranchInspectionDir(
 	ctx context.Context, platform, platformHost, owner, name string,
 ) (dir string, ok bool, localBase bool, err error) {
@@ -400,13 +408,15 @@ func (m *Manager) issueBranchInspectionDir(
 		"https://%s/%s/%s.git",
 		platformHost, owner, name,
 	)
-	if err := m.clones.EnsureClone(
-		ctx, platformHost, owner, name, remoteURL,
+	if err := m.clones.EnsureCloneInNamespace(
+		ctx, workspaceCloneNamespace(platform), platformHost, owner, name, remoteURL,
 	); err != nil {
 		return "", false, false, fmt.Errorf("ensure clone: %w", err)
 	}
 
-	cloneDir, err := m.clones.ClonePath(platformHost, owner, name)
+	cloneDir, err := m.clones.ClonePathInNamespace(
+		workspaceCloneNamespace(platform), platformHost, owner, name,
+	)
 	if err != nil {
 		return "", false, false, err
 	}
@@ -567,14 +577,15 @@ func (m *Manager) workspaceSetupGitDir(
 		"https://%s/%s/%s.git",
 		ws.PlatformHost, ws.RepoOwner, ws.RepoName,
 	)
-	if err := m.clones.EnsureClone(
-		ctx, ws.PlatformHost, ws.RepoOwner,
+	if err := m.clones.EnsureCloneInNamespace(
+		ctx, workspaceCloneNamespace(ws.Platform), ws.PlatformHost, ws.RepoOwner,
 		ws.RepoName, remoteURL,
 	); err != nil {
 		return "", false, err
 	}
 
-	cloneDir, err := m.clones.ClonePath(
+	cloneDir, err := m.clones.ClonePathInNamespace(
+		workspaceCloneNamespace(ws.Platform),
 		ws.PlatformHost, ws.RepoOwner, ws.RepoName,
 	)
 	if err != nil {
@@ -1101,17 +1112,19 @@ func (m *Manager) addPreferredWorktree(
 		return "", err
 	}
 
-	if err := setBranchUpstream(
-		ctx, ws.WorktreePath, ws.GitHeadRef,
-		"origin", "refs/heads/"+ws.GitHeadRef,
-	); err != nil {
-		cleanupCtx, cancel := cleanupContext(ctx)
-		defer cancel()
-		_ = runGitWithoutHooks(
-			cleanupCtx, cloneDir,
-			"worktree", "remove", "--force", ws.WorktreePath,
-		)
-		return "", fmt.Errorf("configure branch upstream: %w", err)
+	if !localBase {
+		if err := setBranchUpstream(
+			ctx, ws.WorktreePath, ws.GitHeadRef,
+			"origin", "refs/heads/"+ws.GitHeadRef,
+		); err != nil {
+			cleanupCtx, cancel := cleanupContext(ctx)
+			defer cancel()
+			_ = runGitWithoutHooks(
+				cleanupCtx, cloneDir,
+				"worktree", "remove", "--force", ws.WorktreePath,
+			)
+			return "", fmt.Errorf("configure branch upstream: %w", err)
+		}
 	}
 
 	// The branch already existed before this workspace was materialized. Return
@@ -1509,7 +1522,8 @@ func (m *Manager) workspaceCleanupGitDir(
 	}
 
 	if m.clones != nil {
-		cloneDir, err := m.clones.ClonePath(
+		cloneDir, err := m.clones.ClonePathInNamespace(
+			workspaceCloneNamespace(ws.Platform),
 			ws.PlatformHost, ws.RepoOwner, ws.RepoName,
 		)
 		if err != nil {

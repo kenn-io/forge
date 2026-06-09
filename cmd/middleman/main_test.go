@@ -306,6 +306,41 @@ func TestValidateProviderHostKeysAllowsMixedProviderSourcesOnSameHostWithSameDes
 	require.NoError(t, err)
 }
 
+func TestValidateProviderHostKeysAllowsEquivalentSourceChainsOnSameHost(t *testing.T) {
+	host := "code.example.com"
+	// A repo-level override that repeats the platform fallback yields the
+	// chain env:SHARED -> env:SHARED, which resolves identically to a plain
+	// env:SHARED. The canonical comparison must treat them as the same clone
+	// token instead of reporting a spurious conflict.
+	repeated := tokenauth.NewManagedSource(
+		tokenauth.Descriptor{
+			Key: tokenauth.Key{Platform: "github", Host: host},
+			Candidates: []tokenauth.Candidate{
+				{Kind: tokenauth.SourceKindEnv, EnvName: "SHARED_TOKEN"},
+				{Kind: tokenauth.SourceKindEnv, EnvName: "SHARED_TOKEN"},
+			},
+		},
+		tokenauth.Options{},
+	)
+	single := tokenauth.NewManagedSource(
+		tokenauth.Descriptor{
+			Key: tokenauth.Key{Platform: "gitlab", Host: host},
+			Candidates: []tokenauth.Candidate{{
+				Kind:    tokenauth.SourceKindEnv,
+				EnvName: "SHARED_TOKEN",
+			}},
+		},
+		tokenauth.Options{},
+	)
+
+	err := validateProviderHostKeys(map[string]tokenauth.Source{
+		providerHostKey("github", host): repeated,
+		providerHostKey("gitlab", host): single,
+	})
+
+	require.NoError(t, err)
+}
+
 func TestDefaultProviderFactoriesRegisterForgejoAndGitea(t *testing.T) {
 	factories := defaultProviderFactories()
 

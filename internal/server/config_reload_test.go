@@ -525,6 +525,37 @@ token_env = "REPO_TOKEN"
 	require.NoError(t, validateReloadCloneTokenSources(cfg))
 }
 
+func TestValidateReloadCloneTokenSourcesAllowsEquivalentChainsOnSameHost(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "config.toml")
+	// Two providers share a self-hosted host. The forgejo repo's token_env
+	// repeats its platform fallback, producing the chain env:SHARED ->
+	// env:SHARED, while gitlab resolves to a plain env:SHARED. They name the
+	// same token, so the per-host clone-token check must compare canonical
+	// chains and accept the reload rather than flag a conflict.
+	writeConfigToml(t, cfgPath, `
+[[platforms]]
+type = "forgejo"
+host = "code.example.com"
+token_env = "SHARED"
+
+[[platforms]]
+type = "gitlab"
+host = "code.example.com"
+token_env = "SHARED"
+
+[[repos]]
+owner = "acme"
+name = "widget"
+platform = "forgejo"
+platform_host = "code.example.com"
+token_env = "SHARED"
+`)
+	cfg, err := config.Load(cfgPath)
+	require.NoError(t, err)
+
+	require.NoError(t, validateReloadCloneTokenSources(cfg))
+}
+
 func TestConfigReload_RepoTokenOverrideWithPlatformFallbackUpdatesSource(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

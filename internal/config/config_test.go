@@ -829,13 +829,14 @@ name = "ibis"
 
 func TestLoadTokenFilePathsAreNormalized(t *testing.T) {
 	assert := Assert.New(t)
+	require := require.New(t)
 	dir := t.TempDir()
 	home := filepath.Join(dir, "home")
-	require.NoError(t, os.MkdirAll(home, 0o755))
+	require.NoError(os.MkdirAll(home, 0o755))
 	t.Setenv("HOME", home)
 	cfgPath := filepath.Join(dir, "config", "config.toml")
-	require.NoError(t, os.MkdirAll(filepath.Dir(cfgPath), 0o755))
-	require.NoError(t, os.WriteFile(cfgPath, []byte(`
+	require.NoError(os.MkdirAll(filepath.Dir(cfgPath), 0o755))
+	require.NoError(os.WriteFile(cfgPath, []byte(`
 github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
 
 [[platforms]]
@@ -851,7 +852,7 @@ token_file = "~/tokens/github"
 `), 0o600))
 
 	cfg, err := Load(cfgPath)
-	require.NoError(t, err)
+	require.NoError(err)
 
 	assert.Equal(filepath.Join(filepath.Dir(cfgPath), "tokens", "gitlab"), cfg.Platforms[0].TokenFile)
 	assert.Equal(filepath.Join(home, "tokens", "github"), cfg.Repos[0].TokenFile)

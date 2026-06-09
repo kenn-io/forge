@@ -654,7 +654,7 @@ func providerHostTokenID[T any](token T) string {
 	case string:
 		return typed
 	case tokenauth.Source:
-		return typed.Descriptor().SafeString()
+		return typed.Descriptor().CanonicalSourceString()
 	default:
 		return ""
 	}

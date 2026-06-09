@@ -215,6 +215,7 @@ func TestNewWithResolveToken(t *testing.T) {
 
 func TestResolveHostTokenSourcesReadsResolverPerRequest(t *testing.T) {
 	assert := Assert.New(t)
+	require := require.New(t)
 	var calls []string
 	sources, err := resolveHostTokenSources(
 		t.Context(),
@@ -225,14 +226,14 @@ func TestResolveHostTokenSourcesReadsResolverPerRequest(t *testing.T) {
 			return fmt.Sprintf("token-%d", len(calls)), nil
 		},
 	)
-	require.NoError(t, err)
+	require.NoError(err)
 	source := sources["github.com"]
-	require.NotNil(t, source)
+	require.NotNil(source)
 
 	first, err := source.Token(t.Context())
-	require.NoError(t, err)
+	require.NoError(err)
 	second, err := source.Token(t.Context())
-	require.NoError(t, err)
+	require.NoError(err)
 
 	assert.Equal("token-2", first)
 	assert.Equal("token-3", second)

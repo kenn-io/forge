@@ -11,21 +11,23 @@ import (
 )
 
 func TestManagedSourceReadsTokenFileEachCall(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
 	path := filepath.Join(t.TempDir(), "token")
-	require.NoError(t, os.WriteFile(path, []byte("first\n"), 0o600))
+	require.NoError(os.WriteFile(path, []byte("first\n"), 0o600))
 	src := NewManagedSource(Descriptor{
 		Key:        Key{Platform: "github", Host: "github.com"},
 		Candidates: []Candidate{{Kind: SourceKindFile, FilePath: path}},
 	}, Options{})
 
 	got, err := src.Token(context.Background())
-	require.NoError(t, err)
-	assert.Equal(t, "first", got)
+	require.NoError(err)
+	assert.Equal("first", got)
 
-	require.NoError(t, os.WriteFile(path, []byte("second\n"), 0o600))
+	require.NoError(os.WriteFile(path, []byte("second\n"), 0o600))
 	got, err = src.Token(context.Background())
-	require.NoError(t, err)
-	assert.Equal(t, "second", got)
+	require.NoError(err)
+	assert.Equal("second", got)
 }
 
 func TestManagedSourceFallsThroughEmptyFileAndEnv(t *testing.T) {
@@ -62,6 +64,8 @@ func TestManagedSourceUnreadableFileDoesNotExposeToken(t *testing.T) {
 }
 
 func TestManagedSourceGitHubCLIInvalidatesCache(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
 	calls := 0
 	runner := func(context.Context, string) (string, error) {
 		calls++
@@ -73,17 +77,17 @@ func TestManagedSourceGitHubCLIInvalidatesCache(t *testing.T) {
 	}, Options{GitHubCLI: runner})
 
 	first, err := src.Token(context.Background())
-	require.NoError(t, err)
+	require.NoError(err)
 	second, err := src.Token(context.Background())
-	require.NoError(t, err)
+	require.NoError(err)
 	src.Invalidate()
 	third, err := src.Token(context.Background())
-	require.NoError(t, err)
+	require.NoError(err)
 
-	assert.Equal(t, "first", first)
-	assert.Equal(t, "first", second)
-	assert.Equal(t, "second", third)
-	assert.Equal(t, 2, calls)
+	assert.Equal("first", first)
+	assert.Equal("first", second)
+	assert.Equal("second", third)
+	assert.Equal(2, calls)
 }
 
 func TestManagedSourceUpdateChangesDescriptor(t *testing.T) {

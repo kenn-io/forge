@@ -57,12 +57,28 @@ func (d Descriptor) EqualSource(other Descriptor) bool {
 }
 
 func (d Descriptor) SafeString() string {
-	if len(d.Candidates) == 0 {
+	return joinCandidateStrings(d.Candidates)
+}
+
+// CanonicalSourceString returns a stable identifier for the descriptor's
+// resolution chain with duplicate and field-redundant candidates removed.
+// Two descriptors that resolve from the same ordered sources produce the same
+// string even when their raw candidate lists differ — for example a repo-level
+// override that repeats the platform fallback (env:SHARED -> env:SHARED)
+// matches a provider that lists env:SHARED once. Same-host clone-token
+// validation compares this; SafeString keeps the raw chain for human-readable
+// error messages.
+func (d Descriptor) CanonicalSourceString() string {
+	return joinCandidateStrings(canonicalCandidates(d.Candidates))
+}
+
+func joinCandidateStrings(candidates []Candidate) string {
+	if len(candidates) == 0 {
 		return "none"
 	}
 	var out strings.Builder
-	out.WriteString(d.Candidates[0].SafeString())
-	for _, c := range d.Candidates[1:] {
+	out.WriteString(candidates[0].SafeString())
+	for _, c := range candidates[1:] {
 		out.WriteString(" -> ")
 		out.WriteString(c.SafeString())
 	}

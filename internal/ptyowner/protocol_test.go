@@ -141,6 +141,11 @@ func TestCreatePrivateSocketDirRejectsSharedExistingDir(t *testing.T) {
 	require := require.New(t)
 	socketDir := filepath.Join(t.TempDir(), "middleman-pty-shared")
 	require.NoError(os.Mkdir(socketDir, 0o755))
+	// os.Mkdir applies the process umask, so under a umask of 077 the dir
+	// would be created 0o700 and the rejection below would never fire. Force
+	// the group/other bits so the shared-dir path is exercised regardless of
+	// the caller's umask.
+	require.NoError(os.Chmod(socketDir, 0o755))
 
 	err := createPrivateSocketDir(socketDir)
 

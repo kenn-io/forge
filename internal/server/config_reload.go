@@ -318,7 +318,7 @@ func validateReloadCloneTokenSources(cfg *config.Config) error {
 		if desc.Key.Host == "" {
 			continue
 		}
-		sourceID := desc.SafeString()
+		sourceID := desc.CanonicalSourceString()
 		if existing, ok := byHost[desc.Key.Host]; ok {
 			if existing != sourceID {
 				return fmt.Errorf(

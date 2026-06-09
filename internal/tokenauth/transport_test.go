@@ -32,6 +32,8 @@ func (s *sequenceSource) Descriptor() Descriptor {
 }
 
 func TestAuthTransportReadsTokenEachRequest(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
 	src := &sequenceSource{tokens: []string{"first", "second"}}
 	var auth []string
 	rt := AuthTransport{
@@ -51,16 +53,18 @@ func TestAuthTransportReadsTokenEachRequest(t *testing.T) {
 	req, err := http.NewRequestWithContext(
 		context.Background(), http.MethodGet, "https://api.example.test", nil,
 	)
-	require.NoError(t, err)
+	require.NoError(err)
 	_, err = rt.RoundTrip(req)
-	require.NoError(t, err)
+	require.NoError(err)
 	_, err = rt.RoundTrip(req)
-	require.NoError(t, err)
+	require.NoError(err)
 
-	assert.Equal(t, []string{"Bearer first", "Bearer second"}, auth)
+	assert.Equal([]string{"Bearer first", "Bearer second"}, auth)
 }
 
 func TestRetryOnUnauthorizedInvalidatesAndRetriesOnce(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
 	src := &sequenceSource{tokens: []string{"old", "new"}}
 	var auth []string
 	calls := 0
@@ -87,16 +91,18 @@ func TestRetryOnUnauthorizedInvalidatesAndRetriesOnce(t *testing.T) {
 	req, err := http.NewRequestWithContext(
 		context.Background(), http.MethodGet, "https://api.example.test", nil,
 	)
-	require.NoError(t, err)
+	require.NoError(err)
 	resp, err := rt.RoundTrip(req)
-	require.NoError(t, err)
+	require.NoError(err)
 
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
-	assert.Equal(t, 1, src.invalidated)
-	assert.Equal(t, []string{"Bearer old", "Bearer new"}, auth)
+	assert.Equal(http.StatusOK, resp.StatusCode)
+	assert.Equal(1, src.invalidated)
+	assert.Equal([]string{"Bearer old", "Bearer new"}, auth)
 }
 
 func TestRetryOnUnauthorizedDoesNotRetryForbidden(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
 	src := &sequenceSource{tokens: []string{"old", "new"}}
 	calls := 0
 	rt := AuthTransport{
@@ -117,16 +123,18 @@ func TestRetryOnUnauthorizedDoesNotRetryForbidden(t *testing.T) {
 	req, err := http.NewRequestWithContext(
 		context.Background(), http.MethodGet, "https://api.example.test", nil,
 	)
-	require.NoError(t, err)
+	require.NoError(err)
 	resp, err := rt.RoundTrip(req)
-	require.NoError(t, err)
+	require.NoError(err)
 
-	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
-	assert.Equal(t, 1, calls)
-	assert.Equal(t, 0, src.invalidated)
+	assert.Equal(http.StatusForbidden, resp.StatusCode)
+	assert.Equal(1, calls)
+	assert.Equal(0, src.invalidated)
 }
 
 func TestRetryOnUnauthorizedReplaysGetBody(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
 	src := &sequenceSource{tokens: []string{"old", "new"}}
 	var bodies []string
 	calls := 0
@@ -135,7 +143,7 @@ func TestRetryOnUnauthorizedReplaysGetBody(t *testing.T) {
 		Base: RoundTripFunc(func(req *http.Request) (*http.Response, error) {
 			calls++
 			body, err := io.ReadAll(req.Body)
-			require.NoError(t, err)
+			require.NoError(err)
 			bodies = append(bodies, string(body))
 			status := http.StatusUnauthorized
 			if calls == 2 {
@@ -156,16 +164,18 @@ func TestRetryOnUnauthorizedReplaysGetBody(t *testing.T) {
 		context.Background(), http.MethodPost, "https://api.example.test",
 		strings.NewReader("payload"),
 	)
-	require.NoError(t, err)
+	require.NoError(err)
 	resp, err := rt.RoundTrip(req)
-	require.NoError(t, err)
+	require.NoError(err)
 
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
-	assert.Equal(t, []string{"payload", "payload"}, bodies)
-	assert.Equal(t, 1, src.invalidated)
+	assert.Equal(http.StatusOK, resp.StatusCode)
+	assert.Equal([]string{"payload", "payload"}, bodies)
+	assert.Equal(1, src.invalidated)
 }
 
 func TestRetryOnUnauthorizedDoesNotRetryUnrewindableBody(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
 	src := &sequenceSource{tokens: []string{"old", "new"}}
 	calls := 0
 	rt := AuthTransport{
@@ -187,16 +197,18 @@ func TestRetryOnUnauthorizedDoesNotRetryUnrewindableBody(t *testing.T) {
 		context.Background(), http.MethodPost, "https://api.example.test",
 		io.NopCloser(strings.NewReader("payload")),
 	)
-	require.NoError(t, err)
+	require.NoError(err)
 	resp, err := rt.RoundTrip(req)
-	require.NoError(t, err)
+	require.NoError(err)
 
-	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
-	assert.Equal(t, 1, calls)
-	assert.Equal(t, 0, src.invalidated)
+	assert.Equal(http.StatusUnauthorized, resp.StatusCode)
+	assert.Equal(1, calls)
+	assert.Equal(0, src.invalidated)
 }
 
 func TestAuthTransportRejectsRequestOutsideAllowedOrigin(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
 	src := &sequenceSource{tokens: []string{"secret"}}
 	called := false
 	rt := AuthTransport{
@@ -217,13 +229,13 @@ func TestAuthTransportRejectsRequestOutsideAllowedOrigin(t *testing.T) {
 	req, err := http.NewRequestWithContext(
 		context.Background(), http.MethodGet, "https://evil.example.test", nil,
 	)
-	require.NoError(t, err)
+	require.NoError(err)
 	resp, err := rt.RoundTrip(req)
 
-	require.Error(t, err)
-	assert.Nil(t, resp)
-	assert.False(t, called)
-	assert.Equal(t, []string{"secret"}, src.tokens)
+	require.Error(err)
+	assert.Nil(resp)
+	assert.False(called)
+	assert.Equal([]string{"secret"}, src.tokens)
 }
 
 func TestAuthTransportRejectsCrossOriginRedirectBeforeAuth(t *testing.T) {

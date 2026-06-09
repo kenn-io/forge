@@ -7,7 +7,39 @@ export type ItemFilter = "all" | "prs" | "issues";
 
 export const DEFAULT_EVENT_TYPES = ["comment", "review", "commit", "force_push"] as const;
 
-export const DEFAULT_BRANCH_ACTIVITY_TYPES = ["default_branch_commit", "default_branch_force_push"] as const;
+// Default-branch activity rows render as "Commit"/"Force-pushed" just like
+// their PR counterparts, so the event-type toggles must govern both kinds.
+const BRANCH_TYPE_FOR_EVENT: Partial<Record<string, string>> = {
+  commit: "default_branch_commit",
+  force_push: "default_branch_force_push",
+};
+
+export function buildActivityFilterTypes(
+  itemFilter: ItemFilter,
+  enabledEvents: ReadonlySet<string>,
+  hideDefaultBranchActivity: boolean,
+): string[] {
+  const allSelected =
+    itemFilter === "all" && enabledEvents.size === DEFAULT_EVENT_TYPES.length && !hideDefaultBranchActivity;
+  if (allSelected) return [];
+
+  const types: string[] = [];
+  if (itemFilter === "prs") types.push("new_pr");
+  else if (itemFilter === "issues") types.push("new_issue");
+  else {
+    types.push("new_pr", "new_issue");
+    if (!hideDefaultBranchActivity) {
+      for (const evt of DEFAULT_EVENT_TYPES) {
+        const branchType = BRANCH_TYPE_FOR_EVENT[evt];
+        if (branchType && enabledEvents.has(evt)) types.push(branchType);
+      }
+    }
+  }
+  for (const evt of DEFAULT_EVENT_TYPES) {
+    if (enabledEvents.has(evt)) types.push(evt);
+  }
+  return types;
+}
 
 const RANGE_MS: Record<TimeRange, number> = {
   "24h": 24 * 60 * 60 * 1000,

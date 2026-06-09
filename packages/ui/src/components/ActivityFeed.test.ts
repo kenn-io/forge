@@ -59,6 +59,9 @@ const expandAllThreads = vi.hoisted(() => vi.fn());
 const hideDefaultBranchActivity = vi.hoisted(() => ({ value: false }));
 const hideOrgName = vi.hoisted(() => ({ value: false }));
 const setActivityFilterTypes = vi.hoisted(() => vi.fn());
+const enabledEvents = vi.hoisted(() => ({
+  value: new Set(["comment", "review", "commit", "force_push"]),
+}));
 
 vi.mock("../context.js", () => ({
   getNavigate: () => vi.fn(),
@@ -70,7 +73,7 @@ vi.mock("../context.js", () => ({
       startActivityPolling: vi.fn(),
       stopActivityPolling: vi.fn(),
       getActivitySearch: () => "",
-      getEnabledEvents: () => new Set(["comment", "review", "commit", "force_push"]),
+      getEnabledEvents: () => enabledEvents.value,
       getHideClosedMerged: () => false,
       getHideBots: () => false,
       getHideDefaultBranchActivity: () => hideDefaultBranchActivity.value,
@@ -88,7 +91,9 @@ vi.mock("../context.js", () => ({
       toggleThreadItem: vi.fn(),
       setActivityFilterTypes,
       setItemFilter: vi.fn(),
-      setEnabledEvents: vi.fn(),
+      setEnabledEvents: vi.fn((events: Set<string>) => {
+        enabledEvents.value = events;
+      }),
       setHideClosedMerged: vi.fn(),
       setHideBots: vi.fn(),
       setHideDefaultBranchActivity: vi.fn((value: boolean) => {
@@ -123,6 +128,7 @@ describe("ActivityFeed compact mode", () => {
     collapseThreads.value = false;
     hideDefaultBranchActivity.value = false;
     hideOrgName.value = false;
+    enabledEvents.value = new Set(["comment", "review", "commit", "force_push"]);
     setActivityFilterTypes.mockClear();
     items.value = [
       activityItem("selected"),
@@ -327,6 +333,38 @@ describe("ActivityFeed compact mode", () => {
     expect(row?.textContent).not.toContain("#0");
     expect(row?.querySelector(".chip--kind-pr")).toBeNull();
     expect(row?.querySelector(".chip--kind-issue")).toBeNull();
+  });
+
+  it("deselecting Commits also hides default-branch commit activity", async () => {
+    render(ActivityFeed, { props: { compact: true } });
+
+    await fireEvent.click(screen.getByRole("button", { name: "View" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Commits" }));
+
+    expect(setActivityFilterTypes).toHaveBeenCalledWith([
+      "new_pr",
+      "new_issue",
+      "default_branch_force_push",
+      "comment",
+      "review",
+      "force_push",
+    ]);
+  });
+
+  it("deselecting Force pushes also hides default-branch force pushes", async () => {
+    render(ActivityFeed, { props: { compact: true } });
+
+    await fireEvent.click(screen.getByRole("button", { name: "View" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Force pushes" }));
+
+    expect(setActivityFilterTypes).toHaveBeenCalledWith([
+      "new_pr",
+      "new_issue",
+      "default_branch_commit",
+      "comment",
+      "review",
+      "commit",
+    ]);
   });
 
   it("can hide default-branch activity from the filter dropdown", async () => {

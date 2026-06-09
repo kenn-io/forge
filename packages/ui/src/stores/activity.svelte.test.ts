@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 import type { ActivitySettings } from "../api/types.js";
-import { createActivityStore } from "./activity.svelte.js";
+import { buildActivityFilterTypes, createActivityStore, DEFAULT_EVENT_TYPES } from "./activity.svelte.js";
 
 const fakeClient = {
   GET: async () => ({
@@ -116,6 +116,66 @@ describe("activity store collapse state", () => {
 
     s.hydrateDefaults(settings(false));
     expect(s.getCollapseThreads()).toBe(false);
+  });
+});
+
+describe("buildActivityFilterTypes", () => {
+  const allEvents = new Set<string>(DEFAULT_EVENT_TYPES);
+
+  it("returns no filter when everything is selected", () => {
+    expect(buildActivityFilterTypes("all", allEvents, false)).toEqual([]);
+  });
+
+  it("drops default-branch commits when the commit event is deselected", () => {
+    const enabled = new Set(["comment", "review", "force_push"]);
+    expect(buildActivityFilterTypes("all", enabled, false)).toEqual([
+      "new_pr",
+      "new_issue",
+      "default_branch_force_push",
+      "comment",
+      "review",
+      "force_push",
+    ]);
+  });
+
+  it("drops default-branch force pushes when the force-push event is deselected", () => {
+    const enabled = new Set(["comment", "review", "commit"]);
+    expect(buildActivityFilterTypes("all", enabled, false)).toEqual([
+      "new_pr",
+      "new_issue",
+      "default_branch_commit",
+      "comment",
+      "review",
+      "commit",
+    ]);
+  });
+
+  it("excludes all default-branch activity when it is hidden", () => {
+    expect(buildActivityFilterTypes("all", allEvents, true)).toEqual([
+      "new_pr",
+      "new_issue",
+      "comment",
+      "review",
+      "commit",
+      "force_push",
+    ]);
+  });
+
+  it("never includes default-branch activity for PR or issue item filters", () => {
+    expect(buildActivityFilterTypes("prs", allEvents, false)).toEqual([
+      "new_pr",
+      "comment",
+      "review",
+      "commit",
+      "force_push",
+    ]);
+    expect(buildActivityFilterTypes("issues", allEvents, false)).toEqual([
+      "new_issue",
+      "comment",
+      "review",
+      "commit",
+      "force_push",
+    ]);
   });
 });
 

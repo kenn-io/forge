@@ -2,7 +2,7 @@
   import { onMount, onDestroy } from "svelte";
   import type { ActivityItem } from "../api/types.js";
   import {
-    DEFAULT_BRANCH_ACTIVITY_TYPES,
+    buildActivityFilterTypes,
     DEFAULT_EVENT_TYPES,
     type TimeRange,
     type ViewMode,
@@ -121,21 +121,11 @@
   });
 
   function applyFilters(): void {
-    const types: string[] = [];
-    const filter = activity.getItemFilter();
-    if (filter === "prs") types.push("new_pr");
-    else if (filter === "issues") types.push("new_issue");
-    else {
-      types.push("new_pr", "new_issue");
-      if (!activity.getHideDefaultBranchActivity()) {
-        types.push(...DEFAULT_BRANCH_ACTIVITY_TYPES);
-      }
-    }
-    for (const evt of activity.getEnabledEvents()) types.push(evt);
-    const allSelected = filter === "all"
-      && activity.getEnabledEvents().size === EVENT_TYPES.length
-      && !activity.getHideDefaultBranchActivity();
-    activity.setActivityFilterTypes(allSelected ? [] : types);
+    activity.setActivityFilterTypes(buildActivityFilterTypes(
+      activity.getItemFilter(),
+      activity.getEnabledEvents(),
+      activity.getHideDefaultBranchActivity(),
+    ));
     activity.syncToURL();
     void activity.loadActivity();
   }

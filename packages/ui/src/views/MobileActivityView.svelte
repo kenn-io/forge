@@ -3,8 +3,7 @@
   import type { ActivityItem } from "../api/types.js";
   import { getStores } from "../context.js";
   import {
-    DEFAULT_BRANCH_ACTIVITY_TYPES,
-    DEFAULT_EVENT_TYPES,
+    buildActivityFilterTypes,
     type ItemFilter,
     type TimeRange,
   } from "../stores/activity.svelte.js";
@@ -157,25 +156,11 @@
   const visibleGroups = $derived(groups.slice(0, 30));
 
   function applyFilters(): void {
-    const types: string[] = [];
-    const filter = activity.getItemFilter();
-    if (filter === "prs") types.push("new_pr");
-    else if (filter === "issues") types.push("new_issue");
-    else {
-      types.push("new_pr", "new_issue");
-      if (!activity.getHideDefaultBranchActivity()) {
-        types.push(...DEFAULT_BRANCH_ACTIVITY_TYPES);
-      }
-    }
-
-    for (const eventType of activity.getEnabledEvents()) {
-      types.push(eventType);
-    }
-
-    const allSelected = filter === "all"
-      && activity.getEnabledEvents().size === DEFAULT_EVENT_TYPES.length
-      && !activity.getHideDefaultBranchActivity();
-    activity.setActivityFilterTypes(allSelected ? [] : types);
+    activity.setActivityFilterTypes(buildActivityFilterTypes(
+      activity.getItemFilter(),
+      activity.getEnabledEvents(),
+      activity.getHideDefaultBranchActivity(),
+    ));
     activity.syncToURL();
     void activity.loadActivity();
   }

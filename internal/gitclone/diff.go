@@ -25,7 +25,7 @@ func (m *Manager) DiffFiles(
 		return nil, err
 	}
 	rawOut, err := m.git(ctx, clonePath,
-		diffArgs("--raw", "-z", "-M", "-C",
+		DiffArgs("--raw", "-z", "-M", "-C",
 			"--find-copies-harder", "--end-of-options", mergeBase, headSHA,
 		)...,
 	)
@@ -37,7 +37,7 @@ func (m *Manager) DiffFiles(
 		files = []DiffFile{}
 	}
 	numstatOut, err := m.git(ctx, clonePath,
-		diffArgs("--numstat", "-z", "-M", "-C",
+		DiffArgs("--numstat", "-z", "-M", "-C",
 			"--find-copies-harder", "--end-of-options", mergeBase, headSHA,
 		)...,
 	)
@@ -169,11 +169,11 @@ func (m *Manager) Diff(
 	files := ParseRawZ(rawOut)
 
 	// Step 3: Get patch content.
-	patchArgs := diffArgs(
+	patchArgs := DiffArgs(
 		"-M", "-C", "--find-copies-harder",
 		"-U3",
 	)
-	patchArgs = addDiffWhitespaceFlag(patchArgs, hideWhitespace)
+	patchArgs = AddDiffWhitespaceFlag(patchArgs, hideWhitespace)
 	patchArgs = append(patchArgs, "--end-of-options", mergeBase, headSHA)
 	patchOut, err := m.git(ctx, clonePath, patchArgs...)
 	if err != nil {
@@ -277,7 +277,7 @@ func (m *Manager) whitespaceOnlyFiles(
 		return nil, err
 	}
 	numstatOut, err := m.git(ctx, clonePath,
-		diffArgs("--numstat", "-z", "--no-renames", "-w",
+		DiffArgs("--numstat", "-z", "--no-renames", "-w",
 			"--end-of-options", mergeBase, headSHA,
 		)...,
 	)
@@ -298,42 +298,39 @@ func (m *Manager) whitespaceOnlyFiles(
 }
 
 func diffRawArgs(mergeBase, headSHA string, hideWhitespace bool) []string {
-	args := diffArgs(
+	args := AddDiffWhitespaceFlag(DiffArgs(
 		"--raw", "-z", "-M", "-C",
 		"--find-copies-harder",
-	)
-	if hideWhitespace {
-		args = addDiffWhitespaceFlag(args, true)
-	}
+	), hideWhitespace)
 	return append(args, "--end-of-options", mergeBase, headSHA)
 }
 
 func diffRawNoRenameArgs(mergeBase, headSHA string, hideWhitespace bool) []string {
-	args := diffArgs("--raw", "-z", "--no-renames")
-	if hideWhitespace {
-		args = append(args, "-w")
-	}
+	args := AddDiffWhitespaceFlag(
+		DiffArgs("--raw", "-z", "--no-renames"), hideWhitespace,
+	)
 	return append(args, "--end-of-options", mergeBase, headSHA)
 }
 
-func diffArgs(args ...string) []string {
+// DiffArgs builds a git diff argument list with external diff drivers and
+// textconv filters disabled, so repo-local config can never execute commands
+// during diff generation. All diff invocations, including the worktree diffs
+// in internal/workspace, must build their arguments through this helper.
+func DiffArgs(args ...string) []string {
 	result := make([]string, 0, len(args)+3)
 	result = append(result, "diff", "--no-ext-diff", "--no-textconv")
 	return append(result, args...)
 }
 
-func addDiffWhitespaceFlag(args []string, hideWhitespace bool) []string {
+// AddDiffWhitespaceFlag appends -w to a DiffArgs-built flag list. Call it
+// before positional revision or pathspec arguments are appended.
+func AddDiffWhitespaceFlag(args []string, hideWhitespace bool) []string {
 	if !hideWhitespace {
 		return args
 	}
-	if len(args) < 2 {
-		return append([]string{"-w"}, args...)
-	}
 	withWhitespace := make([]string, 0, len(args)+1)
-	withWhitespace = append(withWhitespace, args[0], args[1])
-	withWhitespace = append(withWhitespace, "-w")
-	withWhitespace = append(withWhitespace, args[2:]...)
-	return withWhitespace
+	withWhitespace = append(withWhitespace, args...)
+	return append(withWhitespace, "-w")
 }
 
 // FileContent returns one file's blob content at ref. maxBytes guards API

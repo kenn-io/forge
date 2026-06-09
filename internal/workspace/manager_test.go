@@ -35,6 +35,16 @@ func openTestDB(t *testing.T) *db.DB {
 	return dbtest.Open(t)
 }
 
+// staticBaseResolver returns a resolver that always reports path as the
+// configured local worktree base.
+func staticBaseResolver(path string) WorktreeBasePathResolver {
+	return func(
+		context.Context, string, string, string, string,
+	) (string, bool, error) {
+		return path, true, nil
+	}
+}
+
 func seedRepo(
 	t *testing.T, d *db.DB,
 	host, owner, name string,
@@ -376,11 +386,7 @@ func TestCreateIssueReuseLocalBaseBranchCheckedOutReturnsConflict(t *testing.T) 
 	)
 
 	mgr := NewManager(d, t.TempDir())
-	mgr.SetWorktreeBasePathResolver(func(
-		context.Context, string, string, string, string,
-	) (string, bool, error) {
-		return localRepo, true, nil
-	})
+	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
 
 	ws, err := mgr.CreateIssue(
 		ctx, "github.com", "acme", "widget", 7,
@@ -508,11 +514,7 @@ func TestSetupUsesConfiguredWorktreeBasePath(t *testing.T) {
 
 	mgr := NewManager(d, wtDir)
 	mgr.SetTmuxCommand([]string{tmuxScript})
-	mgr.SetWorktreeBasePathResolver(func(
-		context.Context, string, string, string, string,
-	) (string, bool, error) {
-		return localRepo, true, nil
-	})
+	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
 
 	ws, err := mgr.Create(t.Context(), "github", platformHost, "acme", "widget", 42)
 	require.NoError(err)
@@ -1022,11 +1024,7 @@ func TestSetupUsesManagedCloneForForkPRWithConfiguredWorktreeBasePath(t *testing
 	mgr := NewManager(d, wtDir)
 	mgr.SetClones(clones)
 	mgr.SetTmuxCommand([]string{tmuxScript})
-	mgr.SetWorktreeBasePathResolver(func(
-		context.Context, string, string, string, string,
-	) (string, bool, error) {
-		return localRepo, true, nil
-	})
+	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
 
 	ws, err := mgr.Create(t.Context(), "github", host, owner, name, prNumber)
 	require.NoError(err)
@@ -1086,11 +1084,7 @@ func TestSetupFetchesConfiguredWorktreeBasePathBeforeAdd(t *testing.T) {
 	tmuxScript, _ := writeRecorderScript(t)
 	mgr := NewManager(d, wtDir)
 	mgr.SetTmuxCommand([]string{tmuxScript})
-	mgr.SetWorktreeBasePathResolver(func(
-		context.Context, string, string, string, string,
-	) (string, bool, error) {
-		return localRepo, true, nil
-	})
+	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
 
 	ws, err := mgr.Create(t.Context(), "github", platformHost, "acme", "widget", 42)
 	require.NoError(err)
@@ -1117,11 +1111,7 @@ func TestSetupRefreshesConfiguredWorktreeBaseOriginHead(t *testing.T) {
 	tmuxScript, _ := writeRecorderScript(t)
 	mgr := NewManager(d, wtDir)
 	mgr.SetTmuxCommand([]string{tmuxScript})
-	mgr.SetWorktreeBasePathResolver(func(
-		context.Context, string, string, string, string,
-	) (string, bool, error) {
-		return localRepo, true, nil
-	})
+	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
 
 	ws, err := mgr.CreateIssue(
 		t.Context(), platformHost, "acme", "widget", 7, CreateIssueOptions{},
@@ -1175,8 +1165,8 @@ func TestFetchWorkspaceBaseRequiresOriginHeadOnlyForIssueWorkspaces(t *testing.T
 		"symbolic-ref", "--delete", "refs/remotes/origin/HEAD",
 	)
 
-	require.NoError(fetchWorkspaceBase(t.Context(), localRepo, false))
-	require.Error(fetchWorkspaceBase(t.Context(), localRepo, true))
+	require.NoError(fetchWorkspaceBaseWithGit(t.Context(), runGitWithoutHooks, localRepo, false))
+	require.Error(fetchWorkspaceBaseWithGit(t.Context(), runGitWithoutHooks, localRepo, true))
 }
 
 func TestFetchWorkspaceBaseConstrainsNegotiationTips(t *testing.T) {
@@ -1238,11 +1228,7 @@ func TestCleanupUsesExistingWorktreeGitDirWhenConfiguredBaseChanges(t *testing.T
 	runWorkspaceTestGit(t, wrongRepo, "branch", branch, "HEAD")
 
 	mgr := NewManager(openTestDB(t), t.TempDir())
-	mgr.SetWorktreeBasePathResolver(func(
-		context.Context, string, string, string, string,
-	) (string, bool, error) {
-		return wrongRepo, true, nil
-	})
+	mgr.SetWorktreeBasePathResolver(staticBaseResolver(wrongRepo))
 	ws := &Workspace{
 		ID:              "ws-cleanup-existing-worktree",
 		PlatformHost:    "github.com",
@@ -1327,11 +1313,7 @@ func TestCleanupDoesNotTrustStaleLocalBaseRegistrationForReplacementClone(t *tes
 	runWorkspaceTestGit(t, worktreePath, "branch", branch, "HEAD")
 
 	mgr := NewManager(openTestDB(t), t.TempDir())
-	mgr.SetWorktreeBasePathResolver(func(
-		context.Context, string, string, string, string,
-	) (string, bool, error) {
-		return localRepo, true, nil
-	})
+	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
 	ws := &Workspace{
 		ID:              "ws-stale-local-base-replaced-clone",
 		Platform:        "github",
@@ -1361,11 +1343,7 @@ func TestCleanupIgnoresInvalidConfiguredBaseWhenWorktreeAbsent(t *testing.T) {
 	require := require.New(t)
 
 	mgr := NewManager(openTestDB(t), t.TempDir())
-	mgr.SetWorktreeBasePathResolver(func(
-		context.Context, string, string, string, string,
-	) (string, bool, error) {
-		return filepath.Join(t.TempDir(), "missing"), true, nil
-	})
+	mgr.SetWorktreeBasePathResolver(staticBaseResolver(filepath.Join(t.TempDir(), "missing")))
 	ws := &Workspace{
 		ID:              "ws-cleanup-invalid-base",
 		Platform:        "github",
@@ -1405,11 +1383,7 @@ func TestCleanupFallsBackToManagedCloneWhenConfiguredBaseInvalid(t *testing.T) {
 
 	mgr := NewManager(openTestDB(t), t.TempDir())
 	mgr.SetClones(clones)
-	mgr.SetWorktreeBasePathResolver(func(
-		context.Context, string, string, string, string,
-	) (string, bool, error) {
-		return filepath.Join(t.TempDir(), "missing"), true, nil
-	})
+	mgr.SetWorktreeBasePathResolver(staticBaseResolver(filepath.Join(t.TempDir(), "missing")))
 	ws := &Workspace{
 		ID:              "ws-cleanup-managed-fallback",
 		Platform:        "github",
@@ -1862,7 +1836,7 @@ func TestRollbackWorktreeDeletesBranchWhenContextCanceled(t *testing.T) {
 
 	cloneDir := setupBareCloneForWorkspaceGitTest(t)
 	branch := syntheticPRWorktreeBranch(42)
-	require.NoError(runGit(
+	require.NoError(runGitWithoutHooks(
 		t.Context(), cloneDir,
 		"branch", branch, "main",
 	))
@@ -1892,7 +1866,7 @@ func TestLocalBranchExistsIgnoresInheritedGitEnv(t *testing.T) {
 
 	targetClone := setupBareCloneForWorkspaceGitTest(t)
 	poisonClone := setupBareCloneForWorkspaceGitTest(t)
-	require.NoError(runGit(
+	require.NoError(runGitWithoutHooks(
 		context.Background(), poisonClone,
 		"branch", "middleman/issue-7", "main",
 	))

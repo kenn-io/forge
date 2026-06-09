@@ -408,8 +408,21 @@ func TestRepoConfigAPIE2ERejectsUnsafeWorktreeScopedBaseConfig(t *testing.T) {
 	assert.Empty(cfgAfterRejectedUpdate.Repos[0].WorktreeBasePath)
 }
 
-func TestRepoConfigAPIE2EWorkspaceCreationUsesWorktreeBasePath(t *testing.T) {
-	assert := Assert.New(t)
+// settingsWorkspaceEnv is the shared scaffolding for worktree-base workspace
+// e2e tests: a configured repo, seeded DB, running server, and API client.
+type settingsWorkspaceEnv struct {
+	ts           *httptest.Server
+	client       *generated.ClientWithResponses
+	database     *db.DB
+	localRepo    string
+	remote       string
+	platformHost string
+}
+
+func setupSettingsWorkspaceEnv(
+	t *testing.T, seed func(database *db.DB, repoID int64),
+) settingsWorkspaceEnv {
+	t.Helper()
 	require := require.New(t)
 
 	dir := t.TempDir()
@@ -437,7 +450,7 @@ name = "widget"
 		t.Context(), db.GitHubRepoIdentity(platformHost, "acme", "widget"),
 	)
 	require.NoError(err)
-	seedSettingsWorkspaceMR(t, database, repoID, 42, "feature/thing")
+	seed(database, repoID)
 
 	syncer := github.NewSyncer(
 		map[string]github.Client{"github.com": &mockGH{}},
@@ -453,7 +466,42 @@ name = "widget"
 	)
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 	ts := httptest.NewServer(srv)
-	defer ts.Close()
+	t.Cleanup(ts.Close)
+
+	client, err := generated.NewClientWithResponses(ts.URL + "/api/v1")
+	require.NoError(err)
+	return settingsWorkspaceEnv{
+		ts:           ts,
+		client:       client,
+		database:     database,
+		localRepo:    localRepo,
+		remote:       remote,
+		platformHost: platformHost,
+	}
+}
+
+// setWorktreeBase points the configured repo's worktree base at the env's
+// local repo through the settings API. Call it after any git setup the
+// validation needs to observe.
+func (env settingsWorkspaceEnv) setWorktreeBase(t *testing.T) {
+	t.Helper()
+	resp, err := env.client.UpdateRepoWorktreeBaseOnHostWithResponse(
+		t.Context(), env.platformHost, "github", "acme", "widget",
+		generated.RepoWorktreeBaseRequest{WorktreeBasePath: env.localRepo},
+	)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode(), string(resp.Body))
+}
+
+func TestRepoConfigAPIE2EWorkspaceCreationUsesWorktreeBasePath(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	env := setupSettingsWorkspaceEnv(t, func(database *db.DB, repoID int64) {
+		seedSettingsWorkspaceMR(t, database, repoID, 42, "feature/thing")
+	})
+	client, database := env.client, env.database
+	localRepo, remote, platformHost := env.localRepo, env.remote, env.platformHost
 
 	runSettingsGit(
 		t, localRepo,
@@ -462,14 +510,7 @@ name = "widget"
 	runSettingsGit(t, remote, "update-server-info")
 	runSettingsGit(t, localRepo, "fetch", "--prune", "origin")
 
-	client, err := generated.NewClientWithResponses(ts.URL + "/api/v1")
-	require.NoError(err)
-	updateResp, err := client.UpdateRepoWorktreeBaseOnHostWithResponse(
-		t.Context(), platformHost, "github", "acme", "widget",
-		generated.RepoWorktreeBaseRequest{WorktreeBasePath: localRepo},
-	)
-	require.NoError(err)
-	require.Equal(http.StatusOK, updateResp.StatusCode(), string(updateResp.Body))
+	env.setWorktreeBase(t)
 	createResp, err := client.CreateWorkspaceWithResponse(
 		t.Context(),
 		generated.CreateWorkspaceInputBody{
@@ -503,48 +544,11 @@ func TestRepoConfigAPIE2EWorkspaceCreationUsesFallbackBranchWhenPreferredChecked
 	assert := Assert.New(t)
 	require := require.New(t)
 
-	dir := t.TempDir()
-	cfgPath := filepath.Join(dir, "config.toml")
-	localRepo, remote, platformHost := setupSettingsLocalGitRepo(t)
-	require.NoError(os.WriteFile(cfgPath, []byte(`
-sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
-host = "127.0.0.1"
-port = 8091
-
-[tmux]
-command = ["sh", "-c", "exit 0"]
-
-[[repos]]
-platform_host = "`+platformHost+`"
-owner = "acme"
-name = "widget"
-`), 0o644))
-	cfg, err := config.Load(cfgPath)
-	require.NoError(err)
-
-	database := dbtest.Open(t)
-	repoID, err := database.UpsertRepo(
-		t.Context(), db.GitHubRepoIdentity(platformHost, "acme", "widget"),
-	)
-	require.NoError(err)
-	seedSettingsWorkspaceMR(t, database, repoID, 42, "feature/thing")
-
-	syncer := github.NewSyncer(
-		map[string]github.Client{"github.com": &mockGH{}},
-		database, nil,
-		[]github.RepoRef{{Owner: "acme", Name: "widget", PlatformHost: platformHost}},
-		time.Minute, nil, nil,
-	)
-	t.Cleanup(syncer.Stop)
-
-	srv := server.NewWithConfig(
-		database, syncer, nil, nil, cfg, cfgPath,
-		server.ServerOptions{WorktreeDir: filepath.Join(dir, "workspaces")},
-	)
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
-	ts := httptest.NewServer(srv)
-	defer ts.Close()
+	env := setupSettingsWorkspaceEnv(t, func(database *db.DB, repoID int64) {
+		seedSettingsWorkspaceMR(t, database, repoID, 42, "feature/thing")
+	})
+	client, database := env.client, env.database
+	localRepo, remote, platformHost := env.localRepo, env.remote, env.platformHost
 
 	runSettingsGit(
 		t, localRepo,
@@ -557,14 +561,7 @@ name = "widget"
 		"feature/thing", "refs/remotes/origin/feature/thing",
 	)
 
-	client, err := generated.NewClientWithResponses(ts.URL + "/api/v1")
-	require.NoError(err)
-	updateResp, err := client.UpdateRepoWorktreeBaseOnHostWithResponse(
-		t.Context(), platformHost, "github", "acme", "widget",
-		generated.RepoWorktreeBaseRequest{WorktreeBasePath: localRepo},
-	)
-	require.NoError(err)
-	require.Equal(http.StatusOK, updateResp.StatusCode(), string(updateResp.Body))
+	env.setWorktreeBase(t)
 	createResp, err := client.CreateWorkspaceWithResponse(
 		t.Context(),
 		generated.CreateWorkspaceInputBody{
@@ -653,60 +650,17 @@ func TestRepoConfigAPIE2EDeleteReusedIssueBranchKeepsLocalBranch(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 
-	dir := t.TempDir()
-	cfgPath := filepath.Join(dir, "config.toml")
-	localRepo, _, platformHost := setupSettingsLocalGitRepo(t)
-	require.NoError(os.WriteFile(cfgPath, []byte(`
-sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
-host = "127.0.0.1"
-port = 8091
-
-[tmux]
-command = ["sh", "-c", "exit 0"]
-
-[[repos]]
-platform_host = "`+platformHost+`"
-owner = "acme"
-name = "widget"
-`), 0o644))
-	cfg, err := config.Load(cfgPath)
-	require.NoError(err)
-
-	database := dbtest.Open(t)
-	repoID, err := database.UpsertRepo(
-		t.Context(), db.GitHubRepoIdentity(platformHost, "acme", "widget"),
-	)
-	require.NoError(err)
-	seedSettingsWorkspaceIssue(t, database, repoID, 7, "")
-
-	syncer := github.NewSyncer(
-		map[string]github.Client{"github.com": &mockGH{}},
-		database, nil,
-		[]github.RepoRef{{Owner: "acme", Name: "widget", PlatformHost: platformHost}},
-		time.Minute, nil, nil,
-	)
-	t.Cleanup(syncer.Stop)
-
-	srv := server.NewWithConfig(
-		database, syncer, nil, nil, cfg, cfgPath,
-		server.ServerOptions{WorktreeDir: filepath.Join(dir, "workspaces")},
-	)
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
-	ts := httptest.NewServer(srv)
-	defer ts.Close()
+	env := setupSettingsWorkspaceEnv(t, func(database *db.DB, repoID int64) {
+		seedSettingsWorkspaceIssue(t, database, repoID, 7, "")
+	})
+	client, database := env.client, env.database
+	localRepo, platformHost := env.localRepo, env.platformHost
+	ts := env.ts
 
 	const branch = "middleman/issue-7"
 	runSettingsGit(t, localRepo, "branch", branch, "HEAD")
 
-	client, err := generated.NewClientWithResponses(ts.URL + "/api/v1")
-	require.NoError(err)
-	updateResp, err := client.UpdateRepoWorktreeBaseOnHostWithResponse(
-		t.Context(), platformHost, "github", "acme", "widget",
-		generated.RepoWorktreeBaseRequest{WorktreeBasePath: localRepo},
-	)
-	require.NoError(err)
-	require.Equal(http.StatusOK, updateResp.StatusCode(), string(updateResp.Body))
+	env.setWorktreeBase(t)
 	reuse := true
 	createResp, err := client.CreateIssueWorkspaceOnHostWithResponse(
 		t.Context(), platformHost, "github", "acme", "widget", 7,

@@ -4692,13 +4692,12 @@ func (s *Server) createWorkspace(
 func (s *Server) createWorkspaceProvider(
 	ctx context.Context, input *createWorkspaceInput,
 ) (string, error) {
-	provider := strings.TrimSpace(input.Body.Provider)
-	if provider != "" {
-		kind, err := platform.NormalizeKind(provider)
+	if strings.TrimSpace(input.Body.Provider) != "" {
+		provider, err := normalizeRouteProvider(input.Body.Provider)
 		if err != nil {
 			return "", problemValidation("body.provider", err.Error())
 		}
-		return string(kind), nil
+		return provider, nil
 	}
 	count, err := s.db.CountReposByHostOwnerName(
 		ctx, input.Body.PlatformHost, input.Body.Owner, input.Body.Name,

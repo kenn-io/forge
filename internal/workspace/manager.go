@@ -302,7 +302,7 @@ func (m *Manager) CreateIssue(
 	issueNumber int,
 	opts CreateIssueOptions,
 ) (*Workspace, error) {
-	repo, err := m.issueWorkspaceRepo(ctx, opts.Provider, platformHost, owner, name)
+	repo, err := m.workspaceRepo(ctx, opts.Provider, platformHost, owner, name)
 	if err != nil {
 		return nil, fmt.Errorf("look up repo: %w", err)
 	}
@@ -699,13 +699,6 @@ func ValidateWorktreeBasePath(
 	return abs, nil
 }
 
-func (m *Manager) issueWorkspaceRepo(
-	ctx context.Context,
-	provider, platformHost, owner, name string,
-) (*db.Repo, error) {
-	return m.workspaceRepo(ctx, provider, platformHost, owner, name)
-}
-
 func (m *Manager) workspaceRepo(
 	ctx context.Context,
 	provider, platformHost, owner, name string,
@@ -906,21 +899,16 @@ func originFetchRefspecUpdatesOrigin(value string) bool {
 }
 
 func gitConfigValues(ctx context.Context, dir, key string) ([]string, error) {
-	cmd := workspaceGitCommand(ctx, dir, "config", "--get-all", key)
-	out, err := procutil.CombinedOutput(
-		ctx, cmd, "git subprocess capacity",
-	)
+	out, err := gitCombinedOutput(ctx, dir, "config", "--get-all", key)
 	if err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
 			return nil, nil
 		}
-		return nil, fmt.Errorf(
-			"%w: %s", err, strings.TrimSpace(string(out)),
-		)
+		return nil, err
 	}
 	var values []string
-	for line := range strings.SplitSeq(string(out), "\n") {
+	for line := range strings.SplitSeq(out, "\n") {
 		value := strings.TrimSpace(line)
 		if value != "" {
 			values = append(values, value)
@@ -945,31 +933,23 @@ func localGitConfigKeys(ctx context.Context, dir string) ([]string, error) {
 func localGitConfigKeysForScope(
 	ctx context.Context, dir, scope string,
 ) ([]string, error) {
-	cmd := workspaceGitCommand(
-		ctx, dir,
-		"config", scope, "--name-only", "--list",
-	)
-	out, err := procutil.CombinedOutput(
-		ctx, cmd, "git subprocess capacity",
+	out, err := gitCombinedOutput(
+		ctx, dir, "config", scope, "--name-only", "--list",
 	)
 	if err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
 			return nil, nil
 		}
-		if scope == "--worktree" {
-			outText := string(out)
-			if strings.Contains(outText, "extensions.worktreeConfig") ||
-				strings.Contains(outText, "extension worktreeConfig") {
-				return nil, nil
-			}
+		if scope == "--worktree" &&
+			(strings.Contains(out, "extensions.worktreeConfig") ||
+				strings.Contains(out, "extension worktreeConfig")) {
+			return nil, nil
 		}
-		return nil, fmt.Errorf(
-			"%w: %s", err, strings.TrimSpace(string(out)),
-		)
+		return nil, err
 	}
 	var keys []string
-	for line := range strings.SplitSeq(string(out), "\n") {
+	for line := range strings.SplitSeq(out, "\n") {
 		key := strings.TrimSpace(line)
 		if key != "" {
 			keys = append(keys, key)
@@ -1734,17 +1714,6 @@ func (m *Manager) Get(
 	return m.db.GetWorkspace(ctx, id)
 }
 
-// GetByMR returns the workspace for a specific MR, or nil.
-func (m *Manager) GetByMR(
-	ctx context.Context,
-	platformHost, owner, name string,
-	mrNumber int,
-) (*Workspace, error) {
-	return m.db.GetWorkspaceByMR(
-		ctx, platformHost, owner, name, mrNumber,
-	)
-}
-
 // GetByMRForProvider returns the workspace for a specific provider-scoped MR,
 // or nil.
 func (m *Manager) GetByMRForProvider(
@@ -1752,19 +1721,12 @@ func (m *Manager) GetByMRForProvider(
 	provider, platformHost, owner, name string,
 	mrNumber int,
 ) (*Workspace, error) {
+	kind, err := platform.NormalizeKind(provider)
+	if err != nil {
+		return nil, err
+	}
 	return m.db.GetWorkspaceByMRForProvider(
-		ctx, provider, platformHost, owner, name, mrNumber,
-	)
-}
-
-// GetByIssue returns the workspace for a specific issue, or nil.
-func (m *Manager) GetByIssue(
-	ctx context.Context,
-	platformHost, owner, name string,
-	issueNumber int,
-) (*Workspace, error) {
-	return m.db.GetWorkspaceByIssue(
-		ctx, platformHost, owner, name, issueNumber,
+		ctx, string(kind), platformHost, owner, name, mrNumber,
 	)
 }
 
@@ -2610,23 +2572,32 @@ func shellFromPasswdLine(line string) string {
 	return shell
 }
 
-// runGit executes a git command in dir and returns combined
-// output on error.
-func runGit(ctx context.Context, dir string, args ...string) error {
+// runGitWithoutHooks executes a git mutation in dir and returns combined
+// output on error. It is the only git mutation runner in this package:
+// workspace git dirs may be user-owned local worktree bases whose repo-local
+// hooks middleman must never run, so there is deliberately no hook-executing
+// variant.
+func runGitWithoutHooks(ctx context.Context, dir string, args ...string) error {
+	_, err := gitCombinedOutput(ctx, dir, gitArgsWithoutHooks(args...)...)
+	return err
+}
+
+// gitCombinedOutput runs git in dir, returning combined output. On failure
+// the returned error includes the trimmed output, and the raw output is
+// still returned so callers can inspect it.
+func gitCombinedOutput(
+	ctx context.Context, dir string, args ...string,
+) (string, error) {
 	cmd := workspaceGitCommand(ctx, dir, args...)
 	out, err := procutil.CombinedOutput(
 		ctx, cmd, "git subprocess capacity",
 	)
 	if err != nil {
-		return fmt.Errorf(
+		return string(out), fmt.Errorf(
 			"%w: %s", err, strings.TrimSpace(string(out)),
 		)
 	}
-	return nil
-}
-
-func runGitWithoutHooks(ctx context.Context, dir string, args ...string) error {
-	return runGit(ctx, dir, gitArgsWithoutHooks(args...)...)
+	return string(out), nil
 }
 
 func gitArgsWithoutHooks(args ...string) []string {
@@ -2635,16 +2606,12 @@ func gitArgsWithoutHooks(args ...string) []string {
 	return append(gitArgs, args...)
 }
 
-func fetchWorkspaceBase(ctx context.Context, dir string, requireOriginHead bool) error {
-	return fetchWorkspaceBaseWithGit(ctx, runGit, dir, requireOriginHead)
-}
-
 func (m *Manager) fetchWorkspaceBase(
 	ctx context.Context,
 	dir, platformHost string,
 	requireOriginHead bool,
 ) error {
-	run := runGit
+	run := runGitWithoutHooks
 	if m.clones != nil {
 		run = func(ctx context.Context, dir string, args ...string) error {
 			out, err := m.clones.RunGit(ctx, platformHost, dir, args...)
@@ -2665,6 +2632,9 @@ func fetchWorkspaceBaseWithGit(
 	dir string,
 	requireOriginHead bool,
 ) error {
+	// The clones-backed run bypasses runGitWithoutHooks, so hook
+	// suppression must be applied here as well; on the runGitWithoutHooks
+	// path the flag is duplicated, which git tolerates.
 	runWithoutHooks := func(ctx context.Context, dir string, args ...string) error {
 		return run(ctx, dir, gitArgsWithoutHooks(args...)...)
 	}
@@ -2737,10 +2707,10 @@ func gitRefExists(ctx context.Context, dir, ref string) bool {
 func runGitWorktreeAdd(
 	ctx context.Context, dir, worktreePath string, args ...string,
 ) error {
-	gitArgs := make([]string, 0, len(args)+5)
-	gitArgs = append(gitArgs, gitArgsWithoutHooks("worktree", "add", worktreePath)...)
+	gitArgs := make([]string, 0, len(args)+3)
+	gitArgs = append(gitArgs, "worktree", "add", worktreePath)
 	gitArgs = append(gitArgs, args...)
-	return runGit(ctx, dir, gitArgs...)
+	return runGitWithoutHooks(ctx, dir, gitArgs...)
 }
 
 // runBuiltCmd runs a pre-built exec.Cmd and wraps any failure with
@@ -3083,41 +3053,31 @@ func (m *Manager) updateWorkspaceBranch(
 func gitRefSHA(
 	ctx context.Context, dir, ref string,
 ) (string, bool, error) {
-	cmd := workspaceGitCommand(
+	out, err := gitCombinedOutput(
 		ctx, dir, "rev-parse", "--verify", "--quiet",
 		ref+"^{commit}",
 	)
-	out, err := procutil.CombinedOutput(
-		ctx, cmd, "git subprocess capacity",
-	)
 	if err == nil {
-		return strings.TrimSpace(string(out)), true, nil
+		return strings.TrimSpace(out), true, nil
 	}
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
 		return "", false, nil
 	}
-	return "", false, fmt.Errorf(
-		"%w: %s", err, strings.TrimSpace(string(out)),
-	)
+	return "", false, err
 }
 
 func worktreeCommonGitDir(
 	ctx context.Context, worktreePath string,
 ) (string, error) {
-	cmd := workspaceGitCommand(
+	out, err := gitCombinedOutput(
 		ctx, worktreePath,
 		"rev-parse", "--path-format=absolute", "--git-common-dir",
 	)
-	out, err := procutil.CombinedOutput(
-		ctx, cmd, "git subprocess capacity",
-	)
 	if err != nil {
-		return "", fmt.Errorf(
-			"%w: %s", err, strings.TrimSpace(string(out)),
-		)
+		return "", err
 	}
-	return strings.TrimSpace(string(out)), nil
+	return strings.TrimSpace(out), nil
 }
 
 func gitDirTracksWorktreePath(
@@ -3130,18 +3090,13 @@ func gitDirTracksWorktreePath(
 	if err != nil {
 		return false, fmt.Errorf("resolve workspace path: %w", err)
 	}
-	cmd := workspaceGitCommand(
+	out, err := gitCombinedOutput(
 		ctx, gitDir, "worktree", "list", "--porcelain",
 	)
-	out, err := procutil.CombinedOutput(
-		ctx, cmd, "git subprocess capacity",
-	)
 	if err != nil {
-		return false, fmt.Errorf(
-			"%w: %s", err, strings.TrimSpace(string(out)),
-		)
+		return false, err
 	}
-	for line := range strings.SplitSeq(string(out), "\n") {
+	for line := range strings.SplitSeq(out, "\n") {
 		path, ok := strings.CutPrefix(line, "worktree ")
 		if !ok {
 			continue
@@ -3174,16 +3129,13 @@ func canonicalWorktreeListPath(path string) (string, error) {
 }
 
 func gitIsBareRepository(ctx context.Context, dir string) (bool, error) {
-	cmd := workspaceGitCommand(ctx, dir, "rev-parse", "--is-bare-repository")
-	out, err := procutil.CombinedOutput(
-		ctx, cmd, "git subprocess capacity",
+	out, err := gitCombinedOutput(
+		ctx, dir, "rev-parse", "--is-bare-repository",
 	)
 	if err != nil {
-		return false, fmt.Errorf(
-			"%w: %s", err, strings.TrimSpace(string(out)),
-		)
+		return false, err
 	}
-	return strings.TrimSpace(string(out)) == "true", nil
+	return strings.TrimSpace(out) == "true", nil
 }
 
 func localBranchExists(
@@ -3211,19 +3163,14 @@ func localBranchExists(
 func localBranchCheckedOut(
 	ctx context.Context, dir, branch string,
 ) (bool, error) {
-	cmd := workspaceGitCommand(
+	out, err := gitCombinedOutput(
 		ctx, dir, "worktree", "list", "--porcelain",
 	)
-	out, err := procutil.CombinedOutput(
-		ctx, cmd, "git subprocess capacity",
-	)
 	if err != nil {
-		return false, fmt.Errorf(
-			"%w: %s", err, strings.TrimSpace(string(out)),
-		)
+		return false, err
 	}
 	want := "refs/heads/" + branch
-	for line := range strings.SplitSeq(string(out), "\n") {
+	for line := range strings.SplitSeq(out, "\n") {
 		got, ok := strings.CutPrefix(line, "branch ")
 		if ok && strings.TrimSpace(got) == want {
 			return true, nil

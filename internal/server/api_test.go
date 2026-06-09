@@ -21663,7 +21663,7 @@ exit 1
 	require.NoError(err)
 	defer conn.Close(websocket.StatusNormalClosure, "done")
 
-	requestResize := func() {
+	writeResize := func() error {
 		t.Helper()
 		resize, err := json.Marshal(map[string]any{
 			"type": "resize",
@@ -21671,9 +21671,9 @@ exit 1
 			"rows": 41,
 		})
 		require.NoError(err)
-		require.NoError(conn.Write(ctx, websocket.MessageText, resize))
+		return conn.Write(ctx, websocket.MessageText, resize)
 	}
-	requestResize()
+	require.NoError(writeResize())
 	deadline := time.Now().Add(8 * time.Second)
 	var got strings.Builder
 	for time.Now().Before(deadline) {
@@ -21682,7 +21682,9 @@ exit 1
 		cancel()
 		if readErr != nil {
 			if errors.Is(readErr, context.DeadlineExceeded) {
-				requestResize()
+				if err := writeResize(); err != nil {
+					break
+				}
 				continue
 			}
 			break
@@ -21697,7 +21699,9 @@ exit 1
 		if strings.Contains(got.String(), "size:40:177:probe") {
 			return
 		}
-		requestResize()
+		if err := writeResize(); err != nil {
+			break
+		}
 	}
 	require.Contains(got.String(), "size:40:177:probe")
 }

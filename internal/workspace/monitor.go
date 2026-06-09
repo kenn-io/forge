@@ -172,7 +172,9 @@ func (m *PRMonitor) detectAssociatedPR(
 	if err != nil {
 		return 0, false, err
 	}
-	if prNumber, ok := selectPRByLocalBranch(candidates, currentBranch, headSHA); ok {
+	if prNumber, ok := selectPRByLocalBranch(
+		candidates, currentBranch, headSHA, upstream,
+	); ok {
 		return prNumber, true, nil
 	}
 	return 0, false, nil
@@ -213,6 +215,7 @@ func selectPRByUpstream(
 func selectPRByLocalBranch(
 	candidates []db.MergeRequest,
 	currentBranch, currentHeadSHA string,
+	upstream upstreamState,
 ) (int, bool) {
 	currentHeadSHA = strings.TrimSpace(currentHeadSHA)
 	if currentBranch == "" || currentHeadSHA == "" {
@@ -223,7 +226,8 @@ func selectPRByLocalBranch(
 	for i := range candidates {
 		candidate := candidates[i]
 		if candidate.HeadBranch == currentBranch &&
-			strings.EqualFold(candidate.PlatformHeadSHA, currentHeadSHA) {
+			strings.EqualFold(candidate.PlatformHeadSHA, currentHeadSHA) &&
+			localBranchCandidateMatchesUpstream(candidate, upstream) {
 			matches = append(matches, candidate)
 		}
 	}
@@ -231,6 +235,20 @@ func selectPRByLocalBranch(
 		return 0, false
 	}
 	return matches[0].Number, true
+}
+
+func localBranchCandidateMatchesUpstream(
+	candidate db.MergeRequest,
+	upstream upstreamState,
+) bool {
+	if !upstream.hasTracking {
+		return true
+	}
+	remoteRepo := normalizeCloneRepoIdentity(upstream.remoteURL)
+	candidateRepo := normalizeCloneRepoIdentity(candidate.HeadRepoCloneURL)
+	return remoteRepo == "" ||
+		candidateRepo == "" ||
+		candidateRepo == remoteRepo
 }
 
 func gitBranchName(

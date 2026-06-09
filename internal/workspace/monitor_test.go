@@ -283,6 +283,65 @@ func TestPRMonitorRunOnceRejectsLocalBranchWithMismatchedHeadSHA(t *testing.T) {
 	assert.Nil(ws.AssociatedPRNumber)
 }
 
+func TestPRMonitorRunOnceRejectsLocalBranchWithMismatchedUpstreamRemote(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := context.Background()
+
+	repoID := seedRepo(t, d, "github.com", "acme", "widget")
+	seedIssue(t, d, repoID, 7, "Track workspace association")
+	worktreePath := setupMonitorRepo(t)
+	runWorkspaceTestGit(t, worktreePath, "checkout", "-b", "feature/shared")
+	require.NoError(os.WriteFile(
+		filepath.Join(worktreePath, "feature.txt"), []byte("feature\n"), 0o644,
+	))
+	runWorkspaceTestGit(t, worktreePath, "add", ".")
+	runWorkspaceTestGit(t, worktreePath, "commit", "-m", "feature commit")
+	runWorkspaceTestGit(
+		t, worktreePath,
+		"remote", "set-url", "origin", "git@github.com:acme/widget.git",
+	)
+	runWorkspaceTestGit(
+		t, worktreePath,
+		"config", "branch.feature/shared.remote", "origin",
+	)
+	runWorkspaceTestGit(
+		t, worktreePath,
+		"config", "branch.feature/shared.merge", "refs/heads/feature/shared",
+	)
+	headSHA, err := gitHeadSHA(ctx, worktreePath)
+	require.NoError(err)
+	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	_, err = d.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:           repoID,
+		PlatformID:       repoID*10000 + 42,
+		Number:           42,
+		Title:            "Test PR",
+		Author:           "author",
+		State:            "open",
+		HeadBranch:       "feature/shared",
+		HeadRepoCloneURL: "https://github.com/fork/widget.git",
+		PlatformHeadSHA:  headSHA,
+		BaseBranch:       "main",
+		CreatedAt:        now,
+		UpdatedAt:        now,
+		LastActivityAt:   now,
+	})
+	require.NoError(err)
+	insertMonitorWorkspace(t, d, worktreePath, nil)
+
+	monitor := NewPRMonitor(d)
+	updates, err := monitor.RunOnce(ctx)
+	require.NoError(err)
+	assert.Empty(updates)
+
+	ws, err := d.GetWorkspace(ctx, "ws-issue")
+	require.NoError(err)
+	require.NotNil(ws)
+	assert.Nil(ws.AssociatedPRNumber)
+}
+
 func TestPRMonitorRunOnceSkipsSyntheticIssueBranch(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
@@ -590,15 +649,21 @@ func TestSelectPRByBranchRejectsAmbiguousMatches(t *testing.T) {
 		{Number: 44, HeadBranch: "wrong-head", PlatformHeadSHA: "def456"},
 	}
 
-	number, ok := selectPRByLocalBranch(candidates, "single-local", "abc123")
+	number, ok := selectPRByLocalBranch(
+		candidates, "single-local", "abc123", upstreamState{},
+	)
 	assert.True(ok)
 	assert.Equal(43, number)
 
-	number, ok = selectPRByLocalBranch(candidates, "shared-local", "abc123")
+	number, ok = selectPRByLocalBranch(
+		candidates, "shared-local", "abc123", upstreamState{},
+	)
 	assert.False(ok)
 	assert.Zero(number)
 
-	number, ok = selectPRByLocalBranch(candidates, "wrong-head", "abc123")
+	number, ok = selectPRByLocalBranch(
+		candidates, "wrong-head", "abc123", upstreamState{},
+	)
 	assert.False(ok)
 	assert.Zero(number)
 }

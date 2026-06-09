@@ -180,6 +180,7 @@ async function setupTerminalMocks(
       body?: unknown;
     };
     diffRequests?: string[];
+    commitRequests?: string[];
     runtime?: WorkspaceRuntime;
     runtimeEvents?: RuntimeEvents;
   },
@@ -294,6 +295,7 @@ async function setupTerminalMocks(
   });
 
   await page.route(`**/api/v1/workspaces/${ws.id}/commits`, async (route) => {
+    opts?.commitRequests?.push(route.request().url());
     await route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -828,7 +830,8 @@ test.describe("terminal state icons", () => {
 
   test("refresh preserves workspace diff target and commit selection", async ({ page }) => {
     const diffRequests: string[] = [];
-    await setupTerminalMocks(page, { diffRequests });
+    const commitRequests: string[] = [];
+    await setupTerminalMocks(page, { diffRequests, commitRequests });
 
     await page.goto("/terminal/ws-123");
     await page.locator(".seg-btn", { hasText: "Diff" }).click();
@@ -843,9 +846,11 @@ test.describe("terminal state icons", () => {
     await expect.poll(() => hasWorkspaceDiffRequest(diffRequests, { base: "merge-target", commit: "sha2" })).toBe(true);
 
     diffRequests.length = 0;
+    commitRequests.length = 0;
     await page.getByRole("button", { name: "Refresh workspace details" }).click();
 
     await expect.poll(() => hasWorkspaceDiffRequest(diffRequests, { base: "merge-target", commit: "sha2" })).toBe(true);
+    await expect.poll(() => commitRequests.length).toBeGreaterThan(0);
     await expect(page.getByRole("button", { name: "Compare with merge target" })).toHaveAttribute(
       "aria-pressed",
       "true",

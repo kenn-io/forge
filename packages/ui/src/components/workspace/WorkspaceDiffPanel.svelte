@@ -38,7 +38,7 @@
     const key = `${workspaceID}:${base}:${refreshToken}`;
     if (loadedKey === key) return;
     loadedKey = key;
-    void diff.loadWorkspaceDiff(workspaceID, base);
+    void diff.loadWorkspaceDiff(workspaceID, base, false, { refreshCommits: refreshToken > 0 });
   });
 
   function selectBase(nextBase: WorkspaceDiffBase): void {

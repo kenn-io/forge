@@ -463,6 +463,65 @@ test("adds and publishes an inline draft review comment", async ({ page }) => {
   await expect(page.getByText("1 draft comment")).toBeHidden();
 });
 
+test("shows a visible composer focus indicator without focus flicker", async ({ page }) => {
+  await mockInlineReviewAPI(page);
+
+  await page.goto("/pulls/github/acme/widgets/42");
+  await page.getByRole("button", { name: "Files changed" }).click();
+
+  // Regression guard for issues #445/#446: opening the composer may change
+  // the textarea's focus state at most once. Repeated focus retries made the
+  // visible focus indicator flicker, so count transitions from before the
+  // composer exists.
+  await page.evaluate(() => {
+    const counts = { focusin: 0, focusout: 0 };
+    const win = window as typeof window & { __composerFocusCounts?: typeof counts };
+    win.__composerFocusCounts = counts;
+    const isComposerTextarea = (target: EventTarget | null): boolean =>
+      target instanceof HTMLTextAreaElement && target.closest(".inline-composer") !== null;
+    document.addEventListener(
+      "focusin",
+      (event) => {
+        if (isComposerTextarea(event.target)) counts.focusin += 1;
+      },
+      true,
+    );
+    document.addEventListener(
+      "focusout",
+      (event) => {
+        if (isComposerTextarea(event.target)) counts.focusout += 1;
+      },
+      true,
+    );
+  });
+
+  await page.getByRole("button", { name: "Comment on new line 2" }).click();
+  const composer = page.getByPlaceholder("Leave a comment");
+  await expect(composer).toBeVisible();
+
+  // Let the windows previous retrying implementations used (animation frames
+  // plus a 50ms timer) elapse before reading the transition counts.
+  await page.waitForTimeout(250);
+  const counts = await page.evaluate(
+    () =>
+      (window as typeof window & { __composerFocusCounts?: { focusin: number; focusout: number } })
+        .__composerFocusCounts,
+  );
+  expect(counts?.focusout).toBe(0);
+  expect(counts?.focusin).toBeLessThanOrEqual(1);
+
+  // The focused textarea must show a visible focus ring.
+  await composer.click();
+  await expect(composer).toBeFocused();
+  const focusedShadow = await composer.evaluate((element) => getComputedStyle(element).boxShadow);
+  expect(focusedShadow).not.toBe("none");
+
+  // The ring is focus-driven, not always-on chrome.
+  await composer.evaluate((element) => (element as HTMLTextAreaElement).blur());
+  const blurredShadow = await composer.evaluate((element) => getComputedStyle(element).boxShadow);
+  expect(blurredShadow).toBe("none");
+});
+
 test("keeps the draft review footer readable for long comments", async ({ page }) => {
   await page.setViewportSize({ width: 1000, height: 720 });
   const longDraftBody = [

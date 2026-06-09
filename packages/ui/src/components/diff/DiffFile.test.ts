@@ -478,6 +478,37 @@ describe("DiffFile", () => {
     expect(selectedPierreLines()).toHaveLength(0);
   });
 
+  it("focuses the inline composer textarea exactly once after opening", async () => {
+    // Regression guard for issues #445/#446: repeated focus retries (extra
+    // frames or timers) made the composer's visible focus indicator flicker.
+    // The composer must mutate textarea focus a single time.
+    const focusSpy = vi.spyOn(HTMLTextAreaElement.prototype, "focus");
+    try {
+      renderDiffFile(makeFile(), {
+        reviewEnabled: true,
+        diffHeadSHA: "diff-head",
+      });
+
+      await clickLineCommentButton(2, "right");
+      const textarea = screen.getByPlaceholderText("Leave a comment");
+      await waitFor(() => {
+        expect(textarea).toBe(document.activeElement);
+      });
+
+      // Cover the windows the old retry implementation used: two animation
+      // frames plus a 50ms timer after the initial focus.
+      await new Promise((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve(undefined)));
+      });
+      await new Promise((resolve) => setTimeout(resolve, 80));
+
+      expect(focusSpy).toHaveBeenCalledTimes(1);
+      expect(textarea).toBe(document.activeElement);
+    } finally {
+      focusSpy.mockRestore();
+    }
+  });
+
   it("toggles an empty inline composer from keyboard line comment button activation", async () => {
     renderDiffFile(makeFile(), {
       reviewEnabled: true,

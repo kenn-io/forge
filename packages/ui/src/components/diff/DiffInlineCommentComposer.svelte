@@ -23,35 +23,21 @@
   function setupTextarea(node: HTMLTextAreaElement) {
     textareaEl = node;
     let destroyed = false;
-    let focusFrame = 0;
-    let focusTimeout: ReturnType<typeof setTimeout> | undefined;
-
-    function focusTextarea(): void {
-      if (destroyed || !node.isConnected || node.disabled) return;
-      node.focus({ preventScroll: true });
-    }
 
     void tick().then(() => {
-      focusTextarea();
+      // Focus exactly once. Retrying focus across frames/timers makes any
+      // visible focus treatment flicker as the indicator blinks per retry
+      // (issues #445/#446); never add a second focus mutation here.
+      if (!destroyed && node.isConnected && !node.disabled) {
+        node.focus({ preventScroll: true });
+      }
       scheduleAutosizeTextarea();
-      focusFrame = requestAnimationFrame(() => {
-        focusFrame = requestAnimationFrame(() => {
-          focusFrame = 0;
-          focusTextarea();
-        });
-      });
-      focusTimeout = setTimeout(() => {
-        focusTimeout = undefined;
-        focusTextarea();
-      }, 50);
     });
 
     return {
       destroy(): void {
         destroyed = true;
         if (textareaEl === node) textareaEl = undefined;
-        if (focusFrame) cancelAnimationFrame(focusFrame);
-        if (focusTimeout !== undefined) clearTimeout(focusTimeout);
         if (autosizeFrame) cancelAnimationFrame(autosizeFrame);
       },
     };
@@ -166,6 +152,12 @@
   textarea:focus {
     border-color: var(--border-muted);
     outline: none;
+  }
+
+  textarea:focus-visible {
+    border-color: var(--accent-blue);
+    outline: none;
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-blue) 42%, transparent);
   }
 
   .composer-error {

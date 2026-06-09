@@ -241,6 +241,82 @@ describe("EventTimeline", () => {
     expect(document.querySelectorAll(".event--compact")).toHaveLength(3);
   });
 
+  it("uses merged status styling for merged lifecycle events", () => {
+    render(EventTimeline, {
+      props: {
+        events: [
+          makeEvent({
+            EventType: "merged",
+            Summary: "merged this",
+          }),
+        ],
+      },
+    });
+
+    const label = screen.getByText("Merged");
+    const dot = document.querySelector(".dot");
+    expect(label.getAttribute("style")).toContain("var(--accent-purple)");
+    expect(dot?.getAttribute("style")).toContain("var(--accent-purple)");
+  });
+
+  it("renders compact lifecycle rows without boxed card chrome", () => {
+    render(EventTimeline, {
+      props: {
+        events: [
+          makeEvent({
+            EventType: "merged",
+            Summary: "merged this",
+          }),
+        ],
+      },
+    });
+
+    expect(document.querySelector(".event-card--compact")).toBeTruthy();
+    const compactCardStyle = findCompiledStyleRule(".event-card--compact");
+    expect(compactCardStyle.getPropertyValue("background")).toBe("transparent");
+    expect(compactCardStyle.getPropertyValue("border-color")).toBe("transparent");
+    expect(compactCardStyle.getPropertyValue("border-radius")).toBe("var(--radius-sm)");
+  });
+
+  it("collapses duplicate merge lifecycle rows into the single authored transition", () => {
+    render(EventTimeline, {
+      props: {
+        events: [
+          makeEvent({
+            ID: 3,
+            EventType: "merged",
+            Author: "mariusvniekerk",
+            Summary: "merged this",
+            CreatedAt: "2024-06-01T12:03:00Z",
+            DedupeKey: "timeline-merge-provider",
+          }),
+          makeEvent({
+            ID: 2,
+            EventType: "closed",
+            Author: "mariusvniekerk",
+            Summary: "closed this",
+            CreatedAt: "2024-06-01T12:03:00Z",
+            DedupeKey: "timeline-close-provider",
+          }),
+          makeEvent({
+            ID: 1,
+            EventType: "merged",
+            Author: "",
+            Summary: "merged this",
+            CreatedAt: "2024-06-01T12:03:00Z",
+            DedupeKey: "timeline-merge-fallback",
+          }),
+        ],
+      },
+    });
+
+    expect(screen.getAllByText("Merged")).toHaveLength(1);
+    expect(screen.queryByText("Closed")).toBeNull();
+    expect(screen.queryByText("closed this")).toBeNull();
+    expect(screen.getByText("mariusvniekerk")).toBeTruthy();
+    expect(document.querySelectorAll(".event--compact")).toHaveLength(1);
+  });
+
   it("keeps the timeline entry card while rendering body content without a nested card surface", () => {
     const { container } = render(EventTimeline, {
       props: {

@@ -342,7 +342,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 
 	// tools#2: merged 60d ago, alice
 	t2Merged := now.Add(-60 * 24 * time.Hour)
-	_, err = d.UpsertMergeRequest(ctx, &db.MergeRequest{
+	t2ID, err := d.UpsertMergeRequest(ctx, &db.MergeRequest{
 		RepoID:            toolsID,
 		PlatformID:        2002,
 		Number:            2,
@@ -786,6 +786,37 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 	})
 	if err != nil {
 		return nil, fmt.Errorf("upsert tools PR#1 events: %w", err)
+	}
+
+	// tools PR#2: duplicate lifecycle rows from provider/import paths collapse to one merge row in the UI.
+	err = d.UpsertMREvents(ctx, []db.MREvent{
+		{
+			MergeRequestID: t2ID,
+			EventType:      "merged",
+			Author:         "",
+			Summary:        "merged this",
+			CreatedAt:      t2Merged,
+			DedupeKey:      "t2-merged-fallback",
+		},
+		{
+			MergeRequestID: t2ID,
+			EventType:      "closed",
+			Author:         "alice",
+			Summary:        "closed this",
+			CreatedAt:      t2Merged.Add(15 * time.Second),
+			DedupeKey:      "t2-closed-provider",
+		},
+		{
+			MergeRequestID: t2ID,
+			EventType:      "merged",
+			Author:         "alice",
+			Summary:        "merged this",
+			CreatedAt:      t2Merged.Add(15 * time.Second),
+			DedupeKey:      "t2-merged-provider",
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("upsert tools PR#2 lifecycle events: %w", err)
 	}
 
 	// --- Issue Events ---

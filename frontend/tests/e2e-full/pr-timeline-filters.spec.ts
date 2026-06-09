@@ -80,6 +80,21 @@ test.describe("PR timeline filters", () => {
     await expect(page.getByText("develop -> main")).toBeVisible();
   });
 
+  test("renders merged lifecycle transitions as one purple row", async ({ page }) => {
+    await openPRTimelinePath(page, "/pulls/github/acme/tools/2");
+
+    const mergedRows = page.locator(".event--compact", { hasText: "Merged" });
+    await expect(mergedRows).toHaveCount(1);
+    await expect(mergedRows.first()).toContainText("alice");
+    await expect(mergedRows.first()).toContainText("merged this");
+    await expect(mergedRows.first().locator(".event-type", { hasText: "Merged" })).toHaveAttribute(
+      "style",
+      /var\(--accent-purple\)/,
+    );
+    await expect(mergedRows.first().locator(".dot")).toHaveAttribute("style", /var\(--accent-purple\)/);
+    await expect(page.locator(".event--compact", { hasText: "Closed" })).toHaveCount(0);
+  });
+
   test("orders force-push commit generations through the seeded timeline", async ({ page }) => {
     await openPRTimeline(page);
 

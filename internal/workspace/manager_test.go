@@ -889,6 +889,55 @@ func TestCreateIssueUsesProviderQualifiedRepo(t *testing.T) {
 	assert.Equal("gitlab", ws.Platform)
 }
 
+func TestCreateIssueUsesProviderCloneURLForNamespacedManagedClone(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	_, remote := setupLocalWorktreeBaseWithRemoteForWorkspaceGitTest(
+		t, "feature/thing",
+	)
+
+	repoID, err := d.UpsertRepo(ctx, db.RepoIdentity{
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.example.com",
+		Owner:        "group",
+		Name:         "project",
+	})
+	require.NoError(err)
+	require.NoError(d.UpdateRepoProviderMetadata(
+		ctx, repoID, db.RepoProviderMetadata{
+			CloneURL:      remote,
+			DefaultBranch: "main",
+		},
+	))
+	seedIssue(t, d, repoID, 11, "GitLab issue")
+
+	clones := gitclone.New(filepath.Join(t.TempDir(), "clones"), nil)
+	mgr := NewManager(d, t.TempDir())
+	mgr.SetClones(clones)
+
+	ws, err := mgr.CreateIssue(
+		ctx, "gitlab.example.com", "group", "project", 11,
+		CreateIssueOptions{Provider: "gitlab"},
+	)
+
+	require.NoError(err)
+	require.NotNil(ws)
+	assert.Equal("gitlab", ws.Platform)
+	cloneDir, err := clones.ClonePathInNamespace(
+		"gitlab", "gitlab.example.com", "group", "project",
+	)
+	require.NoError(err)
+	assert.DirExists(cloneDir)
+	assert.Equal(
+		remote,
+		strings.TrimSpace(string(runWorkspaceTestGit(
+			t, cloneDir, "config", "--get", "remote.origin.url",
+		))),
+	)
+}
+
 func TestCreateUsesProviderQualifiedRepo(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

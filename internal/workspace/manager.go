@@ -333,6 +333,7 @@ func (m *Manager) CreateIssue(
 	workspaceBranch := gitHeadRef
 	branchDir, ok, localBase, err := m.issueBranchInspectionDir(
 		ctx, repo.Platform, platformHost, owner, name,
+		workspaceCloneRemoteURL(repo, platformHost, owner, name),
 	)
 	if err != nil {
 		return nil, err
@@ -395,7 +396,7 @@ func workspaceCloneNamespace(platform string) string {
 }
 
 func (m *Manager) issueBranchInspectionDir(
-	ctx context.Context, platform, platformHost, owner, name string,
+	ctx context.Context, platform, platformHost, owner, name, remoteURL string,
 ) (dir string, ok bool, localBase bool, err error) {
 	if baseDir, ok, err := m.localWorktreeBaseDir(ctx, platform, platformHost, owner, name); err != nil || ok {
 		return baseDir, ok, ok, err
@@ -404,10 +405,6 @@ func (m *Manager) issueBranchInspectionDir(
 		return "", false, false, nil
 	}
 
-	remoteURL := fmt.Sprintf(
-		"https://%s/%s/%s.git",
-		platformHost, owner, name,
-	)
 	if err := m.clones.EnsureCloneInNamespace(
 		ctx, workspaceCloneNamespace(platform), platformHost, owner, name, remoteURL,
 	); err != nil {
@@ -421,6 +418,17 @@ func (m *Manager) issueBranchInspectionDir(
 		return "", false, false, err
 	}
 	return cloneDir, true, false, nil
+}
+
+func workspaceCloneRemoteURL(
+	repo *db.Repo, platformHost, owner, name string,
+) string {
+	if repo != nil {
+		if cloneURL := strings.TrimSpace(repo.CloneURL); cloneURL != "" {
+			return cloneURL
+		}
+	}
+	return fmt.Sprintf("https://%s/%s/%s.git", platformHost, owner, name)
 }
 
 func issueWorkspaceBranchForExistingLocalBranch(
@@ -573,10 +581,12 @@ func (m *Manager) workspaceSetupGitDir(
 		return "", false, fmt.Errorf("clone manager not set")
 	}
 
-	remoteURL := fmt.Sprintf(
-		"https://%s/%s/%s.git",
-		ws.PlatformHost, ws.RepoOwner, ws.RepoName,
+	remoteURL, err := m.workspaceSetupRemoteURL(
+		ctx, ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
 	)
+	if err != nil {
+		return "", false, err
+	}
 	if err := m.clones.EnsureCloneInNamespace(
 		ctx, workspaceCloneNamespace(ws.Platform), ws.PlatformHost, ws.RepoOwner,
 		ws.RepoName, remoteURL,
@@ -592,6 +602,21 @@ func (m *Manager) workspaceSetupGitDir(
 		return "", false, err
 	}
 	return cloneDir, false, nil
+}
+
+func (m *Manager) workspaceSetupRemoteURL(
+	ctx context.Context, platform, platformHost, owner, name string,
+) (string, error) {
+	repo, err := m.db.GetRepoByIdentity(ctx, db.RepoIdentity{
+		Platform:     platform,
+		PlatformHost: platformHost,
+		Owner:        owner,
+		Name:         name,
+	})
+	if err != nil {
+		return "", fmt.Errorf("look up repo clone URL: %w", err)
+	}
+	return workspaceCloneRemoteURL(repo, platformHost, owner, name), nil
 }
 
 func (m *Manager) localWorktreeBaseDir(

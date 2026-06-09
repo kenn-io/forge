@@ -435,6 +435,14 @@ func seedGitLabReadOnlyCapabilityFixture(
 	if err != nil {
 		return fmt.Errorf("upsert gitlab repo: %w", err)
 	}
+	if err := database.UpdateRepoProviderMetadata(ctx, repoID, db.RepoProviderMetadata{
+		PlatformRepoID: "7001",
+		WebURL:         issue.Repo.WebURL,
+		CloneURL:       issue.Repo.CloneURL,
+		DefaultBranch:  issue.Repo.DefaultBranch,
+	}); err != nil {
+		return fmt.Errorf("update gitlab repo metadata: %w", err)
+	}
 	issueID, err := database.UpsertIssue(ctx, &db.Issue{
 		RepoID:          repoID,
 		PlatformID:      issue.PlatformID,

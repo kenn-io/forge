@@ -2330,7 +2330,10 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 		args = append(args, state)
 	}
 
-	if cond := repoListFilterCondition("r", opts.RepoFilters, &args); cond != "" {
+	if opts.RepoID != 0 {
+		conds = append(conds, "p.repo_id = ?")
+		args = append(args, opts.RepoID)
+	} else if cond := repoListFilterCondition("r", opts.RepoFilters, &args); cond != "" {
 		conds = append(conds, cond)
 	} else if opts.RepoPath != "" {
 		host, _, _ := canonicalRepoLookupIdentifier(opts.PlatformHost, "", "")

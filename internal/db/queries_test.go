@@ -2159,6 +2159,39 @@ func TestListPullRequestsFilterByRepo(t *testing.T) {
 	Assert.Equal(t, repo1, prs[0].RepoID)
 }
 
+func TestListPullRequestsFilterByRepoID(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	base := baseTime()
+
+	githubRepoID, err := d.UpsertRepo(ctx, RepoIdentity{
+		Platform:     "github",
+		PlatformHost: "code.example.com",
+		Owner:        "acme",
+		Name:         "widget",
+	})
+	require.NoError(err)
+	gitlabRepoID, err := d.UpsertRepo(ctx, RepoIdentity{
+		Platform:     "gitlab",
+		PlatformHost: "code.example.com",
+		Owner:        "acme",
+		Name:         "widget",
+	})
+	require.NoError(err)
+	insertTestMR(t, d, githubRepoID, 1, "github PR", base)
+	insertTestMR(t, d, gitlabRepoID, 2, "gitlab MR", base.Add(time.Hour))
+
+	prs, err := d.ListMergeRequests(ctx, ListMergeRequestsOpts{
+		RepoID: gitlabRepoID,
+	})
+	require.NoError(err)
+	require.Len(prs, 1)
+	assert.Equal(gitlabRepoID, prs[0].RepoID)
+	assert.Equal("gitlab MR", prs[0].Title)
+}
+
 func TestListPullRequestsFilterByMultipleRepos(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
@@ -4821,7 +4854,7 @@ func TestListIssues_PopulatesAssignees(t *testing.T) {
 }
 
 // TestUpsertIssue_NormalizesEmptyAssigneesJSON verifies that an empty
-// AssigneesJSON (Go zero value) is stored as '[]' rather than '', so that
+// AssigneesJSON (Go zero value) is stored as '[]' instead of an empty string, so that
 // json_each-based filters (e.g. ListIssues with Assignee) don't choke on
 // malformed JSON. Repro for roborev finding on commit 2b9ca4d.
 func TestUpsertIssue_NormalizesEmptyAssigneesJSON(t *testing.T) {

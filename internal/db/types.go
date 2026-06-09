@@ -340,6 +340,7 @@ type KanbanState struct {
 }
 
 type ListMergeRequestsOpts struct {
+	RepoID       int64
 	PlatformHost string
 	RepoOwner    string
 	RepoName     string

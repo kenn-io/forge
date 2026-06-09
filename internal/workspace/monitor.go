@@ -121,11 +121,10 @@ func workspacePRMonitorEligible(ws *Workspace) bool {
 }
 
 type upstreamState struct {
-	branchName    string
-	remoteName    string
-	remoteURL     string
-	hasTracking   bool
-	allowFallback bool
+	branchName  string
+	remoteName  string
+	remoteURL   string
+	hasTracking bool
 }
 
 func (m *PRMonitor) detectAssociatedPR(
@@ -139,11 +138,21 @@ func (m *PRMonitor) detectAssociatedPR(
 	if currentBranch == "" {
 		return 0, false, nil
 	}
-	candidates, err := m.db.ListMergeRequests(ctx, db.ListMergeRequestsOpts{
+	repo, err := m.db.GetRepoByIdentity(ctx, db.RepoIdentity{
+		Platform:     workspaceProvider(ws),
 		PlatformHost: ws.PlatformHost,
-		RepoOwner:    ws.RepoOwner,
-		RepoName:     ws.RepoName,
-		State:        "open",
+		Owner:        ws.RepoOwner,
+		Name:         ws.RepoName,
+	})
+	if err != nil {
+		return 0, false, fmt.Errorf("get repo: %w", err)
+	}
+	if repo == nil {
+		return 0, false, nil
+	}
+	candidates, err := m.db.ListMergeRequests(ctx, db.ListMergeRequestsOpts{
+		RepoID: repo.ID,
+		State:  "open",
 	})
 	if err != nil {
 		return 0, false, fmt.Errorf("list merge requests: %w", err)
@@ -156,9 +165,6 @@ func (m *PRMonitor) detectAssociatedPR(
 	if upstream.hasTracking {
 		if prNumber, ok := selectPRByUpstream(candidates, upstream); ok {
 			return prNumber, true, nil
-		}
-		if !upstream.allowFallback {
-			return 0, false, nil
 		}
 	}
 
@@ -261,12 +267,10 @@ func gitUpstreamState(
 		ctx, dir, "branch."+branch+".merge",
 	)
 	if remoteErr != nil || mergeErr != nil {
-		state.allowFallback = true
 		return state, nil
 	}
 
 	state.hasTracking = true
-	state.allowFallback = false
 	state.remoteName = remoteName
 	state.branchName = strings.TrimPrefix(mergeRef, "refs/heads/")
 	remoteURL, err := gitRemoteURL(ctx, dir, remoteName)

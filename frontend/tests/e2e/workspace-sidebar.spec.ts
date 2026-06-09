@@ -179,6 +179,7 @@ async function setupTerminalMocks(
       status: number;
       body?: unknown;
     };
+    diffRequests?: string[];
     runtime?: WorkspaceRuntime;
     runtimeEvents?: RuntimeEvents;
   },
@@ -227,6 +228,91 @@ async function setupTerminalMocks(
       status: response.status,
       contentType: "application/json",
       body: JSON.stringify(response.body ?? {}),
+    });
+  });
+
+  await page.route(`**/api/v1/workspaces/${ws.id}/refresh`, async (route) => {
+    if (route.request().method() !== "POST") {
+      await route.fulfill({ status: 405 });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(ws),
+    });
+  });
+
+  await page.route(`**/api/v1/workspaces/${ws.id}/files*`, async (route) => {
+    opts?.diffRequests?.push(route.request().url());
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        stale: false,
+        whitespace_only_count: 0,
+        files: [
+          {
+            path: "src/auth.go",
+            old_path: "src/auth.go",
+            status: "modified",
+            is_binary: false,
+            is_whitespace_only: false,
+            additions: 1,
+            deletions: 1,
+            hunks: [],
+            patch: "",
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.route(`**/api/v1/workspaces/${ws.id}/diff*`, async (route) => {
+    opts?.diffRequests?.push(route.request().url());
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        stale: false,
+        whitespace_only_count: 0,
+        files: [
+          {
+            path: "src/auth.go",
+            old_path: "src/auth.go",
+            status: "modified",
+            is_binary: false,
+            is_whitespace_only: false,
+            additions: 1,
+            deletions: 1,
+            hunks: [],
+            patch: "",
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.route(`**/api/v1/workspaces/${ws.id}/commits`, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        commits: [
+          {
+            sha: "sha2",
+            message: "second commit",
+            author_name: "Alice",
+            authored_at: "2026-01-01T00:00:00Z",
+          },
+          {
+            sha: "sha1",
+            message: "first commit",
+            author_name: "Alice",
+            authored_at: "2026-01-01T00:00:00Z",
+          },
+        ],
+      }),
     });
   });
 
@@ -615,6 +701,23 @@ function closedTopDockedTerminalWorkflowLayout() {
   };
 }
 
+function hasWorkspaceDiffRequest(
+  requests: string[],
+  expected: {
+    base: string;
+    commit?: string;
+  },
+): boolean {
+  return requests.some((requestURL) => {
+    const url = new URL(requestURL);
+    return (
+      url.pathname === "/api/v1/workspaces/ws-123/diff" &&
+      url.searchParams.get("base") === expected.base &&
+      (expected.commit === undefined || url.searchParams.get("commit") === expected.commit)
+    );
+  });
+}
+
 function shellWorkflowPreset() {
   return {
     id: "preset-shell",
@@ -721,6 +824,32 @@ test.describe("terminal state icons", () => {
     const stateMessage = page.locator(".state-message");
     await expect(stateMessage).toContainText("Setting up workspace...");
     await expect(stateMessage.locator(".spinner")).toBeVisible();
+  });
+
+  test("refresh preserves workspace diff target and commit selection", async ({ page }) => {
+    const diffRequests: string[] = [];
+    await setupTerminalMocks(page, { diffRequests });
+
+    await page.goto("/terminal/ws-123");
+    await page.locator(".seg-btn", { hasText: "Diff" }).click();
+
+    await expect.poll(() => hasWorkspaceDiffRequest(diffRequests, { base: "head" })).toBe(true);
+
+    await page.getByRole("button", { name: "Compare with merge target" }).click();
+    await expect.poll(() => hasWorkspaceDiffRequest(diffRequests, { base: "merge-target" })).toBe(true);
+
+    await page.getByRole("button", { name: /Select commit range/ }).click();
+    await page.getByRole("button", { name: /second commit/ }).click();
+    await expect.poll(() => hasWorkspaceDiffRequest(diffRequests, { base: "merge-target", commit: "sha2" })).toBe(true);
+
+    diffRequests.length = 0;
+    await page.getByRole("button", { name: "Refresh workspace details" }).click();
+
+    await expect.poll(() => hasWorkspaceDiffRequest(diffRequests, { base: "merge-target", commit: "sha2" })).toBe(true);
+    await expect(page.getByRole("button", { name: "Compare with merge target" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
   });
 
   test("workspace load failure shows alert icon and retry recovers", async ({ page }) => {

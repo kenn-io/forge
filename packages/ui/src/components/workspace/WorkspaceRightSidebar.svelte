@@ -280,7 +280,7 @@
 
 <div class="right-sidebar-content">
   {#if activeTab === "diff"}
-    {#key `diff:${workspaceID}:${refreshToken}`}
+    {#key `diff:${workspaceID}`}
       <WorkspaceDiffPanel
         {workspaceID}
         {provider}
@@ -290,6 +290,7 @@
         {repoPath}
         itemNumber={ownerItemNumber}
         active={activeTab === "diff"}
+        {refreshToken}
       />
     {/key}
   {:else if activeTab === "pr"}

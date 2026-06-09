@@ -14,6 +14,7 @@
     repoPath: string;
     itemNumber: number;
     active?: boolean;
+    refreshToken?: number;
   }
 
   const {
@@ -25,6 +26,7 @@
     repoPath,
     itemNumber,
     active = false,
+    refreshToken = 0,
   }: Props = $props();
   const { diff } = getStores();
 
@@ -33,7 +35,7 @@
 
   $effect(() => {
     if (!active) return;
-    const key = `${workspaceID}:${base}`;
+    const key = `${workspaceID}:${base}:${refreshToken}`;
     if (loadedKey === key) return;
     loadedKey = key;
     void diff.loadWorkspaceDiff(workspaceID, base);

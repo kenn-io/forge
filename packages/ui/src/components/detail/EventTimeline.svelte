@@ -191,16 +191,17 @@
     return candidate.ID > current.ID ? candidate : current;
   }
 
-  function isNearLifecycleEvent(
+  function isCoalescedMergedCloseEvent(
     event: PREvent | IssueEvent,
-    target: PREvent | IssueEvent,
+    mergedEvent: PREvent | IssueEvent,
   ): boolean {
     const eventTime = eventSortValue(event);
-    const targetTime = eventSortValue(target);
-    if (eventTime === 0 || targetTime === 0) {
-      return event.CreatedAt === target.CreatedAt;
+    const mergedTime = eventSortValue(mergedEvent);
+    if (eventTime === 0 || mergedTime === 0) {
+      return event.CreatedAt === mergedEvent.CreatedAt;
     }
-    return Math.abs(eventTime - targetTime) < mergedCloseCoalesceWindowMs;
+    const elapsedAfterMerge = eventTime - mergedTime;
+    return elapsedAfterMerge >= 0 && elapsedAfterMerge < mergedCloseCoalesceWindowMs;
   }
 
   function collapseLifecycleTransitions(
@@ -214,7 +215,7 @@
 
     return sourceEvents.filter((event) => {
       if (event.EventType === "merged") return event.ID === mergedEvent.ID;
-      if (event.EventType === "closed" && isNearLifecycleEvent(event, mergedEvent)) return false;
+      if (event.EventType === "closed" && isCoalescedMergedCloseEvent(event, mergedEvent)) return false;
       return true;
     });
   }

@@ -298,6 +298,42 @@ describe("EventTimeline", () => {
     expect(document.querySelectorAll(".event--compact")).toHaveLength(1);
   });
 
+  it("keeps pre-merge close lifecycle rows when the PR was reopened before merging", () => {
+    render(EventTimeline, {
+      props: {
+        events: [
+          makeEvent({
+            ID: 3,
+            EventType: "merged",
+            Author: "mariusvniekerk",
+            Summary: "merged this",
+            CreatedAt: "2024-06-01T12:01:00Z",
+          }),
+          makeEvent({
+            ID: 2,
+            EventType: "reopened",
+            Author: "mariusvniekerk",
+            Summary: "reopened this",
+            CreatedAt: "2024-06-01T12:00:45Z",
+          }),
+          makeEvent({
+            ID: 1,
+            EventType: "closed",
+            Author: "mariusvniekerk",
+            Summary: "closed this",
+            CreatedAt: "2024-06-01T12:00:30Z",
+          }),
+        ],
+      },
+    });
+
+    expect(screen.getByText("Merged")).toBeTruthy();
+    expect(screen.getByText("Reopened")).toBeTruthy();
+    expect(screen.getByText("Closed")).toBeTruthy();
+    expect(screen.getByText("closed this")).toBeTruthy();
+    expect(document.querySelectorAll(".event--compact")).toHaveLength(3);
+  });
+
   it("keeps the timeline entry card while rendering body content without a nested card surface", () => {
     const { container } = render(EventTimeline, {
       props: {

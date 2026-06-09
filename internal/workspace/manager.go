@@ -423,30 +423,29 @@ func issueWorkspaceBranchForExistingLocalBranch(
 	if !exists {
 		return branch, nil
 	}
-	if reuse {
-		if localBase {
-			checkedOut, err := localBranchCheckedOut(ctx, dir, branch)
-			if err != nil {
-				return "", fmt.Errorf("inspect checked out branch: %w", err)
-			}
-			if checkedOut {
-				suggested, err := nextAvailableBranchName(ctx, dir, branch)
-				if err != nil {
-					return "", fmt.Errorf("suggest branch name: %w", err)
-				}
-				return "", &IssueWorkspaceBranchConflictError{
-					Branch:          branch,
-					SuggestedBranch: suggested,
-				}
-			}
-		}
+	if reuse && !localBase {
 		return "", nil
 	}
+	if reuse {
+		checkedOut, err := localBranchCheckedOut(ctx, dir, branch)
+		if err != nil {
+			return "", fmt.Errorf("inspect checked out branch: %w", err)
+		}
+		if !checkedOut {
+			return "", nil
+		}
+	}
+	return "", issueWorkspaceBranchConflict(ctx, dir, branch)
+}
+
+func issueWorkspaceBranchConflict(
+	ctx context.Context, dir, branch string,
+) error {
 	suggested, err := nextAvailableBranchName(ctx, dir, branch)
 	if err != nil {
-		return "", fmt.Errorf("suggest branch name: %w", err)
+		return fmt.Errorf("suggest branch name: %w", err)
 	}
-	return "", &IssueWorkspaceBranchConflictError{
+	return &IssueWorkspaceBranchConflictError{
 		Branch:          branch,
 		SuggestedBranch: suggested,
 	}
@@ -974,23 +973,23 @@ func (m *Manager) addWorktreeLocked(
 	if ws.ItemType == db.WorkspaceItemTypeIssue {
 		return m.addIssueWorktree(ctx, cloneDir, ws)
 	}
-	if branch, err := m.addPreferredWorktree(ctx, cloneDir, localBase, ws); err == nil {
+	branch, err := m.addPreferredWorktree(ctx, cloneDir, localBase, ws)
+	if err == nil {
 		return branch, nil
-	} else {
-		fallbackBranch := syntheticPRWorktreeBranch(ws.ItemNumber)
-		startRef := workspaceStartRef(ws)
-		fallbackErr := runGitWorktreeAdd(
-			ctx, cloneDir, ws.WorktreePath,
-			"-b", fallbackBranch, startRef,
-		)
-		if fallbackErr == nil {
-			return fallbackBranch, nil
-		}
-		return "", fmt.Errorf(
-			"preferred branch %q failed: %w; fallback branch %q failed: %w",
-			ws.GitHeadRef, err, fallbackBranch, fallbackErr,
-		)
 	}
+	fallbackBranch := syntheticPRWorktreeBranch(ws.ItemNumber)
+	startRef := workspaceStartRef(ws)
+	fallbackErr := runGitWorktreeAdd(
+		ctx, cloneDir, ws.WorktreePath,
+		"-b", fallbackBranch, startRef,
+	)
+	if fallbackErr == nil {
+		return fallbackBranch, nil
+	}
+	return "", fmt.Errorf(
+		"preferred branch %q failed: %w; fallback branch %q failed: %w",
+		ws.GitHeadRef, err, fallbackBranch, fallbackErr,
+	)
 }
 
 func (m *Manager) addIssueWorktree(

@@ -457,7 +457,19 @@ function isExternal(href: string): boolean {
 // safe image types — data:image/svg+xml can embed <script>, and
 // data:text/html turns into a same-origin frame.
 function isUnsafeUri(href: string): boolean {
-  const trimmed = href.trim().toLowerCase();
+  // Browsers strip tab/newline/CR anywhere in a URL and treat backslashes
+  // as forward slashes, so normalize before classifying — otherwise
+  // `/<tab>/evil.com` or `/\evil.com` smuggles a protocol-relative
+  // navigation past the leading-slash checks below.
+  const trimmed = href
+    .replace(/[\t\n\r]/g, "")
+    .trim()
+    .toLowerCase();
+  // Protocol-relative references (//host, \\host, and mixed-slash variants)
+  // navigate same-tab to an arbitrary host with no explicit scheme, bypassing
+  // the external-link handling that adds target/rel. A single leading slash is
+  // a same-origin root path and stays allowed.
+  if (/^[/\\]{2}/.test(trimmed)) return true;
   if (/^(javascript:|vbscript:)/i.test(trimmed)) return true;
   if (trimmed.startsWith("data:")) {
     return !/^data:image\/(png|jpeg|gif|webp)\b/.test(trimmed);

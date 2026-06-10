@@ -195,6 +195,30 @@ describe("hardened rendering", () => {
     const html = renderDocsMarkdown("![](https://example.com/logo.png)", baseOptions);
     expect(html).toMatch(/<img[^>]+src="https:\/\/example.com\/logo.png"/);
   });
+
+  test("drops protocol-relative markdown link and image", () => {
+    const linkHtml = renderDocsMarkdown("[click](//evil.com/x)", baseOptions);
+    expect(linkHtml).not.toContain("evil.com");
+    expect(linkHtml).not.toContain("<a ");
+
+    const imgHtml = renderDocsMarkdown("![bad](//evil.com/x.png)", baseOptions);
+    expect(imgHtml).not.toContain("evil.com");
+    expect(imgHtml).not.toContain("<img");
+  });
+
+  test("drops protocol-relative href on raw HTML anchors", () => {
+    // Raw HTML reaches the DOMPurify attribute hook with the bytes intact,
+    // so mixed slash/backslash variants must all be rejected there.
+    for (const href of ["//evil.com/x", "\\\\evil.com/x", "/\\evil.com/x", "\\/evil.com/x"]) {
+      const html = renderDocsMarkdown(`<a href="${href}">click</a>`, baseOptions);
+      expect(html).not.toContain("evil.com");
+    }
+  });
+
+  test("keeps single-slash root-relative links", () => {
+    const html = renderDocsMarkdown("[home](/docs/readme)", baseOptions);
+    expect(html).toContain('href="/docs/readme"');
+  });
 });
 
 describe("kata short-id links", () => {

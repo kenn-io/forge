@@ -222,6 +222,9 @@ func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
 	s.updateRuntimeStripEnvVars(newCfg)
 	s.updateTokenSourcesForReload(newCfg)
 	restartRequired := s.bootCfgSnapshot.restartRequiredFor(newCfg)
+	if s.reloadCredentialNeedsClientRebuild(ctx, newCfg) {
+		restartRequired = true
+	}
 
 	// Resolve the new repo set against the boot-time registry. Repos
 	// whose (platform, host) the registry never learned about cannot
@@ -265,6 +268,40 @@ func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
 		"restart_required", restartRequired,
 	)
 	return configChangedEvent{Valid: true, RestartRequired: restartRequired}
+}
+
+// reloadCredentialNeedsClientRebuild reports whether the reloaded config
+// resolves a token for a configured platform host that has no live provider
+// client. Clients are constructed at startup from the sources that resolved
+// then, so a credential added for a host that booted credential-less cannot
+// serve sync, settings, or import requests until restart — surface that
+// instead of reporting a clean hot reload. Hosts whose token still does not
+// resolve are skipped: restarting would not make them usable either.
+func (s *Server) reloadCredentialNeedsClientRebuild(
+	ctx context.Context,
+	cfg *config.Config,
+) bool {
+	if s.syncer == nil || s.tokenSources == nil || cfg == nil {
+		return false
+	}
+	for _, pc := range cfg.Platforms {
+		if _, err := s.syncer.RepositoryReader(
+			platform.Kind(pc.Type), pc.Host,
+		); err == nil {
+			continue
+		}
+		src, ok := s.tokenSources.Get(tokenauth.Key{
+			Platform: pc.Type,
+			Host:     pc.Host,
+		})
+		if !ok {
+			continue
+		}
+		if _, err := src.Token(ctx); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) updateTokenSourcesForReload(cfg *config.Config) {
@@ -316,6 +353,12 @@ func validateReloadCloneTokenSources(cfg *config.Config) error {
 	for _, plan := range plans {
 		desc := plan.Descriptor
 		if desc.Key.Host == "" {
+			continue
+		}
+		// A credential-less platform host imposes no clone credential;
+		// comparing its empty chain against tokened entries on the same
+		// host would reject configs that are valid at startup.
+		if len(desc.Candidates) == 0 {
 			continue
 		}
 		sourceID := desc.CanonicalSourceString()

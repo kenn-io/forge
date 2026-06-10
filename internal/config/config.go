@@ -1225,9 +1225,11 @@ func (c *Config) ProviderTokenSources() []ProviderTokenSource {
 		if _, ok := seen[desc.Key]; ok {
 			return
 		}
-		if !required && len(desc.Candidates) == 0 {
-			return
-		}
+		// Optional hosts stay in the list even with no candidates: config
+		// reload updates live sources from these plans, so dropping a host
+		// whose token config was removed would leave its old credential
+		// active until restart. Consumers that need a usable credential
+		// resolve the source and skip optional misses.
 		seen[desc.Key] = struct{}{}
 		out = append(out, ProviderTokenSource{
 			Descriptor: desc,

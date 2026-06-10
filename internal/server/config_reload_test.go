@@ -556,6 +556,143 @@ token_env = "SHARED"
 	require.NoError(t, validateReloadCloneTokenSources(cfg))
 }
 
+func TestValidateReloadCloneTokenSourcesIgnoresCredentiallessPlatformHosts(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "config.toml")
+	// The forgejo entry has no token config and a non-default host, so its
+	// candidate chain is empty. It imposes no clone credential and must not
+	// conflict with the tokened gitlab entry on the same host.
+	writeConfigToml(t, cfgPath, `
+[[platforms]]
+type = "forgejo"
+host = "code.example.com"
+
+[[platforms]]
+type = "gitlab"
+host = "code.example.com"
+token_env = "SHARED"
+`)
+	cfg, err := config.Load(cfgPath)
+	require.NoError(t, err)
+
+	require.NoError(t, validateReloadCloneTokenSources(cfg))
+}
+
+// reloadTestTokenSources registers every provider token plan of the config
+// at cfgPath into a fresh SourceSet, mirroring startup registration, and
+// returns the set plus the source for the given key.
+func reloadTestTokenSources(
+	t *testing.T,
+	cfgPath string,
+	key tokenauth.Key,
+) (*tokenauth.SourceSet, tokenauth.Source) {
+	t.Helper()
+	cfg, err := config.Load(cfgPath)
+	require.NoError(t, err)
+	sourceSet := tokenauth.NewSourceSet(tokenauth.Options{})
+	for _, plan := range cfg.ProviderTokenSources() {
+		sourceSet.Upsert(plan.Descriptor)
+	}
+	src, ok := sourceSet.Get(key)
+	require.True(t, ok, "no source registered for %v", key)
+	return sourceSet, src
+}
+
+const reloadPlatformTokenConfig = `
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[platforms]]
+type = "gitlab"
+host = "gitlab.example.com"
+token_env = "MIDDLEMAN_PLATFORM_TOKEN"
+
+[[repos]]
+owner = "acme"
+name = "widget"
+`
+
+const reloadPlatformTokenlessConfig = `
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[platforms]]
+type = "gitlab"
+host = "gitlab.example.com"
+
+[[repos]]
+owner = "acme"
+name = "widget"
+`
+
+func TestConfigReload_RemovingPlatformTokenClearsLiveSource(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "github-token")
+	t.Setenv("MIDDLEMAN_PLATFORM_TOKEN", "platform-token")
+
+	srv, _, cfgPath := setupTestServerWithConfigContent(
+		t, reloadPlatformTokenConfig, &mockGH{},
+	)
+	sourceSet, src := reloadTestTokenSources(t, cfgPath, tokenauth.Key{
+		Platform: "gitlab", Host: "gitlab.example.com",
+	})
+	srv.tokenSources = sourceSet
+	bootToken, err := src.Token(t.Context())
+	require.NoError(err)
+	require.Equal("platform-token", bootToken)
+
+	waitForConfigWatcher(t, srv, 2*time.Second)
+	stream := streamConfigEvents(t, srv)
+	defer stream.Close()
+
+	writeConfigToml(t, cfgPath, reloadPlatformTokenlessConfig)
+
+	ev := waitForConfigEvent(t, stream, 2*time.Second)
+	assert.True(ev.Valid, "reload error: %s", ev.Error)
+	assert.False(ev.RestartRequired)
+	// The removal is hot-applied: the live source no longer resolves the
+	// credential that was deleted from the config file.
+	_, err = src.Token(t.Context())
+	require.ErrorIs(err, tokenauth.ErrMissingToken)
+}
+
+func TestConfigReload_TokenAddedForUnbuiltClientRequiresRestart(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "github-token")
+	t.Setenv("MIDDLEMAN_PLATFORM_TOKEN", "platform-token")
+
+	srv, _, cfgPath := setupTestServerWithConfigContent(
+		t, reloadPlatformTokenlessConfig, &mockGH{},
+	)
+	sourceSet, src := reloadTestTokenSources(t, cfgPath, tokenauth.Key{
+		Platform: "gitlab", Host: "gitlab.example.com",
+	})
+	srv.tokenSources = sourceSet
+	_, err := src.Token(t.Context())
+	require.ErrorIs(err, tokenauth.ErrMissingToken)
+
+	waitForConfigWatcher(t, srv, 2*time.Second)
+	stream := streamConfigEvents(t, srv)
+	defer stream.Close()
+
+	writeConfigToml(t, cfgPath, reloadPlatformTokenConfig)
+
+	ev := waitForConfigEvent(t, stream, 2*time.Second)
+	assert.True(ev.Valid, "reload error: %s", ev.Error)
+	// The token now resolves, but the gitlab host booted without a
+	// provider client and the reload cannot construct one — the event
+	// must say a restart is needed rather than report a clean hot apply.
+	assert.True(ev.RestartRequired)
+	newToken, err := src.Token(t.Context())
+	require.NoError(err)
+	assert.Equal("platform-token", newToken)
+}
+
 func TestConfigReload_RepoTokenOverrideWithPlatformFallbackUpdatesSource(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

@@ -909,6 +909,32 @@ func TestTokenSourceForPlatformHostScopesGitHubTokenEnvToDefaultHost(t *testing.
 	assert.Equal("github.com", def.Candidates[1].Host)
 }
 
+func TestConfigProviderTokenSourcesKeepsCredentiallessPlatformHosts(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	// A platform host whose token config was removed must stay in the
+	// plans with an empty candidate chain: config reload updates live
+	// sources from this list, and dropping the host would leave its old
+	// credential active until restart.
+	cfg := &Config{
+		Platforms: []PlatformConfig{{Type: "gitlab", Host: "gitlab.example.com"}},
+	}
+
+	plans := cfg.ProviderTokenSources()
+
+	require.Len(plans, 2)
+	assert.Equal(
+		tokenauth.Key{Platform: "gitlab", Host: "gitlab.example.com"},
+		plans[0].Descriptor.Key,
+	)
+	assert.False(plans[0].Required)
+	assert.Empty(plans[0].Descriptor.Candidates)
+	assert.Equal(
+		tokenauth.Key{Platform: "github", Host: "github.com"},
+		plans[1].Descriptor.Key,
+	)
+}
+
 func TestConfigProviderTokenSourcesPlansEffectiveDescriptors(t *testing.T) {
 	assert := Assert.New(t)
 	cfg := &Config{

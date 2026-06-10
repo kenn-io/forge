@@ -363,6 +363,89 @@ func TestMissingTokenBulkAddReposReturnsBadRequestE2E(t *testing.T) {
 	requireMissingTokenBadRequest(t, resp)
 }
 
+func gitLabPlatformTokenConfig(tokenEnvLine string) string {
+	return fmt.Sprintf(`
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[platforms]]
+type = "gitlab"
+host = "gitlab.example.com"
+%s
+`, tokenEnvLine)
+}
+
+func TestPlatformTokenRemovalAppliesWithoutRestartE2E(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	dir := t.TempDir()
+	t.Setenv("MIDDLEMAN_E2E_PLATFORM_TOKEN", "opaque-platform-token-11111")
+
+	var tokens []string
+	gitlabAPI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		tokens = append(tokens, r.Header.Get("Private-Token"))
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.EscapedPath() == "/api/v4/groups/group/projects" {
+			_, _ = fmt.Fprint(w, `[]`)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(gitlabAPI.Close)
+
+	cfgPath := filepath.Join(dir, "config.toml")
+	require.NoError(os.WriteFile(cfgPath, []byte(gitLabPlatformTokenConfig(
+		`token_env = "MIDDLEMAN_E2E_PLATFORM_TOKEN"`,
+	)), 0o644))
+	cfg, err := config.Load(cfgPath)
+	require.NoError(err)
+
+	sourceSet, source := collectStartupTokenSource(
+		t, cfg, tokenauth.Key{Platform: string(platform.KindGitLab), Host: "gitlab.example.com"},
+	)
+	srv, httpServer, _, _ := startGitLabTokenSyncServer(
+		t, cfg, cfgPath, sourceSet, source, gitlabAPI.URL+"/api/v4",
+	)
+	stream := streamTokenRotationConfigEvents(t, srv, httpServer)
+	defer stream.Close()
+
+	previewBody := map[string]string{
+		"provider":      "gitlab",
+		"platform_host": "gitlab.example.com",
+		"owner":         "group",
+		"pattern":       "*",
+	}
+	firstResp := doServerJSON(
+		t, httpServer.Client(), http.MethodPost,
+		httpServer.URL+"/api/v1/repos/preview", previewBody,
+	)
+	defer firstResp.Body.Close()
+	require.Equal(http.StatusOK, firstResp.StatusCode)
+	firstCallCount := len(tokens)
+	require.Positive(firstCallCount)
+	for _, token := range tokens {
+		assert.Equal("opaque-platform-token-11111", token)
+	}
+
+	// Drop the platform's token_env. The reload must clear the live
+	// source without demanding a restart, and the next provider call must
+	// fail closed instead of reusing the removed credential.
+	writeConfigTomlAtomically(t, cfgPath, gitLabPlatformTokenConfig(""))
+	ev := waitForTokenRotationConfigEvent(t, stream, 3*time.Second)
+	assert.True(ev.Valid, "reload error: %s", ev.Error)
+	assert.False(ev.RestartRequired)
+
+	secondResp := doServerJSON(
+		t, httpServer.Client(), http.MethodPost,
+		httpServer.URL+"/api/v1/repos/preview", previewBody,
+	)
+	requireMissingTokenBadRequest(t, secondResp)
+	assert.Len(tokens, firstCallCount,
+		"no provider request may carry the removed credential")
+}
+
 func TestRuntimeLaunchStripsReloadedAndImplicitTokenEnvsE2E(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

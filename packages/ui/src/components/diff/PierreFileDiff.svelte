@@ -89,6 +89,7 @@
   let pierreDiff: FileDiff<unknown> | VirtualizedFileDiff<unknown> | undefined;
   let pierreDiffVirtualizer: Virtualizer | undefined;
   let demandContextHandlerRoot: ShadowRoot | undefined;
+  let annotationFocusTarget: HTMLElement | undefined;
   let fullContext: { oldFile: FileContents; newFile: FileContents } | undefined = $state();
   let fullContextFileDiff: FileDiffMetadata | undefined;
   let fullContextRendered = false;
@@ -147,6 +148,7 @@
       rendered = true;
       installDemandContextHandler();
       scheduleSelectedRangesApplication();
+      restoreAnnotationFocus();
     },
     unsafeCSS: `
       :host {
@@ -254,6 +256,18 @@
   });
 
   $effect(() => {
+    const el = host;
+    if (!el) return;
+    el.addEventListener("focusin", handleAnnotationFocusIn);
+    el.addEventListener("focusout", handleAnnotationFocusOut);
+    return () => {
+      el.removeEventListener("focusin", handleAnnotationFocusIn);
+      el.removeEventListener("focusout", handleAnnotationFocusOut);
+      annotationFocusTarget = undefined;
+    };
+  });
+
+  $effect(() => {
     if (renderedFileKey === fileKey && pierreDiffVirtualizer === virtualizer) return;
     renderedFileKey = fileKey;
     pierreDiffVirtualizer = virtualizer;
@@ -339,6 +353,7 @@
         rendered = true;
         installDemandContextHandler();
         scheduleSelectedRangesApplication();
+        restoreAnnotationFocus();
       } else {
         scheduleRenderRetry();
       }
@@ -382,12 +397,66 @@
     removeDemandContextHandler();
     demandContextHandlerRoot = root;
     root.addEventListener("click", handleDemandContextClick, { capture: true });
+    root.addEventListener("slotchange", handleAnnotationSlotChange);
+  }
+
+  function handleAnnotationSlotChange(): void {
+    // Annotation content becomes focusable again only once a rebuilt shadow
+    // DOM re-slots its wrapper; onPostRender runs before that happens.
+    restoreAnnotationFocus();
+  }
+
+  function annotationWrapperFor(target: EventTarget | null): HTMLElement | undefined {
+    if (!(target instanceof HTMLElement) || !host) return undefined;
+    let wrapper: HTMLElement | null = target;
+    while (wrapper && wrapper.parentElement !== host) wrapper = wrapper.parentElement;
+    if (!wrapper) return undefined;
+    const isAnnotation = wrapper.dataset.middlemanLineAnnotationWrapper !== undefined ||
+      wrapper.dataset.transientAnnotationSlot !== undefined;
+    return isAnnotation ? wrapper : undefined;
+  }
+
+  function handleAnnotationFocusIn(event: FocusEvent): void {
+    const target = event.target;
+    annotationFocusTarget = target instanceof HTMLElement && annotationWrapperFor(target)
+      ? target
+      : undefined;
+  }
+
+  function handleAnnotationFocusOut(event: FocusEvent): void {
+    // A real focusout means the user (or app) moved focus deliberately. The
+    // case this guard exists for — Firefox annulling focus when a re-render
+    // momentarily unslots the annotation — fires no focusout at all.
+    if (event.target === annotationFocusTarget) annotationFocusTarget = undefined;
+  }
+
+  function restoreAnnotationFocus(): void {
+    const target = annotationFocusTarget;
+    if (!target) return;
+    const attempt = (): void => {
+      if (annotationFocusTarget !== target) return;
+      if (!target.isConnected || host?.contains(target) !== true) return;
+      const active = document.activeElement;
+      if (active === target) return;
+      // Reclaim only focus the browser dropped to the document itself when
+      // the diff re-render unslotted the annotation; never steal focus the
+      // user has since placed somewhere else.
+      if (active !== null && active !== document.body && active !== document.documentElement) {
+        return;
+      }
+      target.focus({ preventScroll: true });
+    };
+    attempt();
+    // Firefox annuls focus for unslotted content asynchronously; re-check
+    // once the annulment has landed.
+    queueMicrotask(attempt);
   }
 
   function removeDemandContextHandler(): void {
     demandContextHandlerRoot?.removeEventListener("click", handleDemandContextClick, {
       capture: true,
     });
+    demandContextHandlerRoot?.removeEventListener("slotchange", handleAnnotationSlotChange);
     demandContextHandlerRoot = undefined;
   }
 
@@ -648,6 +717,7 @@
     syncLineAnnotationWrappers();
     installDemandContextHandler();
     scheduleSelectedRangesApplication();
+    restoreAnnotationFocus();
   }
 
   function renderFullContext(context: { oldFile: FileContents; newFile: FileContents }): boolean {
@@ -669,6 +739,7 @@
       rendered = true;
       installDemandContextHandler();
       scheduleSelectedRangesApplication();
+      restoreAnnotationFocus();
       replayPendingContextExpansion();
     }
     return didRender;

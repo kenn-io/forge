@@ -469,10 +469,14 @@ test("shows a visible composer focus indicator without focus flicker", async ({ 
   await page.goto("/pulls/github/acme/widgets/42");
   await page.getByRole("button", { name: "Files changed" }).click();
 
-  // Regression guard for issues #445/#446: opening the composer may change
-  // the textarea's focus state at most once. Repeated focus retries made the
-  // visible focus indicator flicker, so count transitions from before the
-  // composer exists.
+  // Regression guard for issues #445/#446: the composer textarea must never
+  // visibly blur while open (focusout count stays zero) and must end up
+  // focused without any extra interaction. Firefox silently annuls focus
+  // (no focusout) whenever the diff re-render momentarily unslots the
+  // composer, and PierreFileDiff restores it on the following slotchange, so
+  // the focusin count is browser-dependent; a runaway retry loop would still
+  // blow past the small bound asserted below. Count transitions from before
+  // the composer exists.
   await page.evaluate(() => {
     const counts = { focusin: 0, focusout: 0 };
     const win = window as typeof window & { __composerFocusCounts?: typeof counts };
@@ -499,6 +503,10 @@ test("shows a visible composer focus indicator without focus flicker", async ({ 
   const composer = page.getByPlaceholder("Leave a comment");
   await expect(composer).toBeVisible();
 
+  // The composer must be focused without clicking it — this is the actual
+  // issue #446 outcome and what the Firefox focus-annulment regression broke.
+  await expect(composer).toBeFocused();
+
   // Let the windows previous retrying implementations used (animation frames
   // plus a 50ms timer) elapse before reading the transition counts.
   await page.waitForTimeout(250);
@@ -508,10 +516,11 @@ test("shows a visible composer focus indicator without focus flicker", async ({ 
         .__composerFocusCounts,
   );
   expect(counts?.focusout).toBe(0);
-  expect(counts?.focusin).toBeLessThanOrEqual(1);
+  expect(counts?.focusin).toBeGreaterThanOrEqual(1);
+  expect(counts?.focusin).toBeLessThanOrEqual(3);
 
-  // The focused textarea must show a visible focus ring.
-  await composer.click();
+  // The textarea must still be focused after the re-render windows above and
+  // must show a visible focus ring.
   await expect(composer).toBeFocused();
   const focusedShadow = await composer.evaluate((element) => getComputedStyle(element).boxShadow);
   expect(focusedShadow).not.toBe("none");

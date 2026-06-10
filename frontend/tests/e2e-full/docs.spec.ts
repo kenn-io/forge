@@ -21,6 +21,27 @@ async function createEngineeringDocsFixture(): Promise<string> {
   return dir;
 }
 
+// A README that lands tall enough that scrolling to its "## Architecture"
+// heading (id "architecture") moves the scroll container measurably and
+// pushes the h1 out of view. Both anchor fixtures share the heading id so
+// a stale anchor would scroll the second folder's landing doc.
+async function createTallAnchorDocsFixture(h1: string): Promise<string> {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "middleman-anchor-docs-e2e-"));
+  await mkdir(dir, { recursive: true });
+  // Each paragraph needs a blank line after it or markdown folds them
+  // into one short block that never overflows the scroll container.
+  const filler = Array.from({ length: 80 }, (_, i) => `Filler paragraph ${i + 1}.`).flatMap((p) => [p, ""]);
+  await writeFile(
+    path.join(dir, "README.md"),
+    [`# ${h1}`, "", ...filler, "## Architecture", "", "Architecture section body.", ""].join("\n"),
+  );
+  return dir;
+}
+
+async function docScrollTop(page: Page): Promise<number> {
+  return page.locator(".doc-scroll").evaluate((el) => el.scrollTop);
+}
+
 test.describe("docs workspace", () => {
   test("opens the configured folder, navigates tree rows, outline entries, wikilinks, and blobs", async ({ page }) => {
     const server = await startDocsServer(page);
@@ -103,6 +124,44 @@ test.describe("docs workspace", () => {
       await expect(page).toHaveURL(/folder=engineering/);
       await expect(page).toHaveURL(/doc=index\.md/);
       await expect(page.getByRole("heading", { name: "Engineering Wiki", level: 1 })).toBeVisible();
+    } finally {
+      await server.stop();
+    }
+  });
+
+  test("a consumed URL-hash anchor does not scroll the next folder's landing doc", async ({ page }) => {
+    const alphaRoot = await createTallAnchorDocsFixture("Alpha Home");
+    const betaRoot = await createTallAnchorDocsFixture("Beta Home");
+    const server = await startIsolatedE2EServer();
+    try {
+      for (const [id, name, root] of [
+        ["alpha", "Alpha", alphaRoot],
+        ["beta", "Beta", betaRoot],
+      ] as const) {
+        const res = await page.request.post(`${server.info.base_url}/api/v1/docs/folders`, {
+          data: { id, name, path: root },
+        });
+        expect(res.status()).toBe(201);
+      }
+
+      // Deep link straight to the Architecture anchor in alpha; the doc
+      // must scroll down to it (scrollTop > 0, h1 pushed out of view).
+      await page.goto(`${server.info.base_url}/docs?folder=alpha&doc=README.md#architecture`);
+      await expect(page.getByRole("heading", { name: "Architecture", level: 2 })).toBeVisible();
+      await expect.poll(() => docScrollTop(page)).toBeGreaterThan(0);
+      await expect(page.getByRole("heading", { name: "Alpha Home", level: 1 })).not.toBeInViewport();
+
+      // Switch folders via the chip — landing auto-open loads beta/README
+      // without an explicit anchor. The consumed anchor must not be reused:
+      // beta opens at the top with its h1 in view.
+      await page.getByRole("button", { name: "Switch folder" }).click();
+      await page.getByRole("option", { name: /Beta/ }).click();
+      await expect(page).toHaveURL(/folder=beta/);
+      await expect(page.getByRole("heading", { name: "Beta Home", level: 1 })).toBeVisible();
+      // Let any stale-anchor scroll microtask fire before asserting it didn't.
+      await page.waitForTimeout(300);
+      expect(await docScrollTop(page)).toBe(0);
+      await expect(page.getByRole("heading", { name: "Beta Home", level: 1 })).toBeInViewport();
     } finally {
       await server.stop();
     }

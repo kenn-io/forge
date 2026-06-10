@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 
 	"go.kenn.io/middleman/internal/config"
 	"go.kenn.io/middleman/internal/db"
@@ -129,6 +131,7 @@ func collectProviderTokenSources(
 func buildProviderStartup(
 	database *db.DB,
 	cfg *config.Config,
+	set *tokenauth.SourceSet,
 	providerSources map[string]tokenauth.Source,
 	factories map[string]providerFactory,
 ) (providerStartup, error) {
@@ -187,10 +190,29 @@ func buildProviderStartup(
 		if built.provider != nil {
 			providers = append(providers, built.provider)
 		}
-		if _, ok := startup.cloneAuth[host]; !ok {
-			startup.cloneAuth[host] = tokenSource
-		}
 		startup.cloneSources[tokenauth.Key{Platform: platformName, Host: host}] = tokenSource
+	}
+	// Clone auth is host-scoped: every provider sharing a host presents the
+	// same canonical credential chain (validated above), so each host gets a
+	// dedicated source keyed by tokenauth.CloneKey rather than borrowing
+	// whichever provider source map iteration yielded first. Registering it
+	// in the shared SourceSet lets config reload re-point clone/fetch at the
+	// host's current effective chain (config.CloneTokenDescriptors) even when
+	// the provider entry that supplied the credential changes. Hosts with no
+	// resolved provider source keep no entry, so git runs unauthenticated
+	// there — same as a credential-less host at startup today.
+	for _, key := range slices.Sorted(maps.Keys(providerSources)) {
+		_, host := splitProviderHostKey(key)
+		if _, ok := startup.cloneAuth[host]; ok {
+			continue
+		}
+		source := providerSources[key]
+		if source == nil {
+			continue
+		}
+		desc := source.Descriptor()
+		desc.Key = tokenauth.CloneKey(host)
+		startup.cloneAuth[host] = set.Upsert(desc)
 	}
 	registry, err := github.NewProviderRegistry(clients, providers...)
 	if err != nil {

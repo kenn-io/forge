@@ -23,6 +23,21 @@ func (k Key) String() string {
 	return k.Platform + "\x00" + k.Host
 }
 
+// clonePlatform is the synthetic Key.Platform under which a host's git
+// clone/fetch credential is registered. Git transport auth is host-scoped
+// rather than provider-scoped — every provider sharing a host must present
+// the same canonical credential chain — so clone auth holds one dedicated
+// source per host instead of borrowing whichever provider source startup
+// iteration yielded first.
+const clonePlatform = "git-clone"
+
+// CloneKey returns the SourceSet key holding host's git clone/fetch
+// credential. It never collides with provider keys: clonePlatform is not a
+// platform kind.
+func CloneKey(host string) Key {
+	return Key{Platform: clonePlatform, Host: host}
+}
+
 type Candidate struct {
 	Kind     SourceKind
 	EnvName  string

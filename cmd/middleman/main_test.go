@@ -377,9 +377,11 @@ func TestBuildProviderStartupKeepsForgeProviderHostsDistinct(t *testing.T) {
 		},
 	}
 
+	set := tokenauth.NewSourceSet(tokenauth.Options{})
 	startup, err := buildProviderStartup(
 		database,
 		&config.Config{SyncBudgetPerHour: 200},
+		set,
 		map[string]tokenauth.Source{
 			providerHostKey(string(platform.KindForgejo), "codeberg.org"): mainTestTokenSource(
 				t, string(platform.KindForgejo), "codeberg.org", "FORGEJO_TEST_TOKEN", "codeberg-token",
@@ -420,12 +422,19 @@ func TestBuildProviderStartupKeepsForgeProviderHostsDistinct(t *testing.T) {
 		forgejoCalls[0].tokenSource,
 		startup.cloneSources[tokenauth.Key{Platform: string(platform.KindForgejo), Host: "codeberg.org"}],
 	)
-	assert.Same(forgejoCalls[0].tokenSource, forgejoCloneSource)
 	assert.Same(
 		giteaCalls[0].tokenSource,
 		startup.cloneSources[tokenauth.Key{Platform: string(platform.KindGitea), Host: "gitea.example.com"}],
 	)
-	assert.Same(giteaCalls[0].tokenSource, giteaCloneSource)
+	// Clone auth is the dedicated host-level source registered in the
+	// SourceSet, not the provider's own source, so config reload can
+	// re-point it via tokenauth.CloneKey.
+	forgejoCloneManaged, ok := set.Get(tokenauth.CloneKey("codeberg.org"))
+	require.True(ok)
+	assert.Same(forgejoCloneManaged, forgejoCloneSource)
+	giteaCloneManaged, ok := set.Get(tokenauth.CloneKey("gitea.example.com"))
+	require.True(ok)
+	assert.Same(giteaCloneManaged, giteaCloneSource)
 
 	forgejoReader, err := startup.registry.RepositoryReader(platform.KindForgejo, "codeberg.org")
 	require.NoError(err)
@@ -442,13 +451,16 @@ func TestBuildProviderStartupUsesRegisteredFactoryForFutureProvider(t *testing.T
 	database := dbtest.Open(t)
 
 	called := false
+	set := tokenauth.NewSourceSet(tokenauth.Options{})
+	codebergSource := mainTestTokenSource(
+		t, "codeberg", "codeberg.org", "CODEBERG_TEST_TOKEN", "codeberg-token",
+	)
 	startup, err := buildProviderStartup(
 		database,
 		&config.Config{},
+		set,
 		map[string]tokenauth.Source{
-			providerHostKey("codeberg", "codeberg.org"): mainTestTokenSource(
-				t, "codeberg", "codeberg.org", "CODEBERG_TEST_TOKEN", "codeberg-token",
-			),
+			providerHostKey("codeberg", "codeberg.org"): codebergSource,
 		},
 		map[string]providerFactory{
 			"codeberg": func(input providerFactoryInput) (providerFactoryOutput, error) {
@@ -474,13 +486,81 @@ func TestBuildProviderStartupUsesRegisteredFactoryForFutureProvider(t *testing.T
 	require.NoError(err)
 	assert.Equal("codeberg-token", token)
 	assert.Same(
-		src,
+		codebergSource,
 		startup.cloneSources[tokenauth.Key{Platform: "codeberg", Host: "codeberg.org"}],
 	)
+	cloneManaged, ok := set.Get(tokenauth.CloneKey("codeberg.org"))
+	require.True(ok)
+	assert.Same(cloneManaged, src)
 
 	reader, err := startup.registry.RepositoryReader(platform.Kind("codeberg"), "codeberg.org")
 	require.NoError(err)
 	assert.NotNil(reader)
+}
+
+func TestBuildProviderStartupSharedHostCloneAuthUsesHostLevelSource(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	database := dbtest.Open(t)
+	t.Setenv("SHARED_FORGE_TOKEN", "shared-token")
+	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "")
+
+	// Two providers on one host with the same credential chain, mirroring
+	// the only multi-provider-per-host layout startup validation accepts.
+	cfg := &config.Config{
+		Platforms: []config.PlatformConfig{
+			{
+				Type:     string(platform.KindForgejo),
+				Host:     "code.example.com",
+				TokenEnv: "SHARED_FORGE_TOKEN",
+			},
+			{
+				Type:     string(platform.KindGitea),
+				Host:     "code.example.com",
+				TokenEnv: "SHARED_FORGE_TOKEN",
+			},
+		},
+	}
+	set := tokenauth.NewSourceSet(tokenauth.Options{})
+	providerSources, err := collectProviderTokenSources(t.Context(), cfg, set)
+	require.NoError(err)
+	require.Len(providerSources, 2)
+
+	factories := map[string]providerFactory{
+		string(platform.KindForgejo): func(input providerFactoryInput) (providerFactoryOutput, error) {
+			return providerFactoryOutput{provider: mainTestRepositoryReader{
+				kind: platform.KindForgejo,
+				host: input.host,
+			}}, nil
+		},
+		string(platform.KindGitea): func(input providerFactoryInput) (providerFactoryOutput, error) {
+			return providerFactoryOutput{provider: mainTestRepositoryReader{
+				kind: platform.KindGitea,
+				host: input.host,
+			}}, nil
+		},
+	}
+	startup, err := buildProviderStartup(database, cfg, set, providerSources, factories)
+	require.NoError(err)
+
+	// Clone auth must be the host-level source under tokenauth.CloneKey,
+	// not whichever provider source map iteration yielded first: reload
+	// updates the host key from the config's effective per-host chain, so
+	// pointing git at a provider source would detach clone auth from
+	// reload whenever that provider entry is removed or loses its token.
+	cloneSource := startup.cloneAuth["code.example.com"]
+	require.NotNil(cloneSource)
+	cloneManaged, ok := set.Get(tokenauth.CloneKey("code.example.com"))
+	require.True(ok)
+	assert.Same(cloneManaged, cloneSource)
+	forgejoKey := providerHostKey(string(platform.KindForgejo), "code.example.com")
+	giteaKey := providerHostKey(string(platform.KindGitea), "code.example.com")
+	assert.NotSame(providerSources[forgejoKey], cloneSource)
+	assert.NotSame(providerSources[giteaKey], cloneSource)
+	token, err := cloneSource.Token(t.Context())
+	require.NoError(err)
+	assert.Equal("shared-token", token)
 }
 
 func TestStartupFallbackKeepsPersistedGlobMatchesInAPIs(t *testing.T) {

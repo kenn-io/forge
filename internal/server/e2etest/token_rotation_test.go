@@ -20,6 +20,8 @@ import (
 	"go.kenn.io/middleman/internal/db"
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/platform"
+	platformforgejo "go.kenn.io/middleman/internal/platform/forgejo"
+	platformgitea "go.kenn.io/middleman/internal/platform/gitea"
 	platformgitlab "go.kenn.io/middleman/internal/platform/gitlab"
 	"go.kenn.io/middleman/internal/server"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
@@ -585,6 +587,114 @@ name = "widget"
 	assert.Empty(ev.Error)
 }
 
+// sharedHostCloneConfig points forgejo and gitea at one self-hosted host,
+// each with its own token line ("" for credential-less).
+func sharedHostCloneConfig(forgejoTokenLine, giteaTokenLine string) string {
+	return fmt.Sprintf(`
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[platforms]]
+type = "forgejo"
+host = "code.example.com"
+%s
+
+[[platforms]]
+type = "gitea"
+host = "code.example.com"
+%s
+`, forgejoTokenLine, giteaTokenLine)
+}
+
+func TestSharedHostCloneAuthFollowsSurvivingProviderTokenE2E(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	dir := t.TempDir()
+	t.Setenv("MIDDLEMAN_E2E_SHARED_TOKEN", "opaque-shared-token-11111")
+	t.Setenv("MIDDLEMAN_E2E_ROTATED_TOKEN", "opaque-rotated-token-22222")
+
+	cfgPath := filepath.Join(dir, "config.toml")
+	require.NoError(os.WriteFile(cfgPath, []byte(sharedHostCloneConfig(
+		`token_env = "MIDDLEMAN_E2E_SHARED_TOKEN"`,
+		`token_env = "MIDDLEMAN_E2E_SHARED_TOKEN"`,
+	)), 0o644))
+	cfg, err := config.Load(cfgPath)
+	require.NoError(err)
+
+	sourceSet, forgejoSource := collectStartupTokenSource(
+		t, cfg, tokenauth.Key{
+			Platform: string(platform.KindForgejo), Host: "code.example.com",
+		},
+	)
+	giteaSource, ok := sourceSet.Get(tokenauth.Key{
+		Platform: string(platform.KindGitea), Host: "code.example.com",
+	})
+	require.True(ok)
+	// No provider API call happens in this test; the stub base URL only
+	// keeps client construction off the real network.
+	forgeAPI := httptest.NewServer(http.NotFoundHandler())
+	t.Cleanup(forgeAPI.Close)
+	forgejoClient, err := platformforgejo.NewClient(
+		"code.example.com", forgejoSource,
+		platformforgejo.WithBaseURLForTesting(forgeAPI.URL),
+	)
+	require.NoError(err)
+	giteaClient, err := platformgitea.NewClient(
+		"code.example.com", giteaSource,
+		platformgitea.WithBaseURLForTesting(forgeAPI.URL),
+	)
+	require.NoError(err)
+	registry, err := platform.NewRegistry(forgejoClient, giteaClient)
+	require.NoError(err)
+	database := dbtest.Open(t)
+	syncer := ghclient.NewSyncerWithRegistry(
+		registry, database, nil, nil, time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	srv := server.NewWithConfig(
+		database, syncer, nil, nil, cfg, cfgPath,
+		server.ServerOptions{TokenSources: sourceSet},
+	)
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	httpServer := httptest.NewServer(srv)
+	t.Cleanup(httpServer.Close)
+
+	cloneSrc, ok := sourceSet.Get(tokenauth.CloneKey("code.example.com"))
+	require.True(ok)
+	bootToken, err := cloneSrc.Token(t.Context())
+	require.NoError(err)
+	require.Equal("opaque-shared-token-11111", bootToken)
+
+	stream := streamTokenRotationConfigEvents(t, srv, httpServer)
+	defer stream.Close()
+
+	// The forgejo entry that may have supplied clone auth goes
+	// credential-less while gitea rotates to a new env var. Clone auth
+	// must hot-follow the host's surviving effective chain; both hosts
+	// keep live provider clients, so no restart may be demanded.
+	writeConfigTomlAtomically(t, cfgPath, sharedHostCloneConfig(
+		"",
+		`token_env = "MIDDLEMAN_E2E_ROTATED_TOKEN"`,
+	))
+	ev := waitForTokenRotationConfigEvent(t, stream, 3*time.Second)
+	assert.True(ev.Valid, "reload error: %s", ev.Error)
+	assert.False(ev.RestartRequired)
+	rotatedToken, err := cloneSrc.Token(t.Context())
+	require.NoError(err)
+	assert.Equal("opaque-rotated-token-22222", rotatedToken)
+
+	// Every provider on the host goes credential-less: clone auth fails
+	// closed instead of keeping a removed credential.
+	writeConfigTomlAtomically(t, cfgPath, sharedHostCloneConfig("", ""))
+	ev = waitForTokenRotationConfigEvent(t, stream, 3*time.Second)
+	assert.True(ev.Valid, "reload error: %s", ev.Error)
+	assert.False(ev.RestartRequired)
+	_, err = cloneSrc.Token(t.Context())
+	require.ErrorIs(err, tokenauth.ErrMissingToken)
+}
+
 func collectStartupTokenSource(
 	t *testing.T,
 	cfg *config.Config,
@@ -593,6 +703,7 @@ func collectStartupTokenSource(
 	t.Helper()
 	sourceSet := tokenauth.NewSourceSet(tokenauth.Options{})
 	var out tokenauth.Source
+	resolvedHosts := make(map[string]struct{})
 	for _, plan := range cfg.ProviderTokenSources() {
 		source := sourceSet.Upsert(plan.Descriptor)
 		_, err := source.Token(t.Context())
@@ -600,9 +711,18 @@ func collectStartupTokenSource(
 			continue
 		}
 		require.NoError(t, err)
+		resolvedHosts[plan.Descriptor.Key.Host] = struct{}{}
 		if plan.Descriptor.Key == key {
 			out = source
 		}
+	}
+	// Mirror buildProviderStartup: hosts with a resolved provider source
+	// also get the host-level clone source under tokenauth.CloneKey.
+	for _, desc := range cfg.CloneTokenDescriptors() {
+		if _, ok := resolvedHosts[desc.Key.Host]; !ok {
+			continue
+		}
+		sourceSet.Upsert(desc)
 	}
 	require.NotNil(t, out)
 	return sourceSet, out

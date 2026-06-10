@@ -383,7 +383,7 @@ func run(opts serve.Options) error {
 	}
 
 	startup, err := buildProviderStartup(
-		database, cfg, providerSources, defaultProviderFactories(),
+		database, cfg, tokenSources, providerSources, defaultProviderFactories(),
 	)
 	if err != nil {
 		return err

@@ -1248,6 +1248,36 @@ func (c *Config) ProviderTokenSources() []ProviderTokenSource {
 	return out
 }
 
+// CloneTokenDescriptors returns one descriptor per platform host carrying the
+// host's effective git clone/fetch credential chain under
+// tokenauth.CloneKey(host). Git transport auth is host-scoped: every provider
+// sharing a host must use a canonically identical chain (enforced at startup
+// and by reload validation), so the host chain is the first non-empty plan
+// chain in ProviderTokenSources order. Hosts whose plans are all
+// credential-less keep an empty chain so a reload clears a previously tokened
+// live clone source instead of leaving the removed credential active.
+func (c *Config) CloneTokenDescriptors() []tokenauth.Descriptor {
+	plans := c.ProviderTokenSources()
+	indexByHost := make(map[string]int, len(plans))
+	out := make([]tokenauth.Descriptor, 0, len(plans))
+	for _, plan := range plans {
+		host := plan.Descriptor.Key.Host
+		idx, ok := indexByHost[host]
+		if !ok {
+			indexByHost[host] = len(out)
+			out = append(out, tokenauth.Descriptor{
+				Key:        tokenauth.CloneKey(host),
+				Candidates: plan.Descriptor.Candidates,
+			})
+			continue
+		}
+		if len(out[idx].Candidates) == 0 {
+			out[idx].Candidates = plan.Descriptor.Candidates
+		}
+	}
+	return out
+}
+
 func (c *Config) TokenSourceForPlatformHost(
 	platform, host, repoTokenEnv, repoTokenFile string,
 ) tokenauth.Descriptor {
@@ -1413,8 +1443,11 @@ var execCommand = procutil.CommandContext
 
 // ghAuthExecTimeout bounds each gh subprocess invocation. gh auth
 // token is a local lookup and returns in milliseconds; 5s is generous
-// and prevents a hung gh from stalling startup.
-const ghAuthExecTimeout = 5 * time.Second
+// and prevents a hung gh from stalling startup. A var rather than a
+// const only so tests driving fake gh scripts can relax it: under a
+// fully loaded parallel suite run, spawning the fake can exceed 5s and
+// the kill then masquerades as gh behavior.
+var ghAuthExecTimeout = 5 * time.Second
 
 // ghAuthTokenForHost returns the token gh has stored for host, or "".
 // Older gh versions that do not recognize --hostname trigger a fallback

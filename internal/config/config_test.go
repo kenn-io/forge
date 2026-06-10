@@ -81,6 +81,23 @@ func writeFakeGHCLI(t *testing.T, dir, script string) {
 	t.Helper()
 	require.NoError(t, os.WriteFile(fakeGHCLIPath(dir), []byte(script), 0o755))
 	t.Setenv("PATH", dir)
+	// The production 5s exec bound exists to catch a hung gh; under a
+	// loaded parallel suite run it can instead kill the fake before it
+	// records argv. Relax it so these tests assert flag/retry behavior,
+	// not subprocess scheduling latency. Tests that exercise the timeout
+	// itself pin their own value afterwards.
+	setGHAuthExecTimeout(t, time.Minute)
+}
+
+// setGHAuthExecTimeout overrides the gh exec deadline for one test and
+// restores it on cleanup. Safe without locking: this package has no
+// parallel tests (the fake-gh helpers already rely on t.Setenv, which
+// rejects t.Parallel).
+func setGHAuthExecTimeout(t *testing.T, d time.Duration) {
+	t.Helper()
+	old := ghAuthExecTimeout
+	ghAuthExecTimeout = d
+	t.Cleanup(func() { ghAuthExecTimeout = old })
 }
 
 // readFakeGHArgv returns the recorded argv strings, one per
@@ -933,6 +950,36 @@ func TestConfigProviderTokenSourcesKeepsCredentiallessPlatformHosts(t *testing.T
 		tokenauth.Key{Platform: "github", Host: "github.com"},
 		plans[1].Descriptor.Key,
 	)
+}
+
+func TestConfigCloneTokenDescriptorsUseFirstNonEmptyHostChain(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	// Clone auth is host-scoped. The credential-less forgejo entry comes
+	// first, so the host descriptor must carry the first non-empty plan
+	// chain (gitlab's), not the first plan's; a host whose providers are
+	// all credential-less keeps an empty chain so reload clears a
+	// previously tokened clone source instead of leaving it active.
+	cfg := &Config{
+		Platforms: []PlatformConfig{
+			{Type: "forgejo", Host: "code.example.com"},
+			{Type: "gitlab", Host: "code.example.com", TokenEnv: "SHARED"},
+			{Type: "gitea", Host: "tokenless.example.com"},
+		},
+	}
+
+	descs := cfg.CloneTokenDescriptors()
+
+	require.Len(descs, 3)
+	assert.Equal(tokenauth.CloneKey("code.example.com"), descs[0].Key)
+	assert.Equal(
+		[]tokenauth.Candidate{{Kind: tokenauth.SourceKindEnv, EnvName: "SHARED"}},
+		descs[0].Candidates,
+	)
+	assert.Equal(tokenauth.CloneKey("tokenless.example.com"), descs[1].Key)
+	assert.Empty(descs[1].Candidates)
+	assert.Equal(tokenauth.CloneKey("github.com"), descs[2].Key)
+	assert.NotEmpty(descs[2].Candidates)
 }
 
 func TestConfigProviderTokenSourcesPlansEffectiveDescriptors(t *testing.T) {
@@ -2861,6 +2908,7 @@ func TestGitHubCLITokenForHostTimesOutWithoutCallerDeadline(t *testing.T) {
 		Stdout:       "never-reached",
 		SleepSeconds: 10,
 	})
+	setGHAuthExecTimeout(t, time.Second)
 
 	start := time.Now()
 	got, err := GitHubCLITokenForHost(context.Background(), "github.com")

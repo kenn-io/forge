@@ -317,6 +317,13 @@ func (s *Server) updateTokenSourcesForReload(cfg *config.Config) {
 	for _, plan := range cfg.ProviderTokenSources() {
 		updateIfKnown(plan.Descriptor)
 	}
+	// Clone credentials live under host-level keys (tokenauth.CloneKey), so
+	// when a provider entry on a shared host loses or changes its token the
+	// clone source follows the host's surviving effective chain instead of
+	// staying pinned to whichever provider source startup picked.
+	for _, desc := range cfg.CloneTokenDescriptors() {
+		updateIfKnown(desc)
+	}
 }
 
 func (s *Server) validateReloadProviderTokenSources(

@@ -22025,18 +22025,20 @@ func TestWorkspaceRuntimeSessionTerminalTmuxBackedWebSocketE2E(
 	dir := t.TempDir()
 	tmuxCommand := isolatedRealTmuxCommand(t, tmuxPath)
 	agentPath := filepath.Join(dir, "size-agent")
+	// The agent must keep running after it observes the target size. Exiting
+	// on the first match kills the pane, tmux destroys the session, and the
+	// attach client can die within the same redraw tick — before the probe
+	// line is ever painted to the websocket. Keep printing until teardown
+	// (tmux kill-server) reaps the pane; the bound only guards against a
+	// skipped cleanup and the exit status is unchecked.
 	require.NoError(os.WriteFile(agentPath, []byte(`#!/bin/sh
 attempt=0
-while [ "$attempt" -lt 80 ]; do
+while [ "$attempt" -lt 200 ]; do
 	set -- $(stty size 2>/dev/null || printf '0 0')
 	printf 'size:%s:%s:probe\n' "$1" "$2"
-	if [ "$1:$2" = "40:177" ]; then
-		exit 0
-	fi
 	attempt=$((attempt + 1))
 	sleep 0.1
 done
-exit 1
 `), 0o755))
 	cfg := &config.Config{
 		Agents: []config.Agent{{

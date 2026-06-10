@@ -204,6 +204,15 @@ func (r *Registry) GitChanges(ctx context.Context, folderID string) (GitChangesR
 	if !isGitRepo(v.Path) {
 		return GitChangesResponse{IsRepo: false, Changes: []PublishChange{}}, nil
 	}
+	// The preview is the UI's publishability signal, so it must apply the
+	// same command-bearing-config gate publish does — otherwise a repo
+	// with unsafe local config previews as publishable and only fails
+	// once the user submits. Command-bearing config does not execute
+	// during the status read itself (unlike filter attributes), so this
+	// gate is for signal parity, not read-time safety.
+	if err := assertSafeToPublish(ctx, v.Path); err != nil {
+		return GitChangesResponse{}, err
+	}
 	branch, err := currentBranch(ctx, v.Path)
 	if err != nil {
 		return GitChangesResponse{}, err

@@ -13,6 +13,9 @@ afterEach(() => {
   cleanup();
   setActiveKataDaemon(undefined);
   resetKataDaemonRoster();
+  // The anchor-from-hash test mutates the location hash; clear it so it
+  // can't leak into tests that assume a bare URL.
+  if (typeof window !== "undefined") window.location.hash = "";
 });
 
 function renderWorkspace(overrides: Partial<DocsRoute> = {}) {
@@ -165,6 +168,25 @@ describe("DocsWorkspace", () => {
     const outline = await screen.findByRole("complementary", { name: "Document outline" });
     expect(within(outline).getByRole("button", { name: "Reader" })).toBeTruthy();
     expect(within(outline).getByRole("button", { name: "Architecture" })).toBeTruthy();
+  });
+
+  test("scrolls to the heading named in the URL hash on direct navigation", async () => {
+    // jsdom has no scrollIntoView; capture the element it would target.
+    const proto = window.HTMLElement.prototype as { scrollIntoView?: () => void };
+    const original = proto.scrollIntoView;
+    const scrolled: string[] = [];
+    proto.scrollIntoView = function (this: HTMLElement) {
+      scrolled.push(this.id);
+    };
+    try {
+      window.location.hash = "#architecture";
+      renderWorkspace({ folder: "notes", doc: "Projects/reader.md" });
+      await waitFor(() => expect(screen.getByRole("heading", { name: "Architecture" })).toBeTruthy());
+      await waitFor(() => expect(scrolled).toContain("architecture"));
+    } finally {
+      if (original) proto.scrollIntoView = original;
+      else delete proto.scrollIntoView;
+    }
   });
 
   test("clicking a wikilink emits a route change to the resolved doc", async () => {

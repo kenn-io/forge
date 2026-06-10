@@ -459,6 +459,15 @@ func safeInvariantURL(raw string) bool {
 	v = strings.NewReplacer("\t", "", "\n", "", "\r", "").Replace(v)
 	scheme := invariantSchemeRe.FindString(v)
 	if scheme == "" {
+		// A scheme-less value that opens with two slash-like bytes is a
+		// protocol-relative network reference (//host/x, and the
+		// backslash variants browsers fold to //host) — it loads from the
+		// network with the page's scheme. The sanitizer never emits one,
+		// so reject; legitimate scheme-less values are the empty string
+		// and single-slash local paths.
+		if len(v) >= 2 && isSlashByte(v[0]) && isSlashByte(v[1]) {
+			return false
+		}
 		return true
 	}
 	switch strings.TrimSuffix(scheme, ":") {
@@ -469,6 +478,10 @@ func safeInvariantURL(raw string) bool {
 	default:
 		return false
 	}
+}
+
+func isSlashByte(b byte) bool {
+	return b == '/' || b == '\\'
 }
 
 func inlinePathPrefix(basePath string) string {

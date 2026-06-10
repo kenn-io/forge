@@ -139,7 +139,24 @@
   let docContentKey: string | null = $state(null);
   let docError: string | null = $state(null);
   let loadingDoc = $state(false);
-  let pendingAnchor: string | null = $state(null);
+  // On direct navigation, refresh, or open-in-new-tab the target heading
+  // arrives only in window.location.hash — in-app clicks route it through
+  // selectDoc instead, and the router rebuilds the URL without a fragment,
+  // so this seed only fires for the initial load. The scroll happens once
+  // the doc renders (DocMarkdownView consumes scrollToAnchor).
+  let pendingAnchor: string | null = $state(readInitialAnchor());
+
+  function readInitialAnchor(): string | null {
+    if (typeof window === "undefined") return null;
+    const hash = window.location.hash;
+    if (!hash || hash === "#") return null;
+    const raw = hash.slice(1);
+    try {
+      return decodeURIComponent(raw);
+    } catch {
+      return raw;
+    }
+  }
   let headings: HeadingEntry[] = $state([]);
   let activeHeadingID: string | null = $state(null);
 

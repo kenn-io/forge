@@ -633,6 +633,21 @@ func TestGitChangesRejectsFilterAttributes(t *testing.T) {
 	require.ErrorAs(err, &unsafe)
 }
 
+func TestGitChangesRejectsCommandBearingLocalConfig(t *testing.T) {
+	require := require.New(t)
+	g := newGitRepo(t)
+	g.writeFile(t, "new.md", "# new\n")
+	// The preview must apply the same config gate as publish so a folder
+	// with unsafe local config cannot preview as publishable and only
+	// fail on submit.
+	runGit(t, g.dir, "config", "gpg.program", "/tmp/evil")
+
+	_, err := g.registry.GitChanges(context.Background(), g.folderID)
+
+	var unsafe *UnsafeGitConfigError
+	require.ErrorAs(err, &unsafe)
+}
+
 func TestGitPublishAllowsBenignLocalConfig(t *testing.T) {
 	require := require.New(t)
 	g := newGitRepo(t)

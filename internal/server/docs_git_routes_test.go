@@ -178,6 +178,26 @@ func TestDocsGitStatusAndChangesEndpointsRejectUnsafeAttributes(t *testing.T) {
 	}
 }
 
+func TestDocsGitChangesEndpointRejectsUnsafeLocalConfig(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	repo := newDocsGitRepo(t, true)
+	repo.write(t, "new.md", "# new\n")
+	// Command-bearing local config does not execute during the status
+	// read, but the preview must still refuse it so the UI's publish
+	// signal matches publish-time behavior.
+	runDocsGit(t, repo.dir, "config", "gpg.program", "/tmp/evil")
+	srv := setupDocsGitRouteServer(t, repo.dir)
+
+	rr := doDocsJSON(t, srv, http.MethodGet, "/api/v1/docs/folders/f/git/changes", nil)
+
+	require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
+	var problem ProblemError
+	require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
+	assert.Equal(CodeBadRequest, problem.Code)
+	assert.Equal("unsafeGitConfig", problem.Details["reason"])
+}
+
 func TestDocsGitReadEndpointsRejectNonLoopback(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

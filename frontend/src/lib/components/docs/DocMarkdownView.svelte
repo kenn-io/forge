@@ -23,6 +23,10 @@
     // Bind to scroll the doc to a specific heading. Set by parent when
     // route includes an anchor, or when the user clicks an outline entry.
     scrollToAnchor?: string | null;
+    // Fired once a scroll for the current scrollToAnchor has been
+    // attempted, so the parent can treat the anchor as one-shot and not
+    // re-apply it to a later document that has the same heading id.
+    onAnchorConsumed?: () => void;
   }
 
   let {
@@ -33,6 +37,7 @@
     onSelectIssue,
     onSelectKataShortId,
     scrollToAnchor = null,
+    onAnchorConsumed,
   }: Props = $props();
 
   let container: HTMLDivElement | null = $state(null);
@@ -58,7 +63,10 @@
   $effect(() => {
     const id = scrollToAnchor;
     if (!container || !id) return;
-    queueMicrotask(() => scrollHeadingIntoView(id));
+    queueMicrotask(() => {
+      scrollHeadingIntoView(id);
+      onAnchorConsumed?.();
+    });
   });
 
   $effect(() => {

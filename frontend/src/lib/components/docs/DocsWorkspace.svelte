@@ -142,8 +142,10 @@
   // On direct navigation, refresh, or open-in-new-tab the target heading
   // arrives only in window.location.hash — in-app clicks route it through
   // selectDoc instead, and the router rebuilds the URL without a fragment,
-  // so this seed only fires for the initial load. The scroll happens once
-  // the doc renders (DocMarkdownView consumes scrollToAnchor).
+  // so this seed only fires for the initial load. The anchor is one-shot:
+  // DocMarkdownView fires onAnchorConsumed once it scrolls, clearing this
+  // so a later folder switch / landing auto-open can't reuse the stale
+  // anchor on an unrelated doc with a matching heading id.
   let pendingAnchor: string | null = $state(readInitialAnchor());
 
   function readInitialAnchor(): string | null {
@@ -1235,6 +1237,7 @@
               onSelectIssue={handleIssueLink}
               onSelectKataShortId={handleKataShortIdLink}
               scrollToAnchor={pendingAnchor}
+              onAnchorConsumed={() => (pendingAnchor = null)}
             />
           </div>
           <DocOutline {headings} activeId={activeHeadingID} onSelect={selectHeading} />

@@ -189,6 +189,47 @@ describe("DocsWorkspace", () => {
     }
   });
 
+  test("does not re-apply a consumed hash anchor to a later document", async () => {
+    const proto = window.HTMLElement.prototype as { scrollIntoView?: () => void };
+    const original = proto.scrollIntoView;
+    const scrolled: string[] = [];
+    proto.scrollIntoView = function (this: HTMLElement) {
+      scrolled.push(this.id);
+    };
+    try {
+      const api = createMockDocsBackend({
+        folders: [
+          {
+            meta: { id: "notes", name: "Notes", path: "/notes" },
+            files: {
+              "one.md": "# One\n\n## Architecture\n\nFirst.\n",
+              "two.md": "# Two\n\n## Architecture\n\nSecond.\n",
+            },
+          },
+        ],
+      });
+      window.location.hash = "#architecture";
+      const onRouteChange = vi.fn();
+      const { rerender } = render(DocsWorkspace, {
+        props: { route: { mode: "docs", folder: "notes", doc: "one.md" }, onRouteChange, api },
+      });
+      await waitFor(() => expect(screen.getByRole("heading", { name: "Architecture" })).toBeTruthy());
+      await waitFor(() => expect(scrolled).toContain("architecture"));
+
+      // Navigate to another doc that shares the heading id, the way a
+      // folder switch + landing auto-open does (no explicit anchor). The
+      // consumed hash anchor must not scroll the new document.
+      scrolled.length = 0;
+      await rerender({ route: { mode: "docs", folder: "notes", doc: "two.md" }, onRouteChange, api });
+      await waitFor(() => expect(screen.getByRole("heading", { name: "Two", level: 1 })).toBeTruthy());
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(scrolled).not.toContain("architecture");
+    } finally {
+      if (original) proto.scrollIntoView = original;
+      else delete proto.scrollIntoView;
+    }
+  });
+
   test("clicking a wikilink emits a route change to the resolved doc", async () => {
     const { onRouteChange } = renderWorkspace({ folder: "notes", doc: "README.md" });
     await waitFor(() => screen.getByRole("heading", { name: /Welcome to Notes/ }));

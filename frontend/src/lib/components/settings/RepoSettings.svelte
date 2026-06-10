@@ -230,7 +230,7 @@
                 onclick={() => {
                   cloneEditorOpen = { ...cloneEditorOpen, [key]: !cloneEditorOpen[key] };
                 }}
-              ><SettingsIcon size={14} /></button>
+              ><SettingsIcon size={14} aria-hidden="true" /></button>
             {/if}
             <button
               class="remove-btn"

@@ -193,9 +193,15 @@ name = "repo"
 
 func TestLoadAppliesDefaultPlatformHostToLegacyGitHubRepos(t *testing.T) {
 	assert := Assert.New(t)
+	// github_token_env is github.com-only, so a GHE-primary setup names
+	// its host token through a [[platforms]] entry instead.
 	path := writeConfig(t, `
 default_platform_host = "ghe.example.com"
-github_token_env = "GHE_TOKEN"
+
+[[platforms]]
+type = "github"
+host = "ghe.example.com"
+token_env = "GHE_TOKEN"
 
 [[repos]]
 owner = "Acme"
@@ -878,6 +884,29 @@ func TestConfigTokenSourceDescriptorPrecedence(t *testing.T) {
 	assert.Equal("/platform/file", desc.Candidates[2].FilePath)
 	assert.Equal(tokenauth.SourceKindEnv, desc.Candidates[3].Kind)
 	assert.Equal("PLATFORM_TOKEN", desc.Candidates[3].EnvName)
+}
+
+func TestTokenSourceForPlatformHostScopesGitHubTokenEnvToDefaultHost(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	// The env var being set must not matter: a non-default GitHub host's
+	// candidate chain may only contain the host-scoped gh credential, so
+	// the public-GitHub token can never be sent to an Enterprise or
+	// self-hosted GitHub host that lacks an explicit token.
+	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "public-github-token")
+	cfg := &Config{GitHubTokenEnv: "MIDDLEMAN_GITHUB_TOKEN"}
+
+	ghe := cfg.TokenSourceForPlatformHost("github", "ghe.example.com", "", "")
+	require.Len(ghe.Candidates, 1)
+	assert.Equal(tokenauth.SourceKindGitHubCLI, ghe.Candidates[0].Kind)
+	assert.Equal("ghe.example.com", ghe.Candidates[0].Host)
+
+	def := cfg.TokenSourceForPlatformHost("github", "github.com", "", "")
+	require.Len(def.Candidates, 2)
+	assert.Equal(tokenauth.SourceKindEnv, def.Candidates[0].Kind)
+	assert.Equal("MIDDLEMAN_GITHUB_TOKEN", def.Candidates[0].EnvName)
+	assert.Equal(tokenauth.SourceKindGitHubCLI, def.Candidates[1].Kind)
+	assert.Equal("github.com", def.Candidates[1].Host)
 }
 
 func TestConfigProviderTokenSourcesPlansEffectiveDescriptors(t *testing.T) {
@@ -2834,17 +2863,22 @@ func TestTokenForPlatformHostUsesGHWithHostnameForGHE(t *testing.T) {
 	Assert.Equal(t, "auth token --hostname ghe.example.com", argv[0])
 }
 
-func TestTokenForPlatformHostPrefersEnvOverGHForGHE(t *testing.T) {
+func TestTokenForPlatformHostIgnoresGitHubTokenEnvForGHE(t *testing.T) {
+	// github_token_env holds the public-GitHub token. A non-default
+	// GitHub host must never receive it, even when the env var is set;
+	// the host-scoped gh credential is the only implicit fallback.
 	argvPath := setFakeGHCLIScript(t, fakeGHCLIOptions{
 		Stdout: "ghe-from-gh",
 	})
-	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "ghe-from-env")
+	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "public-github-token")
 
 	cfg := &Config{GitHubTokenEnv: "MIDDLEMAN_GITHUB_TOKEN"}
 	got := cfg.TokenForPlatformHost("github", "ghe.example.com", "")
-	Assert.Equal(t, "ghe-from-env", got)
+	Assert.Equal(t, "ghe-from-gh", got)
 
-	Assert.Empty(t, readFakeGHArgv(t, argvPath), "env var should short-circuit gh")
+	argv := readFakeGHArgv(t, argvPath)
+	require.Len(t, argv, 1)
+	Assert.Equal(t, "auth token --hostname ghe.example.com", argv[0])
 }
 
 func TestTokenForPlatformHostPrefersPlatformsEntryOverGHForGHE(t *testing.T) {

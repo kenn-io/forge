@@ -1144,12 +1144,16 @@ func (c *Config) GitHubToken() string {
 }
 
 // gitHubTokenForHost resolves a github token for a specific host. The
-// configured GitHubTokenEnv env var wins when non-empty, otherwise
-// the helper falls back to `gh auth token --hostname <host>`. Internal
-// callers go through GitHubToken() or TokenForPlatformHost.
+// configured GitHubTokenEnv env var wins when non-empty, but only for
+// github.com — it holds the public-GitHub token and must not leak to
+// Enterprise/self-hosted hosts. Every host falls back to the
+// host-scoped `gh auth token --hostname <host>`. Internal callers go
+// through GitHubToken() or TokenForPlatformHost.
 func (c *Config) gitHubTokenForHost(host string) string {
-	if token := os.Getenv(c.GitHubTokenEnv); token != "" {
-		return token
+	if host == platformpkg.DefaultGitHubHost {
+		if token := os.Getenv(c.GitHubTokenEnv); token != "" {
+			return token
+		}
 	}
 	return ghAuthTokenForHost(host)
 }
@@ -1293,7 +1297,13 @@ func (c *Config) TokenSourceForPlatformHost(
 		})
 	}
 	if p == defaultPlatform {
-		if c.GitHubTokenEnv != "" {
+		// github_token_env is a github.com-only default, mirroring the
+		// other public-host defaults. Appending it for Enterprise or
+		// self-hosted GitHub hosts would send the public-GitHub token to
+		// whatever host the config names; those hosts must configure
+		// repo/platform token_env or token_file, or rely on gh's
+		// host-scoped credential below.
+		if c.GitHubTokenEnv != "" && h == platformpkg.DefaultGitHubHost {
 			desc.Candidates = append(desc.Candidates, tokenauth.Candidate{
 				Kind:    tokenauth.SourceKindEnv,
 				EnvName: c.GitHubTokenEnv,

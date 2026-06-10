@@ -11,6 +11,7 @@
     | "verdict"
     | "agent"
     | "elapsed"
+    | "cost"
     | "job_type"
     | "enqueued_at";
 
@@ -36,9 +37,9 @@
       sortable: true,
     },
     {
-      key: "id",
+      key: "cost",
       label: "Cost",
-      sortable: false,
+      sortable: true,
     },
     {
       key: "job_type",

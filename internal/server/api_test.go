@@ -3653,34 +3653,7 @@ func TestAPIGitHubSyncReadsCloneTokenFileAfterRotation(t *testing.T) {
 		}},
 	}, tokenauth.Options{})
 
-	realGit, err := exec.LookPath("git")
-	require.NoError(err)
-	capturePath := filepath.Join(dir, "git-credentials.txt")
-	gitWrapperDir := filepath.Join(dir, "git-wrapper")
-	require.NoError(os.MkdirAll(gitWrapperDir, 0o755))
-	require.NoError(os.WriteFile(filepath.Join(gitWrapperDir, "git"), []byte(`#!/bin/sh
-set -eu
-out="${MIDDLEMAN_TEST_GIT_CAPTURE:?}"
-helper=""
-i=0
-count="${GIT_CONFIG_COUNT:-0}"
-while [ "$i" -lt "$count" ]; do
-	eval "key=\${GIT_CONFIG_KEY_$i:-}"
-	eval "value=\${GIT_CONFIG_VALUE_$i:-}"
-	if [ "$key" = "credential.helper" ]; then
-		helper="$value"
-	fi
-	i=$((i + 1))
-done
-if [ -n "$helper" ]; then
-	"$helper" get >> "$out"
-	echo "---" >> "$out"
-fi
-exec "$MIDDLEMAN_TEST_REAL_GIT" "$@"
-`), 0o755))
-	t.Setenv("PATH", gitWrapperDir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	t.Setenv("MIDDLEMAN_TEST_GIT_CAPTURE", capturePath)
-	t.Setenv("MIDDLEMAN_TEST_REAL_GIT", realGit)
+	capturePath := installCredentialCapturingGit(t, dir)
 
 	cloneURL := gitLocalRemoteURL(remote)
 	number := 7
@@ -3772,14 +3745,248 @@ exec "$MIDDLEMAN_TEST_REAL_GIT" "$@"
 	assert.Equal(baseSHA, mr.MergeBaseSHA)
 }
 
+func sharedHostCloneSyncConfig(forgejoTokenLine, giteaTokenLine string) string {
+	return fmt.Sprintf(`
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[platforms]]
+type = "forgejo"
+host = "code.example.com"
+%s
+
+[[platforms]]
+type = "gitea"
+host = "code.example.com"
+%s
+
+[[repos]]
+platform = "gitea"
+platform_host = "code.example.com"
+owner = "acme"
+name = "widget"
+`, forgejoTokenLine, giteaTokenLine)
+}
+
+// TestAPISharedHostCloneFetchFollowsReloadedHostToken drives the full
+// stack the way main.go wires it: the gitclone.Manager holds the
+// host-level clone source (tokenauth.CloneKey) from the shared
+// SourceSet, sync runs are triggered over HTTP, and the credential git
+// actually receives is captured per invocation. Two providers share one
+// host; the reload drops one provider's token and rotates the other's,
+// and git fetches must follow the surviving effective chain.
+func TestAPISharedHostCloneFetchFollowsReloadedHostToken(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	dir := t.TempDir()
+	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "github-token")
+	t.Setenv("MIDDLEMAN_SHARED_TOKEN", "shared-token")
+	t.Setenv("MIDDLEMAN_ROTATED_TOKEN", "rotated-token")
+
+	remote := filepath.Join(dir, "remote.git")
+	runGit(t, dir, "init", "--bare", "--initial-branch=main", remote)
+	work := filepath.Join(dir, "work")
+	runGit(t, dir, "clone", remote, work)
+	runGit(t, work, "config", "user.email", "test@test.com")
+	runGit(t, work, "config", "user.name", "Test")
+	require.NoError(os.WriteFile(filepath.Join(work, "base.txt"), []byte("base\n"), 0o644))
+	runGit(t, work, "add", ".")
+	runGit(t, work, "commit", "-m", "base commit")
+	runGit(t, work, "push", "origin", "main")
+
+	capturePath := installCredentialCapturingGit(t, dir)
+	cloneURL := gitLocalRemoteURL(remote)
+
+	cfgPath := filepath.Join(dir, "config.toml")
+	writeConfigToml(t, cfgPath, sharedHostCloneSyncConfig(
+		`token_env = "MIDDLEMAN_SHARED_TOKEN"`,
+		`token_env = "MIDDLEMAN_SHARED_TOKEN"`,
+	))
+	cfg, err := config.Load(cfgPath)
+	require.NoError(err)
+
+	// Boot registration mirrors collectProviderTokenSources and
+	// buildProviderStartup: provider plans plus the host-level clone
+	// source, with the clone manager keyed by that source.
+	sourceSet, cloneSrc := reloadTestTokenSources(
+		t, cfgPath, tokenauth.CloneKey("code.example.com"),
+	)
+	bootToken, err := cloneSrc.Token(ctx)
+	require.NoError(err)
+	require.Equal("shared-token", bootToken)
+
+	giteaRef := platform.RepoRef{
+		Platform:           platform.KindGitea,
+		Host:               "code.example.com",
+		Owner:              "acme",
+		Name:               "widget",
+		RepoPath:           "acme/widget",
+		PlatformID:         42,
+		PlatformExternalID: "42",
+		WebURL:             "https://code.example.com/acme/widget",
+		CloneURL:           cloneURL,
+		DefaultBranch:      "main",
+	}
+	giteaProvider := &apiTestGitLabProvider{ref: giteaRef}
+	forgejoProvider := &apiTestGitLabProvider{ref: platform.RepoRef{
+		Platform: platform.KindForgejo,
+		Host:     "code.example.com",
+		Owner:    "acme",
+		Name:     "other",
+	}}
+	registry, err := platform.NewRegistry(giteaProvider, forgejoProvider)
+	require.NoError(err)
+
+	database := dbtest.Open(t)
+	clones := gitclone.New(filepath.Join(dir, "clones"), map[string]tokenauth.Source{
+		"code.example.com": cloneSrc,
+	})
+	syncer := ghclient.NewSyncerWithRegistry(
+		registry, database, clones,
+		[]ghclient.RepoRef{{
+			Platform:           platform.KindGitea,
+			Owner:              "acme",
+			Name:               "widget",
+			PlatformHost:       "code.example.com",
+			RepoPath:           "acme/widget",
+			PlatformRepoID:     42,
+			PlatformExternalID: "42",
+			CloneURL:           cloneURL,
+			DefaultBranch:      "main",
+		}},
+		time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	srv := NewWithConfig(
+		database, syncer, clones, nil, cfg, cfgPath,
+		ServerOptions{Clones: clones, TokenSources: sourceSet},
+	)
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+
+	waitForConfigWatcher(t, srv, 2*time.Second)
+	stream := streamConfigEvents(t, srv)
+	defer stream.Close()
+
+	// Each phase triggers one sync run over HTTP and waits for the
+	// repo's completion timestamp to advance: every networked git
+	// operation of that run happens before UpdateRepoSyncCompleted, so
+	// reading the capture file afterwards cannot race a slow trailing
+	// fetch into the next phase's assertions.
+	identity := platform.DBRepoIdentity(giteaRef)
+	runSync := func(prevCompleted *time.Time) *time.Time {
+		rr := doJSON(t, srv, http.MethodPost, "/api/v1/sync", nil)
+		require.Equal(http.StatusAccepted, rr.Code, rr.Body.String())
+		var completed *time.Time
+		require.Eventually(func() bool {
+			row, err := database.GetRepoByIdentity(ctx, identity)
+			if err != nil || row == nil || row.LastSyncCompletedAt == nil {
+				return false
+			}
+			if prevCompleted != nil && row.LastSyncCompletedAt.Equal(*prevCompleted) {
+				return false
+			}
+			completed = row.LastSyncCompletedAt
+			return true
+		}, 20*time.Second, 25*time.Millisecond, "sync run did not complete")
+		return completed
+	}
+
+	completed := runSync(nil)
+	bootCreds := readCapturedCredentials(t, capturePath)
+	require.NotEmpty(bootCreds)
+	for _, token := range bootCreds {
+		assert.Equal("shared-token", token)
+	}
+
+	// The forgejo entry goes credential-less while gitea rotates to a
+	// new env var. Git fetches must follow the host's surviving chain
+	// without a restart, not stay pinned to whichever provider source
+	// startup happened to hand the clone manager.
+	writeConfigToml(t, cfgPath, sharedHostCloneSyncConfig(
+		"",
+		`token_env = "MIDDLEMAN_ROTATED_TOKEN"`,
+	))
+	ev := waitForConfigEvent(t, stream, 2*time.Second)
+	require.True(ev.Valid, "reload error: %s", ev.Error)
+	assert.False(ev.RestartRequired)
+
+	completed = runSync(completed)
+	rotatedCreds := readCapturedCredentials(t, capturePath)
+	require.Greater(len(rotatedCreds), len(bootCreds))
+	for _, token := range rotatedCreds[len(bootCreds):] {
+		assert.Equal("rotated-token", token)
+	}
+
+	// Removing every credential for a host with tracked repos is an
+	// invalid reload by design (the required repo plan no longer
+	// resolves), so the daemon keeps last-known-good: git keeps using
+	// the rotated token rather than a cleared or stale credential.
+	writeConfigToml(t, cfgPath, sharedHostCloneSyncConfig("", ""))
+	ev = waitForConfigEvent(t, stream, 2*time.Second)
+	require.False(ev.Valid)
+	assert.NotEmpty(ev.Error)
+
+	runSync(completed)
+	finalCreds := readCapturedCredentials(t, capturePath)
+	require.Greater(len(finalCreds), len(rotatedCreds))
+	for _, token := range finalCreds[len(rotatedCreds):] {
+		assert.Equal("rotated-token", token)
+	}
+}
+
+// installCredentialCapturingGit prepends a git wrapper to PATH that, on
+// every invocation carrying an injected credential.helper (i.e. every
+// networked git command middleman authenticates), runs the helper's get
+// action and appends its output to the returned capture file before
+// exec'ing the real git. Local reads run without a helper and leave no
+// trace, so the file records exactly the credentials git was given.
+func installCredentialCapturingGit(t *testing.T, dir string) string {
+	t.Helper()
+	realGit, err := exec.LookPath("git")
+	require.NoError(t, err)
+	capturePath := filepath.Join(dir, "git-credentials.txt")
+	gitWrapperDir := filepath.Join(dir, "git-wrapper")
+	require.NoError(t, os.MkdirAll(gitWrapperDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(gitWrapperDir, "git"), []byte(`#!/bin/sh
+set -eu
+out="${MIDDLEMAN_TEST_GIT_CAPTURE:?}"
+helper=""
+i=0
+count="${GIT_CONFIG_COUNT:-0}"
+while [ "$i" -lt "$count" ]; do
+	eval "key=\${GIT_CONFIG_KEY_$i:-}"
+	eval "value=\${GIT_CONFIG_VALUE_$i:-}"
+	if [ "$key" = "credential.helper" ]; then
+		helper="$value"
+	fi
+	i=$((i + 1))
+done
+if [ -n "$helper" ]; then
+	"$helper" get >> "$out"
+	echo "---" >> "$out"
+fi
+exec "$MIDDLEMAN_TEST_REAL_GIT" "$@"
+`), 0o755))
+	t.Setenv("PATH", gitWrapperDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("MIDDLEMAN_TEST_GIT_CAPTURE", capturePath)
+	t.Setenv("MIDDLEMAN_TEST_REAL_GIT", realGit)
+	return capturePath
+}
+
 func readCapturedCredentials(t *testing.T, path string) []string {
 	t.Helper()
 	data, err := os.ReadFile(path)
 	require.NoError(t, err)
+	return parseCapturedCredentials(string(data))
+}
+
+func parseCapturedCredentials(raw string) []string {
 	var tokens []string
-	for line := range strings.SplitSeq(strings.TrimSpace(string(data)), "\n") {
-		token, ok := strings.CutPrefix(line, "password=")
-		if ok {
+	for line := range strings.SplitSeq(strings.TrimSpace(raw), "\n") {
+		if token, ok := strings.CutPrefix(line, "password="); ok {
 			tokens = append(tokens, token)
 		}
 	}

@@ -255,8 +255,13 @@ func TestInvalidReloadKeepsLiveTokenSourceE2E(t *testing.T) {
 	assert.Equal("GitLab token reload fallback", mr.Title)
 }
 
-func TestMissingRuntimeTokenSyncReturnsBadRequestE2E(t *testing.T) {
-	assert := assert.New(t)
+// startMissingGitLabTokenServerE2E boots a server whose gitlab host is
+// configured with a token file holding only whitespace — the state a
+// token-file rotation passes through while the new credential is being
+// written. Every provider call through the host's source fails with
+// tokenauth.ErrMissingToken.
+func startMissingGitLabTokenServerE2E(t *testing.T) *httptest.Server {
+	t.Helper()
 	require := require.New(t)
 	dir := t.TempDir()
 	tokenPath := filepath.Join(dir, "missing-token")
@@ -299,19 +304,63 @@ token_file = %q
 	_, httpServer, _, _ := startGitLabTokenSyncServer(
 		t, cfg, cfgPath, sourceSet, source, gitlabAPI.URL+"/api/v4",
 	)
+	return httpServer
+}
+
+func requireMissingTokenBadRequest(t *testing.T, resp *http.Response) {
+	t.Helper()
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	var problem struct {
+		Code string `json:"code"`
+	}
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&problem))
+	assert.Equal(t, "badRequest", problem.Code)
+}
+
+func TestMissingRuntimeTokenSyncReturnsBadRequestE2E(t *testing.T) {
+	httpServer := startMissingGitLabTokenServerE2E(t)
 
 	resp := doServerJSON(
 		t, httpServer.Client(), http.MethodPost,
 		httpServer.URL+"/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/sync",
 		nil,
 	)
-	defer resp.Body.Close()
-	require.Equal(http.StatusBadRequest, resp.StatusCode)
-	var problem struct {
-		Code string `json:"code"`
-	}
-	require.NoError(json.NewDecoder(resp.Body).Decode(&problem))
-	assert.Equal("badRequest", problem.Code)
+	requireMissingTokenBadRequest(t, resp)
+}
+
+func TestMissingTokenRepoPreviewReturnsBadRequestE2E(t *testing.T) {
+	httpServer := startMissingGitLabTokenServerE2E(t)
+
+	resp := doServerJSON(
+		t, httpServer.Client(), http.MethodPost,
+		httpServer.URL+"/api/v1/repos/preview",
+		map[string]string{
+			"provider":      "gitlab",
+			"platform_host": "gitlab.example.com",
+			"owner":         "group",
+			"pattern":       "*",
+		},
+	)
+	requireMissingTokenBadRequest(t, resp)
+}
+
+func TestMissingTokenBulkAddReposReturnsBadRequestE2E(t *testing.T) {
+	httpServer := startMissingGitLabTokenServerE2E(t)
+
+	resp := doServerJSON(
+		t, httpServer.Client(), http.MethodPost,
+		httpServer.URL+"/api/v1/repos/bulk",
+		map[string]any{
+			"repos": []map[string]string{{
+				"provider":      "gitlab",
+				"platform_host": "gitlab.example.com",
+				"owner":         "group",
+				"name":          "other",
+			}},
+		},
+	)
+	requireMissingTokenBadRequest(t, resp)
 }
 
 func TestRuntimeLaunchStripsReloadedAndImplicitTokenEnvsE2E(t *testing.T) {

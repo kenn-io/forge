@@ -248,3 +248,35 @@ func TestSanitizePanicRecoveryShape(t *testing.T) {
 	err := mustPanic()
 	require.ErrorIs(t, err, errSanitizePanic)
 }
+
+func TestSafeInvariantURL(t *testing.T) {
+	cases := []struct {
+		name string
+		url  string
+		safe bool
+	}{
+		{"empty", "", true},
+		{"relative inline path", "/api/v1/msgvault/messages/7/inline?cid=x", true},
+		{"colon after slash stays relative", "/a/b:c", true},
+		{"http", "http://example.com/a", true},
+		{"https mixed case", "HTTPS://example.com/a", true},
+		{"mailto", "mailto:a@example.com", true},
+		{"tel", "tel:+15551234", true},
+		{"data image png", "data:image/png;base64,iVBORw0KGgo=", true},
+		{"data html", "data:text/html,<script>alert(1)</script>", false},
+		{"data svg", "data:image/svg+xml;base64,YWJj", false},
+		{"javascript", "javascript:alert(1)", false},
+		{"vbscript mixed case", "VBScript:msgbox(1)", false},
+		{"tab obfuscated scheme", "jav\tascript:alert(1)", false},
+		{"newline obfuscated scheme", "java\nscript:alert(1)", false},
+		{"leading control char", "\x01javascript:alert(1)", false},
+		{"blob", "blob:https://example.com/uuid", false},
+		{"file", "file:///etc/passwd", false},
+		{"ftp", "ftp://example.com/x", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			Assert.Equal(t, tc.safe, safeInvariantURL(tc.url))
+		})
+	}
+}

@@ -3,6 +3,7 @@ package docs
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -101,12 +102,16 @@ func remotePushURLs(ctx context.Context, root, remote string) ([]string, error) 
 }
 
 func classifyPushURL(root, raw string) (pushTargetClass, error) {
-	if scheme, rest, ok := strings.Cut(raw, "://"); ok {
+	if scheme, _, ok := strings.Cut(raw, "://"); ok {
 		switch strings.ToLower(scheme) {
 		case "http", "https", "ssh", "git":
 			return pushTargetNetwork, nil
 		case "file":
-			return classifyLocalPushPath(root, raw, fileURLPath(rest))
+			path, err := fileURLPath(raw)
+			if err != nil {
+				return 0, err
+			}
+			return classifyLocalPushPath(root, raw, path)
 		default:
 			return 0, unsafePushTarget(raw, "remote helper transports are not allowed")
 		}
@@ -142,20 +147,29 @@ func hasDriveLetterPrefix(s string) bool {
 	return ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z')
 }
 
-// fileURLPath extracts the filesystem path from the remainder of a
-// file:// URL. Git accepts an empty host or "localhost"; anything else is
-// returned as-is and ends up rejected by the containment check (git would
-// refuse such a URL anyway).
-func fileURLPath(rest string) string {
-	if host, path, ok := strings.Cut(rest, "/"); ok && (host == "" || strings.EqualFold(host, "localhost")) {
-		if gitParsesDrivePaths && hasDriveLetterPrefix(path) {
-			// file:///C:/docs — the slash before the drive letter is URL
-			// syntax, not part of the filesystem path.
-			return path
-		}
-		return "/" + path
+// fileURLPath extracts the decoded filesystem path from a file:// URL.
+// Git percent-decodes file URLs before resolving them (verified: a push
+// to file://.../ev%20il.git lands in "ev il.git"), so the containment
+// check must run on the decoded path or an in-folder target hidden
+// behind percent-escapes would be misclassified as outside the folder.
+// Only an empty or "localhost" host is local; any other host is a
+// remote/UNC form this flow does not support, so it is rejected.
+func fileURLPath(raw string) (string, error) {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", unsafePushTarget(raw, "unparsable file url")
 	}
-	return rest
+	if u.Host != "" && !strings.EqualFold(u.Host, "localhost") {
+		return "", unsafePushTarget(raw, "non-local file url host")
+	}
+	// url.Parse already decodes percent-escapes into u.Path.
+	path := u.Path
+	if gitParsesDrivePaths && len(path) > 1 && path[0] == '/' && hasDriveLetterPrefix(path[1:]) {
+		// file:///C:/docs — the slash before the drive letter is URL
+		// syntax, not part of the filesystem path.
+		path = path[1:]
+	}
+	return path, nil
 }
 
 func classifyLocalPushPath(root, displayURL, p string) (pushTargetClass, error) {

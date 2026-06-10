@@ -426,8 +426,7 @@ func invariantCheck(sanitized string) error {
 						return fmt.Errorf("%w: attr %s survived", errSanitizeInvariant, key)
 					}
 					if key == "href" || key == "src" || key == "action" || key == "formaction" {
-						low := strings.TrimSpace(strings.ToLower(a.Val))
-						if strings.HasPrefix(low, "javascript:") || strings.HasPrefix(low, "vbscript:") {
+						if !safeInvariantURL(a.Val) {
 							return fmt.Errorf("%w: dangerous scheme in %s", errSanitizeInvariant, key)
 						}
 					}
@@ -439,6 +438,37 @@ func invariantCheck(sanitized string) error {
 		}
 	}
 	return nil
+}
+
+// invariantSchemeRe matches a URL scheme token at the start of a
+// normalized attribute value.
+var invariantSchemeRe = regexp.MustCompile(`^[a-z][a-z0-9+.\-]*:`)
+
+// safeInvariantURL reports whether a URL attribute that survived
+// sanitization is one of the shapes the sanitizer can legitimately emit:
+// scheme-less relative/path URLs, mailto:, tel:, http(s)://, or the
+// strict base64 image data URLs the rewrite pass allows. Anything else
+// (javascript:, vbscript:, data:text/html, blob:, file:, unknown remote
+// helpers) fails the invariant. The value is normalized the way browsers
+// preprocess URLs — ASCII tab/LF/CR stripped anywhere, C0 controls and
+// spaces trimmed at the ends — so an obfuscated scheme such as
+// "jav\tascript:" cannot masquerade as scheme-less.
+func safeInvariantURL(raw string) bool {
+	v := strings.ToLower(raw)
+	v = strings.TrimFunc(v, func(r rune) bool { return r <= ' ' })
+	v = strings.NewReplacer("\t", "", "\n", "", "\r", "").Replace(v)
+	scheme := invariantSchemeRe.FindString(v)
+	if scheme == "" {
+		return true
+	}
+	switch strings.TrimSuffix(scheme, ":") {
+	case "http", "https", "mailto", "tel":
+		return true
+	case "data":
+		return dataImgRe.MatchString(v)
+	default:
+		return false
+	}
 }
 
 func inlinePathPrefix(basePath string) string {

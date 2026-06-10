@@ -448,6 +448,12 @@ func TestGitPublishRejectsPushTargetInsideDocsFolder(t *testing.T) {
 		{"relative path", func(g *gitRepo) string { return "./evil.git" }},
 		{"absolute path", func(g *gitRepo) string { return filepath.Join(g.dir, "evil.git") }},
 		{"file URL", func(g *gitRepo) string { return "file://" + filepath.Join(g.dir, "evil.git") }},
+		{"percent-encoded file URL", func(g *gitRepo) string {
+			// Git decodes %65 to 'e' and pushes into evil.git; the
+			// containment check decodes via net/url so it compares the
+			// same path git resolves rather than the escaped literal.
+			return "file://" + filepath.Join(g.dir, "%65vil.git")
+		}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

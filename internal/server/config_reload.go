@@ -294,7 +294,7 @@ func (s *Server) reloadCredentialNeedsClientRebuild(
 			Platform: pc.Type,
 			Host:     pc.Host,
 		})
-		if !ok {
+		if !ok || src == nil {
 			continue
 		}
 		if _, err := src.Token(ctx); err == nil {

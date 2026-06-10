@@ -3090,6 +3090,10 @@
     overflow: hidden;
   }
 
+  .right-sidebar:has(:global(.modal-overlay)) {
+    z-index: 80;
+  }
+
   .force-delete-backdrop {
     position: fixed;
     inset: 0;

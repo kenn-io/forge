@@ -2507,6 +2507,43 @@ test.describe("sidebar toggle behavior", () => {
     await expect(prBtn).toHaveClass(/active/);
   });
 
+  test("merge modal overlays the bottom terminal splitter", async ({ page }) => {
+    await page.goto("/terminal/ws-123");
+
+    await page
+      .getByRole("button", {
+        name: "Open terminal panel",
+      })
+      .click();
+    await expect(page.locator(".terminal-panel.bottom.open .panel-resizer")).toBeVisible();
+
+    const prBtn = page.locator(".seg-btn", {
+      hasText: "PR",
+    });
+    await prBtn.click();
+
+    await expect(page.locator(".right-sidebar .detail-title")).toContainText("Add browser regression coverage");
+
+    await page.locator(".right-sidebar .btn--merge").first().click();
+    await expect(
+      page.locator(".right-sidebar .modal-title", {
+        hasText: "Merge Pull Request",
+      }),
+    ).toBeVisible();
+
+    const topElementIsModal = await page.evaluate(() => {
+      const resizer = document.querySelector(".terminal-panel.bottom.open .panel-resizer");
+      if (!(resizer instanceof HTMLElement)) {
+        throw new Error("Missing bottom terminal panel resizer");
+      }
+      const rect = resizer.getBoundingClientRect();
+      const topElement = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+      return topElement instanceof HTMLElement && topElement.closest(".modal-overlay") !== null;
+    });
+
+    expect(topElementIsModal).toBe(true);
+  });
+
   test("clicking active segment closes sidebar", async ({ page }) => {
     await page.goto("/terminal/ws-123");
 

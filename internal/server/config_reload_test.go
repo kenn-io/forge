@@ -5,11 +5,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -17,8 +19,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/config"
+	"go.kenn.io/middleman/internal/docs"
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/tokenauth"
+	"go.kenn.io/middleman/internal/workspace/localruntime"
 )
 
 // waitForConfigWatcher blocks until the server's config watcher has
@@ -272,6 +276,23 @@ default_branch_retention_days = 14
 default_branch_max_commits = 2
 `
 
+const validReloadConfigChangedModes = `
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "widget"
+
+[modes]
+kata = true
+docs = true
+messages = true
+workspaces = false
+`
+
 const validReloadConfigRestartRequired = `
 sync_interval = "10m"
 github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
@@ -293,6 +314,15 @@ const malformedTomlConfig = `
 sync_interval = "5m
 host = "127.0.0.1"
 `
+
+func validReloadConfigWithDocFolder(id, name, root string) string {
+	return validReloadConfig + fmt.Sprintf(`
+[[doc_folders]]
+id = %q
+name = %q
+path = %q
+`, id, name, root)
+}
 
 func TestConfigReload_WatcherFiresOnInPlaceEdit(t *testing.T) {
 	assert := assert.New(t)
@@ -338,6 +368,231 @@ func TestConfigReload_UpdatesBranchActivityLimits(t *testing.T) {
 	retention, maxCommits := srv.syncer.BranchActivityLimits()
 	assert.Equal(14*24*time.Hour, retention)
 	assert.Equal(2, maxCommits)
+}
+
+func TestConfigReload_UpdatesModes(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	srv, _, cfgPath := setupTestServerWithConfigContent(
+		t, validReloadConfig, &mockGH{},
+	)
+	waitForConfigWatcher(t, srv, 2*time.Second)
+	stream := streamConfigEvents(t, srv)
+	defer stream.Close()
+
+	writeConfigToml(t, cfgPath, validReloadConfigChangedModes)
+
+	ev := waitForConfigEvent(t, stream, 2*time.Second)
+	require.True(ev.Valid)
+	assert.False(ev.RestartRequired)
+
+	srv.cfgMu.Lock()
+	gotModes := cloneModeVisibility(srv.cfg.Modes)
+	srv.cfgMu.Unlock()
+	assert.True(*gotModes.Kata)
+	assert.True(*gotModes.Docs)
+	assert.True(*gotModes.Messages)
+	assert.False(*gotModes.Workspaces)
+	assert.True(*gotModes.Activity)
+	assert.True(*gotModes.Repos)
+	assert.True(*gotModes.Pulls)
+	assert.True(*gotModes.Issues)
+	assert.True(*gotModes.Board)
+	assert.True(*gotModes.Reviews)
+}
+
+func TestConfigReload_UpdatesDocFoldersAndRegistry(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	initialRoot := t.TempDir()
+	updatedRoot := t.TempDir()
+	require.NoError(os.WriteFile(filepath.Join(initialRoot, "old.md"), []byte("old\n"), 0o644))
+	require.NoError(os.WriteFile(filepath.Join(updatedRoot, "guide.md"), []byte("# Guide\n"), 0o644))
+	initialConfig := validReloadConfigWithDocFolder("notes", "Notes", initialRoot)
+	updatedConfig := validReloadConfigWithDocFolder("handbook", "Handbook", updatedRoot)
+
+	srv, _, cfgPath := setupTestServerWithConfigContent(
+		t, initialConfig, &mockGH{},
+	)
+	waitForConfigWatcher(t, srv, 2*time.Second)
+	stream := streamConfigEvents(t, srv)
+	defer stream.Close()
+
+	writeConfigToml(t, cfgPath, updatedConfig)
+
+	ev := waitForConfigEvent(t, stream, 2*time.Second)
+	require.True(ev.Valid)
+	assert.False(ev.RestartRequired)
+
+	srv.cfgMu.Lock()
+	gotCfgFolders := append([]config.DocFolder(nil), srv.cfg.DocFolders...)
+	srv.cfgMu.Unlock()
+	require.Len(gotCfgFolders, 1)
+	assert.Equal("handbook", gotCfgFolders[0].ID)
+	assert.Equal("Handbook", gotCfgFolders[0].Name)
+	assert.Equal(updatedRoot, gotCfgFolders[0].Path)
+
+	gotRegistryFolders := srv.docsRegistry.Folders()
+	require.Len(gotRegistryFolders, 1)
+	assert.Equal("handbook", gotRegistryFolders[0].ID)
+	assert.Equal("Handbook", gotRegistryFolders[0].Name)
+	wantRegistryRoot, err := filepath.EvalSymlinks(updatedRoot)
+	require.NoError(err)
+	assert.Equal(wantRegistryRoot, gotRegistryFolders[0].Path)
+	_, err = srv.docsRegistry.Lookup("notes")
+	require.ErrorIs(err, docs.ErrFolderNotFound)
+
+	listRR := doDocsJSON(t, srv, http.MethodGet, "/api/v1/docs/folders", nil)
+	require.Equal(http.StatusOK, listRR.Code, listRR.Body.String())
+	var listBody docsFolderListWire
+	require.NoError(json.NewDecoder(listRR.Body).Decode(&listBody))
+	require.Len(listBody.Folders, 1)
+	assert.Equal("handbook", listBody.Folders[0].ID)
+	assert.Equal("Handbook", listBody.Folders[0].Name)
+
+	updatedReadRR := doDocsJSON(t, srv, http.MethodGet, "/api/v1/docs/folders/handbook/file?path=guide.md", nil)
+	require.Equal(http.StatusOK, updatedReadRR.Code, updatedReadRR.Body.String())
+	var readBody struct {
+		Content string `json:"content"`
+	}
+	require.NoError(json.NewDecoder(updatedReadRR.Body).Decode(&readBody))
+	assert.Equal("# Guide\n", readBody.Content)
+
+	oldReadRR := doDocsJSON(t, srv, http.MethodGet, "/api/v1/docs/folders/notes/file?path=old.md", nil)
+	assert.Equal(http.StatusNotFound, oldReadRR.Code, oldReadRR.Body.String())
+}
+
+func TestConfigReload_UpdatesMsgvaultHealthHandler(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	t.Setenv("MSGVAULT_API_KEY_TEST", "secret-key")
+	var firstStats, secondStats atomic.Int32
+	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/stats":
+			firstStats.Add(1)
+			_, _ = w.Write([]byte(`{}`))
+		default:
+			_, _ = w.Write([]byte(`{"status":"ok"}`))
+		}
+	}))
+	defer first.Close()
+	second := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/stats":
+			secondStats.Add(1)
+			_, _ = w.Write([]byte(`{}`))
+		default:
+			_, _ = w.Write([]byte(`{"status":"ok"}`))
+		}
+	}))
+	defer second.Close()
+
+	initialConfig := validReloadConfig + fmt.Sprintf(`
+[msgvault]
+url = %q
+api_key_env = "MSGVAULT_API_KEY_TEST"
+`, first.URL)
+	updatedConfig := validReloadConfig + fmt.Sprintf(`
+[msgvault]
+url = %q
+api_key_env = "MSGVAULT_API_KEY_TEST"
+`, second.URL)
+
+	srv, _, cfgPath := setupTestServerWithConfigContent(
+		t, initialConfig, &mockGH{},
+	)
+	waitForConfigWatcher(t, srv, 2*time.Second)
+	stream := streamConfigEvents(t, srv)
+	defer stream.Close()
+
+	firstRR := doMsgvaultJSON(t, srv, http.MethodGet, "/api/v1/msgvault/health", nil)
+	require.Equal(http.StatusOK, firstRR.Code, firstRR.Body.String())
+	firstBody := decodeMsgvaultHealth(t, firstRR)
+	require.True(firstBody.OK)
+	assert.Equal(first.URL, firstBody.URL)
+	assert.Equal(int32(1), firstStats.Load())
+
+	writeConfigToml(t, cfgPath, updatedConfig)
+
+	ev := waitForConfigEvent(t, stream, 2*time.Second)
+	require.True(ev.Valid)
+	assert.False(ev.RestartRequired)
+
+	secondRR := doMsgvaultJSON(t, srv, http.MethodGet, "/api/v1/msgvault/health", nil)
+	require.Equal(http.StatusOK, secondRR.Code, secondRR.Body.String())
+	secondBody := decodeMsgvaultHealth(t, secondRR)
+	require.True(secondBody.OK)
+	assert.Equal(second.URL, secondBody.URL)
+	assert.Equal(int32(1), secondStats.Load())
+}
+
+func TestConfigReload_UpdatesMsgvaultTokenEnvWithoutRestart(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	}))
+	defer first.Close()
+	second := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	}))
+	defer second.Close()
+
+	initialConfig := validReloadConfig + fmt.Sprintf(`
+[msgvault]
+url = %q
+api_key_env = "MSGVAULT_OLD_KEY"
+
+[[agents]]
+key = "helper"
+label = "Helper"
+command = ["/bin/echo"]
+`, first.URL)
+	updatedConfig := validReloadConfig + fmt.Sprintf(`
+[msgvault]
+url = %q
+api_key_env = "MSGVAULT_NEW_KEY"
+
+[[agents]]
+key = "helper"
+label = "Helper"
+command = ["/bin/echo"]
+`, second.URL)
+
+	srv, _, cfgPath := setupTestServerWithConfigContent(
+		t, initialConfig, &mockGH{},
+	)
+	owner := &msgvaultRuntimeOwner{}
+	srv.runtime = localruntime.NewManager(localruntime.Options{
+		Targets: []localruntime.LaunchTarget{{
+			Key:       "helper",
+			Label:     "Helper",
+			Kind:      localruntime.LaunchTargetAgent,
+			Source:    "test",
+			Command:   []string{"/bin/echo"},
+			Available: true,
+		}},
+		PtyOwnerRuntime: owner,
+		StripEnvVars:    []string{"MSGVAULT_OLD_KEY"},
+	})
+	t.Cleanup(srv.runtime.Shutdown)
+	waitForConfigWatcher(t, srv, 2*time.Second)
+	stream := streamConfigEvents(t, srv)
+	defer stream.Close()
+
+	writeConfigToml(t, cfgPath, updatedConfig)
+
+	ev := waitForConfigEvent(t, stream, 2*time.Second)
+	require.True(ev.Valid)
+	assert.False(ev.RestartRequired)
+
+	_, err := srv.runtime.Launch(context.Background(), "ws-1", t.TempDir(), "helper")
+	require.NoError(err)
+	assert.Contains(owner.startedStripEnvVars, "MSGVAULT_NEW_KEY")
+	assert.Contains(owner.startedStripEnvVars, "MSGVAULT_OLD_KEY")
 }
 
 func TestConfigReload_WatcherFiresOnAtomicRename(t *testing.T) {
@@ -869,6 +1124,67 @@ func TestConfigReload_RepoTokenOverrideWithPlatformFallbackUpdatesSource(t *test
 	newToken, err := src.Token(t.Context())
 	require.NoError(err)
 	assert.Equal("repo-token", newToken)
+}
+
+func TestConfigReload_RuntimeStripsBootAndReloadedStartupBoundTokenEnvs(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	initialConfig := strings.ReplaceAll(
+		validReloadConfigRepoTokenEnv,
+		"MIDDLEMAN_REPO_TOKEN",
+		"MIDDLEMAN_REPO_OLD_TOKEN",
+	) + `
+[[agents]]
+key = "helper"
+label = "Helper"
+command = ["/bin/echo"]
+`
+	updatedConfig := strings.ReplaceAll(
+		validReloadConfigRepoTokenEnv,
+		"MIDDLEMAN_REPO_TOKEN",
+		"MIDDLEMAN_REPO_NEW_TOKEN",
+	) + `
+[[agents]]
+key = "helper"
+label = "Helper"
+command = ["/bin/echo"]
+`
+
+	srv, _, cfgPath := setupTestServerWithConfigContent(
+		t, initialConfig, &mockGH{},
+	)
+	owner := &msgvaultRuntimeOwner{}
+	srv.runtime = localruntime.NewManager(localruntime.Options{
+		Targets: []localruntime.LaunchTarget{{
+			Key:       "helper",
+			Label:     "Helper",
+			Kind:      localruntime.LaunchTargetAgent,
+			Source:    "test",
+			Command:   []string{"/bin/echo"},
+			Available: true,
+		}},
+		PtyOwnerRuntime: owner,
+		StripEnvVars:    srv.cfg.TokenEnvNames(),
+	})
+	t.Cleanup(srv.runtime.Shutdown)
+	waitForConfigWatcher(t, srv, 2*time.Second)
+	stream := streamConfigEvents(t, srv)
+	defer stream.Close()
+
+	writeConfigToml(t, cfgPath, updatedConfig)
+
+	ev := waitForConfigEvent(t, stream, 2*time.Second)
+	require.True(ev.Valid)
+	// Token env changes hot-reload through the token sources, so the
+	// rename alone must not demand a restart — but both the boot-bound
+	// and the reloaded env names must be stripped from future launches.
+	assert.False(ev.RestartRequired)
+
+	_, err := srv.runtime.Launch(context.Background(), "ws-1", t.TempDir(), "helper")
+	require.NoError(err)
+	assert.Contains(owner.startedStripEnvVars, "MIDDLEMAN_REPO_OLD_TOKEN")
+	assert.Contains(owner.startedStripEnvVars, "MIDDLEMAN_REPO_NEW_TOKEN")
 }
 
 func TestConfigReload_InvalidConfigKeepsLastKnownGood(t *testing.T) {

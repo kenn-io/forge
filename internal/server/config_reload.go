@@ -30,7 +30,7 @@ type configChangedEvent struct {
 	// (listener address, base path, sync interval, data dir, token env
 	// names, platform registry, tmux/shell command, etc.) differ from
 	// the boot-time snapshot. Hot-reloadable fields (repos, activity,
-	// terminal, agents) are applied regardless.
+	// terminal, agents, docs, msgvault) are applied regardless.
 	RestartRequired bool `json:"restart_required"`
 }
 
@@ -46,9 +46,13 @@ type startupConfigSnapshot struct {
 	DataDir             string
 	SyncBudgetPerHour   int
 	ProviderHosts       []tokenauth.Key
-	Roborev             config.Roborev
-	Tmux                config.Tmux
-	Shell               config.Shell
+	// TokenEnvNames is the boot-time baseline of provider token env
+	// names (msgvault excluded) used to accumulate runtime strip-env
+	// lists; it is not compared for restart-required drift.
+	TokenEnvNames []string
+	Roborev       config.Roborev
+	Tmux          config.Tmux
+	Shell         config.Shell
 }
 
 func snapshotStartupConfig(cfg *config.Config) startupConfigSnapshot {
@@ -72,6 +76,7 @@ func snapshotStartupConfig(cfg *config.Config) startupConfigSnapshot {
 		snap.Tmux.AgentSessions = &v
 	}
 	snap.Shell.Command = slices.Clone(cfg.Shell.Command)
+	snap.TokenEnvNames = startupBoundTokenEnvNames(cfg)
 	return snap
 }
 
@@ -105,11 +110,67 @@ func startupProviderHosts(cfg *config.Config) []tokenauth.Key {
 	return out
 }
 
+func startupBoundTokenEnvNames(cfg *config.Config) []string {
+	if cfg == nil {
+		return nil
+	}
+	withoutMsgvault := *cfg
+	withoutMsgvault.Msgvault = nil
+	names := withoutMsgvault.TokenEnvNames()
+	slices.Sort(names)
+	return names
+}
+
+func initialRuntimeStripEnvNames(cfg *config.Config) []string {
+	if cfg == nil {
+		return nil
+	}
+	names := cfg.TokenEnvNames()
+	slices.Sort(names)
+	return names
+}
+
+func runtimeStripEnvNamesForConfig(
+	boot startupConfigSnapshot,
+	current []string,
+	cfg *config.Config,
+) []string {
+	names := slices.Clone(boot.TokenEnvNames)
+	for _, name := range current {
+		if name == "" || slices.Contains(names, name) {
+			continue
+		}
+		names = append(names, name)
+	}
+	for _, name := range cfg.TokenEnvNames() {
+		if name == "" || slices.Contains(names, name) {
+			continue
+		}
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	return names
+}
+
+func (s *Server) updateRuntimeStripEnvVarsLocked(cfg *config.Config) []string {
+	s.runtimeStripEnvVars = runtimeStripEnvNamesForConfig(
+		s.bootCfgSnapshot,
+		s.runtimeStripEnvVars,
+		cfg,
+	)
+	return slices.Clone(s.runtimeStripEnvVars)
+}
+
 func (s startupConfigSnapshot) restartRequiredFor(cfg *config.Config) bool {
 	if cfg == nil {
 		return true
 	}
 	candidate := snapshotStartupConfig(cfg)
+	// TokenEnvNames is the boot baseline for runtime strip-env
+	// accumulation, not a startup binding: token env changes hot-reload
+	// through the token sources, so they must not flag a restart.
+	s.TokenEnvNames = nil
+	candidate.TokenEnvNames = nil
 	// Reflect-deep-equal handles slice and pointer comparison correctly
 	// here; the snapshot owns its own slices so external mutation cannot
 	// blur the comparison.
@@ -225,6 +286,7 @@ func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
 	if s.reloadCredentialNeedsClientRebuild(ctx, newCfg) {
 		restartRequired = true
 	}
+	warnDocFolderDaemonBindings(newCfg.DocFolders)
 
 	// Resolve the new repo set against the boot-time registry. Repos
 	// whose (platform, host) the registry never learned about cannot
@@ -251,7 +313,16 @@ func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
 	s.cfg.Platforms = slices.Clone(newCfg.Platforms)
 	s.cfg.Activity = newCfg.Activity
 	s.cfg.Terminal = newCfg.Terminal
+	s.cfg.Modes = cloneModeVisibility(newCfg.Modes)
 	s.cfg.Agents = cloneConfigAgents(newCfg.Agents)
+	s.cfg.DocFolders = slices.Clone(newCfg.DocFolders)
+	s.cfg.Msgvault = cloneMsgvault(newCfg.Msgvault)
+	if s.docsRegistry != nil {
+		s.docsRegistry.Replace(newCfg.DocFolders)
+	}
+	if s.msgvault != nil {
+		s.msgvault.applyConfig(newCfg)
+	}
 
 	s.syncer.SetRepos(resolved)
 	s.syncer.SetBranchActivityLimits(
@@ -260,6 +331,9 @@ func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
 	)
 
 	s.refreshRuntimeTargetsLocked()
+	if s.runtime != nil {
+		s.runtime.UpdateStripEnvVars(s.updateRuntimeStripEnvVarsLocked(newCfg))
+	}
 
 	slog.Info(
 		"config reload applied",
@@ -381,6 +455,14 @@ func validateReloadCloneTokenSources(cfg *config.Config) error {
 		byHost[desc.Key.Host] = sourceID
 	}
 	return nil
+}
+
+func cloneMsgvault(in *config.Msgvault) *config.Msgvault {
+	if in == nil {
+		return nil
+	}
+	out := *in
+	return &out
 }
 
 // resolveReposForReload walks the reloaded repo list and asks the syncer

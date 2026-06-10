@@ -601,6 +601,10 @@ func (s *Server) registerAPI(api huma.API) {
 
 	huma.Get(api, "/activity", s.listActivity,
 		documentOperation("list-activity", "List activity", "Activity"))
+	s.registerKataAPI(api)
+	s.registerDocsAPI(api)
+	s.registerMsgvaultAPI(api)
+	s.registerMessagesAPI(api)
 	huma.Get(api, "/pulls", s.listPulls,
 		documentOperation("list-pulls", "List pull requests", "Pull Requests"))
 	huma.Get(api, "/issues", s.listIssues,

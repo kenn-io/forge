@@ -51,7 +51,7 @@ export {
   buildRoutedItemRoute,
 } from "./routes.js";
 export { supportsLocked } from "./api/provider-capabilities.js";
-export { DEFAULT_TERMINAL_SETTINGS } from "./api/types.js";
+export { DEFAULT_MODE_VISIBILITY, DEFAULT_TERMINAL_SETTINGS } from "./api/types.js";
 export type {
   FocusListRouteRef,
   IssueRouteRef,

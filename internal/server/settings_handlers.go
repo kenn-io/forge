@@ -20,13 +20,15 @@ type settingsResponse struct {
 	Repos    []ghclient.ConfiguredRepoStatus `json:"repos" nullable:"false"`
 	Activity config.Activity                 `json:"activity"`
 	Terminal config.Terminal                 `json:"terminal"`
+	Modes    config.ModeVisibility           `json:"modes,omitzero"`
 	Agents   []config.Agent                  `json:"agents" nullable:"false"`
 }
 
 type updateSettingsRequest struct {
-	Activity *config.Activity `json:"activity,omitempty"`
-	Terminal *config.Terminal `json:"terminal,omitempty"`
-	Agents   *[]config.Agent  `json:"agents,omitempty"`
+	Activity *config.Activity       `json:"activity,omitempty"`
+	Terminal *config.Terminal       `json:"terminal,omitempty"`
+	Modes    *config.ModeVisibility `json:"modes,omitempty"`
+	Agents   *[]config.Agent        `json:"agents,omitempty"`
 }
 
 func (s *Server) configuredClients(
@@ -54,6 +56,7 @@ func (s *Server) buildLocalSettingsResponse() settingsResponse {
 	repos := slices.Clone(s.cfg.Repos)
 	activity := s.cfg.Activity
 	terminal := s.cfg.Terminal
+	modes := cloneModeVisibility(s.cfg.Modes).WithDefaults()
 	agents := cloneConfigAgents(s.cfg.Agents)
 	s.cfgMu.Unlock()
 
@@ -76,6 +79,7 @@ func (s *Server) buildLocalSettingsResponse() settingsResponse {
 		Repos:    configured,
 		Activity: activity,
 		Terminal: terminal,
+		Modes:    modes,
 		Agents:   agents,
 	}
 }
@@ -334,6 +338,7 @@ func (s *Server) updateSettings(
 	s.cfgMu.Lock()
 	prevActivity := s.cfg.Activity
 	prevTerminal := s.cfg.Terminal
+	prevModes := cloneModeVisibility(s.cfg.Modes)
 	prevAgents := cloneConfigAgents(s.cfg.Agents)
 	if input.Body.Activity != nil {
 		candidate := *input.Body.Activity
@@ -348,12 +353,16 @@ func (s *Server) updateSettings(
 	if input.Body.Terminal != nil {
 		s.cfg.Terminal = *input.Body.Terminal
 	}
+	if input.Body.Modes != nil {
+		s.cfg.Modes = cloneModeVisibility(*input.Body.Modes).WithDefaults()
+	}
 	if input.Body.Agents != nil {
 		s.cfg.Agents = cloneConfigAgents(*input.Body.Agents)
 	}
 	if err := s.cfg.Validate(); err != nil {
 		s.cfg.Activity = prevActivity
 		s.cfg.Terminal = prevTerminal
+		s.cfg.Modes = prevModes
 		s.cfg.Agents = prevAgents
 		s.cfgMu.Unlock()
 		return nil, problemBadRequest(CodeBadRequest, err.Error(), nil)
@@ -361,6 +370,7 @@ func (s *Server) updateSettings(
 	if err := s.cfg.Save(s.cfgPath); err != nil {
 		s.cfg.Activity = prevActivity
 		s.cfg.Terminal = prevTerminal
+		s.cfg.Modes = prevModes
 		s.cfg.Agents = prevAgents
 		s.cfgMu.Unlock()
 		return nil, problemInternal("save config: " + err.Error())
@@ -375,6 +385,51 @@ func (s *Server) updateSettings(
 	s.cfgMu.Unlock()
 
 	return &settingsOutput{Body: s.buildLocalSettingsResponse()}, nil
+}
+
+func cloneModeVisibility(modes config.ModeVisibility) config.ModeVisibility {
+	out := modes
+	if modes.Activity != nil {
+		v := *modes.Activity
+		out.Activity = &v
+	}
+	if modes.Repos != nil {
+		v := *modes.Repos
+		out.Repos = &v
+	}
+	if modes.Kata != nil {
+		v := *modes.Kata
+		out.Kata = &v
+	}
+	if modes.Docs != nil {
+		v := *modes.Docs
+		out.Docs = &v
+	}
+	if modes.Messages != nil {
+		v := *modes.Messages
+		out.Messages = &v
+	}
+	if modes.Pulls != nil {
+		v := *modes.Pulls
+		out.Pulls = &v
+	}
+	if modes.Issues != nil {
+		v := *modes.Issues
+		out.Issues = &v
+	}
+	if modes.Board != nil {
+		v := *modes.Board
+		out.Board = &v
+	}
+	if modes.Reviews != nil {
+		v := *modes.Reviews
+		out.Reviews = &v
+	}
+	if modes.Workspaces != nil {
+		v := *modes.Workspaces
+		out.Workspaces = &v
+	}
+	return out
 }
 
 func cloneConfigAgents(agents []config.Agent) []config.Agent {

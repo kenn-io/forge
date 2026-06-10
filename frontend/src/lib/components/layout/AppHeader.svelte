@@ -1,5 +1,7 @@
 <script lang="ts">
-  import { getStores, SelectDropdown } from "@middleman/ui";
+  import { getStores, KbdBadge, SelectDropdown } from "@middleman/ui";
+  import type { ModeVisibility } from "@middleman/ui/api/types";
+  import { SvelteMap } from "svelte/reactivity";
   import {
     getBasePath,
     getPage,
@@ -14,6 +16,7 @@
   import HeaderIconButton from "./HeaderIconButton.svelte";
   import {
     MoonIcon,
+    SearchIcon,
     SettingsIcon,
     SidebarToggleIcon,
     SpinnerIcon,
@@ -34,6 +37,7 @@
     toggleSidebar,
     isSidebarToggleEnabled,
   } from "../../stores/sidebar.svelte.js";
+  import { openPalette } from "../../stores/keyboard/palette-state.svelte.js";
 
   const appIconSrc = `${getBasePath().replace(/\/$/, "")}/favicon.svg`;
 
@@ -45,7 +49,34 @@
   );
 
   const stores = getStores();
-  const { sync } = stores;
+  const { settings, sync } = stores;
+
+  type ModeKey = keyof ModeVisibility;
+  type NavDestination =
+    | "activity"
+    | "repos"
+    | "kata"
+    | "docs"
+    | "messages"
+    | "pulls"
+    | "issues"
+    | "board"
+    | "reviews"
+    | "workspaces";
+  type CompactNavValue = NavDestination | "settings" | "design-system";
+
+  const modeNavOptions: { value: NavDestination; label: string; mode: ModeKey }[] = [
+    { value: "activity", label: "Activity", mode: "activity" },
+    { value: "repos", label: "Repos", mode: "repos" },
+    { value: "kata", label: "Kata", mode: "kata" },
+    { value: "docs", label: "Docs", mode: "docs" },
+    { value: "messages", label: "Messages", mode: "messages" },
+    { value: "pulls", label: "PRs", mode: "pulls" },
+    { value: "issues", label: "Issues", mode: "issues" },
+    { value: "board", label: "Board", mode: "board" },
+    { value: "reviews", label: "Reviews", mode: "reviews" },
+    { value: "workspaces", label: "Workspaces", mode: "workspaces" },
+  ];
 
   async function handleSync(): Promise<void> {
     if (sync.getSyncState()?.running) return;
@@ -54,6 +85,13 @@
 
   const syncing = $derived(sync.getSyncState()?.running ?? false);
   const compactHeader = $derived(getContainerSize() !== "wide");
+  const showProviderRepoSelector = $derived(
+    !getUIConfig().hideRepoSelector &&
+      (getPage() === "activity" ||
+        getPage() === "repos" ||
+        getPage() === "pulls" ||
+        getPage() === "issues"),
+  );
   let settingsReturnPath = "/";
 
   function currentAppPath(): string {
@@ -76,15 +114,9 @@
   }
 
   const compactNavOptions = $derived.by(() => {
-    const options = [
-      { value: "activity", label: "Activity" },
-      { value: "repos", label: "Repos" },
-      { value: "pulls", label: "PRs" },
-      { value: "issues", label: "Issues" },
-      { value: "board", label: "Board" },
-      { value: "reviews", label: "Reviews" },
-      { value: "workspaces", label: "Workspaces" },
-    ];
+    const options: { value: CompactNavValue; label: string }[] = modeNavOptions
+      .filter((option) => settings.isModeVisible(option.mode))
+      .map(({ value, label }) => ({ value, label }));
 
     if (getPage() === "design-system") {
       options.push({ value: "design-system", label: "Design system" });
@@ -102,6 +134,23 @@
         ? "workspaces"
       : getPage(),
   );
+  type StickyMode = "kata" | "docs" | "messages";
+  const stickyModeDefaults: Record<StickyMode, string> = {
+    kata: "/kata",
+    docs: "/docs",
+    messages: "/messages",
+  };
+  const lastStickyModeRoutes = new SvelteMap<StickyMode, string>();
+
+  function stickyModeForPage(page: ReturnType<typeof getPage>): StickyMode | null {
+    return page === "kata" || page === "docs" || page === "messages" ? page : null;
+  }
+
+  function rememberCurrentStickyModeRoute(): void {
+    const currentMode = stickyModeForPage(getPage());
+    if (!currentMode) return;
+    lastStickyModeRoutes.set(currentMode, currentAppPath());
+  }
 
   function routeForTab(
     destination: "pulls" | "issues",
@@ -117,6 +166,9 @@
     destination:
       | "activity"
       | "repos"
+      | "kata"
+      | "docs"
+      | "messages"
       | "pulls"
       | "issues"
       | "board"
@@ -125,8 +177,18 @@
       | "settings"
       | "design-system",
   ): void {
+    const currentMode = stickyModeForPage(getPage());
+    rememberCurrentStickyModeRoute();
     if (destination === "activity") navigate("/");
     else if (destination === "repos") navigate("/repos");
+    else if (destination === "kata" || destination === "docs" || destination === "messages") {
+      if (currentMode === destination) {
+        lastStickyModeRoutes.set(destination, stickyModeDefaults[destination]);
+        navigate(stickyModeDefaults[destination]);
+        return;
+      }
+      navigate(lastStickyModeRoutes.get(destination) ?? stickyModeDefaults[destination]);
+    }
     else if (destination === "pulls" || destination === "issues") {
       navigate(routeForTab(destination));
     } else if (destination === "board") navigate("/pulls/board");
@@ -137,8 +199,11 @@
   }
 
   function navigateCompactNav(value: string): void {
-    if (value === "activity") navigate("/");
+    if (value === "activity") navigateTab("activity");
     else if (value === "repos") navigateTab("repos");
+    else if (value === "kata") navigateTab("kata");
+    else if (value === "docs") navigateTab("docs");
+    else if (value === "messages") navigateTab("messages");
     else if (value === "pulls") navigateTab("pulls");
     else if (value === "issues") navigateTab("issues");
     else if (value === "board") navigateTab("board");
@@ -146,6 +211,10 @@
     else if (value === "workspaces") navigateTab("workspaces");
     else if (value === "settings") navigateTab("settings");
     else if (value === "design-system") navigateTab("design-system");
+  }
+
+  function showMode(mode: ModeKey): boolean {
+    return settings.isModeVisible(mode);
   }
 </script>
 
@@ -167,7 +236,7 @@
       <img class="app-icon" src={appIconSrc} alt="" aria-hidden="true" />
       <span class="logo">middleman</span>
     </span>
-    {#if !getUIConfig().hideRepoSelector}
+    {#if showProviderRepoSelector}
       <RepoTypeahead
         selected={getGlobalRepo()}
         onchange={setGlobalRepo}
@@ -197,39 +266,72 @@
       {/if}
     {:else}
       <div class="tab-group">
-        <button class="view-tab" class:active={getPage() === "activity"} onclick={() => { if (getPage() !== "activity") navigateTab("activity"); }}>
-          Activity
-        </button>
-        <button class="view-tab" class:active={getPage() === "repos"} onclick={() => navigateTab("repos")}>
-          Repos
-        </button>
-        <button class="view-tab" class:active={getPage() === "pulls"} onclick={() => navigateTab("pulls")}>
-          PRs
-        </button>
-        <button class="view-tab" class:active={getPage() === "issues"} onclick={() => navigateTab("issues")}>
-          Issues
-        </button>
-        <button class="view-tab" class:active={getView() === "board"} onclick={() => navigateTab("board")}>
-          Board
-        </button>
-        <button class="view-tab"
-          class:active={getPage() === "reviews"}
-          onclick={() => navigateTab("reviews")}>
-          Reviews
-          {#if stores.roborevDaemon && !stores.roborevDaemon.isAvailable()}
-            <span class="daemon-indicator" title="Daemon unavailable"></span>
-          {/if}
-        </button>
-        <button
-          class="view-tab"
-          class:active={getPage() === "workspaces" || getPage() === "terminal"}
-          onclick={() => navigateTab("workspaces")}
-        >Workspaces</button>
+        {#if showMode("activity")}
+          <button class="view-tab" class:active={getPage() === "activity"} onclick={() => { if (getPage() !== "activity") navigateTab("activity"); }}>
+            Activity
+          </button>
+        {/if}
+        {#if showMode("repos")}
+          <button class="view-tab" class:active={getPage() === "repos"} onclick={() => navigateTab("repos")}>
+            Repos
+          </button>
+        {/if}
+        {#if showMode("kata")}
+          <button class="view-tab" class:active={getPage() === "kata"} onclick={() => navigateTab("kata")}>
+            Kata
+          </button>
+        {/if}
+        {#if showMode("docs")}
+          <button class="view-tab" class:active={getPage() === "docs"} onclick={() => navigateTab("docs")}>
+            Docs
+          </button>
+        {/if}
+        {#if showMode("messages")}
+          <button class="view-tab" class:active={getPage() === "messages"} onclick={() => navigateTab("messages")}>
+            Messages
+          </button>
+        {/if}
+        {#if showMode("pulls")}
+          <button class="view-tab" class:active={getPage() === "pulls"} onclick={() => navigateTab("pulls")}>
+            PRs
+          </button>
+        {/if}
+        {#if showMode("issues")}
+          <button class="view-tab" class:active={getPage() === "issues"} onclick={() => navigateTab("issues")}>
+            Issues
+          </button>
+        {/if}
+        {#if showMode("board")}
+          <button class="view-tab" class:active={getView() === "board"} onclick={() => navigateTab("board")}>
+            Board
+          </button>
+        {/if}
+        {#if showMode("reviews")}
+          <button class="view-tab"
+            class:active={getPage() === "reviews"}
+            onclick={() => navigateTab("reviews")}>
+            Reviews
+            {#if stores.roborevDaemon && !stores.roborevDaemon.isAvailable()}
+              <span class="daemon-indicator" title="Daemon unavailable"></span>
+            {/if}
+          </button>
+        {/if}
+        {#if showMode("workspaces")}
+          <button
+            class="view-tab"
+            class:active={getPage() === "workspaces" || getPage() === "terminal"}
+            onclick={() => navigateTab("workspaces")}
+          >Workspaces</button>
+        {/if}
       </div>
     {/if}
   </nav>
 
   <div class="header-right">
+    <HeaderIconButton onclick={openPalette} title="Open command palette">
+      <SearchIcon size="14" strokeWidth="1.75" aria-hidden="true" />
+      <KbdBadge binding={{ key: "K", ctrlOrMeta: true }} />
+    </HeaderIconButton>
     {#if !getUIConfig().hideSync}
       <button
         class="action-btn sync-btn"

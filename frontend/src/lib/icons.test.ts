@@ -10,6 +10,7 @@ const approvedIconNames = [
   "MergeConflictIcon",
   "MonitorIcon",
   "MoonIcon",
+  "PaperclipIcon",
   "RefreshIcon",
   "SearchIcon",
   "SettingsIcon",

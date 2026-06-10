@@ -7,10 +7,10 @@
     "packages/*"
   ],
   "scripts": {
-    "check": "vp check frontend packages/ui '!frontend/test-results/**' '!packages/ui/src/api/generated/**' '!packages/ui/src/api/roborev/generated/**' --no-error-on-unmatched-pattern && vp run -w svelte-check:frontend && vp run -w svelte-check:ui",
+    "check": "vp check frontend packages/ui '!frontend/dist/**' '!frontend/test-results/**' '!packages/ui/src/api/generated/**' '!packages/ui/src/api/roborev/generated/**' --no-error-on-unmatched-pattern && vp run -w svelte-check:frontend && vp run -w svelte-check:ui",
     "demo-workspace": "bun run --cwd frontend demo-workspace",
-    "fmt": "vp fmt frontend packages/ui '!frontend/test-results/**' '!packages/ui/src/api/generated/**' '!packages/ui/src/api/roborev/generated/**' --no-error-on-unmatched-pattern",
-    "fmt:check": "vp fmt --check frontend packages/ui '!frontend/test-results/**' '!packages/ui/src/api/generated/**' '!packages/ui/src/api/roborev/generated/**' --no-error-on-unmatched-pattern",
+    "fmt": "vp fmt frontend packages/ui '!frontend/dist/**' '!frontend/test-results/**' '!packages/ui/src/api/generated/**' '!packages/ui/src/api/roborev/generated/**' --no-error-on-unmatched-pattern",
+    "fmt:check": "vp fmt --check frontend packages/ui '!frontend/dist/**' '!frontend/test-results/**' '!packages/ui/src/api/generated/**' '!packages/ui/src/api/roborev/generated/**' --no-error-on-unmatched-pattern",
     "test:e2e": "bun run --cwd frontend test:e2e"
   },
   "devDependencies": {

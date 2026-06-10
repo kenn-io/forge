@@ -17760,6 +17760,15 @@ func setupWorkspaceServerFixtureWithMockHostAndOptions(
 	if testing.Short() {
 		t.Skip("workspace e2e tests skipped in short mode")
 	}
+	if cfg == nil {
+		cfg = &config.Config{}
+	} else {
+		clone := *cfg
+		cfg = &clone
+	}
+	if len(cfg.Tmux.Command) == 0 {
+		cfg.Tmux.Command = isolatedRealTmuxCommandIfAvailable(t)
+	}
 
 	dir := t.TempDir()
 	database := dbtest.Open(t)

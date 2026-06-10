@@ -5,6 +5,33 @@ const mockedContainerSize = vi.hoisted(() => ({
   value: "wide" as "narrow" | "medium" | "wide",
 }));
 
+type ModeKey =
+  | "activity"
+  | "repos"
+  | "kata"
+  | "docs"
+  | "messages"
+  | "pulls"
+  | "issues"
+  | "board"
+  | "reviews"
+  | "workspaces";
+
+const mockedModeVisibility = vi.hoisted(() => ({
+  value: {
+    activity: true,
+    repos: true,
+    kata: false,
+    docs: false,
+    messages: false,
+    pulls: true,
+    issues: true,
+    board: true,
+    reviews: true,
+    workspaces: true,
+  } as Record<ModeKey, boolean>,
+}));
+
 // Prevent RepoTypeahead from making real API calls in the test environment.
 vi.mock("../../api/runtime.js", () => ({
   client: {
@@ -28,6 +55,9 @@ vi.mock("@middleman/ui", async (importOriginal) => {
         getSyncState: () => null,
         triggerSync: () => Promise.resolve(),
       },
+      settings: {
+        isModeVisible: (mode: ModeKey) => mockedModeVisibility.value[mode],
+      },
     }),
   };
 });
@@ -36,6 +66,7 @@ import AppHeader from "./AppHeader.svelte";
 import { initTheme, cleanupTheme } from "../../stores/theme.svelte.js";
 import { setSidebarCollapsed } from "../../stores/sidebar.svelte.ts";
 import { navigate } from "../../stores/router.svelte.ts";
+import { isPaletteOpen, resetPaletteState } from "../../stores/keyboard/palette-state.svelte.js";
 
 type MediaChangeCallback = (event: MediaQueryListEvent) => void;
 
@@ -58,6 +89,15 @@ function mockMatchMedia(matches: boolean, listeners?: MediaChangeCallback[]): vo
   });
 }
 
+function showImportedModes(): void {
+  mockedModeVisibility.value = {
+    ...mockedModeVisibility.value,
+    kata: true,
+    docs: true,
+    messages: true,
+  };
+}
+
 describe("AppHeader", () => {
   beforeEach(() => {
     document.documentElement.classList.remove("dark");
@@ -65,6 +105,19 @@ describe("AppHeader", () => {
     mockMatchMedia(false);
     setSidebarCollapsed(false);
     mockedContainerSize.value = "wide";
+    mockedModeVisibility.value = {
+      activity: true,
+      repos: true,
+      kata: false,
+      docs: false,
+      messages: false,
+      pulls: true,
+      issues: true,
+      board: true,
+      reviews: true,
+      workspaces: true,
+    };
+    resetPaletteState();
   });
 
   afterEach(() => {
@@ -75,6 +128,19 @@ describe("AppHeader", () => {
     localStorage.clear();
     setSidebarCollapsed(false);
     mockedContainerSize.value = "wide";
+    mockedModeVisibility.value = {
+      activity: true,
+      repos: true,
+      kata: false,
+      docs: false,
+      messages: false,
+      pulls: true,
+      issues: true,
+      board: true,
+      reviews: true,
+      workspaces: true,
+    };
+    resetPaletteState();
   });
 
   it("toggles the root dark class when the theme button is clicked", async () => {
@@ -188,9 +254,21 @@ describe("AppHeader", () => {
     initTheme();
     const { container } = render(AppHeader);
 
+    expect(container.querySelector("button[title='Open command palette'] svg")).toBeTruthy();
     expect(container.querySelector("button[title='Toggle theme'] svg")).toBeTruthy();
     expect(container.querySelector("button[title='Settings'] svg")).toBeTruthy();
     expect(container.querySelector("button[title='Select repository'] svg")).toBeTruthy();
+  });
+
+  it("opens the command palette from the header trigger", async () => {
+    initTheme();
+    render(AppHeader);
+
+    expect(isPaletteOpen()).toBe(false);
+
+    await fireEvent.click(screen.getByRole("button", { name: "Open command palette" }));
+
+    expect(isPaletteOpen()).toBe(true);
   });
 
   it("changes the theme toggle SVG when toggled", async () => {
@@ -264,8 +342,159 @@ describe("AppHeader", () => {
     setSidebarCollapsed(true);
     const { container } = render(AppHeader);
 
-    expect(container.querySelector("button[title='Expand sidebar']")).toBeTruthy();
-    expect(container.querySelector("kbd[aria-label]")).toBeNull();
+    const expandButton = container.querySelector("button[title='Expand sidebar']");
+    expect(expandButton).toBeTruthy();
+    expect(expandButton!.querySelector("kbd[aria-label]")).toBeNull();
+  });
+
+  it("hides imported modes from the top nav by default", async () => {
+    initTheme();
+    render(AppHeader);
+
+    expect(screen.queryByRole("button", { name: "Kata" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Docs" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Messages" })).toBeNull();
+
+    cleanup();
+    mockedContainerSize.value = "medium";
+    render(AppHeader);
+
+    const pageSelect = screen.getByRole("combobox", {
+      name: "Page: Activity",
+    });
+    await fireEvent.click(pageSelect);
+
+    expect(screen.queryByRole("option", { name: "Kata" })).toBeNull();
+    expect(screen.queryByRole("option", { name: "Docs" })).toBeNull();
+    expect(screen.queryByRole("option", { name: "Messages" })).toBeNull();
+  });
+
+  it("navigates to Kata from the desktop nav", async () => {
+    initTheme();
+    showImportedModes();
+    render(AppHeader);
+
+    await fireEvent.click(screen.getByRole("button", { name: "Kata" }));
+
+    expect(window.location.pathname + window.location.search).toBe("/kata");
+  });
+
+  it("resets an active sticky mode tab to its default route", async () => {
+    initTheme();
+    showImportedModes();
+    navigate("/kata?issue=issue-q3");
+    render(AppHeader);
+
+    await fireEvent.click(screen.getByRole("button", { name: "Kata" }));
+
+    expect(window.location.pathname + window.location.search).toBe("/kata");
+  });
+
+  it("navigates to Docs from the desktop nav", async () => {
+    initTheme();
+    showImportedModes();
+    render(AppHeader);
+
+    await fireEvent.click(screen.getByRole("button", { name: "Docs" }));
+
+    expect(window.location.pathname + window.location.search).toBe("/docs");
+  });
+
+  it("navigates to Messages from the desktop nav", async () => {
+    initTheme();
+    showImportedModes();
+    render(AppHeader);
+
+    await fireEvent.click(screen.getByRole("button", { name: "Messages" }));
+
+    expect(window.location.pathname + window.location.search).toBe("/messages");
+  });
+
+  it("does not render the provider repo selector on Kata", () => {
+    initTheme();
+    navigate("/kata");
+    render(AppHeader);
+
+    expect(screen.queryByTitle("Select repository")).toBeNull();
+  });
+
+  it("does not render the provider repo selector on Docs", () => {
+    initTheme();
+    navigate("/docs");
+    render(AppHeader);
+
+    expect(screen.queryByTitle("Select repository")).toBeNull();
+  });
+
+  it("does not render the provider repo selector on Messages", () => {
+    initTheme();
+    navigate("/messages");
+    render(AppHeader);
+
+    expect(screen.queryByTitle("Select repository")).toBeNull();
+  });
+
+  it("includes Kata in the compact nav", async () => {
+    initTheme();
+    showImportedModes();
+    mockedContainerSize.value = "medium";
+    render(AppHeader);
+
+    const pageSelect = screen.getByRole("combobox", {
+      name: "Page: Activity",
+    });
+    await fireEvent.click(pageSelect);
+    await fireEvent.click(screen.getByRole("option", { name: "Kata" }));
+
+    expect(window.location.pathname + window.location.search).toBe("/kata");
+  });
+
+  it("includes Docs in the compact nav", async () => {
+    initTheme();
+    showImportedModes();
+    mockedContainerSize.value = "medium";
+    render(AppHeader);
+
+    const pageSelect = screen.getByRole("combobox", {
+      name: "Page: Activity",
+    });
+    await fireEvent.click(pageSelect);
+    await fireEvent.click(screen.getByRole("option", { name: "Docs" }));
+
+    expect(window.location.pathname + window.location.search).toBe("/docs");
+  });
+
+  it("includes Messages in the compact nav", async () => {
+    initTheme();
+    showImportedModes();
+    mockedContainerSize.value = "medium";
+    render(AppHeader);
+
+    const pageSelect = screen.getByRole("combobox", {
+      name: "Page: Activity",
+    });
+    await fireEvent.click(pageSelect);
+    await fireEvent.click(screen.getByRole("option", { name: "Messages" }));
+
+    expect(window.location.pathname + window.location.search).toBe("/messages");
+  });
+
+  it("remembers sticky mode routes when compact nav switches to Activity", async () => {
+    initTheme();
+    showImportedModes();
+    mockedContainerSize.value = "medium";
+    navigate("/kata?issue=issue-q3");
+    render(AppHeader);
+
+    await fireEvent.click(screen.getByRole("combobox", { name: "Page: Kata" }));
+    await fireEvent.click(screen.getByRole("option", { name: "Activity" }));
+
+    expect(window.location.pathname + window.location.search).toBe("/");
+
+    await fireEvent.click(screen.getByRole("combobox", { name: "Page: Activity" }));
+    await fireEvent.click(screen.getByRole("option", { name: "Kata" }));
+
+    expect(window.location.pathname + window.location.search).toBe("/kata?issue=issue-q3");
   });
 
   it("opens selected Activity PR in PRs tab with files tab preserved", async () => {

@@ -156,7 +156,7 @@ describe("WorkspaceListSidebar", () => {
             provider: "github",
             platformHost: "github.com",
             owner: "kenn-io",
-            name: "kataflow",
+            name: "taskboard",
             number: 9,
             title: "Migrate native HTTP surface to Huma v2",
             branch: "feat/huma-adoption",

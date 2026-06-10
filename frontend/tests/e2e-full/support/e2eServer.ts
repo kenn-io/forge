@@ -24,6 +24,7 @@ export type IsolatedE2EServer = {
 
 export type IsolatedE2EServerOptions = {
   defaultPlatformHost?: string;
+  visibleImportedModes?: boolean;
 };
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -267,6 +268,9 @@ async function spawnServer(
   if (options.defaultPlatformHost) {
     args.push("-default-platform-host", options.defaultPlatformHost);
   }
+  if (options.visibleImportedModes) {
+    args.push("-visible-imported-modes");
+  }
   if (process.env.ROBOREV_ENDPOINT) {
     args.push("-roborev", process.env.ROBOREV_ENDPOINT);
   }
@@ -323,7 +327,7 @@ function installCleanup(infoFile: string): void {
 }
 
 async function startManagedServer(): Promise<E2EServerInfo> {
-  const started = await spawnServer(serverInfoFile);
+  const started = await spawnServer(serverInfoFile, { visibleImportedModes: true });
   managedChild = started.child;
 
   installCleanup(serverInfoFile);

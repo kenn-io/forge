@@ -95,7 +95,7 @@ frontend-dev-bun: frontend-deps
 
 # Run TypeScript/Svelte lint and type checks
 frontend-check: frontend-deps
-	./node_modules/.bin/vp run -w check
+	./node_modules/.bin/vp run -w check '!frontend/dist/**'
 
 # Prevent production frontend code from bypassing generated API clients
 frontend-api-client-check:

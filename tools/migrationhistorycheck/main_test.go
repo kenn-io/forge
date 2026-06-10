@@ -113,7 +113,7 @@ func initRepoWithMainMigration(t *testing.T) string {
 	require.NoError(t, os.WriteFile(migrationPath, []byte("old\n"), 0o644))
 
 	gitCommandIn(t, repo, "init", "-q", "-b", "main")
-	gitCommandIn(t, repo, "config", "user.email", "test@example.com")
+	gitCommandIn(t, repo, "config", "user.email", "middleman-fixture@example.invalid")
 	gitCommandIn(t, repo, "config", "user.name", "Test")
 	gitCommandIn(t, repo, "add", ".")
 	gitCommandIn(t, repo, "commit", "-qm", "init")

@@ -7,6 +7,28 @@ test.beforeEach(async ({ page }) => {
 });
 
 test.describe("palette command dispatch", () => {
+  test("header trigger and Cmd+Shift+P open the palette", async ({ page }) => {
+    await page.goto("/pulls");
+
+    const trigger = page.getByRole("button", { name: "Open command palette" });
+    await expect(trigger).toBeVisible();
+    await trigger.click();
+
+    const dialog = page.getByRole("dialog", { name: "Command palette" });
+    await expect(dialog).toBeVisible();
+    await expect(page.locator(".palette-input")).toBeFocused();
+
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+
+    await page.keyboard.press("Meta+Shift+P");
+    await expect(dialog).toBeVisible();
+    await expect(page.locator(".palette-input")).toBeFocused();
+
+    await page.keyboard.press("Meta+Shift+P");
+    await expect(dialog).toBeHidden();
+  });
+
   test("'>' filters to commands; running Open settings navigates", async ({ page }) => {
     await page.goto("/pulls");
     await page.keyboard.press("Meta+K");

@@ -137,7 +137,7 @@ func TestRunDefaultRoborevFailsClosedThroughProxy(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- run(ctx, 0, defaultRoborevEndpoint, serverInfoFile, "github.com")
+		done <- run(ctx, 0, defaultRoborevEndpoint, serverInfoFile, "github.com", false)
 	}()
 
 	baseURL := waitForServerInfoBaseURL(t, serverInfoFile, done)

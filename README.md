@@ -1,8 +1,14 @@
 # middleman
 
-A local-first GitHub dashboard for project maintainers. Syncs PRs and issues from your repos into SQLite, serves a fast Svelte 5 frontend from a single binary, and keeps you out of GitHub's notification inbox.
+A local-first maintainer console. The original core syncs PRs and issues from your repos into SQLite, serves a fast Svelte 5 frontend from a single binary, and keeps you out of provider notification inboxes.
 
 Middleman runs entirely on your machine -- no hosted service, no account to create. One binary, one config file, and you're up.
+
+This workstream expands middleman beyond provider PR/MR triage with first-class
+modes for external Kata task daemons, local markdown docs, and msgvault-backed
+message search. Those domains stay owned by their source systems: Kata task
+data remains in Kata daemons, docs remain on disk, and msgvault data remains in
+msgvault.
 
 ## Features
 
@@ -67,6 +73,15 @@ Expandable check run section on each PR shows pass/fail/pending status with colo
 - **Settings UI** -- add/remove repos and configure activity feed defaults from the browser
 - **Reverse proxy support** -- deploy behind a proxy with the `base_path` config
 - **Version info** -- `middleman version` prints the version, commit, and build date
+
+### Additional modes in this integration branch
+
+- **Kata** -- talk to external Kata daemons discovered from Kata's own
+  `$KATA_HOME/config.toml` and runtime records.
+- **Docs** -- browse, view, edit, search, and publish configured markdown
+  folders.
+- **Messages** -- search and inspect msgvault-backed messages with safe HTML and
+  image handling.
 
 ## Quickstart
 
@@ -146,6 +161,11 @@ All fields are optional. Repos can be added in the config file or through the Se
 | `activity.hide_bots` | `false` | Hide bot activity |
 | `activity.default_branch_retention_days` | `90` | Days of default-branch commits to keep for Activity |
 | `activity.default_branch_max_commits` | `5000` | Maximum default-branch commit rows kept per repo branch |
+
+The integration branch also adds docs-folder and msgvault configuration. Kata
+daemon definitions are intentionally not stored in middleman config; middleman
+reads the Kata daemon catalog from `$KATA_HOME/config.toml`, defaulting to
+`~/.kata/config.toml`.
 
 ### Provider Hosts
 
@@ -307,12 +327,15 @@ The frontend is also available as the `@middleman/ui` Svelte package, which expo
 
 ## Architecture
 
-Middleman is a single Go binary with the Svelte frontend embedded at build time. No external services -- just SQLite on disk.
+Middleman is a single Go binary with the Svelte frontend embedded at build time.
+The provider dashboard stores synced provider state in SQLite. Additional modes
+may talk to local external services such as Kata daemons and msgvault.
 
 ```
 middleman binary
   |- Config loader (TOML)
   |- Sync engine -> provider registry (GitHub/GitLab/Forgejo/Gitea readers)
+  |- Mode adapters -> Kata daemons, markdown folders, msgvault
   |- SQLite database (WAL mode, pure Go driver)
   +- HTTP server (Huma) -> REST API + embedded SPA
 ```

@@ -52,6 +52,10 @@ func main() {
 		"default-platform-host", "github.com",
 		"default platform host for seeded config",
 	)
+	visibleImportedModes := flag.Bool(
+		"visible-imported-modes", false,
+		"show imported app modes in the seeded config",
+	)
 	serverInfoFile := flag.String(
 		"server-info-file", "",
 		"path to write discovered server port info as JSON",
@@ -71,6 +75,7 @@ func main() {
 		*roborev,
 		*serverInfoFile,
 		*defaultPlatformHost,
+		*visibleImportedModes,
 	); err != nil {
 		slog.Error("fatal", "err", err)
 		os.Exit(1)
@@ -536,6 +541,7 @@ func run(
 	ctx context.Context,
 	port int,
 	roborevEndpoint, serverInfoFile, defaultPlatformHost string,
+	visibleImportedModes bool,
 ) error {
 	defaultPlatformHost = strings.TrimSpace(defaultPlatformHost)
 	if defaultPlatformHost == "" {
@@ -624,6 +630,13 @@ func run(
 			ViewMode:  "flat",
 			TimeRange: "7d",
 		},
+	}
+	if visibleImportedModes {
+		modes := config.DefaultModeVisibility()
+		*modes.Kata = true
+		*modes.Docs = true
+		*modes.Messages = true
+		cfg.Modes = modes
 	}
 
 	cfg.Roborev.Endpoint = roborevEndpoint

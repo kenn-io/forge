@@ -193,6 +193,8 @@ func runCLI(args []string, stdout io.Writer) error {
 			return err
 		case "config":
 			return runConfigCLI(args[1:], stdout)
+		case "docs":
+			return runDocsCLI(args[1:], stdout)
 		case "pty-owner":
 			return runPtyOwnerCLI(args[1:])
 		case "status":

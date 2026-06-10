@@ -65,6 +65,16 @@ type Repo struct {
 	TokenFile    string `toml:"token_file,omitempty" json:"token_file,omitempty"`
 }
 
+// DocFolder names a markdown folder registered for docs mode. Path
+// normalization and existence checks are handled by the docs registry
+// when the folder is used or edited.
+type DocFolder struct {
+	ID     string `toml:"id" json:"id"`
+	Name   string `toml:"name" json:"name"`
+	Path   string `toml:"path" json:"path"`
+	Daemon string `toml:"daemon,omitempty" json:"daemon,omitempty"`
+}
+
 type PlatformConfig struct {
 	Type      string `toml:"type" json:"type"`
 	Host      string `toml:"host" json:"host"`
@@ -525,6 +535,87 @@ type Roborev struct {
 	Endpoint string `toml:"endpoint,omitempty"`
 }
 
+// Msgvault configures the external msgvault server used by the Messages UI.
+// Secrets are resolved from APIKeyEnv at runtime and are never stored on the
+// serializable config object.
+type Msgvault struct {
+	URL       string `toml:"url,omitempty" json:"url,omitempty"`
+	APIKeyEnv string `toml:"api_key_env,omitempty" json:"api_key_env,omitempty"`
+}
+
+// ModeVisibility controls which top-level app modes are shown. Nil booleans
+// mean the mode uses its default visibility.
+type ModeVisibility struct {
+	Activity   *bool `toml:"activity,omitempty" json:"activity" nullable:"false"`
+	Repos      *bool `toml:"repos,omitempty" json:"repos" nullable:"false"`
+	Kata       *bool `toml:"kata,omitempty" json:"kata" nullable:"false"`
+	Docs       *bool `toml:"docs,omitempty" json:"docs" nullable:"false"`
+	Messages   *bool `toml:"messages,omitempty" json:"messages" nullable:"false"`
+	Pulls      *bool `toml:"pulls,omitempty" json:"pulls" nullable:"false"`
+	Issues     *bool `toml:"issues,omitempty" json:"issues" nullable:"false"`
+	Board      *bool `toml:"board,omitempty" json:"board" nullable:"false"`
+	Reviews    *bool `toml:"reviews,omitempty" json:"reviews" nullable:"false"`
+	Workspaces *bool `toml:"workspaces,omitempty" json:"workspaces" nullable:"false"`
+}
+
+func DefaultModeVisibility() ModeVisibility {
+	return ModeVisibility{
+		Activity:   new(true),
+		Repos:      new(true),
+		Kata:       new(false),
+		Docs:       new(false),
+		Messages:   new(false),
+		Pulls:      new(true),
+		Issues:     new(true),
+		Board:      new(true),
+		Reviews:    new(true),
+		Workspaces: new(true),
+	}
+}
+
+func (m ModeVisibility) WithDefaults() ModeVisibility {
+	defaults := DefaultModeVisibility()
+	if m.Activity != nil {
+		defaults.Activity = m.Activity
+	}
+	if m.Repos != nil {
+		defaults.Repos = m.Repos
+	}
+	if m.Kata != nil {
+		defaults.Kata = m.Kata
+	}
+	if m.Docs != nil {
+		defaults.Docs = m.Docs
+	}
+	if m.Messages != nil {
+		defaults.Messages = m.Messages
+	}
+	if m.Pulls != nil {
+		defaults.Pulls = m.Pulls
+	}
+	if m.Issues != nil {
+		defaults.Issues = m.Issues
+	}
+	if m.Board != nil {
+		defaults.Board = m.Board
+	}
+	if m.Reviews != nil {
+		defaults.Reviews = m.Reviews
+	}
+	if m.Workspaces != nil {
+		defaults.Workspaces = m.Workspaces
+	}
+	return defaults
+}
+
+type MsgvaultState int
+
+const (
+	MsgvaultAbsent MsgvaultState = iota
+	MsgvaultMisconfigured
+	MsgvaultOK
+)
+
 type Tmux struct {
 	Command       []string `toml:"command,omitempty"`
 	AgentSessions *bool    `toml:"agent_sessions,omitempty"`
@@ -557,8 +648,11 @@ type Config struct {
 	Platforms                 []PlatformConfig `toml:"platforms"`
 	Activity                  Activity         `toml:"activity"`
 	Terminal                  Terminal         `toml:"terminal"`
+	Modes                     ModeVisibility   `toml:"modes"`
 	Agents                    []Agent          `toml:"agents"`
+	DocFolders                []DocFolder      `toml:"doc_folders"`
 	Roborev                   Roborev          `toml:"roborev"`
+	Msgvault                  *Msgvault        `toml:"msgvault"`
 	Tmux                      Tmux             `toml:"tmux"`
 	Shell                     Shell            `toml:"shell"`
 }
@@ -572,6 +666,63 @@ func (c *Config) SSEBufferSizeOrDefault() int {
 		return defaultSSEBufferSize
 	}
 	return c.SSEBufferSize
+}
+
+// IsLoopbackHostname reports whether a URL hostname (no port, no
+// brackets) is localhost or a loopback IP literal. Hostnames that
+// merely resolve to loopback are not recognized.
+func IsLoopbackHostname(hostname string) bool {
+	if strings.EqualFold(strings.TrimSuffix(hostname, "."), "localhost") {
+		return true
+	}
+	ip := net.ParseIP(hostname)
+	return ip != nil && ip.IsLoopback()
+}
+
+// MsgvaultState classifies the optional msgvault config and resolves the API
+// key from the configured environment variable when possible.
+func (c *Config) MsgvaultState() (state MsgvaultState, canonicalURL, apiKey string, err error) {
+	if c == nil || c.Msgvault == nil {
+		return MsgvaultAbsent, "", "", nil
+	}
+	mv := c.Msgvault
+	rawURL := strings.TrimSpace(mv.URL)
+	apiKeyEnv := strings.TrimSpace(mv.APIKeyEnv)
+	if rawURL == "" {
+		return MsgvaultMisconfigured, "", "", errors.New("[msgvault]: url is required")
+	}
+	u, perr := url.ParseRequestURI(rawURL)
+	if perr != nil {
+		return MsgvaultMisconfigured, "", "", fmt.Errorf("[msgvault]: invalid url: %w", perr)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return MsgvaultMisconfigured, "", "", fmt.Errorf("[msgvault]: url scheme must be http or https, got %q", u.Scheme)
+	}
+	if u.Host == "" {
+		return MsgvaultMisconfigured, "", "", errors.New("[msgvault]: url is missing host")
+	}
+	if u.Scheme == "http" && !IsLoopbackHostname(u.Hostname()) {
+		return MsgvaultMisconfigured, "", "", fmt.Errorf(
+			"[msgvault]: http url %q would send the API key in cleartext; use https, or http only with a loopback host (localhost/127.0.0.1)", rawURL)
+	}
+	if u.User != nil {
+		return MsgvaultMisconfigured, "", "", errors.New("[msgvault]: url must not include userinfo")
+	}
+	if u.RawQuery != "" || u.ForceQuery {
+		return MsgvaultMisconfigured, "", "", errors.New("[msgvault]: url must not include query string")
+	}
+	if u.Fragment != "" {
+		return MsgvaultMisconfigured, "", "", errors.New("[msgvault]: url must not include fragment")
+	}
+	canonicalURL = strings.TrimRight(u.String(), "/")
+	if apiKeyEnv == "" {
+		return MsgvaultMisconfigured, canonicalURL, "", errors.New("[msgvault]: api_key_env is required")
+	}
+	apiKey, ok := os.LookupEnv(apiKeyEnv)
+	if !ok || strings.TrimSpace(apiKey) == "" {
+		return MsgvaultMisconfigured, canonicalURL, "", fmt.Errorf("[msgvault]: env var %s is not set", apiKeyEnv)
+	}
+	return MsgvaultOK, canonicalURL, apiKey, nil
 }
 
 func DefaultConfigPath() string {
@@ -649,6 +800,18 @@ default_branch_max_commits = 5000
 [terminal]
 renderer = "xterm"
 
+[modes]
+activity = true
+repos = true
+kata = false
+docs = false
+messages = false
+pulls = true
+issues = true
+board = true
+reviews = true
+workspaces = true
+
 [tmux]
 agent_sessions = true
 `
@@ -721,7 +884,11 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("reading config %s: %w", path, err)
 	}
 
-	if err := toml.Unmarshal(data, cfg); err != nil {
+	meta, err := toml.Decode(string(data), cfg)
+	if err != nil {
+		return nil, fmt.Errorf("parsing config %s: %w", path, err)
+	}
+	if err := rejectDeprecatedConfigKeys(meta); err != nil {
 		return nil, fmt.Errorf("parsing config %s: %w", path, err)
 	}
 
@@ -734,6 +901,7 @@ func Load(path string) (*Config, error) {
 	if cfg.Agents == nil {
 		cfg.Agents = []Agent{}
 	}
+	cfg.Modes = cfg.Modes.WithDefaults()
 
 	if cfg.DataDir == "" {
 		cfg.DataDir = DefaultDataDir()
@@ -778,6 +946,18 @@ func Load(path string) (*Config, error) {
 	return cfg, cfg.Validate()
 }
 
+func rejectDeprecatedConfigKeys(meta toml.MetaData) error {
+	for _, key := range meta.Undecoded() {
+		if len(key) == 2 && key[0] == "msgvault" && key[1] == "api_key" {
+			return errors.New("[msgvault]: api_key is not supported; use api_key_env")
+		}
+		if len(key) >= 1 && (key[0] == "notebooks" || key[0] == "vaults") {
+			return fmt.Errorf("[[%s]] is not supported; use [[doc_folders]]", key[0])
+		}
+	}
+	return nil
+}
+
 func (c *Config) Validate() error {
 	var err error
 	c.DefaultPlatformHost, err = normalizePlatformHost(
@@ -806,6 +986,10 @@ func (c *Config) Validate() error {
 	if err := c.validatePlatforms(); err != nil {
 		return err
 	}
+	if err := c.canonicalizeDocFolders(); err != nil {
+		return err
+	}
+	c.Modes = c.Modes.WithDefaults()
 
 	for i := range c.Repos {
 		if c.Repos[i].ownerHasGlob() {
@@ -1012,6 +1196,64 @@ func (c *Config) Validate() error {
 	}
 
 	return nil
+}
+
+// docFolderIDPattern constrains a docs folder id to characters that
+// survive as a single URL path segment, matching docs.ValidateFolderID.
+// Duplicated here because internal/docs imports this package.
+var docFolderIDPattern = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
+
+func (c *Config) canonicalizeDocFolders() error {
+	seen := make(map[string]struct{}, len(c.DocFolders))
+	for i := range c.DocFolders {
+		folder := &c.DocFolders[i]
+		folder.ID = strings.TrimSpace(folder.ID)
+		if folder.ID == "" {
+			return fmt.Errorf("config: doc_folders[%d]: id is required", i)
+		}
+		if folder.ID == "." || folder.ID == ".." || !docFolderIDPattern.MatchString(folder.ID) {
+			return fmt.Errorf("config: doc_folders[%q]: id may contain only letters, digits, '.', '_' or '-'", folder.ID)
+		}
+		if _, dup := seen[folder.ID]; dup {
+			return fmt.Errorf("config: doc_folders: duplicate id %q", folder.ID)
+		}
+		seen[folder.ID] = struct{}{}
+
+		folder.Path = strings.TrimSpace(folder.Path)
+		if folder.Path == "" {
+			return fmt.Errorf("config: doc_folders[%q]: path is required", folder.ID)
+		}
+		expanded, err := expandTilde(folder.Path)
+		if err != nil {
+			return fmt.Errorf("config: doc_folders[%q]: %w", folder.ID, err)
+		}
+		resolved, err := filepath.Abs(expanded)
+		if err != nil {
+			return fmt.Errorf("config: doc_folders[%q]: resolve path: %w", folder.ID, err)
+		}
+		folder.Path = resolved
+
+		folder.Name = strings.TrimSpace(folder.Name)
+		if folder.Name == "" {
+			folder.Name = filepath.Base(resolved)
+		}
+		folder.Daemon = strings.TrimSpace(folder.Daemon)
+	}
+	return nil
+}
+
+func expandTilde(path string) (string, error) {
+	if path == "~" || strings.HasPrefix(path, "~/") {
+		home := homeDir()
+		if home == "" {
+			return "", errors.New("home directory is not set")
+		}
+		if path == "~" {
+			return home, nil
+		}
+		return filepath.Join(home, path[2:]), nil
+	}
+	return path, nil
 }
 
 func (c *Config) validatePlatforms() error {
@@ -1391,6 +1633,9 @@ func (c *Config) TokenEnvNames() []string {
 	for _, r := range c.Repos {
 		names = appendTokenEnvNamesFromDescriptor(names, c.ResolveRepoTokenSource(r))
 	}
+	if c.Msgvault != nil && c.Msgvault.APIKeyEnv != "" {
+		names = appendTokenEnvName(names, strings.TrimSpace(c.Msgvault.APIKeyEnv))
+	}
 	return names
 }
 
@@ -1611,52 +1856,146 @@ type configFile struct {
 	Platforms                 []PlatformConfig `toml:"platforms,omitempty"`
 	Activity                  Activity         `toml:"activity"`
 	Terminal                  Terminal         `toml:"terminal,omitempty"`
+	Modes                     ModeVisibility   `toml:"modes,omitempty"`
 	Agents                    []Agent          `toml:"agents,omitempty"`
+	DocFolders                []DocFolder      `toml:"doc_folders,omitempty"`
 	Roborev                   Roborev          `toml:"roborev,omitempty"`
+	Msgvault                  *Msgvault        `toml:"msgvault,omitempty"`
 	Tmux                      Tmux             `toml:"tmux,omitempty"`
 	Shell                     Shell            `toml:"shell,omitempty"`
 }
 
 // Save writes the current config to the given path.
 func (c *Config) Save(path string) error {
-	f := configFile{
-		SyncInterval:        c.SyncInterval,
-		GitHubTokenEnv:      c.GitHubTokenEnv,
-		DefaultPlatformHost: c.DefaultPlatformHost,
-		Host:                c.Host,
-		Port:                c.Port,
-		Repos:               reposForSave(c.Repos),
-		Platforms:           c.Platforms,
-		Activity:            c.Activity,
-		Terminal:            c.Terminal,
-		Agents:              c.Agents,
-		Roborev:             c.Roborev,
-		Tmux:                c.Tmux,
-		Shell:               c.Shell,
+	cfg := c.copyForSave()
+	if err := cfg.Validate(); err != nil {
+		return fmt.Errorf("validating config: %w", err)
 	}
-	if c.DefaultPlatformHost == defaultPlatformHost {
+	f := configFile{
+		SyncInterval:        cfg.SyncInterval,
+		GitHubTokenEnv:      cfg.GitHubTokenEnv,
+		DefaultPlatformHost: cfg.DefaultPlatformHost,
+		Host:                cfg.Host,
+		Port:                cfg.Port,
+		Repos:               reposForSave(cfg.Repos),
+		Platforms:           cfg.Platforms,
+		Activity:            cfg.Activity,
+		Terminal:            cfg.Terminal,
+		Modes:               cfg.Modes,
+		Agents:              cfg.Agents,
+		DocFolders:          cfg.DocFolders,
+		Roborev:             cfg.Roborev,
+		Msgvault:            cfg.Msgvault,
+		Tmux:                cfg.Tmux,
+		Shell:               cfg.Shell,
+	}
+	if cfg.DefaultPlatformHost == defaultPlatformHost {
 		f.DefaultPlatformHost = ""
 	}
-	if c.SyncBudgetPerHour != defaultSyncBudgetPerHour {
-		f.SyncBudgetPerHour = c.SyncBudgetPerHour
+	if cfg.SyncBudgetPerHour != defaultSyncBudgetPerHour {
+		f.SyncBudgetPerHour = cfg.SyncBudgetPerHour
 	}
-	if c.SSEBufferSize != 0 && c.SSEBufferSize != defaultSSEBufferSize {
-		f.SSEBufferSize = c.SSEBufferSize
+	if cfg.SSEBufferSize != 0 && cfg.SSEBufferSize != defaultSSEBufferSize {
+		f.SSEBufferSize = cfg.SSEBufferSize
 	}
-	if c.BasePath != defaultBasePath {
-		f.BasePath = c.BasePath
+	if cfg.BasePath != defaultBasePath {
+		f.BasePath = cfg.BasePath
 	}
-	if c.DataDir != DefaultDataDir() {
-		f.DataDir = c.DataDir
+	if cfg.DataDir != DefaultDataDir() {
+		f.DataDir = cfg.DataDir
 	}
-	if c.IssueWorkspaceBranchStyle != defaultIssueWorkspaceBranchStyle {
-		f.IssueWorkspaceBranchStyle = c.IssueWorkspaceBranchStyle
+	if cfg.IssueWorkspaceBranchStyle != defaultIssueWorkspaceBranchStyle {
+		f.IssueWorkspaceBranchStyle = cfg.IssueWorkspaceBranchStyle
 	}
 
-	var buf bytes.Buffer
-	enc := toml.NewEncoder(&buf)
+	savePath := path
+	info, err := os.Lstat(path)
+	if err == nil && info.Mode()&os.ModeSymlink != 0 {
+		resolved, err := filepath.EvalSymlinks(path)
+		if err != nil {
+			return fmt.Errorf("resolving config symlink: %w", err)
+		}
+		savePath = resolved
+	} else if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("checking config path: %w", err)
+	}
+
+	dir := filepath.Dir(savePath)
+	if dir != "" && dir != "." {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			return fmt.Errorf("creating config directory: %w", err)
+		}
+	}
+
+	tmp, err := os.CreateTemp(dir, ".middleman-config-*.toml")
+	if err != nil {
+		return fmt.Errorf("creating temp config: %w", err)
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+	if err := tmp.Chmod(0o600); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("chmod temp config: %w", err)
+	}
+	enc := toml.NewEncoder(tmp)
 	if err := enc.Encode(f); err != nil {
+		_ = tmp.Close()
 		return fmt.Errorf("encoding config: %w", err)
 	}
-	return os.WriteFile(path, buf.Bytes(), 0o644)
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("closing temp config: %w", err)
+	}
+	if err := os.Rename(tmpPath, savePath); err != nil {
+		return fmt.Errorf("renaming temp config: %w", err)
+	}
+	return nil
+}
+
+func (c *Config) copyForSave() Config {
+	if c == nil {
+		return Config{}
+	}
+	cfg := *c
+	cfg.Repos = slices.Clone(c.Repos)
+	cfg.Platforms = slices.Clone(c.Platforms)
+	cfg.DocFolders = slices.Clone(c.DocFolders)
+	cfg.Agents = slices.Clone(c.Agents)
+	if cfg.SyncInterval == "" {
+		cfg.SyncInterval = defaultSyncInterval
+	}
+	if cfg.DefaultPlatformHost == "" {
+		cfg.DefaultPlatformHost = defaultPlatformHost
+	}
+	if cfg.Host == "" {
+		cfg.Host = defaultHost
+	}
+	if cfg.DataDir == "" {
+		cfg.DataDir = DefaultDataDir()
+	}
+	cfg.Modes = cfg.Modes.WithDefaults()
+	if cfg.Activity.ViewMode == "" {
+		cfg.Activity.ViewMode = defaultViewMode
+	}
+	if cfg.Activity.TimeRange == "" {
+		cfg.Activity.TimeRange = defaultTimeRange
+	}
+	if cfg.Activity.DefaultBranchRetentionDays == 0 {
+		cfg.Activity.DefaultBranchRetentionDays = defaultBranchActivityRetentionDays
+	}
+	if cfg.Activity.DefaultBranchMaxCommits == 0 {
+		cfg.Activity.DefaultBranchMaxCommits = defaultBranchActivityMaxCommits
+	}
+	if cfg.SyncBudgetPerHour == 0 {
+		cfg.SyncBudgetPerHour = defaultSyncBudgetPerHour
+	}
+	if cfg.SSEBufferSize == 0 {
+		cfg.SSEBufferSize = defaultSSEBufferSize
+	}
+	if cfg.BasePath == "" {
+		cfg.BasePath = defaultBasePath
+	}
+	if strings.TrimSpace(cfg.IssueWorkspaceBranchStyle) == "" {
+		cfg.IssueWorkspaceBranchStyle = defaultIssueWorkspaceBranchStyle
+	}
+	return cfg
 }

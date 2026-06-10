@@ -1,4 +1,4 @@
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page, type Request } from "@playwright/test";
 import type { DiffFile, DiffLine, DiffResult, FilesResult } from "@middleman/ui/api/types";
 import { acquireExclusiveLock } from "./support/exclusiveLock";
 import { startIsolatedE2EServer } from "./support/e2eServer";
@@ -618,16 +618,32 @@ async function expectPierreCodeTabSize(file: ReturnType<Page["locator"]>, tabSiz
 }
 
 async function clickPierreContextExpander(
+  page: Page,
   file: ReturnType<Page["locator"]>,
   separatorIndex = 0,
   buttonSelector = "[data-expand-button]",
+  options: { shiftKey?: boolean } = {},
 ): Promise<void> {
   const separator = file
     .locator(".pierre-diff [data-separator][data-expand-index]")
     .filter({ visible: true })
     .nth(separatorIndex);
   const expander = separator.locator(buttonSelector).filter({ visible: true }).first();
-  await activateVisibleTarget(expander);
+  if (options.shiftKey) {
+    await expect(expander).toBeVisible();
+    await expander.evaluate((button: HTMLElement) => {
+      button.dispatchEvent(
+        new MouseEvent("click", {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          shiftKey: true,
+        }),
+      );
+    });
+  } else {
+    await activateVisibleTarget(expander);
+  }
 }
 
 async function expectPierreDarkBackgroundMatchesAppSurface(file: ReturnType<Page["locator"]>) {
@@ -1889,7 +1905,7 @@ test.describe("diff view", () => {
     await expectRenderedNonBlankRows(schemaFile, "schema response row");
 
     const beforeExpansionScrollTop = await diffArea.evaluate((area) => area.scrollTop);
-    await clickPierreContextExpander(detailFile, 0, "[data-expand-down]");
+    await clickPierreContextExpander(page, detailFile, 0, "[data-expand-down]");
     await expect.poll(() => [...new Set(previewSides)].sort()).toEqual(["new", "old"]);
     await expectRenderedNonBlankRows(schemaFile, "schema response row");
     await scrollDiffAreaUntilPierreText(
@@ -1906,7 +1922,7 @@ test.describe("diff view", () => {
       area.dispatchEvent(new Event("scroll", { bubbles: true }));
     }, beforeExpansionScrollTop);
     await expectRenderedNonBlankRows(schemaFile, "schema response row");
-    await clickPierreContextExpander(detailFile);
+    await clickPierreContextExpander(page, detailFile);
     await expectRenderedNonBlankRows(schemaFile, "schema response row");
     await scrollDiffAreaUntilPierreText(
       page,
@@ -2601,19 +2617,7 @@ test.describe("diff view (git-backed)", () => {
 
   test("context expansion fetches both sides from the real file preview API", async ({ page }) => {
     const server = await startIsolatedE2EServer();
-    const previewSides: string[] = [];
     try {
-      await page.route("**/file-preview**", async (route) => {
-        const url = new URL(route.request().url());
-        if (
-          url.pathname.endsWith("/pulls/github/acme/widgets/1/file-preview") &&
-          url.searchParams.get("path") === "internal/handler.go"
-        ) {
-          previewSides.push(url.searchParams.get("side") ?? "");
-        }
-        await route.continue();
-      });
-
       await page.goto(`${server.info.base_url}/pulls/github/acme/widgets/1/files`);
       await waitForDiffLoaded(page);
       await waitForSidebarFilesLoaded(page);
@@ -2621,21 +2625,33 @@ test.describe("diff view (git-backed)", () => {
       const handlerFile = page.locator('[data-file-path="internal/handler.go"]');
       await handlerFile.scrollIntoViewIfNeeded();
       await expectPierreDiffCountAtLeast(handlerFile, "[data-expand-button]", 1);
-      const expandedContextRowsBefore = await pierreDiffCount(handlerFile, "[data-line-type='context-expanded']");
 
-      await clickPierreContextExpander(handlerFile);
+      const previewSides: string[] = [];
+      const capturePreviewRequest = (request: Request) => {
+        const url = new URL(request.url());
+        if (!url.pathname.endsWith("/file-preview")) return;
+        if (url.searchParams.get("path") !== "internal/handler.go") return;
+        const side = url.searchParams.get("side");
+        if (side) previewSides.push(side);
+      };
+      page.on("request", capturePreviewRequest);
+      try {
+        await clickPierreContextExpander(page, handlerFile, 0, "[data-expand-button]", { shiftKey: true });
 
-      await expect
-        .poll(() => pierreDiffCount(handlerFile, "[data-line-type='context-expanded']"))
-        .toBeGreaterThan(expandedContextRowsBefore);
-      await expect
-        .poll(async () => {
-          const texts = await pierreDiffTexts(handlerFile, "[data-content] [data-line-type='context-expanded']");
-          return texts.filter((text) => text.length > 0).length;
-        })
-        .toBeGreaterThan(0);
+        await expect
+          .poll(
+            async () => {
+              const texts = await pierreDiffTexts(handlerFile, "[data-content] [data-line-type='context-expanded']");
+              return texts.filter((text) => text.length > 0).length;
+            },
+            { timeout: 20_000 },
+          )
+          .toBeGreaterThan(0);
+      } finally {
+        page.off("request", capturePreviewRequest);
+      }
       await expectPierreDiffVisibleText(handlerFile, "[data-content] [data-line-type='context-expanded']", "// line 1");
-      await expect.poll(() => [...new Set(previewSides)].sort()).toEqual(["new", "old"]);
+      expect(new Set(previewSides)).toEqual(new Set(["old", "new"]));
     } finally {
       await server.stop();
     }

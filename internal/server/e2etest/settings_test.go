@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"testing"
 
 	gh "github.com/google/go-github/v84/github"
@@ -134,6 +135,53 @@ func TestSettingsAPIE2EReadUpdateAndValidation(t *testing.T) {
 	var reGet generated.SettingsResponse
 	require.NoError(json.NewDecoder(reGetResp.Body).Decode(&reGet))
 	assert.True(reGet.Activity.CollapseThreads)
+}
+
+func TestSettingsAPIE2EPreservesMsgvaultConfig(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	srv, _, cfgPath := setupTestServerWithConfigContent(t, `
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "widget"
+
+[msgvault]
+url = "http://127.0.0.1:4879"
+api_key_env = "MSGVAULT_API_KEY_TEST"
+`, &mockGH{})
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	updateResp := doServerJSON(
+		t, ts.Client(), http.MethodPut,
+		ts.URL+"/api/v1/settings",
+		generated.UpdateSettingsRequest{
+			Activity: &generated.Activity{
+				ViewMode:  "flat",
+				TimeRange: "30d",
+			},
+		},
+	)
+	defer updateResp.Body.Close()
+	require.Equal(http.StatusOK, updateResp.StatusCode)
+
+	cfgAfterUpdate, err := config.Load(cfgPath)
+	require.NoError(err)
+	require.NotNil(cfgAfterUpdate.Msgvault)
+	assert.Equal("http://127.0.0.1:4879", cfgAfterUpdate.Msgvault.URL)
+	assert.Equal("MSGVAULT_API_KEY_TEST", cfgAfterUpdate.Msgvault.APIKeyEnv)
+
+	raw, err := os.ReadFile(cfgPath)
+	require.NoError(err)
+	content := string(raw)
+	assert.Contains(content, "[msgvault]")
+	assert.Contains(content, "api_key_env")
+	assert.NotContains(content, "api_key =", "settings save must not persist inline msgvault secrets")
 }
 
 func TestRepoConfigAPIE2EAddDeleteAndErrors(t *testing.T) {

@@ -47,6 +47,7 @@ export function runAppStartup(deps: AppStartupDeps): () => void {
       const stores = deps.getStores();
       if (stores) {
         stores.settings.setConfiguredRepos(settings.repos);
+        stores.settings.setModeVisibility(settings.modes);
         stores.settings.setTerminalSettings(settings.terminal);
         stores.activity.hydrateDefaults(settings.activity);
       }

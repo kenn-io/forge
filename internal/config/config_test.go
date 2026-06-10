@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -192,6 +194,134 @@ name = "repo"
 	require.Len(t, cfg.Repos, 1)
 	assert.Equal("github", cfg.Repos[0].Platform)
 	assert.Equal("github.com", cfg.Repos[0].PlatformHostOrDefault())
+}
+
+func TestLoadDocFoldersRoundTrips(t *testing.T) {
+	assert := Assert.New(t)
+	cfg, cfg2 := roundTripConfigString(t, `
+[[doc_folders]]
+id = "notes"
+name = "Notes"
+path = "/tmp/notes"
+daemon = "work"
+`)
+
+	require.Len(t, cfg.DocFolders, 1)
+	assert.Equal("notes", cfg.DocFolders[0].ID)
+	assert.Equal("Notes", cfg.DocFolders[0].Name)
+	assert.Equal("/tmp/notes", cfg.DocFolders[0].Path)
+	assert.Equal("work", cfg.DocFolders[0].Daemon)
+	require.Len(t, cfg2.DocFolders, 1)
+	assert.Equal(cfg.DocFolders[0], cfg2.DocFolders[0])
+}
+
+func TestLoadDocFoldersRejectsDeprecatedKeys(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+	}{
+		{
+			name: "notebooks",
+			body: `
+[[notebooks]]
+id = "notes"
+path = "/tmp/notes"
+`,
+		},
+		{
+			name: "vaults",
+			body: `
+[[vaults]]
+id = "notes"
+path = "/tmp/notes"
+`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := Load(writeConfig(t, tc.body))
+			require.Error(t, err)
+			Assert.Contains(t, err.Error(), "[[doc_folders]]")
+		})
+	}
+}
+
+func TestLoadDocFoldersCanonicalizesPathAndDefaultName(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	require.NoError(os.MkdirAll(filepath.Join(home, "Notes"), 0o755))
+
+	path := writeConfig(t, `
+[[doc_folders]]
+id = "notes"
+path = "~/Notes"
+daemon = "  work  "
+`)
+
+	cfg, err := Load(path)
+	require.NoError(err)
+	require.Len(cfg.DocFolders, 1)
+	folder := cfg.DocFolders[0]
+	assert.Equal("notes", folder.ID)
+	assert.Equal("Notes", folder.Name)
+	assert.True(filepath.IsAbs(folder.Path), "folder path should be absolute")
+	assert.True(strings.HasSuffix(folder.Path, "Notes"))
+	assert.Equal("work", folder.Daemon)
+}
+
+func TestLoadDocFoldersRejectsDuplicateIDs(t *testing.T) {
+	path := writeConfig(t, `
+[[doc_folders]]
+id = "notes"
+path = "/tmp/a"
+
+[[doc_folders]]
+id = "notes"
+path = "/tmp/b"
+`)
+
+	_, err := Load(path)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), `doc_folders: duplicate id "notes"`)
+}
+
+func TestLoadDocFoldersRejectsNonSegmentSafeID(t *testing.T) {
+	for _, id := range []string{"a/b", "with space", ".."} {
+		t.Run(id, func(t *testing.T) {
+			path := writeConfig(t, "[[doc_folders]]\nid = \""+id+"\"\npath = \"/tmp/a\"\n")
+			_, err := Load(path)
+			require.Error(t, err)
+			Assert.Contains(t, err.Error(), "may contain only")
+		})
+	}
+}
+
+func TestLoadDocFoldersRejectsMissingFields(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+	}{
+		{
+			name: "missing id",
+			body: `[[doc_folders]]
+path = "/tmp/notes"`,
+		},
+		{
+			name: "missing path",
+			body: `[[doc_folders]]
+id = "notes"`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := Load(writeConfig(t, tc.body))
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "doc_folders")
+		})
+	}
 }
 
 func TestLoadNormalizesDefaultPlatformHost(t *testing.T) {
@@ -1835,6 +1965,128 @@ name = "ibis"
 	assert.Empty(cfg2.Repos[1].TokenEnv)
 }
 
+func TestSaveWritesPrivateFileMode(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	if runtime.GOOS == "windows" {
+		t.Skip("file permission semantics differ on Windows")
+	}
+	path := writeConfig(t, `
+[[repos]]
+owner = "apache"
+name = "arrow"
+`)
+	cfg, err := Load(path)
+	require.NoError(err)
+
+	savePath := filepath.Join(t.TempDir(), "saved.toml")
+	require.NoError(cfg.Save(savePath))
+
+	info, err := os.Stat(savePath)
+	require.NoError(err)
+	assert.Equal(fs.FileMode(0o600), info.Mode().Perm())
+}
+
+func TestSaveCreatesParentDirectory(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	path := writeConfig(t, `
+[[repos]]
+owner = "apache"
+name = "arrow"
+`)
+	cfg, err := Load(path)
+	require.NoError(err)
+
+	savePath := filepath.Join(t.TempDir(), "nested", "deeper", "saved.toml")
+	require.NoError(cfg.Save(savePath))
+
+	info, err := os.Stat(filepath.Dir(savePath))
+	require.NoError(err)
+	require.True(info.IsDir())
+	if runtime.GOOS != "windows" {
+		assert.Equal(fs.FileMode(0o700), info.Mode().Perm())
+	}
+}
+
+func TestSaveFollowsExistingSymlink(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink permissions require elevated privileges on Windows")
+	}
+	path := writeConfig(t, `
+[[repos]]
+owner = "apache"
+name = "arrow"
+`)
+	cfg, err := Load(path)
+	require.NoError(err)
+
+	dir := t.TempDir()
+	targetPath := filepath.Join(dir, "dotfiles", "config.toml")
+	require.NoError(os.MkdirAll(filepath.Dir(targetPath), 0o700))
+	require.NoError(os.WriteFile(targetPath, []byte("stale = true\n"), 0o600))
+	linkPath := filepath.Join(dir, "config.toml")
+	require.NoError(os.Symlink(targetPath, linkPath))
+
+	require.NoError(cfg.Save(linkPath))
+
+	info, err := os.Lstat(linkPath)
+	require.NoError(err)
+	assert.NotZero(info.Mode()&fs.ModeSymlink, "config path should remain a symlink")
+	cfg2, err := Load(targetPath)
+	require.NoError(err)
+	require.Len(cfg2.Repos, 1)
+	assert.Equal("arrow", cfg2.Repos[0].Name)
+}
+
+func TestSaveRejectsInvalidConfigWithoutWriting(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	cfg := &Config{
+		SyncInterval:   "5m",
+		GitHubTokenEnv: "MIDDLEMAN_GITHUB_TOKEN",
+		Host:           "0.0.0.0",
+		Port:           8091,
+		Activity:       Activity{ViewMode: "threaded", TimeRange: "7d"},
+	}
+	savePath := filepath.Join(t.TempDir(), "config.toml")
+
+	err := cfg.Save(savePath)
+
+	require.Error(err)
+	assert.Contains(err.Error(), "host")
+	_, statErr := os.Stat(savePath)
+	require.True(os.IsNotExist(statErr), "config should not be written on validation failure: %v", statErr)
+}
+
+func TestSaveDoesNotInheritStaleTmpPermissions(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	if runtime.GOOS == "windows" {
+		t.Skip("file permission semantics differ on Windows")
+	}
+	path := writeConfig(t, `
+[[repos]]
+owner = "apache"
+name = "arrow"
+`)
+	cfg, err := Load(path)
+	require.NoError(err)
+
+	dir := t.TempDir()
+	savePath := filepath.Join(dir, "saved.toml")
+	stale := savePath + ".tmp"
+	require.NoError(os.WriteFile(stale, []byte("stale"), 0o644))
+
+	require.NoError(cfg.Save(savePath))
+
+	info, err := os.Stat(savePath)
+	require.NoError(err)
+	assert.Equal(fs.FileMode(0o600), info.Mode().Perm())
+}
+
 func TestSaveRoundTripEmptyGitHubTokenEnv(t *testing.T) {
 	assert := Assert.New(t)
 	path := writeConfig(t, `
@@ -2171,6 +2423,67 @@ default_branch_max_commits = 1000
 		require.NoError(err)
 		Assert.Equal(t, 30, cfg2.Activity.DefaultBranchRetentionDays)
 		Assert.Equal(t, 1000, cfg2.Activity.DefaultBranchMaxCommits)
+	})
+}
+
+func TestModeVisibilityDefaultsAndRoundTrip(t *testing.T) {
+	t.Run("defaults imported modes hidden when unset", func(t *testing.T) {
+		assert := Assert.New(t)
+		cfg, err := Load(writeConfig(t, `
+[[repos]]
+owner = "a"
+name = "b"
+`))
+		require.NoError(t, err)
+
+		assert.True(*cfg.Modes.Activity)
+		assert.True(*cfg.Modes.Repos)
+		assert.False(*cfg.Modes.Kata)
+		assert.False(*cfg.Modes.Docs)
+		assert.False(*cfg.Modes.Messages)
+		assert.True(*cfg.Modes.Pulls)
+		assert.True(*cfg.Modes.Issues)
+		assert.True(*cfg.Modes.Board)
+		assert.True(*cfg.Modes.Reviews)
+		assert.True(*cfg.Modes.Workspaces)
+	})
+
+	t.Run("preserves configured false values through save", func(t *testing.T) {
+		assert := Assert.New(t)
+		cfg, err := Load(writeConfig(t, `
+[[repos]]
+owner = "a"
+name = "b"
+
+[modes]
+activity = false
+repos = false
+kata = false
+docs = false
+messages = false
+pulls = false
+issues = false
+board = false
+reviews = false
+workspaces = false
+`))
+		require.NoError(t, err)
+
+		savePath := filepath.Join(t.TempDir(), "saved.toml")
+		require.NoError(t, cfg.Save(savePath))
+		cfg2, err := Load(savePath)
+		require.NoError(t, err)
+
+		assert.False(*cfg2.Modes.Activity)
+		assert.False(*cfg2.Modes.Repos)
+		assert.False(*cfg2.Modes.Kata)
+		assert.False(*cfg2.Modes.Docs)
+		assert.False(*cfg2.Modes.Messages)
+		assert.False(*cfg2.Modes.Pulls)
+		assert.False(*cfg2.Modes.Issues)
+		assert.False(*cfg2.Modes.Board)
+		assert.False(*cfg2.Modes.Reviews)
+		assert.False(*cfg2.Modes.Workspaces)
 	})
 }
 
@@ -2836,6 +3149,17 @@ func TestTokenEnvNamesIncludesFallbackProviderDefaultsForRepoTokenEnv(t *testing
 		},
 		cfg.TokenEnvNames(),
 	)
+}
+
+func TestTokenEnvNamesIncludesMsgvaultAPIKeyEnv(t *testing.T) {
+	cfg := &Config{
+		Msgvault: &Msgvault{
+			URL:       "http://127.0.0.1:8123",
+			APIKeyEnv: " MSGVAULT_API_KEY_TEST ",
+		},
+	}
+
+	Assert.Contains(t, cfg.TokenEnvNames(), "MSGVAULT_API_KEY_TEST")
 }
 
 func TestGhAuthTokenForHostPassesHostnameFlag(t *testing.T) {

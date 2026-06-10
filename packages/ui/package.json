@@ -107,6 +107,9 @@
     },
     "./api/csrf": {
       "default": "./src/api/csrf.ts"
+    },
+    "./api/contract-status": {
+      "default": "./src/api/contract-status.ts"
     }
   },
   "scripts": {

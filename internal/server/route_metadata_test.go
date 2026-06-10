@@ -21,7 +21,11 @@ import (
 
 var allowedAPITags = map[string]struct{}{
 	"Activity":      {},
+	"Docs":          {},
 	"Issues":        {},
+	"Kata":          {},
+	"Messages":      {},
+	"Msgvault":      {},
 	"Projects":      {},
 	"Pull Requests": {},
 	"Repositories":  {},

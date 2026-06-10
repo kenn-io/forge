@@ -211,8 +211,8 @@ func runGit(t *testing.T, dir string, args ...string) error {
 	t.Helper()
 	cmd := gitcmd.New().Command(t.Context(), dir, args...)
 	cmd.Env = append(cmd.Env,
-		"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@example.com",
-		"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@example.com",
+		"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=middleman-fixture@example.invalid",
+		"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=middleman-fixture@example.invalid",
 	)
 	return cmd.Run()
 }

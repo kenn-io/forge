@@ -29,6 +29,7 @@ test("settings shows glob match counts and refresh updates tracked repos", async
   await page.goto(`${isolatedServer!.info.base_url}/settings`);
 
   await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
+  await expect(page.getByTitle("Select repository")).not.toBeAttached();
 
   const row = page.locator(".repo-row", { hasText: "roborev-dev/*" });
   await expect(row).toContainText("roborev-dev/*");
@@ -48,6 +49,7 @@ test("settings shows glob match counts and refresh updates tracked repos", async
     })
     .toBe("middleman,worker");
 
+  await page.goto(`${isolatedServer!.info.base_url}/pulls`);
   const selector = page.getByTitle("Select repository");
   await expect(selector).toBeVisible();
   await selector.click();
@@ -55,6 +57,8 @@ test("settings shows glob match counts and refresh updates tracked repos", async
   await expect(page.getByRole("option", { name: /roborev-dev\/worker/ })).toBeVisible();
   await page.keyboard.press("Escape");
 
+  await page.goto(`${isolatedServer!.info.base_url}/settings`);
+  await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
   await row.getByRole("button", { name: "Refresh" }).click();
 
   await expect(row).toContainText("(3)");
@@ -82,6 +86,7 @@ test("settings shows glob match counts and refresh updates tracked repos", async
 test("settings imports a selected subset from a repository glob", async ({ page }) => {
   await page.goto(`${isolatedServer!.info.base_url}/settings`);
   await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
+  await expect(page.getByTitle("Select repository")).not.toBeAttached();
 
   await page.getByRole("button", { name: "Add repositories…" }).click();
   await expect(page.getByRole("dialog", { name: "Add repositories" })).toBeVisible();
@@ -101,6 +106,7 @@ test("settings imports a selected subset from a repository glob", async ({ page 
   await expect(page.locator(".repo-row", { hasText: "import-lab/api" })).toBeVisible();
   await expect(page.locator(".repo-row", { hasText: "import-lab/worker" })).toHaveCount(0);
 
+  await page.goto(`${isolatedServer!.info.base_url}/pulls`);
   const selector = page.getByTitle("Select repository");
   await expect(selector).toBeVisible();
   await selector.click();
@@ -114,6 +120,8 @@ test("settings imports a selected subset from a repository glob", async ({ page 
   await page.keyboard.press("Escape");
   await expect(selector).toContainText("github.com/import-lab/api");
 
+  await page.goto(`${isolatedServer!.info.base_url}/settings`);
+  await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
   if (!api) throw new Error("settings-globs API context not initialized");
   const settingsResponse = await api.get("/api/v1/settings");
   const settings = (await settingsResponse.json()) as {
@@ -143,7 +151,6 @@ test("settings imports a selected subset from a repository glob", async ({ page 
   await repoRow.getByRole("button", { name: "Yes" }).click();
 
   await expect(repoRow).toHaveCount(0);
-  await expect(selector).toContainText("All repos");
   await expect
     .poll(async () => {
       const response = await api!.get("/api/v1/repos");
@@ -155,6 +162,9 @@ test("settings imports a selected subset from a repository glob", async ({ page 
         .join(",");
     })
     .toBe("");
+
+  await page.goto(`${isolatedServer!.info.base_url}/pulls`);
+  await expect(page.getByTitle("Select repository")).toContainText("All repos");
 });
 
 test("repository import can hide forks and private repositories before adding", async ({ page }) => {

@@ -143,7 +143,7 @@ test("design system page renders chip matrix with shared styles", async ({ page 
     })
     .first();
   const plainCaseChip = page.getByText("plain case", { exact: true }).first();
-  const descenderChip = page.getByText("kenn-io/msgvault", { exact: true }).first();
+  const descenderChip = page.getByText("team/inbox-view", { exact: true }).first();
   const interactiveChip = page
     .getByRole("button", {
       name: "Interactive",

@@ -23,6 +23,7 @@ import (
 	"go.kenn.io/middleman/internal/config"
 	"go.kenn.io/middleman/internal/configwatch"
 	"go.kenn.io/middleman/internal/db"
+	"go.kenn.io/middleman/internal/docs"
 	"go.kenn.io/middleman/internal/gitclone"
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/ptyowner"
@@ -32,6 +33,8 @@ import (
 	"go.kenn.io/middleman/internal/workspace"
 	"go.kenn.io/middleman/internal/workspace/localruntime"
 )
+
+const middlemanCSRFHeaderName = "X-Middleman-Csrf"
 
 type EmbedConfig struct {
 	Theme *ThemeConfig `json:"theme,omitempty"`
@@ -78,6 +81,7 @@ type ServerOptions struct {
 	PtyOwnerInProcess                  bool
 	Telemetry                          telemetry.Client
 	TokenSources                       *tokenauth.SourceSet
+	msgvaultRemoteImageDeps            *msgvaultRemoteImageDeps
 }
 
 type shutdownDeadline struct {
@@ -156,9 +160,12 @@ type Server struct {
 	// config-file watcher reload can detect when those changed and
 	// surface restart_required to the UI without ever mutating them.
 	bootCfgSnapshot        startupConfigSnapshot
+	runtimeStripEnvVars    []string
 	configWatcher          *configwatch.Watcher
 	basePath               string
 	options                ServerOptions
+	allowedHostMu          sync.RWMutex
+	allowedHosts           map[string]struct{}
 	version                string
 	now                    func() time.Time
 	handler                http.Handler
@@ -170,6 +177,15 @@ type Server struct {
 	labelCatalogRefreshIDs map[int64]struct{}
 	detailSyncMu           sync.Mutex
 	detailSyncInFlight     map[string]struct{}
+	kataHealthMu           sync.Mutex
+	kataHealthCache        map[string]kataDaemonHealthCacheEntry
+	kataHealthInFlight     map[string]*kataDaemonInflightProbe
+	kataProxyMu            sync.Mutex
+	kataProxyCache         map[kataProxyCacheKey]kataProxyCacheEntry
+	kataProxyIdleCloseOnce sync.Once
+	docsRegistry           *docs.Registry
+	docsPublishLocks       *docsPublishLockSet
+	msgvault               *msgvaultHandler
 
 	// bg tracks short-lived goroutines that HTTP handlers spawn
 	// outside of the Syncer's own wait group (e.g. mergePR's
@@ -393,6 +409,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	}
 
 	var httpErr error
+	httpDrained := httpSrv == nil
 	if httpSrv != nil {
 		httpErr = httpSrv.Shutdown(ctx)
 		// http.Server.Shutdown returns when active connections
@@ -413,6 +430,11 @@ func (s *Server) Shutdown(ctx context.Context) error {
 				httpErr = ctx.Err()
 			}
 		}
+		httpDrained = httpErr == nil
+	}
+
+	if httpDrained {
+		s.kataProxyIdleCloseOnce.Do(s.closeKataProxyIdleConnections)
 	}
 
 	if first {
@@ -510,11 +532,14 @@ func newServer(
 		cfgPath:                cfgPath,
 		tokenSources:           options.TokenSources,
 		bootCfgSnapshot:        snapshotStartupConfig(cfg),
+		runtimeStripEnvVars:    initialRuntimeStripEnvNames(cfg),
 		options:                options,
 		now:                    time.Now,
 		hub:                    NewEventHubWithCapacity(cfg.SSEBufferSizeOrDefault()),
 		tmuxActivity:           newTmuxActivityTracker(nil),
 		labelCatalogRefreshIDs: make(map[int64]struct{}),
+		docsPublishLocks:       newDocsPublishLockSet(),
+		msgvault:               newMsgvaultHandler(cfg, basePath, options.msgvaultRemoteImageDeps),
 		bgCtx: shutdownAwareContext{
 			parent:   bgBaseCtx,
 			deadline: bgDeadline,
@@ -522,6 +547,12 @@ func newServer(
 		bgCancel:   bgCancel,
 		bgDeadline: bgDeadline,
 	}
+	var docFolders []config.DocFolder
+	if cfg != nil {
+		docFolders = cfg.DocFolders
+	}
+	s.docsRegistry = docs.NewRegistry(docFolders)
+	warnDocFolderDaemonBindings(docFolders)
 
 	// (*Config).TmuxCommand handles a nil receiver and returns the
 	// default ["tmux"]. Compute once so the workspace, runtime, and
@@ -587,7 +618,7 @@ func newServer(
 			TmuxCommand:              tmuxCmd,
 			TmuxOwnerMarker:          s.workspaces.TmuxOwnerMarker(),
 			WrapAgentSessionsInTmux:  cfg.TmuxAgentSessionsEnabled(),
-			StripEnvVars:             cfg.TokenEnvNames(),
+			StripEnvVars:             s.runtimeStripEnvVars,
 			ShellCommand:             cfg.ShellCommand(),
 			OnSessionExit:            s.handleRuntimeSessionExit,
 			PtyOwnerRuntime:          runtimePtyOwner,
@@ -865,12 +896,101 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			"duration", time.Since(start).String(),
 		)
 	}()
+	if !s.checkHost(w, r) {
+		return
+	}
 	if r.Method != http.MethodGet && s.isMutatingAPIRequest(r) {
-		if !checkCSRF(w, r) {
+		if !checkCSRF(w, r, s.isKataProxyAPIRequest(r)) {
 			return
 		}
+		if s.isMutatingDocsAPIRequest(r) && !isLoopbackRemoteAddr(r.RemoteAddr) {
+			writeProblemResponse(w, newProblem(
+				http.StatusForbidden,
+				CodeForbidden,
+				"docs mutations require a loopback client",
+				map[string]any{"reason": "loopbackOnly"},
+			))
+			return
+		}
+		if s.isMutatingMessagesAPIRequest(r) {
+			if !isLoopbackRemoteAddr(r.RemoteAddr) {
+				writeProblemResponse(w, newProblem(
+					http.StatusForbidden,
+					CodeForbidden,
+					"message configuration changes require a loopback client",
+					map[string]any{"reason": "loopbackOnly"},
+				))
+				return
+			}
+			if r.Header.Get(middlemanCSRFHeaderName) == "" {
+				writeProblemResponse(w, newProblem(
+					http.StatusForbidden,
+					CodeForbidden,
+					"message mutations require the "+middlemanCSRFHeaderName+" header",
+					map[string]any{"reason": "missingCsrfHeader"},
+				))
+				return
+			}
+		}
+	}
+	if r.Method == http.MethodGet && s.isDocsBrowseAPIRequest(r) && !isLoopbackRemoteAddr(r.RemoteAddr) {
+		writeProblemResponse(w, newProblem(
+			http.StatusForbidden,
+			CodeForbidden,
+			"docs browse requires a loopback client",
+			map[string]any{"reason": "loopbackOnly"},
+		))
+		return
+	}
+	if r.Method == http.MethodGet && s.isDocsReadAPIRequest(r) && !isLoopbackRemoteAddr(r.RemoteAddr) {
+		writeProblemResponse(w, newProblem(
+			http.StatusForbidden,
+			CodeForbidden,
+			"docs reads require a loopback client",
+			map[string]any{"reason": "loopbackOnly"},
+		))
+		return
+	}
+	if r.Method == http.MethodGet && s.isMessagesSavedSearchesAPIRequest(r) && !isLoopbackRemoteAddr(r.RemoteAddr) {
+		writeProblemResponse(w, newProblem(
+			http.StatusForbidden,
+			CodeForbidden,
+			"message saved searches require a loopback client",
+			map[string]any{"reason": "loopbackOnly"},
+		))
+		return
 	}
 	s.handler.ServeHTTP(w, r)
+}
+
+func (s *Server) checkHost(w http.ResponseWriter, r *http.Request) bool {
+	s.allowedHostMu.RLock()
+	allowedHosts := s.allowedHosts
+	if len(allowedHosts) == 0 {
+		s.allowedHostMu.RUnlock()
+		return true
+	}
+	_, ok := allowedHosts[strings.ToLower(r.Host)]
+	s.allowedHostMu.RUnlock()
+	if ok {
+		if authorityIsLoopbackHost(r.Host) && !isLoopbackRemoteAddr(r.RemoteAddr) {
+			writeProblemResponse(w, newProblem(
+				http.StatusForbidden,
+				CodeForbidden,
+				"host is not allowed",
+				map[string]any{"reason": "hostNotAllowed"},
+			))
+			return false
+		}
+		return true
+	}
+	writeProblemResponse(w, newProblem(
+		http.StatusForbidden,
+		CodeForbidden,
+		"host is not allowed",
+		map[string]any{"reason": "hostNotAllowed"},
+	))
+	return false
 }
 
 // isMutatingAPIRequest checks whether the request targets an API route,
@@ -884,9 +1004,97 @@ func (s *Server) isMutatingAPIRequest(r *http.Request) bool {
 	return strings.HasPrefix(path, "/api/")
 }
 
+func (s *Server) isKataProxyAPIRequest(r *http.Request) bool {
+	path := r.URL.Path
+	if s.basePath != "/" {
+		prefix := strings.TrimSuffix(s.basePath, "/")
+		path = strings.TrimPrefix(path, prefix)
+	}
+	return path == kataProxyPrefix || strings.HasPrefix(path, kataProxyPrefix+"/")
+}
+
+func (s *Server) isMutatingDocsAPIRequest(r *http.Request) bool {
+	path := r.URL.Path
+	if s.basePath != "/" {
+		prefix := strings.TrimSuffix(s.basePath, "/")
+		path = strings.TrimPrefix(path, prefix)
+	}
+	return strings.HasPrefix(path, "/api/v1/docs/")
+}
+
+func (s *Server) isMutatingMessagesAPIRequest(r *http.Request) bool {
+	path := r.URL.Path
+	if s.basePath != "/" {
+		prefix := strings.TrimSuffix(s.basePath, "/")
+		path = strings.TrimPrefix(path, prefix)
+	}
+	return path == "/api/v1/msgvault/configure" ||
+		path == "/api/v1/messages/saved-searches"
+}
+
+func (s *Server) isMessagesSavedSearchesAPIRequest(r *http.Request) bool {
+	path := r.URL.Path
+	if s.basePath != "/" {
+		prefix := strings.TrimSuffix(s.basePath, "/")
+		path = strings.TrimPrefix(path, prefix)
+	}
+	return path == "/api/v1/messages/saved-searches"
+}
+
+func (s *Server) isDocsBrowseAPIRequest(r *http.Request) bool {
+	path := r.URL.Path
+	if s.basePath != "/" {
+		prefix := strings.TrimSuffix(s.basePath, "/")
+		path = strings.TrimPrefix(path, prefix)
+	}
+	return path == "/api/v1/docs/browse"
+}
+
+func (s *Server) isDocsReadAPIRequest(r *http.Request) bool {
+	path := r.URL.Path
+	if s.basePath != "/" {
+		prefix := strings.TrimSuffix(s.basePath, "/")
+		path = strings.TrimPrefix(path, prefix)
+	}
+	if path == "/api/v1/docs/folders" || path == "/api/v1/docs/search" {
+		return true
+	}
+	if !strings.HasPrefix(path, "/api/v1/docs/folders/") {
+		return false
+	}
+	return strings.HasSuffix(path, "/tree") ||
+		strings.HasSuffix(path, "/git") ||
+		strings.HasSuffix(path, "/git/changes") ||
+		strings.HasSuffix(path, "/file") ||
+		strings.HasSuffix(path, "/blob") ||
+		strings.HasSuffix(path, "/search")
+}
+
+func isLoopbackRemoteAddr(remoteAddr string) bool {
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		return false
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+func authorityIsLoopbackHost(hostHeader string) bool {
+	host := hostHeader
+	if h, _, err := net.SplitHostPort(hostHeader); err == nil {
+		host = h
+	}
+	host = strings.ToLower(host)
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
 // checkCSRF rejects cross-site mutation requests. Returns true if
 // the request is allowed, false if it was rejected (response written).
-func checkCSRF(w http.ResponseWriter, r *http.Request) bool {
+func checkCSRF(w http.ResponseWriter, r *http.Request, allowProxyContentType bool) bool {
 	if sfs := r.Header.Get("Sec-Fetch-Site"); sfs != "" {
 		if sfs != "same-origin" && sfs != "none" {
 			writeError(w, http.StatusForbidden,
@@ -901,6 +1109,9 @@ func checkCSRF(w http.ResponseWriter, r *http.Request) bool {
 	// requests even without Sec-Fetch-Site.
 	ct := r.Header.Get("Content-Type")
 	if !strings.HasPrefix(ct, "application/json") {
+		if allowProxyContentType && r.Header.Get("Sec-Fetch-Site") != "" {
+			return true
+		}
 		writeError(w, http.StatusUnsupportedMediaType,
 			"Content-Type must be application/json")
 		return false
@@ -923,6 +1134,7 @@ func (s *Server) ListenAndServe(addr string) error {
 // for tests and any caller that wants to own the listener lifetime.
 // Returns http.ErrServerClosed when stopped by Shutdown.
 func (s *Server) Serve(ln net.Listener) error {
+	s.setAllowedHostsForListener(ln)
 	srv := &http.Server{
 		Handler:     s,
 		ReadTimeout: 15 * time.Second,
@@ -945,6 +1157,29 @@ func (s *Server) Serve(ln net.Listener) error {
 	s.bgMu.Unlock()
 
 	return srv.Serve(ln)
+}
+
+func (s *Server) setAllowedHostsForListener(ln net.Listener) {
+	allowed := allowedHostsForListener(ln)
+	s.allowedHostMu.Lock()
+	s.allowedHosts = allowed
+	s.allowedHostMu.Unlock()
+}
+
+func allowedHostsForListener(ln net.Listener) map[string]struct{} {
+	host, port, err := net.SplitHostPort(ln.Addr().String())
+	if err != nil {
+		return nil
+	}
+	ip := net.ParseIP(host)
+	if ip == nil || !ip.IsLoopback() {
+		return nil
+	}
+	out := map[string]struct{}{}
+	for _, h := range []string{host, "127.0.0.1", "localhost", "::1"} {
+		out[strings.ToLower(net.JoinHostPort(h, port))] = struct{}{}
+	}
+	return out
 }
 
 // handleSSE streams server events to a client. The handler subscribes

@@ -3031,8 +3031,8 @@ test.describe("workspace list bubble opens right sidebar", () => {
       ...testWorkspace,
       id: "ws-title",
       repo_owner: "kenn-io",
-      repo_name: "kataflow",
-      repo: workspaceRepoRef("kenn-io", "kataflow"),
+      repo_name: "taskboard",
+      repo: workspaceRepoRef("kenn-io", "taskboard"),
       item_number: 9,
       mr_title: "Migrate native HTTP surface to Huma v2",
     };

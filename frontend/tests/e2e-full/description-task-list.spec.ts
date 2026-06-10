@@ -8,10 +8,28 @@ if (chromiumBinary) {
   test.use({ launchOptions: { executablePath: chromiumBinary } });
 }
 
+const initialPRBody =
+  "## Summary\n\n" +
+  "Introduce an LRU cache in front of the widget store.\n\n" +
+  "## Test plan\n\n" +
+  "- [ ] Cmd+K opens palette, focus lands in the search input\n" +
+  "- [ ] Tab/Shift+Tab cycles within the palette dialog only\n" +
+  "- [ ] `>settings` + Enter navigates to /settings\n" +
+  "- [x] Cache invalidates on widget update\n";
+
+async function resetPRBody(page: import("@playwright/test").Page): Promise<void> {
+  const response = await page.request.patch("/api/v1/pulls/github/acme/widgets/1", {
+    headers: { "X-Middleman-Csrf": "1" },
+    data: { body: initialPRBody },
+  });
+  expect(response.ok()).toBeTruthy();
+}
+
 // Run sequentially: each test mutates the shared fixture body, so a
 // parallel run would race on the same upstream PR state.
 test.describe.serial("PR description task list", () => {
   test.beforeEach(async ({ page }) => {
+    await resetPRBody(page);
     await page.goto("/pulls/github/acme/widgets/1");
     await page.locator(".pull-detail").waitFor({ state: "visible", timeout: 15_000 });
     await page.locator(".body-section .markdown-body").waitFor({ state: "visible" });

@@ -1,0 +1,45 @@
+{
+  "issue": {
+    "id": 101,
+    "uid": "01HZX4Y5Z6A7B8C9D0E1F2G3J1",
+    "project_id": 1,
+    "project_uid": "01HZX4Y5Z6A7B8C9D0E1F2G3P1",
+    "project_name": "Inbox",
+    "short_id": "capt",
+    "qualified_id": "Inbox#capt",
+    "title": "Recorded capture",
+    "body": "Captured from a recorded daemon response.",
+    "status": "open",
+    "author": "middleman",
+    "labels": ["mobile", "capture"],
+    "metadata": {
+      "scheduled_on": "2026-05-20",
+      "checklist": [
+        {
+          "id": "01HZX4Y5Z6A7B8C9D0E1F2G3C2",
+          "text": "Review on mobile",
+          "done": false
+        }
+      ]
+    },
+    "revision": 2,
+    "created_at": "2026-05-15T12:01:00Z",
+    "updated_at": "2026-05-15T12:02:00Z"
+  },
+  "comments": null,
+  "links": null,
+  "labels": [
+    {
+      "issue_id": 101,
+      "label": "mobile",
+      "author": "middleman",
+      "created_at": "2026-05-15T12:01:00Z"
+    },
+    {
+      "issue_id": 101,
+      "label": "capture",
+      "author": "middleman",
+      "created_at": "2026-05-15T12:01:00Z"
+    }
+  ]
+}

@@ -8,10 +8,26 @@ if (chromiumBinary) {
   test.use({ launchOptions: { executablePath: chromiumBinary } });
 }
 
+const initialIssueBody =
+  "## Acceptance criteria\n\n" +
+  "- [ ] System preference detected on first launch\n" +
+  "- [ ] Manual toggle in settings overrides system\n" +
+  "- [ ] Choice persists across reloads\n" +
+  "- [x] Theme tokens defined in design system\n";
+
+async function resetIssueBody(page: import("@playwright/test").Page): Promise<void> {
+  const response = await page.request.patch("/api/v1/issues/github/acme/widgets/11", {
+    headers: { "X-Middleman-Csrf": "1" },
+    data: { body: initialIssueBody },
+  });
+  expect(response.ok()).toBeTruthy();
+}
+
 // Run sequentially: each test mutates the shared fixture body, so a
 // parallel run would race on the same upstream issue state.
 test.describe.serial("issue description task list", () => {
   test.beforeEach(async ({ page }) => {
+    await resetIssueBody(page);
     await page.goto("/issues/github/acme/widgets/11");
     await page.locator(".issue-detail").waitFor({ state: "visible", timeout: 15_000 });
     await page.locator(".body-section .markdown-body").waitFor({ state: "visible" });

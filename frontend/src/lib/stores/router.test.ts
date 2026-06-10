@@ -220,6 +220,52 @@ describe("router basic routes", () => {
     expect(getRoute()).toEqual({ page: "repos" });
   });
 
+  it("parses /kata", () => {
+    navigate("/kata");
+    expect(getRoute()).toEqual({ page: "kata" });
+    expect(getPage()).toBe("kata");
+
+    navigate("/kata?issue=issue-email-susan");
+    expect(getRoute()).toEqual({ page: "kata", issue: "issue-email-susan" });
+    expect(getPage()).toBe("kata");
+
+    navigate("/kata?view=inbox&scope=project-kata&issue=issue-email-susan");
+    expect(getRoute()).toEqual({
+      page: "kata",
+      view: "inbox",
+      scope: "project-kata",
+      issue: "issue-email-susan",
+    });
+    expect(getPage()).toBe("kata");
+  });
+
+  it("parses /docs route state", () => {
+    navigate("/docs?folder=notes&doc=Daily%2Ftoday.md");
+    expect(getRoute()).toEqual({
+      page: "docs",
+      folder: "notes",
+      doc: "Daily/today.md",
+    });
+    expect(getPage()).toBe("docs");
+  });
+
+  it("parses /messages route state", () => {
+    navigate("/messages?q=label%3AInbox&message=42&view=linked");
+    expect(getRoute()).toEqual({
+      page: "messages",
+      q: "label:Inbox",
+      message: "42",
+      view: "linked",
+    });
+    expect(getPage()).toBe("messages");
+  });
+
+  it("does not parse the old mail route as messages", () => {
+    navigate("/mail?q=label%3AInbox");
+    expect(getRoute()).toEqual({ page: "activity" });
+    expect(getPage()).toBe("activity");
+  });
+
   it("does not parse legacy issue detail routes", () => {
     navigate("/issues/org/repo/3");
     expect(getRoute()).toEqual({ page: "issues" });
@@ -504,6 +550,39 @@ describe("router navigation events", () => {
     const payload = spy.mock.calls[spy.mock.calls.length - 1]![0];
     expect(payload.type).toBe("activity");
     expect(payload.view).toBe("/design-system");
+  });
+
+  it("maps /kata to kata navigation events", () => {
+    const spy = vi.fn();
+    installOnNavigate(spy);
+
+    navigate("/kata");
+
+    const payload = spy.mock.calls[spy.mock.calls.length - 1]![0];
+    expect(payload.type).toBe("kata");
+    expect(payload.view).toBe("/kata");
+  });
+
+  it("maps /docs to docs navigation events", () => {
+    const spy = vi.fn();
+    installOnNavigate(spy);
+
+    navigate("/docs?folder=notes&doc=Daily%2Ftoday.md");
+
+    const payload = spy.mock.calls[spy.mock.calls.length - 1]![0];
+    expect(payload.type).toBe("docs");
+    expect(payload.view).toBe("/docs?folder=notes&doc=Daily%2Ftoday.md");
+  });
+
+  it("maps /messages to messages navigation events", () => {
+    const spy = vi.fn();
+    installOnNavigate(spy);
+
+    navigate("/messages?q=from%3Aops");
+
+    const payload = spy.mock.calls[spy.mock.calls.length - 1]![0];
+    expect(payload.type).toBe("messages");
+    expect(payload.view).toBe("/messages?q=from%3Aops");
   });
 
   it("maps every embed-workspace route to a workspaces navigation event", () => {

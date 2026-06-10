@@ -53,7 +53,7 @@ func SetupDiffRepo(
 		return nil, fmt.Errorf("git init: %w", err)
 	}
 	if err := git(ctx, workDir,
-		"config", "user.email", "test@example.com"); err != nil {
+		"config", "user.email", "middleman-fixture@example.invalid"); err != nil {
 		return nil, err
 	}
 	if err := git(ctx, workDir,

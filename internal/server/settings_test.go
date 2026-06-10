@@ -342,9 +342,69 @@ command = ["codex", "--full-auto"]
 	require.NotNil(resp.Terminal.CursorBlink)
 	assert.True(*resp.Terminal.CursorBlink)
 	assert.False(resp.Terminal.FontLigatures)
+	assertDefaultModeVisibility(t, resp.Modes)
 	require.Len(resp.Agents, 1)
 	assert.Equal("codex", resp.Agents[0].Key)
 	assert.Equal([]string{"codex", "--full-auto"}, resp.Agents[0].Command)
+}
+
+func TestHandleUpdateSettingsPersistsModes(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	srv, _, cfgPath := setupTestServerWithConfig(t)
+
+	modes := config.DefaultModeVisibility()
+	*modes.Kata = true
+	*modes.Docs = true
+	*modes.Messages = true
+	*modes.Workspaces = false
+
+	rr := doJSON(
+		t, srv, http.MethodPut, "/api/v1/settings",
+		updateSettingsRequest{Modes: &modes},
+	)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+
+	var resp settingsResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+	assert.True(*resp.Modes.Kata)
+	assert.True(*resp.Modes.Docs)
+	assert.True(*resp.Modes.Messages)
+	assert.False(*resp.Modes.Workspaces)
+	assert.True(*resp.Modes.Activity)
+	assert.True(*resp.Modes.Repos)
+	assert.True(*resp.Modes.Pulls)
+	assert.True(*resp.Modes.Issues)
+	assert.True(*resp.Modes.Board)
+	assert.True(*resp.Modes.Reviews)
+
+	cfg2, err := config.Load(cfgPath)
+	require.NoError(err)
+	assert.True(*cfg2.Modes.Kata)
+	assert.True(*cfg2.Modes.Docs)
+	assert.True(*cfg2.Modes.Messages)
+	assert.False(*cfg2.Modes.Workspaces)
+	assert.True(*cfg2.Modes.Activity)
+	assert.True(*cfg2.Modes.Repos)
+	assert.True(*cfg2.Modes.Pulls)
+	assert.True(*cfg2.Modes.Issues)
+	assert.True(*cfg2.Modes.Board)
+	assert.True(*cfg2.Modes.Reviews)
+}
+
+func assertDefaultModeVisibility(t *testing.T, modes config.ModeVisibility) {
+	t.Helper()
+	assert := Assert.New(t)
+	assert.True(*modes.Activity)
+	assert.True(*modes.Repos)
+	assert.False(*modes.Kata)
+	assert.False(*modes.Docs)
+	assert.False(*modes.Messages)
+	assert.True(*modes.Pulls)
+	assert.True(*modes.Issues)
+	assert.True(*modes.Board)
+	assert.True(*modes.Reviews)
+	assert.True(*modes.Workspaces)
 }
 
 func TestHandleUpdateSettings(t *testing.T) {
@@ -404,6 +464,10 @@ view_mode = "flat"
 time_range = "30d"
 hide_closed = true
 hide_bots = true
+
+[modes]
+docs = false
+messages = false
 `, &mockGH{})
 
 	terminal := config.Terminal{
@@ -432,6 +496,8 @@ hide_bots = true
 	assert.Equal(15, cfg2.Terminal.FontSize)
 	assert.Equal(2000, cfg2.Terminal.Scrollback)
 	assert.Equal(1, cfg2.Terminal.LetterSpacing)
+	assert.False(*cfg2.Modes.Docs)
+	assert.False(*cfg2.Modes.Messages)
 }
 
 func TestHandleUpdateSettingsPersistsAgents(t *testing.T) {

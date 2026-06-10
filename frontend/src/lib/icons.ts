@@ -4,6 +4,7 @@ export { default as ExternalLinkIcon } from "@lucide/svelte/icons/external-link"
 export { default as MergeConflictIcon } from "@lucide/svelte/icons/git-merge";
 export { default as MonitorIcon } from "@lucide/svelte/icons/monitor";
 export { default as MoonIcon } from "@lucide/svelte/icons/moon";
+export { default as PaperclipIcon } from "@lucide/svelte/icons/paperclip";
 export { default as RefreshIcon } from "@lucide/svelte/icons/refresh-ccw";
 export { default as SearchIcon } from "@lucide/svelte/icons/search";
 export { default as SettingsIcon } from "@lucide/svelte/icons/settings";

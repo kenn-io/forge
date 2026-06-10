@@ -11,6 +11,8 @@ type WorkspaceStatusResponse = {
   error_message?: string | null;
 };
 
+type ModeVisibility = Record<string, boolean>;
+
 const lockedWorkspaceTestTimeoutMs = 120_000;
 
 function hasCommand(command: string, args: string[] = ["--version"]): boolean {
@@ -141,6 +143,49 @@ test("settings saves and reloads workspace terminal options", async ({ page }) =
   await expect(page.getByLabel("Letter spacing")).toHaveValue("1");
   await expect(page.getByLabel("Cursor blink")).not.toBeChecked();
   await expect(page.getByLabel("Terminal renderer")).toHaveValue("ghostty-web");
+});
+
+test("settings saves visible modes and hides disabled nav entries", async ({ page }) => {
+  if (!api) throw new Error("settings API context not initialized");
+  const originalResponse = await api.get("/api/v1/settings");
+  const originalSettings = (await originalResponse.json()) as { modes: ModeVisibility };
+  const originalModes = { ...originalSettings.modes };
+
+  try {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(`${isolatedServer!.info.base_url}/settings`);
+    await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
+    await expect(page.getByLabel("PRs")).toBeChecked();
+
+    await page.getByLabel("PRs").uncheck();
+    const saveResponsePromise = page.waitForResponse(
+      (response) => response.url().endsWith("/api/v1/settings") && response.request().method() === "PUT",
+    );
+    await page.getByRole("button", { name: "Save visible modes" }).click();
+    const saveResponse = await saveResponsePromise;
+    const saveBody = await saveResponse.text();
+    expect(saveResponse.status(), `PUT /api/v1/settings failed: ${saveBody}`).toBe(200);
+
+    await expect
+      .poll(async () => {
+        const response = await api!.get("/api/v1/settings");
+        const settings = (await response.json()) as { modes: ModeVisibility };
+        return settings.modes.pulls;
+      })
+      .toBe(false);
+
+    await page.goto(`${isolatedServer!.info.base_url}/`);
+    await expect(page.getByRole("link", { name: "PRs" })).toHaveCount(0);
+    await page.reload();
+    await expect(page.getByRole("link", { name: "PRs" })).toHaveCount(0);
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(`${isolatedServer!.info.base_url}/m`);
+    await expect(page.locator(".mobile-tabs").getByText("PRs", { exact: true })).toHaveCount(0);
+  } finally {
+    const restore = await api.put("/api/v1/settings", { data: { modes: originalModes } });
+    expect(restore.ok()).toBe(true);
+  }
 });
 
 test.describe("terminal options popover", () => {

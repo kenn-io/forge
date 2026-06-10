@@ -108,11 +108,18 @@ describe("dispatchKeydown — modal stack", () => {
     expect(globalHandler).not.toHaveBeenCalled();
   });
 
-  it("preventDefaults reserved keys (Cmd+K) when no frame action matches", () => {
-    pushModalFrame("modal", []);
-    const e = event({ key: "k", metaKey: true });
-    dispatchKeydown(e, () => ctx);
-    expect(e.preventDefault).toHaveBeenCalled();
+  it("preventDefaults reserved palette keys when no frame action matches", () => {
+    for (const init of [
+      { key: "k", metaKey: true },
+      { key: "p", metaKey: true },
+      { key: "p", metaKey: true, shiftKey: true },
+    ]) {
+      pushModalFrame("modal", []);
+      const e = event(init);
+      dispatchKeydown(e, () => ctx);
+      expect(e.preventDefault).toHaveBeenCalled();
+      resetModalStack();
+    }
   });
 
   it("does NOT preventDefault unmatched non-reserved keys", () => {

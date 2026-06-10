@@ -1,0 +1,21 @@
+{
+  "reset_required": false,
+  "events": [
+    {
+      "event_id": 1,
+      "event_uid": "01HZX4Y5Z6A7B8C9D0E1F2G3E1",
+      "origin_instance_uid": "01HZX4Y5Z6A7B8C9D0E1F2G3H4",
+      "type": "issue.created",
+      "project_id": 1,
+      "project_uid": "01HZX4Y5Z6A7B8C9D0E1F2G3P1",
+      "project_name": "Inbox",
+      "issue_id": 101,
+      "issue_uid": "01HZX4Y5Z6A7B8C9D0E1F2G3J1",
+      "issue_short_id": "capt",
+      "actor": "middleman",
+      "payload": "{\"labels\":[\"mobile\",\"capture\"]}",
+      "created_at": "2026-05-15T12:01:00Z"
+    }
+  ],
+  "next_after_id": 1
+}

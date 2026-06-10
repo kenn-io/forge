@@ -11,6 +11,7 @@
     buildPullRequestRoute,
     type RoutedItemRef,
   } from "@middleman/ui/routes";
+  import { docsHref } from "../../api/docs/route.js";
   import {
     closePalette,
     isPaletteOpen,
@@ -28,10 +29,28 @@
     readRecents,
     writeRecent,
   } from "../../stores/keyboard/recents.svelte.js";
+  import type {
+    ModeDocResult,
+    ModePaletteResults,
+    ModeTaskResult,
+  } from "../../stores/keyboard/mode-palette-search.js";
   import { navigate } from "../../stores/router.svelte.js";
   import type { Action, RecentsState } from "../../stores/keyboard/types.js";
 
   const RECENT_CAP = 8;
+  const MODE_SEARCH_DEBOUNCE_MS = 150;
+
+  interface Props {
+    modeSearch?: ((query: string) => Promise<ModePaletteResults>) | undefined;
+    onOpenKataIssue?: ((uid: string) => void) | undefined;
+    onOpenDoc?: ((folder: string, relPath: string) => void) | undefined;
+  }
+
+  let {
+    modeSearch = undefined,
+    onOpenKataIssue = undefined,
+    onOpenDoc = undefined,
+  }: Props = $props();
 
   // getStores() returns undefined when the palette is mounted outside the
   // <Provider> context (notably the unit-test fixture in
@@ -47,6 +66,10 @@
   let query = $state("");
   let highlightIndex = $state(0);
   let recents = $state<RecentsState>({ version: 1, items: [] });
+  let modeResults = $state<ModePaletteResults | null>(null);
+  let modeLoading = $state(false);
+  let modeRequestVersion = 0;
+  let modeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
   const parsed = $derived(parsePaletteQuery(query));
 
@@ -81,6 +104,62 @@
       parsed,
     }),
   );
+  const modeTaskRows = $derived<ModeTaskResult[]>(
+    modeResults?.tasks.ok ? modeResults.tasks.rows : [],
+  );
+  const modeDocRows = $derived<ModeDocResult[]>(
+    modeResults?.docs.ok ? modeResults.docs.rows : [],
+  );
+  const modeFeedbackCount = $derived(
+    (modeLoading ? 1 : 0) +
+      (modeResults?.tasks.ok === false ? 1 : 0) +
+      (modeResults?.docs.ok === false ? 1 : 0),
+  );
+
+  $effect(() => {
+    const open = isPaletteOpen();
+    const search = modeSearch;
+    const scope = parsed.scope;
+    const q = parsed.query;
+    if (modeDebounceTimer !== null) {
+      clearTimeout(modeDebounceTimer);
+      modeDebounceTimer = null;
+    }
+    if (!open || !search || scope !== "all" || q === "") {
+      modeRequestVersion++;
+      modeResults = null;
+      modeLoading = false;
+      return;
+    }
+
+    const version = ++modeRequestVersion;
+    modeResults = null;
+    modeLoading = true;
+    modeDebounceTimer = setTimeout(() => {
+      void search(q)
+        .then((results) => {
+          if (version === modeRequestVersion) modeResults = results;
+        })
+        .catch((err) => {
+          if (version !== modeRequestVersion) return;
+          const message = err instanceof Error ? err.message : String(err);
+          modeResults = {
+            query: q,
+            tasks: { ok: false, error: message },
+            docs: { ok: false, error: message },
+          };
+        })
+        .finally(() => {
+          if (version === modeRequestVersion) modeLoading = false;
+        });
+    }, MODE_SEARCH_DEBOUNCE_MS);
+    return () => {
+      if (modeDebounceTimer !== null) {
+        clearTimeout(modeDebounceTimer);
+        modeDebounceTimer = null;
+      }
+    };
+  });
 
   type RecentResult =
     | { kind: "recent-pr"; ref: RoutedItemRef; lastSelectedAt: string }
@@ -90,6 +169,8 @@
     | { kind: "command"; item: Action }
     | { kind: "pull"; item: PullRequest }
     | { kind: "issue"; item: Issue }
+    | { kind: "kata-task"; item: ModeTaskResult }
+    | { kind: "doc"; item: ModeDocResult }
     | RecentResult;
 
   // Recents only appear in the empty-state view (no query, default scope).
@@ -117,6 +198,9 @@
     grouped.commands.length +
       grouped.pulls.length +
       grouped.issues.length +
+      modeTaskRows.length +
+      modeDocRows.length +
+      modeFeedbackCount +
       recentResults.length >
       0,
   );
@@ -126,6 +210,8 @@
     ...grouped.commands.map<FlatResult>((c) => ({ kind: "command", item: c })),
     ...grouped.pulls.map<FlatResult>((p) => ({ kind: "pull", item: p })),
     ...grouped.issues.map<FlatResult>((i) => ({ kind: "issue", item: i })),
+    ...modeTaskRows.map<FlatResult>((item) => ({ kind: "kata-task", item })),
+    ...modeDocRows.map<FlatResult>((item) => ({ kind: "doc", item })),
   ]);
 
   // Reset the highlight to the top whenever the query changes. The first match
@@ -270,6 +356,18 @@
       navigate(buildIssueRoute(ref));
       return;
     }
+    if (result.kind === "kata-task") {
+      closePalette();
+      if (onOpenKataIssue) onOpenKataIssue(result.item.uid);
+      else navigate(`/kata?issue=${encodeURIComponent(result.item.uid)}`);
+      return;
+    }
+    if (result.kind === "doc") {
+      closePalette();
+      if (onOpenDoc) onOpenDoc(result.item.folder, result.item.rel_path);
+      else navigate(docsHref({ mode: "docs", folder: result.item.folder, doc: result.item.rel_path }));
+      return;
+    }
     if (result.kind === "recent-pr") {
       // Refresh the timestamp + bump to the front. The destination view
       // tolerates a missing record itself, so we don't pre-filter recents
@@ -319,6 +417,7 @@
         { key: "Escape" },
         { key: "k", ctrlOrMeta: true },
         { key: "p", ctrlOrMeta: true },
+        { key: "p", ctrlOrMeta: true, shift: true },
       ],
       priority: 100,
       when: () => true,
@@ -380,7 +479,7 @@
       bind:value={query}
       onkeydown={onPaletteKeyDown}
       class="palette-input"
-      placeholder="Search loaded PRs, issues, commands..."
+      placeholder="Search PRs, issues, commands, tasks, docs..."
     />
     <div class="palette-body">
       <div class="palette-list">
@@ -480,6 +579,69 @@
               {/each}
             </div>
           {/if}
+          {#if modeLoading}
+            <div class="palette-group">
+              <div class="palette-group-header">Modes</div>
+              <div class="palette-row palette-row-disabled">Searching tasks and docs...</div>
+            </div>
+          {/if}
+          {#if modeResults?.tasks.ok === false}
+            <div class="palette-group">
+              <div class="palette-group-header">Tasks</div>
+              <div class="palette-row palette-row-disabled">Task search failed: {modeResults.tasks.error}</div>
+            </div>
+          {:else if modeTaskRows.length > 0}
+            <div class="palette-group">
+              <div class="palette-group-header">Kata tasks</div>
+              {#each modeTaskRows as task, ti (task.uid)}
+                {@const flatIdx =
+                  recentResults.length +
+                  grouped.commands.length +
+                  grouped.pulls.length +
+                  grouped.issues.length +
+                  ti}
+                <button
+                  class="palette-row {flatIdx === highlightIndex
+                    ? 'palette-row-highlight'
+                    : ''}"
+                  type="button"
+                  onclick={() => selectRowAt(flatIdx)}
+                >
+                  <span class="palette-row-tag">{task.qualified_id}</span>
+                  <span class="palette-row-label">{task.title}</span>
+                </button>
+              {/each}
+            </div>
+          {/if}
+          {#if modeResults?.docs.ok === false}
+            <div class="palette-group">
+              <div class="palette-group-header">Docs</div>
+              <div class="palette-row palette-row-disabled">Docs search failed: {modeResults.docs.error}</div>
+            </div>
+          {:else if modeDocRows.length > 0}
+            <div class="palette-group">
+              <div class="palette-group-header">Docs</div>
+              {#each modeDocRows as doc, di (doc.folder + "/" + doc.rel_path)}
+                {@const flatIdx =
+                  recentResults.length +
+                  grouped.commands.length +
+                  grouped.pulls.length +
+                  grouped.issues.length +
+                  modeTaskRows.length +
+                  di}
+                <button
+                  class="palette-row {flatIdx === highlightIndex
+                    ? 'palette-row-highlight'
+                    : ''}"
+                  type="button"
+                  onclick={() => selectRowAt(flatIdx)}
+                >
+                  <span class="palette-row-tag">{doc.folder_name}</span>
+                  <span class="palette-row-label">{doc.rel_path}</span>
+                </button>
+              {/each}
+            </div>
+          {/if}
         {/if}
       </div>
       <div class="palette-preview">
@@ -525,6 +687,27 @@
           {/if}
           {#if issue.Body}
             <div class="preview-body">{bodyExcerpt(issue.Body)}</div>
+          {/if}
+        {:else if highlighted.kind === "kata-task"}
+          {@const task = highlighted.item}
+          <div class="preview-header">
+            <div class="preview-title">{task.title}</div>
+            <ItemStateChip
+              state={task.status}
+              class="preview-badge"
+            />
+          </div>
+          <div class="preview-subtitle">{task.qualified_id}</div>
+          <div class="preview-meta">{task.project_name}</div>
+        {:else if highlighted.kind === "doc"}
+          {@const doc = highlighted.item}
+          <div class="preview-title">{doc.rel_path}</div>
+          <div class="preview-subtitle">{doc.folder_name}</div>
+          <div class="preview-meta">
+            {doc.hit_type === "body" && doc.line ? `Line ${doc.line}` : "Filename match"}
+          </div>
+          {#if doc.snippet}
+            <div class="preview-body">{doc.snippet.text}</div>
           {/if}
         {:else if highlighted.kind === "recent-pr"}
           {@const ref = highlighted.ref}

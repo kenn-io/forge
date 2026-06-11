@@ -346,6 +346,48 @@ test.describe("docs workspace", () => {
     }
   });
 
+  test("strips protocol-relative links and images from real markdown files", async ({ page }) => {
+    const docsRoot = await createDocsFixture();
+    await writeFile(
+      path.join(docsRoot, "protorel.md"),
+      [
+        "# Protorel Fixture",
+        "",
+        "[md link](//evil.example/x) and ![md img](//evil.example/x.png) inline.",
+        "",
+        '<a href="//evil.example/raw">raw slashes</a>',
+        '<a href="\\\\evil.example/bs">raw backslashes</a>',
+        '<a href="/\\evil.example/mix">raw mixed</a>',
+        '<img src="//evil.example/raw.png" alt="raw img">',
+        "",
+        "[ok root](/docs/readme)",
+        "",
+      ].join("\n"),
+    );
+    const server = await startIsolatedE2EServer();
+    try {
+      const folder = await page.request.post(`${server.info.base_url}/api/v1/docs/folders`, {
+        data: {
+          id: "notes",
+          name: "Notes",
+          path: docsRoot,
+        },
+      });
+      expect(folder.status()).toBe(201);
+
+      await page.goto(`${server.info.base_url}/docs?folder=notes&doc=protorel.md`);
+      await expect(page.getByRole("heading", { name: "Protorel Fixture", level: 1 })).toBeVisible();
+
+      const rendered = page.locator(".doc-markdown");
+      // No rendered href/src may point at the protocol-relative host.
+      await expect(rendered.locator('a[href*="evil.example"], img[src*="evil.example"]')).toHaveCount(0);
+      // The single-slash root link must survive unchanged.
+      await expect(rendered.locator('a[href="/docs/readme"]')).toHaveCount(1);
+    } finally {
+      await server.stop();
+    }
+  });
+
   test("preserves doc-only deep links while auto-selecting the first folder", async ({ page }) => {
     const server = await startDocsServer(page);
     try {

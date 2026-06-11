@@ -272,6 +272,7 @@ function createWorkspaceAPI(
   options: { recurrences?: KataRecurrence[] | undefined; events?: KataTaskEvent[] | undefined } = {},
 ): {
   api: KataTaskAPI;
+  instance: ReturnType<typeof vi.fn>;
   search: ReturnType<typeof vi.fn>;
   addComment: ReturnType<typeof vi.fn>;
   addLabel: ReturnType<typeof vi.fn>;
@@ -356,15 +357,16 @@ function createWorkspaceAPI(
     rows = [created, ...rows];
     return { changed: true, issue: created, etag: '"rev-1"' };
   });
+  const instance = vi.fn(
+    async (): Promise<KataInstanceResponse> => ({
+      instance_uid: "instance-1",
+      version: "dev",
+      schema_version: 1,
+    }),
+  );
   return {
     api: {
-      instance: vi.fn(
-        async (): Promise<KataInstanceResponse> => ({
-          instance_uid: "instance-1",
-          version: "dev",
-          schema_version: 1,
-        }),
-      ),
+      instance,
       projects: vi.fn(async () => ({ projects, fetched_at: fetchedAt })),
       createProject: vi.fn(async (name: string) => ({
         id: 90,
@@ -427,6 +429,7 @@ function createWorkspaceAPI(
       patchRecurrence,
       deleteRecurrence: vi.fn(async () => undefined),
     },
+    instance,
     search,
     addComment,
     addLabel,

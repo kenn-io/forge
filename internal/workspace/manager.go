@@ -457,6 +457,16 @@ func (m *Manager) Setup(
 		"terminal session started",
 	)
 
+	// Record the final setup event before flipping status: "ready" is
+	// the externally visible completion signal, so observers that poll
+	// status must never see "ready" while the event log is still
+	// missing its last row. failSetup keeps the same event-then-status
+	// order on the error path.
+	m.recordSetupEvent(
+		ctx,
+		ws.ID, workspaceSetupStageSetup, "ready",
+		"workspace ready",
+	)
 	if err := m.updateWorkspaceStatus(
 		ctx, ws.ID, "ready", nil,
 	); err != nil {
@@ -466,11 +476,6 @@ func (m *Manager) Setup(
 			fmt.Errorf("update status to ready: %w", err),
 		)
 	}
-	m.recordSetupEvent(
-		ctx,
-		ws.ID, workspaceSetupStageSetup, "ready",
-		"workspace ready",
-	)
 	return nil
 }
 

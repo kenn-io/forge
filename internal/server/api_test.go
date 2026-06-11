@@ -22972,6 +22972,51 @@ func TestWorkspaceRetryReadyWorkspaceConflictE2E(t *testing.T) {
 	assert.Len(afterEvents, len(beforeEvents))
 }
 
+// TestWorkspaceReadyStatusImpliesReadySetupEventE2E pins the write order
+// in Manager.Setup: the final "setup ready" event must be recorded before
+// status flips to "ready". When the order was reversed, pollers that
+// reacted to status=ready could read a setup-event list still missing its
+// last row, which made retry-conflict event-count assertions flake on CI.
+func TestWorkspaceReadyStatusImpliesReadySetupEventE2E(t *testing.T) {
+	t.Parallel()
+
+	require := require.New(t)
+
+	client, database, _, _ := setupTestServerWithWorkspaces(t)
+	ctx := context.Background()
+
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(
+		ctx,
+		generated.CreateWorkspaceInputBody{
+			PlatformHost: "github.com",
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     1,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, createResp.StatusCode())
+	require.NotNil(createResp.JSON202)
+	wsID := createResp.JSON202.Id
+
+	// Read the event log immediately after the first observation of
+	// status=ready: the ready event must already be there.
+	waitForWorkspaceReady(t, ctx, client, wsID)
+	events, err := database.ListWorkspaceSetupEvents(ctx, wsID)
+	require.NoError(err)
+	sawReadyEvent := false
+	for _, event := range events {
+		if event.Stage == "setup" && event.Outcome == "ready" {
+			sawReadyEvent = true
+		}
+	}
+	require.True(
+		sawReadyEvent,
+		"workspace reported status=ready before the setup ready "+
+			"event was recorded; events: %d", len(events),
+	)
+}
+
 func TestWorkspaceCreateNotFound(t *testing.T) {
 	t.Parallel()
 

@@ -6457,7 +6457,29 @@ func TestSyncer_OnStatusChangeCallback(t *testing.T) {
 		"last callback should be running=false")
 }
 
-func TestSyncerRateLimitProgressRoundsWaitToSeconds(t *testing.T) {
+func TestFormatRateLimitWaitUsesSecondsOnlyBelowOneMinute(t *testing.T) {
+	assert := Assert.New(t)
+
+	tests := []struct {
+		name string
+		wait time.Duration
+		want string
+	}{
+		{name: "sub-second waits round up to one second", wait: 364 * time.Millisecond, want: "1s"},
+		{name: "sub-minute waits show seconds", wait: 38*time.Second + 364*time.Millisecond, want: "39s"},
+		{name: "minute-scale waits hide seconds", wait: 25*time.Minute + 38*time.Second + 364*time.Millisecond, want: "26m"},
+		{name: "hour-scale waits hide seconds", wait: 2*time.Hour + time.Minute + time.Second, want: "2h2m"},
+		{name: "exact hours hide zero minutes", wait: 2 * time.Hour, want: "2h"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(tt.want, formatRateLimitWait(tt.wait))
+		})
+	}
+}
+
+func TestSyncerRateLimitProgressUsesMinuteScaleWaits(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -6511,7 +6533,8 @@ func TestSyncerRateLimitProgressRoundsWaitToSeconds(t *testing.T) {
 
 	assert.Contains(got, "rate limited, waiting ")
 	assert.NotContains(got, ".")
-	assert.Regexp(`rate limited, waiting \d+m\d+s$`, got)
+	assert.NotContains(got, "s")
+	assert.Regexp(`rate limited, waiting \d+m$`, got)
 }
 
 // notModifiedErr returns the error shape go-github surfaces when the

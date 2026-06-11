@@ -37,11 +37,24 @@ type SyncStatus struct {
 }
 
 func formatRateLimitWait(wait time.Duration) string {
-	rounded := wait.Round(time.Second)
-	if wait > 0 && rounded < time.Second {
-		rounded = time.Second
+	if wait <= 0 {
+		return "0s"
 	}
-	return rounded.String()
+	if wait < time.Minute {
+		seconds := int((wait + time.Second - time.Nanosecond) / time.Second)
+		return fmt.Sprintf("%ds", seconds)
+	}
+
+	minutes := int((wait + time.Minute - time.Nanosecond) / time.Minute)
+	hours := minutes / 60
+	remainingMinutes := minutes % 60
+	if hours == 0 {
+		return fmt.Sprintf("%dm", minutes)
+	}
+	if remainingMinutes == 0 {
+		return fmt.Sprintf("%dh", hours)
+	}
+	return fmt.Sprintf("%dh%dm", hours, remainingMinutes)
 }
 
 // DiffSyncErrorCode categorizes the reason a diff sync failed. The frontend

@@ -68,6 +68,7 @@ describe("KataIssueList", () => {
     cleanup();
     window.localStorage.clear();
     vi.restoreAllMocks();
+    vi.useRealTimers();
   });
 
   it("renders the heading, table columns, and the selected row metadata", () => {
@@ -247,7 +248,9 @@ describe("KataIssueList", () => {
     parentRow.focus();
     await fireEvent.keyDown(parentRow, { key: "j" });
     expect(document.activeElement).toBe(childRow);
-    expect(selected[selected.length - 1]).toBe("issue-child");
+    await waitFor(() => {
+      expect(selected[selected.length - 1]).toBe("issue-child");
+    });
 
     await fireEvent.keyDown(parentRow, { key: "ArrowLeft" });
     await waitFor(() => {
@@ -271,11 +274,70 @@ describe("KataIssueList", () => {
     rows[0]!.focus();
     await fireEvent.keyDown(rows[0]!, { key: "j" });
     expect(document.activeElement).toBe(rows[1]);
-    expect(selected[selected.length - 1]).toBe(rows[1]!.dataset.uid);
+    await waitFor(() => {
+      expect(selected[selected.length - 1]).toBe(rows[1]!.dataset.uid);
+    });
 
     await fireEvent.keyDown(rows[1]!, { key: "k" });
     expect(document.activeElement).toBe(rows[0]);
-    expect(selected[selected.length - 1]).toBe(rows[0]!.dataset.uid);
+    await waitFor(() => {
+      expect(selected[selected.length - 1]).toBe(rows[0]!.dataset.uid);
+    });
+  });
+
+  it("debounces keyboard navigation so only the final row is selected", async () => {
+    vi.useFakeTimers();
+    const third = task({
+      id: 103,
+      uid: "issue-water-plants",
+      short_id: "water-plants",
+      qualified_id: "Home#water-plants",
+      title: "Water plants",
+      updated_at: "2026-05-13T08:00:00Z",
+    });
+    const selected: string[] = [];
+    render(KataIssueList, {
+      props: {
+        currentView: viewWithIssues([...baseIssues, third]),
+        selectedIssueUID: null,
+        loading: false,
+        onSelect: (issue: KataTaskSummary) => selected.push(issue.uid),
+      },
+    });
+
+    const rows = visibleRows();
+    rows[0]!.focus();
+    await fireEvent.keyDown(rows[0]!, { key: "j" });
+    await fireEvent.keyDown(rows[1]!, { key: "j" });
+    expect(document.activeElement).toBe(rows[2]);
+    expect(selected).toEqual([]);
+
+    vi.advanceTimersByTime(50);
+    expect(selected).toEqual([rows[2]!.dataset.uid]);
+  });
+
+  it("clicking a row selects immediately and cancels a pending keyboard selection", async () => {
+    vi.useFakeTimers();
+    const selected: string[] = [];
+    render(KataIssueList, {
+      props: {
+        currentView,
+        selectedIssueUID: null,
+        loading: false,
+        onSelect: (issue: KataTaskSummary) => selected.push(issue.uid),
+      },
+    });
+
+    const rows = visibleRows();
+    rows[0]!.focus();
+    await fireEvent.keyDown(rows[0]!, { key: "j" });
+    expect(selected).toEqual([]);
+
+    await fireEvent.click(rows[0]!);
+    expect(selected).toEqual([rows[0]!.dataset.uid]);
+
+    vi.advanceTimersByTime(100);
+    expect(selected).toEqual([rows[0]!.dataset.uid]);
   });
 
   it("Home and End jump to first and last rows", async () => {

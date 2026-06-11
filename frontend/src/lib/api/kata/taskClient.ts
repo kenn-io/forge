@@ -248,13 +248,21 @@ export function createKataTaskAPI(options: CreateKataTaskAPIOptions = {}): KataT
 
   async function request<T>(
     path: string,
-    init: { method?: string | undefined; body?: unknown; headers?: Record<string, string> | undefined } = {},
+    init: {
+      method?: string | undefined;
+      body?: unknown;
+      headers?: Record<string, string> | undefined;
+      signal?: AbortSignal | undefined;
+    } = {},
   ): Promise<RequestResult<T>> {
     const headers = new Headers(init.headers);
     const requestInit: RequestInit = {
       method: init.method ?? "GET",
       headers,
     };
+    if (init.signal) {
+      requestInit.signal = init.signal;
+    }
     if (init.body !== undefined) {
       headers.set("Content-Type", "application/json");
       requestInit.body = JSON.stringify(init.body);
@@ -334,9 +342,15 @@ export function createKataTaskAPI(options: CreateKataTaskAPIOptions = {}): KataT
     return normalizeKataTaskList(result.body).groups.flatMap((group) => group.issues);
   }
 
-  async function fetchIssue(uid: string, daemonId?: string, pinned = false): Promise<KataTaskDetail> {
+  async function fetchIssue(
+    uid: string,
+    daemonId?: string,
+    pinned = false,
+    signal?: AbortSignal,
+  ): Promise<KataTaskDetail> {
     const result = await request<unknown>(taskPath(`/issues/${encodeURIComponent(uid)}`), {
       headers: pinned ? pinnedDaemonHeaders(daemonId) : daemonHeaders(daemonId),
+      signal,
     });
     return { ...normalizeKataTaskDetail(result.body), etag: result.headers.get("etag") ?? undefined };
   }
@@ -531,17 +545,17 @@ export function createKataTaskAPI(options: CreateKataTaskAPIOptions = {}): KataT
     },
 
     async issue(uid, opts) {
-      return fetchIssue(uid, opts?.daemonId, opts?.pinned);
+      return fetchIssue(uid, opts?.daemonId, opts?.pinned, opts?.signal);
     },
 
-    async events(query = {}) {
+    async events(query = {}, opts) {
       async function fetchPage(afterID?: number): Promise<KataTaskEventsResponse> {
         const params = new URLSearchParams();
         if (query.project_id !== undefined) params.set("project_id", String(query.project_id));
         if (afterID !== undefined) params.set("after_id", String(afterID));
         if (query.limit !== undefined) params.set("limit", String(query.limit));
         const suffix = params.toString() ? `?${params.toString()}` : "";
-        const result = await request<unknown>(taskPath(`/events${suffix}`));
+        const result = await request<unknown>(taskPath(`/events${suffix}`), { signal: opts?.signal });
         return normalizeKataEvents(result.body);
       }
 
@@ -583,7 +597,7 @@ export function createKataTaskAPI(options: CreateKataTaskAPIOptions = {}): KataT
       if (query.after_id !== undefined) params.set("after_id", String(query.after_id));
       if (query.limit !== undefined && query.issue_uid === undefined) params.set("limit", String(query.limit));
       const suffix = params.toString() ? `?${params.toString()}` : "";
-      const result = await request<unknown>(taskPath(`/events${suffix}`));
+      const result = await request<unknown>(taskPath(`/events${suffix}`), { signal: opts?.signal });
       const events = normalizeKataEvents(result.body);
       return {
         ...events,

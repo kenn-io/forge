@@ -781,6 +781,53 @@ describe("kata workspace store", () => {
     expect(store.pendingSelectionUID).toBeNull();
   });
 
+  test("selecting a new issue aborts the in-flight detail load for the previous one", async () => {
+    const api = createFakeKataTaskAPI();
+    const firstSignals: (AbortSignal | undefined)[] = [];
+    api.mocks.issue.mockImplementationOnce(
+      (_uid: string, opts?: { signal?: AbortSignal }) =>
+        new Promise<KataTaskDetail>((_resolve, reject) => {
+          firstSignals.push(opts?.signal);
+          opts?.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), {
+            once: true,
+          });
+        }),
+    );
+    const store = createKataWorkspaceStore({ api });
+
+    const first = store.selectIssue("issue-pay-rent");
+    const second = store.selectIssue("issue-call-dentist");
+
+    await expect(second).resolves.toBe(true);
+    await expect(first).resolves.toBe(false);
+    expect(firstSignals[0]?.aborted).toBe(true);
+    expect(store.selectedIssue?.issue.uid).toBe("issue-call-dentist");
+    expect(store.pendingSelectionUID).toBeNull();
+  });
+
+  test("clearing the selection aborts the in-flight detail load", async () => {
+    const api = createFakeKataTaskAPI();
+    const signals: (AbortSignal | undefined)[] = [];
+    api.mocks.issue.mockImplementationOnce(
+      (_uid: string, opts?: { signal?: AbortSignal }) =>
+        new Promise<KataTaskDetail>((_resolve, reject) => {
+          signals.push(opts?.signal);
+          opts?.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), {
+            once: true,
+          });
+        }),
+    );
+    const store = createKataWorkspaceStore({ api });
+
+    const pending = store.selectIssue("issue-pay-rent");
+    store.clearSelection();
+
+    await expect(pending).resolves.toBe(false);
+    expect(signals[0]?.aborted).toBe(true);
+    expect(store.selectedIssue).toBeNull();
+    expect(store.pendingSelectionUID).toBeNull();
+  });
+
   test("opens a different view and selects its first issue", async () => {
     const store = createKataWorkspaceStore({ api: createFakeKataTaskAPI() });
     await store.bootstrap();
@@ -915,7 +962,7 @@ describe("kata workspace store", () => {
       '"rev-1"',
     );
     expect(store.selectedIssue?.issue.uid).toBe("issue-pay-rent");
-    expect(api.mocks.issue).toHaveBeenCalledWith("issue-pay-rent");
+    expect(api.mocks.issue).toHaveBeenCalledWith("issue-pay-rent", { signal: expect.any(AbortSignal) });
   });
 
   test("serializes metadata patches so rapid edits use the refreshed ETag", async () => {
@@ -1192,7 +1239,7 @@ describe("kata workspace store", () => {
     const mutation = store.addComment("issue-pay-rent", "fixture-user", "Payment is scheduled.");
     await Promise.resolve();
     await Promise.resolve();
-    expect(api.mocks.issue).toHaveBeenCalledWith("issue-pay-rent");
+    expect(api.mocks.issue).toHaveBeenCalledWith("issue-pay-rent", { signal: expect.any(AbortSignal) });
 
     await store.selectIssue("issue-call-dentist");
     expect(store.selectedIssue?.issue.uid).toBe("issue-call-dentist");
@@ -1346,7 +1393,7 @@ describe("kata workspace store", () => {
 
     expect(store.eventCursor).toBe(77);
     expect(api.mocks.issues).toHaveBeenCalledWith({ view: "today" });
-    expect(api.mocks.issue).toHaveBeenCalledWith("issue-pay-rent");
+    expect(api.mocks.issue).toHaveBeenCalledWith("issue-pay-rent", { signal: expect.any(AbortSignal) });
     expect(store.selectedIssue?.comments.map((comment) => comment.body)).toContain("Remote note.");
   });
 

@@ -13,6 +13,7 @@ import type {
   KataTaskEditPatch,
   KataTaskEvent,
   KataTaskEventStreamMessage,
+  KataTaskEventsResponse,
   KataTaskIssuesQuery,
   KataTaskMetadataPatch,
   KataTaskMutationResponse,
@@ -223,6 +224,7 @@ export class KataWorkspaceStore {
 
   private viewRequestID = 0;
   private detailRequestID = 0;
+  private detailAbort: AbortController | null = null;
   private unscopedViewName: KataTaskViewName = "today";
   private issueETags = new Map<string, string>();
   private metadataQueues = new Map<string, Promise<void>>();
@@ -436,6 +438,8 @@ export class KataWorkspaceStore {
 
   clearSelection(): void {
     this.detailRequestID++;
+    this.detailAbort?.abort();
+    this.detailAbort = null;
     this.selectedIssue = null;
     this.selectedEvents = [];
     this.selectedRecurrences = [];
@@ -792,6 +796,12 @@ export class KataWorkspaceStore {
     viewRequestID: number | undefined,
     detailRequestID: number,
   ): Promise<boolean> {
+    // A newer selection makes the previous detail load moot — abort it so
+    // the connection isn't tied up; the server cancels the proxied daemon
+    // request along with it.
+    this.detailAbort?.abort();
+    this.detailAbort = null;
+
     if (!uid) {
       if (viewRequestID === undefined || viewRequestID === this.viewRequestID) {
         this.selectedIssue = null;
@@ -803,7 +813,23 @@ export class KataWorkspaceStore {
       return false;
     }
 
-    const [detail, events] = await Promise.all([this.api.issue(uid), this.api.events({ issue_uid: uid, limit: 100 })]);
+    const abort = new AbortController();
+    this.detailAbort = abort;
+    let detail: KataTaskDetail;
+    let events: KataTaskEventsResponse;
+    try {
+      [detail, events] = await Promise.all([
+        this.api.issue(uid, { signal: abort.signal }),
+        this.api.events({ issue_uid: uid, limit: 100 }, { signal: abort.signal }),
+      ]);
+    } catch (error) {
+      // Aborted means superseded: a newer selection owns the pane now, so
+      // this failure must not surface as a user-facing error.
+      if (abort.signal.aborted) return false;
+      throw error;
+    } finally {
+      if (this.detailAbort === abort) this.detailAbort = null;
+    }
     if (viewRequestID !== undefined && viewRequestID !== this.viewRequestID) return false;
     if (detailRequestID !== this.detailRequestID) return false;
     this.selectedIssue = detail;

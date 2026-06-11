@@ -359,8 +359,8 @@ export interface KataTaskAPI {
   ): Promise<KataTaskMutationResponse>;
   issues(query: KataTaskIssuesQuery): Promise<KataTaskViewResponse>;
   search(filters: KataTaskSearchFilters, opts?: { daemonId?: string }): Promise<KataTaskSearchResponse>;
-  issue(uid: string, opts?: { daemonId?: string; pinned?: boolean }): Promise<KataTaskDetail>;
-  events(query?: KataTaskEventsQuery): Promise<KataTaskEventsResponse>;
+  issue(uid: string, opts?: { daemonId?: string; pinned?: boolean; signal?: AbortSignal }): Promise<KataTaskDetail>;
+  events(query?: KataTaskEventsQuery, opts?: { signal?: AbortSignal }): Promise<KataTaskEventsResponse>;
   addComment(target: KataTaskMutationTarget, actor: string, body: string): Promise<KataTaskMutationResponse>;
   addLabel(target: KataTaskMutationTarget, actor: string, label: string): Promise<KataTaskMutationResponse>;
   removeLabel(target: KataTaskMutationTarget, actor: string, label: string): Promise<KataTaskMutationResponse>;

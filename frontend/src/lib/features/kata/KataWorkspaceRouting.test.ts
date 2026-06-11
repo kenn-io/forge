@@ -174,7 +174,7 @@ describe("KataWorkspace", () => {
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: "Email Susan re: Q3" })).toBeTruthy();
     });
-    expect(api.issue).toHaveBeenCalledWith("issue-email-susan");
+    expect(api.issue).toHaveBeenCalledWith("issue-email-susan", { signal: expect.any(AbortSignal) });
   });
 
   it("selects the routed task after bootstrap when it is outside the initial view", async () => {
@@ -202,7 +202,7 @@ describe("KataWorkspace", () => {
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: "Later review" })).toBeTruthy();
     });
-    expect(issueMock).toHaveBeenCalledWith("issue-later-review");
+    expect(issueMock).toHaveBeenCalledWith("issue-later-review", { signal: expect.any(AbortSignal) });
   });
 
   it("updates the selection when the routed task changes", async () => {

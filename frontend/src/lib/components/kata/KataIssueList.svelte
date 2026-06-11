@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onDestroy } from "svelte";
   import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
   import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
   import ChevronUpIcon from "@lucide/svelte/icons/chevron-up";
@@ -211,14 +212,41 @@
     return `Sort by ${label}`;
   }
 
+  // Keyboard navigation selects on every step, and each selection kicks
+  // off a detail + events fetch upstream. Debounce the notification so
+  // holding j/k doesn't fire a request per row traversed — focus still
+  // moves instantly, only the fetch waits for the cursor to settle.
+  const KEYBOARD_SELECT_DEBOUNCE_MS = 50;
+  let keyboardSelectTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function cancelPendingKeyboardSelect() {
+    if (keyboardSelectTimer !== undefined) {
+      clearTimeout(keyboardSelectTimer);
+      keyboardSelectTimer = undefined;
+    }
+  }
+
+  onDestroy(cancelPendingKeyboardSelect);
+
+  function selectNow(issue: KataTaskSummary) {
+    cancelPendingKeyboardSelect();
+    onSelect(issue);
+  }
+
   function focusRow(target: HTMLElement | null) {
     if (!target) return;
     target.focus();
     const uid = target.dataset.uid;
-    const issue = uid ? findIssueByUID(uid) : undefined;
-    if (issue) {
-      onSelect(issue);
-    }
+    if (!uid || !findIssueByUID(uid)) return;
+    cancelPendingKeyboardSelect();
+    keyboardSelectTimer = setTimeout(() => {
+      keyboardSelectTimer = undefined;
+      // Re-resolve at fire time: a live refresh inside the debounce
+      // window can drop the row, and selecting a vanished issue would
+      // surface an error for something the user can no longer see.
+      const issue = findIssueByUID(uid);
+      if (issue) onSelect(issue);
+    }, KEYBOARD_SELECT_DEBOUNCE_MS);
   }
 
   function handleListKeydown(event: KeyboardEvent) {
@@ -443,7 +471,7 @@
     aria-current={isSelected(issue) ? "true" : undefined}
     aria-expanded={expandable ? isExpanded : undefined}
     data-uid={issue.uid}
-    onclick={() => onSelect(issue)}
+    onclick={() => selectNow(issue)}
   >
     <span class="cell cell-id"><span class="id-badge">{displayId(issue)}</span></span>
     <span class="cell cell-title">
@@ -502,7 +530,7 @@
           class:selected={isSelected(child)}
           aria-current={isSelected(child) ? "true" : undefined}
           data-uid={child.uid}
-          onclick={() => onSelect(child)}
+          onclick={() => selectNow(child)}
         >
           <span class="cell cell-id"><span class="id-badge">{displayId(child)}</span></span>
           <span class="cell cell-title">

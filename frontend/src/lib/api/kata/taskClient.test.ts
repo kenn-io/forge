@@ -659,6 +659,30 @@ describe("kata task HTTP client", () => {
     expect(calls[0]!.headers.get(KATA_DAEMON_HEADER)).toBe("work");
   });
 
+  test("threads abort signals through issue and events fetches", async () => {
+    const { fetchImpl } = createFetchStub({
+      "/api/v1/issues/issue-1": {
+        body: { issue: { ...issue("issue-1", "Shown issue"), body: "Body" }, comments: [], labels: [], links: [] },
+      },
+      "/api/v1/events?limit=100": {
+        body: { reset_required: false, events: [], next_after_id: 0 },
+      },
+    });
+    const signals: (AbortSignal | null | undefined)[] = [];
+    const recordingFetch: typeof fetch = (input, init) => {
+      signals.push(init?.signal);
+      return fetchImpl(input, init);
+    };
+    const api = createKataTaskAPI({ fetchImpl: recordingFetch });
+    const controller = new AbortController();
+
+    await api.issue("issue-1", { signal: controller.signal });
+    await api.events({ issue_uid: "issue-1", limit: 100 }, { signal: controller.signal });
+
+    expect(signals).toHaveLength(2);
+    expect(signals.every((signal) => signal === controller.signal)).toBe(true);
+  });
+
   test("fetches events with supported server params and filters issue_uid client-side", async () => {
     const { calls, fetchImpl } = createFetchStub({
       "/api/v1/events?project_id=2&after_id=4": {

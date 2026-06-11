@@ -118,6 +118,9 @@ type AssigneeMutator interface {
 // empty username list is a read: it mutates nothing and returns the
 // provider's current requested-reviewer set, so callers can diff a
 // desired set against live provider state instead of cached state.
+// All usernames, in both directions, are individual user logins;
+// implementations must exclude team or group reviewer identities so a
+// caller-computed removal diff never targets an unsupported identity.
 type ReviewerMutator interface {
 	RequestMergeRequestReviewers(ctx context.Context, ref RepoRef, number int, usernames []string) ([]string, error)
 	RemoveMergeRequestReviewers(ctx context.Context, ref RepoRef, number int, usernames []string) ([]string, error)

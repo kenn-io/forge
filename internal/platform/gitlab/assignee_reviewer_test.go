@@ -144,6 +144,38 @@ func TestRequestAndRemoveMergeRequestReviewersDiffAgainstCurrentSet(t *testing.T
 	assert.Equal([]int64{5}, *updates[1].ReviewerIDs)
 }
 
+func TestRequestMergeRequestReviewersWithEmptyListReadsWithoutMutating(t *testing.T) {
+	puts := 0
+	userLookups := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/v4/users":
+			userLookups++
+			writeJSON(w, `[]`)
+		case r.URL.Path == "/api/v4/projects/42/merge_requests/7" && r.Method == http.MethodGet:
+			writeJSON(w, `{"id": 1001, "iid": 7, "state": "opened", "reviewers": [{"id": 9, "username": "carol"}]}`)
+		case r.Method == http.MethodPut:
+			puts++
+			writeJSON(w, `{}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server.URL)
+	ref := platform.RepoRef{Platform: platform.KindGitLab, Host: "gitlab.example.com", RepoPath: "acme/widget", PlatformID: 42}
+
+	// The ReviewerMutator contract treats an empty request as a read of
+	// the current requested-reviewer set.
+	assert := assert.New(t)
+	current, err := client.RequestMergeRequestReviewers(context.Background(), ref, 7, nil)
+	require.NoError(t, err)
+	assert.Equal([]string{"carol"}, current)
+	assert.Zero(puts)
+	assert.Zero(userLookups)
+}
+
 func TestRequestMergeRequestReviewersSkipsUpdateWhenAlreadyRequested(t *testing.T) {
 	puts := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

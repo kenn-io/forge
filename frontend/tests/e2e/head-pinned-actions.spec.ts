@@ -209,6 +209,45 @@ test.describe("head-pinned merge and approve", () => {
   });
 });
 
+test.describe("palette approve head conflict", () => {
+  test("stale_state from a palette approval reloads the detail before retry", async ({ page }) => {
+    await mockApi(page);
+
+    let detailLoads = 0;
+    await page.route("**/api/v1/pulls/github/acme/widgets/42", async (route: Route) => {
+      if (route.request().method() !== "GET") {
+        await route.fallback();
+        return;
+      }
+      detailLoads += 1;
+      await route.fallback();
+    });
+    await page.route(APPROVE_PATH, async (route: Route) => {
+      await route.fulfill(conflictProblem("stale_state", "target changed since it was reviewed; refresh and retry"));
+    });
+
+    await page.goto("/pulls/github/acme/widgets/42");
+    await expect(page.locator(".detail-title")).toContainText("Add browser regression coverage");
+    const loadsBeforeApprove = detailLoads;
+
+    const approveRequest = page.waitForRequest(
+      (req) =>
+        req.method() === "POST" && /\/pulls\/github\/acme\/widgets\/42\/approve$/.test(new URL(req.url()).pathname),
+    );
+    await page.keyboard.press("Meta+K");
+    await page.locator(".palette-input").fill("approve pr");
+    await page.keyboard.press("Enter");
+
+    // The pin must be the rendered head, and the conflict must trigger a
+    // detail reload so the user re-reviews current data before retrying.
+    const request = await approveRequest;
+    const body = request.postDataJSON() as { expected_head_sha?: string };
+    expect(body.expected_head_sha).toBe(REVIEWED_SHA);
+
+    await expect.poll(() => detailLoads, { timeout: 5000 }).toBeGreaterThan(loadsBeforeApprove);
+  });
+});
+
 test.describe("head_unknown approve conflict", () => {
   test("head-bound actions stay disabled until a sync records the head", async ({ page }) => {
     await mockApi(page);

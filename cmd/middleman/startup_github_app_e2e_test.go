@@ -76,6 +76,7 @@ app_id = ` + strconv.FormatInt(creds.ID, 10) + `
 slug = "middleman-startup"
 private_key_path = "app.pem"
 installation_id = ` + strconv.FormatInt(installID, 10) + `
+installation_account = "kenn-io"
 `
 	require.NoError(os.WriteFile(configPath, []byte(configTOML), 0o644))
 	cfg, err := config.Load(configPath)

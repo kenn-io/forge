@@ -82,6 +82,12 @@ func TestMutationsUseUserPATWhileReadsUseAppToken(t *testing.T) {
 			w.WriteHeader(http.StatusCreated)
 			_, _ = w.Write([]byte(`{"id":1}`))
 		})
+	mux.HandleFunc("GET /api/v3/repos/acme/widgets",
+		func(w http.ResponseWriter, r *http.Request) {
+			record("write:get-repo", r)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":1,"name":"widgets","permissions":{"push":true}}`))
+		})
 	mux.HandleFunc("PUT /api/v3/repos/acme/widgets/pulls/5/merge",
 		func(w http.ResponseWriter, r *http.Request) {
 			record("write:merge", r)
@@ -135,6 +141,11 @@ func TestMutationsUseUserPATWhileReadsUseAppToken(t *testing.T) {
 	require.NoError(err)
 	_, err = c.MarkPullRequestReadyForReview(t.Context(), "acme", "widgets", 5)
 	require.NoError(err)
+	// GetRepository is a read, but its permissions block is
+	// viewer-specific and feeds viewer_can_merge; resolving it with
+	// the app token would store the read-only app's permissions.
+	_, err = c.GetRepository(t.Context(), "acme", "widgets")
+	require.NoError(err)
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -143,6 +154,7 @@ func TestMutationsUseUserPATWhileReadsUseAppToken(t *testing.T) {
 	assert.Equal("Bearer user-pat", authByCall["write:merge"])
 	assert.Equal("Bearer user-pat", authByCall["write:rfr-id-lookup"])
 	assert.Equal("Bearer user-pat", authByCall["write:rfr-mutation"])
+	assert.Equal("Bearer user-pat", authByCall["write:get-repo"])
 	assert.Equal(int64(1), mints.Load(),
 		"reads share one minted token; writes must not mint")
 }

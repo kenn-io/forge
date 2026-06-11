@@ -39,6 +39,10 @@ type App struct {
 type Installation struct {
 	ID      int64
 	Account string
+	// RepositorySelection mirrors GitHub's field: "all" (default) or
+	// "selected". Repos lists accessible full names for "selected".
+	RepositorySelection string
+	Repos               []string
 }
 
 type mintedToken struct {
@@ -80,6 +84,7 @@ func NewFake() *Fake {
 	mux.HandleFunc("GET /api/v3/app/installations", f.handleListInstallations)
 	mux.HandleFunc("POST /api/v3/app/installations/{id}/access_tokens", f.handleCreateToken)
 	mux.HandleFunc("DELETE /api/v3/app/installations/{id}", f.handleDeleteInstallation)
+	mux.HandleFunc("GET /api/v3/installation/repositories", f.handleInstallationRepos)
 	mux.HandleFunc("GET /api/v3/rate_limit", f.handleRateLimit)
 	f.srv = httptest.NewServer(mux)
 	return f
@@ -111,7 +116,27 @@ func (f *Fake) Install(appID int64, account string) (int64, error) {
 	}
 	f.nextID++
 	app.Installations = append(app.Installations, Installation{
-		ID: f.nextID, Account: account,
+		ID: f.nextID, Account: account, RepositorySelection: "all",
+	})
+	return f.nextID, nil
+}
+
+// InstallSelected simulates the user installing the app with "Only
+// select repositories", granting access to exactly repos (full
+// "owner/name" names).
+func (f *Fake) InstallSelected(appID int64, account string, repos ...string) (int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	app, ok := f.apps[appID]
+	if !ok {
+		return 0, fmt.Errorf("no app %d", appID)
+	}
+	f.nextID++
+	app.Installations = append(app.Installations, Installation{
+		ID:                  f.nextID,
+		Account:             account,
+		RepositorySelection: "selected",
+		Repos:               append([]string(nil), repos...),
 	})
 	return f.nextID, nil
 }
@@ -283,12 +308,16 @@ func (f *Fake) handleListInstallations(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]map[string]any, 0, len(app.Installations))
 	for _, inst := range app.Installations {
+		selection := inst.RepositorySelection
+		if selection == "" {
+			selection = "all"
+		}
 		out = append(out, map[string]any{
 			"id": inst.ID,
 			"account": map[string]any{
 				"login": inst.Account, "type": "Organization",
 			},
-			"repository_selection": "all",
+			"repository_selection": selection,
 		})
 	}
 	writeJSON(w, http.StatusOK, out)
@@ -357,6 +386,40 @@ func (f *Fake) handleDeleteInstallation(w http.ResponseWriter, r *http.Request) 
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
+	}
+	writeJSONError(w, http.StatusNotFound, "installation not found")
+}
+
+// handleInstallationRepos answers GET /installation/repositories for
+// a minted installation token, returning the repos that token's
+// installation can reach.
+func (f *Fake) handleInstallationRepos(w http.ResponseWriter, r *http.Request) {
+	auth := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	tok, ok := f.tokens[auth]
+	if !ok {
+		writeJSONError(w, http.StatusUnauthorized, "unknown token")
+		return
+	}
+	app, ok := f.apps[tok.appID]
+	if !ok {
+		writeJSONError(w, http.StatusNotFound, "app not found")
+		return
+	}
+	for _, inst := range app.Installations {
+		if inst.ID != tok.installID {
+			continue
+		}
+		repos := make([]map[string]any, 0, len(inst.Repos))
+		for _, name := range inst.Repos {
+			repos = append(repos, map[string]any{"full_name": name})
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"total_count":  len(repos),
+			"repositories": repos,
+		})
+		return
 	}
 	writeJSONError(w, http.StatusNotFound, "installation not found")
 }

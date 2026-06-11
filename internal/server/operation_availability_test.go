@@ -317,6 +317,59 @@ func TestAPIRepoResponseIncludesOperationsGraphQLPauseDoesNotBlockREST(t *testin
 	assert.Empty(merge.Code)
 }
 
+func TestAPIRepoResponseOperationsGateOnWriteTrackerWhenSplit(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	// With a GitHub App handling sync reads, mutations ride the user's
+	// PAT and must gate on the write credential's budget: an exhausted
+	// app tracker must not disable PAT-backed writes, and an exhausted
+	// write tracker must disable them even while reads still flow.
+	database := dbtest.Open(t)
+	restRT := ghclient.NewRateTracker(database, "github.com", "rest")
+	writeRT := ghclient.NewRateTracker(database, "github.com", "rest_write")
+	key := ratelimit.RateBucketKey("github", "github.com")
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": &mockGH{}},
+		database, nil,
+		[]ghclient.RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}},
+		time.Minute,
+		map[string]*ghclient.RateTracker{key: restRT},
+		nil,
+	)
+	syncer.SetWriteRateTrackers(map[string]*ghclient.RateTracker{key: writeRT})
+	t.Cleanup(syncer.Stop)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+
+	_, err := database.UpsertRepo(
+		t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+
+	// App (sync) budget exhausted, PAT healthy: writes stay available.
+	resetAt := time.Now().UTC().Add(30 * time.Minute)
+	restRT.UpdateFromRate(ratelimit.Rate{Limit: 5000, Remaining: 0, Reset: resetAt})
+
+	rr := doJSON(t, srv, http.MethodGet, "/api/v1/repo/github/acme/widget", nil)
+	require.Equal(http.StatusOK, rr.Code)
+	var resp repoResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+	assert.True(resp.Operations.MergePR.Available,
+		"app budget exhaustion must not disable PAT-backed writes")
+
+	// PAT budget exhausted: writes gate even though reads would flow.
+	writeRT.UpdateFromRate(ratelimit.Rate{Limit: 5000, Remaining: 0, Reset: resetAt})
+
+	rr = doJSON(t, srv, http.MethodGet, "/api/v1/repo/github/acme/widget", nil)
+	require.Equal(http.StatusOK, rr.Code)
+	resp = repoResponse{}
+	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+	merge := resp.Operations.MergePR
+	assert.False(merge.Available, "PAT exhaustion must disable writes")
+	assert.Equal(availabilityCodeRateLimited, merge.Code)
+}
+
 func TestAPIRepoResponseIncludesOperationsViewerCannotMerge(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)

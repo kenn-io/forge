@@ -35,13 +35,18 @@ type graphQLRateTrackerSetter interface {
 	SetGraphQLRateTracker(*github.RateTracker)
 }
 
+type writeRateTrackerSetter interface {
+	SetWriteRateTracker(*github.RateTracker)
+}
+
 type providerStartup struct {
-	registry     *platform.Registry
-	rateTrackers map[string]*github.RateTracker
-	budgets      map[string]*github.SyncBudget
-	cloneSources map[tokenauth.Key]tokenauth.Source
-	cloneAuth    map[string]tokenauth.Source
-	fetchers     map[string]*github.GraphQLFetcher
+	registry          *platform.Registry
+	rateTrackers      map[string]*github.RateTracker
+	writeRateTrackers map[string]*github.RateTracker
+	budgets           map[string]*github.SyncBudget
+	cloneSources      map[tokenauth.Key]tokenauth.Source
+	cloneAuth         map[string]tokenauth.Source
+	fetchers          map[string]*github.GraphQLFetcher
 }
 
 func defaultProviderFactories() map[string]providerFactory {
@@ -143,11 +148,12 @@ func buildProviderStartup(
 		return providerStartup{}, err
 	}
 	startup := providerStartup{
-		rateTrackers: make(map[string]*github.RateTracker, len(providerSources)),
-		budgets:      make(map[string]*github.SyncBudget, len(providerSources)),
-		cloneSources: make(map[tokenauth.Key]tokenauth.Source, len(providerSources)),
-		cloneAuth:    make(map[string]tokenauth.Source, len(providerSources)),
-		fetchers:     make(map[string]*github.GraphQLFetcher, len(providerSources)),
+		rateTrackers:      make(map[string]*github.RateTracker, len(providerSources)),
+		writeRateTrackers: make(map[string]*github.RateTracker, len(providerSources)),
+		budgets:           make(map[string]*github.SyncBudget, len(providerSources)),
+		cloneSources:      make(map[tokenauth.Key]tokenauth.Source, len(providerSources)),
+		cloneAuth:         make(map[string]tokenauth.Source, len(providerSources)),
+		fetchers:          make(map[string]*github.GraphQLFetcher, len(providerSources)),
 	}
 	budgetPerHour := cfg.BudgetPerHour()
 	clients := make(map[string]github.Client, len(providerSources))
@@ -228,6 +234,14 @@ func buildProviderStartup(
 		gqlRT := github.NewPlatformRateTracker(database, string(platform.KindGitHub), host, "graphql")
 		if setter, ok := clients[host].(graphQLRateTrackerSetter); ok {
 			setter.SetGraphQLRateTracker(gqlRT)
+		}
+		// The mutation credential (the user's PAT when a GitHub App
+		// handles sync reads) gets its own tracker so write
+		// availability gates on the budget writes actually consume.
+		writeRT := github.NewPlatformRateTracker(database, string(platform.KindGitHub), host, "rest_write")
+		if setter, ok := clients[host].(writeRateTrackerSetter); ok {
+			setter.SetWriteRateTracker(writeRT)
+			startup.writeRateTrackers[rateKey] = writeRT
 		}
 		source := startup.cloneSources[tokenauth.Key{
 			Platform: string(platform.KindGitHub),

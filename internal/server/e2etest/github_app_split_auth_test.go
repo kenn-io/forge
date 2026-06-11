@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -52,7 +53,14 @@ func TestGitHubAppSplitAuthE2E(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v3/repos/kenn-io/middleman",
 		func(w http.ResponseWriter, r *http.Request) {
-			record("read:repo", r)
+			record("write:repo-settings", r)
+			// The permissions block is viewer-specific: the user's PAT
+			// can push, the read-only app cannot. viewer_can_merge in
+			// the DB proves which credential fetched it.
+			permissions := `"permissions": {"push": false}`
+			if r.Header.Get("Authorization") == "Bearer user-pat-e2e" {
+				permissions = `"permissions": {"push": true}`
+			}
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = fmt.Fprint(w, `{
 				"id": 4242001,
@@ -61,7 +69,8 @@ func TestGitHubAppSplitAuthE2E(t *testing.T) {
 				"owner": {"login": "kenn-io"},
 				"default_branch": "main",
 				"html_url": "https://github.com/kenn-io/middleman",
-				"clone_url": "https://github.com/kenn-io/middleman.git"
+				"clone_url": "https://github.com/kenn-io/middleman.git",
+				`+permissions+`
 			}`)
 		})
 	mux.HandleFunc("GET /api/v3/repos/kenn-io/middleman/pulls",
@@ -223,14 +232,23 @@ installation_account = "kenn-io"
 	require.NoError(err)
 	require.Equal(http.StatusCreated, commentResp.StatusCode, string(commentBody))
 
+	// The repo settings refresh resolved with the PAT, so the stored
+	// merge permission must reflect the user, not the read-only app.
+	dbRepo, err := database.GetRepoByOwnerName(t.Context(), "kenn-io", "middleman")
+	require.NoError(err)
+	assert.True(dbRepo.ViewerCanMerge,
+		"viewer_can_merge must come from the PAT-visible permissions, not the app's")
+
 	mu.Lock()
 	defer mu.Unlock()
 	assert.Equal("Bearer ghs_app_token_e2e", authByCall["read:list-pulls"],
 		"sync reads must use the minted installation token")
 	assert.Equal("Bearer user-pat-e2e", authByCall["write:comment"],
 		"mutations must use the user's PAT for attribution")
+	assert.Equal("Bearer user-pat-e2e", authByCall["write:repo-settings"],
+		"the viewer-specific repository read must use the user's PAT")
 	for name, auth := range authByCall {
-		if name == "write:comment" {
+		if strings.HasPrefix(name, "write:") {
 			continue
 		}
 		assert.Equal("Bearer ghs_app_token_e2e", auth, "call %s", name)

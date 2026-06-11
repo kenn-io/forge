@@ -155,6 +155,35 @@ func (c *Client) CreateInstallationToken(
 	return &token, nil
 }
 
+// ListInstallationRepositories lists the full names ("owner/name") of
+// every repository an installation token can reach. Authenticated
+// with the installation token itself, not an app JWT. Used to verify
+// that a "selected repositories" installation actually covers the
+// repos middleman is configured to sync.
+func (c *Client) ListInstallationRepositories(
+	ctx context.Context, installationToken string,
+) ([]string, error) {
+	var names []string
+	for page := 1; ; page++ {
+		var out struct {
+			TotalCount   int `json:"total_count"`
+			Repositories []struct {
+				FullName string `json:"full_name"`
+			} `json:"repositories"`
+		}
+		path := fmt.Sprintf("/installation/repositories?per_page=100&page=%d", page)
+		if err := c.do(ctx, http.MethodGet, path, installationToken, nil, &out); err != nil {
+			return nil, fmt.Errorf("listing installation repositories: %w", err)
+		}
+		for _, repo := range out.Repositories {
+			names = append(names, repo.FullName)
+		}
+		if len(out.Repositories) == 0 || len(names) >= out.TotalCount {
+			return names, nil
+		}
+	}
+}
+
 // DeleteInstallation uninstalls the app from an account.
 func (c *Client) DeleteInstallation(
 	ctx context.Context, appJWT string, installationID int64,

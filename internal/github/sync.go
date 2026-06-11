@@ -306,6 +306,7 @@ type Syncer struct {
 	db                       *db.DB
 	clones                   *gitclone.Manager
 	rateTrackers             map[string]*RateTracker    // provider/host bucket -> tracker
+	writeRateTrackers        map[string]*RateTracker    // provider/host bucket -> mutation-credential tracker
 	budgets                  map[string]*SyncBudget     // provider/host bucket -> budget
 	fetchers                 map[string]*GraphQLFetcher // host -> GraphQL fetcher
 	rateLimitSnapshotMu      sync.Mutex
@@ -2448,6 +2449,25 @@ func (s *Syncer) Status() *SyncStatus {
 // RateTrackers returns the per-host rate trackers map.
 func (s *Syncer) RateTrackers() map[string]*RateTracker {
 	return s.rateTrackers
+}
+
+// SetWriteRateTrackers attaches the per-host trackers fed by
+// mutation-path responses. Kept apart from rateTrackers: the write
+// credential (the user's PAT when a GitHub App handles sync reads)
+// has its own budget, and the sync tracker iteration paths
+// (snapshot refresh, pause handling) must not treat it as a sync
+// bucket. Mutation operation availability consults this map.
+func (s *Syncer) SetWriteRateTrackers(trackers map[string]*RateTracker) {
+	s.writeRateTrackers = trackers
+}
+
+// WriteRateTrackers returns the per-host mutation-credential rate
+// trackers; empty when no host splits read and write credentials.
+func (s *Syncer) WriteRateTrackers() map[string]*RateTracker {
+	if s.writeRateTrackers == nil {
+		return map[string]*RateTracker{}
+	}
+	return s.writeRateTrackers
 }
 
 // Budgets returns the per-host sync budgets map.

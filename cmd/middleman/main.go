@@ -524,6 +524,7 @@ func run(opts serve.Options) error {
 		cfg.Activity.DefaultBranchMaxCommits,
 	)
 	syncer.SetFetchers(startup.fetchers)
+	syncer.SetWriteRateTrackers(startup.writeRateTrackers)
 
 	telemetryReporter = telemetry.NewReporterOrDisabled(telemetry.Options{
 		Database: database,

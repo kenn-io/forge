@@ -118,8 +118,8 @@ var (
 func (s *Server) repoOperations(repo db.Repo) RepoOperations {
 	caps := s.capabilitiesForRepo(repo)
 	rates := map[apiBucket]rateLimitAvailability{
-		apiBucketREST:    s.rateLimitedReason(repo, apiBucketREST),
-		apiBucketGraphQL: s.rateLimitedReason(repo, apiBucketGraphQL),
+		apiBucketREST:    s.mutationRateLimitedReason(repo, apiBucketREST),
+		apiBucketGraphQL: s.mutationRateLimitedReason(repo, apiBucketGraphQL),
 	}
 	derive := func(op operationDescriptor) OperationAvailability {
 		return deriveOperationAvailability(op, caps, repo, rates[op.bucket])
@@ -178,6 +178,32 @@ type rateLimitAvailability struct {
 	limited bool
 	reason  string
 	retryAt string
+}
+
+// mutationRateLimitedReason resolves the rate state gating a write
+// operation. Every operation in RepoOperations is a mutation, and
+// mutations authenticate with the host's write credential (the user's
+// PAT when a GitHub App handles sync reads). When the host has a
+// dedicated write tracker, that tracker alone decides: an exhausted
+// app budget must not disable PAT-backed writes, and PAT exhaustion
+// must surface even though sync reads still flow. Hosts without a
+// write tracker share one credential across reads and writes, so the
+// bucket tracker the operation consumes keeps gating as before.
+func (s *Server) mutationRateLimitedReason(
+	repo db.Repo, bucket apiBucket,
+) rateLimitAvailability {
+	if s == nil || s.syncer == nil {
+		return rateLimitAvailability{}
+	}
+	host := repoProviderHost(repo)
+	key := ratelimit.RateBucketKey(string(repoProviderKind(repo)), host)
+	if wt, ok := s.syncer.WriteRateTrackers()[key]; ok && wt != nil {
+		if wt.IsPaused() {
+			return formatRateLimit(host, wt.ResetAt())
+		}
+		return rateLimitAvailability{}
+	}
+	return s.rateLimitedReason(repo, bucket)
 }
 
 func (s *Server) rateLimitedReason(repo db.Repo, bucket apiBucket) rateLimitAvailability {

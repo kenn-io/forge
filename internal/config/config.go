@@ -1363,6 +1363,7 @@ func (c *Config) validateGitHubApps() error {
 		app.Slug = strings.TrimSpace(app.Slug)
 		app.Owner = strings.TrimSpace(app.Owner)
 		app.PrivateKeyPath = strings.TrimSpace(app.PrivateKeyPath)
+		app.InstallationAccount = strings.TrimSpace(app.InstallationAccount)
 		host, err := normalizePlatformHost(defaultPlatform, app.Host)
 		if err != nil {
 			return fmt.Errorf("config: github_apps[%d]: %w", i, err)
@@ -1376,6 +1377,16 @@ func (c *Config) validateGitHubApps() error {
 		if app.PrivateKeyPath == "" {
 			return fmt.Errorf(
 				"config: github_apps[%d]: private_key_path is required", i,
+			)
+		}
+		// An installation without its account would activate the app
+		// token source while silently skipping installation coverage
+		// validation, so miscovered repos would only fail at sync time.
+		if app.InstallationID != 0 && app.InstallationAccount == "" {
+			return fmt.Errorf(
+				"config: github_apps[%d]: installation_account is required when "+
+					"installation_id is set (re-run \"middleman-github-app install\" "+
+					"to record it)", i,
 			)
 		}
 		// One app per host: the token source chain is host-scoped, so a

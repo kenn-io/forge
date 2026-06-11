@@ -396,6 +396,14 @@ func (env *appEnv) runInstallFlow(
 			picked.Account.Login, strings.Join(uncovered, ", "),
 		)
 	}
+	// Account ownership is not enough for an "Only select repositories"
+	// install: the token reaches only the chosen repos, and anything
+	// else 404s during sync while the config looks healthy.
+	if !strings.EqualFold(picked.RepositorySelection, "all") {
+		if err := env.verifySelectedInstallationCoverage(ctx, cfg, app, picked); err != nil {
+			return err
+		}
+	}
 	if err := updateAppInConfig(cfg, env.configPath, app); err != nil {
 		return fmt.Errorf("saving installation to config: %w", err)
 	}
@@ -411,6 +419,67 @@ func (env *appEnv) runInstallFlow(
 // different account than the installation. Mirrors the config-level
 // coverage validation so the CLI can explain the problem instead of
 // failing a save.
+// verifySelectedInstallationCoverage checks an "Only select
+// repositories" installation against the configured repos it is
+// supposed to serve, by listing what an installation token can
+// actually reach. Glob repo patterns cannot be verified repo-by-repo
+// and are rejected outright: they expand to an open-ended set only an
+// "All repositories" install can satisfy.
+func (env *appEnv) verifySelectedInstallationCoverage(
+	ctx context.Context,
+	cfg *config.Config,
+	app config.GitHubAppConfig,
+	picked githubapp.Installation,
+) error {
+	client := env.apiClient(app.Host)
+	jwt, err := appJWT(app, env.now())
+	if err != nil {
+		return err
+	}
+	token, err := client.CreateInstallationToken(ctx, jwt, picked.ID)
+	if err != nil {
+		return fmt.Errorf("verifying selected-repository installation: %w", err)
+	}
+	names, err := client.ListInstallationRepositories(ctx, token.Token)
+	if err != nil {
+		return fmt.Errorf("verifying selected-repository installation: %w", err)
+	}
+	accessible := make(map[string]struct{}, len(names))
+	for _, name := range names {
+		accessible[strings.ToLower(name)] = struct{}{}
+	}
+	var missing []string
+	for _, r := range cfg.Repos {
+		if r.PlatformOrDefault() != "github" || r.PlatformHostOrDefault() != app.Host {
+			continue
+		}
+		if r.TokenEnv != "" || r.TokenFile != "" {
+			continue
+		}
+		if !strings.EqualFold(r.Owner, picked.Account.Login) {
+			continue
+		}
+		full := r.Owner + "/" + r.Name
+		if r.HasNameGlob() {
+			missing = append(missing, full+" (glob patterns need an \"All repositories\" install)")
+			continue
+		}
+		if _, ok := accessible[strings.ToLower(full)]; !ok {
+			missing = append(missing, full)
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf(
+			"the app was installed on %q with \"Only select repositories\", but the "+
+				"installation cannot reach %s; not recording it in config. Edit the "+
+				"installation's repository access on GitHub (or choose \"All "+
+				"repositories\") and re-run \"install\"",
+			picked.Account.Login, strings.Join(missing, ", "),
+		)
+	}
+	return nil
+}
+
 func reposNotCoveredByInstallation(
 	cfg *config.Config, app config.GitHubAppConfig,
 ) []string {

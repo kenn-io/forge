@@ -77,6 +77,17 @@ app_id = 1
 			wantErr: "private_key_path is required",
 		},
 		{
+			name: "installation id without account",
+			toml: `
+[[github_apps]]
+host = "github.com"
+app_id = 1
+private_key_path = "key.pem"
+installation_id = 5
+`,
+			wantErr: "installation_account is required when installation_id is set",
+		},
+		{
 			name: "duplicate host",
 			toml: `
 [[github_apps]]
@@ -235,6 +246,7 @@ host = "github.com"
 app_id = 4321
 private_key_path = "app.pem"
 installation_id = 99
+installation_account = "kenn-io"
 `))
 	require.NoError(t, err)
 
@@ -273,6 +285,7 @@ host = "github.com"
 app_id = 4321
 private_key_path = "app.pem"
 installation_id = 99
+installation_account = "kenn-io"
 `))
 	require.NoError(t, err)
 

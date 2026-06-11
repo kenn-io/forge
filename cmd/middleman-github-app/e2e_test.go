@@ -91,6 +91,18 @@ var (
 // on the fake, and confirms app deletion in fake settings.
 func scriptBrowser(t *testing.T, fake *githubapptest.Fake, installAccount string) func(string) error {
 	t.Helper()
+	return scriptBrowserWithInstall(t, fake, func(appID int64) error {
+		_, err := fake.Install(appID, installAccount)
+		return err
+	})
+}
+
+// scriptBrowserWithInstall is scriptBrowser with the install click
+// replaced, so tests can simulate "Only select repositories" installs.
+func scriptBrowserWithInstall(
+	t *testing.T, fake *githubapptest.Fake, install func(appID int64) error,
+) func(string) error {
+	t.Helper()
 	return func(target string) error {
 		go func() {
 			if m := installSlugRe.FindStringSubmatch(target); m != nil {
@@ -98,8 +110,7 @@ func scriptBrowser(t *testing.T, fake *githubapptest.Fake, installAccount string
 				if !assert.True(t, ok, "install URL for unknown app slug %q", m[1]) {
 					return
 				}
-				_, err := fake.Install(app.ID, installAccount)
-				assert.NoError(t, err)
+				assert.NoError(t, install(app.ID))
 				return
 			}
 			if m := settingsSlugRe.FindStringSubmatch(target); m != nil {
@@ -384,6 +395,62 @@ func TestDeleteRefusesWhenCredentialsCannotBeVerified(t *testing.T) {
 	require.NoError(err)
 	assert.Len(t, cfg.GitHubApps, 1, "config entry must survive unverified delete")
 	assert.FileExists(t, keyPath)
+}
+
+func TestInstallRejectsSelectedInstallMissingConfiguredRepos(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	fake := githubapptest.NewFake()
+	t.Cleanup(fake.Close)
+	configPath := writeTestConfig(t)
+	createTestApp(t, fake, configPath, "middleman-sel")
+
+	env, _ := newTestEnv(t, fake, configPath)
+	require.NoError(runCLI([]string{"uninstall", "--yes"}, env))
+
+	// "Only select repositories" granting a different repo than the
+	// configured kenn-io/middleman: the install must be refused and
+	// stay unrecorded, because sync would 404 on the uncovered repo.
+	env, _ = newTestEnv(t, fake, configPath)
+	env.openBrowser = scriptBrowserWithInstall(t, fake, func(appID int64) error {
+		_, err := fake.InstallSelected(appID, "kenn-io", "kenn-io/other-repo")
+		return err
+	})
+	err := runCLI([]string{"install", "--timeout", "10s"}, env)
+	require.Error(err)
+	require.ErrorContains(err, "Only select repositories")
+	require.ErrorContains(err, "kenn-io/middleman")
+
+	cfg, err := config.Load(configPath)
+	require.NoError(err)
+	require.Len(cfg.GitHubApps, 1)
+	assert.Zero(t, cfg.GitHubApps[0].InstallationID,
+		"uncovered selected install must not be recorded")
+}
+
+func TestInstallAcceptsSelectedInstallCoveringConfiguredRepos(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	fake := githubapptest.NewFake()
+	t.Cleanup(fake.Close)
+	configPath := writeTestConfig(t)
+	createTestApp(t, fake, configPath, "middleman-selok")
+
+	env, _ := newTestEnv(t, fake, configPath)
+	require.NoError(runCLI([]string{"uninstall", "--yes"}, env))
+
+	env, _ = newTestEnv(t, fake, configPath)
+	env.openBrowser = scriptBrowserWithInstall(t, fake, func(appID int64) error {
+		_, err := fake.InstallSelected(appID, "kenn-io", "kenn-io/middleman")
+		return err
+	})
+	require.NoError(runCLI([]string{"install", "--timeout", "10s"}, env))
+
+	cfg, err := config.Load(configPath)
+	require.NoError(err)
+	require.Len(cfg.GitHubApps, 1)
+	assert.NotZero(t, cfg.GitHubApps[0].InstallationID)
+	assert.Equal(t, "kenn-io", cfg.GitHubApps[0].InstallationAccount)
 }
 
 func TestDeleteRemovesConfigAndKeyAfterBrowserDeletion(t *testing.T) {

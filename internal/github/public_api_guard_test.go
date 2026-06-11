@@ -46,7 +46,7 @@ func TestPublicGitHubAPIGuardTransportAllowsOtherHosts(t *testing.T) {
 func TestNewClientBlocksPublicGitHubAPIInDefaultTests(t *testing.T) {
 	require := require.New(t)
 
-	client, err := NewClient("fake-token", "github.com", nil, nil)
+	client, err := NewClient(testTokenSource("fake-token"), "github.com", nil, nil)
 	require.NoError(err)
 	live, ok := client.(*liveClient)
 	require.True(ok)
@@ -60,7 +60,7 @@ func TestNewClientBlocksPublicGitHubAPIInDefaultTests(t *testing.T) {
 }
 
 func TestNewGraphQLFetcherBlocksPublicGitHubAPIInDefaultTests(t *testing.T) {
-	fetcher := NewGraphQLFetcher("fake-token", "github.com", nil, nil)
+	fetcher := NewGraphQLFetcher(testTokenSource("fake-token"), "github.com", nil, nil)
 
 	_, err := fetcher.FetchRepoPRs(t.Context(), "acme", "widgets")
 

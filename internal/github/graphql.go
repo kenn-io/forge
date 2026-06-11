@@ -10,7 +10,7 @@ import (
 
 	gh "github.com/google/go-github/v84/github"
 	"github.com/shurcooL/githubv4"
-	"golang.org/x/oauth2"
+	"go.kenn.io/middleman/internal/tokenauth"
 )
 
 // topLevelPageSize is the number of PRs fetched per GraphQL
@@ -663,17 +663,19 @@ func (f *GraphQLFetcher) RateTracker() *RateTracker {
 
 // NewGraphQLFetcher creates a fetcher for the given host. budget may be nil.
 func NewGraphQLFetcher(
-	token string,
+	source tokenauth.Source,
 	platformHost string,
 	rateTracker *RateTracker,
 	budget *SyncBudget,
 ) *GraphQLFetcher {
-	ts := oauth2.StaticTokenSource(
-		&oauth2.Token{AccessToken: token},
-	)
-	tc := oauth2.NewClient(context.Background(), ts)
-
-	base := tc.Transport
+	authRT := tokenauth.AuthTransport{
+		Source:              source,
+		Base:                http.DefaultTransport,
+		SetHeader:           tokenauth.BearerAuthHeader,
+		RetryOnUnauthorized: true,
+		AllowedOrigin:       graphQLEndpointForHost(platformHost),
+	}
+	var base http.RoundTripper = authRT
 	if rateTracker != nil {
 		base = &graphqlRateTransport{
 			base:        base,
@@ -686,14 +688,14 @@ func NewGraphQLFetcher(
 			budget: budget,
 		}
 	}
-	tc.Transport = wrapPublicGitHubAPIGuard(base)
+	httpClient := &http.Client{Transport: wrapPublicGitHubAPIGuard(base)}
 
 	var gqlClient *githubv4.Client
 	if platformHost == "" || platformHost == "github.com" {
-		gqlClient = githubv4.NewClient(tc)
+		gqlClient = githubv4.NewClient(httpClient)
 	} else {
 		endpoint := graphQLEndpointForHost(platformHost)
-		gqlClient = githubv4.NewEnterpriseClient(endpoint, tc)
+		gqlClient = githubv4.NewEnterpriseClient(endpoint, httpClient)
 	}
 
 	return &GraphQLFetcher{

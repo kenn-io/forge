@@ -3031,8 +3031,8 @@ test.describe("workspace list bubble opens right sidebar", () => {
       ...testWorkspace,
       id: "ws-title",
       repo_owner: "kenn-io",
-      repo_name: "kataflow",
-      repo: workspaceRepoRef("kenn-io", "kataflow"),
+      repo_name: "taskboard",
+      repo: workspaceRepoRef("kenn-io", "taskboard"),
       item_number: 9,
       mr_title: "Migrate native HTTP surface to Huma v2",
     };
@@ -3097,6 +3097,132 @@ test.describe("workspace list bubble opens right sidebar", () => {
     await filter.fill("not-present");
     await expect(rows).toHaveCount(0);
     await expect(page.locator(".workspace-list-sidebar")).toContainText("No workspaces match.");
+  });
+});
+
+// -------------------------------------------------------
+// Group 3.4: Workspace list sorting
+// -------------------------------------------------------
+
+test.describe("workspace list sorting", () => {
+  // Three workspaces across two repos, in API order
+  // (created_at DESC). The most recently active workspace is
+  // neither the newest nor in the first repo group, so each sort
+  // mode produces a distinct row order.
+  const wsNew = {
+    ...testWorkspace,
+    id: "ws-new",
+    item_number: 3,
+    mr_title: "Newest created",
+    created_at: "2026-05-12T12:00:00Z",
+    tmux_last_output_at: "2026-05-12T13:00:00Z",
+  };
+  const wsMid = {
+    ...testWorkspace,
+    id: "ws-mid",
+    repo_owner: "kenn-io",
+    repo_name: "agentsview",
+    repo: workspaceRepoRef("kenn-io", "agentsview"),
+    item_number: 2,
+    mr_title: "Most recently active",
+    created_at: "2026-05-11T12:00:00Z",
+    tmux_last_output_at: "2026-05-14T09:00:00Z",
+  };
+  const wsOld = {
+    ...testWorkspace,
+    id: "ws-old",
+    item_number: 1,
+    mr_title: "Oldest without activity",
+    created_at: "2026-05-10T12:00:00Z",
+  };
+
+  test.beforeEach(async ({ page }) => {
+    await mockApi(page);
+    await page.route("**/api/v1/events", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "text/event-stream",
+        body: "",
+      });
+    });
+    await page.route("**/api/v1/workspaces", async (route) => {
+      if (route.request().method() === "GET") {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ workspaces: [wsNew, wsMid, wsOld] }),
+        });
+        return;
+      }
+      await route.fulfill({ status: 200 });
+    });
+  });
+
+  test("offers creation and activity sorts and persists the choice across reloads", async ({ page }) => {
+    await page.goto("/workspaces");
+
+    const names = page.locator(".workspace-list-sidebar .ws-name");
+    const headers = page.locator(".workspace-list-sidebar .group-header");
+    await expect(names).toHaveText(["Newest created", "Oldest without activity", "Most recently active"]);
+    await expect(headers).toHaveCount(2);
+
+    const sortTrigger = page.getByTitle("Sort workspaces");
+    await sortTrigger.click();
+    await page.locator(".filter-dropdown").getByRole("button", { name: "Created" }).click();
+
+    await expect(names).toHaveText(["Newest created", "Most recently active", "Oldest without activity"]);
+    await expect(headers).toHaveCount(0);
+    // Without group headers each row carries its own repo context.
+    await expect(page.locator(".workspace-list-sidebar .repo-context").first()).toContainText("acme/widgets");
+
+    await sortTrigger.click();
+    await page.locator(".filter-dropdown").getByRole("button", { name: "Activity" }).click();
+
+    // ws-old has no tmux output and falls back to creation time.
+    await expect(names).toHaveText(["Most recently active", "Newest created", "Oldest without activity"]);
+
+    await page.reload();
+
+    await expect(names).toHaveText(["Most recently active", "Newest created", "Oldest without activity"]);
+    await expect(headers).toHaveCount(0);
+
+    await sortTrigger.click();
+    await page.locator(".filter-dropdown").getByRole("button", { name: "Org / repo" }).click();
+
+    await expect(headers).toHaveCount(2);
+    await expect(names).toHaveText(["Newest created", "Oldest without activity", "Most recently active"]);
+  });
+
+  test("sort trigger hugs the collapse toggle and the dropdown opens left-aligned", async ({ page }) => {
+    await page.goto("/workspaces");
+
+    const trigger = page.getByTitle("Sort workspaces");
+    const toggle = page.getByRole("button", { name: "Collapse Workspaces sidebar" });
+    await expect(trigger).toBeVisible();
+    await expect(toggle).toBeVisible();
+
+    const triggerBox = await trigger.boundingBox();
+    const toggleBox = await toggle.boundingBox();
+    expect(triggerBox).not.toBeNull();
+    expect(toggleBox).not.toBeNull();
+
+    // Regression: two competing auto margins (sort wrapper + toggle
+    // push class) once split the header's free space and stranded
+    // the trigger mid-header. The trigger must sit directly beside
+    // the toggle at the right edge.
+    const gap = toggleBox!.x - (triggerBox!.x + triggerBox!.width);
+    expect(gap).toBeGreaterThanOrEqual(0);
+    expect(gap).toBeLessThanOrEqual(12);
+
+    await trigger.click();
+    const dropdown = page.locator(".filter-dropdown");
+    await expect(dropdown).toBeVisible();
+    const dropdownBox = await dropdown.boundingBox();
+    expect(dropdownBox).not.toBeNull();
+
+    // Regression: align="end" used to hang the panel out to the
+    // left over the filter input. Left edges must align instead.
+    expect(Math.abs(dropdownBox!.x - triggerBox!.x)).toBeLessThanOrEqual(1.5);
   });
 });
 

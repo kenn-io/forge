@@ -7,6 +7,7 @@ import type { Action, Context, KeySpec } from "./types.js";
 const RESERVED_WHILE_MODAL_OPEN: KeySpec[] = [
   { key: "k", ctrlOrMeta: true },
   { key: "p", ctrlOrMeta: true },
+  { key: "p", ctrlOrMeta: true, shift: true },
 ];
 
 const SCOPE_SPECIFICITY: Record<Action["scope"], number> = {

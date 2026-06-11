@@ -15,7 +15,7 @@ import (
 // git several times; if the test binary is invoked from a git hook
 // (prek pre-commit fires `go test`), the outer git exports GIT_DIR,
 // GIT_WORK_TREE, and friends. Without stripping, `git config
-// user.email test@example.com` inside the fixture's workrepo honors
+// user.email middleman-fixture@example.invalid` inside the fixture's workrepo honors
 // the inherited GIT_DIR and writes to the hosting repo's .git/config
 // instead, leaving a stray [user] block behind.
 //

@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { components } from "../../api/roborev/generated/schema.js";
+  import { parseCostUsd } from "../../utils/roborev-cost.js";
   import { timeAgo } from "../../utils/time.js";
   import StatusBadge from "./StatusBadge.svelte";
   import VerdictBadge from "./VerdictBadge.svelte";
@@ -32,23 +33,9 @@
   }
 
   function formatCost(tokenUsage: string | undefined): string {
-    if (!tokenUsage) return "--";
-    try {
-      const usage: unknown = JSON.parse(tokenUsage);
-      if (
-        typeof usage !== "object" ||
-        usage === null ||
-        !("has_cost" in usage) ||
-        !("cost_usd" in usage) ||
-        usage.has_cost !== true ||
-        typeof usage.cost_usd !== "number"
-      ) {
-        return "--";
-      }
-      return `~$${usage.cost_usd.toFixed(2)}`;
-    } catch {
-      return "--";
-    }
+    const cost = parseCostUsd(tokenUsage);
+    if (cost === null) return "--";
+    return `~$${cost.toFixed(2)}`;
   }
 
   function shortRef(ref: string): string {

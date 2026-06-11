@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -89,6 +90,171 @@ func TestHealthz_ReturnsServiceUnavailableAfterDBClose(t *testing.T) {
 
 	assert.Equal(http.StatusServiceUnavailable, resp.StatusCode)
 	assert.Contains(string(body), "database unavailable")
+}
+
+func TestServeRejectsRebindingHost(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	srv := newTestServer(t)
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(err)
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- srv.Serve(ln)
+	}()
+	t.Cleanup(func() {
+		gracefulShutdown(t, srv)
+		err := <-errCh
+		require.ErrorIs(err, http.ErrServerClosed)
+	})
+
+	validResp, err := http.Get("http://" + ln.Addr().String() + "/healthz")
+	require.NoError(err)
+	require.NoError(validResp.Body.Close())
+	assert.Equal(http.StatusOK, validResp.StatusCode)
+
+	req, err := http.NewRequest(http.MethodGet, "http://"+ln.Addr().String()+"/healthz", nil)
+	require.NoError(err)
+	req.Host = "evil.example:8091"
+
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(err)
+	defer resp.Body.Close()
+
+	require.Equal(http.StatusForbidden, resp.StatusCode)
+	var body ProblemError
+	require.NoError(json.NewDecoder(resp.Body).Decode(&body))
+	assert.Equal(CodeForbidden, body.Code)
+	assert.Equal("hostNotAllowed", body.Details["reason"])
+}
+
+func TestServeAllowsBoundLoopbackHost(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	srv := newTestServer(t)
+	ln, err := net.Listen("tcp", "127.0.0.2:0")
+	if err != nil {
+		t.Skipf("127.0.0.2 loopback alias unavailable: %v", err)
+	}
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- srv.Serve(ln)
+	}()
+	t.Cleanup(func() {
+		gracefulShutdown(t, srv)
+		err := <-errCh
+		require.ErrorIs(err, http.ErrServerClosed)
+	})
+
+	validResp, err := http.Get("http://" + ln.Addr().String() + "/healthz")
+	require.NoError(err)
+	require.NoError(validResp.Body.Close())
+	assert.Equal(http.StatusOK, validResp.StatusCode)
+
+	req, err := http.NewRequest(http.MethodGet, "http://"+ln.Addr().String()+"/healthz", nil)
+	require.NoError(err)
+	req.Host = "evil.example:8091"
+
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(err)
+	defer resp.Body.Close()
+	assert.Equal(http.StatusForbidden, resp.StatusCode)
+}
+
+func TestServeHTTPRejectsLoopbackHostFromNonLoopbackPeer(t *testing.T) {
+	srv := newTestServer(t)
+	srv.allowedHostMu.Lock()
+	srv.allowedHosts = map[string]struct{}{
+		"127.0.0.1:8091":    {},
+		"localhost:8091":    {},
+		"messages.lan:8091": {},
+	}
+	srv.allowedHostMu.Unlock()
+
+	tests := []struct {
+		name       string
+		host       string
+		remoteAddr string
+		want       int
+	}{
+		{
+			name:       "loopback host from loopback client",
+			host:       "localhost:8091",
+			remoteAddr: "127.0.0.1:4444",
+			want:       http.StatusOK,
+		},
+		{
+			name:       "loopback ip host from loopback client",
+			host:       "127.0.0.1:8091",
+			remoteAddr: "127.0.0.1:4444",
+			want:       http.StatusOK,
+		},
+		{
+			name:       "loopback host from remote client",
+			host:       "localhost:8091",
+			remoteAddr: "192.0.2.10:4444",
+			want:       http.StatusForbidden,
+		},
+		{
+			name:       "loopback ip host from remote client",
+			host:       "127.0.0.1:8091",
+			remoteAddr: "203.0.113.7:4444",
+			want:       http.StatusForbidden,
+		},
+		{
+			name:       "allowed lan host from remote client",
+			host:       "messages.lan:8091",
+			remoteAddr: "192.0.2.10:4444",
+			want:       http.StatusOK,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+
+			req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+			req.Host = tt.host
+			req.RemoteAddr = tt.remoteAddr
+			rec := httptest.NewRecorder()
+			srv.ServeHTTP(rec, req)
+
+			require.Equal(tt.want, rec.Code, rec.Body.String())
+			if tt.want == http.StatusForbidden {
+				var body ProblemError
+				require.NoError(json.NewDecoder(rec.Body).Decode(&body))
+				assert.Equal(CodeForbidden, body.Code)
+				assert.Equal("hostNotAllowed", body.Details["reason"])
+			}
+		})
+	}
+}
+
+type staticListenerAddr string
+
+func (a staticListenerAddr) Network() string { return "tcp" }
+func (a staticListenerAddr) String() string  { return string(a) }
+
+type staticListener struct {
+	addr net.Addr
+}
+
+func (l staticListener) Accept() (net.Conn, error) { return nil, errors.New("unused listener") }
+func (l staticListener) Close() error              { return nil }
+func (l staticListener) Addr() net.Addr            { return l.addr }
+
+func TestAllowedHostsForListenerIncludesBoundLoopbackHost(t *testing.T) {
+	assert := assert.New(t)
+
+	allowed := allowedHostsForListener(staticListener{addr: staticListenerAddr("127.0.0.2:8123")})
+
+	assert.Contains(allowed, "127.0.0.2:8123")
+	assert.Contains(allowed, "127.0.0.1:8123")
+	assert.Contains(allowed, "localhost:8123")
+	assert.Contains(allowed, "[::1]:8123")
 }
 
 func TestSSE_ReturnsEventStream(t *testing.T) {

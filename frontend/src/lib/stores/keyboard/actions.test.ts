@@ -69,12 +69,13 @@ describe("defaultActions", () => {
     );
   });
 
-  it("palette.open binds Cmd/Ctrl+K and Cmd/Ctrl+P", () => {
+  it("palette.open binds Cmd/Ctrl+K, Cmd/Ctrl+P, and Cmd/Ctrl+Shift+P", () => {
     const palette = defaultActions.find((a) => a.id === "palette.open");
     expect(palette).toBeDefined();
     expect(palette!.binding).toEqual([
       { key: "k", ctrlOrMeta: true },
       { key: "p", ctrlOrMeta: true },
+      { key: "p", ctrlOrMeta: true, shift: true },
     ]);
   });
 
@@ -238,5 +239,17 @@ describe("defaultActions", () => {
         }),
       ),
     ).toBe(true);
+  });
+
+  it("does not enable pull request number navigation on Kata", () => {
+    const list = defaultActions.find((a) => a.id === "nav.pulls.list");
+    const board = defaultActions.find((a) => a.id === "nav.pulls.board");
+
+    expect(list).toBeDefined();
+    expect(board).toBeDefined();
+    expect(list!.when(ctx("kata"))).toBe(false);
+    expect(board!.when(ctx("kata"))).toBe(false);
+    expect(list!.when(ctx("pulls"))).toBe(true);
+    expect(board!.when(ctx("pulls"))).toBe(true);
   });
 });

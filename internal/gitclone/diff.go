@@ -24,7 +24,7 @@ func (m *Manager) DiffFiles(
 	if err != nil {
 		return nil, err
 	}
-	rawOut, err := m.git(ctx, host, clonePath,
+	rawOut, err := m.git(ctx, clonePath,
 		"diff", "--raw", "-z", "-M", "-C",
 		"--find-copies-harder", "--end-of-options", mergeBase, headSHA,
 	)
@@ -35,7 +35,7 @@ func (m *Manager) DiffFiles(
 	if files == nil {
 		files = []DiffFile{}
 	}
-	numstatOut, err := m.git(ctx, host, clonePath,
+	numstatOut, err := m.git(ctx, clonePath,
 		"diff", "--numstat", "-z", "-M", "-C",
 		"--find-copies-harder", "--end-of-options", mergeBase, headSHA,
 	)
@@ -53,7 +53,7 @@ func (m *Manager) DiffFiles(
 			files[i].Hunks = []Hunk{}
 		}
 	}
-	m.markGenerated(ctx, host, clonePath, headSHA, files)
+	m.markGenerated(ctx, clonePath, headSHA, files)
 	SortDiffFiles(files)
 	return files, nil
 }
@@ -153,14 +153,14 @@ func (m *Manager) Diff(
 
 	// Step 1: Compute whitespace-only file count.
 	wsCount, err := m.computeWhitespaceOnlyCount(
-		ctx, host, clonePath, mergeBase, headSHA)
+		ctx, clonePath, mergeBase, headSHA)
 	if err != nil {
 		return nil, fmt.Errorf("whitespace count: %w", err)
 	}
 
 	// Step 2: Get file metadata from --raw -z (with rename/copy detection).
 	rawArgs := diffRawArgs(mergeBase, headSHA, hideWhitespace)
-	rawOut, err := m.git(ctx, host, clonePath, rawArgs...)
+	rawOut, err := m.git(ctx, clonePath, rawArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("git diff --raw: %w", err)
 	}
@@ -176,7 +176,7 @@ func (m *Manager) Diff(
 			append([]string{"-w"}, patchArgs[2:]...)...)
 	}
 	patchArgs = append(patchArgs, "--end-of-options", mergeBase, headSHA)
-	patchOut, err := m.git(ctx, host, clonePath, patchArgs...)
+	patchOut, err := m.git(ctx, clonePath, patchArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("git diff patch: %w", err)
 	}
@@ -193,7 +193,7 @@ func (m *Manager) Diff(
 	// -w in --raw output, so step 2 returns whitespace-only files even
 	// when the caller asked to hide them.
 	wsFiles := m.getWhitespaceOnlyFiles(
-		ctx, host, clonePath, mergeBase, headSHA)
+		ctx, clonePath, mergeBase, headSHA)
 	if hideWhitespace {
 		filtered := files[:0]
 		for i := range files {
@@ -210,7 +210,7 @@ func (m *Manager) Diff(
 			}
 		}
 	}
-	m.markGenerated(ctx, host, clonePath, headSHA, files)
+	m.markGenerated(ctx, clonePath, headSHA, files)
 	SortDiffFiles(files)
 
 	return &DiffResult{
@@ -221,7 +221,6 @@ func (m *Manager) Diff(
 
 func (m *Manager) markGenerated(
 	ctx context.Context,
-	host string,
 	clonePath string,
 	attrSource string,
 	files []DiffFile,
@@ -237,7 +236,7 @@ func (m *Manager) markGenerated(
 			args = append(args, "--source", attrSource)
 		}
 		args = append(args, "linguist-generated")
-		if out, err := m.gitWithInput(ctx, host, clonePath, input, args...); err == nil {
+		if out, err := m.gitWithInput(ctx, clonePath, input, args...); err == nil {
 			generated = ParseLinguistGeneratedAttributes(out)
 		}
 	}
@@ -245,9 +244,9 @@ func (m *Manager) markGenerated(
 }
 
 func (m *Manager) computeWhitespaceOnlyCount(
-	ctx context.Context, host, clonePath, mergeBase, headSHA string,
+	ctx context.Context, clonePath, mergeBase, headSHA string,
 ) (int, error) {
-	whitespaceOnlyFiles, err := m.whitespaceOnlyFiles(ctx, host, clonePath, mergeBase, headSHA)
+	whitespaceOnlyFiles, err := m.whitespaceOnlyFiles(ctx, clonePath, mergeBase, headSHA)
 	if err != nil {
 		return 0, err
 	}
@@ -255,9 +254,9 @@ func (m *Manager) computeWhitespaceOnlyCount(
 }
 
 func (m *Manager) getWhitespaceOnlyFiles(
-	ctx context.Context, host, clonePath, mergeBase, headSHA string,
+	ctx context.Context, clonePath, mergeBase, headSHA string,
 ) map[string]bool {
-	files, err := m.whitespaceOnlyFiles(ctx, host, clonePath, mergeBase, headSHA)
+	files, err := m.whitespaceOnlyFiles(ctx, clonePath, mergeBase, headSHA)
 	if err != nil {
 		return nil
 	}
@@ -265,7 +264,7 @@ func (m *Manager) getWhitespaceOnlyFiles(
 }
 
 func (m *Manager) whitespaceOnlyFiles(
-	ctx context.Context, host, clonePath, mergeBase, headSHA string,
+	ctx context.Context, clonePath, mergeBase, headSHA string,
 ) (map[string]bool, error) {
 	// Compare --raw (full file list) against --numstat -w (files with
 	// non-whitespace changes). --raw -w would be more symmetric, but git
@@ -274,11 +273,11 @@ func (m *Manager) whitespaceOnlyFiles(
 	// on every Ubuntu image that ships an older git, including the
 	// Playwright noble image used by the e2e job (git 2.43). --numstat
 	// honors -w in every supported git version, so we pivot through it.
-	rawOut, err := m.git(ctx, host, clonePath, diffRawNoRenameArgs(mergeBase, headSHA, false)...)
+	rawOut, err := m.git(ctx, clonePath, diffRawNoRenameArgs(mergeBase, headSHA, false)...)
 	if err != nil {
 		return nil, err
 	}
-	numstatOut, err := m.git(ctx, host, clonePath,
+	numstatOut, err := m.git(ctx, clonePath,
 		"diff", "--numstat", "-z", "--no-renames", "-w",
 		"--end-of-options", mergeBase, headSHA,
 	)
@@ -329,7 +328,7 @@ func (m *Manager) FileContent(
 		return nil, err
 	}
 	object := ref + ":" + filePath
-	sizeOut, err := m.git(ctx, host, clonePath, "cat-file", "-s", object)
+	sizeOut, err := m.git(ctx, clonePath, "cat-file", "-s", object)
 	if err != nil {
 		return nil, fmt.Errorf("git cat-file -s: %w", err)
 	}
@@ -340,7 +339,7 @@ func (m *Manager) FileContent(
 	if maxBytes > 0 && size > maxBytes {
 		return nil, fmt.Errorf("%w: %d bytes", ErrTooLarge, size)
 	}
-	data, err := m.git(ctx, host, clonePath, "cat-file", "blob", object)
+	data, err := m.git(ctx, clonePath, "cat-file", "blob", object)
 	if err != nil {
 		return nil, fmt.Errorf("git cat-file blob: %w", err)
 	}

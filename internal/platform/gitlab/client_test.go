@@ -105,6 +105,44 @@ func TestClientRecordsRateLimitRequests(t *testing.T) {
 	assert.Equal(resetAt, row.RateResetAt.Unix())
 }
 
+func TestClientReadsTokenSourceForEachRequest(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	source := newMutableTestTokenSource("first-token")
+	var tokens []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		tokens = append(tokens, r.Header.Get("Private-Token"))
+		assert.Equal("/api/v4/projects/group%2Fproject", r.URL.EscapedPath())
+		writeJSON(w, `{
+			"id": 42,
+			"path": "project",
+			"path_with_namespace": "group/project",
+			"name": "Project"
+		}`)
+	}))
+	defer server.Close()
+
+	client, err := NewClient(
+		"gitlab.example.com",
+		source,
+		WithBaseURLForTesting(server.URL+"/api/v4"),
+	)
+	require.NoError(err)
+	ref := platform.RepoRef{
+		Platform: platform.KindGitLab,
+		Host:     "gitlab.example.com",
+		RepoPath: "group/project",
+	}
+
+	_, err = client.GetRepository(context.Background(), ref)
+	require.NoError(err)
+	source.token = "second-token"
+	_, err = client.GetRepository(context.Background(), ref)
+	require.NoError(err)
+
+	assert.Equal([]string{"first-token", "second-token"}, tokens)
+}
+
 func TestClientRejectsAlreadyEscapedProjectPathBeforeDoubleEscaping(t *testing.T) {
 	client := newTestClient(t, "http://127.0.0.1")
 
@@ -401,7 +439,7 @@ func TestListCIChecksReturnsEmptyWhenNoPipelineExists(t *testing.T) {
 }
 
 func TestSelfHostedBaseURLConstruction(t *testing.T) {
-	client, err := NewClient("gitlab.example.com:8443", "token")
+	client, err := NewClient("gitlab.example.com:8443", testTokenSource("token"))
 	require.NoError(t, err)
 
 	assert.Equal(t, "https://gitlab.example.com:8443/api/v4", client.baseURL)
@@ -410,7 +448,7 @@ func TestSelfHostedBaseURLConstruction(t *testing.T) {
 func newTestClient(t *testing.T, serverURL string, opts ...ClientOption) *Client {
 	t.Helper()
 	allOpts := append([]ClientOption{WithBaseURLForTesting(serverURL + "/api/v4")}, opts...)
-	client, err := NewClient("gitlab.example.com", "token", allOpts...)
+	client, err := NewClient("gitlab.example.com", testTokenSource("token"), allOpts...)
 	require.NoError(t, err)
 	return client
 }

@@ -12,7 +12,28 @@ type TerminalSettings = {
   renderer: "xterm" | "ghostty-web";
 };
 
-const { currentTerminal, defaultTerminal, mockSetTerminalSettings, mockUpdateSettings } = vi.hoisted(() => {
+type ModeVisibility = {
+  activity: boolean;
+  repos: boolean;
+  kata: boolean;
+  docs: boolean;
+  messages: boolean;
+  pulls: boolean;
+  issues: boolean;
+  board: boolean;
+  reviews: boolean;
+  workspaces: boolean;
+};
+
+const {
+  currentModes,
+  currentTerminal,
+  defaultModes,
+  defaultTerminal,
+  mockSetModeVisibility,
+  mockSetTerminalSettings,
+  mockUpdateSettings,
+} = vi.hoisted(() => {
   const defaults: TerminalSettings = {
     font_family: "",
     font_size: 14,
@@ -23,9 +44,26 @@ const { currentTerminal, defaultTerminal, mockSetTerminalSettings, mockUpdateSet
     font_ligatures: false,
     renderer: "xterm",
   };
+  const modes: ModeVisibility = {
+    activity: true,
+    repos: true,
+    kata: false,
+    docs: false,
+    messages: false,
+    pulls: true,
+    issues: true,
+    board: true,
+    reviews: true,
+    workspaces: true,
+  };
   return {
+    currentModes: { value: { ...modes } },
     currentTerminal: { value: { ...defaults } },
+    defaultModes: modes,
     defaultTerminal: defaults,
+    mockSetModeVisibility: vi.fn((settings: ModeVisibility) => {
+      currentModes.value = settings;
+    }),
     mockSetTerminalSettings: vi.fn((settings: TerminalSettings) => {
       currentTerminal.value = settings;
     }),
@@ -34,6 +72,18 @@ const { currentTerminal, defaultTerminal, mockSetTerminalSettings, mockUpdateSet
 });
 
 vi.mock("@middleman/ui", () => ({
+  DEFAULT_MODE_VISIBILITY: {
+    activity: true,
+    repos: true,
+    kata: false,
+    docs: false,
+    messages: false,
+    pulls: true,
+    issues: true,
+    board: true,
+    reviews: true,
+    workspaces: true,
+  },
   DEFAULT_TERMINAL_SETTINGS: {
     font_family: "",
     font_size: 14,
@@ -47,6 +97,8 @@ vi.mock("@middleman/ui", () => ({
   getStores: () => ({
     settings: {
       getTerminalSettings: () => currentTerminal.value,
+      getModeVisibility: () => currentModes.value,
+      setModeVisibility: mockSetModeVisibility,
       setTerminalSettings: mockSetTerminalSettings,
     },
   }),
@@ -65,7 +117,9 @@ import TerminalOptionsMenu from "./TerminalOptionsMenu.svelte";
 describe("TerminalOptionsMenu", () => {
   afterEach(() => {
     cleanup();
+    currentModes.value = { ...defaultModes };
     currentTerminal.value = { ...defaultTerminal };
+    mockSetModeVisibility.mockClear();
     mockSetTerminalSettings.mockClear();
     mockUpdateSettings.mockReset();
   });
@@ -109,5 +163,33 @@ describe("TerminalOptionsMenu", () => {
       expect(screen.queryByRole("dialog", { name: "Terminal options" })).toBeNull();
     });
     expect(currentTerminal.value.font_size).toBe(19);
+  });
+
+  it("persists mode visibility from the options popover", async () => {
+    const updatedModes = {
+      ...defaultModes,
+      kata: true,
+      docs: true,
+      messages: true,
+    };
+    mockUpdateSettings.mockResolvedValue({ modes: updatedModes });
+
+    render(TerminalOptionsMenu);
+
+    await fireEvent.click(screen.getByRole("button", { name: "Terminal options" }));
+
+    expect((screen.getByLabelText("Kata") as HTMLInputElement).checked).toBe(false);
+    expect((screen.getByLabelText("Docs") as HTMLInputElement).checked).toBe(false);
+    expect((screen.getByLabelText("Messages") as HTMLInputElement).checked).toBe(false);
+
+    await fireEvent.click(screen.getByLabelText("Kata"));
+    await fireEvent.click(screen.getByLabelText("Docs"));
+    await fireEvent.click(screen.getByLabelText("Messages"));
+    await fireEvent.click(screen.getByRole("button", { name: "Save visible modes" }));
+
+    await waitFor(() => {
+      expect(mockUpdateSettings).toHaveBeenCalledWith({ modes: updatedModes });
+    });
+    expect(mockSetModeVisibility).toHaveBeenCalledWith(updatedModes);
   });
 });

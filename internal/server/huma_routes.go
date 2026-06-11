@@ -25,6 +25,7 @@ import (
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/platform"
 	"go.kenn.io/middleman/internal/platform/gitealike"
+	"go.kenn.io/middleman/internal/tokenauth"
 	"go.kenn.io/middleman/internal/workspace"
 	"go.kenn.io/middleman/internal/workspace/localruntime"
 )
@@ -600,6 +601,10 @@ func (s *Server) registerAPI(api huma.API) {
 
 	huma.Get(api, "/activity", s.listActivity,
 		documentOperation("list-activity", "List activity", "Activity"))
+	s.registerKataAPI(api)
+	s.registerDocsAPI(api)
+	s.registerMsgvaultAPI(api)
+	s.registerMessagesAPI(api)
 	huma.Get(api, "/pulls", s.listPulls,
 		documentOperation("list-pulls", "List pull requests", "Pull Requests"))
 	huma.Get(api, "/issues", s.listIssues,
@@ -5686,6 +5691,9 @@ func (s *Server) getReadyRuntimeWorkspace(
 
 func workspaceRuntimeLaunchError(err error) error {
 	msg := err.Error()
+	if errors.Is(err, tokenauth.ErrMissingToken) {
+		return problemBadRequest(CodeBadRequest, msg, nil)
+	}
 	if strings.Contains(msg, "target not found") {
 		return problemNotFound(CodeNotFound, msg, nil)
 	}

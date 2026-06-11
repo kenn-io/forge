@@ -325,6 +325,108 @@ func TestSyncRepoSkipsBranchActivityWhenCloneFetchFails(t *testing.T) {
 	assert.Empty(syncActivityForcePushes(t, fixture.DB))
 }
 
+func TestSyncMRDiffPreservesCloneContextCancellation(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	dir := t.TempDir()
+	gitPath := filepath.Join(dir, "git")
+	cancelFile := filepath.Join(dir, "cancel-context")
+	require.NoError(os.WriteFile(gitPath, []byte(`#!/bin/sh
+set -eu
+case "$*" in
+	"config --get remote.origin.url")
+		echo "https://github.com/acme/widgets.git"
+		;;
+	"config --get-all remote.origin.fetch")
+		echo "+refs/heads/*:refs/remotes/origin/*"
+		echo "+refs/pull/*/head:refs/pull/*/head"
+		;;
+	"fetch --prune origin")
+		;;
+	"remote set-head origin -a")
+		touch "${MIDDLEMAN_TEST_CANCEL_FILE:?}"
+		sleep 10
+		;;
+	merge-base*)
+		echo "merge-base should not run after cancellation" >&2
+		exit 2
+		;;
+	*)
+		echo "unexpected git $*" >&2
+		exit 2
+		;;
+esac
+`), 0o755))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("MIDDLEMAN_TEST_CANCEL_FILE", cancelFile)
+
+	database := openTestDB(t)
+	clones := gitclone.New(filepath.Join(dir, "clones"), nil)
+	repo := RepoRef{
+		Owner:        "acme",
+		Name:         "widgets",
+		PlatformHost: "github.com",
+		CloneURL:     "https://github.com/acme/widgets.git",
+	}
+	clonePath, err := clones.ClonePath("github.com", repo.Owner, repo.Name)
+	require.NoError(err)
+	require.NoError(os.MkdirAll(clonePath, 0o755))
+	require.NoError(os.WriteFile(
+		filepath.Join(clonePath, "HEAD"),
+		[]byte("ref: refs/heads/main\n"),
+		0o644,
+	))
+	repoID, err := database.UpsertRepo(
+		t.Context(),
+		db.GitHubRepoIdentity("github.com", repo.Owner, repo.Name),
+	)
+	require.NoError(err)
+	syncer := NewSyncer(
+		map[string]Client{"github.com": &mockClient{}},
+		database,
+		clones,
+		[]RepoRef{repo},
+		time.Minute,
+		nil,
+		nil,
+	)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	go func() {
+		ticker := time.NewTicker(time.Millisecond)
+		defer ticker.Stop()
+		for {
+			if _, err := os.Stat(cancelFile); err == nil {
+				cancel()
+				return
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
+	err = syncer.syncMRDiff(
+		ctx,
+		repo,
+		repoID,
+		1,
+		&gh.PullRequest{},
+		&db.MergeRequest{
+			PlatformHeadSHA: "head-sha",
+			PlatformBaseSHA: "base-sha",
+		},
+	)
+
+	require.Error(err)
+	require.ErrorIs(err, context.Canceled)
+	var diffErr *DiffSyncError
+	require.ErrorAs(err, &diffErr)
+	assert.Equal(DiffSyncCodeCloneUnavailable, diffErr.Code)
+}
+
 func TestSyncRepoDefaultBranchRenameDoesNotRecordForcePush(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
@@ -3195,7 +3297,7 @@ func TestCloneRemoteURLUsesProviderCloneURLAndRepoPath(t *testing.T) {
 func TestFetcherForSkipsNonGitHubRepoOnSameHost(t *testing.T) {
 	assert := Assert.New(t)
 	d := openTestDB(t)
-	fetcher := NewGraphQLFetcher("token", "code.example.com", nil, nil)
+	fetcher := NewGraphQLFetcher(testTokenSource("token"), "code.example.com", nil, nil)
 	syncer := NewSyncer(nil, d, nil, nil, time.Minute, nil, nil)
 	syncer.SetFetchers(map[string]*GraphQLFetcher{
 		"code.example.com": fetcher,
@@ -9835,7 +9937,7 @@ func TestSyncerGQLRateTrackers(t *testing.T) {
 		nil,
 	)
 
-	fetcher := NewGraphQLFetcher("token", "github.com", gqlRT, nil)
+	fetcher := NewGraphQLFetcher(testTokenSource("token"), "github.com", gqlRT, nil)
 	syncer.SetFetchers(map[string]*GraphQLFetcher{"github.com": fetcher})
 
 	gqlTrackers := syncer.GQLRateTrackers()
@@ -9858,7 +9960,7 @@ func TestSyncerGQLRateTrackersSkipsNil(t *testing.T) {
 	// Nil fetcher entry and a fetcher with no tracker both skipped.
 	syncer.SetFetchers(map[string]*GraphQLFetcher{
 		"github.com":           nil,
-		"ghe.corp.example.com": NewGraphQLFetcher("tok", "ghe.corp.example.com", nil, nil),
+		"ghe.corp.example.com": NewGraphQLFetcher(testTokenSource("tok"), "ghe.corp.example.com", nil, nil),
 	})
 
 	assert.Empty(syncer.GQLRateTrackers())
@@ -9881,8 +9983,8 @@ func TestSyncerGQLRateTrackersMixed(t *testing.T) {
 	// Mix of nil fetcher, fetcher-without-tracker, and valid fetcher.
 	syncer.SetFetchers(map[string]*GraphQLFetcher{
 		"nil.example.com":        nil,
-		"no-tracker.example.com": NewGraphQLFetcher("tok", "no-tracker.example.com", nil, nil),
-		"github.com":             NewGraphQLFetcher("tok", "github.com", validRT, nil),
+		"no-tracker.example.com": NewGraphQLFetcher(testTokenSource("tok"), "no-tracker.example.com", nil, nil),
+		"github.com":             NewGraphQLFetcher(testTokenSource("tok"), "github.com", validRT, nil),
 	})
 
 	got := syncer.GQLRateTrackers()

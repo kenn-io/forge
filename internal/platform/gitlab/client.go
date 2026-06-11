@@ -12,6 +12,7 @@ import (
 	gitlab "gitlab.com/gitlab-org/api/client-go"
 	"go.kenn.io/middleman/internal/platform"
 	"go.kenn.io/middleman/internal/ratelimit"
+	"go.kenn.io/middleman/internal/tokenauth"
 )
 
 const (
@@ -72,7 +73,7 @@ func WithRateTracker(rateTracker *ratelimit.RateTracker) ClientOption {
 	}
 }
 
-func NewClient(host, token string, options ...ClientOption) (*Client, error) {
+func NewClient(host string, source tokenauth.Source, options ...ClientOption) (*Client, error) {
 	opts := clientOptions{
 		baseURL:           "https://" + strings.TrimRight(host, "/") + "/api/v4",
 		foregroundTimeout: 20 * time.Second,
@@ -82,16 +83,25 @@ func NewClient(host, token string, options ...ClientOption) (*Client, error) {
 	}
 
 	clientOptions := []gitlab.ClientOptionFunc{gitlab.WithBaseURL(opts.baseURL)}
+	baseTransport := http.DefaultTransport
 	if opts.rateTracker != nil {
-		clientOptions = append(clientOptions, gitlab.WithHTTPClient(&http.Client{
-			Transport: &rateTrackingTransport{
-				base:        http.DefaultTransport,
-				rateTracker: opts.rateTracker,
-			},
-		}))
+		baseTransport = &rateTrackingTransport{
+			base:        baseTransport,
+			rateTracker: opts.rateTracker,
+		}
 	}
+	authRT := tokenauth.AuthTransport{
+		Source:              source,
+		Base:                baseTransport,
+		SetHeader:           tokenauth.PrivateTokenHeader,
+		RetryOnUnauthorized: true,
+		AllowedOrigin:       opts.baseURL,
+	}
+	clientOptions = append(clientOptions, gitlab.WithHTTPClient(&http.Client{
+		Transport: authRT,
+	}))
 
-	api, err := gitlab.NewClient(token, clientOptions...)
+	api, err := gitlab.NewClient("", clientOptions...)
 	if err != nil {
 		return nil, err
 	}

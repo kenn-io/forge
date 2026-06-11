@@ -6,6 +6,7 @@ import {
   type RoutedItemRef,
 } from "@middleman/ui/routes";
 import { canonicalProvider } from "@middleman/ui/api/provider-routes";
+import type { KataTaskViewName } from "../api/kata/taskTypes.js";
 
 export type RepoRef = RepositoryRouteRef;
 export type NumberedItemRef = NumberedRouteItemRef;
@@ -23,6 +24,9 @@ export type Route =
   | { page: "mobile-issues" }
   | { page: "design-system" }
   | { page: "repos" }
+  | { page: "kata"; issue?: string; view?: KataTaskViewName; scope?: string }
+  | { page: "docs"; folder: string | null; doc: string | null }
+  | { page: "messages"; q: string | null; message: string | null; view?: "linked" }
   | { page: "workspaces" }
   | {
       page: "pulls";
@@ -84,6 +88,14 @@ export function getBasePath(): string {
   return rawBase;
 }
 
+// Prefix an in-app absolute path (e.g. "/docs?...") with the configured
+// base path so it works as a real href attribute. navigate() applies the
+// prefix itself, so use this only when building hrefs that the browser
+// follows directly (new-tab, copy-link, non-intercepted navigation).
+export function withBasePath(path: string): string {
+  return basePrefix + path;
+}
+
 function stripBase(path: string): string {
   if (basePrefix && path.startsWith(basePrefix)) {
     return path.slice(basePrefix.length) || "/";
@@ -101,6 +113,8 @@ const defaultPlatformHosts: Record<string, string> = {
   forgejo: "codeberg.org",
   gitea: "gitea.com",
 };
+
+const kataViewNames = new Set<KataTaskViewName>(["inbox", "today", "upcoming", "deadlines", "all", "logbook"]);
 
 function defaultPlatformHost(provider: string): string | undefined {
   return defaultPlatformHosts[canonicalProvider(provider)];
@@ -245,6 +259,36 @@ function parseRoute(fullPath: string): Route {
   }
   if (path === "/repos") {
     return { page: "repos" };
+  }
+  if (path === "/kata") {
+    const sp = new URLSearchParams(search);
+    const issue = emptyToNull(sp.get("issue"));
+    const view = parseKataView(sp.get("view"));
+    const scope = emptyToNull(sp.get("scope"));
+    return {
+      page: "kata",
+      ...(view ? { view } : {}),
+      ...(scope ? { scope } : {}),
+      ...(issue ? { issue } : {}),
+    };
+  }
+  if (path === "/docs") {
+    const sp = new URLSearchParams(search);
+    return {
+      page: "docs",
+      folder: emptyToNull(sp.get("folder")),
+      doc: emptyToNull(sp.get("doc")),
+    };
+  }
+  if (path === "/messages") {
+    const sp = new URLSearchParams(search);
+    const view = sp.get("view");
+    return {
+      page: "messages",
+      q: sp.get("q"),
+      message: sp.get("message"),
+      ...(view === "linked" ? { view: "linked" as const } : {}),
+    };
   }
   if (path === "/settings" && !isEmbedded()) return { page: "settings" };
   if (path.startsWith("/issues")) {
@@ -467,6 +511,12 @@ function buildRouteEvent(r: Route): MiddlemanNavigateEvent {
     navType = "issue";
   } else if (r.page === "repos") {
     navType = "repos";
+  } else if (r.page === "kata") {
+    navType = "kata";
+  } else if (r.page === "docs") {
+    navType = "docs";
+  } else if (r.page === "messages") {
+    navType = "messages";
   } else if (r.page === "reviews") {
     navType = "reviews";
   } else if (isWorkspacePage(r.page)) {
@@ -513,6 +563,15 @@ function buildRouteEvent(r: Route): MiddlemanNavigateEvent {
   }
 
   return event;
+}
+
+function emptyToNull(value: string | null): string | null {
+  return value && value.length > 0 ? value : null;
+}
+
+function parseKataView(value: string | null): KataTaskViewName | undefined {
+  if (value === null) return undefined;
+  return kataViewNames.has(value as KataTaskViewName) ? (value as KataTaskViewName) : undefined;
 }
 
 export function isWorkspacePage(page: Page): boolean {

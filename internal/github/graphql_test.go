@@ -227,12 +227,12 @@ func TestGraphqlRateTransport(t *testing.T) {
 func TestGraphQLFetcherRateTracker(t *testing.T) {
 	d := openTestDB(t)
 	rt := NewRateTracker(d, "github.com", "graphql")
-	f := NewGraphQLFetcher("fake-token", "github.com", rt, nil)
+	f := NewGraphQLFetcher(testTokenSource("fake-token"), "github.com", rt, nil)
 	require.Same(t, rt, f.RateTracker())
 }
 
 func TestGraphQLFetcherRateTrackerNil(t *testing.T) {
-	f := NewGraphQLFetcher("fake-token", "github.com", nil, nil)
+	f := NewGraphQLFetcher(testTokenSource("fake-token"), "github.com", nil, nil)
 	require.Nil(t, f.RateTracker())
 }
 

@@ -31,6 +31,7 @@ import (
 	"go.kenn.io/middleman/internal/server"
 	"go.kenn.io/middleman/internal/stacks"
 	"go.kenn.io/middleman/internal/telemetry"
+	"go.kenn.io/middleman/internal/tokenauth"
 	"go.kenn.io/middleman/internal/web"
 )
 
@@ -121,10 +122,10 @@ func configureLogging(stderr io.Writer) (func() error, error) {
 	}
 
 	handlers := []slog.Handler{
-		slog.NewTextHandler(
+		tokenauth.NewRedactingHandler(slog.NewTextHandler(
 			stderr,
 			&slog.HandlerOptions{Level: stderrLevel},
-		),
+		)),
 	}
 	if logFile != "" {
 		if err := os.MkdirAll(filepath.Dir(logFile), 0o700); err != nil {
@@ -140,10 +141,10 @@ func configureLogging(stderr io.Writer) (func() error, error) {
 		}
 		handlers = append(
 			handlers,
-			slog.NewTextHandler(
+			tokenauth.NewRedactingHandler(slog.NewTextHandler(
 				file,
 				&slog.HandlerOptions{Level: level},
-			),
+			)),
 		)
 	}
 
@@ -192,6 +193,8 @@ func runCLI(args []string, stdout io.Writer) error {
 			return err
 		case "config":
 			return runConfigCLI(args[1:], stdout)
+		case "docs":
+			return runDocsCLI(args[1:], stdout)
 		case "pty-owner":
 			return runPtyOwnerCLI(args[1:])
 		case "status":
@@ -373,13 +376,16 @@ func run(opts serve.Options) error {
 	}
 	defer database.Close()
 
-	providerTokens, err := collectProviderTokens(cfg)
+	tokenSources := tokenauth.NewSourceSet(tokenauth.Options{
+		GitHubCLI: config.GitHubCLITokenForHost,
+	})
+	providerSources, err := collectProviderTokenSources(context.Background(), cfg, tokenSources)
 	if err != nil {
 		return err
 	}
 
 	startup, err := buildProviderStartup(
-		database, cfg, providerTokens, defaultProviderFactories(),
+		database, cfg, tokenSources, providerSources, defaultProviderFactories(),
 	)
 	if err != nil {
 		return err
@@ -391,7 +397,7 @@ func run(opts serve.Options) error {
 	slog.Debug("startup repos resolved", "count", len(repos))
 
 	cloneMgr := gitclone.New(
-		filepath.Join(cfg.DataDir, "clones"), startup.cloneTokens,
+		filepath.Join(cfg.DataDir, "clones"), startup.cloneAuth,
 	)
 
 	syncer := ghclient.NewSyncerWithRegistry(
@@ -433,6 +439,7 @@ func run(opts serve.Options) error {
 			WorktreeDir:         filepath.Join(cfg.DataDir, "worktrees"),
 			PtyOwnerManagerPath: os.Getenv("MIDDLEMAN_PTY_MANAGER"),
 			Telemetry:           telemetryReporter,
+			TokenSources:        tokenSources,
 		},
 	)
 	slog.Debug(
@@ -621,7 +628,7 @@ func splitProviderHostKey(key string) (string, string) {
 	return platformName, host
 }
 
-func validateProviderHostKeys(providerTokens map[string]string) error {
+func validateProviderHostKeys[T any](providerTokens map[string]T) error {
 	type hostToken struct {
 		platform string
 		token    string
@@ -629,8 +636,9 @@ func validateProviderHostKeys(providerTokens map[string]string) error {
 	byHost := make(map[string]hostToken, len(providerTokens))
 	for key, token := range providerTokens {
 		platformName, host := splitProviderHostKey(key)
+		tokenID := providerHostTokenID(token)
 		if existing, ok := byHost[host]; ok {
-			if existing.token != token {
+			if existing.token != tokenID {
 				return fmt.Errorf(
 					"host %s is configured for both %s and %s with different clone tokens; use identical tokens or separate hosts",
 					host, existing.platform, platformName,
@@ -638,9 +646,20 @@ func validateProviderHostKeys(providerTokens map[string]string) error {
 			}
 			continue
 		}
-		byHost[host] = hostToken{platform: platformName, token: token}
+		byHost[host] = hostToken{platform: platformName, token: tokenID}
 	}
 	return nil
+}
+
+func providerHostTokenID[T any](token T) string {
+	switch typed := any(token).(type) {
+	case string:
+		return typed
+	case tokenauth.Source:
+		return typed.Descriptor().CanonicalSourceString()
+	default:
+		return ""
+	}
 }
 
 func repoPlatform(repo ghclient.RepoRef) platform.Kind {

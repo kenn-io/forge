@@ -437,32 +437,31 @@ func (s *Server) previewRepos(
 	repos := slices.Clone(s.cfg.Repos)
 	s.cfgMu.Unlock()
 
+	// Provider read failures route through the shared mapping so a
+	// missing token during token-file rotation surfaces as 400
+	// badRequest like the sync and runtime paths, not a 502.
 	var rows []repoPreviewRow
 	if provider == platform.KindGitHub {
 		client, err := s.syncer.ClientForHost(host)
 		if err != nil {
-			return nil, problemUpstream("GitHub API error: "+err.Error(), "github", host)
+			return nil, providerCallProblem(err, "github", host)
 		}
 		rows, err = buildRepoPreviewRows(
 			ctx, client, exactConfiguredRepoSet(repos), owner, pattern, host,
 		)
 		if err != nil {
-			return nil, problemUpstream("GitHub API error: "+err.Error(), "github", host)
+			return nil, providerCallProblem(err, "github", host)
 		}
 	} else {
 		reader, err := s.syncer.RepositoryReader(provider, host)
 		if err != nil {
-			return nil, problemUpstream(
-				"Provider API error: "+err.Error(), string(provider), host,
-			)
+			return nil, providerCallProblem(err, string(provider), host)
 		}
 		rows, err = buildPlatformRepoPreviewRows(
 			ctx, reader, provider, host, exactConfiguredRepoSet(repos), owner, pattern,
 		)
 		if err != nil {
-			return nil, problemUpstream(
-				"Provider API error: "+err.Error(), string(provider), host,
-			)
+			return nil, providerCallProblem(err, string(provider), host)
 		}
 	}
 	return &repoPreviewOutput{

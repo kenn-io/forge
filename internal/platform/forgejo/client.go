@@ -11,6 +11,7 @@ import (
 	"go.kenn.io/middleman/internal/platform"
 	"go.kenn.io/middleman/internal/platform/gitealike"
 	"go.kenn.io/middleman/internal/ratelimit"
+	"go.kenn.io/middleman/internal/tokenauth"
 )
 
 type ClientOption func(*clientOptions)
@@ -57,7 +58,7 @@ func WithSyncBudget(budget *ghsync.SyncBudget) ClientOption {
 	}
 }
 
-func NewClient(host, token string, options ...ClientOption) (*Client, error) {
+func NewClient(host string, source tokenauth.Source, options ...ClientOption) (*Client, error) {
 	opts := clientOptions{
 		baseURL:           "https://" + strings.TrimRight(host, "/"),
 		foregroundTimeout: 20 * time.Second,
@@ -67,7 +68,6 @@ func NewClient(host, token string, options ...ClientOption) (*Client, error) {
 	}
 
 	clientOptions := []forgejosdk.ClientOption{
-		forgejosdk.SetToken(token),
 		forgejosdk.SetUserAgent("middleman"),
 	}
 	if opts.skipVersionProbe {
@@ -88,9 +88,16 @@ func NewClient(host, token string, options ...ClientOption) (*Client, error) {
 		Base:  httpTransport,
 		Cache: mergeability,
 	}
+	authRT := tokenauth.AuthTransport{
+		Source:              source,
+		Base:                httpTransport,
+		SetHeader:           tokenauth.TokenAuthHeader,
+		RetryOnUnauthorized: true,
+		AllowedOrigin:       opts.baseURL,
+	}
 	clientOptions = append(clientOptions, forgejosdk.SetHTTPClient(&http.Client{
 		Timeout:   opts.foregroundTimeout,
-		Transport: httpTransport,
+		Transport: authRT,
 	}))
 
 	api, err := forgejosdk.NewClient(opts.baseURL, clientOptions...)

@@ -1,16 +1,20 @@
 package config
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/middleman/internal/tokenauth"
 )
 
 func writeConfig(t *testing.T, content string) string {
@@ -79,6 +83,23 @@ func writeFakeGHCLI(t *testing.T, dir, script string) {
 	t.Helper()
 	require.NoError(t, os.WriteFile(fakeGHCLIPath(dir), []byte(script), 0o755))
 	t.Setenv("PATH", dir)
+	// The production 5s exec bound exists to catch a hung gh; under a
+	// loaded parallel suite run it can instead kill the fake before it
+	// records argv. Relax it so these tests assert flag/retry behavior,
+	// not subprocess scheduling latency. Tests that exercise the timeout
+	// itself pin their own value afterwards.
+	setGHAuthExecTimeout(t, time.Minute)
+}
+
+// setGHAuthExecTimeout overrides the gh exec deadline for one test and
+// restores it on cleanup. Safe without locking: this package has no
+// parallel tests (the fake-gh helpers already rely on t.Setenv, which
+// rejects t.Parallel).
+func setGHAuthExecTimeout(t *testing.T, d time.Duration) {
+	t.Helper()
+	old := ghAuthExecTimeout
+	ghAuthExecTimeout = d
+	t.Cleanup(func() { ghAuthExecTimeout = old })
 }
 
 // readFakeGHArgv returns the recorded argv strings, one per
@@ -175,6 +196,134 @@ name = "repo"
 	assert.Equal("github.com", cfg.Repos[0].PlatformHostOrDefault())
 }
 
+func TestLoadDocFoldersRoundTrips(t *testing.T) {
+	assert := Assert.New(t)
+	cfg, cfg2 := roundTripConfigString(t, `
+[[doc_folders]]
+id = "notes"
+name = "Notes"
+path = "/tmp/notes"
+daemon = "work"
+`)
+
+	require.Len(t, cfg.DocFolders, 1)
+	assert.Equal("notes", cfg.DocFolders[0].ID)
+	assert.Equal("Notes", cfg.DocFolders[0].Name)
+	assert.Equal("/tmp/notes", cfg.DocFolders[0].Path)
+	assert.Equal("work", cfg.DocFolders[0].Daemon)
+	require.Len(t, cfg2.DocFolders, 1)
+	assert.Equal(cfg.DocFolders[0], cfg2.DocFolders[0])
+}
+
+func TestLoadDocFoldersRejectsDeprecatedKeys(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+	}{
+		{
+			name: "notebooks",
+			body: `
+[[notebooks]]
+id = "notes"
+path = "/tmp/notes"
+`,
+		},
+		{
+			name: "vaults",
+			body: `
+[[vaults]]
+id = "notes"
+path = "/tmp/notes"
+`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := Load(writeConfig(t, tc.body))
+			require.Error(t, err)
+			Assert.Contains(t, err.Error(), "[[doc_folders]]")
+		})
+	}
+}
+
+func TestLoadDocFoldersCanonicalizesPathAndDefaultName(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	require.NoError(os.MkdirAll(filepath.Join(home, "Notes"), 0o755))
+
+	path := writeConfig(t, `
+[[doc_folders]]
+id = "notes"
+path = "~/Notes"
+daemon = "  work  "
+`)
+
+	cfg, err := Load(path)
+	require.NoError(err)
+	require.Len(cfg.DocFolders, 1)
+	folder := cfg.DocFolders[0]
+	assert.Equal("notes", folder.ID)
+	assert.Equal("Notes", folder.Name)
+	assert.True(filepath.IsAbs(folder.Path), "folder path should be absolute")
+	assert.True(strings.HasSuffix(folder.Path, "Notes"))
+	assert.Equal("work", folder.Daemon)
+}
+
+func TestLoadDocFoldersRejectsDuplicateIDs(t *testing.T) {
+	path := writeConfig(t, `
+[[doc_folders]]
+id = "notes"
+path = "/tmp/a"
+
+[[doc_folders]]
+id = "notes"
+path = "/tmp/b"
+`)
+
+	_, err := Load(path)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), `doc_folders: duplicate id "notes"`)
+}
+
+func TestLoadDocFoldersRejectsNonSegmentSafeID(t *testing.T) {
+	for _, id := range []string{"a/b", "with space", ".."} {
+		t.Run(id, func(t *testing.T) {
+			path := writeConfig(t, "[[doc_folders]]\nid = \""+id+"\"\npath = \"/tmp/a\"\n")
+			_, err := Load(path)
+			require.Error(t, err)
+			Assert.Contains(t, err.Error(), "may contain only")
+		})
+	}
+}
+
+func TestLoadDocFoldersRejectsMissingFields(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+	}{
+		{
+			name: "missing id",
+			body: `[[doc_folders]]
+path = "/tmp/notes"`,
+		},
+		{
+			name: "missing path",
+			body: `[[doc_folders]]
+id = "notes"`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := Load(writeConfig(t, tc.body))
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "doc_folders")
+		})
+	}
+}
+
 func TestLoadNormalizesDefaultPlatformHost(t *testing.T) {
 	assert := Assert.New(t)
 	cfg, cfg2 := roundTripConfigString(t, `
@@ -191,9 +340,15 @@ name = "repo"
 
 func TestLoadAppliesDefaultPlatformHostToLegacyGitHubRepos(t *testing.T) {
 	assert := Assert.New(t)
+	// github_token_env is github.com-only, so a GHE-primary setup names
+	// its host token through a [[platforms]] entry instead.
 	path := writeConfig(t, `
 default_platform_host = "ghe.example.com"
-github_token_env = "GHE_TOKEN"
+
+[[platforms]]
+type = "github"
+host = "ghe.example.com"
+token_env = "GHE_TOKEN"
 
 [[repos]]
 owner = "Acme"
@@ -823,6 +978,258 @@ name = "ibis"
 	assert.Empty(cfg.Repos[1].PlatformHost)
 	assert.Equal("github.com", cfg.Repos[1].PlatformHostOrDefault())
 	assert.Empty(cfg.Repos[1].TokenEnv)
+}
+
+func TestLoadTokenFilePathsAreNormalized(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	dir := t.TempDir()
+	home := filepath.Join(dir, "home")
+	require.NoError(os.MkdirAll(home, 0o755))
+	t.Setenv("HOME", home)
+	cfgPath := filepath.Join(dir, "config", "config.toml")
+	require.NoError(os.MkdirAll(filepath.Dir(cfgPath), 0o755))
+	require.NoError(os.WriteFile(cfgPath, []byte(`
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+
+[[platforms]]
+type = "gitlab"
+host = "gitlab.com"
+token_file = "tokens/gitlab"
+
+[[repos]]
+owner = "acme"
+name = "widget"
+platform = "github"
+token_file = "~/tokens/github"
+`), 0o600))
+
+	cfg, err := Load(cfgPath)
+	require.NoError(err)
+
+	assert.Equal(filepath.Join(filepath.Dir(cfgPath), "tokens", "gitlab"), cfg.Platforms[0].TokenFile)
+	assert.Equal(filepath.Join(home, "tokens", "github"), cfg.Repos[0].TokenFile)
+}
+
+func TestConfigTokenSourceDescriptorPrecedence(t *testing.T) {
+	assert := Assert.New(t)
+	cfg := &Config{
+		GitHubTokenEnv: "MIDDLEMAN_GITHUB_TOKEN",
+		Platforms: []PlatformConfig{{
+			Type: "gitlab", Host: "gitlab.com", TokenFile: "/platform/file", TokenEnv: "PLATFORM_TOKEN",
+		}},
+	}
+
+	desc := cfg.TokenSourceForPlatformHost("gitlab", "gitlab.com", "REPO_TOKEN", "/repo/file")
+
+	require.Len(t, desc.Candidates, 4)
+	assert.Equal(tokenauth.SourceKindFile, desc.Candidates[0].Kind)
+	assert.Equal("/repo/file", desc.Candidates[0].FilePath)
+	assert.Equal(tokenauth.SourceKindEnv, desc.Candidates[1].Kind)
+	assert.Equal("REPO_TOKEN", desc.Candidates[1].EnvName)
+	assert.Equal(tokenauth.SourceKindFile, desc.Candidates[2].Kind)
+	assert.Equal("/platform/file", desc.Candidates[2].FilePath)
+	assert.Equal(tokenauth.SourceKindEnv, desc.Candidates[3].Kind)
+	assert.Equal("PLATFORM_TOKEN", desc.Candidates[3].EnvName)
+}
+
+func TestTokenSourceForPlatformHostScopesGitHubTokenEnvToDefaultHost(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	// The env var being set must not matter: a non-default GitHub host's
+	// candidate chain may only contain the host-scoped gh credential, so
+	// the public-GitHub token can never be sent to an Enterprise or
+	// self-hosted GitHub host that lacks an explicit token.
+	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "public-github-token")
+	cfg := &Config{GitHubTokenEnv: "MIDDLEMAN_GITHUB_TOKEN"}
+
+	ghe := cfg.TokenSourceForPlatformHost("github", "ghe.example.com", "", "")
+	require.Len(ghe.Candidates, 1)
+	assert.Equal(tokenauth.SourceKindGitHubCLI, ghe.Candidates[0].Kind)
+	assert.Equal("ghe.example.com", ghe.Candidates[0].Host)
+
+	def := cfg.TokenSourceForPlatformHost("github", "github.com", "", "")
+	require.Len(def.Candidates, 2)
+	assert.Equal(tokenauth.SourceKindEnv, def.Candidates[0].Kind)
+	assert.Equal("MIDDLEMAN_GITHUB_TOKEN", def.Candidates[0].EnvName)
+	assert.Equal(tokenauth.SourceKindGitHubCLI, def.Candidates[1].Kind)
+	assert.Equal("github.com", def.Candidates[1].Host)
+}
+
+func TestConfigProviderTokenSourcesKeepsCredentiallessPlatformHosts(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	// A platform host whose token config was removed must stay in the
+	// plans with an empty candidate chain: config reload updates live
+	// sources from this list, and dropping the host would leave its old
+	// credential active until restart.
+	cfg := &Config{
+		Platforms: []PlatformConfig{{Type: "gitlab", Host: "gitlab.example.com"}},
+	}
+
+	plans := cfg.ProviderTokenSources()
+
+	require.Len(plans, 2)
+	assert.Equal(
+		tokenauth.Key{Platform: "gitlab", Host: "gitlab.example.com"},
+		plans[0].Descriptor.Key,
+	)
+	assert.False(plans[0].Required)
+	assert.Empty(plans[0].Descriptor.Candidates)
+	assert.Equal(
+		tokenauth.Key{Platform: "github", Host: "github.com"},
+		plans[1].Descriptor.Key,
+	)
+}
+
+func TestConfigCloneTokenDescriptorsUseFirstNonEmptyHostChain(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	// Clone auth is host-scoped. The credential-less forgejo entry comes
+	// first, so the host descriptor must carry the first non-empty plan
+	// chain (gitlab's), not the first plan's; a host whose providers are
+	// all credential-less keeps an empty chain so reload clears a
+	// previously tokened clone source instead of leaving it active.
+	cfg := &Config{
+		Platforms: []PlatformConfig{
+			{Type: "forgejo", Host: "code.example.com"},
+			{Type: "gitlab", Host: "code.example.com", TokenEnv: "SHARED"},
+			{Type: "gitea", Host: "tokenless.example.com"},
+		},
+	}
+
+	descs := cfg.CloneTokenDescriptors()
+
+	require.Len(descs, 3)
+	assert.Equal(tokenauth.CloneKey("code.example.com"), descs[0].Key)
+	assert.Equal(
+		[]tokenauth.Candidate{{Kind: tokenauth.SourceKindEnv, EnvName: "SHARED"}},
+		descs[0].Candidates,
+	)
+	assert.Equal(tokenauth.CloneKey("tokenless.example.com"), descs[1].Key)
+	assert.Empty(descs[1].Candidates)
+	assert.Equal(tokenauth.CloneKey("github.com"), descs[2].Key)
+	assert.NotEmpty(descs[2].Candidates)
+}
+
+func TestConfigProviderTokenSourcesPlansEffectiveDescriptors(t *testing.T) {
+	assert := Assert.New(t)
+	cfg := &Config{
+		GitHubTokenEnv: "MIDDLEMAN_GITHUB_TOKEN",
+		Platforms: []PlatformConfig{
+			{Type: "github", Host: "github.com", TokenEnv: "PLATFORM_GITHUB_TOKEN"},
+			{Type: "gitlab", Host: "gitlab.com"},
+			{Type: "forgejo", Host: "codeberg.org", TokenEnv: "PLATFORM_FORGEJO_TOKEN"},
+		},
+		Repos: []Repo{
+			{
+				Owner:        "acme",
+				Name:         "widget",
+				Platform:     "github",
+				PlatformHost: "github.com",
+				TokenEnv:     "REPO_GITHUB_TOKEN",
+			},
+			{
+				Owner:        "gitlab-org",
+				Name:         "example",
+				Platform:     "gitlab",
+				PlatformHost: "gitlab.com",
+			},
+		},
+	}
+
+	plans := cfg.ProviderTokenSources()
+
+	require.Len(t, plans, 3)
+	assert.True(plans[0].Required)
+	assert.Equal(tokenauth.Key{Platform: "github", Host: "github.com"}, plans[0].Descriptor.Key)
+	assert.Equal("REPO_GITHUB_TOKEN", plans[0].Descriptor.Candidates[0].EnvName)
+	assert.Equal("PLATFORM_GITHUB_TOKEN", plans[0].Descriptor.Candidates[1].EnvName)
+	assert.True(plans[1].Required)
+	assert.Equal(tokenauth.Key{Platform: "gitlab", Host: "gitlab.com"}, plans[1].Descriptor.Key)
+	assert.Empty(plans[1].Descriptor.Candidates)
+	assert.False(plans[2].Required)
+	assert.Equal(tokenauth.Key{Platform: "forgejo", Host: "codeberg.org"}, plans[2].Descriptor.Key)
+	assert.Equal("PLATFORM_FORGEJO_TOKEN", plans[2].Descriptor.Candidates[0].EnvName)
+}
+
+func TestConfigProviderTokenSourcesIncludesOptionalDefaultGitHub(t *testing.T) {
+	assert := Assert.New(t)
+	cfg := &Config{GitHubTokenEnv: "MIDDLEMAN_GITHUB_TOKEN"}
+
+	plans := cfg.ProviderTokenSources()
+
+	require.Len(t, plans, 1)
+	assert.False(plans[0].Required)
+	assert.Equal(tokenauth.Key{Platform: "github", Host: "github.com"}, plans[0].Descriptor.Key)
+	require.Len(t, plans[0].Descriptor.Candidates, 2)
+	assert.Equal(tokenauth.SourceKindEnv, plans[0].Descriptor.Candidates[0].Kind)
+	assert.Equal("MIDDLEMAN_GITHUB_TOKEN", plans[0].Descriptor.Candidates[0].EnvName)
+	assert.Equal(tokenauth.SourceKindGitHubCLI, plans[0].Descriptor.Candidates[1].Kind)
+	assert.Equal("github.com", plans[0].Descriptor.Candidates[1].Host)
+}
+
+func TestValidateRejectsConflictingTokenSources(t *testing.T) {
+	assert := Assert.New(t)
+	cfg := &Config{
+		GitHubTokenEnv: "MIDDLEMAN_GITHUB_TOKEN",
+		Repos: []Repo{
+			{Owner: "acme", Name: "one", Platform: "github", PlatformHost: "ghe.example.com", TokenFile: "/tokens/a"},
+			{Owner: "acme", Name: "two", Platform: "github", PlatformHost: "ghe.example.com", TokenFile: "/tokens/b"},
+		},
+	}
+
+	err := cfg.Validate()
+	require.Error(t, err)
+	assert.Contains(err.Error(), "conflicting token source")
+	assert.NotContains(err.Error(), "ghp_")
+}
+
+func TestValidateAllowsRepoTokenEnvMatchingPlatformFallback(t *testing.T) {
+	path := writeConfig(t, `
+[[platforms]]
+type = "gitlab"
+host = "gitlab.com"
+token_env = "GITLAB_SHARED_TOKEN"
+
+[[repos]]
+platform = "gitlab"
+owner = "group"
+name = "explicit"
+token_env = "GITLAB_SHARED_TOKEN"
+
+[[repos]]
+platform = "gitlab"
+owner = "group"
+name = "fallback"
+`)
+
+	_, err := Load(path)
+	require.NoError(t, err)
+}
+
+func TestSaveRoundTripTokenFile(t *testing.T) {
+	assert := Assert.New(t)
+	path := filepath.Join(t.TempDir(), "config.toml")
+	cfg := &Config{
+		SyncInterval:        defaultSyncInterval,
+		GitHubTokenEnv:      defaultGitHubTokenEnv,
+		DefaultPlatformHost: defaultPlatformHost,
+		Host:                defaultHost,
+		Port:                defaultPort,
+		Platforms: []PlatformConfig{{
+			Type: "gitlab", Host: "gitlab.com", TokenFile: "/tokens/gitlab",
+		}},
+		Repos: []Repo{{
+			Owner: "acme", Name: "widget", Platform: "gitlab", PlatformHost: "gitlab.com", TokenFile: "/tokens/repo",
+		}},
+	}
+
+	require.NoError(t, cfg.Save(path))
+	loaded, err := Load(path)
+	require.NoError(t, err)
+	assert.Equal("/tokens/gitlab", loaded.Platforms[0].TokenFile)
+	assert.Equal("/tokens/repo", loaded.Repos[0].TokenFile)
 }
 
 func TestLoadPlatformConfigGitLabToken(t *testing.T) {
@@ -1558,6 +1965,128 @@ name = "ibis"
 	assert.Empty(cfg2.Repos[1].TokenEnv)
 }
 
+func TestSaveWritesPrivateFileMode(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	if runtime.GOOS == "windows" {
+		t.Skip("file permission semantics differ on Windows")
+	}
+	path := writeConfig(t, `
+[[repos]]
+owner = "apache"
+name = "arrow"
+`)
+	cfg, err := Load(path)
+	require.NoError(err)
+
+	savePath := filepath.Join(t.TempDir(), "saved.toml")
+	require.NoError(cfg.Save(savePath))
+
+	info, err := os.Stat(savePath)
+	require.NoError(err)
+	assert.Equal(fs.FileMode(0o600), info.Mode().Perm())
+}
+
+func TestSaveCreatesParentDirectory(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	path := writeConfig(t, `
+[[repos]]
+owner = "apache"
+name = "arrow"
+`)
+	cfg, err := Load(path)
+	require.NoError(err)
+
+	savePath := filepath.Join(t.TempDir(), "nested", "deeper", "saved.toml")
+	require.NoError(cfg.Save(savePath))
+
+	info, err := os.Stat(filepath.Dir(savePath))
+	require.NoError(err)
+	require.True(info.IsDir())
+	if runtime.GOOS != "windows" {
+		assert.Equal(fs.FileMode(0o700), info.Mode().Perm())
+	}
+}
+
+func TestSaveFollowsExistingSymlink(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink permissions require elevated privileges on Windows")
+	}
+	path := writeConfig(t, `
+[[repos]]
+owner = "apache"
+name = "arrow"
+`)
+	cfg, err := Load(path)
+	require.NoError(err)
+
+	dir := t.TempDir()
+	targetPath := filepath.Join(dir, "dotfiles", "config.toml")
+	require.NoError(os.MkdirAll(filepath.Dir(targetPath), 0o700))
+	require.NoError(os.WriteFile(targetPath, []byte("stale = true\n"), 0o600))
+	linkPath := filepath.Join(dir, "config.toml")
+	require.NoError(os.Symlink(targetPath, linkPath))
+
+	require.NoError(cfg.Save(linkPath))
+
+	info, err := os.Lstat(linkPath)
+	require.NoError(err)
+	assert.NotZero(info.Mode()&fs.ModeSymlink, "config path should remain a symlink")
+	cfg2, err := Load(targetPath)
+	require.NoError(err)
+	require.Len(cfg2.Repos, 1)
+	assert.Equal("arrow", cfg2.Repos[0].Name)
+}
+
+func TestSaveRejectsInvalidConfigWithoutWriting(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	cfg := &Config{
+		SyncInterval:   "5m",
+		GitHubTokenEnv: "MIDDLEMAN_GITHUB_TOKEN",
+		Host:           "0.0.0.0",
+		Port:           8091,
+		Activity:       Activity{ViewMode: "threaded", TimeRange: "7d"},
+	}
+	savePath := filepath.Join(t.TempDir(), "config.toml")
+
+	err := cfg.Save(savePath)
+
+	require.Error(err)
+	assert.Contains(err.Error(), "host")
+	_, statErr := os.Stat(savePath)
+	require.True(os.IsNotExist(statErr), "config should not be written on validation failure: %v", statErr)
+}
+
+func TestSaveDoesNotInheritStaleTmpPermissions(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	if runtime.GOOS == "windows" {
+		t.Skip("file permission semantics differ on Windows")
+	}
+	path := writeConfig(t, `
+[[repos]]
+owner = "apache"
+name = "arrow"
+`)
+	cfg, err := Load(path)
+	require.NoError(err)
+
+	dir := t.TempDir()
+	savePath := filepath.Join(dir, "saved.toml")
+	stale := savePath + ".tmp"
+	require.NoError(os.WriteFile(stale, []byte("stale"), 0o644))
+
+	require.NoError(cfg.Save(savePath))
+
+	info, err := os.Stat(savePath)
+	require.NoError(err)
+	assert.Equal(fs.FileMode(0o600), info.Mode().Perm())
+}
+
 func TestSaveRoundTripEmptyGitHubTokenEnv(t *testing.T) {
 	assert := Assert.New(t)
 	path := writeConfig(t, `
@@ -1894,6 +2423,67 @@ default_branch_max_commits = 1000
 		require.NoError(err)
 		Assert.Equal(t, 30, cfg2.Activity.DefaultBranchRetentionDays)
 		Assert.Equal(t, 1000, cfg2.Activity.DefaultBranchMaxCommits)
+	})
+}
+
+func TestModeVisibilityDefaultsAndRoundTrip(t *testing.T) {
+	t.Run("defaults imported modes hidden when unset", func(t *testing.T) {
+		assert := Assert.New(t)
+		cfg, err := Load(writeConfig(t, `
+[[repos]]
+owner = "a"
+name = "b"
+`))
+		require.NoError(t, err)
+
+		assert.True(*cfg.Modes.Activity)
+		assert.True(*cfg.Modes.Repos)
+		assert.False(*cfg.Modes.Kata)
+		assert.False(*cfg.Modes.Docs)
+		assert.False(*cfg.Modes.Messages)
+		assert.True(*cfg.Modes.Pulls)
+		assert.True(*cfg.Modes.Issues)
+		assert.True(*cfg.Modes.Board)
+		assert.True(*cfg.Modes.Reviews)
+		assert.True(*cfg.Modes.Workspaces)
+	})
+
+	t.Run("preserves configured false values through save", func(t *testing.T) {
+		assert := Assert.New(t)
+		cfg, err := Load(writeConfig(t, `
+[[repos]]
+owner = "a"
+name = "b"
+
+[modes]
+activity = false
+repos = false
+kata = false
+docs = false
+messages = false
+pulls = false
+issues = false
+board = false
+reviews = false
+workspaces = false
+`))
+		require.NoError(t, err)
+
+		savePath := filepath.Join(t.TempDir(), "saved.toml")
+		require.NoError(t, cfg.Save(savePath))
+		cfg2, err := Load(savePath)
+		require.NoError(t, err)
+
+		assert.False(*cfg2.Modes.Activity)
+		assert.False(*cfg2.Modes.Repos)
+		assert.False(*cfg2.Modes.Kata)
+		assert.False(*cfg2.Modes.Docs)
+		assert.False(*cfg2.Modes.Messages)
+		assert.False(*cfg2.Modes.Pulls)
+		assert.False(*cfg2.Modes.Issues)
+		assert.False(*cfg2.Modes.Board)
+		assert.False(*cfg2.Modes.Reviews)
+		assert.False(*cfg2.Modes.Workspaces)
 	})
 }
 
@@ -2505,6 +3095,28 @@ func TestTokenEnvNamesIncludesImplicitPublicForgeTokenEnvs(t *testing.T) {
 	)
 }
 
+func TestTokenEnvNamesIncludesImplicitPublicForgeTokenEnvsFromPlatformOnly(t *testing.T) {
+	cfg := &Config{
+		GitHubTokenEnv: "WORK_GH_BOT_TOKEN",
+		Platforms: []PlatformConfig{
+			{Type: "forgejo", Host: "codeberg.org"},
+			{Type: "gitea", Host: "gitea.com"},
+			{Type: "forgejo", Host: "forgejo.example.com"},
+			{Type: "gitea", Host: "gitea.internal.example"},
+		},
+	}
+
+	Assert.Equal(
+		t,
+		[]string{
+			"WORK_GH_BOT_TOKEN",
+			"MIDDLEMAN_FORGEJO_TOKEN",
+			"MIDDLEMAN_GITEA_TOKEN",
+		},
+		cfg.TokenEnvNames(),
+	)
+}
+
 func TestTokenEnvNamesIncludesFallbackProviderDefaultsForRepoTokenEnv(t *testing.T) {
 	cfg := &Config{
 		GitHubTokenEnv: "WORK_GH_BOT_TOKEN",
@@ -2537,6 +3149,17 @@ func TestTokenEnvNamesIncludesFallbackProviderDefaultsForRepoTokenEnv(t *testing
 		},
 		cfg.TokenEnvNames(),
 	)
+}
+
+func TestTokenEnvNamesIncludesMsgvaultAPIKeyEnv(t *testing.T) {
+	cfg := &Config{
+		Msgvault: &Msgvault{
+			URL:       "http://127.0.0.1:8123",
+			APIKeyEnv: " MSGVAULT_API_KEY_TEST ",
+		},
+	}
+
+	Assert.Contains(t, cfg.TokenEnvNames(), "MSGVAULT_API_KEY_TEST")
 }
 
 func TestGhAuthTokenForHostPassesHostnameFlag(t *testing.T) {
@@ -2602,18 +3225,20 @@ func TestGhAuthTokenForHostReturnsEmptyWhenBinaryMissing(t *testing.T) {
 	Assert.Empty(t, ghAuthTokenForHost("github.com"))
 }
 
-func TestGhAuthTokenForHostTimesOut(t *testing.T) {
+func TestGitHubCLITokenForHostTimesOutWithoutCallerDeadline(t *testing.T) {
 	// Fake gh sleeps longer than the timeout, so the helper must
 	// return "" once the context expires.
 	setFakeGHCLIScript(t, fakeGHCLIOptions{
 		Stdout:       "never-reached",
 		SleepSeconds: 10,
 	})
+	setGHAuthExecTimeout(t, time.Second)
 
 	start := time.Now()
-	got := ghAuthTokenForHost("github.com")
+	got, err := GitHubCLITokenForHost(context.Background(), "github.com")
 	elapsed := time.Since(start)
 
+	require.NoError(t, err)
 	Assert.Empty(t, got)
 	Assert.Less(
 		t, elapsed, ghAuthExecTimeout+2*time.Second,
@@ -2636,17 +3261,22 @@ func TestTokenForPlatformHostUsesGHWithHostnameForGHE(t *testing.T) {
 	Assert.Equal(t, "auth token --hostname ghe.example.com", argv[0])
 }
 
-func TestTokenForPlatformHostPrefersEnvOverGHForGHE(t *testing.T) {
+func TestTokenForPlatformHostIgnoresGitHubTokenEnvForGHE(t *testing.T) {
+	// github_token_env holds the public-GitHub token. A non-default
+	// GitHub host must never receive it, even when the env var is set;
+	// the host-scoped gh credential is the only implicit fallback.
 	argvPath := setFakeGHCLIScript(t, fakeGHCLIOptions{
 		Stdout: "ghe-from-gh",
 	})
-	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "ghe-from-env")
+	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "public-github-token")
 
 	cfg := &Config{GitHubTokenEnv: "MIDDLEMAN_GITHUB_TOKEN"}
 	got := cfg.TokenForPlatformHost("github", "ghe.example.com", "")
-	Assert.Equal(t, "ghe-from-env", got)
+	Assert.Equal(t, "ghe-from-gh", got)
 
-	Assert.Empty(t, readFakeGHArgv(t, argvPath), "env var should short-circuit gh")
+	argv := readFakeGHArgv(t, argvPath)
+	require.Len(t, argv, 1)
+	Assert.Equal(t, "auth token --hostname ghe.example.com", argv[0])
 }
 
 func TestTokenForPlatformHostPrefersPlatformsEntryOverGHForGHE(t *testing.T) {

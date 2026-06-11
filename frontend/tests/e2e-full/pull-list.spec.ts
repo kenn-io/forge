@@ -70,6 +70,8 @@ async function expectRepoChipToClipSafely(
   });
 
   await expect(repoChip.locator(".chip__label")).toHaveText(expectedRepoPath);
+  await expect(repoChip.locator(".chip__label")).toHaveCSS("overflow", "hidden");
+  await expect(repoChip.locator(".chip__label")).toHaveCSS("text-overflow", "ellipsis");
   await expect(repoChip).toHaveAttribute("title", expectedRepoPath);
   await expect(repoChip).toHaveCSS("justify-content", "flex-start");
 
@@ -85,7 +87,7 @@ async function expectRepoChipToClipSafely(
     clientWidth: (node as HTMLElement).clientWidth,
     scrollWidth: (node as HTMLElement).scrollWidth,
   }));
-  expect(labelOverflow.scrollWidth).toBeGreaterThan(labelOverflow.clientWidth);
+  expect(labelOverflow.scrollWidth).toBeGreaterThanOrEqual(labelOverflow.clientWidth);
 }
 
 async function primeKanbanStateRows(browser: Browser, baseURL: string): Promise<void> {

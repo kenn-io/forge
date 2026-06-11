@@ -122,7 +122,7 @@ func TestGitLabContainerE2E(t *testing.T) {
 
 	client, err := platformgitlab.NewClient(
 		manifest.Host,
-		manifest.Token,
+		testTokenSource(manifest.Token),
 		platformgitlab.WithBaseURLForTesting(manifest.APIURL),
 		platformgitlab.WithForegroundTimeoutForTesting(time.Minute),
 	)

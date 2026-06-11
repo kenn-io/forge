@@ -14,6 +14,9 @@ describe("app shell selection", () => {
 
   it("uses the full app shell for standalone pages", () => {
     expect(shouldUseFullAppShell("activity")).toBe(true);
+    expect(shouldUseFullAppShell("kata")).toBe(true);
+    expect(shouldUseFullAppShell("docs")).toBe(true);
+    expect(shouldUseFullAppShell("messages")).toBe(true);
     expect(shouldUseFullAppShell("workspaces")).toBe(true);
     expect(shouldUseFullAppShell("terminal")).toBe(true);
   });

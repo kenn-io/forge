@@ -21,6 +21,215 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/docs/browse": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Browse docs folders */
+        get: operations["browse-docs-folders"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/docs/folders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List docs folders */
+        get: operations["list-docs-folders"];
+        put?: never;
+        /** Create docs folder */
+        post: operations["create-docs-folder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/docs/folders/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete docs folder */
+        delete: operations["delete-docs-folder"];
+        options?: never;
+        head?: never;
+        /** Update docs folder */
+        patch: operations["update-docs-folder"];
+        trace?: never;
+    };
+    "/docs/folders/{id}/blob": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read docs image blob */
+        get: operations["read-docs-blob"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/docs/folders/{id}/file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read docs file */
+        get: operations["read-docs-file"];
+        /** Write docs file */
+        put: operations["write-docs-file"];
+        /** Create docs file */
+        post: operations["create-docs-file"];
+        /** Delete docs file */
+        delete: operations["delete-docs-file"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/docs/folders/{id}/file/actions/rename": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Rename docs file */
+        post: operations["rename-docs-file"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/docs/folders/{id}/git": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get docs Git status */
+        get: operations["get-docs-git-status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/docs/folders/{id}/git/changes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get docs Git changes */
+        get: operations["get-docs-git-changes"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/docs/folders/{id}/git/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Publish docs Git changes */
+        post: operations["publish-docs-git"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/docs/folders/{id}/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Search docs folder */
+        get: operations["search-docs-folder"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/docs/folders/{id}/tree": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get docs folder tree */
+        get: operations["get-docs-tree"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/docs/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Search docs */
+        get: operations["search-docs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/events": {
         parameters: {
             query?: never;
@@ -922,6 +1131,177 @@ export interface paths {
         put?: never;
         /** Create issue workspace */
         post: operations["create-issue-workspace"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/kata/daemons": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Kata daemons */
+        get: operations["list-kata-daemons"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/messages/saved-searches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List messages saved searches */
+        get: operations["list-messages-saved-searches"];
+        /** Replace messages saved searches */
+        put: operations["replace-messages-saved-searches"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/msgvault/aggregates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get msgvault aggregates */
+        get: operations["get-msgvault-aggregates"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/msgvault/configure": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Configure msgvault */
+        post: operations["configure-msgvault"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/msgvault/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get msgvault health */
+        get: operations["get-msgvault-health"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/msgvault/messages/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get msgvault message */
+        get: operations["get-msgvault-message"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/msgvault/messages/{id}/inline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get msgvault inline image */
+        get: operations["get-msgvault-inline-image"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/msgvault/messages/{id}/remote-image/{token}/{idx}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get msgvault remote image */
+        get: operations["get-msgvault-remote-image"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/msgvault/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Search msgvault */
+        get: operations["search-msgvault"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/msgvault/threads/{conversation_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get msgvault thread */
+        get: operations["get-msgvault-thread"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2065,6 +2445,27 @@ export interface components {
             key: string;
             label: string;
         };
+        AggregateResult: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/AggregateResult.json
+             */
+            readonly $schema?: string;
+            rows: components["schemas"]["AggregateRow"][] | null;
+            view_type: string;
+        };
+        AggregateRow: {
+            /** Format: int64 */
+            attachment_count: number;
+            /** Format: int64 */
+            attachment_size: number;
+            /** Format: int64 */
+            count: number;
+            key: string;
+            /** Format: int64 */
+            total_size: number;
+        };
         ApprovePRHostInputBody: {
             /**
              * Format: uri
@@ -2082,6 +2483,16 @@ export interface components {
              */
             readonly $schema?: string;
             body: string;
+        };
+        AttachmentMeta: {
+            filename: string;
+            mime_type: string;
+            /** Format: int64 */
+            size_bytes: number;
+        };
+        BodySnippet: {
+            matches: components["schemas"]["SnippetRange"][] | null;
+            text: string;
         };
         BulkAddRepoRequest: {
             host?: string;
@@ -2170,6 +2581,27 @@ export interface components {
             body: string;
             range: components["schemas"]["DiffReviewLineRange"];
         };
+        CreateDocsFolderInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/CreateDocsFolderInputBody.json
+             */
+            readonly $schema?: string;
+            daemon?: string;
+            id?: string;
+            name?: string;
+            path?: string;
+        };
+        CreateDocsFolderOutputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/CreateDocsFolderOutputBody.json
+             */
+            readonly $schema?: string;
+            folder: components["schemas"]["DocsFolderResponse"];
+        };
         CreateIssueHostInputBody: {
             /**
              * Format: uri
@@ -2222,6 +2654,18 @@ export interface components {
             name: string;
             owner: string;
             platform_host: string;
+        };
+        CrossFolderHit: {
+            folder: string;
+            folder_name: string;
+            hit_type: string;
+            /** Format: int64 */
+            line?: number;
+            name: string;
+            rel_path: string;
+            /** Format: int64 */
+            score: number;
+            snippet?: components["schemas"]["BodySnippet"];
         };
         DiffFile: {
             /** Format: int64 */
@@ -2329,6 +2773,127 @@ export interface components {
             start_line?: number;
             start_side?: string;
             updated_at: string;
+        };
+        DocsBrowseEntry: {
+            hidden: boolean;
+            name: string;
+            path: string;
+        };
+        DocsBrowseOutputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/DocsBrowseOutputBody.json
+             */
+            readonly $schema?: string;
+            entries: components["schemas"]["DocsBrowseEntry"][] | null;
+            parent?: string;
+            path: string;
+        };
+        DocsCreateFileInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/DocsCreateFileInputBody.json
+             */
+            readonly $schema?: string;
+            content?: string;
+        };
+        DocsFileWriteBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/DocsFileWriteBody.json
+             */
+            readonly $schema?: string;
+            rel_path: string;
+            /** Format: int64 */
+            size: number;
+        };
+        DocsFolderOutputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/DocsFolderOutputBody.json
+             */
+            readonly $schema?: string;
+            folder: components["schemas"]["DocsFolderResponse"];
+        };
+        DocsFolderResponse: {
+            daemon?: string;
+            id: string;
+            name: string;
+            path: string;
+        };
+        DocsGitPublishInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/DocsGitPublishInputBody.json
+             */
+            readonly $schema?: string;
+            message?: string;
+        };
+        DocsReadFileOutputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/DocsReadFileOutputBody.json
+             */
+            readonly $schema?: string;
+            content: string;
+            rel_path: string;
+        };
+        DocsRenameFileInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/DocsRenameFileInputBody.json
+             */
+            readonly $schema?: string;
+            from?: string;
+            to?: string;
+        };
+        DocsRenameFileOutputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/DocsRenameFileOutputBody.json
+             */
+            readonly $schema?: string;
+            from: string;
+            to: string;
+        };
+        DocsSearchAllOutputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/DocsSearchAllOutputBody.json
+             */
+            readonly $schema?: string;
+            hits: components["schemas"]["CrossFolderHit"][] | null;
+            query: string;
+            truncated: boolean;
+            warnings?: string[] | null;
+        };
+        DocsSearchOutputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/DocsSearchOutputBody.json
+             */
+            readonly $schema?: string;
+            hits: components["schemas"]["Hit"][] | null;
+            query: string;
+        };
+        DocsWriteFileInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/DocsWriteFileInputBody.json
+             */
+            readonly $schema?: string;
+            content?: string;
         };
         EditCommentHostInputBody: {
             /**
@@ -2460,6 +3025,35 @@ export interface components {
             /** Format: int64 */
             whitespace_only_count: number;
         };
+        GitChangesResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/GitChangesResponse.json
+             */
+            readonly $schema?: string;
+            branch?: string;
+            changes: components["schemas"]["PublishChange"][] | null;
+            /** Format: int64 */
+            ignored_non_markdown_count: number;
+            is_repo: boolean;
+            suggested_message?: string;
+            upstream?: string;
+        };
+        GitStatusEntry: {
+            path: string;
+            status: string;
+        };
+        GitStatusResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/GitStatusResponse.json
+             */
+            readonly $schema?: string;
+            entries: components["schemas"]["GitStatusEntry"][] | null;
+            is_repo: boolean;
+        };
         GithubStateHostInputBody: {
             /**
              * Format: uri
@@ -2486,6 +3080,12 @@ export interface components {
              */
             readonly $schema?: string;
             state: string;
+        };
+        Hit: {
+            name: string;
+            rel_path: string;
+            /** Format: int64 */
+            score: number;
         };
         Hunk: {
             lines: components["schemas"]["Line"][] | null;
@@ -2622,6 +3222,24 @@ export interface components {
             readonly $schema?: string;
             labels: components["schemas"]["Label"][] | null;
         };
+        KataDaemonResponse: {
+            auth: string;
+            default: boolean;
+            health: string;
+            hint?: string;
+            id: string;
+            url: string;
+        };
+        KataDaemonRosterResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/KataDaemonRosterResponse.json
+             */
+            readonly $schema?: string;
+            daemons: components["schemas"]["KataDaemonResponse"][] | null;
+            source?: string;
+        };
         Label: {
             color: string;
             description?: string;
@@ -2654,6 +3272,15 @@ export interface components {
             /** Format: int64 */
             old_num?: number;
             type: string;
+        };
+        ListDocsFoldersOutputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/ListDocsFoldersOutputBody.json
+             */
+            readonly $schema?: string;
+            folders: components["schemas"]["DocsFolderResponse"][] | null;
         };
         ListLaunchTargetsOutputBody: {
             /**
@@ -2882,6 +3509,46 @@ export interface components {
             workspace?: components["schemas"]["WorkspaceRef"];
             worktree_links: components["schemas"]["WorktreeLinkResponse"][] | null;
         };
+        MessageSummary: {
+            bcc: string[] | null;
+            cc: string[] | null;
+            /** Format: int64 */
+            conversation_id: number;
+            deleted_at: string | null;
+            from: string;
+            has_attachments: boolean;
+            /** Format: int64 */
+            id: number;
+            labels: string[] | null;
+            sent_at: string;
+            /** Format: int64 */
+            size_bytes: number;
+            snippet: string;
+            subject: string;
+            to: string[] | null;
+        };
+        MessagesSavedSearchesBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/MessagesSavedSearchesBody.json
+             */
+            readonly $schema?: string;
+            etag: string;
+            searches: components["schemas"]["SavedSearch"][] | null;
+        };
+        ModeVisibility: {
+            activity: boolean;
+            board: boolean;
+            docs: boolean;
+            issues: boolean;
+            kata: boolean;
+            messages: boolean;
+            pulls: boolean;
+            repos: boolean;
+            reviews: boolean;
+            workspaces: boolean;
+        };
         MrImportMetadataResponse: {
             /**
              * Format: uri
@@ -2897,6 +3564,98 @@ export interface components {
             platform_head_sha: string;
             state: string;
             title: string;
+        };
+        MsgvaultHealthBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/MsgvaultHealthBody.json
+             */
+            readonly $schema?: string;
+            api_key_env?: string;
+            configured: boolean;
+            features: {
+                [key: string]: unknown;
+            };
+            modes: string[] | null;
+            ok: boolean;
+            status?: string;
+            status_detail?: string;
+            url?: string;
+        };
+        MsgvaultMessageBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/MsgvaultMessageBody.json
+             */
+            readonly $schema?: string;
+            attachments: components["schemas"]["AttachmentMeta"][] | null;
+            bcc: string[] | null;
+            body: string;
+            body_html?: string;
+            cc: string[] | null;
+            /** Format: int64 */
+            conversation_id: number;
+            deleted_at: string | null;
+            from: string;
+            has_attachments: boolean;
+            html_sanitization_failed?: boolean;
+            /** Format: int64 */
+            id: number;
+            labels: string[] | null;
+            /** Format: int64 */
+            remote_image_count?: number;
+            remote_image_token?: string;
+            sent_at: string;
+            /** Format: int64 */
+            size_bytes: number;
+            snippet: string;
+            subject: string;
+            to: string[] | null;
+        };
+        MsgvaultSearchBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/MsgvaultSearchBody.json
+             */
+            readonly $schema?: string;
+            messages: components["schemas"]["MessageSummary"][] | null;
+            mode: string;
+            /** Format: int64 */
+            page: number;
+            /** Format: int64 */
+            page_size: number;
+            paginatable: boolean;
+            query: string;
+            /** Format: int64 */
+            total: number;
+        };
+        MsgvaultThreadBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/MsgvaultThreadBody.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            conversation_id: number;
+            messages: components["schemas"]["MessageSummary"][] | null;
+        };
+        Node: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/Node.json
+             */
+            readonly $schema?: string;
+            children?: components["schemas"]["Node"][] | null;
+            is_dir: boolean;
+            name: string;
+            rel_path: string;
+            /** Format: int64 */
+            size?: number;
         };
         OperationAvailability: {
             available: boolean;
@@ -3037,6 +3796,11 @@ export interface components {
             thread_resolve: boolean;
             workflow_approval: boolean;
         };
+        PublishChange: {
+            old_path?: string;
+            path: string;
+            status: string;
+        };
         PublishDiffReviewDraftHostInputBody: {
             /**
              * Format: uri
@@ -3056,6 +3820,20 @@ export interface components {
             readonly $schema?: string;
             action: string;
             body?: string;
+        };
+        PublishResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/PublishResponse.json
+             */
+            readonly $schema?: string;
+            branch: string;
+            commit: string;
+            files: components["schemas"]["PublishChange"][] | null;
+            pushed: boolean;
+            short_commit: string;
+            upstream?: string;
         };
         RateLimitHostStatus: {
             /** Format: int64 */
@@ -3128,6 +3906,15 @@ export interface components {
              */
             readonly $schema?: string;
             label: string;
+        };
+        ReplaceMessagesSavedSearchesInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/ReplaceMessagesSavedSearchesInputBody.json
+             */
+            readonly $schema?: string;
+            searches: unknown[];
         };
         ReplyToDiscussionHostInputBody: {
             /**
@@ -3356,6 +4143,10 @@ export interface components {
             endpoint: string;
             version: string;
         };
+        SavedSearch: {
+            name: string;
+            query: string;
+        };
         SessionInfo: {
             /**
              * Format: uri
@@ -3412,8 +4203,15 @@ export interface components {
             readonly $schema?: string;
             activity: components["schemas"]["Activity"];
             agents: components["schemas"]["Agent"][];
+            modes?: components["schemas"]["ModeVisibility"];
             repos: components["schemas"]["ConfiguredRepoStatus"][];
             terminal: components["schemas"]["Terminal"];
+        };
+        SnippetRange: {
+            /** Format: int64 */
+            end: number;
+            /** Format: int64 */
+            start: number;
         };
         StackContextResponse: {
             /**
@@ -3520,6 +4318,15 @@ export interface components {
             /** Format: int64 */
             scrollback: number;
         };
+        UpdateDocsFolderInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/UpdateDocsFolderInputBody.json
+             */
+            readonly $schema?: string;
+            name?: string;
+        };
         UpdateSettingsRequest: {
             /**
              * Format: uri
@@ -3529,6 +4336,7 @@ export interface components {
             readonly $schema?: string;
             activity?: components["schemas"]["Activity"];
             agents?: components["schemas"]["Agent"][];
+            modes?: components["schemas"]["ModeVisibility"];
             terminal?: components["schemas"]["Terminal"];
         };
         VersionOutputBody: {
@@ -3653,6 +4461,566 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ActivityResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "browse-docs-folders": {
+        parameters: {
+            query?: {
+                path?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocsBrowseOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "list-docs-folders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListDocsFoldersOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "create-docs-folder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateDocsFolderInputBody"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreateDocsFolderOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "delete-docs-folder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "update-docs-folder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateDocsFolderInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocsFolderOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "read-docs-blob": {
+        parameters: {
+            query?: {
+                path?: string;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Image response */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    "Content-Length"?: string;
+                    "Content-Type"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/octet-stream": string;
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "read-docs-file": {
+        parameters: {
+            query?: {
+                path?: string;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocsReadFileOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "write-docs-file": {
+        parameters: {
+            query?: {
+                path?: string;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DocsWriteFileInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocsFileWriteBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "create-docs-file": {
+        parameters: {
+            query?: {
+                path?: string;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["DocsCreateFileInputBody"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocsFileWriteBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "delete-docs-file": {
+        parameters: {
+            query?: {
+                path?: string;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "rename-docs-file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DocsRenameFileInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocsRenameFileOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-docs-git-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GitStatusResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-docs-git-changes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GitChangesResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "publish-docs-git": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DocsGitPublishInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublishResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "search-docs-folder": {
+        parameters: {
+            query?: {
+                q?: string;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocsSearchOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-docs-tree": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Node"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "search-docs": {
+        parameters: {
+            query?: {
+                q?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocsSearchAllOutputBody"];
                 };
             };
             /** @description Error */
@@ -5822,6 +7190,382 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WorkspaceResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "list-kata-daemons": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KataDaemonRosterResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "list-messages-saved-searches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessagesSavedSearchesBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "replace-messages-saved-searches": {
+        parameters: {
+            query?: never;
+            header: {
+                "If-Match"?: string;
+                "X-Middleman-Csrf": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReplaceMessagesSavedSearchesInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessagesSavedSearchesBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-msgvault-aggregates": {
+        parameters: {
+            query: {
+                view_type: string;
+                q?: string;
+                hide_deleted?: string;
+                sort?: string;
+                direction?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AggregateResult"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "configure-msgvault": {
+        parameters: {
+            query?: never;
+            header: {
+                "Content-Type"?: string;
+                "X-Middleman-Csrf": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    api_key_env: string;
+                    url: string;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MsgvaultHealthBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-msgvault-health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MsgvaultHealthBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-msgvault-message": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MsgvaultMessageBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-msgvault-inline-image": {
+        parameters: {
+            query: {
+                cid: string;
+            };
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    "Content-Length"?: string;
+                    "Content-Type"?: string;
+                    "X-Content-Type-Options"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/gif": string;
+                    "image/jpeg": string;
+                    "image/png": string;
+                    "image/webp": string;
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-msgvault-remote-image": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+                token: string;
+                idx: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    "Content-Length"?: string;
+                    "Content-Type"?: string;
+                    "X-Content-Type-Options"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/gif": string;
+                    "image/jpeg": string;
+                    "image/png": string;
+                    "image/webp": string;
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "search-msgvault": {
+        parameters: {
+            query?: {
+                q?: string;
+                mode?: string;
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MsgvaultSearchBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-msgvault-thread": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversation_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MsgvaultThreadBody"];
                 };
             };
             /** @description Error */

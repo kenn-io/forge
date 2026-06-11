@@ -1,5 +1,15 @@
 /// <reference types="vite/client" />
 
+declare module "*.svelte?retry" {
+  const component: any;
+  export default component;
+}
+
+declare module "*.svelte?retry2" {
+  const component: any;
+  export default component;
+}
+
 declare module "@xterm/addon-ligatures/lib/addon-ligatures.mjs" {
   export { LigaturesAddon } from "@xterm/addon-ligatures";
 }
@@ -210,7 +220,7 @@ interface WorkspaceDetailContext {
 }
 
 interface MiddlemanNavigateEvent {
-  type: "pull" | "issue" | "activity" | "repos" | "board" | "reviews" | "workspaces";
+  type: "pull" | "issue" | "activity" | "repos" | "kata" | "docs" | "messages" | "board" | "reviews" | "workspaces";
   owner?: string;
   name?: string;
   number?: number;

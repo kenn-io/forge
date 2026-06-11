@@ -7,6 +7,7 @@ function makeStores(): StoreInstances {
   return {
     settings: {
       setConfiguredRepos: vi.fn(),
+      setModeVisibility: vi.fn(),
       setTerminalSettings: vi.fn(),
       setTerminalFontFamily: vi.fn(),
       setTerminalRenderer: vi.fn(),
@@ -55,6 +56,18 @@ function makeSettings(): Settings {
       font_ligatures: false,
       renderer: "xterm",
     },
+    modes: {
+      activity: true,
+      repos: true,
+      kata: false,
+      docs: false,
+      messages: false,
+      pulls: true,
+      issues: true,
+      board: true,
+      reviews: true,
+      workspaces: true,
+    },
     agents: [],
   };
 }
@@ -83,6 +96,7 @@ describe("runAppStartup", () => {
     await flushMicrotasks();
 
     expect(stores.settings.setConfiguredRepos).toHaveBeenCalledWith(settings.repos);
+    expect(stores.settings.setModeVisibility).toHaveBeenCalledWith(settings.modes);
     expect(stores.settings.setTerminalSettings).toHaveBeenCalledWith(settings.terminal);
     expect(stores.activity.hydrateDefaults).toHaveBeenCalledWith(settings.activity);
     expect(onReady).toHaveBeenCalledTimes(1);

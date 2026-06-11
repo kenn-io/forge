@@ -55,6 +55,7 @@ import (
 	"go.kenn.io/middleman/internal/stacks"
 	"go.kenn.io/middleman/internal/testutil"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
+	"go.kenn.io/middleman/internal/tokenauth"
 	"go.kenn.io/middleman/internal/workspace"
 	"go.kenn.io/middleman/internal/workspace/localruntime"
 	"golang.org/x/sync/semaphore"
@@ -3499,6 +3500,497 @@ func TestAPIGitLabConfiguredRepoSyncThroughProviderRegistry(t *testing.T) {
 	assert.Equal("project", (*pullsResp.JSON200)[0].RepoName)
 	assert.Equal("GitLab provider MR", (*pullsResp.JSON200)[0].Title)
 	assert.Equal("dirty", (*pullsResp.JSON200)[0].MergeableState)
+}
+
+func TestAPIGitLabSyncReadsTokenFileAfterRotation(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	dir := t.TempDir()
+	tokenPath := filepath.Join(dir, "gitlab-token")
+	require.NoError(os.WriteFile(tokenPath, []byte("first-token\n"), 0o600))
+
+	var tokens []string
+	gitlabAPI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		tokens = append(tokens, r.Header.Get("Private-Token"))
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.EscapedPath() {
+		case "/api/v4/projects/42/merge_requests/7":
+			_, _ = fmt.Fprint(w, `{
+				"id": 7001,
+				"iid": 7,
+				"project_id": 42,
+				"title": "GitLab token-file rotation",
+				"state": "opened",
+				"web_url": "https://gitlab.example.com/group/project/-/merge_requests/7",
+				"author": {"username": "ada", "name": "Ada Lovelace"},
+				"source_branch": "feature/token-rotation",
+				"target_branch": "main",
+				"created_at": "2026-04-01T10:00:00Z",
+				"updated_at": "2026-04-02T10:00:00Z"
+			}`)
+		case "/api/v4/projects/42/merge_requests/7/discussions",
+			"/api/v4/projects/42/merge_requests/7/commits":
+			_, _ = fmt.Fprint(w, `[]`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(gitlabAPI.Close)
+
+	source := tokenauth.NewManagedSource(tokenauth.Descriptor{
+		Key: tokenauth.Key{Platform: string(platform.KindGitLab), Host: "gitlab.example.com"},
+		Candidates: []tokenauth.Candidate{{
+			Kind:     tokenauth.SourceKindFile,
+			FilePath: tokenPath,
+		}},
+	}, tokenauth.Options{})
+	client, err := platformgitlab.NewClient(
+		"gitlab.example.com",
+		source,
+		platformgitlab.WithBaseURLForTesting(gitlabAPI.URL+"/api/v4"),
+	)
+	require.NoError(err)
+	registry, err := platform.NewRegistry(client)
+	require.NoError(err)
+
+	database := dbtest.Open(t)
+	ref := platform.RepoRef{
+		Platform:           platform.KindGitLab,
+		Host:               "gitlab.example.com",
+		Owner:              "group",
+		Name:               "project",
+		RepoPath:           "group/project",
+		PlatformID:         42,
+		PlatformExternalID: "42",
+		WebURL:             "https://gitlab.example.com/group/project",
+		CloneURL:           "https://gitlab.example.com/group/project.git",
+		DefaultBranch:      "main",
+	}
+	repoID, err := database.UpsertRepo(ctx, platform.DBRepoIdentity(ref))
+	require.NoError(err)
+	repo := ghclient.RepoRef{
+		Platform:           platform.KindGitLab,
+		Owner:              ref.Owner,
+		Name:               ref.Name,
+		PlatformHost:       ref.Host,
+		RepoPath:           ref.RepoPath,
+		PlatformRepoID:     ref.PlatformID,
+		PlatformExternalID: ref.PlatformExternalID,
+		WebURL:             ref.WebURL,
+		CloneURL:           ref.CloneURL,
+		DefaultBranch:      ref.DefaultBranch,
+	}
+	syncer := ghclient.NewSyncerWithRegistry(
+		registry, database, nil, []ghclient.RepoRef{repo}, time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+
+	firstRR := doJSON(
+		t, srv, http.MethodPost,
+		"/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/sync",
+		nil,
+	)
+	require.Equal(http.StatusOK, firstRR.Code, firstRR.Body.String())
+	firstCallCount := len(tokens)
+	require.Positive(firstCallCount)
+	for _, token := range tokens {
+		assert.Equal("first-token", token)
+	}
+
+	require.NoError(os.WriteFile(tokenPath, []byte("second-token\n"), 0o600))
+	secondRR := doJSON(
+		t, srv, http.MethodPost,
+		"/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/sync",
+		nil,
+	)
+	require.Equal(http.StatusOK, secondRR.Code, secondRR.Body.String())
+	require.Greater(len(tokens), firstCallCount)
+	for _, token := range tokens[firstCallCount:] {
+		assert.Equal("second-token", token)
+	}
+
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	require.NotNil(mr)
+	assert.Equal("GitLab token-file rotation", mr.Title)
+	require.NotNil(mr.DetailFetchedAt)
+}
+
+func TestAPIGitHubSyncReadsCloneTokenFileAfterRotation(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	dir := t.TempDir()
+
+	remote := filepath.Join(dir, "remote.git")
+	runGit(t, dir, "init", "--bare", "--initial-branch=main", remote)
+	work := filepath.Join(dir, "work")
+	runGit(t, dir, "clone", remote, work)
+	runGit(t, work, "config", "user.email", "test@test.com")
+	runGit(t, work, "config", "user.name", "Test")
+	require.NoError(os.WriteFile(filepath.Join(work, "base.txt"), []byte("base\n"), 0o644))
+	runGit(t, work, "add", ".")
+	runGit(t, work, "commit", "-m", "base commit")
+	runGit(t, work, "push", "origin", "main")
+	baseSHA := gitOutput(t, work, "rev-parse", "HEAD")
+	runGit(t, work, "checkout", "-b", "feature/token-rotation")
+	require.NoError(os.WriteFile(filepath.Join(work, "feature.txt"), []byte("feature\n"), 0o644))
+	runGit(t, work, "add", ".")
+	runGit(t, work, "commit", "-m", "feature commit")
+	runGit(t, work, "push", "origin", "feature/token-rotation")
+	headSHA := gitOutput(t, work, "rev-parse", "HEAD")
+
+	tokenPath := filepath.Join(dir, "github-token")
+	require.NoError(os.WriteFile(tokenPath, []byte("first-token\n"), 0o600))
+	source := tokenauth.NewManagedSource(tokenauth.Descriptor{
+		Key: tokenauth.Key{Platform: string(platform.KindGitHub), Host: "github.com"},
+		Candidates: []tokenauth.Candidate{{
+			Kind:     tokenauth.SourceKindFile,
+			FilePath: tokenPath,
+		}},
+	}, tokenauth.Options{})
+
+	capturePath := installCredentialCapturingGit(t, dir)
+
+	cloneURL := gitLocalRemoteURL(remote)
+	number := 7
+	title := "GitHub clone token-file rotation"
+	openState := "open"
+	featureBranch := "feature/token-rotation"
+	mainBranch := "main"
+	htmlURL := "https://github.com/acme/widget/pull/7"
+	login := "ada"
+	fullName := "acme/widget"
+	now := gh.Timestamp{Time: time.Now().UTC().Truncate(time.Second)}
+	mock := &mockGH{
+		getPullRequestFn: func(context.Context, string, string, int) (*gh.PullRequest, error) {
+			return &gh.PullRequest{
+				Number:    &number,
+				Title:     &title,
+				State:     &openState,
+				HTMLURL:   &htmlURL,
+				User:      &gh.User{Login: &login},
+				CreatedAt: &now,
+				UpdatedAt: &now,
+				Head: &gh.PullRequestBranch{
+					Ref: &featureBranch,
+					SHA: &headSHA,
+					Repo: &gh.Repository{
+						CloneURL: &cloneURL,
+						FullName: &fullName,
+					},
+				},
+				Base: &gh.PullRequestBranch{
+					Ref: &mainBranch,
+					SHA: &baseSHA,
+					Repo: &gh.Repository{
+						CloneURL: &cloneURL,
+						FullName: &fullName,
+					},
+				},
+			}, nil
+		},
+	}
+
+	database := dbtest.Open(t)
+	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	clones := gitclone.New(filepath.Join(dir, "clones"), map[string]tokenauth.Source{
+		"github.com": source,
+	})
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": mock},
+		database,
+		clones,
+		[]ghclient.RepoRef{{
+			Owner:         "acme",
+			Name:          "widget",
+			PlatformHost:  "github.com",
+			CloneURL:      cloneURL,
+			DefaultBranch: "main",
+		}},
+		time.Minute,
+		nil,
+		nil,
+	)
+	t.Cleanup(syncer.Stop)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{Clones: clones})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+
+	firstRR := doJSON(t, srv, http.MethodPost, "/api/v1/pulls/gh/acme/widget/7/sync", nil)
+	require.Equal(http.StatusOK, firstRR.Code, firstRR.Body.String())
+	firstCredentials := readCapturedCredentials(t, capturePath)
+	require.NotEmpty(firstCredentials)
+	for _, token := range firstCredentials {
+		assert.Equal("first-token", token)
+	}
+
+	require.NoError(os.WriteFile(tokenPath, []byte("second-token\n"), 0o600))
+	secondRR := doJSON(t, srv, http.MethodPost, "/api/v1/pulls/gh/acme/widget/7/sync", nil)
+	require.Equal(http.StatusOK, secondRR.Code, secondRR.Body.String())
+	allCredentials := readCapturedCredentials(t, capturePath)
+	require.Greater(len(allCredentials), len(firstCredentials))
+	for _, token := range allCredentials[len(firstCredentials):] {
+		assert.Equal("second-token", token)
+	}
+
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	require.NotNil(mr)
+	assert.Equal(headSHA, mr.DiffHeadSHA)
+	assert.Equal(baseSHA, mr.DiffBaseSHA)
+	assert.Equal(baseSHA, mr.MergeBaseSHA)
+}
+
+func sharedHostCloneSyncConfig(forgejoTokenLine, giteaTokenLine string) string {
+	return fmt.Sprintf(`
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[platforms]]
+type = "forgejo"
+host = "code.example.com"
+%s
+
+[[platforms]]
+type = "gitea"
+host = "code.example.com"
+%s
+
+[[repos]]
+platform = "gitea"
+platform_host = "code.example.com"
+owner = "acme"
+name = "widget"
+`, forgejoTokenLine, giteaTokenLine)
+}
+
+// TestAPISharedHostCloneFetchFollowsReloadedHostToken drives the full
+// stack the way main.go wires it: the gitclone.Manager holds the
+// host-level clone source (tokenauth.CloneKey) from the shared
+// SourceSet, sync runs are triggered over HTTP, and the credential git
+// actually receives is captured per invocation. Two providers share one
+// host; the reload drops one provider's token and rotates the other's,
+// and git fetches must follow the surviving effective chain.
+func TestAPISharedHostCloneFetchFollowsReloadedHostToken(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	dir := t.TempDir()
+	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "github-token")
+	t.Setenv("MIDDLEMAN_SHARED_TOKEN", "shared-token")
+	t.Setenv("MIDDLEMAN_ROTATED_TOKEN", "rotated-token")
+
+	remote := filepath.Join(dir, "remote.git")
+	runGit(t, dir, "init", "--bare", "--initial-branch=main", remote)
+	work := filepath.Join(dir, "work")
+	runGit(t, dir, "clone", remote, work)
+	runGit(t, work, "config", "user.email", "test@test.com")
+	runGit(t, work, "config", "user.name", "Test")
+	require.NoError(os.WriteFile(filepath.Join(work, "base.txt"), []byte("base\n"), 0o644))
+	runGit(t, work, "add", ".")
+	runGit(t, work, "commit", "-m", "base commit")
+	runGit(t, work, "push", "origin", "main")
+
+	capturePath := installCredentialCapturingGit(t, dir)
+	cloneURL := gitLocalRemoteURL(remote)
+
+	cfgPath := filepath.Join(dir, "config.toml")
+	writeConfigToml(t, cfgPath, sharedHostCloneSyncConfig(
+		`token_env = "MIDDLEMAN_SHARED_TOKEN"`,
+		`token_env = "MIDDLEMAN_SHARED_TOKEN"`,
+	))
+	cfg, err := config.Load(cfgPath)
+	require.NoError(err)
+
+	// Boot registration mirrors collectProviderTokenSources and
+	// buildProviderStartup: provider plans plus the host-level clone
+	// source, with the clone manager keyed by that source.
+	sourceSet, cloneSrc := reloadTestTokenSources(
+		t, cfgPath, tokenauth.CloneKey("code.example.com"),
+	)
+	bootToken, err := cloneSrc.Token(ctx)
+	require.NoError(err)
+	require.Equal("shared-token", bootToken)
+
+	giteaRef := platform.RepoRef{
+		Platform:           platform.KindGitea,
+		Host:               "code.example.com",
+		Owner:              "acme",
+		Name:               "widget",
+		RepoPath:           "acme/widget",
+		PlatformID:         42,
+		PlatformExternalID: "42",
+		WebURL:             "https://code.example.com/acme/widget",
+		CloneURL:           cloneURL,
+		DefaultBranch:      "main",
+	}
+	giteaProvider := &apiTestGitLabProvider{ref: giteaRef}
+	forgejoProvider := &apiTestGitLabProvider{ref: platform.RepoRef{
+		Platform: platform.KindForgejo,
+		Host:     "code.example.com",
+		Owner:    "acme",
+		Name:     "other",
+	}}
+	registry, err := platform.NewRegistry(giteaProvider, forgejoProvider)
+	require.NoError(err)
+
+	database := dbtest.Open(t)
+	clones := gitclone.New(filepath.Join(dir, "clones"), map[string]tokenauth.Source{
+		"code.example.com": cloneSrc,
+	})
+	syncer := ghclient.NewSyncerWithRegistry(
+		registry, database, clones,
+		[]ghclient.RepoRef{{
+			Platform:           platform.KindGitea,
+			Owner:              "acme",
+			Name:               "widget",
+			PlatformHost:       "code.example.com",
+			RepoPath:           "acme/widget",
+			PlatformRepoID:     42,
+			PlatformExternalID: "42",
+			CloneURL:           cloneURL,
+			DefaultBranch:      "main",
+		}},
+		time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	srv := NewWithConfig(
+		database, syncer, clones, nil, cfg, cfgPath,
+		ServerOptions{Clones: clones, TokenSources: sourceSet},
+	)
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+
+	waitForConfigWatcher(t, srv, 2*time.Second)
+	stream := streamConfigEvents(t, srv)
+	defer stream.Close()
+
+	// Each phase triggers one sync run over HTTP and waits for the
+	// repo's completion timestamp to advance: every networked git
+	// operation of that run happens before UpdateRepoSyncCompleted, so
+	// reading the capture file afterwards cannot race a slow trailing
+	// fetch into the next phase's assertions.
+	identity := platform.DBRepoIdentity(giteaRef)
+	runSync := func(prevCompleted *time.Time) *time.Time {
+		rr := doJSON(t, srv, http.MethodPost, "/api/v1/sync", nil)
+		require.Equal(http.StatusAccepted, rr.Code, rr.Body.String())
+		var completed *time.Time
+		require.Eventually(func() bool {
+			row, err := database.GetRepoByIdentity(ctx, identity)
+			if err != nil || row == nil || row.LastSyncCompletedAt == nil {
+				return false
+			}
+			if prevCompleted != nil && row.LastSyncCompletedAt.Equal(*prevCompleted) {
+				return false
+			}
+			completed = row.LastSyncCompletedAt
+			return true
+		}, 20*time.Second, 25*time.Millisecond, "sync run did not complete")
+		return completed
+	}
+
+	completed := runSync(nil)
+	bootCreds := readCapturedCredentials(t, capturePath)
+	require.NotEmpty(bootCreds)
+	for _, token := range bootCreds {
+		assert.Equal("shared-token", token)
+	}
+
+	// The forgejo entry goes credential-less while gitea rotates to a
+	// new env var. Git fetches must follow the host's surviving chain
+	// without a restart, not stay pinned to whichever provider source
+	// startup happened to hand the clone manager.
+	writeConfigToml(t, cfgPath, sharedHostCloneSyncConfig(
+		"",
+		`token_env = "MIDDLEMAN_ROTATED_TOKEN"`,
+	))
+	ev := waitForConfigEvent(t, stream, 2*time.Second)
+	require.True(ev.Valid, "reload error: %s", ev.Error)
+	assert.False(ev.RestartRequired)
+
+	completed = runSync(completed)
+	rotatedCreds := readCapturedCredentials(t, capturePath)
+	require.Greater(len(rotatedCreds), len(bootCreds))
+	for _, token := range rotatedCreds[len(bootCreds):] {
+		assert.Equal("rotated-token", token)
+	}
+
+	// Removing every credential for a host with tracked repos is an
+	// invalid reload by design (the required repo plan no longer
+	// resolves), so the daemon keeps last-known-good: git keeps using
+	// the rotated token rather than a cleared or stale credential.
+	writeConfigToml(t, cfgPath, sharedHostCloneSyncConfig("", ""))
+	ev = waitForConfigEvent(t, stream, 2*time.Second)
+	require.False(ev.Valid)
+	assert.NotEmpty(ev.Error)
+
+	runSync(completed)
+	finalCreds := readCapturedCredentials(t, capturePath)
+	require.Greater(len(finalCreds), len(rotatedCreds))
+	for _, token := range finalCreds[len(rotatedCreds):] {
+		assert.Equal("rotated-token", token)
+	}
+}
+
+// installCredentialCapturingGit prepends a git wrapper to PATH that, on
+// every invocation carrying an injected credential.helper (i.e. every
+// networked git command middleman authenticates), runs the helper's get
+// action and appends its output to the returned capture file before
+// exec'ing the real git. Local reads run without a helper and leave no
+// trace, so the file records exactly the credentials git was given.
+func installCredentialCapturingGit(t *testing.T, dir string) string {
+	t.Helper()
+	realGit, err := exec.LookPath("git")
+	require.NoError(t, err)
+	capturePath := filepath.Join(dir, "git-credentials.txt")
+	gitWrapperDir := filepath.Join(dir, "git-wrapper")
+	require.NoError(t, os.MkdirAll(gitWrapperDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(gitWrapperDir, "git"), []byte(`#!/bin/sh
+set -eu
+out="${MIDDLEMAN_TEST_GIT_CAPTURE:?}"
+helper=""
+i=0
+count="${GIT_CONFIG_COUNT:-0}"
+while [ "$i" -lt "$count" ]; do
+	eval "key=\${GIT_CONFIG_KEY_$i:-}"
+	eval "value=\${GIT_CONFIG_VALUE_$i:-}"
+	if [ "$key" = "credential.helper" ]; then
+		helper="$value"
+	fi
+	i=$((i + 1))
+done
+if [ -n "$helper" ]; then
+	"$helper" get >> "$out"
+	echo "---" >> "$out"
+fi
+exec "$MIDDLEMAN_TEST_REAL_GIT" "$@"
+`), 0o755))
+	t.Setenv("PATH", gitWrapperDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("MIDDLEMAN_TEST_GIT_CAPTURE", capturePath)
+	t.Setenv("MIDDLEMAN_TEST_REAL_GIT", realGit)
+	return capturePath
+}
+
+func readCapturedCredentials(t *testing.T, path string) []string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+	return parseCapturedCredentials(string(data))
+}
+
+func parseCapturedCredentials(raw string) []string {
+	var tokens []string
+	for line := range strings.SplitSeq(strings.TrimSpace(raw), "\n") {
+		if token, ok := strings.CutPrefix(line, "password="); ok {
+			tokens = append(tokens, token)
+		}
+	}
+	return tokens
 }
 
 func TestGitLabSyncCoversRepositoryItemsEventsOverviewAndCI(t *testing.T) {
@@ -11791,7 +12283,7 @@ func TestAPIGitLabPublishReviewDraftSurfacesCleanupFailureAsPartial(t *testing.T
 	database := dbtest.Open(t)
 	client, err := platformgitlab.NewClient(
 		"gitlab.example.com",
-		"token",
+		testTokenSource("token"),
 		platformgitlab.WithBaseURLForTesting(gitlabServer.URL+"/api/v4"),
 	)
 	require.NoError(err)
@@ -12010,7 +12502,7 @@ func setupActualGitLabReviewServer(
 	database := dbtest.Open(t)
 	client, err := platformgitlab.NewClient(
 		"gitlab.example.com",
-		"token",
+		testTokenSource("token"),
 		platformgitlab.WithBaseURLForTesting(gitlabServerURL+"/api/v4"),
 	)
 	require.NoError(err)
@@ -13008,7 +13500,7 @@ func TestAPIGitealikeHTTPMergeabilityPersistsThroughServer(t *testing.T) {
 			token: "gitea-token",
 			newClient: func(host, token, baseURL string) (platform.Provider, error) {
 				return giteaplatform.NewClient(
-					host, token, giteaplatform.WithBaseURLForTesting(baseURL),
+					host, testTokenSource(token), giteaplatform.WithBaseURLForTesting(baseURL),
 				)
 			},
 		},
@@ -13019,7 +13511,7 @@ func TestAPIGitealikeHTTPMergeabilityPersistsThroughServer(t *testing.T) {
 			token: "forgejo-token",
 			newClient: func(host, token, baseURL string) (platform.Provider, error) {
 				return forgejoplatform.NewClient(
-					host, token, forgejoplatform.WithBaseURLForTesting(baseURL),
+					host, testTokenSource(token), forgejoplatform.WithBaseURLForTesting(baseURL),
 				)
 			},
 		},
@@ -14751,6 +15243,135 @@ func TestAPIGetFilesAndDiffMarkGeneratedFilesE2E(t *testing.T) {
 	assert.False(requireWorkspaceDiffFile(t, *diffResp.JSON200.Files, "src.ts").IsGenerated)
 }
 
+// countingTokenFileSource wraps a managed token-file source and records how
+// many times the credential is resolved. Local-read endpoints must never
+// resolve it, so the count stays at zero even after the file is emptied.
+type countingTokenFileSource struct {
+	inner *tokenauth.ManagedSource
+	calls atomic.Int64
+}
+
+func (s *countingTokenFileSource) Token(ctx context.Context) (string, error) {
+	s.calls.Add(1)
+	return s.inner.Token(ctx)
+}
+
+func (s *countingTokenFileSource) Invalidate() { s.inner.Invalidate() }
+
+func (s *countingTokenFileSource) Descriptor() tokenauth.Descriptor {
+	return s.inner.Descriptor()
+}
+
+// TestAPILocalReadEndpointsServeDuringTokenRotationE2E proves that an
+// already-cloned repo keeps serving diff, files, file-preview, and commits
+// after its host token file is emptied mid-rotation. Those endpoints only run
+// local git reads, so they must never resolve the credential; if they did, the
+// briefly empty file would surface a missing-token error and break commit and
+// diff views for repos that are already on disk.
+func TestAPILocalReadEndpointsServeDuringTokenRotationE2E(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := t.Context()
+
+	dir := t.TempDir()
+	database := dbtest.Open(t)
+
+	bareDir := filepath.Join(dir, "clones")
+	bare := filepath.Join(bareDir, "github.com", "acme", "widget.git")
+	require.NoError(os.MkdirAll(filepath.Dir(bare), 0o755))
+
+	work := filepath.Join(dir, "work")
+	runGit(t, dir, "init", "--bare", "--initial-branch=main", bare)
+	runGit(t, dir, "clone", bare, work)
+	runGit(t, work, "config", "user.email", "test@test.com")
+	runGit(t, work, "config", "user.name", "Test")
+
+	require.NoError(os.WriteFile(filepath.Join(work, "base.txt"), []byte("base\n"), 0o644))
+	runGit(t, work, "add", ".")
+	runGit(t, work, "commit", "-m", "base commit")
+	runGit(t, work, "push", "origin", "main")
+	mergeBase := testGitSHA(t, work, "HEAD")
+
+	runGit(t, work, "checkout", "-b", "feature")
+	require.NoError(os.WriteFile(filepath.Join(work, "feature.txt"), []byte("feature\n"), 0o644))
+	runGit(t, work, "add", ".")
+	runGit(t, work, "commit", "-m", "feature commit")
+	runGit(t, work, "push", "origin", "feature")
+	headSHA := testGitSHA(t, work, "HEAD")
+
+	// A token-file source modeling the credential that was valid when the
+	// clone was created. Rotation empties the file before the reads below.
+	tokenPath := filepath.Join(dir, "github-token")
+	require.NoError(os.WriteFile(tokenPath, []byte("ghp_local_rotation_token\n"), 0o600))
+	source := &countingTokenFileSource{
+		inner: tokenauth.NewManagedSource(tokenauth.Descriptor{
+			Key: tokenauth.Key{Platform: string(platform.KindGitHub), Host: "github.com"},
+			Candidates: []tokenauth.Candidate{
+				{Kind: tokenauth.SourceKindFile, FilePath: tokenPath},
+			},
+		}, tokenauth.Options{}),
+	}
+
+	clones := gitclone.New(bareDir, map[string]tokenauth.Source{"github.com": source})
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": &mockGH{}},
+		database, nil, defaultTestRepos, time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{Clones: clones})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	client := setupTestClient(t, srv)
+
+	seedPR(t, database, "acme", "widget", 1)
+	repoID, err := database.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	require.NoError(database.UpdateDiffSHAs(ctx, repoID, 1, headSHA, mergeBase, mergeBase))
+
+	// Rotation in progress: the token file is briefly empty. Any attempt to
+	// resolve it now fails, so the local-read endpoints below must not try.
+	require.NoError(os.WriteFile(tokenPath, []byte("\n"), 0o600))
+
+	commitsResp, err := client.HTTP.GetPullCommitsWithResponse(ctx, "gh", "acme", "widget", 1)
+	require.NoError(err)
+	require.Equal(http.StatusOK, commitsResp.StatusCode(), string(commitsResp.Body))
+	require.NotNil(commitsResp.JSON200)
+	require.Len(*commitsResp.JSON200.Commits, 1)
+	assert.Equal(headSHA, (*commitsResp.JSON200.Commits)[0].Sha)
+
+	diffResp, err := client.HTTP.GetPullDiffWithResponse(ctx, "gh", "acme", "widget", 1, nil)
+	require.NoError(err)
+	require.Equal(http.StatusOK, diffResp.StatusCode(), string(diffResp.Body))
+	require.NotNil(diffResp.JSON200)
+	require.Len(*diffResp.JSON200.Files, 1)
+
+	filesResp, err := client.HTTP.GetPullFilesWithResponse(ctx, "gh", "acme", "widget", 1)
+	require.NoError(err)
+	require.Equal(http.StatusOK, filesResp.StatusCode(), string(filesResp.Body))
+	require.NotNil(filesResp.JSON200)
+	require.Len(*filesResp.JSON200.Files, 1)
+
+	previewPath := "feature.txt"
+	previewResp, err := client.HTTP.GetPullFilePreviewWithResponse(
+		ctx, "gh", "acme", "widget", 1,
+		&generated.GetPullFilePreviewParams{Path: &previewPath},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, previewResp.StatusCode(), string(previewResp.Body))
+	require.NotNil(previewResp.JSON200)
+	assert.Equal(previewPath, previewResp.JSON200.Path)
+	decoded, err := base64.StdEncoding.DecodeString(previewResp.JSON200.Content)
+	require.NoError(err)
+	assert.Equal("feature\n", string(decoded))
+
+	// The local-read endpoints above never resolved the rotated-out token.
+	assert.Zero(source.calls.Load())
+
+	// Sanity: resolving the emptied file really does fail, so the zero count
+	// means the reads skipped the source rather than finding a usable token.
+	_, err = source.Token(ctx)
+	require.ErrorIs(err, tokenauth.ErrMissingToken)
+}
+
 func TestSetActiveWorktreeKey(t *testing.T) {
 	assert := Assert.New(t)
 	srv, _ := setupTestServer(t)
@@ -14989,7 +15610,7 @@ func TestAPIRateLimitsWithGQL(t *testing.T) {
 		nil,
 	)
 
-	fetcher := ghclient.NewGraphQLFetcher("token", "github.com", gqlRT, nil)
+	fetcher := ghclient.NewGraphQLFetcher(testTokenSource("token"), "github.com", gqlRT, nil)
 	syncer.SetFetchers(map[string]*ghclient.GraphQLFetcher{
 		"github.com": fetcher,
 	})
@@ -15096,7 +15717,7 @@ func TestAPIRateLimitsMultiHostMixed(t *testing.T) {
 		nil,
 	)
 
-	fetcher := ghclient.NewGraphQLFetcher("token", "github.com", gqlRT, nil)
+	fetcher := ghclient.NewGraphQLFetcher(testTokenSource("token"), "github.com", gqlRT, nil)
 	syncer.SetFetchers(map[string]*ghclient.GraphQLFetcher{
 		"github.com": fetcher,
 	})
@@ -17138,6 +17759,15 @@ func setupWorkspaceServerFixtureWithMockHostAndOptions(
 
 	if testing.Short() {
 		t.Skip("workspace e2e tests skipped in short mode")
+	}
+	if cfg == nil {
+		cfg = &config.Config{}
+	} else {
+		clone := *cfg
+		cfg = &clone
+	}
+	if len(cfg.Tmux.Command) == 0 {
+		cfg.Tmux.Command = isolatedRealTmuxCommandIfAvailable(t)
 	}
 
 	dir := t.TempDir()
@@ -21611,18 +22241,20 @@ func TestWorkspaceRuntimeSessionTerminalTmuxBackedWebSocketE2E(
 	dir := t.TempDir()
 	tmuxCommand := isolatedRealTmuxCommand(t, tmuxPath)
 	agentPath := filepath.Join(dir, "size-agent")
+	// The agent must keep running after it observes the target size. Exiting
+	// on the first match kills the pane, tmux destroys the session, and the
+	// attach client can die within the same redraw tick — before the probe
+	// line is ever painted to the websocket. Keep printing until teardown
+	// (tmux kill-server) reaps the pane; the bound only guards against a
+	// skipped cleanup and the exit status is unchecked.
 	require.NoError(os.WriteFile(agentPath, []byte(`#!/bin/sh
 attempt=0
-while [ "$attempt" -lt 80 ]; do
+while [ "$attempt" -lt 200 ]; do
 	set -- $(stty size 2>/dev/null || printf '0 0')
 	printf 'size:%s:%s:probe\n' "$1" "$2"
-	if [ "$1:$2" = "40:177" ]; then
-		exit 0
-	fi
 	attempt=$((attempt + 1))
 	sleep 0.1
 done
-exit 1
 `), 0o755))
 	cfg := &config.Config{
 		Agents: []config.Agent{{

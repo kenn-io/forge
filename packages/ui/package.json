@@ -107,6 +107,9 @@
     },
     "./api/csrf": {
       "default": "./src/api/csrf.ts"
+    },
+    "./api/contract-status": {
+      "default": "./src/api/contract-status.ts"
     }
   },
   "scripts": {
@@ -126,7 +129,7 @@
     "@tiptap/extension-text": "3.22.3",
     "@tiptap/pm": "3.22.3",
     "@tiptap/suggestion": "3.22.3",
-    "dompurify": "3.3.3",
+    "dompurify": "3.4.0",
     "marked": "17.0.5",
     "openapi-fetch": "^0.17.0",
     "prosemirror-state": "^1.4.4",
@@ -138,11 +141,11 @@
     "@types/dompurify": "3.2.0",
     "@types/node": "^24.9.2",
     "openapi-fetch": "^0.17.0",
-    "svelte": "^5.55.0",
+    "svelte": "^5.55.7",
     "svelte-check": "4.4.5",
     "vite-plus": "0.1.22"
   },
   "peerDependencies": {
-    "svelte": "^5.0.0"
+    "svelte": "^5.55.7"
   }
 }

@@ -7,6 +7,7 @@
   import RepoSettings from "./RepoSettings.svelte";
   import ActivitySettings from "./ActivitySettings.svelte";
   import TerminalSettings from "./TerminalSettings.svelte";
+  import ModeVisibilitySettings from "./ModeVisibilitySettings.svelte";
   import AgentSettings from "./AgentSettings.svelte";
 
   const { settings: settingsStore } = getStores();
@@ -23,6 +24,7 @@
     try {
       settings = await getSettings();
       settingsStore.setConfiguredRepos(settings.repos);
+      settingsStore.setModeVisibility(settings.modes);
       settingsStore.setTerminalSettings(settings.terminal);
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
@@ -54,6 +56,17 @@
         onUpdate={(terminal) => {
           settings = { ...settings!, terminal };
           settingsStore.setTerminalSettings(terminal);
+        }}
+      />
+    </SettingsSection>
+
+    <SettingsSection title="Visible modes">
+      <ModeVisibilitySettings
+        modes={settings.modes}
+        saveLabel="Save visible modes"
+        onUpdate={(modes) => {
+          settings = { ...settings!, modes };
+          settingsStore.setModeVisibility(modes);
         }}
       />
     </SettingsSection>

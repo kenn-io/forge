@@ -395,6 +395,23 @@ type Agent struct {
 	Label   string    `json:"label"`
 }
 
+// AggregateResult defines model for AggregateResult.
+type AggregateResult struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema   *string         `json:"$schema,omitempty"`
+	Rows     *[]AggregateRow `json:"rows"`
+	ViewType string          `json:"view_type"`
+}
+
+// AggregateRow defines model for AggregateRow.
+type AggregateRow struct {
+	AttachmentCount int64  `json:"attachment_count"`
+	AttachmentSize  int64  `json:"attachment_size"`
+	Count           int64  `json:"count"`
+	Key             string `json:"key"`
+	TotalSize       int64  `json:"total_size"`
+}
+
 // ApprovePRHostInputBody defines model for ApprovePRHostInputBody.
 type ApprovePRHostInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -407,6 +424,19 @@ type ApprovePRInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema *string `json:"$schema,omitempty"`
 	Body   string  `json:"body"`
+}
+
+// AttachmentMeta defines model for AttachmentMeta.
+type AttachmentMeta struct {
+	Filename  string `json:"filename"`
+	MimeType  string `json:"mime_type"`
+	SizeBytes int64  `json:"size_bytes"`
+}
+
+// BodySnippet defines model for BodySnippet.
+type BodySnippet struct {
+	Matches *[]SnippetRange `json:"matches"`
+	Text    string          `json:"text"`
 }
 
 // BulkAddRepoRequest defines model for BulkAddRepoRequest.
@@ -493,6 +523,23 @@ type CreateDiffReviewDraftCommentInputBody struct {
 	Range  DiffReviewLineRange `json:"range"`
 }
 
+// CreateDocsFolderInputBody defines model for CreateDocsFolderInputBody.
+type CreateDocsFolderInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string `json:"$schema,omitempty"`
+	Daemon *string `json:"daemon,omitempty"`
+	Id     *string `json:"id,omitempty"`
+	Name   *string `json:"name,omitempty"`
+	Path   *string `json:"path,omitempty"`
+}
+
+// CreateDocsFolderOutputBody defines model for CreateDocsFolderOutputBody.
+type CreateDocsFolderOutputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string            `json:"$schema,omitempty"`
+	Folder DocsFolderResponse `json:"folder"`
+}
+
 // CreateIssueHostInputBody defines model for CreateIssueHostInputBody.
 type CreateIssueHostInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -533,6 +580,18 @@ type CreateWorkspaceInputBody struct {
 	Name         string  `json:"name"`
 	Owner        string  `json:"owner"`
 	PlatformHost string  `json:"platform_host"`
+}
+
+// CrossFolderHit defines model for CrossFolderHit.
+type CrossFolderHit struct {
+	Folder     string       `json:"folder"`
+	FolderName string       `json:"folder_name"`
+	HitType    string       `json:"hit_type"`
+	Line       *int64       `json:"line,omitempty"`
+	Name       string       `json:"name"`
+	RelPath    string       `json:"rel_path"`
+	Score      int64        `json:"score"`
+	Snippet    *BodySnippet `json:"snippet,omitempty"`
 }
 
 // DiffFile defines model for DiffFile.
@@ -625,6 +684,108 @@ type DiffReviewThreadResponse struct {
 	StartLine         *int64  `json:"start_line,omitempty"`
 	StartSide         *string `json:"start_side,omitempty"`
 	UpdatedAt         string  `json:"updated_at"`
+}
+
+// DocsBrowseEntry defines model for DocsBrowseEntry.
+type DocsBrowseEntry struct {
+	Hidden bool   `json:"hidden"`
+	Name   string `json:"name"`
+	Path   string `json:"path"`
+}
+
+// DocsBrowseOutputBody defines model for DocsBrowseOutputBody.
+type DocsBrowseOutputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema  *string            `json:"$schema,omitempty"`
+	Entries *[]DocsBrowseEntry `json:"entries"`
+	Parent  *string            `json:"parent,omitempty"`
+	Path    string             `json:"path"`
+}
+
+// DocsCreateFileInputBody defines model for DocsCreateFileInputBody.
+type DocsCreateFileInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema  *string `json:"$schema,omitempty"`
+	Content *string `json:"content,omitempty"`
+}
+
+// DocsFileWriteBody defines model for DocsFileWriteBody.
+type DocsFileWriteBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema  *string `json:"$schema,omitempty"`
+	RelPath string  `json:"rel_path"`
+	Size    int64   `json:"size"`
+}
+
+// DocsFolderOutputBody defines model for DocsFolderOutputBody.
+type DocsFolderOutputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string            `json:"$schema,omitempty"`
+	Folder DocsFolderResponse `json:"folder"`
+}
+
+// DocsFolderResponse defines model for DocsFolderResponse.
+type DocsFolderResponse struct {
+	Daemon *string `json:"daemon,omitempty"`
+	Id     string  `json:"id"`
+	Name   string  `json:"name"`
+	Path   string  `json:"path"`
+}
+
+// DocsGitPublishInputBody defines model for DocsGitPublishInputBody.
+type DocsGitPublishInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema  *string `json:"$schema,omitempty"`
+	Message *string `json:"message,omitempty"`
+}
+
+// DocsReadFileOutputBody defines model for DocsReadFileOutputBody.
+type DocsReadFileOutputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema  *string `json:"$schema,omitempty"`
+	Content string  `json:"content"`
+	RelPath string  `json:"rel_path"`
+}
+
+// DocsRenameFileInputBody defines model for DocsRenameFileInputBody.
+type DocsRenameFileInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string `json:"$schema,omitempty"`
+	From   *string `json:"from,omitempty"`
+	To     *string `json:"to,omitempty"`
+}
+
+// DocsRenameFileOutputBody defines model for DocsRenameFileOutputBody.
+type DocsRenameFileOutputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string `json:"$schema,omitempty"`
+	From   string  `json:"from"`
+	To     string  `json:"to"`
+}
+
+// DocsSearchAllOutputBody defines model for DocsSearchAllOutputBody.
+type DocsSearchAllOutputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema    *string           `json:"$schema,omitempty"`
+	Hits      *[]CrossFolderHit `json:"hits"`
+	Query     string            `json:"query"`
+	Truncated bool              `json:"truncated"`
+	Warnings  *[]string         `json:"warnings,omitempty"`
+}
+
+// DocsSearchOutputBody defines model for DocsSearchOutputBody.
+type DocsSearchOutputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string `json:"$schema,omitempty"`
+	Hits   *[]Hit  `json:"hits"`
+	Query  string  `json:"query"`
+}
+
+// DocsWriteFileInputBody defines model for DocsWriteFileInputBody.
+type DocsWriteFileInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema  *string `json:"$schema,omitempty"`
+	Content *string `json:"content,omitempty"`
 }
 
 // EditCommentHostInputBody defines model for EditCommentHostInputBody.
@@ -735,6 +896,32 @@ type FilesResponse struct {
 	WhitespaceOnlyCount int64       `json:"whitespace_only_count"`
 }
 
+// GitChangesResponse defines model for GitChangesResponse.
+type GitChangesResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema                  *string          `json:"$schema,omitempty"`
+	Branch                  *string          `json:"branch,omitempty"`
+	Changes                 *[]PublishChange `json:"changes"`
+	IgnoredNonMarkdownCount int64            `json:"ignored_non_markdown_count"`
+	IsRepo                  bool             `json:"is_repo"`
+	SuggestedMessage        *string          `json:"suggested_message,omitempty"`
+	Upstream                *string          `json:"upstream,omitempty"`
+}
+
+// GitStatusEntry defines model for GitStatusEntry.
+type GitStatusEntry struct {
+	Path   string `json:"path"`
+	Status string `json:"status"`
+}
+
+// GitStatusResponse defines model for GitStatusResponse.
+type GitStatusResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema  *string           `json:"$schema,omitempty"`
+	Entries *[]GitStatusEntry `json:"entries"`
+	IsRepo  bool              `json:"is_repo"`
+}
+
 // GithubStateHostInputBody defines model for GithubStateHostInputBody.
 type GithubStateHostInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -754,6 +941,13 @@ type GithubStateOutputBody struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema *string `json:"$schema,omitempty"`
 	State  string  `json:"state"`
+}
+
+// Hit defines model for Hit.
+type Hit struct {
+	Name    string `json:"name"`
+	RelPath string `json:"rel_path"`
+	Score   int64  `json:"score"`
 }
 
 // Hunk defines model for Hunk.
@@ -860,6 +1054,24 @@ type ItemLabelsResponse struct {
 	Labels *[]Label `json:"labels"`
 }
 
+// KataDaemonResponse defines model for KataDaemonResponse.
+type KataDaemonResponse struct {
+	Auth    string  `json:"auth"`
+	Default bool    `json:"default"`
+	Health  string  `json:"health"`
+	Hint    *string `json:"hint,omitempty"`
+	Id      string  `json:"id"`
+	Url     string  `json:"url"`
+}
+
+// KataDaemonRosterResponse defines model for KataDaemonRosterResponse.
+type KataDaemonRosterResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema  *string               `json:"$schema,omitempty"`
+	Daemons *[]KataDaemonResponse `json:"daemons"`
+	Source  *string               `json:"source,omitempty"`
+}
+
 // Label defines model for Label.
 type Label struct {
 	Color       string  `json:"color"`
@@ -893,6 +1105,13 @@ type Line struct {
 	NoNewline *bool  `json:"no_newline,omitempty"`
 	OldNum    *int64 `json:"old_num,omitempty"`
 	Type      string `json:"type"`
+}
+
+// ListDocsFoldersOutputBody defines model for ListDocsFoldersOutputBody.
+type ListDocsFoldersOutputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema  *string               `json:"$schema,omitempty"`
+	Folders *[]DocsFolderResponse `json:"folders"`
 }
 
 // ListLaunchTargetsOutputBody defines model for ListLaunchTargetsOutputBody.
@@ -1087,6 +1306,45 @@ type MergeRequestResponseKanbanStatus string
 // MergeRequestResponseState defines model for MergeRequestResponse.State.
 type MergeRequestResponseState string
 
+// MessageSummary defines model for MessageSummary.
+type MessageSummary struct {
+	Bcc            *[]string `json:"bcc"`
+	Cc             *[]string `json:"cc"`
+	ConversationId int64     `json:"conversation_id"`
+	DeletedAt      *string   `json:"deleted_at"`
+	From           string    `json:"from"`
+	HasAttachments bool      `json:"has_attachments"`
+	Id             int64     `json:"id"`
+	Labels         *[]string `json:"labels"`
+	SentAt         string    `json:"sent_at"`
+	SizeBytes      int64     `json:"size_bytes"`
+	Snippet        string    `json:"snippet"`
+	Subject        string    `json:"subject"`
+	To             *[]string `json:"to"`
+}
+
+// MessagesSavedSearchesBody defines model for MessagesSavedSearchesBody.
+type MessagesSavedSearchesBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema   *string        `json:"$schema,omitempty"`
+	Etag     string         `json:"etag"`
+	Searches *[]SavedSearch `json:"searches"`
+}
+
+// ModeVisibility defines model for ModeVisibility.
+type ModeVisibility struct {
+	Activity   bool `json:"activity"`
+	Board      bool `json:"board"`
+	Docs       bool `json:"docs"`
+	Issues     bool `json:"issues"`
+	Kata       bool `json:"kata"`
+	Messages   bool `json:"messages"`
+	Pulls      bool `json:"pulls"`
+	Repos      bool `json:"repos"`
+	Reviews    bool `json:"reviews"`
+	Workspaces bool `json:"workspaces"`
+}
+
 // MrImportMetadataResponse defines model for MrImportMetadataResponse.
 type MrImportMetadataResponse struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -1098,6 +1356,77 @@ type MrImportMetadataResponse struct {
 	PlatformHeadSha  string  `json:"platform_head_sha"`
 	State            string  `json:"state"`
 	Title            string  `json:"title"`
+}
+
+// MsgvaultHealthBody defines model for MsgvaultHealthBody.
+type MsgvaultHealthBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema       *string                `json:"$schema,omitempty"`
+	ApiKeyEnv    *string                `json:"api_key_env,omitempty"`
+	Configured   bool                   `json:"configured"`
+	Features     map[string]interface{} `json:"features"`
+	Modes        *[]string              `json:"modes"`
+	Ok           bool                   `json:"ok"`
+	Status       *string                `json:"status,omitempty"`
+	StatusDetail *string                `json:"status_detail,omitempty"`
+	Url          *string                `json:"url,omitempty"`
+}
+
+// MsgvaultMessageBody defines model for MsgvaultMessageBody.
+type MsgvaultMessageBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema                 *string           `json:"$schema,omitempty"`
+	Attachments            *[]AttachmentMeta `json:"attachments"`
+	Bcc                    *[]string         `json:"bcc"`
+	Body                   string            `json:"body"`
+	BodyHtml               *string           `json:"body_html,omitempty"`
+	Cc                     *[]string         `json:"cc"`
+	ConversationId         int64             `json:"conversation_id"`
+	DeletedAt              *string           `json:"deleted_at"`
+	From                   string            `json:"from"`
+	HasAttachments         bool              `json:"has_attachments"`
+	HtmlSanitizationFailed *bool             `json:"html_sanitization_failed,omitempty"`
+	Id                     int64             `json:"id"`
+	Labels                 *[]string         `json:"labels"`
+	RemoteImageCount       *int64            `json:"remote_image_count,omitempty"`
+	RemoteImageToken       *string           `json:"remote_image_token,omitempty"`
+	SentAt                 string            `json:"sent_at"`
+	SizeBytes              int64             `json:"size_bytes"`
+	Snippet                string            `json:"snippet"`
+	Subject                string            `json:"subject"`
+	To                     *[]string         `json:"to"`
+}
+
+// MsgvaultSearchBody defines model for MsgvaultSearchBody.
+type MsgvaultSearchBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema      *string           `json:"$schema,omitempty"`
+	Messages    *[]MessageSummary `json:"messages"`
+	Mode        string            `json:"mode"`
+	Page        int64             `json:"page"`
+	PageSize    int64             `json:"page_size"`
+	Paginatable bool              `json:"paginatable"`
+	Query       string            `json:"query"`
+	Total       int64             `json:"total"`
+}
+
+// MsgvaultThreadBody defines model for MsgvaultThreadBody.
+type MsgvaultThreadBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema         *string           `json:"$schema,omitempty"`
+	ConversationId int64             `json:"conversation_id"`
+	Messages       *[]MessageSummary `json:"messages"`
+}
+
+// Node defines model for Node.
+type Node struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema   *string `json:"$schema,omitempty"`
+	Children *[]Node `json:"children,omitempty"`
+	IsDir    bool    `json:"is_dir"`
+	Name     string  `json:"name"`
+	RelPath  string  `json:"rel_path"`
+	Size     *int64  `json:"size,omitempty"`
 }
 
 // OperationAvailability defines model for OperationAvailability.
@@ -1217,6 +1546,13 @@ type ProviderCapabilitiesResponse struct {
 	WorkflowApproval       bool      `json:"workflow_approval"`
 }
 
+// PublishChange defines model for PublishChange.
+type PublishChange struct {
+	OldPath *string `json:"old_path,omitempty"`
+	Path    string  `json:"path"`
+	Status  string  `json:"status"`
+}
+
 // PublishDiffReviewDraftHostInputBody defines model for PublishDiffReviewDraftHostInputBody.
 type PublishDiffReviewDraftHostInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -1231,6 +1567,18 @@ type PublishDiffReviewDraftInputBody struct {
 	Schema *string `json:"$schema,omitempty"`
 	Action string  `json:"action"`
 	Body   *string `json:"body,omitempty"`
+}
+
+// PublishResponse defines model for PublishResponse.
+type PublishResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema      *string          `json:"$schema,omitempty"`
+	Branch      string           `json:"branch"`
+	Commit      string           `json:"commit"`
+	Files       *[]PublishChange `json:"files"`
+	Pushed      bool             `json:"pushed"`
+	ShortCommit string           `json:"short_commit"`
+	Upstream    *string          `json:"upstream,omitempty"`
 }
 
 // RateLimitHostStatus defines model for RateLimitHostStatus.
@@ -1285,6 +1633,13 @@ type RenameWorkspaceRuntimeSessionInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema *string `json:"$schema,omitempty"`
 	Label  string  `json:"label"`
+}
+
+// ReplaceMessagesSavedSearchesInputBody defines model for ReplaceMessagesSavedSearchesInputBody.
+type ReplaceMessagesSavedSearchesInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema   *string       `json:"$schema,omitempty"`
+	Searches []interface{} `json:"searches"`
 }
 
 // ReplyToDiscussionHostInputBody defines model for ReplyToDiscussionHostInputBody.
@@ -1494,6 +1849,12 @@ type RoborevStatusResponse struct {
 	Version   string  `json:"version"`
 }
 
+// SavedSearch defines model for SavedSearch.
+type SavedSearch struct {
+	Name  string `json:"name"`
+	Query string `json:"query"`
+}
+
 // SessionInfo defines model for SessionInfo.
 type SessionInfo struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -1536,8 +1897,15 @@ type SettingsResponse struct {
 	Schema   *string                `json:"$schema,omitempty"`
 	Activity Activity               `json:"activity"`
 	Agents   []Agent                `json:"agents"`
+	Modes    *ModeVisibility        `json:"modes,omitempty"`
 	Repos    []ConfiguredRepoStatus `json:"repos"`
 	Terminal Terminal               `json:"terminal"`
+}
+
+// SnippetRange defines model for SnippetRange.
+type SnippetRange struct {
+	End   int64 `json:"end"`
+	Start int64 `json:"start"`
 }
 
 // StackContextResponse defines model for StackContextResponse.
@@ -1628,13 +1996,21 @@ type Terminal struct {
 // TerminalRenderer defines model for Terminal.Renderer.
 type TerminalRenderer string
 
+// UpdateDocsFolderInputBody defines model for UpdateDocsFolderInputBody.
+type UpdateDocsFolderInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string `json:"$schema,omitempty"`
+	Name   *string `json:"name,omitempty"`
+}
+
 // UpdateSettingsRequest defines model for UpdateSettingsRequest.
 type UpdateSettingsRequest struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema   *string   `json:"$schema,omitempty"`
-	Activity *Activity `json:"activity,omitempty"`
-	Agents   *[]Agent  `json:"agents,omitempty"`
-	Terminal *Terminal `json:"terminal,omitempty"`
+	Schema   *string         `json:"$schema,omitempty"`
+	Activity *Activity       `json:"activity,omitempty"`
+	Agents   *[]Agent        `json:"agents,omitempty"`
+	Modes    *ModeVisibility `json:"modes,omitempty"`
+	Terminal *Terminal       `json:"terminal,omitempty"`
 }
 
 // VersionOutputBody defines model for VersionOutputBody.
@@ -1726,6 +2102,48 @@ type ListActivityParams struct {
 	Since  *string   `form:"since,omitempty" json:"since,omitempty"`
 }
 
+// BrowseDocsFoldersParams defines parameters for BrowseDocsFolders.
+type BrowseDocsFoldersParams struct {
+	Path *string `form:"path,omitempty" json:"path,omitempty"`
+}
+
+// ReadDocsBlobParams defines parameters for ReadDocsBlob.
+type ReadDocsBlobParams struct {
+	Path *string `form:"path,omitempty" json:"path,omitempty"`
+}
+
+// DeleteDocsFileParams defines parameters for DeleteDocsFile.
+type DeleteDocsFileParams struct {
+	Path *string `form:"path,omitempty" json:"path,omitempty"`
+}
+
+// ReadDocsFileParams defines parameters for ReadDocsFile.
+type ReadDocsFileParams struct {
+	Path *string `form:"path,omitempty" json:"path,omitempty"`
+}
+
+// CreateDocsFileParams defines parameters for CreateDocsFile.
+type CreateDocsFileParams struct {
+	Path *string `form:"path,omitempty" json:"path,omitempty"`
+}
+
+// WriteDocsFileParams defines parameters for WriteDocsFile.
+type WriteDocsFileParams struct {
+	Path *string `form:"path,omitempty" json:"path,omitempty"`
+}
+
+// SearchDocsFolderParams defines parameters for SearchDocsFolder.
+type SearchDocsFolderParams struct {
+	Q     *string `form:"q,omitempty" json:"q,omitempty"`
+	Limit *int64  `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// SearchDocsParams defines parameters for SearchDocs.
+type SearchDocsParams struct {
+	Q     *string `form:"q,omitempty" json:"q,omitempty"`
+	Limit *int64  `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
 // GetPullDiffOnHostParams defines parameters for GetPullDiffOnHost.
 type GetPullDiffOnHostParams struct {
 	Whitespace *string `form:"whitespace,omitempty" json:"whitespace,omitempty"`
@@ -1791,6 +2209,47 @@ type ListIssuesParams struct {
 	Assignee *string `form:"assignee,omitempty" json:"assignee,omitempty"`
 	Limit    *int64  `form:"limit,omitempty" json:"limit,omitempty"`
 	Offset   *int64  `form:"offset,omitempty" json:"offset,omitempty"`
+}
+
+// ReplaceMessagesSavedSearchesParams defines parameters for ReplaceMessagesSavedSearches.
+type ReplaceMessagesSavedSearchesParams struct {
+	IfMatch        *string `json:"If-Match,omitempty"`
+	XMiddlemanCsrf string  `json:"X-Middleman-Csrf"`
+}
+
+// GetMsgvaultAggregatesParams defines parameters for GetMsgvaultAggregates.
+type GetMsgvaultAggregatesParams struct {
+	ViewType    string  `form:"view_type" json:"view_type"`
+	Q           *string `form:"q,omitempty" json:"q,omitempty"`
+	HideDeleted *string `form:"hide_deleted,omitempty" json:"hide_deleted,omitempty"`
+	Sort        *string `form:"sort,omitempty" json:"sort,omitempty"`
+	Direction   *string `form:"direction,omitempty" json:"direction,omitempty"`
+	Limit       *int64  `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// ConfigureMsgvaultJSONBody defines parameters for ConfigureMsgvault.
+type ConfigureMsgvaultJSONBody struct {
+	ApiKeyEnv string `json:"api_key_env"`
+	Url       string `json:"url"`
+}
+
+// ConfigureMsgvaultParams defines parameters for ConfigureMsgvault.
+type ConfigureMsgvaultParams struct {
+	ContentType    *string `json:"Content-Type,omitempty"`
+	XMiddlemanCsrf string  `json:"X-Middleman-Csrf"`
+}
+
+// GetMsgvaultInlineImageParams defines parameters for GetMsgvaultInlineImage.
+type GetMsgvaultInlineImageParams struct {
+	Cid string `form:"cid" json:"cid"`
+}
+
+// SearchMsgvaultParams defines parameters for SearchMsgvault.
+type SearchMsgvaultParams struct {
+	Q        *string `form:"q,omitempty" json:"q,omitempty"`
+	Mode     *string `form:"mode,omitempty" json:"mode,omitempty"`
+	Page     *int64  `form:"page,omitempty" json:"page,omitempty"`
+	PageSize *int64  `form:"page_size,omitempty" json:"page_size,omitempty"`
 }
 
 // ListPullsParams defines parameters for ListPulls.
@@ -1915,6 +2374,24 @@ type GetWorkspaceFilesParams struct {
 	To *string `form:"to,omitempty" json:"to,omitempty"`
 }
 
+// CreateDocsFolderJSONRequestBody defines body for CreateDocsFolder for application/json ContentType.
+type CreateDocsFolderJSONRequestBody = CreateDocsFolderInputBody
+
+// UpdateDocsFolderJSONRequestBody defines body for UpdateDocsFolder for application/json ContentType.
+type UpdateDocsFolderJSONRequestBody = UpdateDocsFolderInputBody
+
+// CreateDocsFileJSONRequestBody defines body for CreateDocsFile for application/json ContentType.
+type CreateDocsFileJSONRequestBody = DocsCreateFileInputBody
+
+// WriteDocsFileJSONRequestBody defines body for WriteDocsFile for application/json ContentType.
+type WriteDocsFileJSONRequestBody = DocsWriteFileInputBody
+
+// RenameDocsFileJSONRequestBody defines body for RenameDocsFile for application/json ContentType.
+type RenameDocsFileJSONRequestBody = DocsRenameFileInputBody
+
+// PublishDocsGitJSONRequestBody defines body for PublishDocsGit for application/json ContentType.
+type PublishDocsGitJSONRequestBody = DocsGitPublishInputBody
+
 // CreateIssueOnHostJSONRequestBody defines body for CreateIssueOnHost for application/json ContentType.
 type CreateIssueOnHostJSONRequestBody = CreateIssueHostInputBody
 
@@ -1995,6 +2472,12 @@ type SetIssueLabelsJSONRequestBody = SetLabelsRequest
 
 // CreateIssueWorkspaceJSONRequestBody defines body for CreateIssueWorkspace for application/json ContentType.
 type CreateIssueWorkspaceJSONRequestBody = CreateIssueWorkspaceInputBody
+
+// ReplaceMessagesSavedSearchesJSONRequestBody defines body for ReplaceMessagesSavedSearches for application/json ContentType.
+type ReplaceMessagesSavedSearchesJSONRequestBody = ReplaceMessagesSavedSearchesInputBody
+
+// ConfigureMsgvaultJSONRequestBody defines body for ConfigureMsgvault for application/json ContentType.
+type ConfigureMsgvaultJSONRequestBody ConfigureMsgvaultJSONBody
 
 // RegisterProjectJSONRequestBody defines body for RegisterProject for application/json ContentType.
 type RegisterProjectJSONRequestBody = RegisterProjectInputBody
@@ -2146,6 +2629,69 @@ func WithRequestEditorFn(fn RequestEditorFn) ClientOption {
 type ClientInterface interface {
 	// ListActivity request
 	ListActivity(ctx context.Context, params *ListActivityParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// BrowseDocsFolders request
+	BrowseDocsFolders(ctx context.Context, params *BrowseDocsFoldersParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListDocsFolders request
+	ListDocsFolders(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateDocsFolderWithBody request with any body
+	CreateDocsFolderWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	CreateDocsFolder(ctx context.Context, body CreateDocsFolderJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteDocsFolder request
+	DeleteDocsFolder(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateDocsFolderWithBody request with any body
+	UpdateDocsFolderWithBody(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	UpdateDocsFolder(ctx context.Context, id string, body UpdateDocsFolderJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ReadDocsBlob request
+	ReadDocsBlob(ctx context.Context, id string, params *ReadDocsBlobParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteDocsFile request
+	DeleteDocsFile(ctx context.Context, id string, params *DeleteDocsFileParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ReadDocsFile request
+	ReadDocsFile(ctx context.Context, id string, params *ReadDocsFileParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateDocsFileWithBody request with any body
+	CreateDocsFileWithBody(ctx context.Context, id string, params *CreateDocsFileParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	CreateDocsFile(ctx context.Context, id string, params *CreateDocsFileParams, body CreateDocsFileJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// WriteDocsFileWithBody request with any body
+	WriteDocsFileWithBody(ctx context.Context, id string, params *WriteDocsFileParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	WriteDocsFile(ctx context.Context, id string, params *WriteDocsFileParams, body WriteDocsFileJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RenameDocsFileWithBody request with any body
+	RenameDocsFileWithBody(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	RenameDocsFile(ctx context.Context, id string, body RenameDocsFileJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetDocsGitStatus request
+	GetDocsGitStatus(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetDocsGitChanges request
+	GetDocsGitChanges(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PublishDocsGitWithBody request with any body
+	PublishDocsGitWithBody(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	PublishDocsGit(ctx context.Context, id string, body PublishDocsGitJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SearchDocsFolder request
+	SearchDocsFolder(ctx context.Context, id string, params *SearchDocsFolderParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetDocsTree request
+	GetDocsTree(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SearchDocs request
+	SearchDocs(ctx context.Context, params *SearchDocsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// StreamEvents request
 	StreamEvents(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -2377,6 +2923,43 @@ type ClientInterface interface {
 	CreateIssueWorkspaceWithBody(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	CreateIssueWorkspace(ctx context.Context, provider string, owner string, name string, number int64, body CreateIssueWorkspaceJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListKataDaemons request
+	ListKataDaemons(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListMessagesSavedSearches request
+	ListMessagesSavedSearches(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ReplaceMessagesSavedSearchesWithBody request with any body
+	ReplaceMessagesSavedSearchesWithBody(ctx context.Context, params *ReplaceMessagesSavedSearchesParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	ReplaceMessagesSavedSearches(ctx context.Context, params *ReplaceMessagesSavedSearchesParams, body ReplaceMessagesSavedSearchesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetMsgvaultAggregates request
+	GetMsgvaultAggregates(ctx context.Context, params *GetMsgvaultAggregatesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ConfigureMsgvaultWithBody request with any body
+	ConfigureMsgvaultWithBody(ctx context.Context, params *ConfigureMsgvaultParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	ConfigureMsgvault(ctx context.Context, params *ConfigureMsgvaultParams, body ConfigureMsgvaultJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetMsgvaultHealth request
+	GetMsgvaultHealth(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetMsgvaultMessage request
+	GetMsgvaultMessage(ctx context.Context, id int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetMsgvaultInlineImage request
+	GetMsgvaultInlineImage(ctx context.Context, id int64, params *GetMsgvaultInlineImageParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetMsgvaultRemoteImage request
+	GetMsgvaultRemoteImage(ctx context.Context, id int64, token string, idx int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SearchMsgvault request
+	SearchMsgvault(ctx context.Context, params *SearchMsgvaultParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetMsgvaultThread request
+	GetMsgvaultThread(ctx context.Context, conversationId int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListProjects request
 	ListProjects(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -2650,6 +3233,282 @@ type ClientInterface interface {
 
 func (c *Client) ListActivity(ctx context.Context, params *ListActivityParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListActivityRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) BrowseDocsFolders(ctx context.Context, params *BrowseDocsFoldersParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewBrowseDocsFoldersRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ListDocsFolders(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListDocsFoldersRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateDocsFolderWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateDocsFolderRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateDocsFolder(ctx context.Context, body CreateDocsFolderJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateDocsFolderRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) DeleteDocsFolder(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteDocsFolderRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UpdateDocsFolderWithBody(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateDocsFolderRequestWithBody(c.Server, id, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UpdateDocsFolder(ctx context.Context, id string, body UpdateDocsFolderJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateDocsFolderRequest(c.Server, id, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ReadDocsBlob(ctx context.Context, id string, params *ReadDocsBlobParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewReadDocsBlobRequest(c.Server, id, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) DeleteDocsFile(ctx context.Context, id string, params *DeleteDocsFileParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteDocsFileRequest(c.Server, id, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ReadDocsFile(ctx context.Context, id string, params *ReadDocsFileParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewReadDocsFileRequest(c.Server, id, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateDocsFileWithBody(ctx context.Context, id string, params *CreateDocsFileParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateDocsFileRequestWithBody(c.Server, id, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateDocsFile(ctx context.Context, id string, params *CreateDocsFileParams, body CreateDocsFileJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateDocsFileRequest(c.Server, id, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) WriteDocsFileWithBody(ctx context.Context, id string, params *WriteDocsFileParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewWriteDocsFileRequestWithBody(c.Server, id, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) WriteDocsFile(ctx context.Context, id string, params *WriteDocsFileParams, body WriteDocsFileJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewWriteDocsFileRequest(c.Server, id, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RenameDocsFileWithBody(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRenameDocsFileRequestWithBody(c.Server, id, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RenameDocsFile(ctx context.Context, id string, body RenameDocsFileJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRenameDocsFileRequest(c.Server, id, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetDocsGitStatus(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetDocsGitStatusRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetDocsGitChanges(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetDocsGitChangesRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PublishDocsGitWithBody(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPublishDocsGitRequestWithBody(c.Server, id, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PublishDocsGit(ctx context.Context, id string, body PublishDocsGitJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPublishDocsGitRequest(c.Server, id, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SearchDocsFolder(ctx context.Context, id string, params *SearchDocsFolderParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSearchDocsFolderRequest(c.Server, id, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetDocsTree(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetDocsTreeRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SearchDocs(ctx context.Context, params *SearchDocsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSearchDocsRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -3682,6 +4541,162 @@ func (c *Client) CreateIssueWorkspaceWithBody(ctx context.Context, provider stri
 
 func (c *Client) CreateIssueWorkspace(ctx context.Context, provider string, owner string, name string, number int64, body CreateIssueWorkspaceJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewCreateIssueWorkspaceRequest(c.Server, provider, owner, name, number, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ListKataDaemons(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListKataDaemonsRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ListMessagesSavedSearches(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListMessagesSavedSearchesRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ReplaceMessagesSavedSearchesWithBody(ctx context.Context, params *ReplaceMessagesSavedSearchesParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewReplaceMessagesSavedSearchesRequestWithBody(c.Server, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ReplaceMessagesSavedSearches(ctx context.Context, params *ReplaceMessagesSavedSearchesParams, body ReplaceMessagesSavedSearchesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewReplaceMessagesSavedSearchesRequest(c.Server, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetMsgvaultAggregates(ctx context.Context, params *GetMsgvaultAggregatesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetMsgvaultAggregatesRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ConfigureMsgvaultWithBody(ctx context.Context, params *ConfigureMsgvaultParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewConfigureMsgvaultRequestWithBody(c.Server, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ConfigureMsgvault(ctx context.Context, params *ConfigureMsgvaultParams, body ConfigureMsgvaultJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewConfigureMsgvaultRequest(c.Server, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetMsgvaultHealth(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetMsgvaultHealthRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetMsgvaultMessage(ctx context.Context, id int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetMsgvaultMessageRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetMsgvaultInlineImage(ctx context.Context, id int64, params *GetMsgvaultInlineImageParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetMsgvaultInlineImageRequest(c.Server, id, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetMsgvaultRemoteImage(ctx context.Context, id int64, token string, idx int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetMsgvaultRemoteImageRequest(c.Server, id, token, idx)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SearchMsgvault(ctx context.Context, params *SearchMsgvaultParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSearchMsgvaultRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetMsgvaultThread(ctx context.Context, conversationId int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetMsgvaultThreadRequest(c.Server, conversationId)
 	if err != nil {
 		return nil, err
 	}
@@ -4957,6 +5972,842 @@ func NewListActivityRequest(server string, params *ListActivityParams) (*http.Re
 		if params.Since != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "since", *params.Since, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewBrowseDocsFoldersRequest generates requests for BrowseDocsFolders
+func NewBrowseDocsFoldersRequest(server string, params *BrowseDocsFoldersParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/docs/browse")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Path != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "path", *params.Path, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewListDocsFoldersRequest generates requests for ListDocsFolders
+func NewListDocsFoldersRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/docs/folders")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreateDocsFolderRequest calls the generic CreateDocsFolder builder with application/json body
+func NewCreateDocsFolderRequest(server string, body CreateDocsFolderJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateDocsFolderRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewCreateDocsFolderRequestWithBody generates requests for CreateDocsFolder with any type of body
+func NewCreateDocsFolderRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/docs/folders")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDeleteDocsFolderRequest generates requests for DeleteDocsFolder
+func NewDeleteDocsFolderRequest(server string, id string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/docs/folders/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("DELETE", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewUpdateDocsFolderRequest calls the generic UpdateDocsFolder builder with application/json body
+func NewUpdateDocsFolderRequest(server string, id string, body UpdateDocsFolderJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewUpdateDocsFolderRequestWithBody(server, id, "application/json", bodyReader)
+}
+
+// NewUpdateDocsFolderRequestWithBody generates requests for UpdateDocsFolder with any type of body
+func NewUpdateDocsFolderRequestWithBody(server string, id string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/docs/folders/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("PATCH", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewReadDocsBlobRequest generates requests for ReadDocsBlob
+func NewReadDocsBlobRequest(server string, id string, params *ReadDocsBlobParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/docs/folders/%s/blob", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Path != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "path", *params.Path, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewDeleteDocsFileRequest generates requests for DeleteDocsFile
+func NewDeleteDocsFileRequest(server string, id string, params *DeleteDocsFileParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/docs/folders/%s/file", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Path != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "path", *params.Path, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("DELETE", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewReadDocsFileRequest generates requests for ReadDocsFile
+func NewReadDocsFileRequest(server string, id string, params *ReadDocsFileParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/docs/folders/%s/file", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Path != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "path", *params.Path, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreateDocsFileRequest calls the generic CreateDocsFile builder with application/json body
+func NewCreateDocsFileRequest(server string, id string, params *CreateDocsFileParams, body CreateDocsFileJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateDocsFileRequestWithBody(server, id, params, "application/json", bodyReader)
+}
+
+// NewCreateDocsFileRequestWithBody generates requests for CreateDocsFile with any type of body
+func NewCreateDocsFileRequestWithBody(server string, id string, params *CreateDocsFileParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/docs/folders/%s/file", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Path != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "path", *params.Path, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewWriteDocsFileRequest calls the generic WriteDocsFile builder with application/json body
+func NewWriteDocsFileRequest(server string, id string, params *WriteDocsFileParams, body WriteDocsFileJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewWriteDocsFileRequestWithBody(server, id, params, "application/json", bodyReader)
+}
+
+// NewWriteDocsFileRequestWithBody generates requests for WriteDocsFile with any type of body
+func NewWriteDocsFileRequestWithBody(server string, id string, params *WriteDocsFileParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/docs/folders/%s/file", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Path != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "path", *params.Path, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("PUT", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewRenameDocsFileRequest calls the generic RenameDocsFile builder with application/json body
+func NewRenameDocsFileRequest(server string, id string, body RenameDocsFileJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewRenameDocsFileRequestWithBody(server, id, "application/json", bodyReader)
+}
+
+// NewRenameDocsFileRequestWithBody generates requests for RenameDocsFile with any type of body
+func NewRenameDocsFileRequestWithBody(server string, id string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/docs/folders/%s/file/actions/rename", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewGetDocsGitStatusRequest generates requests for GetDocsGitStatus
+func NewGetDocsGitStatusRequest(server string, id string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/docs/folders/%s/git", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetDocsGitChangesRequest generates requests for GetDocsGitChanges
+func NewGetDocsGitChangesRequest(server string, id string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/docs/folders/%s/git/changes", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPublishDocsGitRequest calls the generic PublishDocsGit builder with application/json body
+func NewPublishDocsGitRequest(server string, id string, body PublishDocsGitJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPublishDocsGitRequestWithBody(server, id, "application/json", bodyReader)
+}
+
+// NewPublishDocsGitRequestWithBody generates requests for PublishDocsGit with any type of body
+func NewPublishDocsGitRequestWithBody(server string, id string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/docs/folders/%s/git/publish", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewSearchDocsFolderRequest generates requests for SearchDocsFolder
+func NewSearchDocsFolderRequest(server string, id string, params *SearchDocsFolderParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/docs/folders/%s/search", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Q != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "q", *params.Q, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetDocsTreeRequest generates requests for GetDocsTree
+func NewGetDocsTreeRequest(server string, id string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/docs/folders/%s/tree", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewSearchDocsRequest generates requests for SearchDocs
+func NewSearchDocsRequest(server string, params *SearchDocsParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/docs/search")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Q != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "q", *params.Q, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
 				return nil, err
 			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
 				return nil, err
@@ -9236,6 +11087,605 @@ func NewCreateIssueWorkspaceRequestWithBody(server string, provider string, owne
 	return req, nil
 }
 
+// NewListKataDaemonsRequest generates requests for ListKataDaemons
+func NewListKataDaemonsRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/kata/daemons")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewListMessagesSavedSearchesRequest generates requests for ListMessagesSavedSearches
+func NewListMessagesSavedSearchesRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/messages/saved-searches")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewReplaceMessagesSavedSearchesRequest calls the generic ReplaceMessagesSavedSearches builder with application/json body
+func NewReplaceMessagesSavedSearchesRequest(server string, params *ReplaceMessagesSavedSearchesParams, body ReplaceMessagesSavedSearchesJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewReplaceMessagesSavedSearchesRequestWithBody(server, params, "application/json", bodyReader)
+}
+
+// NewReplaceMessagesSavedSearchesRequestWithBody generates requests for ReplaceMessagesSavedSearches with any type of body
+func NewReplaceMessagesSavedSearchesRequestWithBody(server string, params *ReplaceMessagesSavedSearchesParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/messages/saved-searches")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("PUT", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		if params.IfMatch != nil {
+			var headerParam0 string
+
+			headerParam0, err = runtime.StyleParamWithOptions("simple", false, "If-Match", *params.IfMatch, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+			if err != nil {
+				return nil, err
+			}
+
+			req.Header.Set("If-Match", headerParam0)
+		}
+
+		var headerParam1 string
+
+		headerParam1, err = runtime.StyleParamWithOptions("simple", false, "X-Middleman-Csrf", params.XMiddlemanCsrf, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("X-Middleman-Csrf", headerParam1)
+
+	}
+
+	return req, nil
+}
+
+// NewGetMsgvaultAggregatesRequest generates requests for GetMsgvaultAggregates
+func NewGetMsgvaultAggregatesRequest(server string, params *GetMsgvaultAggregatesParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/msgvault/aggregates")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if queryFrag, err := runtime.StyleParamWithOptions("form", false, "view_type", params.ViewType, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+			return nil, err
+		} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+			return nil, err
+		} else {
+			for k, v := range parsed {
+				for _, v2 := range v {
+					queryValues.Add(k, v2)
+				}
+			}
+		}
+
+		if params.Q != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "q", *params.Q, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.HideDeleted != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "hide_deleted", *params.HideDeleted, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Sort != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "sort", *params.Sort, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Direction != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "direction", *params.Direction, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewConfigureMsgvaultRequest calls the generic ConfigureMsgvault builder with application/json body
+func NewConfigureMsgvaultRequest(server string, params *ConfigureMsgvaultParams, body ConfigureMsgvaultJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewConfigureMsgvaultRequestWithBody(server, params, "application/json", bodyReader)
+}
+
+// NewConfigureMsgvaultRequestWithBody generates requests for ConfigureMsgvault with any type of body
+func NewConfigureMsgvaultRequestWithBody(server string, params *ConfigureMsgvaultParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/msgvault/configure")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		if params.ContentType != nil {
+			var headerParam0 string
+
+			headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Content-Type", *params.ContentType, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+			if err != nil {
+				return nil, err
+			}
+
+			req.Header.Set("Content-Type", headerParam0)
+		}
+
+		var headerParam1 string
+
+		headerParam1, err = runtime.StyleParamWithOptions("simple", false, "X-Middleman-Csrf", params.XMiddlemanCsrf, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("X-Middleman-Csrf", headerParam1)
+
+	}
+
+	return req, nil
+}
+
+// NewGetMsgvaultHealthRequest generates requests for GetMsgvaultHealth
+func NewGetMsgvaultHealthRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/msgvault/health")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetMsgvaultMessageRequest generates requests for GetMsgvaultMessage
+func NewGetMsgvaultMessageRequest(server string, id int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/msgvault/messages/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetMsgvaultInlineImageRequest generates requests for GetMsgvaultInlineImage
+func NewGetMsgvaultInlineImageRequest(server string, id int64, params *GetMsgvaultInlineImageParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/msgvault/messages/%s/inline", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if queryFrag, err := runtime.StyleParamWithOptions("form", false, "cid", params.Cid, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+			return nil, err
+		} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+			return nil, err
+		} else {
+			for k, v := range parsed {
+				for _, v2 := range v {
+					queryValues.Add(k, v2)
+				}
+			}
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetMsgvaultRemoteImageRequest generates requests for GetMsgvaultRemoteImage
+func NewGetMsgvaultRemoteImageRequest(server string, id int64, token string, idx int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "token", token, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "idx", idx, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/msgvault/messages/%s/remote-image/%s/%s", pathParam0, pathParam1, pathParam2)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewSearchMsgvaultRequest generates requests for SearchMsgvault
+func NewSearchMsgvaultRequest(server string, params *SearchMsgvaultParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/msgvault/search")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Q != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "q", *params.Q, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Mode != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "mode", *params.Mode, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Page != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "page", *params.Page, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.PageSize != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "page_size", *params.PageSize, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetMsgvaultThreadRequest generates requests for GetMsgvaultThread
+func NewGetMsgvaultThreadRequest(server string, conversationId int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "conversation_id", conversationId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/msgvault/threads/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewListProjectsRequest generates requests for ListProjects
 func NewListProjectsRequest(server string) (*http.Request, error) {
 	var err error
@@ -13373,6 +15823,69 @@ type ClientWithResponsesInterface interface {
 	// ListActivityWithResponse request
 	ListActivityWithResponse(ctx context.Context, params *ListActivityParams, reqEditors ...RequestEditorFn) (*ListActivityResponse, error)
 
+	// BrowseDocsFoldersWithResponse request
+	BrowseDocsFoldersWithResponse(ctx context.Context, params *BrowseDocsFoldersParams, reqEditors ...RequestEditorFn) (*BrowseDocsFoldersResponse, error)
+
+	// ListDocsFoldersWithResponse request
+	ListDocsFoldersWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListDocsFoldersResponse, error)
+
+	// CreateDocsFolderWithBodyWithResponse request with any body
+	CreateDocsFolderWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateDocsFolderResponse, error)
+
+	CreateDocsFolderWithResponse(ctx context.Context, body CreateDocsFolderJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateDocsFolderResponse, error)
+
+	// DeleteDocsFolderWithResponse request
+	DeleteDocsFolderWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*DeleteDocsFolderResponse, error)
+
+	// UpdateDocsFolderWithBodyWithResponse request with any body
+	UpdateDocsFolderWithBodyWithResponse(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateDocsFolderResponse, error)
+
+	UpdateDocsFolderWithResponse(ctx context.Context, id string, body UpdateDocsFolderJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateDocsFolderResponse, error)
+
+	// ReadDocsBlobWithResponse request
+	ReadDocsBlobWithResponse(ctx context.Context, id string, params *ReadDocsBlobParams, reqEditors ...RequestEditorFn) (*ReadDocsBlobResponse, error)
+
+	// DeleteDocsFileWithResponse request
+	DeleteDocsFileWithResponse(ctx context.Context, id string, params *DeleteDocsFileParams, reqEditors ...RequestEditorFn) (*DeleteDocsFileResponse, error)
+
+	// ReadDocsFileWithResponse request
+	ReadDocsFileWithResponse(ctx context.Context, id string, params *ReadDocsFileParams, reqEditors ...RequestEditorFn) (*ReadDocsFileResponse, error)
+
+	// CreateDocsFileWithBodyWithResponse request with any body
+	CreateDocsFileWithBodyWithResponse(ctx context.Context, id string, params *CreateDocsFileParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateDocsFileResponse, error)
+
+	CreateDocsFileWithResponse(ctx context.Context, id string, params *CreateDocsFileParams, body CreateDocsFileJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateDocsFileResponse, error)
+
+	// WriteDocsFileWithBodyWithResponse request with any body
+	WriteDocsFileWithBodyWithResponse(ctx context.Context, id string, params *WriteDocsFileParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*WriteDocsFileResponse, error)
+
+	WriteDocsFileWithResponse(ctx context.Context, id string, params *WriteDocsFileParams, body WriteDocsFileJSONRequestBody, reqEditors ...RequestEditorFn) (*WriteDocsFileResponse, error)
+
+	// RenameDocsFileWithBodyWithResponse request with any body
+	RenameDocsFileWithBodyWithResponse(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RenameDocsFileResponse, error)
+
+	RenameDocsFileWithResponse(ctx context.Context, id string, body RenameDocsFileJSONRequestBody, reqEditors ...RequestEditorFn) (*RenameDocsFileResponse, error)
+
+	// GetDocsGitStatusWithResponse request
+	GetDocsGitStatusWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetDocsGitStatusResponse, error)
+
+	// GetDocsGitChangesWithResponse request
+	GetDocsGitChangesWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetDocsGitChangesResponse, error)
+
+	// PublishDocsGitWithBodyWithResponse request with any body
+	PublishDocsGitWithBodyWithResponse(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PublishDocsGitResponse, error)
+
+	PublishDocsGitWithResponse(ctx context.Context, id string, body PublishDocsGitJSONRequestBody, reqEditors ...RequestEditorFn) (*PublishDocsGitResponse, error)
+
+	// SearchDocsFolderWithResponse request
+	SearchDocsFolderWithResponse(ctx context.Context, id string, params *SearchDocsFolderParams, reqEditors ...RequestEditorFn) (*SearchDocsFolderResponse, error)
+
+	// GetDocsTreeWithResponse request
+	GetDocsTreeWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetDocsTreeResponse, error)
+
+	// SearchDocsWithResponse request
+	SearchDocsWithResponse(ctx context.Context, params *SearchDocsParams, reqEditors ...RequestEditorFn) (*SearchDocsResponse, error)
+
 	// CreateIssueOnHostWithBodyWithResponse request with any body
 	CreateIssueOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateIssueOnHostResponse, error)
 
@@ -13600,6 +16113,43 @@ type ClientWithResponsesInterface interface {
 	CreateIssueWorkspaceWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateIssueWorkspaceResponse, error)
 
 	CreateIssueWorkspaceWithResponse(ctx context.Context, provider string, owner string, name string, number int64, body CreateIssueWorkspaceJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateIssueWorkspaceResponse, error)
+
+	// ListKataDaemonsWithResponse request
+	ListKataDaemonsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListKataDaemonsResponse, error)
+
+	// ListMessagesSavedSearchesWithResponse request
+	ListMessagesSavedSearchesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListMessagesSavedSearchesResponse, error)
+
+	// ReplaceMessagesSavedSearchesWithBodyWithResponse request with any body
+	ReplaceMessagesSavedSearchesWithBodyWithResponse(ctx context.Context, params *ReplaceMessagesSavedSearchesParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ReplaceMessagesSavedSearchesResponse, error)
+
+	ReplaceMessagesSavedSearchesWithResponse(ctx context.Context, params *ReplaceMessagesSavedSearchesParams, body ReplaceMessagesSavedSearchesJSONRequestBody, reqEditors ...RequestEditorFn) (*ReplaceMessagesSavedSearchesResponse, error)
+
+	// GetMsgvaultAggregatesWithResponse request
+	GetMsgvaultAggregatesWithResponse(ctx context.Context, params *GetMsgvaultAggregatesParams, reqEditors ...RequestEditorFn) (*GetMsgvaultAggregatesResponse, error)
+
+	// ConfigureMsgvaultWithBodyWithResponse request with any body
+	ConfigureMsgvaultWithBodyWithResponse(ctx context.Context, params *ConfigureMsgvaultParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ConfigureMsgvaultResponse, error)
+
+	ConfigureMsgvaultWithResponse(ctx context.Context, params *ConfigureMsgvaultParams, body ConfigureMsgvaultJSONRequestBody, reqEditors ...RequestEditorFn) (*ConfigureMsgvaultResponse, error)
+
+	// GetMsgvaultHealthWithResponse request
+	GetMsgvaultHealthWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetMsgvaultHealthResponse, error)
+
+	// GetMsgvaultMessageWithResponse request
+	GetMsgvaultMessageWithResponse(ctx context.Context, id int64, reqEditors ...RequestEditorFn) (*GetMsgvaultMessageResponse, error)
+
+	// GetMsgvaultInlineImageWithResponse request
+	GetMsgvaultInlineImageWithResponse(ctx context.Context, id int64, params *GetMsgvaultInlineImageParams, reqEditors ...RequestEditorFn) (*GetMsgvaultInlineImageResponse, error)
+
+	// GetMsgvaultRemoteImageWithResponse request
+	GetMsgvaultRemoteImageWithResponse(ctx context.Context, id int64, token string, idx int64, reqEditors ...RequestEditorFn) (*GetMsgvaultRemoteImageResponse, error)
+
+	// SearchMsgvaultWithResponse request
+	SearchMsgvaultWithResponse(ctx context.Context, params *SearchMsgvaultParams, reqEditors ...RequestEditorFn) (*SearchMsgvaultResponse, error)
+
+	// GetMsgvaultThreadWithResponse request
+	GetMsgvaultThreadWithResponse(ctx context.Context, conversationId int64, reqEditors ...RequestEditorFn) (*GetMsgvaultThreadResponse, error)
 
 	// ListProjectsWithResponse request
 	ListProjectsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListProjectsResponse, error)
@@ -13888,6 +16438,394 @@ func (r ListActivityResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r ListActivityResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type BrowseDocsFoldersResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *DocsBrowseOutputBody
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r BrowseDocsFoldersResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r BrowseDocsFoldersResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ListDocsFoldersResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *ListDocsFoldersOutputBody
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r ListDocsFoldersResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListDocsFoldersResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type CreateDocsFolderResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON201                       *CreateDocsFolderOutputBody
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateDocsFolderResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateDocsFolderResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type DeleteDocsFolderResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteDocsFolderResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteDocsFolderResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type UpdateDocsFolderResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *DocsFolderOutputBody
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r UpdateDocsFolderResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UpdateDocsFolderResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ReadDocsBlobResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r ReadDocsBlobResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ReadDocsBlobResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type DeleteDocsFileResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteDocsFileResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteDocsFileResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ReadDocsFileResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *DocsReadFileOutputBody
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r ReadDocsFileResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ReadDocsFileResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type CreateDocsFileResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON201                       *DocsFileWriteBody
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateDocsFileResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateDocsFileResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type WriteDocsFileResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *DocsFileWriteBody
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r WriteDocsFileResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r WriteDocsFileResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type RenameDocsFileResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *DocsRenameFileOutputBody
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r RenameDocsFileResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RenameDocsFileResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetDocsGitStatusResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *GitStatusResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetDocsGitStatusResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetDocsGitStatusResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetDocsGitChangesResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *GitChangesResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetDocsGitChangesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetDocsGitChangesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type PublishDocsGitResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *PublishResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r PublishDocsGitResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PublishDocsGitResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type SearchDocsFolderResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *DocsSearchOutputBody
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r SearchDocsFolderResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SearchDocsFolderResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetDocsTreeResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *Node
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetDocsTreeResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetDocsTreeResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type SearchDocsResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *DocsSearchAllOutputBody
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r SearchDocsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SearchDocsResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -15212,6 +18150,257 @@ func (r CreateIssueWorkspaceResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r CreateIssueWorkspaceResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ListKataDaemonsResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *KataDaemonRosterResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r ListKataDaemonsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListKataDaemonsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ListMessagesSavedSearchesResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *MessagesSavedSearchesBody
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r ListMessagesSavedSearchesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListMessagesSavedSearchesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ReplaceMessagesSavedSearchesResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *MessagesSavedSearchesBody
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r ReplaceMessagesSavedSearchesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ReplaceMessagesSavedSearchesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetMsgvaultAggregatesResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *AggregateResult
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetMsgvaultAggregatesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetMsgvaultAggregatesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ConfigureMsgvaultResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *MsgvaultHealthBody
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r ConfigureMsgvaultResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ConfigureMsgvaultResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetMsgvaultHealthResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *MsgvaultHealthBody
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetMsgvaultHealthResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetMsgvaultHealthResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetMsgvaultMessageResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *MsgvaultMessageBody
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetMsgvaultMessageResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetMsgvaultMessageResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetMsgvaultInlineImageResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetMsgvaultInlineImageResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetMsgvaultInlineImageResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetMsgvaultRemoteImageResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetMsgvaultRemoteImageResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetMsgvaultRemoteImageResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type SearchMsgvaultResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *MsgvaultSearchBody
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r SearchMsgvaultResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SearchMsgvaultResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetMsgvaultThreadResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *MsgvaultThreadBody
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetMsgvaultThreadResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetMsgvaultThreadResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -16893,6 +20082,207 @@ func (c *ClientWithResponses) ListActivityWithResponse(ctx context.Context, para
 	return ParseListActivityResponse(rsp)
 }
 
+// BrowseDocsFoldersWithResponse request returning *BrowseDocsFoldersResponse
+func (c *ClientWithResponses) BrowseDocsFoldersWithResponse(ctx context.Context, params *BrowseDocsFoldersParams, reqEditors ...RequestEditorFn) (*BrowseDocsFoldersResponse, error) {
+	rsp, err := c.BrowseDocsFolders(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseBrowseDocsFoldersResponse(rsp)
+}
+
+// ListDocsFoldersWithResponse request returning *ListDocsFoldersResponse
+func (c *ClientWithResponses) ListDocsFoldersWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListDocsFoldersResponse, error) {
+	rsp, err := c.ListDocsFolders(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListDocsFoldersResponse(rsp)
+}
+
+// CreateDocsFolderWithBodyWithResponse request with arbitrary body returning *CreateDocsFolderResponse
+func (c *ClientWithResponses) CreateDocsFolderWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateDocsFolderResponse, error) {
+	rsp, err := c.CreateDocsFolderWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateDocsFolderResponse(rsp)
+}
+
+func (c *ClientWithResponses) CreateDocsFolderWithResponse(ctx context.Context, body CreateDocsFolderJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateDocsFolderResponse, error) {
+	rsp, err := c.CreateDocsFolder(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateDocsFolderResponse(rsp)
+}
+
+// DeleteDocsFolderWithResponse request returning *DeleteDocsFolderResponse
+func (c *ClientWithResponses) DeleteDocsFolderWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*DeleteDocsFolderResponse, error) {
+	rsp, err := c.DeleteDocsFolder(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteDocsFolderResponse(rsp)
+}
+
+// UpdateDocsFolderWithBodyWithResponse request with arbitrary body returning *UpdateDocsFolderResponse
+func (c *ClientWithResponses) UpdateDocsFolderWithBodyWithResponse(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateDocsFolderResponse, error) {
+	rsp, err := c.UpdateDocsFolderWithBody(ctx, id, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateDocsFolderResponse(rsp)
+}
+
+func (c *ClientWithResponses) UpdateDocsFolderWithResponse(ctx context.Context, id string, body UpdateDocsFolderJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateDocsFolderResponse, error) {
+	rsp, err := c.UpdateDocsFolder(ctx, id, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateDocsFolderResponse(rsp)
+}
+
+// ReadDocsBlobWithResponse request returning *ReadDocsBlobResponse
+func (c *ClientWithResponses) ReadDocsBlobWithResponse(ctx context.Context, id string, params *ReadDocsBlobParams, reqEditors ...RequestEditorFn) (*ReadDocsBlobResponse, error) {
+	rsp, err := c.ReadDocsBlob(ctx, id, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseReadDocsBlobResponse(rsp)
+}
+
+// DeleteDocsFileWithResponse request returning *DeleteDocsFileResponse
+func (c *ClientWithResponses) DeleteDocsFileWithResponse(ctx context.Context, id string, params *DeleteDocsFileParams, reqEditors ...RequestEditorFn) (*DeleteDocsFileResponse, error) {
+	rsp, err := c.DeleteDocsFile(ctx, id, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteDocsFileResponse(rsp)
+}
+
+// ReadDocsFileWithResponse request returning *ReadDocsFileResponse
+func (c *ClientWithResponses) ReadDocsFileWithResponse(ctx context.Context, id string, params *ReadDocsFileParams, reqEditors ...RequestEditorFn) (*ReadDocsFileResponse, error) {
+	rsp, err := c.ReadDocsFile(ctx, id, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseReadDocsFileResponse(rsp)
+}
+
+// CreateDocsFileWithBodyWithResponse request with arbitrary body returning *CreateDocsFileResponse
+func (c *ClientWithResponses) CreateDocsFileWithBodyWithResponse(ctx context.Context, id string, params *CreateDocsFileParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateDocsFileResponse, error) {
+	rsp, err := c.CreateDocsFileWithBody(ctx, id, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateDocsFileResponse(rsp)
+}
+
+func (c *ClientWithResponses) CreateDocsFileWithResponse(ctx context.Context, id string, params *CreateDocsFileParams, body CreateDocsFileJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateDocsFileResponse, error) {
+	rsp, err := c.CreateDocsFile(ctx, id, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateDocsFileResponse(rsp)
+}
+
+// WriteDocsFileWithBodyWithResponse request with arbitrary body returning *WriteDocsFileResponse
+func (c *ClientWithResponses) WriteDocsFileWithBodyWithResponse(ctx context.Context, id string, params *WriteDocsFileParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*WriteDocsFileResponse, error) {
+	rsp, err := c.WriteDocsFileWithBody(ctx, id, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseWriteDocsFileResponse(rsp)
+}
+
+func (c *ClientWithResponses) WriteDocsFileWithResponse(ctx context.Context, id string, params *WriteDocsFileParams, body WriteDocsFileJSONRequestBody, reqEditors ...RequestEditorFn) (*WriteDocsFileResponse, error) {
+	rsp, err := c.WriteDocsFile(ctx, id, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseWriteDocsFileResponse(rsp)
+}
+
+// RenameDocsFileWithBodyWithResponse request with arbitrary body returning *RenameDocsFileResponse
+func (c *ClientWithResponses) RenameDocsFileWithBodyWithResponse(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RenameDocsFileResponse, error) {
+	rsp, err := c.RenameDocsFileWithBody(ctx, id, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRenameDocsFileResponse(rsp)
+}
+
+func (c *ClientWithResponses) RenameDocsFileWithResponse(ctx context.Context, id string, body RenameDocsFileJSONRequestBody, reqEditors ...RequestEditorFn) (*RenameDocsFileResponse, error) {
+	rsp, err := c.RenameDocsFile(ctx, id, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRenameDocsFileResponse(rsp)
+}
+
+// GetDocsGitStatusWithResponse request returning *GetDocsGitStatusResponse
+func (c *ClientWithResponses) GetDocsGitStatusWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetDocsGitStatusResponse, error) {
+	rsp, err := c.GetDocsGitStatus(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetDocsGitStatusResponse(rsp)
+}
+
+// GetDocsGitChangesWithResponse request returning *GetDocsGitChangesResponse
+func (c *ClientWithResponses) GetDocsGitChangesWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetDocsGitChangesResponse, error) {
+	rsp, err := c.GetDocsGitChanges(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetDocsGitChangesResponse(rsp)
+}
+
+// PublishDocsGitWithBodyWithResponse request with arbitrary body returning *PublishDocsGitResponse
+func (c *ClientWithResponses) PublishDocsGitWithBodyWithResponse(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PublishDocsGitResponse, error) {
+	rsp, err := c.PublishDocsGitWithBody(ctx, id, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePublishDocsGitResponse(rsp)
+}
+
+func (c *ClientWithResponses) PublishDocsGitWithResponse(ctx context.Context, id string, body PublishDocsGitJSONRequestBody, reqEditors ...RequestEditorFn) (*PublishDocsGitResponse, error) {
+	rsp, err := c.PublishDocsGit(ctx, id, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePublishDocsGitResponse(rsp)
+}
+
+// SearchDocsFolderWithResponse request returning *SearchDocsFolderResponse
+func (c *ClientWithResponses) SearchDocsFolderWithResponse(ctx context.Context, id string, params *SearchDocsFolderParams, reqEditors ...RequestEditorFn) (*SearchDocsFolderResponse, error) {
+	rsp, err := c.SearchDocsFolder(ctx, id, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSearchDocsFolderResponse(rsp)
+}
+
+// GetDocsTreeWithResponse request returning *GetDocsTreeResponse
+func (c *ClientWithResponses) GetDocsTreeWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetDocsTreeResponse, error) {
+	rsp, err := c.GetDocsTree(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetDocsTreeResponse(rsp)
+}
+
+// SearchDocsWithResponse request returning *SearchDocsResponse
+func (c *ClientWithResponses) SearchDocsWithResponse(ctx context.Context, params *SearchDocsParams, reqEditors ...RequestEditorFn) (*SearchDocsResponse, error) {
+	rsp, err := c.SearchDocs(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSearchDocsResponse(rsp)
+}
+
 // CreateIssueOnHostWithBodyWithResponse request with arbitrary body returning *CreateIssueOnHostResponse
 func (c *ClientWithResponses) CreateIssueOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateIssueOnHostResponse, error) {
 	rsp, err := c.CreateIssueOnHostWithBody(ctx, platformHost, provider, owner, name, contentType, body, reqEditors...)
@@ -17629,6 +21019,121 @@ func (c *ClientWithResponses) CreateIssueWorkspaceWithResponse(ctx context.Conte
 		return nil, err
 	}
 	return ParseCreateIssueWorkspaceResponse(rsp)
+}
+
+// ListKataDaemonsWithResponse request returning *ListKataDaemonsResponse
+func (c *ClientWithResponses) ListKataDaemonsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListKataDaemonsResponse, error) {
+	rsp, err := c.ListKataDaemons(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListKataDaemonsResponse(rsp)
+}
+
+// ListMessagesSavedSearchesWithResponse request returning *ListMessagesSavedSearchesResponse
+func (c *ClientWithResponses) ListMessagesSavedSearchesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListMessagesSavedSearchesResponse, error) {
+	rsp, err := c.ListMessagesSavedSearches(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListMessagesSavedSearchesResponse(rsp)
+}
+
+// ReplaceMessagesSavedSearchesWithBodyWithResponse request with arbitrary body returning *ReplaceMessagesSavedSearchesResponse
+func (c *ClientWithResponses) ReplaceMessagesSavedSearchesWithBodyWithResponse(ctx context.Context, params *ReplaceMessagesSavedSearchesParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ReplaceMessagesSavedSearchesResponse, error) {
+	rsp, err := c.ReplaceMessagesSavedSearchesWithBody(ctx, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseReplaceMessagesSavedSearchesResponse(rsp)
+}
+
+func (c *ClientWithResponses) ReplaceMessagesSavedSearchesWithResponse(ctx context.Context, params *ReplaceMessagesSavedSearchesParams, body ReplaceMessagesSavedSearchesJSONRequestBody, reqEditors ...RequestEditorFn) (*ReplaceMessagesSavedSearchesResponse, error) {
+	rsp, err := c.ReplaceMessagesSavedSearches(ctx, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseReplaceMessagesSavedSearchesResponse(rsp)
+}
+
+// GetMsgvaultAggregatesWithResponse request returning *GetMsgvaultAggregatesResponse
+func (c *ClientWithResponses) GetMsgvaultAggregatesWithResponse(ctx context.Context, params *GetMsgvaultAggregatesParams, reqEditors ...RequestEditorFn) (*GetMsgvaultAggregatesResponse, error) {
+	rsp, err := c.GetMsgvaultAggregates(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetMsgvaultAggregatesResponse(rsp)
+}
+
+// ConfigureMsgvaultWithBodyWithResponse request with arbitrary body returning *ConfigureMsgvaultResponse
+func (c *ClientWithResponses) ConfigureMsgvaultWithBodyWithResponse(ctx context.Context, params *ConfigureMsgvaultParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ConfigureMsgvaultResponse, error) {
+	rsp, err := c.ConfigureMsgvaultWithBody(ctx, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseConfigureMsgvaultResponse(rsp)
+}
+
+func (c *ClientWithResponses) ConfigureMsgvaultWithResponse(ctx context.Context, params *ConfigureMsgvaultParams, body ConfigureMsgvaultJSONRequestBody, reqEditors ...RequestEditorFn) (*ConfigureMsgvaultResponse, error) {
+	rsp, err := c.ConfigureMsgvault(ctx, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseConfigureMsgvaultResponse(rsp)
+}
+
+// GetMsgvaultHealthWithResponse request returning *GetMsgvaultHealthResponse
+func (c *ClientWithResponses) GetMsgvaultHealthWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetMsgvaultHealthResponse, error) {
+	rsp, err := c.GetMsgvaultHealth(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetMsgvaultHealthResponse(rsp)
+}
+
+// GetMsgvaultMessageWithResponse request returning *GetMsgvaultMessageResponse
+func (c *ClientWithResponses) GetMsgvaultMessageWithResponse(ctx context.Context, id int64, reqEditors ...RequestEditorFn) (*GetMsgvaultMessageResponse, error) {
+	rsp, err := c.GetMsgvaultMessage(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetMsgvaultMessageResponse(rsp)
+}
+
+// GetMsgvaultInlineImageWithResponse request returning *GetMsgvaultInlineImageResponse
+func (c *ClientWithResponses) GetMsgvaultInlineImageWithResponse(ctx context.Context, id int64, params *GetMsgvaultInlineImageParams, reqEditors ...RequestEditorFn) (*GetMsgvaultInlineImageResponse, error) {
+	rsp, err := c.GetMsgvaultInlineImage(ctx, id, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetMsgvaultInlineImageResponse(rsp)
+}
+
+// GetMsgvaultRemoteImageWithResponse request returning *GetMsgvaultRemoteImageResponse
+func (c *ClientWithResponses) GetMsgvaultRemoteImageWithResponse(ctx context.Context, id int64, token string, idx int64, reqEditors ...RequestEditorFn) (*GetMsgvaultRemoteImageResponse, error) {
+	rsp, err := c.GetMsgvaultRemoteImage(ctx, id, token, idx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetMsgvaultRemoteImageResponse(rsp)
+}
+
+// SearchMsgvaultWithResponse request returning *SearchMsgvaultResponse
+func (c *ClientWithResponses) SearchMsgvaultWithResponse(ctx context.Context, params *SearchMsgvaultParams, reqEditors ...RequestEditorFn) (*SearchMsgvaultResponse, error) {
+	rsp, err := c.SearchMsgvault(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSearchMsgvaultResponse(rsp)
+}
+
+// GetMsgvaultThreadWithResponse request returning *GetMsgvaultThreadResponse
+func (c *ClientWithResponses) GetMsgvaultThreadWithResponse(ctx context.Context, conversationId int64, reqEditors ...RequestEditorFn) (*GetMsgvaultThreadResponse, error) {
+	rsp, err := c.GetMsgvaultThread(ctx, conversationId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetMsgvaultThreadResponse(rsp)
 }
 
 // ListProjectsWithResponse request returning *ListProjectsResponse
@@ -18504,6 +22009,546 @@ func ParseListActivityResponse(rsp *http.Response) (*ListActivityResponse, error
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest ActivityResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseBrowseDocsFoldersResponse parses an HTTP response from a BrowseDocsFoldersWithResponse call
+func ParseBrowseDocsFoldersResponse(rsp *http.Response) (*BrowseDocsFoldersResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &BrowseDocsFoldersResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest DocsBrowseOutputBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListDocsFoldersResponse parses an HTTP response from a ListDocsFoldersWithResponse call
+func ParseListDocsFoldersResponse(rsp *http.Response) (*ListDocsFoldersResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListDocsFoldersResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ListDocsFoldersOutputBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateDocsFolderResponse parses an HTTP response from a CreateDocsFolderWithResponse call
+func ParseCreateDocsFolderResponse(rsp *http.Response) (*CreateDocsFolderResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateDocsFolderResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest CreateDocsFolderOutputBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeleteDocsFolderResponse parses an HTTP response from a DeleteDocsFolderWithResponse call
+func ParseDeleteDocsFolderResponse(rsp *http.Response) (*DeleteDocsFolderResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteDocsFolderResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseUpdateDocsFolderResponse parses an HTTP response from a UpdateDocsFolderWithResponse call
+func ParseUpdateDocsFolderResponse(rsp *http.Response) (*UpdateDocsFolderResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UpdateDocsFolderResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest DocsFolderOutputBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseReadDocsBlobResponse parses an HTTP response from a ReadDocsBlobWithResponse call
+func ParseReadDocsBlobResponse(rsp *http.Response) (*ReadDocsBlobResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ReadDocsBlobResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeleteDocsFileResponse parses an HTTP response from a DeleteDocsFileWithResponse call
+func ParseDeleteDocsFileResponse(rsp *http.Response) (*DeleteDocsFileResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteDocsFileResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseReadDocsFileResponse parses an HTTP response from a ReadDocsFileWithResponse call
+func ParseReadDocsFileResponse(rsp *http.Response) (*ReadDocsFileResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ReadDocsFileResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest DocsReadFileOutputBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateDocsFileResponse parses an HTTP response from a CreateDocsFileWithResponse call
+func ParseCreateDocsFileResponse(rsp *http.Response) (*CreateDocsFileResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateDocsFileResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest DocsFileWriteBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseWriteDocsFileResponse parses an HTTP response from a WriteDocsFileWithResponse call
+func ParseWriteDocsFileResponse(rsp *http.Response) (*WriteDocsFileResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &WriteDocsFileResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest DocsFileWriteBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRenameDocsFileResponse parses an HTTP response from a RenameDocsFileWithResponse call
+func ParseRenameDocsFileResponse(rsp *http.Response) (*RenameDocsFileResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RenameDocsFileResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest DocsRenameFileOutputBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetDocsGitStatusResponse parses an HTTP response from a GetDocsGitStatusWithResponse call
+func ParseGetDocsGitStatusResponse(rsp *http.Response) (*GetDocsGitStatusResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetDocsGitStatusResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest GitStatusResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetDocsGitChangesResponse parses an HTTP response from a GetDocsGitChangesWithResponse call
+func ParseGetDocsGitChangesResponse(rsp *http.Response) (*GetDocsGitChangesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetDocsGitChangesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest GitChangesResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePublishDocsGitResponse parses an HTTP response from a PublishDocsGitWithResponse call
+func ParsePublishDocsGitResponse(rsp *http.Response) (*PublishDocsGitResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PublishDocsGitResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest PublishResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseSearchDocsFolderResponse parses an HTTP response from a SearchDocsFolderWithResponse call
+func ParseSearchDocsFolderResponse(rsp *http.Response) (*SearchDocsFolderResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SearchDocsFolderResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest DocsSearchOutputBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetDocsTreeResponse parses an HTTP response from a GetDocsTreeWithResponse call
+func ParseGetDocsTreeResponse(rsp *http.Response) (*GetDocsTreeResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetDocsTreeResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Node
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseSearchDocsResponse parses an HTTP response from a SearchDocsWithResponse call
+func ParseSearchDocsResponse(rsp *http.Response) (*SearchDocsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SearchDocsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest DocsSearchAllOutputBody
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -20352,6 +24397,355 @@ func ParseCreateIssueWorkspaceResponse(rsp *http.Response) (*CreateIssueWorkspac
 			return nil, err
 		}
 		response.JSON202 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListKataDaemonsResponse parses an HTTP response from a ListKataDaemonsWithResponse call
+func ParseListKataDaemonsResponse(rsp *http.Response) (*ListKataDaemonsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListKataDaemonsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest KataDaemonRosterResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListMessagesSavedSearchesResponse parses an HTTP response from a ListMessagesSavedSearchesWithResponse call
+func ParseListMessagesSavedSearchesResponse(rsp *http.Response) (*ListMessagesSavedSearchesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListMessagesSavedSearchesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest MessagesSavedSearchesBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseReplaceMessagesSavedSearchesResponse parses an HTTP response from a ReplaceMessagesSavedSearchesWithResponse call
+func ParseReplaceMessagesSavedSearchesResponse(rsp *http.Response) (*ReplaceMessagesSavedSearchesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ReplaceMessagesSavedSearchesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest MessagesSavedSearchesBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetMsgvaultAggregatesResponse parses an HTTP response from a GetMsgvaultAggregatesWithResponse call
+func ParseGetMsgvaultAggregatesResponse(rsp *http.Response) (*GetMsgvaultAggregatesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetMsgvaultAggregatesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest AggregateResult
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseConfigureMsgvaultResponse parses an HTTP response from a ConfigureMsgvaultWithResponse call
+func ParseConfigureMsgvaultResponse(rsp *http.Response) (*ConfigureMsgvaultResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ConfigureMsgvaultResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest MsgvaultHealthBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetMsgvaultHealthResponse parses an HTTP response from a GetMsgvaultHealthWithResponse call
+func ParseGetMsgvaultHealthResponse(rsp *http.Response) (*GetMsgvaultHealthResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetMsgvaultHealthResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest MsgvaultHealthBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetMsgvaultMessageResponse parses an HTTP response from a GetMsgvaultMessageWithResponse call
+func ParseGetMsgvaultMessageResponse(rsp *http.Response) (*GetMsgvaultMessageResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetMsgvaultMessageResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest MsgvaultMessageBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetMsgvaultInlineImageResponse parses an HTTP response from a GetMsgvaultInlineImageWithResponse call
+func ParseGetMsgvaultInlineImageResponse(rsp *http.Response) (*GetMsgvaultInlineImageResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetMsgvaultInlineImageResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetMsgvaultRemoteImageResponse parses an HTTP response from a GetMsgvaultRemoteImageWithResponse call
+func ParseGetMsgvaultRemoteImageResponse(rsp *http.Response) (*GetMsgvaultRemoteImageResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetMsgvaultRemoteImageResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseSearchMsgvaultResponse parses an HTTP response from a SearchMsgvaultWithResponse call
+func ParseSearchMsgvaultResponse(rsp *http.Response) (*SearchMsgvaultResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SearchMsgvaultResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest MsgvaultSearchBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetMsgvaultThreadResponse parses an HTTP response from a GetMsgvaultThreadWithResponse call
+func ParseGetMsgvaultThreadResponse(rsp *http.Response) (*GetMsgvaultThreadResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetMsgvaultThreadResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest MsgvaultThreadBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest ProblemError

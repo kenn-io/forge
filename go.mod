@@ -19,8 +19,10 @@ require (
 	github.com/google/go-github/v84 v84.0.0
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
 	github.com/klauspost/compress v1.18.5
+	github.com/microcosm-cc/bluemonday v1.0.27
 	github.com/oapi-codegen/runtime v1.3.1
 	github.com/posthog/posthog-go v1.12.6
+	github.com/sabhiram/go-gitignore v0.0.0-20210923224102-525f6e181f06
 	github.com/shurcooL/githubv4 v0.0.0-20260209031235-2402fdf4a9ed
 	github.com/sourcegraph/go-diff v0.7.0
 	github.com/spf13/cobra v1.10.2
@@ -48,6 +50,7 @@ require (
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/acarl005/stripansi v0.0.0-20180116102854-5a71ef0e047d // indirect
 	github.com/apapsch/go-jsonmerge/v2 v2.0.0 // indirect
+	github.com/aymerick/douceur v0.2.0 // indirect
 	github.com/bitfield/gotestdox v0.2.2 // indirect
 	github.com/buger/goterm v1.0.4 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
@@ -116,6 +119,7 @@ require (
 	github.com/google/go-querystring v1.2.0 // indirect
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 // indirect
 	github.com/google/uuid v1.6.0 // indirect
+	github.com/gorilla/css v1.0.1 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.28.0 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect

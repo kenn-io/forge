@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os/exec"
 	"slices"
 	"strconv"
 	"strings"
@@ -25,7 +24,7 @@ func (m *Manager) ResolveDefaultBranch(
 	preferred = strings.TrimSpace(preferred)
 	if preferred != "" {
 		for _, candidate := range branchActivityRefCandidates(preferred) {
-			if sha, err := m.resolveRefInDir(ctx, host, dir, candidate); err == nil {
+			if sha, err := m.resolveRefInDir(ctx, dir, candidate); err == nil {
 				return defaultBranchNameForResolvedCandidate(preferred, candidate), sha, nil
 			} else if !isMissingRefError(err) {
 				return "", "", fmt.Errorf("resolve preferred default branch %s: %w", preferred, err)
@@ -33,7 +32,7 @@ func (m *Manager) ResolveDefaultBranch(
 		}
 	}
 
-	out, err := m.git(ctx, host, dir,
+	out, err := m.git(ctx, dir,
 		"symbolic-ref", "--quiet", "refs/remotes/origin/HEAD",
 	)
 	if err != nil {
@@ -44,7 +43,7 @@ func (m *Manager) ResolveDefaultBranch(
 	if !ok || branch == "" || branch == "HEAD" {
 		return "", "", fmt.Errorf("resolve origin HEAD: %w", ErrNotFound)
 	}
-	sha, err := m.resolveRefInDir(ctx, host, dir, remoteRef)
+	sha, err := m.resolveRefInDir(ctx, dir, remoteRef)
 	if err != nil {
 		return "", "", fmt.Errorf("resolve origin HEAD target %s: %w", remoteRef, err)
 	}
@@ -70,11 +69,11 @@ func (m *Manager) ResolveRef(
 	if err != nil {
 		return "", err
 	}
-	refName, err := m.resolveBranchActivityRef(ctx, host, dir, ref)
+	refName, err := m.resolveBranchActivityRef(ctx, dir, ref)
 	if err != nil {
 		return "", err
 	}
-	return m.resolveRefInDir(ctx, host, dir, refName)
+	return m.resolveRefInDir(ctx, dir, refName)
 }
 
 // ResolveCommit resolves objectID directly to a commit SHA without branch
@@ -87,7 +86,7 @@ func (m *Manager) ResolveCommit(
 	if err != nil {
 		return "", err
 	}
-	return m.resolveRefInDir(ctx, host, dir, objectID)
+	return m.resolveRefInDir(ctx, dir, objectID)
 }
 
 // IsAncestor reports whether ancestor is reachable from descendant.
@@ -99,14 +98,13 @@ func (m *Manager) IsAncestor(
 	if err != nil {
 		return false, err
 	}
-	_, err = m.git(ctx, host, dir,
+	_, err = m.git(ctx, dir,
 		"merge-base", "--is-ancestor", ancestor, descendant,
 	)
 	if err == nil {
 		return true, nil
 	}
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+	if code, ok := gitExitCode(err); ok && code == 1 {
 		return false, nil
 	}
 	return false, fmt.Errorf("check ancestor %s..%s: %w", ancestor, descendant, err)
@@ -125,7 +123,7 @@ func (m *Manager) ListBranchCommitsSince(
 	if err != nil {
 		return nil, err
 	}
-	refName, err := m.resolveBranchActivityRef(ctx, host, dir, ref)
+	refName, err := m.resolveBranchActivityRef(ctx, dir, ref)
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +137,7 @@ func (m *Manager) ListBranchCommitsSince(
 	} else {
 		args = append(args, "--since="+since.UTC().Format(time.RFC3339), refName)
 	}
-	out, err := m.git(ctx, host, dir, args...)
+	out, err := m.git(ctx, dir, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list branch commits %s: %w", ref, err)
 	}
@@ -148,7 +146,7 @@ func (m *Manager) ListBranchCommitsSince(
 
 func (m *Manager) resolveBranchActivityRef(
 	ctx context.Context,
-	host, dir, ref string,
+	dir, ref string,
 ) (string, error) {
 	ref = strings.TrimSpace(ref)
 	if ref == "" {
@@ -156,7 +154,7 @@ func (m *Manager) resolveBranchActivityRef(
 	}
 	var lastErr error
 	for _, candidate := range branchActivityRefCandidates(ref) {
-		if _, err := m.resolveRefInDir(ctx, host, dir, candidate); err == nil {
+		if _, err := m.resolveRefInDir(ctx, dir, candidate); err == nil {
 			return candidate, nil
 		} else {
 			lastErr = err
@@ -202,9 +200,9 @@ func isMissingRefError(err error) bool {
 
 func (m *Manager) resolveRefInDir(
 	ctx context.Context,
-	host, dir, ref string,
+	dir, ref string,
 ) (string, error) {
-	out, err := m.git(ctx, host, dir,
+	out, err := m.git(ctx, dir,
 		"rev-parse", "--verify", "--end-of-options", ref+"^{commit}",
 	)
 	if err != nil {

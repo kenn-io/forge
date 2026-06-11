@@ -300,9 +300,18 @@ a:hover {
   height: auto;
   border-radius: var(--radius-sm);
 }
+/* GitHub's (Primer) table layout model: shrink-wrap to content, cap at
+   the container, scroll on overflow. Auto table layout then gives compact
+   columns their content width and wraps or scrolls wide ones, so text
+   tables and side-by-side image tables both render the way github.com
+   renders them. No width hacks or nowrap overrides on cells. */
 .markdown-body table {
-  width: 100%;
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow: auto;
   border-collapse: collapse;
+  font-variant: tabular-nums;
   margin: 10px 0 12px;
   font-size: 0.9em;
   line-height: 1.45;
@@ -313,6 +322,10 @@ a:hover {
   border: 1px solid var(--border-muted);
   text-align: left;
   vertical-align: top;
+  /* Reset the word-break: break-word inherited from PR/issue body
+     containers: it feeds soft-wrap opportunities into auto table layout's
+     min-content sizing, splitting long tokens instead of letting the
+     column grow and the table scroll the way github.com renders it. */
   word-break: normal;
   overflow-wrap: normal;
 }
@@ -320,16 +333,6 @@ a:hover {
   background: var(--bg-surface-hover);
   color: var(--text-secondary);
   font-weight: 600;
-  white-space: nowrap;
-}
-.markdown-body th:not(:last-child),
-.markdown-body td:not(:last-child) {
-  width: 1%;
-  white-space: nowrap;
-}
-.markdown-body th:last-child,
-.markdown-body td:last-child {
-  overflow-wrap: anywhere;
 }
 .markdown-body tr:nth-child(even) td {
   background: color-mix(in srgb, var(--bg-surface-hover) 42%, transparent);

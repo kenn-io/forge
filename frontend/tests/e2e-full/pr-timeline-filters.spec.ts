@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 const storageKey = "middleman-pr-timeline-filter";
 
@@ -33,9 +33,11 @@ async function openPRTimelinePath(page: Page, path: string): Promise<void> {
   await page.locator(".pull-detail").waitFor({ state: "visible", timeout: 10_000 });
 }
 
-async function openTimelineFilters(page: Page): Promise<void> {
+async function openTimelineFilters(page: Page): Promise<Locator> {
   await page.locator('button[title="Filter PR activity"]').click();
-  await expect(page.locator(".filter-dropdown")).toBeVisible();
+  const filters = page.locator(".filter-dropdown");
+  await expect(filters).toBeVisible();
+  return filters;
 }
 
 function cacheCommitRow(page: Page) {
@@ -172,12 +174,12 @@ test.describe("PR timeline filters", () => {
 
   test("keeps commit rows when other event buckets are hidden", async ({ page }) => {
     await openPRTimeline(page);
-    await openTimelineFilters(page);
+    const filters = await openTimelineFilters(page);
 
-    await page.getByRole("button", { name: "Messages" }).click();
-    await page.getByRole("button", { name: "Commit details" }).click();
-    await page.getByRole("button", { name: "Events" }).click();
-    await page.getByRole("button", { name: "Force pushes" }).click();
+    await filters.getByRole("button", { name: "Messages" }).click();
+    await filters.getByRole("button", { name: "Commit details" }).click();
+    await filters.getByRole("button", { name: "Events" }).click();
+    await filters.getByRole("button", { name: "Force pushes" }).click();
     const commitRow = cacheCommitRow(page);
 
     await expect(commitRow.locator(".commit-title")).toHaveText("feat: add cache store");

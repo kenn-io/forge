@@ -1,7 +1,9 @@
 <script lang="ts">
   import SettingsIcon from "@lucide/svelte/icons/settings";
   import { getStores } from "@middleman/ui";
+  import type { ModeVisibility } from "@middleman/ui/api/types";
   import type { TerminalSettings as TerminalSettingsType } from "@middleman/ui/api/types";
+  import ModeVisibilitySettings from "../settings/ModeVisibilitySettings.svelte";
   import TerminalSettings from "../settings/TerminalSettings.svelte";
 
   const { settings: settingsStore } = getStores();
@@ -11,12 +13,14 @@
   let terminal = $state<TerminalSettingsType>(
     settingsStore.getTerminalSettings(),
   );
+  let modes = $state<ModeVisibility>(settingsStore.getModeVisibility());
   let childSaving = $state(false);
 
   function toggleOpen(): void {
     if (childSaving) return;
     if (!open) {
       terminal = settingsStore.getTerminalSettings();
+      modes = settingsStore.getModeVisibility();
       childSaving = false;
     }
     open = !open;
@@ -77,6 +81,20 @@
           childSaving = saving;
         }}
       />
+      <div class="popover-section">
+        <div class="section-heading">Visible modes</div>
+        <ModeVisibilitySettings
+          {modes}
+          compact={true}
+          saveLabel="Save visible modes"
+          onUpdate={(updated) => {
+            modes = updated;
+          }}
+          onSavingChange={(saving) => {
+            childSaving = saving;
+          }}
+        />
+      </div>
     </div>
   {/if}
 </div>
@@ -132,6 +150,21 @@
     letter-spacing: 0.06em;
     border-bottom: 1px solid var(--border-muted);
     margin-bottom: 8px;
+  }
+
+  .popover-section {
+    border-top: 1px solid var(--border-muted);
+    margin-top: 10px;
+    padding-top: 10px;
+  }
+
+  .section-heading {
+    margin-bottom: 8px;
+    color: var(--text-muted);
+    font-size: var(--font-size-xs);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
   }
 
   @media (max-width: 620px) {

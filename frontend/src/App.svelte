@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, untrack } from "svelte";
+  import { onDestroy, onMount, untrack } from "svelte";
   import {
     Provider,
     PRListView,
@@ -11,7 +11,7 @@
     FocusListView,
   } from "@middleman/ui";
   import type { StoreInstances } from "@middleman/ui";
-  import type { ActivityItem } from "@middleman/ui/api/types";
+  import type { ActivityItem, ModeVisibility } from "@middleman/ui/api/types";
   import {
     buildFocusPullRequestFilesRoute,
     buildFocusPullRequestRoute,
@@ -30,6 +30,13 @@
   import WorkspaceTerminalView from "./lib/components/terminal/WorkspaceTerminalView.svelte";
   import WorkspaceEmbedShell from "./lib/components/terminal/WorkspaceEmbedShell.svelte";
   import DesignSystemPage from "./lib/components/design-system/DesignSystemPage.svelte";
+  import KataFeature from "./lib/features/kata/KataFeature.svelte";
+  import { fetchKataDaemons } from "./lib/api/kata/daemons.js";
+  import { kataLinkingEnabledForEffectiveDaemon } from "./lib/api/kata/daemonSelection.js";
+  import { createKataTaskAPI } from "./lib/api/kata/taskClient.js";
+  import type { KataTaskViewName } from "./lib/api/kata/taskTypes.js";
+  import { createDocsAPI } from "./lib/api/docs/api.js";
+  import { createMessageIssueLinker } from "./lib/messages/kataMessageLinker.js";
   import FlashBanner from "./lib/components/FlashBanner.svelte";
   import { MonitorIcon, SpinnerIcon } from "./lib/icons.ts";
   import { showFlash } from "./lib/stores/flash.svelte.js";
@@ -51,6 +58,12 @@
     setNarrowOverride,
   } from "./lib/stores/sidebar.svelte.js";
   import {
+    getActiveKataDaemon,
+    getKataDaemonRoster,
+    setActiveKataDaemon,
+    setKataDaemonRoster,
+  } from "./lib/stores/active-kata-daemon.svelte.js";
+  import {
     initContainerObserver,
     isNarrow,
   } from "./lib/stores/container.svelte.js";
@@ -70,6 +83,8 @@
     parseActivitySelection,
     type ActivityDetailTab,
   } from "./lib/utils/activitySelection.js";
+  import { docsHref } from "./lib/api/docs/route.js";
+  import { messagesHref } from "./lib/messages/route.js";
   import {
     getGlobalRepo,
     applyConfigRepo,
@@ -98,17 +113,60 @@
   } from "./lib/stores/keyboard/actions.js";
   import { dispatchKeydown } from "./lib/stores/keyboard/dispatch.svelte.js";
   import { buildContext } from "./lib/stores/keyboard/context.svelte.js";
+  import { searchModePalette } from "./lib/stores/keyboard/mode-palette-search.js";
   import { registerPRDetailActions } from "./lib/stores/keyboard/pr-detail-actions.js";
   import type { PRDetailActionInput } from "../../packages/ui/src/components/detail/keyboard-actions.js";
   import type { Context } from "./lib/stores/keyboard/types.js";
+
+  type DocsRouteState = {
+    mode: "docs";
+    folder: string | null;
+    doc: string | null;
+  };
+
+  type MessagesRouteState = {
+    mode: "messages";
+    q: string | null;
+    message: string | null;
+    view?: "linked";
+  };
+
+  type DocsFeatureComponent = typeof import("./lib/features/docs/DocsFeature.svelte").default;
+  type MessagesFeatureComponent = typeof import("./lib/features/messages/MessagesFeature.svelte").default;
 
   let stores = $state<StoreInstances | undefined>();
   let appReady = $state(false);
   let viewportWidth = $state(window.innerWidth);
   let hasCoarsePointer = $state(window.matchMedia("(pointer: coarse)").matches);
+  let kataDaemonInfos = $state<Awaited<ReturnType<typeof fetchKataDaemons>>>([]);
+  let kataDefaultDaemonId = $state<string | undefined>(undefined);
+  let kataLinkingEnabled = $derived(
+    kataLinkingEnabledForEffectiveDaemon(kataDaemonInfos, getActiveKataDaemon(), kataDefaultDaemonId),
+  );
+  let DocsFeature = $state<DocsFeatureComponent | null>(null);
+  let docsLoading = $state(false);
+  let docsLoadError = $state<string | null>(null);
+  let docsRetryFailures = 0;
+  let docsRoute = $state<DocsRouteState>({
+    mode: "docs",
+    folder: null,
+    doc: null,
+  });
+  let MessagesFeature = $state<MessagesFeatureComponent | null>(null);
+  let messagesLoading = $state(false);
+  let messagesLoadError = $state<string | null>(null);
+  let messagesRetryFailures = 0;
+  let messagesRoute = $state<MessagesRouteState>({
+    mode: "messages",
+    q: null,
+    message: null,
+  });
   let cleanupFullAppShell: (() => void) | undefined;
   let fullShellStores: StoreInstances | undefined;
   const appIconSrc = `${getBasePath().replace(/\/$/, "")}/favicon.svg`;
+  const kataAPI = createKataTaskAPI();
+  const docsAPI = createDocsAPI();
+  const messageIssueLinker = createMessageIssueLinker(kataAPI);
 
   function stopFullAppShell() {
     fullShellStores?.events.disconnect();
@@ -131,6 +189,164 @@
     if (next === undefined) return;
     if (currentRepo === next) return;
     setGlobalRepo(next);
+  }
+
+  type KataRouteUpdate = {
+    issue?: string | null;
+    view?: KataTaskViewName | null;
+    scope?: string | null;
+  };
+
+  function currentKataRouteUpdate(): KataRouteUpdate {
+    const route = getRoute();
+    if (route.page !== "kata") return {};
+    return {
+      issue: route.issue ?? null,
+      view: route.view ?? null,
+      scope: route.scope ?? null,
+    };
+  }
+
+  function kataHref(update: KataRouteUpdate = {}): string {
+    const params = new URLSearchParams();
+    if (update.view) params.set("view", update.view);
+    if (update.scope) params.set("scope", update.scope);
+    if (update.issue) params.set("issue", update.issue);
+    const query = params.toString();
+    return query ? `/kata?${query}` : "/kata";
+  }
+
+  function kataIssueHref(uid: string): string {
+    return kataHref({ ...currentKataRouteUpdate(), issue: uid });
+  }
+
+  function openKataIssue(uid: string | null, daemonId?: string): void {
+    if (daemonId && getKataDaemonRoster().includes(daemonId)) {
+      setActiveKataDaemon(daemonId);
+    }
+    if (uid === null) {
+      navigate("/kata");
+      return;
+    }
+    navigate(kataIssueHref(uid));
+  }
+
+  function updateKataRoute(update: KataRouteUpdate): void {
+    navigate(kataHref({ ...currentKataRouteUpdate(), ...update }));
+  }
+
+  function openMessage(messageId: number): void {
+    navigate(messagesHref({ mode: "messages", q: null, message: String(messageId) }));
+  }
+
+  async function importDocsFeature(retryAttempt: number): Promise<typeof DocsFeature> {
+    if (retryAttempt > 1) return (await import("./lib/features/docs/DocsFeature.svelte?retry2")).default;
+    if (retryAttempt > 0) return (await import("./lib/features/docs/DocsFeature.svelte?retry")).default;
+    return (await import("./lib/features/docs/DocsFeature.svelte")).default;
+  }
+
+  async function importMessagesFeature(retryAttempt: number): Promise<typeof MessagesFeature> {
+    if (retryAttempt > 1) return (await import("./lib/features/messages/MessagesFeature.svelte?retry2")).default;
+    if (retryAttempt > 0) return (await import("./lib/features/messages/MessagesFeature.svelte?retry")).default;
+    return (await import("./lib/features/messages/MessagesFeature.svelte")).default;
+  }
+
+  function featureLoadMessage(error: unknown): string {
+    if (error instanceof Error && error.message) return error.message;
+    return "Could not load feature";
+  }
+
+  function reloadAfterLazyFeatureRetryFailure(): void {
+    const url = new URL(window.location.href);
+    url.searchParams.set("_middleman_feature_retry", String(Date.now()));
+    window.location.assign(url.toString());
+  }
+
+  async function loadDocsFeature(options: { retry?: boolean } = {}): Promise<void> {
+    if (DocsFeature || docsLoading || (docsLoadError && !options.retry)) return;
+    if (options.retry && docsRetryFailures >= 2) {
+      reloadAfterLazyFeatureRetryFailure();
+      return;
+    }
+    docsLoading = true;
+    docsLoadError = null;
+    try {
+      DocsFeature = await importDocsFeature(options.retry ? docsRetryFailures + 1 : 0);
+      docsRetryFailures = 0;
+    } catch (error) {
+      docsLoadError = featureLoadMessage(error);
+      if (options.retry) {
+        docsRetryFailures += 1;
+      }
+    } finally {
+      docsLoading = false;
+    }
+  }
+
+  async function loadMessagesFeature(options: { retry?: boolean } = {}): Promise<void> {
+    if (MessagesFeature || messagesLoading || (messagesLoadError && !options.retry)) return;
+    if (options.retry && messagesRetryFailures >= 2) {
+      reloadAfterLazyFeatureRetryFailure();
+      return;
+    }
+    messagesLoading = true;
+    messagesLoadError = null;
+    try {
+      MessagesFeature = await importMessagesFeature(options.retry ? messagesRetryFailures + 1 : 0);
+      messagesRetryFailures = 0;
+    } catch (error) {
+      messagesLoadError = featureLoadMessage(error);
+      if (options.retry) {
+        messagesRetryFailures += 1;
+      }
+    } finally {
+      messagesLoading = false;
+    }
+  }
+
+  function openDoc(folder: string, relPath: string): void {
+    navigate(docsHref({ mode: "docs", folder, doc: relPath }));
+  }
+
+  async function runModePaletteSearch(query: string) {
+    return searchModePalette(query, { kata: kataAPI, docs: docsAPI });
+  }
+
+  async function loadKataDaemonRoster(): Promise<{
+    daemons: Awaited<ReturnType<typeof fetchKataDaemons>>;
+    ids: string[];
+    defaultId: string | undefined;
+  }> {
+    const daemons = await fetchKataDaemons();
+    return {
+      daemons,
+      ids: daemons.map((daemon) => daemon.id),
+      defaultId: daemons.find((daemon) => daemon.default)?.id,
+    };
+  }
+
+  function isModeVisible(mode: keyof ModeVisibility): boolean {
+    return stores?.settings.isModeVisible(mode) ?? true;
+  }
+
+  async function openKataShortId(shortId: string, project?: string, daemonId?: string): Promise<void> {
+    try {
+      const results = await kataAPI.search({
+        scope: { kind: "all" },
+        status: "all",
+        owner: "",
+        label: "",
+        query: shortId,
+      }, daemonId ? { daemonId } : undefined);
+      const match = results.issues.find(
+        (issue) => issue.short_id === shortId && (!project || issue.project_name === project),
+      );
+      if (match) {
+        openKataIssue(match.uid, daemonId);
+      }
+    } catch {
+      showFlash("Could not open linked task");
+    }
   }
 
   function startFullAppShell(startupStores: StoreInstances) {
@@ -178,6 +394,29 @@
       stopFullAppShell();
       startFullAppShell(stores);
     }
+  });
+
+  $effect(() => {
+    const route = getRoute();
+    if (route.page !== "docs") return;
+    docsRoute = {
+      mode: "docs",
+      folder: route.folder,
+      doc: route.doc,
+    };
+    void loadDocsFeature();
+  });
+
+  $effect(() => {
+    const route = getRoute();
+    if (route.page !== "messages") return;
+    messagesRoute = {
+      mode: "messages",
+      q: route.q,
+      message: route.message,
+      ...(route.view === "linked" ? { view: "linked" as const } : {}),
+    };
+    void loadMessagesFeature();
   });
 
   let lastRepo: string | undefined;
@@ -271,6 +510,28 @@
   onDestroy(() => {
     stopFullAppShell();
     stores?.events.disconnect();
+  });
+
+  onMount(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const roster = await loadKataDaemonRoster();
+        if (cancelled) return;
+        setKataDaemonRoster(roster.ids, roster.defaultId);
+        kataDaemonInfos = roster.daemons;
+        kataDefaultDaemonId = roster.defaultId;
+      } catch {
+        if (!cancelled) {
+          kataDaemonInfos = [];
+          kataDefaultDaemonId = undefined;
+          setKataDaemonRoster([], undefined);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   });
 
   $effect(() => {
@@ -699,30 +960,36 @@
         </span>
 
         <nav class="mobile-tabs" aria-label="Phone navigation">
-          <a
-            class:mobile-tab--active={getPage() === "mobile-activity" || getPage() === "activity"}
-            href="/m"
-            onclick={(e) => {
-              e.preventDefault();
-              navigateMobile("/m");
-            }}
-          >Activity</a>
-          <a
-            class:mobile-tab--active={getPage() === "mobile-pulls"}
-            href="/m/pulls"
-            onclick={(e) => {
-              e.preventDefault();
-              navigateMobile("/m/pulls");
-            }}
-          >PRs</a>
-          <a
-            class:mobile-tab--active={getPage() === "mobile-issues"}
-            href="/m/issues"
-            onclick={(e) => {
-              e.preventDefault();
-              navigateMobile("/m/issues");
-            }}
-          >Issues</a>
+          {#if isModeVisible("activity")}
+            <a
+              class:mobile-tab--active={getPage() === "mobile-activity" || getPage() === "activity"}
+              href="/m"
+              onclick={(e) => {
+                e.preventDefault();
+                navigateMobile("/m");
+              }}
+            >Activity</a>
+          {/if}
+          {#if isModeVisible("pulls")}
+            <a
+              class:mobile-tab--active={getPage() === "mobile-pulls"}
+              href="/m/pulls"
+              onclick={(e) => {
+                e.preventDefault();
+                navigateMobile("/m/pulls");
+              }}
+            >PRs</a>
+          {/if}
+          {#if isModeVisible("issues")}
+            <a
+              class:mobile-tab--active={getPage() === "mobile-issues"}
+              href="/m/issues"
+              onclick={(e) => {
+                e.preventDefault();
+                navigateMobile("/m/issues");
+              }}
+            >Issues</a>
+          {/if}
         </nav>
 
         <button
@@ -792,6 +1059,53 @@
         />
       {:else if getPage() === "repos"}
         <RepoSummaryPage />
+      {:else if getPage() === "kata"}
+        {@const route = getRoute()}
+        {#if route.page === "kata"}
+          <KataFeature
+            api={kataAPI}
+            selectedIssueUID={route.issue ?? null}
+            routeViewName={route.view ?? null}
+            routeScopeUID={route.scope ?? null}
+            onSelectedIssueChange={openKataIssue}
+            onRouteStateChange={updateKataRoute}
+            onOpenMessage={isModeVisible("messages") ? openMessage : undefined}
+          />
+        {/if}
+      {:else if getPage() === "docs"}
+        {#if docsLoadError}
+          <div class="loading-state">
+            <span>{docsLoadError}</span>
+            <button type="button" onclick={() => void loadDocsFeature({ retry: true })}>Retry loading Docs</button>
+          </div>
+        {:else if !DocsFeature}
+          <div class="loading-state">
+            <SpinnerIcon
+              class="loading-spinner"
+              size="18"
+              strokeWidth="2"
+              aria-hidden="true"
+            />
+            Loading Docs
+          </div>
+        {/if}
+      {:else if getPage() === "messages"}
+        {#if messagesLoadError}
+          <div class="loading-state">
+            <span>{messagesLoadError}</span>
+            <button type="button" onclick={() => void loadMessagesFeature({ retry: true })}>Retry loading Messages</button>
+          </div>
+        {:else if !MessagesFeature}
+          <div class="loading-state">
+            <SpinnerIcon
+              class="loading-spinner"
+              size="18"
+              strokeWidth="2"
+              aria-hidden="true"
+            />
+            Loading Messages
+          </div>
+        {/if}
       {:else if getPage() === "pulls"}
         {@const route = getRoute()}
         {#if route.page === "pulls" && route.view === "board"}
@@ -842,6 +1156,43 @@
           onToggleSidebar={toggleSidebar}
         />
       {/if}
+
+      {#if appReady && DocsFeature}
+        <section
+          class="feature-shell docs-shell"
+          hidden={getPage() !== "docs"}
+          aria-hidden={getPage() !== "docs"}
+        >
+          <DocsFeature
+            route={docsRoute}
+            onRouteChange={(next, options) => {
+              if (options?.replace) replaceUrl(docsHref(next));
+              else navigate(docsHref(next));
+            }}
+            {kataAPI}
+            onOpenIssue={openKataIssue}
+            onOpenKataShortId={(shortId, project, daemonId) => {
+              void openKataShortId(shortId, project, daemonId);
+            }}
+          />
+        </section>
+      {/if}
+
+      {#if appReady && MessagesFeature}
+        <section
+          class="feature-shell messages-shell"
+          hidden={getPage() !== "messages"}
+          aria-hidden={getPage() !== "messages"}
+        >
+          <MessagesFeature
+            route={messagesRoute}
+            onRouteChange={(next) => navigate(messagesHref(next))}
+            kata={kataLinkingEnabled ? kataAPI : undefined}
+            onLinkMessage={kataLinkingEnabled ? messageIssueLinker.linkMessage : undefined}
+            onOpenIssue={kataLinkingEnabled ? openKataIssue : undefined}
+          />
+        </section>
+      {/if}
     </main>
 
     {#if !isStatusBarHidden()}
@@ -849,7 +1200,11 @@
     {/if}
   {/if}
 
-    <Palette />
+    <Palette
+      modeSearch={runModePaletteSearch}
+      onOpenKataIssue={openKataIssue}
+      onOpenDoc={openDoc}
+    />
     <Cheatsheet />
   </Provider>
 {/if}
@@ -1156,6 +1511,18 @@
     color: var(--text-muted);
     font-size: var(--font-size-mobile-sm);
     animation: fade-in 0.3s ease;
+  }
+
+  .feature-shell {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .feature-shell[hidden] {
+    display: none;
   }
 
   :global(.loading-spinner) {

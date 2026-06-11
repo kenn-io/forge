@@ -9,9 +9,16 @@
   import { client } from "../../api/runtime.js";
   import {
     DiffStats,
+    FilterDropdown,
     LeftSidebarToggle,
   } from "@middleman/ui";
   import ProviderIcon from "../provider/ProviderIcon.svelte";
+  import {
+    loadWorkspaceListSort,
+    saveWorkspaceListSort,
+    workspaceListSortOptions,
+    type WorkspaceListSort,
+  } from "./workspaceListSort.ts";
 
   interface Workspace {
     id: string;
@@ -74,6 +81,7 @@
   let workspaces = $state.raw<Workspace[]>([]);
   let collapsedGroups = $state<Set<string>>(new Set());
   let searchQuery = $state("");
+  let sortMode = $state<WorkspaceListSort>(loadWorkspaceListSort());
 
   type GroupedWorkspaces = Map<string, Workspace[]>;
 
@@ -109,6 +117,77 @@
     }
     return map;
   });
+
+  const sortLabel = $derived(
+    workspaceListSortOptions.find(
+      (option) => option.value === sortMode,
+    )?.label ?? "Org / repo",
+  );
+
+  const sortSections = $derived.by(() => [
+    {
+      items: workspaceListSortOptions.map((option) => ({
+        id: option.value,
+        label: option.label,
+        active: sortMode === option.value,
+        closeOnSelect: true,
+        onSelect: () => setSort(option.value),
+      })),
+    },
+  ]);
+
+  // Flat ordering for the timestamp sorts. The org/repo mode keeps
+  // the API order (created_at DESC) inside each repo group instead.
+  // "Activity" means terminal output only (tmux_last_output_at);
+  // pane-title or working-state changes do not count, and
+  // workspaces that have never produced output fall back to their
+  // creation time.
+  const sortedFlat = $derived.by(() => {
+    const stamp = sortMode === "activity"
+      ? (ws: Workspace) =>
+        timeValue(ws.tmux_last_output_at) || timeValue(ws.created_at)
+      : (ws: Workspace) => timeValue(ws.created_at);
+    return [...visibleWorkspaces].sort(
+      (a, b) => stamp(b) - stamp(a) || a.id.localeCompare(b.id),
+    );
+  });
+
+  function setSort(sort: WorkspaceListSort): void {
+    sortMode = sort;
+    saveWorkspaceListSort(sort);
+  }
+
+  function timeValue(value: string | null | undefined): number {
+    if (!value) return 0;
+    const ms = Date.parse(value);
+    return Number.isNaN(ms) ? 0 : ms;
+  }
+
+  // Owner/name pairs that exist on more than one platform host.
+  // Flat rows prefix the host for these so identical repo names on
+  // different hosts stay distinguishable; repo identity is always
+  // (platform, host, owner, name), never owner/name alone.
+  const ambiguousFlatRepos = $derived.by(() => {
+    const hostByRepo = new Map<string, string>();
+    const ambiguous = new Set<string>();
+    for (const ws of workspaces) {
+      const key = `${ws.repo_owner}/${ws.repo_name}`;
+      const seen = hostByRepo.get(key);
+      if (seen === undefined) {
+        hostByRepo.set(key, ws.platform_host);
+      } else if (seen !== ws.platform_host) {
+        ambiguous.add(key);
+      }
+    }
+    return ambiguous;
+  });
+
+  function flatRepoLabel(ws: Workspace): string {
+    const key = `${ws.repo_owner}/${ws.repo_name}`;
+    return ambiguousFlatRepos.has(key)
+      ? `${ws.platform_host}/${key}`
+      : key;
+  }
 
   const showProviderIcons = $derived.by(() => {
     const providers = new Set<string>();
@@ -263,12 +342,25 @@
   <div class="sidebar-header">
     <span class="sidebar-header-label">Workspaces</span>
     <span class="sidebar-header-count">{sidebarCountLabel}</span>
+    <div class="workspace-sort">
+      <FilterDropdown
+        label={sortLabel}
+        showBadge={false}
+        sections={sortSections}
+        title="Sort workspaces"
+        minWidth="170px"
+        icon="sort"
+      />
+    </div>
     {#if isSidebarToggleEnabled && onCollapseSidebar}
+      <!-- No --push here: .workspace-sort's auto margin already
+           claims the free space, and a second auto margin would
+           split it and strand the sort trigger mid-header. -->
       <LeftSidebarToggle
         state="expanded"
         label="Workspaces sidebar"
         onclick={onCollapseSidebar}
-        class="left-sidebar-toggle--push left-sidebar-toggle--compact"
+        class="left-sidebar-toggle--compact"
       />
     {/if}
   </div>
@@ -288,6 +380,7 @@
     />
   </label>
   <div class="sidebar-list">
+    {#if sortMode === "repo"}
     {#each [...grouped] as [repoKey, items] (repoKey)}
       {@const collapsed =
         !normalizedSearchQuery && collapsedGroups.has(repoKey)}
@@ -313,6 +406,17 @@
       </button>
       {#if !collapsed}
         {#each items as ws (ws.id)}
+          {@render workspaceRow(ws, false)}
+        {/each}
+      {/if}
+    {/each}
+    {:else}
+      {#each sortedFlat as ws (ws.id)}
+        {@render workspaceRow(ws, true)}
+      {/each}
+    {/if}
+
+    {#snippet workspaceRow(ws: Workspace, showRepo: boolean)}
           {@const adds = ws.mr_additions}
           {@const dels = ws.mr_deletions}
           {@const showDiff =
@@ -366,6 +470,21 @@
                 {/if}
               </div>
               <div class="ws-row-meta">
+                {#if showRepo}
+                  <span
+                    class="repo-context"
+                    title={`${ws.platform_host}/${ws.repo_owner}/${ws.repo_name}`}
+                  >
+                    {#if showProviderIcons && workspaceProvider(ws)}
+                      <ProviderIcon
+                        provider={workspaceProvider(ws)!}
+                        size={10}
+                        class="repo-context-icon"
+                      />
+                    {/if}
+                    <span class="repo-context-name">{flatRepoLabel(ws)}</span>
+                  </span>
+                {/if}
                 <span class="branch-chip" title={ws.git_head_ref}>
                   <GitBranchIcon
                     class="branch-icon"
@@ -429,9 +548,7 @@
               #{ws.item_number}
             </button>
           </div>
-        {/each}
-      {/if}
-    {/each}
+    {/snippet}
     {#if visibleWorkspaces.length === 0 && normalizedSearchQuery}
       <p class="filter-empty">No workspaces match.</p>
     {/if}
@@ -494,6 +611,26 @@
     background: var(--bg-surface);
     color: var(--text-muted);
     flex-shrink: 0;
+  }
+
+  .workspace-sort {
+    /* Claims the header's free space so the sort trigger (and the
+     * collapse toggle after it) sit flush right. */
+    margin-left: auto;
+    flex-shrink: 0;
+  }
+
+  .workspace-sort :global(.filter-btn) {
+    /* Borderless inside the 28px header rail; the dropdown trigger
+     * reads as header chrome rather than a standalone button. */
+    min-height: 22px;
+    padding: 2px 6px;
+    border-color: transparent;
+    background: transparent;
+  }
+
+  .workspace-sort :global(.filter-btn:hover:not(:disabled)) {
+    border-color: var(--border-muted);
   }
 
   :global(.workspace-filter-icon) {
@@ -738,6 +875,32 @@
     }
   }
 
+  .repo-context {
+    /* Flat sorts drop the per-repo group headers, so each row
+     * carries its own repo context on the meta line. Caps at half
+     * the line so the branch chip always keeps some room. */
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    flex: 0 1 auto;
+    max-width: 50%;
+    min-width: 0;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
+    color: var(--text-muted);
+  }
+
+  .repo-context-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  :global(.repo-context-icon) {
+    color: var(--text-muted);
+    flex-shrink: 0;
+  }
+
   .branch-chip {
     /* Lives on the meta line; takes whatever width is left after
      * push state and diff stats and truncates with ellipsis. */
@@ -872,6 +1035,14 @@
 
   @container workspace-rail (max-width: 220px) {
     .push-state {
+      display: none;
+    }
+  }
+
+  /* The sort trigger collapses to its icon before the filter input
+   * is squeezed into uselessness. */
+  @container workspace-rail (max-width: 240px) {
+    .workspace-sort :global(.filter-trigger-label) {
       display: none;
     }
   }

@@ -53,6 +53,7 @@ export interface CICheck {
 export type ActivitySettings = components["schemas"]["Activity"];
 export type TerminalSettings = components["schemas"]["Terminal"];
 export type TerminalRenderer = TerminalSettings["renderer"];
+export type ModeVisibility = components["schemas"]["ModeVisibility"];
 
 export const DEFAULT_TERMINAL_SETTINGS: TerminalSettings = {
   font_family: "",
@@ -63,6 +64,19 @@ export const DEFAULT_TERMINAL_SETTINGS: TerminalSettings = {
   cursor_blink: true,
   font_ligatures: false,
   renderer: "xterm",
+};
+
+export const DEFAULT_MODE_VISIBILITY: ModeVisibility = {
+  activity: true,
+  repos: true,
+  kata: false,
+  docs: false,
+  messages: false,
+  pulls: true,
+  issues: true,
+  board: true,
+  reviews: true,
+  workspaces: true,
 };
 
 export type AgentSettings = components["schemas"]["Agent"];

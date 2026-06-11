@@ -246,6 +246,197 @@ func TestServerShutdownRetryWaitsForHTTPHandler(t *testing.T) {
 	}
 }
 
+// TestServerShutdownClosesKataProxyIdleConnectionsAfterHTTPDrain verifies
+// that upstream proxy transports are closed only after active handlers finish.
+func TestServerShutdownClosesKataProxyIdleConnectionsAfterHTTPDrain(t *testing.T) {
+	req := require.New(t)
+	srv, _ := setupTestServer(t)
+
+	release := make(chan struct{})
+	started := make(chan struct{}, 1)
+	var handlerFinished atomic.Bool
+	srv.handler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		select {
+		case started <- struct{}{}:
+		default:
+		}
+		<-release
+		handlerFinished.Store(true)
+		w.WriteHeader(http.StatusOK)
+	})
+
+	closeCalled := make(chan bool, 1)
+	srv.kataProxyCache = map[kataProxyCacheKey]kataProxyCacheEntry{
+		{id: "primary", url: "http://127.0.0.1:1"}: {
+			closeIdle: func() {
+				closeCalled <- handlerFinished.Load()
+			},
+		},
+	}
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	req.NoError(err)
+	addr := ln.Addr().String()
+
+	serveErr := make(chan error, 1)
+	go func() {
+		serveErr <- srv.Serve(ln)
+	}()
+
+	reqDone := make(chan struct{})
+	go func() {
+		resp, err := http.Get("http://" + addr + "/slow")
+		if err == nil {
+			_, _ = io.Copy(io.Discard, resp.Body)
+			_ = resp.Body.Close()
+		}
+		close(reqDone)
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		req.FailNow("slow handler never started")
+	}
+
+	shutdownDone := make(chan error, 1)
+	go func() {
+		ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+		defer cancel()
+		shutdownDone <- srv.Shutdown(ctx)
+	}()
+
+	closedBeforeRelease := false
+	closedBeforeReleaseAfterFinish := false
+	select {
+	case closedAfterFinish := <-closeCalled:
+		closedBeforeRelease = true
+		closedBeforeReleaseAfterFinish = closedAfterFinish
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	close(release)
+	<-reqDone
+	req.NoError(<-shutdownDone)
+
+	if closedBeforeRelease {
+		req.True(closedBeforeReleaseAfterFinish, "proxy idle connections closed before HTTP handlers drained")
+		return
+	}
+
+	select {
+	case closedAfterFinish := <-closeCalled:
+		req.True(closedAfterFinish, "proxy idle connections should close after HTTP handlers drain")
+	case <-time.After(time.Second):
+		req.FailNow("proxy idle connections were not closed")
+	}
+
+	select {
+	case e := <-serveErr:
+		req.ErrorIs(e, http.ErrServerClosed)
+	case <-time.After(time.Second):
+		req.FailNow("Serve did not return after Shutdown")
+	}
+}
+
+// TestServerShutdownRetryClosesKataProxyIdleConnectionsAfterHTTPDrain verifies
+// that a timed-out first Shutdown does not spend the one cleanup pass before a
+// later retry drains active handlers.
+func TestServerShutdownRetryClosesKataProxyIdleConnectionsAfterHTTPDrain(t *testing.T) {
+	req := require.New(t)
+	srv, _ := setupTestServer(t)
+
+	release := make(chan struct{})
+	started := make(chan struct{}, 1)
+	var handlerFinished atomic.Bool
+	srv.handler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		select {
+		case started <- struct{}{}:
+		default:
+		}
+		<-release
+		handlerFinished.Store(true)
+		w.WriteHeader(http.StatusOK)
+	})
+
+	closeCalled := make(chan bool, 2)
+	srv.kataProxyCache = map[kataProxyCacheKey]kataProxyCacheEntry{
+		{id: "primary", url: "http://127.0.0.1:1"}: {
+			closeIdle: func() {
+				closeCalled <- handlerFinished.Load()
+			},
+		},
+	}
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	req.NoError(err)
+	addr := ln.Addr().String()
+
+	serveErr := make(chan error, 1)
+	go func() {
+		serveErr <- srv.Serve(ln)
+	}()
+
+	reqDone := make(chan struct{})
+	go func() {
+		resp, err := http.Get("http://" + addr + "/slow")
+		if err == nil {
+			_, _ = io.Copy(io.Discard, resp.Body)
+			_ = resp.Body.Close()
+		}
+		close(reqDone)
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		req.FailNow("slow handler never started")
+	}
+
+	shortCtx, shortCancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+	defer shortCancel()
+	err = srv.Shutdown(shortCtx)
+	req.ErrorIs(err, context.DeadlineExceeded)
+
+	select {
+	case closedAfterFinish := <-closeCalled:
+		req.True(closedAfterFinish, "proxy idle connections closed before HTTP handlers drained")
+		req.FailNow("proxy idle connections should not close after a timed-out drain")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	longErrCh := make(chan error, 1)
+	go func() {
+		longCtx, longCancel := context.WithTimeout(t.Context(), 2*time.Second)
+		defer longCancel()
+		longErrCh <- srv.Shutdown(longCtx)
+	}()
+
+	select {
+	case <-longErrCh:
+		req.FailNow("second Shutdown returned before HTTP handler drained")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	close(release)
+	<-reqDone
+	req.NoError(<-longErrCh)
+
+	select {
+	case closedAfterFinish := <-closeCalled:
+		req.True(closedAfterFinish, "proxy idle connections should close after retry drains")
+	case <-time.After(time.Second):
+		req.FailNow("proxy idle connections were not closed after successful retry")
+	}
+
+	select {
+	case e := <-serveErr:
+		req.ErrorIs(e, http.ErrServerClosed)
+	case <-time.After(time.Second):
+		req.FailNow("Serve did not return after Shutdown")
+	}
+}
+
 // TestServerShutdownClosesSSESubscribers verifies that Shutdown
 // closes the EventHub so `handleSSE` handlers exit on their
 // <-done arm. Without this, http.Server.Shutdown would hang

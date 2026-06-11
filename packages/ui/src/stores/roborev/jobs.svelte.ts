@@ -1,5 +1,6 @@
 import type { RoborevClient } from "../../api/roborev/client.js";
 import type { components, operations } from "../../api/roborev/generated/schema.js";
+import { parseCostUsd } from "../../utils/roborev-cost.js";
 
 type ReviewJob = components["schemas"]["ReviewJob"];
 type JobStats = components["schemas"]["JobStats"];
@@ -11,7 +12,7 @@ export interface JobsStoreOptions {
   onError?: (msg: string) => void;
 }
 
-type SortColumn = "id" | "status" | "verdict" | "agent" | "elapsed" | "job_type" | "enqueued_at";
+type SortColumn = "id" | "status" | "verdict" | "agent" | "elapsed" | "cost" | "job_type" | "enqueued_at";
 type SortDirection = "asc" | "desc";
 
 export function createJobsStore(opts: JobsStoreOptions) {
@@ -75,6 +76,8 @@ export function createJobsStore(opts: JobsStoreOptions) {
         return job.agent;
       case "elapsed":
         return getElapsedSeconds(job);
+      case "cost":
+        return parseCostUsd(job.token_usage) ?? -1;
       case "job_type":
         return job.job_type;
       case "enqueued_at":

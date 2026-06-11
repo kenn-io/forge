@@ -59,7 +59,7 @@ func TestClientLooksUpRepositoryAndSendsToken(t *testing.T) {
 
 	client, err := NewClient(
 		"codeberg.test",
-		"forgejo-token",
+		testTokenSource("forgejo-token"),
 		WithBaseURLForTesting(server.URL),
 	)
 	require.NoError(err)
@@ -79,7 +79,7 @@ func TestClientLookupUsesForegroundTimeout(t *testing.T) {
 
 	client, err := NewClient(
 		"codeberg.test",
-		"forgejo-token",
+		testTokenSource("forgejo-token"),
 		WithBaseURLForTesting(server.URL),
 		WithForegroundTimeoutForTesting(20*time.Millisecond),
 	)
@@ -103,7 +103,7 @@ func TestTransportGetRepositoryRawCancelsInFlightRequest(t *testing.T) {
 
 	client, err := NewClient(
 		"codeberg.test",
-		"forgejo-token",
+		testTokenSource("forgejo-token"),
 		WithBaseURLForTesting(server.URL),
 		WithForegroundTimeoutForTesting(time.Minute),
 	)
@@ -156,7 +156,7 @@ func TestTransportGetRepositoryRawCancelsWhileWaitingForRequestContext(t *testin
 
 	client, err := NewClient(
 		"codeberg.test",
-		"forgejo-token",
+		testTokenSource("forgejo-token"),
 		WithBaseURLForTesting(server.URL),
 		WithForegroundTimeoutForTesting(time.Minute),
 	)
@@ -214,7 +214,7 @@ func TestClientLookupCountsSyncBudget(t *testing.T) {
 	budget := ghsync.NewSyncBudget(20)
 	client, err := NewClient(
 		"codeberg.test",
-		"forgejo-token",
+		testTokenSource("forgejo-token"),
 		WithBaseURLForTesting(server.URL),
 		WithSyncBudget(budget),
 	)
@@ -237,7 +237,7 @@ func TestClientProviderIdentityExposesReadCapabilities(t *testing.T) {
 
 	client, err := NewClient(
 		"codeberg.test",
-		"forgejo-token",
+		testTokenSource("forgejo-token"),
 		WithBaseURLForTesting(server.URL),
 	)
 	require.NoError(err)
@@ -316,7 +316,7 @@ func TestClientReadsOpenPullRequestsIssuesAndCIChecks(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewClient("codeberg.test", "forgejo-token", WithBaseURLForTesting(server.URL))
+	client, err := NewClient("codeberg.test", testTokenSource("forgejo-token"), WithBaseURLForTesting(server.URL))
 	require.NoError(err)
 	ref := platform.RepoRef{Owner: "owner", Name: "repo"}
 
@@ -370,7 +370,7 @@ func TestClientReadsCommitStatusesWhenActionsEndpointUnavailable(t *testing.T) {
 			}))
 			defer server.Close()
 
-			client, err := NewClient("codeberg.test", "forgejo-token", WithBaseURLForTesting(server.URL))
+			client, err := NewClient("codeberg.test", testTokenSource("forgejo-token"), WithBaseURLForTesting(server.URL))
 			require.NoError(err)
 			ref := platform.RepoRef{Owner: "owner", Name: "repo"}
 
@@ -421,7 +421,7 @@ func TestClientMutationCapabilityUsesForgejoEndpoints(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewClient("codeberg.test", "forgejo-token", WithBaseURLForTesting(server.URL))
+	client, err := NewClient("codeberg.test", testTokenSource("forgejo-token"), WithBaseURLForTesting(server.URL))
 	require.NoError(err)
 	ref := platform.RepoRef{Owner: "owner", Name: "repo"}
 
@@ -467,7 +467,7 @@ func TestClientMapsNotFoundResponsesToPlatformError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewClient("codeberg.test", "forgejo-token", WithBaseURLForTesting(server.URL))
+	client, err := NewClient("codeberg.test", testTokenSource("forgejo-token"), WithBaseURLForTesting(server.URL))
 	require.NoError(err)
 
 	_, err = client.GetMergeRequest(

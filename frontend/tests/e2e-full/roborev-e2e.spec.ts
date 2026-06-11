@@ -431,6 +431,29 @@ test.describe.serial("Roborev", () => {
       expect(lastDash).toBeLessThan(firstZero);
     });
 
+    test("click Cost header sorts by cost", async ({ page }) => {
+      await waitForReviewsReady(page);
+      await waitForJobRows(page, 10);
+
+      // Job 74 is the only costed job (~$0.42) on the first
+      // page; every other row renders "--". Ascending order
+      // puts missing costs first, so the costed row sinks to
+      // the bottom; descending brings it to the top.
+      const costHeader = page.locator("th.sortable").filter({ hasText: "Cost" });
+      await costHeader.click();
+      await page.waitForTimeout(300);
+
+      const costCells = page.locator(".col-cost");
+      await expect(costCells.last()).toHaveText("~$0.42");
+      await expect(costCells.first()).toHaveText("--");
+
+      await costHeader.click();
+      await page.waitForTimeout(300);
+
+      await expect(costCells.first()).toHaveText("~$0.42");
+      await expect(costCells.last()).toHaveText("--");
+    });
+
     test("sort persists across filter changes", async ({ page }) => {
       await waitForReviewsReady(page);
       await waitForJobRows(page, 10);

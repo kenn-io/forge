@@ -1,10 +1,11 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
-import { afterEach, beforeEach, describe, expect, it } from "vite-plus/test";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import Palette from "./Palette.svelte";
 import { closePalette, openPalette, resetPaletteState } from "../../stores/keyboard/palette-state.svelte.js";
 import { registerScopedActions, resetRegistry } from "../../stores/keyboard/registry.svelte.js";
 import { RECENTS_KEY } from "../../stores/keyboard/recents.svelte.js";
+import type { ModePaletteResults } from "../../stores/keyboard/mode-palette-search.js";
 import type { Action } from "../../stores/keyboard/types.js";
 import { resetModalStack } from "@middleman/ui/stores/keyboard/modal-stack";
 
@@ -30,6 +31,8 @@ describe("Palette", () => {
 
   afterEach(() => {
     cleanup();
+    vi.useRealTimers();
+    vi.restoreAllMocks();
     resetPaletteState();
     resetModalStack();
     resetRegistry();
@@ -278,5 +281,125 @@ describe("Palette", () => {
     expect(persisted.items[0].kind).toBe("pr");
     expect(persisted.items[0].ref.number).toBe(42);
     expect(Date.parse(persisted.items[0].lastSelectedAt)).toBeGreaterThan(Date.parse(seedAt));
+  });
+
+  it("renders injected Kata task and docs search results for plain queries", async () => {
+    const modeSearch = vi.fn(
+      async (): Promise<ModePaletteResults> => ({
+        query: "budget",
+        tasks: {
+          ok: true,
+          truncated: false,
+          rows: [
+            {
+              kind: "kata-task",
+              uid: "issue-budget",
+              short_id: "budget",
+              qualified_id: "Finances#budget",
+              title: "Set monthly budget",
+              project_name: "Finances",
+              status: "open",
+            },
+          ],
+        },
+        docs: {
+          ok: true,
+          truncated: false,
+          rows: [
+            {
+              kind: "doc",
+              folder: "notes",
+              folder_name: "Notes",
+              rel_path: "finance/budget.md",
+              hit_type: "body",
+              line: 4,
+              snippet: { text: "monthly budget", matches: [{ start: 8, end: 14 }] },
+            },
+          ],
+        },
+      }),
+    );
+
+    const { rerender } = render(Palette, { props: { modeSearch } });
+    openPalette();
+    await rerender({ modeSearch });
+    const dialog = screen.getByRole("dialog", { name: "Command palette" });
+    const input = dialog.querySelector(".palette-input");
+    expect(input).not.toBeNull();
+    await fireEvent.input(input!, { target: { value: "budget" } });
+    const list = dialog.querySelector<HTMLElement>(".palette-list");
+    expect(list).not.toBeNull();
+
+    await waitFor(() => {
+      expect(modeSearch).toHaveBeenCalledWith("budget");
+      expect(within(list!).getByText("Kata tasks")).toBeTruthy();
+      expect(within(list!).getByText("Set monthly budget")).toBeTruthy();
+      expect(within(list!).getByText("Docs")).toBeTruthy();
+      expect(within(list!).getByText("finance/budget.md")).toBeTruthy();
+    });
+  });
+
+  it("selects injected mode results with their callbacks", async () => {
+    const onOpenKataIssue = vi.fn();
+    const onOpenDoc = vi.fn();
+    const modeSearch = vi.fn(
+      async (): Promise<ModePaletteResults> => ({
+        query: "budget",
+        tasks: {
+          ok: true,
+          truncated: false,
+          rows: [
+            {
+              kind: "kata-task",
+              uid: "issue-budget",
+              short_id: "budget",
+              qualified_id: "Finances#budget",
+              title: "Set monthly budget",
+              project_name: "Finances",
+              status: "open",
+            },
+          ],
+        },
+        docs: {
+          ok: true,
+          truncated: false,
+          rows: [
+            {
+              kind: "doc",
+              folder: "notes",
+              folder_name: "Notes",
+              rel_path: "finance/budget.md",
+              hit_type: "filename",
+            },
+          ],
+        },
+      }),
+    );
+
+    const props = { modeSearch, onOpenKataIssue, onOpenDoc };
+    const { rerender } = render(Palette, { props });
+    openPalette();
+    await rerender(props);
+    let dialog = screen.getByRole("dialog", { name: "Command palette" });
+    let input = dialog.querySelector(".palette-input");
+    expect(input).not.toBeNull();
+    await fireEvent.input(input!, { target: { value: "budget" } });
+    let list = dialog.querySelector<HTMLElement>(".palette-list");
+    expect(list).not.toBeNull();
+    await waitFor(() => expect(within(list!).getByText("Set monthly budget")).toBeTruthy());
+    await fireEvent.click(within(list!).getByText("Set monthly budget"));
+    expect(onOpenKataIssue).toHaveBeenCalledWith("issue-budget");
+
+    openPalette();
+    await rerender(props);
+    dialog = screen.getByRole("dialog", { name: "Command palette" });
+    input = dialog.querySelector(".palette-input");
+    expect(input).not.toBeNull();
+    await fireEvent.input(input!, { target: { value: "budget" } });
+    list = dialog.querySelector<HTMLElement>(".palette-list");
+    expect(list).not.toBeNull();
+    await waitFor(() => expect(within(list!).getByText("finance/budget.md")).toBeTruthy());
+    await fireEvent.click(within(list!).getByText("finance/budget.md"));
+    expect(onOpenDoc).toHaveBeenCalledWith("notes", "finance/budget.md");
   });
 });

@@ -32,6 +32,7 @@ import (
 	"go.kenn.io/middleman/internal/server"
 	"go.kenn.io/middleman/internal/stacks"
 	"go.kenn.io/middleman/internal/testutil"
+	"go.kenn.io/middleman/internal/tokenauth"
 	"go.kenn.io/middleman/internal/web"
 	"go.kenn.io/middleman/internal/workspace"
 )
@@ -55,6 +56,10 @@ func main() {
 		"default-platform-host", "github.com",
 		"default platform host for seeded config",
 	)
+	visibleImportedModes := flag.Bool(
+		"visible-imported-modes", false,
+		"show imported app modes in the seeded config",
+	)
 	serverInfoFile := flag.String(
 		"server-info-file", "",
 		"path to write discovered server port info as JSON",
@@ -74,6 +79,7 @@ func main() {
 		*roborev,
 		*serverInfoFile,
 		*defaultPlatformHost,
+		*visibleImportedModes,
 	); err != nil {
 		slog.Error("fatal", "err", err)
 		os.Exit(1)
@@ -86,6 +92,18 @@ type e2eServerInfo struct {
 	BaseURL    string `json:"base_url"`
 	PID        int    `json:"pid"`
 	ConfigPath string `json:"config_path"`
+}
+
+type staticTokenSource string
+
+func (s staticTokenSource) Token(context.Context) (string, error) {
+	return string(s), nil
+}
+
+func (s staticTokenSource) Invalidate() {}
+
+func (s staticTokenSource) Descriptor() tokenauth.Descriptor {
+	return tokenauth.Descriptor{Key: tokenauth.Key{Platform: "github", Host: "github.com"}}
 }
 
 type e2eStaticProvider struct {
@@ -524,8 +542,9 @@ func setPR1CIState(
 // state. The same options feed the initial startup and every
 // /__e2e/reset rebuild.
 type appOptions struct {
-	roborevEndpoint     string
-	defaultPlatformHost string
+	roborevEndpoint      string
+	defaultPlatformHost  string
+	visibleImportedModes bool
 }
 
 // appState bundles everything one logical e2e server instance owns:
@@ -706,6 +725,13 @@ func buildAppState(
 		// contend on one tmux server. This is what lets workspace
 		// tests run unserialized.
 		Tmux: config.Tmux{Command: instanceTmuxCommand()},
+	}
+	if opts.visibleImportedModes {
+		modes := config.DefaultModeVisibility()
+		*modes.Kata = true
+		*modes.Docs = true
+		*modes.Messages = true
+		cfg.Modes = modes
 	}
 
 	cfg.Roborev.Endpoint = roborevEndpoint
@@ -971,7 +997,9 @@ func buildAppState(
 	)
 
 	// Wire GraphQL fetcher so GQL rate data appears in the endpoint.
-	gqlFetcher := ghclient.NewGraphQLFetcher("fake-token", "github.com", gqlRT, budget)
+	gqlFetcher := ghclient.NewGraphQLFetcher(
+		staticTokenSource("fake-token"), "github.com", gqlRT, budget,
+	)
 	syncer.SetFetchers(map[string]*ghclient.GraphQLFetcher{
 		"github.com":        gqlFetcher,
 		defaultPlatformHost: gqlFetcher,
@@ -1342,6 +1370,7 @@ func run(
 	ctx context.Context,
 	port int,
 	roborevEndpoint, serverInfoFile, defaultPlatformHost string,
+	visibleImportedModes bool,
 ) error {
 	assets, err := web.Assets()
 	if err != nil {
@@ -1349,8 +1378,9 @@ func run(
 	}
 
 	baseOpts := appOptions{
-		roborevEndpoint:     roborevEndpoint,
-		defaultPlatformHost: defaultPlatformHost,
+		roborevEndpoint:      roborevEndpoint,
+		defaultPlatformHost:  defaultPlatformHost,
+		visibleImportedModes: visibleImportedModes,
 	}
 
 	state, err := buildAppState(ctx, assets, baseOpts)
@@ -1408,12 +1438,16 @@ func run(
 
 			opts := baseOpts
 			var req struct {
-				DefaultPlatformHost string `json:"default_platform_host"`
+				DefaultPlatformHost  string `json:"default_platform_host"`
+				VisibleImportedModes *bool  `json:"visible_imported_modes"`
 			}
 			// Tolerate an empty body: reset to the startup options.
 			_ = json.NewDecoder(r.Body).Decode(&req)
 			if strings.TrimSpace(req.DefaultPlatformHost) != "" {
 				opts.defaultPlatformHost = req.DefaultPlatformHost
+			}
+			if req.VisibleImportedModes != nil {
+				opts.visibleImportedModes = *req.VisibleImportedModes
 			}
 
 			// Build against the process ctx, not r.Context(): a

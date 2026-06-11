@@ -23,6 +23,13 @@ export type IsolatedE2EServer = {
 
 export type IsolatedE2EServerOptions = {
   defaultPlatformHost?: string;
+  visibleImportedModes?: boolean;
+  // Spawn a dedicated server process and kill it on stop() instead of
+  // leasing from the per-worker pool. Required when the test depends
+  // on process environment the server must inherit at spawn time
+  // (e.g. KATA_HOME): pooled servers were spawned earlier and never
+  // see env vars the test sets afterwards.
+  freshProcess?: boolean;
 };
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -275,6 +282,9 @@ async function spawnServer(
   if (options.defaultPlatformHost) {
     args.push("-default-platform-host", options.defaultPlatformHost);
   }
+  if (options.visibleImportedModes) {
+    args.push("-visible-imported-modes");
+  }
   if (process.env.ROBOREV_ENDPOINT) {
     args.push("-roborev", process.env.ROBOREV_ENDPOINT);
   }
@@ -331,7 +341,7 @@ function installCleanup(infoFile: string): void {
 }
 
 async function startManagedServer(): Promise<E2EServerInfo> {
-  const started = await spawnServer(serverInfoFile);
+  const started = await spawnServer(serverInfoFile, { visibleImportedModes: true });
   managedChild = started.child;
 
   installCleanup(serverInfoFile);
@@ -358,7 +368,12 @@ export async function ensureE2EServer(): Promise<E2EServerInfo> {
   // script) are still reused as-is.
   if (process.env.TEST_WORKER_INDEX !== undefined && process.env[ownedServerEnvVar] === "1") {
     serverPromise = (async () => {
-      const server = await spawnPooledServer(defaultPlatformHost);
+      // Mirror startManagedServer's options: the shared server runs
+      // with all imported app modes visible.
+      const server = await spawnPooledServer({
+        host: defaultPlatformHost,
+        visibleImportedModes: true,
+      });
       // Permanently leased: this is the worker's shared server; the
       // isolated-server pool must never hand it out or reset it.
       server.busy = true;
@@ -425,16 +440,36 @@ export async function stopE2EServer(): Promise<void> {
 // per-test isolation while paying the process spawn cost at most
 // once per worker.
 
+type PooledServerOptions = {
+  host: string;
+  visibleImportedModes: boolean;
+};
+
 type PooledServer = {
   child: ChildProcess;
   info: E2EServerInfo;
   busy: boolean;
   // Reset fired by stop(); the next lease awaits it before reuse.
   pending: Promise<void> | null;
-  // default_platform_host the server has (or will have once
-  // `pending` resolves).
-  host: string;
+  // Options the server has (or will have once `pending` resolves).
+  options: PooledServerOptions;
 };
+
+const defaultPooledOptions: PooledServerOptions = {
+  host: defaultPlatformHost,
+  visibleImportedModes: false,
+};
+
+function normalizedPooledOptions(options: IsolatedE2EServerOptions): PooledServerOptions {
+  return {
+    host: options.defaultPlatformHost ?? defaultPlatformHost,
+    visibleImportedModes: options.visibleImportedModes ?? false,
+  };
+}
+
+function samePooledOptions(a: PooledServerOptions, b: PooledServerOptions): boolean {
+  return a.host === b.host && a.visibleImportedModes === b.visibleImportedModes;
+}
 
 const isolatedPool: PooledServer[] = [];
 let poolCleanupInstalled = false;
@@ -467,7 +502,7 @@ function installPoolCleanup(): void {
   });
 }
 
-async function postReset(baseURL: string, host: string): Promise<E2EServerInfo> {
+async function postReset(baseURL: string, options: PooledServerOptions): Promise<E2EServerInfo> {
   return await new Promise<E2EServerInfo>((resolve, reject) => {
     const url = new URL("/__e2e/reset", baseURL);
     const request = (url.protocol === "https:" ? httpsRequest : httpRequest)(
@@ -498,13 +533,18 @@ async function postReset(baseURL: string, host: string): Promise<E2EServerInfo> 
     request.on("timeout", () => {
       request.destroy(new Error("e2e reset timed out"));
     });
-    request.end(JSON.stringify({ default_platform_host: host }));
+    request.end(
+      JSON.stringify({
+        default_platform_host: options.host,
+        visible_imported_modes: options.visibleImportedModes,
+      }),
+    );
   });
 }
 
-async function resetPooledServer(server: PooledServer, host: string): Promise<void> {
-  server.info = await postReset(server.info.base_url, host);
-  server.host = host;
+async function resetPooledServer(server: PooledServer, options: PooledServerOptions): Promise<void> {
+  server.info = await postReset(server.info.base_url, options);
+  server.options = options;
 }
 
 function dropPooledServer(server: PooledServer): void {
@@ -519,10 +559,13 @@ function dropPooledServer(server: PooledServer): void {
   }
 }
 
-async function spawnPooledServer(host: string): Promise<PooledServer> {
+async function spawnPooledServer(options: PooledServerOptions): Promise<PooledServer> {
   const infoDir = mkdtempSync(path.join(os.tmpdir(), "middleman-e2e-"));
   const infoFile = path.join(infoDir, "server-info.json");
-  const started = await spawnServer(infoFile, host === defaultPlatformHost ? {} : { defaultPlatformHost: host });
+  const started = await spawnServer(infoFile, {
+    ...(options.host === defaultPlatformHost ? {} : { defaultPlatformHost: options.host }),
+    ...(options.visibleImportedModes ? { visibleImportedModes: true } : {}),
+  });
   // The info is in memory now; the temp dir is no longer needed.
   await rm(infoDir, { force: true, recursive: true });
 
@@ -531,7 +574,7 @@ async function spawnPooledServer(host: string): Promise<PooledServer> {
     info: started.info,
     busy: true,
     pending: null,
-    host,
+    options,
   };
   isolatedPool.push(server);
   installPoolCleanup();
@@ -545,7 +588,21 @@ export async function startIsolatedE2EServer(): Promise<IsolatedE2EServer> {
 export async function startIsolatedE2EServerWithOptions(
   options: IsolatedE2EServerOptions = {},
 ): Promise<IsolatedE2EServer> {
-  const host = options.defaultPlatformHost ?? defaultPlatformHost;
+  if (options.freshProcess) {
+    const infoDir = mkdtempSync(path.join(os.tmpdir(), "middleman-e2e-"));
+    const infoFile = path.join(infoDir, "server-info.json");
+    const started = await spawnServer(infoFile, options);
+    return {
+      info: started.info,
+      stop: async () => {
+        cleanupManagedServerProcess(started.child, infoFile);
+        await removeServerInfo(infoFile);
+        await rm(infoDir, { force: true, recursive: true });
+      },
+    };
+  }
+
+  const desired = normalizedPooledOptions(options);
   let server: PooledServer | null = null;
 
   const candidate = isolatedPool.find((pooled) => !pooled.busy);
@@ -556,8 +613,8 @@ export async function startIsolatedE2EServerWithOptions(
         await candidate.pending;
         candidate.pending = null;
       }
-      if (candidate.host !== host) {
-        await resetPooledServer(candidate, host);
+      if (!samePooledOptions(candidate.options, desired)) {
+        await resetPooledServer(candidate, desired);
       }
       server = candidate;
     } catch {
@@ -567,7 +624,7 @@ export async function startIsolatedE2EServerWithOptions(
   }
 
   if (!server) {
-    server = await spawnPooledServer(host);
+    server = await spawnPooledServer(desired);
   }
 
   const leased = server;
@@ -583,7 +640,7 @@ export async function startIsolatedE2EServerWithOptions(
       // worker finds a clean server waiting. A failed reset
       // surfaces on the next lease via `pending`; the extra catch
       // avoids an unhandled rejection when no lease follows.
-      const reset = resetPooledServer(leased, defaultPlatformHost);
+      const reset = resetPooledServer(leased, defaultPooledOptions);
       reset.catch(() => {});
       leased.pending = reset;
       leased.busy = false;

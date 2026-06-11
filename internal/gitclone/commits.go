@@ -51,7 +51,7 @@ func (m *Manager) ListCommits(
 		args = append(args, mergeBase+".."+headSHA)
 	}
 
-	out, err := m.git(ctx, host, dir, args...)
+	out, err := m.git(ctx, dir, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list commits: %w", err)
 	}
@@ -134,9 +134,9 @@ func (m *Manager) CommitTimelineSinceTag(
 	if err != nil {
 		return 0, nil, err
 	}
-	defaultRef := m.defaultTimelineRef(ctx, host, dir)
+	defaultRef := m.defaultTimelineRef(ctx, dir)
 	rangeSpec := tagName + ".." + defaultRef
-	countOut, err := m.git(ctx, host, dir,
+	countOut, err := m.git(ctx, dir,
 		"rev-list", "--first-parent", "--count", rangeSpec,
 	)
 	if err != nil {
@@ -148,7 +148,7 @@ func (m *Manager) CommitTimelineSinceTag(
 		return 0, nil, fmt.Errorf("parse commit count %q: %w", countText, err)
 	}
 
-	out, err := m.git(ctx, host, dir,
+	out, err := m.git(ctx, dir,
 		"log", "--first-parent",
 		fmt.Sprintf("--max-count=%d", limit),
 		"--format=%H%x00%aI%x00%s",
@@ -188,15 +188,15 @@ func (m *Manager) CommitTimelineSinceTag(
 
 func (m *Manager) defaultTimelineRef(
 	ctx context.Context,
-	host, dir string,
+	dir string,
 ) string {
-	if _, err := m.git(ctx, host, dir,
+	if _, err := m.git(ctx, dir,
 		"rev-parse", "--verify", "refs/remotes/origin/HEAD",
 	); err == nil {
 		return "refs/remotes/origin/HEAD"
 	}
 
-	out, err := m.git(ctx, host, dir, "symbolic-ref", "--quiet", "HEAD")
+	out, err := m.git(ctx, dir, "symbolic-ref", "--quiet", "HEAD")
 	if err != nil {
 		return "HEAD"
 	}
@@ -209,7 +209,7 @@ func (m *Manager) defaultTimelineRef(
 	}
 
 	remoteRef := "refs/remotes/origin/" + branch
-	if _, err := m.git(ctx, host, dir,
+	if _, err := m.git(ctx, dir,
 		"rev-parse", "--verify", remoteRef,
 	); err == nil {
 		return remoteRef
@@ -229,7 +229,7 @@ func (m *Manager) ParentOf(
 	if err != nil {
 		return "", err
 	}
-	out, err := m.git(ctx, host, dir,
+	out, err := m.git(ctx, dir,
 		"rev-list", "--parents", "-n", "1", "--end-of-options", sha,
 	)
 	if err != nil {

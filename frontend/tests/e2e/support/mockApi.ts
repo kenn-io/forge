@@ -207,6 +207,36 @@ const repos = [
   },
 ];
 
+// Twelve repos with open PRs on only a few of them, so switching the summary
+// page filter between "All" (2-digit count) and "Has PRs" (1-digit count)
+// exercises the results-label digit change.
+const repoSummaries = Array.from({ length: 12 }, (_, i) => {
+  const name = `repo-${String(i + 1).padStart(2, "0")}`;
+  return {
+    owner: "acme",
+    name,
+    platform_host: "github.com",
+    repo: {
+      provider: "github",
+      platform_host: "github.com",
+      owner: "acme",
+      name,
+      repo_path: `acme/${name}`,
+    },
+    cached_pr_count: i < 4 ? 3 : 0,
+    open_pr_count: i < 4 ? 3 : 0,
+    draft_pr_count: 0,
+    cached_issue_count: i < 3 ? 2 : 0,
+    open_issue_count: i < 3 ? 2 : 0,
+    most_recent_activity_at: "2026-03-30T12:00:00Z",
+    last_sync_completed_at: "2026-03-30T14:00:30Z",
+    last_sync_started_at: "2026-03-30T14:00:00Z",
+    last_sync_error: "",
+    active_authors: [],
+    recent_issues: [],
+  };
+});
+
 const syncStatus = {
   running: false,
   last_run_at: "2026-03-30T14:00:30Z",
@@ -553,6 +583,11 @@ export async function mockApi(page: Page): Promise<void> {
 
     if (method === "GET" && pathname === "/api/v1/repos") {
       await fulfillJson(route, repos);
+      return;
+    }
+
+    if (method === "GET" && pathname === "/api/v1/repos/summary") {
+      await fulfillJson(route, repoSummaries);
       return;
     }
 

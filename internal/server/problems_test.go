@@ -16,6 +16,7 @@ import (
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/middleman/internal/tokenauth"
 )
 
 // structField is a tiny reflection helper for inspecting struct tags
@@ -248,6 +249,45 @@ func TestProblemHelpersSetStatusCodeAndDetails(t *testing.T) {
 	}
 }
 
+func TestProblemHelpersRedactTokenMaterial(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	err := newProblem(
+		http.StatusBadGateway,
+		CodeUpstreamError,
+		"provider returned https://x-access-token:ghp_problem_secret@github.com/acme/widgets.git",
+		map[string]any{
+			"message": "Authorization: Bearer ghp_detail_secret",
+			"nested": map[string]any{
+				"url": "https://oauth2:glpat-detail-secret@gitlab.example.com/acme/widgets.git",
+			},
+			"allowed": []string{
+				"safe",
+				"https://x-access-token:ghp_allowed_secret@github.com/acme/widgets.git",
+			},
+		},
+	)
+	err.Errors = []*huma.ErrorDetail{{
+		Location: "body.token",
+		Message:  "token ghp_validation_secret was rejected",
+		Value:    "glpat-validation-secret",
+	}}
+
+	encoded, marshalErr := json.Marshal(err)
+	require.NoError(marshalErr)
+	body := string(encoded)
+
+	assert.NotContains(body, "ghp_problem_secret")
+	assert.NotContains(body, "ghp_detail_secret")
+	assert.NotContains(body, "glpat-detail-secret")
+	assert.NotContains(body, "ghp_allowed_secret")
+	assert.NotContains(body, "ghp_validation_secret")
+	assert.NotContains(body, "glpat-validation-secret")
+	assert.NotContains(body, "x-access-token")
+	assert.Contains(body, "[REDACTED]")
+}
+
 func TestProblemRateLimitedFormatsResetAt(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
@@ -353,6 +393,12 @@ func TestMapPlatformError(t *testing.T) {
 			wantCode:   CodeBadRequest,
 		},
 		{
+			name:       "RuntimeMissingToken",
+			input:      fmt.Errorf("clone token unavailable: %w", tokenauth.ErrMissingToken),
+			wantStatus: http.StatusBadRequest,
+			wantCode:   CodeBadRequest,
+		},
+		{
 			name:       "InvalidRepoRef",
 			input:      &platform.Error{Code: platform.ErrCodeInvalidRepoRef},
 			wantStatus: http.StatusBadRequest,
@@ -383,6 +429,23 @@ func TestMapPlatformError(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestProviderCallProblemMapsRuntimeMissingToken(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	got := providerCallProblem(
+		fmt.Errorf("clone token unavailable: %w", tokenauth.ErrMissingToken),
+		"github",
+		"github.com",
+	)
+
+	require.NotNil(got)
+	pe, ok := got.(*ProblemError)
+	require.True(ok, "want *ProblemError, got %T", got)
+	assert.Equal(http.StatusBadRequest, pe.Status)
+	assert.Equal(CodeBadRequest, pe.Code)
 }
 
 func TestProviderCallProblemDoesNotReturnNilForContextWrappedPlatformError(t *testing.T) {

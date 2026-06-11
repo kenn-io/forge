@@ -76,6 +76,7 @@
   import type {
     ActivitySettings,
     ConfigRepo,
+    Settings,
     TerminalSettings,
   } from "./api/types.js";
 
@@ -218,9 +219,11 @@
       repos: ConfigRepo[],
       activity: ActivitySettings,
       terminal: TerminalSettings,
+      modes: Settings["modes"],
     ): void {
       settingsStore.setConfiguredRepos(repos);
       settingsStore.setTerminalSettings(terminal);
+      settingsStore.setModeVisibility(modes);
       activityStore.hydrateDefaults(activity);
     }
 
@@ -231,6 +234,7 @@
         data.repos,
         data.activity,
         data.terminal,
+        data.modes,
       );
     }
 

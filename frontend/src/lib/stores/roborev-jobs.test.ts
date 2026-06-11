@@ -21,6 +21,51 @@ function makeJob(id: number, startedAt?: string, finishedAt?: string): ReviewJob
   };
 }
 
+describe("createJobsStore cost sorting", () => {
+  function makeCostJob(id: number, tokenUsage?: string): ReviewJob {
+    return {
+      ...makeJob(id),
+      ...(tokenUsage !== undefined ? { token_usage: tokenUsage } : {}),
+    };
+  }
+
+  it("sorts missing cost before zero-dollar jobs", async () => {
+    const jobs: ReviewJob[] = [
+      makeCostJob(8),
+      makeCostJob(2, JSON.stringify({ has_cost: true, cost_usd: 0.5 })),
+      makeCostJob(6, JSON.stringify({ has_cost: true, cost_usd: 0 })),
+      makeCostJob(5, "not json"),
+    ];
+    const client = {
+      GET: vi.fn().mockResolvedValue({
+        data: {
+          jobs,
+          has_more: false,
+          stats: { done: 1, closed: 0, open: 0 },
+        },
+        error: undefined,
+      }),
+    };
+
+    const store = createJobsStore({
+      client: client as never,
+      navigate: vi.fn(),
+    });
+
+    await store.loadJobs();
+    store.setSortColumn("cost");
+
+    expect(store.getSortColumn()).toBe("cost");
+    expect(store.getSortDirection()).toBe("asc");
+    expect(store.getJobs().map((job) => job.id)).toEqual([8, 5, 6, 2]);
+
+    store.setSortColumn("cost");
+
+    expect(store.getSortDirection()).toBe("desc");
+    expect(store.getJobs().map((job) => job.id)).toEqual([2, 6, 8, 5]);
+  });
+});
+
 describe("createJobsStore elapsed sorting", () => {
   beforeEach(() => {
     vi.useFakeTimers();

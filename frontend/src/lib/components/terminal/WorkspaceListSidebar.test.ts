@@ -33,6 +33,8 @@ interface WorkspaceFixtureOptions {
   title?: string;
   branch?: string;
   itemType?: "pull_request" | "issue";
+  createdAt?: string;
+  tmuxLastOutputAt?: string | null;
 }
 
 function workspaceFixture({
@@ -45,6 +47,8 @@ function workspaceFixture({
   title = `PR ${number}`,
   branch = `feature-${number}`,
   itemType = "pull_request",
+  createdAt = "2026-05-12T12:00:00Z",
+  tmuxLastOutputAt = null,
 }: WorkspaceFixtureOptions) {
   return {
     id,
@@ -64,16 +68,61 @@ function workspaceFixture({
     worktree_path: `/tmp/${id}`,
     tmux_session: id,
     status: "ready",
-    created_at: "2026-05-12T12:00:00Z",
+    created_at: createdAt,
+    tmux_last_output_at: tmuxLastOutputAt,
     mr_title: title,
     mr_state: "open",
   };
+}
+
+// Three workspaces across two repos with distinct creation and
+// activity timestamps, listed in API order (created_at DESC).
+function sortFixtures() {
+  return [
+    workspaceFixture({
+      id: "ws-new",
+      provider: "github",
+      platformHost: "github.com",
+      owner: "kenn-io",
+      name: "middleman",
+      number: 3,
+      title: "Newest created",
+      createdAt: "2026-05-12T12:00:00Z",
+      tmuxLastOutputAt: "2026-05-12T13:00:00Z",
+    }),
+    workspaceFixture({
+      id: "ws-mid",
+      provider: "github",
+      platformHost: "github.com",
+      owner: "kenn-io",
+      name: "agentsview",
+      number: 2,
+      title: "Most recently active",
+      createdAt: "2026-05-11T12:00:00Z",
+      tmuxLastOutputAt: "2026-05-14T09:00:00Z",
+    }),
+    workspaceFixture({
+      id: "ws-old",
+      provider: "github",
+      platformHost: "github.com",
+      owner: "kenn-io",
+      name: "middleman",
+      number: 1,
+      title: "Oldest without activity",
+      createdAt: "2026-05-10T12:00:00Z",
+    }),
+  ];
+}
+
+function rowTitles(container: HTMLElement): string[] {
+  return Array.from(container.querySelectorAll(".ws-name")).map((el) => el.textContent?.trim() ?? "");
 }
 
 describe("WorkspaceListSidebar", () => {
   beforeEach(() => {
     mockGet.mockReset();
     mockNavigate.mockReset();
+    localStorage.clear();
     vi.stubGlobal("EventSource", MockEventSource);
   });
 
@@ -156,7 +205,7 @@ describe("WorkspaceListSidebar", () => {
             provider: "github",
             platformHost: "github.com",
             owner: "kenn-io",
-            name: "kataflow",
+            name: "taskboard",
             number: 9,
             title: "Migrate native HTTP surface to Huma v2",
             branch: "feat/huma-adoption",
@@ -248,5 +297,127 @@ describe("WorkspaceListSidebar", () => {
       target: { value: "" },
     });
     expect(container.querySelectorAll(".ws-row")).toHaveLength(0);
+  });
+
+  it("sorts flat by creation time and drops group headers", async () => {
+    mockGet.mockResolvedValue({
+      data: { workspaces: sortFixtures() },
+    });
+
+    const { container } = render(WorkspaceListSidebar, {
+      props: { selectedId: "ws-new" },
+    });
+    await screen.findByText("Newest created");
+
+    // Default org/repo mode groups rows under repo headers.
+    expect(screen.getByText("kenn-io/middleman")).toBeTruthy();
+    expect(container.querySelectorAll(".repo-context")).toHaveLength(0);
+
+    await fireEvent.click(screen.getByTitle("Sort workspaces"));
+    await fireEvent.click(screen.getByRole("button", { name: "Created" }));
+
+    expect(rowTitles(container)).toEqual(["Newest created", "Most recently active", "Oldest without activity"]);
+    expect(container.querySelectorAll(".group-header")).toHaveLength(0);
+    // Flat rows carry their own repo context instead of a header.
+    expect(container.querySelectorAll(".repo-context")).toHaveLength(3);
+  });
+
+  it("keeps provider and host identity visible in flat rows", async () => {
+    mockGet.mockResolvedValue({
+      data: {
+        workspaces: [
+          workspaceFixture({
+            id: "ws-github",
+            provider: "github",
+            platformHost: "github.com",
+            owner: "acme",
+            name: "widgets",
+            number: 1,
+            title: "GitHub workspace",
+            createdAt: "2026-05-12T12:00:00Z",
+          }),
+          workspaceFixture({
+            id: "ws-gitlab",
+            provider: "gitlab",
+            platformHost: "gitlab.example.com",
+            owner: "acme",
+            name: "widgets",
+            number: 2,
+            title: "GitLab workspace",
+            createdAt: "2026-05-11T12:00:00Z",
+          }),
+          workspaceFixture({
+            id: "ws-other",
+            provider: "gitlab",
+            platformHost: "gitlab.example.com",
+            owner: "platform",
+            name: "api",
+            number: 3,
+            title: "Unambiguous workspace",
+            createdAt: "2026-05-10T12:00:00Z",
+          }),
+        ],
+      },
+    });
+
+    const { container } = render(WorkspaceListSidebar, {
+      props: { selectedId: "ws-github" },
+    });
+    await screen.findByText("GitHub workspace");
+
+    await fireEvent.click(screen.getByTitle("Sort workspaces"));
+    await fireEvent.click(screen.getByRole("button", { name: "Created" }));
+
+    // Provider icons survive the loss of group headers.
+    expect(container.querySelectorAll(".repo-context")).toHaveLength(3);
+    expect(screen.getByRole("img", { name: "GitHub" })).toBeTruthy();
+    expect(screen.getAllByRole("img", { name: "GitLab" })).toHaveLength(2);
+
+    // acme/widgets exists on two hosts, so its rows carry the host;
+    // platform/api is unique and stays short.
+    const contextNames = container.querySelectorAll(".repo-context-name");
+    expect(contextNames[0]?.textContent?.trim()).toBe("github.com/acme/widgets");
+    expect(contextNames[1]?.textContent?.trim()).toBe("gitlab.example.com/acme/widgets");
+    expect(contextNames[2]?.textContent?.trim()).toBe("platform/api");
+  });
+
+  it("sorts flat by last activity with creation time as fallback", async () => {
+    mockGet.mockResolvedValue({
+      data: { workspaces: sortFixtures() },
+    });
+
+    const { container } = render(WorkspaceListSidebar, {
+      props: { selectedId: "ws-new" },
+    });
+    await screen.findByText("Newest created");
+
+    await fireEvent.click(screen.getByTitle("Sort workspaces"));
+    await fireEvent.click(screen.getByRole("button", { name: "Activity" }));
+
+    // ws-old has no tmux output, so it sorts by its creation time.
+    expect(rowTitles(container)).toEqual(["Most recently active", "Newest created", "Oldest without activity"]);
+  });
+
+  it("persists the selected sort across mounts", async () => {
+    mockGet.mockResolvedValue({
+      data: { workspaces: sortFixtures() },
+    });
+
+    const first = render(WorkspaceListSidebar, {
+      props: { selectedId: "ws-new" },
+    });
+    await screen.findByText("Newest created");
+
+    await fireEvent.click(screen.getByTitle("Sort workspaces"));
+    await fireEvent.click(screen.getByRole("button", { name: "Activity" }));
+    first.unmount();
+
+    const { container } = render(WorkspaceListSidebar, {
+      props: { selectedId: "ws-new" },
+    });
+    await screen.findByText("Newest created");
+
+    expect(rowTitles(container)).toEqual(["Most recently active", "Newest created", "Oldest without activity"]);
+    expect(container.querySelectorAll(".group-header")).toHaveLength(0);
   });
 });

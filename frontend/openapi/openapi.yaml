@@ -195,6 +195,52 @@ components:
         - key
         - label
       type: object
+    AggregateResult:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/AggregateResult.json
+          format: uri
+          readOnly: true
+          type: string
+        rows:
+          items:
+            $ref: "#/components/schemas/AggregateRow"
+          type:
+            - array
+            - "null"
+        view_type:
+          type: string
+      required:
+        - view_type
+        - rows
+      type: object
+    AggregateRow:
+      additionalProperties: false
+      properties:
+        attachment_count:
+          format: int64
+          type: integer
+        attachment_size:
+          format: int64
+          type: integer
+        count:
+          format: int64
+          type: integer
+        key:
+          type: string
+        total_size:
+          format: int64
+          type: integer
+      required:
+        - key
+        - count
+        - total_size
+        - attachment_size
+        - attachment_count
+      type: object
     ApprovePRHostInputBody:
       additionalProperties: false
       properties:
@@ -224,6 +270,36 @@ components:
           type: string
       required:
         - body
+      type: object
+    AttachmentMeta:
+      additionalProperties: false
+      properties:
+        filename:
+          type: string
+        mime_type:
+          type: string
+        size_bytes:
+          format: int64
+          type: integer
+      required:
+        - filename
+        - mime_type
+        - size_bytes
+      type: object
+    BodySnippet:
+      additionalProperties: false
+      properties:
+        matches:
+          items:
+            $ref: "#/components/schemas/SnippetRange"
+          type:
+            - array
+            - "null"
+        text:
+          type: string
+      required:
+        - text
+        - matches
       type: object
     BulkAddRepoRequest:
       additionalProperties: false
@@ -406,6 +482,40 @@ components:
         - body
         - range
       type: object
+    CreateDocsFolderInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/CreateDocsFolderInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        daemon:
+          type: string
+        id:
+          type: string
+        name:
+          type: string
+        path:
+          type: string
+      type: object
+    CreateDocsFolderOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/CreateDocsFolderOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        folder:
+          $ref: "#/components/schemas/DocsFolderResponse"
+      required:
+        - folder
+      type: object
     CreateIssueHostInputBody:
       additionalProperties: false
       properties:
@@ -496,6 +606,35 @@ components:
         - owner
         - name
         - mr_number
+      type: object
+    CrossFolderHit:
+      additionalProperties: false
+      properties:
+        folder:
+          type: string
+        folder_name:
+          type: string
+        hit_type:
+          type: string
+        line:
+          format: int64
+          type: integer
+        name:
+          type: string
+        rel_path:
+          type: string
+        score:
+          format: int64
+          type: integer
+        snippet:
+          $ref: "#/components/schemas/BodySnippet"
+      required:
+        - folder
+        - folder_name
+        - name
+        - rel_path
+        - score
+        - hit_type
       type: object
     DiffFile:
       additionalProperties: false
@@ -741,6 +880,237 @@ components:
         - created_at
         - updated_at
       type: object
+    DocsBrowseEntry:
+      additionalProperties: false
+      properties:
+        hidden:
+          type: boolean
+        name:
+          type: string
+        path:
+          type: string
+      required:
+        - name
+        - path
+        - hidden
+      type: object
+    DocsBrowseOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/DocsBrowseOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        entries:
+          items:
+            $ref: "#/components/schemas/DocsBrowseEntry"
+          type:
+            - array
+            - "null"
+        parent:
+          type: string
+        path:
+          type: string
+      required:
+        - path
+        - entries
+      type: object
+    DocsCreateFileInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/DocsCreateFileInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        content:
+          type: string
+      type: object
+    DocsFileWriteBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/DocsFileWriteBody.json
+          format: uri
+          readOnly: true
+          type: string
+        rel_path:
+          type: string
+        size:
+          format: int64
+          type: integer
+      required:
+        - rel_path
+        - size
+      type: object
+    DocsFolderOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/DocsFolderOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        folder:
+          $ref: "#/components/schemas/DocsFolderResponse"
+      required:
+        - folder
+      type: object
+    DocsFolderResponse:
+      additionalProperties: false
+      properties:
+        daemon:
+          type: string
+        id:
+          type: string
+        name:
+          type: string
+        path:
+          type: string
+      required:
+        - id
+        - name
+        - path
+      type: object
+    DocsGitPublishInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/DocsGitPublishInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        message:
+          type: string
+      type: object
+    DocsReadFileOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/DocsReadFileOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        content:
+          type: string
+        rel_path:
+          type: string
+      required:
+        - rel_path
+        - content
+      type: object
+    DocsRenameFileInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/DocsRenameFileInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        from:
+          type: string
+        to:
+          type: string
+      type: object
+    DocsRenameFileOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/DocsRenameFileOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        from:
+          type: string
+        to:
+          type: string
+      required:
+        - from
+        - to
+      type: object
+    DocsSearchAllOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/DocsSearchAllOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        hits:
+          items:
+            $ref: "#/components/schemas/CrossFolderHit"
+          type:
+            - array
+            - "null"
+        query:
+          type: string
+        truncated:
+          type: boolean
+        warnings:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+      required:
+        - query
+        - hits
+        - truncated
+      type: object
+    DocsSearchOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/DocsSearchOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        hits:
+          items:
+            $ref: "#/components/schemas/Hit"
+          type:
+            - array
+            - "null"
+        query:
+          type: string
+      required:
+        - query
+        - hits
+      type: object
+    DocsWriteFileInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/DocsWriteFileInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        content:
+          type: string
+      type: object
     EditCommentHostInputBody:
       additionalProperties: false
       properties:
@@ -963,6 +1333,71 @@ components:
         - whitespace_only_count
         - files
       type: object
+    GitChangesResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/GitChangesResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        branch:
+          type: string
+        changes:
+          items:
+            $ref: "#/components/schemas/PublishChange"
+          type:
+            - array
+            - "null"
+        ignored_non_markdown_count:
+          format: int64
+          type: integer
+        is_repo:
+          type: boolean
+        suggested_message:
+          type: string
+        upstream:
+          type: string
+      required:
+        - is_repo
+        - changes
+        - ignored_non_markdown_count
+      type: object
+    GitStatusEntry:
+      additionalProperties: false
+      properties:
+        path:
+          type: string
+        status:
+          type: string
+      required:
+        - path
+        - status
+      type: object
+    GitStatusResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/GitStatusResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        entries:
+          items:
+            $ref: "#/components/schemas/GitStatusEntry"
+          type:
+            - array
+            - "null"
+        is_repo:
+          type: boolean
+      required:
+        - is_repo
+        - entries
+      type: object
     GithubStateHostInputBody:
       additionalProperties: false
       properties:
@@ -1007,6 +1442,21 @@ components:
           type: string
       required:
         - state
+      type: object
+    Hit:
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+        rel_path:
+          type: string
+        score:
+          format: int64
+          type: integer
+      required:
+        - name
+        - rel_path
+        - score
       type: object
     Hunk:
       additionalProperties: false
@@ -1338,6 +1788,49 @@ components:
       required:
         - labels
       type: object
+    KataDaemonResponse:
+      additionalProperties: false
+      properties:
+        auth:
+          type: string
+        default:
+          type: boolean
+        health:
+          type: string
+        hint:
+          type: string
+        id:
+          type: string
+        url:
+          type: string
+      required:
+        - id
+        - url
+        - default
+        - auth
+        - health
+      type: object
+    KataDaemonRosterResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/KataDaemonRosterResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        daemons:
+          items:
+            $ref: "#/components/schemas/KataDaemonResponse"
+          type:
+            - array
+            - "null"
+        source:
+          type: string
+      required:
+        - daemons
+      type: object
     Label:
       additionalProperties: false
       properties:
@@ -1415,6 +1908,25 @@ components:
       required:
         - type
         - content
+      type: object
+    ListDocsFoldersOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/ListDocsFoldersOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        folders:
+          items:
+            $ref: "#/components/schemas/DocsFolderResponse"
+          type:
+            - array
+            - "null"
+      required:
+        - folders
       type: object
     ListLaunchTargetsOutputBody:
       additionalProperties: false
@@ -1980,6 +2492,128 @@ components:
         - KanbanStatus
         - Starred
       type: object
+    MessageSummary:
+      additionalProperties: false
+      properties:
+        bcc:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        cc:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        conversation_id:
+          format: int64
+          type: integer
+        deleted_at:
+          type:
+            - string
+            - "null"
+        from:
+          type: string
+        has_attachments:
+          type: boolean
+        id:
+          format: int64
+          type: integer
+        labels:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        sent_at:
+          type: string
+        size_bytes:
+          format: int64
+          type: integer
+        snippet:
+          type: string
+        subject:
+          type: string
+        to:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+      required:
+        - id
+        - conversation_id
+        - subject
+        - from
+        - to
+        - cc
+        - bcc
+        - sent_at
+        - snippet
+        - labels
+        - has_attachments
+        - size_bytes
+        - deleted_at
+      type: object
+    MessagesSavedSearchesBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/MessagesSavedSearchesBody.json
+          format: uri
+          readOnly: true
+          type: string
+        etag:
+          type: string
+        searches:
+          items:
+            $ref: "#/components/schemas/SavedSearch"
+          type:
+            - array
+            - "null"
+      required:
+        - searches
+        - etag
+      type: object
+    ModeVisibility:
+      additionalProperties: false
+      properties:
+        activity:
+          type: boolean
+        board:
+          type: boolean
+        docs:
+          type: boolean
+        issues:
+          type: boolean
+        kata:
+          type: boolean
+        messages:
+          type: boolean
+        pulls:
+          type: boolean
+        repos:
+          type: boolean
+        reviews:
+          type: boolean
+        workspaces:
+          type: boolean
+      required:
+        - activity
+        - repos
+        - kata
+        - docs
+        - messages
+        - pulls
+        - issues
+        - board
+        - reviews
+        - workspaces
+      type: object
     MrImportMetadataResponse:
       additionalProperties: false
       properties:
@@ -2013,6 +2647,227 @@ components:
         - state
         - is_draft
         - title
+      type: object
+    MsgvaultHealthBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/MsgvaultHealthBody.json
+          format: uri
+          readOnly: true
+          type: string
+        api_key_env:
+          type: string
+        configured:
+          type: boolean
+        features:
+          additionalProperties: {}
+          type: object
+        modes:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        ok:
+          type: boolean
+        status:
+          type: string
+        status_detail:
+          type: string
+        url:
+          type: string
+      required:
+        - configured
+        - ok
+        - modes
+        - features
+      type: object
+    MsgvaultMessageBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/MsgvaultMessageBody.json
+          format: uri
+          readOnly: true
+          type: string
+        attachments:
+          items:
+            $ref: "#/components/schemas/AttachmentMeta"
+          type:
+            - array
+            - "null"
+        bcc:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        body:
+          type: string
+        body_html:
+          type: string
+        cc:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        conversation_id:
+          format: int64
+          type: integer
+        deleted_at:
+          type:
+            - string
+            - "null"
+        from:
+          type: string
+        has_attachments:
+          type: boolean
+        html_sanitization_failed:
+          type: boolean
+        id:
+          format: int64
+          type: integer
+        labels:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        remote_image_count:
+          format: int64
+          type: integer
+        remote_image_token:
+          type: string
+        sent_at:
+          type: string
+        size_bytes:
+          format: int64
+          type: integer
+        snippet:
+          type: string
+        subject:
+          type: string
+        to:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+      required:
+        - id
+        - conversation_id
+        - subject
+        - from
+        - to
+        - cc
+        - bcc
+        - sent_at
+        - snippet
+        - labels
+        - has_attachments
+        - size_bytes
+        - deleted_at
+        - body
+        - attachments
+      type: object
+    MsgvaultSearchBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/MsgvaultSearchBody.json
+          format: uri
+          readOnly: true
+          type: string
+        messages:
+          items:
+            $ref: "#/components/schemas/MessageSummary"
+          type:
+            - array
+            - "null"
+        mode:
+          type: string
+        page:
+          format: int64
+          type: integer
+        page_size:
+          format: int64
+          type: integer
+        paginatable:
+          type: boolean
+        query:
+          type: string
+        total:
+          format: int64
+          type: integer
+      required:
+        - query
+        - mode
+        - total
+        - page
+        - page_size
+        - paginatable
+        - messages
+      type: object
+    MsgvaultThreadBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/MsgvaultThreadBody.json
+          format: uri
+          readOnly: true
+          type: string
+        conversation_id:
+          format: int64
+          type: integer
+        messages:
+          items:
+            $ref: "#/components/schemas/MessageSummary"
+          type:
+            - array
+            - "null"
+      required:
+        - conversation_id
+        - messages
+      type: object
+    Node:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/Node.json
+          format: uri
+          readOnly: true
+          type: string
+        children:
+          items:
+            $ref: "#/components/schemas/Node"
+          type:
+            - array
+            - "null"
+        is_dir:
+          type: boolean
+        name:
+          type: string
+        rel_path:
+          type: string
+        size:
+          format: int64
+          type: integer
+      required:
+        - name
+        - rel_path
+        - is_dir
       type: object
     OperationAvailability:
       additionalProperties: false
@@ -2294,6 +3149,19 @@ components:
         - native_multiline_ranges
         - supported_review_actions
       type: object
+    PublishChange:
+      additionalProperties: false
+      properties:
+        old_path:
+          type: string
+        path:
+          type: string
+        status:
+          type: string
+      required:
+        - path
+        - status
+      type: object
     PublishDiffReviewDraftHostInputBody:
       additionalProperties: false
       properties:
@@ -2327,6 +3195,39 @@ components:
           type: string
       required:
         - action
+      type: object
+    PublishResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/PublishResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        branch:
+          type: string
+        commit:
+          type: string
+        files:
+          items:
+            $ref: "#/components/schemas/PublishChange"
+          type:
+            - array
+            - "null"
+        pushed:
+          type: boolean
+        short_commit:
+          type: string
+        upstream:
+          type: string
+      required:
+        - commit
+        - short_commit
+        - branch
+        - pushed
+        - files
       type: object
     RateLimitHostStatus:
       additionalProperties: false
@@ -2467,6 +3368,22 @@ components:
           type: string
       required:
         - label
+      type: object
+    ReplaceMessagesSavedSearchesInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/ReplaceMessagesSavedSearchesInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        searches:
+          items: {}
+          type: array
+      required:
+        - searches
       type: object
     ReplyToDiscussionHostInputBody:
       additionalProperties: false
@@ -3007,6 +3924,17 @@ components:
         - version
         - endpoint
       type: object
+    SavedSearch:
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+        query:
+          type: string
+      required:
+        - name
+        - query
+      type: object
     SessionInfo:
       additionalProperties: false
       properties:
@@ -3112,6 +4040,8 @@ components:
           items:
             $ref: "#/components/schemas/Agent"
           type: array
+        modes:
+          $ref: "#/components/schemas/ModeVisibility"
         repos:
           items:
             $ref: "#/components/schemas/ConfiguredRepoStatus"
@@ -3123,6 +4053,19 @@ components:
         - activity
         - terminal
         - agents
+      type: object
+    SnippetRange:
+      additionalProperties: false
+      properties:
+        end:
+          format: int64
+          type: integer
+        start:
+          format: int64
+          type: integer
+      required:
+        - start
+        - end
       type: object
     StackContextResponse:
       additionalProperties: false
@@ -3349,6 +4292,19 @@ components:
         - font_ligatures
         - renderer
       type: object
+    UpdateDocsFolderInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/UpdateDocsFolderInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        name:
+          type: string
+      type: object
     UpdateSettingsRequest:
       additionalProperties: false
       properties:
@@ -3365,6 +4321,8 @@ components:
           items:
             $ref: "#/components/schemas/Agent"
           type: array
+        modes:
+          $ref: "#/components/schemas/ModeVisibility"
         terminal:
           $ref: "#/components/schemas/Terminal"
       type: object
@@ -3622,6 +4580,495 @@ paths:
       summary: List activity
       tags:
         - Activity
+  /docs/browse:
+    get:
+      operationId: browse-docs-folders
+      parameters:
+        - explode: false
+          in: query
+          name: path
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocsBrowseOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Browse docs folders
+      tags:
+        - Docs
+  /docs/folders:
+    get:
+      operationId: list-docs-folders
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListDocsFoldersOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: List docs folders
+      tags:
+        - Docs
+    post:
+      operationId: create-docs-folder
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateDocsFolderInputBody"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateDocsFolderOutputBody"
+          description: Created
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Create docs folder
+      tags:
+        - Docs
+  /docs/folders/{id}:
+    delete:
+      operationId: delete-docs-folder
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Delete docs folder
+      tags:
+        - Docs
+    patch:
+      operationId: update-docs-folder
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateDocsFolderInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocsFolderOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Update docs folder
+      tags:
+        - Docs
+  /docs/folders/{id}/blob:
+    get:
+      operationId: read-docs-blob
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: path
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/octet-stream:
+              schema:
+                contentMediaType: application/octet-stream
+                format: binary
+                type: string
+          description: Image response
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+            Content-Length:
+              schema:
+                type: string
+            Content-Type:
+              schema:
+                type: string
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Read docs image blob
+      tags:
+        - Docs
+  /docs/folders/{id}/file:
+    delete:
+      operationId: delete-docs-file
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: path
+          schema:
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Delete docs file
+      tags:
+        - Docs
+    get:
+      operationId: read-docs-file
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: path
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocsReadFileOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Read docs file
+      tags:
+        - Docs
+    post:
+      operationId: create-docs-file
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: path
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DocsCreateFileInputBody"
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocsFileWriteBody"
+          description: Created
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Create docs file
+      tags:
+        - Docs
+    put:
+      operationId: write-docs-file
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: path
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DocsWriteFileInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocsFileWriteBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Write docs file
+      tags:
+        - Docs
+  /docs/folders/{id}/file/actions/rename:
+    post:
+      operationId: rename-docs-file
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DocsRenameFileInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocsRenameFileOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Rename docs file
+      tags:
+        - Docs
+  /docs/folders/{id}/git:
+    get:
+      operationId: get-docs-git-status
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GitStatusResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Get docs Git status
+      tags:
+        - Docs
+  /docs/folders/{id}/git/changes:
+    get:
+      operationId: get-docs-git-changes
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GitChangesResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Get docs Git changes
+      tags:
+        - Docs
+  /docs/folders/{id}/git/publish:
+    post:
+      operationId: publish-docs-git
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DocsGitPublishInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublishResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Publish docs Git changes
+      tags:
+        - Docs
+  /docs/folders/{id}/search:
+    get:
+      operationId: search-docs-folder
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: q
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: limit
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocsSearchOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Search docs folder
+      tags:
+        - Docs
+  /docs/folders/{id}/tree:
+    get:
+      operationId: get-docs-tree
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Node"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Get docs folder tree
+      tags:
+        - Docs
+  /docs/search:
+    get:
+      operationId: search-docs
+      parameters:
+        - explode: false
+          in: query
+          name: q
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: limit
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocsSearchAllOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Search docs
+      tags:
+        - Docs
   /events:
     get:
       operationId: stream-events
@@ -6488,6 +7935,424 @@ paths:
       summary: Create issue workspace
       tags:
         - Issues
+  /kata/daemons:
+    get:
+      operationId: list-kata-daemons
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KataDaemonRosterResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: List Kata daemons
+      tags:
+        - Kata
+  /messages/saved-searches:
+    get:
+      operationId: list-messages-saved-searches
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessagesSavedSearchesBody"
+          description: OK
+          headers:
+            ETag:
+              schema:
+                type: string
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: List messages saved searches
+      tags:
+        - Messages
+    put:
+      operationId: replace-messages-saved-searches
+      parameters:
+        - in: header
+          name: If-Match
+          schema:
+            type: string
+        - in: header
+          name: X-Middleman-Csrf
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReplaceMessagesSavedSearchesInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessagesSavedSearchesBody"
+          description: OK
+          headers:
+            ETag:
+              schema:
+                type: string
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Replace messages saved searches
+      tags:
+        - Messages
+  /msgvault/aggregates:
+    get:
+      operationId: get-msgvault-aggregates
+      parameters:
+        - explode: false
+          in: query
+          name: view_type
+          required: true
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: q
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: hide_deleted
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: sort
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: direction
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: limit
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AggregateResult"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Get msgvault aggregates
+      tags:
+        - Msgvault
+  /msgvault/configure:
+    post:
+      operationId: configure-msgvault
+      parameters:
+        - in: header
+          name: Content-Type
+          schema:
+            type: string
+        - in: header
+          name: X-Middleman-Csrf
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              additionalProperties: false
+              properties:
+                api_key_env:
+                  type: string
+                url:
+                  type: string
+              required:
+                - url
+                - api_key_env
+              type: object
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MsgvaultHealthBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Configure msgvault
+      tags:
+        - Msgvault
+  /msgvault/health:
+    get:
+      operationId: get-msgvault-health
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MsgvaultHealthBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Get msgvault health
+      tags:
+        - Msgvault
+  /msgvault/messages/{id}:
+    get:
+      operationId: get-msgvault-message
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MsgvaultMessageBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Get msgvault message
+      tags:
+        - Msgvault
+  /msgvault/messages/{id}/inline:
+    get:
+      operationId: get-msgvault-inline-image
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            format: int64
+            type: integer
+        - explode: false
+          in: query
+          name: cid
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            image/gif:
+              schema:
+                contentMediaType: application/octet-stream
+                format: binary
+                type: string
+            image/jpeg:
+              schema:
+                contentMediaType: application/octet-stream
+                format: binary
+                type: string
+            image/png:
+              schema:
+                contentMediaType: application/octet-stream
+                format: binary
+                type: string
+            image/webp:
+              schema:
+                contentMediaType: application/octet-stream
+                format: binary
+                type: string
+          description: OK
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+            Content-Length:
+              schema:
+                type: string
+            Content-Type:
+              schema:
+                type: string
+            X-Content-Type-Options:
+              schema:
+                type: string
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Get msgvault inline image
+      tags:
+        - Msgvault
+  /msgvault/messages/{id}/remote-image/{token}/{idx}:
+    get:
+      operationId: get-msgvault-remote-image
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            format: int64
+            type: integer
+        - in: path
+          name: token
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: idx
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            image/gif:
+              schema:
+                contentMediaType: application/octet-stream
+                format: binary
+                type: string
+            image/jpeg:
+              schema:
+                contentMediaType: application/octet-stream
+                format: binary
+                type: string
+            image/png:
+              schema:
+                contentMediaType: application/octet-stream
+                format: binary
+                type: string
+            image/webp:
+              schema:
+                contentMediaType: application/octet-stream
+                format: binary
+                type: string
+          description: OK
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+            Content-Length:
+              schema:
+                type: string
+            Content-Type:
+              schema:
+                type: string
+            X-Content-Type-Options:
+              schema:
+                type: string
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Get msgvault remote image
+      tags:
+        - Msgvault
+  /msgvault/search:
+    get:
+      operationId: search-msgvault
+      parameters:
+        - explode: false
+          in: query
+          name: q
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: mode
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: page
+          schema:
+            format: int64
+            type: integer
+        - explode: false
+          in: query
+          name: page_size
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MsgvaultSearchBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Search msgvault
+      tags:
+        - Msgvault
+  /msgvault/threads/{conversation_id}:
+    get:
+      operationId: get-msgvault-thread
+      parameters:
+        - in: path
+          name: conversation_id
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MsgvaultThreadBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Get msgvault thread
+      tags:
+        - Msgvault
   /projects:
     get:
       operationId: list-projects

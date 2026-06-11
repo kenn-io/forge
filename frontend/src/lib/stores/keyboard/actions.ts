@@ -130,6 +130,7 @@ const onNumberNavPages = (ctx: Context): boolean => {
     case "settings":
     case "design-system":
     case "repos":
+    case "kata":
     case "reviews":
     case "workspaces":
     case "activity":
@@ -270,6 +271,7 @@ export const defaultActions: Action[] = [
     binding: [
       { key: "k", ctrlOrMeta: true },
       { key: "p", ctrlOrMeta: true },
+      { key: "p", ctrlOrMeta: true, shift: true },
     ],
     priority: 0,
     when: always,

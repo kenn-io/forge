@@ -120,15 +120,20 @@
     },
   ]);
 
-  const filteredSummaries = $derived.by(() => {
+  const searchedSummaries = $derived.by(() => {
     const q = searchQuery.trim().toLowerCase();
-    const matches = summaries.filter((summary) => {
+    if (q === "") return summaries;
+    return summaries.filter((summary) =>
+      repoKey(summary).toLowerCase().includes(q)
+        || summary.platform_host.toLowerCase().includes(q));
+  });
+
+  const filteredSummaries = $derived.by(() => {
+    const matches = searchedSummaries.filter((summary) => {
       if (activeFilter === "prs" && summary.open_pr_count === 0) return false;
       if (activeFilter === "issues" && summary.open_issue_count === 0) return false;
       if (activeFilter === "stale" && !isStaleRelease(summary)) return false;
-      if (q === "") return true;
-      return repoKey(summary).toLowerCase().includes(q)
-        || summary.platform_host.toLowerCase().includes(q);
+      return true;
     });
 
     return [...matches].sort((a, b) => {
@@ -156,6 +161,10 @@
     );
     return providers.size > 1;
   });
+
+  function resultsLabel(count: number): string {
+    return `${count} ${count === 1 ? "result" : "results"}`;
+  }
 
   function dateValue(value: string | undefined): number {
     if (!value) return 0;
@@ -434,7 +443,12 @@
           />
         </div>
         <span class="repo-page__results">
-          {filteredSummaries.length} {filteredSummaries.length === 1 ? "result" : "results"}
+          <span class="repo-page__results-sizer" aria-hidden="true">
+            {searchedSummaries.length} results
+          </span>
+          <span class="repo-page__results-value">
+            {resultsLabel(filteredSummaries.length)}
+          </span>
         </span>
         <button
           type="button"
@@ -639,9 +653,24 @@
   }
 
   .repo-page__results {
+    display: inline-grid;
+    justify-items: end;
     color: var(--text-secondary);
     font-size: var(--font-size-sm);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Sizer and value stack in the same grid cell so the label is always as
+     wide as the unfiltered ("All") count, preventing layout shift when
+     switching filters changes the digit count. */
+  .repo-page__results-sizer,
+  .repo-page__results-value {
+    grid-area: 1 / 1;
     white-space: nowrap;
+  }
+
+  .repo-page__results-sizer {
+    visibility: hidden;
   }
 
   .repo-page__refresh {

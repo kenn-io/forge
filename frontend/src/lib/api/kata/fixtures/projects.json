@@ -1,0 +1,20 @@
+{
+  "projects": [
+    {
+      "id": 1,
+      "uid": "01HZX4Y5Z6A7B8C9D0E1F2G3P1",
+      "name": "Inbox",
+      "metadata": {
+        "role": "inbox",
+        "area": "Unfiled"
+      },
+      "revision": 2,
+      "created_at": "2026-05-15T12:00:00Z",
+      "stats": {
+        "open": 1,
+        "closed": 0,
+        "last_event_at": "2026-05-15T12:01:00Z"
+      }
+    }
+  ]
+}

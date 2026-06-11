@@ -103,7 +103,15 @@ test("markdown mermaid fences render as diagrams", async ({ page }) => {
   await page.locator(".body-edit .title-edit-save").click();
 
   await expect(page.locator(".markdown-body code.language-mermaid")).toHaveCount(0);
-  await expect(page.locator(".markdown-body pre.mermaid svg")).toBeVisible();
+  await expect(page.locator(".markdown-body pre.mermaid.mermaid-viewer svg")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Zoom in diagram" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Copy Mermaid source" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Open diagram in expanded view" }).click();
+  await expect(page.getByRole("dialog", { name: "Expanded Mermaid diagram" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Close expanded diagram" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: "Expanded Mermaid diagram" })).toBeHidden();
 });
 
 test("markdown tables keep compact columns readable", async ({ page }) => {

@@ -518,6 +518,9 @@ func (p *Provider) SetIssueState(
 	return NormalizeIssue(ref, issue), nil
 }
 
+// MergeMergeRequest ignores expectedHeadSHA: the Gitea/Forgejo merge API
+// has a head_commit_id field, but the shared transport does not thread it
+// yet, so head binding is advisory here.
 func (p *Provider) MergeMergeRequest(
 	ctx context.Context,
 	ref platform.RepoRef,
@@ -525,6 +528,7 @@ func (p *Provider) MergeMergeRequest(
 	commitTitle string,
 	commitMessage string,
 	method string,
+	_ string,
 ) (platform.MergeResult, error) {
 	transport, err := p.mutationTransport("merge_mutation")
 	if err != nil {
@@ -541,11 +545,15 @@ func (p *Provider) MergeMergeRequest(
 	return platform.MergeResult{Merged: result.Merged, SHA: result.SHA, Message: result.Message}, nil
 }
 
+// ApproveMergeRequest ignores expectedHeadSHA: Gitea/Forgejo reviews can
+// carry a commit id, but the shared transport does not thread it yet, so
+// head binding is advisory here.
 func (p *Provider) ApproveMergeRequest(
 	ctx context.Context,
 	ref platform.RepoRef,
 	number int,
 	body string,
+	_ string,
 ) (platform.MergeRequestEvent, error) {
 	transport, err := p.mutationTransport("review_mutation")
 	if err != nil {

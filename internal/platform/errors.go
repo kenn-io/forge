@@ -17,6 +17,10 @@ const (
 	ErrCodePermissionDenied      PlatformErrorCode = "permission_denied"
 	ErrCodeNotFound              PlatformErrorCode = "not_found"
 	ErrCodeRateLimited           PlatformErrorCode = "rate_limited"
+	// ErrCodeStaleState marks mutations rejected because the target moved
+	// past the state the caller acted on (for example an MR head SHA that
+	// advanced after review).
+	ErrCodeStaleState PlatformErrorCode = "stale_state"
 )
 
 var (
@@ -28,6 +32,7 @@ var (
 	ErrPermissionDenied      = &Error{Code: ErrCodePermissionDenied}
 	ErrNotFound              = &Error{Code: ErrCodeNotFound}
 	ErrRateLimited           = &Error{Code: ErrCodeRateLimited}
+	ErrStaleState            = &Error{Code: ErrCodeStaleState}
 )
 
 type Error struct {

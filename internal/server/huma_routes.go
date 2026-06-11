@@ -2351,10 +2351,35 @@ func (s *Server) approvePR(ctx context.Context, input *approvePRInput) (*actionS
 		return nil, unsupportedCapabilityProblem(*repo, capabilityReviewMutation)
 	}
 
+	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
+	if err != nil {
+		return nil, problemInternal("get pull request failed")
+	}
+	if mr == nil {
+		return nil, problemNotFound(CodePullNotFound, "pull request not found", nil)
+	}
+
 	platformEvent, err := mutator.ApproveMergeRequest(
 		ctx, platformRepoRefFromDB(*repo), input.Number, input.Body.Body,
+		// Bind the approval to the head commit the user reviewed locally
+		// so a source-branch push between review and approval is rejected
+		// instead of approving unreviewed code.
+		mr.PlatformHeadSHA,
 	)
 	if err != nil {
+		if errors.Is(err, platform.ErrStaleState) {
+			// The MR head moved past the reviewed commit; refresh local
+			// state so the user re-reviews against the current head.
+			s.runBackground(func(bgCtx context.Context) {
+				if syncErr := s.syncer.SyncMROnProvider(
+					bgCtx,
+					repoProviderKind(*repo), repoProviderHost(*repo),
+					repo.Owner, repo.Name, input.Number,
+				); syncErr != nil {
+					slog.Warn("background sync after stale approval", "err", syncErr)
+				}
+			})
+		}
 		return nil, providerCallProblemWithDetail(
 			err,
 			string(repoProviderKind(*repo)), repoProviderHost(*repo),
@@ -2362,16 +2387,21 @@ func (s *Server) approvePR(ctx context.Context, input *approvePRInput) (*actionS
 		)
 	}
 
-	ref := repoNumberPathRef{
-		owner:        repo.Owner,
-		name:         repo.Name,
-		number:       input.Number,
-		platformHost: repo.PlatformHost,
-	}
-	mrID, lookupErr := s.lookupMRID(ctx, ref)
-	if lookupErr == nil {
-		event := platform.DBMREvent(mrID, platformEvent)
-		_ = s.db.UpsertMREvents(ctx, []db.MREvent{event})
+	event := platform.DBMREvent(mr.ID, platformEvent)
+	_ = s.db.UpsertMREvents(ctx, []db.MREvent{event})
+
+	// Providers like GitLab store the approval body as a separate upstream
+	// comment that is not part of the returned event. Sync inline so the
+	// comment is visible in the next local detail load instead of waiting
+	// for the periodic sync.
+	if strings.TrimSpace(input.Body.Body) != "" && platformEvent.Body == "" {
+		if syncErr := s.syncer.SyncMROnProvider(
+			ctx,
+			repoProviderKind(*repo), repoProviderHost(*repo),
+			repo.Owner, repo.Name, input.Number,
+		); syncErr != nil {
+			slog.Warn("sync after approval with comment", "err", syncErr)
+		}
 	}
 
 	return &actionStatusOutput{Body: actionStatusBody{Status: "approved"}}, nil
@@ -2596,6 +2626,14 @@ func (s *Server) mergePR(ctx context.Context, input *mergePRInput) (*mergePROutp
 		return nil, unsupportedCapabilityProblem(*repo, capabilityMergeMutation)
 	}
 
+	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
+	if err != nil {
+		return nil, problemInternal("get pull request failed")
+	}
+	if mr == nil {
+		return nil, problemNotFound(CodePullNotFound, "pull request not found", nil)
+	}
+
 	result, err := mutator.MergeMergeRequest(
 		ctx,
 		platformRepoRefFromDB(*repo),
@@ -2603,6 +2641,10 @@ func (s *Server) mergePR(ctx context.Context, input *mergePRInput) (*mergePROutp
 		input.Body.CommitTitle,
 		input.Body.CommitMessage,
 		input.Body.Method,
+		// Bind the merge to the head commit the user reviewed locally so
+		// a source-branch push between review and merge is rejected
+		// upstream instead of merging unreviewed code.
+		mr.PlatformHeadSHA,
 	)
 	if err != nil {
 		if status, message, ok := mergeHTTPErrorStatus(err); ok {

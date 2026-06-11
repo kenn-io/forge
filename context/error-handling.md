@@ -88,6 +88,7 @@ Translate `internal/platform` typed errors at the server boundary:
 | Platform code | Wire result |
 | --- | --- |
 | `unsupported_capability` | `409 unsupportedCapability` |
+| `stale_state` | `409 conflict` |
 | `rate_limited` | `429 rateLimited` |
 | `permission_denied` | `403 forbidden` |
 | `not_found` | `404 notFound`, or a more specific not-found code when the caller knows the resource type |

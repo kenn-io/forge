@@ -93,6 +93,26 @@ func setupGitLabMutationServer(
 				"http_url_to_repo": "https://gitlab.com/acme/widget.git",
 				"default_branch": "main"
 			}`)
+		case path == "/api/v4/projects/4242/merge_requests/7" && r.Method == http.MethodGet:
+			writeGitLabJSON(w, `{
+				"id": 7001, "iid": 7, "title": "Test MR", "state": "opened",
+				"sha": "head-sha",
+				"author": {"username": "author"},
+				"created_at": "2026-05-01T09:00:00Z",
+				"updated_at": "2026-05-01T09:00:00Z"
+			}`)
+		case path == "/api/v4/projects/4242/merge_requests/7/discussions" && r.Method == http.MethodGet:
+			writeGitLabJSON(w, `[{
+				"id": "`+gitlabMutationThreadID+`",
+				"notes": [{
+					"id": 9100,
+					"body": "ship it",
+					"author": {"username": "ada"},
+					"created_at": "2026-06-01T10:00:00Z"
+				}]
+			}]`)
+		case path == "/api/v4/projects/4242/merge_requests/7/commits" && r.Method == http.MethodGet:
+			writeGitLabJSON(w, `[]`)
 		case path == "/api/v4/projects/4242/merge_requests/7/notes" && r.Method == http.MethodPost:
 			writeGitLabJSON(w, `{
 				"id": 9100,
@@ -108,6 +128,11 @@ func setupGitLabMutationServer(
 				"created_at": "2026-05-01T10:00:00Z"
 			}`)
 		case path == "/api/v4/projects/4242/merge_requests/7/merge" && r.Method == http.MethodPut:
+			if !strings.Contains(request.Body, `"sha":"head-sha"`) {
+				w.WriteHeader(http.StatusConflict)
+				writeGitLabJSON(w, `{"message": "SHA does not match HEAD of source branch"}`)
+				return
+			}
 			writeGitLabJSON(w, `{
 				"id": 7001, "iid": 7, "state": "merged",
 				"squash_commit_sha": "squash-sha", "sha": "head-sha"
@@ -122,6 +147,11 @@ func setupGitLabMutationServer(
 				"description": "Updated MR body", "state": "opened"
 			}`)
 		case path == "/api/v4/projects/4242/merge_requests/7/approve" && r.Method == http.MethodPost:
+			if !strings.Contains(request.Body, `"sha":"head-sha"`) {
+				w.WriteHeader(http.StatusConflict)
+				writeGitLabJSON(w, `{"message": "SHA does not match HEAD of source branch"}`)
+				return
+			}
 			writeGitLabJSON(w, `{"approved": true, "updated_at": "2026-06-01T11:00:00Z"}`)
 		case path == "/api/v4/user" && r.Method == http.MethodGet:
 			writeGitLabJSON(w, `{"id": 1, "username": "ada"}`)
@@ -191,16 +221,17 @@ func setupGitLabMutationServer(
 	require.NoError(err)
 
 	mrID, err := database.UpsertMergeRequest(ctx, &db.MergeRequest{
-		RepoID:         repoID,
-		PlatformID:     7001,
-		Number:         7,
-		URL:            "https://gitlab.com/acme/widget/-/merge_requests/7",
-		Title:          "Test MR",
-		Author:         "author",
-		State:          "open",
-		CreatedAt:      now,
-		UpdatedAt:      now,
-		LastActivityAt: now,
+		RepoID:          repoID,
+		PlatformID:      7001,
+		Number:          7,
+		URL:             "https://gitlab.com/acme/widget/-/merge_requests/7",
+		Title:           "Test MR",
+		Author:          "author",
+		State:           "open",
+		PlatformHeadSHA: "head-sha",
+		CreatedAt:       now,
+		UpdatedAt:       now,
+		LastActivityAt:  now,
 	})
 	require.NoError(err)
 
@@ -515,14 +546,99 @@ func TestGitLabMutationApprove(t *testing.T) {
 	events, err := database.ListMREvents(ctx, mr.ID)
 	require.NoError(err)
 	reviewSeen := false
+	commentSeen := false
 	for _, event := range events {
 		if event.EventType == "review" {
 			reviewSeen = true
 			assert.Equal("ada", event.Author)
 			assert.Equal("approved", event.Summary)
 		}
+		if event.EventType == "issue_comment" && event.Body == "ship it" {
+			commentSeen = true
+		}
 	}
 	assert.True(reviewSeen, "approval event was not persisted")
+	// The approval body lives in an upstream note; the inline sync after
+	// approve must make it visible locally right away.
+	assert.True(commentSeen, "approval comment was not synced into local events")
+}
+
+func TestGitLabMutationApproveStaleHeadReturnsConflict(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, database, recorder, repoID := setupGitLabMutationServer(t)
+	ctx := t.Context()
+
+	// The local head is behind the provider head served by the fake API,
+	// mimicking a source-branch push after the user reviewed.
+	_, err := database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:          repoID,
+		PlatformID:      7001,
+		Number:          7,
+		URL:             "https://gitlab.com/acme/widget/-/merge_requests/7",
+		Title:           "Test MR",
+		Author:          "author",
+		State:           "open",
+		PlatformHeadSHA: "stale-sha",
+		CreatedAt:       time.Now().UTC(),
+		UpdatedAt:       time.Now().UTC(),
+		LastActivityAt:  time.Now().UTC(),
+	})
+	require.NoError(err)
+
+	rr := doGitLabJSON(t, srv, http.MethodPost,
+		"/api/v1/pulls/gitlab/acme/widget/7/approve",
+		`{"body":"ship it"}`,
+	)
+	require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
+	var problem struct {
+		Code string `json:"code"`
+	}
+	require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
+	assert.Equal("conflict", problem.Code)
+
+	_, noted := recorder.find(http.MethodPost, "/api/v4/projects/4242/merge_requests/7/notes")
+	assert.False(noted, "stale approval must not post the comment")
+	_, approved := recorder.find(http.MethodPost, "/api/v4/projects/4242/merge_requests/7/approve")
+	assert.False(approved, "stale approval must not reach the approvals API")
+}
+
+func TestGitLabMutationMergeStaleHeadReturnsConflict(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, database, _, repoID := setupGitLabMutationServer(t)
+	ctx := t.Context()
+
+	_, err := database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:          repoID,
+		PlatformID:      7001,
+		Number:          7,
+		URL:             "https://gitlab.com/acme/widget/-/merge_requests/7",
+		Title:           "Test MR",
+		Author:          "author",
+		State:           "open",
+		PlatformHeadSHA: "stale-sha",
+		CreatedAt:       time.Now().UTC(),
+		UpdatedAt:       time.Now().UTC(),
+		LastActivityAt:  time.Now().UTC(),
+	})
+	require.NoError(err)
+
+	rr := doGitLabJSON(t, srv, http.MethodPost,
+		"/api/v1/pulls/gitlab/acme/widget/7/merge",
+		`{"method":"squash","commit_title":"t","commit_message":"m"}`,
+	)
+	require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
+	var problem struct {
+		Code string `json:"code"`
+	}
+	require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
+	assert.Equal("conflict", problem.Code)
+
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	require.NotNil(mr)
+	assert.Equal("open", string(mr.State), "stale merge must not mark the MR merged locally")
 }
 
 func TestGitLabMutationDiscussionReplyThroughRealClient(t *testing.T) {

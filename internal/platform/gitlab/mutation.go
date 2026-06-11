@@ -229,7 +229,9 @@ func (c *Client) SetIssueState(
 // per request: squash is a flag on accept, while merge-commit versus
 // fast-forward behavior comes from the project's merge method setting.
 // "squash" and "merge" map onto the squash flag; "rebase" cannot be
-// honored per request and returns a typed capability error.
+// honored per request and returns a typed capability error. A non-empty
+// expectedHeadSHA is passed to GitLab, which rejects the merge with 409
+// when the source branch HEAD has moved past the reviewed commit.
 func (c *Client) MergeMergeRequest(
 	ctx context.Context,
 	ref platform.RepoRef,
@@ -237,6 +239,7 @@ func (c *Client) MergeMergeRequest(
 	commitTitle string,
 	commitMessage string,
 	method string,
+	expectedHeadSHA string,
 ) (platform.MergeResult, error) {
 	opts := &gitlab.AcceptMergeRequestOptions{}
 	squash := false
@@ -260,6 +263,8 @@ func (c *Client) MergeMergeRequest(
 			Capability:   "merge_method_" + method,
 		}
 	}
+
+	opts.SHA = nonEmptyStringPtr(expectedHeadSHA)
 
 	pid, _, err := c.projectScopedArg(ctx, ref)
 	if err != nil {
@@ -350,6 +355,12 @@ func (c *Client) EditIssueContent(
 }
 
 // ApproveMergeRequest approves an MR through the GitLab approvals API.
+// A non-empty expectedHeadSHA binds the approval to the reviewed commit:
+// GitLab rejects the approval when the MR head has moved, and the note
+// below is guarded by a head check first so a stale review does not leave
+// an orphaned comment (a small race window remains between the check and
+// the note; the approval itself is hard-bound by GitLab).
+//
 // GitLab approvals carry no body, so a non-empty body is posted as a
 // regular MR note before approving; the synthesized approval event keeps
 // an empty body because the note is synced into the timeline as its own
@@ -363,10 +374,26 @@ func (c *Client) ApproveMergeRequest(
 	ref platform.RepoRef,
 	number int,
 	body string,
+	expectedHeadSHA string,
 ) (platform.MergeRequestEvent, error) {
 	pid, normalizedRef, err := c.projectScopedArg(ctx, ref)
 	if err != nil {
 		return platform.MergeRequestEvent{}, err
+	}
+
+	if expectedHeadSHA != "" {
+		current, _, err := c.api.MergeRequests.GetMergeRequest(pid, int64(number), nil, gitlab.WithContext(ctx))
+		if err != nil {
+			return platform.MergeRequestEvent{}, mapGitLabError("approve_merge_request", err)
+		}
+		if current != nil && current.SHA != "" && current.SHA != expectedHeadSHA {
+			return platform.MergeRequestEvent{}, &platform.Error{
+				Code:         platform.ErrCodeStaleState,
+				Provider:     platform.KindGitLab,
+				PlatformHost: c.host,
+				Capability:   "approve_merge_request",
+			}
+		}
 	}
 
 	notePosted := false
@@ -385,7 +412,7 @@ func (c *Client) ApproveMergeRequest(
 	approvals, _, err := c.api.MergeRequestApprovals.ApproveMergeRequest(
 		pid,
 		int64(number),
-		&gitlab.ApproveMergeRequestOptions{},
+		&gitlab.ApproveMergeRequestOptions{SHA: nonEmptyStringPtr(expectedHeadSHA)},
 		gitlab.WithContext(ctx),
 	)
 	if err != nil {

@@ -256,6 +256,7 @@ func TestGitLabMergeMergeRequestMapsMethods(t *testing.T) {
 				var payload map[string]any
 				decodeBody(t, r, &payload)
 				assert.Equal(tt.wantSquash, payload["squash"])
+				assert.Equal("reviewed-head", payload["sha"])
 				for key, want := range tt.wantMessage {
 					assert.Equal(want, payload[key])
 				}
@@ -265,7 +266,7 @@ func TestGitLabMergeMergeRequestMapsMethods(t *testing.T) {
 
 			result, err := newTestClient(t, server.URL).MergeMergeRequest(
 				context.Background(), projectRef(), 7,
-				"Squash title", "Squash body", tt.method,
+				"Squash title", "Squash body", tt.method, "reviewed-head",
 			)
 			require.NoError(err)
 			assert.True(result.Merged)
@@ -283,7 +284,7 @@ func TestGitLabMergeMergeRequestRejectsRebaseWithTypedError(t *testing.T) {
 	require.NoError(err)
 
 	_, err = client.MergeMergeRequest(
-		context.Background(), projectRef(), 7, "title", "message", "rebase",
+		context.Background(), projectRef(), 7, "title", "message", "rebase", "",
 	)
 	var platformErr *platform.Error
 	require.ErrorAs(err, &platformErr)
@@ -366,6 +367,8 @@ func TestGitLabApproveMergeRequestPostsNoteAndApproves(t *testing.T) {
 	var noteSeen, approveSeen bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.EscapedPath() {
+		case "/api/v4/projects/42/merge_requests/7":
+			writeJSON(w, `{"id": 7001, "iid": 7, "state": "opened", "sha": "reviewed-head"}`)
 		case "/api/v4/projects/42/merge_requests/7/notes":
 			noteSeen = true
 			assert.Equal(http.MethodPost, r.Method)
@@ -378,6 +381,11 @@ func TestGitLabApproveMergeRequestPostsNoteAndApproves(t *testing.T) {
 		case "/api/v4/projects/42/merge_requests/7/approve":
 			approveSeen = true
 			assert.Equal(http.MethodPost, r.Method)
+			var payload struct {
+				SHA string `json:"sha"`
+			}
+			decodeBody(t, r, &payload)
+			assert.Equal("reviewed-head", payload.SHA)
 			writeJSON(w, `{"approved": true, "updated_at": "2026-06-01T10:00:00Z"}`)
 		case "/api/v4/user":
 			writeJSON(w, `{"id": 1, "username": "ada"}`)
@@ -388,7 +396,7 @@ func TestGitLabApproveMergeRequestPostsNoteAndApproves(t *testing.T) {
 	defer server.Close()
 
 	event, err := newTestClient(t, server.URL).ApproveMergeRequest(
-		context.Background(), projectRef(), 7, " ship it ",
+		context.Background(), projectRef(), 7, " ship it ", "reviewed-head",
 	)
 	require.NoError(err)
 	assert.True(noteSeen)
@@ -423,7 +431,7 @@ func TestGitLabApproveMergeRequestReportsNotePostedWhenApprovalFails(t *testing.
 	defer server.Close()
 
 	_, err := newTestClient(t, server.URL).ApproveMergeRequest(
-		context.Background(), projectRef(), 7, "ship it",
+		context.Background(), projectRef(), 7, "ship it", "",
 	)
 	require.Error(err)
 	assert.True(noteSeen)
@@ -455,12 +463,42 @@ func TestGitLabApproveMergeRequestSkipsNoteForEmptyBody(t *testing.T) {
 	defer server.Close()
 
 	event, err := newTestClient(t, server.URL).ApproveMergeRequest(
-		context.Background(), projectRef(), 7, "   ",
+		context.Background(), projectRef(), 7, "   ", "",
 	)
 	require.NoError(err)
 	assert.False(noteSeen)
 	assert.Equal("review", event.EventType)
 	assert.Empty(event.Author)
+}
+
+func TestGitLabApproveMergeRequestRejectsStaleHeadBeforePostingNote(t *testing.T) {
+	assert := Assert.New(t)
+	require := Require.New(t)
+	var noteSeen, approveSeen bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.EscapedPath() {
+		case "/api/v4/projects/42/merge_requests/7":
+			writeJSON(w, `{"id": 7001, "iid": 7, "state": "opened", "sha": "new-head"}`)
+		case "/api/v4/projects/42/merge_requests/7/notes":
+			noteSeen = true
+			writeJSON(w, `{"id": 9002}`)
+		case "/api/v4/projects/42/merge_requests/7/approve":
+			approveSeen = true
+			writeJSON(w, `{"approved": true}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	_, err := newTestClient(t, server.URL).ApproveMergeRequest(
+		context.Background(), projectRef(), 7, "ship it", "reviewed-head",
+	)
+	var platformErr *platform.Error
+	require.ErrorAs(err, &platformErr)
+	assert.Equal(platform.ErrCodeStaleState, platformErr.Code)
+	assert.False(noteSeen, "stale review must not post the comment")
+	assert.False(approveSeen, "stale review must not approve")
 }
 
 func TestCombineCommitMessage(t *testing.T) {

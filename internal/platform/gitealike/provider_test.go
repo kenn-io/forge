@@ -95,9 +95,9 @@ func TestProviderMutationsNormalizeTransportResponses(t *testing.T) {
 	require.NoError(err)
 	closedIssue, err := provider.SetIssueState(context.Background(), ref, 8, "closed")
 	require.NoError(err)
-	merged, err := provider.MergeMergeRequest(context.Background(), ref, 7, "title", "body", "squash")
+	merged, err := provider.MergeMergeRequest(context.Background(), ref, 7, "title", "body", "squash", "")
 	require.NoError(err)
-	review, err := provider.ApproveMergeRequest(context.Background(), ref, 7, "ship it")
+	review, err := provider.ApproveMergeRequest(context.Background(), ref, 7, "ship it", "")
 	require.NoError(err)
 	prTitle := "new title"
 	prBody := "new body"

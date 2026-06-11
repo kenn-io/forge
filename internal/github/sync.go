@@ -1076,6 +1076,9 @@ func (p gitHubClientProvider) SetIssueState(
 	return platformgithub.NormalizeIssue(ref, ghIssue)
 }
 
+// MergeMergeRequest ignores expectedHeadSHA: the GitHub merge API accepts
+// a sha parameter, but the internal client does not thread it yet, so
+// head binding is advisory here.
 func (p gitHubClientProvider) MergeMergeRequest(
 	ctx context.Context,
 	ref platform.RepoRef,
@@ -1083,6 +1086,7 @@ func (p gitHubClientProvider) MergeMergeRequest(
 	commitTitle string,
 	commitMessage string,
 	method string,
+	_ string,
 ) (platform.MergeResult, error) {
 	result, err := p.client.MergePullRequest(
 		ctx, ref.Owner, ref.Name, number, commitTitle, commitMessage, method,
@@ -1178,11 +1182,14 @@ func (p gitHubClientProvider) setIssueLikeLabels(
 	return platformgithub.NormalizeLabels(ref, labels), nil
 }
 
+// ApproveMergeRequest ignores expectedHeadSHA: GitHub review commit ids
+// associate rather than gate, so head binding is advisory here.
 func (p gitHubClientProvider) ApproveMergeRequest(
 	ctx context.Context,
 	ref platform.RepoRef,
 	number int,
 	body string,
+	_ string,
 ) (platform.MergeRequestEvent, error) {
 	review, err := p.client.CreateReview(ctx, ref.Owner, ref.Name, number, "APPROVE", body)
 	if err != nil {

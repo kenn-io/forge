@@ -755,6 +755,10 @@ func mapGitLabError(capability string, err error) error {
 			code = platform.ErrCodePermissionDenied
 		case gitlabErr.HasStatusCode(http.StatusNotFound):
 			code = platform.ErrCodeNotFound
+		case gitlabErr.HasStatusCode(http.StatusConflict):
+			// GitLab uses 409 for sha-bound mutations whose target moved
+			// (merge/approve with a stale head SHA).
+			code = platform.ErrCodeStaleState
 		case gitlabErr.HasStatusCode(http.StatusTooManyRequests):
 			code = platform.ErrCodeRateLimited
 		}

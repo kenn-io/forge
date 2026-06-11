@@ -80,8 +80,9 @@ func (c *Client) MergeMergeRequest(
 	commitTitle string,
 	commitMessage string,
 	method string,
+	expectedHeadSHA string,
 ) (platform.MergeResult, error) {
-	return c.provider.MergeMergeRequest(ctx, ref, number, commitTitle, commitMessage, method)
+	return c.provider.MergeMergeRequest(ctx, ref, number, commitTitle, commitMessage, method, expectedHeadSHA)
 }
 
 func (c *Client) ApproveMergeRequest(
@@ -89,8 +90,9 @@ func (c *Client) ApproveMergeRequest(
 	ref platform.RepoRef,
 	number int,
 	body string,
+	expectedHeadSHA string,
 ) (platform.MergeRequestEvent, error) {
-	return c.provider.ApproveMergeRequest(ctx, ref, number, body)
+	return c.provider.ApproveMergeRequest(ctx, ref, number, body, expectedHeadSHA)
 }
 
 func (c *Client) EditMergeRequestContent(

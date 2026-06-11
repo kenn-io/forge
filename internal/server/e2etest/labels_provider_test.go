@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -16,6 +18,7 @@ import (
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/platform"
 	"go.kenn.io/middleman/internal/platform/forgejo"
+	"go.kenn.io/middleman/internal/platform/gitea"
 	gitlabprovider "go.kenn.io/middleman/internal/platform/gitlab"
 	"go.kenn.io/middleman/internal/server"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
@@ -156,11 +159,25 @@ func doJSONRequest(
 
 // fakeGitLabAPI serves the minimal GitLab v4 surface the label flows
 // touch: project lookup, the project label catalog, and label
-// assignment on a merge request and an issue.
+// assignment on a merge request and an issue. Assignment responses echo
+// the requested names the way GitLab does: bare label names, no color.
 type fakeGitLabAPI struct {
 	mu             sync.Mutex
 	mrLabelBody    map[string]any
 	issueLabelBody map[string]any
+}
+
+func gitlabAssignedLabelsJSON(body map[string]any) string {
+	raw, _ := body["labels"].(string)
+	if raw == "" {
+		return "[]"
+	}
+	names := strings.Split(raw, ",")
+	quoted := make([]string, 0, len(names))
+	for _, name := range names {
+		quoted = append(quoted, fmt.Sprintf("%q", name))
+	}
+	return "[" + strings.Join(quoted, ",") + "]"
 }
 
 func (f *fakeGitLabAPI) handler(t *testing.T) http.Handler {
@@ -188,14 +205,20 @@ func (f *fakeGitLabAPI) handler(t *testing.T) http.Handler {
 			f.mu.Lock()
 			f.mrLabelBody = body
 			f.mu.Unlock()
-			_, _ = w.Write([]byte(`{"id": 1001, "iid": 7, "project_id": 42, "state": "opened", "labels": ["triage"]}`))
+			_, _ = fmt.Fprintf(w,
+				`{"id": 1001, "iid": 7, "project_id": 42, "state": "opened", "labels": %s}`,
+				gitlabAssignedLabelsJSON(body),
+			)
 		case "PUT /api/v4/projects/42/issues/11":
 			var body map[string]any
 			assert.NoError(t, json.NewDecoder(r.Body).Decode(&body))
 			f.mu.Lock()
 			f.issueLabelBody = body
 			f.mu.Unlock()
-			_, _ = w.Write([]byte(`{"id": 3001, "iid": 11, "project_id": 42, "state": "opened", "labels": ["triage"]}`))
+			_, _ = fmt.Fprintf(w,
+				`{"id": 3001, "iid": 11, "project_id": 42, "state": "opened", "labels": %s}`,
+				gitlabAssignedLabelsJSON(body),
+			)
 		default:
 			http.NotFound(w, r)
 		}
@@ -289,6 +312,14 @@ func TestGitLabSetIssueLabelsUpdatesProviderAndDB(t *testing.T) {
 	})
 	require.Equal(http.StatusOK, rr.Code, "response: %s", rr.Body.String())
 
+	var body labelWireResponse
+	require.NoError(json.Unmarshal(rr.Body.Bytes(), &body))
+	require.Len(body.Labels, 1)
+	assert.Equal("triage", body.Labels[0].Name)
+	assert.Equal("#fbca04", body.Labels[0].Color,
+		"response must carry the catalog color even though GitLab returns names only")
+	assert.Equal("Needs review", body.Labels[0].Description)
+
 	fake.mu.Lock()
 	sent := fake.issueLabelBody
 	fake.mu.Unlock()
@@ -304,24 +335,76 @@ func TestGitLabSetIssueLabelsUpdatesProviderAndDB(t *testing.T) {
 		"stored label must carry the catalog color even though GitLab returns names only")
 }
 
-// fakeForgejoAPI serves the minimal Forgejo/Gitea v1 surface the label
+// An empty labels array is the API contract for "remove every label":
+// the provider must receive an explicit clear (labels="" on GitLab) and
+// the stored assignment must end up empty. A missing or null labels
+// field is rejected instead (covered in internal/server/apitest).
+func TestGitLabSetPullLabelsEmptyArrayClearsAll(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, database, repoID, fake := setupGitLabLabelStack(t)
+
+	rr := doJSONRequest(t, srv, http.MethodPut, "/api/v1/pulls/gitlab/acme/widget/7/labels", map[string][]string{
+		"labels": {},
+	})
+	require.Equal(http.StatusOK, rr.Code, "response: %s", rr.Body.String())
+
+	var body labelWireResponse
+	require.NoError(json.Unmarshal(rr.Body.Bytes(), &body))
+	assert.Empty(body.Labels)
+
+	fake.mu.Lock()
+	sent := fake.mrLabelBody
+	fake.mu.Unlock()
+	require.NotNil(sent, "provider must receive the label update")
+	value, ok := sent["labels"]
+	require.True(ok, "labels field must be sent so GitLab clears assignments")
+	assert.Empty(value)
+
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 7)
+	require.NoError(err)
+	require.NotNil(mr)
+	assert.Empty(mr.Labels)
+}
+
+// fakeGitealikeAPI serves the minimal Forgejo/Gitea v1 surface the label
 // flows touch: the repo label catalog and issue-style label replacement
-// (shared by pull requests and issues).
-type fakeForgejoAPI struct {
+// (shared by pull requests and issues). Replacement responses echo the
+// catalog entries matching the requested IDs, like the real servers.
+type fakeGitealikeAPI struct {
 	mu          sync.Mutex
-	labels      string
+	catalog     []fakeGitealikeLabel
 	replaceBody map[int]map[string][]int64
 }
 
-func (f *fakeForgejoAPI) handler(t *testing.T) http.Handler {
+type fakeGitealikeLabel struct {
+	ID          int64  `json:"id"`
+	Name        string `json:"name"`
+	Color       string `json:"color"`
+	Description string `json:"description"`
+}
+
+func (f *fakeGitealikeAPI) labelsForIDs(ids []int64) []fakeGitealikeLabel {
+	out := []fakeGitealikeLabel{}
+	for _, id := range ids {
+		for _, label := range f.catalog {
+			if label.ID == id {
+				out = append(out, label)
+			}
+		}
+	}
+	return out
+}
+
+func (f *fakeGitealikeAPI) handler(t *testing.T) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/repos/acme/widget/labels":
 			f.mu.Lock()
-			labels := f.labels
+			catalog := f.catalog
 			f.mu.Unlock()
-			_, _ = w.Write([]byte(labels))
+			assert.NoError(t, json.NewEncoder(w).Encode(catalog))
 		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/repos/acme/widget/issues/7/labels",
 			r.Method == http.MethodPut && r.URL.Path == "/api/v1/repos/acme/widget/issues/11/labels":
 			number := 7
@@ -335,140 +418,245 @@ func (f *fakeForgejoAPI) handler(t *testing.T) http.Handler {
 				f.replaceBody = make(map[int]map[string][]int64)
 			}
 			f.replaceBody[number] = body
+			replaced := f.labelsForIDs(body["labels"])
 			f.mu.Unlock()
-			_, _ = w.Write([]byte(`[{"id": 12, "name": "triage", "color": "fbca04", "description": "Needs review"}]`))
+			assert.NoError(t, json.NewEncoder(w).Encode(replaced))
 		default:
 			http.NotFound(w, r)
 		}
 	})
 }
 
-func setupForgejoLabelStack(t *testing.T) (*server.Server, *db.DB, int64, *fakeForgejoAPI) {
+// gitealikeLabelVariant runs the shared gitealike label flows through a
+// concrete provider client so each SDK transport gets full-stack
+// coverage, not just the shared adapter.
+type gitealikeLabelVariant struct {
+	name      string
+	kind      platform.Kind
+	host      string
+	route     string
+	newClient func(t *testing.T, upstreamURL string) platform.Provider
+}
+
+func gitealikeLabelVariants() []gitealikeLabelVariant {
+	return []gitealikeLabelVariant{
+		{
+			name:  "forgejo",
+			kind:  platform.KindForgejo,
+			host:  platform.DefaultForgejoHost,
+			route: "forgejo",
+			newClient: func(t *testing.T, upstreamURL string) platform.Provider {
+				t.Helper()
+				client, err := forgejo.NewClient(
+					platform.DefaultForgejoHost,
+					staticTokenSource("token"),
+					forgejo.WithBaseURLForTesting(upstreamURL),
+				)
+				require.NoError(t, err)
+				return client
+			},
+		},
+		{
+			name:  "gitea",
+			kind:  platform.KindGitea,
+			host:  platform.DefaultGiteaHost,
+			route: "gitea",
+			newClient: func(t *testing.T, upstreamURL string) platform.Provider {
+				t.Helper()
+				client, err := gitea.NewClient(
+					platform.DefaultGiteaHost,
+					staticTokenSource("token"),
+					gitea.WithBaseURLForTesting(upstreamURL),
+				)
+				require.NoError(t, err)
+				return client
+			},
+		},
+	}
+}
+
+func setupGitealikeLabelStack(
+	t *testing.T,
+	variant gitealikeLabelVariant,
+) (*server.Server, *db.DB, int64, *fakeGitealikeAPI) {
 	t.Helper()
 	database := dbtest.Open(t)
-	fake := &fakeForgejoAPI{
-		labels: `[
-			{"id": 11, "name": "bug", "color": "d73a4a", "description": "Something is broken"},
-			{"id": 12, "name": "triage", "color": "fbca04", "description": "Needs review"}
-		]`,
+	fake := &fakeGitealikeAPI{
+		catalog: []fakeGitealikeLabel{
+			{ID: 11, Name: "bug", Color: "d73a4a", Description: "Something is broken"},
+			{ID: 12, Name: "triage", Color: "fbca04", Description: "Needs review"},
+		},
 	}
 	upstream := httptest.NewServer(fake.handler(t))
 	t.Cleanup(upstream.Close)
 
-	client, err := forgejo.NewClient(
-		platform.DefaultForgejoHost,
-		staticTokenSource("token"),
-		forgejo.WithBaseURLForTesting(upstream.URL),
-	)
-	require.NoError(t, err)
+	client := variant.newClient(t, upstream.URL)
 
-	repoID := seedProviderRepo(t, database, platform.KindForgejo, platform.DefaultForgejoHost)
+	repoID := seedProviderRepo(t, database, variant.kind, variant.host)
 	seedProviderPRAndIssue(t, database, repoID)
-	srv := newLabelTestServer(t, database, client, platform.KindForgejo, platform.DefaultForgejoHost)
+	srv := newLabelTestServer(t, database, client, variant.kind, variant.host)
 	return srv, database, repoID, fake
 }
 
-func TestForgejoListRepoLabelsSyncsCatalogFromProvider(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	srv, database, repoID, _ := setupForgejoLabelStack(t)
-	assertRepoLabelCapabilities(t, srv)
+func TestGitealikeListRepoLabelsSyncsCatalogFromProvider(t *testing.T) {
+	for _, variant := range gitealikeLabelVariants() {
+		t.Run(variant.name, func(t *testing.T) {
+			require := require.New(t)
+			assert := assert.New(t)
+			srv, database, repoID, _ := setupGitealikeLabelStack(t, variant)
+			assertRepoLabelCapabilities(t, srv)
 
-	rr := doJSONRequest(t, srv, http.MethodGet, "/api/v1/repo/forgejo/acme/widget/labels", nil)
-	require.Equal(http.StatusOK, rr.Code, "response: %s", rr.Body.String())
+			rr := doJSONRequest(t, srv, http.MethodGet, "/api/v1/repo/"+variant.route+"/acme/widget/labels", nil)
+			require.Equal(http.StatusOK, rr.Code, "response: %s", rr.Body.String())
 
-	require.Eventually(func() bool {
-		labels, _, err := database.ListRepoLabelCatalog(t.Context(), repoID)
-		return err == nil && len(labels) == 2
-	}, 2*time.Second, 10*time.Millisecond)
+			require.Eventually(func() bool {
+				labels, _, err := database.ListRepoLabelCatalog(t.Context(), repoID)
+				return err == nil && len(labels) == 2
+			}, 2*time.Second, 10*time.Millisecond)
 
-	labels, _, err := database.ListRepoLabelCatalog(t.Context(), repoID)
-	require.NoError(err)
-	require.Len(labels, 2)
-	assert.Equal("bug", labels[0].Name)
-	assert.Equal("d73a4a", labels[0].Color)
-	assert.Equal("Something is broken", labels[0].Description)
-	assert.Equal("triage", labels[1].Name)
+			labels, _, err := database.ListRepoLabelCatalog(t.Context(), repoID)
+			require.NoError(err)
+			require.Len(labels, 2)
+			assert.Equal("bug", labels[0].Name)
+			assert.Equal("d73a4a", labels[0].Color)
+			assert.Equal("Something is broken", labels[0].Description)
+			assert.Equal("triage", labels[1].Name)
+		})
+	}
 }
 
-func TestForgejoSetPullLabelsResolvesIDsAndUpdatesDB(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	srv, database, repoID, fake := setupForgejoLabelStack(t)
+func TestGitealikeSetPullLabelsResolvesIDsAndUpdatesDB(t *testing.T) {
+	for _, variant := range gitealikeLabelVariants() {
+		t.Run(variant.name, func(t *testing.T) {
+			require := require.New(t)
+			assert := assert.New(t)
+			srv, database, repoID, fake := setupGitealikeLabelStack(t, variant)
 
-	rr := doJSONRequest(t, srv, http.MethodPut, "/api/v1/pulls/forgejo/acme/widget/7/labels", map[string][]string{
-		"labels": {"triage"},
-	})
-	require.Equal(http.StatusOK, rr.Code, "response: %s", rr.Body.String())
+			rr := doJSONRequest(t, srv, http.MethodPut, "/api/v1/pulls/"+variant.route+"/acme/widget/7/labels", map[string][]string{
+				"labels": {"triage"},
+			})
+			require.Equal(http.StatusOK, rr.Code, "response: %s", rr.Body.String())
 
-	var body labelWireResponse
-	require.NoError(json.Unmarshal(rr.Body.Bytes(), &body))
-	require.Len(body.Labels, 1)
-	assert.Equal("triage", body.Labels[0].Name)
-	assert.Equal("fbca04", body.Labels[0].Color)
+			var body labelWireResponse
+			require.NoError(json.Unmarshal(rr.Body.Bytes(), &body))
+			require.Len(body.Labels, 1)
+			assert.Equal("triage", body.Labels[0].Name)
+			assert.Equal("fbca04", body.Labels[0].Color)
 
-	fake.mu.Lock()
-	sent := fake.replaceBody[7]
-	fake.mu.Unlock()
-	require.NotNil(sent, "provider must receive the label replacement")
-	assert.Equal([]int64{12}, sent["labels"], "names must be resolved to label IDs")
+			fake.mu.Lock()
+			sent := fake.replaceBody[7]
+			fake.mu.Unlock()
+			require.NotNil(sent, "provider must receive the label replacement")
+			assert.Equal([]int64{12}, sent["labels"], "names must be resolved to label IDs")
 
-	mr, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 7)
-	require.NoError(err)
-	require.NotNil(mr)
-	require.Len(mr.Labels, 1)
-	assert.Equal("triage", mr.Labels[0].Name)
+			mr, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 7)
+			require.NoError(err)
+			require.NotNil(mr)
+			require.Len(mr.Labels, 1)
+			assert.Equal("triage", mr.Labels[0].Name)
+			assert.Equal("fbca04", mr.Labels[0].Color)
+		})
+	}
 }
 
-func TestForgejoSetIssueLabelsResolvesIDsAndUpdatesDB(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	srv, database, repoID, fake := setupForgejoLabelStack(t)
+func TestGitealikeSetIssueLabelsResolvesIDsAndUpdatesDB(t *testing.T) {
+	for _, variant := range gitealikeLabelVariants() {
+		t.Run(variant.name, func(t *testing.T) {
+			require := require.New(t)
+			assert := assert.New(t)
+			srv, database, repoID, fake := setupGitealikeLabelStack(t, variant)
 
-	rr := doJSONRequest(t, srv, http.MethodPut, "/api/v1/issues/forgejo/acme/widget/11/labels", map[string][]string{
-		"labels": {"triage"},
-	})
-	require.Equal(http.StatusOK, rr.Code, "response: %s", rr.Body.String())
+			rr := doJSONRequest(t, srv, http.MethodPut, "/api/v1/issues/"+variant.route+"/acme/widget/11/labels", map[string][]string{
+				"labels": {"triage"},
+			})
+			require.Equal(http.StatusOK, rr.Code, "response: %s", rr.Body.String())
 
-	fake.mu.Lock()
-	sent := fake.replaceBody[11]
-	fake.mu.Unlock()
-	require.NotNil(sent, "provider must receive the label replacement")
-	assert.Equal([]int64{12}, sent["labels"], "names must be resolved to label IDs")
+			var body labelWireResponse
+			require.NoError(json.Unmarshal(rr.Body.Bytes(), &body))
+			require.Len(body.Labels, 1)
+			assert.Equal("triage", body.Labels[0].Name)
+			assert.Equal("fbca04", body.Labels[0].Color)
 
-	issue, err := database.GetIssueByRepoIDAndNumber(t.Context(), repoID, 11)
-	require.NoError(err)
-	require.NotNil(issue)
-	require.Len(issue.Labels, 1)
-	assert.Equal("triage", issue.Labels[0].Name)
+			fake.mu.Lock()
+			sent := fake.replaceBody[11]
+			fake.mu.Unlock()
+			require.NotNil(sent, "provider must receive the label replacement")
+			assert.Equal([]int64{12}, sent["labels"], "names must be resolved to label IDs")
+
+			issue, err := database.GetIssueByRepoIDAndNumber(t.Context(), repoID, 11)
+			require.NoError(err)
+			require.NotNil(issue)
+			require.Len(issue.Labels, 1)
+			assert.Equal("triage", issue.Labels[0].Name)
+		})
+	}
 }
 
-func TestForgejoSetLabelsFailsWhenCatalogNameVanishedUpstream(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	srv, database, repoID, fake := setupForgejoLabelStack(t)
+// An empty labels array is the API contract for "remove every label":
+// the provider must receive an explicit empty ID replacement and the
+// stored assignment must end up empty. A missing or null labels field
+// is rejected instead (covered in internal/server/apitest).
+func TestGitealikeSetPullLabelsEmptyArrayClearsAll(t *testing.T) {
+	for _, variant := range gitealikeLabelVariants() {
+		t.Run(variant.name, func(t *testing.T) {
+			require := require.New(t)
+			assert := assert.New(t)
+			srv, database, repoID, fake := setupGitealikeLabelStack(t, variant)
 
-	// The DB catalog knows "ghost" (fresh, so no inline refresh runs)
-	// but the provider no longer has it: name-to-ID resolution must
-	// fail without touching the assignment endpoint.
-	now := time.Now().UTC()
-	require.NoError(database.ReplaceRepoLabelCatalog(t.Context(), repoID, []db.Label{
-		{Name: "ghost", Color: "ffffff", UpdatedAt: now},
-	}, now))
+			rr := doJSONRequest(t, srv, http.MethodPut, "/api/v1/pulls/"+variant.route+"/acme/widget/7/labels", map[string][]string{
+				"labels": {},
+			})
+			require.Equal(http.StatusOK, rr.Code, "response: %s", rr.Body.String())
 
-	rr := doJSONRequest(t, srv, http.MethodPut, "/api/v1/issues/forgejo/acme/widget/11/labels", map[string][]string{
-		"labels": {"ghost"},
-	})
-	require.Equal(http.StatusNotFound, rr.Code, "response: %s", rr.Body.String())
-	assert.Contains(rr.Body.String(), "ghost")
+			var body labelWireResponse
+			require.NoError(json.Unmarshal(rr.Body.Bytes(), &body))
+			assert.Empty(body.Labels)
 
-	fake.mu.Lock()
-	sent := fake.replaceBody[11]
-	fake.mu.Unlock()
-	assert.Nil(sent, "assignment endpoint must not be called when resolution fails")
+			fake.mu.Lock()
+			sent, called := fake.replaceBody[7]
+			fake.mu.Unlock()
+			require.True(called, "provider must receive the label replacement")
+			assert.Empty(sent["labels"])
 
-	issue, err := database.GetIssueByRepoIDAndNumber(t.Context(), repoID, 11)
-	require.NoError(err)
-	require.NotNil(issue)
-	assert.Empty(issue.Labels)
+			mr, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 7)
+			require.NoError(err)
+			require.NotNil(mr)
+			assert.Empty(mr.Labels)
+		})
+	}
+}
+
+func TestGitealikeSetLabelsFailsWhenCatalogNameVanishedUpstream(t *testing.T) {
+	for _, variant := range gitealikeLabelVariants() {
+		t.Run(variant.name, func(t *testing.T) {
+			require := require.New(t)
+			assert := assert.New(t)
+			srv, database, repoID, fake := setupGitealikeLabelStack(t, variant)
+
+			// The DB catalog knows "ghost" (fresh, so no inline refresh
+			// runs) but the provider no longer has it: name-to-ID
+			// resolution must fail without touching the assignment
+			// endpoint.
+			now := time.Now().UTC()
+			require.NoError(database.ReplaceRepoLabelCatalog(t.Context(), repoID, []db.Label{
+				{Name: "ghost", Color: "ffffff", UpdatedAt: now},
+			}, now))
+
+			rr := doJSONRequest(t, srv, http.MethodPut, "/api/v1/issues/"+variant.route+"/acme/widget/11/labels", map[string][]string{
+				"labels": {"ghost"},
+			})
+			require.Equal(http.StatusNotFound, rr.Code, "response: %s", rr.Body.String())
+			assert.Contains(rr.Body.String(), "ghost")
+
+			fake.mu.Lock()
+			sent := fake.replaceBody[11]
+			fake.mu.Unlock()
+			assert.Nil(sent, "assignment endpoint must not be called when resolution fails")
+
+			issue, err := database.GetIssueByRepoIDAndNumber(t.Context(), repoID, 11)
+			require.NoError(err)
+			require.NotNil(issue)
+			assert.Empty(issue.Labels)
+		})
+	}
 }

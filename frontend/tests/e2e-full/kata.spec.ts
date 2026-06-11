@@ -2244,6 +2244,52 @@ test("kata view change drops a held keyboard selection from the previous view", 
   }
 });
 
+test("kata sidebar view click aborts a pending detail load before the new view arrives", async ({ page }) => {
+  let releaseDetail = () => {};
+  const stalledDetail = new Promise<void>((resolve) => {
+    releaseDetail = resolve;
+  });
+  let releaseIssues = () => {};
+  const stalledIssues = new Promise<void>((resolve) => {
+    releaseIssues = resolve;
+  });
+  const backend = await startKataBackend();
+  const kataHome = await configureKataHome(backend.url);
+  const server = await startIsolatedE2EServer();
+
+  try {
+    await page.goto(`${server.info.base_url}/kata?view=all`);
+    await expect(page.getByRole("status", { name: "Connection: online" })).toBeVisible();
+    const rentRow = page.locator(".issue-list .issue-row", { hasText: "Pay rent" });
+    await expect(rentRow).toBeVisible();
+
+    // Select Pay rent with its detail response stalled, then click a
+    // sidebar view whose issues fetch is also stalled. The navigation
+    // abandons the selection, so the doomed detail request must be
+    // aborted at click time — not after the new view's data arrives —
+    // or its failure paints a stale error over the transition.
+    backend.state.issueDetailGates.set("issue-rent", { barrier: stalledDetail, status: 500 });
+    await rentRow.click();
+    await expect.poll(() => backend.state.seenPaths).toContain("GET /api/v1/issues/issue-rent");
+
+    backend.state.issuesBarrier = stalledIssues;
+    await page.getByRole("button", { name: /^Today/ }).click();
+    releaseDetail();
+    await page.waitForTimeout(750);
+    await expect(page.getByRole("status", { name: "Connection: error" })).toHaveCount(0);
+
+    releaseIssues();
+    await expect(page.locator(".issue-list").getByRole("heading", { name: "Today", level: 2 })).toBeVisible();
+    await expect(page.getByRole("status", { name: "Connection: error" })).toHaveCount(0);
+  } finally {
+    releaseDetail();
+    releaseIssues();
+    await server.stop();
+    kataHome.restore();
+    await backend.close();
+  }
+});
+
 test("kata key released during a stalled view transition does not commit a stale selection", async ({ page }) => {
   let releaseIssues = () => {};
   const stalledIssues = new Promise<void>((resolve) => {

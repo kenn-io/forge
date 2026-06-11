@@ -489,9 +489,13 @@
     const generation = beginNavigation();
     resetDetailDrafts();
     store.resetSearchFilters();
+    // Clear (and thereby abort) the abandoned selection before awaiting
+    // the new view: while that fetch is in flight, a still-running
+    // detail load could fail and surface a stale error for a selection
+    // this navigation has already discarded.
+    store.clearSelection();
     await runViewTask(() => store.openView(viewName, { selectFirst: false }));
     if (!isCurrentNavigation(generation)) return;
-    store.clearSelection();
     syncedRouteViewName = viewName;
     syncedRouteScopeUID = null;
     syncedRouteIssueUID = null;

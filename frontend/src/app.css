@@ -322,8 +322,11 @@ a:hover {
   font-weight: 600;
   white-space: nowrap;
 }
-.markdown-body th:not(:last-child),
-.markdown-body td:not(:last-child) {
+/* Compact leading columns only apply to text-only tables. A table holding
+   images (e.g. side-by-side screenshots) must keep auto layout so each
+   column shares the width evenly, matching GitHub's rendering. */
+.markdown-body table:not(:has(img)) th:not(:last-child),
+.markdown-body table:not(:has(img)) td:not(:last-child) {
   width: 1%;
   white-space: nowrap;
 }

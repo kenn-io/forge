@@ -163,6 +163,100 @@ test("markdown tables keep compact columns readable", async ({ page }) => {
   await expect(page.locator(".markdown-body table")).toHaveCSS("border-collapse", "collapse");
 });
 
+test("markdown tables with images share width evenly like GitHub", async ({ page }) => {
+  // Serve a fixed-size image for every screenshot cell so auto table layout
+  // has real intrinsic widths to distribute.
+  await page.route("https://images.test/**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "image/svg+xml",
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="300"><rect width="600" height="300" fill="#7a7"/></svg>',
+    });
+  });
+
+  await page.route("**/api/v1/pulls/github/acme/widgets/42", async (route) => {
+    if (route.request().method() !== "GET") {
+      await route.fallback();
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        merge_request: {
+          ID: 1,
+          RepoID: 1,
+          GitHubID: 101,
+          Number: 42,
+          URL: "https://github.com/acme/widgets/pull/42",
+          Title: "Add browser regression coverage",
+          Author: "marius",
+          State: "open",
+          IsDraft: false,
+          Body: [
+            "| Default | Sort dropdown | Activity sort |",
+            "| --- | --- | --- |",
+            "| ![default](https://images.test/shot-1.svg) | ![dropdown](https://images.test/shot-2.svg) | ![activity](https://images.test/shot-3.svg) |",
+          ].join("\n"),
+          HeadBranch: "feature/playwright",
+          BaseBranch: "main",
+          Additions: 120,
+          Deletions: 12,
+          CommentCount: 3,
+          ReviewDecision: "APPROVED",
+          CIStatus: "success",
+          CIChecksJSON: "[]",
+          CreatedAt: "2026-03-29T14:00:00Z",
+          UpdatedAt: "2026-03-30T14:00:00Z",
+          LastActivityAt: "2026-03-30T14:00:00Z",
+          MergedAt: null,
+          ClosedAt: null,
+          KanbanStatus: "reviewing",
+          Starred: false,
+          repo_owner: "acme",
+          repo_name: "widgets",
+          platform_host: "github.com",
+          repo: mockRepo,
+          worktree_links: [],
+        },
+        repo_owner: "acme",
+        repo_name: "widgets",
+        platform_host: "github.com",
+        repo: mockRepo,
+        detail_loaded: true,
+        detail_fetched_at: "2026-03-30T14:00:00Z",
+        worktree_links: [],
+      }),
+    });
+  });
+
+  await page.goto("/pulls/github/acme/widgets/42");
+
+  const images = page.locator(".markdown-body table img");
+  await expect(images).toHaveCount(3);
+
+  const widths: number[] = [];
+  for (let i = 0; i < 3; i++) {
+    const box = await images.nth(i).boundingBox();
+    expect(box).not.toBeNull();
+    widths.push(box!.width);
+  }
+
+  // Every screenshot gets a real share of the row instead of the first
+  // columns collapsing to slivers while the last column takes everything.
+  for (const width of widths) {
+    expect(width).toBeGreaterThan(100);
+  }
+  expect(Math.max(...widths) / Math.min(...widths)).toBeLessThan(1.25);
+
+  // The table stays within the description container instead of overflowing.
+  const tableBox = await page.locator(".markdown-body table").boundingBox();
+  const bodyBox = await page.locator(".markdown-body").first().boundingBox();
+  expect(tableBox).not.toBeNull();
+  expect(bodyBox).not.toBeNull();
+  expect(tableBox!.width).toBeLessThanOrEqual(bodyBox!.width + 1);
+});
+
 test("add description to empty-body PR shows add-description-btn", async ({ page }) => {
   // Override the GET route to return a PR with empty body.
   await page.route("**/api/v1/pulls/github/acme/widgets/42", async (route) => {

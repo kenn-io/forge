@@ -312,31 +312,6 @@
   <div class="sidebar-header">
     <span class="sidebar-header-label">Workspaces</span>
     <span class="sidebar-header-count">{sidebarCountLabel}</span>
-    {#if isSidebarToggleEnabled && onCollapseSidebar}
-      <LeftSidebarToggle
-        state="expanded"
-        label="Workspaces sidebar"
-        onclick={onCollapseSidebar}
-        class="left-sidebar-toggle--push left-sidebar-toggle--compact"
-      />
-    {/if}
-  </div>
-  <div class="workspace-controls">
-    <label class="workspace-filter">
-      <SearchIcon
-        class="workspace-filter-icon"
-        size="13"
-        strokeWidth="2.25"
-        aria-hidden="true"
-      />
-      <input
-        type="search"
-        value={searchQuery}
-        placeholder="Filter workspaces"
-        aria-label="Filter workspaces"
-        oninput={updateSearch}
-      />
-    </label>
     <div class="workspace-sort">
       <FilterDropdown
         label={sortLabel}
@@ -348,7 +323,30 @@
         align="end"
       />
     </div>
+    {#if isSidebarToggleEnabled && onCollapseSidebar}
+      <LeftSidebarToggle
+        state="expanded"
+        label="Workspaces sidebar"
+        onclick={onCollapseSidebar}
+        class="left-sidebar-toggle--push left-sidebar-toggle--compact"
+      />
+    {/if}
   </div>
+  <label class="workspace-filter">
+    <SearchIcon
+      class="workspace-filter-icon"
+      size="13"
+      strokeWidth="2.25"
+      aria-hidden="true"
+    />
+    <input
+      type="search"
+      value={searchQuery}
+      placeholder="Filter workspaces"
+      aria-label="Filter workspaces"
+      oninput={updateSearch}
+    />
+  </label>
   <div class="sidebar-list">
     {#if sortMode === "repo"}
     {#each [...grouped] as [repoKey, items] (repoKey)}
@@ -562,34 +560,38 @@
     opacity: 0.7;
   }
 
-  .workspace-controls {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    margin: 6px 8px 4px;
-    flex-shrink: 0;
-  }
-
   .workspace-filter {
     display: flex;
     align-items: center;
     gap: 6px;
     height: 28px;
-    flex: 1 1 auto;
-    min-width: 0;
+    margin: 6px 8px 4px;
     padding: 0 8px;
     border: 1px solid var(--border-muted);
     border-radius: 6px;
     background: var(--bg-surface);
     color: var(--text-muted);
+    flex-shrink: 0;
   }
 
   .workspace-sort {
+    /* Claims the header's free space so the sort trigger (and the
+     * collapse toggle after it) sit flush right. */
+    margin-left: auto;
     flex-shrink: 0;
   }
 
   .workspace-sort :global(.filter-btn) {
-    min-height: 28px;
+    /* Borderless inside the 28px header rail; the dropdown trigger
+     * reads as header chrome rather than a standalone button. */
+    min-height: 22px;
+    padding: 2px 6px;
+    border-color: transparent;
+    background: transparent;
+  }
+
+  .workspace-sort :global(.filter-btn:hover:not(:disabled)) {
+    border-color: var(--border-muted);
   }
 
   :global(.workspace-filter-icon) {

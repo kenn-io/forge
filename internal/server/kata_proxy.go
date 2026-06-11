@@ -1,14 +1,17 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -57,7 +60,7 @@ func (s *Server) kataProxy() http.Handler {
 }
 
 func (s *Server) kataProxyForDaemon(d kata.Daemon) (kataProxyCacheEntry, error) {
-	key := kataProxyCacheKey{id: d.ID, url: d.URL, token: d.Token}
+	key := kataProxyCacheKey{id: d.ID, url: d.URL, token: kataDaemonForwardToken(d)}
 	s.kataProxyMu.Lock()
 	if entry, ok := s.kataProxyCache[key]; ok {
 		s.kataProxyMu.Unlock()
@@ -193,9 +196,44 @@ func newKataDaemonProxyEntry(d kata.Daemon) (kataProxyCacheEntry, error) {
 			pr.Out.Host = target.Host
 			pr.Out.Header.Del("Origin")
 			pr.Out.Header.Del(kataDaemonHeaderName)
-			if d.Token != "" && pr.Out.Header.Get("Authorization") == "" {
-				pr.Out.Header.Set("Authorization", "Bearer "+d.Token)
+			if d.Local {
+				pr.Out.Header.Del("Authorization")
+				return
 			}
+			if token := kataDaemonForwardToken(d); token != "" && pr.Out.Header.Get("Authorization") == "" {
+				pr.Out.Header.Set("Authorization", "Bearer "+token)
+			}
+		},
+		ModifyResponse: func(resp *http.Response) error {
+			if !isKataLocalDaemonChallenge(d, resp.StatusCode) {
+				return nil
+			}
+			problem := newProblem(
+				http.StatusBadGateway,
+				CodeUpstreamError,
+				"Kata daemon is unreachable",
+				map[string]any{"daemon": d.ID},
+			)
+			body, err := json.Marshal(problem)
+			if err != nil {
+				return err
+			}
+			_ = resp.Body.Close()
+			resp.StatusCode = problem.Status
+			resp.Status = "502 Bad Gateway"
+			resp.Header.Del("Content-Encoding")
+			resp.Header.Del("Content-Language")
+			resp.Header.Del("Content-Location")
+			resp.Header.Del("ETag")
+			resp.Header.Del("Last-Modified")
+			resp.Header.Del("Trailer")
+			resp.Header.Del("WWW-Authenticate")
+			resp.Header.Set("Content-Type", "application/problem+json")
+			resp.Header.Set("Content-Length", strconv.Itoa(len(body)))
+			resp.Trailer = nil
+			resp.ContentLength = int64(len(body))
+			resp.Body = io.NopCloser(bytes.NewReader(body))
+			return nil
 		},
 		Transport: transport,
 		ErrorHandler: func(w http.ResponseWriter, _ *http.Request, err error) {

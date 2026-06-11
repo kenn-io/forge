@@ -517,6 +517,83 @@ local = true
 	assert.Equal("late-local", strings.TrimSpace(rr.Body.String()))
 }
 
+func TestKataProxyLocalNoAuthDoesNotForwardAuthChallenge(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		writeProblemResponse(w, newProblem(
+			http.StatusUnauthorized,
+			CodeUnauthorized,
+			"Authentication required",
+			nil,
+		))
+	}))
+	defer daemon.Close()
+
+	home := t.TempDir()
+	t.Setenv("KATA_HOME", home)
+	t.Setenv("KATA_DB", "")
+	writeKataProxyCatalog(t, home, `
+active_daemon = "local"
+
+[[daemon]]
+name = "local"
+local = true
+`)
+	writeKataProxyRuntimeRecord(t, daemon.URL)
+	srv, _ := setupTestServer(t)
+
+	rr := doJSON(t, srv, http.MethodGet, "/api/v1/kata/proxy/api/v1/instance", nil)
+
+	require.Equal(http.StatusBadGateway, rr.Code, rr.Body.String())
+	problem := decodeMsgvaultProblem(t, rr)
+	assert.Equal(CodeUpstreamError, problem.Code)
+	assert.NotContains(rr.Body.String(), "Authentication required")
+}
+
+func TestKataProxyLocalDaemonStripsAuthorization(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	var mu sync.Mutex
+	authorizations := []string{}
+	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		authorizations = append(authorizations, r.Header.Get("Authorization"))
+		mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer daemon.Close()
+
+	home := t.TempDir()
+	t.Setenv("KATA_HOME", home)
+	t.Setenv("KATA_DB", "")
+	writeKataProxyCatalog(t, home, `
+active_daemon = "local"
+
+[[daemon]]
+name = "local"
+local = true
+token = "local-secret"
+`)
+	writeKataProxyRuntimeRecord(t, daemon.URL)
+	srv, _ := setupTestServer(t)
+
+	rr := doJSON(t, srv, http.MethodGet, "/api/v1/kata/proxy/api/v1/instance", nil)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/kata/proxy/api/v1/instance", nil)
+	req.Header.Set("Authorization", "Bearer caller-secret")
+	rr = httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+
+	mu.Lock()
+	defer mu.Unlock()
+	assert.Equal([]string{"", ""}, authorizations)
+}
+
 func TestKataProxyLocalDaemonRejectsNonLocalRuntimeTargets(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

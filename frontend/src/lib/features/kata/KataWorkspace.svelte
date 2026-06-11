@@ -62,7 +62,6 @@
   }
 
   type SplitOrientation = "vertical" | "horizontal";
-  type KataConnectionTone = "offline" | "connecting" | "online" | "error";
 
   let {
     api = undefined,
@@ -363,34 +362,10 @@
     return selectedProjectName() ?? systemViews.find((view) => view.name === store.currentView.name)?.label ?? "Kata";
   }
 
-  function activeDaemonLabel(): string {
-    return activeKataDaemonId ?? "Kata daemon";
-  }
-
-  function connectionLabel(): string {
+  function activeDaemonStatusLabel(): string | undefined {
     if (error) return error;
-    if (store.connection.status === "error") return store.connection.message ?? "Connection failed";
-    if (loading || store.connection.status === "connecting") return `Connecting - ${activeDaemonLabel()}`;
-    return "Connected";
-  }
-
-  function connectionTitle(): string {
-    if (error) return error;
-    if (store.connection.status === "error") return store.connection.message ?? "Connection failed";
-    if (store.connection.status === "online") return `Connected - ${activeDaemonLabel()}`;
-    if (loading || store.connection.status === "connecting") return `Connecting - ${activeDaemonLabel()}`;
-    return activeDaemonLabel();
-  }
-
-  function showVisibleConnectionStatus(): boolean {
-    const tone = connectionTone();
-    return tone === "connecting" || tone === "error";
-  }
-
-  function connectionTone(): KataConnectionTone {
-    if (error) return "error";
-    if (loading && store.connection.status !== "error") return "connecting";
-    return store.connection.status;
+    if (store.connection.status !== "error") return undefined;
+    return store.connection.message ?? "Connection failed";
   }
 
   function resetIssueExpansion(): void {
@@ -736,29 +711,16 @@
   <header class="kata-header">
     <div class="kata-header-title">
       <h1 id="kata-title">Kata</h1>
-      {#if daemonInfos.length > 1}
+      {#if daemonInfos.length > 0}
         <KataDaemonSwitcher
           daemons={daemonInfos}
           activeId={activeKataDaemonId}
+          activeStatusLabel={activeDaemonStatusLabel()}
+          activeStatusTone={activeDaemonStatusLabel() ? "error" : undefined}
           onSelect={(id) => {
             void switchKataDaemon(id);
           }}
         />
-      {/if}
-      {#if showVisibleConnectionStatus()}
-        <span
-          class="daemon-status"
-          role="status"
-          title={connectionTitle()}
-          aria-label={`Connection: ${connectionTone()}`}
-        >
-          <span class={`daemon-status-dot daemon-status-dot--${connectionTone()}`} aria-hidden="true"></span>
-          <span class="daemon-status-label">{connectionLabel()}</span>
-        </span>
-      {:else}
-        <span class="daemon-status-sr" role="status" aria-label={`Connection: ${connectionTone()}`}>
-          {connectionLabel()}
-        </span>
       {/if}
     </div>
     <div class="kata-header-actions">
@@ -975,59 +937,6 @@
     background: var(--bg-surface-hover);
     color: var(--text-primary);
     outline: none;
-  }
-
-  .daemon-status {
-    min-width: 0;
-    max-width: min(42vw, 460px);
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    color: var(--text-muted);
-    font-size: var(--font-size-sm);
-  }
-
-  .daemon-status-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: var(--radius-pill);
-    background: var(--text-faint);
-    flex: 0 0 auto;
-  }
-
-  .daemon-status-dot--online {
-    background: var(--accent-green);
-  }
-
-  .daemon-status-dot--connecting {
-    background: var(--accent-amber);
-  }
-
-  .daemon-status-dot--error {
-    background: var(--accent-red);
-  }
-
-  .daemon-status-label {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .daemon-status-dot--error + .daemon-status-label {
-    color: var(--accent-red);
-  }
-
-  .daemon-status-sr {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
   }
 
   .kata-layout {

@@ -217,6 +217,62 @@ describe("KataWorkspace", () => {
     expect(api.issues).toHaveBeenCalledTimes(2);
   });
 
+  it("keeps the daemon switcher visible for a single daemon after connecting", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      Response.json({
+        daemons: [
+          {
+            id: "local",
+            url: "http://127.0.0.1:7777",
+            default: true,
+            auth: "none",
+            health: "connected",
+          },
+        ],
+      }),
+    );
+    const { api } = createWorkspaceAPI();
+
+    render(KataWorkspace, { props: { api } });
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "All Open" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: /Pay rent/ })).toBeTruthy();
+      expect(screen.getByTestId("daemon-chip").textContent).toContain("local");
+    });
+  });
+
+  it("does not render a separate header connection status while a connected daemon is bootstrapping", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      Response.json({
+        daemons: [
+          {
+            id: "kenn",
+            url: "http://127.0.0.1:7777",
+            default: true,
+            auth: "none",
+            health: "connected",
+          },
+        ],
+      }),
+    );
+    const { api } = createWorkspaceAPI();
+    const instance = deferred<Awaited<ReturnType<typeof api.instance>>>();
+    vi.mocked(api.instance).mockReturnValue(instance.promise);
+    const { container } = render(KataWorkspace, { props: { api } });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("daemon-chip").textContent).toContain("kenn");
+    });
+
+    expect(container.querySelector(".daemon-status")).toBeNull();
+    instance.resolve({
+      instance_uid: "instance-1",
+      version: "dev",
+      schema_version: 1,
+    });
+  });
+
   it("clears the routed task when daemon selection leaves no selected task", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
       Response.json({
@@ -494,8 +550,10 @@ describe("KataWorkspace", () => {
     render(KataWorkspace, { props: { api } });
 
     await waitFor(() => {
-      expect(screen.getByRole("status").textContent).toContain("Authentication required");
+      expect(screen.getByTestId("daemon-chip").textContent).toContain("home");
     });
+    await fireEvent.click(screen.getByTestId("daemon-chip"));
+    expect(within(screen.getByTestId("daemon-row-home")).getByText("Authentication required")).toBeTruthy();
     expect(screen.queryByText("daemon token missing")).toBeNull();
   });
 

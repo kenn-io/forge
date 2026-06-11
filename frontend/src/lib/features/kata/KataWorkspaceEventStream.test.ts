@@ -141,9 +141,10 @@ describe("KataWorkspace", () => {
     streamController?.close();
 
     await waitFor(() => {
-      expect(screen.getByText("Live updates disconnected")).toBeTruthy();
-      expect(screen.queryByText("Connected")).toBeNull();
+      expect(screen.queryByRole("status")).toBeNull();
     });
+    await fireEvent.click(screen.getByTestId("daemon-chip"));
+    expect(within(screen.getByTestId("daemon-row-home")).getByText("Live updates disconnected")).toBeTruthy();
   });
 
   it("does not reconnect after a permanent live Kata stream failure", async () => {
@@ -174,8 +175,10 @@ describe("KataWorkspace", () => {
     render(KataWorkspace, { props: { api } });
 
     await waitFor(() => {
-      expect(screen.getByText("Kata event stream failed: HTTP 401")).toBeTruthy();
+      expect(streamRequests).toBe(1);
     });
+    await fireEvent.click(screen.getByTestId("daemon-chip"));
+    expect(within(screen.getByTestId("daemon-row-home")).getByText("Kata event stream failed: HTTP 401")).toBeTruthy();
     await new Promise((resolve) => setTimeout(resolve, 150));
     expect(streamRequests).toBe(1);
   });
@@ -219,13 +222,11 @@ describe("KataWorkspace", () => {
     render(KataWorkspace, { props: { api } });
 
     await waitFor(() => {
-      expect(screen.getByText("Kata event stream failed: HTTP 503")).toBeTruthy();
-    });
-    await waitFor(() => {
       expect(streamRequests).toBe(2);
       expect(streamController).toBeTruthy();
-      expect(screen.getByRole("status", { name: "Connection: online" })).toBeTruthy();
     });
+    await fireEvent.click(screen.getByTestId("daemon-chip"));
+    expect(within(screen.getByTestId("daemon-row-home")).getByText("connected")).toBeTruthy();
   });
 
   it("reconnects the live Kata event stream after a transient close", async () => {
@@ -278,9 +279,9 @@ describe("KataWorkspace", () => {
     await waitFor(() => {
       expect(streamControllers).toHaveLength(2);
     });
-    await waitFor(() => {
-      expect(screen.getByRole("status", { name: "Connection: online" })).toBeTruthy();
-    });
+    await fireEvent.click(screen.getByTestId("daemon-chip"));
+    expect(within(screen.getByTestId("daemon-row-home")).getByText("connected")).toBeTruthy();
+    await fireEvent.click(screen.getByTestId("daemon-chip"));
     expect(streamHeaders[1]?.get("X-Middleman-Kata-Daemon")).toBe("home");
     expect(streamHeaders[1]?.get("Last-Event-ID")).toBe("5");
 

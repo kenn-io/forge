@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import type { KataDaemonInfo } from "../../api/kata/daemons.js";
@@ -29,7 +29,26 @@ describe("KataDaemonSwitcher", () => {
   it("shows the active daemon id on the chip", () => {
     render(KataDaemonSwitcher, { props: { daemons, activeId: "home", onSelect: () => {} } });
 
-    expect(screen.getByTestId("daemon-chip").textContent).toContain("home");
+    const chip = screen.getByRole("button", { name: "Switch Kata daemon: home" });
+    expect(chip.textContent).toContain("home");
+    expect(chip.querySelector(".chip-icon")).toBeTruthy();
+    expect(screen.queryByText("Daemon")).toBeNull();
+  });
+
+  it("keeps daemon health indicators inside the menu", async () => {
+    const { container } = render(KataDaemonSwitcher, {
+      props: { daemons, activeId: "home", onSelect: () => {} },
+    });
+
+    expect(screen.getByTestId("daemon-chip").querySelector(".dot")).toBeNull();
+
+    await fireEvent.click(screen.getByTestId("daemon-chip"));
+
+    expect(screen.queryByText("Switch daemon")).toBeNull();
+    expect(screen.queryByText("Configured Kata daemons")).toBeNull();
+    expect(within(screen.getByTestId("daemon-row-home")).getByText("connected")).toBeTruthy();
+    expect(within(screen.getByTestId("daemon-row-work")).getByText("needs auth")).toBeTruthy();
+    expect(container.querySelector(".daemon-menu .dot")).toBeTruthy();
   });
 
   it("clicking a daemon row calls onSelect with its id", async () => {

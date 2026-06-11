@@ -1,16 +1,19 @@
 <script lang="ts">
   import CheckIcon from "@lucide/svelte/icons/check";
   import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
+  import ServerIcon from "@lucide/svelte/icons/server";
 
   import type { KataDaemonInfo } from "../../api/kata/daemons.js";
 
   interface Props {
     daemons: KataDaemonInfo[];
     activeId: string | undefined;
+    activeStatusLabel?: string | undefined;
+    activeStatusTone?: "error" | undefined;
     onSelect: (id: string) => void;
   }
 
-  let { daemons, activeId, onSelect }: Props = $props();
+  let { daemons, activeId, activeStatusLabel = undefined, activeStatusTone = undefined, onSelect }: Props = $props();
 
   let open = $state(false);
   const active = $derived(
@@ -23,6 +26,18 @@
     open = false;
     if (id !== active?.id) onSelect(id);
   }
+
+  function daemonStatusLabel(daemon: KataDaemonInfo): string {
+    if (daemon.id === active?.id && activeStatusLabel) return activeStatusLabel;
+    if (daemon.health === "connected") return "connected";
+    if (daemon.health === "auth_required") return "needs auth";
+    return "unreachable";
+  }
+
+  function daemonStatusTone(daemon: KataDaemonInfo): string {
+    if (daemon.id === active?.id && activeStatusTone) return activeStatusTone;
+    return daemon.health;
+  }
 </script>
 
 <div class="daemon-switcher">
@@ -30,19 +45,19 @@
     type="button"
     class="daemon-chip"
     data-testid="daemon-chip"
-    aria-label={`Kata daemon: ${active?.id ?? "default"}`}
+    aria-label={`Switch Kata daemon: ${active?.id ?? "default"}`}
+    title="Switch Kata daemon"
     aria-haspopup="menu"
     aria-expanded={open}
     onclick={() => (open = !open)}
   >
-    <span class={`dot dot--${active?.health ?? "down"}`} aria-hidden="true"></span>
+    <ServerIcon class="chip-icon" size={13} strokeWidth={1.9} aria-hidden="true" />
     <span class="chip-label">{active?.id ?? "kata"}</span>
     <ChevronDownIcon size={12} strokeWidth={2} aria-hidden="true" />
   </button>
 
   {#if open}
     <div class="daemon-menu" data-align="start" role="menu" aria-label="Configured Kata daemons">
-      <p class="menu-head">Kata daemon</p>
       {#each daemons as daemon (daemon.id)}
         <button
           type="button"
@@ -53,21 +68,17 @@
           aria-checked={daemon.id === active?.id}
           onclick={() => choose(daemon.id)}
         >
-          <span class={`dot dot--${daemon.health}`} aria-hidden="true"></span>
+          <span class={`dot dot--${daemonStatusTone(daemon)}`} aria-hidden="true"></span>
           <span class="row-name">{daemon.id}</span>
+          <span class="row-meta" title={daemonStatusLabel(daemon)}>{daemonStatusLabel(daemon)}</span>
           {#if daemon.id === active?.id}
             <CheckIcon class="check" size={13} strokeWidth={2} aria-hidden="true" />
-          {:else if daemon.health === "auth_required"}
-            <span class="row-meta">needs auth</span>
-          {:else if daemon.health === "down"}
-            <span class="row-meta">unreachable</span>
           {/if}
           {#if daemon.hint}
             <span class="row-hint">{daemon.hint}</span>
           {/if}
         </button>
       {/each}
-      <p class="menu-foot">Configured Kata daemons</p>
     </div>
   {/if}
 </div>
@@ -105,6 +116,11 @@
     white-space: nowrap;
   }
 
+  .chip-icon {
+    color: var(--text-muted);
+    flex: none;
+  }
+
   .dot {
     width: 8px;
     height: 8px;
@@ -124,6 +140,10 @@
     background: var(--text-faint);
   }
 
+  .dot--error {
+    background: var(--accent-red);
+  }
+
   .daemon-menu {
     position: absolute;
     top: calc(100% + 6px);
@@ -138,19 +158,6 @@
     padding: 5px;
   }
 
-  .menu-head,
-  .menu-foot {
-    margin: 0;
-    padding: 5px 8px;
-    color: var(--text-faint);
-    font-size: var(--font-size-3xs);
-  }
-
-  .menu-foot {
-    border-top: 1px solid var(--border-muted);
-    margin-top: 3px;
-  }
-
   .daemon-row {
     width: 100%;
     border: 0;
@@ -158,7 +165,7 @@
     background: transparent;
     color: var(--text-primary);
     display: grid;
-    grid-template-columns: 14px minmax(0, 1fr) auto;
+    grid-template-columns: 14px minmax(0, 1fr) auto auto;
     align-items: center;
     gap: 9px;
     padding: 7px 8px;
@@ -185,6 +192,10 @@
   .row-meta {
     color: var(--text-muted);
     font-size: var(--font-size-xs);
+    max-width: 132px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .row-hint {

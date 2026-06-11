@@ -20,6 +20,28 @@ async function startDefaultIsolatedE2EServer() {
   return startIsolatedE2EServerWithOptions({ freshProcess: true });
 }
 
+async function expectKataDaemonSwitcherReady(page: Page): Promise<void> {
+  const chip = page.getByTestId("daemon-chip");
+  await expect(chip).toBeVisible();
+  await expect(chip.locator(".dot")).toHaveCount(0);
+
+  const kataHeader = page.locator(".kata-header");
+  await expect(kataHeader.getByText("Daemon", { exact: true })).toHaveCount(0);
+  await expect(kataHeader.getByText(/Connecting|Connection|authentication required/i)).toHaveCount(0);
+  await expect(page.getByRole("status").filter({ hasText: /Connecting|Connection/i })).toHaveCount(0);
+
+  await chip.click();
+  const menu = page.getByRole("menu", { name: "Configured Kata daemons" });
+  await expect(menu).toBeVisible();
+  await expect(menu.getByText("Switch daemon", { exact: true })).toHaveCount(0);
+  await expect(menu.getByText("Configured Kata daemons", { exact: true })).toHaveCount(0);
+  await expect(menu.locator(".daemon-row .row-meta").first()).toContainText(
+    /connected|needs auth|unreachable|Connection|Live updates disconnected/,
+  );
+  await chip.click();
+  await expect(menu).toBeHidden();
+}
+
 type BackendState = {
   commentsByUID: Map<string, CommentRow[]>;
   duplicateIssueListResponses: DuplicateIssueListResponse[];
@@ -1228,7 +1250,7 @@ test("kata workspace reads tasks through the configured external daemon", async 
     await page.goto(`${server.info.base_url}/kata`);
 
     await expect(page.getByRole("heading", { name: "Kata" })).toBeVisible();
-    await expect(page.getByRole("status", { name: "Connection: online" })).toBeVisible();
+    await expectKataDaemonSwitcherReady(page);
     const payRentRow = page.getByRole("button", {
       name: /(?=.*Pay rent)(?=.*Finances#FIN-1)(?=.*project: Finances)(?=.*owner: Wes)(?=.*priority: 0)(?=.*home)/,
     });
@@ -1260,7 +1282,7 @@ test("kata workspace initial load does not mutate the configured external daemon
   try {
     await page.goto(`${server.info.base_url}/kata`);
 
-    await expect(page.getByRole("status", { name: "Connection: online" })).toBeVisible();
+    await expectKataDaemonSwitcherReady(page);
     await expect(page.getByRole("button", { name: /Pay rent/ })).toBeVisible();
     await expect.poll(() => backend.state.seenPaths).toContain("GET /api/v1/events/stream");
     expect(backend.state.seenPaths.filter((path) => !path.startsWith("GET "))).toEqual([]);
@@ -1390,7 +1412,7 @@ test("kata workspace reloads from reset frames on the configured daemon stream",
   try {
     await page.goto(`${server.info.base_url}/kata`);
 
-    await expect(page.getByRole("status", { name: "Connection: online" })).toBeVisible();
+    await expectKataDaemonSwitcherReady(page);
     await expect(page.getByRole("button", { name: /Pay rent/ })).toBeVisible();
     await expect.poll(() => backend.state.seenPaths).toContain("GET /api/v1/events/stream");
 
@@ -1419,7 +1441,7 @@ test("kata workspace applies a final reset frame when the configured daemon stre
   try {
     await page.goto(`${server.info.base_url}/kata`);
 
-    await expect(page.getByRole("status", { name: "Connection: online" })).toBeVisible();
+    await expectKataDaemonSwitcherReady(page);
     await expect(page.getByRole("button", { name: /Pay rent/ })).toBeVisible();
     await expect.poll(() => backend.state.seenPaths).toContain("GET /api/v1/events/stream");
 
@@ -1455,7 +1477,7 @@ test("kata workspace ignores stale metadata update frames from the configured da
   try {
     await page.goto(`${server.info.base_url}/kata`);
 
-    await expect(page.getByRole("status", { name: "Connection: online" })).toBeVisible();
+    await expectKataDaemonSwitcherReady(page);
     const payRentRow = page.locator(".kata-list").getByRole("button", { name: /Pay rent/ });
     await expect(payRentRow).toBeVisible();
     await payRentRow.click();
@@ -1823,7 +1845,7 @@ test("kata workspace applies cursor catch-up events before opening the configure
     await expect
       .poll(() => backend.state.seenPaths.some((path) => path.startsWith("GET /api/v1/events/stream")))
       .toBe(true);
-    await expect(page.getByRole("status", { name: "Connection: online" })).toBeVisible();
+    await expectKataDaemonSwitcherReady(page);
   } finally {
     await server.stop();
     kataHome.restore();
@@ -1839,7 +1861,7 @@ test("kata workspace reconnects after a closed configured daemon stream", async 
   try {
     await page.goto(`${server.info.base_url}/kata`);
 
-    await expect(page.getByRole("status", { name: "Connection: online" })).toBeVisible();
+    await expectKataDaemonSwitcherReady(page);
     await expect
       .poll(() => backend.state.seenPaths.filter((path) => path.startsWith("GET /api/v1/events/stream")).length)
       .toBe(1);
@@ -1850,7 +1872,7 @@ test("kata workspace reconnects after a closed configured daemon stream", async 
     await expect
       .poll(() => backend.state.seenPaths.filter((path) => path.startsWith("GET /api/v1/events/stream")).length)
       .toBeGreaterThanOrEqual(2);
-    await expect(page.getByRole("status", { name: "Connection: online" })).toBeVisible();
+    await expectKataDaemonSwitcherReady(page);
   } finally {
     await server.stop();
     kataHome.restore();
@@ -1866,7 +1888,7 @@ test("kata workspace reconnects a closed configured daemon stream", async ({ pag
   try {
     await page.goto(`${server.info.base_url}/kata`);
 
-    await expect(page.getByRole("status", { name: "Connection: online" })).toBeVisible();
+    await expectKataDaemonSwitcherReady(page);
     await expect(page.getByRole("button", { name: /Pay rent/ })).toBeVisible();
     await expect
       .poll(() => backend.state.seenPaths.filter((path) => path.startsWith("GET /api/v1/events/stream")).length)
@@ -1878,7 +1900,7 @@ test("kata workspace reconnects a closed configured daemon stream", async ({ pag
     await expect
       .poll(() => backend.state.seenPaths.filter((path) => path.startsWith("GET /api/v1/events/stream")).length)
       .toBeGreaterThanOrEqual(2);
-    await expect(page.getByRole("status", { name: "Connection: online" })).toBeVisible();
+    await expectKataDaemonSwitcherReady(page);
 
     backend.state.issues = [
       {
@@ -1975,7 +1997,7 @@ test("kata task list sorts by priority when requested", async ({ page }) => {
 
   try {
     await page.goto(`${server.info.base_url}/kata`);
-    await expect(page.getByRole("status", { name: "Connection: online" })).toBeVisible();
+    await expectKataDaemonSwitcherReady(page);
     const rows = page.locator(".issue-list .issue-row");
     await expect(rows.first()).toContainText("Alpha low priority");
     await expect(rows.nth(1)).toContainText("Zulu high priority");
@@ -2032,7 +2054,7 @@ test("kata task list defaults to newest first and sort controls switch priority"
 
   try {
     await page.goto(`${server.info.base_url}/kata`);
-    await expect(page.getByRole("status", { name: "Connection: online" })).toBeVisible();
+    await expectKataDaemonSwitcherReady(page);
     const rows = page.locator(".issue-list .issue-row");
     await expect(rows.first()).toContainText("Routine newer task");
     await expect(rows.nth(1)).toContainText("Urgent older task");
@@ -2096,7 +2118,7 @@ test("kata task list sorting preserves visible groups", async ({ page }) => {
 
   try {
     await page.goto(`${server.info.base_url}/kata?view=today`);
-    await expect(page.getByRole("status", { name: "Connection: online" })).toBeVisible();
+    await expectKataDaemonSwitcherReady(page);
     const issueList = page.locator(".issue-list");
     const overdueGroup = issueList.getByRole("region", { name: "Overdue" });
     const todayGroup = issueList.getByRole("region", { name: "Today" });
@@ -2124,7 +2146,7 @@ test("kata task list keyboard navigation moves focus and selection", async ({ pa
 
   try {
     await page.goto(`${server.info.base_url}/kata`);
-    await expect(page.getByRole("status", { name: "Connection: online" })).toBeVisible();
+    await expectKataDaemonSwitcherReady(page);
     await page.getByRole("button", { name: "All Open" }).click();
     const rows = page.locator(".issue-list .issue-row");
     await expect(rows.first()).toContainText("Email Susan re: Q3");
@@ -2600,15 +2622,15 @@ test("kata task list selection settles when Shift is released before G", async (
   }
 });
 
-test("kata single configured daemon hides the daemon switcher", async ({ page }) => {
+test("kata single configured daemon keeps the daemon switcher visible", async ({ page }) => {
   const backend = await startKataBackend();
   const kataHome = await configureKataHome(backend.url);
   const server = await startIsolatedE2EServer();
 
   try {
     await page.goto(`${server.info.base_url}/kata`);
-    await expect(page.getByRole("status", { name: "Connection: online" })).toBeVisible();
-    await expect(page.getByTestId("daemon-chip")).toHaveCount(0);
+    await expectKataDaemonSwitcherReady(page);
+    await expect(page.getByTestId("daemon-chip")).toContainText("e2e");
   } finally {
     await server.stop();
     kataHome.restore();
@@ -2647,7 +2669,7 @@ test("kata sidebar hides task inbox projects", async ({ page }) => {
 
   try {
     await page.goto(`${server.info.base_url}/kata`);
-    await expect(page.getByRole("status", { name: "Connection: online" })).toBeVisible();
+    await expectKataDaemonSwitcherReady(page);
 
     await expect(page.getByRole("button", { name: /^Finances\s+1$/ })).toBeVisible();
     await expect(page.getByRole("button", { name: /^Capture Inbox\s+1$/ })).toHaveCount(0);
@@ -2669,7 +2691,7 @@ test("kata sidebar switches system views and renders project areas", async ({ pa
 
   try {
     await page.goto(`${server.info.base_url}/kata`);
-    await expect(page.getByRole("status", { name: "Connection: online" })).toBeVisible();
+    await expectKataDaemonSwitcherReady(page);
 
     await expect(page.getByRole("button", { name: "Inbox" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Today" })).toBeVisible();
@@ -2716,7 +2738,7 @@ test("kata project create submits inline input and switches scope", async ({ pag
 
   try {
     await page.goto(`${server.info.base_url}/kata`);
-    await expect(page.getByRole("status", { name: "Connection: online" })).toBeVisible();
+    await expectKataDaemonSwitcherReady(page);
 
     await page.getByRole("button", { name: "New project" }).click();
     const input = page.getByRole("textbox", { name: "New project name" });
@@ -2741,7 +2763,7 @@ test("kata project create input cancels on Escape", async ({ page }) => {
 
   try {
     await page.goto(`${server.info.base_url}/kata`);
-    await expect(page.getByRole("status", { name: "Connection: online" })).toBeVisible();
+    await expectKataDaemonSwitcherReady(page);
 
     await page.getByRole("button", { name: "New project" }).click();
     const input = page.getByRole("textbox", { name: "New project name" });
@@ -2766,7 +2788,7 @@ test("kata project rename submits inline input", async ({ page }) => {
 
   try {
     await page.goto(`${server.info.base_url}/kata`);
-    await expect(page.getByRole("status", { name: "Connection: online" })).toBeVisible();
+    await expectKataDaemonSwitcherReady(page);
     const listTitle = page.locator(".kata-list h2");
     const titleBeforeRename = await listTitle.innerText();
 
@@ -2794,7 +2816,7 @@ test("kata project rows can be renamed by double-clicking", async ({ page }) => 
 
   try {
     await page.goto(`${server.info.base_url}/kata`);
-    await expect(page.getByRole("status", { name: "Connection: online" })).toBeVisible();
+    await expectKataDaemonSwitcherReady(page);
 
     await page.getByRole("button", { name: /^Finances\s+1$/ }).dblclick();
     const input = page.getByRole("textbox", { name: "Rename project" });
@@ -2819,7 +2841,7 @@ test("kata project row double-click enters rename", async ({ page }) => {
 
   try {
     await page.goto(`${server.info.base_url}/kata`);
-    await expect(page.getByRole("status", { name: "Connection: online" })).toBeVisible();
+    await expectKataDaemonSwitcherReady(page);
 
     await page.getByRole("button", { name: /^Finances\s+1$/ }).dblclick({ delay: 300 });
 
@@ -2838,7 +2860,7 @@ test("kata project rename input cancels on Escape", async ({ page }) => {
 
   try {
     await page.goto(`${server.info.base_url}/kata`);
-    await expect(page.getByRole("status", { name: "Connection: online" })).toBeVisible();
+    await expectKataDaemonSwitcherReady(page);
 
     await page.getByRole("button", { name: "Rename Finances" }).click();
     const input = page.getByRole("textbox", { name: "Rename project" });
@@ -2892,7 +2914,7 @@ test("kata parent row expands children loaded from detail", async ({ page }) => 
 
   try {
     await page.goto(`${server.info.base_url}/kata`);
-    await expect(page.getByRole("status", { name: "Connection: online" })).toBeVisible();
+    await expectKataDaemonSwitcherReady(page);
     const parentRow = page.getByRole("button", { name: /Parent task/ });
     await expect(parentRow).toBeVisible();
     await expect(page.getByRole("button", { name: /Child task/ })).toHaveCount(0);
@@ -2963,7 +2985,7 @@ test("kata task list selects visible parent when child sorts first", async ({ pa
 
   try {
     await page.goto(`${server.info.base_url}/kata`);
-    await expect(page.getByRole("status", { name: "Connection: online" })).toBeVisible();
+    await expectKataDaemonSwitcherReady(page);
 
     const parentRow = page.getByRole("button", { name: /Parent task/ });
     await expect(parentRow).toBeVisible();
@@ -4320,7 +4342,9 @@ test("kata owner assignment failure keeps the custom owner editor open", async (
     await ownerInput.fill("agent:new");
     await ownerInput.press("Enter");
 
-    await expect(page.getByRole("status", { name: "Connection: error" })).toContainText("owner unavailable");
+    await page.getByTestId("daemon-chip").click();
+    await expect(page.getByTestId("daemon-row-e2e")).toContainText("owner unavailable");
+    await page.getByTestId("daemon-chip").click();
     await expect(detail.getByLabel("Owner", { exact: true })).toHaveValue("agent:new");
     await expect(detail.getByRole("button", { name: "Owner: Wes" })).toHaveCount(0);
     expect(backend.state.issues.find((issue) => issue.uid === "issue-rent")?.owner).toBe("Wes");

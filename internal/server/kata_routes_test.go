@@ -221,6 +221,58 @@ local = true
 	assert.Contains(body.Daemons[0].Hint, "kata daemon start")
 }
 
+func TestKataDaemonsEndpointDoesNotReportAuthRequiredForLocalNoAuthDaemon(t *testing.T) {
+	assert := Assert.New(t)
+
+	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer daemon.Close()
+
+	home := t.TempDir()
+	t.Setenv("KATA_HOME", home)
+	t.Setenv("KATA_DB", "")
+	writeKataServerCatalog(t, home, `
+[[daemon]]
+name = "local"
+local = true
+`)
+	writeKataProxyRuntimeRecord(t, daemon.URL)
+	srv, _ := setupTestServer(t)
+
+	got := requestKataDaemonsByID(t, srv)
+
+	assert.Equal("none", got["local"].Auth)
+	assert.Equal("down", got["local"].Health)
+}
+
+func TestKataDaemonsEndpointLocalDaemonDoesNotUseTokenAuth(t *testing.T) {
+	assert := Assert.New(t)
+
+	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Empty(r.Header.Get("Authorization"))
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer daemon.Close()
+
+	home := t.TempDir()
+	t.Setenv("KATA_HOME", home)
+	t.Setenv("KATA_DB", "")
+	writeKataServerCatalog(t, home, `
+[[daemon]]
+name = "local"
+local = true
+token = "local-secret"
+`)
+	writeKataProxyRuntimeRecord(t, daemon.URL)
+	srv, _ := setupTestServer(t)
+
+	got := requestKataDaemonsByID(t, srv)
+
+	assert.Equal("none", got["local"].Auth)
+	assert.Equal("connected", got["local"].Health)
+}
+
 func TestKataDaemonsEndpointRedactsMalformedTargetErrors(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

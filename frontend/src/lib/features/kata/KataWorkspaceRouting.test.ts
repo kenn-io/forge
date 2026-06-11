@@ -118,8 +118,8 @@ describe("KataWorkspace", () => {
 
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: "Today" })).toBeTruthy();
+      expect(screen.getByTestId("daemon-chip").textContent).toContain("home");
     });
-    await screen.findByText("Live updates disconnected");
     await waitFor(() => expect(api.issues).toHaveBeenCalledTimes(2));
     await Promise.resolve();
     await Promise.resolve();

@@ -76,6 +76,23 @@ describe("renderMarkdownMermaidDiagrams", () => {
     expect(loader).not.toHaveBeenCalled();
   });
 
+  test("allows failed mermaid renders to be retried", async () => {
+    const root = document.createElement("div");
+    root.innerHTML = '<div class="markdown-body"><pre class="mermaid">graph TD\nA-->B</pre></div>';
+    const renderError = new Error("render failed");
+    const run = vi.fn<MarkdownMermaidAPI["run"]>().mockRejectedValueOnce(renderError).mockResolvedValueOnce(undefined);
+    const mermaid = mermaidLoader(run);
+    const loader = vi.fn(async () => mermaid);
+
+    await expect(renderMarkdownMermaidDiagrams(root, loader)).rejects.toThrow(renderError);
+    expect(root.querySelector<HTMLElement>("pre.mermaid")?.dataset.mermaidRendered).toBeUndefined();
+
+    const rendered = await renderMarkdownMermaidDiagrams(root, loader);
+
+    expect(rendered).toBe(1);
+    expect(mermaid.run).toHaveBeenCalledTimes(2);
+  });
+
   test("wraps rendered diagrams in viewer controls", async () => {
     const root = document.createElement("div");
     root.innerHTML = '<div class="markdown-body"><pre class="mermaid">graph TD\nA-->B</pre></div>';
@@ -97,8 +114,8 @@ describe("renderMarkdownMermaidDiagrams", () => {
     expect(root.querySelector('button[aria-label="Zoom in diagram"]')).toBeNull();
     expect(root.querySelector('button[aria-label="Zoom out diagram"]')).toBeNull();
     const expandButton = root.querySelector<HTMLButtonElement>('button[aria-label="Open diagram in expanded view"]');
-    expect(expandButton?.querySelector("svg")).not.toBeNull();
-    expect(expandButton?.textContent?.trim()).toBe("");
+    expect(expandButton?.querySelector("svg")).toBeNull();
+    expect(expandButton?.textContent?.trim()).toBe("⟷");
     expect(pan?.style.transform).toBe("translate(0px, 0px) scale(1)");
 
     Object.defineProperty(viewport, "getBoundingClientRect", {

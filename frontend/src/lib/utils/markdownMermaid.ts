@@ -67,7 +67,6 @@ const GITHUB_DARK_MERMAID_THEME: MermaidThemeVariables = {
   labelBoxBkgColor: "#30363d",
   labelBoxBorderColor: "#8b949e",
 };
-type MermaidButtonContent = string | SVGSVGElement;
 let mermaidPromise: Promise<MarkdownMermaidAPI> | null = null;
 const initializedMermaid = new WeakSet<MarkdownMermaidAPI>();
 const diagramSources = new WeakMap<HTMLElement, string>();
@@ -110,10 +109,14 @@ export async function renderMarkdownMermaidDiagrams(
     for (const node of nodes) {
       attachMermaidViewer(node, diagramSources.get(node) ?? "");
     }
-  } finally {
     for (const node of nodes) {
       node.dataset.mermaidRendered = "true";
     }
+  } catch (error: unknown) {
+    for (const node of nodes) {
+      delete node.dataset.mermaidRendered;
+    }
+    throw error;
   }
 
   return nodes.length;
@@ -127,9 +130,7 @@ function attachMermaidViewer(node: HTMLElement, source: string): void {
 
   svg.remove();
   const diagramView = createPannableDiagramView(svg);
-  const expandButton = createMermaidButton("Open diagram in expanded view", createExpandIcon(), () =>
-    openMermaidLightbox(svg),
-  );
+  const expandButton = createMermaidButton("Open diagram in expanded view", "⟷", () => openMermaidLightbox(svg));
   const copyButton = createMermaidButton("Copy Mermaid source", "⧉", () => copyMermaidSource(source, copyButton));
   const topControls = document.createElement("div");
   topControls.className = "mermaid-viewer__controls mermaid-viewer__controls--top";
@@ -276,52 +277,19 @@ function openMermaidLightbox(svg: SVGSVGElement): void {
   }
 }
 
-function createMermaidButton(
-  label: string,
-  content: MermaidButtonContent,
-  onClick: () => void | Promise<void>,
-): HTMLButtonElement {
+function createMermaidButton(label: string, text: string, onClick: () => void | Promise<void>): HTMLButtonElement {
   const button = document.createElement("button");
   button.type = "button";
   button.className = "mermaid-viewer__button";
   button.setAttribute("aria-label", label);
   button.title = label;
-  if (typeof content === "string") {
-    button.textContent = content;
-  } else {
-    button.append(content);
-  }
+  button.textContent = text;
   button.addEventListener("click", (event) => {
     event.preventDefault();
     event.stopPropagation();
     void onClick();
   });
   return button;
-}
-
-function createExpandIcon(): SVGSVGElement {
-  return createSvgIcon(["M15 3h6v6", "M9 21H3v-6", "M21 3l-7 7", "M3 21l7-7"]);
-}
-
-function createSvgIcon(paths: string[]): SVGSVGElement {
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.classList.add("mermaid-viewer__button-icon");
-  svg.setAttribute("viewBox", "0 0 24 24");
-  svg.setAttribute("fill", "none");
-  svg.setAttribute("stroke", "currentColor");
-  svg.setAttribute("stroke-width", "2");
-  svg.setAttribute("stroke-linecap", "round");
-  svg.setAttribute("stroke-linejoin", "round");
-  svg.setAttribute("aria-hidden", "true");
-  svg.setAttribute("focusable", "false");
-
-  for (const pathData of paths) {
-    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-    path.setAttribute("d", pathData);
-    svg.append(path);
-  }
-
-  return svg;
 }
 
 function createMermaidSpacer(): HTMLSpanElement {

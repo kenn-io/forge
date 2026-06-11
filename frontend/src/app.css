@@ -387,11 +387,6 @@ a:hover {
   color: var(--accent-green);
   border-color: color-mix(in srgb, var(--accent-green) 70%, transparent);
 }
-.mermaid-viewer__button-icon {
-  width: 18px;
-  height: 18px;
-  flex: none;
-}
 .markdown-body pre.mermaid.mermaid-viewer .edgeLabel,
 .doc-markdown pre.mermaid.mermaid-viewer .edgeLabel,
 .mermaid-viewer-lightbox .edgeLabel {

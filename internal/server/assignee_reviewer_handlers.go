@@ -38,12 +38,15 @@ type setPullReviewersInput struct {
 	Body         setReviewersRequest
 }
 
+// The pointer distinguishes a missing field from an empty array at
+// decode time, but null is not a valid wire value: an empty array is
+// the only way to clear the set.
 type setAssigneesRequest struct {
-	Assignees *[]string `json:"assignees" required:"true"`
+	Assignees *[]string `json:"assignees" required:"true" nullable:"false"`
 }
 
 type setReviewersRequest struct {
-	Reviewers *[]string `json:"reviewers" required:"true"`
+	Reviewers *[]string `json:"reviewers" required:"true" nullable:"false"`
 }
 
 type itemAssigneesResponse struct {
@@ -167,14 +170,34 @@ func (s *Server) setPullReviewers(
 		return nil, unsupportedCapabilityProblem(*repo, capabilityReviewerMutation)
 	}
 
-	current := mr.RequestedReviewers
+	// Resolve the current requested-reviewer set from the provider, not
+	// from the last synced row: the synced state can be stale (drift
+	// from edits made outside middleman) or unknown (reviewers_json was
+	// never reported), and either would make the diff below silently
+	// skip removals. An empty request is the providers' read primitive.
+	ref := platformRepoRefFromDB(*repo)
+	current, err := mutator.RequestMergeRequestReviewers(ctx, ref, input.Number, nil)
+	if err != nil {
+		return nil, providerCallProblemWithDetail(
+			err,
+			string(repoProviderKind(*repo)), repoProviderHost(*repo),
+			"provider API error: "+err.Error(),
+		)
+	}
+
 	toAdd := diffUserNames(names, current)
 	toRemove := diffUserNames(current, names)
 	reviewers := current
 	if len(toAdd) > 0 {
-		reviewers, err = mutator.RequestMergeRequestReviewers(
-			ctx, platformRepoRefFromDB(*repo), input.Number, toAdd,
-		)
+		reviewers, err = mutator.RequestMergeRequestReviewers(ctx, ref, input.Number, toAdd)
+		// Persist any successful provider change immediately so a
+		// failure in the later removal step cannot leave the DB
+		// describing pre-mutation state while the provider moved on.
+		if err == nil {
+			if dbErr := s.db.UpdateMergeRequestReviewers(ctx, repo.ID, mr.ID, reviewers); dbErr != nil {
+				return nil, problemInternal("save pull reviewers failed")
+			}
+		}
 		if err != nil {
 			return nil, providerCallProblemWithDetail(
 				err,
@@ -184,9 +207,7 @@ func (s *Server) setPullReviewers(
 		}
 	}
 	if len(toRemove) > 0 {
-		reviewers, err = mutator.RemoveMergeRequestReviewers(
-			ctx, platformRepoRefFromDB(*repo), input.Number, toRemove,
-		)
+		reviewers, err = mutator.RemoveMergeRequestReviewers(ctx, ref, input.Number, toRemove)
 		if err != nil {
 			return nil, providerCallProblemWithDetail(
 				err,

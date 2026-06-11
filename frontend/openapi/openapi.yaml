@@ -4062,9 +4062,7 @@ components:
         assignees:
           items:
             type: string
-          type:
-            - array
-            - "null"
+          type: array
       required:
         - assignees
       type: object
@@ -4130,9 +4128,7 @@ components:
         reviewers:
           items:
             type: string
-          type:
-            - array
-            - "null"
+          type: array
       required:
         - reviewers
       type: object

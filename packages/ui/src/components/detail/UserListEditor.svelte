@@ -1,6 +1,7 @@
 <script lang="ts">
   import { tick, type Snippet } from "svelte";
-  import ActionButton from "../shared/ActionButton.svelte";
+  import PlusIcon from "@lucide/svelte/icons/plus";
+  import Chip from "../shared/Chip.svelte";
   import UserPicker from "./UserPicker.svelte";
   import { floatingPopoverStyle } from "../shared/floatingPosition.js";
 
@@ -9,6 +10,8 @@
     users: string[];
     canEdit?: boolean;
     disabled?: boolean;
+    /// Extra context appended to the chip tooltip, e.g. provider caveats.
+    tooltipNote?: string;
     loadCandidates: () => Promise<string[]>;
     onchange: (next: string[]) => Promise<unknown>;
     icon?: Snippet;
@@ -19,6 +22,7 @@
     users,
     canEdit = false,
     disabled = false,
+    tooltipNote = undefined,
     loadCandidates,
     onchange,
     icon = undefined,
@@ -30,12 +34,15 @@
   let pendingUser = $state<string | null>(null);
   let pickerError = $state<string | null>(null);
   let autofocusFilter = $state(false);
-  let anchorEl = $state<HTMLDivElement>();
-  let buttonEl = $state<HTMLSpanElement>();
+  let anchorEl = $state<HTMLSpanElement>();
   let popoverEl = $state<HTMLDivElement>();
   let popoverStyle = $state("");
 
   const editorId = $derived(label.toLowerCase().replace(/\s+/g, "-"));
+  const chipTitle = $derived.by(() => {
+    const base = users.length > 0 ? `${label}: ${users.join(", ")}` : `Add ${label.toLowerCase()}`;
+    return tooltipNote ? `${base}\n${tooltipNote}` : base;
+  });
 
   function closePicker(): void {
     open = false;
@@ -44,11 +51,10 @@
   }
 
   function positionPicker(): void {
-    // Anchor under the trigger button itself, left-aligned like a
-    // conventional dropdown menu. The editor row sits on the left side
-    // of the page, so end-alignment would float the panel away from
-    // its trigger.
-    const trigger = buttonEl ?? anchorEl;
+    // Anchor under the chip, left-aligned like a conventional
+    // dropdown menu. The chips row sits on the left side of the page,
+    // so end-alignment would float the panel away from its trigger.
+    const trigger = anchorEl;
     if (!trigger) return;
     const popoverHeight = popoverEl?.getBoundingClientRect().height;
     popoverStyle = floatingPopoverStyle({
@@ -133,32 +139,40 @@
 </script>
 
 {#if users.length > 0 || canEdit}
-  <div class="user-list-editor" bind:this={anchorEl} data-user-list-editor={editorId}>
-    {#if users.length > 0}
-      <span class="user-list-editor__summary" title="{label}: {users.join(', ')}">
-        <span class="user-list-editor__label">{label}:</span>
-        {users.join(", ")}
-      </span>
-    {/if}
+  <span class="user-list-editor" bind:this={anchorEl} data-user-list-editor={editorId}>
     {#if canEdit}
-      <span class="user-list-editor__button" bind:this={buttonEl}>
-        <ActionButton
-          class="btn--user-list"
-          {label}
-          shortLabel={label}
-          ariaLabel="Edit {label.toLowerCase()}"
-          size="sm"
-          surface="soft"
-          tone="neutral"
-          {disabled}
-          ariaExpanded={open}
-          onclick={togglePicker}
-        >
-          {#if icon}{@render icon()}{/if}
-        </ActionButton>
-      </span>
+      <Chip
+        interactive
+        size="md"
+        tone={users.length > 0 ? "neutral" : "muted"}
+        uppercase={false}
+        title={chipTitle}
+        ariaLabel="Edit {label.toLowerCase()}"
+        expanded={open}
+        {disabled}
+        class="user-list-editor__chip"
+        onclick={togglePicker}
+      >
+        {#if icon}{@render icon()}{/if}
+        {#if users.length > 0}
+          <span class="user-list-editor__names">{users.join(", ")}</span>
+        {:else}
+          <PlusIcon size={11} strokeWidth={2.4} aria-hidden="true" />
+        {/if}
+      </Chip>
+    {:else}
+      <Chip
+        size="md"
+        tone="neutral"
+        uppercase={false}
+        title={chipTitle}
+        class="user-list-editor__chip"
+      >
+        {#if icon}{@render icon()}{/if}
+        <span class="user-list-editor__names">{users.join(", ")}</span>
+      </Chip>
     {/if}
-  </div>
+  </span>
   {#if open}
     <div class="user-list-editor__popover" style={popoverStyle} bind:this={popoverEl}>
       <UserPicker
@@ -180,26 +194,19 @@
 <style>
   .user-list-editor {
     display: inline-flex;
-    align-items: center;
-    gap: 6px;
     min-width: 0;
   }
 
-  .user-list-editor__summary {
+  .user-list-editor :global(.user-list-editor__chip) {
+    max-width: 220px;
+    font-weight: 500;
+  }
+
+  .user-list-editor__names {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    color: var(--text-secondary);
-    font-size: var(--font-size-sm);
-  }
-
-  .user-list-editor__label {
-    color: var(--text-muted);
-  }
-
-  .user-list-editor__button {
-    display: inline-flex;
   }
 
   .user-list-editor__popover {

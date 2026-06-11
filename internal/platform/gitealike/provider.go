@@ -659,6 +659,11 @@ func (p *Provider) RequestMergeRequestReviewers(
 	if err != nil {
 		return nil, err
 	}
+	if len(usernames) == 0 {
+		// An empty request is the interface's read primitive: report
+		// the provider's current requested-reviewer set untouched.
+		return p.currentRequestedReviewers(ctx, ref, number)
+	}
 	if err := transport.CreateReviewRequests(ctx, ref, number, usernames); err != nil {
 		return nil, p.mapError(err)
 	}

@@ -1503,6 +1503,31 @@
             {@render labelActionButton()}
           </div>
         {/if}
+        <UserListEditor
+          label="Assignees"
+          users={prAssignees}
+          canEdit={capabilities.assignee_mutation}
+          disabled={stalePR}
+          loadCandidates={loadUserCandidates}
+          onchange={(next) => detailStore.setPullAssignees(owner, name, number, next)}
+        >
+          {#snippet icon()}
+            <UsersIcon size={12} aria-hidden="true" />
+          {/snippet}
+        </UserListEditor>
+        <UserListEditor
+          label="Reviewers"
+          users={prReviewers}
+          canEdit={capabilities.reviewer_mutation}
+          disabled={stalePR}
+          tooltipNote="User review requests only; team requests are not shown"
+          loadCandidates={loadUserCandidates}
+          onchange={(next) => detailStore.setPullReviewers(owner, name, number, next)}
+        >
+          {#snippet icon()}
+            <UserCheckIcon size={12} aria-hidden="true" />
+          {/snippet}
+        </UserListEditor>
         {#if labelPickerOpen}
           {#if labelPickerLaunchedFromActionMenu}
             <div class="label-editor-backdrop" aria-hidden="true"></div>
@@ -1534,35 +1559,6 @@
           showButton={false}
         />
       </div>
-
-      {#if prAssignees.length > 0 || prReviewers.length > 0 || capabilities.assignee_mutation || capabilities.reviewer_mutation}
-        <div class="people-row">
-          <UserListEditor
-            label="Assignees"
-            users={prAssignees}
-            canEdit={capabilities.assignee_mutation}
-            disabled={stalePR}
-            loadCandidates={loadUserCandidates}
-            onchange={(next) => detailStore.setPullAssignees(owner, name, number, next)}
-          >
-            {#snippet icon()}
-              <UsersIcon size={16} aria-hidden="true" />
-            {/snippet}
-          </UserListEditor>
-          <UserListEditor
-            label="Reviewers"
-            users={prReviewers}
-            canEdit={capabilities.reviewer_mutation}
-            disabled={stalePR}
-            loadCandidates={loadUserCandidates}
-            onchange={(next) => detailStore.setPullReviewers(owner, name, number, next)}
-          >
-            {#snippet icon()}
-              <UserCheckIcon size={16} aria-hidden="true" />
-            {/snippet}
-          </UserListEditor>
-        </div>
-      {/if}
 
       {#if !stalePR}
         <SelectDropdown
@@ -2368,23 +2364,6 @@
     flex-wrap: wrap;
     gap: 6px;
     min-width: 0;
-  }
-
-  .people-row {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 6px 14px;
-    min-width: 0;
-    margin-top: 6px;
-  }
-
-  .people-row :global(.btn--user-list) {
-    min-height: 22px;
-    padding: 0 8px;
-    border-radius: 8px;
-    font-size: var(--font-size-xs);
-    font-weight: 600;
   }
 
   .chips-row :global(.btn--labels) {

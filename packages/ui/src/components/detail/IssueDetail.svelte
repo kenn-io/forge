@@ -889,7 +889,7 @@
             onchange={(next) => issues.setIssueAssignees(owner, name, number, next)}
           >
             {#snippet icon()}
-              <UsersIcon size={16} aria-hidden="true" />
+              <UsersIcon size={12} aria-hidden="true" />
             {/snippet}
           </UserListEditor>
         {/if}

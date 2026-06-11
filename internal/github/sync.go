@@ -1245,6 +1245,18 @@ func (p gitHubClientProvider) RequestMergeRequestReviewers(
 	if !ok {
 		return nil, platform.UnsupportedCapability(platform.KindGitHub, p.host, "reviewer_mutation")
 	}
+	if len(usernames) == 0 {
+		// An empty request is the interface's read primitive: report
+		// the provider's current requested-reviewer set untouched.
+		pr, err := p.client.GetPullRequest(ctx, ref.Owner, ref.Name, number)
+		if err != nil {
+			return nil, err
+		}
+		if pr == nil {
+			return nil, fmt.Errorf("provider returned no pull request")
+		}
+		return githubRequestedReviewerLogins(pr), nil
+	}
 	pr, err := client.RequestPullRequestReviewers(ctx, ref.Owner, ref.Name, number, usernames)
 	if err != nil {
 		return nil, err

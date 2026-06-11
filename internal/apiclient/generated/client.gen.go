@@ -1895,8 +1895,8 @@ type SessionInfo struct {
 // SetAssigneesRequest defines model for SetAssigneesRequest.
 type SetAssigneesRequest struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema    *string   `json:"$schema,omitempty"`
-	Assignees *[]string `json:"assignees"`
+	Schema    *string  `json:"$schema,omitempty"`
+	Assignees []string `json:"assignees"`
 }
 
 // SetKanbanStateHostInputBody defines model for SetKanbanStateHostInputBody.
@@ -1923,8 +1923,8 @@ type SetLabelsRequest struct {
 // SetReviewersRequest defines model for SetReviewersRequest.
 type SetReviewersRequest struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema    *string   `json:"$schema,omitempty"`
-	Reviewers *[]string `json:"reviewers"`
+	Schema    *string  `json:"$schema,omitempty"`
+	Reviewers []string `json:"reviewers"`
 }
 
 // SettingsResponse defines model for SettingsResponse.

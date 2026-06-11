@@ -17,6 +17,18 @@ test.describe("assignee and reviewer editing", () => {
       await expect(page.getByRole("menuitemcheckbox", { name: /alice/i })).toHaveAttribute("aria-checked", "true");
       await expect(page.getByRole("menuitemcheckbox", { name: /bob/i })).toHaveAttribute("aria-checked", "false");
 
+      // The picker is a compact dropdown: start-aligned under its
+      // trigger chip and height-capped so long candidate lists scroll.
+      const triggerBox = await page.getByRole("button", { name: "Edit assignees" }).boundingBox();
+      const dialogBox = await page.getByRole("dialog", { name: "Edit assignees" }).boundingBox();
+      expect(triggerBox).not.toBeNull();
+      expect(dialogBox).not.toBeNull();
+      expect(Math.abs(dialogBox!.x - triggerBox!.x)).toBeLessThanOrEqual(12);
+      const dropGap = dialogBox!.y - (triggerBox!.y + triggerBox!.height);
+      expect(dropGap).toBeGreaterThanOrEqual(0);
+      expect(dropGap).toBeLessThanOrEqual(12);
+      expect(dialogBox!.height).toBeLessThanOrEqual(320);
+
       const updateResponse = page.waitForResponse(
         (response) =>
           response.request().method() === "PUT" &&

@@ -127,6 +127,25 @@ func TestProviderReviewerMutationsReadBackFromPullRequestField(t *testing.T) {
 	assert.Equal([]string{"create:bob", "delete:carol"}, transport.reviewRequests)
 }
 
+func TestProviderRequestReviewersWithEmptyListReadsWithoutMutating(t *testing.T) {
+	assert := Assert.New(t)
+	require := Require.New(t)
+	ref := platform.RepoRef{Platform: platform.KindGitea, Host: "gitea.example.com", Owner: "acme", Name: "widget"}
+	transport := &reviewRequestFakeTransport{
+		fakeTransport: &fakeTransport{},
+		currentPR: PullRequestDTO{
+			Index:              7,
+			RequestedReviewers: []UserDTO{{UserName: "carol"}},
+		},
+	}
+	provider := NewProvider(platform.KindGitea, "gitea.example.com", transport, WithMutations())
+
+	current, err := provider.RequestMergeRequestReviewers(context.Background(), ref, 7, nil)
+	require.NoError(err)
+	assert.Equal([]string{"carol"}, current)
+	assert.Empty(transport.reviewRequests, "an empty request must not call the review-request endpoint")
+}
+
 func TestProviderReviewerMutationsDeriveFromReviewsWhenFieldUnknown(t *testing.T) {
 	assert := Assert.New(t)
 	require := Require.New(t)

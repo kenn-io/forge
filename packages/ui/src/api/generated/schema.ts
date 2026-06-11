@@ -4302,7 +4302,7 @@ export interface components {
              * @example /api/v1/schemas/SetAssigneesRequest.json
              */
             readonly $schema?: string;
-            assignees: string[] | null;
+            assignees: string[];
         };
         SetKanbanStateHostInputBody: {
             /**
@@ -4338,7 +4338,7 @@ export interface components {
              * @example /api/v1/schemas/SetReviewersRequest.json
              */
             readonly $schema?: string;
-            reviewers: string[] | null;
+            reviewers: string[];
         };
         SettingsResponse: {
             /**

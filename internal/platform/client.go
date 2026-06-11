@@ -114,7 +114,10 @@ type AssigneeMutator interface {
 
 // ReviewerMutator requests reviews from users on a merge request and
 // removes pending review requests. Both calls return the full updated
-// requested-reviewer username list after the mutation.
+// requested-reviewer username list after the mutation. Requesting an
+// empty username list is a read: it mutates nothing and returns the
+// provider's current requested-reviewer set, so callers can diff a
+// desired set against live provider state instead of cached state.
 type ReviewerMutator interface {
 	RequestMergeRequestReviewers(ctx context.Context, ref RepoRef, number int, usernames []string) ([]string, error)
 	RemoveMergeRequestReviewers(ctx context.Context, ref RepoRef, number int, usernames []string) ([]string, error)

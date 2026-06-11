@@ -224,6 +224,59 @@ func TestAPISetPullReviewersRemovesAllRequests(t *testing.T) {
 	assert.Equal("[]", updated.ReviewersJSON)
 }
 
+func TestAPISetPullReviewersRemovesProviderReviewersWhenSyncedStateIsUnknown(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	srv, database, providerClient, _ := setupAssigneeTestServer(t)
+	// seedPR leaves reviewers_json empty, so the last synced state is
+	// unknown. The provider still has carol requested; clearing the set
+	// must consult the provider and remove her rather than reporting
+	// success without any provider call.
+	repoID := seedPR(t, database, "acme", "widget", 1)
+
+	rr := doLabelAPIRequest(t, srv, http.MethodPut, "/api/v1/pulls/github/acme/widget/1/reviewers", map[string][]string{
+		"reviewers": {},
+	})
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+
+	var body reviewersAPIResponse
+	require.NoError(json.Unmarshal(rr.Body.Bytes(), &body))
+	assert.Empty(body.Reviewers)
+	assert.Empty(providerClient.PRs["acme/widget"][0].RequestedReviewers)
+
+	pr, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 1)
+	require.NoError(err)
+	require.NotNil(pr)
+	assert.Equal("[]", pr.ReviewersJSON)
+}
+
+func TestAPISetPullReviewersRemovesDriftedProviderReviewers(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	srv, database, providerClient, _ := setupAssigneeTestServer(t)
+	repoID := seedPR(t, database, "acme", "widget", 1)
+	pr, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 1)
+	require.NoError(err)
+	// The synced row believes only alice is requested, but the provider
+	// drifted: carol was requested outside middleman. Replacing the set
+	// with alice must still remove carol because the handler diffs
+	// against live provider state.
+	require.NoError(database.UpdateMergeRequestReviewers(t.Context(), repoID, pr.ID, []string{"alice"}))
+
+	rr := doLabelAPIRequest(t, srv, http.MethodPut, "/api/v1/pulls/github/acme/widget/1/reviewers", map[string][]string{
+		"reviewers": {"alice"},
+	})
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+
+	var body reviewersAPIResponse
+	require.NoError(json.Unmarshal(rr.Body.Bytes(), &body))
+	assert.Equal([]string{"alice"}, body.Reviewers)
+
+	providerReviewers := providerClient.PRs["acme/widget"][0].RequestedReviewers
+	require.Len(providerReviewers, 1)
+	assert.Equal("alice", providerReviewers[0].GetLogin())
+}
+
 func TestAPISyncPersistsAssigneesAndRequestedReviewers(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)

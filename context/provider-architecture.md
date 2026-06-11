@@ -76,10 +76,17 @@ GitLab declares the full mutation capability set, but several operations map
 onto different upstream semantics than GitHub/Forgejo/Gitea. Do not assume
 provider-equivalent behavior from the flags alone:
 
-- Merge methods: `squash` sets GitLab's squash flag; `merge` accepts under the
-  project's configured merge method. `rebase` cannot be requested per merge
-  (it is a project setting) and returns a typed `unsupported_capability`
-  error with capability `merge_method_rebase`.
+- Merge methods: `squash` sets GitLab's squash flag; `merge` accepts under
+  the project's configured merge method — on fast-forward or semi-linear
+  projects that accept does not create a merge commit, so treat
+  `AllowMergeCommit` as "non-squash accept allowed", not as a per-request
+  merge-commit guarantee. `squash_option` bounds the squash flag in both
+  directions (`never` forbids squash; `always` forbids non-squash
+  accepts). `rebase` cannot be requested per merge (it is a project
+  setting) and returns a typed `unsupported_capability` error with
+  capability `merge_method_rebase`. Surfacing GitLab's `merge_method`
+  (merge/ff/rebase_merge) as a provider-accurate action label is follow-up
+  work; until then the generic method labels apply.
 - Head binding: merge and approve pass the locally synced head SHA — the
   commit the user actually reviewed — so a source-branch push after review
   is rejected upstream instead of acting on unreviewed code. The

@@ -726,6 +726,71 @@ func TestGitLabMutationBodylessStaleApproveReliesOnShaBinding(t *testing.T) {
 	)
 }
 
+// GitLab projects with squash_option=always must stop offering the
+// non-squash accept path all the way through sync, SQLite, and the repo
+// settings API the merge modal reads.
+func TestGitLabSquashAlwaysProjectDisallowsMergeCommitE2E(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := t.Context()
+
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.EscapedPath() == "/api/v4/projects/acme%2Fsquashy" && r.Method == http.MethodGet {
+			writeGitLabJSON(w, `{
+				"id": 5151,
+				"path": "squashy",
+				"path_with_namespace": "acme/squashy",
+				"web_url": "https://gitlab.com/acme/squashy",
+				"http_url_to_repo": "https://gitlab.com/acme/squashy.git",
+				"default_branch": "main",
+				"squash_option": "always"
+			}`)
+			return
+		}
+		// Every list resource the sync touches is empty.
+		writeGitLabJSON(w, `[]`)
+	}))
+	t.Cleanup(api.Close)
+
+	client, err := platformgitlab.NewClient(
+		"gitlab.com",
+		staticGitLabTokenSource("token"),
+		platformgitlab.WithBaseURLForTesting(api.URL+"/api/v4"),
+	)
+	require.NoError(err)
+	registry, err := platform.NewRegistry(client)
+	require.NoError(err)
+
+	database := dbtest.Open(t)
+	repo := ghclient.RepoRef{
+		Platform:     platform.KindGitLab,
+		Owner:        "acme",
+		Name:         "squashy",
+		PlatformHost: "gitlab.com",
+		RepoPath:     "acme/squashy",
+	}
+	syncer := ghclient.NewSyncerWithRegistry(
+		registry, database, nil, []ghclient.RepoRef{repo}, time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
+
+	syncer.RunOnce(ctx)
+
+	rr := doGitLabJSON(t, srv, http.MethodGet, "/api/v1/repo/gitlab/acme/squashy", "")
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	var settings struct {
+		AllowSquashMerge bool
+		AllowMergeCommit bool
+		AllowRebaseMerge bool
+	}
+	require.NoError(json.NewDecoder(rr.Body).Decode(&settings))
+	assert.True(settings.AllowSquashMerge)
+	assert.False(settings.AllowMergeCommit, "squash_option=always must disallow non-squash accepts")
+	assert.False(settings.AllowRebaseMerge)
+}
+
 // Head-binding providers reject merge and approve requests that omit the
 // client's head pin: an omitted pin would silently bind to whatever the
 // cache holds now, which may be newer than what the user reviewed.

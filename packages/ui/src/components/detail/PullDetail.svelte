@@ -740,7 +740,11 @@
         State: pr.State,
         IsDraft: pr.IsDraft,
         MergeableState: pr.MergeableState,
-        platform_head_sha: pr.platform_head_sha ?? "",
+        // Same rendered-head source as the button gating and MergeModal:
+        // the detail envelope's top-level platform_head_sha. The nested
+        // merge_request field is optional and may be absent even when
+        // the canonical top-level value is present.
+        platform_head_sha: detailHeadSha,
       },
       ref: routeRef,
       number,
@@ -757,6 +761,7 @@
       stores: { detail: detailStore, pulls },
       client,
       requireHeadPin: capabilities.mutation_head_binding,
+      ...(detailHeadSha !== "" && { expectedHeadSha: detailHeadSha }),
       setMergeModalOpen: (open: boolean) => { showMergeModal = open; },
       onAfterOpenMerge: closeActionMenu,
     };

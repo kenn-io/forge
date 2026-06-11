@@ -1,0 +1,44 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "dependencyDashboard": true,
+  "enabledManagers": ["github-actions", "gomod", "bun", "custom.regex"],
+  "osvVulnerabilityAlerts": true,
+  "minimumReleaseAge": "7 days",
+  "minimumReleaseAgeBehaviour": "timestamp-required",
+  "prCreation": "not-pending",
+  "internalChecksFilter": "strict",
+  "vulnerabilityAlerts": {
+    "minimumReleaseAge": null,
+    "prCreation": "immediate"
+  },
+  "packageRules": [
+    {
+      "matchManagers": ["gomod"],
+      "groupName": "Go dependencies",
+      "groupSlug": "go-dependencies",
+      "postUpdateOptions": ["gomodUpdateImportPaths", "gomodTidy"]
+    },
+    {
+      "matchManagers": ["bun", "custom.regex"],
+      "groupName": "JavaScript dependencies",
+      "groupSlug": "javascript-dependencies"
+    }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/(^|/)\\.github/workflows/.+\\.ya?ml$/",
+        "/(^|/)Dockerfile\\.dev$/"
+      ],
+      "matchStrings": [
+        "bun-version:\\s*[\"']?(?<currentValue>\\d+\\.\\d+\\.\\d+)[\"']?",
+        "bun-v(?<currentValue>\\d+\\.\\d+\\.\\d+)/bun-linux"
+      ],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "oven-sh/bun",
+      "versioningTemplate": "semver"
+    }
+  ]
+}

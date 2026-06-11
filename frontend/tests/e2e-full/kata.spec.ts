@@ -469,7 +469,17 @@ async function handleKataRequest(state: BackendState, req: IncomingMessage, res:
     });
     res.write(": connected\n\n");
     state.streams.add(res);
+    // Middleman's own SSE endpoint and real daemons send periodic
+    // keepalive comments. Beyond fidelity, the heartbeat matters on
+    // Linux WebKit: its network stack delivers a fetch-stream chunk's
+    // tail beyond ~128 bytes only when new data arrives on the socket,
+    // so a heartbeat-free stream leaves the final bytes of an emitted
+    // frame undelivered and the page never reacts to the event.
+    const heartbeat = setInterval(() => {
+      res.write(": keepalive\n\n");
+    }, 250);
     req.on("close", () => {
+      clearInterval(heartbeat);
       state.streams.delete(res);
     });
     return;

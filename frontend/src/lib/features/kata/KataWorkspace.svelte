@@ -560,6 +560,11 @@
     switchingDaemon = true;
     resetDetailDrafts();
     resetIssueExpansion();
+    // The switch abandons any in-flight detail load (only a completed
+    // selection is captured for restore above), so drop it before the
+    // daemon reload: its failure mid-switch would otherwise surface a
+    // stale error from the previous daemon.
+    store.invalidatePendingLoads();
     setActiveKataDaemon(id);
     stopEventStream();
     try {

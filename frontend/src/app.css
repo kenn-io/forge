@@ -96,6 +96,23 @@
   --diff-stale-text: #9a6700;
   --diff-stale-border: #d4a72c;
 
+  /* Mermaid view — light theme */
+  --mermaid-bg: #ffffff;
+  --mermaid-viewer-bg: #f6f8fa;
+  --mermaid-node-bg: #ffffff;
+  --mermaid-node-text: #24292f;
+  --mermaid-node-border: #d0d7de;
+  --mermaid-cluster-bg: #f6f8fa;
+  --mermaid-cluster-text: #24292f;
+  --mermaid-cluster-border: #d0d7de;
+  --mermaid-line: #57606a;
+  --mermaid-text: #24292f;
+  --mermaid-label-bg: #ffffff;
+  --mermaid-label-text: #24292f;
+  --mermaid-note-bg: #fff8c5;
+  --mermaid-note-text: #24292f;
+  --mermaid-note-border: #d4a72c;
+
   color-scheme: light;
 }
 
@@ -158,6 +175,23 @@
   --diff-stale-bg: rgba(187, 128, 9, 0.15);
   --diff-stale-text: #d29922;
   --diff-stale-border: #9e6a03;
+
+  /* Mermaid view — dark theme */
+  --mermaid-bg: #0d1117;
+  --mermaid-viewer-bg: #4a4d4b;
+  --mermaid-node-bg: #f6f8fa;
+  --mermaid-node-text: #24292f;
+  --mermaid-node-border: #d0d7de;
+  --mermaid-cluster-bg: #4a4d4b;
+  --mermaid-cluster-text: #f0f6fc;
+  --mermaid-cluster-border: #4a4d4b;
+  --mermaid-line: #c9d1d9;
+  --mermaid-text: #c9d1d9;
+  --mermaid-label-bg: #30363d;
+  --mermaid-label-text: #f0f6fc;
+  --mermaid-note-bg: #30363d;
+  --mermaid-note-text: #f0f6fc;
+  --mermaid-note-border: #8b949e;
 
   color-scheme: dark;
 }
@@ -286,12 +320,10 @@ a:hover {
 }
 .markdown-body pre.mermaid.mermaid-viewer,
 .doc-markdown pre.mermaid.mermaid-viewer {
-  --mermaid-viewer-bg: #f6f8fa;
   --mermaid-viewer-control-bg: rgba(36, 41, 47, 0.92);
   --mermaid-viewer-control-hover: rgba(48, 54, 61, 0.96);
   --mermaid-viewer-control-border: rgba(139, 148, 158, 0.48);
   --mermaid-viewer-control-text: #f0f6fc;
-  --mermaid-viewer-edge-label-text: #24292f;
 
   position: relative;
   height: clamp(180px, 34vw, 420px);
@@ -302,11 +334,6 @@ a:hover {
   border-color: var(--border-default);
   border-radius: var(--radius-md);
   text-align: initial;
-}
-:root.dark .markdown-body pre.mermaid.mermaid-viewer,
-:root.dark .doc-markdown pre.mermaid.mermaid-viewer {
-  --mermaid-viewer-bg: #4a4d4b;
-  --mermaid-viewer-edge-label-text: #f0f6fc;
 }
 .mermaid-viewer__viewport {
   width: 100%;
@@ -392,12 +419,12 @@ a:hover {
 .markdown-body pre.mermaid.mermaid-viewer .edgeLabel,
 .doc-markdown pre.mermaid.mermaid-viewer .edgeLabel,
 .mermaid-viewer-lightbox .edgeLabel {
-  color: var(--mermaid-viewer-edge-label-text);
+  color: var(--mermaid-label-text);
 }
 .markdown-body pre.mermaid.mermaid-viewer .edgeLabel text,
 .doc-markdown pre.mermaid.mermaid-viewer .edgeLabel text,
 .mermaid-viewer-lightbox .edgeLabel text {
-  fill: var(--mermaid-viewer-edge-label-text) !important;
+  fill: var(--mermaid-label-text) !important;
 }
 .markdown-body pre.mermaid.mermaid-viewer .edgeLabel span,
 .markdown-body pre.mermaid.mermaid-viewer .edgeLabel p,
@@ -408,11 +435,9 @@ a:hover {
 .mermaid-viewer-lightbox .edgeLabel span,
 .mermaid-viewer-lightbox .edgeLabel p,
 .mermaid-viewer-lightbox .edgeLabel div {
-  color: var(--mermaid-viewer-edge-label-text) !important;
+  color: var(--mermaid-label-text) !important;
 }
 .mermaid-viewer-lightbox {
-  --mermaid-viewer-edge-label-text: #24292f;
-
   position: fixed;
   inset: 0;
   z-index: 80;
@@ -422,21 +447,15 @@ a:hover {
   padding: 28px;
   background: rgba(1, 4, 9, 0.72);
 }
-:root.dark .mermaid-viewer-lightbox {
-  --mermaid-viewer-edge-label-text: #f0f6fc;
-}
 .mermaid-viewer-lightbox__panel {
   position: relative;
   width: min(96vw, 1540px);
   height: min(84vh, 760px);
   overflow: hidden;
-  background: var(--bg-inset);
+  background: var(--mermaid-bg);
   border: 2px solid color-mix(in srgb, var(--text-secondary) 72%, var(--border-default));
   border-radius: var(--radius-lg);
   box-shadow: 0 8px 24px rgba(1, 4, 9, 0.38);
-}
-:root.dark .mermaid-viewer-lightbox__panel {
-  background: #0d1117;
 }
 .mermaid-viewer-lightbox .mermaid-viewer__viewport {
   background: transparent;

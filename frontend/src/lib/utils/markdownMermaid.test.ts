@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test, vi } from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 import {
   initMarkdownMermaidRendering,
   renderMarkdownMermaidDiagrams,
@@ -19,6 +19,62 @@ function renderSvgInto(nodes: ArrayLike<HTMLElement>): void {
   }
 }
 
+const TEST_THEME_VARS = {
+  light: {
+    "--font-sans": "Inter, sans-serif",
+    "--font-size-md": "13px",
+    "--mermaid-bg": "#ffffff",
+    "--mermaid-viewer-bg": "#f6f8fa",
+    "--mermaid-node-bg": "#ffffff",
+    "--mermaid-node-text": "#24292f",
+    "--mermaid-node-border": "#d0d7de",
+    "--mermaid-cluster-bg": "#f6f8fa",
+    "--mermaid-cluster-text": "#24292f",
+    "--mermaid-cluster-border": "#d0d7de",
+    "--mermaid-line": "#57606a",
+    "--mermaid-text": "#24292f",
+    "--mermaid-label-bg": "#ffffff",
+    "--mermaid-label-text": "#24292f",
+    "--mermaid-note-bg": "#fff8c5",
+    "--mermaid-note-text": "#24292f",
+    "--mermaid-note-border": "#d4a72c",
+  },
+  dark: {
+    "--font-sans": "Inter, sans-serif",
+    "--font-size-md": "13px",
+    "--mermaid-bg": "#0d1117",
+    "--mermaid-viewer-bg": "#4a4d4b",
+    "--mermaid-node-bg": "#f6f8fa",
+    "--mermaid-node-text": "#24292f",
+    "--mermaid-node-border": "#d0d7de",
+    "--mermaid-cluster-bg": "#4a4d4b",
+    "--mermaid-cluster-text": "#f0f6fc",
+    "--mermaid-cluster-border": "#4a4d4b",
+    "--mermaid-line": "#c9d1d9",
+    "--mermaid-text": "#c9d1d9",
+    "--mermaid-label-bg": "#30363d",
+    "--mermaid-label-text": "#f0f6fc",
+    "--mermaid-note-bg": "#30363d",
+    "--mermaid-note-text": "#f0f6fc",
+    "--mermaid-note-border": "#8b949e",
+  },
+} as const;
+
+const TEST_THEME_VAR_NAMES = Object.keys(TEST_THEME_VARS.light);
+
+function installMermaidThemeVars(theme: keyof typeof TEST_THEME_VARS): void {
+  const style = document.documentElement.style;
+  for (const [name, value] of Object.entries(TEST_THEME_VARS[theme])) {
+    style.setProperty(name, value);
+  }
+}
+
+function clearMermaidThemeVars(): void {
+  for (const name of TEST_THEME_VAR_NAMES) {
+    document.documentElement.style.removeProperty(name);
+  }
+}
+
 async function flushQueuedRender(): Promise<void> {
   await Promise.resolve();
   await Promise.resolve();
@@ -26,7 +82,12 @@ async function flushQueuedRender(): Promise<void> {
 }
 
 describe("renderMarkdownMermaidDiagrams", () => {
+  beforeEach(() => {
+    installMermaidThemeVars("light");
+  });
+
   afterEach(() => {
+    clearMermaidThemeVars();
     document.documentElement.classList.remove("dark");
     document.querySelectorAll(".mermaid-viewer-lightbox").forEach((node) => node.remove());
   });
@@ -75,6 +136,7 @@ describe("renderMarkdownMermaidDiagrams", () => {
   });
 
   test("uses dark mermaid theme variables when the app is in dark mode", async () => {
+    installMermaidThemeVars("dark");
     document.documentElement.classList.add("dark");
     const root = document.createElement("div");
     root.innerHTML = '<div class="markdown-body"><pre class="mermaid">graph TD\nA-->B</pre></div>';
@@ -302,6 +364,7 @@ describe("renderMarkdownMermaidDiagrams", () => {
         }),
       );
 
+      installMermaidThemeVars("dark");
       document.documentElement.classList.add("dark");
       await flushQueuedRender();
 

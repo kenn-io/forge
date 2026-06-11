@@ -30,84 +30,43 @@ const PAN_STEP = 80;
 const WHEEL_ZOOM_SENSITIVITY = 0.0015;
 const WHEEL_DELTA_LINE = 1;
 const WHEEL_DELTA_PAGE = 2;
-const GITHUB_LIGHT_MERMAID_THEME: MermaidThemeVariables = {
-  darkMode: false,
-  background: "#ffffff",
-  fontFamily: "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif",
-  fontSize: "13px",
-  primaryColor: "#ffffff",
-  primaryTextColor: "#24292f",
-  primaryBorderColor: "#d0d7de",
-  secondaryColor: "#f6f8fa",
-  secondaryTextColor: "#24292f",
-  secondaryBorderColor: "#d0d7de",
-  tertiaryColor: "#f6f8fa",
-  tertiaryTextColor: "#24292f",
-  tertiaryBorderColor: "#d0d7de",
-  mainBkg: "#ffffff",
-  nodeTextColor: "#24292f",
-  nodeBorder: "#d0d7de",
-  clusterBkg: "#f6f8fa",
-  clusterBorder: "#d0d7de",
-  lineColor: "#57606a",
-  defaultLinkColor: "#57606a",
-  textColor: "#24292f",
-  titleColor: "#24292f",
-  edgeLabelBackground: "#ffffff",
-  labelColor: "#24292f",
-  labelTextColor: "#24292f",
-  loopTextColor: "#24292f",
-  noteBkgColor: "#fff8c5",
-  noteTextColor: "#24292f",
-  noteBorderColor: "#d4a72c",
-  actorBkg: "#ffffff",
-  actorBorder: "#d0d7de",
-  actorTextColor: "#24292f",
-  actorLineColor: "#57606a",
-  signalColor: "#57606a",
-  signalTextColor: "#24292f",
-  labelBoxBkgColor: "#ffffff",
-  labelBoxBorderColor: "#d0d7de",
-};
-const GITHUB_DARK_MERMAID_THEME: MermaidThemeVariables = {
-  darkMode: true,
-  background: "#0d1117",
-  fontFamily: "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif",
-  fontSize: "13px",
-  primaryColor: "#f6f8fa",
-  primaryTextColor: "#24292f",
-  primaryBorderColor: "#d0d7de",
-  secondaryColor: "#f6f8fa",
-  secondaryTextColor: "#24292f",
-  secondaryBorderColor: "#d0d7de",
-  tertiaryColor: "#4a4d4b",
-  tertiaryTextColor: "#f0f6fc",
-  tertiaryBorderColor: "#4a4d4b",
-  mainBkg: "#f6f8fa",
-  nodeTextColor: "#24292f",
-  nodeBorder: "#d0d7de",
-  clusterBkg: "#4a4d4b",
-  clusterBorder: "#4a4d4b",
-  lineColor: "#c9d1d9",
-  defaultLinkColor: "#c9d1d9",
-  textColor: "#c9d1d9",
-  titleColor: "#c9d1d9",
-  edgeLabelBackground: "#30363d",
-  labelColor: "#c9d1d9",
-  labelTextColor: "#f0f6fc",
-  loopTextColor: "#f0f6fc",
-  noteBkgColor: "#30363d",
-  noteTextColor: "#f0f6fc",
-  noteBorderColor: "#8b949e",
-  actorBkg: "#f6f8fa",
-  actorBorder: "#d0d7de",
-  actorTextColor: "#24292f",
-  actorLineColor: "#8b949e",
-  signalColor: "#c9d1d9",
-  signalTextColor: "#c9d1d9",
-  labelBoxBkgColor: "#30363d",
-  labelBoxBorderColor: "#8b949e",
-};
+const MERMAID_THEME_TOKENS = {
+  background: "--mermaid-bg",
+  fontFamily: "--font-sans",
+  primaryColor: "--mermaid-node-bg",
+  primaryTextColor: "--mermaid-node-text",
+  primaryBorderColor: "--mermaid-node-border",
+  secondaryColor: "--mermaid-node-bg",
+  secondaryTextColor: "--mermaid-node-text",
+  secondaryBorderColor: "--mermaid-node-border",
+  tertiaryColor: "--mermaid-cluster-bg",
+  tertiaryTextColor: "--mermaid-cluster-text",
+  tertiaryBorderColor: "--mermaid-cluster-border",
+  mainBkg: "--mermaid-node-bg",
+  nodeTextColor: "--mermaid-node-text",
+  nodeBorder: "--mermaid-node-border",
+  clusterBkg: "--mermaid-cluster-bg",
+  clusterBorder: "--mermaid-cluster-border",
+  lineColor: "--mermaid-line",
+  defaultLinkColor: "--mermaid-line",
+  textColor: "--mermaid-text",
+  titleColor: "--mermaid-text",
+  edgeLabelBackground: "--mermaid-label-bg",
+  labelColor: "--mermaid-text",
+  labelTextColor: "--mermaid-label-text",
+  loopTextColor: "--mermaid-text",
+  noteBkgColor: "--mermaid-note-bg",
+  noteTextColor: "--mermaid-note-text",
+  noteBorderColor: "--mermaid-note-border",
+  actorBkg: "--mermaid-node-bg",
+  actorBorder: "--mermaid-node-border",
+  actorTextColor: "--mermaid-node-text",
+  actorLineColor: "--mermaid-line",
+  signalColor: "--mermaid-line",
+  signalTextColor: "--mermaid-text",
+  labelBoxBkgColor: "--mermaid-label-bg",
+  labelBoxBorderColor: "--mermaid-node-border",
+} satisfies Record<string, string>;
 let mermaidPromise: Promise<MarkdownMermaidAPI> | null = null;
 const initializedMermaidTheme = new WeakMap<MarkdownMermaidAPI, MermaidThemeName>();
 const diagramSources = new WeakMap<HTMLElement, string>();
@@ -201,7 +160,25 @@ function currentMermaidTheme(): MermaidThemeName {
 }
 
 function mermaidThemeVariables(theme: MermaidThemeName): MermaidThemeVariables {
-  return theme === "dark" ? GITHUB_DARK_MERMAID_THEME : GITHUB_LIGHT_MERMAID_THEME;
+  const styles = getComputedStyle(document.documentElement);
+  const variables: MermaidThemeVariables = {
+    darkMode: theme === "dark",
+    fontSize: cssThemeToken(styles, "--font-size-md"),
+  };
+
+  for (const [mermaidName, cssName] of Object.entries(MERMAID_THEME_TOKENS)) {
+    variables[mermaidName] = cssThemeToken(styles, cssName);
+  }
+
+  return variables;
+}
+
+function cssThemeToken(styles: CSSStyleDeclaration, name: string): string {
+  const value = styles.getPropertyValue(name).trim();
+  if (!value) {
+    throw new Error(`Missing Mermaid theme CSS variable ${name}`);
+  }
+  return value;
 }
 
 function resetRenderedMermaidViewers(root: ParentNode): void {

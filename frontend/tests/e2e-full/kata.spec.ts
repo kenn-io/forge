@@ -2244,6 +2244,48 @@ test("kata view change drops a held keyboard selection from the previous view", 
   }
 });
 
+test("kata key released during a stalled view transition does not commit a stale selection", async ({ page }) => {
+  let releaseIssues = () => {};
+  const stalledIssues = new Promise<void>((resolve) => {
+    releaseIssues = resolve;
+  });
+  const backend = await startKataBackend();
+  const kataHome = await configureKataHome(backend.url);
+  const server = await startIsolatedE2EServer();
+
+  try {
+    await page.goto(`${server.info.base_url}/kata?view=all`);
+    await expect(page.getByRole("status", { name: "Connection: online" })).toBeVisible();
+    const rows = page.locator(".issue-list .issue-row");
+    await expect(rows.first()).toContainText("Email Susan re: Q3");
+    await expect(rows.nth(1)).toContainText("Pay rent");
+
+    // Hold j (parking a pending selection of Pay rent), then start a
+    // view change whose issues fetch is stalled. The old list is still
+    // mounted while that fetch hangs, so releasing the key here would —
+    // without the navigation-epoch cancel — commit the stale selection,
+    // fetch Pay rent's detail, and supersede the in-flight navigation
+    // so the route never updates.
+    await rows.first().focus();
+    await page.keyboard.down("j");
+    backend.state.issuesBarrier = stalledIssues;
+    await page.getByRole("button", { name: /^Today/ }).click();
+    await page.keyboard.up("j");
+    await page.waitForTimeout(750);
+
+    releaseIssues();
+    await expect(page.locator(".issue-list").getByRole("heading", { name: "Today", level: 2 })).toBeVisible();
+    await expect(page).toHaveURL(/view=today/);
+    await expect(page.getByText("Select a task")).toBeVisible();
+    expect(backend.state.seenPaths).not.toContain("GET /api/v1/issues/issue-rent");
+  } finally {
+    releaseIssues();
+    await server.stop();
+    kataHome.restore();
+    await backend.close();
+  }
+});
+
 test("kata task list keyboard scrolling only fetches the final settled task", async ({ page }) => {
   const traversal = [
     issueSummary({

@@ -21,6 +21,7 @@
     selectedIssueUID?: string | null;
     loading?: boolean;
     resetGeneration?: number;
+    navigationGeneration?: number;
     api?: KataTaskAPI;
     onSelect: (issue: KataTaskSummary) => void;
   }
@@ -32,6 +33,7 @@
     selectedIssueUID = null,
     loading = false,
     resetGeneration = 0,
+    navigationGeneration = 0,
     api = undefined,
     onSelect,
   }: Props = $props();
@@ -378,6 +380,19 @@
     expanded = {};
     childrenByUID = {};
     loadingChildren = {};
+  });
+
+  // A pending keyboard selection dies the moment the workspace starts
+  // any navigation (view/scope/route/daemon change). Waiting for the
+  // post-load list remount is too late: a held key released while the
+  // new view's data is still in flight would commit against the old
+  // view and its onSelect would supersede the in-progress navigation.
+  let lastNavigationGeneration: number | null = null;
+  $effect(() => {
+    if (lastNavigationGeneration !== null && navigationGeneration !== lastNavigationGeneration) {
+      cancelPendingKeyboardSelect();
+    }
+    lastNavigationGeneration = navigationGeneration;
   });
 </script>
 

@@ -333,6 +333,31 @@ describe("KataIssueList", () => {
     expect(selected).toEqual([rows[rows.length - 1]!.dataset.uid]);
   });
 
+  it("drops a pending keyboard selection when workspace navigation begins", async () => {
+    vi.useFakeTimers();
+    const selected: string[] = [];
+    const props = {
+      currentView,
+      selectedIssueUID: null,
+      loading: false,
+      navigationGeneration: 0,
+      onSelect: (issue: KataTaskSummary) => selected.push(issue.uid),
+    };
+    const { rerender } = render(KataIssueList, { props });
+
+    const rows = visibleRows();
+    rows[0]!.focus();
+    await fireEvent.keyDown(rows[0]!, { key: "j" });
+
+    // Navigation starts while the key is still held: the view data has
+    // not arrived yet (same currentView, no remount), so only the
+    // generation bump can stop the release from committing stale.
+    await rerender({ ...props, navigationGeneration: 1 });
+    await fireEvent.keyUp(rows[1]!, { key: "j" });
+    vi.advanceTimersByTime(100);
+    expect(selected).toEqual([]);
+  });
+
   it("clicking a row selects immediately and cancels a pending keyboard selection", async () => {
     const { selected, rows } = renderKeyboardList();
     await fireEvent.keyDown(rows[0]!, { key: "j" });

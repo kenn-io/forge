@@ -92,6 +92,11 @@
   let syncedRouteViewName: KataTaskViewName | null = null;
   let syncedRouteScopeUID: string | null = null;
   let navigationGeneration = 0;
+  // Reactive shadow of navigationGeneration so the issue list can drop
+  // a pending keyboard selection the moment any navigation starts —
+  // the list only remounts after the new view's data arrives, which is
+  // too late for a selection released mid-transition.
+  let navigationEpoch = $state(0);
   let observedRouteSignature = "";
   const layoutStorageKey = "middleman:kata:task-layout/v1";
   const defaultSplitSizes: Record<SplitOrientation, number> = {
@@ -235,6 +240,7 @@
 
   function beginNavigation(): number {
     navigationGeneration += 1;
+    navigationEpoch = navigationGeneration;
     return navigationGeneration;
   }
 
@@ -807,6 +813,7 @@
         selectedIssueUID={store.pendingSelectionUID ?? store.selectedIssue?.issue.uid ?? null}
         loading={viewLoading}
         resetGeneration={listResetGeneration}
+        navigationGeneration={navigationEpoch}
         api={store.api}
         onSelect={(issue) => {
           void selectIssue(issue.uid);

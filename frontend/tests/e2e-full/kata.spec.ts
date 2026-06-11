@@ -2197,18 +2197,62 @@ test("kata task list keyboard scrolling only fetches the final settled task", as
     await expect(rows.nth(2)).toContainText("Settled task");
 
     // Hold j across the first two rows: keydowns move focus immediately,
-    // but the selection must not commit until the key is released, no
-    // matter how much wall-clock time the traversal takes.
+    // but the selection must not commit until the key is released. The
+    // waits between steps deliberately exceed the 50ms debounce — a
+    // timer-only debounce (no held-key gate) commits each traversed row
+    // whenever the OS key-repeat interval outlasts the debounce window,
+    // which is the regression this test pins.
     await rows.first().focus();
     await page.keyboard.down("j");
-    await page.keyboard.down("j");
-    await page.keyboard.up("j");
+    await expect(rows.nth(1)).toBeFocused();
+    await page.waitForTimeout(150);
+    expect(backend.state.seenPaths).not.toContain("GET /api/v1/issues/issue-skipped");
 
+    await page.keyboard.down("j");
     await expect(rows.nth(2)).toBeFocused();
+    await page.waitForTimeout(150);
+    expect(backend.state.seenPaths).not.toContain("GET /api/v1/issues/issue-settled");
+
+    await page.keyboard.up("j");
     await expect(page.getByRole("region", { name: "Task detail" })).toContainText("Settled task body.");
     await expect.poll(() => backend.state.seenPaths).toContain("GET /api/v1/issues/issue-settled");
     const detailFetches = backend.state.seenPaths.filter((path) => path.startsWith("GET /api/v1/issues/"));
     expect(detailFetches).toEqual(["GET /api/v1/issues/issue-settled"]);
+  } finally {
+    await server.stop();
+    kataHome.restore();
+    await backend.close();
+  }
+});
+
+test("kata task list selection settles when Shift is released before G", async ({ page }) => {
+  const backend = await startKataBackend();
+  const kataHome = await configureKataHome(backend.url);
+  const server = await startIsolatedE2EServer();
+
+  try {
+    await page.goto(`${server.info.base_url}/kata`);
+    await expect(page.getByRole("status", { name: "Connection: online" })).toBeVisible();
+    await page.getByRole("button", { name: "All Open" }).click();
+    const rows = page.locator(".issue-list .issue-row");
+    await expect(rows.first()).toContainText("Email Susan re: Q3");
+    await expect(rows.nth(1)).toContainText("Pay rent");
+
+    // Shift+g jumps to the end. The keydown reports key "G", but
+    // releasing Shift first makes the keyup report "g" — held-key
+    // tracking must survive the modifier release order or the pending
+    // selection strands until the window blurs. The physical "KeyG"
+    // descriptor makes Playwright resolve the event key against the
+    // modifier state at each step, like a real keyboard.
+    await rows.first().focus();
+    await page.keyboard.down("Shift");
+    await page.keyboard.down("KeyG");
+    await page.keyboard.up("Shift");
+    await page.keyboard.up("KeyG");
+
+    await expect(rows.nth(1)).toBeFocused();
+    await expect(page.getByRole("region", { name: "Task detail" })).toContainText("Send June rent from checking.");
+    await expect.poll(() => backend.state.seenPaths).toContain("GET /api/v1/issues/issue-rent");
   } finally {
     await server.stop();
     kataHome.restore();

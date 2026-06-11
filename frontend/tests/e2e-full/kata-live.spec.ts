@@ -6,7 +6,17 @@ import {
   type LiveKataHarness,
   type MiddlemanKataHome,
 } from "./support/kataLiveHarness";
-import { startIsolatedE2EServer, type IsolatedE2EServer } from "./support/e2eServer";
+import { startIsolatedE2EServerWithOptions, type IsolatedE2EServer } from "./support/e2eServer";
+
+// freshProcess: the live harness points the server at a per-test
+// daemon via process.env.KATA_HOME, which only a process spawned
+// after the env is set can inherit. A pooled lease would fail fast on
+// the support module's env guardrail. This suite is gated behind
+// MIDDLEMAN_LIVE_KATA_TESTS=1, so the extra spawns never affect
+// normal local or CI runs.
+async function startIsolatedE2EServer(): Promise<IsolatedE2EServer> {
+  return startIsolatedE2EServerWithOptions({ freshProcess: true });
+}
 
 test.describe("kata live daemon integration", () => {
   test.skip(process.env.MIDDLEMAN_LIVE_KATA_TESTS !== "1", "Set MIDDLEMAN_LIVE_KATA_TESTS=1 to run live Kata e2e.");

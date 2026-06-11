@@ -32,6 +32,15 @@ type TimelineTransport interface {
 	ListIssueTimeline(ctx context.Context, ref platform.RepoRef, number int, opts PageOptions) ([]TimelineEventDTO, Page, error)
 }
 
+// LabelTransport is an optional transport extension for repository
+// label reads and issue-like label assignment. Forgejo and Gitea use the
+// same endpoints and treat pull requests as issues for label purposes,
+// so a single ReplaceIssueLabels covers both.
+type LabelTransport interface {
+	ListRepoLabels(ctx context.Context, ref platform.RepoRef, opts PageOptions) ([]LabelDTO, Page, error)
+	ReplaceIssueLabels(ctx context.Context, ref platform.RepoRef, number int, labelIDs []int64) ([]LabelDTO, error)
+}
+
 type MutationTransport interface {
 	CreateIssueComment(ctx context.Context, ref platform.RepoRef, number int, body string) (CommentDTO, error)
 	EditIssueComment(ctx context.Context, ref platform.RepoRef, commentID int64, body string) (CommentDTO, error)

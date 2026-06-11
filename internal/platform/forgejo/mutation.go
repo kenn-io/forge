@@ -103,6 +103,24 @@ func (c *Client) EditMergeRequestContent(
 	return c.provider.EditMergeRequestContent(ctx, ref, number, title, body)
 }
 
+func (c *Client) SetMergeRequestLabels(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	names []string,
+) ([]platform.Label, error) {
+	return c.provider.SetMergeRequestLabels(ctx, ref, number, names)
+}
+
+func (c *Client) SetIssueLabels(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	names []string,
+) ([]platform.Label, error) {
+	return c.provider.SetIssueLabels(ctx, ref, number, names)
+}
+
 func (c *Client) EditIssueContent(
 	ctx context.Context,
 	ref platform.RepoRef,
@@ -266,6 +284,27 @@ func (t *transport) CreatePullReview(
 		return gitealike.ReviewDTO{}, forgejoHTTPError(resp, err)
 	}
 	return convertReview(review), nil
+}
+
+func (t *transport) ReplaceIssueLabels(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	labelIDs []int64,
+) ([]gitealike.LabelDTO, error) {
+	var labels []*forgejosdk.Label
+	var resp *forgejosdk.Response
+	err := t.withRequestContext(ctx, func() error {
+		var err error
+		labels, resp, err = t.api.ReplaceIssueLabels(ref.Owner, ref.Name, int64(number), forgejosdk.IssueLabelsOption{
+			Labels: labelIDs,
+		})
+		return err
+	})
+	if err != nil {
+		return nil, forgejoHTTPError(resp, err)
+	}
+	return convertLabels(labels), nil
 }
 
 func forgejoStatePtr(state *string) *forgejosdk.StateType {

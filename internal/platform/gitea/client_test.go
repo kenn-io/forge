@@ -250,11 +250,13 @@ func TestClientProviderIdentityExposesReadCapabilities(t *testing.T) {
 		ReadComments:      true,
 		ReadReleases:      true,
 		ReadCI:            true,
+		ReadLabels:        true,
 		CommentMutation:   true,
 		StateMutation:     true,
 		MergeMutation:     true,
 		ReviewMutation:    true,
 		IssueMutation:     true,
+		LabelMutation:     true,
 	}, client.Capabilities())
 }
 

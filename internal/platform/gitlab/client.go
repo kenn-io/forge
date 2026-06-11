@@ -195,6 +195,8 @@ func (c *Client) Capabilities() platform.Capabilities {
 		ReadComments:           true,
 		ReadReleases:           true,
 		ReadCI:                 true,
+		ReadLabels:             true,
+		LabelMutation:          true,
 		ThreadReply:            true,
 		ThreadResolve:          true,
 		ReviewDraftMutation:    true,

@@ -81,6 +81,13 @@ func (c *Client) ListCIChecks(
 	return c.provider.ListCIChecks(ctx, ref, sha)
 }
 
+func (c *Client) ListLabels(
+	ctx context.Context,
+	ref platform.RepoRef,
+) (platform.LabelCatalog, error) {
+	return c.provider.ListLabels(ctx, ref)
+}
+
 func (t *transport) GetRepository(
 	ctx context.Context,
 	owner, repo string,
@@ -358,6 +365,27 @@ func (t *transport) ListTags(
 		return nil, gitealike.Page{}, forgejoHTTPError(resp, err)
 	}
 	return convertTags(tags), forgejoPage(resp), nil
+}
+
+func (t *transport) ListRepoLabels(
+	ctx context.Context,
+	ref platform.RepoRef,
+	opts gitealike.PageOptions,
+) ([]gitealike.LabelDTO, gitealike.Page, error) {
+	t.spendSyncBudget(ctx)
+	var labels []*forgejosdk.Label
+	var resp *forgejosdk.Response
+	err := t.withRequestContext(ctx, func() error {
+		var err error
+		labels, resp, err = t.api.ListRepoLabels(ref.Owner, ref.Name, forgejosdk.ListLabelsOptions{
+			ListOptions: forgejoListOptions(opts),
+		})
+		return err
+	})
+	if err != nil {
+		return nil, gitealike.Page{}, forgejoHTTPError(resp, err)
+	}
+	return convertLabels(labels), forgejoPage(resp), nil
 }
 
 func (t *transport) ListStatuses(

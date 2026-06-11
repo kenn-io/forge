@@ -71,12 +71,15 @@ func (p *Provider) Capabilities() platform.Capabilities {
 		ReadReleases:      true,
 		ReadCI:            true,
 	}
+	_, hasLabels := p.transport.(LabelTransport)
+	caps.ReadLabels = hasLabels
 	if p.options.Mutations {
 		caps.CommentMutation = true
 		caps.StateMutation = true
 		caps.MergeMutation = true
 		caps.ReviewMutation = true
 		caps.IssueMutation = true
+		caps.LabelMutation = hasLabels
 	}
 	return caps
 }
@@ -301,6 +304,97 @@ func (p *Provider) ListCIChecks(
 		}
 	}
 	return NormalizeStatuses(ref, statuses, actionRuns), nil
+}
+
+func (p *Provider) ListLabels(
+	ctx context.Context,
+	ref platform.RepoRef,
+) (platform.LabelCatalog, error) {
+	transport, ok := p.transport.(LabelTransport)
+	if !ok {
+		return platform.LabelCatalog{}, platform.UnsupportedCapability(p.kind, p.host, "read_labels")
+	}
+	items, err := collectPages(ctx, func(opts PageOptions) ([]LabelDTO, Page, error) {
+		return transport.ListRepoLabels(ctx, ref, opts)
+	})
+	if err != nil {
+		return platform.LabelCatalog{}, p.mapError(err)
+	}
+	return platform.LabelCatalog{Labels: NormalizeLabels(ref, items)}, nil
+}
+
+func (p *Provider) SetMergeRequestLabels(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	names []string,
+) ([]platform.Label, error) {
+	return p.setIssueLikeLabels(ctx, ref, number, names)
+}
+
+func (p *Provider) SetIssueLabels(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	names []string,
+) ([]platform.Label, error) {
+	return p.setIssueLikeLabels(ctx, ref, number, names)
+}
+
+// setIssueLikeLabels assigns labels by name on a pull request or issue.
+// Forgejo and Gitea assign labels by numeric ID and use the issues
+// endpoint for both, so names are resolved against the repository label
+// catalog first.
+func (p *Provider) setIssueLikeLabels(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	names []string,
+) ([]platform.Label, error) {
+	transport, err := p.labelMutationTransport()
+	if err != nil {
+		return nil, err
+	}
+	catalog, err := collectPages(ctx, func(opts PageOptions) ([]LabelDTO, Page, error) {
+		return transport.ListRepoLabels(ctx, ref, opts)
+	})
+	if err != nil {
+		return nil, p.mapError(err)
+	}
+	idsByName := make(map[string]int64, len(catalog))
+	for _, label := range catalog {
+		idsByName[label.Name] = label.ID
+	}
+	labelIDs := make([]int64, 0, len(names))
+	for _, name := range names {
+		id, ok := idsByName[name]
+		if !ok {
+			return nil, &platform.Error{
+				Code:         platform.ErrCodeNotFound,
+				Provider:     p.kind,
+				PlatformHost: p.host,
+				Capability:   "label_mutation",
+				Err:          fmt.Errorf("label %q not found in repository %s/%s", name, ref.Owner, ref.Name),
+			}
+		}
+		labelIDs = append(labelIDs, id)
+	}
+	labels, err := transport.ReplaceIssueLabels(ctx, ref, number, labelIDs)
+	if err != nil {
+		return nil, p.mapError(err)
+	}
+	return NormalizeLabels(ref, labels), nil
+}
+
+func (p *Provider) labelMutationTransport() (LabelTransport, error) {
+	if !p.options.Mutations {
+		return nil, platform.UnsupportedCapability(p.kind, p.host, "label_mutation")
+	}
+	transport, ok := p.transport.(LabelTransport)
+	if !ok {
+		return nil, platform.UnsupportedCapability(p.kind, p.host, "label_mutation")
+	}
+	return transport, nil
 }
 
 func (p *Provider) CreateMergeRequestComment(

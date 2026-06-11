@@ -504,7 +504,14 @@ func TestGitLabUpgradeKeepsLegacyLabelAssignmentThroughCatalogRefresh(t *testing
 	)
 	require.NoError(err)
 	// Rewind to the pre-cleanup schema version so reopening runs
-	// migration 000031 against the seeded legacy rows.
+	// migration 000031 against the seeded legacy rows. Migration
+	// 000031 is data-only but 000032 is not: drop its merge-request
+	// columns so the replay applies cleanly.
+	_, err = seeded.WriteDB().ExecContext(ctx, `
+		ALTER TABLE middleman_merge_requests DROP COLUMN assignees_json;
+		ALTER TABLE middleman_merge_requests DROP COLUMN reviewers_json;
+	`)
+	require.NoError(err)
 	_, err = seeded.WriteDB().ExecContext(ctx, `UPDATE schema_migrations SET version = 30, dirty = 0`)
 	require.NoError(err)
 	seeded.Close()

@@ -94,10 +94,7 @@ func (c *Client) SetIssueLabels(
 // marshals nil to JSON null (labels untouched) while an empty value
 // marshals to "" which clears every label on the merge request or issue.
 func assignableLabelOptions(names []string) gitlab.LabelOptions {
-	if names == nil {
-		return gitlab.LabelOptions{}
-	}
-	return gitlab.LabelOptions(names)
+	return append(gitlab.LabelOptions{}, names...)
 }
 
 var _ platform.LabelReader = (*Client)(nil)

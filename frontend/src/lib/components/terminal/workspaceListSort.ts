@@ -5,8 +5,8 @@ export const workspaceListSortOptions: {
   label: string;
 }[] = [
   { value: "repo", label: "Org / repo" },
-  { value: "created", label: "Recently created" },
-  { value: "activity", label: "Recent activity" },
+  { value: "created", label: "Created" },
+  { value: "activity", label: "Activity" },
 ];
 
 export const defaultWorkspaceListSort: WorkspaceListSort = "repo";

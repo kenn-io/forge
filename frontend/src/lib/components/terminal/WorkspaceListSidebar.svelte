@@ -138,6 +138,10 @@
 
   // Flat ordering for the timestamp sorts. The org/repo mode keeps
   // the API order (created_at DESC) inside each repo group instead.
+  // "Activity" means terminal output only (tmux_last_output_at);
+  // pane-title or working-state changes do not count, and
+  // workspaces that have never produced output fall back to their
+  // creation time.
   const sortedFlat = $derived.by(() => {
     const stamp = sortMode === "activity"
       ? (ws: Workspace) =>
@@ -157,6 +161,32 @@
     if (!value) return 0;
     const ms = Date.parse(value);
     return Number.isNaN(ms) ? 0 : ms;
+  }
+
+  // Owner/name pairs that exist on more than one platform host.
+  // Flat rows prefix the host for these so identical repo names on
+  // different hosts stay distinguishable; repo identity is always
+  // (platform, host, owner, name), never owner/name alone.
+  const ambiguousFlatRepos = $derived.by(() => {
+    const hostByRepo = new Map<string, string>();
+    const ambiguous = new Set<string>();
+    for (const ws of workspaces) {
+      const key = `${ws.repo_owner}/${ws.repo_name}`;
+      const seen = hostByRepo.get(key);
+      if (seen === undefined) {
+        hostByRepo.set(key, ws.platform_host);
+      } else if (seen !== ws.platform_host) {
+        ambiguous.add(key);
+      }
+    }
+    return ambiguous;
+  });
+
+  function flatRepoLabel(ws: Workspace): string {
+    const key = `${ws.repo_owner}/${ws.repo_name}`;
+    return ambiguousFlatRepos.has(key)
+      ? `${ws.platform_host}/${key}`
+      : key;
   }
 
   const showProviderIcons = $derived.by(() => {
@@ -445,7 +475,14 @@
                     class="repo-context"
                     title={`${ws.platform_host}/${ws.repo_owner}/${ws.repo_name}`}
                   >
-                    {ws.repo_owner}/{ws.repo_name}
+                    {#if showProviderIcons && workspaceProvider(ws)}
+                      <ProviderIcon
+                        provider={workspaceProvider(ws)!}
+                        size={10}
+                        class="repo-context-icon"
+                      />
+                    {/if}
+                    <span class="repo-context-name">{flatRepoLabel(ws)}</span>
                   </span>
                 {/if}
                 <span class="branch-chip" title={ws.git_head_ref}>
@@ -842,14 +879,26 @@
     /* Flat sorts drop the per-repo group headers, so each row
      * carries its own repo context on the meta line. Caps at half
      * the line so the branch chip always keeps some room. */
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
     flex: 0 1 auto;
     max-width: 50%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    min-width: 0;
     font-family: var(--font-mono);
     font-size: var(--font-size-xs);
     color: var(--text-muted);
+  }
+
+  .repo-context-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  :global(.repo-context-icon) {
+    color: var(--text-muted);
+    flex-shrink: 0;
   }
 
   .branch-chip {

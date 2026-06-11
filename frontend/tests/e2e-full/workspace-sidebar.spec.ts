@@ -141,6 +141,69 @@ test.describe("workspace sidebar full-stack", () => {
     }
   });
 
+  test("flat sort modes order real workspaces by creation time and keep provider identity", async ({ page }) => {
+    let isolatedServer: IsolatedE2EServer | null = null;
+    let api: APIRequestContext | null = null;
+    try {
+      isolatedServer = await startIsolatedWorkspaceE2EServer();
+      api = await playwrightRequest.newContext({
+        baseURL: isolatedServer.info.base_url,
+      });
+
+      // Created sequentially, so the gitlab workspace has the newer
+      // created_at in the real database. created_at is stored with
+      // second granularity (datetime('now')), so space the two
+      // creations far enough apart that they cannot tie.
+      const githubResponse = await api.post("/api/v1/issues/github/acme/widgets/10/workspace", {
+        data: {},
+      });
+      expect(githubResponse.status()).toBe(202);
+      const githubWorkspace = (await githubResponse.json()) as WorkspaceStatusResponse;
+      await waitForWorkspaceReady(api, githubWorkspace.id);
+      await new Promise((resolve) => setTimeout(resolve, 1_100));
+
+      const gitlabResponse = await api.post(
+        "/api/v1/host/gitlab.example.com/issues/gitlab/group/project/11/workspace",
+        {
+          data: {},
+        },
+      );
+      expect(gitlabResponse.status()).toBe(202);
+      const gitlabWorkspace = (await gitlabResponse.json()) as WorkspaceStatusResponse;
+      await waitForWorkspaceReady(api, gitlabWorkspace.id);
+
+      await page.goto(`${isolatedServer.info.base_url}/terminal/${githubWorkspace.id}`);
+
+      const rows = page.locator(".workspace-list-sidebar .ws-row");
+      const headers = page.locator(".workspace-list-sidebar .group-header");
+      await expect(rows).toHaveCount(2);
+      await expect(headers).toHaveCount(2);
+
+      await page.getByTitle("Sort workspaces").click();
+      await page.locator(".filter-dropdown .filter-item", { hasText: "Created" }).click();
+
+      // Flat list ordered by the real created_at column: the
+      // gitlab workspace was created last, so it sorts first.
+      await expect(headers).toHaveCount(0);
+      await expect(rows).toHaveCount(2);
+      await expect(rows.first().locator(".repo-context")).toContainText("group/project");
+      await expect(rows.last().locator(".repo-context")).toContainText("acme/widgets");
+
+      // Provider identity survives without group headers.
+      await expect(rows.first().getByRole("img", { name: "GitLab" })).toBeVisible();
+      await expect(rows.last().getByRole("img", { name: "GitHub" })).toBeVisible();
+
+      // The choice persists against the real backend across reloads.
+      await page.reload();
+      await expect(rows).toHaveCount(2);
+      await expect(headers).toHaveCount(0);
+      await expect(rows.first().locator(".repo-context")).toContainText("group/project");
+    } finally {
+      await api?.dispose();
+      await isolatedServer?.stop();
+    }
+  });
+
   test("filters real workspace API results and expands collapsed matches during search", async ({ page }) => {
     let isolatedServer: IsolatedE2EServer | null = null;
     let api: APIRequestContext | null = null;

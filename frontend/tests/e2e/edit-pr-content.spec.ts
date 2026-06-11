@@ -182,6 +182,80 @@ test("markdown tables keep compact columns readable", async ({ page }) => {
   await expect(page.locator(".markdown-body table")).toHaveCSS("border-collapse", "collapse");
 });
 
+test("markdown tables keep long unbroken values on one line and scroll", async ({ page }) => {
+  const longToken = "deadbeef".repeat(30);
+  await page.route("**/api/v1/pulls/github/acme/widgets/42", async (route) => {
+    if (route.request().method() !== "GET") {
+      await route.fallback();
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        merge_request: {
+          ID: 1,
+          RepoID: 1,
+          GitHubID: 101,
+          Number: 42,
+          URL: "https://github.com/acme/widgets/pull/42",
+          Title: "Add browser regression coverage",
+          Author: "marius",
+          State: "open",
+          IsDraft: false,
+          Body: ["| Name | Digest |", "| --- | --- |", `| image | ${longToken} |`].join("\n"),
+          HeadBranch: "feature/playwright",
+          BaseBranch: "main",
+          Additions: 120,
+          Deletions: 12,
+          CommentCount: 3,
+          ReviewDecision: "APPROVED",
+          CIStatus: "success",
+          CIChecksJSON: "[]",
+          CreatedAt: "2026-03-29T14:00:00Z",
+          UpdatedAt: "2026-03-30T14:00:00Z",
+          LastActivityAt: "2026-03-30T14:00:00Z",
+          MergedAt: null,
+          ClosedAt: null,
+          KanbanStatus: "reviewing",
+          Starred: false,
+          repo_owner: "acme",
+          repo_name: "widgets",
+          platform_host: "github.com",
+          repo: mockRepo,
+          worktree_links: [],
+        },
+        repo_owner: "acme",
+        repo_name: "widgets",
+        platform_host: "github.com",
+        repo: mockRepo,
+        detail_loaded: true,
+        detail_fetched_at: "2026-03-30T14:00:00Z",
+        worktree_links: [],
+      }),
+    });
+  });
+
+  await page.goto("/pulls/github/acme/widgets/42");
+
+  // The PR body container sets word-break: break-word; cells must reset it
+  // so an unbroken token keeps its intrinsic width instead of splitting.
+  const digestCell = page.locator(".markdown-body td").filter({ hasText: longToken.slice(0, 24) });
+  await expect(digestCell).toBeVisible();
+  const digestLines = await digestCell.evaluate((el) => {
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    return Array.from(range.getClientRects()).filter((rect) => rect.width > 0).length;
+  });
+  expect(digestLines).toBe(1);
+
+  // The too-wide table scrolls horizontally within itself like GitHub.
+  const overflow = await page
+    .locator(".markdown-body table")
+    .evaluate((el) => ({ scrollWidth: el.scrollWidth, clientWidth: el.clientWidth }));
+  expect(overflow.scrollWidth).toBeGreaterThan(overflow.clientWidth);
+});
+
 test("markdown tables with images share width evenly like GitHub", async ({ page }) => {
   // Serve a fixed-size image for every screenshot cell so auto table layout
   // has real intrinsic widths to distribute.

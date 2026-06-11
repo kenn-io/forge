@@ -322,6 +322,12 @@ a:hover {
   border: 1px solid var(--border-muted);
   text-align: left;
   vertical-align: top;
+  /* Reset the word-break: break-word inherited from PR/issue body
+     containers: it feeds soft-wrap opportunities into auto table layout's
+     min-content sizing, splitting long tokens instead of letting the
+     column grow and the table scroll the way github.com renders it. */
+  word-break: normal;
+  overflow-wrap: normal;
 }
 .markdown-body th {
   background: var(--bg-surface-hover);

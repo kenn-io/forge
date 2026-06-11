@@ -106,27 +106,29 @@ export async function renderMarkdownMermaidDiagrams(
       initializedMermaid.add(mermaid);
     }
     await mermaid.run({ nodes, suppressErrors: true });
+    let renderedCount = 0;
     for (const node of nodes) {
-      attachMermaidViewer(node, diagramSources.get(node) ?? "");
+      if (attachMermaidViewer(node, diagramSources.get(node) ?? "")) {
+        node.dataset.mermaidRendered = "true";
+        renderedCount += 1;
+      } else {
+        clearMermaidRenderState(node);
+      }
     }
-    for (const node of nodes) {
-      node.dataset.mermaidRendered = "true";
-    }
+    return renderedCount;
   } catch (error: unknown) {
     for (const node of nodes) {
-      delete node.dataset.mermaidRendered;
+      clearMermaidRenderState(node);
     }
     throw error;
   }
-
-  return nodes.length;
 }
 
-function attachMermaidViewer(node: HTMLElement, source: string): void {
-  if (node.dataset.mermaidViewer === MERMAID_VIEWER_ATTACHED) return;
+function attachMermaidViewer(node: HTMLElement, source: string): boolean {
+  if (node.dataset.mermaidViewer === MERMAID_VIEWER_ATTACHED) return true;
 
   const svg = node.querySelector("svg");
-  if (!svg) return;
+  if (!svg) return false;
 
   svg.remove();
   const diagramView = createPannableDiagramView(svg);
@@ -140,6 +142,12 @@ function attachMermaidViewer(node: HTMLElement, source: string): void {
   node.classList.add("mermaid-viewer");
   node.dataset.mermaidViewer = MERMAID_VIEWER_ATTACHED;
   node.append(diagramView.viewport, topControls, diagramView.controls);
+  return true;
+}
+
+function clearMermaidRenderState(node: HTMLElement): void {
+  delete node.dataset.mermaidRendered;
+  delete node.dataset.processed;
 }
 
 function createPannableDiagramView(svg: SVGSVGElement): { controls: HTMLDivElement; viewport: HTMLDivElement } {

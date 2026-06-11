@@ -9,6 +9,12 @@ function mermaidLoader(run?: MarkdownMermaidAPI["run"]): MarkdownMermaidAPI {
   };
 }
 
+function renderSvgInto(nodes: ArrayLike<HTMLElement>): void {
+  for (const node of Array.from(nodes)) {
+    node.innerHTML = '<svg viewBox="0 0 120 60"><text>diagram</text></svg>';
+  }
+}
+
 describe("renderMarkdownMermaidDiagrams", () => {
   test("does not load mermaid when the rendered markdown has no mermaid diagrams", async () => {
     const root = document.createElement("div");
@@ -24,7 +30,9 @@ describe("renderMarkdownMermaidDiagrams", () => {
   test("runs mermaid against unrendered markdown diagram blocks", async () => {
     const root = document.createElement("div");
     root.innerHTML = '<div class="markdown-body"><pre class="mermaid">graph TD\nA-->B</pre></div>';
-    const mermaid = mermaidLoader();
+    const mermaid = mermaidLoader(async ({ nodes }) => {
+      renderSvgInto(nodes);
+    });
     const loader = vi.fn(async () => mermaid);
 
     const rendered = await renderMarkdownMermaidDiagrams(root, loader);
@@ -54,7 +62,9 @@ describe("renderMarkdownMermaidDiagrams", () => {
   test("does not render the same mermaid block twice", async () => {
     const root = document.createElement("div");
     root.innerHTML = '<div class="doc-markdown"><pre class="mermaid">graph TD\nA-->B</pre></div>';
-    const mermaid = mermaidLoader();
+    const mermaid = mermaidLoader(async ({ nodes }) => {
+      renderSvgInto(nodes);
+    });
     const loader = vi.fn(async () => mermaid);
 
     await renderMarkdownMermaidDiagrams(root, loader);
@@ -80,12 +90,23 @@ describe("renderMarkdownMermaidDiagrams", () => {
     const root = document.createElement("div");
     root.innerHTML = '<div class="markdown-body"><pre class="mermaid">graph TD\nA-->B</pre></div>';
     const renderError = new Error("render failed");
-    const run = vi.fn<MarkdownMermaidAPI["run"]>().mockRejectedValueOnce(renderError).mockResolvedValueOnce(undefined);
+    let rejectOnce = true;
+    const run = vi.fn<MarkdownMermaidAPI["run"]>(async ({ nodes }) => {
+      if (rejectOnce) {
+        rejectOnce = false;
+        for (const node of Array.from(nodes)) {
+          node.dataset.processed = "true";
+        }
+        throw renderError;
+      }
+      renderSvgInto(nodes);
+    });
     const mermaid = mermaidLoader(run);
     const loader = vi.fn(async () => mermaid);
 
     await expect(renderMarkdownMermaidDiagrams(root, loader)).rejects.toThrow(renderError);
     expect(root.querySelector<HTMLElement>("pre.mermaid")?.dataset.mermaidRendered).toBeUndefined();
+    expect(root.querySelector<HTMLElement>("pre.mermaid")?.dataset.processed).toBeUndefined();
 
     const rendered = await renderMarkdownMermaidDiagrams(root, loader);
 
@@ -93,13 +114,41 @@ describe("renderMarkdownMermaidDiagrams", () => {
     expect(mermaid.run).toHaveBeenCalledTimes(2);
   });
 
+  test("allows suppressed mermaid render failures to be retried", async () => {
+    const root = document.createElement("div");
+    root.innerHTML = '<div class="markdown-body"><pre class="mermaid">graph TD\nA-->B</pre></div>';
+    let suppressOnce = true;
+    const run = vi.fn<MarkdownMermaidAPI["run"]>(async ({ nodes }) => {
+      if (suppressOnce) {
+        suppressOnce = false;
+        for (const node of Array.from(nodes)) {
+          node.dataset.processed = "true";
+        }
+        return;
+      }
+      renderSvgInto(nodes);
+    });
+    const mermaid = mermaidLoader(run);
+    const loader = vi.fn(async () => mermaid);
+
+    const firstRender = await renderMarkdownMermaidDiagrams(root, loader);
+    const block = root.querySelector<HTMLElement>("pre.mermaid");
+    expect(firstRender).toBe(0);
+    expect(block?.dataset.mermaidRendered).toBeUndefined();
+    expect(block?.dataset.processed).toBeUndefined();
+
+    const secondRender = await renderMarkdownMermaidDiagrams(root, loader);
+
+    expect(secondRender).toBe(1);
+    expect(mermaid.run).toHaveBeenCalledTimes(2);
+    expect(block?.classList.contains("mermaid-viewer")).toBe(true);
+  });
+
   test("wraps rendered diagrams in viewer controls", async () => {
     const root = document.createElement("div");
     root.innerHTML = '<div class="markdown-body"><pre class="mermaid">graph TD\nA-->B</pre></div>';
     const mermaid = mermaidLoader(async ({ nodes }) => {
-      for (const node of Array.from(nodes)) {
-        node.innerHTML = '<svg viewBox="0 0 120 60"><text>diagram</text></svg>';
-      }
+      renderSvgInto(nodes);
     });
     const loader = vi.fn(async () => mermaid);
 
@@ -143,9 +192,7 @@ describe("renderMarkdownMermaidDiagrams", () => {
       value: { writeText },
     });
     const mermaid = mermaidLoader(async ({ nodes }) => {
-      for (const node of Array.from(nodes)) {
-        node.innerHTML = '<svg viewBox="0 0 120 60"></svg>';
-      }
+      renderSvgInto(nodes);
     });
     const loader = vi.fn(async () => mermaid);
 
@@ -159,9 +206,7 @@ describe("renderMarkdownMermaidDiagrams", () => {
     const root = document.createElement("div");
     root.innerHTML = '<div class="markdown-body"><pre class="mermaid">graph TD\nA-->B</pre></div>';
     const mermaid = mermaidLoader(async ({ nodes }) => {
-      for (const node of Array.from(nodes)) {
-        node.innerHTML = '<svg viewBox="0 0 120 60"><text>diagram</text></svg>';
-      }
+      renderSvgInto(nodes);
     });
     const loader = vi.fn(async () => mermaid);
 

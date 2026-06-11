@@ -637,6 +637,11 @@ func pipelineStatusFromInfo(pipeline *gitlab.PipelineInfo) string {
 	return NormalizePipelineStatus(pipeline.Status)
 }
 
+// normalizeLabelNames converts the bare label names GitLab embeds in
+// MR/issue payloads. PlatformExternalID stays empty: the label catalog
+// stores decimal label IDs in that field, so claiming the name here
+// would let a label named like another label's ID match two different
+// rows during persistence and fail the save.
 func normalizeLabelNames(repo platform.RepoRef, labels gitlab.Labels) []platform.Label {
 	out := make([]platform.Label, 0, len(labels))
 	for _, name := range labels {
@@ -645,9 +650,8 @@ func normalizeLabelNames(repo platform.RepoRef, labels gitlab.Labels) []platform
 			continue
 		}
 		out = append(out, platform.Label{
-			Repo:               repo,
-			PlatformExternalID: name,
-			Name:               name,
+			Repo: repo,
+			Name: name,
 		})
 	}
 	if len(out) == 0 {

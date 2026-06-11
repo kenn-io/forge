@@ -163,21 +163,29 @@ func doJSONRequest(
 // the requested names the way GitLab does: bare label names, no color.
 type fakeGitLabAPI struct {
 	mu             sync.Mutex
+	catalogJSON    string
 	mrLabelBody    map[string]any
 	issueLabelBody map[string]any
 }
 
-func gitlabAssignedLabelsJSON(body map[string]any) string {
-	raw, _ := body["labels"].(string)
+// gitlabAssignedLabelsJSON mirrors GitLab's contract for the labels
+// param: it must be a string ("" clears every label). JSON null or a
+// missing field leaves labels untouched, so the fake rejects those
+// instead of accidentally treating them as a clear.
+func gitlabAssignedLabelsJSON(body map[string]any) (string, bool) {
+	raw, isString := body["labels"].(string)
+	if !isString {
+		return "", false
+	}
 	if raw == "" {
-		return "[]"
+		return "[]", true
 	}
 	names := strings.Split(raw, ",")
 	quoted := make([]string, 0, len(names))
 	for _, name := range names {
 		quoted = append(quoted, fmt.Sprintf("%q", name))
 	}
-	return "[" + strings.Join(quoted, ",") + "]"
+	return "[" + strings.Join(quoted, ",") + "]", true
 }
 
 func (f *fakeGitLabAPI) handler(t *testing.T) http.Handler {
@@ -195,19 +203,24 @@ func (f *fakeGitLabAPI) handler(t *testing.T) http.Handler {
 				"http_url_to_repo": "https://gitlab.com/acme/widget.git"
 			}`))
 		case "GET /api/v4/projects/42/labels":
-			_, _ = w.Write([]byte(`[
-				{"id": 4, "name": "bug", "color": "#d73a4a", "description": "Something is broken"},
-				{"id": 5, "name": "triage", "color": "#fbca04", "description": "Needs review"}
-			]`))
+			f.mu.Lock()
+			catalogJSON := f.catalogJSON
+			f.mu.Unlock()
+			_, _ = w.Write([]byte(catalogJSON))
 		case "PUT /api/v4/projects/42/merge_requests/7":
 			var body map[string]any
 			assert.NoError(t, json.NewDecoder(r.Body).Decode(&body))
 			f.mu.Lock()
 			f.mrLabelBody = body
 			f.mu.Unlock()
+			labelsJSON, isString := gitlabAssignedLabelsJSON(body)
+			if !isString {
+				http.Error(w, `{"message": "labels must be a string"}`, http.StatusBadRequest)
+				return
+			}
 			_, _ = fmt.Fprintf(w,
 				`{"id": 1001, "iid": 7, "project_id": 42, "state": "opened", "labels": %s}`,
-				gitlabAssignedLabelsJSON(body),
+				labelsJSON,
 			)
 		case "PUT /api/v4/projects/42/issues/11":
 			var body map[string]any
@@ -215,9 +228,14 @@ func (f *fakeGitLabAPI) handler(t *testing.T) http.Handler {
 			f.mu.Lock()
 			f.issueLabelBody = body
 			f.mu.Unlock()
+			labelsJSON, isString := gitlabAssignedLabelsJSON(body)
+			if !isString {
+				http.Error(w, `{"message": "labels must be a string"}`, http.StatusBadRequest)
+				return
+			}
 			_, _ = fmt.Fprintf(w,
 				`{"id": 3001, "iid": 11, "project_id": 42, "state": "opened", "labels": %s}`,
-				gitlabAssignedLabelsJSON(body),
+				labelsJSON,
 			)
 		default:
 			http.NotFound(w, r)
@@ -228,7 +246,10 @@ func (f *fakeGitLabAPI) handler(t *testing.T) http.Handler {
 func setupGitLabLabelStack(t *testing.T) (*server.Server, *db.DB, int64, *fakeGitLabAPI) {
 	t.Helper()
 	database := dbtest.Open(t)
-	fake := &fakeGitLabAPI{}
+	fake := &fakeGitLabAPI{catalogJSON: `[
+		{"id": 4, "name": "bug", "color": "#d73a4a", "description": "Something is broken"},
+		{"id": 5, "name": "triage", "color": "#fbca04", "description": "Needs review"}
+	]`}
 	upstream := httptest.NewServer(fake.handler(t))
 	t.Cleanup(upstream.Close)
 
@@ -359,12 +380,44 @@ func TestGitLabSetPullLabelsEmptyArrayClearsAll(t *testing.T) {
 	require.NotNil(sent, "provider must receive the label update")
 	value, ok := sent["labels"]
 	require.True(ok, "labels field must be sent so GitLab clears assignments")
-	assert.Empty(value)
+	cleared, isString := value.(string)
+	require.True(isString, "labels must be a string; JSON null leaves GitLab labels untouched")
+	assert.Empty(cleared)
 
 	mr, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 7)
 	require.NoError(err)
 	require.NotNil(mr)
 	assert.Empty(mr.Labels)
+}
+
+// A label whose name equals another label's decimal ID must persist:
+// GitLab item labels are name-only, and the label store keys catalog
+// rows by decimal ID in platform_external_id. If normalization claimed
+// the name as an external ID, label "4" would match label ID 4's row by
+// external ID and its own row by name, and the save would fail after
+// the provider mutation already succeeded.
+func TestGitLabSetPullLabelsNameCollidingWithAnotherLabelID(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, database, repoID, fake := setupGitLabLabelStack(t)
+	fake.mu.Lock()
+	fake.catalogJSON = `[
+		{"id": 4, "name": "bug", "color": "#d73a4a", "description": "Something is broken"},
+		{"id": 5, "name": "4", "color": "#000000", "description": "named like an ID"}
+	]`
+	fake.mu.Unlock()
+
+	rr := doJSONRequest(t, srv, http.MethodPut, "/api/v1/pulls/gitlab/acme/widget/7/labels", map[string][]string{
+		"labels": {"4"},
+	})
+	require.Equal(http.StatusOK, rr.Code, "response: %s", rr.Body.String())
+
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 7)
+	require.NoError(err)
+	require.NotNil(mr)
+	require.Len(mr.Labels, 1)
+	assert.Equal("4", mr.Labels[0].Name)
+	assert.Equal("#000000", mr.Labels[0].Color)
 }
 
 // fakeGitealikeAPI serves the minimal Forgejo/Gitea v1 surface the label
@@ -411,14 +464,23 @@ func (f *fakeGitealikeAPI) handler(t *testing.T) http.Handler {
 			if r.URL.Path == "/api/v1/repos/acme/widget/issues/11/labels" {
 				number = 11
 			}
-			var body map[string][]int64
+			// A pointer distinguishes an explicit empty array (clear
+			// all) from JSON null or a missing field, which must not
+			// count as a replacement.
+			var body struct {
+				Labels *[]int64 `json:"labels"`
+			}
 			assert.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+			if body.Labels == nil {
+				http.Error(w, `{"message": "labels must be an array"}`, http.StatusBadRequest)
+				return
+			}
 			f.mu.Lock()
 			if f.replaceBody == nil {
 				f.replaceBody = make(map[int]map[string][]int64)
 			}
-			f.replaceBody[number] = body
-			replaced := f.labelsForIDs(body["labels"])
+			f.replaceBody[number] = map[string][]int64{"labels": *body.Labels}
+			replaced := f.labelsForIDs(*body.Labels)
 			f.mu.Unlock()
 			assert.NoError(t, json.NewEncoder(w).Encode(replaced))
 		default:

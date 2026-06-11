@@ -126,7 +126,9 @@ func TestClientSetLabelsSendsEmptyStringToClearAll(t *testing.T) {
 	assert.Empty(labels)
 	value, ok := body["labels"]
 	require.True(ok, "labels field must be present so GitLab clears assignments")
-	assert.Empty(value)
+	cleared, isString := value.(string)
+	require.True(isString, "labels must be a string; JSON null leaves GitLab labels untouched")
+	assert.Empty(cleared)
 }
 
 func TestClientSetLabelsMapsProviderErrors(t *testing.T) {

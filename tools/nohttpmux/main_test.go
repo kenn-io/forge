@@ -118,3 +118,36 @@ func newMux(mux interface{ HandleFunc(string, any) }) {
 	assert.Empty(testDiagnostics)
 	assert.Empty(nonServerDiagnostics)
 }
+
+func TestCheckSourceAllowsNonAPIServerMuxes(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	// The GitHub App fake and the middleman-github-app loopback
+	// callback server are not middleman API surfaces; both stand in
+	// for (or talk to) GitHub itself.
+	src := `package whatever
+
+import "net/http"
+
+func routes() {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /callback/abc", nil)
+}
+`
+
+	for _, path := range []string{
+		"internal/githubapp/githubapptest/fake.go",
+		"/tmp/worktree/internal/githubapp/githubapptest/fake.go",
+		"cmd/middleman-github-app/create.go",
+	} {
+		diagnostics, err := checkSource(path, src)
+		require.NoError(err)
+		assert.Empty(diagnostics, "path %s", path)
+	}
+
+	// The exemption must not leak to the API server itself.
+	diagnostics, err := checkSource("internal/server/bad.go", src)
+	require.NoError(err)
+	assert.Len(diagnostics, 1)
+}

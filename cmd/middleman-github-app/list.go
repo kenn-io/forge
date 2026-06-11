@@ -1,0 +1,120 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"flag"
+	"fmt"
+	"text/tabwriter"
+	"time"
+
+	"go.kenn.io/middleman/internal/config"
+)
+
+type appStatus struct {
+	Host                string `json:"host"`
+	AppID               int64  `json:"app_id"`
+	Slug                string `json:"slug"`
+	InstallationID      int64  `json:"installation_id,omitempty"`
+	InstallationAccount string `json:"installation_account,omitempty"`
+	RateLimit           int    `json:"rate_limit,omitempty"`
+	RateRemaining       int    `json:"rate_remaining,omitempty"`
+	RateResetsAt        string `json:"rate_resets_at,omitempty"`
+	Error               string `json:"error,omitempty"`
+}
+
+func runList(args []string, env *appEnv) error {
+	fs := flag.NewFlagSet("middleman-github-app list", flag.ContinueOnError)
+	fs.SetOutput(env.stdout)
+	configPath := fs.String("config", env.configPath, "middleman config path")
+	asJSON := fs.Bool("json", false, "emit JSON instead of a table")
+	registerTestFlags(fs, env)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	env.configPath = *configPath
+	cfg, err := env.loadConfig()
+	if err != nil {
+		return err
+	}
+	if len(cfg.GitHubApps) == 0 {
+		fmt.Fprintln(env.stdout,
+			"no github apps configured; run \"middleman-github-app create\" to add one")
+		return nil
+	}
+
+	ctx := context.Background()
+	statuses := make([]appStatus, 0, len(cfg.GitHubApps))
+	for _, app := range cfg.GitHubApps {
+		status := appStatus{
+			Host:                app.Host,
+			AppID:               app.AppID,
+			Slug:                app.Slug,
+			InstallationID:      app.InstallationID,
+			InstallationAccount: app.InstallationAccount,
+		}
+		if err := env.fillLiveStatus(ctx, app, &status); err != nil {
+			status.Error = err.Error()
+		}
+		statuses = append(statuses, status)
+	}
+
+	if *asJSON {
+		enc := json.NewEncoder(env.stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(statuses)
+	}
+	w := tabwriter.NewWriter(env.stdout, 2, 4, 2, ' ', 0)
+	fmt.Fprintln(w, "HOST\tAPP ID\tSLUG\tINSTALLATION\tACCOUNT\tRATE (CORE)\tSTATUS")
+	for _, s := range statuses {
+		rate, install, account := "-", "-", "-"
+		if s.InstallationID != 0 {
+			install = fmt.Sprintf("%d", s.InstallationID)
+		}
+		if s.InstallationAccount != "" {
+			account = s.InstallationAccount
+		}
+		if s.RateLimit > 0 {
+			rate = fmt.Sprintf("%d/%d resets %s", s.RateRemaining, s.RateLimit, s.RateResetsAt)
+		}
+		status := "ok"
+		if s.Error != "" {
+			status = s.Error
+		} else if s.InstallationID == 0 {
+			status = "not installed"
+		}
+		fmt.Fprintf(w, "%s\t%d\t%s\t%s\t%s\t%s\t%s\n",
+			s.Host, s.AppID, s.Slug, install, account, rate, status)
+	}
+	return w.Flush()
+}
+
+// fillLiveStatus queries GitHub for the app's current installation
+// and, when installed, the rate budget of a freshly minted token.
+func (env *appEnv) fillLiveStatus(
+	ctx context.Context, app config.GitHubAppConfig, status *appStatus,
+) error {
+	client := env.apiClient(app.Host)
+	jwt, err := appJWT(app, env.now())
+	if err != nil {
+		return err
+	}
+	if _, err := client.GetApp(ctx, jwt); err != nil {
+		return err
+	}
+	if app.InstallationID == 0 {
+		return nil
+	}
+	token, err := client.CreateInstallationToken(ctx, jwt, app.InstallationID)
+	if err != nil {
+		return err
+	}
+	rate, err := client.CoreRateLimit(ctx, token.Token)
+	if err != nil {
+		return err
+	}
+	status.RateLimit = rate.Limit
+	status.RateRemaining = rate.Remaining
+	status.RateResetsAt = time.Unix(rate.Reset, 0).UTC().Format(time.RFC3339)
+	return nil
+}

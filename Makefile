@@ -12,6 +12,7 @@ LDFLAGS_RELEASE := $(LDFLAGS) -s -w
 
 EXE_SUFFIX := $(if $(filter windows,$(shell go env GOOS)),.exe,)
 BINARY := middleman$(EXE_SUFFIX)
+GHAPP_BINARY := middleman-github-app$(EXE_SUFFIX)
 GOPATH_FIRST := $(shell go env GOPATH | sed -E 's/^([A-Za-z]:)?([^;:]*).*/\1\2/')
 
 ROBOREV_SRC ?= $(HOME)/code/roborev
@@ -50,10 +51,12 @@ ensure-tmp-dir:
 # Build the binary (debug, with embedded frontend)
 build: frontend
 	go build -ldflags="$(LDFLAGS)" -o $(BINARY) ./cmd/middleman
+	go build -ldflags="$(LDFLAGS)" -o $(GHAPP_BINARY) ./cmd/middleman-github-app
 
 # Build with optimizations (release)
 build-release: frontend
 	go build -ldflags="$(LDFLAGS_RELEASE)" -trimpath -o $(BINARY) ./cmd/middleman
+	go build -ldflags="$(LDFLAGS_RELEASE)" -trimpath -o $(GHAPP_BINARY) ./cmd/middleman-github-app
 
 rust-pty-manager:
 	cargo build -p middleman-pty-manager
@@ -66,6 +69,7 @@ install: build-release
 	@if [ -d "$(HOME)/.local/bin" ]; then \
 		echo "Installing to ~/.local/bin/$(BINARY)"; \
 		cp $(BINARY) "$(HOME)/.local/bin/$(BINARY)"; \
+		cp $(GHAPP_BINARY) "$(HOME)/.local/bin/$(GHAPP_BINARY)"; \
 	else \
 		INSTALL_DIR="$${GOBIN:-$$(go env GOBIN)}"; \
 		if [ -z "$$INSTALL_DIR" ]; then \
@@ -74,6 +78,7 @@ install: build-release
 		mkdir -p "$$INSTALL_DIR"; \
 		echo "Installing to $$INSTALL_DIR/$(BINARY)"; \
 		cp $(BINARY) "$$INSTALL_DIR/$(BINARY)"; \
+		cp $(GHAPP_BINARY) "$$INSTALL_DIR/$(GHAPP_BINARY)"; \
 	fi
 
 # Install Bun workspace dependencies for frontend and packages/ui

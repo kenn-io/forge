@@ -248,6 +248,9 @@ func allowedRegistration(path string, call *ast.CallExpr) bool {
 	if len(call.Args) == 0 {
 		return false
 	}
+	if isExemptNonAPIServerPath(path) {
+		return true
+	}
 	if pathHasSuffix(path, "internal/profiler/profiler.go") {
 		return isProfilerRoute(routePattern(call.Args[0]))
 	}
@@ -263,6 +266,24 @@ func allowedRegistration(path string, call *ast.CallExpr) bool {
 	default:
 		return false
 	}
+}
+
+// isExemptNonAPIServerPath lists muxes that are not middleman API
+// surfaces and so have no Huma route layer to go through: the GitHub
+// App fake server used by tests, and the middleman-github-app CLI's
+// loopback browser-callback server for the App Manifest flow.
+func isExemptNonAPIServerPath(path string) bool {
+	slashPath := filepath.ToSlash(path)
+	for _, exempt := range []string{
+		"internal/githubapp/githubapptest/",
+		"cmd/middleman-github-app/",
+	} {
+		if strings.Contains(slashPath, "/"+exempt) ||
+			strings.HasPrefix(slashPath, exempt) {
+			return true
+		}
+	}
+	return false
 }
 
 func isProfilerRoute(pattern string) bool {

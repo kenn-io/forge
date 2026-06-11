@@ -23,7 +23,7 @@ CLI (middleman) → Config (TOML) → DB (SQLite)
 - **Docs**: Configured markdown folders with filesystem-safe browse/read/write/search/git publish behavior
 - **Messages**: msgvault-backed message search, detail, thread, and safe HTML/image handling
 - **Frontend**: Svelte 5 SPA embedded in the Go binary at build time
-- **Config**: TOML at `~/.config/middleman/config.toml`; per-provider `MIDDLEMAN_<PROVIDER>_TOKEN` env vars (with optional repo-level `token_env` overrides)
+- **Config**: TOML at `~/.config/middleman/config.toml`; per-provider `MIDDLEMAN_<PROVIDER>_TOKEN` env vars (with optional repo-level `token_env` overrides). Optional `[[github_apps]]` entries (written by the `middleman-github-app` CLI) authenticate GitHub hosts with app installation tokens ahead of PATs to relieve rate limits
 
 ## Provider Support
 
@@ -52,7 +52,9 @@ Kata, Docs, and Messages are first-class middleman modes, but they are not platf
 ## Project Structure
 
 - `cmd/middleman/` - Go server entrypoint
+- `cmd/middleman-github-app/` - CLI that creates and manages GitHub Apps (browser manifest flow) whose installation tokens middleman uses instead of PATs
 - `internal/config/` - TOML config loading and validation
+- `internal/githubapp/` - GitHub App manifest flow, app JWT signing, installation token minting
 - `internal/db/` - SQLite schema, connection, queries, types
 - `internal/kata/` - Kata daemon catalog/runtime discovery, health, and proxy integration
 - `internal/docs/` - Markdown folder filesystem, search, and git-publish support (planned on this branch)

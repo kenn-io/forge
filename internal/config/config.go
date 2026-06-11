@@ -82,6 +82,22 @@ type PlatformConfig struct {
 	TokenFile string `toml:"token_file,omitempty" json:"token_file,omitempty"`
 }
 
+// GitHubAppConfig registers a GitHub App created by the
+// middleman-github-app CLI. Installation tokens minted from the app's
+// private key carry their own rate-limit budget, taking sync traffic
+// off the host's PAT. One app per GitHub host; an entry without an
+// installation_id is dormant and the PAT chain stays in effect.
+type GitHubAppConfig struct {
+	Host                string `toml:"host" json:"host"`
+	AppID               int64  `toml:"app_id" json:"app_id"`
+	Slug                string `toml:"slug,omitempty" json:"slug,omitempty"`
+	Owner               string `toml:"owner,omitempty" json:"owner,omitempty"`
+	OwnerType           string `toml:"owner_type,omitempty" json:"owner_type,omitempty"`
+	PrivateKeyPath      string `toml:"private_key_path" json:"private_key_path"`
+	InstallationID      int64  `toml:"installation_id,omitempty" json:"installation_id,omitempty"`
+	InstallationAccount string `toml:"installation_account,omitempty" json:"installation_account,omitempty"`
+}
+
 func (r Repo) FullName() string {
 	return r.Owner + "/" + r.Name
 }
@@ -655,8 +671,9 @@ type Config struct {
 	// The raw Host header must still pass the allowed_hosts gate
 	// before any forwarded header is read.
 	TrustReverseProxy bool             `toml:"trust_reverse_proxy"`
-	Repos             []Repo           `toml:"repos"`
-	Platforms         []PlatformConfig `toml:"platforms"`
+	Repos             []Repo            `toml:"repos"`
+	Platforms         []PlatformConfig  `toml:"platforms"`
+	GitHubApps        []GitHubAppConfig `toml:"github_apps"`
 	Activity          Activity         `toml:"activity"`
 	Terminal          Terminal         `toml:"terminal"`
 	Modes             ModeVisibility   `toml:"modes"`
@@ -1006,6 +1023,9 @@ func (c *Config) Validate() error {
 	if err := c.validatePlatforms(); err != nil {
 		return err
 	}
+	if err := c.validateGitHubApps(); err != nil {
+		return err
+	}
 	if err := c.canonicalizeDocFolders(); err != nil {
 		return err
 	}
@@ -1323,6 +1343,58 @@ func (c *Config) validatePlatforms() error {
 	return nil
 }
 
+func (c *Config) validateGitHubApps() error {
+	seenHosts := make(map[string]struct{}, len(c.GitHubApps))
+	for i := range c.GitHubApps {
+		app := &c.GitHubApps[i]
+		app.Host = strings.TrimSpace(app.Host)
+		app.Slug = strings.TrimSpace(app.Slug)
+		app.Owner = strings.TrimSpace(app.Owner)
+		app.PrivateKeyPath = strings.TrimSpace(app.PrivateKeyPath)
+		host, err := normalizePlatformHost(defaultPlatform, app.Host)
+		if err != nil {
+			return fmt.Errorf("config: github_apps[%d]: %w", i, err)
+		}
+		app.Host = host
+		if app.AppID <= 0 {
+			return fmt.Errorf(
+				"config: github_apps[%d]: app_id must be a positive integer", i,
+			)
+		}
+		if app.PrivateKeyPath == "" {
+			return fmt.Errorf(
+				"config: github_apps[%d]: private_key_path is required", i,
+			)
+		}
+		// One app per host: the token source chain is host-scoped, so a
+		// second app for the same host could never be selected.
+		if _, ok := seenHosts[host]; ok {
+			return fmt.Errorf(
+				"config: github_apps[%d]: duplicate github app for host %q", i, host,
+			)
+		}
+		seenHosts[host] = struct{}{}
+	}
+	return nil
+}
+
+// GitHubAppForHost returns the configured GitHub App for host, if any.
+func (c *Config) GitHubAppForHost(host string) (GitHubAppConfig, bool) {
+	if c == nil {
+		return GitHubAppConfig{}, false
+	}
+	h, err := normalizePlatformHost(defaultPlatform, host)
+	if err != nil {
+		return GitHubAppConfig{}, false
+	}
+	for _, app := range c.GitHubApps {
+		if app.Host == h {
+			return app, true
+		}
+	}
+	return GitHubAppConfig{}, false
+}
+
 func (c *Config) validateAgents() error {
 	seen := make(map[string]struct{}, len(c.Agents))
 	for i := range c.Agents {
@@ -1582,6 +1654,20 @@ func (c *Config) TokenSourceForPlatformHost(
 			EnvName: repoTokenEnv,
 		})
 	}
+	// A configured GitHub App outranks platform and default PAT
+	// candidates: installation tokens exist to take sync traffic off
+	// the PAT budget. Explicit repo-level overrides above still win.
+	if p == defaultPlatform {
+		if app, ok := c.GitHubAppForHost(h); ok && app.AppID > 0 && app.PrivateKeyPath != "" {
+			desc.Candidates = append(desc.Candidates, tokenauth.Candidate{
+				Kind:           tokenauth.SourceKindGitHubApp,
+				Host:           h,
+				FilePath:       app.PrivateKeyPath,
+				AppID:          app.AppID,
+				InstallationID: app.InstallationID,
+			})
+		}
+	}
 	for _, pc := range c.Platforms {
 		if pc.Type == p && pc.Host == h {
 			if pc.TokenFile != "" {
@@ -1692,6 +1778,11 @@ func (c *Config) normalizeTokenFilePaths(configDir string) {
 	}
 	for i := range c.Repos {
 		c.Repos[i].TokenFile = normalizeTokenFilePath(configDir, c.Repos[i].TokenFile)
+	}
+	for i := range c.GitHubApps {
+		c.GitHubApps[i].PrivateKeyPath = normalizeTokenFilePath(
+			configDir, c.GitHubApps[i].PrivateKeyPath,
+		)
 	}
 }
 
@@ -1903,8 +1994,9 @@ type configFile struct {
 	IssueWorkspaceBranchStyle string           `toml:"issue_workspace_branch_style,omitempty"`
 	AllowedHosts              []string         `toml:"allowed_hosts,omitempty"`
 	TrustReverseProxy         bool             `toml:"trust_reverse_proxy,omitempty"`
-	Repos                     []Repo           `toml:"repos"`
-	Platforms                 []PlatformConfig `toml:"platforms,omitempty"`
+	Repos                     []Repo            `toml:"repos"`
+	Platforms                 []PlatformConfig  `toml:"platforms,omitempty"`
+	GitHubApps                []GitHubAppConfig `toml:"github_apps,omitempty"`
 	Activity                  Activity         `toml:"activity"`
 	Terminal                  Terminal         `toml:"terminal,omitempty"`
 	Modes                     ModeVisibility   `toml:"modes,omitempty"`
@@ -1932,6 +2024,7 @@ func (c *Config) Save(path string) error {
 		TrustReverseProxy:   cfg.TrustReverseProxy,
 		Repos:               reposForSave(cfg.Repos),
 		Platforms:           cfg.Platforms,
+		GitHubApps:          cfg.GitHubApps,
 		Activity:            cfg.Activity,
 		Terminal:            cfg.Terminal,
 		Modes:               cfg.Modes,
@@ -2012,6 +2105,7 @@ func (c *Config) copyForSave() Config {
 	cfg.Repos = slices.Clone(c.Repos)
 	cfg.Platforms = slices.Clone(c.Platforms)
 	cfg.AllowedHosts = slices.Clone(c.AllowedHosts)
+	cfg.GitHubApps = slices.Clone(c.GitHubApps)
 	cfg.DocFolders = slices.Clone(c.DocFolders)
 	cfg.Agents = slices.Clone(c.Agents)
 	if cfg.SyncInterval == "" {

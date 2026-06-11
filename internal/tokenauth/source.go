@@ -8,14 +8,22 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 )
 
 var ErrMissingToken = errors.New("missing provider token")
 
 type GitHubCLIRunner func(context.Context, string) (string, error)
 
+// GitHubAppMinter exchanges a github_app candidate (app id, private
+// key path, installation id, host) for an installation access token
+// and its expiry. Installation tokens live one hour; the managed
+// source caches them and re-mints ahead of expiry.
+type GitHubAppMinter func(context.Context, Candidate) (string, time.Time, error)
+
 type Options struct {
 	GitHubCLI GitHubCLIRunner
+	GitHubApp GitHubAppMinter
 }
 
 type Source interface {
@@ -25,11 +33,13 @@ type Source interface {
 }
 
 type ManagedSource struct {
-	mu       sync.Mutex
-	desc     Descriptor
-	options  Options
-	ghToken  string
-	ghCached bool
+	mu          sync.Mutex
+	desc        Descriptor
+	options     Options
+	ghToken     string
+	ghCached    bool
+	appToken    string
+	appTokenExp time.Time
 }
 
 func NewManagedSource(desc Descriptor, options Options) *ManagedSource {
@@ -48,6 +58,8 @@ func (s *ManagedSource) Update(desc Descriptor) {
 	if !s.desc.EqualSource(desc) {
 		s.ghToken = ""
 		s.ghCached = false
+		s.appToken = ""
+		s.appTokenExp = time.Time{}
 	}
 	s.desc = cloneDescriptor(desc)
 }
@@ -56,6 +68,8 @@ func (s *ManagedSource) Invalidate() {
 	s.mu.Lock()
 	s.ghToken = ""
 	s.ghCached = false
+	s.appToken = ""
+	s.appTokenExp = time.Time{}
 	s.mu.Unlock()
 }
 
@@ -92,9 +106,56 @@ func (s *ManagedSource) tokenFromCandidate(
 		return strings.TrimSpace(string(data)), true, nil
 	case SourceKindGitHubCLI:
 		return s.githubCLIToken(ctx, candidate.Host)
+	case SourceKindGitHubApp:
+		return s.githubAppToken(ctx, candidate)
 	default:
 		return "", false, nil
 	}
+}
+
+// githubAppTokenRefreshSkew re-mints installation tokens this long
+// before their recorded expiry so in-flight requests never race the
+// one-hour token lifetime.
+const githubAppTokenRefreshSkew = 5 * time.Minute
+
+func (s *ManagedSource) githubAppToken(
+	ctx context.Context,
+	candidate Candidate,
+) (string, bool, error) {
+	// An app entry that is not installed yet cannot mint tokens; fall
+	// through to the remaining candidates (PAT env vars, gh CLI) so a
+	// half-configured app does not take the whole host offline.
+	if candidate.InstallationID == 0 {
+		return "", false, nil
+	}
+	s.mu.Lock()
+	minter := s.options.GitHubApp
+	token := s.appToken
+	exp := s.appTokenExp
+	s.mu.Unlock()
+	if minter == nil {
+		return "", false, nil
+	}
+	if token != "" && time.Until(exp) > githubAppTokenRefreshSkew {
+		return token, true, nil
+	}
+	token, exp, err := minter(ctx, candidate)
+	if err != nil {
+		// Surface mint failures instead of silently degrading to the
+		// PAT chain: the app exists precisely because the PAT budget
+		// is exhausted, and a quiet fallback would hide broken keys.
+		return "", false, fmt.Errorf(
+			"mint github app installation token (%s): %w", candidate.SafeString(), err,
+		)
+	}
+	if token == "" {
+		return "", true, nil
+	}
+	s.mu.Lock()
+	s.appToken = token
+	s.appTokenExp = exp
+	s.mu.Unlock()
+	return token, true, nil
 }
 
 func (s *ManagedSource) githubCLIToken(

@@ -25,6 +25,7 @@ import (
 	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/gitclone"
 	ghclient "go.kenn.io/middleman/internal/github"
+	"go.kenn.io/middleman/internal/githubapp"
 	"go.kenn.io/middleman/internal/platform"
 	"go.kenn.io/middleman/internal/profiler"
 	"go.kenn.io/middleman/internal/ptyowner"
@@ -479,6 +480,14 @@ func run(opts serve.Options) error {
 
 	tokenSources := tokenauth.NewSourceSet(tokenauth.Options{
 		GitHubCLI: config.GitHubCLITokenForHost,
+		GitHubApp: func(
+			ctx context.Context, candidate tokenauth.Candidate,
+		) (string, time.Time, error) {
+			return githubapp.MintInstallationToken(
+				ctx, candidate.Host, candidate.AppID,
+				candidate.FilePath, candidate.InstallationID,
+			)
+		},
 	})
 	providerSources, err := collectProviderTokenSources(ctx, cfg, tokenSources)
 	if err != nil {

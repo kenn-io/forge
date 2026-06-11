@@ -1,0 +1,190 @@
+package main
+
+import (
+	"context"
+	"flag"
+	"fmt"
+	"net/http"
+	"os"
+	"os/signal"
+	"time"
+
+	"go.kenn.io/middleman/internal/githubapp"
+)
+
+func runInstall(args []string, env *appEnv) error {
+	fs := flag.NewFlagSet("middleman-github-app install", flag.ContinueOnError)
+	fs.SetOutput(env.stdout)
+	configPath := fs.String("config", env.configPath, "middleman config path")
+	host := fs.String("host", "", "GitHub host of the app to install")
+	noBrowser := fs.Bool("no-browser", false, "print URLs instead of opening a browser")
+	timeout := fs.Duration("timeout", 10*time.Minute, "how long to wait for the installation")
+	registerTestFlags(fs, env)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	env.configPath = *configPath
+	cfg, err := env.loadConfig()
+	if err != nil {
+		return err
+	}
+	app, err := selectApp(cfg, *host)
+	if err != nil {
+		return err
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	return env.runInstallFlow(ctx, cfg, app, !*noBrowser, *timeout)
+}
+
+func runUninstall(args []string, env *appEnv) error {
+	fs := flag.NewFlagSet("middleman-github-app uninstall", flag.ContinueOnError)
+	fs.SetOutput(env.stdout)
+	configPath := fs.String("config", env.configPath, "middleman config path")
+	host := fs.String("host", "", "GitHub host of the app to uninstall")
+	yes := fs.Bool("yes", false, "confirm uninstalling without prompting")
+	registerTestFlags(fs, env)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	env.configPath = *configPath
+	cfg, err := env.loadConfig()
+	if err != nil {
+		return err
+	}
+	app, err := selectApp(cfg, *host)
+	if err != nil {
+		return err
+	}
+	if app.InstallationID == 0 {
+		return fmt.Errorf("app %q has no recorded installation", app.Slug)
+	}
+	if !*yes {
+		return fmt.Errorf(
+			"uninstalling removes the app's access to %s; re-run with --yes to confirm",
+			app.InstallationAccount,
+		)
+	}
+	ctx := context.Background()
+	jwt, err := appJWT(app, env.now())
+	if err != nil {
+		return err
+	}
+	err = env.apiClient(app.Host).DeleteInstallation(ctx, jwt, app.InstallationID)
+	// A 404 means the installation is already gone on GitHub's side;
+	// still clear the stale local record.
+	if err != nil && !githubapp.IsStatus(err, http.StatusNotFound) {
+		return err
+	}
+	fmt.Fprintf(env.stdout,
+		"Uninstalled app %q from %s. middleman falls back to PAT tokens for %s.\n",
+		app.Slug, app.InstallationAccount, app.Host,
+	)
+	app.InstallationID = 0
+	app.InstallationAccount = ""
+	return updateAppInConfig(cfg, env.configPath, app)
+}
+
+func runDelete(args []string, env *appEnv) error {
+	fs := flag.NewFlagSet("middleman-github-app delete", flag.ContinueOnError)
+	fs.SetOutput(env.stdout)
+	configPath := fs.String("config", env.configPath, "middleman config path")
+	host := fs.String("host", "", "GitHub host of the app to delete")
+	yes := fs.Bool("yes", false, "confirm deletion without prompting")
+	localOnly := fs.Bool("local-only", false,
+		"only remove the local config entry and key (app already deleted on GitHub)")
+	noBrowser := fs.Bool("no-browser", false, "print URLs instead of opening a browser")
+	timeout := fs.Duration("timeout", 10*time.Minute, "how long to wait for the deletion")
+	registerTestFlags(fs, env)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	env.configPath = *configPath
+	cfg, err := env.loadConfig()
+	if err != nil {
+		return err
+	}
+	app, err := selectApp(cfg, *host)
+	if err != nil {
+		return err
+	}
+	if !*yes {
+		return fmt.Errorf(
+			"deleting app %q removes its credentials permanently; re-run with --yes to confirm",
+			app.Slug,
+		)
+	}
+
+	if !*localOnly {
+		// GitHub has no API for deleting an app; the user confirms it
+		// in browser settings while we poll for the credentials to die.
+		url := settingsURL(env.webBaseFor(app.Host), app) + "/advanced"
+		fmt.Fprintf(env.stdout,
+			"Delete the app in GitHub settings (Danger Zone -> Delete GitHub App):\n  %s\n", url,
+		)
+		if !*noBrowser {
+			if err := env.openBrowser(url); err != nil {
+				fmt.Fprintf(env.stdout, "could not open browser: %v\n", err)
+			}
+		}
+		fmt.Fprintln(env.stdout, "Waiting for the app to disappear...")
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+		defer stop()
+		client := env.apiClient(app.Host)
+		err = env.pollUntil(ctx, *timeout, func(ctx context.Context) (bool, error) {
+			jwt, err := appJWT(app, env.now())
+			if err != nil {
+				return false, err
+			}
+			_, err = client.GetApp(ctx, jwt)
+			if err == nil {
+				return false, nil
+			}
+			if githubapp.IsStatus(err, http.StatusUnauthorized) ||
+				githubapp.IsStatus(err, http.StatusNotFound) {
+				return true, nil
+			}
+			return false, err
+		})
+		if err != nil {
+			return fmt.Errorf(
+				"app still exists on %s: %w\n"+
+					"re-run with --local-only after deleting it in the browser", app.Host, err,
+			)
+		}
+	}
+
+	if err := removeAppFromConfig(cfg, env.configPath, app.Host); err != nil {
+		return err
+	}
+	if err := os.Remove(app.PrivateKeyPath); err != nil && !os.IsNotExist(err) {
+		fmt.Fprintf(env.stdout, "could not remove private key %s: %v\n", app.PrivateKeyPath, err)
+	} else {
+		fmt.Fprintf(env.stdout, "Removed private key %s\n", app.PrivateKeyPath)
+	}
+	fmt.Fprintf(env.stdout, "Deleted app %q for host %s from config.\n", app.Slug, app.Host)
+	return nil
+}
+
+func runOpen(args []string, env *appEnv) error {
+	fs := flag.NewFlagSet("middleman-github-app open", flag.ContinueOnError)
+	fs.SetOutput(env.stdout)
+	configPath := fs.String("config", env.configPath, "middleman config path")
+	host := fs.String("host", "", "GitHub host of the app to open")
+	registerTestFlags(fs, env)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	env.configPath = *configPath
+	cfg, err := env.loadConfig()
+	if err != nil {
+		return err
+	}
+	app, err := selectApp(cfg, *host)
+	if err != nil {
+		return err
+	}
+	url := settingsURL(env.webBaseFor(app.Host), app)
+	fmt.Fprintf(env.stdout, "App settings: %s\n", url)
+	return env.openBrowser(url)
+}

@@ -6,6 +6,9 @@ dist/
 !internal/web/dist/
 internal/web/dist/*
 !internal/web/dist/stub.html
+!internal/githubapp/ui/dist/
+internal/githubapp/ui/dist/*
+!internal/githubapp/ui/dist/stub.html
 frontend/node_modules/
 frontend/dist/
 node_modules/

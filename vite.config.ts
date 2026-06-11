@@ -3,20 +3,21 @@ import { defineConfig } from "vite-plus";
 const rootVP = "node node_modules/vite-plus/bin/vp";
 const frontendVP = "node ../node_modules/vite-plus/bin/vp";
 const uiVP = "node ../../node_modules/vite-plus/bin/vp";
+const packageVP = "node ../../node_modules/vite-plus/bin/vp";
 
 export default defineConfig({
   run: {
     tasks: {
       "frontend-check": {
-        command: `${rootVP} run frontend-fmt && ${rootVP} run frontend-lint && ${rootVP} run svelte-check:frontend && ${rootVP} run svelte-check:ui`,
+        command: `${rootVP} run frontend-fmt && ${rootVP} run frontend-lint && ${rootVP} run svelte-check:frontend && ${rootVP} run svelte-check:ui && ${rootVP} run svelte-check:github-app-ui`,
         cache: false,
       },
       "frontend-fmt": {
-        command: `${rootVP} fmt --check frontend packages/ui --no-error-on-unmatched-pattern --threads=1`,
+        command: `${rootVP} fmt --check frontend packages/ui packages/github-app-ui --no-error-on-unmatched-pattern --threads=1`,
         cache: false,
       },
       "frontend-lint": {
-        command: `${rootVP} lint frontend packages/ui '!frontend/dist/**' '!frontend/test-results/**' '!packages/ui/src/api/generated/**' '!packages/ui/src/api/roborev/generated/**' --no-error-on-unmatched-pattern --threads=1`,
+        command: `${rootVP} lint frontend packages/ui packages/github-app-ui '!frontend/dist/**' '!packages/github-app-ui/dist/**' '!frontend/test-results/**' '!packages/ui/src/api/generated/**' '!packages/ui/src/api/roborev/generated/**' --no-error-on-unmatched-pattern --threads=1`,
         cache: false,
       },
       "frontend-package-check": {
@@ -33,8 +34,17 @@ export default defineConfig({
         cache: false,
         cwd: "packages/ui",
       },
+      "svelte-check:github-app-ui": {
+        command: `${packageVP} exec -- svelte-check --tsconfig ./tsconfig.json --fail-on-warnings`,
+        cache: false,
+        cwd: "packages/github-app-ui",
+      },
       "ui-package-check": {
         command: `${rootVP} fmt --check packages/ui --no-error-on-unmatched-pattern --threads=1 && ${rootVP} lint packages/ui '!packages/ui/src/api/generated/**' '!packages/ui/src/api/roborev/generated/**' --no-error-on-unmatched-pattern --threads=1 && ${rootVP} run svelte-check:ui`,
+        cache: false,
+      },
+      "github-app-ui-package-check": {
+        command: `${rootVP} fmt --check packages/github-app-ui --no-error-on-unmatched-pattern --threads=1 && ${rootVP} lint packages/github-app-ui '!packages/github-app-ui/dist/**' --no-error-on-unmatched-pattern --threads=1 && ${rootVP} run svelte-check:github-app-ui`,
         cache: false,
       },
     },
@@ -45,6 +55,7 @@ export default defineConfig({
   fmt: {
     ignorePatterns: [
       "frontend/dist/**",
+      "packages/github-app-ui/dist/**",
       "frontend/test-results/**",
       "packages/ui/src/api/generated/**",
       "packages/ui/src/api/roborev/generated/**",
@@ -58,6 +69,7 @@ export default defineConfig({
       "frontend/tests/**",
       "frontend/src/**/*.test.ts",
       "frontend/src/**/*.bench.test.ts",
+      "packages/github-app-ui/dist/**",
       "packages/ui/src/api/generated/**",
       "packages/ui/src/api/roborev/generated/**",
       "packages/ui/src/**/*.test.ts",

@@ -5,20 +5,23 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
-	"html/template"
+	"io"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"go.kenn.io/middleman/internal/config"
 	"go.kenn.io/middleman/internal/githubapp"
+	"go.kenn.io/middleman/internal/githubapp/ui"
 )
 
 func runCreate(args []string, env *appEnv) error {
@@ -64,7 +67,16 @@ func runCreate(args []string, env *appEnv) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	creds, err := env.runManifestFlow(ctx, manifestFlowOptions{
+	// The flow server stays up through the install step so the browser
+	// can finish loading the setup page's "done" view after GitHub
+	// redirects back.
+	flow, err := newFlowServer(env.stdout)
+	if err != nil {
+		return err
+	}
+	defer flow.Close()
+
+	creds, err := env.runManifestFlow(ctx, flow, manifestFlowOptions{
 		host:     h,
 		org:      *org,
 		name:     appName,
@@ -117,43 +129,146 @@ type manifestFlowOptions struct {
 	timeout  time.Duration
 }
 
-// callbackPage is what the user sees in the browser tab after GitHub
-// redirects back; the interesting work continues in the terminal.
-const callbackPage = `<!DOCTYPE html><html><body>
-<p>GitHub App created. You can close this tab and return to the terminal.</p>
-</body></html>`
+// flowServer is the loopback HTTP server backing the browser side of
+// app creation. It serves the embedded Svelte setup page, exposes the
+// manifest hand-off contract at /flow.json, and receives GitHub's
+// post-creation redirect. It outlives the manifest exchange so the
+// browser can still load the page's assets for the "done" view while
+// the terminal continues with the install step.
+type flowServer struct {
+	localBase    string
+	callbackPath string
+	state        string
+	listener     net.Listener
+	srv          *http.Server
+	codeCh       chan string
+	errCh        chan error
 
-var manifestPage = template.Must(template.New("manifest").Parse(
-	`<!DOCTYPE html><html><body>
-<form id="m" action="{{.Action}}" method="post">
-<input type="hidden" name="manifest" value="{{.Manifest}}">
-<noscript><button type="submit">Create GitHub App {{.Name}}</button></noscript>
-</form>
-<script>document.getElementById("m").submit();</script>
-</body></html>`))
+	mu       sync.Mutex
+	manifest string
+	action   string
+	appName  string
+	host     string
+}
 
-// runManifestFlow serves the manifest form on loopback, sends the
-// user's browser to it, and exchanges the code GitHub redirects back
-// with for the new app's credentials.
-func (env *appEnv) runManifestFlow(
-	ctx context.Context, opts manifestFlowOptions,
-) (*githubapp.AppCredentials, error) {
+// flowJSON is the contract between the Go flow server and the Svelte
+// setup page: the page POSTs manifest to action exactly as a plain
+// HTML form would.
+type flowJSON struct {
+	Action   string `json:"action"`
+	Manifest string `json:"manifest"`
+	Name     string `json:"name"`
+	Host     string `json:"host"`
+}
+
+func newFlowServer(stdout io.Writer) (*flowServer, error) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return nil, fmt.Errorf("starting local callback server: %w", err)
 	}
-	defer listener.Close()
-	localBase := "http://" + listener.Addr().String()
-
 	state, err := randomToken()
 	if err != nil {
+		_ = listener.Close()
 		return nil, err
 	}
-	// The callback path is itself unguessable, so a forged request
-	// cannot hit the handler even if the state echo were ever dropped.
-	callbackPath := "/callback/" + state
+	assets, err := ui.Assets()
+	if err != nil {
+		_ = listener.Close()
+		return nil, fmt.Errorf("loading embedded setup page: %w", err)
+	}
+	if !ui.HasBuiltApp() {
+		fmt.Fprintln(stdout,
+			"warning: this binary was built without the setup page (plain go build); "+
+				"the browser page will not render. Build with `make build`.")
+	}
+
+	fs := &flowServer{
+		localBase: "http://" + listener.Addr().String(),
+		// The callback path is itself unguessable, so a forged request
+		// cannot hit the handler even if the state echo were dropped.
+		callbackPath: "/callback/" + state,
+		state:        state,
+		listener:     listener,
+		codeCh:       make(chan string, 1),
+		errCh:        make(chan error, 1),
+	}
+
+	mux := http.NewServeMux()
+	mux.Handle("GET /", http.FileServerFS(assets))
+	mux.HandleFunc("GET /flow.json", fs.handleFlowJSON)
+	mux.HandleFunc("GET "+fs.callbackPath, fs.handleCallback)
+	fs.srv = &http.Server{Handler: mux}
+	go func() {
+		if err := fs.srv.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			select {
+			case fs.errCh <- err:
+			default:
+			}
+		}
+	}()
+	return fs, nil
+}
+
+func (f *flowServer) Close() {
+	_ = f.srv.Close()
+	_ = f.listener.Close()
+}
+
+func (f *flowServer) setFlow(action, manifest, appName, host string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.action = action
+	f.manifest = manifest
+	f.appName = appName
+	f.host = host
+}
+
+func (f *flowServer) handleFlowJSON(w http.ResponseWriter, r *http.Request) {
+	f.mu.Lock()
+	flow := flowJSON{
+		Action:   f.action,
+		Manifest: f.manifest,
+		Name:     f.appName,
+		Host:     f.host,
+	}
+	f.mu.Unlock()
+	if flow.Action == "" {
+		http.Error(w, "no app creation in progress", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(flow)
+}
+
+func (f *flowServer) handleCallback(w http.ResponseWriter, r *http.Request) {
+	gotState := r.URL.Query().Get("state")
+	if gotState != "" &&
+		subtle.ConstantTimeCompare([]byte(gotState), []byte(f.state)) != 1 {
+		http.Error(w, "state mismatch", http.StatusBadRequest)
+		return
+	}
+	code := r.URL.Query().Get("code")
+	if code == "" {
+		http.Error(w, "missing code", http.StatusBadRequest)
+		return
+	}
+	select {
+	case f.codeCh <- code:
+	default:
+	}
+	// Hand the browser to the setup page's success view; the code
+	// exchange continues in the terminal.
+	http.Redirect(w, r, "/?step=done", http.StatusFound)
+}
+
+// runManifestFlow points the user's browser at the setup page, which
+// submits the prepared manifest to GitHub, then exchanges the code
+// GitHub redirects back with for the new app's credentials.
+func (env *appEnv) runManifestFlow(
+	ctx context.Context, flow *flowServer, opts manifestFlowOptions,
+) (*githubapp.AppCredentials, error) {
 	manifest, err := githubapp.NewManifest(
-		opts.name, opts.homepage, localBase+callbackPath,
+		opts.name, opts.homepage, flow.localBase+flow.callbackPath,
 	)
 	if err != nil {
 		return nil, err
@@ -162,60 +277,19 @@ func (env *appEnv) runManifestFlow(
 	if err != nil {
 		return nil, err
 	}
-
-	action := env.webBaseFor(opts.host) + "/settings/apps/new?state=" + state
+	action := env.webBaseFor(opts.host) + "/settings/apps/new?state=" + flow.state
 	if opts.org != "" {
 		action = env.webBaseFor(opts.host) +
-			"/organizations/" + opts.org + "/settings/apps/new?state=" + state
+			"/organizations/" + opts.org + "/settings/apps/new?state=" + flow.state
 	}
-
-	codeCh := make(chan string, 1)
-	errCh := make(chan error, 1)
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_ = manifestPage.Execute(w, map[string]string{
-			"Action":   action,
-			"Manifest": manifestJSON,
-			"Name":     opts.name,
-		})
-	})
-	mux.HandleFunc("GET "+callbackPath, func(w http.ResponseWriter, r *http.Request) {
-		gotState := r.URL.Query().Get("state")
-		if gotState != "" &&
-			subtle.ConstantTimeCompare([]byte(gotState), []byte(state)) != 1 {
-			http.Error(w, "state mismatch", http.StatusBadRequest)
-			return
-		}
-		code := r.URL.Query().Get("code")
-		if code == "" {
-			http.Error(w, "missing code", http.StatusBadRequest)
-			return
-		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		fmt.Fprint(w, callbackPage)
-		select {
-		case codeCh <- code:
-		default:
-		}
-	})
-	srv := &http.Server{Handler: mux}
-	go func() {
-		if err := srv.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			select {
-			case errCh <- err:
-			default:
-			}
-		}
-	}()
-	defer srv.Close()
+	flow.setFlow(action, manifestJSON, opts.name, opts.host)
 
 	fmt.Fprintf(env.stdout,
-		"Open this page to create the app (it submits a prepared manifest to GitHub):\n  %s\n",
-		localBase,
+		"Open this page to create the app (it hands a prepared manifest to GitHub):\n  %s\n",
+		flow.localBase,
 	)
 	if opts.open {
-		if err := env.openBrowser(localBase); err != nil {
+		if err := env.openBrowser(flow.localBase); err != nil {
 			fmt.Fprintf(env.stdout, "could not open browser: %v\n", err)
 		}
 	}
@@ -223,8 +297,8 @@ func (env *appEnv) runManifestFlow(
 
 	var code string
 	select {
-	case code = <-codeCh:
-	case err := <-errCh:
+	case code = <-flow.codeCh:
+	case err := <-flow.errCh:
 		return nil, fmt.Errorf("local callback server failed: %w", err)
 	case <-ctx.Done():
 		return nil, ctx.Err()

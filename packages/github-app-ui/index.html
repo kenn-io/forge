@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>middleman · GitHub App setup</title>
+    <style>
+      /* Critical theme colors inlined to prevent flash before app.css loads */
+      html {
+        background: #f5f6f8;
+      }
+      @media (prefers-color-scheme: dark) {
+        html {
+          background: #0d0d12;
+          color-scheme: dark;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>

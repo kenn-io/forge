@@ -26,9 +26,10 @@ DEV_BACKEND_LOG ?= $(DEV_LOG_DIR)/backend-dev.log
 VITE_PLUS_VERSION := 0.1.24
 VITE_PLUS_BIN := node ./node_modules/vite-plus/bin/vp
 VITE_PLUS_FRONTEND_BIN := node ../node_modules/vite-plus/bin/vp
+VITE_PLUS_PACKAGE_BIN := node ../../node_modules/vite-plus/bin/vp
 
 .PHONY: ensure-embed-dir ensure-tmp-dir check-air air-install build build-release install \
-        rust-pty-manager rust-test vite-plus-install frontend-deps check-vite-plus-bin frontend frontend-dev frontend-dev-bun frontend-check api-generate roborev-api-generate \
+        rust-pty-manager rust-test vite-plus-install frontend-deps check-vite-plus-bin frontend githubapp-frontend frontend-dev frontend-dev-bun frontend-check api-generate roborev-api-generate \
         dev dev-ephemeral dev-ephemeral-stop test test-short test-integration test-e2e test-e2e-roborev test-gitlab-container gitlab-fixture-bake vet lint nilaway testify-helper-check \
         frontend-api-client-check font-size-token-check huma-route-check script-tests guardrail-check race-times tidy svelte-skills svelte-skills-sync clean install-hooks help
 
@@ -43,18 +44,21 @@ ensure-embed-dir:
 	@mkdir -p internal/web/dist
 	@test -n "$$(ls internal/web/dist/ 2>/dev/null)" \
 		|| echo ok > internal/web/dist/stub.html
+	@mkdir -p internal/githubapp/ui/dist
+	@test -n "$$(ls internal/githubapp/ui/dist/ 2>/dev/null)" \
+		|| echo ok > internal/githubapp/ui/dist/stub.html
 
 # Ensure tmp/ exists so gotestsum can write JSON output there
 ensure-tmp-dir:
 	@mkdir -p tmp
 
 # Build the binary (debug, with embedded frontend)
-build: frontend
+build: frontend githubapp-frontend
 	go build -ldflags="$(LDFLAGS)" -o $(BINARY) ./cmd/middleman
 	go build -ldflags="$(LDFLAGS)" -o $(GHAPP_BINARY) ./cmd/middleman-github-app
 
 # Build with optimizations (release)
-build-release: frontend
+build-release: frontend githubapp-frontend
 	go build -ldflags="$(LDFLAGS_RELEASE)" -trimpath -o $(BINARY) ./cmd/middleman
 	go build -ldflags="$(LDFLAGS_RELEASE)" -trimpath -o $(GHAPP_BINARY) ./cmd/middleman-github-app
 
@@ -104,6 +108,13 @@ frontend: frontend-deps
 	rm -rf internal/web/dist
 	cp -r frontend/dist internal/web/dist
 	printf 'ok\n' > internal/web/dist/stub.html
+
+# Build the GitHub App setup page and copy into its embed directory
+githubapp-frontend: frontend-deps
+	cd packages/github-app-ui && $(VITE_PLUS_PACKAGE_BIN) build --logLevel warn
+	rm -rf internal/githubapp/ui/dist
+	cp -r packages/github-app-ui/dist internal/githubapp/ui/dist
+	printf 'ok\n' > internal/githubapp/ui/dist/stub.html
 
 # Run Vite dev server with dependencies installed (use alongside `make dev`)
 frontend-dev:
@@ -225,6 +236,7 @@ race-times: ensure-embed-dir
 test-e2e: frontend
 	GOFLAGS="$${GOFLAGS:+$$GOFLAGS }-buildvcs=false" go build -o ./cmd/e2e-server/e2e-server$(EXE_SUFFIX) ./cmd/e2e-server
 	$(VITE_PLUS_BIN) run middleman-frontend#test:e2e --project=chromium
+	cd packages/github-app-ui && $(VITE_PLUS_PACKAGE_BIN) test:e2e
 
 # Run roborev e2e tests with Docker (ROBOREV_SRC, ROBOREV_REF, ROBOREV_PORT configurable)
 test-e2e-roborev:

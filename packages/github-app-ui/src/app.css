@@ -1,0 +1,65 @@
+/* Reset */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* Design tokens mirroring frontend/src/app.css so the setup flow
+   reads as part of middleman. This page is standalone (no config or
+   localStorage), so theme follows the OS preference. */
+:root {
+  --bg-primary: #f5f6f8;
+  --bg-surface: #ffffff;
+  --bg-inset: #ecedf2;
+  --border-default: #d8dae2;
+  --border-muted: #e4e6ec;
+  --text-primary: #181b24;
+  --text-secondary: #555b6e;
+  --text-muted: #878ea0;
+  --accent-blue: #2563eb;
+  --accent-green: #059669;
+  --accent-red: #dc2626;
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.08);
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg-primary: #0d0d12;
+    --bg-surface: #16161e;
+    --bg-inset: #111116;
+    --border-default: #333345;
+    --border-muted: #2a2a3a;
+    --text-primary: #ececf1;
+    --text-secondary: #b4bcd0;
+    --text-muted: #8b93a8;
+    --accent-blue: #60a5fa;
+    --accent-green: #4ade80;
+    --accent-red: #f87171;
+    --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.35);
+  }
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+#app {
+  height: 100%;
+}

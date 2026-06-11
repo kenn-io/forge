@@ -4,13 +4,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"html"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -78,8 +78,6 @@ func newTestEnv(t *testing.T, fake *githubapptest.Fake, configPath string) (*app
 }
 
 var (
-	formActionRe   = regexp.MustCompile(`action="([^"]+)"`)
-	manifestValRe  = regexp.MustCompile(`name="manifest" value="([^"]+)"`)
 	installSlugRe  = regexp.MustCompile(`/apps/([^/]+)/installations/new`)
 	settingsSlugRe = regexp.MustCompile(`/settings/apps/([^/]+)/advanced`)
 )
@@ -114,35 +112,39 @@ func scriptBrowser(t *testing.T, fake *githubapptest.Fake, installAccount string
 	}
 }
 
-// submitManifestForm fetches the CLI's loopback page and performs the
-// form POST a browser would run, following GitHub's redirect back to
-// the CLI callback.
+// submitManifestForm performs what the embedded Svelte setup page's
+// JS does: read the flow contract from /flow.json and POST the
+// manifest form to GitHub, following the redirect chain back through
+// the CLI callback into the setup page's done view.
 func submitManifestForm(pageURL string) error {
-	resp, err := http.Get(pageURL)
+	resp, err := http.Get(strings.TrimRight(pageURL, "/") + "/flow.json")
 	if err != nil {
 		return err
 	}
-	body, err := io.ReadAll(resp.Body)
-	resp.Body.Close()
-	if err != nil {
-		return err
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("flow.json returned %d", resp.StatusCode)
 	}
-	action := formActionRe.FindSubmatch(body)
-	manifest := manifestValRe.FindSubmatch(body)
-	if action == nil || manifest == nil {
-		return fmt.Errorf("manifest page did not contain a form: %s", body)
+	var flow flowJSON
+	if err := json.NewDecoder(resp.Body).Decode(&flow); err != nil {
+		return fmt.Errorf("decoding flow.json: %w", err)
 	}
-	final, err := http.PostForm(
-		html.UnescapeString(string(action[1])),
-		url.Values{"manifest": {html.UnescapeString(string(manifest[1]))}},
-	)
+	if flow.Action == "" || flow.Manifest == "" {
+		return fmt.Errorf("flow.json missing action or manifest: %+v", flow)
+	}
+	final, err := http.PostForm(flow.Action, url.Values{"manifest": {flow.Manifest}})
 	if err != nil {
 		return err
 	}
 	defer final.Body.Close()
 	if final.StatusCode != http.StatusOK {
 		out, _ := io.ReadAll(final.Body)
-		return fmt.Errorf("callback returned %d: %s", final.StatusCode, out)
+		return fmt.Errorf("callback chain returned %d: %s", final.StatusCode, out)
+	}
+	// The callback must land the browser on the setup page's success
+	// view, not a raw handler response.
+	if got := final.Request.URL.Query().Get("step"); got != "done" {
+		return fmt.Errorf("expected redirect to ?step=done, landed on %s", final.Request.URL)
 	}
 	return nil
 }

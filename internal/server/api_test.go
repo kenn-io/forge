@@ -18534,9 +18534,16 @@ func TestWorkspacePtyOwnerTitleMarksWorkspaceWorkingE2E(t *testing.T) {
 	workspaceTerminalConnWriteRead(
 		t, ctx, conn, "stty -echo\rprintf '%s\\n' $((40+2))\r", "42",
 	)
+	// The spinner glyph is sent as printf octal escapes (\342\240\264
+	// is "⠴") so the typed line stays pure ASCII. Raw multibyte bytes
+	// written to an interactive shell are interpreted by readline as
+	// meta editing commands when the host has no UTF-8 locale set,
+	// scrambling the command before it runs. The session still emits
+	// the real multibyte title for the pty owner to track.
 	workspaceTerminalConnWriteRead(
 		t, ctx, conn,
-		"printf 'title-sent\\n'; printf '\\033]0;⠴ t3code-b5014b03\\007'\r",
+		"printf 'title-sent\\n'; "+
+			"printf '\\033]0;\\342\\240\\264 t3code-b5014b03\\007'\r",
 		"t3code-b5014b03",
 	)
 

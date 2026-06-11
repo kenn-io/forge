@@ -84,22 +84,23 @@ func TestNewEmbeddedBootstrapGlobals(t *testing.T) {
 }
 
 func TestNewWiresGraphQLTrackerIntoEmbeddedClient(t *testing.T) {
+	require := require.New(t)
 	inst, err := New(Options{
 		Token:   "test-token",
 		DataDir: t.TempDir(),
 		Repos:   []Repo{{Owner: "acme", Name: "widget"}},
 	})
-	require.NoError(t, err)
+	require.NoError(err)
 	defer inst.Close()
 
 	client, err := inst.syncer.ClientForHost("github.com")
-	require.NoError(t, err)
+	require.NoError(err)
 
 	value := reflect.ValueOf(client)
-	require.Equal(t, reflect.Pointer, value.Kind())
+	require.Equal(reflect.Pointer, value.Kind())
 	tracker := value.Elem().FieldByName("graphQLRateTracker")
-	require.True(t, tracker.IsValid())
-	require.False(t, tracker.IsNil())
+	require.True(tracker.IsValid())
+	require.False(tracker.IsNil())
 }
 
 func TestEmbedConfigFullFlow(t *testing.T) {

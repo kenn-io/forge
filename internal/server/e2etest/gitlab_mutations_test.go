@@ -483,7 +483,7 @@ func TestGitLabMutationMergeSquash(t *testing.T) {
 
 	rr := doGitLabJSON(t, srv, http.MethodPost,
 		"/api/v1/pulls/gitlab/acme/widget/7/merge",
-		`{"method":"squash","commit_title":"Squash title","commit_message":"Squash body"}`,
+		`{"method":"squash","commit_title":"Squash title","commit_message":"Squash body","expected_head_sha":"head-sha"}`,
 	)
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
@@ -677,6 +677,106 @@ func TestGitLabMutationMergeStaleHeadReturnsConflict(t *testing.T) {
 		recorder.findEventually(http.MethodGet, "/api/v4/projects/4242/merge_requests/7"),
 		"stale merge must trigger an MR resync",
 	)
+}
+
+// A body-less stale approval has no note to protect, so it relies solely
+// on GitLab's sha-bound rejection: the approval request must carry the
+// stale stored head, surface as a stale_state conflict, persist nothing
+// locally, and trigger the re-review resync.
+func TestGitLabMutationBodylessStaleApproveReliesOnShaBinding(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, database, recorder, repoID := setupGitLabMutationServer(t)
+	ctx := t.Context()
+
+	upsertGitLabTestMR(t, ctx, database, repoID, "stale-sha")
+
+	rr := doGitLabJSON(t, srv, http.MethodPost,
+		"/api/v1/pulls/gitlab/acme/widget/7/approve",
+		`{"body":""}`,
+	)
+	require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
+	var problem struct {
+		Code    string         `json:"code"`
+		Details map[string]any `json:"details"`
+	}
+	require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
+	assert.Equal("conflict", problem.Code)
+	require.NotNil(problem.Details)
+	assert.Equal("stale_state", problem.Details["reason"])
+
+	approve, ok := recorder.find(http.MethodPost, "/api/v4/projects/4242/merge_requests/7/approve")
+	require.True(ok, "body-less approval must reach the sha-bound approvals API")
+	assert.Contains(approve.Body, `"sha":"stale-sha"`, "approval must be bound to the stored head")
+	_, noted := recorder.find(http.MethodPost, "/api/v4/projects/4242/merge_requests/7/notes")
+	assert.False(noted)
+
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	require.NotNil(mr)
+	events, err := database.ListMREvents(ctx, mr.ID)
+	require.NoError(err)
+	for _, event := range events {
+		assert.NotEqual("review", event.EventType, "stale approval must not persist a review event")
+	}
+
+	assert.True(
+		recorder.findEventually(http.MethodGet, "/api/v4/projects/4242/merge_requests/7"),
+		"stale approval must trigger an MR resync",
+	)
+}
+
+// The stored head is only a cache: when a sync moves it between the
+// client's render and click, the client's expected_head_sha assertion
+// must reject the mutation before any provider call.
+func TestGitLabMutationClientExpectedHeadMismatchFailsClosed(t *testing.T) {
+	tests := []struct {
+		name         string
+		path         string
+		body         string
+		mutationPath string
+	}{
+		{
+			name:         "merge",
+			path:         "/api/v1/pulls/gitlab/acme/widget/7/merge",
+			body:         `{"method":"squash","commit_title":"t","commit_message":"m","expected_head_sha":"reviewed-old-head"}`,
+			mutationPath: "/api/v4/projects/4242/merge_requests/7/merge",
+		},
+		{
+			name:         "approve",
+			path:         "/api/v1/pulls/gitlab/acme/widget/7/approve",
+			body:         `{"body":"ship it","expected_head_sha":"reviewed-old-head"}`,
+			mutationPath: "/api/v4/projects/4242/merge_requests/7/approve",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require := require.New(t)
+			assert := assert.New(t)
+			srv, _, recorder, _ := setupGitLabMutationServer(t)
+
+			// The stored head ("head-sha", seeded by the fixture) advanced
+			// past what the client rendered ("reviewed-old-head").
+			rr := doGitLabJSON(t, srv, http.MethodPost, tt.path, tt.body)
+			require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
+			var problem struct {
+				Code    string         `json:"code"`
+				Details map[string]any `json:"details"`
+			}
+			require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
+			assert.Equal("conflict", problem.Code)
+			require.NotNil(problem.Details)
+			assert.Equal("stale_state", problem.Details["reason"])
+
+			_, mutated := recorder.find(http.MethodPut, tt.mutationPath)
+			if !mutated {
+				_, mutated = recorder.find(http.MethodPost, tt.mutationPath)
+			}
+			assert.False(mutated, "client head mismatch must not reach the provider")
+			_, noted := recorder.find(http.MethodPost, "/api/v4/projects/4242/merge_requests/7/notes")
+			assert.False(noted)
+		})
+	}
 }
 
 // A generic provider conflict on a head-binding provider must not resync:

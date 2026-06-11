@@ -2474,6 +2474,7 @@ export interface components {
              */
             readonly $schema?: string;
             body: string;
+            expected_head_sha?: string;
         };
         ApprovePRInputBody: {
             /**
@@ -2483,6 +2484,7 @@ export interface components {
              */
             readonly $schema?: string;
             body: string;
+            expected_head_sha?: string;
         };
         AttachmentMeta: {
             filename: string;
@@ -3338,6 +3340,7 @@ export interface components {
             readonly $schema?: string;
             commit_message: string;
             commit_title: string;
+            expected_head_sha?: string;
             method: string;
         };
         MergePRInputBody: {
@@ -3349,6 +3352,7 @@ export interface components {
             readonly $schema?: string;
             commit_message: string;
             commit_title: string;
+            expected_head_sha?: string;
             method: string;
         };
         MergeRequest: {
@@ -3400,6 +3404,7 @@ export interface components {
             /** Format: date-time */
             UpdatedAt: string;
             labels?: components["schemas"]["Label"][] | null;
+            platform_head_sha?: string;
         };
         MergeRequestDetailResponse: {
             /**
@@ -3502,6 +3507,7 @@ export interface components {
             detail_fetched_at?: string;
             detail_loaded: boolean;
             labels?: components["schemas"]["Label"][] | null;
+            platform_head_sha?: string;
             platform_host: string;
             repo: components["schemas"]["RepoRefResponse"];
             repo_name: string;

@@ -253,6 +253,8 @@ components:
           type: string
         body:
           type: string
+        expected_head_sha:
+          type: string
       required:
         - body
       type: object
@@ -267,6 +269,8 @@ components:
           readOnly: true
           type: string
         body:
+          type: string
+        expected_head_sha:
           type: string
       required:
         - body
@@ -2039,6 +2043,8 @@ components:
           type: string
         commit_title:
           type: string
+        expected_head_sha:
+          type: string
         method:
           type: string
       required:
@@ -2059,6 +2065,8 @@ components:
         commit_message:
           type: string
         commit_title:
+          type: string
+        expected_head_sha:
           type: string
         method:
           type: string
@@ -2168,6 +2176,8 @@ components:
           type:
             - array
             - "null"
+        platform_head_sha:
+          type: string
       required:
         - ID
         - RepoID
@@ -2437,6 +2447,8 @@ components:
           type:
             - array
             - "null"
+        platform_head_sha:
+          type: string
         platform_host:
           type: string
         repo:

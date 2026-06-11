@@ -334,6 +334,11 @@ type approvePRInput struct {
 	Number       int    `path:"number"`
 	Body         struct {
 		Body string `json:"body"`
+		// ExpectedHeadSHA is the head commit the client rendered when the
+		// user reviewed. When set, the mutation is rejected if the locally
+		// synced head differs, so a sync between render and click cannot
+		// rebind the action to an unreviewed commit.
+		ExpectedHeadSHA string `json:"expected_head_sha,omitempty"`
 	}
 }
 
@@ -354,6 +359,9 @@ type mergePRInput struct {
 		CommitTitle   string `json:"commit_title"`
 		CommitMessage string `json:"commit_message"`
 		Method        string `json:"method"`
+		// ExpectedHeadSHA: see approvePRInput. Optional client assertion
+		// of the reviewed head commit.
+		ExpectedHeadSHA string `json:"expected_head_sha,omitempty"`
 	}
 }
 
@@ -2366,6 +2374,11 @@ func (s *Server) approvePR(ctx context.Context, input *approvePRInput) (*actionS
 	if err != nil {
 		return nil, err
 	}
+	if err := s.verifyClientReviewedHead(
+		repo, input.Number, input.Body.ExpectedHeadSHA, expectedHeadSHA,
+	); err != nil {
+		return nil, err
+	}
 
 	platformEvent, err := mutator.ApproveMergeRequest(
 		ctx, platformRepoRefFromDB(*repo), input.Number, input.Body.Body,
@@ -2646,6 +2659,11 @@ func (s *Server) mergePR(ctx context.Context, input *mergePRInput) (*mergePROutp
 	if err != nil {
 		return nil, err
 	}
+	if err := s.verifyClientReviewedHead(
+		repo, input.Number, input.Body.ExpectedHeadSHA, expectedHeadSHA,
+	); err != nil {
+		return nil, err
+	}
 
 	result, err := mutator.MergeMergeRequest(
 		ctx,
@@ -2746,6 +2764,46 @@ func (s *Server) reviewedHeadSHA(
 		"merge request head commit has not been synced; re-review it once the next sync completes",
 		map[string]any{"reason": "head_unknown"},
 	)
+}
+
+// verifyClientReviewedHead enforces the client's optional assertion of
+// the head commit it rendered. The locally stored head is only a cache —
+// any sync between render and click can move it — so when the client
+// supplies expected_head_sha it must match the head the mutation will
+// bind to, or the action is rejected before reaching the provider.
+func (s *Server) verifyClientReviewedHead(
+	repo *db.Repo,
+	number int,
+	clientSHA, boundSHA string,
+) error {
+	clientSHA = strings.TrimSpace(clientSHA)
+	if clientSHA == "" {
+		return nil
+	}
+	if boundSHA == "" {
+		return problemConflict(
+			CodeConflict,
+			"merge request head commit has not been synced; re-review it once the next sync completes",
+			map[string]any{"reason": "head_unknown"},
+		)
+	}
+	if clientSHA != boundSHA {
+		s.runBackground(func(bgCtx context.Context) {
+			if syncErr := s.syncer.SyncMROnProvider(
+				bgCtx,
+				repoProviderKind(*repo), repoProviderHost(*repo),
+				repo.Owner, repo.Name, number,
+			); syncErr != nil {
+				slog.Warn("background sync after stale client head", "err", syncErr)
+			}
+		})
+		return problemConflict(
+			CodeConflict,
+			"target changed since it was reviewed; refresh and retry",
+			map[string]any{"reason": "stale_state"},
+		)
+	}
+	return nil
 }
 
 func mergeHTTPErrorStatus(err error) (int, string, bool) {

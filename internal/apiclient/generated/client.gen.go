@@ -415,15 +415,17 @@ type AggregateRow struct {
 // ApprovePRHostInputBody defines model for ApprovePRHostInputBody.
 type ApprovePRHostInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema *string `json:"$schema,omitempty"`
-	Body   string  `json:"body"`
+	Schema          *string `json:"$schema,omitempty"`
+	Body            string  `json:"body"`
+	ExpectedHeadSha *string `json:"expected_head_sha,omitempty"`
 }
 
 // ApprovePRInputBody defines model for ApprovePRInputBody.
 type ApprovePRInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema *string `json:"$schema,omitempty"`
-	Body   string  `json:"body"`
+	Schema          *string `json:"$schema,omitempty"`
+	Body            string  `json:"body"`
+	ExpectedHeadSha *string `json:"expected_head_sha,omitempty"`
 }
 
 // AttachmentMeta defines model for AttachmentMeta.
@@ -1154,19 +1156,21 @@ type MergePRBody struct {
 // MergePRHostInputBody defines model for MergePRHostInputBody.
 type MergePRHostInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema        *string `json:"$schema,omitempty"`
-	CommitMessage string  `json:"commit_message"`
-	CommitTitle   string  `json:"commit_title"`
-	Method        string  `json:"method"`
+	Schema          *string `json:"$schema,omitempty"`
+	CommitMessage   string  `json:"commit_message"`
+	CommitTitle     string  `json:"commit_title"`
+	ExpectedHeadSha *string `json:"expected_head_sha,omitempty"`
+	Method          string  `json:"method"`
 }
 
 // MergePRInputBody defines model for MergePRInputBody.
 type MergePRInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema        *string `json:"$schema,omitempty"`
-	CommitMessage string  `json:"commit_message"`
-	CommitTitle   string  `json:"commit_title"`
-	Method        string  `json:"method"`
+	Schema          *string `json:"$schema,omitempty"`
+	CommitMessage   string  `json:"commit_message"`
+	CommitTitle     string  `json:"commit_title"`
+	ExpectedHeadSha *string `json:"expected_head_sha,omitempty"`
+	Method          string  `json:"method"`
 }
 
 // MergeRequest defines model for MergeRequest.
@@ -1204,6 +1208,7 @@ type MergeRequest struct {
 	URL                string                   `json:"URL"`
 	UpdatedAt          time.Time                `json:"UpdatedAt"`
 	Labels             *[]Label                 `json:"labels,omitempty"`
+	PlatformHeadSha    *string                  `json:"platform_head_sha,omitempty"`
 }
 
 // MergeRequestKanbanStatus defines model for MergeRequest.KanbanStatus.
@@ -1292,6 +1297,7 @@ type MergeRequestResponse struct {
 	DetailFetchedAt    *string                          `json:"detail_fetched_at,omitempty"`
 	DetailLoaded       bool                             `json:"detail_loaded"`
 	Labels             *[]Label                         `json:"labels,omitempty"`
+	PlatformHeadSha    *string                          `json:"platform_head_sha,omitempty"`
 	PlatformHost       string                           `json:"platform_host"`
 	Repo               RepoRefResponse                  `json:"repo"`
 	RepoName           string                           `json:"repo_name"`

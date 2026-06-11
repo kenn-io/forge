@@ -207,6 +207,7 @@ describe("renderMarkdownMermaidDiagrams", () => {
         rejectOnce = false;
         for (const node of Array.from(nodes)) {
           node.dataset.processed = "true";
+          node.textContent = "Syntax error";
         }
         throw renderError;
       }
@@ -218,6 +219,7 @@ describe("renderMarkdownMermaidDiagrams", () => {
     await expect(renderMarkdownMermaidDiagrams(root, loader)).rejects.toThrow(renderError);
     expect(root.querySelector<HTMLElement>("pre.mermaid")?.dataset.mermaidRendered).toBeUndefined();
     expect(root.querySelector<HTMLElement>("pre.mermaid")?.dataset.processed).toBeUndefined();
+    expect(root.querySelector<HTMLElement>("pre.mermaid")?.textContent).toBe("graph TD\nA-->B");
 
     const rendered = await renderMarkdownMermaidDiagrams(root, loader);
 
@@ -234,6 +236,7 @@ describe("renderMarkdownMermaidDiagrams", () => {
         suppressOnce = false;
         for (const node of Array.from(nodes)) {
           node.dataset.processed = "true";
+          node.textContent = "Syntax error";
         }
         return;
       }
@@ -247,12 +250,50 @@ describe("renderMarkdownMermaidDiagrams", () => {
     expect(firstRender).toBe(0);
     expect(block?.dataset.mermaidRendered).toBeUndefined();
     expect(block?.dataset.processed).toBeUndefined();
+    expect(block?.textContent).toBe("graph TD\nA-->B");
 
     const secondRender = await renderMarkdownMermaidDiagrams(root, loader);
 
     expect(secondRender).toBe(1);
     expect(mermaid.run).toHaveBeenCalledTimes(2);
     expect(block?.classList.contains("mermaid-viewer")).toBe(true);
+  });
+
+  test("leaves Mermaid blocks beyond the per-document count limit unrendered", async () => {
+    const root = document.createElement("div");
+    root.innerHTML = `<div class="markdown-body">${Array.from(
+      { length: 26 },
+      (_, index) => `<pre class="mermaid">graph TD\nA${index}-->B${index}</pre>`,
+    ).join("")}</div>`;
+    const mermaid = mermaidLoader(async ({ nodes }) => {
+      renderSvgInto(nodes);
+    });
+    const loader = vi.fn(async () => mermaid);
+
+    const rendered = await renderMarkdownMermaidDiagrams(root, loader);
+
+    expect(rendered).toBe(25);
+    expect(mermaid.run).toHaveBeenCalledWith({
+      nodes: Array.from(root.querySelectorAll("pre.mermaid")).slice(0, 25),
+      suppressErrors: true,
+    });
+    const skipped = Array.from(root.querySelectorAll<HTMLElement>("pre")).at(-1);
+    expect(skipped?.classList.contains("mermaid")).toBe(false);
+    expect(skipped?.textContent).toBe("graph TD\nA25-->B25");
+  });
+
+  test("leaves Mermaid blocks beyond the per-document source byte limit unrendered", async () => {
+    const root = document.createElement("div");
+    root.innerHTML = `<div class="markdown-body"><pre class="mermaid">${"A".repeat(200_001)}</pre></div>`;
+    const loader = vi.fn(async () => mermaidLoader());
+
+    const rendered = await renderMarkdownMermaidDiagrams(root, loader);
+
+    expect(rendered).toBe(0);
+    expect(loader).not.toHaveBeenCalled();
+    const skipped = root.querySelector<HTMLElement>("pre");
+    expect(skipped?.classList.contains("mermaid")).toBe(false);
+    expect(skipped?.textContent).toBe("A".repeat(200_001));
   });
 
   test("wraps rendered diagrams in viewer controls", async () => {

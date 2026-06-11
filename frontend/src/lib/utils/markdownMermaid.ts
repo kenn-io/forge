@@ -33,6 +33,8 @@ const PAN_STEP = 80;
 const WHEEL_ZOOM_SENSITIVITY = 0.0015;
 const WHEEL_DELTA_LINE = 1;
 const WHEEL_DELTA_PAGE = 2;
+const MAX_MERMAID_DIAGRAMS_PER_DOCUMENT = 25;
+const MAX_MERMAID_SOURCE_BYTES_PER_DOCUMENT = 200_000;
 const MERMAID_MAX_TEXT_SIZE = 50_000;
 const MERMAID_MAX_EDGES = 500;
 const MERMAID_SECURE_CONFIG = [
@@ -101,9 +103,7 @@ export async function renderMarkdownMermaidDiagrams(
   root: ParentNode,
   load: MarkdownMermaidLoader = loadMermaid,
 ): Promise<number> {
-  const nodes = Array.from(root.querySelectorAll<HTMLElement>(MERMAID_SELECTOR)).filter(
-    (node) => !node.dataset.mermaidRendered && node.dataset.processed !== "true",
-  );
+  const nodes = collectRenderableMermaidNodes(root);
   if (nodes.length === 0) return 0;
 
   for (const node of nodes) {
@@ -121,16 +121,62 @@ export async function renderMarkdownMermaidDiagrams(
         node.dataset.mermaidRendered = "true";
         renderedCount += 1;
       } else {
+        restoreMermaidSource(node);
         clearMermaidRenderState(node);
       }
     }
     return renderedCount;
   } catch (error: unknown) {
     for (const node of nodes) {
+      restoreMermaidSource(node);
       clearMermaidRenderState(node);
     }
     throw error;
   }
+}
+
+function collectRenderableMermaidNodes(root: ParentNode): HTMLElement[] {
+  const nodes: HTMLElement[] = [];
+  let diagramCount = 0;
+  let sourceBytes = 0;
+
+  for (const node of Array.from(root.querySelectorAll<HTMLElement>(MERMAID_SELECTOR))) {
+    const source = mermaidNodeSource(node);
+    const nextSourceBytes = mermaidSourceByteLength(source);
+    if (node.dataset.mermaidRendered || node.dataset.processed === "true") {
+      diagramCount += 1;
+      sourceBytes += nextSourceBytes;
+      continue;
+    }
+
+    if (
+      diagramCount >= MAX_MERMAID_DIAGRAMS_PER_DOCUMENT ||
+      sourceBytes + nextSourceBytes > MAX_MERMAID_SOURCE_BYTES_PER_DOCUMENT
+    ) {
+      skipMermaidRender(node);
+      continue;
+    }
+
+    diagramCount += 1;
+    sourceBytes += nextSourceBytes;
+    nodes.push(node);
+  }
+
+  return nodes;
+}
+
+function mermaidNodeSource(node: HTMLElement): string {
+  return diagramSources.get(node) ?? node.textContent ?? "";
+}
+
+function mermaidSourceByteLength(source: string): number {
+  return new TextEncoder().encode(source).byteLength;
+}
+
+function skipMermaidRender(node: HTMLElement): void {
+  node.classList.remove("mermaid");
+  node.dataset.mermaidRendered = "skipped";
+  delete node.dataset.processed;
 }
 
 function attachMermaidViewer(node: HTMLElement, source: string): boolean {
@@ -157,6 +203,13 @@ function attachMermaidViewer(node: HTMLElement, source: string): boolean {
 function clearMermaidRenderState(node: HTMLElement): void {
   delete node.dataset.mermaidRendered;
   delete node.dataset.processed;
+}
+
+function restoreMermaidSource(node: HTMLElement): void {
+  const source = diagramSources.get(node);
+  if (source !== undefined) {
+    node.textContent = source;
+  }
 }
 
 function initializeMermaidForCurrentTheme(mermaid: MarkdownMermaidAPI): void {

@@ -53,11 +53,6 @@
   let flatIssues = $derived(
     isProjectScoped ? topLevelIssues(currentView.groups.flatMap((group) => group.issues)) : [],
   );
-  let globalSortedIssues = $derived(
-    !isProjectScoped && sort.key === "updated"
-      ? sortKataTasks(topLevelIssues(currentView.groups.flatMap((group) => group.issues)), sort)
-      : [],
-  );
 
   // For the Today view, the kata daemon hands us a "This evening"
   // sub-bucket alongside "Today". That bucket is a daemon-side
@@ -86,6 +81,17 @@
       .map((group) => ({ ...group, issues: topLevelIssues(group.issues, allIssues) }))
       .filter((group) => group.issues.length > 0);
   });
+
+  // Sorting by "updated" collapses multi-group views (e.g. Today's
+  // Overdue/Today buckets) into one global list so the order isn't reset
+  // per group. A single-group view (like Inbox) has nothing to collapse,
+  // so keep its labeled region instead of dropping it to a bare list.
+  let shouldFlatten = $derived(!isProjectScoped && sort.key === "updated" && visibleGroups.length > 1);
+  let globalSortedIssues = $derived(
+    shouldFlatten
+      ? sortKataTasks(topLevelIssues(currentView.groups.flatMap((group) => group.issues)), sort)
+      : [],
+  );
 
   function loadSort(): KataTaskSort {
     if (typeof window === "undefined") return DEFAULT_KATA_TASK_SORT;
@@ -131,7 +137,7 @@
 
   function totalVisibleIssues(): number {
     if (isProjectScoped) return flatIssues.length;
-    if (sort.key === "updated") return globalSortedIssues.length;
+    if (shouldFlatten) return globalSortedIssues.length;
     return visibleGroups.reduce((sum, group) => sum + group.issues.length, 0);
   }
 
@@ -405,7 +411,7 @@
         {#each sortKataTasks(flatIssues, sort) as issue (issue.uid)}
           {@render row(issue)}
         {/each}
-      {:else if sort.key === "updated"}
+      {:else if shouldFlatten}
         {#each globalSortedIssues as issue (issue.uid)}
           {@render row(issue)}
         {/each}

@@ -136,11 +136,6 @@ describe("KataWorkspace", () => {
   it("does not leave single-group task regions with dangling labels", async () => {
     const { api } = createWorkspaceAPI([issue("issue-inbox-note", "Inbox note", "project-inbox")]);
 
-    // The default "updated" sort flattens non-project views into a single
-    // global list with no group <section>s. Pick a grouping sort so the
-    // single-group region (and its label) is actually rendered.
-    window.localStorage.setItem("middleman:kata:issue-sort/v1", JSON.stringify({ key: "priority", direction: "desc" }));
-
     render(KataWorkspace, { props: { api, routeViewName: "inbox" } });
 
     await waitFor(() => {

@@ -47,7 +47,7 @@
     "jsdom": "26.1.0",
     "openapi-typescript": "^7.13.0",
     "playwright": "1.60.0",
-    "svelte": "5.55.0",
+    "svelte": "5.55.7",
     "svelte-check": "4.4.5",
     "vite": "8.0.5",
     "vite-plus": "0.1.22"

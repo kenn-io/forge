@@ -141,11 +141,11 @@
     "@types/dompurify": "3.2.0",
     "@types/node": "^24.9.2",
     "openapi-fetch": "^0.17.0",
-    "svelte": "^5.55.0",
+    "svelte": "^5.55.7",
     "svelte-check": "4.4.5",
     "vite-plus": "0.1.22"
   },
   "peerDependencies": {
-    "svelte": "^5.0.0"
+    "svelte": "^5.55.7"
   }
 }

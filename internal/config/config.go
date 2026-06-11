@@ -1714,8 +1714,12 @@ func (c *Config) TokenSourceForPlatformHost(
 	}
 	// A configured GitHub App outranks platform and default PAT
 	// candidates: installation tokens exist to take sync traffic off
-	// the PAT budget. Explicit repo-level overrides above still win.
-	if p == defaultPlatform {
+	// the PAT budget. Repo-level overrides are terminal with respect
+	// to the app: a repo that names its own credential must never fall
+	// through to the installation token, because installation coverage
+	// validation exempts overridden repos and a fall-through would
+	// reopen the cross-account 404 hole when the override is unset.
+	if p == defaultPlatform && repoTokenEnv == "" && repoTokenFile == "" {
 		if app, ok := c.GitHubAppForHost(h); ok && app.AppID > 0 && app.PrivateKeyPath != "" {
 			desc.Candidates = append(desc.Candidates, tokenauth.Candidate{
 				Kind:           tokenauth.SourceKindGitHubApp,

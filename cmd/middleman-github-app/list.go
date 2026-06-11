@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -53,7 +54,7 @@ func runList(args []string, env *appEnv) error {
 			InstallationID:      app.InstallationID,
 			InstallationAccount: app.InstallationAccount,
 		}
-		if err := env.fillLiveStatus(ctx, app, &status); err != nil {
+		if err := env.fillLiveStatus(ctx, cfg, app, &status); err != nil {
 			status.Error = err.Error()
 		}
 		statuses = append(statuses, status)
@@ -91,8 +92,12 @@ func runList(args []string, env *appEnv) error {
 
 // fillLiveStatus queries GitHub for the app's current installation
 // and, when installed, the rate budget of a freshly minted token.
+// Installations limited to selected repositories are checked against
+// the configured repos: a manually edited or restored config can
+// carry an installation the CLI never verified, and surfacing the gap
+// here beats discovering it as sync-time 404s.
 func (env *appEnv) fillLiveStatus(
-	ctx context.Context, app config.GitHubAppConfig, status *appStatus,
+	ctx context.Context, cfg *config.Config, app config.GitHubAppConfig, status *appStatus,
 ) error {
 	client := env.apiClient(app.Host)
 	jwt, err := appJWT(app, env.now())
@@ -116,5 +121,28 @@ func (env *appEnv) fillLiveStatus(
 	status.RateLimit = rate.Limit
 	status.RateRemaining = rate.Remaining
 	status.RateResetsAt = time.Unix(rate.Reset, 0).UTC().Format(time.RFC3339)
+
+	installs, err := client.ListInstallations(ctx, jwt)
+	if err != nil {
+		return err
+	}
+	for _, install := range installs {
+		if install.ID != app.InstallationID ||
+			strings.EqualFold(install.RepositorySelection, "all") {
+			continue
+		}
+		accessible, err := client.ListInstallationRepositories(ctx, token.Token)
+		if err != nil {
+			return err
+		}
+		if missing := missingSelectedRepos(
+			cfg, app.Host, install.Account.Login, accessible,
+		); len(missing) > 0 {
+			return fmt.Errorf(
+				"installation does not cover %s; edit its repository access on GitHub",
+				strings.Join(missing, ", "),
+			)
+		}
+	}
 	return nil
 }

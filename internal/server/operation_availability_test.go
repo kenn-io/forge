@@ -328,6 +328,7 @@ func TestAPIRepoResponseOperationsGateOnWriteTrackerWhenSplit(t *testing.T) {
 	database := dbtest.Open(t)
 	restRT := ghclient.NewRateTracker(database, "github.com", "rest")
 	writeRT := ghclient.NewRateTracker(database, "github.com", "rest_write")
+	writeGQLRT := ghclient.NewRateTracker(database, "github.com", "graphql_write")
 	key := ratelimit.RateBucketKey("github", "github.com")
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": &mockGH{}},
@@ -338,6 +339,7 @@ func TestAPIRepoResponseOperationsGateOnWriteTrackerWhenSplit(t *testing.T) {
 		nil,
 	)
 	syncer.SetWriteRateTrackers(map[string]*ghclient.RateTracker{key: writeRT})
+	syncer.SetWriteGQLRateTrackers(map[string]*ghclient.RateTracker{key: writeGQLRT})
 	t.Cleanup(syncer.Stop)
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
@@ -358,7 +360,8 @@ func TestAPIRepoResponseOperationsGateOnWriteTrackerWhenSplit(t *testing.T) {
 	assert.True(resp.Operations.MergePR.Available,
 		"app budget exhaustion must not disable PAT-backed writes")
 
-	// PAT budget exhausted: writes gate even though reads would flow.
+	// PAT REST budget exhausted: REST writes gate, but the GraphQL
+	// mutation (ready-for-review) follows its own write bucket.
 	writeRT.UpdateFromRate(ratelimit.Rate{Limit: 5000, Remaining: 0, Reset: resetAt})
 
 	rr = doJSON(t, srv, http.MethodGet, "/api/v1/repo/github/acme/widget", nil)
@@ -368,6 +371,21 @@ func TestAPIRepoResponseOperationsGateOnWriteTrackerWhenSplit(t *testing.T) {
 	merge := resp.Operations.MergePR
 	assert.False(merge.Available, "PAT exhaustion must disable writes")
 	assert.Equal(availabilityCodeRateLimited, merge.Code)
+	assert.True(resp.Operations.MarkReadyForReview.Available,
+		"REST write exhaustion must not gate the GraphQL-backed mutation")
+
+	// PAT GraphQL budget exhausted: only the GraphQL mutation gates.
+	writeRT.UpdateFromRate(ratelimit.Rate{Limit: 5000, Remaining: 4000, Reset: resetAt})
+	writeGQLRT.UpdateFromRate(ratelimit.Rate{Limit: 5000, Remaining: 0, Reset: resetAt})
+
+	rr = doJSON(t, srv, http.MethodGet, "/api/v1/repo/github/acme/widget", nil)
+	require.Equal(http.StatusOK, rr.Code)
+	resp = repoResponse{}
+	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+	assert.True(resp.Operations.MergePR.Available)
+	rfr := resp.Operations.MarkReadyForReview
+	assert.False(rfr.Available, "write GraphQL exhaustion must gate ready-for-review")
+	assert.Equal(availabilityCodeRateLimited, rfr.Code)
 }
 
 func TestAPIRepoResponseIncludesOperationsViewerCannotMerge(t *testing.T) {

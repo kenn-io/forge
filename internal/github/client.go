@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -311,17 +312,23 @@ type liveClient struct {
 	// configured, and mutation availability gates on the write
 	// credential's budget. Nil in hand-built test clients; accessors
 	// fall back to the read client.
-	ghWrite            *gh.Client
-	httpClient         *http.Client
-	httpWriteClient    *http.Client
-	rateTracker        *RateTracker
-	writeRateTracker   *RateTracker
-	graphQLRateTracker *RateTracker
-	platformHost       string
-	graphQLEndpoint    string
-	etag               *etagTransport
-	viewerMu           sync.Mutex
-	viewerLogin        string
+	ghWrite *gh.Client
+	// splitAuth records that this host's reads and writes resolve to
+	// different credentials (a GitHub App for sync, the user's PAT for
+	// writes). It gates the extra viewer-permission fetch in
+	// GetRepository; shared-credential hosts keep single-call behavior.
+	splitAuth               bool
+	httpClient              *http.Client
+	httpWriteClient         *http.Client
+	rateTracker             *RateTracker
+	writeRateTracker        *RateTracker
+	graphQLRateTracker      *RateTracker
+	writeGraphQLRateTracker *RateTracker
+	platformHost            string
+	graphQLEndpoint         string
+	etag                    *etagTransport
+	viewerMu                sync.Mutex
+	viewerLogin             string
 }
 
 func (c *liveClient) writeGH() *gh.Client {
@@ -349,6 +356,18 @@ func (c *liveClient) SetGraphQLRateTracker(rateTracker *RateTracker) {
 // sync reads).
 func (c *liveClient) SetWriteRateTracker(rateTracker *RateTracker) {
 	c.writeRateTracker = rateTracker
+}
+
+// SetWriteGraphQLRateTracker attaches the tracker fed by GraphQL
+// mutation responses (ready-for-review), which consume the write
+// credential's GraphQL budget rather than its REST budget.
+func (c *liveClient) SetWriteGraphQLRateTracker(rateTracker *RateTracker) {
+	c.writeGraphQLRateTracker = rateTracker
+}
+
+// SetSplitAuth marks this host as using split read/write credentials.
+func (c *liveClient) SetSplitAuth(active bool) {
+	c.splitAuth = active
 }
 
 // InvalidateListETagsForRepo evicts cached ETag entries for the repo's
@@ -896,11 +915,16 @@ func (c *liveClient) trackRate(resp *gh.Response) {
 }
 
 // trackWriteRate records a write-path response against the mutation
-// credential's tracker. Mutation availability gates on this tracker,
-// so PAT exhaustion disables writes without pausing app-token reads.
-// Safe to call with nil response or nil tracker.
+// credential's tracker, so PAT exhaustion disables writes without
+// pausing app-token reads. Hosts without a write tracker share one
+// credential across reads and writes; their write responses feed the
+// shared tracker, same as before the split existed.
 func (c *liveClient) trackWriteRate(resp *gh.Response) {
-	if resp == nil || c.writeRateTracker == nil {
+	if c.writeRateTracker == nil {
+		c.trackRate(resp)
+		return
+	}
+	if resp == nil {
 		return
 	}
 	c.writeRateTracker.RecordRequest()
@@ -945,6 +969,37 @@ func (c *liveClient) trackGraphQLRateHeaders(resp *http.Response) {
 		return
 	}
 	c.graphQLRateTracker.UpdateFromRate(rateFromGitHubHeaders(
+		limit, remaining, time.Unix(resetUnix, 0).UTC(),
+	))
+}
+
+// trackWriteGraphQLRateHeaders records a GraphQL mutation response
+// against the write credential's GraphQL tracker. Hosts without one
+// share a single credential, so the shared GraphQL tracker absorbs
+// the response instead.
+func (c *liveClient) trackWriteGraphQLRateHeaders(resp *http.Response) {
+	tracker := c.writeGraphQLRateTracker
+	if tracker == nil {
+		c.trackGraphQLRateHeaders(resp)
+		return
+	}
+	if resp == nil {
+		return
+	}
+	tracker.RecordRequest()
+	remaining, err := parseRateHeaderInt(resp.Header, "X-RateLimit-Remaining")
+	if err != nil {
+		return
+	}
+	limit, err := parseRateHeaderInt(resp.Header, "X-RateLimit-Limit")
+	if err != nil {
+		return
+	}
+	resetUnix, err := strconv.ParseInt(resp.Header.Get("X-RateLimit-Reset"), 10, 64)
+	if err != nil {
+		return
+	}
+	tracker.UpdateFromRate(rateFromGitHubHeaders(
 		limit, remaining, time.Unix(resetUnix, 0).UTC(),
 	))
 }
@@ -2054,20 +2109,36 @@ func (c *liveClient) CreatePullRequestReviewCommentReply(
 	return comment, nil
 }
 
-// GetRepository resolves through the write (user) credential even
-// though it is a read: its permissions block is viewer-specific and
-// feeds viewer_can_merge. Reading it with an app installation token
-// would report the read-only app's permissions and disable merge
-// availability for a user whose PAT can merge. The response keeps the
-// write tracker fresh between actual mutations.
+// GetRepository reads repository metadata with the sync credential so
+// app-token-only hosts keep working, then, on split-credential hosts,
+// overlays the viewer-specific permissions block from the user's
+// credential: it feeds viewer_can_merge, and the app installation
+// token would report the read-only app's permissions instead of the
+// user's. A failed overlay (missing or exhausted PAT) clears the
+// permissions to "unknown" rather than keeping the app's, and never
+// fails the metadata read sync depends on.
 func (c *liveClient) GetRepository(
 	ctx context.Context, owner, repo string,
 ) (*gh.Repository, error) {
-	r, resp, err := c.writeGH().Repositories.Get(ctx, owner, repo)
-	c.trackWriteRate(resp)
+	r, resp, err := c.gh.Repositories.Get(ctx, owner, repo)
+	c.trackRate(resp)
 	if err != nil {
 		return nil, fmt.Errorf("getting repository %s/%s: %w", owner, repo, err)
 	}
+	if !c.splitAuth {
+		return r, nil
+	}
+	viewerRepo, viewerResp, viewerErr := c.writeGH().Repositories.Get(ctx, owner, repo)
+	c.trackWriteRate(viewerResp)
+	if viewerErr != nil {
+		slog.Warn(
+			"viewer permission refresh failed; merge permission unknown until it succeeds",
+			"repo", owner+"/"+repo, "err", viewerErr,
+		)
+		r.Permissions = nil
+		return r, nil
+	}
+	r.Permissions = viewerRepo.Permissions
 	return r, nil
 }
 
@@ -2166,6 +2237,7 @@ func (c *liveClient) MarkPullRequestReadyForReview(
 		if err != nil {
 			return nil, err
 		}
+		c.trackWriteGraphQLRateHeaders(resp)
 		if resp.StatusCode != http.StatusOK {
 			_ = resp.Body.Close()
 			return resp, newReadyForReviewError(

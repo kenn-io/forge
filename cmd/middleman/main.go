@@ -525,6 +525,7 @@ func run(opts serve.Options) error {
 	)
 	syncer.SetFetchers(startup.fetchers)
 	syncer.SetWriteRateTrackers(startup.writeRateTrackers)
+	syncer.SetWriteGQLRateTrackers(startup.writeGQLRateTrackers)
 
 	telemetryReporter = telemetry.NewReporterOrDisabled(telemetry.Options{
 		Database: database,

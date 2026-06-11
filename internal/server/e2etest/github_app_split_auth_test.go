@@ -53,13 +53,17 @@ func TestGitHubAppSplitAuthE2E(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v3/repos/kenn-io/middleman",
 		func(w http.ResponseWriter, r *http.Request) {
-			record("write:repo-settings", r)
-			// The permissions block is viewer-specific: the user's PAT
-			// can push, the read-only app cannot. viewer_can_merge in
-			// the DB proves which credential fetched it.
+			// The repo settings refresh fetches metadata with the app
+			// token and overlays viewer permissions from the PAT; the
+			// permissions block is viewer-specific (only the PAT can
+			// push), so viewer_can_merge in the DB proves the overlay
+			// happened.
 			permissions := `"permissions": {"push": false}`
 			if r.Header.Get("Authorization") == "Bearer user-pat-e2e" {
+				record("write:repo-viewer-overlay", r)
 				permissions = `"permissions": {"push": true}`
+			} else {
+				record("read:repo-metadata", r)
 			}
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = fmt.Fprint(w, `{
@@ -162,6 +166,11 @@ installation_account = "kenn-io"
 		ghclient.WithBaseURLForTesting(fakeGitHub.URL),
 	)
 	require.NoError(err)
+	// main() marks hosts with an active [[github_apps]] entry as
+	// split-credential, which enables the viewer permission overlay.
+	splitSetter, ok := client.(interface{ SetSplitAuth(bool) })
+	require.True(ok, "github client must support split-auth marking")
+	splitSetter.SetSplitAuth(true)
 	registry, err := ghclient.NewProviderRegistry(
 		map[string]ghclient.Client{"github.com": client},
 	)
@@ -245,8 +254,10 @@ installation_account = "kenn-io"
 		"sync reads must use the minted installation token")
 	assert.Equal("Bearer user-pat-e2e", authByCall["write:comment"],
 		"mutations must use the user's PAT for attribution")
-	assert.Equal("Bearer user-pat-e2e", authByCall["write:repo-settings"],
-		"the viewer-specific repository read must use the user's PAT")
+	assert.Equal("Bearer user-pat-e2e", authByCall["write:repo-viewer-overlay"],
+		"the viewer permission overlay must use the user's PAT")
+	assert.Equal("Bearer ghs_app_token_e2e", authByCall["read:repo-metadata"],
+		"repository metadata must stay on the app token")
 	for name, auth := range authByCall {
 		if strings.HasPrefix(name, "write:") {
 			continue

@@ -306,7 +306,8 @@ type Syncer struct {
 	db                       *db.DB
 	clones                   *gitclone.Manager
 	rateTrackers             map[string]*RateTracker    // provider/host bucket -> tracker
-	writeRateTrackers        map[string]*RateTracker    // provider/host bucket -> mutation-credential tracker
+	writeRateTrackers        map[string]*RateTracker    // provider/host bucket -> mutation-credential REST tracker
+	writeGQLRateTrackers     map[string]*RateTracker    // provider/host bucket -> mutation-credential GraphQL tracker
 	budgets                  map[string]*SyncBudget     // provider/host bucket -> budget
 	fetchers                 map[string]*GraphQLFetcher // host -> GraphQL fetcher
 	rateLimitSnapshotMu      sync.Mutex
@@ -2468,6 +2469,21 @@ func (s *Syncer) WriteRateTrackers() map[string]*RateTracker {
 		return map[string]*RateTracker{}
 	}
 	return s.writeRateTrackers
+}
+
+// SetWriteGQLRateTrackers attaches the per-host trackers fed by the
+// write credential's GraphQL mutation responses (ready-for-review).
+func (s *Syncer) SetWriteGQLRateTrackers(trackers map[string]*RateTracker) {
+	s.writeGQLRateTrackers = trackers
+}
+
+// WriteGQLRateTrackers returns the per-host write-credential GraphQL
+// trackers; empty when no host splits read and write credentials.
+func (s *Syncer) WriteGQLRateTrackers() map[string]*RateTracker {
+	if s.writeGQLRateTrackers == nil {
+		return map[string]*RateTracker{}
+	}
+	return s.writeGQLRateTrackers
 }
 
 // Budgets returns the per-host sync budgets map.

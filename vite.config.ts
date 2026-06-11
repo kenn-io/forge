@@ -17,7 +17,7 @@ export default defineConfig({
         cache: false,
       },
       "frontend-lint": {
-        command: `${rootVP} lint frontend packages/ui packages/github-app-ui '!frontend/dist/**' '!packages/github-app-ui/dist/**' '!frontend/test-results/**' '!packages/ui/src/api/generated/**' '!packages/ui/src/api/roborev/generated/**' --no-error-on-unmatched-pattern --threads=1`,
+        command: `${rootVP} lint frontend packages/ui packages/github-app-ui '!frontend/dist/**' '!packages/github-app-ui/dist/**' '!frontend/test-results/**' '!packages/github-app-ui/test-results/**' '!packages/ui/src/api/generated/**' '!packages/ui/src/api/roborev/generated/**' --no-error-on-unmatched-pattern --threads=1`,
         cache: false,
       },
       "frontend-package-check": {
@@ -57,6 +57,7 @@ export default defineConfig({
       "frontend/dist/**",
       "packages/github-app-ui/dist/**",
       "frontend/test-results/**",
+      "packages/github-app-ui/test-results/**",
       "packages/ui/src/api/generated/**",
       "packages/ui/src/api/roborev/generated/**",
     ],
@@ -70,6 +71,7 @@ export default defineConfig({
       "frontend/src/**/*.test.ts",
       "frontend/src/**/*.bench.test.ts",
       "packages/github-app-ui/dist/**",
+      "packages/github-app-ui/test-results/**",
       "packages/ui/src/api/generated/**",
       "packages/ui/src/api/roborev/generated/**",
       "packages/ui/src/**/*.test.ts",

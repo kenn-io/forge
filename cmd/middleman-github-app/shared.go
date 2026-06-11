@@ -107,6 +107,42 @@ func removeAppFromConfig(
 	return cfg.Save(configPath)
 }
 
+// missingSelectedRepos lists configured github repos on host owned by
+// account that a "selected repositories" installation cannot reach,
+// given the full names its token reported accessible. Repos with
+// their own credential override never resolve to the app token and
+// are exempt; glob patterns expand to an open-ended set only an "All
+// repositories" install can satisfy.
+func missingSelectedRepos(
+	cfg *config.Config, host, account string, accessible []string,
+) []string {
+	reachable := make(map[string]struct{}, len(accessible))
+	for _, name := range accessible {
+		reachable[strings.ToLower(name)] = struct{}{}
+	}
+	var missing []string
+	for _, r := range cfg.Repos {
+		if r.PlatformOrDefault() != "github" || r.PlatformHostOrDefault() != host {
+			continue
+		}
+		if r.TokenEnv != "" || r.TokenFile != "" {
+			continue
+		}
+		if !strings.EqualFold(r.Owner, account) {
+			continue
+		}
+		full := r.Owner + "/" + r.Name
+		if r.HasNameGlob() {
+			missing = append(missing, full+" (glob patterns need an \"All repositories\" install)")
+			continue
+		}
+		if _, ok := reachable[strings.ToLower(full)]; !ok {
+			missing = append(missing, full)
+		}
+	}
+	return missing
+}
+
 // pollUntil runs probe at the env's poll interval until it reports
 // done, the context ends, or timeout elapses.
 func (env *appEnv) pollUntil(

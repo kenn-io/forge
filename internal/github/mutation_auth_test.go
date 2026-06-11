@@ -42,6 +42,7 @@ func newSplitAuthTestClient(
 	return &liveClient{
 		gh:              ghRead,
 		ghWrite:         ghWrite,
+		splitAuth:       true,
 		httpClient:      readHTTP,
 		httpWriteClient: writeHTTP,
 		graphQLEndpoint: srv.URL + "/api/graphql",
@@ -84,9 +85,16 @@ func TestMutationsUseUserPATWhileReadsUseAppToken(t *testing.T) {
 		})
 	mux.HandleFunc("GET /api/v3/repos/acme/widgets",
 		func(w http.ResponseWriter, r *http.Request) {
-			record("write:get-repo", r)
+			// Permissions are viewer-specific: only the PAT can push.
+			if r.Header.Get("Authorization") == "Bearer user-pat" {
+				record("repo:viewer-overlay", r)
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"id":1,"name":"widgets","permissions":{"push":true}}`))
+				return
+			}
+			record("repo:metadata", r)
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"id":1,"name":"widgets","permissions":{"push":true}}`))
+			_, _ = w.Write([]byte(`{"id":1,"name":"widgets","permissions":{"push":false}}`))
 		})
 	mux.HandleFunc("PUT /api/v3/repos/acme/widgets/pulls/5/merge",
 		func(w http.ResponseWriter, r *http.Request) {
@@ -97,6 +105,9 @@ func TestMutationsUseUserPATWhileReadsUseAppToken(t *testing.T) {
 	mux.HandleFunc("POST /api/graphql",
 		func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("X-RateLimit-Limit", "5000")
+			w.Header().Set("X-RateLimit-Remaining", "4321")
+			w.Header().Set("X-RateLimit-Reset", "2000000000")
 			if graphQLCalls.Add(1) == 1 {
 				record("write:rfr-id-lookup", r)
 				_, _ = w.Write([]byte(
@@ -132,6 +143,8 @@ func TestMutationsUseUserPATWhileReadsUseAppToken(t *testing.T) {
 		},
 	})
 	c := newSplitAuthTestClient(t, srv, source)
+	writeGQLRT := NewRateTracker(openTestDB(t), "github.example.com", "graphql_write")
+	c.SetWriteGraphQLRateTracker(writeGQLRT)
 
 	_, err := c.ListReleases(t.Context(), "acme", "widgets", 10)
 	require.NoError(err)
@@ -141,11 +154,14 @@ func TestMutationsUseUserPATWhileReadsUseAppToken(t *testing.T) {
 	require.NoError(err)
 	_, err = c.MarkPullRequestReadyForReview(t.Context(), "acme", "widgets", 5)
 	require.NoError(err)
-	// GetRepository is a read, but its permissions block is
-	// viewer-specific and feeds viewer_can_merge; resolving it with
-	// the app token would store the read-only app's permissions.
-	_, err = c.GetRepository(t.Context(), "acme", "widgets")
+	// GetRepository reads metadata with the sync credential (so
+	// app-only hosts keep syncing) and overlays the viewer-specific
+	// permissions from the user's credential, which feed
+	// viewer_can_merge.
+	repo, err := c.GetRepository(t.Context(), "acme", "widgets")
 	require.NoError(err)
+	assert.True(repo.GetPermissions().GetPush(),
+		"permissions must come from the PAT overlay, not the read-only app")
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -154,9 +170,15 @@ func TestMutationsUseUserPATWhileReadsUseAppToken(t *testing.T) {
 	assert.Equal("Bearer user-pat", authByCall["write:merge"])
 	assert.Equal("Bearer user-pat", authByCall["write:rfr-id-lookup"])
 	assert.Equal("Bearer user-pat", authByCall["write:rfr-mutation"])
-	assert.Equal("Bearer user-pat", authByCall["write:get-repo"])
+	assert.Equal("Bearer ghs_app_token", authByCall["repo:metadata"],
+		"repository metadata must stay on the sync credential")
+	assert.Equal("Bearer user-pat", authByCall["repo:viewer-overlay"])
 	assert.Equal(int64(1), mints.Load(),
 		"reads share one minted token; writes must not mint")
+	// The GraphQL mutation consumed the PAT's GraphQL budget; its
+	// response headers must land in the write GraphQL tracker so
+	// ready-for-review availability reflects that budget.
+	assert.Equal(4321, writeGQLRT.Remaining())
 }
 
 // TestMutationAuthFallsBackToReadClientWhenUnsplit pins the hand-built

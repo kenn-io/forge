@@ -3,6 +3,7 @@ package main
 import (
 	"io"
 	"net/http"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -71,4 +72,34 @@ func TestFlowServerServesEmbeddedAssetsAndFlowContract(t *testing.T) {
 	assert.Equal(http.StatusFound, resp.StatusCode)
 	assert.Equal("/?step=done", resp.Header.Get("Location"))
 	assert.Equal("c", <-flow.codeCh)
+
+	// Once the callback consumed the flow, re-serving the manifest
+	// would let a refreshed create tab auto-submit again and register
+	// a second app nothing records.
+	resp, err = http.Get(flow.localBase + "/flow.json")
+	require.NoError(err)
+	_ = resp.Body.Close()
+	assert.Equal(http.StatusNotFound, resp.StatusCode,
+		"flow.json must die once the callback consumed the flow")
+}
+
+func TestWritePrivateKeyRejectsHostileSlugs(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	assert := assert.New(t)
+	configPath := filepath.Join(t.TempDir(), "config.toml")
+	// The slug comes from the manifest conversion response; a
+	// compromised GHES host must not steer the key write outside the
+	// config directory.
+	for _, slug := range []string{
+		"../evil", "a/b", "a\\b", "..", ".", "", "a..b/../c", "-leading", "trailing-",
+	} {
+		_, err := writePrivateKey(configPath, slug, "pem")
+		require.Error(err, "slug %q must be rejected", slug)
+	}
+
+	path, err := writePrivateKey(configPath, "middleman-3f9a2c", "pem-bytes")
+	require.NoError(err)
+	assert.True(filepath.IsAbs(path), "key path %q must be absolute", path)
+	assert.Equal(filepath.Dir(configPath), filepath.Dir(path))
 }

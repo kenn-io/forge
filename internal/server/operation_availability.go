@@ -90,14 +90,15 @@ type operationDescriptor struct {
 	bucket               apiBucket
 }
 
-// All currently-cataloged mutations are served by REST. The bucket
-// field exists so a future GraphQL-backed operation opts in
-// explicitly rather than inheriting REST's rate-limit state.
+// Mutations are REST-served except ready-for-review, which GitHub
+// only exposes as a GraphQL mutation and therefore consumes the
+// GraphQL budget. The bucket field keeps each operation gated on the
+// rate state of the API it actually calls.
 var (
 	descMergePR            = operationDescriptor{name: operationMergePR, requiredCapabilities: []string{capabilityMergeMutation}, bucket: apiBucketREST}
 	descClosePR            = operationDescriptor{name: operationClosePR, requiredCapabilities: []string{capabilityStateMutation}, bucket: apiBucketREST}
 	descReopenPR           = operationDescriptor{name: operationReopenPR, requiredCapabilities: []string{capabilityStateMutation}, bucket: apiBucketREST}
-	descMarkReadyForReview = operationDescriptor{name: operationMarkReadyForReview, requiredCapabilities: []string{capabilityReadyForReview}, bucket: apiBucketREST}
+	descMarkReadyForReview = operationDescriptor{name: operationMarkReadyForReview, requiredCapabilities: []string{capabilityReadyForReview}, bucket: apiBucketGraphQL}
 	descSubmitReview       = operationDescriptor{name: operationSubmitReview, requiredCapabilities: []string{capabilityReviewMutation}, bucket: apiBucketREST}
 	descAddComment         = operationDescriptor{name: operationAddComment, requiredCapabilities: []string{capabilityCommentMutation}, bucket: apiBucketREST}
 	descAddLabel           = operationDescriptor{name: operationAddLabel, requiredCapabilities: []string{capabilityReadLabels, capabilityLabelMutation}, bucket: apiBucketREST}
@@ -184,11 +185,11 @@ type rateLimitAvailability struct {
 // operation. Every operation in RepoOperations is a mutation, and
 // mutations authenticate with the host's write credential (the user's
 // PAT when a GitHub App handles sync reads). When the host has a
-// dedicated write tracker, that tracker alone decides: an exhausted
-// app budget must not disable PAT-backed writes, and PAT exhaustion
-// must surface even though sync reads still flow. Hosts without a
-// write tracker share one credential across reads and writes, so the
-// bucket tracker the operation consumes keeps gating as before.
+// dedicated write tracker for the bucket the operation consumes, that
+// tracker alone decides: an exhausted app budget must not disable
+// PAT-backed writes, and PAT exhaustion must surface even though sync
+// reads still flow. Hosts without write trackers share one credential
+// across reads and writes, so the sync bucket tracker keeps gating.
 func (s *Server) mutationRateLimitedReason(
 	repo db.Repo, bucket apiBucket,
 ) rateLimitAvailability {
@@ -197,7 +198,16 @@ func (s *Server) mutationRateLimitedReason(
 	}
 	host := repoProviderHost(repo)
 	key := ratelimit.RateBucketKey(string(repoProviderKind(repo)), host)
-	if wt, ok := s.syncer.WriteRateTrackers()[key]; ok && wt != nil {
+	var writeTrackers map[string]*ratelimit.RateTracker
+	switch bucket {
+	case apiBucketREST:
+		writeTrackers = s.syncer.WriteRateTrackers()
+	case apiBucketGraphQL:
+		writeTrackers = s.syncer.WriteGQLRateTrackers()
+	default:
+		return rateLimitAvailability{}
+	}
+	if wt, ok := writeTrackers[key]; ok && wt != nil {
 		if wt.IsPaused() {
 			return formatRateLimit(host, wt.ResetAt())
 		}

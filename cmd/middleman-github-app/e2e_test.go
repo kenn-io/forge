@@ -453,6 +453,68 @@ func TestInstallAcceptsSelectedInstallCoveringConfiguredRepos(t *testing.T) {
 	assert.Equal(t, "kenn-io", cfg.GitHubApps[0].InstallationAccount)
 }
 
+func TestCreateWithNestedRelativeConfigPath(t *testing.T) {
+	// A relative --config with a directory component previously saved
+	// a key path that later loads re-resolved against the config dir,
+	// producing tmp/tmp/<key>.pem. The stored path must be absolute
+	// and the key must load on a fresh config read.
+	fake := githubapptest.NewFake()
+	t.Cleanup(fake.Close)
+	dir := t.TempDir()
+	t.Chdir(dir)
+	require := require.New(t)
+	require.NoError(os.MkdirAll("nested", 0o700))
+	relConfig := filepath.Join("nested", "config.toml")
+	require.NoError(os.WriteFile(relConfig, []byte(`
+[[repos]]
+owner = "kenn-io"
+name = "middleman"
+`), 0o600))
+
+	env, _ := newTestEnv(t, fake, relConfig)
+	env.openBrowser = scriptBrowser(t, fake, "kenn-io")
+	require.NoError(runCLI([]string{
+		"create", "--name", "middleman-relcfg", "--timeout", "10s",
+	}, env))
+
+	cfg, err := config.Load(relConfig)
+	require.NoError(err)
+	require.Len(cfg.GitHubApps, 1)
+	keyPath := cfg.GitHubApps[0].PrivateKeyPath
+	assert := assert.New(t)
+	assert.True(filepath.IsAbs(keyPath), "stored key path %q must be absolute", keyPath)
+	assert.FileExists(keyPath)
+	assert.Equal(filepath.Join(dir, "nested"), filepath.Dir(keyPath))
+}
+
+func TestListFlagsSelectedInstallMissingRepos(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	fake := githubapptest.NewFake()
+	t.Cleanup(fake.Close)
+	configPath := writeTestConfig(t)
+	createTestApp(t, fake, configPath, "middleman-listsel")
+
+	// Simulate a manually edited or restored config carrying a
+	// selected-repository installation the CLI never verified.
+	cfg, err := config.Load(configPath)
+	require.NoError(err)
+	app, ok := fake.AppBySlug("middleman-listsel")
+	require.True(ok)
+	installID, err := fake.InstallSelected(app.ID, "kenn-io", "kenn-io/other-repo")
+	require.NoError(err)
+	cfg.GitHubApps[0].InstallationID = installID
+	require.NoError(cfg.Save(configPath))
+
+	env, out := newTestEnv(t, fake, configPath)
+	require.NoError(runCLI([]string{"list", "--json"}, env))
+	var statuses []appStatus
+	require.NoError(json.Unmarshal(out.Bytes(), &statuses))
+	require.Len(statuses, 1)
+	assert.Contains(t, statuses[0].Error, "kenn-io/middleman",
+		"list must surface the uncovered configured repo")
+}
+
 func TestDeleteRemovesConfigAndKeyAfterBrowserDeletion(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)

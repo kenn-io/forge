@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -149,6 +150,7 @@ type flowServer struct {
 	action   string
 	appName  string
 	host     string
+	consumed bool
 }
 
 // missingUIPage is served when the binary was built without the
@@ -252,8 +254,13 @@ func (f *flowServer) handleFlowJSON(w http.ResponseWriter, r *http.Request) {
 		Name:     f.appName,
 		Host:     f.host,
 	}
+	consumed := f.consumed
 	f.mu.Unlock()
-	if flow.Action == "" {
+	// Once GitHub has redirected back, re-serving the manifest would
+	// let a refreshed create tab auto-submit again and register a
+	// second app that nothing records. The done view's assets keep
+	// being served; only the hand-off contract dies.
+	if consumed || flow.Action == "" {
 		http.Error(w, "no app creation in progress", http.StatusNotFound)
 		return
 	}
@@ -273,6 +280,9 @@ func (f *flowServer) handleCallback(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing code", http.StatusBadRequest)
 		return
 	}
+	f.mu.Lock()
+	f.consumed = true
+	f.mu.Unlock()
 	select {
 	case f.codeCh <- code:
 	default:
@@ -444,30 +454,7 @@ func (env *appEnv) verifySelectedInstallationCoverage(
 	if err != nil {
 		return fmt.Errorf("verifying selected-repository installation: %w", err)
 	}
-	accessible := make(map[string]struct{}, len(names))
-	for _, name := range names {
-		accessible[strings.ToLower(name)] = struct{}{}
-	}
-	var missing []string
-	for _, r := range cfg.Repos {
-		if r.PlatformOrDefault() != "github" || r.PlatformHostOrDefault() != app.Host {
-			continue
-		}
-		if r.TokenEnv != "" || r.TokenFile != "" {
-			continue
-		}
-		if !strings.EqualFold(r.Owner, picked.Account.Login) {
-			continue
-		}
-		full := r.Owner + "/" + r.Name
-		if r.HasNameGlob() {
-			missing = append(missing, full+" (glob patterns need an \"All repositories\" install)")
-			continue
-		}
-		if _, ok := accessible[strings.ToLower(full)]; !ok {
-			missing = append(missing, full)
-		}
-	}
+	missing := missingSelectedRepos(cfg, app.Host, picked.Account.Login, names)
 	if len(missing) > 0 {
 		return fmt.Errorf(
 			"the app was installed on %q with \"Only select repositories\", but the "+
@@ -499,14 +486,38 @@ func reposNotCoveredByInstallation(
 	return uncovered
 }
 
+// validAppSlug matches GitHub's app slug shape (letters, digits,
+// hyphens). The slug arrives from the manifest conversion response
+// and is used as a filename, so anything else — path separators,
+// dots, traversal — is rejected rather than written.
+var validAppSlug = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$`)
+
 // writePrivateKey stores the app's PEM next to the config file with
-// owner-only permissions and returns its path.
+// owner-only permissions and returns its absolute path. The path is
+// absolute so later config loads do not re-resolve it against the
+// config directory (a relative --config like tmp/config.toml would
+// otherwise turn "tmp/x.pem" into "tmp/tmp/x.pem"). The slug is
+// untrusted input from the manifest conversion response; a malicious
+// GHES host must not be able to steer the write outside the config
+// directory.
 func writePrivateKey(configPath, slug, pem string) (string, error) {
-	dir := filepath.Dir(configPath)
+	if !validAppSlug.MatchString(slug) {
+		return "", fmt.Errorf(
+			"refusing to use app slug %q as a filename: slugs contain only letters, digits, and hyphens",
+			slug,
+		)
+	}
+	dir, err := filepath.Abs(filepath.Dir(configPath))
+	if err != nil {
+		return "", fmt.Errorf("resolving config directory: %w", err)
+	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", fmt.Errorf("creating config directory: %w", err)
 	}
 	path := filepath.Join(dir, "github-app-"+slug+".pem")
+	if filepath.Dir(path) != dir {
+		return "", fmt.Errorf("app key path %q escapes the config directory", path)
+	}
 	if err := os.WriteFile(path, []byte(pem), 0o600); err != nil {
 		return "", fmt.Errorf("writing app private key: %w", err)
 	}

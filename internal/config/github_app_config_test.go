@@ -239,7 +239,6 @@ github_token_env = "MY_PAT"
 [[repos]]
 owner = "kenn-io"
 name = "middleman"
-token_env = "REPO_PAT"
 
 [[github_apps]]
 host = "github.com"
@@ -250,28 +249,55 @@ installation_account = "kenn-io"
 `))
 	require.NoError(t, err)
 
-	desc := cfg.TokenSourceForPlatformHost("github", "github.com", "REPO_PAT", "")
+	desc := cfg.TokenSourceForPlatformHost("github", "github.com", "", "")
 	kinds := make([]tokenauth.SourceKind, 0, len(desc.Candidates))
 	for _, cand := range desc.Candidates {
 		kinds = append(kinds, cand.Kind)
 	}
-	// Repo-level explicit override stays first; the app outranks the
-	// global PAT env and gh CLI fallbacks.
+	// The app outranks the global PAT env and gh CLI fallbacks.
 	require.Equal(t, []tokenauth.SourceKind{
-		tokenauth.SourceKindEnv,
 		tokenauth.SourceKindGitHubApp,
 		tokenauth.SourceKindEnv,
 		tokenauth.SourceKindGitHubCLI,
 	}, kinds)
 
 	assert := Assert.New(t)
-	assert.Equal("REPO_PAT", desc.Candidates[0].EnvName)
-	app := desc.Candidates[1]
+	app := desc.Candidates[0]
 	assert.Equal(int64(4321), app.AppID)
 	assert.Equal(int64(99), app.InstallationID)
 	assert.Equal("github.com", app.Host)
 	assert.True(filepath.IsAbs(app.FilePath), "key path %q", app.FilePath)
-	assert.Equal("MY_PAT", desc.Candidates[2].EnvName)
+	assert.Equal("MY_PAT", desc.Candidates[1].EnvName)
+}
+
+func TestTokenSourceChainRepoOverrideExcludesGitHubApp(t *testing.T) {
+	cfg, err := Load(writeConfig(t, `
+github_token_env = "MY_PAT"
+
+[[repos]]
+owner = "other-org"
+name = "tool"
+token_env = "OTHER_ORG_PAT"
+
+[[github_apps]]
+host = "github.com"
+app_id = 4321
+private_key_path = "app.pem"
+installation_id = 99
+installation_account = "other-org"
+`))
+	require.NoError(t, err)
+
+	// Installation coverage validation exempts repos with their own
+	// token_env/token_file. That exemption is only sound if the
+	// override is terminal: were the app candidate still appended, an
+	// unset override env var would fall through to the installation
+	// token and reopen the cross-account 404 the validation prevents.
+	desc := cfg.TokenSourceForPlatformHost("github", "github.com", "OTHER_ORG_PAT", "")
+	for _, cand := range desc.Candidates {
+		Assert.NotEqual(t, tokenauth.SourceKindGitHubApp, cand.Kind,
+			"repo-level override chains must not fall through to the app token")
+	}
 }
 
 func TestTokenSourceChainSkipsAppForOtherHosts(t *testing.T) {

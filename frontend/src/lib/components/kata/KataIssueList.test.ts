@@ -289,19 +289,7 @@ describe("KataIssueList", () => {
   });
 
   it("debounces keyboard navigation so only the final row is selected", async () => {
-    vi.useFakeTimers();
-    const selected: string[] = [];
-    render(KataIssueList, {
-      props: {
-        currentView: viewWithIssues([...baseIssues, thirdIssue()]),
-        selectedIssueUID: null,
-        loading: false,
-        onSelect: (issue: KataTaskSummary) => selected.push(issue.uid),
-      },
-    });
-
-    const rows = visibleRows();
-    rows[0]!.focus();
+    const { selected, rows } = renderKeyboardList(viewWithIssues([...baseIssues, thirdIssue()]));
     await fireEvent.keyDown(rows[0]!, { key: "j" });
     await fireEvent.keyDown(rows[1]!, { key: "j", repeat: true });
     await fireEvent.keyUp(rows[2]!, { key: "j" });
@@ -313,19 +301,7 @@ describe("KataIssueList", () => {
   });
 
   it("holds selection while a navigation key repeats slower than the debounce", async () => {
-    vi.useFakeTimers();
-    const selected: string[] = [];
-    render(KataIssueList, {
-      props: {
-        currentView: viewWithIssues([...baseIssues, thirdIssue()]),
-        selectedIssueUID: null,
-        loading: false,
-        onSelect: (issue: KataTaskSummary) => selected.push(issue.uid),
-      },
-    });
-
-    const rows = visibleRows();
-    rows[0]!.focus();
+    const { selected, rows } = renderKeyboardList(viewWithIssues([...baseIssues, thirdIssue()]));
     // OS key-repeat slower than the 50ms debounce: each repeat arrives
     // after the timer has already expired. The held key must keep the
     // selection pending so intermediate rows never commit.
@@ -343,19 +319,7 @@ describe("KataIssueList", () => {
   });
 
   it("commits the selection when Shift is released before the navigation key", async () => {
-    vi.useFakeTimers();
-    const selected: string[] = [];
-    render(KataIssueList, {
-      props: {
-        currentView,
-        selectedIssueUID: null,
-        loading: false,
-        onSelect: (issue: KataTaskSummary) => selected.push(issue.uid),
-      },
-    });
-
-    const rows = visibleRows();
-    rows[0]!.focus();
+    const { selected, rows } = renderKeyboardList();
     // Shift+g jumps to the end; the keydown reports key "G" but releasing
     // Shift first makes the keyup report key "g". The physical code is
     // stable across both, so the held entry must still clear.
@@ -370,19 +334,7 @@ describe("KataIssueList", () => {
   });
 
   it("clicking a row selects immediately and cancels a pending keyboard selection", async () => {
-    vi.useFakeTimers();
-    const selected: string[] = [];
-    render(KataIssueList, {
-      props: {
-        currentView,
-        selectedIssueUID: null,
-        loading: false,
-        onSelect: (issue: KataTaskSummary) => selected.push(issue.uid),
-      },
-    });
-
-    const rows = visibleRows();
-    rows[0]!.focus();
+    const { selected, rows } = renderKeyboardList();
     await fireEvent.keyDown(rows[0]!, { key: "j" });
     expect(selected).toEqual([]);
 
@@ -569,6 +521,24 @@ describe("KataIssueList", () => {
     expect(screen.queryByRole("button", { name: /Stale child/ })).toBeNull();
   });
 });
+
+// Shared setup for the fake-timer keyboard tests: renders the list,
+// records selections, and focuses the first row ready for key events.
+function renderKeyboardList(view: KataCurrentView = currentView) {
+  vi.useFakeTimers();
+  const selected: string[] = [];
+  render(KataIssueList, {
+    props: {
+      currentView: view,
+      selectedIssueUID: null,
+      loading: false,
+      onSelect: (issue: KataTaskSummary) => selected.push(issue.uid),
+    },
+  });
+  const rows = visibleRows();
+  rows[0]!.focus();
+  return { selected, rows };
+}
 
 function thirdIssue(): KataTaskSummary {
   return task({

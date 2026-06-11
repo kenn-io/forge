@@ -438,8 +438,7 @@ export class KataWorkspaceStore {
 
   clearSelection(): void {
     this.detailRequestID++;
-    this.detailAbort?.abort();
-    this.detailAbort = null;
+    this.abortPendingDetail();
     this.selectedIssue = null;
     this.selectedEvents = [];
     this.selectedRecurrences = [];
@@ -554,12 +553,17 @@ export class KataWorkspaceStore {
   invalidatePendingLoads(): void {
     this.viewRequestID++;
     this.detailRequestID++;
-    // Abort like clearSelection() does: without it, a superseded detail
-    // load keeps running and a late rejection surfaces a stale error
-    // for a navigation the user already left.
+    this.abortPendingDetail();
+    this.pendingSelectionUID = null;
+  }
+
+  // Whenever a detail load stops being wanted (newer selection, cleared
+  // selection, route invalidation), abort it: a superseded request left
+  // running ties up the daemon and its late rejection would surface a
+  // stale error for a navigation the user already left.
+  private abortPendingDetail(): void {
     this.detailAbort?.abort();
     this.detailAbort = null;
-    this.pendingSelectionUID = null;
   }
 
   resetEventCursor(): void {
@@ -801,11 +805,7 @@ export class KataWorkspaceStore {
     viewRequestID: number | undefined,
     detailRequestID: number,
   ): Promise<boolean> {
-    // A newer selection makes the previous detail load moot — abort it so
-    // the connection isn't tied up; the server cancels the proxied daemon
-    // request along with it.
-    this.detailAbort?.abort();
-    this.detailAbort = null;
+    this.abortPendingDetail();
 
     if (!uid) {
       if (viewRequestID === undefined || viewRequestID === this.viewRequestID) {

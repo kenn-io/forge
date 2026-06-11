@@ -129,7 +129,7 @@
     "@tiptap/extension-text": "3.22.3",
     "@tiptap/pm": "3.22.3",
     "@tiptap/suggestion": "3.22.3",
-    "dompurify": "3.3.3",
+    "dompurify": "3.4.0",
     "marked": "17.0.5",
     "openapi-fetch": "^0.17.0",
     "prosemirror-state": "^1.4.4",

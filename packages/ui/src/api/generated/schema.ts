@@ -4,10148 +4,10083 @@
  */
 
 export interface paths {
-  "/activity": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** List activity */
-    get: operations["list-activity"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/docs/browse": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Browse docs folders */
-    get: operations["browse-docs-folders"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/docs/folders": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** List docs folders */
-    get: operations["list-docs-folders"];
-    put?: never;
-    /** Create docs folder */
-    post: operations["create-docs-folder"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/docs/folders/{id}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    post?: never;
-    /** Delete docs folder */
-    delete: operations["delete-docs-folder"];
-    options?: never;
-    head?: never;
-    /** Update docs folder */
-    patch: operations["update-docs-folder"];
-    trace?: never;
-  };
-  "/docs/folders/{id}/blob": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Read docs image blob */
-    get: operations["read-docs-blob"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/docs/folders/{id}/file": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Read docs file */
-    get: operations["read-docs-file"];
-    /** Write docs file */
-    put: operations["write-docs-file"];
-    /** Create docs file */
-    post: operations["create-docs-file"];
-    /** Delete docs file */
-    delete: operations["delete-docs-file"];
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/docs/folders/{id}/file/actions/rename": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Rename docs file */
-    post: operations["rename-docs-file"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/docs/folders/{id}/git": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get docs Git status */
-    get: operations["get-docs-git-status"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/docs/folders/{id}/git/changes": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get docs Git changes */
-    get: operations["get-docs-git-changes"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/docs/folders/{id}/git/publish": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Publish docs Git changes */
-    post: operations["publish-docs-git"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/docs/folders/{id}/search": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Search docs folder */
-    get: operations["search-docs-folder"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/docs/folders/{id}/tree": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get docs folder tree */
-    get: operations["get-docs-tree"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/docs/search": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Search docs */
-    get: operations["search-docs"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/events": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Stream server events */
-    get: operations["stream-events"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/host/{platform_host}/issues/{provider}/{owner}/{name}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Create issue */
-    post: operations["create-issue-on-host"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get issue */
-    get: operations["get-issue-on-host"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    /** Edit issue content */
-    patch: operations["edit-issue-content-on-host"];
-    trace?: never;
-  };
-  "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/comments": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Post issue comment */
-    post: operations["post-issue-comment-on-host"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/comments/{comment_id}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    /** Edit issue comment */
-    patch: operations["edit-issue-comment-on-host"];
-    trace?: never;
-  };
-  "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/github-state": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Set issue GitHub state */
-    post: operations["set-issue-github-state-on-host"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/labels": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    /** Set issue labels */
-    put: operations["set-issue-labels-on-host"];
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/sync": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Sync issue */
-    post: operations["sync-issue-on-host"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/sync/async": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Enqueue issue sync */
-    post: operations["enqueue-issue-sync-on-host"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/workspace": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Create issue workspace */
-    post: operations["create-issue-workspace-on-host"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get pull request */
-    get: operations["get-pull-on-host"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    /** Edit pull request content */
-    patch: operations["edit-pr-content-on-host"];
-    trace?: never;
-  };
-  "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/approve": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Approve pull request */
-    post: operations["approve-pull-on-host"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/approve-workflows": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Approve pull request workflows */
-    post: operations["approve-pull-workflows-on-host"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/ci-refresh": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Refresh pull request CI */
-    post: operations["refresh-pull-ci-on-host"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/comments": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Post pull request comment */
-    post: operations["post-pr-comment-on-host"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/comments/{comment_id}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    /** Edit pull request comment */
-    patch: operations["edit-pr-comment-on-host"];
-    trace?: never;
-  };
-  "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/commits": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get pull request commits */
-    get: operations["get-pull-commits-on-host"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/diff": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get pull request diff */
-    get: operations["get-pull-diff-on-host"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/discussions/{discussion_id}/reply": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Reply to pull request discussion */
-    post: operations["reply-to-discussion-on-host"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/discussions/{discussion_id}/resolve": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Resolve pull request discussion */
-    post: operations["resolve-discussion-on-host"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/file-preview": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get pull request file preview */
-    get: operations["get-pull-file-preview-on-host"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/files": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get pull request files */
-    get: operations["get-pull-files-on-host"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/github-state": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Set pull request GitHub state */
-    post: operations["set-pr-github-state-on-host"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/import-metadata": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get pull request import metadata */
-    get: operations["get-pull-import-metadata-on-host"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/labels": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    /** Set pull request labels */
-    put: operations["set-pr-labels-on-host"];
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/merge": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Merge pull request */
-    post: operations["merge-pull-on-host"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/ready-for-review": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Mark pull request ready for review */
-    post: operations["mark-pull-ready-for-review-on-host"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/review-draft": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Review pull request diff */
-    get: operations["get-pr-review-draft-on-host"];
-    put?: never;
-    post?: never;
-    /** Review pull request diff */
-    delete: operations["discard-pr-review-draft-on-host"];
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/review-draft/comments": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Create pull request review draft comment */
-    post: operations["create-pr-review-draft-comment-on-host"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/review-draft/comments/{draft_comment_id}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    post?: never;
-    /** Review pull request diff */
-    delete: operations["delete-pr-review-draft-comment-on-host"];
-    options?: never;
-    head?: never;
-    /** Review pull request diff */
-    patch: operations["edit-pr-review-draft-comment-on-host"];
-    trace?: never;
-  };
-  "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/review-draft/publish": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Review pull request diff */
-    post: operations["publish-pr-review-draft-on-host"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/review-threads/{thread_id}/resolve": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Review pull request diff */
-    post: operations["resolve-pr-review-thread-on-host"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/review-threads/{thread_id}/unresolve": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Review pull request diff */
-    post: operations["unresolve-pr-review-thread-on-host"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/stack": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get pull request stack */
-    get: operations["get-pull-stack-on-host"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/state": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    /** Set pull request kanban state */
-    put: operations["set-kanban-state-on-host"];
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/sync": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Sync pull request */
-    post: operations["sync-pull-on-host"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/sync/async": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Enqueue pull request sync */
-    post: operations["enqueue-pr-sync-on-host"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/host/{platform_host}/repo/{provider}/{owner}/{name}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get repository */
-    get: operations["get-repo-on-host"];
-    put?: never;
-    post?: never;
-    /** Delete repository */
-    delete: operations["delete-repo-on-host"];
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/host/{platform_host}/repo/{provider}/{owner}/{name}/comment-autocomplete": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get comment autocomplete */
-    get: operations["get-comment-autocomplete-on-host"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/host/{platform_host}/repo/{provider}/{owner}/{name}/commits/{sha}/diff": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get repository commit diff */
-    get: operations["get-repo-commit-diff-on-host"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/host/{platform_host}/repo/{provider}/{owner}/{name}/labels": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** List repository labels */
-    get: operations["list-repo-labels-on-host"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/host/{platform_host}/repo/{provider}/{owner}/{name}/refresh": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Refresh repository */
-    post: operations["refresh-repo-on-host"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/host/{platform_host}/repo/{provider}/{owner}/{name}/resolve/{number}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Resolve repository item */
-    post: operations["resolve-repo-item-on-host"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/issues": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** List issues */
-    get: operations["list-issues"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/issues/{provider}/{owner}/{name}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Create issue */
-    post: operations["create-issue"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/issues/{provider}/{owner}/{name}/{number}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get issue */
-    get: operations["get-issue"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    /** Edit issue content */
-    patch: operations["edit-issue-content"];
-    trace?: never;
-  };
-  "/issues/{provider}/{owner}/{name}/{number}/comments": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Post issue comment */
-    post: operations["post-issue-comment"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/issues/{provider}/{owner}/{name}/{number}/comments/{comment_id}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    /** Edit issue comment */
-    patch: operations["edit-issue-comment"];
-    trace?: never;
-  };
-  "/issues/{provider}/{owner}/{name}/{number}/github-state": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Set issue GitHub state */
-    post: operations["set-issue-github-state"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/issues/{provider}/{owner}/{name}/{number}/labels": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    /** Set issue labels */
-    put: operations["set-issue-labels"];
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/issues/{provider}/{owner}/{name}/{number}/sync": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Sync issue */
-    post: operations["sync-issue"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/issues/{provider}/{owner}/{name}/{number}/sync/async": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Enqueue issue sync */
-    post: operations["enqueue-issue-sync"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/issues/{provider}/{owner}/{name}/{number}/workspace": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Create issue workspace */
-    post: operations["create-issue-workspace"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/kata/daemons": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** List Kata daemons */
-    get: operations["list-kata-daemons"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/messages/saved-searches": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** List messages saved searches */
-    get: operations["list-messages-saved-searches"];
-    /** Replace messages saved searches */
-    put: operations["replace-messages-saved-searches"];
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/msgvault/aggregates": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get msgvault aggregates */
-    get: operations["get-msgvault-aggregates"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/msgvault/configure": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Configure msgvault */
-    post: operations["configure-msgvault"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/msgvault/health": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get msgvault health */
-    get: operations["get-msgvault-health"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/msgvault/messages/{id}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get msgvault message */
-    get: operations["get-msgvault-message"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/msgvault/messages/{id}/inline": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get msgvault inline image */
-    get: operations["get-msgvault-inline-image"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/msgvault/messages/{id}/remote-image/{token}/{idx}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get msgvault remote image */
-    get: operations["get-msgvault-remote-image"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/msgvault/search": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Search msgvault */
-    get: operations["search-msgvault"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/msgvault/threads/{conversation_id}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get msgvault thread */
-    get: operations["get-msgvault-thread"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/projects": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** List projects */
-    get: operations["list-projects"];
-    put?: never;
-    /** Register project */
-    post: operations["register-project"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/projects/{project_id}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get project */
-    get: operations["get-project"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/projects/{project_id}/launch-targets": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** List launch targets */
-    get: operations["list-launch-targets"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/projects/{project_id}/worktrees": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** List worktrees */
-    get: operations["list-worktrees"];
-    put?: never;
-    /** Register worktree */
-    post: operations["register-worktree"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/pulls": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** List pull requests */
-    get: operations["list-pulls"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/pulls/{provider}/{owner}/{name}/{number}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get pull request */
-    get: operations["get-pull"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    /** Edit pull request content */
-    patch: operations["edit-pr-content"];
-    trace?: never;
-  };
-  "/pulls/{provider}/{owner}/{name}/{number}/approve": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Approve pull request */
-    post: operations["approve-pull"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/pulls/{provider}/{owner}/{name}/{number}/approve-workflows": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Approve pull request workflows */
-    post: operations["approve-pull-workflows"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/pulls/{provider}/{owner}/{name}/{number}/ci-refresh": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Refresh pull request CI */
-    post: operations["refresh-pull-ci"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/pulls/{provider}/{owner}/{name}/{number}/comments": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Post pull request comment */
-    post: operations["post-pr-comment"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/pulls/{provider}/{owner}/{name}/{number}/comments/{comment_id}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    /** Edit pull request comment */
-    patch: operations["edit-pr-comment"];
-    trace?: never;
-  };
-  "/pulls/{provider}/{owner}/{name}/{number}/commits": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get pull request commits */
-    get: operations["get-pull-commits"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/pulls/{provider}/{owner}/{name}/{number}/diff": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get pull request diff */
-    get: operations["get-pull-diff"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/pulls/{provider}/{owner}/{name}/{number}/discussions/{discussion_id}/reply": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Reply to pull request discussion */
-    post: operations["reply-to-discussion"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/pulls/{provider}/{owner}/{name}/{number}/discussions/{discussion_id}/resolve": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Resolve pull request discussion */
-    post: operations["resolve-discussion"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/pulls/{provider}/{owner}/{name}/{number}/file-preview": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get pull request file preview */
-    get: operations["get-pull-file-preview"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/pulls/{provider}/{owner}/{name}/{number}/files": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get pull request files */
-    get: operations["get-pull-files"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/pulls/{provider}/{owner}/{name}/{number}/github-state": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Set pull request GitHub state */
-    post: operations["set-pr-github-state"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/pulls/{provider}/{owner}/{name}/{number}/import-metadata": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get pull request import metadata */
-    get: operations["get-pull-import-metadata"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/pulls/{provider}/{owner}/{name}/{number}/labels": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    /** Set pull request labels */
-    put: operations["set-pr-labels"];
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/pulls/{provider}/{owner}/{name}/{number}/merge": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Merge pull request */
-    post: operations["merge-pull"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/pulls/{provider}/{owner}/{name}/{number}/ready-for-review": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Mark pull request ready for review */
-    post: operations["mark-pull-ready-for-review"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/pulls/{provider}/{owner}/{name}/{number}/review-draft": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Review pull request diff */
-    get: operations["get-pr-review-draft"];
-    put?: never;
-    post?: never;
-    /** Review pull request diff */
-    delete: operations["discard-pr-review-draft"];
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/pulls/{provider}/{owner}/{name}/{number}/review-draft/comments": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Create pull request review draft comment */
-    post: operations["create-pr-review-draft-comment"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/pulls/{provider}/{owner}/{name}/{number}/review-draft/comments/{draft_comment_id}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    post?: never;
-    /** Review pull request diff */
-    delete: operations["delete-pr-review-draft-comment"];
-    options?: never;
-    head?: never;
-    /** Review pull request diff */
-    patch: operations["edit-pr-review-draft-comment"];
-    trace?: never;
-  };
-  "/pulls/{provider}/{owner}/{name}/{number}/review-draft/publish": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Review pull request diff */
-    post: operations["publish-pr-review-draft"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/pulls/{provider}/{owner}/{name}/{number}/review-threads/{thread_id}/resolve": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Review pull request diff */
-    post: operations["resolve-pr-review-thread"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/pulls/{provider}/{owner}/{name}/{number}/review-threads/{thread_id}/unresolve": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Review pull request diff */
-    post: operations["unresolve-pr-review-thread"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/pulls/{provider}/{owner}/{name}/{number}/stack": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get pull request stack */
-    get: operations["get-pull-stack"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/pulls/{provider}/{owner}/{name}/{number}/state": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    /** Set pull request kanban state */
-    put: operations["set-kanban-state"];
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/pulls/{provider}/{owner}/{name}/{number}/sync": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Sync pull request */
-    post: operations["sync-pull"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/pulls/{provider}/{owner}/{name}/{number}/sync/async": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Enqueue pull request sync */
-    post: operations["enqueue-pr-sync"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/rate-limits": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get rate limits */
-    get: operations["get-rate-limits"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/repo/{provider}/{owner}/{name}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get repository */
-    get: operations["get-repo"];
-    put?: never;
-    post?: never;
-    /** Delete repository */
-    delete: operations["delete-repo"];
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/repo/{provider}/{owner}/{name}/comment-autocomplete": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get comment autocomplete */
-    get: operations["get-comment-autocomplete"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/repo/{provider}/{owner}/{name}/commits/{sha}/diff": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get repository commit diff */
-    get: operations["get-repo-commit-diff"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/repo/{provider}/{owner}/{name}/labels": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** List repository labels */
-    get: operations["list-repo-labels"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/repo/{provider}/{owner}/{name}/refresh": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Refresh repository */
-    post: operations["refresh-repo"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/repo/{provider}/{owner}/{name}/resolve/{number}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Resolve repository item */
-    post: operations["resolve-repo-item"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/repos": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** List repositories */
-    get: operations["list-repos"];
-    put?: never;
-    /** Add repository */
-    post: operations["add-repo"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/repos/bulk": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Bulk add repositories */
-    post: operations["bulk-add-repos"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/repos/preview": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Preview repositories */
-    post: operations["preview-repos"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/repos/summary": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** List repository summaries */
-    get: operations["list-repo-summaries"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/roborev/status": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get roborev status */
-    get: operations["get-roborev-status"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/settings": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get settings */
-    get: operations["get-settings"];
-    /** Update settings */
-    put: operations["update-settings"];
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/stacks": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** List stacks */
-    get: operations["list-stacks"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/starred": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    /** Star repository */
-    put: operations["set-starred"];
-    post?: never;
-    /** Unstar repository */
-    delete: operations["unset-starred"];
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/sync": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Trigger sync */
-    post: operations["trigger-sync"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/sync/status": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get sync status */
-    get: operations["get-sync-status"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/telemetry/events": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Capture telemetry event */
-    post: operations["capture-telemetry-event"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/version": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get server version */
-    get: operations["get-version"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/workspaces": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** List workspaces */
-    get: operations["list-workspaces"];
-    put?: never;
-    /** Create workspace */
-    post: operations["create-workspace"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/workspaces/{id}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get workspace */
-    get: operations["get-workspace"];
-    put?: never;
-    post?: never;
-    /** Delete workspace */
-    delete: operations["delete-workspace"];
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/workspaces/{id}/commits": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get workspace commits */
-    get: operations["get-workspace-commits"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/workspaces/{id}/diff": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get workspace diff */
-    get: operations["get-workspace-diff"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/workspaces/{id}/files": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get workspace files */
-    get: operations["get-workspace-files"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/workspaces/{id}/refresh": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Refresh workspace */
-    post: operations["refresh-workspace"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/workspaces/{id}/retry": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Retry workspace */
-    post: operations["retry-workspace"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/workspaces/{id}/runtime": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get workspace runtime */
-    get: operations["get-workspace-runtime"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/workspaces/{id}/runtime/sessions": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Launch workspace runtime session */
-    post: operations["launch-workspace-runtime-session"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/workspaces/{id}/runtime/sessions/{session_key}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    post?: never;
-    /** Stop workspace runtime session */
-    delete: operations["stop-workspace-runtime-session"];
-    options?: never;
-    head?: never;
-    /** Rename workspace runtime session */
-    patch: operations["rename-workspace-runtime-session"];
-    trace?: never;
-  };
+    "/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List activity */
+        get: operations["list-activity"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/docs/browse": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Browse docs folders */
+        get: operations["browse-docs-folders"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/docs/folders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List docs folders */
+        get: operations["list-docs-folders"];
+        put?: never;
+        /** Create docs folder */
+        post: operations["create-docs-folder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/docs/folders/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete docs folder */
+        delete: operations["delete-docs-folder"];
+        options?: never;
+        head?: never;
+        /** Update docs folder */
+        patch: operations["update-docs-folder"];
+        trace?: never;
+    };
+    "/docs/folders/{id}/blob": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read docs image blob */
+        get: operations["read-docs-blob"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/docs/folders/{id}/file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read docs file */
+        get: operations["read-docs-file"];
+        /** Write docs file */
+        put: operations["write-docs-file"];
+        /** Create docs file */
+        post: operations["create-docs-file"];
+        /** Delete docs file */
+        delete: operations["delete-docs-file"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/docs/folders/{id}/file/actions/rename": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Rename docs file */
+        post: operations["rename-docs-file"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/docs/folders/{id}/git": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get docs Git status */
+        get: operations["get-docs-git-status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/docs/folders/{id}/git/changes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get docs Git changes */
+        get: operations["get-docs-git-changes"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/docs/folders/{id}/git/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Publish docs Git changes */
+        post: operations["publish-docs-git"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/docs/folders/{id}/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Search docs folder */
+        get: operations["search-docs-folder"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/docs/folders/{id}/tree": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get docs folder tree */
+        get: operations["get-docs-tree"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/docs/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Search docs */
+        get: operations["search-docs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Stream server events */
+        get: operations["stream-events"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/host/{platform_host}/issues/{provider}/{owner}/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create issue */
+        post: operations["create-issue-on-host"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get issue */
+        get: operations["get-issue-on-host"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Edit issue content */
+        patch: operations["edit-issue-content-on-host"];
+        trace?: never;
+    };
+    "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/comments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post issue comment */
+        post: operations["post-issue-comment-on-host"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/comments/{comment_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Edit issue comment */
+        patch: operations["edit-issue-comment-on-host"];
+        trace?: never;
+    };
+    "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/github-state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Set issue GitHub state */
+        post: operations["set-issue-github-state-on-host"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/labels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set issue labels */
+        put: operations["set-issue-labels-on-host"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Sync issue */
+        post: operations["sync-issue-on-host"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/sync/async": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Enqueue issue sync */
+        post: operations["enqueue-issue-sync-on-host"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/workspace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create issue workspace */
+        post: operations["create-issue-workspace-on-host"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get pull request */
+        get: operations["get-pull-on-host"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Edit pull request content */
+        patch: operations["edit-pr-content-on-host"];
+        trace?: never;
+    };
+    "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve pull request */
+        post: operations["approve-pull-on-host"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/approve-workflows": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve pull request workflows */
+        post: operations["approve-pull-workflows-on-host"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/ci-refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Refresh pull request CI */
+        post: operations["refresh-pull-ci-on-host"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/comments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post pull request comment */
+        post: operations["post-pr-comment-on-host"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/comments/{comment_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Edit pull request comment */
+        patch: operations["edit-pr-comment-on-host"];
+        trace?: never;
+    };
+    "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/commits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get pull request commits */
+        get: operations["get-pull-commits-on-host"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/diff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get pull request diff */
+        get: operations["get-pull-diff-on-host"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/discussions/{discussion_id}/reply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reply to pull request discussion */
+        post: operations["reply-to-discussion-on-host"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/discussions/{discussion_id}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resolve pull request discussion */
+        post: operations["resolve-discussion-on-host"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/file-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get pull request file preview */
+        get: operations["get-pull-file-preview-on-host"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get pull request files */
+        get: operations["get-pull-files-on-host"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/github-state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Set pull request GitHub state */
+        post: operations["set-pr-github-state-on-host"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/import-metadata": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get pull request import metadata */
+        get: operations["get-pull-import-metadata-on-host"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/labels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set pull request labels */
+        put: operations["set-pr-labels-on-host"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/merge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Merge pull request */
+        post: operations["merge-pull-on-host"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/ready-for-review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark pull request ready for review */
+        post: operations["mark-pull-ready-for-review-on-host"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/review-draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Review pull request diff */
+        get: operations["get-pr-review-draft-on-host"];
+        put?: never;
+        post?: never;
+        /** Review pull request diff */
+        delete: operations["discard-pr-review-draft-on-host"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/review-draft/comments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create pull request review draft comment */
+        post: operations["create-pr-review-draft-comment-on-host"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/review-draft/comments/{draft_comment_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Review pull request diff */
+        delete: operations["delete-pr-review-draft-comment-on-host"];
+        options?: never;
+        head?: never;
+        /** Review pull request diff */
+        patch: operations["edit-pr-review-draft-comment-on-host"];
+        trace?: never;
+    };
+    "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/review-draft/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Review pull request diff */
+        post: operations["publish-pr-review-draft-on-host"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/review-threads/{thread_id}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Review pull request diff */
+        post: operations["resolve-pr-review-thread-on-host"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/review-threads/{thread_id}/unresolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Review pull request diff */
+        post: operations["unresolve-pr-review-thread-on-host"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/stack": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get pull request stack */
+        get: operations["get-pull-stack-on-host"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set pull request kanban state */
+        put: operations["set-kanban-state-on-host"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Sync pull request */
+        post: operations["sync-pull-on-host"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/sync/async": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Enqueue pull request sync */
+        post: operations["enqueue-pr-sync-on-host"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/host/{platform_host}/repo/{provider}/{owner}/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get repository */
+        get: operations["get-repo-on-host"];
+        put?: never;
+        post?: never;
+        /** Delete repository */
+        delete: operations["delete-repo-on-host"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/host/{platform_host}/repo/{provider}/{owner}/{name}/comment-autocomplete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get comment autocomplete */
+        get: operations["get-comment-autocomplete-on-host"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/host/{platform_host}/repo/{provider}/{owner}/{name}/commits/{sha}/diff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get repository commit diff */
+        get: operations["get-repo-commit-diff-on-host"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/host/{platform_host}/repo/{provider}/{owner}/{name}/labels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List repository labels */
+        get: operations["list-repo-labels-on-host"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/host/{platform_host}/repo/{provider}/{owner}/{name}/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Refresh repository */
+        post: operations["refresh-repo-on-host"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/host/{platform_host}/repo/{provider}/{owner}/{name}/resolve/{number}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resolve repository item */
+        post: operations["resolve-repo-item-on-host"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/issues": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List issues */
+        get: operations["list-issues"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/issues/{provider}/{owner}/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create issue */
+        post: operations["create-issue"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/issues/{provider}/{owner}/{name}/{number}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get issue */
+        get: operations["get-issue"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Edit issue content */
+        patch: operations["edit-issue-content"];
+        trace?: never;
+    };
+    "/issues/{provider}/{owner}/{name}/{number}/comments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post issue comment */
+        post: operations["post-issue-comment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/issues/{provider}/{owner}/{name}/{number}/comments/{comment_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Edit issue comment */
+        patch: operations["edit-issue-comment"];
+        trace?: never;
+    };
+    "/issues/{provider}/{owner}/{name}/{number}/github-state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Set issue GitHub state */
+        post: operations["set-issue-github-state"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/issues/{provider}/{owner}/{name}/{number}/labels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set issue labels */
+        put: operations["set-issue-labels"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/issues/{provider}/{owner}/{name}/{number}/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Sync issue */
+        post: operations["sync-issue"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/issues/{provider}/{owner}/{name}/{number}/sync/async": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Enqueue issue sync */
+        post: operations["enqueue-issue-sync"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/issues/{provider}/{owner}/{name}/{number}/workspace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create issue workspace */
+        post: operations["create-issue-workspace"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/kata/daemons": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Kata daemons */
+        get: operations["list-kata-daemons"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/messages/saved-searches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List messages saved searches */
+        get: operations["list-messages-saved-searches"];
+        /** Replace messages saved searches */
+        put: operations["replace-messages-saved-searches"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/msgvault/aggregates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get msgvault aggregates */
+        get: operations["get-msgvault-aggregates"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/msgvault/configure": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Configure msgvault */
+        post: operations["configure-msgvault"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/msgvault/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get msgvault health */
+        get: operations["get-msgvault-health"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/msgvault/messages/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get msgvault message */
+        get: operations["get-msgvault-message"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/msgvault/messages/{id}/inline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get msgvault inline image */
+        get: operations["get-msgvault-inline-image"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/msgvault/messages/{id}/remote-image/{token}/{idx}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get msgvault remote image */
+        get: operations["get-msgvault-remote-image"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/msgvault/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Search msgvault */
+        get: operations["search-msgvault"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/msgvault/threads/{conversation_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get msgvault thread */
+        get: operations["get-msgvault-thread"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List projects */
+        get: operations["list-projects"];
+        put?: never;
+        /** Register project */
+        post: operations["register-project"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{project_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get project */
+        get: operations["get-project"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{project_id}/launch-targets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List launch targets */
+        get: operations["list-launch-targets"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{project_id}/worktrees": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List worktrees */
+        get: operations["list-worktrees"];
+        put?: never;
+        /** Register worktree */
+        post: operations["register-worktree"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pulls": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List pull requests */
+        get: operations["list-pulls"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pulls/{provider}/{owner}/{name}/{number}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get pull request */
+        get: operations["get-pull"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Edit pull request content */
+        patch: operations["edit-pr-content"];
+        trace?: never;
+    };
+    "/pulls/{provider}/{owner}/{name}/{number}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve pull request */
+        post: operations["approve-pull"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pulls/{provider}/{owner}/{name}/{number}/approve-workflows": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve pull request workflows */
+        post: operations["approve-pull-workflows"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pulls/{provider}/{owner}/{name}/{number}/ci-refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Refresh pull request CI */
+        post: operations["refresh-pull-ci"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pulls/{provider}/{owner}/{name}/{number}/comments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post pull request comment */
+        post: operations["post-pr-comment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pulls/{provider}/{owner}/{name}/{number}/comments/{comment_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Edit pull request comment */
+        patch: operations["edit-pr-comment"];
+        trace?: never;
+    };
+    "/pulls/{provider}/{owner}/{name}/{number}/commits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get pull request commits */
+        get: operations["get-pull-commits"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pulls/{provider}/{owner}/{name}/{number}/diff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get pull request diff */
+        get: operations["get-pull-diff"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pulls/{provider}/{owner}/{name}/{number}/discussions/{discussion_id}/reply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reply to pull request discussion */
+        post: operations["reply-to-discussion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pulls/{provider}/{owner}/{name}/{number}/discussions/{discussion_id}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resolve pull request discussion */
+        post: operations["resolve-discussion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pulls/{provider}/{owner}/{name}/{number}/file-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get pull request file preview */
+        get: operations["get-pull-file-preview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pulls/{provider}/{owner}/{name}/{number}/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get pull request files */
+        get: operations["get-pull-files"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pulls/{provider}/{owner}/{name}/{number}/github-state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Set pull request GitHub state */
+        post: operations["set-pr-github-state"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pulls/{provider}/{owner}/{name}/{number}/import-metadata": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get pull request import metadata */
+        get: operations["get-pull-import-metadata"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pulls/{provider}/{owner}/{name}/{number}/labels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set pull request labels */
+        put: operations["set-pr-labels"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pulls/{provider}/{owner}/{name}/{number}/merge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Merge pull request */
+        post: operations["merge-pull"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pulls/{provider}/{owner}/{name}/{number}/ready-for-review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark pull request ready for review */
+        post: operations["mark-pull-ready-for-review"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pulls/{provider}/{owner}/{name}/{number}/review-draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Review pull request diff */
+        get: operations["get-pr-review-draft"];
+        put?: never;
+        post?: never;
+        /** Review pull request diff */
+        delete: operations["discard-pr-review-draft"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pulls/{provider}/{owner}/{name}/{number}/review-draft/comments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create pull request review draft comment */
+        post: operations["create-pr-review-draft-comment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pulls/{provider}/{owner}/{name}/{number}/review-draft/comments/{draft_comment_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Review pull request diff */
+        delete: operations["delete-pr-review-draft-comment"];
+        options?: never;
+        head?: never;
+        /** Review pull request diff */
+        patch: operations["edit-pr-review-draft-comment"];
+        trace?: never;
+    };
+    "/pulls/{provider}/{owner}/{name}/{number}/review-draft/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Review pull request diff */
+        post: operations["publish-pr-review-draft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pulls/{provider}/{owner}/{name}/{number}/review-threads/{thread_id}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Review pull request diff */
+        post: operations["resolve-pr-review-thread"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pulls/{provider}/{owner}/{name}/{number}/review-threads/{thread_id}/unresolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Review pull request diff */
+        post: operations["unresolve-pr-review-thread"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pulls/{provider}/{owner}/{name}/{number}/stack": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get pull request stack */
+        get: operations["get-pull-stack"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pulls/{provider}/{owner}/{name}/{number}/state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set pull request kanban state */
+        put: operations["set-kanban-state"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pulls/{provider}/{owner}/{name}/{number}/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Sync pull request */
+        post: operations["sync-pull"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pulls/{provider}/{owner}/{name}/{number}/sync/async": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Enqueue pull request sync */
+        post: operations["enqueue-pr-sync"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/rate-limits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get rate limits */
+        get: operations["get-rate-limits"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/repo/{provider}/{owner}/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get repository */
+        get: operations["get-repo"];
+        put?: never;
+        post?: never;
+        /** Delete repository */
+        delete: operations["delete-repo"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/repo/{provider}/{owner}/{name}/comment-autocomplete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get comment autocomplete */
+        get: operations["get-comment-autocomplete"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/repo/{provider}/{owner}/{name}/commits/{sha}/diff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get repository commit diff */
+        get: operations["get-repo-commit-diff"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/repo/{provider}/{owner}/{name}/labels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List repository labels */
+        get: operations["list-repo-labels"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/repo/{provider}/{owner}/{name}/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Refresh repository */
+        post: operations["refresh-repo"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/repo/{provider}/{owner}/{name}/resolve/{number}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resolve repository item */
+        post: operations["resolve-repo-item"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/repos": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List repositories */
+        get: operations["list-repos"];
+        put?: never;
+        /** Add repository */
+        post: operations["add-repo"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/repos/bulk": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Bulk add repositories */
+        post: operations["bulk-add-repos"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/repos/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview repositories */
+        post: operations["preview-repos"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/repos/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List repository summaries */
+        get: operations["list-repo-summaries"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/roborev/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get roborev status */
+        get: operations["get-roborev-status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get settings */
+        get: operations["get-settings"];
+        /** Update settings */
+        put: operations["update-settings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/stacks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List stacks */
+        get: operations["list-stacks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/starred": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Star repository */
+        put: operations["set-starred"];
+        post?: never;
+        /** Unstar repository */
+        delete: operations["unset-starred"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Trigger sync */
+        post: operations["trigger-sync"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sync/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get sync status */
+        get: operations["get-sync-status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/telemetry/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Capture telemetry event */
+        post: operations["capture-telemetry-event"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/version": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get server version */
+        get: operations["get-version"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List workspaces */
+        get: operations["list-workspaces"];
+        put?: never;
+        /** Create workspace */
+        post: operations["create-workspace"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get workspace */
+        get: operations["get-workspace"];
+        put?: never;
+        post?: never;
+        /** Delete workspace */
+        delete: operations["delete-workspace"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{id}/commits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get workspace commits */
+        get: operations["get-workspace-commits"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{id}/diff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get workspace diff */
+        get: operations["get-workspace-diff"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{id}/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get workspace files */
+        get: operations["get-workspace-files"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{id}/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Refresh workspace */
+        post: operations["refresh-workspace"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry workspace */
+        post: operations["retry-workspace"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{id}/runtime": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get workspace runtime */
+        get: operations["get-workspace-runtime"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{id}/runtime/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Launch workspace runtime session */
+        post: operations["launch-workspace-runtime-session"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{id}/runtime/sessions/{session_key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Stop workspace runtime session */
+        delete: operations["stop-workspace-runtime-session"];
+        options?: never;
+        head?: never;
+        /** Rename workspace runtime session */
+        patch: operations["rename-workspace-runtime-session"];
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
-  schemas: {
-    ActionStatusBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/ActionStatusBody.json
-       */
-      readonly $schema?: string;
-      /** Format: int64 */
-      approved_count?: number;
-      status: string;
-    };
-    Activity: {
-      collapse_threads: boolean;
-      /** Format: int64 */
-      default_branch_max_commits: number;
-      /** Format: int64 */
-      default_branch_retention_days: number;
-      hide_bots: boolean;
-      hide_closed: boolean;
-      /** @enum {string} */
-      time_range: "24h" | "7d" | "30d" | "90d";
-      /** @enum {string} */
-      view_mode: "flat" | "threaded";
-    };
-    ActivityItemResponse: {
-      activity_type: string;
-      activity_url?: string;
-      after_sha?: string;
-      author: string;
-      author_email?: string;
-      author_name?: string;
-      authored_at?: string;
-      before_sha?: string;
-      body_preview: string;
-      branch_name?: string;
-      commit_sha?: string;
-      committed_at?: string;
-      committer_email?: string;
-      committer_name?: string;
-      created_at: string;
-      cursor: string;
-      id: string;
-      item_author?: string;
-      /** Format: int64 */
-      item_number: number;
-      item_state: string;
-      item_title: string;
-      item_type: string;
-      item_url: string;
-      platform_host: string;
-      repo: components["schemas"]["RepoRefResponse"];
-      repo_name: string;
-      repo_owner: string;
-      workspace?: components["schemas"]["WorkspaceRef"];
-    };
-    ActivityResponse: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/ActivityResponse.json
-       */
-      readonly $schema?: string;
-      capped: boolean;
-      items: components["schemas"]["ActivityItemResponse"][] | null;
-    };
-    AddRepoInputBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/AddRepoInputBody.json
-       */
-      readonly $schema?: string;
-      host?: string;
-      name: string;
-      owner: string;
-      platform_host?: string;
-      provider: string;
-    };
-    Agent: {
-      command?: string[];
-      enabled?: boolean;
-      key: string;
-      label: string;
-    };
-    AggregateResult: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/AggregateResult.json
-       */
-      readonly $schema?: string;
-      rows: components["schemas"]["AggregateRow"][] | null;
-      view_type: string;
-    };
-    AggregateRow: {
-      /** Format: int64 */
-      attachment_count: number;
-      /** Format: int64 */
-      attachment_size: number;
-      /** Format: int64 */
-      count: number;
-      key: string;
-      /** Format: int64 */
-      total_size: number;
-    };
-    ApprovePRHostInputBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/ApprovePRHostInputBody.json
-       */
-      readonly $schema?: string;
-      body: string;
-      expected_head_sha?: string;
-    };
-    ApprovePRInputBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/ApprovePRInputBody.json
-       */
-      readonly $schema?: string;
-      body: string;
-      expected_head_sha?: string;
-    };
-    AttachmentMeta: {
-      filename: string;
-      mime_type: string;
-      /** Format: int64 */
-      size_bytes: number;
-    };
-    BodySnippet: {
-      matches: components["schemas"]["SnippetRange"][] | null;
-      text: string;
-    };
-    BulkAddRepoRequest: {
-      host?: string;
-      name?: string;
-      owner?: string;
-      platform_host?: string;
-      provider: string;
-      repo_path?: string;
-    };
-    BulkAddReposRequest: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/BulkAddReposRequest.json
-       */
-      readonly $schema?: string;
-      repos: components["schemas"]["BulkAddRepoRequest"][];
-    };
-    CommentAutocompleteReference: {
-      kind: string;
-      /** Format: int64 */
-      number: number;
-      state: string;
-      title: string;
-    };
-    CommentAutocompleteResponse: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/CommentAutocompleteResponse.json
-       */
-      readonly $schema?: string;
-      references?: components["schemas"]["CommentAutocompleteReference"][] | null;
-      users?: string[] | null;
-    };
-    CommitResponse: {
-      /** @description Commit author display name */
-      author_name: string;
-      /**
-       * Format: date-time
-       * @description Commit author date (RFC3339)
-       */
-      authored_at: string;
-      /** @description First line of commit message */
-      message: string;
-      /** @description Full commit SHA */
-      sha: string;
-    };
-    CommitsResponse: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/CommitsResponse.json
-       */
-      readonly $schema?: string;
-      /** @description Commits in newest-first order */
-      commits: components["schemas"]["CommitResponse"][] | null;
-    };
-    ConfiguredRepoStatus: {
-      is_glob: boolean;
-      /** Format: int64 */
-      matched_repo_count: number;
-      name: string;
-      owner: string;
-      platform_host: string;
-      provider: string;
-      repo_path: string;
-    };
-    CreateDiffReviewDraftCommentHostInputBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/CreateDiffReviewDraftCommentHostInputBody.json
-       */
-      readonly $schema?: string;
-      body: string;
-      range: components["schemas"]["DiffReviewLineRange"];
-    };
-    CreateDiffReviewDraftCommentInputBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/CreateDiffReviewDraftCommentInputBody.json
-       */
-      readonly $schema?: string;
-      body: string;
-      range: components["schemas"]["DiffReviewLineRange"];
-    };
-    CreateDocsFolderInputBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/CreateDocsFolderInputBody.json
-       */
-      readonly $schema?: string;
-      daemon?: string;
-      id?: string;
-      name?: string;
-      path?: string;
-    };
-    CreateDocsFolderOutputBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/CreateDocsFolderOutputBody.json
-       */
-      readonly $schema?: string;
-      folder: components["schemas"]["DocsFolderResponse"];
-    };
-    CreateIssueHostInputBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/CreateIssueHostInputBody.json
-       */
-      readonly $schema?: string;
-      body: string;
-      title: string;
-    };
-    CreateIssueInputBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/CreateIssueInputBody.json
-       */
-      readonly $schema?: string;
-      body: string;
-      title: string;
-    };
-    CreateIssueWorkspaceHostInputBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/CreateIssueWorkspaceHostInputBody.json
-       */
-      readonly $schema?: string;
-      git_head_ref?: string;
-      reuse_existing_branch?: boolean;
-    };
-    CreateIssueWorkspaceInputBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/CreateIssueWorkspaceInputBody.json
-       */
-      readonly $schema?: string;
-      git_head_ref?: string;
-      reuse_existing_branch?: boolean;
-    };
-    CreateWorkspaceInputBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/CreateWorkspaceInputBody.json
-       */
-      readonly $schema?: string;
-      /** Format: int64 */
-      mr_number: number;
-      name: string;
-      owner: string;
-      platform_host: string;
-    };
-    CrossFolderHit: {
-      folder: string;
-      folder_name: string;
-      hit_type: string;
-      /** Format: int64 */
-      line?: number;
-      name: string;
-      rel_path: string;
-      /** Format: int64 */
-      score: number;
-      snippet?: components["schemas"]["BodySnippet"];
-    };
-    DiffFile: {
-      /** Format: int64 */
-      additions: number;
-      /** Format: int64 */
-      deletions: number;
-      hunks: components["schemas"]["Hunk"][] | null;
-      is_binary: boolean;
-      is_generated: boolean;
-      is_whitespace_only: boolean;
-      old_path: string;
-      patch: string;
-      path: string;
-      status: string;
-    };
-    DiffResponse: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/DiffResponse.json
-       */
-      readonly $schema?: string;
-      files: components["schemas"]["DiffFile"][] | null;
-      stale: boolean;
-      /** Format: int64 */
-      whitespace_only_count: number;
-    };
-    DiffReviewDraftComment: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/DiffReviewDraftComment.json
-       */
-      readonly $schema?: string;
-      body: string;
-      commit_sha?: string;
-      created_at: string;
-      diff_head_sha?: string;
-      id: string;
-      /** Format: int64 */
-      line: number;
-      line_type: string;
-      /** Format: int64 */
-      new_line?: number;
-      /** Format: int64 */
-      old_line?: number;
-      old_path?: string;
-      path: string;
-      side: string;
-      /** Format: int64 */
-      start_line?: number;
-      start_side?: string;
-      updated_at: string;
-    };
-    DiffReviewDraftResponse: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/DiffReviewDraftResponse.json
-       */
-      readonly $schema?: string;
-      comments: components["schemas"]["DiffReviewDraftComment"][] | null;
-      draft_id?: string;
-      native_multiline_ranges: boolean;
-      supported_actions: string[] | null;
-    };
-    DiffReviewLineRange: {
-      commit_sha?: string;
-      diff_head_sha?: string;
-      /** Format: int64 */
-      line: number;
-      line_type: string;
-      /** Format: int64 */
-      new_line?: number;
-      /** Format: int64 */
-      old_line?: number;
-      old_path?: string;
-      path: string;
-      side: string;
-      /** Format: int64 */
-      start_line?: number;
-      start_side?: string;
-    };
-    DiffReviewThreadResponse: {
-      author_login?: string;
-      body: string;
-      can_resolve: boolean;
-      commit_sha?: string;
-      created_at: string;
-      diff_head_sha?: string;
-      id: string;
-      /** Format: int64 */
-      line: number;
-      line_type: string;
-      /** Format: int64 */
-      new_line?: number;
-      /** Format: int64 */
-      old_line?: number;
-      old_path?: string;
-      path: string;
-      provider_comment_id?: string;
-      resolved: boolean;
-      side: string;
-      /** Format: int64 */
-      start_line?: number;
-      start_side?: string;
-      updated_at: string;
-    };
-    DocsBrowseEntry: {
-      hidden: boolean;
-      name: string;
-      path: string;
-    };
-    DocsBrowseOutputBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/DocsBrowseOutputBody.json
-       */
-      readonly $schema?: string;
-      entries: components["schemas"]["DocsBrowseEntry"][] | null;
-      parent?: string;
-      path: string;
-    };
-    DocsCreateFileInputBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/DocsCreateFileInputBody.json
-       */
-      readonly $schema?: string;
-      content?: string;
-    };
-    DocsFileWriteBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/DocsFileWriteBody.json
-       */
-      readonly $schema?: string;
-      rel_path: string;
-      /** Format: int64 */
-      size: number;
-    };
-    DocsFolderOutputBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/DocsFolderOutputBody.json
-       */
-      readonly $schema?: string;
-      folder: components["schemas"]["DocsFolderResponse"];
-    };
-    DocsFolderResponse: {
-      daemon?: string;
-      id: string;
-      name: string;
-      path: string;
-    };
-    DocsGitPublishInputBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/DocsGitPublishInputBody.json
-       */
-      readonly $schema?: string;
-      message?: string;
-    };
-    DocsReadFileOutputBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/DocsReadFileOutputBody.json
-       */
-      readonly $schema?: string;
-      content: string;
-      rel_path: string;
-    };
-    DocsRenameFileInputBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/DocsRenameFileInputBody.json
-       */
-      readonly $schema?: string;
-      from?: string;
-      to?: string;
-    };
-    DocsRenameFileOutputBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/DocsRenameFileOutputBody.json
-       */
-      readonly $schema?: string;
-      from: string;
-      to: string;
-    };
-    DocsSearchAllOutputBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/DocsSearchAllOutputBody.json
-       */
-      readonly $schema?: string;
-      hits: components["schemas"]["CrossFolderHit"][] | null;
-      query: string;
-      truncated: boolean;
-      warnings?: string[] | null;
-    };
-    DocsSearchOutputBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/DocsSearchOutputBody.json
-       */
-      readonly $schema?: string;
-      hits: components["schemas"]["Hit"][] | null;
-      query: string;
-    };
-    DocsWriteFileInputBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/DocsWriteFileInputBody.json
-       */
-      readonly $schema?: string;
-      content?: string;
-    };
-    EditCommentHostInputBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/EditCommentHostInputBody.json
-       */
-      readonly $schema?: string;
-      body: string;
-    };
-    EditCommentInputBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/EditCommentInputBody.json
-       */
-      readonly $schema?: string;
-      body: string;
-    };
-    EditDiffReviewDraftCommentHostInputBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/EditDiffReviewDraftCommentHostInputBody.json
-       */
-      readonly $schema?: string;
-      body: string;
-      range: components["schemas"]["DiffReviewLineRange"];
-    };
-    EditDiffReviewDraftCommentInputBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/EditDiffReviewDraftCommentInputBody.json
-       */
-      readonly $schema?: string;
-      body: string;
-      range: components["schemas"]["DiffReviewLineRange"];
-    };
-    EditIssueCommentHostInputBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/EditIssueCommentHostInputBody.json
-       */
-      readonly $schema?: string;
-      body: string;
-    };
-    EditIssueCommentInputBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/EditIssueCommentInputBody.json
-       */
-      readonly $schema?: string;
-      body: string;
-    };
-    EditIssueContentHostInputBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/EditIssueContentHostInputBody.json
-       */
-      readonly $schema?: string;
-      body?: string;
-      title?: string;
-    };
-    EditIssueContentInputBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/EditIssueContentInputBody.json
-       */
-      readonly $schema?: string;
-      body?: string;
-      title?: string;
-    };
-    EditPRContentHostInputBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/EditPRContentHostInputBody.json
-       */
-      readonly $schema?: string;
-      body?: string;
-      title?: string;
-    };
-    EditPRContentInputBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/EditPRContentInputBody.json
-       */
-      readonly $schema?: string;
-      body?: string;
-      title?: string;
-    };
-    ErrorDetail: {
-      /** @description Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id' */
-      location?: string;
-      /** @description Error message text */
-      message?: string;
-      /** @description The value at the given location */
-      value?: unknown;
-    };
-    FilePreviewResponse: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/FilePreviewResponse.json
-       */
-      readonly $schema?: string;
-      content: string;
-      encoding: string;
-      media_type: string;
-      path: string;
-      /** Format: int64 */
-      size: number;
-    };
-    FilesResponse: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/FilesResponse.json
-       */
-      readonly $schema?: string;
-      files: components["schemas"]["DiffFile"][] | null;
-      stale: boolean;
-      /** Format: int64 */
-      whitespace_only_count: number;
-    };
-    GitChangesResponse: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/GitChangesResponse.json
-       */
-      readonly $schema?: string;
-      branch?: string;
-      changes: components["schemas"]["PublishChange"][] | null;
-      /** Format: int64 */
-      ignored_non_markdown_count: number;
-      is_repo: boolean;
-      suggested_message?: string;
-      upstream?: string;
-    };
-    GitStatusEntry: {
-      path: string;
-      status: string;
-    };
-    GitStatusResponse: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/GitStatusResponse.json
-       */
-      readonly $schema?: string;
-      entries: components["schemas"]["GitStatusEntry"][] | null;
-      is_repo: boolean;
-    };
-    GithubStateHostInputBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/GithubStateHostInputBody.json
-       */
-      readonly $schema?: string;
-      state: string;
-    };
-    GithubStateInputBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/GithubStateInputBody.json
-       */
-      readonly $schema?: string;
-      state: string;
-    };
-    GithubStateOutputBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/GithubStateOutputBody.json
-       */
-      readonly $schema?: string;
-      state: string;
-    };
-    Hit: {
-      name: string;
-      rel_path: string;
-      /** Format: int64 */
-      score: number;
-    };
-    Hunk: {
-      lines: components["schemas"]["Line"][] | null;
-      /** Format: int64 */
-      new_count: number;
-      /** Format: int64 */
-      new_start: number;
-      /** Format: int64 */
-      old_count: number;
-      /** Format: int64 */
-      old_start: number;
-      section?: string;
-    };
-    Issue: {
-      Author: string;
-      Body: string;
-      /** Format: date-time */
-      ClosedAt: string | null;
-      /** Format: int64 */
-      CommentCount: number;
-      /** Format: date-time */
-      CreatedAt: string;
-      /** Format: date-time */
-      DetailFetchedAt: string | null;
-      /** Format: int64 */
-      ID: number;
-      /** Format: date-time */
-      LastActivityAt: string;
-      /** Format: int64 */
-      Number: number;
-      PlatformExternalID: string;
-      /** Format: int64 */
-      PlatformID: number;
-      /** Format: int64 */
-      RepoID: number;
-      Starred: boolean;
-      State: string;
-      Title: string;
-      URL: string;
-      /** Format: date-time */
-      UpdatedAt: string;
-      assignees?: string[] | null;
-      labels?: components["schemas"]["Label"][] | null;
-    };
-    IssueDetailResponse: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/IssueDetailResponse.json
-       */
-      readonly $schema?: string;
-      detail_fetched_at?: string;
-      detail_loaded: boolean;
-      events: components["schemas"]["IssueEvent"][] | null;
-      issue: components["schemas"]["Issue"];
-      platform_host: string;
-      repo: components["schemas"]["RepoRefResponse"];
-      repo_name: string;
-      repo_owner: string;
-      workspace?: components["schemas"]["WorkspaceRef"];
-    };
-    IssueEvent: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/IssueEvent.json
-       */
-      readonly $schema?: string;
-      Author: string;
-      Body: string;
-      /** Format: date-time */
-      CreatedAt: string;
-      DedupeKey: string;
-      EventType: string;
-      /** Format: int64 */
-      ID: number;
-      /** Format: int64 */
-      IssueID: number;
-      MetadataJSON: string;
-      PlatformExternalID: string;
-      /** Format: int64 */
-      PlatformID: number | null;
-      Summary: string;
-      ThreadID: string | null;
-    };
-    IssueResponse: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/IssueResponse.json
-       */
-      readonly $schema?: string;
-      Author: string;
-      Body: string;
-      /** Format: date-time */
-      ClosedAt: string | null;
-      /** Format: int64 */
-      CommentCount: number;
-      /** Format: date-time */
-      CreatedAt: string;
-      /** Format: int64 */
-      ID: number;
-      /** Format: date-time */
-      LastActivityAt: string;
-      /** Format: int64 */
-      Number: number;
-      PlatformExternalID: string;
-      /** Format: int64 */
-      PlatformID: number;
-      /** Format: int64 */
-      RepoID: number;
-      Starred: boolean;
-      State: string;
-      Title: string;
-      URL: string;
-      /** Format: date-time */
-      UpdatedAt: string;
-      assignees?: string[] | null;
-      detail_fetched_at?: string;
-      detail_loaded: boolean;
-      labels?: components["schemas"]["Label"][] | null;
-      platform_host: string;
-      repo: components["schemas"]["RepoRefResponse"];
-      repo_name: string;
-      repo_owner: string;
-      workspace?: components["schemas"]["WorkspaceRef"];
-    };
-    ItemLabelsResponse: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/ItemLabelsResponse.json
-       */
-      readonly $schema?: string;
-      labels: components["schemas"]["Label"][] | null;
-    };
-    KataDaemonResponse: {
-      auth: string;
-      default: boolean;
-      health: string;
-      hint?: string;
-      id: string;
-      url: string;
-    };
-    KataDaemonRosterResponse: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/KataDaemonRosterResponse.json
-       */
-      readonly $schema?: string;
-      daemons: components["schemas"]["KataDaemonResponse"][] | null;
-      source?: string;
-    };
-    Label: {
-      color: string;
-      description?: string;
-      is_default: boolean;
-      name: string;
-    };
-    LaunchTarget: {
-      available: boolean;
-      command?: string[] | null;
-      disabled_reason?: string;
-      key: string;
-      kind: string;
-      label: string;
-      source: string;
-    };
-    LaunchWorkspaceRuntimeSessionInputBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/LaunchWorkspaceRuntimeSessionInputBody.json
-       */
-      readonly $schema?: string;
-      target_key: string;
-    };
-    Line: {
-      content: string;
-      /** Format: int64 */
-      new_num?: number;
-      no_newline?: boolean;
-      /** Format: int64 */
-      old_num?: number;
-      type: string;
-    };
-    ListDocsFoldersOutputBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/ListDocsFoldersOutputBody.json
-       */
-      readonly $schema?: string;
-      folders: components["schemas"]["DocsFolderResponse"][] | null;
-    };
-    ListLaunchTargetsOutputBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/ListLaunchTargetsOutputBody.json
-       */
-      readonly $schema?: string;
-      launch_targets: components["schemas"]["LaunchTarget"][] | null;
-    };
-    ListProjectsOutputBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/ListProjectsOutputBody.json
-       */
-      readonly $schema?: string;
-      projects: components["schemas"]["ProjectResponse"][] | null;
-    };
-    ListWorkspacesOutputBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/ListWorkspacesOutputBody.json
-       */
-      readonly $schema?: string;
-      workspaces: components["schemas"]["WorkspaceResponse"][] | null;
-    };
-    ListWorktreesOutputBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/ListWorktreesOutputBody.json
-       */
-      readonly $schema?: string;
-      worktrees: components["schemas"]["WorktreeResponse"][] | null;
-    };
-    MergePRBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/MergePRBody.json
-       */
-      readonly $schema?: string;
-      merged: boolean;
-      message: string;
-      sha: string;
-    };
-    MergePRHostInputBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/MergePRHostInputBody.json
-       */
-      readonly $schema?: string;
-      commit_message: string;
-      commit_title: string;
-      expected_head_sha?: string;
-      method: string;
-    };
-    MergePRInputBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/MergePRInputBody.json
-       */
-      readonly $schema?: string;
-      commit_message: string;
-      commit_title: string;
-      expected_head_sha?: string;
-      method: string;
-    };
-    MergeRequest: {
-      /** Format: int64 */
-      Additions: number;
-      Author: string;
-      AuthorDisplayName: string;
-      BaseBranch: string;
-      Body: string;
-      CIChecksJSON: string;
-      CIHadPending: boolean;
-      CIStatus: string;
-      /** Format: date-time */
-      ClosedAt: string | null;
-      /** Format: int64 */
-      CommentCount: number;
-      /** Format: date-time */
-      CreatedAt: string;
-      /** Format: int64 */
-      Deletions: number;
-      /** Format: date-time */
-      DetailFetchedAt: string | null;
-      HeadBranch: string;
-      HeadRepoCloneURL: string;
-      /** Format: int64 */
-      ID: number;
-      IsDraft: boolean;
-      IsLocked: boolean;
-      /** @enum {string} */
-      KanbanStatus: "new" | "reviewing" | "waiting" | "awaiting_merge";
-      /** Format: date-time */
-      LastActivityAt: string;
-      MergeableState: string;
-      /** Format: date-time */
-      MergedAt: string | null;
-      /** Format: int64 */
-      Number: number;
-      PlatformExternalID: string;
-      /** Format: int64 */
-      PlatformID: number;
-      /** Format: int64 */
-      RepoID: number;
-      ReviewDecision: string;
-      Starred: boolean;
-      /** @enum {string} */
-      State: "open" | "closed" | "merged";
-      Title: string;
-      URL: string;
-      /** Format: date-time */
-      UpdatedAt: string;
-      labels?: components["schemas"]["Label"][] | null;
-      platform_head_sha?: string;
-    };
-    MergeRequestDetailResponse: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/MergeRequestDetailResponse.json
-       */
-      readonly $schema?: string;
-      detail_fetched_at?: string;
-      detail_loaded: boolean;
-      diff_head_sha: string;
-      events: components["schemas"]["MergeRequestEventResponse"][] | null;
-      merge_base_sha: string;
-      merge_request: components["schemas"]["MergeRequest"];
-      platform_base_sha: string;
-      platform_head_sha: string;
-      platform_host: string;
-      repo: components["schemas"]["RepoRefResponse"];
-      repo_name: string;
-      repo_owner: string;
-      stack?: components["schemas"]["StackContextResponse"];
-      warnings?: string[] | null;
-      workflow_approval: components["schemas"]["WorkflowApprovalResponse"];
-      workspace?: components["schemas"]["WorkspaceRef"];
-      worktree_links: components["schemas"]["WorktreeLinkResponse"][] | null;
-    };
-    MergeRequestEventResponse: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/MergeRequestEventResponse.json
-       */
-      readonly $schema?: string;
-      Author: string;
-      Body: string;
-      /** Format: date-time */
-      CreatedAt: string;
-      DedupeKey: string;
-      EventType: string;
-      /** Format: int64 */
-      ID: number;
-      /** Format: int64 */
-      MergeRequestID: number;
-      MetadataJSON: string;
-      PlatformExternalID: string;
-      /** Format: int64 */
-      PlatformID: number | null;
-      Resolvable: boolean;
-      Resolved: boolean;
-      Summary: string;
-      ThreadID: string | null;
-      diff_thread?: components["schemas"]["DiffReviewThreadResponse"];
-    };
-    MergeRequestResponse: {
-      /** Format: int64 */
-      Additions: number;
-      Author: string;
-      AuthorDisplayName: string;
-      BaseBranch: string;
-      Body: string;
-      CIChecksJSON: string;
-      CIHadPending: boolean;
-      CIStatus: string;
-      /** Format: date-time */
-      ClosedAt: string | null;
-      /** Format: int64 */
-      CommentCount: number;
-      /** Format: date-time */
-      CreatedAt: string;
-      /** Format: int64 */
-      Deletions: number;
-      HeadBranch: string;
-      HeadRepoCloneURL: string;
-      /** Format: int64 */
-      ID: number;
-      IsDraft: boolean;
-      IsLocked: boolean;
-      /** @enum {string} */
-      KanbanStatus: "new" | "reviewing" | "waiting" | "awaiting_merge";
-      /** Format: date-time */
-      LastActivityAt: string;
-      MergeableState: string;
-      /** Format: date-time */
-      MergedAt: string | null;
-      /** Format: int64 */
-      Number: number;
-      PlatformExternalID: string;
-      /** Format: int64 */
-      PlatformID: number;
-      /** Format: int64 */
-      RepoID: number;
-      ReviewDecision: string;
-      Starred: boolean;
-      /** @enum {string} */
-      State: "open" | "closed" | "merged";
-      Title: string;
-      URL: string;
-      /** Format: date-time */
-      UpdatedAt: string;
-      detail_fetched_at?: string;
-      detail_loaded: boolean;
-      labels?: components["schemas"]["Label"][] | null;
-      platform_head_sha?: string;
-      platform_host: string;
-      repo: components["schemas"]["RepoRefResponse"];
-      repo_name: string;
-      repo_owner: string;
-      workspace?: components["schemas"]["WorkspaceRef"];
-      worktree_links: components["schemas"]["WorktreeLinkResponse"][] | null;
-    };
-    MessageSummary: {
-      bcc: string[] | null;
-      cc: string[] | null;
-      /** Format: int64 */
-      conversation_id: number;
-      deleted_at: string | null;
-      from: string;
-      has_attachments: boolean;
-      /** Format: int64 */
-      id: number;
-      labels: string[] | null;
-      sent_at: string;
-      /** Format: int64 */
-      size_bytes: number;
-      snippet: string;
-      subject: string;
-      to: string[] | null;
-    };
-    MessagesSavedSearchesBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/MessagesSavedSearchesBody.json
-       */
-      readonly $schema?: string;
-      etag: string;
-      searches: components["schemas"]["SavedSearch"][] | null;
-    };
-    ModeVisibility: {
-      activity: boolean;
-      board: boolean;
-      docs: boolean;
-      issues: boolean;
-      kata: boolean;
-      messages: boolean;
-      pulls: boolean;
-      repos: boolean;
-      reviews: boolean;
-      workspaces: boolean;
-    };
-    MrImportMetadataResponse: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/MrImportMetadataResponse.json
-       */
-      readonly $schema?: string;
-      head_branch: string;
-      head_repo_clone_url: string;
-      is_draft: boolean;
-      /** Format: int64 */
-      number: number;
-      platform_head_sha: string;
-      state: string;
-      title: string;
-    };
-    MsgvaultHealthBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/MsgvaultHealthBody.json
-       */
-      readonly $schema?: string;
-      api_key_env?: string;
-      configured: boolean;
-      features: {
-        [key: string]: unknown;
-      };
-      modes: string[] | null;
-      ok: boolean;
-      status?: string;
-      status_detail?: string;
-      url?: string;
-    };
-    MsgvaultMessageBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/MsgvaultMessageBody.json
-       */
-      readonly $schema?: string;
-      attachments: components["schemas"]["AttachmentMeta"][] | null;
-      bcc: string[] | null;
-      body: string;
-      body_html?: string;
-      cc: string[] | null;
-      /** Format: int64 */
-      conversation_id: number;
-      deleted_at: string | null;
-      from: string;
-      has_attachments: boolean;
-      html_sanitization_failed?: boolean;
-      /** Format: int64 */
-      id: number;
-      labels: string[] | null;
-      /** Format: int64 */
-      remote_image_count?: number;
-      remote_image_token?: string;
-      sent_at: string;
-      /** Format: int64 */
-      size_bytes: number;
-      snippet: string;
-      subject: string;
-      to: string[] | null;
-    };
-    MsgvaultSearchBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/MsgvaultSearchBody.json
-       */
-      readonly $schema?: string;
-      messages: components["schemas"]["MessageSummary"][] | null;
-      mode: string;
-      /** Format: int64 */
-      page: number;
-      /** Format: int64 */
-      page_size: number;
-      paginatable: boolean;
-      query: string;
-      /** Format: int64 */
-      total: number;
-    };
-    MsgvaultThreadBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/MsgvaultThreadBody.json
-       */
-      readonly $schema?: string;
-      /** Format: int64 */
-      conversation_id: number;
-      messages: components["schemas"]["MessageSummary"][] | null;
-    };
-    Node: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/Node.json
-       */
-      readonly $schema?: string;
-      children?: components["schemas"]["Node"][] | null;
-      is_dir: boolean;
-      name: string;
-      rel_path: string;
-      /** Format: int64 */
-      size?: number;
-    };
-    OperationAvailability: {
-      available: boolean;
-      code?: string;
-      required_capability?: string;
-      retry_at?: string;
-      unavailable_reason?: string;
-    };
-    PlatformIdentityPayload: {
-      name: string;
-      owner: string;
-      platform: string;
-      platform_host: string;
-    };
-    PostCommentHostInputBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/PostCommentHostInputBody.json
-       */
-      readonly $schema?: string;
-      body: string;
-    };
-    PostCommentInputBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/PostCommentInputBody.json
-       */
-      readonly $schema?: string;
-      body: string;
-    };
-    PostIssueCommentHostInputBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/PostIssueCommentHostInputBody.json
-       */
-      readonly $schema?: string;
-      body: string;
-    };
-    PostIssueCommentInputBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/PostIssueCommentInputBody.json
-       */
-      readonly $schema?: string;
-      body: string;
-    };
-    ProblemError: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/ProblemError.json
-       */
-      readonly $schema?: string;
-      /**
-       * @description Machine-readable error code. Stable across occurrences.
-       * @example badRequest
-       * @enum {string}
-       */
-      code:
-        | "badRequest"
-        | "branchConflict"
-        | "commentNotFound"
-        | "conflict"
-        | "forbidden"
-        | "internalError"
-        | "issueNotFound"
-        | "notFound"
-        | "payloadTooLarge"
-        | "projectNotFound"
-        | "pullNotFound"
-        | "rateLimited"
-        | "repoNotFound"
-        | "serviceUnavailable"
-        | "settingsUnavailable"
-        | "unauthorized"
-        | "unsupportedCapability"
-        | "upstreamError"
-        | "validationError"
-        | "workspaceNotFound";
-      /**
-       * @description A human-readable explanation specific to this occurrence of the problem.
-       * @example Property foo is required but is missing.
-       */
-      detail?: string;
-      /** @description Machine-readable error context, keyed by code-specific conventions. */
-      details?: {
-        [key: string]: unknown;
-      };
-      /** @description Optional list of individual error details */
-      errors?: components["schemas"]["ErrorDetail"][] | null;
-      /**
-       * Format: uri
-       * @description A URI reference that identifies the specific occurrence of the problem.
-       * @example https://example.com/error-log/abc123
-       */
-      instance?: string;
-      /**
-       * Format: int64
-       * @description HTTP status code
-       * @example 400
-       */
-      status?: number;
-      /**
-       * @description A short, human-readable summary of the problem type. This value should not change between occurrences of the error.
-       * @example Bad Request
-       */
-      title?: string;
-      /**
-       * Format: uri
-       * @description A URI reference to human-readable documentation for the error.
-       * @default about:blank
-       * @example https://example.com/errors/example
-       */
-      type: string;
-    };
-    ProjectResponse: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/ProjectResponse.json
-       */
-      readonly $schema?: string;
-      /** Format: date-time */
-      created_at: string;
-      default_branch?: string;
-      display_name: string;
-      id: string;
-      local_path: string;
-      platform_identity?: components["schemas"]["PlatformIdentityPayload"];
-      /** Format: date-time */
-      updated_at: string;
-    };
-    ProviderCapabilitiesResponse: {
-      comment_mutation: boolean;
-      issue_mutation: boolean;
-      label_mutation: boolean;
-      merge_mutation: boolean;
-      mutation_head_binding: boolean;
-      native_multiline_ranges: boolean;
-      read_ci: boolean;
-      read_comments: boolean;
-      read_issues: boolean;
-      read_labels: boolean;
-      read_merge_requests: boolean;
-      read_releases: boolean;
-      read_repositories: boolean;
-      read_review_threads: boolean;
-      ready_for_review: boolean;
-      review_draft_mutation: boolean;
-      review_mutation: boolean;
-      review_thread_resolution: boolean;
-      state_mutation: boolean;
-      supported_review_actions: string[] | null;
-      thread_reply: boolean;
-      thread_resolve: boolean;
-      workflow_approval: boolean;
-    };
-    PublishChange: {
-      old_path?: string;
-      path: string;
-      status: string;
-    };
-    PublishDiffReviewDraftHostInputBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/PublishDiffReviewDraftHostInputBody.json
-       */
-      readonly $schema?: string;
-      action: string;
-      body?: string;
-    };
-    PublishDiffReviewDraftInputBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/PublishDiffReviewDraftInputBody.json
-       */
-      readonly $schema?: string;
-      action: string;
-      body?: string;
-    };
-    PublishResponse: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/PublishResponse.json
-       */
-      readonly $schema?: string;
-      branch: string;
-      commit: string;
-      files: components["schemas"]["PublishChange"][] | null;
-      pushed: boolean;
-      short_commit: string;
-      upstream?: string;
-    };
-    RateLimitHostStatus: {
-      /** Format: int64 */
-      budget_limit: number;
-      /** Format: int64 */
-      budget_remaining: number;
-      /** Format: int64 */
-      budget_spent: number;
-      gql_known: boolean;
-      /** Format: int64 */
-      gql_limit: number;
-      /** Format: int64 */
-      gql_remaining: number;
-      gql_reset_at: string;
-      hour_start: string;
-      known: boolean;
-      platform_host: string;
-      provider: string;
-      /** Format: int64 */
-      rate_limit: number;
-      /** Format: int64 */
-      rate_remaining: number;
-      rate_reset_at: string;
-      /** Format: int64 */
-      requests_hour: number;
-      /** Format: int64 */
-      reserve_buffer: number;
-      sync_paused: boolean;
-      /** Format: int64 */
-      sync_throttle_factor: number;
-    };
-    RateLimitsResponse: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/RateLimitsResponse.json
-       */
-      readonly $schema?: string;
-      hosts: {
-        [key: string]: components["schemas"]["RateLimitHostStatus"];
-      };
-    };
-    RegisterProjectInputBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/RegisterProjectInputBody.json
-       */
-      readonly $schema?: string;
-      default_branch?: string;
-      display_name?: string;
-      local_path: string;
-      platform_identity?: components["schemas"]["PlatformIdentityPayload"];
-    };
-    RegisterWorktreeInputBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/RegisterWorktreeInputBody.json
-       */
-      readonly $schema?: string;
-      branch: string;
-      path: string;
-    };
-    RenameWorkspaceRuntimeSessionInputBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/RenameWorkspaceRuntimeSessionInputBody.json
-       */
-      readonly $schema?: string;
-      label: string;
-    };
-    ReplaceMessagesSavedSearchesInputBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/ReplaceMessagesSavedSearchesInputBody.json
-       */
-      readonly $schema?: string;
-      searches: unknown[];
-    };
-    ReplyToDiscussionHostInputBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/ReplyToDiscussionHostInputBody.json
-       */
-      readonly $schema?: string;
-      body: string;
-    };
-    ReplyToDiscussionInputBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/ReplyToDiscussionInputBody.json
-       */
-      readonly $schema?: string;
-      body: string;
-    };
-    RepoLabelsResponse: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/RepoLabelsResponse.json
-       */
-      readonly $schema?: string;
-      checked_at?: string;
-      labels: components["schemas"]["Label"][] | null;
-      stale: boolean;
-      sync_error: string;
-      synced_at?: string;
-      syncing: boolean;
-    };
-    RepoOperations: {
-      add_comment: components["schemas"]["OperationAvailability"];
-      add_label: components["schemas"]["OperationAvailability"];
-      approve_workflow: components["schemas"]["OperationAvailability"];
-      close_issue: components["schemas"]["OperationAvailability"];
-      close_pr: components["schemas"]["OperationAvailability"];
-      mark_ready_for_review: components["schemas"]["OperationAvailability"];
-      merge_pr: components["schemas"]["OperationAvailability"];
-      remove_label: components["schemas"]["OperationAvailability"];
-      reopen_issue: components["schemas"]["OperationAvailability"];
-      reopen_pr: components["schemas"]["OperationAvailability"];
-      submit_review: components["schemas"]["OperationAvailability"];
-    };
-    RepoPreviewRequest: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/RepoPreviewRequest.json
-       */
-      readonly $schema?: string;
-      host?: string;
-      owner: string;
-      pattern: string;
-      platform_host?: string;
-      provider: string;
-    };
-    RepoPreviewResponse: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/RepoPreviewResponse.json
-       */
-      readonly $schema?: string;
-      owner: string;
-      pattern: string;
-      platform_host: string;
-      provider: string;
-      repos: components["schemas"]["RepoPreviewRow"][];
-    };
-    RepoPreviewRow: {
-      already_configured: boolean;
-      description: string | null;
-      fork: boolean;
-      name: string;
-      owner: string;
-      platform_host: string;
-      private: boolean;
-      provider: string;
-      pushed_at: string | null;
-      repo_path: string;
-    };
-    RepoRefResponse: {
-      capabilities: components["schemas"]["ProviderCapabilitiesResponse"];
-      name: string;
-      owner: string;
-      platform_host: string;
-      provider: string;
-      repo_path: string;
-    };
-    RepoResponse: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/RepoResponse.json
-       */
-      readonly $schema?: string;
-      AllowMergeCommit: boolean;
-      AllowRebaseMerge: boolean;
-      AllowSquashMerge: boolean;
-      BackfillIssueComplete: boolean;
-      /** Format: date-time */
-      BackfillIssueCompletedAt: string | null;
-      /** Format: int64 */
-      BackfillIssuePage: number;
-      BackfillPRComplete: boolean;
-      /** Format: date-time */
-      BackfillPRCompletedAt: string | null;
-      /** Format: int64 */
-      BackfillPRPage: number;
-      /** Format: date-time */
-      CreatedAt: string;
-      /** Format: int64 */
-      ID: number;
-      /** Format: date-time */
-      LastSyncCompletedAt: string | null;
-      LastSyncError: string;
-      /** Format: date-time */
-      LastSyncStartedAt: string | null;
-      Name: string;
-      Owner: string;
-      Platform: string;
-      PlatformHost: string;
-      ViewerCanMerge: boolean;
-      capabilities: components["schemas"]["ProviderCapabilitiesResponse"];
-      operations: components["schemas"]["RepoOperations"];
-    };
-    RepoSummaryAuthorResponse: {
-      /** Format: int64 */
-      item_count: number;
-      login: string;
-    };
-    RepoSummaryCommitPointResponse: {
-      committed_at: string;
-      message: string;
-      sha: string;
-    };
-    RepoSummaryIssueResponse: {
-      author: string;
-      last_activity_at: string;
-      /** Format: int64 */
-      number: number;
-      state: string;
-      title: string;
-      url: string;
-    };
-    RepoSummaryReleaseResponse: {
-      name: string;
-      prerelease: boolean;
-      published_at?: string;
-      tag_name: string;
-      target_commitish: string;
-      url: string;
-    };
-    RepoSummaryResponse: {
-      active_authors: components["schemas"]["RepoSummaryAuthorResponse"][] | null;
-      /** Format: int64 */
-      cached_issue_count: number;
-      /** Format: int64 */
-      cached_pr_count: number;
-      commit_timeline: components["schemas"]["RepoSummaryCommitPointResponse"][] | null;
-      /** Format: int64 */
-      commits_since_release?: number;
-      default_platform_host: string;
-      /** Format: int64 */
-      draft_pr_count: number;
-      last_sync_completed_at?: string;
-      last_sync_error?: string;
-      last_sync_started_at?: string;
-      latest_release?: components["schemas"]["RepoSummaryReleaseResponse"];
-      most_recent_activity_at?: string;
-      name: string;
-      /** Format: int64 */
-      open_issue_count: number;
-      /** Format: int64 */
-      open_pr_count: number;
-      operations: components["schemas"]["RepoOperations"];
-      owner: string;
-      platform_host: string;
-      recent_issues: components["schemas"]["RepoSummaryIssueResponse"][] | null;
-      releases: components["schemas"]["RepoSummaryReleaseResponse"][] | null;
-      repo: components["schemas"]["RepoRefResponse"];
-      timeline_updated_at?: string;
-    };
-    ResolveDiscussionHostInputBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/ResolveDiscussionHostInputBody.json
-       */
-      readonly $schema?: string;
-      resolved: boolean;
-    };
-    ResolveDiscussionInputBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/ResolveDiscussionInputBody.json
-       */
-      readonly $schema?: string;
-      resolved: boolean;
-    };
-    ResolveItemResponse: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/ResolveItemResponse.json
-       */
-      readonly $schema?: string;
-      /** @description 'pr' or 'issue' */
-      item_type: string;
-      /** Format: int64 */
-      number: number;
-      repo_tracked: boolean;
-    };
-    RoborevStatusResponse: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/RoborevStatusResponse.json
-       */
-      readonly $schema?: string;
-      available: boolean;
-      endpoint: string;
-      version: string;
-    };
-    SavedSearch: {
-      name: string;
-      query: string;
-    };
-    SessionInfo: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/SessionInfo.json
-       */
-      readonly $schema?: string;
-      /** Format: date-time */
-      created_at: string;
-      /** Format: int64 */
-      exit_code?: number;
-      /** Format: date-time */
-      exited_at?: string;
-      key: string;
-      kind: string;
-      label: string;
-      status: string;
-      target_key: string;
-      workspace_id: string;
-    };
-    SetKanbanStateHostInputBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/SetKanbanStateHostInputBody.json
-       */
-      readonly $schema?: string;
-      status: string;
-    };
-    SetKanbanStateInputBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/SetKanbanStateInputBody.json
-       */
-      readonly $schema?: string;
-      status: string;
-    };
-    SetLabelsRequest: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/SetLabelsRequest.json
-       */
-      readonly $schema?: string;
-      labels: string[] | null;
-    };
-    SettingsResponse: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/SettingsResponse.json
-       */
-      readonly $schema?: string;
-      activity: components["schemas"]["Activity"];
-      agents: components["schemas"]["Agent"][];
-      modes?: components["schemas"]["ModeVisibility"];
-      repos: components["schemas"]["ConfiguredRepoStatus"][];
-      terminal: components["schemas"]["Terminal"];
-    };
-    SnippetRange: {
-      /** Format: int64 */
-      end: number;
-      /** Format: int64 */
-      start: number;
-    };
-    StackContextResponse: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/StackContextResponse.json
-       */
-      readonly $schema?: string;
-      health: string;
-      members: components["schemas"]["StackMemberResponse"][] | null;
-      /** Format: int64 */
-      position: number;
-      /** Format: int64 */
-      size: number;
-      /** Format: int64 */
-      stack_id: number;
-      stack_name: string;
-    };
-    StackMemberResponse: {
-      base_branch: string;
-      /** Format: int64 */
-      blocked_by: number | null;
-      ci_status: string;
-      is_draft: boolean;
-      mergeable_state: string;
-      /** Format: int64 */
-      number: number;
-      /** Format: int64 */
-      position: number;
-      review_decision: string;
-      state: string;
-      title: string;
-    };
-    StackResponse: {
-      health: string;
-      /** Format: int64 */
-      id: number;
-      members: components["schemas"]["StackMemberResponse"][] | null;
-      name: string;
-      repo_name: string;
-      repo_owner: string;
-    };
-    StarredRequest: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/StarredRequest.json
-       */
-      readonly $schema?: string;
-      item_type: string;
-      name: string;
-      /** Format: int64 */
-      number: number;
-      owner: string;
-      platform_host?: string;
-    };
-    SyncStatus: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/SyncStatus.json
-       */
-      readonly $schema?: string;
-      current_repo?: string;
-      last_error?: string;
-      /** Format: date-time */
-      last_run_at?: string;
-      progress?: string;
-      running: boolean;
-    };
-    TelemetryEventInputBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/TelemetryEventInputBody.json
-       */
-      readonly $schema?: string;
-      event: string;
-      properties?: {
-        [key: string]: unknown;
-      };
-    };
-    TelemetryEventResponse: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/TelemetryEventResponse.json
-       */
-      readonly $schema?: string;
-      status: string;
-    };
-    Terminal: {
-      cursor_blink: boolean;
-      font_family: string;
-      font_ligatures: boolean;
-      /** Format: int64 */
-      font_size: number;
-      /** Format: int64 */
-      letter_spacing: number;
-      /** Format: double */
-      line_height: number;
-      /** @enum {string} */
-      renderer: "xterm" | "ghostty-web";
-      /** Format: int64 */
-      scrollback: number;
-    };
-    UpdateDocsFolderInputBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/UpdateDocsFolderInputBody.json
-       */
-      readonly $schema?: string;
-      name?: string;
-    };
-    UpdateSettingsRequest: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/UpdateSettingsRequest.json
-       */
-      readonly $schema?: string;
-      activity?: components["schemas"]["Activity"];
-      agents?: components["schemas"]["Agent"][];
-      modes?: components["schemas"]["ModeVisibility"];
-      terminal?: components["schemas"]["Terminal"];
-    };
-    VersionOutputBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/VersionOutputBody.json
-       */
-      readonly $schema?: string;
-      version: string;
-    };
-    WorkflowApprovalResponse: {
-      checked: boolean;
-      /** Format: int64 */
-      count: number;
-      required: boolean;
-    };
-    WorkspaceRef: {
-      id: string;
-      status: string;
-    };
-    WorkspaceResponse: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/WorkspaceResponse.json
-       */
-      readonly $schema?: string;
-      /** Format: int64 */
-      associated_pr_number?: number;
-      /** Format: int64 */
-      commits_ahead?: number;
-      /** Format: int64 */
-      commits_behind?: number;
-      created_at: string;
-      error_message?: string;
-      git_head_ref: string;
-      id: string;
-      /** Format: int64 */
-      item_number: number;
-      item_type: string;
-      /** Format: int64 */
-      mr_additions?: number;
-      mr_ci_status?: string;
-      /** Format: int64 */
-      mr_deletions?: number;
-      mr_is_draft?: boolean;
-      mr_review_decision?: string;
-      mr_state?: string;
-      mr_title?: string;
-      platform_host: string;
-      repo: components["schemas"]["RepoRefResponse"];
-      repo_name: string;
-      repo_owner: string;
-      status: string;
-      tmux_activity_source: string;
-      tmux_last_output_at: string | null;
-      tmux_pane_title?: string;
-      tmux_session: string;
-      tmux_working: boolean;
-      worktree_path: string;
-    };
-    WorkspaceRuntimeResponse: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/WorkspaceRuntimeResponse.json
-       */
-      readonly $schema?: string;
-      launch_targets: components["schemas"]["LaunchTarget"][] | null;
-      sessions: components["schemas"]["SessionInfo"][] | null;
-    };
-    WorktreeLinkResponse: {
-      worktree_branch?: string;
-      worktree_key: string;
-      worktree_path?: string;
-    };
-    WorktreeResponse: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example /api/v1/schemas/WorktreeResponse.json
-       */
-      readonly $schema?: string;
-      branch: string;
-      /** Format: date-time */
-      created_at: string;
-      id: string;
-      path: string;
-      project_id: string;
-      /** Format: date-time */
-      updated_at: string;
-    };
-  };
-  responses: never;
-  parameters: never;
-  requestBodies: never;
-  headers: never;
-  pathItems: never;
+    schemas: {
+        ActionStatusBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/ActionStatusBody.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            approved_count?: number;
+            status: string;
+        };
+        Activity: {
+            collapse_threads: boolean;
+            /** Format: int64 */
+            default_branch_max_commits: number;
+            /** Format: int64 */
+            default_branch_retention_days: number;
+            hide_bots: boolean;
+            hide_closed: boolean;
+            /** @enum {string} */
+            time_range: "24h" | "7d" | "30d" | "90d";
+            /** @enum {string} */
+            view_mode: "flat" | "threaded";
+        };
+        ActivityItemResponse: {
+            activity_type: string;
+            activity_url?: string;
+            after_sha?: string;
+            author: string;
+            author_email?: string;
+            author_name?: string;
+            authored_at?: string;
+            before_sha?: string;
+            body_preview: string;
+            branch_name?: string;
+            commit_sha?: string;
+            committed_at?: string;
+            committer_email?: string;
+            committer_name?: string;
+            created_at: string;
+            cursor: string;
+            id: string;
+            item_author?: string;
+            /** Format: int64 */
+            item_number: number;
+            item_state: string;
+            item_title: string;
+            item_type: string;
+            item_url: string;
+            platform_host: string;
+            repo: components["schemas"]["RepoRefResponse"];
+            repo_name: string;
+            repo_owner: string;
+            workspace?: components["schemas"]["WorkspaceRef"];
+        };
+        ActivityResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/ActivityResponse.json
+             */
+            readonly $schema?: string;
+            capped: boolean;
+            items: components["schemas"]["ActivityItemResponse"][] | null;
+        };
+        AddRepoInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/AddRepoInputBody.json
+             */
+            readonly $schema?: string;
+            host?: string;
+            name: string;
+            owner: string;
+            platform_host?: string;
+            provider: string;
+        };
+        Agent: {
+            command?: string[];
+            enabled?: boolean;
+            key: string;
+            label: string;
+        };
+        AggregateResult: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/AggregateResult.json
+             */
+            readonly $schema?: string;
+            rows: components["schemas"]["AggregateRow"][] | null;
+            view_type: string;
+        };
+        AggregateRow: {
+            /** Format: int64 */
+            attachment_count: number;
+            /** Format: int64 */
+            attachment_size: number;
+            /** Format: int64 */
+            count: number;
+            key: string;
+            /** Format: int64 */
+            total_size: number;
+        };
+        ApprovePRHostInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/ApprovePRHostInputBody.json
+             */
+            readonly $schema?: string;
+            body: string;
+            expected_head_sha?: string;
+        };
+        ApprovePRInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/ApprovePRInputBody.json
+             */
+            readonly $schema?: string;
+            body: string;
+            expected_head_sha?: string;
+        };
+        AttachmentMeta: {
+            filename: string;
+            mime_type: string;
+            /** Format: int64 */
+            size_bytes: number;
+        };
+        BodySnippet: {
+            matches: components["schemas"]["SnippetRange"][] | null;
+            text: string;
+        };
+        BulkAddRepoRequest: {
+            host?: string;
+            name?: string;
+            owner?: string;
+            platform_host?: string;
+            provider: string;
+            repo_path?: string;
+        };
+        BulkAddReposRequest: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/BulkAddReposRequest.json
+             */
+            readonly $schema?: string;
+            repos: components["schemas"]["BulkAddRepoRequest"][];
+        };
+        CommentAutocompleteReference: {
+            kind: string;
+            /** Format: int64 */
+            number: number;
+            state: string;
+            title: string;
+        };
+        CommentAutocompleteResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/CommentAutocompleteResponse.json
+             */
+            readonly $schema?: string;
+            references?: components["schemas"]["CommentAutocompleteReference"][] | null;
+            users?: string[] | null;
+        };
+        CommitResponse: {
+            /** @description Commit author display name */
+            author_name: string;
+            /**
+             * Format: date-time
+             * @description Commit author date (RFC3339)
+             */
+            authored_at: string;
+            /** @description First line of commit message */
+            message: string;
+            /** @description Full commit SHA */
+            sha: string;
+        };
+        CommitsResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/CommitsResponse.json
+             */
+            readonly $schema?: string;
+            /** @description Commits in newest-first order */
+            commits: components["schemas"]["CommitResponse"][] | null;
+        };
+        ConfiguredRepoStatus: {
+            is_glob: boolean;
+            /** Format: int64 */
+            matched_repo_count: number;
+            name: string;
+            owner: string;
+            platform_host: string;
+            provider: string;
+            repo_path: string;
+        };
+        CreateDiffReviewDraftCommentHostInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/CreateDiffReviewDraftCommentHostInputBody.json
+             */
+            readonly $schema?: string;
+            body: string;
+            range: components["schemas"]["DiffReviewLineRange"];
+        };
+        CreateDiffReviewDraftCommentInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/CreateDiffReviewDraftCommentInputBody.json
+             */
+            readonly $schema?: string;
+            body: string;
+            range: components["schemas"]["DiffReviewLineRange"];
+        };
+        CreateDocsFolderInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/CreateDocsFolderInputBody.json
+             */
+            readonly $schema?: string;
+            daemon?: string;
+            id?: string;
+            name?: string;
+            path?: string;
+        };
+        CreateDocsFolderOutputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/CreateDocsFolderOutputBody.json
+             */
+            readonly $schema?: string;
+            folder: components["schemas"]["DocsFolderResponse"];
+        };
+        CreateIssueHostInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/CreateIssueHostInputBody.json
+             */
+            readonly $schema?: string;
+            body: string;
+            title: string;
+        };
+        CreateIssueInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/CreateIssueInputBody.json
+             */
+            readonly $schema?: string;
+            body: string;
+            title: string;
+        };
+        CreateIssueWorkspaceHostInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/CreateIssueWorkspaceHostInputBody.json
+             */
+            readonly $schema?: string;
+            git_head_ref?: string;
+            reuse_existing_branch?: boolean;
+        };
+        CreateIssueWorkspaceInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/CreateIssueWorkspaceInputBody.json
+             */
+            readonly $schema?: string;
+            git_head_ref?: string;
+            reuse_existing_branch?: boolean;
+        };
+        CreateWorkspaceInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/CreateWorkspaceInputBody.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            mr_number: number;
+            name: string;
+            owner: string;
+            platform_host: string;
+        };
+        CrossFolderHit: {
+            folder: string;
+            folder_name: string;
+            hit_type: string;
+            /** Format: int64 */
+            line?: number;
+            name: string;
+            rel_path: string;
+            /** Format: int64 */
+            score: number;
+            snippet?: components["schemas"]["BodySnippet"];
+        };
+        DiffFile: {
+            /** Format: int64 */
+            additions: number;
+            /** Format: int64 */
+            deletions: number;
+            hunks: components["schemas"]["Hunk"][] | null;
+            is_binary: boolean;
+            is_generated: boolean;
+            is_whitespace_only: boolean;
+            old_path: string;
+            patch: string;
+            path: string;
+            status: string;
+        };
+        DiffResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/DiffResponse.json
+             */
+            readonly $schema?: string;
+            files: components["schemas"]["DiffFile"][] | null;
+            stale: boolean;
+            /** Format: int64 */
+            whitespace_only_count: number;
+        };
+        DiffReviewDraftComment: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/DiffReviewDraftComment.json
+             */
+            readonly $schema?: string;
+            body: string;
+            commit_sha?: string;
+            created_at: string;
+            diff_head_sha?: string;
+            id: string;
+            /** Format: int64 */
+            line: number;
+            line_type: string;
+            /** Format: int64 */
+            new_line?: number;
+            /** Format: int64 */
+            old_line?: number;
+            old_path?: string;
+            path: string;
+            side: string;
+            /** Format: int64 */
+            start_line?: number;
+            start_side?: string;
+            updated_at: string;
+        };
+        DiffReviewDraftResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/DiffReviewDraftResponse.json
+             */
+            readonly $schema?: string;
+            comments: components["schemas"]["DiffReviewDraftComment"][] | null;
+            draft_id?: string;
+            native_multiline_ranges: boolean;
+            supported_actions: string[] | null;
+        };
+        DiffReviewLineRange: {
+            commit_sha?: string;
+            diff_head_sha?: string;
+            /** Format: int64 */
+            line: number;
+            line_type: string;
+            /** Format: int64 */
+            new_line?: number;
+            /** Format: int64 */
+            old_line?: number;
+            old_path?: string;
+            path: string;
+            side: string;
+            /** Format: int64 */
+            start_line?: number;
+            start_side?: string;
+        };
+        DiffReviewThreadResponse: {
+            author_login?: string;
+            body: string;
+            can_resolve: boolean;
+            commit_sha?: string;
+            created_at: string;
+            diff_head_sha?: string;
+            id: string;
+            /** Format: int64 */
+            line: number;
+            line_type: string;
+            /** Format: int64 */
+            new_line?: number;
+            /** Format: int64 */
+            old_line?: number;
+            old_path?: string;
+            path: string;
+            provider_comment_id?: string;
+            resolved: boolean;
+            side: string;
+            /** Format: int64 */
+            start_line?: number;
+            start_side?: string;
+            updated_at: string;
+        };
+        DocsBrowseEntry: {
+            hidden: boolean;
+            name: string;
+            path: string;
+        };
+        DocsBrowseOutputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/DocsBrowseOutputBody.json
+             */
+            readonly $schema?: string;
+            entries: components["schemas"]["DocsBrowseEntry"][] | null;
+            parent?: string;
+            path: string;
+        };
+        DocsCreateFileInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/DocsCreateFileInputBody.json
+             */
+            readonly $schema?: string;
+            content?: string;
+        };
+        DocsFileWriteBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/DocsFileWriteBody.json
+             */
+            readonly $schema?: string;
+            rel_path: string;
+            /** Format: int64 */
+            size: number;
+        };
+        DocsFolderOutputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/DocsFolderOutputBody.json
+             */
+            readonly $schema?: string;
+            folder: components["schemas"]["DocsFolderResponse"];
+        };
+        DocsFolderResponse: {
+            daemon?: string;
+            id: string;
+            name: string;
+            path: string;
+        };
+        DocsGitPublishInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/DocsGitPublishInputBody.json
+             */
+            readonly $schema?: string;
+            message?: string;
+        };
+        DocsReadFileOutputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/DocsReadFileOutputBody.json
+             */
+            readonly $schema?: string;
+            content: string;
+            rel_path: string;
+        };
+        DocsRenameFileInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/DocsRenameFileInputBody.json
+             */
+            readonly $schema?: string;
+            from?: string;
+            to?: string;
+        };
+        DocsRenameFileOutputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/DocsRenameFileOutputBody.json
+             */
+            readonly $schema?: string;
+            from: string;
+            to: string;
+        };
+        DocsSearchAllOutputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/DocsSearchAllOutputBody.json
+             */
+            readonly $schema?: string;
+            hits: components["schemas"]["CrossFolderHit"][] | null;
+            query: string;
+            truncated: boolean;
+            warnings?: string[] | null;
+        };
+        DocsSearchOutputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/DocsSearchOutputBody.json
+             */
+            readonly $schema?: string;
+            hits: components["schemas"]["Hit"][] | null;
+            query: string;
+        };
+        DocsWriteFileInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/DocsWriteFileInputBody.json
+             */
+            readonly $schema?: string;
+            content?: string;
+        };
+        EditCommentHostInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/EditCommentHostInputBody.json
+             */
+            readonly $schema?: string;
+            body: string;
+        };
+        EditCommentInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/EditCommentInputBody.json
+             */
+            readonly $schema?: string;
+            body: string;
+        };
+        EditDiffReviewDraftCommentHostInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/EditDiffReviewDraftCommentHostInputBody.json
+             */
+            readonly $schema?: string;
+            body: string;
+            range: components["schemas"]["DiffReviewLineRange"];
+        };
+        EditDiffReviewDraftCommentInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/EditDiffReviewDraftCommentInputBody.json
+             */
+            readonly $schema?: string;
+            body: string;
+            range: components["schemas"]["DiffReviewLineRange"];
+        };
+        EditIssueCommentHostInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/EditIssueCommentHostInputBody.json
+             */
+            readonly $schema?: string;
+            body: string;
+        };
+        EditIssueCommentInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/EditIssueCommentInputBody.json
+             */
+            readonly $schema?: string;
+            body: string;
+        };
+        EditIssueContentHostInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/EditIssueContentHostInputBody.json
+             */
+            readonly $schema?: string;
+            body?: string;
+            title?: string;
+        };
+        EditIssueContentInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/EditIssueContentInputBody.json
+             */
+            readonly $schema?: string;
+            body?: string;
+            title?: string;
+        };
+        EditPRContentHostInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/EditPRContentHostInputBody.json
+             */
+            readonly $schema?: string;
+            body?: string;
+            title?: string;
+        };
+        EditPRContentInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/EditPRContentInputBody.json
+             */
+            readonly $schema?: string;
+            body?: string;
+            title?: string;
+        };
+        ErrorDetail: {
+            /** @description Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id' */
+            location?: string;
+            /** @description Error message text */
+            message?: string;
+            /** @description The value at the given location */
+            value?: unknown;
+        };
+        FilePreviewResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/FilePreviewResponse.json
+             */
+            readonly $schema?: string;
+            content: string;
+            encoding: string;
+            media_type: string;
+            path: string;
+            /** Format: int64 */
+            size: number;
+        };
+        FilesResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/FilesResponse.json
+             */
+            readonly $schema?: string;
+            files: components["schemas"]["DiffFile"][] | null;
+            stale: boolean;
+            /** Format: int64 */
+            whitespace_only_count: number;
+        };
+        GitChangesResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/GitChangesResponse.json
+             */
+            readonly $schema?: string;
+            branch?: string;
+            changes: components["schemas"]["PublishChange"][] | null;
+            /** Format: int64 */
+            ignored_non_markdown_count: number;
+            is_repo: boolean;
+            suggested_message?: string;
+            upstream?: string;
+        };
+        GitStatusEntry: {
+            path: string;
+            status: string;
+        };
+        GitStatusResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/GitStatusResponse.json
+             */
+            readonly $schema?: string;
+            entries: components["schemas"]["GitStatusEntry"][] | null;
+            is_repo: boolean;
+        };
+        GithubStateHostInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/GithubStateHostInputBody.json
+             */
+            readonly $schema?: string;
+            state: string;
+        };
+        GithubStateInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/GithubStateInputBody.json
+             */
+            readonly $schema?: string;
+            state: string;
+        };
+        GithubStateOutputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/GithubStateOutputBody.json
+             */
+            readonly $schema?: string;
+            state: string;
+        };
+        Hit: {
+            name: string;
+            rel_path: string;
+            /** Format: int64 */
+            score: number;
+        };
+        Hunk: {
+            lines: components["schemas"]["Line"][] | null;
+            /** Format: int64 */
+            new_count: number;
+            /** Format: int64 */
+            new_start: number;
+            /** Format: int64 */
+            old_count: number;
+            /** Format: int64 */
+            old_start: number;
+            section?: string;
+        };
+        Issue: {
+            Author: string;
+            Body: string;
+            /** Format: date-time */
+            ClosedAt: string | null;
+            /** Format: int64 */
+            CommentCount: number;
+            /** Format: date-time */
+            CreatedAt: string;
+            /** Format: date-time */
+            DetailFetchedAt: string | null;
+            /** Format: int64 */
+            ID: number;
+            /** Format: date-time */
+            LastActivityAt: string;
+            /** Format: int64 */
+            Number: number;
+            PlatformExternalID: string;
+            /** Format: int64 */
+            PlatformID: number;
+            /** Format: int64 */
+            RepoID: number;
+            Starred: boolean;
+            State: string;
+            Title: string;
+            URL: string;
+            /** Format: date-time */
+            UpdatedAt: string;
+            assignees?: string[] | null;
+            labels?: components["schemas"]["Label"][] | null;
+        };
+        IssueDetailResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/IssueDetailResponse.json
+             */
+            readonly $schema?: string;
+            detail_fetched_at?: string;
+            detail_loaded: boolean;
+            events: components["schemas"]["IssueEvent"][] | null;
+            issue: components["schemas"]["Issue"];
+            platform_host: string;
+            repo: components["schemas"]["RepoRefResponse"];
+            repo_name: string;
+            repo_owner: string;
+            workspace?: components["schemas"]["WorkspaceRef"];
+        };
+        IssueEvent: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/IssueEvent.json
+             */
+            readonly $schema?: string;
+            Author: string;
+            Body: string;
+            /** Format: date-time */
+            CreatedAt: string;
+            DedupeKey: string;
+            EventType: string;
+            /** Format: int64 */
+            ID: number;
+            /** Format: int64 */
+            IssueID: number;
+            MetadataJSON: string;
+            PlatformExternalID: string;
+            /** Format: int64 */
+            PlatformID: number | null;
+            Summary: string;
+            ThreadID: string | null;
+        };
+        IssueResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/IssueResponse.json
+             */
+            readonly $schema?: string;
+            Author: string;
+            Body: string;
+            /** Format: date-time */
+            ClosedAt: string | null;
+            /** Format: int64 */
+            CommentCount: number;
+            /** Format: date-time */
+            CreatedAt: string;
+            /** Format: int64 */
+            ID: number;
+            /** Format: date-time */
+            LastActivityAt: string;
+            /** Format: int64 */
+            Number: number;
+            PlatformExternalID: string;
+            /** Format: int64 */
+            PlatformID: number;
+            /** Format: int64 */
+            RepoID: number;
+            Starred: boolean;
+            State: string;
+            Title: string;
+            URL: string;
+            /** Format: date-time */
+            UpdatedAt: string;
+            assignees?: string[] | null;
+            detail_fetched_at?: string;
+            detail_loaded: boolean;
+            labels?: components["schemas"]["Label"][] | null;
+            platform_host: string;
+            repo: components["schemas"]["RepoRefResponse"];
+            repo_name: string;
+            repo_owner: string;
+            workspace?: components["schemas"]["WorkspaceRef"];
+        };
+        ItemLabelsResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/ItemLabelsResponse.json
+             */
+            readonly $schema?: string;
+            labels: components["schemas"]["Label"][] | null;
+        };
+        KataDaemonResponse: {
+            auth: string;
+            default: boolean;
+            health: string;
+            hint?: string;
+            id: string;
+            url: string;
+        };
+        KataDaemonRosterResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/KataDaemonRosterResponse.json
+             */
+            readonly $schema?: string;
+            daemons: components["schemas"]["KataDaemonResponse"][] | null;
+            source?: string;
+        };
+        Label: {
+            color: string;
+            description?: string;
+            is_default: boolean;
+            name: string;
+        };
+        LaunchTarget: {
+            available: boolean;
+            command?: string[] | null;
+            disabled_reason?: string;
+            key: string;
+            kind: string;
+            label: string;
+            source: string;
+        };
+        LaunchWorkspaceRuntimeSessionInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/LaunchWorkspaceRuntimeSessionInputBody.json
+             */
+            readonly $schema?: string;
+            target_key: string;
+        };
+        Line: {
+            content: string;
+            /** Format: int64 */
+            new_num?: number;
+            no_newline?: boolean;
+            /** Format: int64 */
+            old_num?: number;
+            type: string;
+        };
+        ListDocsFoldersOutputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/ListDocsFoldersOutputBody.json
+             */
+            readonly $schema?: string;
+            folders: components["schemas"]["DocsFolderResponse"][] | null;
+        };
+        ListLaunchTargetsOutputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/ListLaunchTargetsOutputBody.json
+             */
+            readonly $schema?: string;
+            launch_targets: components["schemas"]["LaunchTarget"][] | null;
+        };
+        ListProjectsOutputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/ListProjectsOutputBody.json
+             */
+            readonly $schema?: string;
+            projects: components["schemas"]["ProjectResponse"][] | null;
+        };
+        ListWorkspacesOutputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/ListWorkspacesOutputBody.json
+             */
+            readonly $schema?: string;
+            workspaces: components["schemas"]["WorkspaceResponse"][] | null;
+        };
+        ListWorktreesOutputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/ListWorktreesOutputBody.json
+             */
+            readonly $schema?: string;
+            worktrees: components["schemas"]["WorktreeResponse"][] | null;
+        };
+        MergePRBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/MergePRBody.json
+             */
+            readonly $schema?: string;
+            merged: boolean;
+            message: string;
+            sha: string;
+        };
+        MergePRHostInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/MergePRHostInputBody.json
+             */
+            readonly $schema?: string;
+            commit_message: string;
+            commit_title: string;
+            expected_head_sha?: string;
+            method: string;
+        };
+        MergePRInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/MergePRInputBody.json
+             */
+            readonly $schema?: string;
+            commit_message: string;
+            commit_title: string;
+            expected_head_sha?: string;
+            method: string;
+        };
+        MergeRequest: {
+            /** Format: int64 */
+            Additions: number;
+            Author: string;
+            AuthorDisplayName: string;
+            BaseBranch: string;
+            Body: string;
+            CIChecksJSON: string;
+            CIHadPending: boolean;
+            CIStatus: string;
+            /** Format: date-time */
+            ClosedAt: string | null;
+            /** Format: int64 */
+            CommentCount: number;
+            /** Format: date-time */
+            CreatedAt: string;
+            /** Format: int64 */
+            Deletions: number;
+            /** Format: date-time */
+            DetailFetchedAt: string | null;
+            HeadBranch: string;
+            HeadRepoCloneURL: string;
+            /** Format: int64 */
+            ID: number;
+            IsDraft: boolean;
+            IsLocked: boolean;
+            /** @enum {string} */
+            KanbanStatus: "new" | "reviewing" | "waiting" | "awaiting_merge";
+            /** Format: date-time */
+            LastActivityAt: string;
+            MergeableState: string;
+            /** Format: date-time */
+            MergedAt: string | null;
+            /** Format: int64 */
+            Number: number;
+            PlatformExternalID: string;
+            /** Format: int64 */
+            PlatformID: number;
+            /** Format: int64 */
+            RepoID: number;
+            ReviewDecision: string;
+            Starred: boolean;
+            /** @enum {string} */
+            State: "open" | "closed" | "merged";
+            Title: string;
+            URL: string;
+            /** Format: date-time */
+            UpdatedAt: string;
+            labels?: components["schemas"]["Label"][] | null;
+            platform_head_sha?: string;
+        };
+        MergeRequestDetailResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/MergeRequestDetailResponse.json
+             */
+            readonly $schema?: string;
+            detail_fetched_at?: string;
+            detail_loaded: boolean;
+            diff_head_sha: string;
+            events: components["schemas"]["MergeRequestEventResponse"][] | null;
+            merge_base_sha: string;
+            merge_request: components["schemas"]["MergeRequest"];
+            platform_base_sha: string;
+            platform_head_sha: string;
+            platform_host: string;
+            repo: components["schemas"]["RepoRefResponse"];
+            repo_name: string;
+            repo_owner: string;
+            stack?: components["schemas"]["StackContextResponse"];
+            warnings?: string[] | null;
+            workflow_approval: components["schemas"]["WorkflowApprovalResponse"];
+            workspace?: components["schemas"]["WorkspaceRef"];
+            worktree_links: components["schemas"]["WorktreeLinkResponse"][] | null;
+        };
+        MergeRequestEventResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/MergeRequestEventResponse.json
+             */
+            readonly $schema?: string;
+            Author: string;
+            Body: string;
+            /** Format: date-time */
+            CreatedAt: string;
+            DedupeKey: string;
+            EventType: string;
+            /** Format: int64 */
+            ID: number;
+            /** Format: int64 */
+            MergeRequestID: number;
+            MetadataJSON: string;
+            PlatformExternalID: string;
+            /** Format: int64 */
+            PlatformID: number | null;
+            Resolvable: boolean;
+            Resolved: boolean;
+            Summary: string;
+            ThreadID: string | null;
+            diff_thread?: components["schemas"]["DiffReviewThreadResponse"];
+        };
+        MergeRequestResponse: {
+            /** Format: int64 */
+            Additions: number;
+            Author: string;
+            AuthorDisplayName: string;
+            BaseBranch: string;
+            Body: string;
+            CIChecksJSON: string;
+            CIHadPending: boolean;
+            CIStatus: string;
+            /** Format: date-time */
+            ClosedAt: string | null;
+            /** Format: int64 */
+            CommentCount: number;
+            /** Format: date-time */
+            CreatedAt: string;
+            /** Format: int64 */
+            Deletions: number;
+            HeadBranch: string;
+            HeadRepoCloneURL: string;
+            /** Format: int64 */
+            ID: number;
+            IsDraft: boolean;
+            IsLocked: boolean;
+            /** @enum {string} */
+            KanbanStatus: "new" | "reviewing" | "waiting" | "awaiting_merge";
+            /** Format: date-time */
+            LastActivityAt: string;
+            MergeableState: string;
+            /** Format: date-time */
+            MergedAt: string | null;
+            /** Format: int64 */
+            Number: number;
+            PlatformExternalID: string;
+            /** Format: int64 */
+            PlatformID: number;
+            /** Format: int64 */
+            RepoID: number;
+            ReviewDecision: string;
+            Starred: boolean;
+            /** @enum {string} */
+            State: "open" | "closed" | "merged";
+            Title: string;
+            URL: string;
+            /** Format: date-time */
+            UpdatedAt: string;
+            detail_fetched_at?: string;
+            detail_loaded: boolean;
+            labels?: components["schemas"]["Label"][] | null;
+            platform_head_sha?: string;
+            platform_host: string;
+            repo: components["schemas"]["RepoRefResponse"];
+            repo_name: string;
+            repo_owner: string;
+            workspace?: components["schemas"]["WorkspaceRef"];
+            worktree_links: components["schemas"]["WorktreeLinkResponse"][] | null;
+        };
+        MessageSummary: {
+            bcc: string[] | null;
+            cc: string[] | null;
+            /** Format: int64 */
+            conversation_id: number;
+            deleted_at: string | null;
+            from: string;
+            has_attachments: boolean;
+            /** Format: int64 */
+            id: number;
+            labels: string[] | null;
+            sent_at: string;
+            /** Format: int64 */
+            size_bytes: number;
+            snippet: string;
+            subject: string;
+            to: string[] | null;
+        };
+        MessagesSavedSearchesBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/MessagesSavedSearchesBody.json
+             */
+            readonly $schema?: string;
+            etag: string;
+            searches: components["schemas"]["SavedSearch"][] | null;
+        };
+        ModeVisibility: {
+            activity: boolean;
+            board: boolean;
+            docs: boolean;
+            issues: boolean;
+            kata: boolean;
+            messages: boolean;
+            pulls: boolean;
+            repos: boolean;
+            reviews: boolean;
+            workspaces: boolean;
+        };
+        MrImportMetadataResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/MrImportMetadataResponse.json
+             */
+            readonly $schema?: string;
+            head_branch: string;
+            head_repo_clone_url: string;
+            is_draft: boolean;
+            /** Format: int64 */
+            number: number;
+            platform_head_sha: string;
+            state: string;
+            title: string;
+        };
+        MsgvaultHealthBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/MsgvaultHealthBody.json
+             */
+            readonly $schema?: string;
+            api_key_env?: string;
+            configured: boolean;
+            features: {
+                [key: string]: unknown;
+            };
+            modes: string[] | null;
+            ok: boolean;
+            status?: string;
+            status_detail?: string;
+            url?: string;
+        };
+        MsgvaultMessageBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/MsgvaultMessageBody.json
+             */
+            readonly $schema?: string;
+            attachments: components["schemas"]["AttachmentMeta"][] | null;
+            bcc: string[] | null;
+            body: string;
+            body_html?: string;
+            cc: string[] | null;
+            /** Format: int64 */
+            conversation_id: number;
+            deleted_at: string | null;
+            from: string;
+            has_attachments: boolean;
+            html_sanitization_failed?: boolean;
+            /** Format: int64 */
+            id: number;
+            labels: string[] | null;
+            /** Format: int64 */
+            remote_image_count?: number;
+            remote_image_token?: string;
+            sent_at: string;
+            /** Format: int64 */
+            size_bytes: number;
+            snippet: string;
+            subject: string;
+            to: string[] | null;
+        };
+        MsgvaultSearchBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/MsgvaultSearchBody.json
+             */
+            readonly $schema?: string;
+            messages: components["schemas"]["MessageSummary"][] | null;
+            mode: string;
+            /** Format: int64 */
+            page: number;
+            /** Format: int64 */
+            page_size: number;
+            paginatable: boolean;
+            query: string;
+            /** Format: int64 */
+            total: number;
+        };
+        MsgvaultThreadBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/MsgvaultThreadBody.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            conversation_id: number;
+            messages: components["schemas"]["MessageSummary"][] | null;
+        };
+        Node: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/Node.json
+             */
+            readonly $schema?: string;
+            children?: components["schemas"]["Node"][] | null;
+            is_dir: boolean;
+            name: string;
+            rel_path: string;
+            /** Format: int64 */
+            size?: number;
+        };
+        OperationAvailability: {
+            available: boolean;
+            code?: string;
+            required_capability?: string;
+            retry_at?: string;
+            unavailable_reason?: string;
+        };
+        PlatformIdentityPayload: {
+            name: string;
+            owner: string;
+            platform: string;
+            platform_host: string;
+        };
+        PostCommentHostInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/PostCommentHostInputBody.json
+             */
+            readonly $schema?: string;
+            body: string;
+        };
+        PostCommentInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/PostCommentInputBody.json
+             */
+            readonly $schema?: string;
+            body: string;
+        };
+        PostIssueCommentHostInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/PostIssueCommentHostInputBody.json
+             */
+            readonly $schema?: string;
+            body: string;
+        };
+        PostIssueCommentInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/PostIssueCommentInputBody.json
+             */
+            readonly $schema?: string;
+            body: string;
+        };
+        ProblemError: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/ProblemError.json
+             */
+            readonly $schema?: string;
+            /**
+             * @description Machine-readable error code. Stable across occurrences.
+             * @example badRequest
+             * @enum {string}
+             */
+            code: "badRequest" | "branchConflict" | "commentNotFound" | "conflict" | "forbidden" | "internalError" | "issueNotFound" | "notFound" | "payloadTooLarge" | "projectNotFound" | "pullNotFound" | "rateLimited" | "repoNotFound" | "serviceUnavailable" | "settingsUnavailable" | "unauthorized" | "unsupportedCapability" | "upstreamError" | "validationError" | "workspaceNotFound";
+            /**
+             * @description A human-readable explanation specific to this occurrence of the problem.
+             * @example Property foo is required but is missing.
+             */
+            detail?: string;
+            /** @description Machine-readable error context, keyed by code-specific conventions. */
+            details?: {
+                [key: string]: unknown;
+            };
+            /** @description Optional list of individual error details */
+            errors?: components["schemas"]["ErrorDetail"][] | null;
+            /**
+             * Format: uri
+             * @description A URI reference that identifies the specific occurrence of the problem.
+             * @example https://example.com/error-log/abc123
+             */
+            instance?: string;
+            /**
+             * Format: int64
+             * @description HTTP status code
+             * @example 400
+             */
+            status?: number;
+            /**
+             * @description A short, human-readable summary of the problem type. This value should not change between occurrences of the error.
+             * @example Bad Request
+             */
+            title?: string;
+            /**
+             * Format: uri
+             * @description A URI reference to human-readable documentation for the error.
+             * @default about:blank
+             * @example https://example.com/errors/example
+             */
+            type: string;
+        };
+        ProjectResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/ProjectResponse.json
+             */
+            readonly $schema?: string;
+            /** Format: date-time */
+            created_at: string;
+            default_branch?: string;
+            display_name: string;
+            id: string;
+            local_path: string;
+            platform_identity?: components["schemas"]["PlatformIdentityPayload"];
+            /** Format: date-time */
+            updated_at: string;
+        };
+        ProviderCapabilitiesResponse: {
+            comment_mutation: boolean;
+            issue_mutation: boolean;
+            label_mutation: boolean;
+            merge_mutation: boolean;
+            mutation_head_binding: boolean;
+            native_multiline_ranges: boolean;
+            read_ci: boolean;
+            read_comments: boolean;
+            read_issues: boolean;
+            read_labels: boolean;
+            read_merge_requests: boolean;
+            read_releases: boolean;
+            read_repositories: boolean;
+            read_review_threads: boolean;
+            ready_for_review: boolean;
+            review_draft_mutation: boolean;
+            review_mutation: boolean;
+            review_thread_resolution: boolean;
+            state_mutation: boolean;
+            supported_review_actions: string[] | null;
+            thread_reply: boolean;
+            thread_resolve: boolean;
+            workflow_approval: boolean;
+        };
+        PublishChange: {
+            old_path?: string;
+            path: string;
+            status: string;
+        };
+        PublishDiffReviewDraftHostInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/PublishDiffReviewDraftHostInputBody.json
+             */
+            readonly $schema?: string;
+            action: string;
+            body?: string;
+        };
+        PublishDiffReviewDraftInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/PublishDiffReviewDraftInputBody.json
+             */
+            readonly $schema?: string;
+            action: string;
+            body?: string;
+        };
+        PublishResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/PublishResponse.json
+             */
+            readonly $schema?: string;
+            branch: string;
+            commit: string;
+            files: components["schemas"]["PublishChange"][] | null;
+            pushed: boolean;
+            short_commit: string;
+            upstream?: string;
+        };
+        RateLimitHostStatus: {
+            /** Format: int64 */
+            budget_limit: number;
+            /** Format: int64 */
+            budget_remaining: number;
+            /** Format: int64 */
+            budget_spent: number;
+            gql_known: boolean;
+            /** Format: int64 */
+            gql_limit: number;
+            /** Format: int64 */
+            gql_remaining: number;
+            gql_reset_at: string;
+            hour_start: string;
+            known: boolean;
+            platform_host: string;
+            provider: string;
+            /** Format: int64 */
+            rate_limit: number;
+            /** Format: int64 */
+            rate_remaining: number;
+            rate_reset_at: string;
+            /** Format: int64 */
+            requests_hour: number;
+            /** Format: int64 */
+            reserve_buffer: number;
+            sync_paused: boolean;
+            /** Format: int64 */
+            sync_throttle_factor: number;
+        };
+        RateLimitsResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/RateLimitsResponse.json
+             */
+            readonly $schema?: string;
+            hosts: {
+                [key: string]: components["schemas"]["RateLimitHostStatus"];
+            };
+        };
+        RegisterProjectInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/RegisterProjectInputBody.json
+             */
+            readonly $schema?: string;
+            default_branch?: string;
+            display_name?: string;
+            local_path: string;
+            platform_identity?: components["schemas"]["PlatformIdentityPayload"];
+        };
+        RegisterWorktreeInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/RegisterWorktreeInputBody.json
+             */
+            readonly $schema?: string;
+            branch: string;
+            path: string;
+        };
+        RenameWorkspaceRuntimeSessionInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/RenameWorkspaceRuntimeSessionInputBody.json
+             */
+            readonly $schema?: string;
+            label: string;
+        };
+        ReplaceMessagesSavedSearchesInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/ReplaceMessagesSavedSearchesInputBody.json
+             */
+            readonly $schema?: string;
+            searches: unknown[];
+        };
+        ReplyToDiscussionHostInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/ReplyToDiscussionHostInputBody.json
+             */
+            readonly $schema?: string;
+            body: string;
+        };
+        ReplyToDiscussionInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/ReplyToDiscussionInputBody.json
+             */
+            readonly $schema?: string;
+            body: string;
+        };
+        RepoLabelsResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/RepoLabelsResponse.json
+             */
+            readonly $schema?: string;
+            checked_at?: string;
+            labels: components["schemas"]["Label"][] | null;
+            stale: boolean;
+            sync_error: string;
+            synced_at?: string;
+            syncing: boolean;
+        };
+        RepoOperations: {
+            add_comment: components["schemas"]["OperationAvailability"];
+            add_label: components["schemas"]["OperationAvailability"];
+            approve_workflow: components["schemas"]["OperationAvailability"];
+            close_issue: components["schemas"]["OperationAvailability"];
+            close_pr: components["schemas"]["OperationAvailability"];
+            mark_ready_for_review: components["schemas"]["OperationAvailability"];
+            merge_pr: components["schemas"]["OperationAvailability"];
+            remove_label: components["schemas"]["OperationAvailability"];
+            reopen_issue: components["schemas"]["OperationAvailability"];
+            reopen_pr: components["schemas"]["OperationAvailability"];
+            submit_review: components["schemas"]["OperationAvailability"];
+        };
+        RepoPreviewRequest: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/RepoPreviewRequest.json
+             */
+            readonly $schema?: string;
+            host?: string;
+            owner: string;
+            pattern: string;
+            platform_host?: string;
+            provider: string;
+        };
+        RepoPreviewResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/RepoPreviewResponse.json
+             */
+            readonly $schema?: string;
+            owner: string;
+            pattern: string;
+            platform_host: string;
+            provider: string;
+            repos: components["schemas"]["RepoPreviewRow"][];
+        };
+        RepoPreviewRow: {
+            already_configured: boolean;
+            description: string | null;
+            fork: boolean;
+            name: string;
+            owner: string;
+            platform_host: string;
+            private: boolean;
+            provider: string;
+            pushed_at: string | null;
+            repo_path: string;
+        };
+        RepoRefResponse: {
+            capabilities: components["schemas"]["ProviderCapabilitiesResponse"];
+            name: string;
+            owner: string;
+            platform_host: string;
+            provider: string;
+            repo_path: string;
+        };
+        RepoResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/RepoResponse.json
+             */
+            readonly $schema?: string;
+            AllowMergeCommit: boolean;
+            AllowRebaseMerge: boolean;
+            AllowSquashMerge: boolean;
+            BackfillIssueComplete: boolean;
+            /** Format: date-time */
+            BackfillIssueCompletedAt: string | null;
+            /** Format: int64 */
+            BackfillIssuePage: number;
+            BackfillPRComplete: boolean;
+            /** Format: date-time */
+            BackfillPRCompletedAt: string | null;
+            /** Format: int64 */
+            BackfillPRPage: number;
+            /** Format: date-time */
+            CreatedAt: string;
+            /** Format: int64 */
+            ID: number;
+            /** Format: date-time */
+            LastSyncCompletedAt: string | null;
+            LastSyncError: string;
+            /** Format: date-time */
+            LastSyncStartedAt: string | null;
+            Name: string;
+            Owner: string;
+            Platform: string;
+            PlatformHost: string;
+            ViewerCanMerge: boolean;
+            capabilities: components["schemas"]["ProviderCapabilitiesResponse"];
+            operations: components["schemas"]["RepoOperations"];
+        };
+        RepoSummaryAuthorResponse: {
+            /** Format: int64 */
+            item_count: number;
+            login: string;
+        };
+        RepoSummaryCommitPointResponse: {
+            committed_at: string;
+            message: string;
+            sha: string;
+        };
+        RepoSummaryIssueResponse: {
+            author: string;
+            last_activity_at: string;
+            /** Format: int64 */
+            number: number;
+            state: string;
+            title: string;
+            url: string;
+        };
+        RepoSummaryReleaseResponse: {
+            name: string;
+            prerelease: boolean;
+            published_at?: string;
+            tag_name: string;
+            target_commitish: string;
+            url: string;
+        };
+        RepoSummaryResponse: {
+            active_authors: components["schemas"]["RepoSummaryAuthorResponse"][] | null;
+            /** Format: int64 */
+            cached_issue_count: number;
+            /** Format: int64 */
+            cached_pr_count: number;
+            commit_timeline: components["schemas"]["RepoSummaryCommitPointResponse"][] | null;
+            /** Format: int64 */
+            commits_since_release?: number;
+            default_platform_host: string;
+            /** Format: int64 */
+            draft_pr_count: number;
+            last_sync_completed_at?: string;
+            last_sync_error?: string;
+            last_sync_started_at?: string;
+            latest_release?: components["schemas"]["RepoSummaryReleaseResponse"];
+            most_recent_activity_at?: string;
+            name: string;
+            /** Format: int64 */
+            open_issue_count: number;
+            /** Format: int64 */
+            open_pr_count: number;
+            operations: components["schemas"]["RepoOperations"];
+            owner: string;
+            platform_host: string;
+            recent_issues: components["schemas"]["RepoSummaryIssueResponse"][] | null;
+            releases: components["schemas"]["RepoSummaryReleaseResponse"][] | null;
+            repo: components["schemas"]["RepoRefResponse"];
+            timeline_updated_at?: string;
+        };
+        ResolveDiscussionHostInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/ResolveDiscussionHostInputBody.json
+             */
+            readonly $schema?: string;
+            resolved: boolean;
+        };
+        ResolveDiscussionInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/ResolveDiscussionInputBody.json
+             */
+            readonly $schema?: string;
+            resolved: boolean;
+        };
+        ResolveItemResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/ResolveItemResponse.json
+             */
+            readonly $schema?: string;
+            /** @description 'pr' or 'issue' */
+            item_type: string;
+            /** Format: int64 */
+            number: number;
+            repo_tracked: boolean;
+        };
+        RoborevStatusResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/RoborevStatusResponse.json
+             */
+            readonly $schema?: string;
+            available: boolean;
+            endpoint: string;
+            version: string;
+        };
+        SavedSearch: {
+            name: string;
+            query: string;
+        };
+        SessionInfo: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/SessionInfo.json
+             */
+            readonly $schema?: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: int64 */
+            exit_code?: number;
+            /** Format: date-time */
+            exited_at?: string;
+            key: string;
+            kind: string;
+            label: string;
+            status: string;
+            target_key: string;
+            workspace_id: string;
+        };
+        SetKanbanStateHostInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/SetKanbanStateHostInputBody.json
+             */
+            readonly $schema?: string;
+            status: string;
+        };
+        SetKanbanStateInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/SetKanbanStateInputBody.json
+             */
+            readonly $schema?: string;
+            status: string;
+        };
+        SetLabelsRequest: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/SetLabelsRequest.json
+             */
+            readonly $schema?: string;
+            labels: string[] | null;
+        };
+        SettingsResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/SettingsResponse.json
+             */
+            readonly $schema?: string;
+            activity: components["schemas"]["Activity"];
+            agents: components["schemas"]["Agent"][];
+            modes?: components["schemas"]["ModeVisibility"];
+            repos: components["schemas"]["ConfiguredRepoStatus"][];
+            terminal: components["schemas"]["Terminal"];
+        };
+        SnippetRange: {
+            /** Format: int64 */
+            end: number;
+            /** Format: int64 */
+            start: number;
+        };
+        StackContextResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/StackContextResponse.json
+             */
+            readonly $schema?: string;
+            health: string;
+            members: components["schemas"]["StackMemberResponse"][] | null;
+            /** Format: int64 */
+            position: number;
+            /** Format: int64 */
+            size: number;
+            /** Format: int64 */
+            stack_id: number;
+            stack_name: string;
+        };
+        StackMemberResponse: {
+            base_branch: string;
+            /** Format: int64 */
+            blocked_by: number | null;
+            ci_status: string;
+            is_draft: boolean;
+            mergeable_state: string;
+            /** Format: int64 */
+            number: number;
+            /** Format: int64 */
+            position: number;
+            review_decision: string;
+            state: string;
+            title: string;
+        };
+        StackResponse: {
+            health: string;
+            /** Format: int64 */
+            id: number;
+            members: components["schemas"]["StackMemberResponse"][] | null;
+            name: string;
+            repo_name: string;
+            repo_owner: string;
+        };
+        StarredRequest: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/StarredRequest.json
+             */
+            readonly $schema?: string;
+            item_type: string;
+            name: string;
+            /** Format: int64 */
+            number: number;
+            owner: string;
+            platform_host?: string;
+        };
+        SyncStatus: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/SyncStatus.json
+             */
+            readonly $schema?: string;
+            current_repo?: string;
+            last_error?: string;
+            /** Format: date-time */
+            last_run_at?: string;
+            progress?: string;
+            running: boolean;
+        };
+        TelemetryEventInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/TelemetryEventInputBody.json
+             */
+            readonly $schema?: string;
+            event: string;
+            properties?: {
+                [key: string]: unknown;
+            };
+        };
+        TelemetryEventResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/TelemetryEventResponse.json
+             */
+            readonly $schema?: string;
+            status: string;
+        };
+        Terminal: {
+            cursor_blink: boolean;
+            font_family: string;
+            font_ligatures: boolean;
+            /** Format: int64 */
+            font_size: number;
+            /** Format: int64 */
+            letter_spacing: number;
+            /** Format: double */
+            line_height: number;
+            /** @enum {string} */
+            renderer: "xterm" | "ghostty-web";
+            /** Format: int64 */
+            scrollback: number;
+        };
+        UpdateDocsFolderInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/UpdateDocsFolderInputBody.json
+             */
+            readonly $schema?: string;
+            name?: string;
+        };
+        UpdateSettingsRequest: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/UpdateSettingsRequest.json
+             */
+            readonly $schema?: string;
+            activity?: components["schemas"]["Activity"];
+            agents?: components["schemas"]["Agent"][];
+            modes?: components["schemas"]["ModeVisibility"];
+            terminal?: components["schemas"]["Terminal"];
+        };
+        VersionOutputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/VersionOutputBody.json
+             */
+            readonly $schema?: string;
+            version: string;
+        };
+        WorkflowApprovalResponse: {
+            checked: boolean;
+            /** Format: int64 */
+            count: number;
+            required: boolean;
+        };
+        WorkspaceRef: {
+            id: string;
+            status: string;
+        };
+        WorkspaceResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/WorkspaceResponse.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            associated_pr_number?: number;
+            /** Format: int64 */
+            commits_ahead?: number;
+            /** Format: int64 */
+            commits_behind?: number;
+            created_at: string;
+            error_message?: string;
+            git_head_ref: string;
+            id: string;
+            /** Format: int64 */
+            item_number: number;
+            item_type: string;
+            /** Format: int64 */
+            mr_additions?: number;
+            mr_ci_status?: string;
+            /** Format: int64 */
+            mr_deletions?: number;
+            mr_is_draft?: boolean;
+            mr_review_decision?: string;
+            mr_state?: string;
+            mr_title?: string;
+            platform_host: string;
+            repo: components["schemas"]["RepoRefResponse"];
+            repo_name: string;
+            repo_owner: string;
+            status: string;
+            tmux_activity_source: string;
+            tmux_last_output_at: string | null;
+            tmux_pane_title?: string;
+            tmux_session: string;
+            tmux_working: boolean;
+            worktree_path: string;
+        };
+        WorkspaceRuntimeResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/WorkspaceRuntimeResponse.json
+             */
+            readonly $schema?: string;
+            launch_targets: components["schemas"]["LaunchTarget"][] | null;
+            sessions: components["schemas"]["SessionInfo"][] | null;
+        };
+        WorktreeLinkResponse: {
+            worktree_branch?: string;
+            worktree_key: string;
+            worktree_path?: string;
+        };
+        WorktreeResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/WorktreeResponse.json
+             */
+            readonly $schema?: string;
+            branch: string;
+            /** Format: date-time */
+            created_at: string;
+            id: string;
+            path: string;
+            project_id: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+    };
+    responses: never;
+    parameters: never;
+    requestBodies: never;
+    headers: never;
+    pathItems: never;
 }
 export type $defs = Record<string, never>;
 export interface operations {
-  "list-activity": {
-    parameters: {
-      query?: {
-        repo?: string;
-        types?: string[] | null;
-        search?: string;
-        after?: string;
-        since?: string;
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ActivityResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "browse-docs-folders": {
-    parameters: {
-      query?: {
-        path?: string;
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["DocsBrowseOutputBody"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "list-docs-folders": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ListDocsFoldersOutputBody"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "create-docs-folder": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["CreateDocsFolderInputBody"];
-      };
-    };
-    responses: {
-      /** @description Created */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["CreateDocsFolderOutputBody"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "delete-docs-folder": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description No Content */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "update-docs-folder": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["UpdateDocsFolderInputBody"];
-      };
-    };
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["DocsFolderOutputBody"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "read-docs-blob": {
-    parameters: {
-      query?: {
-        path?: string;
-      };
-      header?: never;
-      path: {
-        id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Image response */
-      200: {
-        headers: {
-          "Cache-Control"?: string;
-          "Content-Length"?: string;
-          "Content-Type"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/octet-stream": string;
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "read-docs-file": {
-    parameters: {
-      query?: {
-        path?: string;
-      };
-      header?: never;
-      path: {
-        id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["DocsReadFileOutputBody"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "write-docs-file": {
-    parameters: {
-      query?: {
-        path?: string;
-      };
-      header?: never;
-      path: {
-        id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["DocsWriteFileInputBody"];
-      };
-    };
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["DocsFileWriteBody"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "create-docs-file": {
-    parameters: {
-      query?: {
-        path?: string;
-      };
-      header?: never;
-      path: {
-        id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: {
-      content: {
-        "application/json": components["schemas"]["DocsCreateFileInputBody"];
-      };
-    };
-    responses: {
-      /** @description Created */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["DocsFileWriteBody"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "delete-docs-file": {
-    parameters: {
-      query?: {
-        path?: string;
-      };
-      header?: never;
-      path: {
-        id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description No Content */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "rename-docs-file": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["DocsRenameFileInputBody"];
-      };
-    };
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["DocsRenameFileOutputBody"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "get-docs-git-status": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["GitStatusResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "get-docs-git-changes": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["GitChangesResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "publish-docs-git": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["DocsGitPublishInputBody"];
-      };
-    };
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["PublishResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "search-docs-folder": {
-    parameters: {
-      query?: {
-        q?: string;
-        limit?: number;
-      };
-      header?: never;
-      path: {
-        id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["DocsSearchOutputBody"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "get-docs-tree": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Node"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "search-docs": {
-    parameters: {
-      query?: {
-        q?: string;
-        limit?: number;
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["DocsSearchAllOutputBody"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "stream-events": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Server-sent event stream */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "text/event-stream": unknown;
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "create-issue-on-host": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        platform_host: string;
-        owner: string;
-        name: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["CreateIssueHostInputBody"];
-      };
-    };
-    responses: {
-      /** @description Created */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["IssueResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "get-issue-on-host": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        platform_host: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["IssueDetailResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "edit-issue-content-on-host": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        platform_host: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["EditIssueContentHostInputBody"];
-      };
-    };
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["IssueDetailResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "post-issue-comment-on-host": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        platform_host: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["PostIssueCommentHostInputBody"];
-      };
-    };
-    responses: {
-      /** @description Created */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["IssueEvent"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "edit-issue-comment-on-host": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        platform_host: string;
-        owner: string;
-        name: string;
-        number: number;
-        comment_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["EditIssueCommentHostInputBody"];
-      };
-    };
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["IssueEvent"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "set-issue-github-state-on-host": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        platform_host: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["GithubStateHostInputBody"];
-      };
-    };
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["GithubStateOutputBody"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "set-issue-labels-on-host": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        platform_host: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["SetLabelsRequest"];
-      };
-    };
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ItemLabelsResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "sync-issue-on-host": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        platform_host: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["IssueDetailResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "enqueue-issue-sync-on-host": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        platform_host: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Accepted */
-      202: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "create-issue-workspace-on-host": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        platform_host: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["CreateIssueWorkspaceHostInputBody"];
-      };
-    };
-    responses: {
-      /** @description Accepted */
-      202: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["WorkspaceResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "get-pull-on-host": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        platform_host: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MergeRequestDetailResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "edit-pr-content-on-host": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        platform_host: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["EditPRContentHostInputBody"];
-      };
-    };
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MergeRequestDetailResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "approve-pull-on-host": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        platform_host: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["ApprovePRHostInputBody"];
-      };
-    };
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ActionStatusBody"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "approve-pull-workflows-on-host": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        platform_host: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ActionStatusBody"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "refresh-pull-ci-on-host": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        platform_host: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MergeRequestDetailResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "post-pr-comment-on-host": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        platform_host: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["PostCommentHostInputBody"];
-      };
-    };
-    responses: {
-      /** @description Created */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MergeRequestEventResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "edit-pr-comment-on-host": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        platform_host: string;
-        owner: string;
-        name: string;
-        number: number;
-        comment_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["EditCommentHostInputBody"];
-      };
-    };
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MergeRequestEventResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "get-pull-commits-on-host": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        platform_host: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["CommitsResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "get-pull-diff-on-host": {
-    parameters: {
-      query?: {
-        whitespace?: string;
-        /** @description Scope to a single commit SHA */
-        commit?: string;
-        /** @description Start SHA for range diff (inclusive) */
-        from?: string;
-        /** @description End SHA for range diff (inclusive) */
-        to?: string;
-      };
-      header?: never;
-      path: {
-        provider: string;
-        platform_host: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["DiffResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "reply-to-discussion-on-host": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        platform_host: string;
-        owner: string;
-        name: string;
-        number: number;
-        discussion_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["ReplyToDiscussionHostInputBody"];
-      };
-    };
-    responses: {
-      /** @description Created */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MergeRequestEventResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "resolve-discussion-on-host": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        platform_host: string;
-        owner: string;
-        name: string;
-        number: number;
-        discussion_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["ResolveDiscussionHostInputBody"];
-      };
-    };
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "get-pull-file-preview-on-host": {
-    parameters: {
-      query?: {
-        /** @description Changed file path to preview */
-        path?: string;
-        /** @description Optional diff side to read for context expansion */
-        side?: "old" | "new";
-        /** @description Scope to a single commit SHA */
-        commit?: string;
-        /** @description Start SHA for range diff (inclusive) */
-        from?: string;
-        /** @description End SHA for range diff (inclusive) */
-        to?: string;
-      };
-      header?: never;
-      path: {
-        provider: string;
-        platform_host: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["FilePreviewResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "get-pull-files-on-host": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        platform_host: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["FilesResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "set-pr-github-state-on-host": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        platform_host: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["GithubStateHostInputBody"];
-      };
-    };
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["GithubStateOutputBody"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "get-pull-import-metadata-on-host": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        platform_host: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MrImportMetadataResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "set-pr-labels-on-host": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        platform_host: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["SetLabelsRequest"];
-      };
-    };
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ItemLabelsResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "merge-pull-on-host": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        platform_host: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["MergePRHostInputBody"];
-      };
-    };
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MergePRBody"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "mark-pull-ready-for-review-on-host": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        platform_host: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ActionStatusBody"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "get-pr-review-draft-on-host": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        platform_host: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["DiffReviewDraftResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "discard-pr-review-draft-on-host": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        platform_host: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "create-pr-review-draft-comment-on-host": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        platform_host: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["CreateDiffReviewDraftCommentHostInputBody"];
-      };
-    };
-    responses: {
-      /** @description Created */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["DiffReviewDraftComment"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "delete-pr-review-draft-comment-on-host": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        platform_host: string;
-        owner: string;
-        name: string;
-        number: number;
-        draft_comment_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "edit-pr-review-draft-comment-on-host": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        platform_host: string;
-        owner: string;
-        name: string;
-        number: number;
-        draft_comment_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["EditDiffReviewDraftCommentHostInputBody"];
-      };
-    };
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["DiffReviewDraftComment"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "publish-pr-review-draft-on-host": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        platform_host: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["PublishDiffReviewDraftHostInputBody"];
-      };
-    };
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ActionStatusBody"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "resolve-pr-review-thread-on-host": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        platform_host: string;
-        owner: string;
-        name: string;
-        number: number;
-        thread_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "unresolve-pr-review-thread-on-host": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        platform_host: string;
-        owner: string;
-        name: string;
-        number: number;
-        thread_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "get-pull-stack-on-host": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        platform_host: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["StackContextResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "set-kanban-state-on-host": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        platform_host: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["SetKanbanStateHostInputBody"];
-      };
-    };
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "sync-pull-on-host": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        platform_host: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MergeRequestDetailResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "enqueue-pr-sync-on-host": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        platform_host: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Accepted */
-      202: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "get-repo-on-host": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        platform_host: string;
-        owner: string;
-        name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["RepoResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "delete-repo-on-host": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        platform_host: string;
-        owner: string;
-        name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description No Content */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "get-comment-autocomplete-on-host": {
-    parameters: {
-      query?: {
-        trigger?: string;
-        q?: string;
-        limit?: number;
-      };
-      header?: never;
-      path: {
-        provider: string;
-        platform_host: string;
-        owner: string;
-        name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["CommentAutocompleteResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "get-repo-commit-diff-on-host": {
-    parameters: {
-      query?: {
-        whitespace?: string;
-      };
-      header?: never;
-      path: {
-        provider: string;
-        platform_host: string;
-        owner: string;
-        name: string;
-        sha: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["DiffResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "list-repo-labels-on-host": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        platform_host: string;
-        owner: string;
-        name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["RepoLabelsResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "refresh-repo-on-host": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        platform_host: string;
-        owner: string;
-        name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["SettingsResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "resolve-repo-item-on-host": {
-    parameters: {
-      query?: {
-        /** @description Optional item type hint for providers whose issues and merge requests have separate number spaces. */
-        item_type?: "pr" | "issue";
-      };
-      header?: never;
-      path: {
-        provider: string;
-        platform_host: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ResolveItemResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "list-issues": {
-    parameters: {
-      query?: {
-        repo?: string;
-        state?: string;
-        starred?: boolean;
-        q?: string;
-        assignee?: string;
-        limit?: number;
-        offset?: number;
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["IssueResponse"][] | null;
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "create-issue": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        owner: string;
-        name: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["CreateIssueInputBody"];
-      };
-    };
-    responses: {
-      /** @description Created */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["IssueResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "get-issue": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["IssueDetailResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "edit-issue-content": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["EditIssueContentInputBody"];
-      };
-    };
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["IssueDetailResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "post-issue-comment": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["PostIssueCommentInputBody"];
-      };
-    };
-    responses: {
-      /** @description Created */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["IssueEvent"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "edit-issue-comment": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        owner: string;
-        name: string;
-        number: number;
-        comment_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["EditIssueCommentInputBody"];
-      };
-    };
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["IssueEvent"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "set-issue-github-state": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["GithubStateInputBody"];
-      };
-    };
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["GithubStateOutputBody"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "set-issue-labels": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["SetLabelsRequest"];
-      };
-    };
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ItemLabelsResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "sync-issue": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["IssueDetailResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "enqueue-issue-sync": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Accepted */
-      202: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "create-issue-workspace": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["CreateIssueWorkspaceInputBody"];
-      };
-    };
-    responses: {
-      /** @description Accepted */
-      202: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["WorkspaceResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "list-kata-daemons": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["KataDaemonRosterResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "list-messages-saved-searches": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          ETag?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MessagesSavedSearchesBody"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "replace-messages-saved-searches": {
-    parameters: {
-      query?: never;
-      header: {
-        "If-Match"?: string;
-        "X-Middleman-Csrf": string;
-      };
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["ReplaceMessagesSavedSearchesInputBody"];
-      };
-    };
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          ETag?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MessagesSavedSearchesBody"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "get-msgvault-aggregates": {
-    parameters: {
-      query: {
-        view_type: string;
-        q?: string;
-        hide_deleted?: string;
-        sort?: string;
-        direction?: string;
-        limit?: number;
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["AggregateResult"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "configure-msgvault": {
-    parameters: {
-      query?: never;
-      header: {
-        "Content-Type"?: string;
-        "X-Middleman-Csrf": string;
-      };
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": {
-          api_key_env: string;
-          url: string;
-        };
-      };
-    };
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MsgvaultHealthBody"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "get-msgvault-health": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MsgvaultHealthBody"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "get-msgvault-message": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MsgvaultMessageBody"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "get-msgvault-inline-image": {
-    parameters: {
-      query: {
-        cid: string;
-      };
-      header?: never;
-      path: {
-        id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          "Cache-Control"?: string;
-          "Content-Length"?: string;
-          "Content-Type"?: string;
-          "X-Content-Type-Options"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "image/gif": string;
-          "image/jpeg": string;
-          "image/png": string;
-          "image/webp": string;
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "get-msgvault-remote-image": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        id: number;
-        token: string;
-        idx: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          "Cache-Control"?: string;
-          "Content-Length"?: string;
-          "Content-Type"?: string;
-          "X-Content-Type-Options"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "image/gif": string;
-          "image/jpeg": string;
-          "image/png": string;
-          "image/webp": string;
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "search-msgvault": {
-    parameters: {
-      query?: {
-        q?: string;
-        mode?: string;
-        page?: number;
-        page_size?: number;
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MsgvaultSearchBody"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "get-msgvault-thread": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        conversation_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MsgvaultThreadBody"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "list-projects": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ListProjectsOutputBody"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "register-project": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["RegisterProjectInputBody"];
-      };
-    };
-    responses: {
-      /** @description Created */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ProjectResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "get-project": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        project_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ProjectResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "list-launch-targets": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        project_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ListLaunchTargetsOutputBody"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "list-worktrees": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        project_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ListWorktreesOutputBody"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "register-worktree": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        project_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["RegisterWorktreeInputBody"];
-      };
-    };
-    responses: {
-      /** @description Created */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["WorktreeResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "list-pulls": {
-    parameters: {
-      query?: {
-        repo?: string;
-        state?: string;
-        kanban?: string;
-        starred?: boolean;
-        q?: string;
-        limit?: number;
-        offset?: number;
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MergeRequestResponse"][] | null;
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "get-pull": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MergeRequestDetailResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "edit-pr-content": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["EditPRContentInputBody"];
-      };
-    };
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MergeRequestDetailResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "approve-pull": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["ApprovePRInputBody"];
-      };
-    };
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ActionStatusBody"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "approve-pull-workflows": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ActionStatusBody"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "refresh-pull-ci": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MergeRequestDetailResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "post-pr-comment": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["PostCommentInputBody"];
-      };
-    };
-    responses: {
-      /** @description Created */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MergeRequestEventResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "edit-pr-comment": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        owner: string;
-        name: string;
-        number: number;
-        comment_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["EditCommentInputBody"];
-      };
-    };
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MergeRequestEventResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "get-pull-commits": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["CommitsResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "get-pull-diff": {
-    parameters: {
-      query?: {
-        whitespace?: string;
-        /** @description Scope to a single commit SHA */
-        commit?: string;
-        /** @description Start SHA for range diff (inclusive) */
-        from?: string;
-        /** @description End SHA for range diff (inclusive) */
-        to?: string;
-      };
-      header?: never;
-      path: {
-        provider: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["DiffResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "reply-to-discussion": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        owner: string;
-        name: string;
-        number: number;
-        discussion_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["ReplyToDiscussionInputBody"];
-      };
-    };
-    responses: {
-      /** @description Created */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MergeRequestEventResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "resolve-discussion": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        owner: string;
-        name: string;
-        number: number;
-        discussion_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["ResolveDiscussionInputBody"];
-      };
-    };
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "get-pull-file-preview": {
-    parameters: {
-      query?: {
-        /** @description Changed file path to preview */
-        path?: string;
-        /** @description Optional diff side to read for context expansion */
-        side?: "old" | "new";
-        /** @description Scope to a single commit SHA */
-        commit?: string;
-        /** @description Start SHA for range diff (inclusive) */
-        from?: string;
-        /** @description End SHA for range diff (inclusive) */
-        to?: string;
-      };
-      header?: never;
-      path: {
-        provider: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["FilePreviewResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "get-pull-files": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["FilesResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "set-pr-github-state": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["GithubStateInputBody"];
-      };
-    };
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["GithubStateOutputBody"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "get-pull-import-metadata": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MrImportMetadataResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "set-pr-labels": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["SetLabelsRequest"];
-      };
-    };
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ItemLabelsResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "merge-pull": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["MergePRInputBody"];
-      };
-    };
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MergePRBody"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "mark-pull-ready-for-review": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ActionStatusBody"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "get-pr-review-draft": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["DiffReviewDraftResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "discard-pr-review-draft": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "create-pr-review-draft-comment": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["CreateDiffReviewDraftCommentInputBody"];
-      };
-    };
-    responses: {
-      /** @description Created */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["DiffReviewDraftComment"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "delete-pr-review-draft-comment": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        owner: string;
-        name: string;
-        number: number;
-        draft_comment_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "edit-pr-review-draft-comment": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        owner: string;
-        name: string;
-        number: number;
-        draft_comment_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["EditDiffReviewDraftCommentInputBody"];
-      };
-    };
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["DiffReviewDraftComment"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "publish-pr-review-draft": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["PublishDiffReviewDraftInputBody"];
-      };
-    };
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ActionStatusBody"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "resolve-pr-review-thread": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        owner: string;
-        name: string;
-        number: number;
-        thread_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "unresolve-pr-review-thread": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        owner: string;
-        name: string;
-        number: number;
-        thread_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "get-pull-stack": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["StackContextResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "set-kanban-state": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["SetKanbanStateInputBody"];
-      };
-    };
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "sync-pull": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MergeRequestDetailResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "enqueue-pr-sync": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Accepted */
-      202: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "get-rate-limits": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["RateLimitsResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "get-repo": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        owner: string;
-        name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["RepoResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "delete-repo": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        owner: string;
-        name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description No Content */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "get-comment-autocomplete": {
-    parameters: {
-      query?: {
-        trigger?: string;
-        q?: string;
-        limit?: number;
-      };
-      header?: never;
-      path: {
-        provider: string;
-        owner: string;
-        name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["CommentAutocompleteResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "get-repo-commit-diff": {
-    parameters: {
-      query?: {
-        whitespace?: string;
-      };
-      header?: never;
-      path: {
-        provider: string;
-        owner: string;
-        name: string;
-        sha: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["DiffResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "list-repo-labels": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        owner: string;
-        name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["RepoLabelsResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "refresh-repo": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider: string;
-        owner: string;
-        name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["SettingsResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "resolve-repo-item": {
-    parameters: {
-      query?: {
-        /** @description Optional item type hint for providers whose issues and merge requests have separate number spaces. */
-        item_type?: "pr" | "issue";
-      };
-      header?: never;
-      path: {
-        provider: string;
-        owner: string;
-        name: string;
-        number: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ResolveItemResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "list-repos": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["RepoResponse"][] | null;
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "add-repo": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["AddRepoInputBody"];
-      };
-    };
-    responses: {
-      /** @description Created */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["SettingsResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "bulk-add-repos": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["BulkAddReposRequest"];
-      };
-    };
-    responses: {
-      /** @description Created */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["SettingsResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "preview-repos": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["RepoPreviewRequest"];
-      };
-    };
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["RepoPreviewResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "list-repo-summaries": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["RepoSummaryResponse"][] | null;
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "get-roborev-status": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["RoborevStatusResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "get-settings": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["SettingsResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "update-settings": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["UpdateSettingsRequest"];
-      };
-    };
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["SettingsResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "list-stacks": {
-    parameters: {
-      query?: {
-        repo?: string;
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["StackResponse"][] | null;
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "set-starred": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["StarredRequest"];
-      };
-    };
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "unset-starred": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["StarredRequest"];
-      };
-    };
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "trigger-sync": {
-    parameters: {
-      query?: {
-        /** @description Optional repository filters to sync first. Accepts repeated values or comma-separated values. Each value may be host-qualified as platform_host/owner/name or bare as owner/name; bare values match the first tracked repo with that repo path. */
-        priority_repo?: string[] | null;
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Accepted */
-      202: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "get-sync-status": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["SyncStatus"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "capture-telemetry-event": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["TelemetryEventInputBody"];
-      };
-    };
-    responses: {
-      /** @description Accepted */
-      202: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["TelemetryEventResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "get-version": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["VersionOutputBody"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "list-workspaces": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ListWorkspacesOutputBody"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "create-workspace": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["CreateWorkspaceInputBody"];
-      };
-    };
-    responses: {
-      /** @description Accepted */
-      202: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["WorkspaceResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "get-workspace": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["WorkspaceResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "delete-workspace": {
-    parameters: {
-      query?: {
-        force?: boolean;
-      };
-      header?: never;
-      path: {
-        id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description No Content */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "get-workspace-commits": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["CommitsResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "get-workspace-diff": {
-    parameters: {
-      query?: {
-        /** @description Diff base: head, pushed, or merge-target */
-        base?: string;
-        /** @description Set to hide to ignore whitespace-only changes */
-        whitespace?: string;
-        /** @description Optional file path to limit the returned patch */
-        path?: string;
-        /** @description Scope to a single commit SHA */
-        commit?: string;
-        /** @description Start SHA for range diff (inclusive) */
-        from?: string;
-        /** @description End SHA for range diff (inclusive) */
-        to?: string;
-      };
-      header?: never;
-      path: {
-        id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["DiffResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "get-workspace-files": {
-    parameters: {
-      query?: {
-        /** @description Diff base: head, pushed, or merge-target */
-        base?: string;
-        /** @description Set to hide to ignore whitespace-only changes */
-        whitespace?: string;
-        /** @description Scope to a single commit SHA */
-        commit?: string;
-        /** @description Start SHA for range diff (inclusive) */
-        from?: string;
-        /** @description End SHA for range diff (inclusive) */
-        to?: string;
-      };
-      header?: never;
-      path: {
-        id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["FilesResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "refresh-workspace": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["WorkspaceResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "retry-workspace": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Accepted */
-      202: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["WorkspaceResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "get-workspace-runtime": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["WorkspaceRuntimeResponse"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "launch-workspace-runtime-session": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["LaunchWorkspaceRuntimeSessionInputBody"];
-      };
-    };
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["SessionInfo"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "stop-workspace-runtime-session": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        id: string;
-        session_key: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description No Content */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
-  "rename-workspace-runtime-session": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        id: string;
-        session_key: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["RenameWorkspaceRuntimeSessionInputBody"];
-      };
-    };
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["SessionInfo"];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemError"];
-        };
-      };
-    };
-  };
+    "list-activity": {
+        parameters: {
+            query?: {
+                repo?: string;
+                types?: string[] | null;
+                search?: string;
+                after?: string;
+                since?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivityResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "browse-docs-folders": {
+        parameters: {
+            query?: {
+                path?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocsBrowseOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "list-docs-folders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListDocsFoldersOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "create-docs-folder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateDocsFolderInputBody"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreateDocsFolderOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "delete-docs-folder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "update-docs-folder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateDocsFolderInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocsFolderOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "read-docs-blob": {
+        parameters: {
+            query?: {
+                path?: string;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Image response */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    "Content-Length"?: string;
+                    "Content-Type"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/octet-stream": string;
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "read-docs-file": {
+        parameters: {
+            query?: {
+                path?: string;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocsReadFileOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "write-docs-file": {
+        parameters: {
+            query?: {
+                path?: string;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DocsWriteFileInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocsFileWriteBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "create-docs-file": {
+        parameters: {
+            query?: {
+                path?: string;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["DocsCreateFileInputBody"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocsFileWriteBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "delete-docs-file": {
+        parameters: {
+            query?: {
+                path?: string;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "rename-docs-file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DocsRenameFileInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocsRenameFileOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-docs-git-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GitStatusResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-docs-git-changes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GitChangesResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "publish-docs-git": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DocsGitPublishInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublishResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "search-docs-folder": {
+        parameters: {
+            query?: {
+                q?: string;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocsSearchOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-docs-tree": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Node"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "search-docs": {
+        parameters: {
+            query?: {
+                q?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocsSearchAllOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "stream-events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Server-sent event stream */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": unknown;
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "create-issue-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateIssueHostInputBody"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IssueResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-issue-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IssueDetailResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "edit-issue-content-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EditIssueContentHostInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IssueDetailResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "post-issue-comment-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PostIssueCommentHostInputBody"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IssueEvent"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "edit-issue-comment-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+                comment_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EditIssueCommentHostInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IssueEvent"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "set-issue-github-state-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GithubStateHostInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GithubStateOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "set-issue-labels-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetLabelsRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ItemLabelsResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "sync-issue-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IssueDetailResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "enqueue-issue-sync-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "create-issue-workspace-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateIssueWorkspaceHostInputBody"];
+            };
+        };
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-pull-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MergeRequestDetailResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "edit-pr-content-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EditPRContentHostInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MergeRequestDetailResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "approve-pull-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApprovePRHostInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionStatusBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "approve-pull-workflows-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionStatusBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "refresh-pull-ci-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MergeRequestDetailResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "post-pr-comment-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PostCommentHostInputBody"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MergeRequestEventResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "edit-pr-comment-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+                comment_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EditCommentHostInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MergeRequestEventResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-pull-commits-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommitsResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-pull-diff-on-host": {
+        parameters: {
+            query?: {
+                whitespace?: string;
+                /** @description Scope to a single commit SHA */
+                commit?: string;
+                /** @description Start SHA for range diff (inclusive) */
+                from?: string;
+                /** @description End SHA for range diff (inclusive) */
+                to?: string;
+            };
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiffResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "reply-to-discussion-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+                discussion_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReplyToDiscussionHostInputBody"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MergeRequestEventResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "resolve-discussion-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+                discussion_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResolveDiscussionHostInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-pull-file-preview-on-host": {
+        parameters: {
+            query?: {
+                /** @description Changed file path to preview */
+                path?: string;
+                /** @description Optional diff side to read for context expansion */
+                side?: "old" | "new";
+                /** @description Scope to a single commit SHA */
+                commit?: string;
+                /** @description Start SHA for range diff (inclusive) */
+                from?: string;
+                /** @description End SHA for range diff (inclusive) */
+                to?: string;
+            };
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FilePreviewResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-pull-files-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FilesResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "set-pr-github-state-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GithubStateHostInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GithubStateOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-pull-import-metadata-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MrImportMetadataResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "set-pr-labels-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetLabelsRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ItemLabelsResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "merge-pull-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MergePRHostInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MergePRBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "mark-pull-ready-for-review-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionStatusBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-pr-review-draft-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiffReviewDraftResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "discard-pr-review-draft-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "create-pr-review-draft-comment-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateDiffReviewDraftCommentHostInputBody"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiffReviewDraftComment"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "delete-pr-review-draft-comment-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+                draft_comment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "edit-pr-review-draft-comment-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+                draft_comment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EditDiffReviewDraftCommentHostInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiffReviewDraftComment"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "publish-pr-review-draft-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PublishDiffReviewDraftHostInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionStatusBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "resolve-pr-review-thread-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "unresolve-pr-review-thread-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-pull-stack-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StackContextResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "set-kanban-state-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetKanbanStateHostInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "sync-pull-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MergeRequestDetailResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "enqueue-pr-sync-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-repo-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RepoResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "delete-repo-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-comment-autocomplete-on-host": {
+        parameters: {
+            query?: {
+                trigger?: string;
+                q?: string;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommentAutocompleteResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-repo-commit-diff-on-host": {
+        parameters: {
+            query?: {
+                whitespace?: string;
+            };
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                sha: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiffResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "list-repo-labels-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RepoLabelsResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "refresh-repo-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "resolve-repo-item-on-host": {
+        parameters: {
+            query?: {
+                /** @description Optional item type hint for providers whose issues and merge requests have separate number spaces. */
+                item_type?: "pr" | "issue";
+            };
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResolveItemResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "list-issues": {
+        parameters: {
+            query?: {
+                repo?: string;
+                state?: string;
+                starred?: boolean;
+                q?: string;
+                assignee?: string;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IssueResponse"][] | null;
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "create-issue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateIssueInputBody"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IssueResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-issue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IssueDetailResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "edit-issue-content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EditIssueContentInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IssueDetailResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "post-issue-comment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PostIssueCommentInputBody"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IssueEvent"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "edit-issue-comment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+                comment_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EditIssueCommentInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IssueEvent"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "set-issue-github-state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GithubStateInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GithubStateOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "set-issue-labels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetLabelsRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ItemLabelsResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "sync-issue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IssueDetailResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "enqueue-issue-sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "create-issue-workspace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateIssueWorkspaceInputBody"];
+            };
+        };
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "list-kata-daemons": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KataDaemonRosterResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "list-messages-saved-searches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessagesSavedSearchesBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "replace-messages-saved-searches": {
+        parameters: {
+            query?: never;
+            header: {
+                "If-Match"?: string;
+                "X-Middleman-Csrf": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReplaceMessagesSavedSearchesInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessagesSavedSearchesBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-msgvault-aggregates": {
+        parameters: {
+            query: {
+                view_type: string;
+                q?: string;
+                hide_deleted?: string;
+                sort?: string;
+                direction?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AggregateResult"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "configure-msgvault": {
+        parameters: {
+            query?: never;
+            header: {
+                "Content-Type"?: string;
+                "X-Middleman-Csrf": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    api_key_env: string;
+                    url: string;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MsgvaultHealthBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-msgvault-health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MsgvaultHealthBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-msgvault-message": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MsgvaultMessageBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-msgvault-inline-image": {
+        parameters: {
+            query: {
+                cid: string;
+            };
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    "Content-Length"?: string;
+                    "Content-Type"?: string;
+                    "X-Content-Type-Options"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/gif": string;
+                    "image/jpeg": string;
+                    "image/png": string;
+                    "image/webp": string;
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-msgvault-remote-image": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+                token: string;
+                idx: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    "Content-Length"?: string;
+                    "Content-Type"?: string;
+                    "X-Content-Type-Options"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/gif": string;
+                    "image/jpeg": string;
+                    "image/png": string;
+                    "image/webp": string;
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "search-msgvault": {
+        parameters: {
+            query?: {
+                q?: string;
+                mode?: string;
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MsgvaultSearchBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-msgvault-thread": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversation_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MsgvaultThreadBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "list-projects": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListProjectsOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "register-project": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegisterProjectInputBody"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-project": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "list-launch-targets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListLaunchTargetsOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "list-worktrees": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListWorktreesOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "register-worktree": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegisterWorktreeInputBody"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorktreeResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "list-pulls": {
+        parameters: {
+            query?: {
+                repo?: string;
+                state?: string;
+                kanban?: string;
+                starred?: boolean;
+                q?: string;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MergeRequestResponse"][] | null;
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-pull": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MergeRequestDetailResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "edit-pr-content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EditPRContentInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MergeRequestDetailResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "approve-pull": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApprovePRInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionStatusBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "approve-pull-workflows": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionStatusBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "refresh-pull-ci": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MergeRequestDetailResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "post-pr-comment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PostCommentInputBody"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MergeRequestEventResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "edit-pr-comment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+                comment_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EditCommentInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MergeRequestEventResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-pull-commits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommitsResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-pull-diff": {
+        parameters: {
+            query?: {
+                whitespace?: string;
+                /** @description Scope to a single commit SHA */
+                commit?: string;
+                /** @description Start SHA for range diff (inclusive) */
+                from?: string;
+                /** @description End SHA for range diff (inclusive) */
+                to?: string;
+            };
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiffResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "reply-to-discussion": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+                discussion_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReplyToDiscussionInputBody"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MergeRequestEventResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "resolve-discussion": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+                discussion_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResolveDiscussionInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-pull-file-preview": {
+        parameters: {
+            query?: {
+                /** @description Changed file path to preview */
+                path?: string;
+                /** @description Optional diff side to read for context expansion */
+                side?: "old" | "new";
+                /** @description Scope to a single commit SHA */
+                commit?: string;
+                /** @description Start SHA for range diff (inclusive) */
+                from?: string;
+                /** @description End SHA for range diff (inclusive) */
+                to?: string;
+            };
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FilePreviewResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-pull-files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FilesResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "set-pr-github-state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GithubStateInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GithubStateOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-pull-import-metadata": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MrImportMetadataResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "set-pr-labels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetLabelsRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ItemLabelsResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "merge-pull": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MergePRInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MergePRBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "mark-pull-ready-for-review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionStatusBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-pr-review-draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiffReviewDraftResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "discard-pr-review-draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "create-pr-review-draft-comment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateDiffReviewDraftCommentInputBody"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiffReviewDraftComment"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "delete-pr-review-draft-comment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+                draft_comment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "edit-pr-review-draft-comment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+                draft_comment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EditDiffReviewDraftCommentInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiffReviewDraftComment"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "publish-pr-review-draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PublishDiffReviewDraftInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionStatusBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "resolve-pr-review-thread": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "unresolve-pr-review-thread": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-pull-stack": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StackContextResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "set-kanban-state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetKanbanStateInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "sync-pull": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MergeRequestDetailResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "enqueue-pr-sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-rate-limits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RateLimitsResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-repo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RepoResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "delete-repo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-comment-autocomplete": {
+        parameters: {
+            query?: {
+                trigger?: string;
+                q?: string;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommentAutocompleteResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-repo-commit-diff": {
+        parameters: {
+            query?: {
+                whitespace?: string;
+            };
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                sha: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiffResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "list-repo-labels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RepoLabelsResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "refresh-repo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "resolve-repo-item": {
+        parameters: {
+            query?: {
+                /** @description Optional item type hint for providers whose issues and merge requests have separate number spaces. */
+                item_type?: "pr" | "issue";
+            };
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResolveItemResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "list-repos": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RepoResponse"][] | null;
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "add-repo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AddRepoInputBody"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "bulk-add-repos": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BulkAddReposRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "preview-repos": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RepoPreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RepoPreviewResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "list-repo-summaries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RepoSummaryResponse"][] | null;
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-roborev-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoborevStatusResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "update-settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateSettingsRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "list-stacks": {
+        parameters: {
+            query?: {
+                repo?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StackResponse"][] | null;
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "set-starred": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StarredRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "unset-starred": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StarredRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "trigger-sync": {
+        parameters: {
+            query?: {
+                /** @description Optional repository filters to sync first. Accepts repeated values or comma-separated values. Each value may be host-qualified as platform_host/owner/name or bare as owner/name; bare values match the first tracked repo with that repo path. */
+                priority_repo?: string[] | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-sync-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncStatus"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "capture-telemetry-event": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TelemetryEventInputBody"];
+            };
+        };
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TelemetryEventResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-version": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VersionOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "list-workspaces": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListWorkspacesOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "create-workspace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateWorkspaceInputBody"];
+            };
+        };
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-workspace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "delete-workspace": {
+        parameters: {
+            query?: {
+                force?: boolean;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-workspace-commits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommitsResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-workspace-diff": {
+        parameters: {
+            query?: {
+                /** @description Diff base: head, pushed, or merge-target */
+                base?: string;
+                /** @description Set to hide to ignore whitespace-only changes */
+                whitespace?: string;
+                /** @description Optional file path to limit the returned patch */
+                path?: string;
+                /** @description Scope to a single commit SHA */
+                commit?: string;
+                /** @description Start SHA for range diff (inclusive) */
+                from?: string;
+                /** @description End SHA for range diff (inclusive) */
+                to?: string;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiffResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-workspace-files": {
+        parameters: {
+            query?: {
+                /** @description Diff base: head, pushed, or merge-target */
+                base?: string;
+                /** @description Set to hide to ignore whitespace-only changes */
+                whitespace?: string;
+                /** @description Scope to a single commit SHA */
+                commit?: string;
+                /** @description Start SHA for range diff (inclusive) */
+                from?: string;
+                /** @description End SHA for range diff (inclusive) */
+                to?: string;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FilesResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "refresh-workspace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "retry-workspace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "get-workspace-runtime": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceRuntimeResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "launch-workspace-runtime-session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LaunchWorkspaceRuntimeSessionInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionInfo"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "stop-workspace-runtime-session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                session_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "rename-workspace-runtime-session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                session_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RenameWorkspaceRuntimeSessionInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionInfo"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
 }
 type FlattenedDeepRequired<T> = {
-  [K in keyof T]-?: FlattenedDeepRequired<
-    T[K] extends unknown[] | undefined | null ? Extract<T[K], unknown[]>[number] : T[K]
-  >;
+    [K in keyof T]-?: FlattenedDeepRequired<T[K] extends unknown[] | undefined | null ? Extract<T[K], unknown[]>[number] : T[K]>;
 };
-type ReadonlyArray<T> = [Exclude<T, undefined>] extends [unknown[]]
-  ? Readonly<Exclude<T, undefined>>
-  : Readonly<Exclude<T, undefined>[]>;
-export const pathsHostPlatform_hostPullsProviderOwnerNameNumberFilePreviewGetParametersQuerySideValues: ReadonlyArray<
-  FlattenedDeepRequired<paths>["/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/file-preview"]["get"]["parameters"]["query"]["side"]
-> = ["old", "new"];
-export const pathsHostPlatform_hostRepoProviderOwnerNameResolveNumberPostParametersQueryItem_typeValues: ReadonlyArray<
-  FlattenedDeepRequired<paths>["/host/{platform_host}/repo/{provider}/{owner}/{name}/resolve/{number}"]["post"]["parameters"]["query"]["item_type"]
-> = ["pr", "issue"];
-export const pathsPullsProviderOwnerNameNumberFilePreviewGetParametersQuerySideValues: ReadonlyArray<
-  FlattenedDeepRequired<paths>["/pulls/{provider}/{owner}/{name}/{number}/file-preview"]["get"]["parameters"]["query"]["side"]
-> = ["old", "new"];
-export const pathsRepoProviderOwnerNameResolveNumberPostParametersQueryItem_typeValues: ReadonlyArray<
-  FlattenedDeepRequired<paths>["/repo/{provider}/{owner}/{name}/resolve/{number}"]["post"]["parameters"]["query"]["item_type"]
-> = ["pr", "issue"];
-export const activityTime_rangeValues: ReadonlyArray<
-  FlattenedDeepRequired<components>["schemas"]["Activity"]["time_range"]
-> = ["24h", "7d", "30d", "90d"];
-export const activityView_modeValues: ReadonlyArray<
-  FlattenedDeepRequired<components>["schemas"]["Activity"]["view_mode"]
-> = ["flat", "threaded"];
-export const mergeRequestKanbanStatusValues: ReadonlyArray<
-  FlattenedDeepRequired<components>["schemas"]["MergeRequest"]["KanbanStatus"]
-> = ["new", "reviewing", "waiting", "awaiting_merge"];
-export const mergeRequestStateValues: ReadonlyArray<
-  FlattenedDeepRequired<components>["schemas"]["MergeRequest"]["State"]
-> = ["open", "closed", "merged"];
-export const mergeRequestResponseKanbanStatusValues: ReadonlyArray<
-  FlattenedDeepRequired<components>["schemas"]["MergeRequestResponse"]["KanbanStatus"]
-> = ["new", "reviewing", "waiting", "awaiting_merge"];
-export const mergeRequestResponseStateValues: ReadonlyArray<
-  FlattenedDeepRequired<components>["schemas"]["MergeRequestResponse"]["State"]
-> = ["open", "closed", "merged"];
-export const problemErrorCodeValues: ReadonlyArray<
-  FlattenedDeepRequired<components>["schemas"]["ProblemError"]["code"]
-> = [
-  "badRequest",
-  "branchConflict",
-  "commentNotFound",
-  "conflict",
-  "forbidden",
-  "internalError",
-  "issueNotFound",
-  "notFound",
-  "payloadTooLarge",
-  "projectNotFound",
-  "pullNotFound",
-  "rateLimited",
-  "repoNotFound",
-  "serviceUnavailable",
-  "settingsUnavailable",
-  "unauthorized",
-  "unsupportedCapability",
-  "upstreamError",
-  "validationError",
-  "workspaceNotFound",
-];
-export const terminalRendererValues: ReadonlyArray<
-  FlattenedDeepRequired<components>["schemas"]["Terminal"]["renderer"]
-> = ["xterm", "ghostty-web"];
+type ReadonlyArray<T> = [
+    Exclude<T, undefined>
+] extends [
+    unknown[]
+] ? Readonly<Exclude<T, undefined>> : Readonly<Exclude<T, undefined>[]>;
+export const pathsHostPlatform_hostPullsProviderOwnerNameNumberFilePreviewGetParametersQuerySideValues: ReadonlyArray<FlattenedDeepRequired<paths>["/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/file-preview"]["get"]["parameters"]["query"]["side"]> = ["old", "new"];
+export const pathsHostPlatform_hostRepoProviderOwnerNameResolveNumberPostParametersQueryItem_typeValues: ReadonlyArray<FlattenedDeepRequired<paths>["/host/{platform_host}/repo/{provider}/{owner}/{name}/resolve/{number}"]["post"]["parameters"]["query"]["item_type"]> = ["pr", "issue"];
+export const pathsPullsProviderOwnerNameNumberFilePreviewGetParametersQuerySideValues: ReadonlyArray<FlattenedDeepRequired<paths>["/pulls/{provider}/{owner}/{name}/{number}/file-preview"]["get"]["parameters"]["query"]["side"]> = ["old", "new"];
+export const pathsRepoProviderOwnerNameResolveNumberPostParametersQueryItem_typeValues: ReadonlyArray<FlattenedDeepRequired<paths>["/repo/{provider}/{owner}/{name}/resolve/{number}"]["post"]["parameters"]["query"]["item_type"]> = ["pr", "issue"];
+export const activityTime_rangeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Activity"]["time_range"]> = ["24h", "7d", "30d", "90d"];
+export const activityView_modeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Activity"]["view_mode"]> = ["flat", "threaded"];
+export const mergeRequestKanbanStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MergeRequest"]["KanbanStatus"]> = ["new", "reviewing", "waiting", "awaiting_merge"];
+export const mergeRequestStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MergeRequest"]["State"]> = ["open", "closed", "merged"];
+export const mergeRequestResponseKanbanStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MergeRequestResponse"]["KanbanStatus"]> = ["new", "reviewing", "waiting", "awaiting_merge"];
+export const mergeRequestResponseStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["MergeRequestResponse"]["State"]> = ["open", "closed", "merged"];
+export const problemErrorCodeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ProblemError"]["code"]> = ["badRequest", "branchConflict", "commentNotFound", "conflict", "forbidden", "internalError", "issueNotFound", "notFound", "payloadTooLarge", "projectNotFound", "pullNotFound", "rateLimited", "repoNotFound", "serviceUnavailable", "settingsUnavailable", "unauthorized", "unsupportedCapability", "upstreamError", "validationError", "workspaceNotFound"];
+export const terminalRendererValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["Terminal"]["renderer"]> = ["xterm", "ghostty-web"];

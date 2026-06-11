@@ -1551,7 +1551,7 @@ test("kata route reset ignores a stale routed view response", async ({ page }) =
     short_id: "inbox-stale",
     qualified_id: "Inbox#inbox-stale",
     title: "Inbox response that should stay stale",
-    body: "This routed response should not replace the winning Today route.",
+    body: "This routed response should not replace the winning bare-route All Open view.",
     labels: ["triage"],
   });
   const backend = await startKataBackend({
@@ -1564,7 +1564,7 @@ test("kata route reset ignores a stale routed view response", async ({ page }) =
   try {
     await page.goto(`${server.info.base_url}/kata`);
 
-    await expect(page.getByRole("heading", { name: "Today", level: 2 })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "All Open", level: 2 })).toBeVisible();
     const issueReadsBefore = backend.state.seenPaths.filter((path) => path === "GET /api/v1/issues?status=open").length;
     backend.state.issuesBarrier = stalledIssues;
 
@@ -1576,7 +1576,7 @@ test("kata route reset ignores a stale routed view response", async ({ page }) =
     await page.goto(`${server.info.base_url}/kata`);
     releaseIssues();
 
-    await expect(page.getByRole("heading", { name: "Today", level: 2 })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "All Open", level: 2 })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Inbox", level: 2 })).toHaveCount(0);
     await expect(page.getByRole("button", { name: /Pay rent/ })).toBeVisible();
   } finally {

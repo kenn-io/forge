@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -90,6 +91,65 @@ func TestPatchFixturePRSHAsUpdatesLookupPRs(t *testing.T) {
 	assert.Equal("head-sha", updated.GetHead().GetSHA())
 	assert.Equal("base-sha", updated.GetBase().GetSHA())
 	assert.Empty(lookupPR.GetHead().GetSHA(), "update should replace fixture PR instead of mutating shared pointer")
+}
+
+func TestAppStateRegistryWaitsForInFlightHandlersAfterSwap(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	oldState := &appState{
+		handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			close(started)
+			<-release
+			w.WriteHeader(http.StatusNoContent)
+		}),
+	}
+	newState := &appState{
+		handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusAccepted)
+		}),
+	}
+	states := newAppStateRegistry(oldState)
+
+	oldDone := make(chan struct{})
+	go func() {
+		defer close(oldDone)
+		states.ServeHTTP(
+			httptest.NewRecorder(),
+			httptest.NewRequest(http.MethodGet, "/", nil),
+		)
+	}()
+	<-started
+
+	swapped := states.Swap(newState)
+	require.Same(t, oldState, swapped)
+
+	drained := make(chan struct{})
+	go func() {
+		defer close(drained)
+		swapped.waitForHandlers()
+	}()
+
+	select {
+	case <-drained:
+		require.Fail(t, "old state drained before its in-flight handler returned")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	newRecorder := httptest.NewRecorder()
+	states.ServeHTTP(newRecorder, httptest.NewRequest(http.MethodGet, "/", nil))
+	require.Equal(t, http.StatusAccepted, newRecorder.Code)
+
+	close(release)
+	select {
+	case <-oldDone:
+	case <-time.After(5 * time.Second):
+		require.Fail(t, "old handler did not return")
+	}
+	select {
+	case <-drained:
+	case <-time.After(5 * time.Second):
+		require.Fail(t, "old state did not drain after handler returned")
+	}
 }
 
 // TestDefaultRoborevEndpointIsUnbindable pins the e2e server's

@@ -104,8 +104,18 @@ test("markdown mermaid fences render as diagrams", async ({ page }) => {
 
   await expect(page.locator(".markdown-body code.language-mermaid")).toHaveCount(0);
   await expect(page.locator(".markdown-body pre.mermaid.mermaid-viewer svg")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Zoom in diagram" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Zoom in diagram" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Zoom out diagram" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Copy Mermaid source" })).toBeVisible();
+
+  const diagramViewport = page.locator(".markdown-body .mermaid-viewer__viewport");
+  const diagramPan = page.locator(".markdown-body .mermaid-viewer__pan");
+  const initialTransform = await diagramPan.evaluate((element) => getComputedStyle(element).transform);
+  await diagramViewport.hover();
+  await page.mouse.wheel(0, -240);
+  await expect
+    .poll(async () => diagramPan.evaluate((element) => getComputedStyle(element).transform))
+    .not.toBe(initialTransform);
 
   await page.getByRole("button", { name: "Open diagram in expanded view" }).click();
   await expect(page.getByRole("dialog", { name: "Expanded Mermaid diagram" })).toBeVisible();

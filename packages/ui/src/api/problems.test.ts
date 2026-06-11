@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { isProblem, problemCapability, problemRetryAfter, ProblemCodes, readProblem } from "./problems";
+import {
+  isProblem,
+  problemCapability,
+  problemConflictReason,
+  problemRetryAfter,
+  ProblemCodes,
+  readProblem,
+} from "./problems";
 
 describe("isProblem", () => {
   it("accepts a body with a known code", () => {
@@ -99,6 +106,46 @@ describe("problemCapability", () => {
       problemCapability({
         code: ProblemCodes.unsupportedCapability,
         type: "about:blank",
+      }),
+    ).toBeUndefined();
+  });
+});
+
+describe("problemConflictReason", () => {
+  it("returns the head-pinning reasons from details.reason", () => {
+    for (const reason of ["stale_state", "head_unknown"] as const) {
+      expect(
+        problemConflictReason({
+          code: ProblemCodes.conflict,
+          type: "about:blank",
+          details: { reason },
+        }),
+      ).toBe(reason);
+    }
+  });
+
+  it("collapses missing and unrecognized reasons to the generic conflict", () => {
+    expect(
+      problemConflictReason({
+        code: ProblemCodes.conflict,
+        type: "about:blank",
+      }),
+    ).toBe("conflict");
+    expect(
+      problemConflictReason({
+        code: ProblemCodes.conflict,
+        type: "about:blank",
+        details: { reason: "frobnicated" },
+      }),
+    ).toBe("conflict");
+  });
+
+  it("returns undefined for non-conflict codes", () => {
+    expect(
+      problemConflictReason({
+        code: ProblemCodes.badRequest,
+        type: "about:blank",
+        details: { reason: "stale_state" },
       }),
     ).toBeUndefined();
   });

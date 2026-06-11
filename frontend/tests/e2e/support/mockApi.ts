@@ -84,6 +84,7 @@ const pulls = [
     repo_owner: "acme",
     repo_name: "widgets",
     platform_host: "github.com",
+    platform_head_sha: "42aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa42",
     repo: repoRef("acme", "widgets", "github.com"),
     worktree_links: [],
   },
@@ -116,6 +117,7 @@ const pulls = [
     repo_owner: "acme",
     repo_name: "widgets",
     platform_host: "example.com",
+    platform_head_sha: "84bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb84",
     repo: repoRef("acme", "widgets", "example.com"),
     worktree_links: [],
   },
@@ -148,6 +150,7 @@ const pulls = [
     repo_owner: "acme",
     repo_name: "widgets",
     platform_host: "github.com",
+    platform_head_sha: "55cccccccccccccccccccccccccccccccccccc55",
     repo: repoRef("acme", "widgets", "github.com"),
     worktree_links: [
       {
@@ -374,6 +377,7 @@ function pullDetailResponse(pr: (typeof pulls)[number]) {
     repo_owner: pr.repo_owner,
     repo_name: pr.repo_name,
     platform_host: pr.platform_host,
+    platform_head_sha: pr.platform_head_sha ?? "",
     detail_loaded: true,
     detail_fetched_at: "2026-03-30T14:00:00Z",
     worktree_links: pr.worktree_links,

@@ -18,9 +18,11 @@
     size?: "sm" | "md";
     disabled?: boolean;
     /** Head commit the rendered detail showed; pinned on approve. */
-    platformHeadSHA?: string;
+    expectedHeadSha?: string | undefined;
     /** capabilities.mutation_head_binding for this repo's provider. */
     requireHeadPin?: boolean;
+    onheadconflict?: ((reason: "stale_state" | "head_unknown") => void) | undefined;
+    oncompleted?: (() => void) | undefined;
   }
 
   const {
@@ -32,13 +34,15 @@
     repoPath,
     size = "md",
     disabled = false,
-    platformHeadSHA = "",
+    expectedHeadSha,
     requireHeadPin = false,
+    onheadconflict,
+    oncompleted,
   }: Props = $props();
 
   // A head-binding provider cannot approve without a pinned head; treat
   // a missing synced head like a stale view.
-  const headPinMissing = $derived(requireHeadPin && !platformHeadSHA);
+  const headPinMissing = $derived(requireHeadPin && !expectedHeadSha);
 
   let expanded = $state(false);
   let body = $state("");
@@ -69,7 +73,7 @@
     return {
       pr: {
         State: "open", IsDraft: false, MergeableState: "",
-        platform_head_sha: platformHeadSHA,
+        platform_head_sha: expectedHeadSha ?? "",
       },
       ref: { provider, platformHost, owner, name, repoPath },
       number,
@@ -83,6 +87,8 @@
       stores: { detail, pulls },
       client,
       approveCommentBody: body,
+      ...(expectedHeadSha !== undefined && { expectedHeadSha }),
+      ...(onheadconflict !== undefined && { onHeadConflict: onheadconflict }),
     };
   }
 
@@ -94,6 +100,7 @@
       await runApprovePR(buildInput());
       body = "";
       expanded = false;
+      oncompleted?.();
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {

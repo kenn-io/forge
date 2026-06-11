@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
 
+  import { isProblem, problemConflictReason } from "../../api/problems.js";
   import { providerItemPath, providerRouteParams } from "../../api/provider-routes.js";
   import { getClient } from "../../context.js";
   import { pushModalFrame } from "../../stores/keyboard/modal-stack.svelte.js";
@@ -25,24 +26,25 @@
     allowMerge: boolean;
     allowRebase: boolean;
     /** Head commit the rendered detail showed; pinned on merge. */
-    platformHeadSHA?: string;
+    expectedHeadSha?: string | undefined;
     /** capabilities.mutation_head_binding for this repo's provider. */
     requireHeadPin?: boolean;
     onclose: () => void;
     onmerged: () => void;
+    onheadconflict?: ((reason: "stale_state" | "head_unknown") => void) | undefined;
   }
 
   const {
     owner, name, number, provider, platformHost, repoPath, prTitle, prBody,
     prAuthor, prAuthorDisplayName,
     allowSquash, allowMerge, allowRebase,
-    platformHeadSHA = "", requireHeadPin = false,
-    onclose, onmerged,
+    expectedHeadSha, requireHeadPin = false,
+    onclose, onmerged, onheadconflict,
   }: Props = $props();
 
   // A head-binding provider cannot merge without a pinned head; the user
   // must wait for sync and re-review before merging.
-  const headPinMissing = $derived(requireHeadPin && !platformHeadSHA);
+  const headPinMissing = $derived(requireHeadPin && !expectedHeadSha);
 
   type Method = "merge" | "squash" | "rebase";
   type MethodOption = { value: Method; label: string };
@@ -102,20 +104,28 @@
     try {
       // Pin the merge to the head the user reviewed; the server rejects
       // the request when the synced head has moved past it.
+      const pinnedHeadSha = (expectedHeadSha ?? "").trim();
       const params: MergeParams = {
         commit_title: commitTitle,
         commit_message: commitMessage,
         method: selectedMethod,
+        ...(pinnedHeadSha !== "" && { expected_head_sha: pinnedHeadSha }),
       };
-      if (platformHeadSHA) {
-        params.expected_head_sha = platformHeadSHA;
-      }
       const ref = { provider, platformHost, owner, name, repoPath };
       const { error } = await client.POST(providerItemPath("pulls", ref, "/merge"), {
         params: { path: { ...providerRouteParams(ref), number } },
         body: params,
       });
       if (error) {
+        // Head-pinning conflicts close the modal: the user must
+        // re-review the refreshed detail before retrying, so an
+        // inline retry from this stale form would be wrong.
+        const reason = isProblem(error) ? problemConflictReason(error) : undefined;
+        if (reason === "stale_state" || reason === "head_unknown") {
+          onheadconflict?.(reason);
+          onclose();
+          return;
+        }
         throw new Error(error.detail ?? error.title ?? "failed to merge pull request");
       }
       onmerged();

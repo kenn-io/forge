@@ -404,6 +404,7 @@
       return keepExpanded;
     });
     showMergeModal = false;
+    headConflict = null;
     expandedPanel = keepStackExpanded ? "stack" : null;
     editingTitle = false;
     editingBody = false;
@@ -619,6 +620,38 @@
   let repoSettingsRequestID = 0;
   let showMergeModal = $state(false);
 
+  // Head-pinning conflict state (context/provider-architecture.md
+  // "Head binding"). Merge and approve echo the rendered head as
+  // expected_head_sha; a 409 conflict with reason stale_state or
+  // head_unknown lands here.
+  let headConflict = $state<"stale_state" | "head_unknown" | null>(null);
+  const detailHeadSha = $derived(
+    detailStore.getDetail()?.platform_head_sha ?? "",
+  );
+  // After head_unknown the head stays unbound until a sync records it,
+  // so head-bound actions (approve, merge) are disabled until the
+  // refreshed detail carries a head SHA again. Once the SHA arrives
+  // this clears on its own; the stale_state prompt instead stays until
+  // the user completes a head-bound action or navigates away.
+  const headActionsBlocked = $derived(
+    headConflict === "head_unknown" && detailHeadSha === "",
+  );
+
+  function handleHeadConflict(
+    reason: "stale_state" | "head_unknown",
+  ): void {
+    headConflict = reason;
+    showMergeModal = false;
+    // loadDetail's default sync mode pulls fresh provider state, which
+    // is what re-binds the head (stale_state) or populates a missing
+    // one (head_unknown).
+    void detailStore.loadDetail(owner, name, number, {
+      provider,
+      platformHost,
+      repoPath,
+    });
+  }
+
   $effect(() => {
     const requestID = ++repoSettingsRequestID;
     repoSettings = null;
@@ -711,7 +744,9 @@
         approveWorkflows: false,
       },
       repoSettings,
-      stale: stalePR,
+      // Treat a blocked head as stale for gating: the merge modal must
+      // not open while the reviewed head is unknown.
+      stale: stalePR || headActionsBlocked,
       stores: { detail: detailStore, pulls },
       client,
       requireHeadPin: capabilities.mutation_head_binding,
@@ -1592,9 +1627,11 @@
               {platformHost}
               {repoPath}
               size="sm"
-              disabled={stalePR}
-              platformHeadSHA={pr.platform_head_sha ?? ""}
+              disabled={stalePR || headActionsBlocked}
+              expectedHeadSha={detailHeadSha}
               requireHeadPin={capabilities.mutation_head_binding}
+              onheadconflict={handleHeadConflict}
+              oncompleted={() => { headConflict = null; }}
             />
           {/if}
           {#if capabilities.workflow_approval && workflowApproval?.checked && workflowApproval.required}
@@ -1624,10 +1661,10 @@
                 : ""}
             <ActionButton
               class="btn--merge"
-              disabled={stalePR || mergeDisabledByConflicts || mergeOpUnavailable}
+              disabled={stalePR || mergeDisabledByConflicts || mergeOpUnavailable || headActionsBlocked}
               title={mergeTitle}
               onclick={() => {
-                if (stalePR || mergeOpUnavailable) return;
+                if (stalePR || mergeOpUnavailable || headActionsBlocked) return;
                 runOpenMerge(buildOpenMergeInput(pr, capabilities));
               }}
               tone="success"
@@ -1765,6 +1802,15 @@
           {#if stateError}
             <span class="action-error action-error--state">{stateError}</span>
           {/if}
+          {#if headConflict === "stale_state"}
+            <span class="action-error action-error--state" role="status">
+              The head commit changed since this pull request was reviewed. Re-review the latest changes before approving or merging.
+            </span>
+          {:else if headActionsBlocked}
+            <span class="action-error action-error--state" role="status">
+              The head commit has not been synced yet. Approve and merge are unavailable until the next sync records it.
+            </span>
+          {/if}
         </div>
       {/if}
 
@@ -1858,11 +1904,13 @@
           allowSquash={repoSettings.allowSquash}
           allowMerge={repoSettings.allowMerge}
           allowRebase={repoSettings.allowRebase}
-          platformHeadSHA={p.platform_head_sha ?? ""}
+          expectedHeadSha={detailHeadSha}
           requireHeadPin={capabilities.mutation_head_binding}
+          onheadconflict={handleHeadConflict}
           onclose={() => { showMergeModal = false; }}
           onmerged={() => {
             showMergeModal = false;
+            headConflict = null;
             void detailStore.loadDetail(owner, name, number, {
               provider,
               platformHost,

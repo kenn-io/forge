@@ -83,6 +83,8 @@ interface BuildOpts {
   onError?: (msg: string) => void;
   approveCommentBody?: string;
   platformHost?: string;
+  expectedHeadSha?: string;
+  onHeadConflict?: (reason: "stale_state" | "head_unknown") => void;
 }
 
 function buildInput(opts: BuildOpts = {}): PRDetailActionInput {
@@ -136,6 +138,23 @@ function buildInput(opts: BuildOpts = {}): PRDetailActionInput {
     ...(opts.onError !== undefined && {
       onError: opts.onError,
     }),
+    ...(opts.expectedHeadSha !== undefined && {
+      expectedHeadSha: opts.expectedHeadSha,
+    }),
+    ...(opts.onHeadConflict !== undefined && {
+      onHeadConflict: opts.onHeadConflict,
+    }),
+  };
+}
+
+function conflictProblem(reason: string) {
+  return {
+    type: "about:blank",
+    title: "Conflict",
+    status: 409,
+    detail: "target changed since it was reviewed; refresh and retry",
+    code: "conflict",
+    details: { reason },
   };
 }
 
@@ -230,6 +249,57 @@ describe("runApprovePR", () => {
     const client = fakeClient();
     await runApprovePR(buildInput({ client, state: "closed" }));
     expect(client.POST).not.toHaveBeenCalled();
+  });
+
+  it("echoes the reviewed head as expected_head_sha when provided", async () => {
+    const client = fakeClient();
+    await runApprovePR(
+      buildInput({
+        client,
+        expectedHeadSha: " abc123 ",
+      }),
+    );
+    const [, init] = client.POST.mock.calls[0];
+    expect(init.body).toEqual({ body: "", expected_head_sha: "abc123" });
+  });
+
+  it("omits expected_head_sha when the rendered head is unknown", async () => {
+    const client = fakeClient();
+    await runApprovePR(buildInput({ client, expectedHeadSha: "" }));
+    const [, init] = client.POST.mock.calls[0];
+    expect(init.body).toEqual({ body: "" });
+  });
+
+  it("reports stale_state and head_unknown conflicts via onHeadConflict", async () => {
+    for (const reason of ["stale_state", "head_unknown"] as const) {
+      const client = fakeClient();
+      client.POST.mockResolvedValueOnce({
+        data: undefined,
+        error: conflictProblem(reason),
+        response: new Response("{}", { status: 409 }),
+      });
+      const stores = fakeStores();
+      const onHeadConflict = vi.fn();
+      await expect(
+        runApprovePR(buildInput({ client, stores, expectedHeadSha: "abc123", onHeadConflict })),
+      ).rejects.toThrow("target changed since it was reviewed; refresh and retry");
+      expect(onHeadConflict).toHaveBeenCalledWith(reason);
+      // The conflict owner refreshes; the closure must not double-load.
+      expect(stores.detail.loadDetail).not.toHaveBeenCalled();
+      expect(stores.pulls.loadPulls).not.toHaveBeenCalled();
+    }
+  });
+
+  it("does not report generic conflicts via onHeadConflict", async () => {
+    const client = fakeClient();
+    client.POST.mockResolvedValueOnce({
+      data: undefined,
+      error: conflictProblem("merge_conflict_or_unknown"),
+      response: new Response("{}", { status: 409 }),
+    });
+    const onHeadConflict = vi.fn();
+    await expect(runApprovePR(buildInput({ client, expectedHeadSha: "abc123", onHeadConflict }))).rejects.toThrow();
+    expect(onHeadConflict).not.toHaveBeenCalled();
   });
 });
 

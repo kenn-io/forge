@@ -383,10 +383,11 @@ func (c *Client) EditIssueContent(
 
 // ApproveMergeRequest approves an MR through the GitLab approvals API.
 // A non-empty expectedHeadSHA binds the approval to the reviewed commit:
-// GitLab rejects the approval when the MR head has moved, and the note
-// below is guarded by a head check first so a stale review does not leave
-// an orphaned comment (a small race window remains between the check and
-// the note; the approval itself is hard-bound by GitLab).
+// GitLab rejects the approval when the MR head has moved. The approval
+// itself needs no client-side check, but when a body will be posted as a
+// note (notes are not sha-bound) the current head is verified first so a
+// stale review does not leave an orphaned comment (a small race window
+// remains between the check and the note).
 //
 // GitLab approvals carry no body, so a non-empty body is posted as a
 // regular MR note before approving; the synthesized approval event keeps
@@ -408,7 +409,8 @@ func (c *Client) ApproveMergeRequest(
 		return platform.MergeRequestEvent{}, err
 	}
 
-	if expectedHeadSHA != "" {
+	comment := strings.TrimSpace(body)
+	if expectedHeadSHA != "" && comment != "" {
 		current, _, err := c.api.MergeRequests.GetMergeRequest(pid, int64(number), nil, gitlab.WithContext(ctx))
 		if err != nil {
 			return platform.MergeRequestEvent{}, mapGitLabError("approve_merge_request", err)
@@ -424,7 +426,7 @@ func (c *Client) ApproveMergeRequest(
 	}
 
 	notePosted := false
-	if comment := strings.TrimSpace(body); comment != "" {
+	if comment != "" {
 		if _, _, err := c.api.Notes.CreateMergeRequestNote(
 			pid,
 			int64(number),

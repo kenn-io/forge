@@ -509,13 +509,7 @@ func mapPlatformError(err error) huma.StatusError {
 	case platform.ErrCodeRateLimited:
 		return problemRateLimited(provider, host, pe.ResetAt)
 	case platform.ErrCodePermissionDenied:
-		d := map[string]any{}
-		if provider != "" {
-			d["provider"] = provider
-		}
-		if host != "" {
-			d["platformHost"] = host
-		}
+		d := platformErrorDetails(provider, host)
 		if len(d) == 0 {
 			d = nil
 		}
@@ -527,26 +521,16 @@ func mapPlatformError(err error) huma.StatusError {
 	// (stale_state: reload and re-review; conflict: the provider refuses
 	// the current state, re-reviewing won't help by itself).
 	case platform.ErrCodeStaleState:
-		d := map[string]any{"reason": "stale_state"}
-		if provider != "" {
-			d["provider"] = provider
-		}
-		if host != "" {
-			d["platformHost"] = host
-		}
+		d := platformErrorDetails(provider, host)
+		d["reason"] = "stale_state"
 		return problemConflict(
 			CodeConflict,
 			"target changed since it was reviewed; refresh and retry",
 			d,
 		)
 	case platform.ErrCodeConflict:
-		d := map[string]any{"reason": "conflict"}
-		if provider != "" {
-			d["provider"] = provider
-		}
-		if host != "" {
-			d["platformHost"] = host
-		}
+		d := platformErrorDetails(provider, host)
+		d["reason"] = "conflict"
 		return problemConflict(CodeConflict, err.Error(), d)
 	case platform.ErrCodeProviderNotConfigured,
 		platform.ErrCodeMissingToken,
@@ -556,6 +540,19 @@ func mapPlatformError(err error) huma.StatusError {
 	default:
 		return problemUpstream(err.Error(), provider, host)
 	}
+}
+
+// platformErrorDetails seeds a problem details map with provider
+// identity; callers add their extension members on top.
+func platformErrorDetails(provider, host string) map[string]any {
+	d := map[string]any{}
+	if provider != "" {
+		d["provider"] = provider
+	}
+	if host != "" {
+		d["platformHost"] = host
+	}
+	return d
 }
 
 // init replaces huma.NewError so any remaining huma.ErrorNxx callers

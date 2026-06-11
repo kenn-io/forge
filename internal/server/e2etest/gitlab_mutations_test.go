@@ -147,6 +147,8 @@ func setupGitLabMutationServer(
 				"created_at": "2026-05-01T10:00:00Z"
 			}`)
 		case path == "/api/v4/projects/4242/merge_requests/7/merge" && r.Method == http.MethodPut:
+			// Magic marker sent via commit_message by tests that need a
+			// non-stale provider conflict from this fake.
 			if strings.Contains(request.Body, "force-generic-conflict") {
 				w.WriteHeader(http.StatusConflict)
 				writeGitLabJSON(w, `{"message": "merge request is not mergeable"}`)
@@ -318,6 +320,33 @@ func setupGitLabMutationServer(
 
 func writeGitLabJSON(w http.ResponseWriter, body string) {
 	_, _ = io.WriteString(w, body)
+}
+
+// upsertGitLabTestMR rewrites MR 7's row with the given local head SHA,
+// modelling rows reviewed at older heads ("stale-sha") or rows synced
+// before head tracking existed ("").
+func upsertGitLabTestMR(
+	t *testing.T,
+	ctx context.Context,
+	database *db.DB,
+	repoID int64,
+	headSHA string,
+) {
+	t.Helper()
+	_, err := database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:          repoID,
+		PlatformID:      7001,
+		Number:          7,
+		URL:             "https://gitlab.com/acme/widget/-/merge_requests/7",
+		Title:           "Test MR",
+		Author:          "author",
+		State:           "open",
+		PlatformHeadSHA: headSHA,
+		CreatedAt:       time.Now().UTC(),
+		UpdatedAt:       time.Now().UTC(),
+		LastActivityAt:  time.Now().UTC(),
+	})
+	require.NoError(t, err)
 }
 
 func doGitLabJSON(
@@ -595,20 +624,7 @@ func TestGitLabMutationApproveStaleHeadReturnsConflict(t *testing.T) {
 
 	// The local head is behind the provider head served by the fake API,
 	// mimicking a source-branch push after the user reviewed.
-	_, err := database.UpsertMergeRequest(ctx, &db.MergeRequest{
-		RepoID:          repoID,
-		PlatformID:      7001,
-		Number:          7,
-		URL:             "https://gitlab.com/acme/widget/-/merge_requests/7",
-		Title:           "Test MR",
-		Author:          "author",
-		State:           "open",
-		PlatformHeadSHA: "stale-sha",
-		CreatedAt:       time.Now().UTC(),
-		UpdatedAt:       time.Now().UTC(),
-		LastActivityAt:  time.Now().UTC(),
-	})
-	require.NoError(err)
+	upsertGitLabTestMR(t, ctx, database, repoID, "stale-sha")
 
 	rr := doGitLabJSON(t, srv, http.MethodPost,
 		"/api/v1/pulls/gitlab/acme/widget/7/approve",
@@ -636,20 +652,7 @@ func TestGitLabMutationMergeStaleHeadReturnsConflict(t *testing.T) {
 	srv, database, recorder, repoID := setupGitLabMutationServer(t)
 	ctx := t.Context()
 
-	_, err := database.UpsertMergeRequest(ctx, &db.MergeRequest{
-		RepoID:          repoID,
-		PlatformID:      7001,
-		Number:          7,
-		URL:             "https://gitlab.com/acme/widget/-/merge_requests/7",
-		Title:           "Test MR",
-		Author:          "author",
-		State:           "open",
-		PlatformHeadSHA: "stale-sha",
-		CreatedAt:       time.Now().UTC(),
-		UpdatedAt:       time.Now().UTC(),
-		LastActivityAt:  time.Now().UTC(),
-	})
-	require.NoError(err)
+	upsertGitLabTestMR(t, ctx, database, repoID, "stale-sha")
 
 	rr := doGitLabJSON(t, srv, http.MethodPost,
 		"/api/v1/pulls/gitlab/acme/widget/7/merge",
@@ -736,19 +739,7 @@ func TestGitLabMutationMissingHeadSHAFailsClosed(t *testing.T) {
 			srv, database, recorder, repoID := setupGitLabMutationServer(t)
 			ctx := t.Context()
 
-			_, err := database.UpsertMergeRequest(ctx, &db.MergeRequest{
-				RepoID:         repoID,
-				PlatformID:     7001,
-				Number:         7,
-				URL:            "https://gitlab.com/acme/widget/-/merge_requests/7",
-				Title:          "Test MR",
-				Author:         "author",
-				State:          "open",
-				CreatedAt:      time.Now().UTC(),
-				UpdatedAt:      time.Now().UTC(),
-				LastActivityAt: time.Now().UTC(),
-			})
-			require.NoError(err)
+			upsertGitLabTestMR(t, ctx, database, repoID, "")
 
 			// Two consecutive requests model a user re-clicking from the
 			// same stale UI; both must fail closed identically.

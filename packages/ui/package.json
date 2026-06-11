@@ -138,7 +138,6 @@
   "devDependencies": {
     "@testing-library/svelte": "5.2.8",
     "@tsconfig/svelte": "^5.0.0",
-    "@types/dompurify": "3.2.0",
     "@types/node": "^24.9.2",
     "openapi-fetch": "^0.17.0",
     "svelte": "^5.55.7",

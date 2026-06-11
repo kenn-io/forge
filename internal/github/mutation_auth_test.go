@@ -1,0 +1,187 @@
+package github
+
+import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	gh "github.com/google/go-github/v84/github"
+	Assert "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"go.kenn.io/middleman/internal/tokenauth"
+)
+
+// newSplitAuthTestClient builds a liveClient wired exactly like
+// NewClient's read/write split (shared auth transport, mutation-marked
+// write path) but pointed at srv instead of a real GitHub host.
+func newSplitAuthTestClient(
+	t *testing.T, srv *httptest.Server, source tokenauth.Source,
+) *liveClient {
+	t.Helper()
+	authRT := tokenauth.AuthTransport{
+		Source:              source,
+		Base:                http.DefaultTransport,
+		SetHeader:           tokenauth.BearerAuthHeader,
+		RetryOnUnauthorized: true,
+	}
+	readHTTP := &http.Client{Transport: authRT}
+	writeHTTP := &http.Client{Transport: mutationAuthTransport{base: authRT}}
+	ghRead, err := gh.NewClient(readHTTP).WithEnterpriseURLs(
+		srv.URL+"/api/v3/", srv.URL+"/api/uploads/",
+	)
+	require.NoError(t, err)
+	ghWrite, err := gh.NewClient(writeHTTP).WithEnterpriseURLs(
+		srv.URL+"/api/v3/", srv.URL+"/api/uploads/",
+	)
+	require.NoError(t, err)
+	return &liveClient{
+		gh:              ghRead,
+		ghWrite:         ghWrite,
+		httpClient:      readHTTP,
+		httpWriteClient: writeHTTP,
+		graphQLEndpoint: srv.URL + "/api/graphql",
+	}
+}
+
+// TestMutationsUseUserPATWhileReadsUseAppToken pins the credential
+// split at the wire level: with a github_app candidate ahead of the
+// PAT in the chain, sync reads must authenticate with the minted
+// installation token while user-facing writes (REST mutations and the
+// ready-for-review GraphQL mutation) must carry the user's PAT so
+// GitHub attributes them to the user, not "<app>[bot]".
+func TestMutationsUseUserPATWhileReadsUseAppToken(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	t.Setenv("TEST_SPLIT_AUTH_PAT", "user-pat")
+
+	var mu sync.Mutex
+	authByCall := map[string]string{}
+	record := func(name string, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		authByCall[name] = r.Header.Get("Authorization")
+	}
+
+	var graphQLCalls atomic.Int64
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /api/v3/repos/acme/widgets/releases",
+		func(w http.ResponseWriter, r *http.Request) {
+			record("read:releases", r)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`[]`))
+		})
+	mux.HandleFunc("POST /api/v3/repos/acme/widgets/issues/5/comments",
+		func(w http.ResponseWriter, r *http.Request) {
+			record("write:comment", r)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"id":1}`))
+		})
+	mux.HandleFunc("PUT /api/v3/repos/acme/widgets/pulls/5/merge",
+		func(w http.ResponseWriter, r *http.Request) {
+			record("write:merge", r)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"merged":true}`))
+		})
+	mux.HandleFunc("POST /api/graphql",
+		func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			if graphQLCalls.Add(1) == 1 {
+				record("write:rfr-id-lookup", r)
+				_, _ = w.Write([]byte(
+					`{"data":{"repository":{"pullRequest":{"id":"PR_node"}}}}`,
+				))
+				return
+			}
+			record("write:rfr-mutation", r)
+			_, _ = w.Write([]byte(
+				`{"data":{"markPullRequestReadyForReview":{"pullRequest":{"number":5}}}}`,
+			))
+		})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	var mints atomic.Int64
+	source := tokenauth.NewManagedSource(tokenauth.Descriptor{
+		Key: tokenauth.Key{Platform: "github", Host: "github.example.com"},
+		Candidates: []tokenauth.Candidate{
+			{
+				Kind:           tokenauth.SourceKindGitHubApp,
+				Host:           "github.example.com",
+				FilePath:       "/keys/app.pem",
+				AppID:          7,
+				InstallationID: 11,
+			},
+			{Kind: tokenauth.SourceKindEnv, EnvName: "TEST_SPLIT_AUTH_PAT"},
+		},
+	}, tokenauth.Options{
+		GitHubApp: func(context.Context, tokenauth.Candidate) (string, time.Time, error) {
+			mints.Add(1)
+			return "ghs_app_token", time.Now().Add(time.Hour), nil
+		},
+	})
+	c := newSplitAuthTestClient(t, srv, source)
+
+	_, err := c.ListReleases(t.Context(), "acme", "widgets", 10)
+	require.NoError(err)
+	_, err = c.CreateIssueComment(t.Context(), "acme", "widgets", 5, "lgtm")
+	require.NoError(err)
+	_, err = c.MergePullRequest(t.Context(), "acme", "widgets", 5, "t", "m", "squash")
+	require.NoError(err)
+	_, err = c.MarkPullRequestReadyForReview(t.Context(), "acme", "widgets", 5)
+	require.NoError(err)
+
+	mu.Lock()
+	defer mu.Unlock()
+	assert.Equal("Bearer ghs_app_token", authByCall["read:releases"])
+	assert.Equal("Bearer user-pat", authByCall["write:comment"])
+	assert.Equal("Bearer user-pat", authByCall["write:merge"])
+	assert.Equal("Bearer user-pat", authByCall["write:rfr-id-lookup"])
+	assert.Equal("Bearer user-pat", authByCall["write:rfr-mutation"])
+	assert.Equal(int64(1), mints.Load(),
+		"reads share one minted token; writes must not mint")
+}
+
+// TestMutationAuthFallsBackToReadClientWhenUnsplit pins the hand-built
+// client shape used across this package's tests: without a dedicated
+// write client, mutations flow through the read client unchanged.
+func TestMutationAuthFallsBackToReadClientWhenUnsplit(t *testing.T) {
+	var gotAuth string
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /api/v3/repos/acme/widgets/issues/5/comments",
+		func(w http.ResponseWriter, r *http.Request) {
+			gotAuth = r.Header.Get("Authorization")
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"id":1}`))
+		})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	t.Setenv("TEST_SPLIT_AUTH_PAT", "only-pat")
+	source := tokenauth.NewManagedSource(tokenauth.Descriptor{
+		Key: tokenauth.Key{Platform: "github", Host: "github.example.com"},
+		Candidates: []tokenauth.Candidate{
+			{Kind: tokenauth.SourceKindEnv, EnvName: "TEST_SPLIT_AUTH_PAT"},
+		},
+	}, tokenauth.Options{})
+	authRT := tokenauth.AuthTransport{
+		Source:    source,
+		Base:      http.DefaultTransport,
+		SetHeader: tokenauth.BearerAuthHeader,
+	}
+	ghClient, err := gh.NewClient(&http.Client{Transport: authRT}).WithEnterpriseURLs(
+		srv.URL+"/api/v3/", srv.URL+"/api/uploads/",
+	)
+	require.NoError(t, err)
+	c := &liveClient{gh: ghClient}
+
+	_, err = c.CreateIssueComment(t.Context(), "acme", "widgets", 5, "hello")
+	require.NoError(t, err)
+	Assert.Equal(t, "Bearer only-pat", gotAuth)
+}

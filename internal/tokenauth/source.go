@@ -118,6 +118,26 @@ func (s *ManagedSource) tokenFromCandidate(
 // one-hour token lifetime.
 const githubAppTokenRefreshSkew = 5 * time.Minute
 
+type mutationAuthCtxKey struct{}
+
+// WithMutationAuth marks ctx so token resolution skips github_app
+// installation tokens and resolves the user's own credential chain
+// (env PAT, token file, gh CLI) instead. Mutations sent with an app
+// token are attributed to "<app>[bot]" on GitHub; middleman keeps
+// user-visible writes (merges, comments, state changes) on the user's
+// credential so they stay attributed to the user. A host configured
+// with only an app and no PAT chain fails mutation auth with a
+// missing-token error rather than silently writing as the bot.
+func WithMutationAuth(ctx context.Context) context.Context {
+	return context.WithValue(ctx, mutationAuthCtxKey{}, true)
+}
+
+// IsMutationAuth reports whether ctx was marked by WithMutationAuth.
+func IsMutationAuth(ctx context.Context) bool {
+	marked, ok := ctx.Value(mutationAuthCtxKey{}).(bool)
+	return ok && marked
+}
+
 func (s *ManagedSource) githubAppToken(
 	ctx context.Context,
 	candidate Candidate,
@@ -126,6 +146,11 @@ func (s *ManagedSource) githubAppToken(
 	// through to the remaining candidates (PAT env vars, gh CLI) so a
 	// half-configured app does not take the whole host offline.
 	if candidate.InstallationID == 0 {
+		return "", false, nil
+	}
+	// Mutations stay on the user's own credential chain so writes are
+	// attributed to the user instead of the app bot.
+	if IsMutationAuth(ctx) {
 		return "", false, nil
 	}
 	s.mu.Lock()

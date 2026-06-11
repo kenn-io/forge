@@ -109,6 +109,32 @@ func TestGitHubAppMintFailureSurfacesError(t *testing.T) {
 	require.ErrorContains(t, err, "github_app:77@github.com")
 }
 
+func TestMutationAuthSkipsGitHubAppCandidate(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	t.Setenv("TEST_GITHUB_APP_FALLBACK", "user-pat")
+	var mints atomic.Int64
+	src := NewManagedSource(githubAppDescriptor(42), Options{
+		GitHubApp: func(context.Context, Candidate) (string, time.Time, error) {
+			mints.Add(1)
+			return "ghs_minted", time.Now().Add(time.Hour), nil
+		},
+	})
+
+	// Mutation-marked resolution must bypass the app and land on the
+	// user's PAT so writes are attributed to the user.
+	token, err := src.Token(WithMutationAuth(context.Background()))
+	require.NoError(err)
+	assert.Equal("user-pat", token)
+	assert.Zero(mints.Load())
+
+	// Unmarked resolution still mints the app token.
+	token, err = src.Token(context.Background())
+	require.NoError(err)
+	assert.Equal("ghs_minted", token)
+	assert.Equal(int64(1), mints.Load())
+}
+
 func TestGitHubAppDescriptorUpdateClearsCache(t *testing.T) {
 	var mints atomic.Int64
 	src := NewManagedSource(githubAppDescriptor(42), Options{

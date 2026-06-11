@@ -200,31 +200,62 @@ func NewClient(
 		transport = &budgetTransport{base: transport, budget: budget}
 	}
 	httpClient := &http.Client{Transport: wrapPublicGitHubAPIGuard(transport)}
+	// Mutations resolve auth with the mutation marker so a configured
+	// GitHub App is skipped and writes stay attributed to the user's
+	// own credential. The write path is a separate gh.Client because
+	// go-github caches rate limits per client instance: sharing one
+	// client would let an exhausted PAT (reported by a write response)
+	// preemptively block app-token reads until the PAT window resets.
+	// No etag or sync-budget transports: those exist for sync reads.
+	writeHTTPClient := &http.Client{Transport: wrapPublicGitHubAPIGuard(
+		mutationAuthTransport{base: authRT},
+	)}
 
-	var ghClient *gh.Client
-	if platformHost == "" || platformHost == "github.com" {
-		ghClient = gh.NewClient(httpClient)
-	} else {
-		baseURL := "https://" + platformHost + "/api/v3/"
-		uploadURL := "https://" + platformHost +
-			"/api/uploads/"
-		var err error
-		ghClient, err = gh.NewClient(httpClient).
-			WithEnterpriseURLs(baseURL, uploadURL)
-		if err != nil {
-			return nil, fmt.Errorf(
-				"create enterprise client: %w", err,
-			)
+	newGHClient := func(hc *http.Client) (*gh.Client, error) {
+		if platformHost == "" || platformHost == "github.com" {
+			return gh.NewClient(hc), nil
 		}
+		baseURL := "https://" + platformHost + "/api/v3/"
+		uploadURL := "https://" + platformHost + "/api/uploads/"
+		client, err := gh.NewClient(hc).WithEnterpriseURLs(baseURL, uploadURL)
+		if err != nil {
+			return nil, fmt.Errorf("create enterprise client: %w", err)
+		}
+		return client, nil
+	}
+	ghClient, err := newGHClient(httpClient)
+	if err != nil {
+		return nil, err
+	}
+	ghWriteClient, err := newGHClient(writeHTTPClient)
+	if err != nil {
+		return nil, err
 	}
 	return &liveClient{
 		gh:              ghClient,
+		ghWrite:         ghWriteClient,
 		httpClient:      httpClient,
+		httpWriteClient: writeHTTPClient,
 		rateTracker:     rateTracker,
 		platformHost:    platformHost,
 		graphQLEndpoint: graphQLEndpointForHost(platformHost),
 		etag:            et,
 	}, nil
+}
+
+// mutationAuthTransport marks every request's context with
+// tokenauth.WithMutationAuth before auth resolution, steering token
+// selection away from github_app installation tokens.
+type mutationAuthTransport struct {
+	base http.RoundTripper
+}
+
+func (t mutationAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	marked := req.Clone(tokenauth.WithMutationAuth(req.Context()))
+	if req.Body != nil && req.Body != http.NoBody {
+		marked.Body = req.Body
+	}
+	return t.base.RoundTrip(marked)
 }
 
 func restAPIOriginForHost(platformHost string) string {
@@ -235,8 +266,16 @@ func restAPIOriginForHost(platformHost string) string {
 }
 
 type liveClient struct {
-	gh                 *gh.Client
+	gh *gh.Client
+	// ghWrite/httpWriteClient carry mutation traffic on the user's own
+	// credential (mutation-marked auth context, own go-github rate
+	// cache). Mutation responses do not feed the rate trackers: the
+	// trackers describe the sync credential's budget, which is a
+	// different bucket when a GitHub App is configured. Nil in
+	// hand-built test clients; accessors fall back to the read client.
+	ghWrite            *gh.Client
 	httpClient         *http.Client
+	httpWriteClient    *http.Client
 	rateTracker        *RateTracker
 	graphQLRateTracker *RateTracker
 	platformHost       string
@@ -244,6 +283,20 @@ type liveClient struct {
 	etag               *etagTransport
 	viewerMu           sync.Mutex
 	viewerLogin        string
+}
+
+func (c *liveClient) writeGH() *gh.Client {
+	if c.ghWrite != nil {
+		return c.ghWrite
+	}
+	return c.gh
+}
+
+func (c *liveClient) writeHTTPClient() *http.Client {
+	if c.httpWriteClient != nil {
+		return c.httpWriteClient
+	}
+	return c.httpClient
 }
 
 // SetGraphQLRateTracker attaches the tracker used by liveClient's direct
@@ -319,8 +372,7 @@ func (c *liveClient) ListRepoLabels(
 func (c *liveClient) ReplaceIssueLabels(
 	ctx context.Context, owner, repo string, number int, names []string,
 ) ([]*gh.Label, error) {
-	labels, resp, err := c.gh.Issues.ReplaceLabelsForIssue(ctx, owner, repo, number, names)
-	c.trackRate(resp)
+	labels, _, err := c.writeGH().Issues.ReplaceLabelsForIssue(ctx, owner, repo, number, names)
 	if err != nil {
 		return nil, err
 	}
@@ -381,7 +433,7 @@ func (c *liveClient) CreateIssue(
 	if body != "" {
 		req.Body = &body
 	}
-	issue, _, err := c.gh.Issues.Create(ctx, owner, repo, req)
+	issue, _, err := c.writeGH().Issues.Create(ctx, owner, repo, req)
 	if err != nil {
 		return nil, err
 	}
@@ -1875,7 +1927,7 @@ func (c *liveClient) ListWorkflowRunsForHeadSHA(
 func (c *liveClient) ApproveWorkflowRun(
 	ctx context.Context, owner, repo string, runID int64,
 ) error {
-	req, err := c.gh.NewRequest(
+	req, err := c.writeGH().NewRequest(
 		"POST",
 		fmt.Sprintf("repos/%s/%s/actions/runs/%d/approve", owner, repo, runID),
 		nil,
@@ -1887,8 +1939,7 @@ func (c *liveClient) ApproveWorkflowRun(
 		)
 	}
 
-	resp, err := c.gh.Do(ctx, req, nil)
-	c.trackRate(resp)
+	_, err = c.writeGH().Do(ctx, req, nil)
 	if err != nil {
 		return fmt.Errorf(
 			"approving workflow run %s/%s#%d: %w",
@@ -1901,10 +1952,9 @@ func (c *liveClient) ApproveWorkflowRun(
 func (c *liveClient) CreateIssueComment(
 	ctx context.Context, owner, repo string, number int, body string,
 ) (*gh.IssueComment, error) {
-	comment, resp, err := c.gh.Issues.CreateComment(ctx, owner, repo, number, &gh.IssueComment{
+	comment, _, err := c.writeGH().Issues.CreateComment(ctx, owner, repo, number, &gh.IssueComment{
 		Body: new(body),
 	})
-	c.trackRate(resp)
 	if err != nil {
 		return nil, fmt.Errorf("creating comment on %s/%s#%d: %w", owner, repo, number, err)
 	}
@@ -1914,10 +1964,9 @@ func (c *liveClient) CreateIssueComment(
 func (c *liveClient) EditIssueComment(
 	ctx context.Context, owner, repo string, commentID int64, body string,
 ) (*gh.IssueComment, error) {
-	comment, resp, err := c.gh.Issues.EditComment(
+	comment, _, err := c.writeGH().Issues.EditComment(
 		ctx, owner, repo, commentID, &gh.IssueComment{Body: new(body)},
 	)
-	c.trackRate(resp)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"editing comment %d on %s/%s: %w", commentID, owner, repo, err,
@@ -1929,10 +1978,9 @@ func (c *liveClient) EditIssueComment(
 func (c *liveClient) CreatePullRequestReviewCommentReply(
 	ctx context.Context, owner, repo string, number int, body string, commentID int64,
 ) (*gh.PullRequestComment, error) {
-	comment, resp, err := c.gh.PullRequests.CreateCommentInReplyTo(
+	comment, _, err := c.writeGH().PullRequests.CreateCommentInReplyTo(
 		ctx, owner, repo, number, body, commentID,
 	)
-	c.trackRate(resp)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"replying to review comment %d on %s/%s#%d: %w",
@@ -1977,10 +2025,9 @@ func (c *liveClient) CreateReviewWithComments(
 	if commitID != "" {
 		request.CommitID = &commitID
 	}
-	review, resp, err := c.gh.PullRequests.CreateReview(
+	review, _, err := c.writeGH().PullRequests.CreateReview(
 		ctx, owner, repo, number, request,
 	)
-	c.trackRate(resp)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"creating review on %s/%s#%d: %w", owner, repo, number, err,
@@ -2044,11 +2091,10 @@ func (c *liveClient) MarkPullRequestReadyForReview(
 		req.Header.Set("Accept", "application/vnd.github+json")
 		req.Header.Set("Content-Type", "application/json")
 
-		resp, err := c.httpClient.Do(req)
+		resp, err := c.writeHTTPClient().Do(req)
 		if err != nil {
 			return nil, err
 		}
-		c.trackGraphQLRateHeaders(resp)
 		if resp.StatusCode != http.StatusOK {
 			_ = resp.Body.Close()
 			return resp, newReadyForReviewError(
@@ -2143,10 +2189,9 @@ func (c *liveClient) MergePullRequest(
 		// modified" if the PR head moved past the reviewed commit.
 		SHA: expectedHeadSHA,
 	}
-	result, resp, err := c.gh.PullRequests.Merge(
+	result, _, err := c.writeGH().PullRequests.Merge(
 		ctx, owner, repo, number, commitMessage, opts,
 	)
-	c.trackRate(resp)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"merging %s/%s#%d: %w", owner, repo, number, err,
@@ -2168,10 +2213,9 @@ func (c *liveClient) EditPullRequest(
 	if opts.Body != nil {
 		edit.Body = opts.Body
 	}
-	pr, resp, err := c.gh.PullRequests.Edit(
+	pr, _, err := c.writeGH().PullRequests.Edit(
 		ctx, owner, repo, number, edit,
 	)
-	c.trackRate(resp)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"editing pull request %s/%s#%d: %w",
@@ -2184,10 +2228,9 @@ func (c *liveClient) EditPullRequest(
 func (c *liveClient) EditIssue(
 	ctx context.Context, owner, repo string, number int, state string,
 ) (*gh.Issue, error) {
-	issue, resp, err := c.gh.Issues.Edit(
+	issue, _, err := c.writeGH().Issues.Edit(
 		ctx, owner, repo, number, &gh.IssueRequest{State: &state},
 	)
-	c.trackRate(resp)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"editing issue %s/%s#%d: %w",
@@ -2207,8 +2250,7 @@ func (c *liveClient) EditIssueContent(
 	if body != nil {
 		req.Body = body
 	}
-	issue, resp, err := c.gh.Issues.Edit(ctx, owner, repo, number, req)
-	c.trackRate(resp)
+	issue, _, err := c.writeGH().Issues.Edit(ctx, owner, repo, number, req)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"editing issue %s/%s#%d: %w",

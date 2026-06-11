@@ -23,7 +23,7 @@ CLI (middleman) → Config (TOML) → DB (SQLite)
 - **Docs**: Configured markdown folders with filesystem-safe browse/read/write/search/git publish behavior
 - **Messages**: msgvault-backed message search, detail, thread, and safe HTML/image handling
 - **Frontend**: Svelte 5 SPA embedded in the Go binary at build time
-- **Config**: TOML at `~/.config/middleman/config.toml`; per-provider `MIDDLEMAN_<PROVIDER>_TOKEN` env vars (with optional repo-level `token_env` overrides). Optional `[[github_apps]]` entries (written by the `middleman-github-app` CLI) authenticate GitHub hosts with app installation tokens ahead of PATs to relieve rate limits
+- **Config**: TOML at `~/.config/middleman/config.toml`; per-provider `MIDDLEMAN_<PROVIDER>_TOKEN` env vars (with optional repo-level `token_env` overrides). Optional `[[github_apps]]` entries (written by the `middleman-github-app` CLI) authenticate GitHub sync reads with app installation tokens ahead of PATs to relieve rate limits; mutations (merges, comments, state changes) stay on the user's PAT chain so they remain attributed to the user
 
 ## Provider Support
 

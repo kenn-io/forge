@@ -2211,6 +2211,39 @@ test("kata route change aborts a pending detail load instead of surfacing its la
   }
 });
 
+test("kata view change drops a held keyboard selection from the previous view", async ({ page }) => {
+  const backend = await startKataBackend();
+  const kataHome = await configureKataHome(backend.url);
+  const server = await startIsolatedE2EServer();
+
+  try {
+    await page.goto(`${server.info.base_url}/kata?view=all`);
+    await expect(page.getByRole("status", { name: "Connection: online" })).toBeVisible();
+    const rows = page.locator(".issue-list .issue-row");
+    await expect(rows.first()).toContainText("Email Susan re: Q3");
+    await expect(rows.nth(1)).toContainText("Pay rent");
+
+    // Hold j so the pending selection of Pay rent stays parked, then
+    // switch views while it is still held. Pay rent also exists in the
+    // Today view, so a stale commit after the switch would still
+    // resolve and fetch it — the view change must drop the pending
+    // selection instead.
+    await rows.first().focus();
+    await page.keyboard.down("j");
+    await page.getByRole("button", { name: /^Today/ }).click();
+    await expect(page.locator(".issue-list").getByRole("heading", { name: "Today", level: 2 })).toBeVisible();
+    await page.keyboard.up("j");
+
+    await page.waitForTimeout(750);
+    expect(backend.state.seenPaths).not.toContain("GET /api/v1/issues/issue-rent");
+    await expect(page.getByText("Select a task")).toBeVisible();
+  } finally {
+    await server.stop();
+    kataHome.restore();
+    await backend.close();
+  }
+});
+
 test("kata task list keyboard scrolling only fetches the final settled task", async ({ page }) => {
   const traversal = [
     issueSummary({

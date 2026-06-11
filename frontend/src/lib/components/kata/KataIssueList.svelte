@@ -213,13 +213,21 @@
   }
 
   // Keyboard navigation selects on every step, and each selection kicks
-  // off a detail + events fetch upstream. Debounce the notification so
-  // holding j/k doesn't fire a request per row traversed — focus still
-  // moves instantly, only the fetch waits for the cursor to settle.
+  // off a detail + events fetch upstream. Selection therefore only
+  // commits once the keyboard settles: 50ms after the last navigation
+  // keydown, and never while a navigation key is still physically held.
+  // The held-key gate matters because OS key-repeat intervals are often
+  // longer than any reasonable debounce — a timer alone would still
+  // commit one fetch per repeated row. Focus itself moves instantly;
+  // only the upstream notification waits for the cursor to settle.
   const KEYBOARD_SELECT_DEBOUNCE_MS = 50;
+  const KEYBOARD_NAV_KEYS = new Set(["ArrowDown", "ArrowUp", "j", "k", "Home", "End", "g", "G"]);
   let keyboardSelectTimer: ReturnType<typeof setTimeout> | undefined;
+  let pendingKeyboardSelectUID: string | null = null;
+  const heldNavKeys = new Set<string>();
 
   function cancelPendingKeyboardSelect() {
+    pendingKeyboardSelectUID = null;
     if (keyboardSelectTimer !== undefined) {
       clearTimeout(keyboardSelectTimer);
       keyboardSelectTimer = undefined;
@@ -233,20 +241,55 @@
     onSelect(issue);
   }
 
+  function restartKeyboardSelectTimer() {
+    if (keyboardSelectTimer !== undefined) clearTimeout(keyboardSelectTimer);
+    keyboardSelectTimer = setTimeout(() => {
+      keyboardSelectTimer = undefined;
+      // A navigation key is still held: stay pending. The matching keyup
+      // restarts the timer, so even a slow OS key-repeat never commits
+      // intermediate rows mid-hold.
+      if (heldNavKeys.size > 0) return;
+      commitKeyboardSelect();
+    }, KEYBOARD_SELECT_DEBOUNCE_MS);
+  }
+
+  function commitKeyboardSelect() {
+    const uid = pendingKeyboardSelectUID;
+    pendingKeyboardSelectUID = null;
+    if (!uid) return;
+    // Re-resolve at commit time: a live refresh inside the settle window
+    // can drop the row, and selecting a vanished issue would surface an
+    // error for something the user can no longer see.
+    const issue = findIssueByUID(uid);
+    if (issue) onSelect(issue);
+  }
+
   function focusRow(target: HTMLElement | null) {
     if (!target) return;
     target.focus();
     const uid = target.dataset.uid;
     if (!uid || !findIssueByUID(uid)) return;
-    cancelPendingKeyboardSelect();
-    keyboardSelectTimer = setTimeout(() => {
-      keyboardSelectTimer = undefined;
-      // Re-resolve at fire time: a live refresh inside the debounce
-      // window can drop the row, and selecting a vanished issue would
-      // surface an error for something the user can no longer see.
-      const issue = findIssueByUID(uid);
-      if (issue) onSelect(issue);
-    }, KEYBOARD_SELECT_DEBOUNCE_MS);
+    pendingKeyboardSelectUID = uid;
+    restartKeyboardSelectTimer();
+  }
+
+  // Window-level so a release outside the table (focus moved mid-hold)
+  // can't strand a key in the held set and block selection forever.
+  function handleWindowKeyup(event: KeyboardEvent) {
+    if (!KEYBOARD_NAV_KEYS.has(event.key)) return;
+    heldNavKeys.delete(event.key);
+    if (heldNavKeys.size === 0 && pendingKeyboardSelectUID !== null && keyboardSelectTimer === undefined) {
+      restartKeyboardSelectTimer();
+    }
+  }
+
+  // Keyups are lost entirely when the window loses focus mid-hold; treat
+  // blur as releasing everything so the pending selection still settles.
+  function handleWindowBlur() {
+    heldNavKeys.clear();
+    if (pendingKeyboardSelectUID !== null && keyboardSelectTimer === undefined) {
+      restartKeyboardSelectTimer();
+    }
   }
 
   function handleListKeydown(event: KeyboardEvent) {
@@ -303,6 +346,7 @@
         return;
     }
     event.preventDefault();
+    heldNavKeys.add(event.key);
     // Boundary keys (j on last, k on first, Home/End at the edge) can
     // resolve to the row already focused; skip the re-focus so we
     // don't double-fire the click handler and refetch the same issue.
@@ -335,6 +379,8 @@
     loadingChildren = {};
   });
 </script>
+
+<svelte:window onkeyup={handleWindowKeyup} onblur={handleWindowBlur} />
 
 <main class="issue-list" aria-label="Issues">
   <div class="pane-header">

@@ -2138,6 +2138,84 @@ test("kata task list keyboard navigation moves focus and selection", async ({ pa
   }
 });
 
+test("kata task list keyboard scrolling only fetches the final settled task", async ({ page }) => {
+  const traversal = [
+    issueSummary({
+      id: 31,
+      uid: "issue-first",
+      project_id: 2,
+      project_uid: "project-kata",
+      project_name: "Kata",
+      short_id: "kat-31",
+      qualified_id: "Kata#kat-31",
+      title: "First task",
+      body: "First task body.",
+      labels: [],
+    }),
+    {
+      ...issueSummary({
+        id: 32,
+        uid: "issue-skipped",
+        project_id: 2,
+        project_uid: "project-kata",
+        project_name: "Kata",
+        short_id: "kat-32",
+        qualified_id: "Kata#kat-32",
+        title: "Skipped task",
+        body: "Skipped task body.",
+        labels: [],
+      }),
+      updated_at: "2026-05-15T09:00:00Z",
+    },
+    {
+      ...issueSummary({
+        id: 33,
+        uid: "issue-settled",
+        project_id: 2,
+        project_uid: "project-kata",
+        project_name: "Kata",
+        short_id: "kat-33",
+        qualified_id: "Kata#kat-33",
+        title: "Settled task",
+        body: "Settled task body.",
+        labels: [],
+      }),
+      updated_at: "2026-05-15T08:00:00Z",
+    },
+  ];
+  const backend = await startKataBackend({ issues: traversal });
+  const kataHome = await configureKataHome(backend.url);
+  const server = await startIsolatedE2EServer();
+
+  try {
+    await page.goto(`${server.info.base_url}/kata`);
+    await expect(page.getByRole("status", { name: "Connection: online" })).toBeVisible();
+    await page.getByRole("button", { name: "All Open" }).click();
+    const rows = page.locator(".issue-list .issue-row");
+    await expect(rows.first()).toContainText("First task");
+    await expect(rows.nth(1)).toContainText("Skipped task");
+    await expect(rows.nth(2)).toContainText("Settled task");
+
+    // Hold j across the first two rows: keydowns move focus immediately,
+    // but the selection must not commit until the key is released, no
+    // matter how much wall-clock time the traversal takes.
+    await rows.first().focus();
+    await page.keyboard.down("j");
+    await page.keyboard.down("j");
+    await page.keyboard.up("j");
+
+    await expect(rows.nth(2)).toBeFocused();
+    await expect(page.getByRole("region", { name: "Task detail" })).toContainText("Settled task body.");
+    await expect.poll(() => backend.state.seenPaths).toContain("GET /api/v1/issues/issue-settled");
+    const detailFetches = backend.state.seenPaths.filter((path) => path.startsWith("GET /api/v1/issues/"));
+    expect(detailFetches).toEqual(["GET /api/v1/issues/issue-settled"]);
+  } finally {
+    await server.stop();
+    kataHome.restore();
+    await backend.close();
+  }
+});
+
 test("kata single configured daemon hides the daemon switcher", async ({ page }) => {
   const backend = await startKataBackend();
   const kataHome = await configureKataHome(backend.url);

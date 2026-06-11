@@ -9,9 +9,16 @@
   import { client } from "../../api/runtime.js";
   import {
     DiffStats,
+    FilterDropdown,
     LeftSidebarToggle,
   } from "@middleman/ui";
   import ProviderIcon from "../provider/ProviderIcon.svelte";
+  import {
+    loadWorkspaceListSort,
+    saveWorkspaceListSort,
+    workspaceListSortOptions,
+    type WorkspaceListSort,
+  } from "./workspaceListSort.ts";
 
   interface Workspace {
     id: string;
@@ -74,6 +81,7 @@
   let workspaces = $state.raw<Workspace[]>([]);
   let collapsedGroups = $state<Set<string>>(new Set());
   let searchQuery = $state("");
+  let sortMode = $state<WorkspaceListSort>(loadWorkspaceListSort());
 
   type GroupedWorkspaces = Map<string, Workspace[]>;
 
@@ -109,6 +117,47 @@
     }
     return map;
   });
+
+  const sortLabel = $derived(
+    workspaceListSortOptions.find(
+      (option) => option.value === sortMode,
+    )?.label ?? "Org / repo",
+  );
+
+  const sortSections = $derived.by(() => [
+    {
+      items: workspaceListSortOptions.map((option) => ({
+        id: option.value,
+        label: option.label,
+        active: sortMode === option.value,
+        closeOnSelect: true,
+        onSelect: () => setSort(option.value),
+      })),
+    },
+  ]);
+
+  // Flat ordering for the timestamp sorts. The org/repo mode keeps
+  // the API order (created_at DESC) inside each repo group instead.
+  const sortedFlat = $derived.by(() => {
+    const stamp = sortMode === "activity"
+      ? (ws: Workspace) =>
+        timeValue(ws.tmux_last_output_at) || timeValue(ws.created_at)
+      : (ws: Workspace) => timeValue(ws.created_at);
+    return [...visibleWorkspaces].sort(
+      (a, b) => stamp(b) - stamp(a) || a.id.localeCompare(b.id),
+    );
+  });
+
+  function setSort(sort: WorkspaceListSort): void {
+    sortMode = sort;
+    saveWorkspaceListSort(sort);
+  }
+
+  function timeValue(value: string | null | undefined): number {
+    if (!value) return 0;
+    const ms = Date.parse(value);
+    return Number.isNaN(ms) ? 0 : ms;
+  }
 
   const showProviderIcons = $derived.by(() => {
     const providers = new Set<string>();
@@ -272,22 +321,36 @@
       />
     {/if}
   </div>
-  <label class="workspace-filter">
-    <SearchIcon
-      class="workspace-filter-icon"
-      size="13"
-      strokeWidth="2.25"
-      aria-hidden="true"
-    />
-    <input
-      type="search"
-      value={searchQuery}
-      placeholder="Filter workspaces"
-      aria-label="Filter workspaces"
-      oninput={updateSearch}
-    />
-  </label>
+  <div class="workspace-controls">
+    <label class="workspace-filter">
+      <SearchIcon
+        class="workspace-filter-icon"
+        size="13"
+        strokeWidth="2.25"
+        aria-hidden="true"
+      />
+      <input
+        type="search"
+        value={searchQuery}
+        placeholder="Filter workspaces"
+        aria-label="Filter workspaces"
+        oninput={updateSearch}
+      />
+    </label>
+    <div class="workspace-sort">
+      <FilterDropdown
+        label={sortLabel}
+        showBadge={false}
+        sections={sortSections}
+        title="Sort workspaces"
+        minWidth="170px"
+        icon="sort"
+        align="end"
+      />
+    </div>
+  </div>
   <div class="sidebar-list">
+    {#if sortMode === "repo"}
     {#each [...grouped] as [repoKey, items] (repoKey)}
       {@const collapsed =
         !normalizedSearchQuery && collapsedGroups.has(repoKey)}
@@ -313,6 +376,17 @@
       </button>
       {#if !collapsed}
         {#each items as ws (ws.id)}
+          {@render workspaceRow(ws, false)}
+        {/each}
+      {/if}
+    {/each}
+    {:else}
+      {#each sortedFlat as ws (ws.id)}
+        {@render workspaceRow(ws, true)}
+      {/each}
+    {/if}
+
+    {#snippet workspaceRow(ws: Workspace, showRepo: boolean)}
           {@const adds = ws.mr_additions}
           {@const dels = ws.mr_deletions}
           {@const showDiff =
@@ -366,6 +440,14 @@
                 {/if}
               </div>
               <div class="ws-row-meta">
+                {#if showRepo}
+                  <span
+                    class="repo-context"
+                    title={`${ws.platform_host}/${ws.repo_owner}/${ws.repo_name}`}
+                  >
+                    {ws.repo_owner}/{ws.repo_name}
+                  </span>
+                {/if}
                 <span class="branch-chip" title={ws.git_head_ref}>
                   <GitBranchIcon
                     class="branch-icon"
@@ -429,9 +511,7 @@
               #{ws.item_number}
             </button>
           </div>
-        {/each}
-      {/if}
-    {/each}
+    {/snippet}
     {#if visibleWorkspaces.length === 0 && normalizedSearchQuery}
       <p class="filter-empty">No workspaces match.</p>
     {/if}
@@ -482,18 +562,34 @@
     opacity: 0.7;
   }
 
+  .workspace-controls {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 6px 8px 4px;
+    flex-shrink: 0;
+  }
+
   .workspace-filter {
     display: flex;
     align-items: center;
     gap: 6px;
     height: 28px;
-    margin: 6px 8px 4px;
+    flex: 1 1 auto;
+    min-width: 0;
     padding: 0 8px;
     border: 1px solid var(--border-muted);
     border-radius: 6px;
     background: var(--bg-surface);
     color: var(--text-muted);
+  }
+
+  .workspace-sort {
     flex-shrink: 0;
+  }
+
+  .workspace-sort :global(.filter-btn) {
+    min-height: 28px;
   }
 
   :global(.workspace-filter-icon) {
@@ -738,6 +834,20 @@
     }
   }
 
+  .repo-context {
+    /* Flat sorts drop the per-repo group headers, so each row
+     * carries its own repo context on the meta line. Caps at half
+     * the line so the branch chip always keeps some room. */
+    flex: 0 1 auto;
+    max-width: 50%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
+    color: var(--text-muted);
+  }
+
   .branch-chip {
     /* Lives on the meta line; takes whatever width is left after
      * push state and diff stats and truncates with ellipsis. */
@@ -872,6 +982,14 @@
 
   @container workspace-rail (max-width: 220px) {
     .push-state {
+      display: none;
+    }
+  }
+
+  /* The sort trigger collapses to its icon before the filter input
+   * is squeezed into uselessness. */
+  @container workspace-rail (max-width: 240px) {
+    .workspace-sort :global(.filter-trigger-label) {
       display: none;
     }
   }

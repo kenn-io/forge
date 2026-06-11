@@ -3101,6 +3101,100 @@ test.describe("workspace list bubble opens right sidebar", () => {
 });
 
 // -------------------------------------------------------
+// Group 3.4: Workspace list sorting
+// -------------------------------------------------------
+
+test.describe("workspace list sorting", () => {
+  // Three workspaces across two repos, in API order
+  // (created_at DESC). The most recently active workspace is
+  // neither the newest nor in the first repo group, so each sort
+  // mode produces a distinct row order.
+  const wsNew = {
+    ...testWorkspace,
+    id: "ws-new",
+    item_number: 3,
+    mr_title: "Newest created",
+    created_at: "2026-05-12T12:00:00Z",
+    tmux_last_output_at: "2026-05-12T13:00:00Z",
+  };
+  const wsMid = {
+    ...testWorkspace,
+    id: "ws-mid",
+    repo_owner: "kenn-io",
+    repo_name: "agentsview",
+    repo: workspaceRepoRef("kenn-io", "agentsview"),
+    item_number: 2,
+    mr_title: "Most recently active",
+    created_at: "2026-05-11T12:00:00Z",
+    tmux_last_output_at: "2026-05-14T09:00:00Z",
+  };
+  const wsOld = {
+    ...testWorkspace,
+    id: "ws-old",
+    item_number: 1,
+    mr_title: "Oldest without activity",
+    created_at: "2026-05-10T12:00:00Z",
+  };
+
+  test.beforeEach(async ({ page }) => {
+    await mockApi(page);
+    await page.route("**/api/v1/events", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "text/event-stream",
+        body: "",
+      });
+    });
+    await page.route("**/api/v1/workspaces", async (route) => {
+      if (route.request().method() === "GET") {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ workspaces: [wsNew, wsMid, wsOld] }),
+        });
+        return;
+      }
+      await route.fulfill({ status: 200 });
+    });
+  });
+
+  test("offers creation and activity sorts and persists the choice across reloads", async ({ page }) => {
+    await page.goto("/workspaces");
+
+    const names = page.locator(".workspace-list-sidebar .ws-name");
+    const headers = page.locator(".workspace-list-sidebar .group-header");
+    await expect(names).toHaveText(["Newest created", "Oldest without activity", "Most recently active"]);
+    await expect(headers).toHaveCount(2);
+
+    const sortTrigger = page.getByTitle("Sort workspaces");
+    await sortTrigger.click();
+    await page.getByRole("button", { name: "Recently created" }).click();
+
+    await expect(names).toHaveText(["Newest created", "Most recently active", "Oldest without activity"]);
+    await expect(headers).toHaveCount(0);
+    // Without group headers each row carries its own repo context.
+    await expect(page.locator(".workspace-list-sidebar .repo-context").first()).toContainText("acme/widgets");
+
+    await sortTrigger.click();
+    await page.getByRole("button", { name: "Recent activity" }).click();
+
+    // ws-old has no tmux output and falls back to creation time.
+    await expect(names).toHaveText(["Most recently active", "Newest created", "Oldest without activity"]);
+
+    await page.reload();
+
+    await expect(names).toHaveText(["Most recently active", "Newest created", "Oldest without activity"]);
+    await expect(headers).toHaveCount(0);
+
+    await sortTrigger.click();
+    await page.getByRole("button", { name: "Org / repo" }).click();
+
+    await expect(headers).toHaveCount(2);
+    await expect(names).toHaveText(["Newest created", "Oldest without activity", "Most recently active"]);
+  });
+});
+
+// -------------------------------------------------------
 // Group 3.5: Delayed-response navigation (no flash, no
 // stale-action targets)
 // -------------------------------------------------------

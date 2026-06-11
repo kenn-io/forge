@@ -221,9 +221,11 @@
   // commit one fetch per repeated row. Focus itself moves instantly;
   // only the upstream notification waits for the cursor to settle.
   const KEYBOARD_SELECT_DEBOUNCE_MS = 50;
-  const KEYBOARD_NAV_KEYS = new Set(["ArrowDown", "ArrowUp", "j", "k", "Home", "End", "g", "G"]);
   let keyboardSelectTimer: ReturnType<typeof setTimeout> | undefined;
   let pendingKeyboardSelectUID: string | null = null;
+  // Tracked by event.code (physical key), not event.key: "G" is Shift+g,
+  // so releasing Shift before g would make keydown record "G" but keyup
+  // report "g", stranding the entry and blocking selection until blur.
   const heldNavKeys = new Set<string>();
 
   function cancelPendingKeyboardSelect() {
@@ -276,8 +278,7 @@
   // Window-level so a release outside the table (focus moved mid-hold)
   // can't strand a key in the held set and block selection forever.
   function handleWindowKeyup(event: KeyboardEvent) {
-    if (!KEYBOARD_NAV_KEYS.has(event.key)) return;
-    heldNavKeys.delete(event.key);
+    if (!heldNavKeys.delete(event.code)) return;
     if (heldNavKeys.size === 0 && pendingKeyboardSelectUID !== null && keyboardSelectTimer === undefined) {
       restartKeyboardSelectTimer();
     }
@@ -346,7 +347,7 @@
         return;
     }
     event.preventDefault();
-    heldNavKeys.add(event.key);
+    heldNavKeys.add(event.code);
     // Boundary keys (j on last, k on first, Home/End at the edge) can
     // resolve to the row already focused; skip the re-focus so we
     // don't double-fire the click handler and refetch the same issue.

@@ -342,6 +342,33 @@ describe("KataIssueList", () => {
     expect(selected).toEqual([rows[2]!.dataset.uid]);
   });
 
+  it("commits the selection when Shift is released before the navigation key", async () => {
+    vi.useFakeTimers();
+    const selected: string[] = [];
+    render(KataIssueList, {
+      props: {
+        currentView,
+        selectedIssueUID: null,
+        loading: false,
+        onSelect: (issue: KataTaskSummary) => selected.push(issue.uid),
+      },
+    });
+
+    const rows = visibleRows();
+    rows[0]!.focus();
+    // Shift+g jumps to the end; the keydown reports key "G" but releasing
+    // Shift first makes the keyup report key "g". The physical code is
+    // stable across both, so the held entry must still clear.
+    await fireEvent.keyDown(rows[0]!, { key: "G", code: "KeyG", shiftKey: true });
+    expect(document.activeElement).toBe(rows[rows.length - 1]);
+    vi.advanceTimersByTime(50);
+    expect(selected).toEqual([]);
+
+    await fireEvent.keyUp(rows[rows.length - 1]!, { key: "g", code: "KeyG" });
+    vi.advanceTimersByTime(50);
+    expect(selected).toEqual([rows[rows.length - 1]!.dataset.uid]);
+  });
+
   it("clicking a row selects immediately and cancels a pending keyboard selection", async () => {
     vi.useFakeTimers();
     const selected: string[] = [];

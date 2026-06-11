@@ -197,7 +197,10 @@ func (e *StatusError) Error() string {
 // IsStatus reports whether err is a StatusError with the given code.
 func IsStatus(err error, code int) bool {
 	var se *StatusError
-	return errors.As(err, &se) && se.StatusCode == code
+	if !errors.As(err, &se) || se == nil {
+		return false
+	}
+	return se.StatusCode == code
 }
 
 func (c *Client) do(

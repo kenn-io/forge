@@ -344,7 +344,11 @@ func (f *Fake) handleDeleteInstallation(w http.ResponseWriter, r *http.Request) 
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	live := f.apps[app.ID]
+	live, ok := f.apps[app.ID]
+	if !ok {
+		writeJSONError(w, http.StatusNotFound, "app not found")
+		return
+	}
 	for i, inst := range live.Installations {
 		if inst.ID == id {
 			live.Installations = append(

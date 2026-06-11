@@ -359,7 +359,7 @@ func (env *appEnv) runInstallFlow(
 	if app.InstallationID != 0 {
 		known[app.InstallationID] = struct{}{}
 	}
-	var picked *githubapp.Installation
+	var picked githubapp.Installation
 	err := env.pollUntil(ctx, timeout, func(ctx context.Context) (bool, error) {
 		jwt, err := appJWT(app, env.now())
 		if err != nil {
@@ -369,9 +369,9 @@ func (env *appEnv) runInstallFlow(
 		if err != nil {
 			return false, err
 		}
-		for i := range installs {
-			if _, ok := known[installs[i].ID]; !ok {
-				picked = &installs[i]
+		for _, install := range installs {
+			if _, ok := known[install.ID]; !ok {
+				picked = install
 				return true, nil
 			}
 		}

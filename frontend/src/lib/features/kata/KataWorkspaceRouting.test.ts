@@ -144,7 +144,10 @@ describe("KataWorkspace", () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(api.issue).not.toHaveBeenCalledWith("issue-email-susan");
+    // Match on the first argument only: issue() also receives a
+    // { signal } options argument, so a full-arguments matcher would
+    // pass vacuously even if the stale selection fired.
+    expect(vi.mocked(api.issue).mock.calls.map((call) => call[0])).not.toContain("issue-email-susan");
     expect(screen.queryByRole("heading", { name: "Email Susan re: Q3" })).toBeNull();
     expect(screen.queryByRole("heading", { name: "Pay rent" })).toBeNull();
     const taskList = document.querySelector(".issue-list");

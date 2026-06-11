@@ -805,6 +805,28 @@ describe("kata workspace store", () => {
     expect(store.pendingSelectionUID).toBeNull();
   });
 
+  test("invalidating pending loads aborts the in-flight detail load", async () => {
+    const api = createFakeKataTaskAPI();
+    const signals: (AbortSignal | undefined)[] = [];
+    api.mocks.issue.mockImplementationOnce(
+      (_uid: string, opts?: { signal?: AbortSignal }) =>
+        new Promise<KataTaskDetail>((_resolve, reject) => {
+          signals.push(opts?.signal);
+          opts?.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), {
+            once: true,
+          });
+        }),
+    );
+    const store = createKataWorkspaceStore({ api });
+
+    const pending = store.selectIssue("issue-pay-rent");
+    store.invalidatePendingLoads();
+
+    await expect(pending).resolves.toBe(false);
+    expect(signals[0]?.aborted).toBe(true);
+    expect(store.pendingSelectionUID).toBeNull();
+  });
+
   test("clearing the selection aborts the in-flight detail load", async () => {
     const api = createFakeKataTaskAPI();
     const signals: (AbortSignal | undefined)[] = [];

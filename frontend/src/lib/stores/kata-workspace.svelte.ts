@@ -554,6 +554,11 @@ export class KataWorkspaceStore {
   invalidatePendingLoads(): void {
     this.viewRequestID++;
     this.detailRequestID++;
+    // Abort like clearSelection() does: without it, a superseded detail
+    // load keeps running and a late rejection surfaces a stale error
+    // for a navigation the user already left.
+    this.detailAbort?.abort();
+    this.detailAbort = null;
     this.pendingSelectionUID = null;
   }
 

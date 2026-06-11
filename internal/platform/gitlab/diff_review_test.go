@@ -131,7 +131,8 @@ func TestGitLabPublishDiffReviewDraftReturnsPartialErrorWhenApproveFails(t *test
 			writeJSON(w, `{}`)
 		case "/api/v4/projects/group%2Fproject/merge_requests/7/approve":
 			assert.Equal(http.MethodPost, r.Method)
-			http.Error(w, `{"message": "approval failed"}`, http.StatusInternalServerError)
+			// 422 keeps the failure non-retryable; the SDK retries 5xx with backoff.
+			http.Error(w, `{"message": "approval failed"}`, http.StatusUnprocessableEntity)
 		default:
 			http.NotFound(w, r)
 		}
@@ -242,7 +243,8 @@ func TestGitLabPublishDiffReviewDraftDoesNotApproveWhenPublishFails(t *testing.T
 			writeJSON(w, `{"approved": true}`)
 		case "/api/v4/projects/group%2Fproject/merge_requests/7/draft_notes/55/publish":
 			assert.Equal(http.MethodPut, r.Method)
-			http.Error(w, `{"message": "publish failed"}`, http.StatusInternalServerError)
+			// 422 keeps the failure non-retryable; the SDK retries 5xx with backoff.
+			http.Error(w, `{"message": "publish failed"}`, http.StatusUnprocessableEntity)
 		case "/api/v4/projects/group%2Fproject/merge_requests/7/draft_notes/55":
 			assert.Equal(http.MethodDelete, r.Method)
 			deleted = true
@@ -286,7 +288,8 @@ func TestGitLabPublishDiffReviewDraftReturnsNormalErrorWhenFirstPublishCleanupFa
 			writeJSON(w, `{"id": 55, "note": "range note"}`)
 		case "/api/v4/projects/group%2Fproject/merge_requests/7/draft_notes/55/publish":
 			assert.Equal(http.MethodPut, r.Method)
-			http.Error(w, `{"message": "publish failed"}`, http.StatusInternalServerError)
+			// 422 keeps the failure non-retryable; the SDK retries 5xx with backoff.
+			http.Error(w, `{"message": "publish failed"}`, http.StatusUnprocessableEntity)
 		case "/api/v4/projects/group%2Fproject/merge_requests/7/draft_notes/55":
 			assert.Equal(http.MethodDelete, r.Method)
 			http.Error(w, `{"message": "delete failed"}`, http.StatusBadRequest)
@@ -337,7 +340,8 @@ func TestGitLabPublishDiffReviewDraftReturnsPartialErrorAfterSomeDraftsPublish(t
 			writeJSON(w, `{}`)
 		case "/api/v4/projects/group%2Fproject/merge_requests/7/draft_notes/56/publish":
 			assert.Equal(http.MethodPut, r.Method)
-			http.Error(w, `{"message": "publish failed"}`, http.StatusInternalServerError)
+			// 422 keeps the failure non-retryable; the SDK retries 5xx with backoff.
+			http.Error(w, `{"message": "publish failed"}`, http.StatusUnprocessableEntity)
 		case "/api/v4/projects/group%2Fproject/merge_requests/7/draft_notes/56":
 			assert.Equal(http.MethodDelete, r.Method)
 			deleted = true
@@ -403,7 +407,8 @@ func TestGitLabPublishDiffReviewDraftKeepsPartialErrorWhenRemainingCleanupFails(
 			writeJSON(w, `{}`)
 		case "/api/v4/projects/group%2Fproject/merge_requests/7/draft_notes/56/publish":
 			assert.Equal(http.MethodPut, r.Method)
-			http.Error(w, `{"message": "publish failed"}`, http.StatusInternalServerError)
+			// 422 keeps the failure non-retryable; the SDK retries 5xx with backoff.
+			http.Error(w, `{"message": "publish failed"}`, http.StatusUnprocessableEntity)
 		case "/api/v4/projects/group%2Fproject/merge_requests/7/draft_notes/56":
 			assert.Equal(http.MethodDelete, r.Method)
 			http.Error(w, `{"message": "delete failed"}`, http.StatusBadRequest)

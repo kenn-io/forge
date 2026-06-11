@@ -15,6 +15,7 @@ import (
 func TestLiveGitHubRateLimitSnapshotUsesGoGitHub(t *testing.T) {
 	skipUnlessLiveGitHubTests(t)
 	assert := Assert.New(t)
+	require := require.New(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -25,10 +26,10 @@ func TestLiveGitHubRateLimitSnapshotUsesGoGitHub(t *testing.T) {
 	}
 
 	limits, resp, err := client.RateLimit.Get(ctx)
-	require.NoError(t, err)
-	require.NotNil(t, resp)
-	require.NotNil(t, limits)
-	require.NotNil(t, limits.Core)
+	require.NoError(err)
+	require.NotNil(resp)
+	require.NotNil(limits)
+	require.NotNil(limits.Core)
 
 	assert.Equal(http.StatusOK, resp.StatusCode)
 	assert.Positive(limits.Core.Limit)

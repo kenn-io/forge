@@ -120,8 +120,9 @@ func TestAppStateRegistryWaitsForInFlightHandlersAfterSwap(t *testing.T) {
 	}()
 	<-started
 
+	require := require.New(t)
 	swapped := states.Swap(newState)
-	require.Same(t, oldState, swapped)
+	require.Same(oldState, swapped)
 
 	drained := make(chan struct{})
 	go func() {
@@ -131,24 +132,24 @@ func TestAppStateRegistryWaitsForInFlightHandlersAfterSwap(t *testing.T) {
 
 	select {
 	case <-drained:
-		require.Fail(t, "old state drained before its in-flight handler returned")
+		require.Fail("old state drained before its in-flight handler returned")
 	case <-time.After(100 * time.Millisecond):
 	}
 
 	newRecorder := httptest.NewRecorder()
 	states.ServeHTTP(newRecorder, httptest.NewRequest(http.MethodGet, "/", nil))
-	require.Equal(t, http.StatusAccepted, newRecorder.Code)
+	require.Equal(http.StatusAccepted, newRecorder.Code)
 
 	close(release)
 	select {
 	case <-oldDone:
 	case <-time.After(5 * time.Second):
-		require.Fail(t, "old handler did not return")
+		require.Fail("old handler did not return")
 	}
 	select {
 	case <-drained:
 	case <-time.After(5 * time.Second):
-		require.Fail(t, "old state did not drain after handler returned")
+		require.Fail("old state did not drain after handler returned")
 	}
 }
 

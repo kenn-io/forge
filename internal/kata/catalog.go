@@ -27,9 +27,8 @@ type catalogEntry struct {
 	AllowInsecure bool   `toml:"allow_insecure"`
 }
 
-// LoadCatalog reads Kata's shared daemon catalog. token_env is intentionally
-// not resolved here; ResolveDaemon applies that uniformly across daemon
-// sources.
+// LoadCatalog reads Kata's shared daemon catalog. Auth fields are retained
+// only for remote daemons; local entries are tokenless at the catalog boundary.
 func LoadCatalog() (Catalog, error) {
 	path, err := CatalogPath()
 	if err != nil {
@@ -61,19 +60,22 @@ func LoadCatalog() (Catalog, error) {
 			return Catalog{}, fmt.Errorf(
 				"kata catalog daemon %q: exactly one of local or url is required", e.Name)
 		}
-		if e.Token != "" && e.TokenEnv != "" {
-			return Catalog{}, fmt.Errorf(
-				"kata catalog daemon %q: token and token_env are mutually exclusive", e.Name)
-		}
-		out = append(out, Daemon{
+		daemon := Daemon{
 			ID:            e.Name,
 			URL:           e.URL,
-			Token:         e.Token,
-			TokenEnv:      e.TokenEnv,
 			AllowInsecure: e.AllowInsecure,
 			Local:         e.Local,
 			Default:       cat.ActiveDaemon != "" && e.Name == cat.ActiveDaemon,
-		})
+		}
+		if !e.Local {
+			if e.Token != "" && e.TokenEnv != "" {
+				return Catalog{}, fmt.Errorf(
+					"kata catalog daemon %q: token and token_env are mutually exclusive", e.Name)
+			}
+			daemon.Token = e.Token
+			daemon.TokenEnv = e.TokenEnv
+		}
+		out = append(out, daemon)
 	}
 	if cat.ActiveDaemon != "" {
 		if _, ok := seen[cat.ActiveDaemon]; !ok {

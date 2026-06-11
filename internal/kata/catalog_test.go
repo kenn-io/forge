@@ -151,6 +151,29 @@ token_env = "  KATA_WORK_TOKEN  "
 	assert.Equal("KATA_WORK_TOKEN", catalog.Daemons[0].TokenEnv)
 }
 
+func TestLoadCatalogLocalEntryIsTokenless(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	home := t.TempDir()
+	t.Setenv("KATA_HOME", home)
+	writeCatalog(t, home, `
+[[daemon]]
+name = "local"
+local = true
+token = "ignored"
+token_env = "IGNORED"
+`)
+
+	catalog, err := LoadCatalog()
+	require.NoError(err)
+	require.Len(catalog.Daemons, 1)
+
+	assert.True(catalog.Daemons[0].Local)
+	assert.Empty(catalog.Daemons[0].Token)
+	assert.Empty(catalog.Daemons[0].TokenEnv)
+}
+
 func TestLoadCatalogRejectsNeitherLocalNorURL(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

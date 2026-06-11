@@ -2666,18 +2666,26 @@ func (s *Server) mergePR(ctx context.Context, input *mergePRInput) (*mergePROutp
 				"err", err)
 
 			if status == http.StatusMethodNotAllowed || status == http.StatusConflict {
-				s.runBackground(func(bgCtx context.Context) {
-					if syncErr := s.syncer.SyncMROnProvider(
-						bgCtx,
-						repoProviderKind(*repo), repoProviderHost(*repo),
-						repo.Owner, repo.Name, input.Number,
-					); syncErr != nil {
-						slog.Warn("background sync after merge failure", "err", syncErr)
-					}
-				})
 				reason := "conflict"
 				if errors.Is(err, platform.ErrStaleState) {
 					reason = "stale_state"
+				}
+				// Resync on stale heads (the user must re-review current
+				// state) and on providers without hard head binding (the
+				// refresh only improves the local mergeable view). For
+				// head-binding providers a generic-conflict resync would
+				// persist a newer head and let a retry from the same stale
+				// UI mutate a commit nobody reviewed.
+				if reason == "stale_state" || !s.capabilitiesForRepo(*repo).MutationHeadBinding {
+					s.runBackground(func(bgCtx context.Context) {
+						if syncErr := s.syncer.SyncMROnProvider(
+							bgCtx,
+							repoProviderKind(*repo), repoProviderHost(*repo),
+							repo.Owner, repo.Name, input.Number,
+						); syncErr != nil {
+							slog.Warn("background sync after merge failure", "err", syncErr)
+						}
+					})
 				}
 				return nil, problemConflict(CodeConflict, message, map[string]any{"reason": reason})
 			}

@@ -147,6 +147,11 @@ func setupGitLabMutationServer(
 				"created_at": "2026-05-01T10:00:00Z"
 			}`)
 		case path == "/api/v4/projects/4242/merge_requests/7/merge" && r.Method == http.MethodPut:
+			if strings.Contains(request.Body, "force-generic-conflict") {
+				w.WriteHeader(http.StatusConflict)
+				writeGitLabJSON(w, `{"message": "merge request is not mergeable"}`)
+				return
+			}
 			if !strings.Contains(request.Body, `"sha":"head-sha"`) {
 				w.WriteHeader(http.StatusConflict)
 				writeGitLabJSON(w, `{"message": "SHA does not match HEAD of source branch"}`)
@@ -669,6 +674,34 @@ func TestGitLabMutationMergeStaleHeadReturnsConflict(t *testing.T) {
 		recorder.findEventually(http.MethodGet, "/api/v4/projects/4242/merge_requests/7"),
 		"stale merge must trigger an MR resync",
 	)
+}
+
+// A generic provider conflict on a head-binding provider must not resync:
+// persisting a newer head would let a retry from the same stale UI merge
+// a commit nobody reviewed.
+func TestGitLabMutationGenericMergeConflictDoesNotResync(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, _, recorder, _ := setupGitLabMutationServer(t)
+
+	rr := doGitLabJSON(t, srv, http.MethodPost,
+		"/api/v1/pulls/gitlab/acme/widget/7/merge",
+		`{"method":"merge","commit_title":"t","commit_message":"force-generic-conflict"}`,
+	)
+	require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
+	var problem struct {
+		Code    string         `json:"code"`
+		Details map[string]any `json:"details"`
+	}
+	require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
+	assert.Equal("conflict", problem.Code)
+	require.NotNil(problem.Details)
+	assert.Equal("conflict", problem.Details["reason"])
+
+	// Give a wrongly-scheduled background sync time to surface.
+	time.Sleep(300 * time.Millisecond)
+	_, synced := recorder.find(http.MethodGet, "/api/v4/projects/4242/merge_requests/7")
+	assert.False(synced, "generic conflicts must not resync on head-binding providers")
 }
 
 // A legacy or partially synced row with no head SHA fails closed: the

@@ -158,8 +158,27 @@ test("markdown tables keep compact columns readable", async ({ page }) => {
   const commitCell = page.locator(".markdown-body td").filter({ hasText: "b2af4711" });
   await expect(taskHeader).toBeVisible();
   await expect(commitCell).toBeVisible();
-  await expect(taskHeader).toHaveCSS("white-space", "nowrap");
-  await expect(commitCell).toHaveCSS("white-space", "nowrap");
+
+  // Auto table layout gives the compact columns their content width, so
+  // the commit hash renders on a single line without nowrap overrides.
+  const commitLines = await commitCell.evaluate((el) => {
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    return Array.from(range.getClientRects()).filter((rect) => rect.width > 0).length;
+  });
+  expect(commitLines).toBe(1);
+
+  // The long description column absorbs the remaining width; the compact
+  // columns stay narrow instead of splitting the table evenly.
+  const taskBox = await taskHeader.boundingBox();
+  const tableBox = await page.locator(".markdown-body table").boundingBox();
+  const bodyBox = await page.locator(".markdown-body").first().boundingBox();
+  expect(taskBox).not.toBeNull();
+  expect(tableBox).not.toBeNull();
+  expect(bodyBox).not.toBeNull();
+  expect(taskBox!.width).toBeLessThan(tableBox!.width * 0.2);
+  expect(tableBox!.width).toBeLessThanOrEqual(bodyBox!.width + 1);
+
   await expect(page.locator(".markdown-body table")).toHaveCSS("border-collapse", "collapse");
 });
 

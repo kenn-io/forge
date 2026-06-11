@@ -442,6 +442,84 @@ url = "`+upstream.URL+`"
 	assert.Equal(int32(1), probes.Load())
 }
 
+func TestKataDaemonsEndpointHealthCacheSeparatesLocalAndRemoteMode(t *testing.T) {
+	assert := Assert.New(t)
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer upstream.Close()
+
+	home := t.TempDir()
+	t.Setenv("KATA_HOME", home)
+	t.Setenv("KATA_DB", "")
+	writeKataServerCatalog(t, home, `
+[[daemon]]
+name = "home"
+url = "`+upstream.URL+`"
+`)
+	srv, _ := setupTestServer(t)
+
+	got := requestKataDaemonsByID(t, srv)
+	assert.Equal("auth_required", got["home"].Health)
+
+	writeKataServerCatalog(t, home, `
+[[daemon]]
+name = "home"
+local = true
+`)
+	writeKataProxyRuntimeRecord(t, upstream.URL)
+
+	got = requestKataDaemonsByID(t, srv)
+	assert.Equal("down", got["home"].Health)
+}
+
+func TestKataDaemonsEndpointHealthCacheSeparatesRemoteTokens(t *testing.T) {
+	assert := Assert.New(t)
+
+	var mu sync.Mutex
+	authorizations := []string{}
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		auth := r.Header.Get("Authorization")
+		mu.Lock()
+		authorizations = append(authorizations, auth)
+		mu.Unlock()
+		if auth == "Bearer first-secret" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer upstream.Close()
+
+	home := t.TempDir()
+	t.Setenv("KATA_HOME", home)
+	writeKataServerCatalog(t, home, `
+[[daemon]]
+name = "home"
+url = "`+upstream.URL+`"
+token = "first-secret"
+`)
+	srv, _ := setupTestServer(t)
+
+	got := requestKataDaemonsByID(t, srv)
+	assert.Equal("connected", got["home"].Health)
+
+	writeKataServerCatalog(t, home, `
+[[daemon]]
+name = "home"
+url = "`+upstream.URL+`"
+token = "second-secret"
+`)
+
+	got = requestKataDaemonsByID(t, srv)
+	assert.Equal("auth_required", got["home"].Health)
+
+	mu.Lock()
+	defer mu.Unlock()
+	assert.Equal([]string{"Bearer first-secret", "Bearer second-secret"}, authorizations)
+}
+
 func TestKataDaemonsEndpointHealthOverTrailingSlashURL(t *testing.T) {
 	assert := Assert.New(t)
 

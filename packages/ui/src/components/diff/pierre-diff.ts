@@ -1,12 +1,22 @@
 import { parsePatchFiles, processFile } from "@pierre/diffs";
 import type { FileContents, FileDiffMetadata, ThemeTypes } from "@pierre/diffs";
 import type { DiffFile } from "../../api/types.js";
+import { syntaxHighlightingDisabledForAutomation } from "./pierre-worker-pool.js";
 
 interface ParsePierreFileDiffOptions {
   enableDemandContextExpansion?: boolean;
 }
 
 const maxSparseContextLine = 50_000;
+
+// Pierre skips tokenization entirely for "text" diffs; pinning the
+// language override is how automation runs (see pierre-worker-pool)
+// drop shiki's per-hunk highlighting cost without changing the
+// rendered structure.
+function withAutomationLanguage(meta: FileDiffMetadata | undefined): FileDiffMetadata | undefined {
+  if (!meta || !syntaxHighlightingDisabledForAutomation()) return meta;
+  return { ...meta, lang: "text" };
+}
 
 export function appThemeType(): ThemeTypes {
   if (typeof document === "undefined") return "system";
@@ -21,16 +31,16 @@ export function parsePierreFileDiff(
   if (!patchedFile.patch) return undefined;
   if (options.enableDemandContextExpansion && canBuildSparsePatchContents(patchedFile)) {
     const contents = sparsePatchContents(patchedFile);
-    return processPatchWithContext(patchedFile, contents);
+    return withAutomationLanguage(processPatchWithContext(patchedFile, contents));
   }
-  return parsePatchOnly(patchedFile);
+  return withAutomationLanguage(parsePatchOnly(patchedFile));
 }
 
 export function parsePierreFileDiffWithContents(
   file: DiffFile,
   contents: { oldFile: FileContents; newFile: FileContents },
 ): FileDiffMetadata | undefined {
-  return processPatchWithContext(diffFileWithPatch(file), contents);
+  return withAutomationLanguage(processPatchWithContext(diffFileWithPatch(file), contents));
 }
 
 export function pierreFileContents(name: string, contents: string, cacheIdentity: string): FileContents {

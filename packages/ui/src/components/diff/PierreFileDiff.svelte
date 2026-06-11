@@ -424,10 +424,20 @@
   }
 
   function handleAnnotationFocusOut(event: FocusEvent): void {
-    // A real focusout means the user (or app) moved focus deliberately. The
-    // case this guard exists for — Firefox annulling focus when a re-render
-    // momentarily unslots the annotation — fires no focusout at all.
-    if (event.target === annotationFocusTarget) annotationFocusTarget = undefined;
+    // A real focusout means the user (or app) moved focus deliberately.
+    // Involuntary focus loss from a re-render unslotting the annotation
+    // is browser-dependent: Firefox annuls focus silently (no focusout
+    // at all), while Chromium and WebKit fire a focusout with no
+    // successor element. Keep the restore target in that involuntary
+    // case — identified by the wrapper having lost its slot assignment
+    // — so the slotchange handler can reclaim focus once the rebuilt
+    // shadow DOM re-slots the annotation.
+    if (event.target !== annotationFocusTarget) return;
+    if (event.relatedTarget === null) {
+      const wrapper = annotationWrapperFor(event.target);
+      if (wrapper && wrapper.assignedSlot === null) return;
+    }
+    annotationFocusTarget = undefined;
   }
 
   function restoreAnnotationFocus(): void {

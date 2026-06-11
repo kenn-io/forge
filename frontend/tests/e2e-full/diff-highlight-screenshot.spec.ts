@@ -196,6 +196,12 @@ function filesFromDiff(fixture: DiffResult): FilesResult {
 
 test.describe("diff highlight backgrounds on horizontal scroll", () => {
   test("line backgrounds cover the rendered Pierre content width", async ({ page }) => {
+    // Automation runs render diffs as plain text by default (see
+    // pierre-worker-pool.ts); this spec asserts real highlighting, so
+    // opt back in before the app loads.
+    await page.addInitScript(() => {
+      (globalThis as { __middlemanForceSyntaxHighlight?: boolean }).__middlemanForceSyntaxHighlight = true;
+    });
     await page.route("**/api/v1/pulls/github/acme/widgets/1/files", async (route) => {
       await route.fulfill({
         status: 200,

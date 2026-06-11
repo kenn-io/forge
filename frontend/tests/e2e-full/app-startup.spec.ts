@@ -29,6 +29,11 @@ test.describe("app startup", () => {
       if (url.includes("/api/v1/activity")) activityRequested = true;
     });
 
+    // Control the page clock so the test can jump past the 8s
+    // settings timeout instead of waiting it out in real time. The
+    // timeout path still executes exactly as in production.
+    await page.clock.install();
+
     await page.goto("/");
 
     // While settings is pending the loading state is shown.
@@ -36,10 +41,11 @@ test.describe("app startup", () => {
       timeout: 2_000,
     });
 
-    // Settings stalls for 8s, then the timeout fires and onReady
-    // runs. The loading state disappears and the activity feed
-    // mounts, proving runAppStartup continued past the timeout
-    // and the rest of the post-await wiring fired.
+    // Fast-forward past SETTINGS_STARTUP_TIMEOUT_MS: the race's
+    // timer fires, onReady runs, the loading state disappears and
+    // the activity feed mounts, proving runAppStartup continued
+    // past the timeout and the rest of the post-await wiring fired.
+    await page.clock.fastForward(8_100);
     await expect(page.locator(".loading-state")).toHaveCount(0, {
       timeout: 12_000,
     });

@@ -1,6 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import type { DiffFile, DiffLine, DiffResult, FilesResult } from "@middleman/ui/api/types";
-import { acquireExclusiveLock } from "./support/exclusiveLock";
 import { startIsolatedE2EServer } from "./support/e2eServer";
 
 type DiffFixtureFile = Omit<DiffFile, "patch"> & { patch?: string };
@@ -2303,6 +2302,10 @@ test.describe("diff view performance", () => {
       pageErrors.push(error.message);
     });
     await page.addInitScript(() => {
+      // This test asserts the highlight worker pool spins up during
+      // fast scrolling, so opt back into syntax highlighting (it is
+      // disabled by default under automation; see pierre-worker-pool.ts).
+      (globalThis as { __middlemanForceSyntaxHighlight?: boolean }).__middlemanForceSyntaxHighlight = true;
       const nativeWorker = window.Worker;
       (window as typeof window & { __middlemanWorkerUrls?: string[] }).__middlemanWorkerUrls = [];
       window.Worker = class extends nativeWorker {
@@ -2465,23 +2468,14 @@ test.describe("diff view performance", () => {
 //   - config.yaml: deleted
 //   - README.md: whitespace-only change
 
+// These run fully parallel: the state-mutating tests below lease
+// their own pooled isolated server, and the rest only read the
+// shared server's diff for acme/widgets PR #1 (concurrent git reads
+// are safe). The old machine-wide "git-backed-diff" lock predates
+// per-test isolated servers and only serialized wall-clock time.
 test.describe("diff view (git-backed)", () => {
   test.describe.configure({
-    mode: "serial",
     timeout: gitBackedDiffTestTimeoutMs,
-  });
-
-  let releaseLock: (() => Promise<void>) | null = null;
-
-  // eslint-disable-next-line no-empty-pattern -- Playwright requires fixture destructuring to access testInfo.
-  test.beforeAll(async ({}, testInfo) => {
-    testInfo.setTimeout(gitBackedDiffTestTimeoutMs);
-    releaseLock = await acquireExclusiveLock("git-backed-diff");
-  });
-
-  test.afterAll(async () => {
-    await releaseLock?.();
-    releaseLock = null;
   });
 
   test.beforeEach(async ({ page }) => {
@@ -2672,6 +2666,13 @@ test.describe("diff view (git-backed)", () => {
       await page.goto(`${baseURL}/pulls/github/acme/widgets/1/files`);
       await waitForDiffLoaded(page);
       await waitForSidebarFilesLoaded(page);
+
+      // Let the route-load background sync settle (fast on a fresh
+      // isolated server: the sync advances detail_fetched_at, so the
+      // store's refetch loop exits on its first poll). Without this,
+      // the refetch re-render can steal focus from the composer
+      // between toBeFocused and fill below.
+      await expect(page.locator(".pull-detail .sync-indicator")).toHaveCount(0, { timeout: 15_000 });
 
       const cacheFile = page.locator('[data-file-path="internal/cache.go"]');
       await cacheFile.scrollIntoViewIfNeeded();

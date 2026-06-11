@@ -1,3 +1,7 @@
+// The 00- filename prefix schedules this long-running spec first:
+// Playwright dispatches files in path order, and multi-second tests
+// that start near the end of the run stretch the suite tail.
+
 import { execFileSync } from "node:child_process";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";

@@ -7,7 +7,6 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
-import { acquireExclusiveLock } from "./exclusiveLock";
 
 export type E2EServerInfo = {
   host: string;
@@ -34,7 +33,8 @@ const startupTimeoutMs = 60_000;
 const pollIntervalMs = 100;
 const reachabilityTimeoutMs = 1_000;
 const ownedServerEnvVar = "PLAYWRIGHT_E2E_SERVER_OWNED";
-const workspaceTmuxLockName = "workspace-tmux";
+const frontendReadyEnvVar = "PLAYWRIGHT_E2E_FRONTEND_READY";
+const defaultPlatformHost = "github.com";
 
 type ManagedChildLike = {
   pid?: number | undefined;
@@ -128,6 +128,12 @@ async function tryBuildFrontend(frontendDir: string): Promise<BuildOutcome> {
 }
 
 export async function ensureEmbeddedFrontend(rootDir: string = repoRoot): Promise<void> {
+  // The Playwright config process verifies/builds the frontend once
+  // before any worker starts; workers inherit the env flag and skip
+  // the recursive mtime scan on every server spawn.
+  if (process.env[frontendReadyEnvVar] === "1") {
+    return;
+  }
   const embeddedDist = path.join(rootDir, "internal", "web", "dist");
   const embeddedIndex = path.join(embeddedDist, "index.html");
   const frontendDir = path.join(rootDir, "frontend");
@@ -168,6 +174,7 @@ export async function ensureEmbeddedFrontend(rootDir: string = repoRoot): Promis
   if ((await fileMtimeMs(embeddedIndex)) !== null) {
     const embeddedMtime = await newestMtimeUnder(embeddedDist);
     if (embeddedMtime !== null && embeddedMtime >= frontendMtime) {
+      process.env[frontendReadyEnvVar] = "1";
       return;
     }
   }
@@ -176,6 +183,7 @@ export async function ensureEmbeddedFrontend(rootDir: string = repoRoot): Promis
   await mkdir(path.dirname(embeddedDist), { recursive: true });
   await cp(frontendDist, embeddedDist, { recursive: true });
   await writeFile(path.join(embeddedDist, "stub.html"), "ok\n");
+  process.env[frontendReadyEnvVar] = "1";
 }
 
 function delay(ms: number): Promise<void> {
@@ -340,6 +348,26 @@ export async function ensureE2EServer(): Promise<E2EServerInfo> {
     return await serverPromise;
   }
 
+  // Inside a Playwright worker whose runner owns the shared server,
+  // spawn a per-worker server instead of pointing every worker at
+  // one process. Detail-page tests fire background syncs whose SSE
+  // data_changed broadcasts would otherwise fan out to every other
+  // worker's open pages (each one refetching lists in response),
+  // and all workers would contend on a single SQLite writer and
+  // git clone. Externally provided servers (the roborev runner
+  // script) are still reused as-is.
+  if (process.env.TEST_WORKER_INDEX !== undefined && process.env[ownedServerEnvVar] === "1") {
+    serverPromise = (async () => {
+      const server = await spawnPooledServer(defaultPlatformHost);
+      // Permanently leased: this is the worker's shared server; the
+      // isolated-server pool must never hand it out or reset it.
+      server.busy = true;
+      process.env.PLAYWRIGHT_E2E_BASE_URL = server.info.base_url;
+      return server.info;
+    })();
+    return await serverPromise;
+  }
+
   const existingBaseURL = process.env.PLAYWRIGHT_E2E_BASE_URL;
   const existingInfoFile = process.env.PLAYWRIGHT_E2E_SERVER_INFO_FILE;
   if (existingBaseURL && existingInfoFile) {
@@ -387,6 +415,129 @@ export async function stopE2EServer(): Promise<void> {
   delete process.env.PLAYWRIGHT_E2E_BASE_URL;
 }
 
+// --- Isolated server pool ---
+//
+// Tests that mutate server state lease an isolated server instead of
+// the shared one. Leases come from a per-worker pool: the first
+// lease spawns a server process; stop() fires the in-process
+// /__e2e/reset (which rebuilds the seeded fixture state) and returns
+// the server to the pool instead of killing the process. This keeps
+// per-test isolation while paying the process spawn cost at most
+// once per worker.
+
+type PooledServer = {
+  child: ChildProcess;
+  info: E2EServerInfo;
+  busy: boolean;
+  // Reset fired by stop(); the next lease awaits it before reuse.
+  pending: Promise<void> | null;
+  // default_platform_host the server has (or will have once
+  // `pending` resolves).
+  host: string;
+};
+
+const isolatedPool: PooledServer[] = [];
+let poolCleanupInstalled = false;
+
+function installPoolCleanup(): void {
+  if (poolCleanupInstalled) {
+    return;
+  }
+  poolCleanupInstalled = true;
+
+  const killAll = () => {
+    for (const server of isolatedPool) {
+      try {
+        process.kill(server.info.pid, "SIGTERM");
+      } catch {
+        // Process already exited.
+      }
+    }
+    isolatedPool.length = 0;
+  };
+
+  process.once("exit", killAll);
+  process.once("SIGINT", () => {
+    killAll();
+    process.exit(130);
+  });
+  process.once("SIGTERM", () => {
+    killAll();
+    process.exit(143);
+  });
+}
+
+async function postReset(baseURL: string, host: string): Promise<E2EServerInfo> {
+  return await new Promise<E2EServerInfo>((resolve, reject) => {
+    const url = new URL("/__e2e/reset", baseURL);
+    const request = (url.protocol === "https:" ? httpsRequest : httpRequest)(
+      url,
+      {
+        method: "POST",
+        timeout: 60_000,
+        headers: { "content-type": "application/json" },
+      },
+      (response) => {
+        const chunks: Buffer[] = [];
+        response.on("data", (chunk: Buffer) => chunks.push(chunk));
+        response.on("end", () => {
+          const body = Buffer.concat(chunks).toString("utf8");
+          if ((response.statusCode ?? 0) !== 200) {
+            reject(new Error(`e2e reset failed with status ${response.statusCode}: ${body.trim()}`));
+            return;
+          }
+          try {
+            resolve(JSON.parse(body) as E2EServerInfo);
+          } catch (error) {
+            reject(error instanceof Error ? error : new Error(String(error)));
+          }
+        });
+      },
+    );
+    request.on("error", reject);
+    request.on("timeout", () => {
+      request.destroy(new Error("e2e reset timed out"));
+    });
+    request.end(JSON.stringify({ default_platform_host: host }));
+  });
+}
+
+async function resetPooledServer(server: PooledServer, host: string): Promise<void> {
+  server.info = await postReset(server.info.base_url, host);
+  server.host = host;
+}
+
+function dropPooledServer(server: PooledServer): void {
+  const index = isolatedPool.indexOf(server);
+  if (index >= 0) {
+    isolatedPool.splice(index, 1);
+  }
+  try {
+    process.kill(server.info.pid, "SIGTERM");
+  } catch {
+    // Process already exited.
+  }
+}
+
+async function spawnPooledServer(host: string): Promise<PooledServer> {
+  const infoDir = mkdtempSync(path.join(os.tmpdir(), "middleman-e2e-"));
+  const infoFile = path.join(infoDir, "server-info.json");
+  const started = await spawnServer(infoFile, host === defaultPlatformHost ? {} : { defaultPlatformHost: host });
+  // The info is in memory now; the temp dir is no longer needed.
+  await rm(infoDir, { force: true, recursive: true });
+
+  const server: PooledServer = {
+    child: started.child,
+    info: started.info,
+    busy: true,
+    pending: null,
+    host,
+  };
+  isolatedPool.push(server);
+  installPoolCleanup();
+  return server;
+}
+
 export async function startIsolatedE2EServer(): Promise<IsolatedE2EServer> {
   return startIsolatedE2EServerWithOptions();
 }
@@ -394,44 +545,62 @@ export async function startIsolatedE2EServer(): Promise<IsolatedE2EServer> {
 export async function startIsolatedE2EServerWithOptions(
   options: IsolatedE2EServerOptions = {},
 ): Promise<IsolatedE2EServer> {
-  const isolatedInfoDir = mkdtempSync(path.join(os.tmpdir(), "middleman-e2e-"));
-  const isolatedInfoFile = path.join(isolatedInfoDir, "server-info.json");
-  const started = await spawnServer(isolatedInfoFile, options);
+  const host = options.defaultPlatformHost ?? defaultPlatformHost;
+  let server: PooledServer | null = null;
 
+  const candidate = isolatedPool.find((pooled) => !pooled.busy);
+  if (candidate) {
+    candidate.busy = true;
+    try {
+      if (candidate.pending) {
+        await candidate.pending;
+        candidate.pending = null;
+      }
+      if (candidate.host !== host) {
+        await resetPooledServer(candidate, host);
+      }
+      server = candidate;
+    } catch {
+      // Server crashed or its reset failed: replace it.
+      dropPooledServer(candidate);
+    }
+  }
+
+  if (!server) {
+    server = await spawnPooledServer(host);
+  }
+
+  const leased = server;
+  let stopped = false;
   return {
-    info: started.info,
+    info: leased.info,
     stop: async () => {
-      cleanupManagedServerProcess(started.child, isolatedInfoFile);
-      await removeServerInfo(isolatedInfoFile);
-      await rm(isolatedInfoDir, { force: true, recursive: true });
+      if (stopped) {
+        return;
+      }
+      stopped = true;
+      // Reset eagerly in the background so the next lease in this
+      // worker finds a clean server waiting. A failed reset
+      // surfaces on the next lease via `pending`; the extra catch
+      // avoids an unhandled rejection when no lease follows.
+      const reset = resetPooledServer(leased, defaultPlatformHost);
+      reset.catch(() => {});
+      leased.pending = reset;
+      leased.busy = false;
     },
   };
 }
 
+// Workspace/tmux tests lease through the same pool: every e2e server
+// instance runs its own private tmux socket (see instanceTmuxCommand
+// in cmd/e2e-server), so these tests no longer serialize behind a
+// machine-wide lock.
 export async function startIsolatedWorkspaceE2EServer(): Promise<IsolatedE2EServer> {
-  return startIsolatedWorkspaceE2EServerWithOptions();
+  return startIsolatedE2EServerWithOptions();
 }
 
 export async function startIsolatedWorkspaceE2EServerWithOptions(
   options: IsolatedE2EServerOptions = {},
 ): Promise<IsolatedE2EServer> {
-  const releaseLock = await acquireExclusiveLock(workspaceTmuxLockName);
-  let server: IsolatedE2EServer;
-  try {
-    server = await startIsolatedE2EServerWithOptions(options);
-  } catch (error) {
-    await releaseLock();
-    throw error;
-  }
-
-  return {
-    info: server.info,
-    stop: async () => {
-      try {
-        await server.stop();
-      } finally {
-        await releaseLock();
-      }
-    },
-  };
+  return startIsolatedE2EServerWithOptions(options);
 }

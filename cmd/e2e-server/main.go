@@ -7,6 +7,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
@@ -15,6 +16,8 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -25,6 +28,7 @@ import (
 	"go.kenn.io/middleman/internal/gitclone"
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/platform"
+	"go.kenn.io/middleman/internal/procutil"
 	"go.kenn.io/middleman/internal/server"
 	"go.kenn.io/middleman/internal/stacks"
 	"go.kenn.io/middleman/internal/testutil"
@@ -516,33 +520,119 @@ func setPR1CIState(
 	}
 }
 
-// run starts the e2e server and blocks until ctx is canceled or the
-// HTTP server errors out. Tests call it directly with a cancellable
-// context; main() wires it to SIGINT/SIGTERM.
-func run(
+// appOptions parameterizes one in-process build of the e2e server
+// state. The same options feed the initial startup and every
+// /__e2e/reset rebuild.
+type appOptions struct {
+	roborevEndpoint     string
+	defaultPlatformHost string
+}
+
+// appState bundles everything one logical e2e server instance owns:
+// temp dir, database, fixture wiring, and the HTTP handler.
+// /__e2e/reset swaps a fresh appState in and closes the old one so
+// Playwright tests can reuse the process (and its port) instead of
+// paying a full spawn/teardown per test.
+type appState struct {
+	tmpDir      string
+	database    *db.DB
+	srv         *server.Server
+	handler     http.Handler
+	cfgPath     string
+	worktreeDir string
+	tmuxCommand []string
+	clones      *gitclone.Manager
+}
+
+// tmuxSocketCounter feeds per-instance tmux socket names so
+// concurrent e2e server states never share a tmux server. Isolated
+// sockets are what allow workspace/tmux tests to run in parallel
+// instead of serializing behind a machine-wide lock.
+var tmuxSocketCounter atomic.Int64
+
+func instanceTmuxCommand() []string {
+	return []string{
+		"tmux",
+		"-L",
+		fmt.Sprintf("mm-e2e-%d-%d", os.Getpid(), tmuxSocketCounter.Add(1)),
+	}
+}
+
+// killTmuxServer tears down the per-instance tmux server. It only
+// acts on sockets named by instanceTmuxCommand so a misconfigured
+// command can never kill a developer's real tmux server.
+func killTmuxServer(tmuxCmd []string) {
+	idx := slices.Index(tmuxCmd, "-L")
+	if idx < 0 || idx+1 >= len(tmuxCmd) ||
+		!strings.HasPrefix(tmuxCmd[idx+1], "mm-e2e-") {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	args := append(slices.Clone(tmuxCmd[1:]), "kill-server")
+	_ = procutil.CommandContext(ctx, tmuxCmd[0], args...).Run()
+}
+
+// close releases everything the state owns. Shutdown drains HTTP
+// handlers and background goroutines before the workspace cleanup
+// and database close, mirroring the old process-exit defer ordering.
+func (st *appState) close() {
+	shutdownCtx, cancel := context.WithTimeout(
+		context.Background(), 10*time.Second,
+	)
+	defer cancel()
+	if err := st.srv.Shutdown(shutdownCtx); err != nil {
+		slog.Warn("server shutdown", "err", err)
+	}
+	cleanupE2EWorkspaces(st.database, st.clones, st.worktreeDir, st.tmuxCommand)
+	if err := st.database.Close(); err != nil {
+		slog.Warn("close database", "err", err)
+	}
+	killTmuxServer(st.tmuxCommand)
+	if err := os.RemoveAll(st.tmpDir); err != nil {
+		slog.Warn("remove e2e temp dir", "err", err)
+	}
+}
+
+// buildAppState seeds a complete e2e server state: fixture DB, git
+// repos, config file, provider registry, and the HTTP handler with
+// the /__e2e fixture endpoints. It runs at startup and on every
+// /__e2e/reset.
+func buildAppState(
 	ctx context.Context,
-	port int,
-	roborevEndpoint, serverInfoFile, defaultPlatformHost string,
-) error {
-	defaultPlatformHost = strings.TrimSpace(defaultPlatformHost)
+	assets fs.FS,
+	opts appOptions,
+) (*appState, error) {
+	defaultPlatformHost := strings.TrimSpace(opts.defaultPlatformHost)
 	if defaultPlatformHost == "" {
 		defaultPlatformHost = "github.com"
 	}
+	roborevEndpoint := opts.roborevEndpoint
+
 	tmpDir, err := os.MkdirTemp("", "middleman-e2e-*")
 	if err != nil {
-		return fmt.Errorf("create temp dir: %w", err)
+		return nil, fmt.Errorf("create temp dir: %w", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	built := false
+	defer func() {
+		if !built {
+			os.RemoveAll(tmpDir)
+		}
+	}()
 
 	database, err := db.Open(tmpDir + "/e2e.db")
 	if err != nil {
-		return fmt.Errorf("open database: %w", err)
+		return nil, fmt.Errorf("open database: %w", err)
 	}
-	defer database.Close()
+	defer func() {
+		if !built {
+			database.Close()
+		}
+	}()
 
 	result, err := testutil.SeedFixtures(ctx, database)
 	if err != nil {
-		return fmt.Errorf("seed fixtures: %w", err)
+		return nil, fmt.Errorf("seed fixtures: %w", err)
 	}
 	gitLabCloneURL, err := createBareRepoFixture(
 		ctx,
@@ -552,10 +642,10 @@ func run(
 		"project",
 	)
 	if err != nil {
-		return fmt.Errorf("create gitlab fixture repo: %w", err)
+		return nil, fmt.Errorf("create gitlab fixture repo: %w", err)
 	}
 	if err := seedGitLabReadOnlyCapabilityFixture(ctx, database, gitLabCloneURL); err != nil {
-		return fmt.Errorf("seed gitlab capability fixture: %w", err)
+		return nil, fmt.Errorf("seed gitlab capability fixture: %w", err)
 	}
 
 	// Run stack detection so seeded stacked chains are discoverable
@@ -569,13 +659,13 @@ func run(
 			continue
 		}
 		if err := stacks.RunDetection(ctx, database, repo.ID); err != nil {
-			return fmt.Errorf("stack detection %s/%s: %w", rp.owner, rp.name, err)
+			return nil, fmt.Errorf("stack detection %s/%s: %w", rp.owner, rp.name, err)
 		}
 	}
 
 	diffRepo, err := testutil.SetupDiffRepo(ctx, tmpDir, database)
 	if err != nil {
-		return fmt.Errorf("setup diff repo: %w", err)
+		return nil, fmt.Errorf("setup diff repo: %w", err)
 	}
 	e2eWorktreeDir := filepath.Join(tmpDir, "worktrees")
 
@@ -611,20 +701,25 @@ func run(
 			ViewMode:  "flat",
 			TimeRange: "7d",
 		},
+		// Private per-instance tmux socket so concurrent e2e states
+		// (parallel Playwright workers, multiple worktrees) never
+		// contend on one tmux server. This is what lets workspace
+		// tests run unserialized.
+		Tmux: config.Tmux{Command: instanceTmuxCommand()},
 	}
 
 	cfg.Roborev.Endpoint = roborevEndpoint
 	if err := cfg.Validate(); err != nil {
-		return fmt.Errorf("validate e2e config: %w", err)
+		return nil, fmt.Errorf("validate e2e config: %w", err)
 	}
 	cfgPath := filepath.Join(tmpDir, "config.toml")
 	if err := cfg.Save(cfgPath); err != nil {
-		return fmt.Errorf("save e2e config: %w", err)
+		return nil, fmt.Errorf("save e2e config: %w", err)
 	}
 
 	fc := result.FixtureClient()
 	if err := seedLabelEditingFixture(ctx, database, fc); err != nil {
-		return fmt.Errorf("seed label editing fixture: %w", err)
+		return nil, fmt.Errorf("seed label editing fixture: %w", err)
 	}
 	fc.ListRepositoriesByOwnerFn = func(
 		ctx context.Context, owner string,
@@ -718,14 +813,14 @@ func run(
 		if _, err := database.UpsertRepo(
 			ctx, db.GitHubRepoIdentity(repo.PlatformHost, repo.Owner, repo.Name),
 		); err != nil {
-			return fmt.Errorf("seed startup repo %s/%s: %w", repo.Owner, repo.Name, err)
+			return nil, fmt.Errorf("seed startup repo %s/%s: %w", repo.Owner, repo.Name, err)
 		}
 	}
 	if !strings.EqualFold(defaultPlatformHost, "github.com") {
 		if _, err := database.UpsertRepo(
 			ctx, db.GitHubRepoIdentity(defaultPlatformHost, "enterprise", "service"),
 		); err != nil {
-			return fmt.Errorf("seed default-host repo: %w", err)
+			return nil, fmt.Errorf("seed default-host repo: %w", err)
 		}
 	}
 
@@ -847,7 +942,7 @@ func run(
 		},
 	)
 	if err != nil {
-		return fmt.Errorf("create e2e provider registry: %w", err)
+		return nil, fmt.Errorf("create e2e provider registry: %w", err)
 	}
 	trackedRepos := append(
 		slices.Clone(startupResolved.Expanded),
@@ -882,11 +977,6 @@ func run(
 		defaultPlatformHost: gqlFetcher,
 	})
 
-	assets, err := web.Assets()
-	if err != nil {
-		return fmt.Errorf("load frontend assets: %w", err)
-	}
-
 	srv := server.NewWithConfig(
 		database, syncer, diffRepo.Manager, assets, cfg, cfgPath,
 		server.ServerOptions{
@@ -894,7 +984,6 @@ func run(
 			WorktreeDir: e2eWorktreeDir,
 		},
 	)
-	defer cleanupE2EWorkspaces(database, diffRepo.Manager, e2eWorktreeDir, cfg.TmuxCommand())
 	rootHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost &&
 			r.URL.Path == "/__e2e/pr-workflow-approval/required" {
@@ -1233,6 +1322,51 @@ func run(
 	// incomplete fixture client data. The syncer only needs to exist
 	// for Status() and IsTrackedRepo() calls.
 
+	built = true
+	return &appState{
+		tmpDir:      tmpDir,
+		database:    database,
+		srv:         srv,
+		handler:     rootHandler,
+		cfgPath:     cfgPath,
+		worktreeDir: e2eWorktreeDir,
+		tmuxCommand: cfg.TmuxCommand(),
+		clones:      diffRepo.Manager,
+	}, nil
+}
+
+// run starts the e2e server and blocks until ctx is canceled or the
+// HTTP server errors out. Tests call it directly with a cancellable
+// context; main() wires it to SIGINT/SIGTERM.
+func run(
+	ctx context.Context,
+	port int,
+	roborevEndpoint, serverInfoFile, defaultPlatformHost string,
+) error {
+	assets, err := web.Assets()
+	if err != nil {
+		return fmt.Errorf("load frontend assets: %w", err)
+	}
+
+	baseOpts := appOptions{
+		roborevEndpoint:     roborevEndpoint,
+		defaultPlatformHost: defaultPlatformHost,
+	}
+
+	state, err := buildAppState(ctx, assets, baseOpts)
+	if err != nil {
+		return err
+	}
+
+	var current atomic.Pointer[appState]
+	current.Store(state)
+	// Final cleanup of whichever state is live at exit. Runs last
+	// (registered first): the httpServer/srv shutdown defers below
+	// drain handlers before this closes the database and temp dir.
+	defer func() {
+		current.Load().close()
+	}()
+
 	listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
 	if err != nil {
 		return fmt.Errorf("listen: %w", err)
@@ -1249,7 +1383,7 @@ func run(
 		Port:       tcpAddr.Port,
 		BaseURL:    fmt.Sprintf("http://127.0.0.1:%d", tcpAddr.Port),
 		PID:        os.Getpid(),
-		ConfigPath: cfgPath,
+		ConfigPath: state.cfgPath,
 	}
 	if err := writeServerInfoFile(serverInfoFile, info); err != nil {
 		return fmt.Errorf("write server info file: %w", err)
@@ -1258,23 +1392,75 @@ func run(
 
 	slog.Info(fmt.Sprintf("starting e2e server at %s", info.BaseURL))
 
+	// /__e2e/reset rebuilds the full fixture state in-process and
+	// swaps it in, so Playwright can reuse one server process (and
+	// port) across tests instead of spawning a fresh process per
+	// test. The old state drains and cleans up in the background.
+	var resetMu sync.Mutex
+	rootHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/__e2e/reset" {
+			if r.Method != http.MethodPost {
+				http.Error(w, "POST required", http.StatusMethodNotAllowed)
+				return
+			}
+			resetMu.Lock()
+			defer resetMu.Unlock()
+
+			opts := baseOpts
+			var req struct {
+				DefaultPlatformHost string `json:"default_platform_host"`
+			}
+			// Tolerate an empty body: reset to the startup options.
+			_ = json.NewDecoder(r.Body).Decode(&req)
+			if strings.TrimSpace(req.DefaultPlatformHost) != "" {
+				opts.defaultPlatformHost = req.DefaultPlatformHost
+			}
+
+			// Build against the process ctx, not r.Context(): a
+			// client disconnect mid-build must not leave a
+			// half-canceled state in the pool.
+			newState, buildErr := buildAppState(ctx, assets, opts)
+			if buildErr != nil {
+				http.Error(
+					w,
+					fmt.Sprintf("reset: %v", buildErr),
+					http.StatusInternalServerError,
+				)
+				return
+			}
+			old := current.Swap(newState)
+			// Old-state teardown (handler drain, tmux kill, temp
+			// dir removal) happens off the request path, matching
+			// the old SIGTERM-and-return stop() semantics.
+			go old.close()
+
+			resetInfo := info
+			resetInfo.ConfigPath = newState.cfgPath
+			w.Header().Set("Content-Type", "application/json")
+			if err := json.NewEncoder(w).Encode(resetInfo); err != nil {
+				slog.Warn("write e2e reset response", "err", err)
+			}
+			return
+		}
+		current.Load().handler.ServeHTTP(w, r)
+	})
+
 	httpServer := &http.Server{
 		Handler:     rootHandler,
 		ReadTimeout: 15 * time.Second,
 		IdleTimeout: 60 * time.Second,
 	}
 
-	// Drain HTTP handlers and bg goroutines before DB close.
-	// LIFO ordering: this runs after stop() but before the
-	// deferred database.Close above. srv.Shutdown closes the
-	// hub so SSE handlers exit, then drains bg goroutines;
-	// httpServer.Shutdown drains in-flight HTTP handlers.
+	// Drain HTTP handlers and bg goroutines before the deferred
+	// state close above. srv.Shutdown closes the hub so SSE
+	// handlers exit, then drains bg goroutines; httpServer.Shutdown
+	// drains in-flight HTTP handlers.
 	defer func() {
 		shutdownCtx, cancel := context.WithTimeout(
 			context.Background(), 10*time.Second,
 		)
 		defer cancel()
-		if err := srv.Shutdown(shutdownCtx); err != nil {
+		if err := current.Load().srv.Shutdown(shutdownCtx); err != nil {
 			slog.Warn("server shutdown", "err", err)
 		}
 		if err := httpServer.Shutdown(shutdownCtx); err != nil {
@@ -1299,7 +1485,7 @@ func run(
 			context.Background(), 10*time.Second,
 		)
 		defer cancel()
-		if err := srv.Shutdown(shutdownCtx); err != nil {
+		if err := current.Load().srv.Shutdown(shutdownCtx); err != nil {
 			slog.Warn("server shutdown", "err", err)
 		}
 		if err := httpServer.Shutdown(shutdownCtx); err != nil {

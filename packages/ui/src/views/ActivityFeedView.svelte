@@ -141,6 +141,36 @@
   const effectiveDetailTab = $derived(
     controlled ? detailTab : internalDetailTab,
   );
+  // Guarded snapshots for the drawer detail panes. As inline prop
+  // object literals these would compile into deriveds that can
+  // re-evaluate while the {#if} branch below is tearing down — after
+  // activeDrawer has already flipped to null — and crash reading
+  // activeDrawer.owner. Hoisting them behind the null check makes a
+  // teardown-time re-read return null instead of throwing.
+  const drawerPRSelection = $derived(
+    activeDrawer?.itemType === "pr"
+      ? {
+          owner: activeDrawer.owner,
+          name: activeDrawer.name,
+          number: activeDrawer.number,
+          provider: activeDrawer.provider,
+          platformHost: activeDrawer.platformHost,
+          repoPath: activeDrawer.repoPath,
+        }
+      : null,
+  );
+  const drawerIssueSelection = $derived(
+    activeDrawer && activeDrawer.itemType !== "pr"
+      ? {
+          owner: activeDrawer.owner,
+          name: activeDrawer.name,
+          number: activeDrawer.number,
+          provider: activeDrawer.provider,
+          platformHost: activeDrawer.platformHost,
+          repoPath: activeDrawer.repoPath,
+        }
+      : null,
+  );
 
   function handleDetailTabChange(
     tab: ActivityDetailTab,
@@ -343,16 +373,9 @@
             commitSha={commitDrawer.commitSha}
           />
         {/key}
-      {:else if activeDrawer?.itemType === "pr"}
+      {:else if drawerPRSelection}
         <PRListView
-          selectedPR={{
-            owner: activeDrawer.owner,
-            name: activeDrawer.name,
-            number: activeDrawer.number,
-            provider: activeDrawer.provider,
-            platformHost: activeDrawer.platformHost,
-            repoPath: activeDrawer.repoPath,
-          }}
+          selectedPR={drawerPRSelection}
           detailTab={effectiveDetailTab}
           isSidebarCollapsed={true}
           hideSidebar={true}
@@ -362,16 +385,9 @@
           onDetailTabChange={handleDetailTabChange}
           onStackMemberNavigate={handleStackMemberNavigate}
         />
-      {:else if activeDrawer}
+      {:else if drawerIssueSelection}
         <IssueListView
-          selectedIssue={{
-            owner: activeDrawer.owner,
-            name: activeDrawer.name,
-            number: activeDrawer.number,
-            provider: activeDrawer.provider,
-            platformHost: activeDrawer.platformHost,
-            repoPath: activeDrawer.repoPath,
-          }}
+          selectedIssue={drawerIssueSelection}
           isSidebarCollapsed={true}
           hideSidebar={true}
           autoSyncDetail="background"

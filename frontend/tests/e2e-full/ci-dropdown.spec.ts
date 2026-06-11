@@ -251,6 +251,19 @@ test.describe("CI dropdown", () => {
   test("dropdown shows summary header, five sections, show-N-more toggle", async ({ page }) => {
     const server = await startIsolatedE2EServer();
     try {
+      // The payload below contains pending checks, which arm the
+      // 15s CI auto-refresh once the dropdown renders. A refresh
+      // remounts the checks panel and silently resets the
+      // show-more toggle this test exercises, so push the interval
+      // out of reach (the auto-refresh behavior itself is covered
+      // by "expanded pending CI checks trigger a detail sync
+      // refresh" above).
+      await page.addInitScript(() => {
+        const realSetInterval = window.setInterval;
+        window.setInterval = ((handler: TimerHandler, timeout?: number, ...args: unknown[]) =>
+          realSetInterval(handler, timeout === 15_000 ? 3_600_000 : timeout, ...args)) as typeof window.setInterval;
+      });
+
       const seed = await page.request.post(`${server.info.base_url}/__e2e/pr-ci-state/dropdown-mixed`);
       expect(seed.ok()).toBe(true);
 
@@ -272,25 +285,36 @@ test.describe("CI dropdown", () => {
       await expect(headings.nth(3)).toContainText(/Passed \(12\)/);
       await expect(headings.nth(4)).toContainText(/Skipped \(2\)/);
 
+      // The route-load background sync can refetch the detail
+      // payload at any point in the first seconds of the page; the
+      // resulting remount collapses the show-more state. Re-apply
+      // the user action when that happens — the assertions inside
+      // still pin the expand/collapse behavior itself.
       const showMore = panel.getByRole("button", {
         name: /Show 4 more passed/i,
       });
       await expect(showMore).toBeVisible();
-      await showMore.evaluate((button: HTMLElement) => button.click());
-      await expect(
-        panel.getByRole("button", {
-          name: /Show fewer passed/i,
-        }),
-      ).toBeVisible();
-
-      const passedRowsAfter = panel.locator(".ci-section-passed .ci-row");
-      await expect(passedRowsAfter).toHaveCount(12);
+      await expect(async () => {
+        if (await showMore.count()) {
+          await showMore.evaluate((button: HTMLElement) => button.click());
+        }
+        await expect(
+          panel.getByRole("button", {
+            name: /Show fewer passed/i,
+          }),
+        ).toBeVisible({ timeout: 1_000 });
+        await expect(panel.locator(".ci-section-passed .ci-row")).toHaveCount(12, { timeout: 1_000 });
+      }).toPass({ timeout: 15_000 });
 
       const showFewer = panel.getByRole("button", {
         name: /Show fewer passed/i,
       });
-      await showFewer.evaluate((button: HTMLElement) => button.click());
-      await expect(panel.locator(".ci-section-passed .ci-row")).toHaveCount(8);
+      await expect(async () => {
+        if (await showFewer.count()) {
+          await showFewer.evaluate((button: HTMLElement) => button.click());
+        }
+        await expect(panel.locator(".ci-section-passed .ci-row")).toHaveCount(8, { timeout: 1_000 });
+      }).toPass({ timeout: 15_000 });
     } finally {
       await server.stop();
     }

@@ -1,3 +1,7 @@
+// The 00- filename prefix schedules this long-running spec first:
+// Playwright dispatches files in path order, and multi-second tests
+// that start near the end of the run stretch the suite tail.
+
 import { expect, test, type Page } from "@playwright/test";
 import { startIsolatedE2EServer, type IsolatedE2EServer } from "./support/e2eServer";
 
@@ -9,25 +13,25 @@ if (chromiumBinary) {
   test.use({ launchOptions: { executablePath: chromiumBinary } });
 }
 
-// Each test mutates the PR fixture body, so each leases its own
+// Each test mutates the issue fixture body, so each leases its own
 // pooled isolated server. That replaces the old serial run against
 // the shared server and lets the tests execute in parallel.
-test.describe("PR description task list", () => {
-  async function openPullDetail(page: Page): Promise<IsolatedE2EServer> {
+test.describe("issue description task list", () => {
+  async function openIssueDetail(page: Page): Promise<IsolatedE2EServer> {
     const server = await startIsolatedE2EServer();
-    await page.goto(`${server.info.base_url}/pulls/github/acme/widgets/1`);
-    await page.locator(".pull-detail").waitFor({ state: "visible", timeout: 15_000 });
+    await page.goto(`${server.info.base_url}/issues/github/acme/widgets/11`);
+    await page.locator(".issue-detail").waitFor({ state: "visible", timeout: 15_000 });
     await page.locator(".body-section .markdown-body").waitFor({ state: "visible" });
     // Wait for the page-load background sync to settle so it can't
     // race with our optimistic click and clobber the local body. On
     // a fresh isolated server the sync advances detail_fetched_at,
     // so the indicator clears on the store's first refetch poll.
-    await expect(page.locator(".pull-detail .sync-indicator")).toHaveCount(0, { timeout: 15_000 });
+    await expect(page.locator(".issue-detail .sync-indicator")).toHaveCount(0, { timeout: 15_000 });
     return server;
   }
 
   test("checkbox clicks toggle locally and persist on reload", async ({ page }) => {
-    const server = await openPullDetail(page);
+    const server = await openIssueDetail(page);
     try {
       const body = page.locator(".body-section .markdown-body");
       const cb0 = body.locator('input[type="checkbox"][data-task-index="0"]');
@@ -35,7 +39,7 @@ test.describe("PR description task list", () => {
       const cb0Expected = !(await cb0.isChecked());
       const cb1Expected = !(await cb1.isChecked());
       const checkboxMarker = (checked: boolean) => (checked ? "[x]" : "[ ]");
-      const patchRoute = /\/api\/v1\/pulls\/[^/]+\/[^/]+\/[^/]+\/1$/;
+      const patchRoute = /\/api\/v1\/issues\/[^/]+\/[^/]+\/[^/]+\/11$/;
       const persisted = page.waitForResponse(
         (resp) => {
           if (resp.request().method() !== "PATCH" || !patchRoute.test(resp.url()) || !resp.ok()) {
@@ -43,8 +47,8 @@ test.describe("PR description task list", () => {
           }
           const body = resp.request().postData() ?? "";
           return (
-            body.includes(`${checkboxMarker(cb0Expected)} Cmd+K opens palette, focus lands in the search input`) &&
-            body.includes(`${checkboxMarker(cb1Expected)} Tab/Shift+Tab cycles within the palette dialog only`)
+            body.includes(`${checkboxMarker(cb0Expected)} System preference detected on first launch`) &&
+            body.includes(`${checkboxMarker(cb1Expected)} Manual toggle in settings overrides system`)
           );
         },
         { timeout: 5_000 },
@@ -72,11 +76,11 @@ test.describe("PR description task list", () => {
   });
 
   test("drag handle reorders a task item and persists on reload", async ({ page }) => {
-    const server = await openPullDetail(page);
+    const server = await openIssueDetail(page);
     try {
       const body = page.locator(".body-section .markdown-body");
       const firstLabel = await body.locator('.task-list-item--interactive[data-task-index="0"]').textContent();
-      expect(firstLabel ?? "").toMatch(/Cmd\+K/);
+      expect(firstLabel ?? "").toMatch(/System preference/);
 
       const handle0 = body.locator('.task-drag-handle[data-task-index="0"]');
       const item2 = body.locator('.task-list-item--interactive[data-task-index="2"]');
@@ -105,26 +109,24 @@ test.describe("PR description task list", () => {
       const reloadedBody = page.locator(".body-section .markdown-body");
       await reloadedBody.waitFor({ state: "visible" });
 
-      // The originally-first item ("Cmd+K …") now sits at index 2 after
-      // the drag; the originally-second item ("Tab/Shift+Tab …") is now
-      // at index 0.
+      // The originally-first item ("System preference …") now sits at
+      // index 2 after the drag; the originally-second item ("Manual
+      // toggle …") is now at index 0.
       const slot0 = await reloadedBody.locator('.task-list-item--interactive[data-task-index="0"]').textContent();
       const slot2 = await reloadedBody.locator('.task-list-item--interactive[data-task-index="2"]').textContent();
-      expect(slot0 ?? "").toMatch(/Tab\/Shift\+Tab/);
-      expect(slot2 ?? "").toMatch(/Cmd\+K/);
+      expect(slot0 ?? "").toMatch(/Manual toggle/);
+      expect(slot2 ?? "").toMatch(/System preference/);
     } finally {
       await server.stop();
     }
   });
 
   test("queued body save wins when an older PATCH finishes after a newer click", async ({ page }) => {
-    const server = await openPullDetail(page);
+    const server = await openIssueDetail(page);
     try {
       // Hold the first PATCH response so we can queue a newer body
-      // while it's in flight. This exercises the single-flight body-
-      // save queue: out-of-order responses must NOT clobber the
-      // newer body, and the final persisted body must include both
-      // toggles.
+      // while it's in flight. Mirrors the PR test — verifies the
+      // single-flight body-save queue for the issue path.
       const body = page.locator(".body-section .markdown-body");
       const cb0 = body.locator('input[type="checkbox"][data-task-index="0"]');
       const cb1 = body.locator('input[type="checkbox"][data-task-index="1"]');
@@ -136,7 +138,7 @@ test.describe("PR description task list", () => {
       const firstPatchHeld = new Promise<void>((resolve) => {
         releaseFirstPatch = resolve;
       });
-      const patchRoute = /\/api\/v1\/pulls\/[^/]+\/[^/]+\/[^/]+\/1$/;
+      const patchRoute = /\/api\/v1\/issues\/[^/]+\/[^/]+\/[^/]+\/11$/;
       await page.route(patchRoute, async (route) => {
         if (route.request().method() !== "PATCH") {
           await route.fallback();
@@ -159,37 +161,23 @@ test.describe("PR description task list", () => {
       };
       page.on("response", onResponse);
 
-      // Toggle the first checkbox; debounce fires and starts PATCH A
-      // (which the route intercept holds).
       await cb0.click();
       await expect(cb0).toBeChecked({ checked: !cb0Initial });
-      // Wait past the 400ms debounce so PATCH A has been dispatched
-      // and is now blocked on firstPatchHeld.
       await expect.poll(() => patchRequests, { timeout: 3_000 }).toBe(1);
 
-      // Toggle the second checkbox while PATCH A is in flight. Its
-      // debounced save lands in the per-target queue, holding the
-      // body with BOTH toggles.
       await cb1.click();
       await expect(cb1).toBeChecked({ checked: !cb1Initial });
-      // Give the debounce a chance to fire and queue PATCH B. The
-      // queue must hold it back until A returns.
       await page.waitForTimeout(800);
       expect(patchRequests).toBe(1);
       expect(patchResponses).toBe(0);
 
-      // Release PATCH A. The queue then drains and fires PATCH B
-      // with the latest body (both toggles). Wait for BOTH PATCH
-      // responses to come back from the server before reloading,
-      // otherwise the reload could race the second save and see
-      // stale data.
+      // Release PATCH A. Wait for BOTH PATCH responses to come back
+      // from the server before reloading, so the reload doesn't race
+      // the second save.
       releaseFirstPatch();
       await expect.poll(() => patchResponses, { timeout: 5_000 }).toBe(2);
       expect(patchRequests).toBe(2);
 
-      // Reload and confirm BOTH toggles persisted server-side. If
-      // serialization regressed (PATCH A overwrote B's body via an
-      // out-of-order response), the second checkbox would revert.
       page.off("response", onResponse);
       await page.unroute(patchRoute);
       await page.reload();

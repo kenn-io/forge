@@ -2,7 +2,6 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["config:recommended"],
   "dependencyDashboard": true,
-  "enabledManagers": ["github-actions", "gomod", "bun", "custom.regex"],
   "osvVulnerabilityAlerts": true,
   "minimumReleaseAge": "7 days",
   "minimumReleaseAgeBehaviour": "timestamp-required",
@@ -18,6 +17,11 @@
       "groupName": "Go dependencies",
       "groupSlug": "go-dependencies",
       "postUpdateOptions": ["gomodUpdateImportPaths", "gomodTidy"]
+    },
+    {
+      "matchManagers": ["cargo"],
+      "groupName": "Rust dependencies",
+      "groupSlug": "rust-dependencies"
     },
     {
       "matchManagers": ["bun", "custom.regex"],
@@ -38,6 +42,7 @@
       ],
       "datasourceTemplate": "github-releases",
       "depNameTemplate": "oven-sh/bun",
+      "extractVersionTemplate": "^bun-v(?<version>\\d+\\.\\d+\\.\\d+)$",
       "versioningTemplate": "semver"
     }
   ]

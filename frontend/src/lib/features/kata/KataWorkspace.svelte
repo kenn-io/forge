@@ -470,6 +470,9 @@
   async function updateSearchFilters(filters: Partial<KataTaskSearchFilters>): Promise<void> {
     const generation = beginNavigation();
     resetDetailDrafts();
+    // Same rationale as openRoutedProjectScope: a pending detail load is
+    // abandoned by the filter reload, so drop it before awaiting.
+    store.invalidatePendingLoads();
     await runViewTask(() => store.updateSearchFilters(filters));
     if (!isCurrentNavigation(generation)) return;
     const nextScopeUID = scopeUIDFromFilters(store.searchFilters);
@@ -509,6 +512,12 @@
   async function openRoutedProjectScope(projectUID: string): Promise<void> {
     const generation = beginNavigation();
     resetDetailDrafts();
+    // Scope changes keep a completed selection but abandon an in-flight
+    // one (the scoped reload re-selects from selectedIssue, which a
+    // pending load hasn't populated). Invalidate up front so the doomed
+    // detail request can't fail into a stale workspace error while the
+    // scoped list is still loading.
+    store.invalidatePendingLoads();
     const ok = await runViewTask(() => store.updateSearchFilters({ scope: { kind: "project", project_uid: projectUID } }));
     if (!ok || !isCurrentNavigation(generation)) return;
     syncedRouteViewName = null;

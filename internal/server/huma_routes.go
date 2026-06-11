@@ -20,6 +20,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 	gh "github.com/google/go-github/v84/github"
+	gitlabapi "gitlab.com/gitlab-org/api/client-go"
 	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/gitclone"
 	ghclient "go.kenn.io/middleman/internal/github"
@@ -2666,6 +2667,10 @@ func mergeHTTPErrorStatus(err error) (int, string, bool) {
 	var httpErr *gitealike.HTTPError
 	if errors.As(err, &httpErr) && httpErr != nil && httpErr.StatusCode != 0 {
 		return httpErr.StatusCode, httpErr.Error(), true
+	}
+	var gitlabErr *gitlabapi.ErrorResponse
+	if errors.As(err, &gitlabErr) && gitlabErr != nil && gitlabErr.Response != nil {
+		return gitlabErr.Response.StatusCode, gitlabErr.Message, true
 	}
 	return 0, "", false
 }

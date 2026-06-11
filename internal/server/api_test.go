@@ -12125,7 +12125,10 @@ func TestAPIGitLabPublishReviewDraftApprovesWithDiffPositionSHAs(t *testing.T) {
 		basePath+"/publish",
 		map[string]string{"action": "request_changes"},
 	)
-	require.Equal(http.StatusBadRequest, rejectRR.Code, rejectRR.Body.String())
+	require.Equal(http.StatusConflict, rejectRR.Code, rejectRR.Body.String())
+	assertUnsupportedCapabilityProblem(
+		t, rejectRR.Body, "gitlab", "gitlab.example.com", "review_action_request_changes",
+	)
 	require.Empty(provider.publishedReviews)
 
 	publishRR := doJSON(

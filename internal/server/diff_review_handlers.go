@@ -182,7 +182,7 @@ func (s *Server) publishDiffReviewDraft(
 	}
 	caps := s.capabilitiesForRepo(*repo)
 	if !reviewActionSupported(caps, action) {
-		return nil, huma.Error400BadRequest("unsupported review action")
+		return nil, problemUnsupportedCapability(*repo, "review_action_"+string(action))
 	}
 	draft, err := s.db.GetMRReviewDraft(ctx, mr.ID)
 	if err != nil {

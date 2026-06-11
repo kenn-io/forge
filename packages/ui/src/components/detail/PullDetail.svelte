@@ -692,7 +692,7 @@
   }
 
   function buildOpenMergeInput(
-    pr: Pick<PullRequest, "State" | "IsDraft" | "MergeableState">,
+    pr: Pick<PullRequest, "State" | "IsDraft" | "MergeableState" | "platform_head_sha">,
     capabilities: ProviderCapabilities,
   ): PRDetailActionInput {
     return {
@@ -700,6 +700,7 @@
         State: pr.State,
         IsDraft: pr.IsDraft,
         MergeableState: pr.MergeableState,
+        platform_head_sha: pr.platform_head_sha ?? "",
       },
       ref: routeRef,
       number,
@@ -713,6 +714,7 @@
       stale: stalePR,
       stores: { detail: detailStore, pulls },
       client,
+      requireHeadPin: capabilities.mutation_head_binding,
       setMergeModalOpen: (open: boolean) => { showMergeModal = open; },
       onAfterOpenMerge: closeActionMenu,
     };
@@ -1591,6 +1593,8 @@
               {repoPath}
               size="sm"
               disabled={stalePR}
+              platformHeadSHA={pr.platform_head_sha ?? ""}
+              requireHeadPin={capabilities.mutation_head_binding}
             />
           {/if}
           {#if capabilities.workflow_approval && workflowApproval?.checked && workflowApproval.required}
@@ -1854,6 +1858,8 @@
           allowSquash={repoSettings.allowSquash}
           allowMerge={repoSettings.allowMerge}
           allowRebase={repoSettings.allowRebase}
+          platformHeadSHA={p.platform_head_sha ?? ""}
+          requireHeadPin={capabilities.mutation_head_binding}
           onclose={() => { showMergeModal = false; }}
           onmerged={() => {
             showMergeModal = false;

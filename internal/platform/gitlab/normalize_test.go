@@ -48,6 +48,25 @@ func TestNormalizeProjectPreservesGitLabIdentity(t *testing.T) {
 	assert.False(*repo.ViewerCanMerge)
 	assert.Equal(createdAt, repo.CreatedAt)
 	assert.Equal(updatedAt, repo.UpdatedAt)
+	require.NotNil(t, repo.MergeSettings)
+	assert.True(repo.MergeSettings.AllowSquashMerge)
+	assert.True(repo.MergeSettings.AllowMergeCommit)
+	assert.False(repo.MergeSettings.AllowRebaseMerge, "GitLab has no per-merge rebase")
+}
+
+func TestNormalizeProjectMapsSquashNeverToSquashDisallowed(t *testing.T) {
+	assert := assert.New(t)
+	repo, err := NormalizeProject("gitlab.example.com", &gitlab.Project{
+		ID:                42,
+		Path:              "project",
+		PathWithNamespace: "group/project",
+		SquashOption:      gitlab.SquashOptionNever,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, repo.MergeSettings)
+	assert.False(repo.MergeSettings.AllowSquashMerge)
+	assert.True(repo.MergeSettings.AllowMergeCommit)
+	assert.False(repo.MergeSettings.AllowRebaseMerge)
 }
 
 func TestNormalizeProjectUsesHighestGitLabAccessForMergePermission(t *testing.T) {

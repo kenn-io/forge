@@ -791,6 +791,7 @@
         State: pr.State,
         IsDraft: pr.IsDraft,
         MergeableState: pr.MergeableState,
+        platform_head_sha: pr.platform_head_sha ?? "",
       },
       ref: {
         provider: sel.provider,
@@ -813,6 +814,7 @@
       stale: false,
       stores: { pulls: stores.pulls, detail: stores.detail },
       client,
+      requireHeadPin: capabilities.mutation_head_binding,
       approveCommentBody: "",
       onError: (msg: string) => showFlash(msg),
     };

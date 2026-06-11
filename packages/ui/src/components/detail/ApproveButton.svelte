@@ -17,6 +17,10 @@
     repoPath: string;
     size?: "sm" | "md";
     disabled?: boolean;
+    /** Head commit the rendered detail showed; pinned on approve. */
+    platformHeadSHA?: string;
+    /** capabilities.mutation_head_binding for this repo's provider. */
+    requireHeadPin?: boolean;
   }
 
   const {
@@ -28,7 +32,13 @@
     repoPath,
     size = "md",
     disabled = false,
+    platformHeadSHA = "",
+    requireHeadPin = false,
   }: Props = $props();
+
+  // A head-binding provider cannot approve without a pinned head; treat
+  // a missing synced head like a stale view.
+  const headPinMissing = $derived(requireHeadPin && !platformHeadSHA);
 
   let expanded = $state(false);
   let body = $state("");
@@ -57,7 +67,10 @@
 
   function buildInput(): PRDetailActionInput {
     return {
-      pr: { State: "open", IsDraft: false, MergeableState: "" },
+      pr: {
+        State: "open", IsDraft: false, MergeableState: "",
+        platform_head_sha: platformHeadSHA,
+      },
       ref: { provider, platformHost, owner, name, repoPath },
       number,
       viewerCan: {
@@ -66,6 +79,7 @@
       },
       repoSettings: null,
       stale: disabled,
+      requireHeadPin,
       stores: { detail, pulls },
       client,
       approveCommentBody: body,
@@ -73,7 +87,7 @@
   }
 
   async function handleApprove(): Promise<void> {
-    if (disabled || submitting) return;
+    if (disabled || headPinMissing || submitting) return;
     submitting = true;
     error = null;
     try {
@@ -92,7 +106,7 @@
   <ActionButton
     class="btn btn--approve"
     onclick={() => { if (!disabled && !submitting) expanded = !expanded; }}
-    disabled={disabled || submitting}
+    disabled={disabled || headPinMissing || submitting}
     ariaExpanded={expanded}
     tone="success"
     surface="soft"

@@ -159,7 +159,7 @@ import type { DetailStore } from "../../stores/detail.svelte.js";
 import type { PullsStore } from "../../stores/pulls.svelte.js";
 
 /** Subset of the loaded PR sufficient for canX/runX decisions. */
-export type PRDetailActionPR = Pick<PullRequest, "State" | "IsDraft" | "MergeableState">;
+export type PRDetailActionPR = Pick<PullRequest, "State" | "IsDraft" | "MergeableState" | "platform_head_sha">;
 
 /** Capabilities a viewer needs to invoke each PR-detail action. */
 export interface PRDetailViewerCan {
@@ -194,6 +194,12 @@ export interface PRDetailActionInput {
   stale: boolean;
   stores: PRDetailActionStores;
   client: MiddlemanClient;
+  /**
+   * True when the provider hard-binds mutations to the reviewed head
+   * (capabilities.mutation_head_binding). Head-bound actions are
+   * unavailable until the PR row carries platform_head_sha to pin.
+   */
+  requireHeadPin?: boolean;
   /**
    * Approve mutation body. Empty string sends an approving review
    * with no comment (matching the existing button's behavior when
@@ -232,16 +238,27 @@ function describeError(err: { detail?: string; title?: string } | undefined, fal
 // Approve PR ----------------------------------------------------------
 
 export function canApprovePR(input: PRDetailActionInput): boolean {
-  return input.pr.State === "open" && input.viewerCan.approve && !input.stale;
+  return (
+    input.pr.State === "open" &&
+    input.viewerCan.approve &&
+    !input.stale &&
+    (!input.requireHeadPin || !!input.pr.platform_head_sha)
+  );
 }
 
 export async function runApprovePR(input: PRDetailActionInput): Promise<void> {
   if (!canApprovePR(input)) return;
   const { ref, number } = input;
   const body = (input.approveCommentBody ?? "").trim();
+  // Pin the approval to the head the user reviewed; the server rejects
+  // the request when the synced head has moved past it.
+  const approveBody: { body: string; expected_head_sha?: string } = { body };
+  if (input.pr.platform_head_sha) {
+    approveBody.expected_head_sha = input.pr.platform_head_sha;
+  }
   const { error } = await input.client.POST(providerItemPath("pulls", ref, "/approve"), {
     params: { path: { ...providerRouteParams(ref), number } },
-    body: { body },
+    body: approveBody,
   });
   if (error) {
     const msg = describeError(error, "failed to approve pull request");
@@ -265,7 +282,8 @@ export function canOpenMerge(input: PRDetailActionInput): boolean {
     input.repoSettings !== null &&
     input.repoSettings.viewerCanMerge &&
     !input.stale &&
-    !hasMergeConflicts(input.pr)
+    !hasMergeConflicts(input.pr) &&
+    (!input.requireHeadPin || !!input.pr.platform_head_sha)
   );
 }
 

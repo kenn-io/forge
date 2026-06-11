@@ -357,9 +357,17 @@ func TestGitLabContainerE2E(t *testing.T) {
 	require.NoError(syncer.SyncMR(ctx, manifest.Owner, manifest.Name, mergeIID))
 	parityMR := fmt.Sprintf("%s/%d", pullBase, mergeIID)
 
+	// Head-bound mutations require the client to pin the head it reviewed;
+	// read the freshly synced head the way a real client would.
+	parityHead := gitlabContainerAPI(t, ctx, manifest, http.MethodGet,
+		fmt.Sprintf("/projects/%d/merge_requests/%d", manifest.ProjectID, mergeIID), nil)
+	parityHeadSHA, _ := parityHead["sha"].(string)
+	require.NotEmpty(parityHeadSHA)
+
 	// Approve through the approvals API (body becomes a regular note).
 	approveRR := doJSON(t, srv, http.MethodPost, parityMR+"/approve", map[string]string{
-		"body": "Approving from middleman write parity e2e",
+		"body":              "Approving from middleman write parity e2e",
+		"expected_head_sha": parityHeadSHA,
 	})
 	require.Equal(http.StatusOK, approveRR.Code, approveRR.Body.String())
 	approvalState := gitlabContainerAPI(t, ctx, manifest, http.MethodGet,
@@ -410,6 +418,7 @@ func TestGitLabContainerE2E(t *testing.T) {
 	// without merging anything.
 	rebaseRR := doJSON(t, srv, http.MethodPost, parityMR+"/merge", map[string]string{
 		"method": "rebase", "commit_title": "t", "commit_message": "m",
+		"expected_head_sha": parityHeadSHA,
 	})
 	require.Equal(http.StatusConflict, rebaseRR.Code, rebaseRR.Body.String())
 	var rebaseProblem struct {
@@ -425,9 +434,10 @@ func TestGitLabContainerE2E(t *testing.T) {
 	// Squash merge once GitLab finishes its async mergeability check.
 	waitForGitLabMergeable(t, ctx, manifest, mergeIID)
 	mergeRR := doJSON(t, srv, http.MethodPost, parityMR+"/merge", map[string]string{
-		"method":         "squash",
-		"commit_title":   fmt.Sprintf("Write parity squash merge %d", runID),
-		"commit_message": "Squash merged through middleman against the GitLab container",
+		"method":            "squash",
+		"commit_title":      fmt.Sprintf("Write parity squash merge %d", runID),
+		"commit_message":    "Squash merged through middleman against the GitLab container",
+		"expected_head_sha": parityHeadSHA,
 	})
 	require.Equal(http.StatusOK, mergeRR.Code, mergeRR.Body.String())
 	var mergeResult struct {

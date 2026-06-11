@@ -2374,6 +2374,16 @@ func (s *Server) approvePR(ctx context.Context, input *approvePRInput) (*actionS
 	if err != nil {
 		return nil, err
 	}
+	// Head-binding providers require the client to pin the head it
+	// rendered: an omitted pin would silently bind to whatever the cache
+	// holds now, which may be newer than what the user reviewed.
+	if strings.TrimSpace(input.Body.ExpectedHeadSHA) == "" &&
+		s.capabilitiesForRepo(*repo).MutationHeadBinding {
+		return nil, problemValidation(
+			"body.expected_head_sha",
+			"required for this provider: echo the platform_head_sha you rendered",
+		)
+	}
 	if err := s.verifyClientReviewedHead(
 		repo, input.Number, input.Body.ExpectedHeadSHA, expectedHeadSHA,
 	); err != nil {
@@ -2658,6 +2668,16 @@ func (s *Server) mergePR(ctx context.Context, input *mergePRInput) (*mergePROutp
 	expectedHeadSHA, err := s.reviewedHeadSHA(repo, mr)
 	if err != nil {
 		return nil, err
+	}
+	// Head-binding providers require the client to pin the head it
+	// rendered: an omitted pin would silently bind to whatever the cache
+	// holds now, which may be newer than what the user reviewed.
+	if strings.TrimSpace(input.Body.ExpectedHeadSHA) == "" &&
+		s.capabilitiesForRepo(*repo).MutationHeadBinding {
+		return nil, problemValidation(
+			"body.expected_head_sha",
+			"required for this provider: echo the platform_head_sha you rendered",
+		)
 	}
 	if err := s.verifyClientReviewedHead(
 		repo, input.Number, input.Body.ExpectedHeadSHA, expectedHeadSHA,

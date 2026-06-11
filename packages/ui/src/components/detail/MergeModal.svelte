@@ -24,6 +24,10 @@
     allowSquash: boolean;
     allowMerge: boolean;
     allowRebase: boolean;
+    /** Head commit the rendered detail showed; pinned on merge. */
+    platformHeadSHA?: string;
+    /** capabilities.mutation_head_binding for this repo's provider. */
+    requireHeadPin?: boolean;
     onclose: () => void;
     onmerged: () => void;
   }
@@ -32,8 +36,13 @@
     owner, name, number, provider, platformHost, repoPath, prTitle, prBody,
     prAuthor, prAuthorDisplayName,
     allowSquash, allowMerge, allowRebase,
+    platformHeadSHA = "", requireHeadPin = false,
     onclose, onmerged,
   }: Props = $props();
+
+  // A head-binding provider cannot merge without a pinned head; the user
+  // must wait for sync and re-review before merging.
+  const headPinMissing = $derived(requireHeadPin && !platformHeadSHA);
 
   type Method = "merge" | "squash" | "rebase";
   type MethodOption = { value: Method; label: string };
@@ -41,6 +50,7 @@
     commit_title: string;
     commit_message: string;
     method: Method;
+    expected_head_sha?: string;
   };
 
   function buildMethods(): MethodOption[] {
@@ -86,14 +96,20 @@
   let error = $state<string | null>(null);
 
   async function handleMerge(): Promise<void> {
+    if (headPinMissing) return;
     merging = true;
     error = null;
     try {
+      // Pin the merge to the head the user reviewed; the server rejects
+      // the request when the synced head has moved past it.
       const params: MergeParams = {
         commit_title: commitTitle,
         commit_message: commitMessage,
         method: selectedMethod,
       };
+      if (platformHeadSHA) {
+        params.expected_head_sha = platformHeadSHA;
+      }
       const ref = { provider, platformHost, owner, name, repoPath };
       const { error } = await client.POST(providerItemPath("pulls", ref, "/merge"), {
         params: { path: { ...providerRouteParams(ref), number } },
@@ -204,6 +220,13 @@
       {/if}
     </div>
 
+    {#if headPinMissing}
+      <p class="head-pin-note">
+        The reviewed head commit has not been synced yet. Reload after the
+        next sync and re-review before merging.
+      </p>
+    {/if}
+
     <div class="modal-footer">
       <ActionButton
         class="btn btn--secondary"
@@ -217,7 +240,7 @@
       <ActionButton
         class="btn btn--primary btn--green"
         onclick={() => void handleMerge()}
-        disabled={merging}
+        disabled={merging || headPinMissing}
         tone="success"
         surface="solid"
       >
@@ -228,6 +251,12 @@
 </div>
 
 <style>
+  .head-pin-note {
+    margin: 0 0 var(--space-3, 12px);
+    color: var(--text-secondary, #888);
+    font-size: var(--font-size-sm);
+  }
+
   .modal-overlay {
     position: fixed;
     inset: 0;

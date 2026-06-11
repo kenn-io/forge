@@ -513,7 +513,7 @@ func TestGitLabMutationMergeRebaseReturnsTypedCapabilityError(t *testing.T) {
 
 	rr := doGitLabJSON(t, srv, http.MethodPost,
 		"/api/v1/pulls/gitlab/acme/widget/7/merge",
-		`{"method":"rebase","commit_title":"t","commit_message":"m"}`,
+		`{"method":"rebase","commit_title":"t","commit_message":"m","expected_head_sha":"head-sha"}`,
 	)
 	require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
 
@@ -577,7 +577,7 @@ func TestGitLabMutationApprove(t *testing.T) {
 
 	rr := doGitLabJSON(t, srv, http.MethodPost,
 		"/api/v1/pulls/gitlab/acme/widget/7/approve",
-		`{"body":"ship it"}`,
+		`{"body":"ship it","expected_head_sha":"head-sha"}`,
 	)
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
@@ -628,7 +628,7 @@ func TestGitLabMutationApproveStaleHeadReturnsConflict(t *testing.T) {
 
 	rr := doGitLabJSON(t, srv, http.MethodPost,
 		"/api/v1/pulls/gitlab/acme/widget/7/approve",
-		`{"body":"ship it"}`,
+		`{"body":"ship it","expected_head_sha":"stale-sha"}`,
 	)
 	require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
 	var problem struct {
@@ -656,7 +656,7 @@ func TestGitLabMutationMergeStaleHeadReturnsConflict(t *testing.T) {
 
 	rr := doGitLabJSON(t, srv, http.MethodPost,
 		"/api/v1/pulls/gitlab/acme/widget/7/merge",
-		`{"method":"squash","commit_title":"t","commit_message":"m"}`,
+		`{"method":"squash","commit_title":"t","commit_message":"m","expected_head_sha":"stale-sha"}`,
 	)
 	require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
 	var problem struct {
@@ -693,7 +693,7 @@ func TestGitLabMutationBodylessStaleApproveReliesOnShaBinding(t *testing.T) {
 
 	rr := doGitLabJSON(t, srv, http.MethodPost,
 		"/api/v1/pulls/gitlab/acme/widget/7/approve",
-		`{"body":""}`,
+		`{"body":"","expected_head_sha":"stale-sha"}`,
 	)
 	require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
 	var problem struct {
@@ -724,6 +724,55 @@ func TestGitLabMutationBodylessStaleApproveReliesOnShaBinding(t *testing.T) {
 		recorder.findEventually(http.MethodGet, "/api/v4/projects/4242/merge_requests/7"),
 		"stale approval must trigger an MR resync",
 	)
+}
+
+// Head-binding providers reject merge and approve requests that omit the
+// client's head pin: an omitted pin would silently bind to whatever the
+// cache holds now, which may be newer than what the user reviewed.
+func TestGitLabMutationOmittedHeadPinRejected(t *testing.T) {
+	tests := []struct {
+		name         string
+		path         string
+		body         string
+		mutationPath string
+	}{
+		{
+			name:         "merge",
+			path:         "/api/v1/pulls/gitlab/acme/widget/7/merge",
+			body:         `{"method":"squash","commit_title":"t","commit_message":"m"}`,
+			mutationPath: "/api/v4/projects/4242/merge_requests/7/merge",
+		},
+		{
+			name:         "approve",
+			path:         "/api/v1/pulls/gitlab/acme/widget/7/approve",
+			body:         `{"body":"ship it"}`,
+			mutationPath: "/api/v4/projects/4242/merge_requests/7/approve",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require := require.New(t)
+			assert := assert.New(t)
+			srv, _, recorder, _ := setupGitLabMutationServer(t)
+
+			rr := doGitLabJSON(t, srv, http.MethodPost, tt.path, tt.body)
+			require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
+			var problem struct {
+				Code    string         `json:"code"`
+				Details map[string]any `json:"details"`
+			}
+			require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
+			assert.Equal("validationError", problem.Code)
+			require.NotNil(problem.Details)
+			assert.Equal("body.expected_head_sha", problem.Details["field"])
+
+			_, mutated := recorder.find(http.MethodPut, tt.mutationPath)
+			if !mutated {
+				_, mutated = recorder.find(http.MethodPost, tt.mutationPath)
+			}
+			assert.False(mutated, "omitted pin must not reach the provider")
+		})
+	}
 }
 
 // Clients can only echo expected_head_sha if the responses they render
@@ -817,7 +866,7 @@ func TestGitLabMutationGenericMergeConflictDoesNotResync(t *testing.T) {
 
 	rr := doGitLabJSON(t, srv, http.MethodPost,
 		"/api/v1/pulls/gitlab/acme/widget/7/merge",
-		`{"method":"merge","commit_title":"t","commit_message":"force-generic-conflict"}`,
+		`{"method":"merge","commit_title":"t","commit_message":"force-generic-conflict","expected_head_sha":"head-sha"}`,
 	)
 	require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
 	var problem struct {

@@ -464,7 +464,7 @@ a:hover {
   border-color: transparent;
   box-shadow: none;
   color: var(--text-secondary);
-  font-size: 28px;
+  font-size: var(--font-size-xl);
 }
 .mermaid-viewer-lightbox__close:hover {
   background: color-mix(in srgb, var(--bg-surface-hover) 76%, transparent);

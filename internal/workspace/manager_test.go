@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -20,6 +21,7 @@ import (
 	gitcmd "go.kenn.io/kit/git/cmd"
 	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/gitclone"
+	"go.kenn.io/middleman/internal/procutil"
 	"go.kenn.io/middleman/internal/ptyowner"
 	"go.kenn.io/middleman/internal/testutil/dbtest"
 )
@@ -1259,10 +1261,10 @@ func TestManagerReapOrphanTmuxSessionsKillsUnknownManagedSessions(t *testing.T) 
 		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
 		`for a in "$@"; do` + "\n" +
 		`  if [ "$a" = "list-sessions" ]; then` + "\n" +
-		`    printf 'middleman-0000000000000001\t%s\n' "$MIDDLEMAN_TMUX_OWNER"` + "\n" +
+		`    printf 'middleman-0000000000000001:%s\n' "$MIDDLEMAN_TMUX_OWNER"` + "\n" +
 		`    printf 'middleman-ffffffffffffffff\n'` + "\n" +
-		`    printf 'middleman-aaaaaaaaaaaaaaaa-0123456789abcdef\t%s\n' "$MIDDLEMAN_TMUX_OWNER"` + "\n" +
-		`    printf 'middleman-aaaaaaaaaaaaaaaa-claude\t%s\n' "$MIDDLEMAN_TMUX_OWNER"` + "\n" +
+		`    printf 'middleman-aaaaaaaaaaaaaaaa-0123456789abcdef:%s\n' "$MIDDLEMAN_TMUX_OWNER"` + "\n" +
+		`    printf 'middleman-aaaaaaaaaaaaaaaa-claude:%s\n' "$MIDDLEMAN_TMUX_OWNER"` + "\n" +
 		`    printf 'middleman-notes\nother-session\n'` + "\n" +
 		`    exit 0` + "\n" +
 		`  fi` + "\n" +
@@ -1297,7 +1299,7 @@ func TestManagerReapOrphanTmuxSessionsKillsUnknownManagedSessions(t *testing.T) 
 	assert.Equal(
 		[]string{
 			"wrap", "list-sessions", "-F",
-			"#{session_name}\t#{@middleman_owner}",
+			"#{session_name}:#{@middleman_owner}",
 		},
 		argvs[0],
 	)
@@ -1331,9 +1333,9 @@ func TestManagerReapOrphanTmuxSessionsKeepsStoredRuntimeSessions(
 		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
 		`for a in "$@"; do` + "\n" +
 		`  if [ "$a" = "list-sessions" ]; then` + "\n" +
-		`    printf 'middleman-0000000000000001\t%s\n' "$MIDDLEMAN_TMUX_OWNER"` + "\n" +
-		`    printf 'middleman-0000000000000001-57de4cf40144bdf7\t%s\n' "$MIDDLEMAN_TMUX_OWNER"` + "\n" +
-		`    printf 'middleman-aaaaaaaaaaaaaaaa-c857d09db23e6822\t%s\n' "$MIDDLEMAN_TMUX_OWNER"` + "\n" +
+		`    printf 'middleman-0000000000000001:%s\n' "$MIDDLEMAN_TMUX_OWNER"` + "\n" +
+		`    printf 'middleman-0000000000000001-57de4cf40144bdf7:%s\n' "$MIDDLEMAN_TMUX_OWNER"` + "\n" +
+		`    printf 'middleman-aaaaaaaaaaaaaaaa-c857d09db23e6822:%s\n' "$MIDDLEMAN_TMUX_OWNER"` + "\n" +
 		`    exit 0` + "\n" +
 		`  fi` + "\n" +
 		"done\n" +
@@ -1488,6 +1490,139 @@ func TestManagerPruneMissingTmuxSessionsRemovesStaleRecords(
 	require.NoError(err)
 	require.NotNil(legacyOwner)
 	assert.Equal("ready", legacyOwner.Status)
+}
+
+// TestManagerTmuxSessionListSurvivesTmux36Sanitization guards against
+// tmux 3.6+'s format sanitization: control characters in -F output print
+// as "_", so a literal tab separator corrupts every line into
+// "<name>_<owner>", making prune mark live workspaces as errored and reap
+// skip owned orphans. The fake tmux expands the requested format the way
+// tmux 3.6 does, including the tab-to-underscore substitution, so this
+// fails if the list format ever reverts to a control-character separator.
+func TestManagerTmuxSessionListSurvivesTmux36Sanitization(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	dir := t.TempDir()
+	record := filepath.Join(dir, "record")
+	script := filepath.Join(dir, "fake-tmux")
+	body := "#!/bin/sh\n" +
+		`printf '%s\0' "$#" "$@" >> "$TMUX_RECORD"` + "\n" +
+		`fmt=''` + "\n" +
+		`prev=''` + "\n" +
+		`for a in "$@"; do` + "\n" +
+		`  if [ "$prev" = "-F" ]; then fmt="$a"; fi` + "\n" +
+		`  prev="$a"` + "\n" +
+		`done` + "\n" +
+		`for a in "$@"; do` + "\n" +
+		`  if [ "$a" = "list-sessions" ]; then` + "\n" +
+		`    for name in middleman-0000000000000001 middleman-aaaaaaaaaaaaaaaa; do` + "\n" +
+		`      printf '%s\n' "$fmt" \` + "\n" +
+		`        | sed -e "s|#{session_name}|$name|" \` + "\n" +
+		`              -e "s|#{@middleman_owner}|$MIDDLEMAN_TMUX_OWNER|" \` + "\n" +
+		`        | tr '\t' '_'` + "\n" +
+		`    done` + "\n" +
+		`    exit 0` + "\n" +
+		`  fi` + "\n" +
+		`done` + "\n" +
+		"exit 0\n"
+	require.NoError(os.WriteFile(script, []byte(body), 0o755))
+	t.Setenv("TMUX_RECORD", record)
+
+	d := openTestDB(t)
+	mgr := NewManager(d, t.TempDir())
+	mgr.SetTmuxCommand([]string{script, "wrap"})
+	t.Setenv("MIDDLEMAN_TMUX_OWNER", mgr.tmuxOwnerMarker())
+	ctx := context.Background()
+
+	require.NoError(d.InsertWorkspace(ctx, &Workspace{
+		ID:           "0000000000000001",
+		PlatformHost: "github.com",
+		RepoOwner:    "acme",
+		RepoName:     "widget",
+		ItemType:     db.WorkspaceItemTypePullRequest,
+		ItemNumber:   1,
+		GitHeadRef:   "feature/live",
+		WorktreePath: filepath.Join(t.TempDir(), "live"),
+		TmuxSession:  "middleman-0000000000000001",
+		Status:       "ready",
+	}))
+
+	require.NoError(mgr.PruneMissingTmuxSessions(ctx))
+	live, err := d.GetWorkspace(ctx, "0000000000000001")
+	require.NoError(err)
+	require.NotNil(live)
+	assert.Equal("ready", live.Status)
+
+	require.NoError(mgr.ReapOrphanTmuxSessions(ctx))
+	argvs := readRecorderArgv(t, record)
+	assert.Contains(argvs, []string{
+		"wrap", "kill-session", "-t", "middleman-aaaaaaaaaaaaaaaa",
+	})
+	assert.NotContains(argvs, []string{
+		"wrap", "kill-session", "-t", "middleman-0000000000000001",
+	})
+}
+
+// TestManagerListTmuxSessionInfosRealTmux lists sessions through an
+// actual tmux server on an isolated socket. tmux 3.6+ sanitizes control
+// characters in -F output, which silently broke a tab-separated list
+// format on real servers while fake-script tests kept passing; running
+// against the installed binary catches any future sanitization drift.
+func TestManagerListTmuxSessionInfosRealTmux(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("real tmux listing test uses Unix tmux")
+	}
+	tmuxPath, err := exec.LookPath("tmux")
+	if err != nil {
+		t.Skipf("tmux unavailable in this test environment: %v", err)
+	}
+
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	dir, err := os.MkdirTemp("/tmp", "middleman-tmux-list-*")
+	require.NoError(err)
+	t.Cleanup(func() {
+		_ = os.RemoveAll(dir)
+	})
+	socket := filepath.Join(dir, "tmux.sock")
+	t.Cleanup(func() {
+		_ = procutil.Command(
+			tmuxPath, "-f", "/dev/null", "-S", socket, "kill-server",
+		).Run()
+	})
+	run := func(args ...string) {
+		t.Helper()
+		cmd := procutil.Command(
+			tmuxPath,
+			append([]string{"-f", "/dev/null", "-S", socket}, args...)...,
+		)
+		cmd.Env = append(os.Environ(), "TERM=xterm-256color")
+		out, err := cmd.CombinedOutput()
+		require.NoError(err, string(out))
+	}
+
+	const owned = "middleman-0123456789abcdef"
+	const unowned = "middleman-fedcba9876543210"
+	run("new-session", "-d", "-s", owned, "sleep 30")
+	run("new-session", "-d", "-s", unowned, "sleep 30")
+
+	d := openTestDB(t)
+	mgr := NewManager(d, t.TempDir())
+	mgr.SetTmuxCommand([]string{tmuxPath, "-f", "/dev/null", "-S", socket})
+	run("set-option", "-t", owned, "@middleman_owner", mgr.tmuxOwnerMarker())
+
+	infos, err := mgr.listTmuxSessionInfos(context.Background())
+	require.NoError(err)
+	owners := make(map[string]string, len(infos))
+	for _, info := range infos {
+		owners[info.name] = info.owner
+	}
+	require.Len(owners, 2)
+	assert.Equal(mgr.tmuxOwnerMarker(), owners[owned])
+	assert.Contains(owners, unowned)
+	assert.Empty(owners[unowned])
 }
 
 func TestManagerTmuxSessionsForWorkspaceReadsStoredRuntimeSessions(

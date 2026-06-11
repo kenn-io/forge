@@ -1320,12 +1320,20 @@ type tmuxSessionInfo struct {
 	owner string
 }
 
+// tmuxSessionListFormat joins the session name and owner marker with a
+// colon. tmux 3.6+ sanitizes control characters in -F output (a literal
+// tab prints as "_"), so the separator must be printable. A colon is
+// unambiguous because tmux replaces ":" in session names with "_", so no
+// live session name can contain one; the owner marker ("middleman:<hex>")
+// does, which is why parsing cuts at the first colon only.
+const tmuxSessionListFormat = "#{session_name}:#{@middleman_owner}"
+
 func (m *Manager) listTmuxSessionInfos(
 	ctx context.Context,
 ) ([]tmuxSessionInfo, error) {
 	cmd := m.tmuxExec(
 		ctx,
-		"list-sessions", "-F", "#{session_name}\t#{@middleman_owner}",
+		"list-sessions", "-F", tmuxSessionListFormat,
 	)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -1347,7 +1355,7 @@ func (m *Manager) listTmuxSessionInfos(
 		if line == "" {
 			continue
 		}
-		name, owner, _ := strings.Cut(line, "\t")
+		name, owner, _ := strings.Cut(line, ":")
 		name = strings.TrimSpace(name)
 		if name == "" {
 			continue

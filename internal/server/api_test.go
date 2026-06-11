@@ -18112,8 +18112,12 @@ func middlemanTmuxSessions(
 	tmuxPath string,
 	includePath func(string) bool,
 ) ([]string, error) {
+	// Colon-separated because tmux 3.6+ sanitizes control characters in
+	// -F output (a tab prints as "_"). Session names cannot contain ":"
+	// (tmux replaces it with "_"), so cutting at the first colon is
+	// unambiguous even when the session path contains colons.
 	cmd := procutil.CommandContext(
-		ctx, tmuxPath, "list-sessions", "-F", "#{session_name}\t#{session_path}",
+		ctx, tmuxPath, "list-sessions", "-F", "#{session_name}:#{session_path}",
 	)
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -18129,7 +18133,7 @@ func middlemanTmuxSessions(
 
 	var sessions []string
 	for line := range strings.SplitSeq(stdout.String(), "\n") {
-		name, path, ok := strings.Cut(line, "\t")
+		name, path, ok := strings.Cut(line, ":")
 		if !ok || !strings.HasPrefix(name, "middleman-") {
 			continue
 		}
@@ -19828,8 +19832,8 @@ for a in "$@"; do
 done
 case "$1" in
   list-sessions)
-    printf 'middleman-0000000000000001\t%%s\n' "$MIDDLEMAN_TMUX_OWNER"
-    printf 'middleman-0000000000000001-0123456789abcdef\t%%s\n' "$MIDDLEMAN_TMUX_OWNER"
+    printf 'middleman-0000000000000001:%%s\n' "$MIDDLEMAN_TMUX_OWNER"
+    printf 'middleman-0000000000000001-0123456789abcdef:%%s\n' "$MIDDLEMAN_TMUX_OWNER"
     exit 0
     ;;
   kill-session)

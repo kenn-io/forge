@@ -40,7 +40,17 @@ type BackendState = {
   eventsBarrier?: Promise<void> | undefined;
   issuesBarrier?: Promise<void> | undefined;
   searchBarriers: Map<string, Promise<void>>;
+  issueDetailGates: Map<string, IssueDetailGate>;
   onEventsRequest?: ((state: BackendState, url: URL) => void) | undefined;
+};
+
+// Stalls one issue-detail response until `barrier` resolves; when
+// `status` is set the gated response is that error instead of the
+// normal detail body. Lets tests race navigation against an
+// in-flight detail load.
+type IssueDetailGate = {
+  barrier: Promise<void>;
+  status?: number | undefined;
 };
 
 type MsgvaultBackendState = {
@@ -155,6 +165,7 @@ type KataBackendOptions = {
   eventsBarrier?: Promise<void> | undefined;
   issuesBarrier?: Promise<void> | undefined;
   searchBarriers?: Map<string, Promise<void>> | undefined;
+  issueDetailGates?: Map<string, IssueDetailGate> | undefined;
   onEventsRequest?: ((state: BackendState, url: URL) => void) | undefined;
 };
 
@@ -345,6 +356,7 @@ async function startKataBackend(options: KataBackendOptions = {}): Promise<Backe
     eventsBarrier: options.eventsBarrier,
     issuesBarrier: options.issuesBarrier,
     searchBarriers: options.searchBarriers ?? new Map(),
+    issueDetailGates: options.issueDetailGates ?? new Map(),
     onEventsRequest: options.onEventsRequest,
   };
   const server = createServer((req, res) => {
@@ -506,7 +518,19 @@ async function handleKataRequest(state: BackendState, req: IncomingMessage, res:
 
   const issueDetailRoute = /^\/api\/v1\/issues\/([^/]+)$/.exec(url.pathname);
   if (issueDetailRoute) {
-    writeIssueDetail(state, res, decodeURIComponent(issueDetailRoute[1] ?? ""));
+    const uid = decodeURIComponent(issueDetailRoute[1] ?? "");
+    const gate = state.issueDetailGates.get(uid);
+    if (gate) {
+      state.issueDetailGates.delete(uid);
+      await gate.barrier;
+      if (gate.status !== undefined) {
+        writeJSON(res, gate.status, {
+          error: { code: "internal", message: "kata daemon exploded" },
+        });
+        return;
+      }
+    }
+    writeIssueDetail(state, res, uid);
     return;
   }
 
@@ -2132,6 +2156,55 @@ test("kata task list keyboard navigation moves focus and selection", async ({ pa
       "Confirm the Q3 project review agenda.",
     );
   } finally {
+    await server.stop();
+    kataHome.restore();
+    await backend.close();
+  }
+});
+
+test("kata route change aborts a pending detail load instead of surfacing its late failure", async ({ page }) => {
+  let releaseDetail = () => {};
+  const stalledDetail = new Promise<void>((resolve) => {
+    releaseDetail = resolve;
+  });
+  let releaseIssues = () => {};
+  const stalledIssues = new Promise<void>((resolve) => {
+    releaseIssues = resolve;
+  });
+  const backend = await startKataBackend();
+  const kataHome = await configureKataHome(backend.url);
+  const server = await startIsolatedE2EServer();
+
+  try {
+    await page.goto(`${server.info.base_url}/kata?view=all`);
+    await expect(page.getByRole("status", { name: "Connection: online" })).toBeVisible();
+    await page.getByRole("button", { name: /^Today/ }).click();
+    const rentRow = page.getByRole("button", { name: /Pay rent/ });
+    await expect(rentRow).toBeVisible();
+
+    // Stall Pay rent's detail response, then select it so the load hangs.
+    backend.state.issueDetailGates.set("issue-rent", { barrier: stalledDetail, status: 500 });
+    await rentRow.click();
+    await expect.poll(() => backend.state.seenPaths).toContain("GET /api/v1/issues/issue-rent");
+
+    // Navigate back to All Open while the detail load is in flight, and
+    // stall the new view's issues fetch so the route transition stays
+    // mid-flight when the superseded detail request finally fails.
+    backend.state.issuesBarrier = stalledIssues;
+    await page.goBack();
+
+    // The daemon now fails the superseded request. Route invalidation
+    // aborted it, so the failure must not surface as a workspace error.
+    releaseDetail();
+    await page.waitForTimeout(750);
+    await expect(page.getByRole("status", { name: "Connection: error" })).toHaveCount(0);
+
+    releaseIssues();
+    await expect(page.getByRole("heading", { name: "All Open", level: 2 })).toBeVisible();
+    await expect(page.getByRole("status", { name: "Connection: error" })).toHaveCount(0);
+  } finally {
+    releaseDetail();
+    releaseIssues();
     await server.stop();
     kataHome.restore();
     await backend.close();

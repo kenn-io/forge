@@ -380,4 +380,49 @@ describe("renderMarkdownMermaidDiagrams", () => {
       root.remove();
     }
   });
+
+  test("rerenders if the app theme changes during an in-flight render", async () => {
+    const root = document.createElement("div");
+    root.innerHTML = '<div class="markdown-body"><pre class="mermaid">graph TD\nA-->B</pre></div>';
+    document.body.append(root);
+    let activeRenderTheme = "light";
+    let releaseFirstRender: (() => void) | undefined;
+    let runCount = 0;
+    const run = vi.fn<MarkdownMermaidAPI["run"]>(async ({ nodes }) => {
+      runCount += 1;
+      const renderTheme = activeRenderTheme;
+      if (runCount === 1) {
+        await new Promise<void>((resolve) => {
+          releaseFirstRender = resolve;
+        });
+      }
+      for (const node of Array.from(nodes)) {
+        node.innerHTML = `<svg data-theme="${renderTheme}" viewBox="0 0 120 60"><text>diagram</text></svg>`;
+      }
+    });
+    const mermaid = mermaidLoader(run);
+    vi.mocked(mermaid.initialize).mockImplementation((config) => {
+      activeRenderTheme = config.themeVariables.darkMode === true ? "dark" : "light";
+    });
+    const loader = vi.fn(async () => mermaid);
+    const controller = initMarkdownMermaidRendering(root, loader);
+
+    try {
+      await flushQueuedRender();
+      expect(mermaid.run).toHaveBeenCalledTimes(1);
+
+      installMermaidThemeVars("dark");
+      document.documentElement.classList.add("dark");
+      await flushQueuedRender();
+      releaseFirstRender?.();
+      await flushQueuedRender();
+      await flushQueuedRender();
+
+      expect(root.querySelector("svg")?.getAttribute("data-theme")).toBe("dark");
+      expect(mermaid.run).toHaveBeenCalledTimes(2);
+    } finally {
+      controller.disconnect();
+      root.remove();
+    }
+  });
 });

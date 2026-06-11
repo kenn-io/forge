@@ -433,17 +433,48 @@ export function initMarkdownMermaidRendering(
 ): MarkdownMermaidController {
   let disconnected = false;
   let scheduled = false;
+  let rendering = false;
+  let renderAfterCurrent = false;
+  let themeResetAfterCurrent = false;
   let renderedTheme = currentMermaidTheme();
 
   const render = () => {
-    if (disconnected || scheduled) return;
+    if (disconnected) return;
+    if (rendering) {
+      renderAfterCurrent = true;
+      return;
+    }
+    if (scheduled) return;
     scheduled = true;
-    queueMicrotask(() => {
+    queueMicrotask(async () => {
       scheduled = false;
       if (disconnected) return;
-      void renderMarkdownMermaidDiagrams(root, load).catch((error: unknown) => {
+      rendering = true;
+      const themeAtStart = currentMermaidTheme();
+      try {
+        await renderMarkdownMermaidDiagrams(root, load);
+      } catch (error: unknown) {
         console.error("Failed to render Mermaid diagrams in markdown", error);
-      });
+      } finally {
+        rendering = false;
+      }
+      if (disconnected) return;
+
+      const themeAtEnd = currentMermaidTheme();
+      if (themeResetAfterCurrent || themeAtEnd !== themeAtStart) {
+        themeResetAfterCurrent = false;
+        renderAfterCurrent = false;
+        renderedTheme = themeAtEnd;
+        resetRenderedMermaidViewers(root);
+        render();
+        return;
+      }
+
+      renderedTheme = themeAtEnd;
+      if (renderAfterCurrent) {
+        renderAfterCurrent = false;
+        render();
+      }
     });
   };
 
@@ -465,6 +496,10 @@ export function initMarkdownMermaidRendering(
           const nextTheme = currentMermaidTheme();
           if (nextTheme === renderedTheme) return;
           renderedTheme = nextTheme;
+          if (rendering) {
+            themeResetAfterCurrent = true;
+            return;
+          }
           resetRenderedMermaidViewers(root);
           render();
         });

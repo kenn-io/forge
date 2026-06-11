@@ -320,15 +320,17 @@
         title="Sort workspaces"
         minWidth="170px"
         icon="sort"
-        align="end"
       />
     </div>
     {#if isSidebarToggleEnabled && onCollapseSidebar}
+      <!-- No --push here: .workspace-sort's auto margin already
+           claims the free space, and a second auto margin would
+           split it and strand the sort trigger mid-header. -->
       <LeftSidebarToggle
         state="expanded"
         label="Workspaces sidebar"
         onclick={onCollapseSidebar}
-        class="left-sidebar-toggle--push left-sidebar-toggle--compact"
+        class="left-sidebar-toggle--compact"
       />
     {/if}
   </div>

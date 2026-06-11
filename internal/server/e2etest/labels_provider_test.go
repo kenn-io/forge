@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -104,6 +105,32 @@ func seedProviderPRAndIssue(t *testing.T, database *db.DB, repoID int64) {
 		LastActivityAt: now,
 	})
 	require.NoError(t, err)
+}
+
+// seedAssignedLabel attaches an existing label to the PR or issue so a
+// clear-all test starts from a non-empty assignment and proves removal.
+func seedAssignedLabel(t *testing.T, database *db.DB, repoID int64, kind string, number int) {
+	t.Helper()
+	now := time.Now().UTC()
+	seeded := []db.Label{{Name: "bug", Color: "d73a4a", UpdatedAt: now}}
+	switch kind {
+	case "pull":
+		mr, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, number)
+		require.NoError(t, err)
+		require.NotNil(t, mr)
+		require.NoError(t, database.ReplaceMergeRequestLabels(t.Context(), repoID, mr.ID, seeded))
+		mr, err = database.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, number)
+		require.NoError(t, err)
+		require.NotEmpty(t, mr.Labels, "seeded pull must start with an assigned label")
+	case "issue":
+		issue, err := database.GetIssueByRepoIDAndNumber(t.Context(), repoID, number)
+		require.NoError(t, err)
+		require.NotNil(t, issue)
+		require.NoError(t, database.ReplaceIssueLabels(t.Context(), repoID, issue.ID, seeded))
+		issue, err = database.GetIssueByRepoIDAndNumber(t.Context(), repoID, number)
+		require.NoError(t, err)
+		require.NotEmpty(t, issue.Labels, "seeded issue must start with an assigned label")
+	}
 }
 
 func newLabelTestServer(
@@ -357,37 +384,83 @@ func TestGitLabSetIssueLabelsUpdatesProviderAndDB(t *testing.T) {
 }
 
 // An empty labels array is the API contract for "remove every label":
-// the provider must receive an explicit clear (labels="" on GitLab) and
-// the stored assignment must end up empty. A missing or null labels
-// field is rejected instead (covered in internal/server/apitest).
-func TestGitLabSetPullLabelsEmptyArrayClearsAll(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	srv, database, repoID, fake := setupGitLabLabelStack(t)
+// starting from an existing assignment, the provider must receive an
+// explicit clear (labels="" on GitLab) and the stored assignment must
+// end up empty. A missing or null labels field is rejected instead
+// (covered in internal/server/apitest).
+func TestGitLabSetLabelsEmptyArrayClearsAll(t *testing.T) {
+	tests := []struct {
+		name     string
+		kind     string
+		number   int
+		path     string
+		sentBody func(fake *fakeGitLabAPI) map[string]any
+		stored   func(t *testing.T, database *db.DB, repoID int64) []db.Label
+	}{
+		{
+			name:   "pull",
+			kind:   "pull",
+			number: 7,
+			path:   "/api/v1/pulls/gitlab/acme/widget/7/labels",
+			sentBody: func(fake *fakeGitLabAPI) map[string]any {
+				fake.mu.Lock()
+				defer fake.mu.Unlock()
+				return fake.mrLabelBody
+			},
+			stored: func(t *testing.T, database *db.DB, repoID int64) []db.Label {
+				t.Helper()
+				mr, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 7)
+				require.NoError(t, err)
+				require.NotNil(t, mr)
+				return mr.Labels
+			},
+		},
+		{
+			name:   "issue",
+			kind:   "issue",
+			number: 11,
+			path:   "/api/v1/issues/gitlab/acme/widget/11/labels",
+			sentBody: func(fake *fakeGitLabAPI) map[string]any {
+				fake.mu.Lock()
+				defer fake.mu.Unlock()
+				return fake.issueLabelBody
+			},
+			stored: func(t *testing.T, database *db.DB, repoID int64) []db.Label {
+				t.Helper()
+				issue, err := database.GetIssueByRepoIDAndNumber(t.Context(), repoID, 11)
+				require.NoError(t, err)
+				require.NotNil(t, issue)
+				return issue.Labels
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require := require.New(t)
+			assert := assert.New(t)
+			srv, database, repoID, fake := setupGitLabLabelStack(t)
+			seedAssignedLabel(t, database, repoID, tt.kind, tt.number)
 
-	rr := doJSONRequest(t, srv, http.MethodPut, "/api/v1/pulls/gitlab/acme/widget/7/labels", map[string][]string{
-		"labels": {},
-	})
-	require.Equal(http.StatusOK, rr.Code, "response: %s", rr.Body.String())
+			rr := doJSONRequest(t, srv, http.MethodPut, tt.path, map[string][]string{
+				"labels": {},
+			})
+			require.Equal(http.StatusOK, rr.Code, "response: %s", rr.Body.String())
 
-	var body labelWireResponse
-	require.NoError(json.Unmarshal(rr.Body.Bytes(), &body))
-	assert.Empty(body.Labels)
+			var body labelWireResponse
+			require.NoError(json.Unmarshal(rr.Body.Bytes(), &body))
+			assert.Empty(body.Labels)
 
-	fake.mu.Lock()
-	sent := fake.mrLabelBody
-	fake.mu.Unlock()
-	require.NotNil(sent, "provider must receive the label update")
-	value, ok := sent["labels"]
-	require.True(ok, "labels field must be sent so GitLab clears assignments")
-	cleared, isString := value.(string)
-	require.True(isString, "labels must be a string; JSON null leaves GitLab labels untouched")
-	assert.Empty(cleared)
+			sent := tt.sentBody(fake)
+			require.NotNil(sent, "provider must receive the label update")
+			value, ok := sent["labels"]
+			require.True(ok, "labels field must be sent so GitLab clears assignments")
+			cleared, isString := value.(string)
+			require.True(isString, "labels must be a string; JSON null leaves GitLab labels untouched")
+			assert.Empty(cleared)
 
-	mr, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 7)
-	require.NoError(err)
-	require.NotNil(mr)
-	assert.Empty(mr.Labels)
+			assert.Empty(tt.stored(t, database, repoID), "assigned label must be removed")
+		})
+	}
 }
 
 // A label whose name equals another label's decimal ID must persist:
@@ -655,36 +728,73 @@ func TestGitealikeSetIssueLabelsResolvesIDsAndUpdatesDB(t *testing.T) {
 }
 
 // An empty labels array is the API contract for "remove every label":
-// the provider must receive an explicit empty ID replacement and the
-// stored assignment must end up empty. A missing or null labels field
-// is rejected instead (covered in internal/server/apitest).
-func TestGitealikeSetPullLabelsEmptyArrayClearsAll(t *testing.T) {
+// starting from an existing assignment, the provider must receive an
+// explicit empty ID replacement and the stored assignment must end up
+// empty. A missing or null labels field is rejected instead (covered in
+// internal/server/apitest).
+func TestGitealikeSetLabelsEmptyArrayClearsAll(t *testing.T) {
+	items := []struct {
+		name   string
+		kind   string
+		number int
+		route  string
+		stored func(t *testing.T, database *db.DB, repoID int64) []db.Label
+	}{
+		{
+			name:   "pull",
+			kind:   "pull",
+			number: 7,
+			route:  "pulls",
+			stored: func(t *testing.T, database *db.DB, repoID int64) []db.Label {
+				t.Helper()
+				mr, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 7)
+				require.NoError(t, err)
+				require.NotNil(t, mr)
+				return mr.Labels
+			},
+		},
+		{
+			name:   "issue",
+			kind:   "issue",
+			number: 11,
+			route:  "issues",
+			stored: func(t *testing.T, database *db.DB, repoID int64) []db.Label {
+				t.Helper()
+				issue, err := database.GetIssueByRepoIDAndNumber(t.Context(), repoID, 11)
+				require.NoError(t, err)
+				require.NotNil(t, issue)
+				return issue.Labels
+			},
+		},
+	}
 	for _, variant := range gitealikeLabelVariants() {
-		t.Run(variant.name, func(t *testing.T) {
-			require := require.New(t)
-			assert := assert.New(t)
-			srv, database, repoID, fake := setupGitealikeLabelStack(t, variant)
+		for _, item := range items {
+			t.Run(variant.name+"/"+item.name, func(t *testing.T) {
+				require := require.New(t)
+				assert := assert.New(t)
+				srv, database, repoID, fake := setupGitealikeLabelStack(t, variant)
+				seedAssignedLabel(t, database, repoID, item.kind, item.number)
 
-			rr := doJSONRequest(t, srv, http.MethodPut, "/api/v1/pulls/"+variant.route+"/acme/widget/7/labels", map[string][]string{
-				"labels": {},
+				path := "/api/v1/" + item.route + "/" + variant.route + "/acme/widget/" +
+					strconv.Itoa(item.number) + "/labels"
+				rr := doJSONRequest(t, srv, http.MethodPut, path, map[string][]string{
+					"labels": {},
+				})
+				require.Equal(http.StatusOK, rr.Code, "response: %s", rr.Body.String())
+
+				var body labelWireResponse
+				require.NoError(json.Unmarshal(rr.Body.Bytes(), &body))
+				assert.Empty(body.Labels)
+
+				fake.mu.Lock()
+				sent, called := fake.replaceBody[item.number]
+				fake.mu.Unlock()
+				require.True(called, "provider must receive the label replacement")
+				assert.Empty(sent["labels"])
+
+				assert.Empty(item.stored(t, database, repoID), "assigned label must be removed")
 			})
-			require.Equal(http.StatusOK, rr.Code, "response: %s", rr.Body.String())
-
-			var body labelWireResponse
-			require.NoError(json.Unmarshal(rr.Body.Bytes(), &body))
-			assert.Empty(body.Labels)
-
-			fake.mu.Lock()
-			sent, called := fake.replaceBody[7]
-			fake.mu.Unlock()
-			require.True(called, "provider must receive the label replacement")
-			assert.Empty(sent["labels"])
-
-			mr, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 7)
-			require.NoError(err)
-			require.NotNil(mr)
-			assert.Empty(mr.Labels)
-		})
+		}
 	}
 }
 

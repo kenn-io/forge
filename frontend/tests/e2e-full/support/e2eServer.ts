@@ -460,6 +460,29 @@ const defaultPooledOptions: PooledServerOptions = {
   visibleImportedModes: false,
 };
 
+// Env vars that steer a spawned e2e server's behavior. A pooled
+// server only sees the env present when it was first spawned, so a
+// test that mutates one of these and then takes a pooled lease gets
+// order-dependent behavior. Snapshot the values at module load and
+// fail fast when a pooled lease is requested after a mutation —
+// such tests must pass freshProcess: true instead.
+const envSensitiveServerVars = ["KATA_HOME", "MIDDLEMAN_MESSAGES_SAVED_SEARCHES_PATH"] as const;
+const envSensitiveBaseline = new Map<string, string | undefined>(
+  envSensitiveServerVars.map((key) => [key, process.env[key]]),
+);
+
+function assertPooledLeaseEnvUnchanged(): void {
+  for (const key of envSensitiveServerVars) {
+    if (process.env[key] !== envSensitiveBaseline.get(key)) {
+      throw new Error(
+        `${key} was changed after the worker started; a pooled e2e server cannot ` +
+          `inherit it. Pass { freshProcess: true } to startIsolatedE2EServerWithOptions ` +
+          `for tests that configure the server through process env.`,
+      );
+    }
+  }
+}
+
 function normalizedPooledOptions(options: IsolatedE2EServerOptions): PooledServerOptions {
   return {
     host: options.defaultPlatformHost ?? defaultPlatformHost,
@@ -482,11 +505,7 @@ function installPoolCleanup(): void {
 
   const killAll = () => {
     for (const server of isolatedPool) {
-      try {
-        process.kill(server.info.pid, "SIGTERM");
-      } catch {
-        // Process already exited.
-      }
+      killPooledServerProcess(server);
     }
     isolatedPool.length = 0;
   };
@@ -547,16 +566,26 @@ async function resetPooledServer(server: PooledServer, options: PooledServerOpti
   server.options = options;
 }
 
-function dropPooledServer(server: PooledServer): void {
-  const index = isolatedPool.indexOf(server);
-  if (index >= 0) {
-    isolatedPool.splice(index, 1);
+// Signal only while the spawned child is still alive: once `go run`
+// has exited, the server's reported PID may already have been reused
+// by an unrelated process, and signalling it would be unsafe.
+function killPooledServerProcess(server: PooledServer): void {
+  if (server.child.exitCode !== null) {
+    return;
   }
   try {
     process.kill(server.info.pid, "SIGTERM");
   } catch {
     // Process already exited.
   }
+}
+
+function dropPooledServer(server: PooledServer): void {
+  const index = isolatedPool.indexOf(server);
+  if (index >= 0) {
+    isolatedPool.splice(index, 1);
+  }
+  killPooledServerProcess(server);
 }
 
 async function spawnPooledServer(options: PooledServerOptions): Promise<PooledServer> {
@@ -602,6 +631,7 @@ export async function startIsolatedE2EServerWithOptions(
     };
   }
 
+  assertPooledLeaseEnvUnchanged();
   const desired = normalizedPooledOptions(options);
   let server: PooledServer | null = null;
 
@@ -612,6 +642,11 @@ export async function startIsolatedE2EServerWithOptions(
       if (candidate.pending) {
         await candidate.pending;
         candidate.pending = null;
+      }
+      // The server may have died while idle (crash, OOM, external
+      // kill); never hand out a dead base_url.
+      if (candidate.child.exitCode !== null || !(await isServerReachable(candidate.info.base_url))) {
+        throw new Error("pooled e2e server is no longer reachable");
       }
       if (!samePooledOptions(candidate.options, desired)) {
         await resetPooledServer(candidate, desired);
@@ -636,10 +671,15 @@ export async function startIsolatedE2EServerWithOptions(
         return;
       }
       stopped = true;
-      // Reset eagerly in the background so the next lease in this
+      // stop() has release semantics, not cleanup-complete
+      // semantics: it returns the server to the pool and kicks off
+      // the state reset in the background so the next lease in this
       // worker finds a clean server waiting. A failed reset
-      // surfaces on the next lease via `pending`; the extra catch
-      // avoids an unhandled rejection when no lease follows.
+      // surfaces on the next lease via `pending` (the server is
+      // dropped and replaced); if no lease follows, the worker's
+      // exit hook kills the process, so a swallowed failure cannot
+      // leak state into another test. The extra catch avoids an
+      // unhandled rejection in that no-follow-up case.
       const reset = resetPooledServer(leased, defaultPooledOptions);
       reset.catch(() => {});
       leased.pending = reset;

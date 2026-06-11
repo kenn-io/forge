@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -197,4 +198,124 @@ func waitForServerInfoBaseURL(
 	}
 	r.FailNow("timed out waiting for server-info file")
 	return ""
+}
+
+// TestResetSwapsFixtureState pins the /__e2e/reset contract that the
+// Playwright server pool depends on: a reset discards mutations made
+// against the old state, serves the rebuilt state on the same port,
+// reports the new config path, honors option overrides, and rejects
+// malformed bodies instead of silently resetting to defaults.
+func TestResetSwapsFixtureState(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	t.Cleanup(cancel)
+
+	serverInfoFile := filepath.Join(t.TempDir(), "server-info.json")
+	done := make(chan error, 1)
+	go func() {
+		done <- run(ctx, 0, defaultRoborevEndpoint, serverInfoFile, "github.com", false)
+	}()
+	baseURL := waitForServerInfoBaseURL(t, serverInfoFile, done)
+
+	infoBefore := readInfoFile(t, serverInfoFile)
+
+	seededDetail := getJSON(t, baseURL+"/api/v1/pulls/github/acme/widgets/1")
+	seededMR, ok := seededDetail["merge_request"].(map[string]any)
+	require.True(ok, "detail payload missing merge_request")
+	seededCIStatus := seededMR["CIStatus"]
+
+	// Mutate old-state fixture data away from the seeded value.
+	resp, err := http.Post(baseURL+"/__e2e/pr-ci-state/mixed", "application/json", nil)
+	require.NoError(err)
+	resp.Body.Close()
+	require.Equal(http.StatusOK, resp.StatusCode)
+	mutatedDetail := getJSON(t, baseURL+"/api/v1/pulls/github/acme/widgets/1")
+	mutatedMR, ok := mutatedDetail["merge_request"].(map[string]any)
+	require.True(ok, "detail payload missing merge_request")
+	require.NotEqual(seededCIStatus, mutatedMR["CIStatus"], "fixture mutation must change CI status")
+
+	// Malformed JSON must fail loudly, not reset.
+	resp, err = http.Post(baseURL+"/__e2e/reset", "application/json", strings.NewReader("{not json"))
+	require.NoError(err)
+	resp.Body.Close()
+	assert.Equal(http.StatusBadRequest, resp.StatusCode)
+
+	// A real reset succeeds and reports a fresh config path.
+	resp, err = http.Post(baseURL+"/__e2e/reset", "application/json", nil)
+	require.NoError(err)
+	var resetInfo e2eServerInfo
+	require.NoError(json.NewDecoder(resp.Body).Decode(&resetInfo))
+	resp.Body.Close()
+	require.Equal(http.StatusOK, resp.StatusCode)
+	assert.Equal(infoBefore.BaseURL, resetInfo.BaseURL, "reset must keep the listener and port")
+	assert.NotEqual(infoBefore.ConfigPath, resetInfo.ConfigPath, "reset must rebuild the seeded config")
+
+	// The mutation must not survive into the rebuilt state.
+	detail := getJSON(t, baseURL+"/api/v1/pulls/github/acme/widgets/1")
+	mr, ok := detail["merge_request"].(map[string]any)
+	require.True(ok, "detail payload missing merge_request")
+	assert.Equal(seededCIStatus, mr["CIStatus"], "seeded CI state must be restored after reset")
+
+	// Option overrides apply to the rebuilt state.
+	resp, err = http.Post(
+		baseURL+"/__e2e/reset",
+		"application/json",
+		strings.NewReader(`{"default_platform_host":"ghe.example.com"}`),
+	)
+	require.NoError(err)
+	resp.Body.Close()
+	require.Equal(http.StatusOK, resp.StatusCode)
+	repos := getJSONList(t, baseURL+"/api/v1/repos")
+	foundEnterprise := false
+	for _, repo := range repos {
+		row, ok := repo.(map[string]any)
+		if !ok {
+			continue
+		}
+		if row["Owner"] == "enterprise" && row["Name"] == "service" {
+			foundEnterprise = true
+		}
+	}
+	assert.True(foundEnterprise, "host override must reseed the enterprise repo set")
+
+	cancel()
+	select {
+	case runErr := <-done:
+		require.NoError(runErr)
+	case <-time.After(10 * time.Second):
+		require.Fail("run() did not exit within 10s of cancellation")
+	}
+}
+
+func readInfoFile(t *testing.T, path string) e2eServerInfo {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+	var info e2eServerInfo
+	require.NoError(t, json.Unmarshal(data, &info))
+	return info
+}
+
+func getJSON(t *testing.T, url string) map[string]any {
+	t.Helper()
+	resp, err := http.Get(url)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	var payload map[string]any
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&payload))
+	return payload
+}
+
+func getJSONList(t *testing.T, url string) []any {
+	t.Helper()
+	resp, err := http.Get(url)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	var payload []any
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&payload))
+	return payload
 }

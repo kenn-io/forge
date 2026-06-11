@@ -3,10 +3,13 @@ package main
 import (
 	"bytes"
 	"context"
+	cryptorand "crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"io/fs"
 	"log/slog"
 	"net"
@@ -566,14 +569,27 @@ type appState struct {
 // tmuxSocketCounter feeds per-instance tmux socket names so
 // concurrent e2e server states never share a tmux server. Isolated
 // sockets are what allow workspace/tmux tests to run in parallel
-// instead of serializing behind a machine-wide lock.
+// instead of serializing behind a machine-wide lock. The random
+// suffix guards against PID reuse attaching a later run to a stale
+// tmux server left behind by a crashed process.
 var tmuxSocketCounter atomic.Int64
 
 func instanceTmuxCommand() []string {
+	var randSuffix [4]byte
+	if _, err := cryptorand.Read(randSuffix[:]); err != nil {
+		// Extremely unlikely; pid+counter still keep concurrent
+		// states apart, only crash+pid-reuse protection degrades.
+		slog.Warn("tmux socket random suffix", "err", err)
+	}
 	return []string{
 		"tmux",
 		"-L",
-		fmt.Sprintf("mm-e2e-%d-%d", os.Getpid(), tmuxSocketCounter.Add(1)),
+		fmt.Sprintf(
+			"mm-e2e-%d-%d-%s",
+			os.Getpid(),
+			tmuxSocketCounter.Add(1),
+			hex.EncodeToString(randSuffix[:]),
+		),
 	}
 }
 
@@ -1441,8 +1457,24 @@ func run(
 				DefaultPlatformHost  string `json:"default_platform_host"`
 				VisibleImportedModes *bool  `json:"visible_imported_modes"`
 			}
-			// Tolerate an empty body: reset to the startup options.
-			_ = json.NewDecoder(r.Body).Decode(&req)
+			// An empty body resets to the startup options; a
+			// non-empty body must be valid JSON so option typos
+			// fail loudly instead of silently resetting defaults.
+			body, readErr := io.ReadAll(r.Body)
+			if readErr != nil {
+				http.Error(w, "read reset body", http.StatusBadRequest)
+				return
+			}
+			if len(bytes.TrimSpace(body)) > 0 {
+				if err := json.Unmarshal(body, &req); err != nil {
+					http.Error(
+						w,
+						fmt.Sprintf("invalid reset body: %v", err),
+						http.StatusBadRequest,
+					)
+					return
+				}
+			}
 			if strings.TrimSpace(req.DefaultPlatformHost) != "" {
 				opts.defaultPlatformHost = req.DefaultPlatformHost
 			}

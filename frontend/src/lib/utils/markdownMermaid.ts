@@ -1,9 +1,19 @@
 export interface MarkdownMermaidAPI {
-  initialize: (config: { startOnLoad: false; securityLevel: "strict"; secure: string[] }) => void;
+  initialize: (config: MarkdownMermaidConfig) => void;
   run: (config: { nodes: ArrayLike<HTMLElement>; suppressErrors: true }) => Promise<unknown>;
 }
 
 export type MarkdownMermaidLoader = () => Promise<MarkdownMermaidAPI>;
+
+type MermaidThemeVariables = Record<string, boolean | string>;
+
+interface MarkdownMermaidConfig {
+  startOnLoad: false;
+  securityLevel: "strict";
+  secure: string[];
+  theme: "base";
+  themeVariables: MermaidThemeVariables;
+}
 
 export interface MarkdownMermaidController {
   renderNow: () => void;
@@ -16,6 +26,44 @@ const MIN_SCALE = 0.4;
 const MAX_SCALE = 3;
 const ZOOM_STEP = 0.2;
 const PAN_STEP = 80;
+const GITHUB_DARK_MERMAID_THEME: MermaidThemeVariables = {
+  darkMode: true,
+  background: "#0d1117",
+  fontFamily: "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif",
+  fontSize: "13px",
+  primaryColor: "#f6f8fa",
+  primaryTextColor: "#24292f",
+  primaryBorderColor: "#d0d7de",
+  secondaryColor: "#f6f8fa",
+  secondaryTextColor: "#24292f",
+  secondaryBorderColor: "#d0d7de",
+  tertiaryColor: "#4a4d4b",
+  tertiaryTextColor: "#f0f6fc",
+  tertiaryBorderColor: "#4a4d4b",
+  mainBkg: "#f6f8fa",
+  nodeTextColor: "#24292f",
+  nodeBorder: "#d0d7de",
+  clusterBkg: "#4a4d4b",
+  clusterBorder: "#4a4d4b",
+  lineColor: "#c9d1d9",
+  defaultLinkColor: "#c9d1d9",
+  textColor: "#c9d1d9",
+  titleColor: "#c9d1d9",
+  edgeLabelBackground: "#30363d",
+  labelColor: "#c9d1d9",
+  labelTextColor: "#24292f",
+  noteBkgColor: "#30363d",
+  noteTextColor: "#f0f6fc",
+  noteBorderColor: "#8b949e",
+  actorBkg: "#f6f8fa",
+  actorBorder: "#d0d7de",
+  actorTextColor: "#24292f",
+  actorLineColor: "#8b949e",
+  signalColor: "#c9d1d9",
+  signalTextColor: "#c9d1d9",
+  labelBoxBkgColor: "#30363d",
+  labelBoxBorderColor: "#8b949e",
+};
 let mermaidPromise: Promise<MarkdownMermaidAPI> | null = null;
 const initializedMermaid = new WeakSet<MarkdownMermaidAPI>();
 const diagramSources = new WeakMap<HTMLElement, string>();
@@ -49,6 +97,8 @@ export async function renderMarkdownMermaidDiagrams(
         startOnLoad: false,
         securityLevel: "strict",
         secure: ["securityLevel", "startOnLoad"],
+        theme: "base",
+        themeVariables: GITHUB_DARK_MERMAID_THEME,
       });
       initializedMermaid.add(mermaid);
     }

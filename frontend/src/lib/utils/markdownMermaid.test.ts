@@ -34,6 +34,14 @@ describe("renderMarkdownMermaidDiagrams", () => {
       startOnLoad: false,
       securityLevel: "strict",
       secure: ["securityLevel", "startOnLoad"],
+      theme: "base",
+      themeVariables: expect.objectContaining({
+        background: "#0d1117",
+        clusterBkg: "#4a4d4b",
+        darkMode: true,
+        lineColor: "#c9d1d9",
+        primaryColor: "#f6f8fa",
+      }),
     });
     expect(mermaid.run).toHaveBeenCalledWith({
       nodes: [root.querySelector("pre.mermaid")],

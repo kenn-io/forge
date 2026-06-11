@@ -524,7 +524,8 @@ func mapPlatformError(err error) huma.StatusError {
 		return problemNotFound(CodeNotFound, err.Error(), nil)
 	case platform.ErrCodeProviderNotConfigured,
 		platform.ErrCodeMissingToken,
-		platform.ErrCodeInvalidRepoRef:
+		platform.ErrCodeInvalidRepoRef,
+		platform.ErrCodeInvalidArgument:
 		return problemBadRequest(CodeBadRequest, err.Error(), nil)
 	default:
 		return problemUpstream(err.Error(), provider, host)

@@ -2,7 +2,9 @@ package gitlab
 
 import (
 	"context"
+	"fmt"
 	"strconv"
+	"strings"
 
 	gitlab "gitlab.com/gitlab-org/api/client-go"
 	"go.kenn.io/middleman/internal/platform"
@@ -50,6 +52,9 @@ func (c *Client) SetMergeRequestLabels(
 	number int,
 	names []string,
 ) ([]platform.Label, error) {
+	if err := c.validateAssignableLabelNames(names); err != nil {
+		return nil, err
+	}
 	pid, normalizedRef, err := c.projectScopedArg(ctx, ref)
 	if err != nil {
 		return nil, err
@@ -73,6 +78,9 @@ func (c *Client) SetIssueLabels(
 	number int,
 	names []string,
 ) ([]platform.Label, error) {
+	if err := c.validateAssignableLabelNames(names); err != nil {
+		return nil, err
+	}
 	pid, normalizedRef, err := c.projectScopedArg(ctx, ref)
 	if err != nil {
 		return nil, err
@@ -95,6 +103,28 @@ func (c *Client) SetIssueLabels(
 // marshals to "" which clears every label on the merge request or issue.
 func assignableLabelOptions(names []string) gitlab.LabelOptions {
 	return append(gitlab.LabelOptions{}, names...)
+}
+
+// validateAssignableLabelNames rejects label names GitLab's labels
+// parameter cannot express: the SDK comma-joins names, so a name
+// containing a comma would be split and assigned as multiple labels.
+func (c *Client) validateAssignableLabelNames(names []string) error {
+	for _, name := range names {
+		if strings.Contains(name, ",") {
+			return &platform.Error{
+				Code:         platform.ErrCodeInvalidArgument,
+				Provider:     platform.KindGitLab,
+				PlatformHost: c.host,
+				Capability:   "label_mutation",
+				Field:        "labels",
+				Err: fmt.Errorf(
+					"label %q contains a comma; GitLab's labels parameter is comma-separated and cannot assign it",
+					name,
+				),
+			}
+		}
+	}
+	return nil
 }
 
 var _ platform.LabelReader = (*Client)(nil)

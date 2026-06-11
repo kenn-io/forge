@@ -13,6 +13,7 @@ const (
 	ErrCodeProviderNotConfigured PlatformErrorCode = "provider_not_configured"
 	ErrCodeMissingToken          PlatformErrorCode = "missing_token"
 	ErrCodeInvalidRepoRef        PlatformErrorCode = "invalid_repo_ref"
+	ErrCodeInvalidArgument       PlatformErrorCode = "invalid_argument"
 	ErrCodePermissionDenied      PlatformErrorCode = "permission_denied"
 	ErrCodeNotFound              PlatformErrorCode = "not_found"
 	ErrCodeRateLimited           PlatformErrorCode = "rate_limited"
@@ -23,6 +24,7 @@ var (
 	ErrProviderNotConfigured = &Error{Code: ErrCodeProviderNotConfigured}
 	ErrMissingToken          = &Error{Code: ErrCodeMissingToken}
 	ErrInvalidRepoRef        = &Error{Code: ErrCodeInvalidRepoRef}
+	ErrInvalidArgument       = &Error{Code: ErrCodeInvalidArgument}
 	ErrPermissionDenied      = &Error{Code: ErrCodePermissionDenied}
 	ErrNotFound              = &Error{Code: ErrCodeNotFound}
 	ErrRateLimited           = &Error{Code: ErrCodeRateLimited}

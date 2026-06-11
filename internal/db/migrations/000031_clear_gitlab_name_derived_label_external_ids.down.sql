@@ -1,0 +1,2 @@
+-- One-way data cleanup: the cleared name-derived external IDs cannot
+-- be reconstructed from remaining data. Nothing to undo.

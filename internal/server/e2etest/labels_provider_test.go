@@ -463,6 +463,38 @@ func TestGitLabSetLabelsEmptyArrayClearsAll(t *testing.T) {
 	}
 }
 
+// GitLab's labels parameter is comma-separated, so a catalog label whose
+// name contains a comma cannot be assigned without GitLab splitting it
+// into multiple labels. The mutation must fail with a clear validation
+// error before any provider write happens.
+func TestGitLabSetPullLabelsRejectsCommaNamesFromCatalog(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, database, repoID, fake := setupGitLabLabelStack(t)
+	fake.mu.Lock()
+	fake.catalogJSON = `[
+		{"id": 4, "name": "bug", "color": "#d73a4a", "description": "Something is broken"},
+		{"id": 9, "name": "reviewed,deploy", "color": "#00ff00", "description": "comma label"}
+	]`
+	fake.mu.Unlock()
+
+	rr := doJSONRequest(t, srv, http.MethodPut, "/api/v1/pulls/gitlab/acme/widget/7/labels", map[string][]string{
+		"labels": {"reviewed,deploy"},
+	})
+	require.Equal(http.StatusBadRequest, rr.Code, "response: %s", rr.Body.String())
+	assert.Contains(rr.Body.String(), "comma")
+
+	fake.mu.Lock()
+	sent := fake.mrLabelBody
+	fake.mu.Unlock()
+	assert.Nil(sent, "provider must not receive a label update for a rejected name")
+
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 7)
+	require.NoError(err)
+	require.NotNil(mr)
+	assert.Empty(mr.Labels, "rejected assignment must not be persisted")
+}
+
 // A label whose name equals another label's decimal ID must persist:
 // GitLab item labels are name-only, and the label store keys catalog
 // rows by decimal ID in platform_external_id. If normalization claimed

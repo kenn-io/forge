@@ -131,6 +131,36 @@ func TestClientSetLabelsSendsEmptyStringToClearAll(t *testing.T) {
 	assert.Empty(cleared)
 }
 
+func TestClientSetLabelsRejectsCommaNamesWithoutCallingProvider(t *testing.T) {
+	require := Require.New(t)
+	assert := Assert.New(t)
+	var requests int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		writeJSON(w, `{}`)
+	}))
+	defer server.Close()
+	client := newTestClient(t, server.URL)
+
+	for _, set := range []func() ([]platform.Label, error){
+		func() ([]platform.Label, error) {
+			return client.SetMergeRequestLabels(
+				context.Background(), gitlabLabelTestRef(), 7, []string{"bug", "reviewed,deploy"},
+			)
+		},
+		func() ([]platform.Label, error) {
+			return client.SetIssueLabels(
+				context.Background(), gitlabLabelTestRef(), 11, []string{"reviewed,deploy"},
+			)
+		},
+	} {
+		_, err := set()
+		require.ErrorIs(err, platform.ErrInvalidArgument)
+		assert.Contains(err.Error(), `"reviewed,deploy"`)
+	}
+	assert.Zero(requests, "comma-name rejection must happen before any provider call")
+}
+
 func TestClientSetLabelsMapsProviderErrors(t *testing.T) {
 	require := Require.New(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

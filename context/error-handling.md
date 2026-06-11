@@ -91,7 +91,7 @@ Translate `internal/platform` typed errors at the server boundary:
 | `rate_limited` | `429 rateLimited` |
 | `permission_denied` | `403 forbidden` |
 | `not_found` | `404 notFound`, or a more specific not-found code when the caller knows the resource type |
-| `provider_not_configured`, `missing_token`, `invalid_repo_ref` | `400 badRequest` |
+| `provider_not_configured`, `missing_token`, `invalid_repo_ref`, `invalid_argument` | `400 badRequest` |
 | Unknown provider/platform failures | `502 upstreamError` |
 
 Context cancellation and deadline errors should pass through cancellation paths

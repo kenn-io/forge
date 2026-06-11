@@ -2712,10 +2712,12 @@ func (s *Server) mergePR(ctx context.Context, input *mergePRInput) (*mergePROutp
 }
 
 // reviewedHeadSHA resolves the head commit a head-bound mutation should
-// be pinned to. Providers with MutationHeadBinding must not mutate
-// unbound: when the local row has no head SHA (legacy or partial sync),
-// the MR is refreshed once and a still-missing head fails closed with a
-// conflict instead of silently skipping the check.
+// be pinned to: the locally synced head, which is what the user reviewed.
+// Providers with MutationHeadBinding must not mutate unbound, so a row
+// with no head SHA (legacy or partial sync) always fails closed with a
+// conflict. The MR is refreshed first only so the client's reload shows
+// current state for re-review — the freshly fetched head is never used
+// for the mutation, because the user has not reviewed it.
 func (s *Server) reviewedHeadSHA(
 	ctx context.Context,
 	repo *db.Repo,
@@ -2733,15 +2735,11 @@ func (s *Server) reviewedHeadSHA(
 		repoProviderKind(*repo), repoProviderHost(*repo),
 		repo.Owner, repo.Name, number,
 	); err != nil {
-		slog.Warn("refresh before head-bound mutation failed", "err", err)
-	}
-	refreshed, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, number)
-	if err == nil && refreshed != nil && refreshed.PlatformHeadSHA != "" {
-		return refreshed.PlatformHeadSHA, nil
+		slog.Warn("refresh after unknown head on head-bound mutation failed", "err", err)
 	}
 	return "", problemConflict(
 		CodeConflict,
-		"merge request head commit is unknown locally; sync and re-review before this action",
+		"merge request head commit was not synced when this was reviewed; reload and re-review before this action",
 		nil,
 	)
 }

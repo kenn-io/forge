@@ -275,27 +275,57 @@ func TestGitLabMergeMergeRequestMapsMethods(t *testing.T) {
 	}
 }
 
-func TestGitLabMergeMergeRequestMapsConflictToStaleState(t *testing.T) {
-	assert := Assert.New(t)
-	require := Require.New(t)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.EscapedPath() != "/api/v4/projects/42/merge_requests/7/merge" {
-			http.NotFound(w, r)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusConflict)
-		_, _ = w.Write([]byte(`{"message": "SHA does not match HEAD of source branch"}`))
-	}))
-	defer server.Close()
+func TestGitLabMergeMergeRequestClassifies409s(t *testing.T) {
+	tests := []struct {
+		name            string
+		expectedHeadSHA string
+		message         string
+		wantCode        platform.PlatformErrorCode
+	}{
+		{
+			name:            "sha-bound head mismatch is stale",
+			expectedHeadSHA: "old-head",
+			message:         "SHA does not match HEAD of source branch",
+			wantCode:        platform.ErrCodeStaleState,
+		},
+		{
+			name:            "sha-bound but unrelated conflict stays a conflict",
+			expectedHeadSHA: "old-head",
+			message:         "merge request is not mergeable",
+			wantCode:        platform.ErrCodeConflict,
+		},
+		{
+			name:            "unbound 409 stays a conflict",
+			expectedHeadSHA: "",
+			message:         "SHA does not match HEAD of source branch",
+			wantCode:        platform.ErrCodeConflict,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert := Assert.New(t)
+			require := Require.New(t)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.EscapedPath() != "/api/v4/projects/42/merge_requests/7/merge" {
+					http.NotFound(w, r)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusConflict)
+				_, _ = w.Write([]byte(`{"message": "` + tt.message + `"}`))
+			}))
+			defer server.Close()
 
-	_, err := newTestClient(t, server.URL).MergeMergeRequest(
-		context.Background(), projectRef(), 7, "title", "message", "squash", "old-head",
-	)
-	var platformErr *platform.Error
-	require.ErrorAs(err, &platformErr)
-	assert.Equal(platform.ErrCodeStaleState, platformErr.Code)
-	assert.Equal("merge_merge_request", platformErr.Capability)
+			_, err := newTestClient(t, server.URL).MergeMergeRequest(
+				context.Background(), projectRef(), 7,
+				"title", "message", "squash", tt.expectedHeadSHA,
+			)
+			var platformErr *platform.Error
+			require.ErrorAs(err, &platformErr)
+			assert.Equal(tt.wantCode, platformErr.Code)
+			assert.Equal("merge_merge_request", platformErr.Capability)
+		})
+	}
 }
 
 func TestGitLabMergeMergeRequestRejectsRebaseWithTypedError(t *testing.T) {

@@ -665,40 +665,71 @@ func TestGitLabMutationMergeStaleHeadReturnsConflict(t *testing.T) {
 	)
 }
 
-// A legacy or partially synced row with no head SHA must not produce an
-// unbound merge: the server refreshes the MR once and merges bound to the
-// refreshed head.
-func TestGitLabMutationMergeRefreshesMissingHeadSHA(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	srv, database, recorder, repoID := setupGitLabMutationServer(t)
-	ctx := t.Context()
+// A legacy or partially synced row with no head SHA fails closed: the
+// user never reviewed any particular commit, so neither merge nor approve
+// may proceed — not even bound to a freshly refreshed head, since nobody
+// reviewed that head either. The refresh only prepares local state for
+// the client's reload.
+func TestGitLabMutationMissingHeadSHAFailsClosed(t *testing.T) {
+	tests := []struct {
+		name         string
+		path         string
+		body         string
+		mutationPath string
+	}{
+		{
+			name:         "merge",
+			path:         "/api/v1/pulls/gitlab/acme/widget/7/merge",
+			body:         `{"method":"squash","commit_title":"t","commit_message":"m"}`,
+			mutationPath: "/api/v4/projects/4242/merge_requests/7/merge",
+		},
+		{
+			name:         "approve",
+			path:         "/api/v1/pulls/gitlab/acme/widget/7/approve",
+			body:         `{"body":"ship it"}`,
+			mutationPath: "/api/v4/projects/4242/merge_requests/7/approve",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require := require.New(t)
+			assert := assert.New(t)
+			srv, database, recorder, repoID := setupGitLabMutationServer(t)
+			ctx := t.Context()
 
-	_, err := database.UpsertMergeRequest(ctx, &db.MergeRequest{
-		RepoID:         repoID,
-		PlatformID:     7001,
-		Number:         7,
-		URL:            "https://gitlab.com/acme/widget/-/merge_requests/7",
-		Title:          "Test MR",
-		Author:         "author",
-		State:          "open",
-		CreatedAt:      time.Now().UTC(),
-		UpdatedAt:      time.Now().UTC(),
-		LastActivityAt: time.Now().UTC(),
-	})
-	require.NoError(err)
+			_, err := database.UpsertMergeRequest(ctx, &db.MergeRequest{
+				RepoID:         repoID,
+				PlatformID:     7001,
+				Number:         7,
+				URL:            "https://gitlab.com/acme/widget/-/merge_requests/7",
+				Title:          "Test MR",
+				Author:         "author",
+				State:          "open",
+				CreatedAt:      time.Now().UTC(),
+				UpdatedAt:      time.Now().UTC(),
+				LastActivityAt: time.Now().UTC(),
+			})
+			require.NoError(err)
 
-	rr := doGitLabJSON(t, srv, http.MethodPost,
-		"/api/v1/pulls/gitlab/acme/widget/7/merge",
-		`{"method":"squash","commit_title":"t","commit_message":"m"}`,
-	)
-	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+			rr := doGitLabJSON(t, srv, http.MethodPost, tt.path, tt.body)
+			require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
+			var problem struct {
+				Code string `json:"code"`
+			}
+			require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
+			assert.Equal("conflict", problem.Code)
 
-	_, refreshed := recorder.find(http.MethodGet, "/api/v4/projects/4242/merge_requests/7")
-	assert.True(refreshed, "missing head SHA must refresh the MR before merging")
-	merge, ok := recorder.find(http.MethodPut, "/api/v4/projects/4242/merge_requests/7/merge")
-	require.True(ok)
-	assert.Contains(merge.Body, `"sha":"head-sha"`, "merge must be bound to the refreshed head")
+			_, refreshed := recorder.find(http.MethodGet, "/api/v4/projects/4242/merge_requests/7")
+			assert.True(refreshed, "missing head SHA must refresh local state for re-review")
+			_, mutated := recorder.find(http.MethodPut, tt.mutationPath)
+			if !mutated {
+				_, mutated = recorder.find(http.MethodPost, tt.mutationPath)
+			}
+			assert.False(mutated, "missing head SHA must not reach the provider mutation")
+			_, noted := recorder.find(http.MethodPost, "/api/v4/projects/4242/merge_requests/7/notes")
+			assert.False(noted, "missing head SHA must not post the approval comment")
+		})
+	}
 }
 
 func TestGitLabMutationDiscussionReplyThroughRealClient(t *testing.T) {

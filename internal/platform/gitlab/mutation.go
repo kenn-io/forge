@@ -14,13 +14,17 @@ import (
 	"go.kenn.io/middleman/internal/platform"
 )
 
-// mapGitLabMutationError classifies 409 responses from sha-bound
-// mutations (merge/approve with an expected head SHA) as stale_state.
-// 409 is only given this meaning here; other endpoints keep the generic
-// mapping because GitLab uses the status for unrelated conflicts too.
-func mapGitLabMutationError(capability string, err error) error {
+// mapGitLabMutationError classifies a 409 as stale_state only when the
+// request was actually sha-bound and GitLab's message blames the head
+// SHA ("SHA does not match HEAD of source branch"). Any other 409 keeps
+// the generic conflict mapping so unrelated provider conflicts are not
+// presented as staleness.
+func mapGitLabMutationError(capability, expectedHeadSHA string, err error) error {
 	var gitlabErr *gitlab.ErrorResponse
-	if errors.As(err, &gitlabErr) && gitlabErr.HasStatusCode(http.StatusConflict) {
+	if expectedHeadSHA != "" &&
+		errors.As(err, &gitlabErr) &&
+		gitlabErr.HasStatusCode(http.StatusConflict) &&
+		strings.Contains(strings.ToLower(gitlabErr.Message), "sha") {
 		return &platform.Error{
 			Code:       platform.ErrCodeStaleState,
 			Provider:   platform.KindGitLab,
@@ -291,7 +295,7 @@ func (c *Client) MergeMergeRequest(
 	}
 	mr, _, err := c.api.MergeRequests.AcceptMergeRequest(pid, int64(number), opts, gitlab.WithContext(ctx))
 	if err != nil {
-		return platform.MergeResult{}, mapGitLabMutationError("merge_merge_request", err)
+		return platform.MergeResult{}, mapGitLabMutationError("merge_merge_request", expectedHeadSHA, err)
 	}
 	if mr == nil {
 		return platform.MergeResult{}, &platform.Error{
@@ -435,7 +439,7 @@ func (c *Client) ApproveMergeRequest(
 		gitlab.WithContext(ctx),
 	)
 	if err != nil {
-		mapped := mapGitLabMutationError("approve_merge_request", err)
+		mapped := mapGitLabMutationError("approve_merge_request", expectedHeadSHA, err)
 		if notePosted {
 			return platform.MergeRequestEvent{}, fmt.Errorf(
 				"review comment was posted but the approval failed; retrying will repeat the comment: %w",

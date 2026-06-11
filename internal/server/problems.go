@@ -538,6 +538,18 @@ func mapPlatformError(err error) huma.StatusError {
 			"target changed since it was reviewed; refresh and retry",
 			d,
 		)
+	case platform.ErrCodeConflict:
+		d := map[string]any{}
+		if provider != "" {
+			d["provider"] = provider
+		}
+		if host != "" {
+			d["platformHost"] = host
+		}
+		if len(d) == 0 {
+			d = nil
+		}
+		return problemConflict(CodeConflict, err.Error(), d)
 	case platform.ErrCodeProviderNotConfigured,
 		platform.ErrCodeMissingToken,
 		platform.ErrCodeInvalidRepoRef,

@@ -21,6 +21,10 @@ const (
 	// past the state the caller acted on (for example an MR head SHA that
 	// advanced after review).
 	ErrCodeStaleState PlatformErrorCode = "stale_state"
+	// ErrCodeConflict marks provider conflicts that are not staleness:
+	// the request was understood but the target's current state refuses
+	// it (for example merging an unmergeable MR).
+	ErrCodeConflict PlatformErrorCode = "conflict"
 )
 
 var (
@@ -33,6 +37,7 @@ var (
 	ErrNotFound              = &Error{Code: ErrCodeNotFound}
 	ErrRateLimited           = &Error{Code: ErrCodeRateLimited}
 	ErrStaleState            = &Error{Code: ErrCodeStaleState}
+	ErrConflict              = &Error{Code: ErrCodeConflict}
 )
 
 type Error struct {

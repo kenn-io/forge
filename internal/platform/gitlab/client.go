@@ -756,6 +756,8 @@ func mapGitLabError(capability string, err error) error {
 			code = platform.ErrCodePermissionDenied
 		case gitlabErr.HasStatusCode(http.StatusNotFound):
 			code = platform.ErrCodeNotFound
+		case gitlabErr.HasStatusCode(http.StatusConflict):
+			code = platform.ErrCodeConflict
 		case gitlabErr.HasStatusCode(http.StatusTooManyRequests):
 			code = platform.ErrCodeRateLimited
 		}

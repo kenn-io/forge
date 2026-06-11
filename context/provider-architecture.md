@@ -99,12 +99,15 @@ provider-equivalent behavior from the flags alone:
   the pin only guards against local cache movement until provider-side
   binding lands there. Conflict responses carry `details.reason`
   (`stale_state`, `conflict`, or `head_unknown`) per
-  `context/error-handling.md`; only stale heads trigger an MR resync.
-  The SPA's PR detail view echoes the rendered head on merge and
-  approve and branches on those reasons: `stale_state` refreshes the
-  detail and prompts a re-review, `head_unknown` refreshes and disables
-  head-bound actions until a sync records `platform_head_sha`, and a
-  generic `conflict` surfaces the provider message in place.
+  `context/error-handling.md`; only stale heads trigger a server-side
+  MR resync — `head_unknown` recovery is client-initiated. The SPA's PR
+  detail view echoes the rendered head on merge and approve, disables
+  head-bound actions preflight while no head is synced, and branches on
+  the conflict reasons: `stale_state` reloads the detail (a sync-enabled
+  load) and prompts a re-review, `head_unknown` reloads the same way and
+  keeps head-bound actions disabled until the response carries
+  `platform_head_sha`, and a generic `conflict` surfaces the provider
+  message in place.
 - Reviews: GitLab has no `request_changes` state. `SupportedReviewActions` is
   comment/approve only, and publishing a request-changes review returns the
   typed `unsupportedCapability` envelope (`review_action_request_changes`).

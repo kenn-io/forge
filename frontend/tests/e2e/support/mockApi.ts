@@ -60,7 +60,6 @@ const pulls = [
     GitHubID: 101,
     Number: 42,
     URL: "https://github.com/acme/widgets/pull/42",
-    platform_head_sha: "fixture-head-sha-42",
     Title: "Add browser regression coverage",
     Author: "marius",
     State: "open",

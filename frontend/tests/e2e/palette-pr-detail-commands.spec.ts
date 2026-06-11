@@ -30,7 +30,7 @@ test.describe("PR-detail palette commands", () => {
     // server can reject the action when the head moved after review.
     const request = await approveRequest;
     const body = request.postDataJSON() as { expected_head_sha?: string };
-    expect(body.expected_head_sha).toBe("fixture-head-sha-42");
+    expect(body.expected_head_sha).toBe("42aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa42");
   });
 
   test("Approve PR is absent from the palette when the PR is closed", async ({ page }) => {

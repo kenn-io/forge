@@ -117,9 +117,11 @@
     ariaExpanded={expanded}
     tone="success"
     surface="soft"
-    title={expanded
-      ? "Close the approval form"
-      : "Open the approval form to submit a code review on this pull request"}
+    title={headPinMissing
+      ? "The reviewed head commit has not been synced yet; approving is disabled until the next sync records it"
+      : expanded
+        ? "Close the approval form"
+        : "Open the approval form to submit a code review on this pull request"}
     label="Approve"
     shortLabel="Approve"
     {size}

@@ -210,14 +210,15 @@ test.describe("head-pinned merge and approve", () => {
 });
 
 test.describe("head_unknown approve conflict", () => {
-  test("disables head-bound actions until a sync records the head", async ({ page }) => {
+  test("head-bound actions stay disabled until a sync records the head", async ({ page }) => {
     await mockApi(page);
 
-    let conflictReturned = false;
-    let releaseSync: () => void = () => {};
-    const syncHeld = new Promise<void>((resolve) => {
-      releaseSync = resolve;
-    });
+    // On a head-binding provider the UI never fires an unbound
+    // mutation: with no synced head, approve and merge are disabled
+    // preflight (the server would reject the pin-less request anyway),
+    // and they enable once a sync records the head.
+    let syncedHead = "";
+    let approveRequested = false;
 
     await page.route("**/api/v1/pulls/github/acme/widgets/77", async (route: Route) => {
       if (route.request().method() !== "GET") {
@@ -227,26 +228,15 @@ test.describe("head_unknown approve conflict", () => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify(unboundDetailEnvelope("")),
+        body: JSON.stringify(unboundDetailEnvelope(syncedHead)),
       });
     });
 
     await page.route("**/api/v1/pulls/github/acme/widgets/77/sync", async (route: Route) => {
-      if (!conflictReturned) {
-        await route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify(unboundDetailEnvelope("")),
-        });
-        return;
-      }
-      // Hold the post-conflict sync so the disabled state is
-      // observable, then resolve it with a recorded head.
-      await syncHeld;
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify(unboundDetailEnvelope(SYNCED_SHA)),
+        body: JSON.stringify(unboundDetailEnvelope(syncedHead)),
       });
     });
 
@@ -255,27 +245,26 @@ test.describe("head_unknown approve conflict", () => {
     });
 
     await page.route("**/api/v1/pulls/github/acme/widgets/77/approve", async (route: Route) => {
-      conflictReturned = true;
-      await route.fulfill(
-        conflictProblem(
-          "head_unknown",
-          "merge request head commit has not been synced; re-review it once the next sync completes",
-        ),
-      );
+      approveRequested = true;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ status: "approved" }),
+      });
     });
 
     await page.goto("/pulls/github/acme/widgets/77");
     await expect(page.locator(".detail-title")).toContainText("Unbound head PR");
 
-    await submitApproval(page);
-
-    await expect(page.getByText(UNKNOWN_PROMPT)).toBeVisible();
     await expect(page.locator(".btn--approve").first()).toBeDisabled();
     await expect(page.locator(".btn--merge").first()).toBeDisabled();
+    expect(approveRequested).toBe(false);
 
-    releaseSync();
-
-    await expect(page.getByText(UNKNOWN_PROMPT)).toHaveCount(0);
+    // A sync records the head; the reloaded detail re-enables the
+    // head-bound actions.
+    syncedHead = SYNCED_SHA;
+    await page.reload();
+    await expect(page.locator(".detail-title")).toContainText("Unbound head PR");
     await expect(page.locator(".btn--approve").first()).toBeEnabled();
     await expect(page.locator(".btn--merge").first()).toBeEnabled();
   });

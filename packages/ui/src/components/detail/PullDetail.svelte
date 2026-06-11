@@ -636,6 +636,13 @@
   const headActionsBlocked = $derived(
     headConflict === "head_unknown" && detailHeadSha === "",
   );
+  // Preflight guard: a head-binding provider must never fire an unbound
+  // mutation, so head-bound actions stay disabled until a sync records
+  // the head — no request, no 409 round trip.
+  const headPinMissing = $derived(
+    (detailStore.getDetail()?.repo?.capabilities?.mutation_head_binding ?? false)
+      && detailHeadSha === "",
+  );
 
   function handleHeadConflict(
     reason: "stale_state" | "head_unknown",
@@ -1656,15 +1663,17 @@
             {@const mergeDisabledByConflicts = hasMergeConflicts(pr)}
             {@const mergeTitle = mergeDisabledByConflicts
               ? "Resolve merge conflicts before merging"
-              : mergeOpUnavailable
-                ? mergeOp?.unavailable_reason ?? ""
-                : ""}
+              : headPinMissing
+                ? "The reviewed head commit has not been synced yet; merging is disabled until the next sync records it"
+                : mergeOpUnavailable
+                  ? mergeOp?.unavailable_reason ?? ""
+                  : ""}
             <ActionButton
               class="btn--merge"
-              disabled={stalePR || mergeDisabledByConflicts || mergeOpUnavailable || headActionsBlocked}
+              disabled={stalePR || mergeDisabledByConflicts || mergeOpUnavailable || headActionsBlocked || headPinMissing}
               title={mergeTitle}
               onclick={() => {
-                if (stalePR || mergeOpUnavailable || headActionsBlocked) return;
+                if (stalePR || mergeOpUnavailable || headActionsBlocked || headPinMissing) return;
                 runOpenMerge(buildOpenMergeInput(pr, capabilities));
               }}
               tone="success"

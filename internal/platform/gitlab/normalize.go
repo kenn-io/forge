@@ -56,10 +56,12 @@ func NormalizeProject(host string, p *gitlab.Project) (platform.Repository, erro
 		ViewerCanMerge:     gitLabViewerCanMerge(p.Permissions),
 		// GitLab accepts MRs under the project's configured merge method
 		// with squash as a per-merge flag; there is no per-merge rebase,
-		// so clients must not offer "Rebase and merge".
+		// so clients must not offer "Rebase and merge". squash_option
+		// bounds the per-merge squash flag in both directions: "never"
+		// forbids squashing and "always" forbids accepting without it.
 		MergeSettings: &platform.RepositoryMergeSettings{
 			AllowSquashMerge: p.SquashOption != gitlab.SquashOptionNever,
-			AllowMergeCommit: true,
+			AllowMergeCommit: p.SquashOption != gitlab.SquashOptionAlways,
 			AllowRebaseMerge: false,
 		},
 		DefaultBranch: p.DefaultBranch,

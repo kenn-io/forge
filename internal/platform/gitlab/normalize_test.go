@@ -69,6 +69,21 @@ func TestNormalizeProjectMapsSquashNeverToSquashDisallowed(t *testing.T) {
 	assert.False(repo.MergeSettings.AllowRebaseMerge)
 }
 
+func TestNormalizeProjectMapsSquashAlwaysToMergeCommitDisallowed(t *testing.T) {
+	assert := assert.New(t)
+	repo, err := NormalizeProject("gitlab.example.com", &gitlab.Project{
+		ID:                42,
+		Path:              "project",
+		PathWithNamespace: "group/project",
+		SquashOption:      gitlab.SquashOptionAlways,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, repo.MergeSettings)
+	assert.True(repo.MergeSettings.AllowSquashMerge)
+	assert.False(repo.MergeSettings.AllowMergeCommit, "squash_option=always forbids non-squash accepts")
+	assert.False(repo.MergeSettings.AllowRebaseMerge)
+}
+
 func TestNormalizeProjectUsesHighestGitLabAccessForMergePermission(t *testing.T) {
 	repo, err := NormalizeProject("gitlab.example.com", &gitlab.Project{
 		ID:                42,

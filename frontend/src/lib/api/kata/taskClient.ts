@@ -44,6 +44,16 @@ interface RequestResult<T> {
   headers: Headers;
 }
 
+// The explicit `| undefined` unions are required by
+// exactOptionalPropertyTypes: call sites pass values that may be
+// undefined (e.g. daemonHeaders() or an optional caller signal).
+interface KataRequestInit {
+  method?: string | undefined;
+  body?: unknown;
+  headers?: Record<string, string> | undefined;
+  signal?: AbortSignal | undefined;
+}
+
 interface ErrorEnvelope {
   code: string;
   message: string;
@@ -246,15 +256,7 @@ export function createKataTaskAPI(options: CreateKataTaskAPIOptions = {}): KataT
     return { [KATA_DAEMON_HEADER]: daemonId ?? "" };
   }
 
-  async function request<T>(
-    path: string,
-    init: {
-      method?: string | undefined;
-      body?: unknown;
-      headers?: Record<string, string> | undefined;
-      signal?: AbortSignal | undefined;
-    } = {},
-  ): Promise<RequestResult<T>> {
+  async function request<T>(path: string, init: KataRequestInit = {}): Promise<RequestResult<T>> {
     const headers = new Headers(init.headers);
     const requestInit: RequestInit = {
       method: init.method ?? "GET",

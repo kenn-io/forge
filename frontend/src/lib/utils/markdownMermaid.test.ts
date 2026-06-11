@@ -89,17 +89,29 @@ describe("renderMarkdownMermaidDiagrams", () => {
     await renderMarkdownMermaidDiagrams(root, loader);
 
     const pre = root.querySelector("pre.mermaid");
+    const viewport = root.querySelector<HTMLElement>(".mermaid-viewer__viewport");
     const pan = root.querySelector<HTMLElement>(".mermaid-viewer__pan");
     expect(pre?.classList.contains("mermaid-viewer")).toBe(true);
     expect(root.querySelector(".mermaid-viewer__viewport svg")).not.toBeNull();
-    expect(root.querySelectorAll(".mermaid-viewer__button")).toHaveLength(9);
+    expect(root.querySelectorAll(".mermaid-viewer__button")).toHaveLength(7);
+    expect(root.querySelector('button[aria-label="Zoom in diagram"]')).toBeNull();
+    expect(root.querySelector('button[aria-label="Zoom out diagram"]')).toBeNull();
     const expandButton = root.querySelector<HTMLButtonElement>('button[aria-label="Open diagram in expanded view"]');
     expect(expandButton?.querySelector("svg")).not.toBeNull();
     expect(expandButton?.textContent?.trim()).toBe("");
     expect(pan?.style.transform).toBe("translate(0px, 0px) scale(1)");
 
-    root.querySelector<HTMLButtonElement>('button[aria-label="Zoom in diagram"]')?.click();
-    expect(pan?.style.transform).toBe("translate(0px, 0px) scale(1.2)");
+    Object.defineProperty(viewport, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({ bottom: 60, height: 60, left: 0, right: 120, top: 0, width: 120, x: 0, y: 0 }),
+    });
+    const wheelZoomIn = new WheelEvent("wheel", { cancelable: true, clientX: 60, clientY: 30, deltaY: -100 });
+    expect(viewport?.dispatchEvent(wheelZoomIn)).toBe(false);
+    expect(wheelZoomIn.defaultPrevented).toBe(true);
+    expect(pan?.style.transform).toBe("translate(0px, 0px) scale(1.16)");
+
+    root.querySelector<HTMLButtonElement>('button[aria-label="Pan diagram right"]')?.click();
+    expect(pan?.style.transform).toBe("translate(80px, 0px) scale(1.16)");
 
     root.querySelector<HTMLButtonElement>('button[aria-label="Reset diagram view"]')?.click();
     expect(pan?.style.transform).toBe("translate(0px, 0px) scale(1)");
@@ -140,15 +152,22 @@ describe("renderMarkdownMermaidDiagrams", () => {
     root.querySelector<HTMLButtonElement>('button[aria-label="Open diagram in expanded view"]')?.click();
 
     const overlay = document.querySelector<HTMLElement>(".mermaid-viewer-lightbox");
+    const overlayViewport = document.querySelector<HTMLElement>(".mermaid-viewer-lightbox .mermaid-viewer__viewport");
     const overlayPan = document.querySelector<HTMLElement>(".mermaid-viewer-lightbox .mermaid-viewer__pan");
     expect(overlay?.getAttribute("role")).toBe("dialog");
     expect(overlay?.getAttribute("aria-modal")).toBe("true");
     expect(overlay?.querySelector("svg")).not.toBeNull();
-    expect(overlay?.querySelectorAll(".mermaid-viewer__controls--nav .mermaid-viewer__button")).toHaveLength(7);
+    expect(overlay?.querySelectorAll(".mermaid-viewer__controls--nav .mermaid-viewer__button")).toHaveLength(5);
     expect(overlay?.querySelector('button[aria-label="Copy Mermaid source"]')).toBeNull();
+    expect(overlay?.querySelector('button[aria-label="Zoom in diagram"]')).toBeNull();
 
-    overlay?.querySelector<HTMLButtonElement>('button[aria-label="Zoom in diagram"]')?.click();
-    expect(overlayPan?.style.transform).toBe("translate(0px, 0px) scale(1.2)");
+    Object.defineProperty(overlayViewport, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({ bottom: 60, height: 60, left: 0, right: 120, top: 0, width: 120, x: 0, y: 0 }),
+    });
+    const wheelZoomIn = new WheelEvent("wheel", { cancelable: true, clientX: 60, clientY: 30, deltaY: -100 });
+    expect(overlayViewport?.dispatchEvent(wheelZoomIn)).toBe(false);
+    expect(overlayPan?.style.transform).toBe("translate(0px, 0px) scale(1.16)");
 
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
     expect(document.querySelector(".mermaid-viewer-lightbox")).toBeNull();

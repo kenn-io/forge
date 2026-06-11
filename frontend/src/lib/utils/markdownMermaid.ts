@@ -24,8 +24,10 @@ const MERMAID_SELECTOR = ".markdown-body pre.mermaid, .doc-markdown pre.mermaid"
 const MERMAID_VIEWER_ATTACHED = "true";
 const MIN_SCALE = 0.4;
 const MAX_SCALE = 3;
-const ZOOM_STEP = 0.2;
 const PAN_STEP = 80;
+const WHEEL_ZOOM_SENSITIVITY = 0.0015;
+const WHEEL_DELTA_LINE = 1;
+const WHEEL_DELTA_PAGE = 2;
 const GITHUB_DARK_MERMAID_THEME: MermaidThemeVariables = {
   darkMode: true,
   background: "#0d1117",
@@ -161,8 +163,13 @@ function createPannableDiagramView(svg: SVGSVGElement): { controls: HTMLDivEleme
     updateTransform();
   };
 
-  const zoomBy = (delta: number) => {
-    scale = clampScale(scale + delta);
+  const zoomTo = (nextScale: number, originX: number, originY: number) => {
+    nextScale = clampScale(nextScale);
+    if (nextScale === scale) return;
+    const scaleRatio = nextScale / scale;
+    offsetX = originX - (originX - offsetX) * scaleRatio;
+    offsetY = originY - (originY - offsetY) * scaleRatio;
+    scale = nextScale;
     updateTransform();
   };
 
@@ -175,7 +182,6 @@ function createPannableDiagramView(svg: SVGSVGElement): { controls: HTMLDivEleme
   const controls = createMermaidNavControls({
     panBy,
     resetView,
-    zoomBy,
   });
 
   attachDragPanning(viewport, {
@@ -183,6 +189,16 @@ function createPannableDiagramView(svg: SVGSVGElement): { controls: HTMLDivEleme
       offsetX += deltaX;
       offsetY += deltaY;
       updateTransform();
+    },
+  });
+  attachWheelZoom(viewport, {
+    onZoom(event) {
+      const rect = viewport.getBoundingClientRect();
+      zoomTo(
+        scale * Math.exp(-normalizeWheelDelta(event, viewport) * WHEEL_ZOOM_SENSITIVITY),
+        event.clientX - rect.left - rect.width / 2,
+        event.clientY - rect.top - rect.height / 2,
+      );
     },
   });
 
@@ -196,20 +212,19 @@ function createPannableDiagramView(svg: SVGSVGElement): { controls: HTMLDivEleme
 function createMermaidNavControls(actions: {
   panBy: (deltaX: number, deltaY: number) => void;
   resetView: () => void;
-  zoomBy: (delta: number) => void;
 }): HTMLDivElement {
   const navControls = document.createElement("div");
   navControls.className = "mermaid-viewer__controls mermaid-viewer__controls--nav";
   navControls.append(
     createMermaidSpacer(),
     createMermaidButton("Pan diagram up", "↑", () => actions.panBy(0, -PAN_STEP)),
-    createMermaidButton("Zoom in diagram", "+", () => actions.zoomBy(ZOOM_STEP)),
+    createMermaidSpacer(),
     createMermaidButton("Pan diagram left", "←", () => actions.panBy(-PAN_STEP, 0)),
     createMermaidButton("Reset diagram view", "⟳", actions.resetView),
     createMermaidButton("Pan diagram right", "→", () => actions.panBy(PAN_STEP, 0)),
     createMermaidSpacer(),
     createMermaidButton("Pan diagram down", "↓", () => actions.panBy(0, PAN_STEP)),
-    createMermaidButton("Zoom out diagram", "-", () => actions.zoomBy(-ZOOM_STEP)),
+    createMermaidSpacer(),
   );
   return navControls;
 }
@@ -363,6 +378,24 @@ function attachDragPanning(viewport: HTMLElement, drag: { onDrag: (deltaX: numbe
 
   viewport.addEventListener("pointerup", endDrag);
   viewport.addEventListener("pointercancel", endDrag);
+}
+
+function attachWheelZoom(viewport: HTMLElement, zoom: { onZoom: (event: WheelEvent) => void }): void {
+  viewport.addEventListener(
+    "wheel",
+    (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      zoom.onZoom(event);
+    },
+    { passive: false },
+  );
+}
+
+function normalizeWheelDelta(event: WheelEvent, viewport: HTMLElement): number {
+  if (event.deltaMode === WHEEL_DELTA_LINE) return event.deltaY * 16;
+  if (event.deltaMode === WHEEL_DELTA_PAGE) return event.deltaY * (viewport.clientHeight || window.innerHeight || 800);
+  return event.deltaY;
 }
 
 function clampScale(value: number): number {

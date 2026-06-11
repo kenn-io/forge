@@ -27,6 +27,7 @@ type kataProxyCacheKey struct {
 	id    string
 	url   string
 	token string
+	local bool
 }
 
 type kataProxyCacheEntry struct {
@@ -60,7 +61,7 @@ func (s *Server) kataProxy() http.Handler {
 }
 
 func (s *Server) kataProxyForDaemon(d kata.Daemon) (kataProxyCacheEntry, error) {
-	key := kataProxyCacheKey{id: d.ID, url: d.URL, token: kataDaemonForwardToken(d)}
+	key := kataProxyCacheKey{id: d.ID, url: d.URL, token: kataDaemonForwardToken(d), local: d.Local}
 	s.kataProxyMu.Lock()
 	if entry, ok := s.kataProxyCache[key]; ok {
 		s.kataProxyMu.Unlock()

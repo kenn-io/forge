@@ -273,6 +273,34 @@ token = "local-secret"
 	assert.Equal("connected", got["local"].Health)
 }
 
+func TestKataDaemonsEndpointLocalDaemonIgnoresTokenEnv(t *testing.T) {
+	assert := Assert.New(t)
+
+	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Empty(r.Header.Get("Authorization"))
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer daemon.Close()
+
+	home := t.TempDir()
+	t.Setenv("KATA_HOME", home)
+	t.Setenv("KATA_DB", "")
+	t.Setenv("MIDDLEMAN_KATA_MISSING_TOKEN", "")
+	writeKataServerCatalog(t, home, `
+[[daemon]]
+name = "local"
+local = true
+token_env = "MIDDLEMAN_KATA_MISSING_TOKEN"
+`)
+	writeKataProxyRuntimeRecord(t, daemon.URL)
+	srv, _ := setupTestServer(t)
+
+	got := requestKataDaemonsByID(t, srv)
+
+	assert.Equal("none", got["local"].Auth)
+	assert.Equal("connected", got["local"].Health)
+}
+
 func TestKataDaemonsEndpointRedactsMalformedTargetErrors(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

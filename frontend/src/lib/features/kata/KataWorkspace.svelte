@@ -721,6 +721,8 @@
             void switchKataDaemon(id);
           }}
         />
+      {:else if activeDaemonStatusLabel()}
+        <span class="daemon-fallback-status" role="alert">{activeDaemonStatusLabel()}</span>
       {/if}
     </div>
     <div class="kata-header-actions">
@@ -902,6 +904,17 @@
     font-size: var(--font-size-lg);
     font-weight: 650;
     line-height: 1.2;
+  }
+
+  .daemon-fallback-status {
+    min-width: 0;
+    max-width: min(420px, 48vw);
+    color: var(--accent-red);
+    font-size: var(--font-size-sm);
+    line-height: 1.3;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .kata-header-actions {

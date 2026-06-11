@@ -79,9 +79,9 @@ local = true
 	require.NoError(err)
 
 	assert.Equal(http.StatusBadGateway, resp.StatusCode)
-	assert.Equal("", resp.Header.Get("Content-Encoding"))
-	assert.Equal("", resp.Header.Get("ETag"))
-	assert.Equal("", resp.Header.Get("WWW-Authenticate"))
+	assert.Empty(resp.Header.Get("Content-Encoding"))
+	assert.Empty(resp.Header.Get("ETag"))
+	assert.Empty(resp.Header.Get("WWW-Authenticate"))
 	assert.Contains(string(body), `"code":"upstreamError"`)
 	assert.NotContains(string(body), "Authentication required")
 
@@ -90,7 +90,7 @@ local = true
 	assert.Equal([]string{"", ""}, authorizations)
 }
 
-func TestKataLocalDaemonTokenIsNotUsedForRosterOrProxyE2E(t *testing.T) {
+func TestKataLocalDaemonTokenEnvIsNotUsedForRosterOrProxyE2E(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
 
@@ -108,13 +108,14 @@ func TestKataLocalDaemonTokenIsNotUsedForRosterOrProxyE2E(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("KATA_HOME", home)
 	t.Setenv("KATA_DB", "")
+	t.Setenv("MIDDLEMAN_KATA_MISSING_TOKEN", "")
 	writeKataE2ECatalog(t, home, `
 active_daemon = "local"
 
 [[daemon]]
 name = "local"
 local = true
-token = "local-secret"
+token_env = "MIDDLEMAN_KATA_MISSING_TOKEN"
 `)
 	writeKataE2ERuntimeRecord(t, daemon.URL)
 	srv, _ := setupTestServer(t)

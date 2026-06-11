@@ -557,6 +557,22 @@ describe("KataWorkspace", () => {
     expect(screen.queryByText("daemon token missing")).toBeNull();
   });
 
+  it("shows a header error when bootstrap fails without a daemon switcher", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      Response.json({
+        daemons: [],
+      }),
+    );
+    const { api, instance } = createWorkspaceAPI();
+    instance.mockRejectedValueOnce(new Error("Kata daemon catalog is empty"));
+
+    render(KataWorkspace, { props: { api } });
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("Kata daemon catalog is empty");
+    expect(screen.queryByTestId("daemon-chip")).toBeNull();
+  });
+
   it("rehydrates linked task titles when switching daemons with matching peer uids", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
       Response.json({

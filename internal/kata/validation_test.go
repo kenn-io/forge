@@ -104,6 +104,25 @@ func TestResolveDaemonRejectsUnsetTokenEnv(t *testing.T) {
 	assert.Contains(err.Error(), "KATA_TEST_TOKEN")
 }
 
+func TestResolveDaemonLocalIgnoresTokenFields(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	t.Setenv("KATA_TEST_TOKEN", "")
+
+	daemon, err := ResolveDaemon(Daemon{
+		ID:       "local",
+		Local:    true,
+		Token:    "inline-secret",
+		TokenEnv: "KATA_TEST_TOKEN",
+	})
+
+	require.NoError(err)
+	assert.True(daemon.Local)
+	assert.Empty(daemon.Token)
+	assert.Empty(daemon.TokenEnv)
+}
+
 func TestResolveDaemonAppliesSecurityGuard(t *testing.T) {
 	require := require.New(t)
 

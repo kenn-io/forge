@@ -594,6 +594,90 @@ token = "local-secret"
 	assert.Equal([]string{"", ""}, authorizations)
 }
 
+func TestKataProxyCacheSeparatesLocalAndRemoteDaemonMode(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	var mu sync.Mutex
+	authorizations := []string{}
+	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		authorizations = append(authorizations, r.Header.Get("Authorization"))
+		mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer daemon.Close()
+
+	home := t.TempDir()
+	t.Setenv("KATA_HOME", home)
+	t.Setenv("KATA_DB", "")
+	writeKataProxyCatalog(t, home, `
+active_daemon = "home"
+
+[[daemon]]
+name = "home"
+url = "`+daemon.URL+`"
+`)
+	srv, _ := setupTestServer(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/kata/proxy/api/v1/instance", nil)
+	req.Header.Set("Authorization", "Bearer caller-secret")
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+
+	writeKataProxyCatalog(t, home, `
+active_daemon = "home"
+
+[[daemon]]
+name = "home"
+local = true
+`)
+	writeKataProxyRuntimeRecord(t, daemon.URL)
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/kata/proxy/api/v1/instance", nil)
+	req.Header.Set("Authorization", "Bearer caller-secret")
+	rr = httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+
+	mu.Lock()
+	defer mu.Unlock()
+	assert.Equal([]string{"Bearer caller-secret", ""}, authorizations)
+}
+
+func TestKataProxyLocalDaemonIgnoresTokenEnv(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Empty(r.Header.Get("Authorization"))
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer daemon.Close()
+
+	home := t.TempDir()
+	t.Setenv("KATA_HOME", home)
+	t.Setenv("KATA_DB", "")
+	t.Setenv("MIDDLEMAN_KATA_MISSING_TOKEN", "")
+	writeKataProxyCatalog(t, home, `
+active_daemon = "local"
+
+[[daemon]]
+name = "local"
+local = true
+token_env = "MIDDLEMAN_KATA_MISSING_TOKEN"
+`)
+	writeKataProxyRuntimeRecord(t, daemon.URL)
+	srv, _ := setupTestServer(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/kata/proxy/api/v1/instance", nil)
+	req.Header.Set("Authorization", "Bearer caller-secret")
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+}
+
 func TestKataProxyLocalDaemonRejectsNonLocalRuntimeTargets(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

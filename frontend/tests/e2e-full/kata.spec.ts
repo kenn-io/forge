@@ -2199,7 +2199,7 @@ test("kata route change aborts a pending detail load instead of surfacing its la
 
   try {
     await page.goto(`${server.info.base_url}/kata?view=all`);
-    await expect(page.getByRole("status", { name: "Connection: online" })).toBeVisible();
+    await expectKataDaemonSwitcherReady(page);
     await page.getByRole("button", { name: /^Today/ }).click();
     const rentRow = page.getByRole("button", { name: /Pay rent/ });
     await expect(rentRow).toBeVisible();
@@ -2240,7 +2240,7 @@ test("kata view change drops a held keyboard selection from the previous view", 
 
   try {
     await page.goto(`${server.info.base_url}/kata?view=all`);
-    await expect(page.getByRole("status", { name: "Connection: online" })).toBeVisible();
+    await expectKataDaemonSwitcherReady(page);
     const rows = page.locator(".issue-list .issue-row");
     await expect(rows.first()).toContainText("Email Susan re: Q3");
     await expect(rows.nth(1)).toContainText("Pay rent");
@@ -2281,7 +2281,7 @@ test("kata sidebar view click aborts a pending detail load before the new view a
 
   try {
     await page.goto(`${server.info.base_url}/kata?view=all`);
-    await expect(page.getByRole("status", { name: "Connection: online" })).toBeVisible();
+    await expectKataDaemonSwitcherReady(page);
     const rentRow = page.locator(".issue-list .issue-row", { hasText: "Pay rent" });
     await expect(rentRow).toBeVisible();
 
@@ -2327,7 +2327,7 @@ test("kata project scope click drops a pending detail load before the scoped lis
 
   try {
     await page.goto(`${server.info.base_url}/kata?view=all`);
-    await expect(page.getByRole("status", { name: "Connection: online" })).toBeVisible();
+    await expectKataDaemonSwitcherReady(page);
     const rentRow = page.locator(".issue-list .issue-row", { hasText: "Pay rent" });
     await expect(rentRow).toBeVisible();
 
@@ -2373,7 +2373,7 @@ test("kata search filter change drops a pending detail load before results arriv
 
   try {
     await page.goto(`${server.info.base_url}/kata?view=all`);
-    await expect(page.getByRole("status", { name: "Connection: online" })).toBeVisible();
+    await expectKataDaemonSwitcherReady(page);
     const rentRow = page.locator(".issue-list .issue-row", { hasText: "Pay rent" });
     await expect(rentRow).toBeVisible();
 
@@ -2425,7 +2425,7 @@ test("kata daemon switch drops a pending detail load from the previous daemon", 
 
   try {
     await page.goto(`${server.info.base_url}/kata?view=all`);
-    await expect(page.getByRole("status", { name: "Connection: online" })).toBeVisible();
+    await expectKataDaemonSwitcherReady(page);
     const rentRow = page.locator(".issue-list .issue-row", { hasText: "Pay rent" });
     await expect(rentRow).toBeVisible();
 
@@ -2446,7 +2446,7 @@ test("kata daemon switch drops a pending detail load from the previous daemon", 
 
     releaseIssues();
     await expect(page.getByTestId("daemon-chip")).toContainText("work");
-    await expect(page.getByRole("status", { name: "Connection: online" })).toBeVisible();
+    await expectKataDaemonSwitcherReady(page);
     await expect(page.getByRole("status", { name: "Connection: error" })).toHaveCount(0);
   } finally {
     releaseDetail();
@@ -2469,7 +2469,7 @@ test("kata key released during a stalled view transition does not commit a stale
 
   try {
     await page.goto(`${server.info.base_url}/kata?view=all`);
-    await expect(page.getByRole("status", { name: "Connection: online" })).toBeVisible();
+    await expectKataDaemonSwitcherReady(page);
     const rows = page.locator(".issue-list .issue-row");
     await expect(rows.first()).toContainText("Email Susan re: Q3");
     await expect(rows.nth(1)).toContainText("Pay rent");
@@ -2551,7 +2551,7 @@ test("kata task list keyboard scrolling only fetches the final settled task", as
 
   try {
     await page.goto(`${server.info.base_url}/kata`);
-    await expect(page.getByRole("status", { name: "Connection: online" })).toBeVisible();
+    await expectKataDaemonSwitcherReady(page);
     await page.getByRole("button", { name: "All Open" }).click();
     const rows = page.locator(".issue-list .issue-row");
     await expect(rows.first()).toContainText("First task");
@@ -2594,7 +2594,7 @@ test("kata task list selection settles when Shift is released before G", async (
 
   try {
     await page.goto(`${server.info.base_url}/kata`);
-    await expect(page.getByRole("status", { name: "Connection: online" })).toBeVisible();
+    await expectKataDaemonSwitcherReady(page);
     await page.getByRole("button", { name: "All Open" }).click();
     const rows = page.locator(".issue-list .issue-row");
     await expect(rows.first()).toContainText("Email Susan re: Q3");
@@ -4342,9 +4342,9 @@ test("kata owner assignment failure keeps the custom owner editor open", async (
     await ownerInput.fill("agent:new");
     await ownerInput.press("Enter");
 
-    await page.getByTestId("daemon-chip").click();
-    await expect(page.getByTestId("daemon-row-e2e")).toContainText("owner unavailable");
-    await page.getByTestId("daemon-chip").click();
+    await expect
+      .poll(() => backend.state.seenPaths)
+      .toContain("POST /api/v1/projects/1/issues/issue-rent/actions/assign");
     await expect(detail.getByLabel("Owner", { exact: true })).toHaveValue("agent:new");
     await expect(detail.getByRole("button", { name: "Owner: Wes" })).toHaveCount(0);
     expect(backend.state.issues.find((issue) => issue.uid === "issue-rent")?.owner).toBe("Wes");

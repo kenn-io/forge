@@ -2463,7 +2463,7 @@ func (d *DB) UpsertMREvents(ctx context.Context, events []MREvent) error {
 			    body          = excluded.body,
 			    metadata_json = excluded.metadata_json,
 			    created_at    = excluded.created_at,
-			    thread_id = excluded.thread_id,
+			    thread_id = COALESCE(excluded.thread_id, thread_id),
 			    position_json = excluded.position_json,
 			    resolvable    = excluded.resolvable,
 			    resolved      = excluded.resolved`)
@@ -3672,7 +3672,7 @@ func (d *DB) UpsertIssueEvents(ctx context.Context, events []IssueEvent) error {
 			    body           = excluded.body,
 			    metadata_json  = excluded.metadata_json,
 			    created_at     = excluded.created_at,
-			    thread_id  = excluded.thread_id`)
+			    thread_id  = COALESCE(excluded.thread_id, thread_id)`)
 		if err != nil {
 			return fmt.Errorf("prepare upsert issue events: %w", err)
 		}

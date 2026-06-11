@@ -80,7 +80,7 @@ func setupGitLabMutationServer(
 
 	recorder := &gitlabAPIRecorder{}
 	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		recorder.record(r)
+		request := recorder.record(r)
 		w.Header().Set("Content-Type", "application/json")
 		path := r.URL.EscapedPath()
 		switch {
@@ -113,7 +113,14 @@ func setupGitLabMutationServer(
 				"squash_commit_sha": "squash-sha", "sha": "head-sha"
 			}`)
 		case path == "/api/v4/projects/4242/merge_requests/7" && r.Method == http.MethodPut:
-			writeGitLabJSON(w, `{"id": 7001, "iid": 7, "title": "Test MR", "state": "closed"}`)
+			if strings.Contains(request.Body, "state_event") {
+				writeGitLabJSON(w, `{"id": 7001, "iid": 7, "title": "Test MR", "state": "closed"}`)
+				return
+			}
+			writeGitLabJSON(w, `{
+				"id": 7001, "iid": 7, "title": "Test MR",
+				"description": "Updated MR body", "state": "opened"
+			}`)
 		case path == "/api/v4/projects/4242/merge_requests/7/approve" && r.Method == http.MethodPost:
 			writeGitLabJSON(w, `{"approved": true, "updated_at": "2026-06-01T11:00:00Z"}`)
 		case path == "/api/v4/user" && r.Method == http.MethodGet:
@@ -145,7 +152,18 @@ func setupGitLabMutationServer(
 				"created_at": "2026-06-01T13:00:00Z"
 			}`)
 		case path == "/api/v4/projects/4242/issues/11" && r.Method == http.MethodPut:
-			writeGitLabJSON(w, `{"id": 8001, "iid": 11, "title": "Issue", "state": "closed"}`)
+			if strings.Contains(request.Body, "state_event") {
+				writeGitLabJSON(w, `{"id": 8001, "iid": 11, "title": "Issue", "state": "closed"}`)
+				return
+			}
+			writeGitLabJSON(w, `{"id": 8001, "iid": 11, "title": "Issue (edited)", "state": "opened"}`)
+		case path == "/api/v4/projects/4242/issues/11/notes/9301" && r.Method == http.MethodPut:
+			writeGitLabJSON(w, `{
+				"id": 9301,
+				"body": "edited issue comment",
+				"author": {"username": "ada"},
+				"created_at": "2026-05-01T13:00:00Z"
+			}`)
 		default:
 			http.NotFound(w, r)
 		}
@@ -200,7 +218,7 @@ func setupGitLabMutationServer(
 		Resolvable:     true,
 	}}))
 
-	_, err = database.UpsertIssue(ctx, &db.Issue{
+	issueID, err := database.UpsertIssue(ctx, &db.Issue{
 		RepoID:         repoID,
 		PlatformID:     8001,
 		Number:         11,
@@ -213,6 +231,17 @@ func setupGitLabMutationServer(
 		LastActivityAt: now,
 	})
 	require.NoError(err)
+
+	existingIssueNoteID := int64(9301)
+	require.NoError(database.UpsertIssueEvents(ctx, []db.IssueEvent{{
+		IssueID:    issueID,
+		PlatformID: &existingIssueNoteID,
+		EventType:  "issue_comment",
+		Author:     "reviewer",
+		Body:       "original issue comment",
+		CreatedAt:  now,
+		DedupeKey:  "gitlab:gitlab.com:acme/widget:issue:11:note:9301",
+	}}))
 
 	repo := ghclient.RepoRef{
 		Platform:           platform.KindGitLab,
@@ -259,7 +288,8 @@ func doGitLabJSON(
 func TestGitLabMutationCommentPostAndEdit(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	srv, _, recorder, _ := setupGitLabMutationServer(t)
+	srv, database, recorder, repoID := setupGitLabMutationServer(t)
+	ctx := t.Context()
 
 	rr := doGitLabJSON(t, srv, http.MethodPost,
 		"/api/v1/pulls/gitlab/acme/widget/7/comments",
@@ -294,6 +324,71 @@ func TestGitLabMutationCommentPostAndEdit(t *testing.T) {
 	}
 	require.NoError(json.NewDecoder(rr.Body).Decode(&editResult))
 	assert.Equal("edited body", editResult.Body)
+
+	// GitLab note responses omit the discussion id; the edit must not
+	// detach the stored comment from its thread.
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	require.NotNil(mr)
+	events, err := database.ListMREvents(ctx, mr.ID)
+	require.NoError(err)
+	threadPreserved := false
+	for _, event := range events {
+		if event.PlatformID != nil && *event.PlatformID == 9001 {
+			assert.Equal("edited body", event.Body)
+			require.NotNil(event.ThreadID, "thread_id must survive a comment edit")
+			assert.Equal(gitlabMutationThreadID, *event.ThreadID)
+			threadPreserved = true
+		}
+	}
+	assert.True(threadPreserved, "edited comment event not found")
+}
+
+func TestGitLabMutationContentEdits(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, _, recorder, _ := setupGitLabMutationServer(t)
+
+	rr := doGitLabJSON(t, srv, http.MethodPatch,
+		"/api/v1/pulls/gitlab/acme/widget/7",
+		`{"body":"Updated MR body"}`,
+	)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	mrEdit, ok := recorder.find(http.MethodPut, "/api/v4/projects/4242/merge_requests/7")
+	require.True(ok, "fake GitLab API did not receive MR content edit")
+	assert.Contains(mrEdit.Body, `"description":"Updated MR body"`)
+	var prDetail struct {
+		MergeRequest struct {
+			Body string `json:"Body"`
+		} `json:"merge_request"`
+	}
+	require.NoError(json.NewDecoder(rr.Body).Decode(&prDetail))
+	assert.Equal("Updated MR body", prDetail.MergeRequest.Body)
+
+	rr = doGitLabJSON(t, srv, http.MethodPatch,
+		"/api/v1/issues/gitlab/acme/widget/11",
+		`{"title":"Issue (edited)"}`,
+	)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	issueEdit, ok := recorder.find(http.MethodPut, "/api/v4/projects/4242/issues/11")
+	require.True(ok, "fake GitLab API did not receive issue content edit")
+	assert.Contains(issueEdit.Body, `"title":"Issue (edited)"`)
+}
+
+func TestGitLabMutationIssueCommentEdit(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, _, recorder, _ := setupGitLabMutationServer(t)
+
+	rr := doGitLabJSON(t, srv, http.MethodPatch,
+		"/api/v1/issues/gitlab/acme/widget/11/comments/9301",
+		`{"body":"edited issue comment"}`,
+	)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+
+	edited, ok := recorder.find(http.MethodPut, "/api/v4/projects/4242/issues/11/notes/9301")
+	require.True(ok, "fake GitLab API did not receive issue note edit")
+	assert.Contains(edited.Body, `"body":"edited issue comment"`)
 }
 
 func TestGitLabMutationMergeSquash(t *testing.T) {

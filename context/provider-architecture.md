@@ -70,6 +70,29 @@ Rules:
 - Do not fake GitHub behavior for another provider. Add provider-specific
   normalization or explicit unsupported-capability handling instead.
 
+### GitLab Mutation Semantics
+
+GitLab declares the full mutation capability set, but several operations map
+onto different upstream semantics than GitHub/Forgejo/Gitea. Do not assume
+provider-equivalent behavior from the flags alone:
+
+- Merge methods: `squash` sets GitLab's squash flag; `merge` accepts under the
+  project's configured merge method. `rebase` cannot be requested per merge
+  (it is a project setting) and returns a typed `unsupported_capability`
+  error with capability `merge_method_rebase`.
+- Reviews: GitLab has no `request_changes` state. `SupportedReviewActions` is
+  comment/approve only, and publishing a request-changes review returns the
+  typed `unsupportedCapability` envelope (`review_action_request_changes`).
+- Approvals: the approvals API carries no body and returns approval state,
+  not a review object. A non-empty approve body is posted as a regular MR
+  note first, and the returned "review/approved" event is synthesized with an
+  empty body (the note syncs in as its own comment). If approval fails after
+  the note posted, the typed error says so; retrying repeats the comment
+  because GitLab rejects duplicate approvals by the same user.
+- Comment edits: GitLab's note responses do not include the discussion ID, so
+  edited events carry an empty `ThreadID`; the event upsert preserves the
+  stored `thread_id` when the incoming value is NULL.
+
 ## Label Capabilities
 
 Repository label editing is provider-neutral:

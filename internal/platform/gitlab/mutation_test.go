@@ -191,14 +191,20 @@ func TestGitLabSetIssueStateSendsStateEvent(t *testing.T) {
 }
 
 func TestGitLabSetStateRejectsUnknownState(t *testing.T) {
+	assert := Assert.New(t)
+	require := Require.New(t)
 	client, err := NewClient("gitlab.example.com", testTokenSource("token"))
-	Require.NoError(t, err)
+	require.NoError(err)
 
+	var platformErr *platform.Error
 	_, err = client.SetMergeRequestState(context.Background(), projectRef(), 7, "merged")
-	Require.Error(t, err)
+	require.ErrorAs(err, &platformErr)
+	assert.Equal(platform.ErrCodeInvalidRepoRef, platformErr.Code)
+	assert.Equal("state", platformErr.Field)
 
 	_, err = client.SetIssueState(context.Background(), projectRef(), 11, "locked")
-	Require.Error(t, err)
+	require.ErrorAs(err, &platformErr)
+	assert.Equal(platform.ErrCodeInvalidRepoRef, platformErr.Code)
 }
 
 func TestGitLabMergeMergeRequestMapsMethods(t *testing.T) {
@@ -390,10 +396,41 @@ func TestGitLabApproveMergeRequestPostsNoteAndApproves(t *testing.T) {
 	assert.Equal("review", event.EventType)
 	assert.Equal("approved", event.Summary)
 	assert.Equal("ada", event.Author)
+	// The body lives on the posted note, which sync imports as its own
+	// comment; keeping it off the approval event avoids duplicate text.
+	assert.Empty(event.Body)
 	assert.Equal(
 		"gitlab:gitlab.example.com:group/project:mr:7:approval:ada",
 		event.DedupeKey,
 	)
+}
+
+func TestGitLabApproveMergeRequestReportsNotePostedWhenApprovalFails(t *testing.T) {
+	assert := Assert.New(t)
+	require := Require.New(t)
+	var noteSeen bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.EscapedPath() {
+		case "/api/v4/projects/42/merge_requests/7/notes":
+			noteSeen = true
+			writeJSON(w, `{"id": 9002, "body": "ship it", "author": {"username": "ada"}}`)
+		case "/api/v4/projects/42/merge_requests/7/approve":
+			http.Error(w, `{"message":"401 Unauthorized"}`, http.StatusUnauthorized)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	_, err := newTestClient(t, server.URL).ApproveMergeRequest(
+		context.Background(), projectRef(), 7, "ship it",
+	)
+	require.Error(err)
+	assert.True(noteSeen)
+	assert.Contains(err.Error(), "review comment was posted but the approval failed")
+	var platformErr *platform.Error
+	require.ErrorAs(err, &platformErr)
+	assert.Equal(platform.ErrCodePermissionDenied, platformErr.Code)
 }
 
 func TestGitLabApproveMergeRequestSkipsNoteForEmptyBody(t *testing.T) {

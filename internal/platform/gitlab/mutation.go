@@ -351,8 +351,13 @@ func (c *Client) EditIssueContent(
 
 // ApproveMergeRequest approves an MR through the GitLab approvals API.
 // GitLab approvals carry no body, so a non-empty body is posted as a
-// regular MR note before approving. GitLab has no native
-// "request changes" review state, so only approval is supported here.
+// regular MR note before approving; the synthesized approval event keeps
+// an empty body because the note is synced into the timeline as its own
+// comment. If approval fails after the note was posted, the error says so
+// explicitly — a retry repeats the comment, which is preferable to
+// re-approving first since GitLab rejects duplicate approvals by the same
+// user. GitLab has no native "request changes" review state, so only
+// approval is supported here.
 func (c *Client) ApproveMergeRequest(
 	ctx context.Context,
 	ref platform.RepoRef,
@@ -364,6 +369,7 @@ func (c *Client) ApproveMergeRequest(
 		return platform.MergeRequestEvent{}, err
 	}
 
+	notePosted := false
 	if comment := strings.TrimSpace(body); comment != "" {
 		if _, _, err := c.api.Notes.CreateMergeRequestNote(
 			pid,
@@ -373,6 +379,7 @@ func (c *Client) ApproveMergeRequest(
 		); err != nil {
 			return platform.MergeRequestEvent{}, mapGitLabError("approve_merge_request_comment", err)
 		}
+		notePosted = true
 	}
 
 	approvals, _, err := c.api.MergeRequestApprovals.ApproveMergeRequest(
@@ -382,7 +389,14 @@ func (c *Client) ApproveMergeRequest(
 		gitlab.WithContext(ctx),
 	)
 	if err != nil {
-		return platform.MergeRequestEvent{}, mapGitLabError("approve_merge_request", err)
+		mapped := mapGitLabError("approve_merge_request", err)
+		if notePosted {
+			return platform.MergeRequestEvent{}, fmt.Errorf(
+				"review comment was posted but the approval failed; retrying will repeat the comment: %w",
+				mapped,
+			)
+		}
+		return platform.MergeRequestEvent{}, mapped
 	}
 
 	author := c.currentUsername(ctx)
@@ -396,7 +410,6 @@ func (c *Client) ApproveMergeRequest(
 		EventType:          "review",
 		Author:             author,
 		Summary:            "approved",
-		Body:               body,
 		CreatedAt:          createdAt,
 		DedupeKey:          noteDedupeKey(normalizedRef, "mr", number, "approval", author),
 	}, nil
@@ -421,7 +434,14 @@ func gitlabStateEvent(state string) (string, error) {
 	case "closed":
 		return "close", nil
 	default:
-		return "", fmt.Errorf("unsupported state %q: must be open or closed", state)
+		// Typed like rawProjectPath's input validation so the server
+		// boundary translates it to a stable badRequest envelope.
+		return "", &platform.Error{
+			Code:       platform.ErrCodeInvalidRepoRef,
+			Provider:   platform.KindGitLab,
+			Field:      "state",
+			Capability: "state_mutation",
+		}
 	}
 }
 

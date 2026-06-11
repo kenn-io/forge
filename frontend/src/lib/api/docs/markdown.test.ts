@@ -175,6 +175,13 @@ describe("hardened rendering", () => {
     expect(html).toMatch(/<td[^>]*>done<\/td>/);
   });
 
+  test("renders mermaid fences as mermaid diagram targets", () => {
+    const html = renderDocsMarkdown("```mermaid\ngraph TD\n  A --> B\n```", baseOptions);
+
+    expect(html).toContain('<pre class="mermaid">graph TD\n  A --&gt; B</pre>');
+    expect(html).not.toContain("language-mermaid");
+  });
+
   test("images get loading=lazy and decoding=async for perf", () => {
     const html = renderDocsMarkdown("![logo](./assets/logo.png)", baseOptions);
     expect(html).toMatch(/<img[^>]+loading="lazy"/);

@@ -202,3 +202,12 @@ describe("renderMarkdown task lists", () => {
     expect(outerOpen).toBeGreaterThanOrEqual(0);
   });
 });
+
+describe("renderMarkdown mermaid diagrams", () => {
+  it("renders mermaid fences as mermaid diagram targets", () => {
+    const html = renderMarkdown("```mermaid\ngraph TD\n  A --> B\n```");
+
+    expect(html).toContain('<pre class="mermaid">graph TD\n  A --&gt; B</pre>');
+    expect(html).not.toContain("language-mermaid");
+  });
+});

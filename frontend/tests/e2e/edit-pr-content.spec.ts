@@ -95,6 +95,17 @@ test("edit body: cancel preserves original", async ({ page }) => {
   await expect(page.locator(".markdown-body")).toContainText("Adds Playwright smoke tests");
 });
 
+test("markdown mermaid fences render as diagrams", async ({ page }) => {
+  await page.goto("/pulls/github/acme/widgets/42");
+  await page.locator(".edit-body-btn").click();
+
+  await page.locator(".body-edit-textarea").fill("```mermaid\ngraph TD\n  A --> B\n```");
+  await page.locator(".body-edit .title-edit-save").click();
+
+  await expect(page.locator(".markdown-body code.language-mermaid")).toHaveCount(0);
+  await expect(page.locator(".markdown-body pre.mermaid svg")).toBeVisible();
+});
+
 test("markdown tables keep compact columns readable", async ({ page }) => {
   await page.route("**/api/v1/pulls/github/acme/widgets/42", async (route) => {
     if (route.request().method() !== "GET") {

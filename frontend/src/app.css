@@ -274,6 +274,22 @@ a:hover {
   background: none;
   padding: 0;
 }
+.markdown-body pre.mermaid {
+  background: var(--bg-surface);
+  text-align: center;
+}
+.markdown-body pre.mermaid svg {
+  max-width: 100%;
+  height: auto;
+}
+.doc-markdown pre.mermaid {
+  background: var(--bg-surface);
+  text-align: center;
+}
+.doc-markdown pre.mermaid svg {
+  max-width: 100%;
+  height: auto;
+}
 .markdown-body a {
   color: var(--accent-blue);
 }

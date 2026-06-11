@@ -180,12 +180,24 @@ const DRAG_HANDLE_SVG =
   `<circle cx="9" cy="13" r="1.2"/>` +
   `</svg>`;
 
+function isMermaidFence(lang: string | undefined): boolean {
+  return (lang ?? "").trim().split(/\s+/, 1)[0]?.toLowerCase() === "mermaid";
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
 const taskListRenderer: RendererObject = {
   blockquote(token): string {
     renderState.blockquoteDepth++;
     const inner = this.parser.parse(token.tokens);
     renderState.blockquoteDepth--;
     return `<blockquote>\n${inner}</blockquote>\n`;
+  },
+  code(token: Tokens.Code): string | false {
+    if (!isMermaidFence(token.lang)) return false;
+    return `<pre class="mermaid">${escapeHtml(token.text)}</pre>`;
   },
   // The checkbox renderer is called during the recursive parse
   // of a listitem's inner tokens. It allocates the next task

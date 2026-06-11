@@ -369,6 +369,10 @@ function wikilinkAnchor(
 
 function docsRenderer(options: DocsMarkdownOptions, imageToken: string) {
   return {
+    code(token: Tokens.Code): string | false {
+      if (!isMermaidFence(token.lang)) return false;
+      return `<pre class="mermaid">${escapeHtml(token.text)}</pre>`;
+    },
     link(this: { parser: { parseInline: (tokens: Tokens.Generic[]) => string } }, token: Tokens.Link) {
       const inner = this.parser.parseInline(token.tokens ?? []);
       const href = token.href ?? "";
@@ -446,6 +450,10 @@ function docsRenderer(options: DocsMarkdownOptions, imageToken: string) {
       return `<h${level} id="${escapeAttr(id)}">${inner}</h${level}>`;
     },
   };
+}
+
+function isMermaidFence(lang: string | undefined): boolean {
+  return (lang ?? "").trim().split(/\s+/, 1)[0]?.toLowerCase() === "mermaid";
 }
 
 function isExternal(href: string): boolean {

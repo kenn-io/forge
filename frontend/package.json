@@ -34,6 +34,7 @@
     "ghostty-web": "^0.4.0",
     "js-toml": "^1.0.3",
     "marked": "17.0.5",
+    "mermaid": "11.15.0",
     "openapi-fetch": "^0.17.0",
     "simple-icons": "^16.19.0"
   },

@@ -2362,7 +2362,7 @@ func (s *Server) approvePR(ctx context.Context, input *approvePRInput) (*actionS
 	// Bind the approval to the head commit the user reviewed locally so a
 	// source-branch push between review and approval is rejected instead
 	// of approving unreviewed code.
-	expectedHeadSHA, err := s.reviewedHeadSHA(ctx, repo, input.Number, mr)
+	expectedHeadSHA, err := s.reviewedHeadSHA(repo, mr)
 	if err != nil {
 		return nil, err
 	}
@@ -2642,7 +2642,7 @@ func (s *Server) mergePR(ctx context.Context, input *mergePRInput) (*mergePROutp
 	// Bind the merge to the head commit the user reviewed locally so a
 	// source-branch push between review and merge is rejected upstream
 	// instead of merging unreviewed code.
-	expectedHeadSHA, err := s.reviewedHeadSHA(ctx, repo, input.Number, mr)
+	expectedHeadSHA, err := s.reviewedHeadSHA(repo, mr)
 	if err != nil {
 		return nil, err
 	}
@@ -2675,7 +2675,11 @@ func (s *Server) mergePR(ctx context.Context, input *mergePRInput) (*mergePROutp
 						slog.Warn("background sync after merge failure", "err", syncErr)
 					}
 				})
-				return nil, problemConflict(CodeConflict, message, nil)
+				reason := "conflict"
+				if errors.Is(err, platform.ErrStaleState) {
+					reason = "stale_state"
+				}
+				return nil, problemConflict(CodeConflict, message, map[string]any{"reason": reason})
 			}
 
 			// Forward 4xx provider errors as-is so the user sees the real cause
@@ -2715,13 +2719,12 @@ func (s *Server) mergePR(ctx context.Context, input *mergePRInput) (*mergePROutp
 // be pinned to: the locally synced head, which is what the user reviewed.
 // Providers with MutationHeadBinding must not mutate unbound, so a row
 // with no head SHA (legacy or partial sync) always fails closed with a
-// conflict. The MR is refreshed first only so the client's reload shows
-// current state for re-review — the freshly fetched head is never used
-// for the mutation, because the user has not reviewed it.
+// conflict. Deliberately, this path never syncs the MR: persisting a
+// fresh head here would arm a retry from the same stale UI to mutate a
+// commit nobody reviewed. The head stays unknown until a normal review
+// cycle (detail view or periodic sync) populates it.
 func (s *Server) reviewedHeadSHA(
-	ctx context.Context,
 	repo *db.Repo,
-	number int,
 	mr *db.MergeRequest,
 ) (string, error) {
 	if mr.PlatformHeadSHA != "" {
@@ -2730,17 +2733,10 @@ func (s *Server) reviewedHeadSHA(
 	if !s.capabilitiesForRepo(*repo).MutationHeadBinding {
 		return "", nil
 	}
-	if err := s.syncer.SyncMROnProvider(
-		ctx,
-		repoProviderKind(*repo), repoProviderHost(*repo),
-		repo.Owner, repo.Name, number,
-	); err != nil {
-		slog.Warn("refresh after unknown head on head-bound mutation failed", "err", err)
-	}
 	return "", problemConflict(
 		CodeConflict,
-		"merge request head commit was not synced when this was reviewed; reload and re-review before this action",
-		nil,
+		"merge request head commit has not been synced; re-review it once the next sync completes",
+		map[string]any{"reason": "head_unknown"},
 	)
 }
 

@@ -295,6 +295,12 @@ func TestGitLabMergeMergeRequestClassifies409s(t *testing.T) {
 			wantCode:        platform.ErrCodeConflict,
 		},
 		{
+			name:            "sha mentioned without head mismatch stays a conflict",
+			expectedHeadSHA: "old-head",
+			message:         "commit sha was rejected by a push rule",
+			wantCode:        platform.ErrCodeConflict,
+		},
+		{
 			name:            "unbound 409 stays a conflict",
 			expectedHeadSHA: "",
 			message:         "SHA does not match HEAD of source branch",

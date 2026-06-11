@@ -48,7 +48,7 @@ snake_case form and translate them at the `internal/server` boundary.
 | `projectNotFound` | 404 | Local project record lookup miss. |
 | `workspaceNotFound` | 404 | Workspace lookup miss. |
 | `settingsUnavailable` | 404 | Settings store is unavailable in the current server mode. |
-| `conflict` | 409 | Generic state conflict. |
+| `conflict` | 409 | Generic state conflict. Head-bound provider mutations include `details.reason` as a stable discriminator: `stale_state` (target moved past the reviewed commit; reload and re-review), `conflict` (provider refuses the current state), or `head_unknown` (no reviewed head synced locally; wait for sync and re-review). Only `stale_state` triggers an MR resync. |
 | `branchConflict` | 409 | Local workspace branch already exists. Include `details.branch` and `details.suggestedBranch`. |
 | `unsupportedCapability` | 409 | Provider lacks the operation capability. Include `details.capability`, `details.provider`, and `details.platformHost`. |
 | `payloadTooLarge` | 413 | Request body exceeds the accepted size. Include `details.maxBytes` when known. |

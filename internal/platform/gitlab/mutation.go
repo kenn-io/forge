@@ -14,17 +14,21 @@ import (
 	"go.kenn.io/middleman/internal/platform"
 )
 
+// gitlabHeadMismatchPhrase is the documented GitLab rejection for
+// sha-bound merge/approve when the source branch HEAD moved past the
+// supplied sha.
+const gitlabHeadMismatchPhrase = "sha does not match head"
+
 // mapGitLabMutationError classifies a 409 as stale_state only when the
-// request was actually sha-bound and GitLab's message blames the head
-// SHA ("SHA does not match HEAD of source branch"). Any other 409 keeps
-// the generic conflict mapping so unrelated provider conflicts are not
-// presented as staleness.
+// request was actually sha-bound and GitLab's message is the known head
+// mismatch rejection. Any other 409 keeps the generic conflict mapping
+// so unrelated provider conflicts are not presented as staleness.
 func mapGitLabMutationError(capability, expectedHeadSHA string, err error) error {
 	var gitlabErr *gitlab.ErrorResponse
 	if expectedHeadSHA != "" &&
 		errors.As(err, &gitlabErr) &&
 		gitlabErr.HasStatusCode(http.StatusConflict) &&
-		strings.Contains(strings.ToLower(gitlabErr.Message), "sha") {
+		strings.Contains(strings.ToLower(gitlabErr.Message), gitlabHeadMismatchPhrase) {
 		return &platform.Error{
 			Code:       platform.ErrCodeStaleState,
 			Provider:   platform.KindGitLab,

@@ -522,16 +522,17 @@ func mapPlatformError(err error) huma.StatusError {
 		return problemForbidden(err.Error(), d)
 	case platform.ErrCodeNotFound:
 		return problemNotFound(CodeNotFound, err.Error(), nil)
+	// Both conflict flavors share wire code `conflict` and HTTP 409;
+	// details.reason is the stable discriminator clients branch on
+	// (stale_state: reload and re-review; conflict: the provider refuses
+	// the current state, re-reviewing won't help by itself).
 	case platform.ErrCodeStaleState:
-		d := map[string]any{}
+		d := map[string]any{"reason": "stale_state"}
 		if provider != "" {
 			d["provider"] = provider
 		}
 		if host != "" {
 			d["platformHost"] = host
-		}
-		if len(d) == 0 {
-			d = nil
 		}
 		return problemConflict(
 			CodeConflict,
@@ -539,15 +540,12 @@ func mapPlatformError(err error) huma.StatusError {
 			d,
 		)
 	case platform.ErrCodeConflict:
-		d := map[string]any{}
+		d := map[string]any{"reason": "conflict"}
 		if provider != "" {
 			d["provider"] = provider
 		}
 		if host != "" {
 			d["platformHost"] = host
-		}
-		if len(d) == 0 {
-			d = nil
 		}
 		return problemConflict(CodeConflict, err.Error(), d)
 	case platform.ErrCodeProviderNotConfigured,

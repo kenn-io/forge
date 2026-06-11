@@ -611,10 +611,13 @@ func TestGitLabMutationApproveStaleHeadReturnsConflict(t *testing.T) {
 	)
 	require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
 	var problem struct {
-		Code string `json:"code"`
+		Code    string         `json:"code"`
+		Details map[string]any `json:"details"`
 	}
 	require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
 	assert.Equal("conflict", problem.Code)
+	require.NotNil(problem.Details)
+	assert.Equal("stale_state", problem.Details["reason"])
 
 	_, noted := recorder.find(http.MethodPost, "/api/v4/projects/4242/merge_requests/7/notes")
 	assert.False(noted, "stale approval must not post the comment")
@@ -649,10 +652,13 @@ func TestGitLabMutationMergeStaleHeadReturnsConflict(t *testing.T) {
 	)
 	require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
 	var problem struct {
-		Code string `json:"code"`
+		Code    string         `json:"code"`
+		Details map[string]any `json:"details"`
 	}
 	require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
 	assert.Equal("conflict", problem.Code)
+	require.NotNil(problem.Details)
+	assert.Equal("stale_state", problem.Details["reason"])
 
 	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
 	require.NoError(err)
@@ -667,9 +673,9 @@ func TestGitLabMutationMergeStaleHeadReturnsConflict(t *testing.T) {
 
 // A legacy or partially synced row with no head SHA fails closed: the
 // user never reviewed any particular commit, so neither merge nor approve
-// may proceed — not even bound to a freshly refreshed head, since nobody
-// reviewed that head either. The refresh only prepares local state for
-// the client's reload.
+// may proceed. The path must not sync either — persisting a fresh head
+// would let an immediate retry from the same stale UI mutate a commit
+// nobody reviewed — so consecutive requests keep failing identically.
 func TestGitLabMutationMissingHeadSHAFailsClosed(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -711,23 +717,32 @@ func TestGitLabMutationMissingHeadSHAFailsClosed(t *testing.T) {
 			})
 			require.NoError(err)
 
-			rr := doGitLabJSON(t, srv, http.MethodPost, tt.path, tt.body)
-			require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
-			var problem struct {
-				Code string `json:"code"`
-			}
-			require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
-			assert.Equal("conflict", problem.Code)
+			// Two consecutive requests model a user re-clicking from the
+			// same stale UI; both must fail closed identically.
+			for attempt := range 2 {
+				rr := doGitLabJSON(t, srv, http.MethodPost, tt.path, tt.body)
+				require.Equal(http.StatusConflict, rr.Code,
+					"attempt %d: %s", attempt+1, rr.Body.String())
+				var problem struct {
+					Code    string         `json:"code"`
+					Details map[string]any `json:"details"`
+				}
+				require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
+				assert.Equal("conflict", problem.Code)
+				require.NotNil(problem.Details)
+				assert.Equal("head_unknown", problem.Details["reason"])
 
-			_, refreshed := recorder.find(http.MethodGet, "/api/v4/projects/4242/merge_requests/7")
-			assert.True(refreshed, "missing head SHA must refresh local state for re-review")
-			_, mutated := recorder.find(http.MethodPut, tt.mutationPath)
-			if !mutated {
-				_, mutated = recorder.find(http.MethodPost, tt.mutationPath)
+				_, synced := recorder.find(http.MethodGet, "/api/v4/projects/4242/merge_requests/7")
+				assert.False(synced,
+					"missing head must not sync: a persisted fresh head would arm the retry")
+				_, mutated := recorder.find(http.MethodPut, tt.mutationPath)
+				if !mutated {
+					_, mutated = recorder.find(http.MethodPost, tt.mutationPath)
+				}
+				assert.False(mutated, "missing head SHA must not reach the provider mutation")
+				_, noted := recorder.find(http.MethodPost, "/api/v4/projects/4242/merge_requests/7/notes")
+				assert.False(noted, "missing head SHA must not post the approval comment")
 			}
-			assert.False(mutated, "missing head SHA must not reach the provider mutation")
-			_, noted := recorder.find(http.MethodPost, "/api/v4/projects/4242/merge_requests/7/notes")
-			assert.False(noted, "missing head SHA must not post the approval comment")
 		})
 	}
 }

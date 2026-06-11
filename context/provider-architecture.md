@@ -86,12 +86,12 @@ provider-equivalent behavior from the flags alone:
   `mutation_head_binding` capability marks providers that enforce this
   (currently GitLab); others treat the expected head SHA as advisory. For
   enforcing providers a missing local head SHA always fails closed with a
-  `409 conflict`: the server refreshes the MR so the client's reload shows
-  current state, but never mutates bound to the freshly fetched head,
-  because nobody reviewed it. Stale heads surface as the `stale_state`
-  platform code and non-stale provider 409s as `conflict` (both wire:
-  `409 conflict`); stale mutations trigger an MR resync so the user
-  re-reviews current state.
+  `409 conflict` and deliberately does not sync: persisting a fresh head
+  would let a retry from the same stale UI mutate a commit nobody
+  reviewed. The head populates through the normal review cycle (detail
+  view or periodic sync). Conflict responses carry `details.reason`
+  (`stale_state`, `conflict`, or `head_unknown`) per
+  `context/error-handling.md`; only stale heads trigger an MR resync.
 - Reviews: GitLab has no `request_changes` state. `SupportedReviewActions` is
   comment/approve only, and publishing a request-changes review returns the
   typed `unsupportedCapability` envelope (`review_action_request_changes`).

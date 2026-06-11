@@ -116,6 +116,29 @@ func runDelete(args []string, env *appEnv) error {
 	}
 
 	if !*localOnly {
+		// Deletion is confirmed by the app's credentials dying, so the
+		// credentials must demonstrably work first. Otherwise a stale
+		// or rotated key would read as "deleted" and local state would
+		// be removed while the app keeps its access on GitHub.
+		ctxCheck := context.Background()
+		jwt, err := appJWT(app, env.now())
+		if err != nil {
+			return fmt.Errorf(
+				"cannot verify deletion, app credentials are unusable: %w\n"+
+					"delete the app in GitHub settings yourself, then re-run with --local-only", err,
+			)
+		}
+		if _, err := env.apiClient(app.Host).GetApp(ctxCheck, jwt); err != nil {
+			if githubapp.IsStatus(err, http.StatusUnauthorized) ||
+				githubapp.IsStatus(err, http.StatusNotFound) {
+				return fmt.Errorf(
+					"cannot verify deletion, GitHub rejected the app credentials: %w\n"+
+						"if the app is already deleted, re-run with --local-only", err,
+				)
+			}
+			return err
+		}
+
 		// GitHub has no API for deleting an app; the user confirms it
 		// in browser settings while we poll for the credentials to die.
 		url := settingsURL(env.webBaseFor(app.Host), app) + "/advanced"

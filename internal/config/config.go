@@ -85,8 +85,16 @@ type PlatformConfig struct {
 // GitHubAppConfig registers a GitHub App created by the
 // middleman-github-app CLI. Installation tokens minted from the app's
 // private key carry their own rate-limit budget, taking sync traffic
-// off the host's PAT. One app per GitHub host; an entry without an
-// installation_id is dormant and the PAT chain stays in effect.
+// off the host's PAT.
+//
+// Scope decision: one app per GitHub host with one recorded
+// installation. The token source chain is host-scoped, and an
+// installation token only reaches repos owned by the installed
+// account, so repos on the host owned by other accounts must carry
+// their own repo-level token_env/token_file override; Validate
+// enforces this so uncovered repos fail loudly at load instead of
+// 404ing during sync. An entry without an installation_id is dormant
+// and the PAT chain stays in effect.
 type GitHubAppConfig struct {
 	Host                string `toml:"host" json:"host"`
 	AppID               int64  `toml:"app_id" json:"app_id"`
@@ -1057,6 +1065,10 @@ func (c *Config) Validate() error {
 		seen[key] = display
 	}
 
+	if err := c.validateGitHubAppCoverage(); err != nil {
+		return err
+	}
+
 	// Reject conflicting token source descriptors for the same host.
 	// Empty repo-level fields mean "use platform/default token sources".
 	hostToken := make(map[string]tokenauth.Descriptor, len(c.Repos))
@@ -1374,6 +1386,41 @@ func (c *Config) validateGitHubApps() error {
 			)
 		}
 		seenHosts[host] = struct{}{}
+	}
+	return nil
+}
+
+// validateGitHubAppCoverage rejects github repos that would resolve
+// to an app installation token without being reachable by it.
+// Installation tokens are scoped to the installed account, not the
+// host, so a repo owned by anyone else would 404 during sync while
+// the config looks healthy. Repos with their own token_env/token_file
+// override never reach the app candidate and are exempt. Runs after
+// repo normalization so owners are canonical.
+func (c *Config) validateGitHubAppCoverage() error {
+	for _, app := range c.GitHubApps {
+		if app.InstallationID == 0 || app.InstallationAccount == "" {
+			continue
+		}
+		for i, r := range c.Repos {
+			if r.PlatformOrDefault() != defaultPlatform ||
+				r.PlatformHostOrDefault() != app.Host {
+				continue
+			}
+			if r.TokenEnv != "" || r.TokenFile != "" {
+				continue
+			}
+			if strings.EqualFold(r.Owner, app.InstallationAccount) {
+				continue
+			}
+			return fmt.Errorf(
+				"config: repos[%d]: %s/%s is not covered by the github app for %s "+
+					"(installed on %q): installation tokens only reach repos owned by the "+
+					"installed account; set token_env/token_file on the repo, or install "+
+					"the app on %q instead",
+				i, r.Owner, r.Name, app.Host, app.InstallationAccount, r.Owner,
+			)
+		}
 	}
 	return nil
 }

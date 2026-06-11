@@ -7,6 +7,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"go.kenn.io/middleman/internal/githubapp/ui"
 )
 
 // TestFlowServerServesEmbeddedAssetsAndFlowContract pins the loopback
@@ -21,16 +23,22 @@ func TestFlowServerServesEmbeddedAssetsAndFlowContract(t *testing.T) {
 	require.NoError(err)
 	t.Cleanup(flow.Close)
 
-	// Embedded dist files are served from the root. Go test builds
-	// embed only the committed stub; `make build` swaps in the real
-	// Svelte output at the same paths.
-	resp, err := http.Get(flow.localBase + "/stub.html")
+	// The root always answers with a usable HTML page: the built
+	// Svelte app when the dist was embedded by `make build`, or an
+	// explicit "rebuild with make build" explanation when only the
+	// committed stub is present (plain go test / go build).
+	resp, err := http.Get(flow.localBase + "/")
 	require.NoError(err)
 	body, err := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
 	require.NoError(err)
 	assert.Equal(http.StatusOK, resp.StatusCode)
-	assert.Equal("ok\n", string(body))
+	assert.Contains(resp.Header.Get("Content-Type"), "text/html")
+	if ui.HasBuiltApp() {
+		assert.Contains(string(body), `<div id="app">`)
+	} else {
+		assert.Contains(string(body), "make build")
+	}
 
 	// Before a flow is prepared there is nothing to hand to GitHub.
 	resp, err = http.Get(flow.localBase + "/flow.json")

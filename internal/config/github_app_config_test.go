@@ -100,6 +100,116 @@ private_key_path = "b.pem"
 	}
 }
 
+func TestGitHubAppInstallationCoverage(t *testing.T) {
+	tests := []struct {
+		name    string
+		toml    string
+		wantErr string
+	}{
+		{
+			name: "repo owned by installation account passes",
+			toml: `
+[[repos]]
+owner = "kenn-io"
+name = "middleman"
+
+[[github_apps]]
+app_id = 1
+private_key_path = "a.pem"
+installation_id = 9
+installation_account = "kenn-io"
+`,
+		},
+		{
+			name: "case-insensitive owner match passes",
+			toml: `
+[[repos]]
+owner = "kenn-io"
+name = "middleman"
+
+[[github_apps]]
+app_id = 1
+private_key_path = "a.pem"
+installation_id = 9
+installation_account = "Kenn-IO"
+`,
+		},
+		{
+			name: "uncovered repo without override fails",
+			toml: `
+[[repos]]
+owner = "kenn-io"
+name = "middleman"
+
+[[repos]]
+owner = "otherorg"
+name = "thing"
+
+[[github_apps]]
+app_id = 1
+private_key_path = "a.pem"
+installation_id = 9
+installation_account = "kenn-io"
+`,
+			wantErr: "otherorg/thing is not covered by the github app",
+		},
+		{
+			name: "uncovered repo with its own token override passes",
+			toml: `
+[[repos]]
+owner = "otherorg"
+name = "thing"
+token_env = "OTHERORG_TOKEN"
+
+[[github_apps]]
+app_id = 1
+private_key_path = "a.pem"
+installation_id = 9
+installation_account = "kenn-io"
+`,
+		},
+		{
+			name: "dormant app without installation ignores coverage",
+			toml: `
+[[repos]]
+owner = "otherorg"
+name = "thing"
+
+[[github_apps]]
+app_id = 1
+private_key_path = "a.pem"
+`,
+		},
+		{
+			name: "other-host repos are unaffected",
+			toml: `
+[[repos]]
+platform = "gitlab"
+platform_host = "gitlab.com"
+owner = "otherorg"
+name = "thing"
+
+[[github_apps]]
+app_id = 1
+private_key_path = "a.pem"
+installation_id = 9
+installation_account = "kenn-io"
+`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := Load(writeConfig(t, tt.toml))
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.Error(t, err)
+			Assert.ErrorContains(t, err, tt.wantErr)
+		})
+	}
+}
+
 func TestGitHubAppHostDefaultsToPublicHost(t *testing.T) {
 	cfg, err := Load(writeConfig(t, `
 [[github_apps]]

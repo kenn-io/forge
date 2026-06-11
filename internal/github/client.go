@@ -177,6 +177,24 @@ func graphQLEndpointForHost(platformHost string) string {
 
 }
 
+// ClientOption adjusts NewClient construction.
+type ClientOption func(*clientOptions)
+
+type clientOptions struct {
+	baseURLOverride string
+}
+
+// WithBaseURLForTesting points the client's REST and GraphQL traffic
+// at a local fake server (GHES-shaped /api/v3 and /api/graphql
+// paths). Wire-level tests use it to exercise the real transport
+// stack, including the read/write credential split, against an
+// httptest server.
+func WithBaseURLForTesting(base string) ClientOption {
+	return func(o *clientOptions) {
+		o.baseURLOverride = strings.TrimRight(base, "/")
+	}
+}
+
 // NewClient creates a GitHub Client authenticated with the given
 // token source. platformHost selects the API endpoint: "" or "github.com"
 // uses the public API; any other value creates an Enterprise
@@ -186,13 +204,22 @@ func NewClient(
 	platformHost string,
 	rateTracker *RateTracker,
 	budget *SyncBudget,
+	opts ...ClientOption,
 ) (Client, error) {
+	var options clientOptions
+	for _, opt := range opts {
+		opt(&options)
+	}
+	allowedOrigin := restAPIOriginForHost(platformHost)
+	if options.baseURLOverride != "" {
+		allowedOrigin = options.baseURLOverride
+	}
 	authRT := tokenauth.AuthTransport{
 		Source:              source,
 		Base:                http.DefaultTransport,
 		SetHeader:           tokenauth.BearerAuthHeader,
 		RetryOnUnauthorized: true,
-		AllowedOrigin:       restAPIOriginForHost(platformHost),
+		AllowedOrigin:       allowedOrigin,
 	}
 	et := &etagTransport{base: authRT}
 	var transport http.RoundTripper = et
@@ -212,6 +239,12 @@ func NewClient(
 	)}
 
 	newGHClient := func(hc *http.Client) (*gh.Client, error) {
+		if options.baseURLOverride != "" {
+			return gh.NewClient(hc).WithEnterpriseURLs(
+				options.baseURLOverride+"/api/v3/",
+				options.baseURLOverride+"/api/uploads/",
+			)
+		}
 		if platformHost == "" || platformHost == "github.com" {
 			return gh.NewClient(hc), nil
 		}
@@ -231,6 +264,10 @@ func NewClient(
 	if err != nil {
 		return nil, err
 	}
+	graphQLEndpoint := graphQLEndpointForHost(platformHost)
+	if options.baseURLOverride != "" {
+		graphQLEndpoint = options.baseURLOverride + "/api/graphql"
+	}
 	return &liveClient{
 		gh:              ghClient,
 		ghWrite:         ghWriteClient,
@@ -238,7 +275,7 @@ func NewClient(
 		httpWriteClient: writeHTTPClient,
 		rateTracker:     rateTracker,
 		platformHost:    platformHost,
-		graphQLEndpoint: graphQLEndpointForHost(platformHost),
+		graphQLEndpoint: graphQLEndpoint,
 		etag:            et,
 	}, nil
 }

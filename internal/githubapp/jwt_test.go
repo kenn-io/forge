@@ -128,10 +128,15 @@ func TestNewManifestValidation(t *testing.T) {
 	assert.Empty(m.DefaultEvents)
 	assert.Equal("http://127.0.0.1:9/callback", m.RedirectURL)
 	assert.Equal(DefaultHomepageURL, m.URL)
-	// Merging PRs needs contents write; dropping it would break the
-	// core merge workflow even though sync still reads fine.
-	assert.Equal("write", m.DefaultPermissions["contents"])
-	assert.Equal("write", m.DefaultPermissions["pull_requests"])
+	// Sync needs to read repo contents and PRs.
+	assert.Equal("read", m.DefaultPermissions["contents"])
+	assert.Equal("read", m.DefaultPermissions["pull_requests"])
+	// The app must stay read-only: every mutation rides the user's own
+	// credential chain (see tokenauth.WithMutationAuth), so a write
+	// level here would be standing unused privilege.
+	for scope, level := range m.DefaultPermissions {
+		assert.Equal("read", level, "permission %s must be read-only", scope)
+	}
 }
 
 func TestRandomAppNameFitsGitHubLimit(t *testing.T) {

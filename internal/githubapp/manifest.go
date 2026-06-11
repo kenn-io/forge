@@ -39,25 +39,30 @@ const DefaultHomepageURL = "https://go.kenn.io/middleman"
 // maxAppNameLength is GitHub's limit for app names.
 const maxAppNameLength = 34
 
-// DefaultPermissions is the permission set middleman's sync and
-// mutation surface needs. Webhooks stay disabled: middleman polls.
+// DefaultPermissions is the permission set middleman's sync surface
+// needs. The app is read-only by design: every mutation (merge,
+// comment, review, ready-for-review, workflow approval) authenticates
+// with the user's own credential chain so it stays attributed to the
+// user, and the tokenauth mutation marker never selects the app token
+// for writes. Webhooks stay disabled: middleman polls.
 //
-//   - contents write: merge PRs, read releases/tags
-//   - issues write: issue triage and comments
-//   - pull_requests write: reviews, comments, ready-for-review
-//   - workflows write: merging PRs that touch .github/workflows
-//   - actions write: approving workflow runs
-//   - checks/statuses read: CI state
+// Permission matrix (all read):
+//   - contents: PR/issue sync, releases, tags, git clone/fetch
+//   - issues: issue lists, detail, comments, timeline
+//   - pull_requests: PR lists, detail, reviews, review threads
+//   - checks: check runs for refs
+//   - statuses: combined commit status
+//   - actions: workflow runs awaiting approval
+//   - metadata: mandatory baseline for any app
 func DefaultPermissions() map[string]string {
 	return map[string]string{
-		"actions":       "write",
+		"actions":       "read",
 		"checks":        "read",
-		"contents":      "write",
-		"issues":        "write",
+		"contents":      "read",
+		"issues":        "read",
 		"metadata":      "read",
-		"pull_requests": "write",
+		"pull_requests": "read",
 		"statuses":      "read",
-		"workflows":     "write",
 	}
 }
 

@@ -2,7 +2,11 @@ package main
 
 import (
 	"bytes"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"io"
 	"net/http"
@@ -149,6 +153,17 @@ func submitManifestForm(pageURL string) error {
 	return nil
 }
 
+// generateWrongKeyPEM returns a valid RSA private key PEM that does
+// not belong to any app on the fake, simulating a rotated/stale key.
+func generateWrongKeyPEM(t *testing.T) []byte {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+	return pem.EncodeToMemory(&pem.Block{
+		Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key),
+	})
+}
+
 func createTestApp(t *testing.T, fake *githubapptest.Fake, configPath, name string) {
 	t.Helper()
 	env, _ := newTestEnv(t, fake, configPath)
@@ -212,8 +227,12 @@ func TestCreateFlowEndToEnd(t *testing.T) {
 	}
 	require.NoError(json.Unmarshal([]byte(manifests[0]), &sent))
 	assert.False(sent.Public)
+	// The app stays read-only; mutations use the user's PAT chain.
+	for scope, level := range sent.DefaultPermissions {
+		assert.Equal("read", level, "permission %s", scope)
+	}
 	assert.False(sent.HookAttributes.Active)
-	assert.Equal("write", sent.DefaultPermissions["contents"])
+	assert.Equal("read", sent.DefaultPermissions["contents"])
 }
 
 func TestCreateRefusesSecondAppForSameHost(t *testing.T) {
@@ -285,7 +304,16 @@ func TestInstallRecordsNewInstallation(t *testing.T) {
 	require := require.New(t)
 	fake := githubapptest.NewFake()
 	t.Cleanup(fake.Close)
-	configPath := writeTestConfig(t)
+	// The repo carries its own token override, so installing on a
+	// different account than the repo owner is a valid configuration.
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.toml")
+	require.NoError(os.WriteFile(configPath, []byte(`
+[[repos]]
+owner = "kenn-io"
+name = "middleman"
+token_env = "KENN_IO_TOKEN"
+`), 0o600))
 	createTestApp(t, fake, configPath, "middleman-reinst")
 
 	env, _ := newTestEnv(t, fake, configPath)
@@ -300,6 +328,62 @@ func TestInstallRecordsNewInstallation(t *testing.T) {
 	require.Len(cfg.GitHubApps, 1)
 	assert.Equal(t, "other-org", cfg.GitHubApps[0].InstallationAccount)
 	assert.NotZero(t, cfg.GitHubApps[0].InstallationID)
+}
+
+func TestInstallRefusesInstallationThatMissesConfiguredRepos(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	fake := githubapptest.NewFake()
+	t.Cleanup(fake.Close)
+	configPath := writeTestConfig(t)
+	createTestApp(t, fake, configPath, "middleman-uncov")
+
+	env, _ := newTestEnv(t, fake, configPath)
+	require.NoError(runCLI([]string{"uninstall", "--yes"}, env))
+
+	// Installing on an account that does not own kenn-io/middleman
+	// must not be recorded: the installation token cannot reach the
+	// repo, so sync would 404 while the config looks healthy.
+	env, _ = newTestEnv(t, fake, configPath)
+	env.openBrowser = scriptBrowser(t, fake, "someone-else")
+	err := runCLI([]string{"install", "--timeout", "10s"}, env)
+	require.Error(err)
+	require.ErrorContains(err, "kenn-io/middleman")
+	require.ErrorContains(err, "someone-else")
+
+	cfg, err := config.Load(configPath)
+	require.NoError(err)
+	require.Len(cfg.GitHubApps, 1)
+	assert.Zero(t, cfg.GitHubApps[0].InstallationID,
+		"uncovered installation must not be recorded")
+}
+
+func TestDeleteRefusesWhenCredentialsCannotBeVerified(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	fake := githubapptest.NewFake()
+	t.Cleanup(fake.Close)
+	configPath := writeTestConfig(t)
+	createTestApp(t, fake, configPath, "middleman-badcred")
+	cfg, err := config.Load(configPath)
+	require.NoError(err)
+	keyPath := cfg.GitHubApps[0].PrivateKeyPath
+
+	// A rotated/stale key makes GitHub reject the app JWT with 401.
+	// Delete must not interpret that as "the app is gone" and wipe
+	// local state while the app keeps its access on GitHub.
+	wrongKey := generateWrongKeyPEM(t)
+	require.NoError(os.WriteFile(keyPath, wrongKey, 0o600))
+
+	env, _ := newTestEnv(t, fake, configPath)
+	err = runCLI([]string{"delete", "--yes", "--timeout", "5s"}, env)
+	require.Error(err)
+	require.ErrorContains(err, "--local-only")
+
+	cfg, err = config.Load(configPath)
+	require.NoError(err)
+	assert.Len(t, cfg.GitHubApps, 1, "config entry must survive unverified delete")
+	assert.FileExists(t, keyPath)
 }
 
 func TestDeleteRemovesConfigAndKeyAfterBrowserDeletion(t *testing.T) {

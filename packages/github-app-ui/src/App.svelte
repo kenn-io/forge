@@ -104,15 +104,16 @@
             />
           </svg>
         </span>
-        <h1>GitHub App created</h1>
+        <h1>App created on GitHub</h1>
       </div>
       <p>
-        The app's credentials were handed back to <code>middleman-github-app</code> and saved to your middleman
-        config.
+        GitHub handed the app's creation code back to <code>middleman-github-app</code>. The terminal is finishing
+        setup: exchanging the code, saving the credentials to your middleman config, and opening GitHub's install
+        page so you can choose the account your repositories live in.
       </p>
       <p>
-        You can close this tab and return to the terminal. GitHub's install page opens next so you can choose the
-        account your repositories live in.
+        You can close this tab, but keep the terminal open until it reports the install step finished — if it
+        prints an error instead, setup is not complete.
       </p>
     {:else if loadError !== null}
       <div class="status">

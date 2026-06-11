@@ -151,6 +151,17 @@ type flowServer struct {
 	host     string
 }
 
+// missingUIPage is served when the binary was built without the
+// embedded Svelte setup page (plain `go build`). The flow cannot
+// continue in the browser, so say that instead of dead-ending.
+const missingUIPage = `<!DOCTYPE html><html><head><title>middleman-github-app</title></head><body>
+<h1>Setup page not included in this build</h1>
+<p>This middleman-github-app binary was built without the embedded setup UI,
+so the GitHub App creation flow cannot continue in the browser.</p>
+<p>Rebuild with <code>make build</code> (which builds and embeds the page),
+then re-run <code>middleman-github-app create</code>.</p>
+</body></html>`
+
 // flowJSON is the contract between the Go flow server and the Svelte
 // setup page: the page POSTs manifest to action exactly as a plain
 // HTML form would.
@@ -176,10 +187,11 @@ func newFlowServer(stdout io.Writer) (*flowServer, error) {
 		_ = listener.Close()
 		return nil, fmt.Errorf("loading embedded setup page: %w", err)
 	}
-	if !ui.HasBuiltApp() {
+	hasBuiltApp := ui.HasBuiltApp()
+	if !hasBuiltApp {
 		fmt.Fprintln(stdout,
 			"warning: this binary was built without the setup page (plain go build); "+
-				"the browser page will not render. Build with `make build`.")
+				"the browser shows instructions instead. Build with `make build`.")
 	}
 
 	fs := &flowServer{
@@ -194,7 +206,16 @@ func newFlowServer(stdout io.Writer) (*flowServer, error) {
 	}
 
 	mux := http.NewServeMux()
-	mux.Handle("GET /", http.FileServerFS(assets))
+	if hasBuiltApp {
+		mux.Handle("GET /", http.FileServerFS(assets))
+	} else {
+		// Without the embedded page the flow is a dead end in the
+		// browser; explain that instead of serving a stub directory.
+		mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			fmt.Fprint(w, missingUIPage)
+		})
+	}
 	mux.HandleFunc("GET /flow.json", fs.handleFlowJSON)
 	mux.HandleFunc("GET "+fs.callbackPath, fs.handleCallback)
 	fs.srv = &http.Server{Handler: mux}
@@ -362,6 +383,19 @@ func (env *appEnv) runInstallFlow(
 
 	app.InstallationID = picked.ID
 	app.InstallationAccount = picked.Account.Login
+	// Installation tokens only reach repos owned by the installed
+	// account. Surface uncovered repos before saving: config
+	// validation would reject the entry anyway, and the user needs to
+	// know the GitHub-side installation exists but was not recorded.
+	if uncovered := reposNotCoveredByInstallation(cfg, app); len(uncovered) > 0 {
+		return fmt.Errorf(
+			"the app was installed on %q on GitHub, but that installation cannot reach "+
+				"configured repos %s; not recording it in config. Uninstall it in the "+
+				"browser and install on the owning account, or give those repos their "+
+				"own token_env/token_file override and re-run \"install\"",
+			picked.Account.Login, strings.Join(uncovered, ", "),
+		)
+	}
 	if err := updateAppInConfig(cfg, env.configPath, app); err != nil {
 		return fmt.Errorf("saving installation to config: %w", err)
 	}
@@ -370,6 +404,30 @@ func (env *appEnv) runInstallFlow(
 		picked.Account.Login, picked.ID, app.Host,
 	)
 	return nil
+}
+
+// reposNotCoveredByInstallation lists configured github repos on the
+// app's host that would resolve to the app token but are owned by a
+// different account than the installation. Mirrors the config-level
+// coverage validation so the CLI can explain the problem instead of
+// failing a save.
+func reposNotCoveredByInstallation(
+	cfg *config.Config, app config.GitHubAppConfig,
+) []string {
+	var uncovered []string
+	for _, r := range cfg.Repos {
+		if r.PlatformOrDefault() != "github" || r.PlatformHostOrDefault() != app.Host {
+			continue
+		}
+		if r.TokenEnv != "" || r.TokenFile != "" {
+			continue
+		}
+		if strings.EqualFold(r.Owner, app.InstallationAccount) {
+			continue
+		}
+		uncovered = append(uncovered, r.Owner+"/"+r.Name)
+	}
+	return uncovered
 }
 
 // writePrivateKey stores the app's PEM next to the config file with

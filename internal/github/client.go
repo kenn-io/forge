@@ -323,6 +323,51 @@ func (c *liveClient) ReplaceIssueLabels(
 	return labels, nil
 }
 
+// ReplaceIssueAssignees replaces the full assignee set on an issue or
+// pull request (GitHub assigns PRs through the issues API).
+func (c *liveClient) ReplaceIssueAssignees(
+	ctx context.Context, owner, repo string, number int, usernames []string,
+) (*gh.Issue, error) {
+	if usernames == nil {
+		usernames = []string{}
+	}
+	issue, resp, err := c.gh.Issues.Edit(ctx, owner, repo, number, &gh.IssueRequest{
+		Assignees: &usernames,
+	})
+	c.trackRate(resp)
+	if err != nil {
+		return nil, err
+	}
+	return issue, nil
+}
+
+// RequestPullRequestReviewers requests reviews from the given users and
+// returns the updated pull request.
+func (c *liveClient) RequestPullRequestReviewers(
+	ctx context.Context, owner, repo string, number int, usernames []string,
+) (*gh.PullRequest, error) {
+	pr, resp, err := c.gh.PullRequests.RequestReviewers(ctx, owner, repo, number, gh.ReviewersRequest{
+		Reviewers: usernames,
+	})
+	c.trackRate(resp)
+	if err != nil {
+		return nil, err
+	}
+	return pr, nil
+}
+
+// RemovePullRequestReviewers removes pending review requests for the
+// given users.
+func (c *liveClient) RemovePullRequestReviewers(
+	ctx context.Context, owner, repo string, number int, usernames []string,
+) error {
+	resp, err := c.gh.PullRequests.RemoveReviewers(ctx, owner, repo, number, gh.ReviewersRequest{
+		Reviewers: usernames,
+	})
+	c.trackRate(resp)
+	return err
+}
+
 func (c *liveClient) CreateIssue(
 	ctx context.Context, owner, repo, title, body string,
 ) (*gh.Issue, error) {

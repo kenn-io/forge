@@ -277,6 +277,122 @@ func (c *FixtureClient) ReplaceIssueLabels(
 	return slices.Clone(labels), nil
 }
 
+// ReplaceIssueAssignees replaces the assignee set on the seeded issue or
+// pull request with the given number, mirroring GitHub's issues API
+// which covers both item kinds.
+func (c *FixtureClient) ReplaceIssueAssignees(
+	_ context.Context, owner, repo string, number int, usernames []string,
+) (*gh.Issue, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	users := make([]*gh.User, 0, len(usernames))
+	for _, username := range usernames {
+		login := username
+		users = append(users, &gh.User{Login: &login})
+	}
+	now := gh.Timestamp{Time: time.Now().UTC()}
+	var updatedIssue *gh.Issue
+	for _, issues := range [][]*gh.Issue{c.OpenIssues[repoKey(owner, repo)], c.Issues[repoKey(owner, repo)]} {
+		for _, issue := range issues {
+			if issue.GetNumber() == number {
+				issue.Assignees = slices.Clone(users)
+				issue.UpdatedAt = &now
+				if updatedIssue == nil {
+					updatedIssue = issue
+				}
+			}
+		}
+	}
+	var updatedPR *gh.PullRequest
+	for _, prs := range []map[string][]*gh.PullRequest{c.OpenPRs, c.PRs} {
+		for _, pr := range prs[repoKey(owner, repo)] {
+			if pr.GetNumber() == number {
+				pr.Assignees = slices.Clone(users)
+				pr.UpdatedAt = &now
+				if updatedPR == nil {
+					updatedPR = pr
+				}
+			}
+		}
+	}
+	if updatedIssue != nil {
+		return cloneFixtureValue(updatedIssue), nil
+	}
+	if updatedPR == nil {
+		return nil, fmt.Errorf("%w: issue %s/%s#%d", errFixtureNotFound, owner, repo, number)
+	}
+	return &gh.Issue{
+		Number:    updatedPR.Number,
+		Assignees: slices.Clone(users),
+	}, nil
+}
+
+// RequestPullRequestReviewers adds pending review requests on the seeded
+// pull request and returns its updated state.
+func (c *FixtureClient) RequestPullRequestReviewers(
+	_ context.Context, owner, repo string, number int, usernames []string,
+) (*gh.PullRequest, error) {
+	return c.mutateRequestedReviewers(owner, repo, number, func(current []*gh.User) []*gh.User {
+		next := slices.Clone(current)
+		for _, username := range usernames {
+			exists := slices.ContainsFunc(next, func(u *gh.User) bool {
+				return u.GetLogin() == username
+			})
+			if !exists {
+				login := username
+				next = append(next, &gh.User{Login: &login})
+			}
+		}
+		return next
+	})
+}
+
+// RemovePullRequestReviewers removes pending review requests on the
+// seeded pull request.
+func (c *FixtureClient) RemovePullRequestReviewers(
+	_ context.Context, owner, repo string, number int, usernames []string,
+) error {
+	_, err := c.mutateRequestedReviewers(owner, repo, number, func(current []*gh.User) []*gh.User {
+		next := make([]*gh.User, 0, len(current))
+		for _, user := range current {
+			if !slices.Contains(usernames, user.GetLogin()) {
+				next = append(next, user)
+			}
+		}
+		return next
+	})
+	return err
+}
+
+func (c *FixtureClient) mutateRequestedReviewers(
+	owner, repo string,
+	number int,
+	apply func(current []*gh.User) []*gh.User,
+) (*gh.PullRequest, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	now := gh.Timestamp{Time: time.Now().UTC()}
+	var updated *gh.PullRequest
+	for _, prs := range []map[string][]*gh.PullRequest{c.OpenPRs, c.PRs} {
+		for _, pr := range prs[repoKey(owner, repo)] {
+			if pr.GetNumber() != number {
+				continue
+			}
+			pr.RequestedReviewers = apply(pr.RequestedReviewers)
+			pr.UpdatedAt = &now
+			if updated == nil {
+				updated = pr
+			}
+		}
+	}
+	if updated == nil {
+		return nil, fmt.Errorf("%w: pull request %s/%s#%d", errFixtureNotFound, owner, repo, number)
+	}
+	return clonePullRequest(updated), nil
+}
+
 func (c *FixtureClient) CreateIssue(
 	_ context.Context, owner, repo, title, body string,
 ) (*gh.Issue, error) {

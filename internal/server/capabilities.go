@@ -17,6 +17,8 @@ const (
 	capabilityIssueMutation          = "issue_mutation"
 	capabilityReadLabels             = "read_labels"
 	capabilityLabelMutation          = "label_mutation"
+	capabilityAssigneeMutation       = "assignee_mutation"
+	capabilityReviewerMutation       = "reviewer_mutation"
 	capabilityThreadReply            = "thread_reply"
 	capabilityThreadResolve          = "thread_resolve"
 	capabilityReviewDraftMutation    = "review_draft_mutation"
@@ -47,6 +49,10 @@ func capabilityEnabled(
 		return caps.ReadLabels
 	case capabilityLabelMutation:
 		return caps.LabelMutation
+	case capabilityAssigneeMutation:
+		return caps.AssigneeMutation
+	case capabilityReviewerMutation:
+		return caps.ReviewerMutation
 	case capabilityThreadReply:
 		return caps.ThreadReply
 	case capabilityThreadResolve:

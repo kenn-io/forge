@@ -188,6 +188,8 @@ func TestRepoOperationsWireShape(t *testing.T) {
 		"add_comment",
 		"add_label",
 		"remove_label",
+		"set_assignees",
+		"set_reviewers",
 		"close_issue",
 		"reopen_issue",
 		"approve_workflow",

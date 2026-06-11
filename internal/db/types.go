@@ -217,6 +217,13 @@ type MergeRequest struct {
 	KanbanStatus              KanbanStatus `enum:"new,reviewing,waiting,awaiting_merge"`
 	Starred                   bool
 	Labels                    []Label `json:"labels,omitempty"`
+	// AssigneesJSON and ReviewersJSON store usernames as JSON arrays.
+	// Empty string means the provider never reported the field; '[]'
+	// records a provider-confirmed empty set.
+	AssigneesJSON      string   `json:"-"`
+	ReviewersJSON      string   `json:"-"`
+	Assignees          []string `json:"assignees,omitempty"`
+	RequestedReviewers []string `json:"requested_reviewers,omitempty"`
 }
 
 type MergeRequestState string

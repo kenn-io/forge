@@ -62,6 +62,12 @@ type gqlPR struct {
 	Labels struct {
 		Nodes []gqlLabel
 	} `graphql:"labels(first: 100)"`
+	Assignees struct {
+		Nodes []gqlAssigneeID
+	} `graphql:"assignees(first: 100)"`
+	ReviewRequests struct {
+		Nodes []gqlReviewRequest
+	} `graphql:"reviewRequests(first: 100)"`
 	Comments struct {
 		Nodes    []gqlComment
 		PageInfo pageInfo
@@ -90,6 +96,28 @@ type gqlPR struct {
 		Nodes    []gqlPullRequestTimelineItem
 		PageInfo pageInfo
 	} `graphql:"timelineItems(itemTypes: [HEAD_REF_FORCE_PUSHED_EVENT, COMMENT_DELETED_EVENT, CROSS_REFERENCED_EVENT, RENAMED_TITLE_EVENT, BASE_REF_CHANGED_EVENT, ASSIGNED_EVENT, UNASSIGNED_EVENT, MERGED_EVENT, CLOSED_EVENT, REOPENED_EVENT], first: 100)"`
+}
+
+// gqlReviewRequest carries the requested reviewer of a pending review
+// request. Team review requests are intentionally skipped: middleman only
+// tracks user review requests.
+type gqlReviewRequest struct {
+	RequestedReviewer struct {
+		Typename  string        `graphql:"__typename"`
+		User      gqlAssigneeID `graphql:"... on User"`
+		Mannequin gqlAssigneeID `graphql:"... on Mannequin"`
+	} `graphql:"requestedReviewer"`
+}
+
+func (r gqlReviewRequest) Login() string {
+	switch r.RequestedReviewer.Typename {
+	case "User":
+		return r.RequestedReviewer.User.Login
+	case "Mannequin":
+		return r.RequestedReviewer.Mannequin.Login
+	default:
+		return ""
+	}
 }
 
 type gqlComment struct {
@@ -364,6 +392,8 @@ func adaptPR(gql *gqlPR) *gh.PullRequest {
 		pr.ClosedAt = &t
 	}
 	pr.Labels = adaptLabels(gql.Labels.Nodes)
+	pr.Assignees = adaptAssignees(gql.Assignees.Nodes)
+	pr.RequestedReviewers = adaptRequestedReviewers(gql.ReviewRequests.Nodes)
 
 	if gql.HeadRepository != nil {
 		cloneURL := gql.HeadRepository.URL
@@ -404,6 +434,18 @@ func adaptIssue(gql *gqlIssue) *gh.Issue {
 	issue.Assignees = adaptAssignees(gql.Assignees.Nodes)
 
 	return issue
+}
+
+func adaptRequestedReviewers(nodes []gqlReviewRequest) []*gh.User {
+	out := make([]*gh.User, 0, len(nodes))
+	for _, n := range nodes {
+		login := n.Login()
+		if login == "" {
+			continue
+		}
+		out = append(out, &gh.User{Login: &login})
+	}
+	return out
 }
 
 func adaptAssignees(nodes []gqlAssigneeID) []*gh.User {

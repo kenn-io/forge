@@ -576,6 +576,38 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     return nextLabels;
   }
 
+  async function setIssueAssignees(
+    owner: string,
+    name: string,
+    number: number,
+    assignees: string[],
+  ): Promise<string[]> {
+    const ref = currentIssueDetailRef(owner, name, number);
+    const { data, error: requestError } = await apiClient.PUT(providerItemPath("issues", ref, "/assignees"), {
+      params: {
+        path: { ...providerRouteParams(ref), number },
+      },
+      body: { assignees },
+    });
+    if (requestError) {
+      const message = apiErrorMessage(requestError, "failed to update assignees");
+      detailError = message;
+      throw new Error(message);
+    }
+    const nextAssignees = data?.assignees ?? [];
+    if (isIssueDetailShowingRef(ref) && issueDetail) {
+      issueDetail = {
+        ...issueDetail,
+        issue: {
+          ...issueDetail.issue,
+          assignees: nextAssignees,
+        },
+      };
+    }
+    void refreshIssuesIfActive();
+    return nextAssignees;
+  }
+
   async function submitIssueComment(owner: string, name: string, number: number, body: string): Promise<void> {
     const ref = currentIssueDetailRef(owner, name, number);
 
@@ -967,6 +999,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     stopIssueDetailPolling,
     clearIssueDetail,
     setIssueLabels,
+    setIssueAssignees,
     submitIssueComment,
     editIssueComment,
     setLocalIssueBody,

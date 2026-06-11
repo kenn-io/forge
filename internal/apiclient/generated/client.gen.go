@@ -1047,11 +1047,25 @@ type IssueResponse struct {
 	Workspace          *WorkspaceRef   `json:"workspace,omitempty"`
 }
 
+// ItemAssigneesResponse defines model for ItemAssigneesResponse.
+type ItemAssigneesResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema    *string   `json:"$schema,omitempty"`
+	Assignees *[]string `json:"assignees"`
+}
+
 // ItemLabelsResponse defines model for ItemLabelsResponse.
 type ItemLabelsResponse struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema *string  `json:"$schema,omitempty"`
 	Labels *[]Label `json:"labels"`
+}
+
+// ItemReviewersResponse defines model for ItemReviewersResponse.
+type ItemReviewersResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema    *string   `json:"$schema,omitempty"`
+	Reviewers *[]string `json:"reviewers"`
 }
 
 // KataDaemonResponse defines model for KataDaemonResponse.
@@ -1203,7 +1217,9 @@ type MergeRequest struct {
 	Title              string                   `json:"Title"`
 	URL                string                   `json:"URL"`
 	UpdatedAt          time.Time                `json:"UpdatedAt"`
+	Assignees          *[]string                `json:"assignees,omitempty"`
 	Labels             *[]Label                 `json:"labels,omitempty"`
+	RequestedReviewers *[]string                `json:"requested_reviewers,omitempty"`
 }
 
 // MergeRequestKanbanStatus defines model for MergeRequest.KanbanStatus.
@@ -1289,6 +1305,7 @@ type MergeRequestResponse struct {
 	Title              string                           `json:"Title"`
 	URL                string                           `json:"URL"`
 	UpdatedAt          time.Time                        `json:"UpdatedAt"`
+	Assignees          *[]string                        `json:"assignees,omitempty"`
 	DetailFetchedAt    *string                          `json:"detail_fetched_at,omitempty"`
 	DetailLoaded       bool                             `json:"detail_loaded"`
 	Labels             *[]Label                         `json:"labels,omitempty"`
@@ -1296,6 +1313,7 @@ type MergeRequestResponse struct {
 	Repo               RepoRefResponse                  `json:"repo"`
 	RepoName           string                           `json:"repo_name"`
 	RepoOwner          string                           `json:"repo_owner"`
+	RequestedReviewers *[]string                        `json:"requested_reviewers,omitempty"`
 	Workspace          *WorkspaceRef                    `json:"workspace,omitempty"`
 	WorktreeLinks      *[]WorktreeLinkResponse          `json:"worktree_links"`
 }
@@ -1522,6 +1540,7 @@ type ProjectResponse struct {
 
 // ProviderCapabilitiesResponse defines model for ProviderCapabilitiesResponse.
 type ProviderCapabilitiesResponse struct {
+	AssigneeMutation       bool      `json:"assignee_mutation"`
 	CommentMutation        bool      `json:"comment_mutation"`
 	IssueMutation          bool      `json:"issue_mutation"`
 	LabelMutation          bool      `json:"label_mutation"`
@@ -1539,6 +1558,7 @@ type ProviderCapabilitiesResponse struct {
 	ReviewDraftMutation    bool      `json:"review_draft_mutation"`
 	ReviewMutation         bool      `json:"review_mutation"`
 	ReviewThreadResolution bool      `json:"review_thread_resolution"`
+	ReviewerMutation       bool      `json:"reviewer_mutation"`
 	StateMutation          bool      `json:"state_mutation"`
 	SupportedReviewActions *[]string `json:"supported_review_actions"`
 	ThreadReply            bool      `json:"thread_reply"`
@@ -1680,6 +1700,8 @@ type RepoOperations struct {
 	RemoveLabel        OperationAvailability `json:"remove_label"`
 	ReopenIssue        OperationAvailability `json:"reopen_issue"`
 	ReopenPr           OperationAvailability `json:"reopen_pr"`
+	SetAssignees       OperationAvailability `json:"set_assignees"`
+	SetReviewers       OperationAvailability `json:"set_reviewers"`
 	SubmitReview       OperationAvailability `json:"submit_review"`
 }
 
@@ -1870,6 +1892,13 @@ type SessionInfo struct {
 	WorkspaceId string     `json:"workspace_id"`
 }
 
+// SetAssigneesRequest defines model for SetAssigneesRequest.
+type SetAssigneesRequest struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema    *string   `json:"$schema,omitempty"`
+	Assignees *[]string `json:"assignees"`
+}
+
 // SetKanbanStateHostInputBody defines model for SetKanbanStateHostInputBody.
 type SetKanbanStateHostInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -1889,6 +1918,13 @@ type SetLabelsRequest struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema *string   `json:"$schema,omitempty"`
 	Labels *[]string `json:"labels"`
+}
+
+// SetReviewersRequest defines model for SetReviewersRequest.
+type SetReviewersRequest struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema    *string   `json:"$schema,omitempty"`
+	Reviewers *[]string `json:"reviewers"`
 }
 
 // SettingsResponse defines model for SettingsResponse.
@@ -2398,6 +2434,9 @@ type CreateIssueOnHostJSONRequestBody = CreateIssueHostInputBody
 // EditIssueContentOnHostJSONRequestBody defines body for EditIssueContentOnHost for application/json ContentType.
 type EditIssueContentOnHostJSONRequestBody = EditIssueContentHostInputBody
 
+// SetIssueAssigneesOnHostJSONRequestBody defines body for SetIssueAssigneesOnHost for application/json ContentType.
+type SetIssueAssigneesOnHostJSONRequestBody = SetAssigneesRequest
+
 // PostIssueCommentOnHostJSONRequestBody defines body for PostIssueCommentOnHost for application/json ContentType.
 type PostIssueCommentOnHostJSONRequestBody = PostIssueCommentHostInputBody
 
@@ -2418,6 +2457,9 @@ type EditPrContentOnHostJSONRequestBody = EditPRContentHostInputBody
 
 // ApprovePullOnHostJSONRequestBody defines body for ApprovePullOnHost for application/json ContentType.
 type ApprovePullOnHostJSONRequestBody = ApprovePRHostInputBody
+
+// SetPrAssigneesOnHostJSONRequestBody defines body for SetPrAssigneesOnHost for application/json ContentType.
+type SetPrAssigneesOnHostJSONRequestBody = SetAssigneesRequest
 
 // PostPrCommentOnHostJSONRequestBody defines body for PostPrCommentOnHost for application/json ContentType.
 type PostPrCommentOnHostJSONRequestBody = PostCommentHostInputBody
@@ -2449,6 +2491,9 @@ type EditPrReviewDraftCommentOnHostJSONRequestBody = EditDiffReviewDraftCommentH
 // PublishPrReviewDraftOnHostJSONRequestBody defines body for PublishPrReviewDraftOnHost for application/json ContentType.
 type PublishPrReviewDraftOnHostJSONRequestBody = PublishDiffReviewDraftHostInputBody
 
+// SetPrReviewersOnHostJSONRequestBody defines body for SetPrReviewersOnHost for application/json ContentType.
+type SetPrReviewersOnHostJSONRequestBody = SetReviewersRequest
+
 // SetKanbanStateOnHostJSONRequestBody defines body for SetKanbanStateOnHost for application/json ContentType.
 type SetKanbanStateOnHostJSONRequestBody = SetKanbanStateHostInputBody
 
@@ -2457,6 +2502,9 @@ type CreateIssueJSONRequestBody = CreateIssueInputBody
 
 // EditIssueContentJSONRequestBody defines body for EditIssueContent for application/json ContentType.
 type EditIssueContentJSONRequestBody = EditIssueContentInputBody
+
+// SetIssueAssigneesJSONRequestBody defines body for SetIssueAssignees for application/json ContentType.
+type SetIssueAssigneesJSONRequestBody = SetAssigneesRequest
 
 // PostIssueCommentJSONRequestBody defines body for PostIssueComment for application/json ContentType.
 type PostIssueCommentJSONRequestBody = PostIssueCommentInputBody
@@ -2491,6 +2539,9 @@ type EditPrContentJSONRequestBody = EditPRContentInputBody
 // ApprovePullJSONRequestBody defines body for ApprovePull for application/json ContentType.
 type ApprovePullJSONRequestBody = ApprovePRInputBody
 
+// SetPrAssigneesJSONRequestBody defines body for SetPrAssignees for application/json ContentType.
+type SetPrAssigneesJSONRequestBody = SetAssigneesRequest
+
 // PostPrCommentJSONRequestBody defines body for PostPrComment for application/json ContentType.
 type PostPrCommentJSONRequestBody = PostCommentInputBody
 
@@ -2520,6 +2571,9 @@ type EditPrReviewDraftCommentJSONRequestBody = EditDiffReviewDraftCommentInputBo
 
 // PublishPrReviewDraftJSONRequestBody defines body for PublishPrReviewDraft for application/json ContentType.
 type PublishPrReviewDraftJSONRequestBody = PublishDiffReviewDraftInputBody
+
+// SetPrReviewersJSONRequestBody defines body for SetPrReviewers for application/json ContentType.
+type SetPrReviewersJSONRequestBody = SetReviewersRequest
 
 // SetKanbanStateJSONRequestBody defines body for SetKanbanState for application/json ContentType.
 type SetKanbanStateJSONRequestBody = SetKanbanStateInputBody
@@ -2709,6 +2763,11 @@ type ClientInterface interface {
 
 	EditIssueContentOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body EditIssueContentOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// SetIssueAssigneesOnHostWithBody request with any body
+	SetIssueAssigneesOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	SetIssueAssigneesOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body SetIssueAssigneesOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// PostIssueCommentOnHostWithBody request with any body
 	PostIssueCommentOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -2755,6 +2814,11 @@ type ClientInterface interface {
 
 	// ApprovePullWorkflowsOnHost request
 	ApprovePullWorkflowsOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SetPrAssigneesOnHostWithBody request with any body
+	SetPrAssigneesOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	SetPrAssigneesOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body SetPrAssigneesOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// RefreshPullCiOnHost request
 	RefreshPullCiOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -2842,6 +2906,11 @@ type ClientInterface interface {
 	// UnresolvePrReviewThreadOnHost request
 	UnresolvePrReviewThreadOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, threadId string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// SetPrReviewersOnHostWithBody request with any body
+	SetPrReviewersOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	SetPrReviewersOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body SetPrReviewersOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetPullStackOnHost request
 	GetPullStackOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -2892,6 +2961,11 @@ type ClientInterface interface {
 	EditIssueContentWithBody(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	EditIssueContent(ctx context.Context, provider string, owner string, name string, number int64, body EditIssueContentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SetIssueAssigneesWithBody request with any body
+	SetIssueAssigneesWithBody(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	SetIssueAssignees(ctx context.Context, provider string, owner string, name string, number int64, body SetIssueAssigneesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// PostIssueCommentWithBody request with any body
 	PostIssueCommentWithBody(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -3002,6 +3076,11 @@ type ClientInterface interface {
 	// ApprovePullWorkflows request
 	ApprovePullWorkflows(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// SetPrAssigneesWithBody request with any body
+	SetPrAssigneesWithBody(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	SetPrAssignees(ctx context.Context, provider string, owner string, name string, number int64, body SetPrAssigneesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// RefreshPullCi request
 	RefreshPullCi(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -3087,6 +3166,11 @@ type ClientInterface interface {
 
 	// UnresolvePrReviewThread request
 	UnresolvePrReviewThread(ctx context.Context, provider string, owner string, name string, number int64, threadId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SetPrReviewersWithBody request with any body
+	SetPrReviewersWithBody(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	SetPrReviewers(ctx context.Context, provider string, owner string, name string, number int64, body SetPrReviewersJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetPullStack request
 	GetPullStack(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -3591,6 +3675,30 @@ func (c *Client) EditIssueContentOnHost(ctx context.Context, platformHost string
 	return c.Client.Do(req)
 }
 
+func (c *Client) SetIssueAssigneesOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetIssueAssigneesOnHostRequestWithBody(c.Server, platformHost, provider, owner, name, number, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SetIssueAssigneesOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body SetIssueAssigneesOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetIssueAssigneesOnHostRequest(c.Server, platformHost, provider, owner, name, number, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) PostIssueCommentOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewPostIssueCommentOnHostRequestWithBody(c.Server, platformHost, provider, owner, name, number, contentType, body)
 	if err != nil {
@@ -3797,6 +3905,30 @@ func (c *Client) ApprovePullOnHost(ctx context.Context, platformHost string, pro
 
 func (c *Client) ApprovePullWorkflowsOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewApprovePullWorkflowsOnHostRequest(c.Server, platformHost, provider, owner, name, number)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SetPrAssigneesOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetPrAssigneesOnHostRequestWithBody(c.Server, platformHost, provider, owner, name, number, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SetPrAssigneesOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body SetPrAssigneesOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetPrAssigneesOnHostRequest(c.Server, platformHost, provider, owner, name, number, body)
 	if err != nil {
 		return nil, err
 	}
@@ -4191,6 +4323,30 @@ func (c *Client) UnresolvePrReviewThreadOnHost(ctx context.Context, platformHost
 	return c.Client.Do(req)
 }
 
+func (c *Client) SetPrReviewersOnHostWithBody(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetPrReviewersOnHostRequestWithBody(c.Server, platformHost, provider, owner, name, number, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SetPrReviewersOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body SetPrReviewersOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetPrReviewersOnHostRequest(c.Server, platformHost, provider, owner, name, number, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) GetPullStackOnHost(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetPullStackOnHostRequest(c.Server, platformHost, provider, owner, name, number)
 	if err != nil {
@@ -4397,6 +4553,30 @@ func (c *Client) EditIssueContentWithBody(ctx context.Context, provider string, 
 
 func (c *Client) EditIssueContent(ctx context.Context, provider string, owner string, name string, number int64, body EditIssueContentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewEditIssueContentRequest(c.Server, provider, owner, name, number, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SetIssueAssigneesWithBody(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetIssueAssigneesRequestWithBody(c.Server, provider, owner, name, number, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SetIssueAssignees(ctx context.Context, provider string, owner string, name string, number int64, body SetIssueAssigneesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetIssueAssigneesRequest(c.Server, provider, owner, name, number, body)
 	if err != nil {
 		return nil, err
 	}
@@ -4887,6 +5067,30 @@ func (c *Client) ApprovePullWorkflows(ctx context.Context, provider string, owne
 	return c.Client.Do(req)
 }
 
+func (c *Client) SetPrAssigneesWithBody(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetPrAssigneesRequestWithBody(c.Server, provider, owner, name, number, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SetPrAssignees(ctx context.Context, provider string, owner string, name string, number int64, body SetPrAssigneesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetPrAssigneesRequest(c.Server, provider, owner, name, number, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) RefreshPullCi(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewRefreshPullCiRequest(c.Server, provider, owner, name, number)
 	if err != nil {
@@ -5261,6 +5465,30 @@ func (c *Client) ResolvePrReviewThread(ctx context.Context, provider string, own
 
 func (c *Client) UnresolvePrReviewThread(ctx context.Context, provider string, owner string, name string, number int64, threadId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewUnresolvePrReviewThreadRequest(c.Server, provider, owner, name, number, threadId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SetPrReviewersWithBody(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetPrReviewersRequestWithBody(c.Server, provider, owner, name, number, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SetPrReviewers(ctx context.Context, provider string, owner string, name string, number int64, body SetPrReviewersJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetPrReviewersRequest(c.Server, provider, owner, name, number, body)
 	if err != nil {
 		return nil, err
 	}
@@ -7064,6 +7292,81 @@ func NewEditIssueContentOnHostRequestWithBody(server string, platformHost string
 	return req, nil
 }
 
+// NewSetIssueAssigneesOnHostRequest calls the generic SetIssueAssigneesOnHost builder with application/json body
+func NewSetIssueAssigneesOnHostRequest(server string, platformHost string, provider string, owner string, name string, number int64, body SetIssueAssigneesOnHostJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewSetIssueAssigneesOnHostRequestWithBody(server, platformHost, provider, owner, name, number, "application/json", bodyReader)
+}
+
+// NewSetIssueAssigneesOnHostRequestWithBody generates requests for SetIssueAssigneesOnHost with any type of body
+func NewSetIssueAssigneesOnHostRequestWithBody(server string, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/issues/%s/%s/%s/%s/assignees", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("PUT", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewPostIssueCommentOnHostRequest calls the generic PostIssueCommentOnHost builder with application/json body
 func NewPostIssueCommentOnHostRequest(server string, platformHost string, provider string, owner string, name string, number int64, body PostIssueCommentOnHostJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -7840,6 +8143,81 @@ func NewApprovePullWorkflowsOnHostRequest(server string, platformHost string, pr
 	if err != nil {
 		return nil, err
 	}
+
+	return req, nil
+}
+
+// NewSetPrAssigneesOnHostRequest calls the generic SetPrAssigneesOnHost builder with application/json body
+func NewSetPrAssigneesOnHostRequest(server string, platformHost string, provider string, owner string, name string, number int64, body SetPrAssigneesOnHostJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewSetPrAssigneesOnHostRequestWithBody(server, platformHost, provider, owner, name, number, "application/json", bodyReader)
+}
+
+// NewSetPrAssigneesOnHostRequestWithBody generates requests for SetPrAssigneesOnHost with any type of body
+func NewSetPrAssigneesOnHostRequestWithBody(server string, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/pulls/%s/%s/%s/%s/assignees", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("PUT", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
@@ -9543,6 +9921,81 @@ func NewUnresolvePrReviewThreadOnHostRequest(server string, platformHost string,
 	return req, nil
 }
 
+// NewSetPrReviewersOnHostRequest calls the generic SetPrReviewersOnHost builder with application/json body
+func NewSetPrReviewersOnHostRequest(server string, platformHost string, provider string, owner string, name string, number int64, body SetPrReviewersOnHostJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewSetPrReviewersOnHostRequestWithBody(server, platformHost, provider, owner, name, number, "application/json", bodyReader)
+}
+
+// NewSetPrReviewersOnHostRequestWithBody generates requests for SetPrReviewersOnHost with any type of body
+func NewSetPrReviewersOnHostRequestWithBody(server string, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "platform_host", platformHost, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam4 string
+
+	pathParam4, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/host/%s/pulls/%s/%s/%s/%s/reviewers", pathParam0, pathParam1, pathParam2, pathParam3, pathParam4)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("PUT", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewGetPullStackOnHostRequest generates requests for GetPullStackOnHost
 func NewGetPullStackOnHostRequest(server string, platformHost string, provider string, owner string, name string, number int64) (*http.Request, error) {
 	var err error
@@ -10621,6 +11074,74 @@ func NewEditIssueContentRequestWithBody(server string, provider string, owner st
 	}
 
 	req, err := http.NewRequest("PATCH", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewSetIssueAssigneesRequest calls the generic SetIssueAssignees builder with application/json body
+func NewSetIssueAssigneesRequest(server string, provider string, owner string, name string, number int64, body SetIssueAssigneesJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewSetIssueAssigneesRequestWithBody(server, provider, owner, name, number, "application/json", bodyReader)
+}
+
+// NewSetIssueAssigneesRequestWithBody generates requests for SetIssueAssignees with any type of body
+func NewSetIssueAssigneesRequestWithBody(server string, provider string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/issues/%s/%s/%s/%s/assignees", pathParam0, pathParam1, pathParam2, pathParam3)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("PUT", queryURL.String(), body)
 	if err != nil {
 		return nil, err
 	}
@@ -12293,6 +12814,74 @@ func NewApprovePullWorkflowsRequest(server string, provider string, owner string
 	return req, nil
 }
 
+// NewSetPrAssigneesRequest calls the generic SetPrAssignees builder with application/json body
+func NewSetPrAssigneesRequest(server string, provider string, owner string, name string, number int64, body SetPrAssigneesJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewSetPrAssigneesRequestWithBody(server, provider, owner, name, number, "application/json", bodyReader)
+}
+
+// NewSetPrAssigneesRequestWithBody generates requests for SetPrAssignees with any type of body
+func NewSetPrAssigneesRequestWithBody(server string, provider string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/pulls/%s/%s/%s/%s/assignees", pathParam0, pathParam1, pathParam2, pathParam3)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("PUT", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewRefreshPullCiRequest generates requests for RefreshPullCi
 func NewRefreshPullCiRequest(server string, provider string, owner string, name string, number int64) (*http.Request, error) {
 	var err error
@@ -13834,6 +14423,74 @@ func NewUnresolvePrReviewThreadRequest(server string, provider string, owner str
 	if err != nil {
 		return nil, err
 	}
+
+	return req, nil
+}
+
+// NewSetPrReviewersRequest calls the generic SetPrReviewers builder with application/json body
+func NewSetPrReviewersRequest(server string, provider string, owner string, name string, number int64, body SetPrReviewersJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewSetPrReviewersRequestWithBody(server, provider, owner, name, number, "application/json", bodyReader)
+}
+
+// NewSetPrReviewersRequestWithBody generates requests for SetPrReviewers with any type of body
+func NewSetPrReviewersRequestWithBody(server string, provider string, owner string, name string, number int64, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider", provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam3 string
+
+	pathParam3, err = runtime.StyleParamWithOptions("simple", false, "number", number, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/pulls/%s/%s/%s/%s/reviewers", pathParam0, pathParam1, pathParam2, pathParam3)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("PUT", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
@@ -15899,6 +16556,11 @@ type ClientWithResponsesInterface interface {
 
 	EditIssueContentOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body EditIssueContentOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*EditIssueContentOnHostResponse, error)
 
+	// SetIssueAssigneesOnHostWithBodyWithResponse request with any body
+	SetIssueAssigneesOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetIssueAssigneesOnHostResponse, error)
+
+	SetIssueAssigneesOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body SetIssueAssigneesOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*SetIssueAssigneesOnHostResponse, error)
+
 	// PostIssueCommentOnHostWithBodyWithResponse request with any body
 	PostIssueCommentOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostIssueCommentOnHostResponse, error)
 
@@ -15945,6 +16607,11 @@ type ClientWithResponsesInterface interface {
 
 	// ApprovePullWorkflowsOnHostWithResponse request
 	ApprovePullWorkflowsOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*ApprovePullWorkflowsOnHostResponse, error)
+
+	// SetPrAssigneesOnHostWithBodyWithResponse request with any body
+	SetPrAssigneesOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetPrAssigneesOnHostResponse, error)
+
+	SetPrAssigneesOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body SetPrAssigneesOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*SetPrAssigneesOnHostResponse, error)
 
 	// RefreshPullCiOnHostWithResponse request
 	RefreshPullCiOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*RefreshPullCiOnHostResponse, error)
@@ -16032,6 +16699,11 @@ type ClientWithResponsesInterface interface {
 	// UnresolvePrReviewThreadOnHostWithResponse request
 	UnresolvePrReviewThreadOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, threadId string, reqEditors ...RequestEditorFn) (*UnresolvePrReviewThreadOnHostResponse, error)
 
+	// SetPrReviewersOnHostWithBodyWithResponse request with any body
+	SetPrReviewersOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetPrReviewersOnHostResponse, error)
+
+	SetPrReviewersOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body SetPrReviewersOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*SetPrReviewersOnHostResponse, error)
+
 	// GetPullStackOnHostWithResponse request
 	GetPullStackOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetPullStackOnHostResponse, error)
 
@@ -16082,6 +16754,11 @@ type ClientWithResponsesInterface interface {
 	EditIssueContentWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*EditIssueContentResponse, error)
 
 	EditIssueContentWithResponse(ctx context.Context, provider string, owner string, name string, number int64, body EditIssueContentJSONRequestBody, reqEditors ...RequestEditorFn) (*EditIssueContentResponse, error)
+
+	// SetIssueAssigneesWithBodyWithResponse request with any body
+	SetIssueAssigneesWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetIssueAssigneesResponse, error)
+
+	SetIssueAssigneesWithResponse(ctx context.Context, provider string, owner string, name string, number int64, body SetIssueAssigneesJSONRequestBody, reqEditors ...RequestEditorFn) (*SetIssueAssigneesResponse, error)
 
 	// PostIssueCommentWithBodyWithResponse request with any body
 	PostIssueCommentWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostIssueCommentResponse, error)
@@ -16192,6 +16869,11 @@ type ClientWithResponsesInterface interface {
 	// ApprovePullWorkflowsWithResponse request
 	ApprovePullWorkflowsWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*ApprovePullWorkflowsResponse, error)
 
+	// SetPrAssigneesWithBodyWithResponse request with any body
+	SetPrAssigneesWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetPrAssigneesResponse, error)
+
+	SetPrAssigneesWithResponse(ctx context.Context, provider string, owner string, name string, number int64, body SetPrAssigneesJSONRequestBody, reqEditors ...RequestEditorFn) (*SetPrAssigneesResponse, error)
+
 	// RefreshPullCiWithResponse request
 	RefreshPullCiWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*RefreshPullCiResponse, error)
 
@@ -16277,6 +16959,11 @@ type ClientWithResponsesInterface interface {
 
 	// UnresolvePrReviewThreadWithResponse request
 	UnresolvePrReviewThreadWithResponse(ctx context.Context, provider string, owner string, name string, number int64, threadId string, reqEditors ...RequestEditorFn) (*UnresolvePrReviewThreadResponse, error)
+
+	// SetPrReviewersWithBodyWithResponse request with any body
+	SetPrReviewersWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetPrReviewersResponse, error)
+
+	SetPrReviewersWithResponse(ctx context.Context, provider string, owner string, name string, number int64, body SetPrReviewersJSONRequestBody, reqEditors ...RequestEditorFn) (*SetPrReviewersResponse, error)
 
 	// GetPullStackWithResponse request
 	GetPullStackWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetPullStackResponse, error)
@@ -16901,6 +17588,29 @@ func (r EditIssueContentOnHostResponse) StatusCode() int {
 	return 0
 }
 
+type SetIssueAssigneesOnHostResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *ItemAssigneesResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r SetIssueAssigneesOnHostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SetIssueAssigneesOnHostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type PostIssueCommentOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
@@ -17147,6 +17857,29 @@ func (r ApprovePullWorkflowsOnHostResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r ApprovePullWorkflowsOnHostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type SetPrAssigneesOnHostResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *ItemAssigneesResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r SetPrAssigneesOnHostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SetPrAssigneesOnHostResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -17654,6 +18387,29 @@ func (r UnresolvePrReviewThreadOnHostResponse) StatusCode() int {
 	return 0
 }
 
+type SetPrReviewersOnHostResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *ItemReviewersResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r SetPrReviewersOnHostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SetPrReviewersOnHostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type GetPullStackOnHostResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
@@ -17990,6 +18746,29 @@ func (r EditIssueContentResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r EditIssueContentResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type SetIssueAssigneesResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *ItemAssigneesResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r SetIssueAssigneesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SetIssueAssigneesResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -18660,6 +19439,29 @@ func (r ApprovePullWorkflowsResponse) StatusCode() int {
 	return 0
 }
 
+type SetPrAssigneesResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *ItemAssigneesResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r SetPrAssigneesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SetPrAssigneesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type RefreshPullCiResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
@@ -19155,6 +19957,29 @@ func (r UnresolvePrReviewThreadResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r UnresolvePrReviewThreadResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type SetPrReviewersResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *ItemReviewersResponse
+	ApplicationproblemJSONDefault *ProblemError
+}
+
+// Status returns HTTPResponse.Status
+func (r SetPrReviewersResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SetPrReviewersResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -20326,6 +21151,23 @@ func (c *ClientWithResponses) EditIssueContentOnHostWithResponse(ctx context.Con
 	return ParseEditIssueContentOnHostResponse(rsp)
 }
 
+// SetIssueAssigneesOnHostWithBodyWithResponse request with arbitrary body returning *SetIssueAssigneesOnHostResponse
+func (c *ClientWithResponses) SetIssueAssigneesOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetIssueAssigneesOnHostResponse, error) {
+	rsp, err := c.SetIssueAssigneesOnHostWithBody(ctx, platformHost, provider, owner, name, number, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetIssueAssigneesOnHostResponse(rsp)
+}
+
+func (c *ClientWithResponses) SetIssueAssigneesOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body SetIssueAssigneesOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*SetIssueAssigneesOnHostResponse, error) {
+	rsp, err := c.SetIssueAssigneesOnHost(ctx, platformHost, provider, owner, name, number, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetIssueAssigneesOnHostResponse(rsp)
+}
+
 // PostIssueCommentOnHostWithBodyWithResponse request with arbitrary body returning *PostIssueCommentOnHostResponse
 func (c *ClientWithResponses) PostIssueCommentOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostIssueCommentOnHostResponse, error) {
 	rsp, err := c.PostIssueCommentOnHostWithBody(ctx, platformHost, provider, owner, name, number, contentType, body, reqEditors...)
@@ -20479,6 +21321,23 @@ func (c *ClientWithResponses) ApprovePullWorkflowsOnHostWithResponse(ctx context
 		return nil, err
 	}
 	return ParseApprovePullWorkflowsOnHostResponse(rsp)
+}
+
+// SetPrAssigneesOnHostWithBodyWithResponse request with arbitrary body returning *SetPrAssigneesOnHostResponse
+func (c *ClientWithResponses) SetPrAssigneesOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetPrAssigneesOnHostResponse, error) {
+	rsp, err := c.SetPrAssigneesOnHostWithBody(ctx, platformHost, provider, owner, name, number, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetPrAssigneesOnHostResponse(rsp)
+}
+
+func (c *ClientWithResponses) SetPrAssigneesOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body SetPrAssigneesOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*SetPrAssigneesOnHostResponse, error) {
+	rsp, err := c.SetPrAssigneesOnHost(ctx, platformHost, provider, owner, name, number, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetPrAssigneesOnHostResponse(rsp)
 }
 
 // RefreshPullCiOnHostWithResponse request returning *RefreshPullCiOnHostResponse
@@ -20759,6 +21618,23 @@ func (c *ClientWithResponses) UnresolvePrReviewThreadOnHostWithResponse(ctx cont
 	return ParseUnresolvePrReviewThreadOnHostResponse(rsp)
 }
 
+// SetPrReviewersOnHostWithBodyWithResponse request with arbitrary body returning *SetPrReviewersOnHostResponse
+func (c *ClientWithResponses) SetPrReviewersOnHostWithBodyWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetPrReviewersOnHostResponse, error) {
+	rsp, err := c.SetPrReviewersOnHostWithBody(ctx, platformHost, provider, owner, name, number, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetPrReviewersOnHostResponse(rsp)
+}
+
+func (c *ClientWithResponses) SetPrReviewersOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, body SetPrReviewersOnHostJSONRequestBody, reqEditors ...RequestEditorFn) (*SetPrReviewersOnHostResponse, error) {
+	rsp, err := c.SetPrReviewersOnHost(ctx, platformHost, provider, owner, name, number, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetPrReviewersOnHostResponse(rsp)
+}
+
 // GetPullStackOnHostWithResponse request returning *GetPullStackOnHostResponse
 func (c *ClientWithResponses) GetPullStackOnHostWithResponse(ctx context.Context, platformHost string, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*GetPullStackOnHostResponse, error) {
 	rsp, err := c.GetPullStackOnHost(ctx, platformHost, provider, owner, name, number, reqEditors...)
@@ -20916,6 +21792,23 @@ func (c *ClientWithResponses) EditIssueContentWithResponse(ctx context.Context, 
 		return nil, err
 	}
 	return ParseEditIssueContentResponse(rsp)
+}
+
+// SetIssueAssigneesWithBodyWithResponse request with arbitrary body returning *SetIssueAssigneesResponse
+func (c *ClientWithResponses) SetIssueAssigneesWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetIssueAssigneesResponse, error) {
+	rsp, err := c.SetIssueAssigneesWithBody(ctx, provider, owner, name, number, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetIssueAssigneesResponse(rsp)
+}
+
+func (c *ClientWithResponses) SetIssueAssigneesWithResponse(ctx context.Context, provider string, owner string, name string, number int64, body SetIssueAssigneesJSONRequestBody, reqEditors ...RequestEditorFn) (*SetIssueAssigneesResponse, error) {
+	rsp, err := c.SetIssueAssignees(ctx, provider, owner, name, number, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetIssueAssigneesResponse(rsp)
 }
 
 // PostIssueCommentWithBodyWithResponse request with arbitrary body returning *PostIssueCommentResponse
@@ -21267,6 +22160,23 @@ func (c *ClientWithResponses) ApprovePullWorkflowsWithResponse(ctx context.Conte
 	return ParseApprovePullWorkflowsResponse(rsp)
 }
 
+// SetPrAssigneesWithBodyWithResponse request with arbitrary body returning *SetPrAssigneesResponse
+func (c *ClientWithResponses) SetPrAssigneesWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetPrAssigneesResponse, error) {
+	rsp, err := c.SetPrAssigneesWithBody(ctx, provider, owner, name, number, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetPrAssigneesResponse(rsp)
+}
+
+func (c *ClientWithResponses) SetPrAssigneesWithResponse(ctx context.Context, provider string, owner string, name string, number int64, body SetPrAssigneesJSONRequestBody, reqEditors ...RequestEditorFn) (*SetPrAssigneesResponse, error) {
+	rsp, err := c.SetPrAssignees(ctx, provider, owner, name, number, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetPrAssigneesResponse(rsp)
+}
+
 // RefreshPullCiWithResponse request returning *RefreshPullCiResponse
 func (c *ClientWithResponses) RefreshPullCiWithResponse(ctx context.Context, provider string, owner string, name string, number int64, reqEditors ...RequestEditorFn) (*RefreshPullCiResponse, error) {
 	rsp, err := c.RefreshPullCi(ctx, provider, owner, name, number, reqEditors...)
@@ -21543,6 +22453,23 @@ func (c *ClientWithResponses) UnresolvePrReviewThreadWithResponse(ctx context.Co
 		return nil, err
 	}
 	return ParseUnresolvePrReviewThreadResponse(rsp)
+}
+
+// SetPrReviewersWithBodyWithResponse request with arbitrary body returning *SetPrReviewersResponse
+func (c *ClientWithResponses) SetPrReviewersWithBodyWithResponse(ctx context.Context, provider string, owner string, name string, number int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetPrReviewersResponse, error) {
+	rsp, err := c.SetPrReviewersWithBody(ctx, provider, owner, name, number, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetPrReviewersResponse(rsp)
+}
+
+func (c *ClientWithResponses) SetPrReviewersWithResponse(ctx context.Context, provider string, owner string, name string, number int64, body SetPrReviewersJSONRequestBody, reqEditors ...RequestEditorFn) (*SetPrReviewersResponse, error) {
+	rsp, err := c.SetPrReviewers(ctx, provider, owner, name, number, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetPrReviewersResponse(rsp)
 }
 
 // GetPullStackWithResponse request returning *GetPullStackResponse
@@ -22665,6 +23592,39 @@ func ParseEditIssueContentOnHostResponse(rsp *http.Response) (*EditIssueContentO
 	return response, nil
 }
 
+// ParseSetIssueAssigneesOnHostResponse parses an HTTP response from a SetIssueAssigneesOnHostWithResponse call
+func ParseSetIssueAssigneesOnHostResponse(rsp *http.Response) (*SetIssueAssigneesOnHostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SetIssueAssigneesOnHostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ItemAssigneesResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParsePostIssueCommentOnHostResponse parses an HTTP response from a PostIssueCommentOnHostWithResponse call
 func ParsePostIssueCommentOnHostResponse(rsp *http.Response) (*PostIssueCommentOnHostResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -23004,6 +23964,39 @@ func ParseApprovePullWorkflowsOnHostResponse(rsp *http.Response) (*ApprovePullWo
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest ActionStatusBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseSetPrAssigneesOnHostResponse parses an HTTP response from a SetPrAssigneesOnHostWithResponse call
+func ParseSetPrAssigneesOnHostResponse(rsp *http.Response) (*SetPrAssigneesOnHostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SetPrAssigneesOnHostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ItemAssigneesResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -23712,6 +24705,39 @@ func ParseUnresolvePrReviewThreadOnHostResponse(rsp *http.Response) (*UnresolveP
 	return response, nil
 }
 
+// ParseSetPrReviewersOnHostResponse parses an HTTP response from a SetPrReviewersOnHostWithResponse call
+func ParseSetPrReviewersOnHostResponse(rsp *http.Response) (*SetPrReviewersOnHostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SetPrReviewersOnHostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ItemReviewersResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseGetPullStackOnHostResponse parses an HTTP response from a GetPullStackOnHostWithResponse call
 func ParseGetPullStackOnHostResponse(rsp *http.Response) (*GetPullStackOnHostResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -24169,6 +25195,39 @@ func ParseEditIssueContentResponse(rsp *http.Response) (*EditIssueContentRespons
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest IssueDetailResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseSetIssueAssigneesResponse parses an HTTP response from a SetIssueAssigneesWithResponse call
+func ParseSetIssueAssigneesResponse(rsp *http.Response) (*SetIssueAssigneesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SetIssueAssigneesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ItemAssigneesResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -25122,6 +26181,39 @@ func ParseApprovePullWorkflowsResponse(rsp *http.Response) (*ApprovePullWorkflow
 	return response, nil
 }
 
+// ParseSetPrAssigneesResponse parses an HTTP response from a SetPrAssigneesWithResponse call
+func ParseSetPrAssigneesResponse(rsp *http.Response) (*SetPrAssigneesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SetPrAssigneesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ItemAssigneesResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseRefreshPullCiResponse parses an HTTP response from a RefreshPullCiWithResponse call
 func ParseRefreshPullCiResponse(rsp *http.Response) (*RefreshPullCiResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -25801,6 +26893,39 @@ func ParseUnresolvePrReviewThreadResponse(rsp *http.Response) (*UnresolvePrRevie
 	}
 
 	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ProblemError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseSetPrReviewersResponse parses an HTTP response from a SetPrReviewersWithResponse call
+func ParseSetPrReviewersResponse(rsp *http.Response) (*SetPrReviewersResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SetPrReviewersResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ItemReviewersResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest ProblemError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {

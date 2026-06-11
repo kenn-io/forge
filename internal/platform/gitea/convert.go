@@ -63,6 +63,11 @@ func convertPullRequest(pr *giteasdk.PullRequest, mergeable *bool) gitealike.Pul
 		Merged:    pr.HasMerged,
 		MergedAt:  timePtrValue(pr.Merged),
 		Closed:    timePtrValue(pr.Closed),
+		// convertUsers never returns nil, so both fields read as
+		// provider-confirmed sets: the Gitea API always serializes
+		// assignees and requested reviewers on pull requests.
+		Assignees:          convertUsers(pr.Assignees),
+		RequestedReviewers: convertUsers(pr.RequestedReviewers),
 	}
 }
 

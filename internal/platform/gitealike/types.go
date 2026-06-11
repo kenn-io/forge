@@ -51,6 +51,15 @@ type MutationTransport interface {
 	CreatePullReview(ctx context.Context, ref platform.RepoRef, number int, body string) (ReviewDTO, error)
 }
 
+// ReviewRequestTransport is the optional transport surface for adding
+// and removing pull request review requests. The endpoints return no
+// useful body, so callers re-read the pull request (or its reviews) for
+// the updated requested-reviewer set.
+type ReviewRequestTransport interface {
+	CreateReviewRequests(ctx context.Context, ref platform.RepoRef, number int, reviewers []string) error
+	DeleteReviewRequests(ctx context.Context, ref platform.RepoRef, number int, reviewers []string) error
+}
+
 type ActionsTransport interface {
 	ListActionRuns(ctx context.Context, ref platform.RepoRef, sha string, opts PageOptions) ([]ActionRunDTO, Page, error)
 }
@@ -124,6 +133,13 @@ type PullRequestDTO struct {
 	Merged    bool
 	MergedAt  *time.Time
 	Closed    *time.Time
+	// Assignees and RequestedReviewers are nil when the transport's SDK
+	// does not expose the field (unknown) and an empty non-nil slice
+	// when the provider reported none. The Forgejo SDK has no
+	// requested-reviewers field on pull requests, so Forgejo transports
+	// leave RequestedReviewers nil.
+	Assignees          []UserDTO
+	RequestedReviewers []UserDTO
 }
 
 type IssueDTO struct {
@@ -210,12 +226,16 @@ type IssueMutationOptions struct {
 	Title *string
 	Body  *string
 	State *string
+	// Assignees replaces the full assignee username set when non-nil.
+	Assignees *[]string
 }
 
 type PullRequestMutationOptions struct {
 	Title *string
 	Body  *string
 	State *string
+	// Assignees replaces the full assignee username set when non-nil.
+	Assignees *[]string
 }
 
 type MergeOptions struct {

@@ -51,6 +51,8 @@
     thread_reply: false,
     thread_resolve: false,
     label_mutation: true,
+    assignee_mutation: false,
+    reviewer_mutation: false,
     state_mutation: true,
     merge_mutation: true,
     review_mutation: true,

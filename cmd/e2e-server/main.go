@@ -373,6 +373,50 @@ func seedFixtureClientLabels(fc *testutil.FixtureClient) {
 	}
 }
 
+// seedAssigneeReviewerFixture gives acme/widgets#1 a starting assignee
+// and requested reviewer in both SQLite and the fixture provider so the
+// Playwright suite can exercise the assignee/reviewer pickers.
+func seedAssigneeReviewerFixture(
+	ctx context.Context,
+	database *db.DB,
+	fc *testutil.FixtureClient,
+) error {
+	repo, err := database.GetRepoByOwnerName(ctx, "acme", "widgets")
+	if err != nil {
+		return fmt.Errorf("get widgets repo: %w", err)
+	}
+	if repo == nil {
+		return nil
+	}
+	pr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 1)
+	if err != nil {
+		return fmt.Errorf("get seeded pr: %w", err)
+	}
+	if pr != nil {
+		if err := database.UpdateMergeRequestAssignees(ctx, repo.ID, pr.ID, []string{"alice"}); err != nil {
+			return fmt.Errorf("seed pr assignees: %w", err)
+		}
+		if err := database.UpdateMergeRequestReviewers(ctx, repo.ID, pr.ID, []string{"carol"}); err != nil {
+			return fmt.Errorf("seed pr reviewers: %w", err)
+		}
+	}
+	if fc == nil {
+		return nil
+	}
+	for _, prs := range [][]*gh.PullRequest{
+		fc.OpenPRs["acme/widgets"],
+		fc.PRs["acme/widgets"],
+	} {
+		for _, fixturePR := range prs {
+			if fixturePR.GetNumber() == 1 {
+				fixturePR.Assignees = []*gh.User{{Login: new("alice")}}
+				fixturePR.RequestedReviewers = []*gh.User{{Login: new("carol")}}
+			}
+		}
+	}
+	return nil
+}
+
 func seedGitLabReadOnlyCapabilityFixture(
 	ctx context.Context,
 	database *db.DB,
@@ -809,6 +853,9 @@ func buildAppState(
 	fc := result.FixtureClient()
 	if err := seedLabelEditingFixture(ctx, database, fc); err != nil {
 		return nil, fmt.Errorf("seed label editing fixture: %w", err)
+	}
+	if err := seedAssigneeReviewerFixture(ctx, database, fc); err != nil {
+		return nil, fmt.Errorf("seed assignee reviewer fixture: %w", err)
 	}
 	fc.ListRepositoriesByOwnerFn = func(
 		ctx context.Context, owner string,

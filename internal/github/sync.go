@@ -571,6 +571,15 @@ type githubLabelClient interface {
 	ReplaceIssueLabels(ctx context.Context, owner, repo string, number int, names []string) ([]*gh.Label, error)
 }
 
+type githubAssigneeClient interface {
+	ReplaceIssueAssignees(ctx context.Context, owner, repo string, number int, usernames []string) (*gh.Issue, error)
+}
+
+type githubReviewerClient interface {
+	RequestPullRequestReviewers(ctx context.Context, owner, repo string, number int, usernames []string) (*gh.PullRequest, error)
+	RemovePullRequestReviewers(ctx context.Context, owner, repo string, number int, usernames []string) error
+}
+
 func registryFromGitHubClients(clients map[string]Client) *platform.Registry {
 	registry, err := platform.NewRegistry()
 	if err != nil {
@@ -612,6 +621,8 @@ func (p gitHubClientProvider) Host() string {
 
 func (p gitHubClientProvider) Capabilities() platform.Capabilities {
 	_, labels := p.client.(githubLabelClient)
+	_, assignees := p.client.(githubAssigneeClient)
+	_, reviewers := p.client.(githubReviewerClient)
 	return platform.Capabilities{
 		ReadRepositories:      true,
 		ReadMergeRequests:     true,
@@ -628,6 +639,8 @@ func (p gitHubClientProvider) Capabilities() platform.Capabilities {
 		ReadyForReview:        true,
 		IssueMutation:         true,
 		LabelMutation:         labels,
+		AssigneeMutation:      assignees,
+		ReviewerMutation:      reviewers,
 		ThreadReply:           true,
 		ReviewDraftMutation:   true,
 		ReadReviewThreads:     true,
@@ -1176,6 +1189,105 @@ func (p gitHubClientProvider) setIssueLikeLabels(
 		return nil, err
 	}
 	return platformgithub.NormalizeLabels(ref, labels), nil
+}
+
+func (p gitHubClientProvider) SetMergeRequestAssignees(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	usernames []string,
+) ([]string, error) {
+	return p.setIssueLikeAssignees(ctx, ref, number, usernames)
+}
+
+func (p gitHubClientProvider) SetIssueAssignees(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	usernames []string,
+) ([]string, error) {
+	return p.setIssueLikeAssignees(ctx, ref, number, usernames)
+}
+
+func (p gitHubClientProvider) setIssueLikeAssignees(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	usernames []string,
+) ([]string, error) {
+	client, ok := p.client.(githubAssigneeClient)
+	if !ok {
+		return nil, platform.UnsupportedCapability(platform.KindGitHub, p.host, "assignee_mutation")
+	}
+	issue, err := client.ReplaceIssueAssignees(ctx, ref.Owner, ref.Name, number, usernames)
+	if err != nil {
+		return nil, err
+	}
+	if issue == nil {
+		return nil, fmt.Errorf("provider returned no issue")
+	}
+	assignees := make([]string, 0, len(issue.Assignees))
+	for _, user := range issue.Assignees {
+		if user.GetLogin() != "" {
+			assignees = append(assignees, user.GetLogin())
+		}
+	}
+	return assignees, nil
+}
+
+func (p gitHubClientProvider) RequestMergeRequestReviewers(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	usernames []string,
+) ([]string, error) {
+	client, ok := p.client.(githubReviewerClient)
+	if !ok {
+		return nil, platform.UnsupportedCapability(platform.KindGitHub, p.host, "reviewer_mutation")
+	}
+	pr, err := client.RequestPullRequestReviewers(ctx, ref.Owner, ref.Name, number, usernames)
+	if err != nil {
+		return nil, err
+	}
+	if pr == nil {
+		return nil, fmt.Errorf("provider returned no pull request")
+	}
+	return githubRequestedReviewerLogins(pr), nil
+}
+
+func (p gitHubClientProvider) RemoveMergeRequestReviewers(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	usernames []string,
+) ([]string, error) {
+	client, ok := p.client.(githubReviewerClient)
+	if !ok {
+		return nil, platform.UnsupportedCapability(platform.KindGitHub, p.host, "reviewer_mutation")
+	}
+	if err := client.RemovePullRequestReviewers(ctx, ref.Owner, ref.Name, number, usernames); err != nil {
+		return nil, err
+	}
+	// The removal endpoint has no useful body; re-read the pull request
+	// for the authoritative requested-reviewer set.
+	pr, err := p.client.GetPullRequest(ctx, ref.Owner, ref.Name, number)
+	if err != nil {
+		return nil, err
+	}
+	if pr == nil {
+		return nil, fmt.Errorf("provider returned no pull request")
+	}
+	return githubRequestedReviewerLogins(pr), nil
+}
+
+func githubRequestedReviewerLogins(pr *gh.PullRequest) []string {
+	logins := make([]string, 0, len(pr.RequestedReviewers))
+	for _, user := range pr.RequestedReviewers {
+		if user.GetLogin() != "" {
+			logins = append(logins, user.GetLogin())
+		}
+	}
+	return logins
 }
 
 func (p gitHubClientProvider) ApproveMergeRequest(
@@ -1823,6 +1935,20 @@ func (s *Syncer) ReviewMutator(
 	host string,
 ) (platform.ReviewMutator, error) {
 	return s.clients.ReviewMutator(kind, canonicalRepoHost(host))
+}
+
+func (s *Syncer) AssigneeMutator(
+	kind platform.Kind,
+	host string,
+) (platform.AssigneeMutator, error) {
+	return s.clients.AssigneeMutator(kind, canonicalRepoHost(host))
+}
+
+func (s *Syncer) ReviewerMutator(
+	kind platform.Kind,
+	host string,
+) (platform.ReviewerMutator, error) {
+	return s.clients.ReviewerMutator(kind, canonicalRepoHost(host))
 }
 
 func (s *Syncer) DiffReviewDraftMutator(

@@ -192,6 +192,33 @@ type setIssueLabelsHostInput struct {
 	Body         setLabelsRequest
 }
 
+type setPullAssigneesHostInput struct {
+	Provider     string `path:"provider"`
+	PlatformHost string `path:"platform_host"`
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
+	Body         setAssigneesRequest
+}
+
+type setIssueAssigneesHostInput struct {
+	Provider     string `path:"provider"`
+	PlatformHost string `path:"platform_host"`
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
+	Body         setAssigneesRequest
+}
+
+type setPullReviewersHostInput struct {
+	Provider     string `path:"provider"`
+	PlatformHost string `path:"platform_host"`
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
+	Body         setReviewersRequest
+}
+
 type commentAutocompleteHostInput struct {
 	Provider     string `path:"provider"`
 	PlatformHost string `path:"platform_host"`
@@ -415,6 +442,42 @@ func (s *Server) setPullLabelsOnHost(ctx context.Context, input *setPullLabelsHo
 		Body:         input.Body,
 	}
 	return s.setPullLabels(ctx, &next)
+}
+
+func (s *Server) setPullAssigneesOnHost(ctx context.Context, input *setPullAssigneesHostInput) (*setAssigneesOutput, error) {
+	next := setPullAssigneesInput{
+		Provider:     input.Provider,
+		PlatformHost: input.PlatformHost,
+		Owner:        input.Owner,
+		Name:         input.Name,
+		Number:       input.Number,
+		Body:         input.Body,
+	}
+	return s.setPullAssignees(ctx, &next)
+}
+
+func (s *Server) setIssueAssigneesOnHost(ctx context.Context, input *setIssueAssigneesHostInput) (*setAssigneesOutput, error) {
+	next := setIssueAssigneesInput{
+		Provider:     input.Provider,
+		PlatformHost: input.PlatformHost,
+		Owner:        input.Owner,
+		Name:         input.Name,
+		Number:       input.Number,
+		Body:         input.Body,
+	}
+	return s.setIssueAssignees(ctx, &next)
+}
+
+func (s *Server) setPullReviewersOnHost(ctx context.Context, input *setPullReviewersHostInput) (*setReviewersOutput, error) {
+	next := setPullReviewersInput{
+		Provider:     input.Provider,
+		PlatformHost: input.PlatformHost,
+		Owner:        input.Owner,
+		Name:         input.Name,
+		Number:       input.Number,
+		Body:         input.Body,
+	}
+	return s.setPullReviewers(ctx, &next)
 }
 
 func (s *Server) getDiffReviewDraftOnHost(

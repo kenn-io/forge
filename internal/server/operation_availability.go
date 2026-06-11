@@ -20,6 +20,8 @@ const (
 	operationAddComment         = "add_comment"
 	operationAddLabel           = "add_label"
 	operationRemoveLabel        = "remove_label"
+	operationSetAssignees       = "set_assignees"
+	operationSetReviewers       = "set_reviewers"
 	operationCloseIssue         = "close_issue"
 	operationReopenIssue        = "reopen_issue"
 	operationApproveWorkflow    = "approve_workflow"
@@ -70,6 +72,8 @@ type RepoOperations struct {
 	AddComment         OperationAvailability `json:"add_comment"`
 	AddLabel           OperationAvailability `json:"add_label"`
 	RemoveLabel        OperationAvailability `json:"remove_label"`
+	SetAssignees       OperationAvailability `json:"set_assignees"`
+	SetReviewers       OperationAvailability `json:"set_reviewers"`
 	CloseIssue         OperationAvailability `json:"close_issue"`
 	ReopenIssue        OperationAvailability `json:"reopen_issue"`
 	ApproveWorkflow    OperationAvailability `json:"approve_workflow"`
@@ -98,6 +102,8 @@ var (
 	descAddComment         = operationDescriptor{name: operationAddComment, requiredCapabilities: []string{capabilityCommentMutation}, bucket: apiBucketREST}
 	descAddLabel           = operationDescriptor{name: operationAddLabel, requiredCapabilities: []string{capabilityReadLabels, capabilityLabelMutation}, bucket: apiBucketREST}
 	descRemoveLabel        = operationDescriptor{name: operationRemoveLabel, requiredCapabilities: []string{capabilityReadLabels, capabilityLabelMutation}, bucket: apiBucketREST}
+	descSetAssignees       = operationDescriptor{name: operationSetAssignees, requiredCapabilities: []string{capabilityAssigneeMutation}, bucket: apiBucketREST}
+	descSetReviewers       = operationDescriptor{name: operationSetReviewers, requiredCapabilities: []string{capabilityReviewerMutation}, bucket: apiBucketREST}
 	descCloseIssue         = operationDescriptor{name: operationCloseIssue, requiredCapabilities: []string{capabilityIssueMutation}, bucket: apiBucketREST}
 	descReopenIssue        = operationDescriptor{name: operationReopenIssue, requiredCapabilities: []string{capabilityIssueMutation}, bucket: apiBucketREST}
 	descApproveWorkflow    = operationDescriptor{name: operationApproveWorkflow, requiredCapabilities: []string{capabilityWorkflowApproval}, bucket: apiBucketREST}
@@ -127,6 +133,8 @@ func (s *Server) repoOperations(repo db.Repo) RepoOperations {
 		AddComment:         derive(descAddComment),
 		AddLabel:           derive(descAddLabel),
 		RemoveLabel:        derive(descRemoveLabel),
+		SetAssignees:       derive(descSetAssignees),
+		SetReviewers:       derive(descSetReviewers),
 		CloseIssue:         derive(descCloseIssue),
 		ReopenIssue:        derive(descReopenIssue),
 		ApproveWorkflow:    derive(descApproveWorkflow),

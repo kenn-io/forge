@@ -96,7 +96,24 @@ func NormalizePullRequest(repo platform.RepoRef, pr PullRequestDTO) platform.Mer
 		MergedAt:           timePtrUTC(pr.MergedAt),
 		ClosedAt:           timePtrUTC(pr.Closed),
 		Labels:             NormalizeLabels(repo, pr.Labels),
+		Assignees:          userDTONames(pr.Assignees),
+		RequestedReviewers: userDTONames(pr.RequestedReviewers),
 	}
+}
+
+// userDTONames preserves nil (field unknown to the transport) versus an
+// empty non-nil slice (provider-confirmed empty set).
+func userDTONames(users []UserDTO) []string {
+	if users == nil {
+		return nil
+	}
+	out := make([]string, 0, len(users))
+	for _, user := range users {
+		if user.UserName != "" {
+			out = append(out, user.UserName)
+		}
+	}
+	return out
 }
 
 func normalizeMergeable(mergeable *bool) string {

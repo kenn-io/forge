@@ -179,6 +179,6 @@ test.describe("issue detail assignees", () => {
 
     await expect(page.locator(".issue-detail .detail-title")).toContainText("Issue with assignees");
     const metaRow = page.locator(".issue-detail .meta-row");
-    await expect(metaRow).toContainText("Assigned: alice, bob");
+    await expect(metaRow).toContainText("Assignees: alice, bob");
   });
 });

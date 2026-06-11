@@ -18,6 +18,7 @@
   import Chip from "../shared/Chip.svelte";
   import GitHubLabels from "../shared/GitHubLabels.svelte";
   import LabelPicker from "./LabelPicker.svelte";
+  import UserListEditor from "./UserListEditor.svelte";
   import { loadLabelCatalogWithRefresh } from "./labelCatalogRefresh.js";
   import {
     labelPickerCommandMatches,
@@ -31,6 +32,7 @@
   import PackagePlusIcon from "@lucide/svelte/icons/package-plus";
   import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw";
   import TagsIcon from "@lucide/svelte/icons/tags";
+  import UsersIcon from "@lucide/svelte/icons/users";
   import XIcon from "@lucide/svelte/icons/x";
 
   const CLEAR_LABELS_PENDING = "__clear-label-selection__";
@@ -57,6 +59,8 @@
     ready_for_review: true,
     issue_mutation: true,
     label_mutation: false,
+    assignee_mutation: false,
+    reviewer_mutation: false,
     thread_reply: false,
     thread_resolve: false,
     review_draft_mutation: false,
@@ -323,6 +327,22 @@
     } finally {
       pendingLabel = null;
     }
+  }
+
+  async function loadUserCandidates(): Promise<string[]> {
+    const { data, error } = await client.GET(
+      providerRepoPath(routeRef, "/comment-autocomplete"),
+      {
+        params: {
+          path: providerRouteParams(routeRef),
+          query: { trigger: "@", limit: 25 },
+        },
+      },
+    );
+    if (error) {
+      throw new Error(error.detail ?? error.title ?? "failed to load users");
+    }
+    return data?.users ?? [];
   }
 
   function onDocumentMousedown(e: MouseEvent): void {
@@ -858,9 +878,20 @@
         <CopyItemNumber kind="issue" number={issue.Number} url={issue.URL} />
         <span class="meta-sep">·</span>
         <span class="meta-item">{issue.Author}</span>
-        {#if issue.assignees && issue.assignees.length > 0}
+        {#if (issue.assignees && issue.assignees.length > 0) || capabilities.assignee_mutation}
           <span class="meta-sep">·</span>
-          <span class="meta-item">Assigned: {issue.assignees.join(", ")}</span>
+          <UserListEditor
+            label="Assignees"
+            users={issue.assignees ?? []}
+            canEdit={capabilities.assignee_mutation}
+            disabled={staleIssue}
+            loadCandidates={loadUserCandidates}
+            onchange={(next) => issues.setIssueAssignees(owner, name, number, next)}
+          >
+            {#snippet icon()}
+              <UsersIcon size={16} aria-hidden="true" />
+            {/snippet}
+          </UserListEditor>
         {/if}
         <span class="meta-sep">·</span>
         <span class="meta-item">{timeAgo(issue.CreatedAt)}</span>

@@ -162,6 +162,8 @@ func normalizeMergeRequest(
 		UpdatedAt:          timeValue(mr.UpdatedAt),
 		LastActivityAt:     timeValue(mr.UpdatedAt),
 		Labels:             normalizeLabelNames(repo, mr.Labels),
+		Assignees:          basicUsernames(mr.Assignees),
+		RequestedReviewers: basicUsernames(mr.Reviewers),
 	}
 	if mr.MergedAt != nil {
 		t := mr.MergedAt.UTC()
@@ -691,6 +693,19 @@ func commitTime(commit *gitlab.Commit) time.Time {
 		return t
 	}
 	return timeValue(commit.AuthoredDate)
+}
+
+// basicUsernames always returns a non-nil slice: GitLab includes the
+// assignees and reviewers fields on every merge request payload, so an
+// empty result is a provider-confirmed empty set rather than unknown.
+func basicUsernames(users []*gitlab.BasicUser) []string {
+	out := make([]string, 0, len(users))
+	for _, user := range users {
+		if user != nil && user.Username != "" {
+			out = append(out, user.Username)
+		}
+	}
+	return out
 }
 
 func basicUsername(user *gitlab.BasicUser) string {

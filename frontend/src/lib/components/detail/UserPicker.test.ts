@@ -1,0 +1,106 @@
+import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import UserPicker from "../../../../../packages/ui/src/components/detail/UserPicker.svelte";
+
+describe("UserPicker", () => {
+  afterEach(() => cleanup());
+
+  it("lists candidates with selected users first and marks them checked", () => {
+    render(UserPicker, {
+      props: {
+        title: "Edit assignees",
+        candidates: ["alice", "bob"],
+        selected: ["carol"],
+        ontoggle: vi.fn(),
+        onclose: vi.fn(),
+      },
+    });
+
+    const rows = screen.getAllByRole("menuitemcheckbox");
+    expect(rows.map((row) => row.textContent?.trim().split(/\s/)[0])).toEqual(["C", "A", "B"]);
+    expect(screen.getByRole("menuitemcheckbox", { name: /carol/i }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByRole("menuitemcheckbox", { name: /alice/i }).getAttribute("aria-checked")).toBe("false");
+  });
+
+  it("filters users by the query", async () => {
+    render(UserPicker, {
+      props: {
+        title: "Edit assignees",
+        candidates: ["alice", "bob"],
+        selected: [],
+        ontoggle: vi.fn(),
+        onclose: vi.fn(),
+      },
+    });
+
+    await fireEvent.input(screen.getByLabelText("Filter users"), {
+      target: { value: "ali" },
+    });
+
+    expect(screen.queryByRole("menuitemcheckbox", { name: /bob/i })).toBeNull();
+    expect(screen.getByRole("menuitemcheckbox", { name: /alice/i })).toBeTruthy();
+  });
+
+  it("dedupes selected users that also appear as candidates", () => {
+    render(UserPicker, {
+      props: {
+        title: "Edit assignees",
+        candidates: ["alice", "bob"],
+        selected: ["alice"],
+        ontoggle: vi.fn(),
+        onclose: vi.fn(),
+      },
+    });
+
+    expect(screen.getAllByRole("menuitemcheckbox")).toHaveLength(2);
+  });
+
+  it("emits the toggled username", async () => {
+    const onToggle = vi.fn();
+    render(UserPicker, {
+      props: {
+        title: "Edit reviewers",
+        candidates: ["alice"],
+        selected: [],
+        ontoggle: onToggle,
+        onclose: vi.fn(),
+      },
+    });
+
+    await fireEvent.click(screen.getByRole("menuitemcheckbox", { name: /alice/i }));
+
+    expect(onToggle).toHaveBeenCalledWith("alice");
+  });
+
+  it("emits clear from the header action and disables rows while saving", async () => {
+    const onClear = vi.fn();
+    render(UserPicker, {
+      props: {
+        title: "Edit assignees",
+        candidates: ["alice"],
+        selected: ["alice"],
+        pendingUser: null,
+        ontoggle: vi.fn(),
+        onclear: onClear,
+        onclose: vi.fn(),
+      },
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Clear selected users" }));
+    expect(onClear).toHaveBeenCalledOnce();
+
+    cleanup();
+    render(UserPicker, {
+      props: {
+        title: "Edit assignees",
+        candidates: ["alice"],
+        selected: [],
+        pendingUser: "alice",
+        ontoggle: vi.fn(),
+        onclose: vi.fn(),
+      },
+    });
+    expect(screen.getByRole("menuitemcheckbox", { name: /alice/i }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByText("Saving…")).toBeTruthy();
+  });
+});

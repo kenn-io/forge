@@ -42,6 +42,8 @@ export const defaultProviderCapabilities: ProviderCapabilities = {
   ready_for_review: true,
   issue_mutation: true,
   label_mutation: false,
+  assignee_mutation: false,
+  reviewer_mutation: false,
   thread_reply: false,
   thread_resolve: false,
   review_draft_mutation: false,

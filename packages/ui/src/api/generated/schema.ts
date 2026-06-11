@@ -282,6 +282,23 @@ export interface paths {
         patch: operations["edit-issue-content-on-host"];
         trace?: never;
     };
+    "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/assignees": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set issue assignees */
+        put: operations["set-issue-assignees-on-host"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/comments": {
         parameters: {
             query?: never;
@@ -447,6 +464,23 @@ export interface paths {
         put?: never;
         /** Approve pull request workflows */
         post: operations["approve-pull-workflows-on-host"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/assignees": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set pull request assignees */
+        put: operations["set-pr-assignees-on-host"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -795,6 +829,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/reviewers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set pull request reviewers */
+        put: operations["set-pr-reviewers-on-host"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/stack": {
         parameters: {
             query?: never;
@@ -1016,6 +1067,23 @@ export interface paths {
         head?: never;
         /** Edit issue content */
         patch: operations["edit-issue-content"];
+        trace?: never;
+    };
+    "/issues/{provider}/{owner}/{name}/{number}/assignees": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set issue assignees */
+        put: operations["set-issue-assignees"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/issues/{provider}/{owner}/{name}/{number}/comments": {
@@ -1447,6 +1515,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/pulls/{provider}/{owner}/{name}/{number}/assignees": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set pull request assignees */
+        put: operations["set-pr-assignees"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/pulls/{provider}/{owner}/{name}/{number}/ci-refresh": {
         parameters: {
             query?: never;
@@ -1783,6 +1868,23 @@ export interface paths {
         put?: never;
         /** Review pull request diff */
         post: operations["unresolve-pr-review-thread"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pulls/{provider}/{owner}/{name}/{number}/reviewers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set pull request reviewers */
+        put: operations["set-pr-reviewers"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3213,6 +3315,15 @@ export interface components {
             repo_owner: string;
             workspace?: components["schemas"]["WorkspaceRef"];
         };
+        ItemAssigneesResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/ItemAssigneesResponse.json
+             */
+            readonly $schema?: string;
+            assignees: string[] | null;
+        };
         ItemLabelsResponse: {
             /**
              * Format: uri
@@ -3221,6 +3332,15 @@ export interface components {
              */
             readonly $schema?: string;
             labels: components["schemas"]["Label"][] | null;
+        };
+        ItemReviewersResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/ItemReviewersResponse.json
+             */
+            readonly $schema?: string;
+            reviewers: string[] | null;
         };
         KataDaemonResponse: {
             auth: string;
@@ -3399,7 +3519,9 @@ export interface components {
             URL: string;
             /** Format: date-time */
             UpdatedAt: string;
+            assignees?: string[] | null;
             labels?: components["schemas"]["Label"][] | null;
+            requested_reviewers?: string[] | null;
         };
         MergeRequestDetailResponse: {
             /**
@@ -3499,6 +3621,7 @@ export interface components {
             URL: string;
             /** Format: date-time */
             UpdatedAt: string;
+            assignees?: string[] | null;
             detail_fetched_at?: string;
             detail_loaded: boolean;
             labels?: components["schemas"]["Label"][] | null;
@@ -3506,6 +3629,7 @@ export interface components {
             repo: components["schemas"]["RepoRefResponse"];
             repo_name: string;
             repo_owner: string;
+            requested_reviewers?: string[] | null;
             workspace?: components["schemas"]["WorkspaceRef"];
             worktree_links: components["schemas"]["WorktreeLinkResponse"][] | null;
         };
@@ -3773,6 +3897,7 @@ export interface components {
             updated_at: string;
         };
         ProviderCapabilitiesResponse: {
+            assignee_mutation: boolean;
             comment_mutation: boolean;
             issue_mutation: boolean;
             label_mutation: boolean;
@@ -3790,6 +3915,7 @@ export interface components {
             review_draft_mutation: boolean;
             review_mutation: boolean;
             review_thread_resolution: boolean;
+            reviewer_mutation: boolean;
             state_mutation: boolean;
             supported_review_actions: string[] | null;
             thread_reply: boolean;
@@ -3959,6 +4085,8 @@ export interface components {
             remove_label: components["schemas"]["OperationAvailability"];
             reopen_issue: components["schemas"]["OperationAvailability"];
             reopen_pr: components["schemas"]["OperationAvailability"];
+            set_assignees: components["schemas"]["OperationAvailability"];
+            set_reviewers: components["schemas"]["OperationAvailability"];
             submit_review: components["schemas"]["OperationAvailability"];
         };
         RepoPreviewRequest: {
@@ -4167,6 +4295,15 @@ export interface components {
             target_key: string;
             workspace_id: string;
         };
+        SetAssigneesRequest: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/SetAssigneesRequest.json
+             */
+            readonly $schema?: string;
+            assignees: string[] | null;
+        };
         SetKanbanStateHostInputBody: {
             /**
              * Format: uri
@@ -4193,6 +4330,15 @@ export interface components {
              */
             readonly $schema?: string;
             labels: string[] | null;
+        };
+        SetReviewersRequest: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example /api/v1/schemas/SetReviewersRequest.json
+             */
+            readonly $schema?: string;
+            reviewers: string[] | null;
         };
         SettingsResponse: {
             /**
@@ -5175,6 +5321,45 @@ export interface operations {
             };
         };
     };
+    "set-issue-assignees-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetAssigneesRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ItemAssigneesResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
     "post-issue-comment-on-host": {
         parameters: {
             query?: never;
@@ -5574,6 +5759,45 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ActionStatusBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "set-pr-assignees-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetAssigneesRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ItemAssigneesResponse"];
                 };
             };
             /** @description Error */
@@ -6413,6 +6637,45 @@ export interface operations {
             };
         };
     };
+    "set-pr-reviewers-on-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                platform_host: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetReviewersRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ItemReviewersResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
     "get-pull-stack-on-host": {
         parameters: {
             query?: never;
@@ -6933,6 +7196,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["IssueDetailResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "set-issue-assignees": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetAssigneesRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ItemAssigneesResponse"];
                 };
             };
             /** @description Error */
@@ -7950,6 +8251,44 @@ export interface operations {
             };
         };
     };
+    "set-pr-assignees": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetAssigneesRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ItemAssigneesResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
     "refresh-pull-ci": {
         parameters: {
             query?: never;
@@ -8742,6 +9081,44 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemError"];
+                };
+            };
+        };
+    };
+    "set-pr-reviewers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                owner: string;
+                name: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetReviewersRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ItemReviewersResponse"];
+                };
             };
             /** @description Error */
             default: {

@@ -80,6 +80,10 @@ func (p *Provider) Capabilities() platform.Capabilities {
 		caps.ReviewMutation = true
 		caps.IssueMutation = true
 		caps.LabelMutation = hasLabels
+		caps.AssigneeMutation = true
+		if _, ok := p.transport.(ReviewRequestTransport); ok {
+			caps.ReviewerMutation = true
+		}
 	}
 	return caps
 }
@@ -592,6 +596,137 @@ func (p *Provider) EditIssueContent(
 		return platform.Issue{}, p.mapError(err)
 	}
 	return NormalizeIssue(ref, issue), nil
+}
+
+func (p *Provider) SetMergeRequestAssignees(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	usernames []string,
+) ([]string, error) {
+	transport, err := p.mutationTransport("assignee_mutation")
+	if err != nil {
+		return nil, err
+	}
+	if usernames == nil {
+		usernames = []string{}
+	}
+	pr, err := transport.EditPullRequest(ctx, ref, number, PullRequestMutationOptions{Assignees: &usernames})
+	if err != nil {
+		return nil, p.mapError(err)
+	}
+	if pr.Assignees == nil {
+		// The SDK response omitted the field; the request set is the
+		// best available truth after a successful edit.
+		return usernames, nil
+	}
+	return userDTONames(pr.Assignees), nil
+}
+
+func (p *Provider) SetIssueAssignees(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	usernames []string,
+) ([]string, error) {
+	transport, err := p.mutationTransport("assignee_mutation")
+	if err != nil {
+		return nil, err
+	}
+	if usernames == nil {
+		usernames = []string{}
+	}
+	issue, err := transport.EditIssue(ctx, ref, number, IssueMutationOptions{Assignees: &usernames})
+	if err != nil {
+		return nil, p.mapError(err)
+	}
+	assignees := make([]string, 0, len(issue.Assignees))
+	for _, user := range issue.Assignees {
+		if user.UserName != "" {
+			assignees = append(assignees, user.UserName)
+		}
+	}
+	return assignees, nil
+}
+
+func (p *Provider) RequestMergeRequestReviewers(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	usernames []string,
+) ([]string, error) {
+	transport, err := p.reviewRequestTransport()
+	if err != nil {
+		return nil, err
+	}
+	if err := transport.CreateReviewRequests(ctx, ref, number, usernames); err != nil {
+		return nil, p.mapError(err)
+	}
+	return p.currentRequestedReviewers(ctx, ref, number)
+}
+
+func (p *Provider) RemoveMergeRequestReviewers(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	usernames []string,
+) ([]string, error) {
+	transport, err := p.reviewRequestTransport()
+	if err != nil {
+		return nil, err
+	}
+	if err := transport.DeleteReviewRequests(ctx, ref, number, usernames); err != nil {
+		return nil, p.mapError(err)
+	}
+	return p.currentRequestedReviewers(ctx, ref, number)
+}
+
+// currentRequestedReviewers reads the requested-reviewer set back after
+// a review-request mutation. The Gitea SDK carries the field on the pull
+// request itself; the Forgejo SDK does not, so pending requests are
+// derived from review rows in the REQUEST_REVIEW state.
+func (p *Provider) currentRequestedReviewers(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+) ([]string, error) {
+	pr, err := p.transport.GetPullRequest(ctx, ref, number)
+	if err != nil {
+		return nil, p.mapError(err)
+	}
+	if pr.RequestedReviewers != nil {
+		return userDTONames(pr.RequestedReviewers), nil
+	}
+	reviews, err := collectPages(ctx, func(opts PageOptions) ([]ReviewDTO, Page, error) {
+		return p.transport.ListPullRequestReviews(ctx, ref, number, opts)
+	})
+	if err != nil {
+		return nil, p.mapError(err)
+	}
+	seen := make(map[string]bool)
+	requested := make([]string, 0, len(reviews))
+	for _, review := range reviews {
+		if review.State != "REQUEST_REVIEW" || review.User.UserName == "" {
+			continue
+		}
+		if seen[review.User.UserName] {
+			continue
+		}
+		seen[review.User.UserName] = true
+		requested = append(requested, review.User.UserName)
+	}
+	return requested, nil
+}
+
+func (p *Provider) reviewRequestTransport() (ReviewRequestTransport, error) {
+	if !p.options.Mutations {
+		return nil, platform.UnsupportedCapability(p.kind, p.host, "reviewer_mutation")
+	}
+	transport, ok := p.transport.(ReviewRequestTransport)
+	if !ok {
+		return nil, platform.UnsupportedCapability(p.kind, p.host, "reviewer_mutation")
+	}
+	return transport, nil
 }
 
 func (p *Provider) listRepositories(

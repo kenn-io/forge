@@ -230,6 +230,30 @@ func (r *Registry) LabelMutator(kind Kind, host string) (LabelMutator, error) {
 	return mutator, nil
 }
 
+func (r *Registry) AssigneeMutator(kind Kind, host string) (AssigneeMutator, error) {
+	provider, err := r.Provider(kind, host)
+	if err != nil {
+		return nil, err
+	}
+	mutator, ok := provider.(AssigneeMutator)
+	if !ok {
+		return nil, UnsupportedCapability(kind, host, "assignee_mutation")
+	}
+	return mutator, nil
+}
+
+func (r *Registry) ReviewerMutator(kind Kind, host string) (ReviewerMutator, error) {
+	provider, err := r.Provider(kind, host)
+	if err != nil {
+		return nil, err
+	}
+	mutator, ok := provider.(ReviewerMutator)
+	if !ok {
+		return nil, UnsupportedCapability(kind, host, "reviewer_mutation")
+	}
+	return mutator, nil
+}
+
 func (r *Registry) ReviewMutator(kind Kind, host string) (ReviewMutator, error) {
 	provider, err := r.Provider(kind, host)
 	if err != nil {

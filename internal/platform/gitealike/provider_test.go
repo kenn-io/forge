@@ -44,6 +44,9 @@ func TestProviderCapabilitiesEnableProvenMutations(t *testing.T) {
 		MergeMutation:     true,
 		ReviewMutation:    true,
 		IssueMutation:     true,
+		AssigneeMutation:  true,
+		// ReviewerMutation stays false: fakeTransport does not
+		// implement ReviewRequestTransport.
 	}, provider.Capabilities())
 }
 

@@ -51,6 +51,7 @@ type PullSuffix =
   | ""
   | "/approve"
   | "/approve-workflows"
+  | "/assignees"
   | "/comments"
   | "/comments/{comment_id}"
   | "/commits"
@@ -63,6 +64,7 @@ type PullSuffix =
   | "/labels"
   | "/merge"
   | "/ready-for-review"
+  | "/reviewers"
   | "/discussions/{discussion_id}/reply"
   | "/review-draft"
   | "/review-draft/comments"
@@ -77,6 +79,7 @@ type PullSuffix =
 
 type IssueSuffix =
   | ""
+  | "/assignees"
   | "/comments"
   | "/comments/{comment_id}"
   | "/github-state"

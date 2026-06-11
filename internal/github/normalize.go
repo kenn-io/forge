@@ -98,6 +98,10 @@ func NormalizePR(repoID int64, ghPR *gh.PullRequest) (*db.MergeRequest, error) {
 	}
 	mr.MergeableState = ghPR.GetMergeableState()
 	mr.Labels = dbLabels(platformMR.Labels, itemLabelUpdatedAt(mr.UpdatedAt, mr.CreatedAt))
+	mr.Assignees = platformMR.Assignees
+	mr.RequestedReviewers = platformMR.RequestedReviewers
+	mr.AssigneesJSON = platform.MarshalUserNamesJSON(platformMR.Assignees)
+	mr.ReviewersJSON = platform.MarshalUserNamesJSON(platformMR.RequestedReviewers)
 
 	return mr, nil
 }

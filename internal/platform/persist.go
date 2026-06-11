@@ -19,6 +19,20 @@ func MarshalAssigneesJSON(assignees []string) string {
 	return "[]"
 }
 
+// MarshalUserNamesJSON converts a username list to a JSON array string,
+// preserving the unknown state: nil returns "" so merge-request upserts
+// keep the previously stored value, while an empty non-nil slice returns
+// "[]" to record that the provider reported no users.
+func MarshalUserNamesJSON(names []string) string {
+	if names == nil {
+		return ""
+	}
+	if b, err := json.Marshal(names); err == nil {
+		return string(b)
+	}
+	return ""
+}
+
 func DBRepoIdentity(ref RepoRef) db.RepoIdentity {
 	return db.RepoIdentity{
 		Platform:       string(ref.Platform),
@@ -68,6 +82,8 @@ func DBMergeRequest(repoID int64, mr MergeRequest) *db.MergeRequest {
 		LastActivityAt:     mr.LastActivityAt,
 		MergedAt:           mr.MergedAt,
 		ClosedAt:           mr.ClosedAt,
+		AssigneesJSON:      MarshalUserNamesJSON(mr.Assignees),
+		ReviewersJSON:      MarshalUserNamesJSON(mr.RequestedReviewers),
 	}
 	out.Labels = DBLabels(mr.Labels, itemLabelUpdatedAt(mr.UpdatedAt, mr.CreatedAt))
 	return out

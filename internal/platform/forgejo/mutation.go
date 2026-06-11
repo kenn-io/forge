@@ -131,6 +131,42 @@ func (c *Client) EditIssueContent(
 	return c.provider.EditIssueContent(ctx, ref, number, title, body)
 }
 
+func (c *Client) SetMergeRequestAssignees(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	usernames []string,
+) ([]string, error) {
+	return c.provider.SetMergeRequestAssignees(ctx, ref, number, usernames)
+}
+
+func (c *Client) SetIssueAssignees(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	usernames []string,
+) ([]string, error) {
+	return c.provider.SetIssueAssignees(ctx, ref, number, usernames)
+}
+
+func (c *Client) RequestMergeRequestReviewers(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	usernames []string,
+) ([]string, error) {
+	return c.provider.RequestMergeRequestReviewers(ctx, ref, number, usernames)
+}
+
+func (c *Client) RemoveMergeRequestReviewers(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	usernames []string,
+) ([]string, error) {
+	return c.provider.RemoveMergeRequestReviewers(ctx, ref, number, usernames)
+}
+
 func (t *transport) CreateIssueComment(
 	ctx context.Context,
 	ref platform.RepoRef,
@@ -206,9 +242,10 @@ func (t *transport) EditIssue(
 	err := t.withRequestContext(ctx, func() error {
 		var err error
 		issue, resp, err = t.api.EditIssue(ref.Owner, ref.Name, int64(number), forgejosdk.EditIssueOption{
-			Title: stringValue(opts.Title),
-			Body:  opts.Body,
-			State: forgejoStatePtr(opts.State),
+			Title:     stringValue(opts.Title),
+			Body:      opts.Body,
+			State:     forgejoStatePtr(opts.State),
+			Assignees: assigneesValue(opts.Assignees),
 		})
 		return err
 	})
@@ -229,9 +266,10 @@ func (t *transport) EditPullRequest(
 	err := t.withRequestContext(ctx, func() error {
 		var err error
 		pr, resp, err = t.api.EditPullRequest(ref.Owner, ref.Name, int64(number), forgejosdk.EditPullRequestOption{
-			Title: stringValue(opts.Title),
-			Body:  opts.Body,
-			State: forgejoStatePtr(opts.State),
+			Title:     stringValue(opts.Title),
+			Body:      opts.Body,
+			State:     forgejoStatePtr(opts.State),
+			Assignees: assigneesValue(opts.Assignees),
 		})
 		return err
 	})
@@ -305,6 +343,59 @@ func (t *transport) ReplaceIssueLabels(
 		return nil, forgejoHTTPError(resp, err)
 	}
 	return convertLabels(labels), nil
+}
+
+func (t *transport) CreateReviewRequests(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	reviewers []string,
+) error {
+	var resp *forgejosdk.Response
+	err := t.withRequestContext(ctx, func() error {
+		var err error
+		resp, err = t.api.CreateReviewRequests(ref.Owner, ref.Name, int64(number), forgejosdk.PullReviewRequestOptions{
+			Reviewers: reviewers,
+		})
+		return err
+	})
+	if err != nil {
+		return forgejoHTTPError(resp, err)
+	}
+	return nil
+}
+
+func (t *transport) DeleteReviewRequests(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	reviewers []string,
+) error {
+	var resp *forgejosdk.Response
+	err := t.withRequestContext(ctx, func() error {
+		var err error
+		resp, err = t.api.DeleteReviewRequests(ref.Owner, ref.Name, int64(number), forgejosdk.PullReviewRequestOptions{
+			Reviewers: reviewers,
+		})
+		return err
+	})
+	if err != nil {
+		return forgejoHTTPError(resp, err)
+	}
+	return nil
+}
+
+// assigneesValue keeps the no-change semantics of a nil option: the SDK
+// serializes a nil slice as JSON null, which the server ignores, while a
+// non-nil (possibly empty) slice replaces the assignee set.
+func assigneesValue(assignees *[]string) []string {
+	if assignees == nil {
+		return nil
+	}
+	if *assignees == nil {
+		return []string{}
+	}
+	return *assignees
 }
 
 func forgejoStatePtr(state *string) *forgejosdk.StateType {

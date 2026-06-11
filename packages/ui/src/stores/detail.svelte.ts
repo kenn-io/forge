@@ -614,6 +614,60 @@ export function createDetailStore(opts: DetailStoreOptions) {
     return nextLabels;
   }
 
+  async function setPullAssignees(owner: string, name: string, number: number, assignees: string[]): Promise<string[]> {
+    const ref = currentDetailRef(owner, name, number);
+    const { data, error: requestError } = await apiClient.PUT(providerItemPath("pulls", ref, "/assignees"), {
+      params: {
+        path: { ...providerRouteParams(ref), number },
+      },
+      body: { assignees },
+    });
+    if (requestError) {
+      const message = apiErrorMessage(requestError, "failed to update assignees");
+      storeError = message;
+      throw new Error(message);
+    }
+    const nextAssignees = data?.assignees ?? [];
+    if (isDetailShowingRef(ref) && detail) {
+      detail = {
+        ...detail,
+        merge_request: {
+          ...detail.merge_request,
+          assignees: nextAssignees,
+        },
+      };
+    }
+    void refreshPullsIfActive();
+    return nextAssignees;
+  }
+
+  async function setPullReviewers(owner: string, name: string, number: number, reviewers: string[]): Promise<string[]> {
+    const ref = currentDetailRef(owner, name, number);
+    const { data, error: requestError } = await apiClient.PUT(providerItemPath("pulls", ref, "/reviewers"), {
+      params: {
+        path: { ...providerRouteParams(ref), number },
+      },
+      body: { reviewers },
+    });
+    if (requestError) {
+      const message = apiErrorMessage(requestError, "failed to update reviewers");
+      storeError = message;
+      throw new Error(message);
+    }
+    const nextReviewers = data?.reviewers ?? [];
+    if (isDetailShowingRef(ref) && detail) {
+      detail = {
+        ...detail,
+        merge_request: {
+          ...detail.merge_request,
+          requested_reviewers: nextReviewers,
+        },
+      };
+    }
+    void refreshPullsIfActive();
+    return nextReviewers;
+  }
+
   async function updatePRContent(
     owner: string,
     name: string,
@@ -1029,6 +1083,8 @@ export function createDetailStore(opts: DetailStoreOptions) {
     refreshPendingCI,
     updateKanbanState,
     setPullLabels,
+    setPullAssignees,
+    setPullReviewers,
     updatePRContent,
     setLocalPRBody,
     savePRBodyInBackground,

@@ -2129,6 +2129,74 @@ func (d *DB) UpdateRepoViewerCanMerge(ctx context.Context, id int64, viewerCanMe
 // ID. Before writing, all timestamp fields are normalized to UTC so the raw
 // SQLite DATETIME text stays comparable in SQL.
 // On conflict (repo_id, number), stale snapshots are ignored wholesale.
+// parseMergeRequestUserLists fills the parsed Assignees and
+// RequestedReviewers slices from their JSON columns. Empty or malformed
+// JSON leaves the slice nil.
+func parseMergeRequestUserLists(mr *MergeRequest) {
+	mr.Assignees = parseUserNamesJSON(mr.AssigneesJSON)
+	mr.RequestedReviewers = parseUserNamesJSON(mr.ReviewersJSON)
+}
+
+func parseUserNamesJSON(raw string) []string {
+	if raw == "" || raw == "[]" {
+		return nil
+	}
+	var names []string
+	if err := json.Unmarshal([]byte(raw), &names); err != nil {
+		return nil
+	}
+	return names
+}
+
+func marshalUserNamesJSON(names []string) string {
+	if len(names) == 0 {
+		return "[]"
+	}
+	if b, err := json.Marshal(names); err == nil {
+		return string(b)
+	}
+	return "[]"
+}
+
+// UpdateMergeRequestAssignees persists a provider-confirmed assignee set
+// after a mutation so the next sync does not revert the edit.
+func (d *DB) UpdateMergeRequestAssignees(ctx context.Context, repoID, mrID int64, assignees []string) error {
+	_, err := d.rw.ExecContext(ctx,
+		`UPDATE middleman_merge_requests SET assignees_json = ? WHERE id = ? AND repo_id = ?`,
+		marshalUserNamesJSON(assignees), mrID, repoID,
+	)
+	if err != nil {
+		return fmt.Errorf("update merge request assignees: %w", err)
+	}
+	return nil
+}
+
+// UpdateMergeRequestReviewers persists a provider-confirmed
+// requested-reviewer set after a mutation.
+func (d *DB) UpdateMergeRequestReviewers(ctx context.Context, repoID, mrID int64, reviewers []string) error {
+	_, err := d.rw.ExecContext(ctx,
+		`UPDATE middleman_merge_requests SET reviewers_json = ? WHERE id = ? AND repo_id = ?`,
+		marshalUserNamesJSON(reviewers), mrID, repoID,
+	)
+	if err != nil {
+		return fmt.Errorf("update merge request reviewers: %w", err)
+	}
+	return nil
+}
+
+// UpdateIssueAssignees persists a provider-confirmed assignee set on an
+// issue after a mutation.
+func (d *DB) UpdateIssueAssignees(ctx context.Context, repoID, issueID int64, assignees []string) error {
+	_, err := d.rw.ExecContext(ctx,
+		`UPDATE middleman_issues SET assignees_json = ? WHERE id = ? AND repo_id = ?`,
+		marshalUserNamesJSON(assignees), issueID, repoID,
+	)
+	if err != nil {
+		return fmt.Errorf("update issue assignees: %w", err)
+	}
+	return nil
+}
+
 func (d *DB) UpsertMergeRequest(ctx context.Context, mr *MergeRequest) (int64, error) {
 	canonicalizeMergeRequestTimestamps(mr)
 	_, err := d.rw.ExecContext(ctx, `
@@ -2141,8 +2209,9 @@ func (d *DB) UpsertMergeRequest(ctx context.Context, mr *MergeRequest) (int64, e
 		     review_decision, ci_status, ci_checks_json,
 		     detail_fetched_at, ci_had_pending,
 		     created_at, updated_at,
-		     last_activity_at, merged_at, closed_at, mergeable_state)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		     last_activity_at, merged_at, closed_at, mergeable_state,
+		     assignees_json, reviewers_json)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(repo_id, number) DO UPDATE SET
 		    platform_id          = excluded.platform_id,
 		    platform_external_id = COALESCE(NULLIF(excluded.platform_external_id, ''), middleman_merge_requests.platform_external_id),
@@ -2171,7 +2240,13 @@ func (d *DB) UpsertMergeRequest(ctx context.Context, mr *MergeRequest) (int64, e
 		    last_activity_at     = MAX(middleman_merge_requests.last_activity_at, excluded.last_activity_at),
 		    merged_at            = excluded.merged_at,
 		    closed_at            = excluded.closed_at,
-		    mergeable_state      = excluded.mergeable_state
+		    mergeable_state      = excluded.mergeable_state,
+		    assignees_json       = CASE WHEN excluded.assignees_json = ''
+		                                THEN middleman_merge_requests.assignees_json
+		                                ELSE excluded.assignees_json END,
+		    reviewers_json       = CASE WHEN excluded.reviewers_json = ''
+		                                THEN middleman_merge_requests.reviewers_json
+		                                ELSE excluded.reviewers_json END
 		WHERE excluded.updated_at >= middleman_merge_requests.updated_at`,
 		mr.RepoID, mr.PlatformID, mr.PlatformExternalID, mr.Number, mr.URL, mr.Title,
 		mr.Author, mr.AuthorDisplayName,
@@ -2183,6 +2258,7 @@ func (d *DB) UpsertMergeRequest(ctx context.Context, mr *MergeRequest) (int64, e
 		mr.DetailFetchedAt, mr.CIHadPending,
 		mr.CreatedAt, mr.UpdatedAt,
 		mr.LastActivityAt, mr.MergedAt, mr.ClosedAt, mr.MergeableState,
+		mr.AssigneesJSON, mr.ReviewersJSON,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("upsert merge request: %w", err)
@@ -2216,6 +2292,7 @@ func (d *DB) GetMergeRequest(ctx context.Context, owner, name string, number int
 		       p.detail_fetched_at, p.ci_had_pending,
 		       p.workflow_approval_checked_at, p.workflow_approval_head_sha,
 		       p.workflow_approval_required, p.workflow_approval_count,
+		       p.assignees_json, p.reviewers_json,
 		       COALESCE(k.status, '') AS kanban_status,
 		       (s.number IS NOT NULL) AS starred
 		FROM middleman_merge_requests p
@@ -2239,6 +2316,7 @@ func (d *DB) GetMergeRequest(ctx context.Context, owner, name string, number int
 		&mr.DetailFetchedAt, &mr.CIHadPending,
 		&mr.WorkflowApprovalCheckedAt, &mr.WorkflowApprovalHeadSHA,
 		&mr.WorkflowApprovalRequired, &mr.WorkflowApprovalCount,
+		&mr.AssigneesJSON, &mr.ReviewersJSON,
 		&mr.KanbanStatus, &mr.Starred,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -2247,6 +2325,7 @@ func (d *DB) GetMergeRequest(ctx context.Context, owner, name string, number int
 	if err != nil {
 		return nil, fmt.Errorf("get merge request: %w", err)
 	}
+	parseMergeRequestUserLists(&mr)
 	labelsByMR, err := d.loadLabelsForMergeRequests(ctx, []int64{mr.ID})
 	if err != nil {
 		return nil, fmt.Errorf("load merge request labels: %w", err)
@@ -2272,6 +2351,7 @@ func (d *DB) GetMergeRequestByRepoIDAndNumber(ctx context.Context, repoID int64,
 		       p.detail_fetched_at, p.ci_had_pending,
 		       p.workflow_approval_checked_at, p.workflow_approval_head_sha,
 		       p.workflow_approval_required, p.workflow_approval_count,
+		       p.assignees_json, p.reviewers_json,
 		       COALESCE(k.status, '') AS kanban_status,
 		       (s.number IS NOT NULL) AS starred
 		FROM middleman_merge_requests p
@@ -2294,6 +2374,7 @@ func (d *DB) GetMergeRequestByRepoIDAndNumber(ctx context.Context, repoID int64,
 		&mr.DetailFetchedAt, &mr.CIHadPending,
 		&mr.WorkflowApprovalCheckedAt, &mr.WorkflowApprovalHeadSHA,
 		&mr.WorkflowApprovalRequired, &mr.WorkflowApprovalCount,
+		&mr.AssigneesJSON, &mr.ReviewersJSON,
 		&mr.KanbanStatus, &mr.Starred,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -2302,6 +2383,7 @@ func (d *DB) GetMergeRequestByRepoIDAndNumber(ctx context.Context, repoID int64,
 	if err != nil {
 		return nil, fmt.Errorf("get merge request by repo id: %w", err)
 	}
+	parseMergeRequestUserLists(&mr)
 	labelsByMR, err := d.loadLabelsForMergeRequests(ctx, []int64{mr.ID})
 	if err != nil {
 		return nil, fmt.Errorf("load merge request labels: %w", err)
@@ -2385,6 +2467,7 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 		       p.created_at, p.updated_at, p.last_activity_at,
 		       p.merged_at, p.closed_at, p.mergeable_state,
 		       p.detail_fetched_at, p.ci_had_pending,
+		       p.assignees_json, p.reviewers_json,
 		       COALESCE(k.status, '') AS kanban_status,
 		       (s.number IS NOT NULL) AS starred
 		FROM middleman_merge_requests p
@@ -2418,10 +2501,12 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 			&mr.CreatedAt, &mr.UpdatedAt, &mr.LastActivityAt,
 			&mr.MergedAt, &mr.ClosedAt, &mr.MergeableState,
 			&mr.DetailFetchedAt, &mr.CIHadPending,
+			&mr.AssigneesJSON, &mr.ReviewersJSON,
 			&mr.KanbanStatus, &mr.Starred,
 		); err != nil {
 			return nil, fmt.Errorf("scan merge request: %w", err)
 		}
+		parseMergeRequestUserLists(&mr)
 		mrs = append(mrs, mr)
 		mrIDs = append(mrIDs, mr.ID)
 	}

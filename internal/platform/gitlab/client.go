@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	gitlab "gitlab.com/gitlab-org/api/client-go"
@@ -34,6 +35,13 @@ type Client struct {
 	baseURL           string
 	api               *gitlab.Client
 	foregroundTimeout time.Duration
+
+	// userIDMu guards userIDs, a username -> user ID cache for
+	// assignee/reviewer mutations. GitLab addresses users by numeric ID
+	// while middleman stores usernames, so lookups are cached for the
+	// client lifetime (user IDs are immutable).
+	userIDMu sync.Mutex
+	userIDs  map[string]int64
 }
 
 type PreviewOptions struct {
@@ -110,6 +118,7 @@ func NewClient(host string, source tokenauth.Source, options ...ClientOption) (*
 		baseURL:           opts.baseURL,
 		api:               api,
 		foregroundTimeout: opts.foregroundTimeout,
+		userIDs:           make(map[string]int64),
 	}, nil
 }
 
@@ -197,6 +206,8 @@ func (c *Client) Capabilities() platform.Capabilities {
 		ReadCI:                 true,
 		ReadLabels:             true,
 		LabelMutation:          true,
+		AssigneeMutation:       true,
+		ReviewerMutation:       true,
 		ThreadReply:            true,
 		ThreadResolve:          true,
 		ReviewDraftMutation:    true,
@@ -812,3 +823,5 @@ var _ platform.TagReader = (*Client)(nil)
 var _ platform.CIReader = (*Client)(nil)
 var _ platform.ThreadReplier = (*Client)(nil)
 var _ platform.ThreadResolver = (*Client)(nil)
+var _ platform.AssigneeMutator = (*Client)(nil)
+var _ platform.ReviewerMutator = (*Client)(nil)

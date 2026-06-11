@@ -257,6 +257,8 @@ func TestClientProviderIdentityExposesReadCapabilities(t *testing.T) {
 		ReviewMutation:    true,
 		IssueMutation:     true,
 		LabelMutation:     true,
+		AssigneeMutation:  true,
+		ReviewerMutation:  true,
 	}, client.Capabilities())
 }
 

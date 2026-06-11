@@ -42,10 +42,13 @@
   import PackagePlusIcon from "@lucide/svelte/icons/package-plus";
   import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw";
   import TagsIcon from "@lucide/svelte/icons/tags";
+  import UserCheckIcon from "@lucide/svelte/icons/user-check";
+  import UsersIcon from "@lucide/svelte/icons/users";
   import XIcon from "@lucide/svelte/icons/x";
   import Chip from "../shared/Chip.svelte";
   import GitHubLabels from "../shared/GitHubLabels.svelte";
   import LabelPicker from "./LabelPicker.svelte";
+  import UserListEditor from "./UserListEditor.svelte";
   import { loadLabelCatalogWithRefresh } from "./labelCatalogRefresh.js";
   import {
     labelPickerCommandMatches,
@@ -106,6 +109,8 @@
     ready_for_review: true,
     issue_mutation: true,
     label_mutation: false,
+    assignee_mutation: false,
+    reviewer_mutation: false,
     thread_reply: false,
     thread_resolve: false,
     review_draft_mutation: false,
@@ -741,6 +746,8 @@
     ),
   );
   const labels = $derived(detailStore.getDetail()?.merge_request?.labels ?? []);
+  const prAssignees = $derived(detailStore.getDetail()?.merge_request?.assignees ?? []);
+  const prReviewers = $derived(detailStore.getDetail()?.merge_request?.requested_reviewers ?? []);
   let labelPickerOpen = $state(false);
   let labelCatalog = $state<Label[]>([]);
   let labelCatalogSyncing = $state(false);
@@ -905,6 +912,22 @@
     } finally {
       pendingLabel = null;
     }
+  }
+
+  async function loadUserCandidates(): Promise<string[]> {
+    const { data, error } = await client.GET(
+      providerRepoPath(routeRef, "/comment-autocomplete"),
+      {
+        params: {
+          path: providerRouteParams(routeRef),
+          query: { trigger: "@", limit: 25 },
+        },
+      },
+    );
+    if (error) {
+      throw new Error(error.detail ?? error.title ?? "failed to load users");
+    }
+    return data?.users ?? [];
   }
 
   function onActionMenuKeydown(e: KeyboardEvent): void {
@@ -1511,6 +1534,35 @@
           showButton={false}
         />
       </div>
+
+      {#if prAssignees.length > 0 || prReviewers.length > 0 || capabilities.assignee_mutation || capabilities.reviewer_mutation}
+        <div class="people-row">
+          <UserListEditor
+            label="Assignees"
+            users={prAssignees}
+            canEdit={capabilities.assignee_mutation}
+            disabled={stalePR}
+            loadCandidates={loadUserCandidates}
+            onchange={(next) => detailStore.setPullAssignees(owner, name, number, next)}
+          >
+            {#snippet icon()}
+              <UsersIcon size={16} aria-hidden="true" />
+            {/snippet}
+          </UserListEditor>
+          <UserListEditor
+            label="Reviewers"
+            users={prReviewers}
+            canEdit={capabilities.reviewer_mutation}
+            disabled={stalePR}
+            loadCandidates={loadUserCandidates}
+            onchange={(next) => detailStore.setPullReviewers(owner, name, number, next)}
+          >
+            {#snippet icon()}
+              <UserCheckIcon size={16} aria-hidden="true" />
+            {/snippet}
+          </UserListEditor>
+        </div>
+      {/if}
 
       {#if !stalePR}
         <SelectDropdown
@@ -2316,6 +2368,23 @@
     flex-wrap: wrap;
     gap: 6px;
     min-width: 0;
+  }
+
+  .people-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 14px;
+    min-width: 0;
+    margin-top: 6px;
+  }
+
+  .people-row :global(.btn--user-list) {
+    min-height: 22px;
+    padding: 0 8px;
+    border-radius: 8px;
+    font-size: var(--font-size-xs);
+    font-weight: 600;
   }
 
   .chips-row :global(.btn--labels) {

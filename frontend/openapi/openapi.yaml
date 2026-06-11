@@ -1769,6 +1769,25 @@ components:
         - ClosedAt
         - Starred
       type: object
+    ItemAssigneesResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/ItemAssigneesResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        assignees:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+      required:
+        - assignees
+      type: object
     ItemLabelsResponse:
       additionalProperties: false
       properties:
@@ -1787,6 +1806,25 @@ components:
             - "null"
       required:
         - labels
+      type: object
+    ItemReviewersResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/ItemReviewersResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        reviewers:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+      required:
+        - reviewers
       type: object
     KataDaemonResponse:
       additionalProperties: false
@@ -2162,9 +2200,21 @@ components:
         UpdatedAt:
           format: date-time
           type: string
+        assignees:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
         labels:
           items:
             $ref: "#/components/schemas/Label"
+          type:
+            - array
+            - "null"
+        requested_reviewers:
+          items:
+            type: string
           type:
             - array
             - "null"
@@ -2427,6 +2477,12 @@ components:
         UpdatedAt:
           format: date-time
           type: string
+        assignees:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
         detail_fetched_at:
           type: string
         detail_loaded:
@@ -2445,6 +2501,12 @@ components:
           type: string
         repo_owner:
           type: string
+        requested_reviewers:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
         workspace:
           $ref: "#/components/schemas/WorkspaceRef"
         worktree_links:
@@ -3077,6 +3139,8 @@ components:
     ProviderCapabilitiesResponse:
       additionalProperties: false
       properties:
+        assignee_mutation:
+          type: boolean
         comment_mutation:
           type: boolean
         issue_mutation:
@@ -3111,6 +3175,8 @@ components:
           type: boolean
         review_thread_resolution:
           type: boolean
+        reviewer_mutation:
+          type: boolean
         state_mutation:
           type: boolean
         supported_review_actions:
@@ -3141,6 +3207,8 @@ components:
         - ready_for_review
         - issue_mutation
         - label_mutation
+        - assignee_mutation
+        - reviewer_mutation
         - thread_reply
         - thread_resolve
         - review_draft_mutation
@@ -3470,6 +3538,10 @@ components:
           $ref: "#/components/schemas/OperationAvailability"
         reopen_pr:
           $ref: "#/components/schemas/OperationAvailability"
+        set_assignees:
+          $ref: "#/components/schemas/OperationAvailability"
+        set_reviewers:
+          $ref: "#/components/schemas/OperationAvailability"
         submit_review:
           $ref: "#/components/schemas/OperationAvailability"
       required:
@@ -3481,6 +3553,8 @@ components:
         - add_comment
         - add_label
         - remove_label
+        - set_assignees
+        - set_reviewers
         - close_issue
         - reopen_issue
         - approve_workflow
@@ -3975,6 +4049,25 @@ components:
         - status
         - created_at
       type: object
+    SetAssigneesRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/SetAssigneesRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        assignees:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+      required:
+        - assignees
+      type: object
     SetKanbanStateHostInputBody:
       additionalProperties: false
       properties:
@@ -4023,6 +4116,25 @@ components:
             - "null"
       required:
         - labels
+      type: object
+    SetReviewersRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/SetReviewersRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        reviewers:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+      required:
+        - reviewers
       type: object
     SettingsResponse:
       additionalProperties: false
@@ -5229,6 +5341,58 @@ paths:
       summary: Edit issue content
       tags:
         - Issues
+  /host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/assignees:
+    put:
+      operationId: set-issue-assignees-on-host
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetAssigneesRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemAssigneesResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Set issue assignees
+      tags:
+        - Issues
   /host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/comments:
     post:
       operationId: post-issue-comment-on-host
@@ -5776,6 +5940,58 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Approve pull request workflows
+      tags:
+        - Pull Requests
+  /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/assignees:
+    put:
+      operationId: set-pr-assignees-on-host
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetAssigneesRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemAssigneesResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Set pull request assignees
       tags:
         - Pull Requests
   /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/ci-refresh:
@@ -6928,6 +7144,58 @@ paths:
       summary: Review pull request diff
       tags:
         - Pull Requests
+  /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/reviewers:
+    put:
+      operationId: set-pr-reviewers-on-host
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetReviewersRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemReviewersResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Set pull request reviewers
+      tags:
+        - Pull Requests
   /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/stack:
     get:
       operationId: get-pull-stack-on-host
@@ -7614,6 +7882,53 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Edit issue content
+      tags:
+        - Issues
+  /issues/{provider}/{owner}/{name}/{number}/assignees:
+    put:
+      operationId: set-issue-assignees
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetAssigneesRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemAssigneesResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Set issue assignees
       tags:
         - Issues
   /issues/{provider}/{owner}/{name}/{number}/comments:
@@ -8737,6 +9052,53 @@ paths:
       summary: Approve pull request workflows
       tags:
         - Pull Requests
+  /pulls/{provider}/{owner}/{name}/{number}/assignees:
+    put:
+      operationId: set-pr-assignees
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetAssigneesRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemAssigneesResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Set pull request assignees
+      tags:
+        - Pull Requests
   /pulls/{provider}/{owner}/{name}/{number}/ci-refresh:
     post:
       operationId: refresh-pull-ci
@@ -9775,6 +10137,53 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Review pull request diff
+      tags:
+        - Pull Requests
+  /pulls/{provider}/{owner}/{name}/{number}/reviewers:
+    put:
+      operationId: set-pr-reviewers
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetReviewersRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemReviewersResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Set pull request reviewers
       tags:
         - Pull Requests
   /pulls/{provider}/{owner}/{name}/{number}/stack:

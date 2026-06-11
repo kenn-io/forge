@@ -66,7 +66,27 @@ func NormalizePullRequest(repo platform.RepoRef, ghPR *gh.PullRequest) (platform
 		mr.BaseSHA = ghPR.GetBase().GetSHA()
 	}
 	mr.Labels = normalizeLabels(repo, ghPR.Labels)
+	mr.Assignees = normalizeUserLogins(ghPR.Assignees)
+	mr.RequestedReviewers = normalizeUserLogins(ghPR.RequestedReviewers)
 	return mr, nil
+}
+
+// normalizeUserLogins preserves the distinction between a provider
+// response without the field (nil, unknown) and an explicit empty list.
+// GitHub team review requests are intentionally not represented here;
+// only user logins are tracked.
+func normalizeUserLogins(users []*gh.User) []string {
+	if users == nil {
+		return nil
+	}
+	out := make([]string, 0, len(users))
+	for _, u := range users {
+		if u == nil || u.GetLogin() == "" {
+			continue
+		}
+		out = append(out, u.GetLogin())
+	}
+	return out
 }
 
 func NormalizeIssue(repo platform.RepoRef, ghIssue *gh.Issue) (platform.Issue, error) {

@@ -96,6 +96,13 @@ type MergeRequest struct {
 	MergedAt           *time.Time
 	ClosedAt           *time.Time
 	Labels             []Label
+	// Assignees and RequestedReviewers carry usernames. nil means the
+	// provider response did not include the field (unknown), while an
+	// empty non-nil slice means the provider reported none. Persistence
+	// preserves the previously stored value for nil so partial provider
+	// responses never wipe synced data.
+	Assignees          []string
+	RequestedReviewers []string
 }
 
 type Issue struct {
@@ -298,6 +305,8 @@ type Capabilities struct {
 	ReadyForReview         bool
 	IssueMutation          bool
 	LabelMutation          bool
+	AssigneeMutation       bool
+	ReviewerMutation       bool
 	ThreadReply            bool
 	ThreadResolve          bool
 	ReviewDraftMutation    bool

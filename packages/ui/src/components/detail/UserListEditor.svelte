@@ -31,6 +31,7 @@
   let pickerError = $state<string | null>(null);
   let autofocusFilter = $state(false);
   let anchorEl = $state<HTMLDivElement>();
+  let buttonEl = $state<HTMLSpanElement>();
   let popoverEl = $state<HTMLDivElement>();
   let popoverStyle = $state("");
 
@@ -43,16 +44,21 @@
   }
 
   function positionPicker(): void {
-    if (!anchorEl) return;
+    // Anchor under the trigger button itself, left-aligned like a
+    // conventional dropdown menu. The editor row sits on the left side
+    // of the page, so end-alignment would float the panel away from
+    // its trigger.
+    const trigger = buttonEl ?? anchorEl;
+    if (!trigger) return;
     const popoverHeight = popoverEl?.getBoundingClientRect().height;
     popoverStyle = floatingPopoverStyle({
-      trigger: anchorEl.getBoundingClientRect(),
+      trigger: trigger.getBoundingClientRect(),
       viewportWidth: window.innerWidth,
       viewportHeight: window.innerHeight,
       ...(popoverHeight !== undefined ? { popoverHeight } : {}),
-      align: "end",
+      align: "start",
       edgeGap: 12,
-      maxWidth: 320,
+      maxWidth: 260,
       constrainWidth: true,
     });
   }
@@ -135,20 +141,22 @@
       </span>
     {/if}
     {#if canEdit}
-      <ActionButton
-        class="btn--user-list"
-        {label}
-        shortLabel={label}
-        ariaLabel="Edit {label.toLowerCase()}"
-        size="sm"
-        surface="soft"
-        tone="neutral"
-        {disabled}
-        ariaExpanded={open}
-        onclick={togglePicker}
-      >
-        {#if icon}{@render icon()}{/if}
-      </ActionButton>
+      <span class="user-list-editor__button" bind:this={buttonEl}>
+        <ActionButton
+          class="btn--user-list"
+          {label}
+          shortLabel={label}
+          ariaLabel="Edit {label.toLowerCase()}"
+          size="sm"
+          surface="soft"
+          tone="neutral"
+          {disabled}
+          ariaExpanded={open}
+          onclick={togglePicker}
+        >
+          {#if icon}{@render icon()}{/if}
+        </ActionButton>
+      </span>
     {/if}
   </div>
   {#if open}
@@ -188,6 +196,10 @@
 
   .user-list-editor__label {
     color: var(--text-muted);
+  }
+
+  .user-list-editor__button {
+    display: inline-flex;
   }
 
   .user-list-editor__popover {

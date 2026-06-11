@@ -136,7 +136,7 @@
   .user-picker {
     width: 100%;
     min-width: 0;
-    max-height: var(--user-picker-max-height, min(390px, calc(100dvh - 64px)));
+    max-height: var(--user-picker-max-height, min(300px, calc(100dvh - 64px)));
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -152,8 +152,8 @@
     align-items: center;
     justify-content: space-between;
     gap: 8px;
-    min-height: 36px;
-    padding: 5px 8px 5px 12px;
+    min-height: 28px;
+    padding: 3px 6px 3px 10px;
     border-bottom: 1px solid var(--border-muted);
   }
 
@@ -178,8 +178,8 @@
   }
 
   .user-picker__icon-button {
-    width: 26px;
-    height: 26px;
+    width: 22px;
+    height: 22px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -206,7 +206,7 @@
 
   .user-picker__filter {
     display: block;
-    padding: 8px;
+    padding: 6px;
     border-bottom: 1px solid var(--border-muted);
     color: var(--text-secondary);
     font-size: var(--font-size-sm);
@@ -218,9 +218,10 @@
     border-radius: var(--radius-md);
     background: var(--bg-inset);
     color: var(--text-primary);
-    padding: 6px 9px;
+    padding: 3px 8px;
     font: inherit;
-    min-height: 32px;
+    font-size: var(--font-size-sm);
+    min-height: 26px;
     outline: none;
   }
 
@@ -246,15 +247,15 @@
   .user-picker__row {
     width: 100%;
     display: grid;
-    grid-template-columns: 18px minmax(0, 1fr) 48px;
+    grid-template-columns: 16px minmax(0, 1fr) 40px;
     align-items: center;
-    gap: 9px;
+    gap: 8px;
     border: 0;
     background: transparent;
     color: inherit;
     cursor: pointer;
-    min-height: 36px;
-    padding: 4px 8px 4px 12px;
+    min-height: 28px;
+    padding: 2px 8px 2px 10px;
     text-align: left;
     transition: background 0.08s, color 0.08s;
   }
@@ -275,8 +276,8 @@
   }
 
   .user-picker__avatar {
-    width: 18px;
-    height: 18px;
+    width: 16px;
+    height: 16px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -291,7 +292,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-weight: 600;
+    font-weight: 500;
     font-size: var(--font-size-sm);
     line-height: 1.2;
   }
@@ -311,7 +312,7 @@
   }
 
   .user-picker__empty {
-    padding: 18px 12px;
+    padding: 12px 10px;
     color: var(--text-secondary);
     text-align: center;
     font-size: var(--font-size-sm);

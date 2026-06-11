@@ -151,6 +151,47 @@ func TestE2E_SSESinceQueryWorks(t *testing.T) {
 	assert.Equal("data_changed", f.Event)
 }
 
+func TestE2E_SSEBufferWraparoundReplaysRetainedEvents(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	srv, _, _ := setupTestServerWithSSEBufferSize(t, 4)
+	defer gracefulShutdown(t, srv)
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	// Six broadcasts into a 4-slot ring: ids 1 and 2 are overwritten,
+	// ids 3..6 remain. A cursor inside the retained window must replay
+	// the tail in order even though the ring has wrapped.
+	for i := 1; i <= 6; i++ {
+		srv.Hub().Broadcast(server.Event{Type: "data_changed", Data: i})
+	}
+
+	req, err := http.NewRequestWithContext(
+		t.Context(), http.MethodGet, ts.URL+"/api/v1/events", nil,
+	)
+	require.NoError(err)
+	req.Header.Set("Last-Event-ID", "4")
+	resp, err := ts.Client().Do(req)
+	require.NoError(err)
+	defer resp.Body.Close()
+
+	scanner := bufio.NewScanner(resp.Body)
+	var replayed []string
+	for range 2 {
+		f := readSSEFrame(t, scanner)
+		assert.Equal("data_changed", f.Event)
+		replayed = append(replayed, f.ID)
+	}
+	assert.Equal([]string{"5", "6"}, replayed)
+
+	// Live delivery resumes after the replay with the next id.
+	waitForSubscribe(t, srv, 1)
+	srv.Hub().Broadcast(server.Event{Type: "data_changed", Data: "post-wrap"})
+	live := readSSEFrame(t, scanner)
+	assert.Equal("7", live.ID)
+}
+
 func TestE2E_SSEStaleCursorEmitsReconnectStale(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

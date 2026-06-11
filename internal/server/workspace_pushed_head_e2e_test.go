@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -106,6 +107,72 @@ func TestWorkspacePushedHeadObserverE2ERefreshesPRDetailAndSSE(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(stored)
 	assert.Equal(newHead, stored.PlatformHeadSHA)
+}
+
+func TestWorkspacePushedHeadObserverE2ELocalOnlyCommitTriggersNothing(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+	var detailSyncCalls atomic.Int64
+	mock := &mockGH{
+		getPullRequestFn: func(context.Context, string, string, int) (*gh.PullRequest, error) {
+			detailSyncCalls.Add(1)
+			return nil, nil
+		},
+	}
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": mock},
+		database,
+		nil,
+		[]ghclient.RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}},
+		time.Minute,
+		nil,
+		nil,
+	)
+	t.Cleanup(syncer.Stop)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{WorktreeDir: t.TempDir()})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+
+	worktreePath, pushedHead := setupPushedHeadE2EWorktree(t)
+	repoID := seedPushedHeadE2ERepoAndPR(t, database, pushedHead)
+	insertPushedHeadE2EWorkspace(t, database, worktreePath)
+
+	// Commit locally without pushing: the remote-tracking ref must not
+	// move, so the observer must treat the workspace as unchanged.
+	require.NoError(os.WriteFile(filepath.Join(worktreePath, "feature.txt"), []byte("local only\n"), 0o644))
+	runGit(t, worktreePath, "add", ".")
+	runGit(t, worktreePath, "commit", "-m", "local-only commit")
+	assert.Equal(pushedHead, testGitSHA(t, worktreePath, "refs/remotes/origin/feature"),
+		"local commit must not move the remote-tracking ref")
+
+	httpServer := httptest.NewServer(srv)
+	defer httpServer.Close()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, httpServer.URL+"/api/v1/events", nil)
+	require.NoError(err)
+	resp, err := httpServer.Client().Do(req)
+	require.NoError(err)
+	defer resp.Body.Close()
+	require.Equal(http.StatusOK, resp.StatusCode)
+	require.Eventually(func() bool {
+		return srv.SubscriberCount() == 1
+	}, 2*time.Second, 5*time.Millisecond)
+	scanner := bufio.NewScanner(resp.Body)
+
+	srv.runWorkspacePushedHeadObserverPass(ctx)
+
+	// The pass enqueues nothing, so the sentinel broadcast after it must
+	// be the first frame the subscriber sees.
+	srv.Hub().Broadcast(Event{Type: "sentinel_after_pass", Data: map[string]any{}})
+	frame := readSSEFrameWithin(t, scanner, 5*time.Second, nil)
+	assert.Equal("sentinel_after_pass", frame.Event)
+
+	assert.Equal(int64(0), detailSyncCalls.Load(), "no PR detail sync may run for a local-only commit")
+	stored, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 1)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Equal("Old title", stored.Title)
+	assert.Equal(pushedHead, stored.PlatformHeadSHA)
 }
 
 func seedPushedHeadE2ERepoAndPR(t *testing.T, database *db.DB, oldHead string) int64 {

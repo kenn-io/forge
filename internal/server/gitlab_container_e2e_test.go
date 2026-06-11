@@ -1,12 +1,14 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"testing"
@@ -187,6 +189,303 @@ func TestGitLabContainerE2E(t *testing.T) {
 	require.Len(summaries, 1)
 	require.NotNil(summaries[0].Overview.LatestRelease)
 	assert.Equal(manifest.ReleaseTag, summaries[0].Overview.LatestRelease.TagName)
+
+	// Write surface: drive every GitLab mutation through middleman's HTTP
+	// API against the live container.
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+
+	encodedOwner := url.PathEscape(manifest.Owner)
+	pullBase := fmt.Sprintf(
+		"/api/v1/host/%s/pulls/gl/%s/%s", manifest.Host, encodedOwner, manifest.Name,
+	)
+	issueBase := fmt.Sprintf(
+		"/api/v1/host/%s/issues/gl/%s/%s", manifest.Host, encodedOwner, manifest.Name,
+	)
+	seededMR := fmt.Sprintf("%s/%d", pullBase, manifest.MergeRequestIID)
+	seededIssue := fmt.Sprintf("%s/%d", issueBase, manifest.IssueIID)
+	runID := time.Now().UnixNano()
+
+	// Comment post and edit on the seeded MR.
+	commentRR := doJSON(t, srv, http.MethodPost, seededMR+"/comments", map[string]string{
+		"body": fmt.Sprintf("Write parity comment %d", runID),
+	})
+	require.Equal(http.StatusCreated, commentRR.Code, commentRR.Body.String())
+	var commentEvent struct {
+		PlatformID *int64
+		Author     string
+		Body       string
+	}
+	require.NoError(json.NewDecoder(commentRR.Body).Decode(&commentEvent))
+	require.NotNil(commentEvent.PlatformID)
+	assert.Equal("root", commentEvent.Author)
+
+	editedBody := fmt.Sprintf("Write parity comment %d (edited)", runID)
+	editRR := doJSON(
+		t, srv, http.MethodPatch,
+		fmt.Sprintf("%s/comments/%d", seededMR, *commentEvent.PlatformID),
+		map[string]string{"body": editedBody},
+	)
+	require.Equal(http.StatusOK, editRR.Code, editRR.Body.String())
+	editedNote := gitlabContainerAPI(
+		t, ctx, manifest, http.MethodGet,
+		fmt.Sprintf("/projects/%d/merge_requests/%d/notes/%d",
+			manifest.ProjectID, manifest.MergeRequestIID, *commentEvent.PlatformID),
+		nil,
+	)
+	assert.Equal(editedBody, editedNote["body"])
+
+	// MR description edit (title is left alone so bootstrap stays idempotent).
+	mrEditRR := doJSON(t, srv, http.MethodPatch, seededMR, map[string]string{
+		"body": fmt.Sprintf("Description updated by write parity e2e %d", runID),
+	})
+	require.Equal(http.StatusOK, mrEditRR.Code, mrEditRR.Body.String())
+
+	// Close and reopen the seeded MR.
+	closeRR := doJSON(t, srv, http.MethodPost, seededMR+"/github-state", map[string]string{"state": "closed"})
+	require.Equal(http.StatusOK, closeRR.Code, closeRR.Body.String())
+	assert.Equal("closed", gitlabContainerMRState(t, ctx, manifest, manifest.MergeRequestIID))
+	reopenRR := doJSON(t, srv, http.MethodPost, seededMR+"/github-state", map[string]string{"state": "open"})
+	require.Equal(http.StatusOK, reopenRR.Code, reopenRR.Body.String())
+	assert.Equal("opened", gitlabContainerMRState(t, ctx, manifest, manifest.MergeRequestIID))
+
+	// Issue comment, close, and reopen on the seeded issue.
+	issueCommentRR := doJSON(t, srv, http.MethodPost, seededIssue+"/comments", map[string]string{
+		"body": fmt.Sprintf("Issue write parity comment %d", runID),
+	})
+	require.Equal(http.StatusCreated, issueCommentRR.Code, issueCommentRR.Body.String())
+	issueCloseRR := doJSON(t, srv, http.MethodPost, seededIssue+"/github-state", map[string]string{"state": "closed"})
+	require.Equal(http.StatusOK, issueCloseRR.Code, issueCloseRR.Body.String())
+	issueReopenRR := doJSON(t, srv, http.MethodPost, seededIssue+"/github-state", map[string]string{"state": "open"})
+	require.Equal(http.StatusOK, issueReopenRR.Code, issueReopenRR.Body.String())
+
+	// Issue create plus title/body edit.
+	createIssueRR := doJSON(t, srv, http.MethodPost, issueBase, map[string]string{
+		"title": fmt.Sprintf("Write parity issue %d", runID),
+		"body":  "Issue created through middleman against the GitLab container.",
+	})
+	require.Equal(http.StatusCreated, createIssueRR.Code, createIssueRR.Body.String())
+	var createdIssue struct {
+		Number int
+	}
+	require.NoError(json.NewDecoder(createIssueRR.Body).Decode(&createdIssue))
+	require.Positive(createdIssue.Number)
+	issueEditRR := doJSON(
+		t, srv, http.MethodPatch,
+		fmt.Sprintf("%s/%d", issueBase, createdIssue.Number),
+		map[string]string{"title": fmt.Sprintf("Write parity issue %d (edited)", runID)},
+	)
+	require.Equal(http.StatusOK, issueEditRR.Code, issueEditRR.Body.String())
+
+	// request_changes has no GitLab equivalent and must fail with the typed
+	// capability envelope.
+	rejectRR := doJSON(t, srv, http.MethodPost, seededMR+"/review-draft/publish", map[string]string{
+		"action": "request_changes", "body": "needs work",
+	})
+	require.Equal(http.StatusConflict, rejectRR.Code, rejectRR.Body.String())
+	var rejectProblem struct {
+		Code    string         `json:"code"`
+		Details map[string]any `json:"details"`
+	}
+	require.NoError(json.NewDecoder(rejectRR.Body).Decode(&rejectProblem))
+	assert.Equal("unsupportedCapability", rejectProblem.Code)
+	require.NotNil(rejectProblem.Details)
+	assert.Equal("review_action_request_changes", rejectProblem.Details["capability"])
+
+	// A dedicated MR for approve, discussion, and merge so the seeded MR
+	// stays open for repeated warm-volume runs.
+	branch := fmt.Sprintf("feature/write-parity-%d", runID)
+	gitlabContainerAPI(t, ctx, manifest, http.MethodPost,
+		fmt.Sprintf("/projects/%d/repository/branches?branch=%s&ref=main",
+			manifest.ProjectID, url.QueryEscape(branch)),
+		map[string]any{},
+	)
+	gitlabContainerAPI(t, ctx, manifest, http.MethodPost,
+		fmt.Sprintf("/projects/%d/repository/files/%s",
+			manifest.ProjectID, url.PathEscape(fmt.Sprintf("docs/write-parity-%d.txt", runID))),
+		map[string]any{
+			"branch":         branch,
+			"content":        "write parity fixture\n",
+			"commit_message": "Add write parity fixture file",
+		},
+	)
+	createdMR := gitlabContainerAPI(t, ctx, manifest, http.MethodPost,
+		fmt.Sprintf("/projects/%d/merge_requests", manifest.ProjectID),
+		map[string]any{
+			"source_branch": branch,
+			"target_branch": "main",
+			"title":         fmt.Sprintf("Write parity MR %d", runID),
+		},
+	)
+	mergeIID := int(createdMR["iid"].(float64))
+	require.Positive(mergeIID)
+	require.NoError(syncer.SyncMR(ctx, manifest.Owner, manifest.Name, mergeIID))
+	parityMR := fmt.Sprintf("%s/%d", pullBase, mergeIID)
+
+	// Approve through the approvals API (body becomes a regular note).
+	approveRR := doJSON(t, srv, http.MethodPost, parityMR+"/approve", map[string]string{
+		"body": "Approving from middleman write parity e2e",
+	})
+	require.Equal(http.StatusOK, approveRR.Code, approveRR.Body.String())
+	approvalState := gitlabContainerAPI(t, ctx, manifest, http.MethodGet,
+		fmt.Sprintf("/projects/%d/merge_requests/%d/approvals", manifest.ProjectID, mergeIID),
+		nil,
+	)
+	approvedBy, _ := approvalState["approved_by"].([]any)
+	assert.NotEmpty(approvedBy, "approvals API should record the middleman approval")
+
+	// Discussion reply and resolve/unresolve on a resolvable thread.
+	discussion := gitlabContainerAPI(t, ctx, manifest, http.MethodPost,
+		fmt.Sprintf("/projects/%d/merge_requests/%d/discussions", manifest.ProjectID, mergeIID),
+		map[string]any{"body": "Thread started for write parity e2e"},
+	)
+	discussionID, _ := discussion["id"].(string)
+	require.NotEmpty(discussionID)
+
+	replyRR := doJSON(t, srv, http.MethodPost,
+		fmt.Sprintf("%s/discussions/%s/reply", parityMR, discussionID),
+		map[string]string{"body": "Reply sent through middleman"},
+	)
+	require.Equal(http.StatusCreated, replyRR.Code, replyRR.Body.String())
+
+	resolveRR := doJSON(t, srv, http.MethodPost,
+		fmt.Sprintf("%s/discussions/%s/resolve", parityMR, discussionID),
+		map[string]bool{"resolved": true},
+	)
+	require.Equal(http.StatusOK, resolveRR.Code, resolveRR.Body.String())
+	assert.True(gitlabContainerDiscussionResolved(t, ctx, manifest, mergeIID, discussionID))
+
+	unresolveRR := doJSON(t, srv, http.MethodPost,
+		fmt.Sprintf("%s/discussions/%s/resolve", parityMR, discussionID),
+		map[string]bool{"resolved": false},
+	)
+	require.Equal(http.StatusOK, unresolveRR.Code, unresolveRR.Body.String())
+	assert.False(gitlabContainerDiscussionResolved(t, ctx, manifest, mergeIID, discussionID))
+
+	// Rebase cannot be honored per merge on GitLab and must fail typed,
+	// without merging anything.
+	rebaseRR := doJSON(t, srv, http.MethodPost, parityMR+"/merge", map[string]string{
+		"method": "rebase", "commit_title": "t", "commit_message": "m",
+	})
+	require.Equal(http.StatusConflict, rebaseRR.Code, rebaseRR.Body.String())
+	var rebaseProblem struct {
+		Code    string         `json:"code"`
+		Details map[string]any `json:"details"`
+	}
+	require.NoError(json.NewDecoder(rebaseRR.Body).Decode(&rebaseProblem))
+	assert.Equal("unsupportedCapability", rebaseProblem.Code)
+	require.NotNil(rebaseProblem.Details)
+	assert.Equal("merge_method_rebase", rebaseProblem.Details["capability"])
+	assert.Equal("opened", gitlabContainerMRState(t, ctx, manifest, mergeIID))
+
+	// Squash merge once GitLab finishes its async mergeability check.
+	waitForGitLabMergeable(t, ctx, manifest, mergeIID)
+	mergeRR := doJSON(t, srv, http.MethodPost, parityMR+"/merge", map[string]string{
+		"method":         "squash",
+		"commit_title":   fmt.Sprintf("Write parity squash merge %d", runID),
+		"commit_message": "Squash merged through middleman against the GitLab container",
+	})
+	require.Equal(http.StatusOK, mergeRR.Code, mergeRR.Body.String())
+	var mergeResult struct {
+		Merged bool   `json:"merged"`
+		SHA    string `json:"sha"`
+	}
+	require.NoError(json.NewDecoder(mergeRR.Body).Decode(&mergeResult))
+	assert.True(mergeResult.Merged)
+	assert.NotEmpty(mergeResult.SHA)
+	assert.Equal("merged", gitlabContainerMRState(t, ctx, manifest, mergeIID))
+}
+
+// gitlabContainerAPI issues a raw request against the container's GitLab
+// REST API for fixture setup and out-of-band verification of middleman's
+// mutations. Payload nil sends no body; responses must be JSON objects.
+func gitlabContainerAPI(
+	t *testing.T,
+	ctx context.Context,
+	manifest gitLabContainerManifest,
+	method, path string,
+	payload map[string]any,
+) map[string]any {
+	t.Helper()
+	require := require.New(t)
+
+	var body io.Reader
+	if payload != nil {
+		encoded, err := json.Marshal(payload)
+		require.NoError(err)
+		body = bytes.NewReader(encoded)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, manifest.APIURL+path, body)
+	require.NoError(err)
+	req.Header.Set("PRIVATE-TOKEN", manifest.Token)
+	if payload != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(err)
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	require.NoError(err)
+	require.Less(resp.StatusCode, 300, "%s %s: %s", method, path, string(raw))
+	out := map[string]any{}
+	require.NoError(json.Unmarshal(raw, &out), string(raw))
+	return out
+}
+
+func gitlabContainerMRState(
+	t *testing.T,
+	ctx context.Context,
+	manifest gitLabContainerManifest,
+	iid int,
+) string {
+	t.Helper()
+	mr := gitlabContainerAPI(t, ctx, manifest, http.MethodGet,
+		fmt.Sprintf("/projects/%d/merge_requests/%d", manifest.ProjectID, iid), nil)
+	state, _ := mr["state"].(string)
+	return state
+}
+
+func gitlabContainerDiscussionResolved(
+	t *testing.T,
+	ctx context.Context,
+	manifest gitLabContainerManifest,
+	iid int,
+	discussionID string,
+) bool {
+	t.Helper()
+	discussion := gitlabContainerAPI(t, ctx, manifest, http.MethodGet,
+		fmt.Sprintf("/projects/%d/merge_requests/%d/discussions/%s",
+			manifest.ProjectID, iid, discussionID),
+		nil,
+	)
+	notes, _ := discussion["notes"].([]any)
+	require.NotEmpty(t, notes)
+	first, _ := notes[0].(map[string]any)
+	resolved, _ := first["resolved"].(bool)
+	return resolved
+}
+
+// waitForGitLabMergeable polls until GitLab's async merge status check
+// settles; accepting an MR while the check runs returns 405.
+func waitForGitLabMergeable(
+	t *testing.T,
+	ctx context.Context,
+	manifest gitLabContainerManifest,
+	iid int,
+) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Minute)
+	for {
+		mr := gitlabContainerAPI(t, ctx, manifest, http.MethodGet,
+			fmt.Sprintf("/projects/%d/merge_requests/%d", manifest.ProjectID, iid), nil)
+		status, _ := mr["detailed_merge_status"].(string)
+		if status == "mergeable" {
+			return
+		}
+		require.False(t, time.Now().After(deadline),
+			"MR %d never became mergeable, last detailed_merge_status=%q", iid, status)
+		time.Sleep(3 * time.Second)
+	}
 }
 
 func envOrDefault(key, fallback string) string {

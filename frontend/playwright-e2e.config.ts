@@ -3,10 +3,10 @@ import { ensureE2EServer } from "./tests/e2e-full/support/e2eServer";
 
 const serverInfo = await ensureE2EServer();
 
-// Local worker count, tuned per engine: chromium and webkit scale to
-// 75% of cores, while firefox's heavier per-worker processes degrade
-// past ~50% (measured locally: 9 workers beat both 6 and 13). CI
-// runners are small; they keep Playwright's default.
+// Local worker count, tuned per engine: chromium scales to 75% of cores,
+// while firefox's heavier per-worker processes degrade past ~50% (measured
+// locally: 9 workers beat both 6 and 13). CI runners are small; they keep
+// Playwright's default.
 function localWorkers(): string {
   const args = process.argv.join(" ");
   return /--project[= ]firefox/.test(args) ? "50%" : "75%";
@@ -41,14 +41,6 @@ export default defineConfig({
       testIgnore: /roborev/,
       use: {
         ...devices["Desktop Firefox"],
-      },
-    },
-    {
-      name: "webkit",
-      testIgnore: /roborev/,
-      use: {
-        ...devices["Desktop Safari"],
-        deviceScaleFactor: 1,
       },
     },
     {

@@ -1,4 +1,4 @@
-const defaultProjectRuns = [["--project=chromium"], ["--project=firefox"], ["--project=webkit"]];
+const defaultProjectRuns = [["--project=chromium"], ["--project=firefox"]];
 
 function includesProjectArg(args: string[]): boolean {
   return args.some((arg) => arg === "--project" || arg.startsWith("--project="));

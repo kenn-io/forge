@@ -44,82 +44,82 @@ func submitManifest(t *testing.T, fake *githubapptest.Fake, manifest Manifest) s
 
 func TestConvertManifest(t *testing.T) {
 	t.Parallel()
-	req := require.New(t)
+	require := require.New(t)
 	fake := githubapptest.NewFake()
 	t.Cleanup(fake.Close)
 	manifest, err := NewManifest("middleman-conv", "", "http://127.0.0.1:1/callback")
-	req.NoError(err)
+	require.NoError(err)
 	code := submitManifest(t, fake, manifest)
 
 	client := NewClientWithBase(fake.APIBase())
 	creds, err := client.ConvertManifest(context.Background(), code)
-	req.NoError(err)
+	require.NoError(err)
 
-	check := assert.New(t)
-	check.Equal("middleman-conv", creds.Slug)
-	check.Positive(creds.ID)
-	check.Contains(creds.PEM, "RSA PRIVATE KEY")
-	check.NotEmpty(creds.ClientSecret)
+	assert := assert.New(t)
+	assert.Equal("middleman-conv", creds.Slug)
+	assert.Positive(creds.ID)
+	assert.Contains(creds.PEM, "RSA PRIVATE KEY")
+	assert.NotEmpty(creds.ClientSecret)
 	_, parseErr := ParsePrivateKey([]byte(creds.PEM))
-	req.NoError(parseErr)
+	require.NoError(parseErr)
 
 	// Conversion codes are single use; replay must fail loudly so the
 	// CLI reports a stale callback instead of silently re-creating.
 	_, err = client.ConvertManifest(context.Background(), code)
-	check.True(IsStatus(err, http.StatusNotFound), "got %v", err)
+	assert.True(IsStatus(err, http.StatusNotFound), "got %v", err)
 }
 
 func TestMintInstallationToken(t *testing.T) {
 	t.Parallel()
-	req := require.New(t)
+	require := require.New(t)
 	fake := githubapptest.NewFake()
 	t.Cleanup(fake.Close)
 	manifest, err := NewManifest("middleman-mint", "", "http://127.0.0.1:1/callback")
-	req.NoError(err)
+	require.NoError(err)
 	code := submitManifest(t, fake, manifest)
 	client := NewClientWithBase(fake.APIBase())
 	creds, err := client.ConvertManifest(context.Background(), code)
-	req.NoError(err)
+	require.NoError(err)
 	installID, err := fake.Install(creds.ID, "kenn-io")
-	req.NoError(err)
+	require.NoError(err)
 
 	keyPath := filepath.Join(t.TempDir(), "app.pem")
-	req.NoError(os.WriteFile(keyPath, []byte(creds.PEM), 0o600))
+	require.NoError(os.WriteFile(keyPath, []byte(creds.PEM), 0o600))
 
 	token, expires, err := mintInstallationToken(
 		context.Background(), fake.APIBase(), creds.ID, keyPath, installID,
 	)
-	req.NoError(err)
-	check := assert.New(t)
-	check.True(strings.HasPrefix(token, "ghs_"), "token %q", token)
-	check.Greater(time.Until(expires), 50*time.Minute)
+	require.NoError(err)
+	assert := assert.New(t)
+	assert.True(strings.HasPrefix(token, "ghs_"), "token %q", token)
+	assert.Greater(time.Until(expires), 50*time.Minute)
 
 	// The minted token must be usable as a plain bearer credential.
 	rate, err := client.CoreRateLimit(context.Background(), token)
-	req.NoError(err)
-	check.Equal(5000, rate.Limit)
+	require.NoError(err)
+	assert.Equal(5000, rate.Limit)
 }
 
 func TestMintInstallationTokenRejectsWrongKey(t *testing.T) {
 	t.Parallel()
-	req := require.New(t)
+	require := require.New(t)
 	fake := githubapptest.NewFake()
 	t.Cleanup(fake.Close)
 	manifest, err := NewManifest("middleman-badkey", "", "http://127.0.0.1:1/callback")
-	req.NoError(err)
+	require.NoError(err)
 	client := NewClientWithBase(fake.APIBase())
 	creds, err := client.ConvertManifest(
 		context.Background(), submitManifest(t, fake, manifest),
 	)
-	req.NoError(err)
+	require.NoError(err)
 	installID, err := fake.Install(creds.ID, "kenn-io")
-	req.NoError(err)
+	require.NoError(err)
 
 	// A key that does not match the app must be rejected by signature
 	// verification, not just shape checks.
 	otherKey := generateTestKey(t)
 	wrongJWT, err := SignAppJWT(creds.ID, otherKey, time.Now())
-	req.NoError(err)
+	require.NoError(err)
 	_, err = client.CreateInstallationToken(context.Background(), wrongJWT, installID)
 	assert.True(t, IsStatus(err, http.StatusUnauthorized), "got %v", err)
 }

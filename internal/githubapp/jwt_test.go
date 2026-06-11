@@ -60,12 +60,12 @@ func TestSignAppJWT(t *testing.T) {
 	require.True(t, ok)
 	exp, ok := claims["exp"].(float64)
 	require.True(t, ok)
-	check := assert.New(t)
-	check.Equal("4321", claims["iss"])
-	check.Equal(now.Add(-time.Minute).Unix(), int64(iat))
-	check.Equal(int64(exp), now.Add(8*time.Minute).Unix())
+	assert := assert.New(t)
+	assert.Equal("4321", claims["iss"])
+	assert.Equal(now.Add(-time.Minute).Unix(), int64(iat))
+	assert.Equal(int64(exp), now.Add(8*time.Minute).Unix())
 	// GitHub rejects JWTs whose lifetime exceeds 10 minutes.
-	check.LessOrEqual(int64(exp)-int64(iat), int64(600))
+	assert.LessOrEqual(int64(exp)-int64(iat), int64(600))
 }
 
 func TestSignAppJWTRejectsBadInput(t *testing.T) {
@@ -122,26 +122,26 @@ func TestNewManifestValidation(t *testing.T) {
 
 	m, err := NewManifest("middleman-test", "", "http://127.0.0.1:9/callback")
 	require.NoError(t, err)
-	check := assert.New(t)
-	check.False(m.Public)
-	check.False(m.HookAttributes.Active)
-	check.Empty(m.DefaultEvents)
-	check.Equal("http://127.0.0.1:9/callback", m.RedirectURL)
-	check.Equal(DefaultHomepageURL, m.URL)
+	assert := assert.New(t)
+	assert.False(m.Public)
+	assert.False(m.HookAttributes.Active)
+	assert.Empty(m.DefaultEvents)
+	assert.Equal("http://127.0.0.1:9/callback", m.RedirectURL)
+	assert.Equal(DefaultHomepageURL, m.URL)
 	// Merging PRs needs contents write; dropping it would break the
 	// core merge workflow even though sync still reads fine.
-	check.Equal("write", m.DefaultPermissions["contents"])
-	check.Equal("write", m.DefaultPermissions["pull_requests"])
+	assert.Equal("write", m.DefaultPermissions["contents"])
+	assert.Equal("write", m.DefaultPermissions["pull_requests"])
 }
 
 func TestRandomAppNameFitsGitHubLimit(t *testing.T) {
 	t.Parallel()
-	req := require.New(t)
-	check := assert.New(t)
+	require := require.New(t)
+	assert := assert.New(t)
 	name, err := RandomAppName()
-	req.NoError(err)
-	check.LessOrEqual(len(name), maxAppNameLength)
+	require.NoError(err)
+	assert.LessOrEqual(len(name), maxAppNameLength)
 	other, err := RandomAppName()
-	req.NoError(err)
-	check.NotEqual(name, other)
+	require.NoError(err)
+	assert.NotEqual(name, other)
 }

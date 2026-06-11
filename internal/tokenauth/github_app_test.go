@@ -28,34 +28,34 @@ func githubAppDescriptor(installationID int64) Descriptor {
 }
 
 func TestGitHubAppTokenMintAndCache(t *testing.T) {
-	req := require.New(t)
-	check := assert.New(t)
+	require := require.New(t)
+	assert := assert.New(t)
 	var mints atomic.Int64
 	src := NewManagedSource(githubAppDescriptor(42), Options{
 		GitHubApp: func(_ context.Context, c Candidate) (string, time.Time, error) {
 			mints.Add(1)
-			check.Equal(int64(77), c.AppID)
-			check.Equal(int64(42), c.InstallationID)
-			check.Equal("/keys/app.pem", c.FilePath)
+			assert.Equal(int64(77), c.AppID)
+			assert.Equal(int64(42), c.InstallationID)
+			assert.Equal("/keys/app.pem", c.FilePath)
 			return "ghs_minted", time.Now().Add(time.Hour), nil
 		},
 	})
 
 	token, err := src.Token(context.Background())
-	req.NoError(err)
-	check.Equal("ghs_minted", token)
+	require.NoError(err)
+	assert.Equal("ghs_minted", token)
 
 	// A second resolve inside the expiry window reuses the cache.
 	token, err = src.Token(context.Background())
-	req.NoError(err)
-	check.Equal("ghs_minted", token)
-	check.Equal(int64(1), mints.Load())
+	require.NoError(err)
+	assert.Equal("ghs_minted", token)
+	assert.Equal(int64(1), mints.Load())
 
 	// Invalidate (e.g. a 401 retry in AuthTransport) forces a re-mint.
 	src.Invalidate()
 	_, err = src.Token(context.Background())
-	req.NoError(err)
-	check.Equal(int64(2), mints.Load())
+	require.NoError(err)
+	assert.Equal(int64(2), mints.Load())
 }
 
 func TestGitHubAppTokenRemintsNearExpiry(t *testing.T) {

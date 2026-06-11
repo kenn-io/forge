@@ -164,43 +164,43 @@ func TestCreateFlowEndToEnd(t *testing.T) {
 	env, out := newTestEnv(t, fake, configPath)
 	env.openBrowser = scriptBrowser(t, fake, "kenn-io")
 
-	req := require.New(t)
-	req.NoError(runCLI([]string{
+	require := require.New(t)
+	require.NoError(runCLI([]string{
 		"create", "--name", "middleman-e2e", "--timeout", "10s",
 	}, env))
 
 	cfg, err := config.Load(configPath)
-	req.NoError(err)
-	req.Len(cfg.GitHubApps, 1)
+	require.NoError(err)
+	require.Len(cfg.GitHubApps, 1)
 	app := cfg.GitHubApps[0]
 
-	check := assert.New(t)
-	check.Equal("github.com", app.Host)
-	check.Equal("middleman-e2e", app.Slug)
-	check.Positive(app.AppID)
-	check.NotZero(app.InstallationID)
-	check.Equal("kenn-io", app.InstallationAccount)
-	check.Contains(out.String(), "Installed on kenn-io")
+	assert := assert.New(t)
+	assert.Equal("github.com", app.Host)
+	assert.Equal("middleman-e2e", app.Slug)
+	assert.Positive(app.AppID)
+	assert.NotZero(app.InstallationID)
+	assert.Equal("kenn-io", app.InstallationAccount)
+	assert.Contains(out.String(), "Installed on kenn-io")
 
 	// The private key must exist next to the config, owner-only.
 	info, err := os.Stat(app.PrivateKeyPath)
-	req.NoError(err)
-	check.Equal(filepath.Dir(configPath), filepath.Dir(app.PrivateKeyPath))
-	check.Equal(os.FileMode(0o600), info.Mode().Perm())
+	require.NoError(err)
+	assert.Equal(filepath.Dir(configPath), filepath.Dir(app.PrivateKeyPath))
+	assert.Equal(os.FileMode(0o600), info.Mode().Perm())
 
 	// The saved entry must put a mintable github_app candidate in the
 	// host's token chain — that is the whole point of the tool.
 	desc := cfg.TokenSourceForPlatformHost("github", "github.com", "", "")
-	req.NotEmpty(desc.Candidates)
+	require.NotEmpty(desc.Candidates)
 	first := desc.Candidates[0]
-	check.Equal(tokenauth.SourceKindGitHubApp, first.Kind)
-	check.Equal(app.AppID, first.AppID)
-	check.Equal(app.InstallationID, first.InstallationID)
+	assert.Equal(tokenauth.SourceKindGitHubApp, first.Kind)
+	assert.Equal(app.AppID, first.AppID)
+	assert.Equal(app.InstallationID, first.InstallationID)
 
 	// The manifest GitHub received must keep webhooks off (middleman
 	// polls) and stay private.
 	manifests := fake.Manifests()
-	req.Len(manifests, 1)
+	require.Len(manifests, 1)
 	var sent struct {
 		Public         bool `json:"public"`
 		HookAttributes struct {
@@ -208,10 +208,10 @@ func TestCreateFlowEndToEnd(t *testing.T) {
 		} `json:"hook_attributes"`
 		DefaultPermissions map[string]string `json:"default_permissions"`
 	}
-	req.NoError(json.Unmarshal([]byte(manifests[0]), &sent))
-	check.False(sent.Public)
-	check.False(sent.HookAttributes.Active)
-	check.Equal("write", sent.DefaultPermissions["contents"])
+	require.NoError(json.Unmarshal([]byte(manifests[0]), &sent))
+	assert.False(sent.Public)
+	assert.False(sent.HookAttributes.Active)
+	assert.Equal("write", sent.DefaultPermissions["contents"])
 }
 
 func TestCreateRefusesSecondAppForSameHost(t *testing.T) {
@@ -241,14 +241,14 @@ func TestListReportsInstallationAndRateBudget(t *testing.T) {
 	var statuses []appStatus
 	require.NoError(t, json.Unmarshal(out.Bytes(), &statuses))
 	require.Len(t, statuses, 1)
-	check := assert.New(t)
-	check.Equal("middleman-list", statuses[0].Slug)
-	check.Equal("kenn-io", statuses[0].InstallationAccount)
-	check.Equal(5000, statuses[0].RateLimit)
-	check.Empty(statuses[0].Error)
+	assert := assert.New(t)
+	assert.Equal("middleman-list", statuses[0].Slug)
+	assert.Equal("kenn-io", statuses[0].InstallationAccount)
+	assert.Equal(5000, statuses[0].RateLimit)
+	assert.Empty(statuses[0].Error)
 	// Rate numbers come from a freshly minted installation token; the
 	// fake mints with zero usage unless configured otherwise.
-	check.Equal(5000, statuses[0].RateRemaining)
+	assert.Equal(5000, statuses[0].RateRemaining)
 }
 
 func TestUninstallClearsInstallationButKeepsApp(t *testing.T) {
@@ -258,73 +258,73 @@ func TestUninstallClearsInstallationButKeepsApp(t *testing.T) {
 	configPath := writeTestConfig(t)
 	createTestApp(t, fake, configPath, "middleman-uninst")
 
-	req := require.New(t)
+	require := require.New(t)
 	env, _ := newTestEnv(t, fake, configPath)
 	err := runCLI([]string{"uninstall"}, env)
-	req.Error(err, "uninstall must demand --yes")
-	req.ErrorContains(err, "--yes")
+	require.Error(err, "uninstall must demand --yes")
+	require.ErrorContains(err, "--yes")
 
 	env, _ = newTestEnv(t, fake, configPath)
-	req.NoError(runCLI([]string{"uninstall", "--yes"}, env))
+	require.NoError(runCLI([]string{"uninstall", "--yes"}, env))
 
 	cfg, err := config.Load(configPath)
-	req.NoError(err)
-	req.Len(cfg.GitHubApps, 1)
-	check := assert.New(t)
-	check.Zero(cfg.GitHubApps[0].InstallationID)
-	check.Empty(cfg.GitHubApps[0].InstallationAccount)
+	require.NoError(err)
+	require.Len(cfg.GitHubApps, 1)
+	assert := assert.New(t)
+	assert.Zero(cfg.GitHubApps[0].InstallationID)
+	assert.Empty(cfg.GitHubApps[0].InstallationAccount)
 	app, ok := fake.AppBySlug("middleman-uninst")
-	req.True(ok)
-	check.Empty(app.Installations, "installation must be deleted on GitHub")
+	require.True(ok)
+	assert.Empty(app.Installations, "installation must be deleted on GitHub")
 }
 
 func TestInstallRecordsNewInstallation(t *testing.T) {
 	t.Parallel()
-	req := require.New(t)
+	require := require.New(t)
 	fake := githubapptest.NewFake()
 	t.Cleanup(fake.Close)
 	configPath := writeTestConfig(t)
 	createTestApp(t, fake, configPath, "middleman-reinst")
 
 	env, _ := newTestEnv(t, fake, configPath)
-	req.NoError(runCLI([]string{"uninstall", "--yes"}, env))
+	require.NoError(runCLI([]string{"uninstall", "--yes"}, env))
 
 	env, _ = newTestEnv(t, fake, configPath)
 	env.openBrowser = scriptBrowser(t, fake, "other-org")
-	req.NoError(runCLI([]string{"install", "--timeout", "10s"}, env))
+	require.NoError(runCLI([]string{"install", "--timeout", "10s"}, env))
 
 	cfg, err := config.Load(configPath)
-	req.NoError(err)
-	req.Len(cfg.GitHubApps, 1)
+	require.NoError(err)
+	require.Len(cfg.GitHubApps, 1)
 	assert.Equal(t, "other-org", cfg.GitHubApps[0].InstallationAccount)
 	assert.NotZero(t, cfg.GitHubApps[0].InstallationID)
 }
 
 func TestDeleteRemovesConfigAndKeyAfterBrowserDeletion(t *testing.T) {
 	t.Parallel()
-	req := require.New(t)
+	require := require.New(t)
 	fake := githubapptest.NewFake()
 	t.Cleanup(fake.Close)
 	configPath := writeTestConfig(t)
 	createTestApp(t, fake, configPath, "middleman-del")
 	cfg, err := config.Load(configPath)
-	req.NoError(err)
+	require.NoError(err)
 	keyPath := cfg.GitHubApps[0].PrivateKeyPath
 
 	env, _ := newTestEnv(t, fake, configPath)
 	err = runCLI([]string{"delete"}, env)
-	req.Error(err, "delete must demand --yes")
+	require.Error(err, "delete must demand --yes")
 
 	env, out := newTestEnv(t, fake, configPath)
 	env.openBrowser = scriptBrowser(t, fake, "kenn-io")
-	req.NoError(runCLI([]string{"delete", "--yes", "--timeout", "10s"}, env))
+	require.NoError(runCLI([]string{"delete", "--yes", "--timeout", "10s"}, env))
 
 	cfg, err = config.Load(configPath)
-	req.NoError(err)
-	check := assert.New(t)
-	check.Empty(cfg.GitHubApps)
-	check.NoFileExists(keyPath)
-	check.Contains(out.String(), "Deleted app")
+	require.NoError(err)
+	assert := assert.New(t)
+	assert.Empty(cfg.GitHubApps)
+	assert.NoFileExists(keyPath)
+	assert.Contains(out.String(), "Deleted app")
 }
 
 func TestCreateNoBrowserPrintsManifestURL(t *testing.T) {

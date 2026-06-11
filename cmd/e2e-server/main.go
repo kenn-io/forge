@@ -561,6 +561,52 @@ type appState struct {
 	worktreeDir string
 	tmuxCommand []string
 	clones      *gitclone.Manager
+	handlerWG   sync.WaitGroup
+}
+
+type appStateRegistry struct {
+	mu      sync.Mutex
+	current atomic.Pointer[appState]
+}
+
+func newAppStateRegistry(initial *appState) *appStateRegistry {
+	registry := &appStateRegistry{}
+	registry.current.Store(initial)
+	return registry
+}
+
+func (r *appStateRegistry) Load() *appState {
+	return r.current.Load()
+}
+
+func (r *appStateRegistry) Swap(next *appState) *appState {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.current.Swap(next)
+}
+
+func (r *appStateRegistry) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	state := r.startRequest()
+	defer state.finishRequest()
+	state.handler.ServeHTTP(w, req)
+}
+
+func (r *appStateRegistry) startRequest() *appState {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	state := r.current.Load()
+	// Swap takes the same lock, so any request that observes the old
+	// state increments its handler count before old-state teardown can wait.
+	state.handlerWG.Add(1)
+	return state
+}
+
+func (st *appState) finishRequest() {
+	st.handlerWG.Done()
+}
+
+func (st *appState) waitForHandlers() {
+	st.handlerWG.Wait()
 }
 
 // tmuxSocketCounter feeds per-instance tmux socket names so
@@ -603,6 +649,7 @@ func (st *appState) close() {
 	if err := st.srv.Shutdown(shutdownCtx); err != nil {
 		slog.Warn("server shutdown", "err", err)
 	}
+	st.waitForHandlers()
 	cleanupE2EWorkspaces(st.database, st.clones, st.worktreeDir, st.tmuxCommand)
 	if err := st.database.Close(); err != nil {
 		slog.Warn("close database", "err", err)
@@ -1388,13 +1435,12 @@ func run(
 		return err
 	}
 
-	var current atomic.Pointer[appState]
-	current.Store(state)
+	states := newAppStateRegistry(state)
 	// Final cleanup of whichever state is live at exit. Runs last
 	// (registered first): the httpServer/srv shutdown defers below
 	// drain handlers before this closes the database and temp dir.
 	defer func() {
-		current.Load().close()
+		states.Load().close()
 	}()
 
 	listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
@@ -1462,7 +1508,7 @@ func run(
 				)
 				return
 			}
-			old := current.Swap(newState)
+			old := states.Swap(newState)
 			// Old-state teardown (handler drain, tmux kill, temp
 			// dir removal) happens off the request path, matching
 			// the old SIGTERM-and-return stop() semantics.
@@ -1476,7 +1522,7 @@ func run(
 			}
 			return
 		}
-		current.Load().handler.ServeHTTP(w, r)
+		states.ServeHTTP(w, r)
 	})
 
 	httpServer := &http.Server{
@@ -1494,7 +1540,7 @@ func run(
 			context.Background(), 10*time.Second,
 		)
 		defer cancel()
-		if err := current.Load().srv.Shutdown(shutdownCtx); err != nil {
+		if err := states.Load().srv.Shutdown(shutdownCtx); err != nil {
 			slog.Warn("server shutdown", "err", err)
 		}
 		if err := httpServer.Shutdown(shutdownCtx); err != nil {
@@ -1519,7 +1565,7 @@ func run(
 			context.Background(), 10*time.Second,
 		)
 		defer cancel()
-		if err := current.Load().srv.Shutdown(shutdownCtx); err != nil {
+		if err := states.Load().srv.Shutdown(shutdownCtx); err != nil {
 			slog.Warn("server shutdown", "err", err)
 		}
 		if err := httpServer.Shutdown(shutdownCtx); err != nil {

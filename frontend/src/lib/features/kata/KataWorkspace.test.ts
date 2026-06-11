@@ -573,6 +573,40 @@ describe("KataWorkspace", () => {
     expect(screen.queryByTestId("daemon-chip")).toBeNull();
   });
 
+  it("surfaces task request failures outside the daemon switcher", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      Response.json({
+        daemons: [
+          {
+            id: "home",
+            url: "http://127.0.0.1:7777",
+            default: true,
+            auth: "none",
+            health: "connected",
+          },
+        ],
+      }),
+    );
+    const { api, assignOwner } = createWorkspaceAPI();
+    assignOwner.mockRejectedValueOnce(new Error("owner unavailable"));
+
+    render(KataWorkspace, { props: { api, selectedIssueUID: "issue-pay-rent" } });
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Pay rent" })).toBeTruthy();
+    });
+    const detailRegion = within(screen.getByRole("region", { name: "Task detail" }));
+    await fireEvent.click(detailRegion.getByRole("button", { name: "Owner: fixture-user" }));
+    const ownerInput = detailRegion.getByRole("combobox", { name: "Owner" }) as HTMLInputElement;
+    await fireEvent.input(ownerInput, { target: { value: "agent:new" } });
+    await fireEvent.keyDown(ownerInput, { key: "Enter" });
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("owner unavailable");
+    expect(ownerInput.value).toBe("agent:new");
+    expect(screen.getByTestId("daemon-chip").textContent).not.toContain("owner unavailable");
+  });
+
   it("rehydrates linked task titles when switching daemons with matching peer uids", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
       Response.json({

@@ -62,6 +62,7 @@
   }
 
   type SplitOrientation = "vertical" | "horizontal";
+  type FailureSurface = "request" | "daemon" | "none";
 
   let {
     api = undefined,
@@ -77,6 +78,8 @@
   let viewLoading = $state(false);
   let viewLoadingGeneration = 0;
   let error = $state<string | null>(null);
+  let requestError = $state<string | null>(null);
+  let lastTaskError: string | null = null;
   let unlinkBusyIds = $state<ReadonlySet<number>>(new Set());
   let unlinkError = $state<string | null>(null);
   let daemonInfos = $state.raw<KataDaemonInfo[]>([]);
@@ -151,9 +154,31 @@
     viewLoading = false;
   }
 
-  async function runViewTask(task: () => Promise<void | boolean>): Promise<boolean> {
-    const loadingGeneration = beginViewLoading();
+  function kataRequestErrorMessage(err: unknown): string {
+    return err instanceof Error ? err.message : "Kata request failed.";
+  }
+
+  function clearTaskErrors(): void {
     error = null;
+    requestError = null;
+    lastTaskError = null;
+  }
+
+  function surfaceTaskError(message: string, surface: FailureSurface): void {
+    lastTaskError = message;
+    if (surface === "request") {
+      requestError = message;
+    } else if (surface === "daemon") {
+      error = message;
+    }
+  }
+
+  async function runViewTask(
+    task: () => Promise<void | boolean>,
+    failureSurface: FailureSurface = "request",
+  ): Promise<boolean> {
+    const loadingGeneration = beginViewLoading();
+    clearTaskErrors();
     const expansionSignature = currentExpansionSignature();
     try {
       const ok = (await task()) ?? true;
@@ -162,20 +187,23 @@
       }
       return ok;
     } catch (err) {
-      error = err instanceof Error ? err.message : "Kata request failed.";
+      surfaceTaskError(kataRequestErrorMessage(err), failureSurface);
       return false;
     } finally {
       endViewLoading(loadingGeneration);
     }
   }
 
-  async function runViewTaskOrThrow(task: () => Promise<void>): Promise<void> {
+  async function runViewTaskOrThrow(
+    task: () => Promise<void>,
+    failureSurface: FailureSurface = "request",
+  ): Promise<void> {
     const loadingGeneration = beginViewLoading();
-    error = null;
+    clearTaskErrors();
     try {
       await task();
     } catch (err) {
-      error = err instanceof Error ? err.message : "Kata request failed.";
+      surfaceTaskError(kataRequestErrorMessage(err), failureSurface);
       throw err;
     } finally {
       endViewLoading(loadingGeneration);
@@ -547,7 +575,7 @@
       const ok = await runViewTask(async () => {
         await store.bootstrap(previousView);
         store.resetSearchFilters();
-      });
+      }, "daemon");
       if (!ok) {
         setActiveKataDaemon(previousExplicitDaemon);
         const restored = await runViewTask(async () => {
@@ -560,7 +588,7 @@
           if (previousIssueUID && store.selectedIssue?.issue.uid !== previousIssueUID) {
             await store.selectIssue(previousIssueUID);
           }
-        });
+        }, "daemon");
         if (restored) {
           await store.syncEventCursor();
         }
@@ -647,13 +675,13 @@
   async function createRecurrence(projectID: number, input: KataCreateRecurrenceInput): Promise<void> {
     await runViewTaskOrThrow(async () => {
       await store.createRecurrence(projectID, input);
-    });
+    }, "none");
   }
 
   async function patchRecurrence(id: number, input: KataPatchRecurrenceInput, etag: string): Promise<void> {
     await runViewTaskOrThrow(async () => {
       await store.patchRecurrence(id, input, etag);
-    });
+    }, "none");
   }
 
   async function deleteRecurrence(recurrence: KataRecurrence): Promise<boolean> {
@@ -697,9 +725,9 @@
     unlinkBusyIds = new Set(links.map((item) => item.message_id));
     unlinkError = null;
     try {
-      const ok = await runViewTask(() => store.patchMetadata(uid, actor, metadataPatch));
+      const ok = await runViewTask(() => store.patchMetadata(uid, actor, metadataPatch), "none");
       if (!ok) {
-        unlinkError = error || "Could not unlink message.";
+        unlinkError = lastTaskError || "Could not unlink message.";
       }
     } finally {
       unlinkBusyIds = new Set();
@@ -747,6 +775,10 @@
       </button>
     </div>
   </header>
+
+  {#if requestError}
+    <p class="kata-request-error" role="alert">{requestError}</p>
+  {/if}
 
   <div class="kata-layout">
     <KataSidebar
@@ -922,6 +954,17 @@
     align-items: center;
     gap: 10px;
     flex: 0 0 auto;
+  }
+
+  .kata-request-error {
+    margin: 10px 20px 0;
+    padding: 8px 10px;
+    border: 1px solid color-mix(in srgb, var(--accent-red) 42%, var(--border-default));
+    border-radius: var(--radius-sm);
+    background: color-mix(in srgb, var(--accent-red) 9%, var(--bg-primary));
+    color: var(--accent-red);
+    font-size: var(--font-size-sm);
+    line-height: 1.35;
   }
 
   .header-action {

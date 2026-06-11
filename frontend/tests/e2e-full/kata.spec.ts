@@ -4345,6 +4345,7 @@ test("kata owner assignment failure keeps the custom owner editor open", async (
     await expect
       .poll(() => backend.state.seenPaths)
       .toContain("POST /api/v1/projects/1/issues/issue-rent/actions/assign");
+    await expect(page.getByRole("alert")).toContainText("owner unavailable");
     await expect(detail.getByLabel("Owner", { exact: true })).toHaveValue("agent:new");
     await expect(detail.getByRole("button", { name: "Owner: Wes" })).toHaveCount(0);
     expect(backend.state.issues.find((issue) => issue.uid === "issue-rent")?.owner).toBe("Wes");

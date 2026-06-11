@@ -67,6 +67,21 @@ func (rec *gitlabAPIRecorder) find(method, path string) (recordedGitLabRequest, 
 	return recordedGitLabRequest{}, false
 }
 
+// findEventually polls for a request issued from a background goroutine
+// (e.g. the resync triggered after a stale mutation).
+func (rec *gitlabAPIRecorder) findEventually(method, path string) bool {
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		if _, ok := rec.find(method, path); ok {
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+}
+
 // setupGitLabMutationServer wires the real GitLab provider client against a
 // fake GitLab REST API and seeds a tracked repo with MR 7 (including one
 // existing comment, platform id 9001) and issue 11.
@@ -94,12 +109,14 @@ func setupGitLabMutationServer(
 				"default_branch": "main"
 			}`)
 		case path == "/api/v4/projects/4242/merge_requests/7" && r.Method == http.MethodGet:
+			// updated_at must be current: UpsertMergeRequest discards
+			// snapshots older than the stored row.
 			writeGitLabJSON(w, `{
 				"id": 7001, "iid": 7, "title": "Test MR", "state": "opened",
 				"sha": "head-sha",
 				"author": {"username": "author"},
 				"created_at": "2026-05-01T09:00:00Z",
-				"updated_at": "2026-05-01T09:00:00Z"
+				"updated_at": "`+time.Now().UTC().Add(time.Minute).Format(time.RFC3339)+`"
 			}`)
 		case path == "/api/v4/projects/4242/merge_requests/7/discussions" && r.Method == http.MethodGet:
 			writeGitLabJSON(w, `[{
@@ -112,6 +129,8 @@ func setupGitLabMutationServer(
 				}]
 			}]`)
 		case path == "/api/v4/projects/4242/merge_requests/7/commits" && r.Method == http.MethodGet:
+			writeGitLabJSON(w, `[]`)
+		case path == "/api/v4/projects/4242/pipelines" && r.Method == http.MethodGet:
 			writeGitLabJSON(w, `[]`)
 		case path == "/api/v4/projects/4242/merge_requests/7/notes" && r.Method == http.MethodPost:
 			writeGitLabJSON(w, `{
@@ -606,7 +625,7 @@ func TestGitLabMutationApproveStaleHeadReturnsConflict(t *testing.T) {
 func TestGitLabMutationMergeStaleHeadReturnsConflict(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	srv, database, _, repoID := setupGitLabMutationServer(t)
+	srv, database, recorder, repoID := setupGitLabMutationServer(t)
 	ctx := t.Context()
 
 	_, err := database.UpsertMergeRequest(ctx, &db.MergeRequest{
@@ -639,6 +658,47 @@ func TestGitLabMutationMergeStaleHeadReturnsConflict(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(mr)
 	assert.Equal("open", string(mr.State), "stale merge must not mark the MR merged locally")
+
+	assert.True(
+		recorder.findEventually(http.MethodGet, "/api/v4/projects/4242/merge_requests/7"),
+		"stale merge must trigger an MR resync",
+	)
+}
+
+// A legacy or partially synced row with no head SHA must not produce an
+// unbound merge: the server refreshes the MR once and merges bound to the
+// refreshed head.
+func TestGitLabMutationMergeRefreshesMissingHeadSHA(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, database, recorder, repoID := setupGitLabMutationServer(t)
+	ctx := t.Context()
+
+	_, err := database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:         repoID,
+		PlatformID:     7001,
+		Number:         7,
+		URL:            "https://gitlab.com/acme/widget/-/merge_requests/7",
+		Title:          "Test MR",
+		Author:         "author",
+		State:          "open",
+		CreatedAt:      time.Now().UTC(),
+		UpdatedAt:      time.Now().UTC(),
+		LastActivityAt: time.Now().UTC(),
+	})
+	require.NoError(err)
+
+	rr := doGitLabJSON(t, srv, http.MethodPost,
+		"/api/v1/pulls/gitlab/acme/widget/7/merge",
+		`{"method":"squash","commit_title":"t","commit_message":"m"}`,
+	)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+
+	_, refreshed := recorder.find(http.MethodGet, "/api/v4/projects/4242/merge_requests/7")
+	assert.True(refreshed, "missing head SHA must refresh the MR before merging")
+	merge, ok := recorder.find(http.MethodPut, "/api/v4/projects/4242/merge_requests/7/merge")
+	require.True(ok)
+	assert.Contains(merge.Body, `"sha":"head-sha"`, "merge must be bound to the refreshed head")
 }
 
 func TestGitLabMutationDiscussionReplyThroughRealClient(t *testing.T) {

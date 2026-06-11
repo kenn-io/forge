@@ -275,6 +275,29 @@ func TestGitLabMergeMergeRequestMapsMethods(t *testing.T) {
 	}
 }
 
+func TestGitLabMergeMergeRequestMapsConflictToStaleState(t *testing.T) {
+	assert := Assert.New(t)
+	require := Require.New(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.EscapedPath() != "/api/v4/projects/42/merge_requests/7/merge" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		_, _ = w.Write([]byte(`{"message": "SHA does not match HEAD of source branch"}`))
+	}))
+	defer server.Close()
+
+	_, err := newTestClient(t, server.URL).MergeMergeRequest(
+		context.Background(), projectRef(), 7, "title", "message", "squash", "old-head",
+	)
+	var platformErr *platform.Error
+	require.ErrorAs(err, &platformErr)
+	assert.Equal(platform.ErrCodeStaleState, platformErr.Code)
+	assert.Equal("merge_merge_request", platformErr.Capability)
+}
+
 func TestGitLabMergeMergeRequestRejectsRebaseWithTypedError(t *testing.T) {
 	assert := Assert.New(t)
 	require := Require.New(t)

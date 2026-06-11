@@ -2463,10 +2463,17 @@ func (d *DB) UpsertMREvents(ctx context.Context, events []MREvent) error {
 			    body          = excluded.body,
 			    metadata_json = excluded.metadata_json,
 			    created_at    = excluded.created_at,
+			    -- Events without a thread id come from provider responses
+			    -- that lack discussion context (e.g. GitLab note edits);
+			    -- keep the stored discussion metadata for those instead of
+			    -- detaching the comment or resetting its resolution state.
 			    thread_id = COALESCE(excluded.thread_id, thread_id),
-			    position_json = excluded.position_json,
-			    resolvable    = excluded.resolvable,
-			    resolved      = excluded.resolved`)
+			    position_json = CASE WHEN excluded.thread_id IS NULL
+			        THEN position_json ELSE excluded.position_json END,
+			    resolvable = CASE WHEN excluded.thread_id IS NULL
+			        THEN resolvable ELSE excluded.resolvable END,
+			    resolved = CASE WHEN excluded.thread_id IS NULL
+			        THEN resolved ELSE excluded.resolved END`)
 		if err != nil {
 			return fmt.Errorf("prepare upsert mr events: %w", err)
 		}

@@ -63,6 +63,7 @@
     review_thread_resolution: false,
     read_review_threads: false,
     native_multiline_ranges: false,
+    mutation_head_binding: false,
     supported_review_actions: [],
   };
 

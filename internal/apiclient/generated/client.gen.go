@@ -1526,6 +1526,7 @@ type ProviderCapabilitiesResponse struct {
 	IssueMutation          bool      `json:"issue_mutation"`
 	LabelMutation          bool      `json:"label_mutation"`
 	MergeMutation          bool      `json:"merge_mutation"`
+	MutationHeadBinding    bool      `json:"mutation_head_binding"`
 	NativeMultilineRanges  bool      `json:"native_multiline_ranges"`
 	ReadCi                 bool      `json:"read_ci"`
 	ReadComments           bool      `json:"read_comments"`

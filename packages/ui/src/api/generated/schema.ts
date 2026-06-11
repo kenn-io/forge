@@ -3777,6 +3777,7 @@ export interface components {
             issue_mutation: boolean;
             label_mutation: boolean;
             merge_mutation: boolean;
+            mutation_head_binding: boolean;
             native_multiline_ranges: boolean;
             read_ci: boolean;
             read_comments: boolean;

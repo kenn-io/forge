@@ -2,7 +2,9 @@ package gitlab
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
@@ -11,6 +13,23 @@ import (
 	gitlab "gitlab.com/gitlab-org/api/client-go"
 	"go.kenn.io/middleman/internal/platform"
 )
+
+// mapGitLabMutationError classifies 409 responses from sha-bound
+// mutations (merge/approve with an expected head SHA) as stale_state.
+// 409 is only given this meaning here; other endpoints keep the generic
+// mapping because GitLab uses the status for unrelated conflicts too.
+func mapGitLabMutationError(capability string, err error) error {
+	var gitlabErr *gitlab.ErrorResponse
+	if errors.As(err, &gitlabErr) && gitlabErr.HasStatusCode(http.StatusConflict) {
+		return &platform.Error{
+			Code:       platform.ErrCodeStaleState,
+			Provider:   platform.KindGitLab,
+			Capability: capability,
+			Err:        err,
+		}
+	}
+	return mapGitLabError(capability, err)
+}
 
 // discussionIDPattern validates GitLab discussion IDs which are 40-char hex strings.
 var discussionIDPattern = regexp.MustCompile(`^[a-f0-9]{40}$`)
@@ -272,7 +291,7 @@ func (c *Client) MergeMergeRequest(
 	}
 	mr, _, err := c.api.MergeRequests.AcceptMergeRequest(pid, int64(number), opts, gitlab.WithContext(ctx))
 	if err != nil {
-		return platform.MergeResult{}, mapGitLabError("merge_merge_request", err)
+		return platform.MergeResult{}, mapGitLabMutationError("merge_merge_request", err)
 	}
 	if mr == nil {
 		return platform.MergeResult{}, &platform.Error{
@@ -416,7 +435,7 @@ func (c *Client) ApproveMergeRequest(
 		gitlab.WithContext(ctx),
 	)
 	if err != nil {
-		mapped := mapGitLabError("approve_merge_request", err)
+		mapped := mapGitLabMutationError("approve_merge_request", err)
 		if notePosted {
 			return platform.MergeRequestEvent{}, fmt.Errorf(
 				"review comment was posted but the approval failed; retrying will repeat the comment: %w",

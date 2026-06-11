@@ -3085,6 +3085,8 @@ components:
           type: boolean
         merge_mutation:
           type: boolean
+        mutation_head_binding:
+          type: boolean
         native_multiline_ranges:
           type: boolean
         read_ci:
@@ -3147,6 +3149,7 @@ components:
         - review_thread_resolution
         - read_review_threads
         - native_multiline_ranges
+        - mutation_head_binding
         - supported_review_actions
       type: object
     PublishChange:

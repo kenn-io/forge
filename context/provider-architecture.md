@@ -82,9 +82,13 @@ provider-equivalent behavior from the flags alone:
   error with capability `merge_method_rebase`.
 - Head binding: merge and approve pass the locally synced head SHA so a
   source-branch push after review is rejected upstream instead of acting on
-  unreviewed code. Stale heads surface as the `stale_state` platform code
-  (wire: `409 conflict`) and trigger a background MR resync. Other providers
-  currently treat the expected head SHA as advisory.
+  unreviewed code. The `mutation_head_binding` capability marks providers
+  that enforce this (currently GitLab); others treat the expected head SHA
+  as advisory. For enforcing providers the server fails closed when the
+  local head SHA is missing: it refreshes the MR once and returns a `409
+  conflict` if the head is still unknown. Stale heads surface as the
+  `stale_state` platform code (wire: `409 conflict`) and trigger an MR
+  resync so the user re-reviews current state.
 - Reviews: GitLab has no `request_changes` state. `SupportedReviewActions` is
   comment/approve only, and publishing a request-changes review returns the
   typed `unsupportedCapability` envelope (`review_action_request_changes`).

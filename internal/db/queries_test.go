@@ -477,6 +477,9 @@ func TestUpsertMREventsKeepsThreadIDWhenIncomingIsNil(t *testing.T) {
 		CreatedAt:      base,
 		DedupeKey:      "note-101",
 		ThreadID:       &threadID,
+		PositionJSON:   `{"new_path":"main.go","new_line":42}`,
+		Resolvable:     true,
+		Resolved:       true,
 	}}))
 
 	require.NoError(d.UpsertMREvents(ctx, []MREvent{{
@@ -495,7 +498,12 @@ func TestUpsertMREventsKeepsThreadIDWhenIncomingIsNil(t *testing.T) {
 	assert.Equal("edited body", events[0].Body)
 	require.NotNil(events[0].ThreadID)
 	assert.Equal(threadID, *events[0].ThreadID)
+	assert.JSONEq(`{"new_path":"main.go","new_line":42}`, events[0].PositionJSON)
+	assert.True(events[0].Resolvable, "resolvable must survive a threadless update")
+	assert.True(events[0].Resolved, "resolved must survive a threadless update")
 
+	// Updates that do carry a thread id (sync) must still refresh the
+	// discussion metadata, including unresolving.
 	newThreadID := "def456abc"
 	require.NoError(d.UpsertMREvents(ctx, []MREvent{{
 		MergeRequestID: mrID,
@@ -506,6 +514,8 @@ func TestUpsertMREventsKeepsThreadIDWhenIncomingIsNil(t *testing.T) {
 		CreatedAt:      base,
 		DedupeKey:      "note-101",
 		ThreadID:       &newThreadID,
+		Resolvable:     true,
+		Resolved:       false,
 	}}))
 
 	events, err = d.ListMREvents(ctx, mrID)
@@ -513,6 +523,9 @@ func TestUpsertMREventsKeepsThreadIDWhenIncomingIsNil(t *testing.T) {
 	require.Len(events, 1)
 	require.NotNil(events[0].ThreadID)
 	assert.Equal(newThreadID, *events[0].ThreadID)
+	assert.Empty(events[0].PositionJSON)
+	assert.True(events[0].Resolvable)
+	assert.False(events[0].Resolved)
 }
 
 func TestUpsertIssueEventsKeepsThreadIDWhenIncomingIsNil(t *testing.T) {

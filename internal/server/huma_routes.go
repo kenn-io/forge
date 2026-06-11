@@ -2359,12 +2359,17 @@ func (s *Server) approvePR(ctx context.Context, input *approvePRInput) (*actionS
 		return nil, problemNotFound(CodePullNotFound, "pull request not found", nil)
 	}
 
+	// Bind the approval to the head commit the user reviewed locally so a
+	// source-branch push between review and approval is rejected instead
+	// of approving unreviewed code.
+	expectedHeadSHA, err := s.reviewedHeadSHA(ctx, repo, input.Number, mr)
+	if err != nil {
+		return nil, err
+	}
+
 	platformEvent, err := mutator.ApproveMergeRequest(
 		ctx, platformRepoRefFromDB(*repo), input.Number, input.Body.Body,
-		// Bind the approval to the head commit the user reviewed locally
-		// so a source-branch push between review and approval is rejected
-		// instead of approving unreviewed code.
-		mr.PlatformHeadSHA,
+		expectedHeadSHA,
 	)
 	if err != nil {
 		if errors.Is(err, platform.ErrStaleState) {
@@ -2634,6 +2639,14 @@ func (s *Server) mergePR(ctx context.Context, input *mergePRInput) (*mergePROutp
 		return nil, problemNotFound(CodePullNotFound, "pull request not found", nil)
 	}
 
+	// Bind the merge to the head commit the user reviewed locally so a
+	// source-branch push between review and merge is rejected upstream
+	// instead of merging unreviewed code.
+	expectedHeadSHA, err := s.reviewedHeadSHA(ctx, repo, input.Number, mr)
+	if err != nil {
+		return nil, err
+	}
+
 	result, err := mutator.MergeMergeRequest(
 		ctx,
 		platformRepoRefFromDB(*repo),
@@ -2641,10 +2654,7 @@ func (s *Server) mergePR(ctx context.Context, input *mergePRInput) (*mergePROutp
 		input.Body.CommitTitle,
 		input.Body.CommitMessage,
 		input.Body.Method,
-		// Bind the merge to the head commit the user reviewed locally so
-		// a source-branch push between review and merge is rejected
-		// upstream instead of merging unreviewed code.
-		mr.PlatformHeadSHA,
+		expectedHeadSHA,
 	)
 	if err != nil {
 		if status, message, ok := mergeHTTPErrorStatus(err); ok {
@@ -2699,6 +2709,41 @@ func (s *Server) mergePR(ctx context.Context, input *mergePRInput) (*mergePROutp
 			Message: result.Message,
 		},
 	}, nil
+}
+
+// reviewedHeadSHA resolves the head commit a head-bound mutation should
+// be pinned to. Providers with MutationHeadBinding must not mutate
+// unbound: when the local row has no head SHA (legacy or partial sync),
+// the MR is refreshed once and a still-missing head fails closed with a
+// conflict instead of silently skipping the check.
+func (s *Server) reviewedHeadSHA(
+	ctx context.Context,
+	repo *db.Repo,
+	number int,
+	mr *db.MergeRequest,
+) (string, error) {
+	if mr.PlatformHeadSHA != "" {
+		return mr.PlatformHeadSHA, nil
+	}
+	if !s.capabilitiesForRepo(*repo).MutationHeadBinding {
+		return "", nil
+	}
+	if err := s.syncer.SyncMROnProvider(
+		ctx,
+		repoProviderKind(*repo), repoProviderHost(*repo),
+		repo.Owner, repo.Name, number,
+	); err != nil {
+		slog.Warn("refresh before head-bound mutation failed", "err", err)
+	}
+	refreshed, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, number)
+	if err == nil && refreshed != nil && refreshed.PlatformHeadSHA != "" {
+		return refreshed.PlatformHeadSHA, nil
+	}
+	return "", problemConflict(
+		CodeConflict,
+		"merge request head commit is unknown locally; sync and re-review before this action",
+		nil,
+	)
 }
 
 func mergeHTTPErrorStatus(err error) (int, string, bool) {

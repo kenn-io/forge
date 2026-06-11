@@ -291,6 +291,7 @@ a:hover {
   --mermaid-viewer-control-hover: rgba(48, 54, 61, 0.96);
   --mermaid-viewer-control-border: rgba(139, 148, 158, 0.48);
   --mermaid-viewer-control-text: #f0f6fc;
+  --mermaid-viewer-edge-label-text: #24292f;
 
   position: relative;
   height: clamp(180px, 34vw, 420px);
@@ -305,6 +306,7 @@ a:hover {
 :root.dark .markdown-body pre.mermaid.mermaid-viewer,
 :root.dark .doc-markdown pre.mermaid.mermaid-viewer {
   --mermaid-viewer-bg: #4a4d4b;
+  --mermaid-viewer-edge-label-text: #f0f6fc;
 }
 .mermaid-viewer__viewport {
   width: 100%;
@@ -390,12 +392,12 @@ a:hover {
 .markdown-body pre.mermaid.mermaid-viewer .edgeLabel,
 .doc-markdown pre.mermaid.mermaid-viewer .edgeLabel,
 .mermaid-viewer-lightbox .edgeLabel {
-  color: #f0f6fc;
+  color: var(--mermaid-viewer-edge-label-text);
 }
 .markdown-body pre.mermaid.mermaid-viewer .edgeLabel text,
 .doc-markdown pre.mermaid.mermaid-viewer .edgeLabel text,
 .mermaid-viewer-lightbox .edgeLabel text {
-  fill: #f0f6fc !important;
+  fill: var(--mermaid-viewer-edge-label-text) !important;
 }
 .markdown-body pre.mermaid.mermaid-viewer .edgeLabel span,
 .markdown-body pre.mermaid.mermaid-viewer .edgeLabel p,
@@ -406,9 +408,11 @@ a:hover {
 .mermaid-viewer-lightbox .edgeLabel span,
 .mermaid-viewer-lightbox .edgeLabel p,
 .mermaid-viewer-lightbox .edgeLabel div {
-  color: #f0f6fc !important;
+  color: var(--mermaid-viewer-edge-label-text) !important;
 }
 .mermaid-viewer-lightbox {
+  --mermaid-viewer-edge-label-text: #24292f;
+
   position: fixed;
   inset: 0;
   z-index: 80;
@@ -417,6 +421,9 @@ a:hover {
   justify-content: center;
   padding: 28px;
   background: rgba(1, 4, 9, 0.72);
+}
+:root.dark .mermaid-viewer-lightbox {
+  --mermaid-viewer-edge-label-text: #f0f6fc;
 }
 .mermaid-viewer-lightbox__panel {
   position: relative;

@@ -6,6 +6,7 @@ export interface MarkdownMermaidAPI {
 export type MarkdownMermaidLoader = () => Promise<MarkdownMermaidAPI>;
 
 type MermaidThemeVariables = Record<string, boolean | string>;
+type MermaidThemeName = "light" | "dark";
 
 interface MarkdownMermaidConfig {
   startOnLoad: false;
@@ -21,6 +22,7 @@ export interface MarkdownMermaidController {
 }
 
 const MERMAID_SELECTOR = ".markdown-body pre.mermaid, .doc-markdown pre.mermaid";
+const MERMAID_VIEWER_SELECTOR = ".markdown-body pre.mermaid.mermaid-viewer, .doc-markdown pre.mermaid.mermaid-viewer";
 const MERMAID_VIEWER_ATTACHED = "true";
 const MIN_SCALE = 0.4;
 const MAX_SCALE = 3;
@@ -28,6 +30,45 @@ const PAN_STEP = 80;
 const WHEEL_ZOOM_SENSITIVITY = 0.0015;
 const WHEEL_DELTA_LINE = 1;
 const WHEEL_DELTA_PAGE = 2;
+const GITHUB_LIGHT_MERMAID_THEME: MermaidThemeVariables = {
+  darkMode: false,
+  background: "#ffffff",
+  fontFamily: "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif",
+  fontSize: "13px",
+  primaryColor: "#ffffff",
+  primaryTextColor: "#24292f",
+  primaryBorderColor: "#d0d7de",
+  secondaryColor: "#f6f8fa",
+  secondaryTextColor: "#24292f",
+  secondaryBorderColor: "#d0d7de",
+  tertiaryColor: "#f6f8fa",
+  tertiaryTextColor: "#24292f",
+  tertiaryBorderColor: "#d0d7de",
+  mainBkg: "#ffffff",
+  nodeTextColor: "#24292f",
+  nodeBorder: "#d0d7de",
+  clusterBkg: "#f6f8fa",
+  clusterBorder: "#d0d7de",
+  lineColor: "#57606a",
+  defaultLinkColor: "#57606a",
+  textColor: "#24292f",
+  titleColor: "#24292f",
+  edgeLabelBackground: "#ffffff",
+  labelColor: "#24292f",
+  labelTextColor: "#24292f",
+  loopTextColor: "#24292f",
+  noteBkgColor: "#fff8c5",
+  noteTextColor: "#24292f",
+  noteBorderColor: "#d4a72c",
+  actorBkg: "#ffffff",
+  actorBorder: "#d0d7de",
+  actorTextColor: "#24292f",
+  actorLineColor: "#57606a",
+  signalColor: "#57606a",
+  signalTextColor: "#24292f",
+  labelBoxBkgColor: "#ffffff",
+  labelBoxBorderColor: "#d0d7de",
+};
 const GITHUB_DARK_MERMAID_THEME: MermaidThemeVariables = {
   darkMode: true,
   background: "#0d1117",
@@ -68,7 +109,7 @@ const GITHUB_DARK_MERMAID_THEME: MermaidThemeVariables = {
   labelBoxBorderColor: "#8b949e",
 };
 let mermaidPromise: Promise<MarkdownMermaidAPI> | null = null;
-const initializedMermaid = new WeakSet<MarkdownMermaidAPI>();
+const initializedMermaidTheme = new WeakMap<MarkdownMermaidAPI, MermaidThemeName>();
 const diagramSources = new WeakMap<HTMLElement, string>();
 let closeActiveMermaidLightbox: (() => void) | null = null;
 
@@ -95,16 +136,7 @@ export async function renderMarkdownMermaidDiagrams(
 
   try {
     const mermaid = await load();
-    if (!initializedMermaid.has(mermaid)) {
-      mermaid.initialize({
-        startOnLoad: false,
-        securityLevel: "strict",
-        secure: ["securityLevel", "startOnLoad"],
-        theme: "base",
-        themeVariables: GITHUB_DARK_MERMAID_THEME,
-      });
-      initializedMermaid.add(mermaid);
-    }
+    initializeMermaidForCurrentTheme(mermaid);
     await mermaid.run({ nodes, suppressErrors: true });
     let renderedCount = 0;
     for (const node of nodes) {
@@ -148,6 +180,42 @@ function attachMermaidViewer(node: HTMLElement, source: string): boolean {
 function clearMermaidRenderState(node: HTMLElement): void {
   delete node.dataset.mermaidRendered;
   delete node.dataset.processed;
+}
+
+function initializeMermaidForCurrentTheme(mermaid: MarkdownMermaidAPI): void {
+  const theme = currentMermaidTheme();
+  if (initializedMermaidTheme.get(mermaid) === theme) return;
+
+  mermaid.initialize({
+    startOnLoad: false,
+    securityLevel: "strict",
+    secure: ["securityLevel", "startOnLoad"],
+    theme: "base",
+    themeVariables: mermaidThemeVariables(theme),
+  });
+  initializedMermaidTheme.set(mermaid, theme);
+}
+
+function currentMermaidTheme(): MermaidThemeName {
+  return document.documentElement.classList.contains("dark") ? "dark" : "light";
+}
+
+function mermaidThemeVariables(theme: MermaidThemeName): MermaidThemeVariables {
+  return theme === "dark" ? GITHUB_DARK_MERMAID_THEME : GITHUB_LIGHT_MERMAID_THEME;
+}
+
+function resetRenderedMermaidViewers(root: ParentNode): void {
+  closeActiveMermaidLightbox?.();
+
+  for (const node of Array.from(root.querySelectorAll<HTMLElement>(MERMAID_VIEWER_SELECTOR))) {
+    const source = diagramSources.get(node);
+    if (source === undefined) continue;
+
+    node.textContent = source;
+    node.classList.remove("mermaid-viewer");
+    delete node.dataset.mermaidViewer;
+    clearMermaidRenderState(node);
+  }
 }
 
 function createPannableDiagramView(svg: SVGSVGElement): { controls: HTMLDivElement; viewport: HTMLDivElement } {
@@ -388,6 +456,7 @@ export function initMarkdownMermaidRendering(
 ): MarkdownMermaidController {
   let disconnected = false;
   let scheduled = false;
+  let renderedTheme = currentMermaidTheme();
 
   const render = () => {
     if (disconnected || scheduled) return;
@@ -411,6 +480,21 @@ export function initMarkdownMermaidRendering(
     childList: true,
     subtree: true,
   });
+
+  const themeObserver =
+    typeof MutationObserver === "undefined"
+      ? null
+      : new MutationObserver(() => {
+          const nextTheme = currentMermaidTheme();
+          if (nextTheme === renderedTheme) return;
+          renderedTheme = nextTheme;
+          resetRenderedMermaidViewers(root);
+          render();
+        });
+  themeObserver?.observe(document.documentElement, {
+    attributeFilter: ["class"],
+    attributes: true,
+  });
   render();
 
   return {
@@ -418,6 +502,7 @@ export function initMarkdownMermaidRendering(
     disconnect() {
       disconnected = true;
       observer?.disconnect();
+      themeObserver?.disconnect();
     },
   };
 }

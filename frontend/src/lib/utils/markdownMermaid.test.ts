@@ -1,5 +1,9 @@
-import { describe, expect, test, vi } from "vite-plus/test";
-import { renderMarkdownMermaidDiagrams, type MarkdownMermaidAPI } from "./markdownMermaid";
+import { afterEach, describe, expect, test, vi } from "vite-plus/test";
+import {
+  initMarkdownMermaidRendering,
+  renderMarkdownMermaidDiagrams,
+  type MarkdownMermaidAPI,
+} from "./markdownMermaid";
 
 function mermaidLoader(run?: MarkdownMermaidAPI["run"]): MarkdownMermaidAPI {
   const defaultRun: MarkdownMermaidAPI["run"] = async () => undefined;
@@ -15,7 +19,18 @@ function renderSvgInto(nodes: ArrayLike<HTMLElement>): void {
   }
 }
 
+async function flushQueuedRender(): Promise<void> {
+  await Promise.resolve();
+  await Promise.resolve();
+  await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+}
+
 describe("renderMarkdownMermaidDiagrams", () => {
+  afterEach(() => {
+    document.documentElement.classList.remove("dark");
+    document.querySelectorAll(".mermaid-viewer-lightbox").forEach((node) => node.remove());
+  });
+
   test("does not load mermaid when the rendered markdown has no mermaid diagrams", async () => {
     const root = document.createElement("div");
     root.innerHTML = '<div class="markdown-body"><pre><code>plain code</code></pre></div>';
@@ -44,6 +59,38 @@ describe("renderMarkdownMermaidDiagrams", () => {
       secure: ["securityLevel", "startOnLoad"],
       theme: "base",
       themeVariables: expect.objectContaining({
+        background: "#ffffff",
+        clusterBkg: "#f6f8fa",
+        darkMode: false,
+        edgeLabelBackground: "#ffffff",
+        labelTextColor: "#24292f",
+        lineColor: "#57606a",
+        primaryColor: "#ffffff",
+      }),
+    });
+    expect(mermaid.run).toHaveBeenCalledWith({
+      nodes: [root.querySelector("pre.mermaid")],
+      suppressErrors: true,
+    });
+  });
+
+  test("uses dark mermaid theme variables when the app is in dark mode", async () => {
+    document.documentElement.classList.add("dark");
+    const root = document.createElement("div");
+    root.innerHTML = '<div class="markdown-body"><pre class="mermaid">graph TD\nA-->B</pre></div>';
+    const mermaid = mermaidLoader(async ({ nodes }) => {
+      renderSvgInto(nodes);
+    });
+    const loader = vi.fn(async () => mermaid);
+
+    await renderMarkdownMermaidDiagrams(root, loader);
+
+    expect(mermaid.initialize).toHaveBeenCalledWith({
+      startOnLoad: false,
+      securityLevel: "strict",
+      secure: ["securityLevel", "startOnLoad"],
+      theme: "base",
+      themeVariables: expect.objectContaining({
         background: "#0d1117",
         clusterBkg: "#4a4d4b",
         darkMode: true,
@@ -52,10 +99,6 @@ describe("renderMarkdownMermaidDiagrams", () => {
         lineColor: "#c9d1d9",
         primaryColor: "#f6f8fa",
       }),
-    });
-    expect(mermaid.run).toHaveBeenCalledWith({
-      nodes: [root.querySelector("pre.mermaid")],
-      suppressErrors: true,
     });
   });
 
@@ -233,5 +276,45 @@ describe("renderMarkdownMermaidDiagrams", () => {
 
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
     expect(document.querySelector(".mermaid-viewer-lightbox")).toBeNull();
+  });
+
+  test("rerenders diagrams when the app theme changes", async () => {
+    const root = document.createElement("div");
+    root.innerHTML = '<div class="markdown-body"><pre class="mermaid">graph TD\nA-->B</pre></div>';
+    document.body.append(root);
+    let renderCount = 0;
+    const mermaid = mermaidLoader(async ({ nodes }) => {
+      renderCount += 1;
+      for (const node of Array.from(nodes)) {
+        node.innerHTML = `<svg data-render="${renderCount}" viewBox="0 0 120 60"><text>diagram</text></svg>`;
+      }
+    });
+    const loader = vi.fn(async () => mermaid);
+    const controller = initMarkdownMermaidRendering(root, loader);
+
+    try {
+      await flushQueuedRender();
+
+      expect(root.querySelector("svg")?.getAttribute("data-render")).toBe("1");
+      expect(mermaid.initialize).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          themeVariables: expect.objectContaining({ darkMode: false }),
+        }),
+      );
+
+      document.documentElement.classList.add("dark");
+      await flushQueuedRender();
+
+      expect(root.querySelector("svg")?.getAttribute("data-render")).toBe("2");
+      expect(mermaid.run).toHaveBeenCalledTimes(2);
+      expect(mermaid.initialize).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          themeVariables: expect.objectContaining({ darkMode: true }),
+        }),
+      );
+    } finally {
+      controller.disconnect();
+      root.remove();
+    }
   });
 });

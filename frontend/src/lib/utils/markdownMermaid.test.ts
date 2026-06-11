@@ -117,7 +117,10 @@ describe("renderMarkdownMermaidDiagrams", () => {
     expect(mermaid.initialize).toHaveBeenCalledWith({
       startOnLoad: false,
       securityLevel: "strict",
-      secure: ["securityLevel", "startOnLoad"],
+      secure: ["secure", "securityLevel", "startOnLoad", "maxTextSize", "suppressErrorRendering", "maxEdges"],
+      maxTextSize: 50_000,
+      maxEdges: 500,
+      suppressErrorRendering: true,
       theme: "base",
       themeVariables: expect.objectContaining({
         background: "#ffffff",
@@ -150,7 +153,10 @@ describe("renderMarkdownMermaidDiagrams", () => {
     expect(mermaid.initialize).toHaveBeenCalledWith({
       startOnLoad: false,
       securityLevel: "strict",
-      secure: ["securityLevel", "startOnLoad"],
+      secure: ["secure", "securityLevel", "startOnLoad", "maxTextSize", "suppressErrorRendering", "maxEdges"],
+      maxTextSize: 50_000,
+      maxEdges: 500,
+      suppressErrorRendering: true,
       theme: "base",
       themeVariables: expect.objectContaining({
         background: "#0d1117",

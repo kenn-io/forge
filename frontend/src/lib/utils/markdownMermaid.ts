@@ -12,6 +12,9 @@ interface MarkdownMermaidConfig {
   startOnLoad: false;
   securityLevel: "strict";
   secure: string[];
+  maxTextSize: number;
+  maxEdges: number;
+  suppressErrorRendering: true;
   theme: "base";
   themeVariables: MermaidThemeVariables;
 }
@@ -30,6 +33,16 @@ const PAN_STEP = 80;
 const WHEEL_ZOOM_SENSITIVITY = 0.0015;
 const WHEEL_DELTA_LINE = 1;
 const WHEEL_DELTA_PAGE = 2;
+const MERMAID_MAX_TEXT_SIZE = 50_000;
+const MERMAID_MAX_EDGES = 500;
+const MERMAID_SECURE_CONFIG = [
+  "secure",
+  "securityLevel",
+  "startOnLoad",
+  "maxTextSize",
+  "suppressErrorRendering",
+  "maxEdges",
+];
 const MERMAID_THEME_TOKENS = {
   background: "--mermaid-bg",
   fontFamily: "--font-sans",
@@ -74,7 +87,12 @@ let closeActiveMermaidLightbox: (() => void) | null = null;
 
 async function loadMermaid(): Promise<MarkdownMermaidAPI> {
   if (!mermaidPromise) {
-    mermaidPromise = import("mermaid").then((module): MarkdownMermaidAPI => module.default);
+    mermaidPromise = import("mermaid")
+      .then((module): MarkdownMermaidAPI => module.default)
+      .catch((error: unknown) => {
+        mermaidPromise = null;
+        throw error;
+      });
   }
   return mermaidPromise;
 }
@@ -148,7 +166,10 @@ function initializeMermaidForCurrentTheme(mermaid: MarkdownMermaidAPI): void {
   mermaid.initialize({
     startOnLoad: false,
     securityLevel: "strict",
-    secure: ["securityLevel", "startOnLoad"],
+    secure: [...MERMAID_SECURE_CONFIG],
+    maxTextSize: MERMAID_MAX_TEXT_SIZE,
+    maxEdges: MERMAID_MAX_EDGES,
+    suppressErrorRendering: true,
     theme: "base",
     themeVariables: mermaidThemeVariables(theme),
   });

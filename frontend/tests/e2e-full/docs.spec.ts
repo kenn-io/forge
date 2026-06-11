@@ -346,6 +346,36 @@ test.describe("docs workspace", () => {
     }
   });
 
+  test("renders Mermaid fences from real markdown files", async ({ page }) => {
+    const docsRoot = await createDocsFixture();
+    await writeFile(
+      path.join(docsRoot, "diagram.md"),
+      ["# Diagram Fixture", "", "```mermaid", "graph TD", "  A --> B", "```", ""].join("\n"),
+    );
+    const server = await startIsolatedE2EServer();
+    try {
+      const folder = await page.request.post(`${server.info.base_url}/api/v1/docs/folders`, {
+        data: {
+          id: "notes",
+          name: "Notes",
+          path: docsRoot,
+        },
+      });
+      expect(folder.status()).toBe(201);
+
+      await page.goto(`${server.info.base_url}/docs?folder=notes&doc=diagram.md`);
+      await expect(page.getByRole("heading", { name: "Diagram Fixture", level: 1 })).toBeVisible();
+
+      const rendered = page.locator(".doc-markdown");
+      await expect(rendered.locator("code.language-mermaid")).toHaveCount(0);
+      await expect(rendered.locator("pre.mermaid.mermaid-viewer svg")).toBeVisible();
+      await expect(rendered.getByRole("button", { name: "Copy Mermaid source" })).toBeVisible();
+      await expect(rendered.getByRole("button", { name: "Open diagram in expanded view" })).toBeVisible();
+    } finally {
+      await server.stop();
+    }
+  });
+
   test("strips protocol-relative links and images from real markdown files", async ({ page }) => {
     const docsRoot = await createDocsFixture();
     await writeFile(

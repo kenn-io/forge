@@ -258,7 +258,8 @@ describe("KataWorkspace", () => {
     );
     const { api } = createWorkspaceAPI();
     const instance = deferred<Awaited<ReturnType<typeof api.instance>>>();
-    vi.mocked(api.instance).mockReturnValue(instance.promise);
+    const instanceMock = api.instance as ReturnType<typeof vi.fn>;
+    instanceMock.mockReturnValue(instance.promise);
     const { container } = render(KataWorkspace, { props: { api } });
 
     await waitFor(() => {

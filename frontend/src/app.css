@@ -380,6 +380,32 @@ a:hover {
   color: var(--accent-green);
   border-color: color-mix(in srgb, var(--accent-green) 70%, transparent);
 }
+.mermaid-viewer__button-icon {
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
+.markdown-body pre.mermaid.mermaid-viewer .edgeLabel,
+.doc-markdown pre.mermaid.mermaid-viewer .edgeLabel,
+.mermaid-viewer-lightbox .edgeLabel {
+  color: #f0f6fc;
+}
+.markdown-body pre.mermaid.mermaid-viewer .edgeLabel text,
+.doc-markdown pre.mermaid.mermaid-viewer .edgeLabel text,
+.mermaid-viewer-lightbox .edgeLabel text {
+  fill: #f0f6fc !important;
+}
+.markdown-body pre.mermaid.mermaid-viewer .edgeLabel span,
+.markdown-body pre.mermaid.mermaid-viewer .edgeLabel p,
+.markdown-body pre.mermaid.mermaid-viewer .edgeLabel div,
+.doc-markdown pre.mermaid.mermaid-viewer .edgeLabel span,
+.doc-markdown pre.mermaid.mermaid-viewer .edgeLabel p,
+.doc-markdown pre.mermaid.mermaid-viewer .edgeLabel div,
+.mermaid-viewer-lightbox .edgeLabel span,
+.mermaid-viewer-lightbox .edgeLabel p,
+.mermaid-viewer-lightbox .edgeLabel div {
+  color: #f0f6fc !important;
+}
 .mermaid-viewer-lightbox {
   position: fixed;
   inset: 0;

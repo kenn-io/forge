@@ -39,6 +39,8 @@ describe("renderMarkdownMermaidDiagrams", () => {
         background: "#0d1117",
         clusterBkg: "#4a4d4b",
         darkMode: true,
+        edgeLabelBackground: "#30363d",
+        labelTextColor: "#f0f6fc",
         lineColor: "#c9d1d9",
         primaryColor: "#f6f8fa",
       }),
@@ -91,7 +93,9 @@ describe("renderMarkdownMermaidDiagrams", () => {
     expect(pre?.classList.contains("mermaid-viewer")).toBe(true);
     expect(root.querySelector(".mermaid-viewer__viewport svg")).not.toBeNull();
     expect(root.querySelectorAll(".mermaid-viewer__button")).toHaveLength(9);
-    expect(root.querySelector('button[aria-label="Open diagram in expanded view"]')).not.toBeNull();
+    const expandButton = root.querySelector<HTMLButtonElement>('button[aria-label="Open diagram in expanded view"]');
+    expect(expandButton?.querySelector("svg")).not.toBeNull();
+    expect(expandButton?.textContent?.trim()).toBe("");
     expect(pan?.style.transform).toBe("translate(0px, 0px) scale(1)");
 
     root.querySelector<HTMLButtonElement>('button[aria-label="Zoom in diagram"]')?.click();

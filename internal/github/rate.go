@@ -13,6 +13,11 @@ const RateReserveBuffer = ratelimit.RateReserveBuffer
 type Rate = ratelimit.Rate
 type RateTracker = ratelimit.RateTracker
 
+type RateLimitSnapshot struct {
+	Core    *Rate
+	GraphQL *Rate
+}
+
 func NewRateTracker(
 	database *db.DB, platformHost string, apiType string,
 ) *RateTracker {

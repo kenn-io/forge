@@ -231,14 +231,21 @@ func restAPIOriginForHost(platformHost string) string {
 }
 
 type liveClient struct {
-	gh              *gh.Client
-	httpClient      *http.Client
-	rateTracker     *RateTracker
-	platformHost    string
-	graphQLEndpoint string
-	etag            *etagTransport
-	viewerMu        sync.Mutex
-	viewerLogin     string
+	gh                 *gh.Client
+	httpClient         *http.Client
+	rateTracker        *RateTracker
+	graphQLRateTracker *RateTracker
+	platformHost       string
+	graphQLEndpoint    string
+	etag               *etagTransport
+	viewerMu           sync.Mutex
+	viewerLogin        string
+}
+
+// SetGraphQLRateTracker attaches the tracker used by liveClient's direct
+// GraphQL HTTP helpers.
+func (c *liveClient) SetGraphQLRateTracker(rateTracker *RateTracker) {
+	c.graphQLRateTracker = rateTracker
 }
 
 // InvalidateListETagsForRepo evicts cached ETag entries for the repo's
@@ -739,12 +746,36 @@ func (c *liveClient) trackRate(resp *gh.Response) {
 	c.rateTracker.UpdateFromRate(rateFromGitHub(resp.Rate))
 }
 
-func (c *liveClient) trackRateHeaders(resp *http.Response) {
-	if resp == nil || c.rateTracker == nil {
+func (c *liveClient) GetRateLimitSnapshot(ctx context.Context) (*RateLimitSnapshot, error) {
+	limits, _, err := c.gh.RateLimit.Get(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get GitHub rate limit snapshot: %w", err)
+	}
+	if limits == nil {
+		return &RateLimitSnapshot{}, nil
+	}
+	snapshot := &RateLimitSnapshot{}
+	if limits.Core != nil {
+		rate := rateFromGitHub(*limits.Core)
+		snapshot.Core = &rate
+	}
+	if limits.GraphQL != nil {
+		rate := rateFromGitHub(*limits.GraphQL)
+		snapshot.GraphQL = &rate
+	}
+	return snapshot, nil
+}
+
+func (c *liveClient) trackGraphQLRateHeaders(resp *http.Response) {
+	if resp == nil || c.graphQLRateTracker == nil {
 		return
 	}
-	c.rateTracker.RecordRequest()
-	remaining, err := strconv.Atoi(resp.Header.Get("X-RateLimit-Remaining"))
+	c.graphQLRateTracker.RecordRequest()
+	remaining, err := parseRateHeaderInt(resp.Header, "X-RateLimit-Remaining")
+	if err != nil {
+		return
+	}
+	limit, err := parseRateHeaderInt(resp.Header, "X-RateLimit-Limit")
 	if err != nil {
 		return
 	}
@@ -752,9 +783,17 @@ func (c *liveClient) trackRateHeaders(resp *http.Response) {
 	if err != nil {
 		return
 	}
-	c.rateTracker.UpdateFromRate(rateFromGitHubHeaders(
-		0, remaining, time.Unix(resetUnix, 0).UTC(),
+	c.graphQLRateTracker.UpdateFromRate(rateFromGitHubHeaders(
+		limit, remaining, time.Unix(resetUnix, 0).UTC(),
 	))
+}
+
+func parseRateHeaderInt(header http.Header, name string) (int, error) {
+	value, err := strconv.ParseInt(header.Get(name), 10, strconv.IntSize)
+	if err != nil {
+		return 0, err
+	}
+	return int(value), nil
 }
 
 func (c *liveClient) ListOpenPullRequests(ctx context.Context, owner, repo string) ([]*gh.PullRequest, error) {
@@ -1127,7 +1166,7 @@ func (c *liveClient) ListPullRequestReviewThreads(
 				owner, repo, number, err,
 			)
 		}
-		c.trackRateHeaders(resp)
+		c.trackGraphQLRateHeaders(resp)
 		if resp.StatusCode != http.StatusOK {
 			_ = resp.Body.Close()
 			return nil, fmt.Errorf(
@@ -1251,7 +1290,7 @@ func (c *liveClient) listPullRequestReviewThreadComments(
 				owner, repo, number, threadID, err,
 			)
 		}
-		c.trackRateHeaders(resp)
+		c.trackGraphQLRateHeaders(resp)
 		if resp.StatusCode != http.StatusOK {
 			_ = resp.Body.Close()
 			return nil, fmt.Errorf(
@@ -1444,7 +1483,7 @@ func (c *liveClient) ListPullRequestTimelineEvents(
 				owner, repo, number, err,
 			)
 		}
-		c.trackRateHeaders(resp)
+		c.trackGraphQLRateHeaders(resp)
 		if resp.StatusCode != http.StatusOK {
 			_ = resp.Body.Close()
 			return nil, fmt.Errorf(
@@ -1627,7 +1666,7 @@ func (c *liveClient) ListIssueTimelineEvents(
 				owner, repo, number, err,
 			)
 		}
-		c.trackRateHeaders(resp)
+		c.trackGraphQLRateHeaders(resp)
 		if resp.StatusCode != http.StatusOK {
 			_ = resp.Body.Close()
 			return nil, fmt.Errorf(
@@ -1944,7 +1983,7 @@ func (c *liveClient) MarkPullRequestReadyForReview(
 		if err != nil {
 			return nil, err
 		}
-		c.trackRateHeaders(resp)
+		c.trackGraphQLRateHeaders(resp)
 		if resp.StatusCode != http.StatusOK {
 			_ = resp.Body.Close()
 			return resp, newReadyForReviewError(

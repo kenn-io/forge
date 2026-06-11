@@ -216,6 +216,8 @@ type mockGH struct {
 	listOpenIssuesFn           func(context.Context, string, string) ([]*gh.Issue, error)
 	listIssueCommentsFn        func(context.Context, string, string, int) ([]*gh.IssueComment, error)
 	listReviewThreadsFn        func(context.Context, string, string, int) ([]ghclient.PullRequestReviewThread, error)
+	rateLimitSnapshotFn        func(context.Context) (*ghclient.RateLimitSnapshot, error)
+	rateLimitSnapshotCalls     int
 	listIssueCommentsErr       error
 }
 
@@ -284,6 +286,14 @@ func (m *mockGH) GetUser(ctx context.Context, login string) (*gh.User, error) {
 		return m.getUserFn(ctx, login)
 	}
 	return &gh.User{Login: &login}, nil
+}
+
+func (m *mockGH) GetRateLimitSnapshot(ctx context.Context) (*ghclient.RateLimitSnapshot, error) {
+	m.rateLimitSnapshotCalls++
+	if m.rateLimitSnapshotFn != nil {
+		return m.rateLimitSnapshotFn(ctx)
+	}
+	return nil, nil
 }
 
 func (m *mockGH) ListRepositoriesByOwner(
@@ -15643,6 +15653,94 @@ func TestAPIRateLimitsWithGQL(t *testing.T) {
 	assert.Equal(5000, host.GQLLimit)
 	assert.True(host.GQLKnown)
 	assert.NotEmpty(host.GQLResetAt)
+}
+
+func TestAPIRateLimitsReadsLocalStateWithoutRefreshingGitHubRateLimit(t *testing.T) {
+	assert := Assert.New(t)
+
+	database := dbtest.Open(t)
+	now := time.Now().UTC().Truncate(time.Second)
+	localRestReset := now.Add(30 * time.Minute)
+	localGQLReset := now.Add(45 * time.Minute)
+	gitHubRestReset := now.Add(time.Hour)
+	gitHubGQLReset := now.Add(90 * time.Minute)
+
+	restRT := ghclient.NewRateTracker(database, "github.com", "rest")
+	gqlRT := ghclient.NewRateTracker(database, "github.com", "graphql")
+	restRT.UpdateFromRate(ghclient.Rate{
+		Limit:     5000,
+		Remaining: 3000,
+		Reset:     localRestReset,
+	})
+	gqlRT.UpdateFromRate(ghclient.Rate{
+		Limit:     5000,
+		Remaining: 4000,
+		Reset:     localGQLReset,
+	})
+	mock := &mockGH{
+		rateLimitSnapshotFn: func(context.Context) (*ghclient.RateLimitSnapshot, error) {
+			return &ghclient.RateLimitSnapshot{
+				Core: &ghclient.Rate{
+					Limit:     5000,
+					Remaining: 4991,
+					Reset:     gitHubRestReset,
+				},
+				GraphQL: &ghclient.Rate{
+					Limit:     5000,
+					Remaining: 4988,
+					Reset:     gitHubGQLReset,
+				},
+			}, nil
+		},
+	}
+	syncer := ghclient.NewSyncer(
+		map[string]ghclient.Client{"github.com": mock},
+		database, nil,
+		[]ghclient.RepoRef{{
+			Owner: "acme", Name: "widget",
+			PlatformHost: "github.com",
+		}},
+		time.Minute,
+		map[string]*ghclient.RateTracker{"github.com": restRT},
+		nil,
+	)
+	syncer.SetFetchers(map[string]*ghclient.GraphQLFetcher{
+		"github.com": ghclient.NewGraphQLFetcher(testTokenSource("token"), "github.com", gqlRT, nil),
+	})
+	t.Cleanup(syncer.Stop)
+
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	fetch := func() rateLimitsResponse {
+		resp, err := http.Get(ts.URL + "/api/v1/rate-limits")
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		assert.Equal(200, resp.StatusCode)
+
+		var body rateLimitsResponse
+		err = json.NewDecoder(resp.Body).Decode(&body)
+		require.NoError(t, err)
+		return body
+	}
+
+	body := fetch()
+	host, ok := body.Hosts["github.com"]
+	assert.True(ok)
+	assert.Equal(0, mock.rateLimitSnapshotCalls)
+	assert.Equal(0, host.RequestsHour)
+	assert.Equal(3000, host.RateRemaining)
+	assert.Equal(5000, host.RateLimit)
+	assert.Equal(formatUTCRFC3339(localRestReset), host.RateResetAt)
+	assert.True(host.Known)
+	assert.Equal(4000, host.GQLRemaining)
+	assert.Equal(5000, host.GQLLimit)
+	assert.Equal(formatUTCRFC3339(localGQLReset), host.GQLResetAt)
+	assert.True(host.GQLKnown)
+
+	_ = fetch()
+	assert.Equal(0, mock.rateLimitSnapshotCalls)
 }
 
 func TestAPIRateLimitsGQLDefaultsUnknown(t *testing.T) {

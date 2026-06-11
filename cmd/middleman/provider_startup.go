@@ -31,6 +31,10 @@ type providerFactoryOutput struct {
 	provider     platform.Provider
 }
 
+type graphQLRateTrackerSetter interface {
+	SetGraphQLRateTracker(*github.RateTracker)
+}
+
 type providerStartup struct {
 	registry     *platform.Registry
 	rateTrackers map[string]*github.RateTracker
@@ -222,6 +226,9 @@ func buildProviderStartup(
 	for host := range githubHosts {
 		rateKey := github.RateBucketKey(string(platform.KindGitHub), host)
 		gqlRT := github.NewPlatformRateTracker(database, string(platform.KindGitHub), host, "graphql")
+		if setter, ok := clients[host].(graphQLRateTrackerSetter); ok {
+			setter.SetGraphQLRateTracker(gqlRT)
+		}
 		source := startup.cloneSources[tokenauth.Key{
 			Platform: string(platform.KindGitHub),
 			Host:     host,

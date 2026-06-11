@@ -154,6 +154,30 @@ func TestListTagsTracksRate(t *testing.T) {
 	require.Equal(5000, rt.RateLimit())
 }
 
+func TestTrackGraphQLRateHeadersUsesGraphQLTracker(t *testing.T) {
+	assert := Assert.New(t)
+	database := openTestDB(t)
+	restRT := NewRateTracker(database, "github.example.com", "rest")
+	gqlRT := NewRateTracker(database, "github.example.com", "graphql")
+	resetAt := time.Now().Add(time.Hour).Unix()
+	c := &liveClient{rateTracker: restRT}
+	c.SetGraphQLRateTracker(gqlRT)
+	header := http.Header{}
+	header.Set("X-RateLimit-Limit", "5000")
+	header.Set("X-RateLimit-Remaining", "4996")
+	header.Set("X-RateLimit-Reset", strconv.FormatInt(resetAt, 10))
+	resp := &http.Response{Header: header}
+
+	c.trackGraphQLRateHeaders(resp)
+
+	assert.Equal(0, restRT.RequestsThisHour())
+	assert.False(restRT.Known())
+	assert.Equal(1, gqlRT.RequestsThisHour())
+	assert.Equal(4996, gqlRT.Remaining())
+	assert.Equal(5000, gqlRT.RateLimit())
+	assert.True(gqlRT.Known())
+}
+
 func TestListOpenIssuesLogsFetchProgressForLargeIssueSet(t *testing.T) {
 	require := require.New(t)
 	assert := Assert.New(t)

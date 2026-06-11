@@ -2,7 +2,6 @@ package github
 
 import (
 	"context"
-	"os"
 	"testing"
 	"time"
 
@@ -11,18 +10,9 @@ import (
 	"golang.org/x/oauth2"
 )
 
-const liveGraphQLTestsEnv = "MIDDLEMAN_LIVE_GITHUB_TESTS"
-
 func TestLiveGraphQLQueriesValidateAgainstGitHub(t *testing.T) {
-	if os.Getenv(liveGraphQLTestsEnv) != "1" {
-		t.Skipf("set %s=1 to validate GraphQL queries against GitHub", liveGraphQLTestsEnv)
-	}
-
-	token := os.Getenv("MIDDLEMAN_GITHUB_TOKEN")
-	if token == "" {
-		token = os.Getenv("GITHUB_TOKEN")
-	}
-	require.NotEmpty(t, token, "set MIDDLEMAN_GITHUB_TOKEN or GITHUB_TOKEN")
+	skipUnlessLiveGitHubTests(t)
+	token := requireLiveGitHubToken(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()

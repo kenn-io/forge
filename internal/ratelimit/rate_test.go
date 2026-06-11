@@ -353,6 +353,40 @@ func TestRateTrackerResetAtJitterDoesNotResetCounter(t *testing.T) {
 	assert.Equal(50, rt.RequestsThisHour())
 }
 
+func TestRateTrackerSnapshotResetDoesNotRequireRemainingIncrease(t *testing.T) {
+	assert := Assert.New(t)
+	d := openTestDB(t)
+	rt := newGitHubRateTracker(d, "github.com", "rest")
+	var resetCallbacks int
+	rt.SetOnWindowReset(func() {
+		resetCallbacks++
+	})
+
+	oldReset := time.Now().Add(30 * time.Minute)
+	rt.UpdateFromRate(Rate{
+		Limit:     5000,
+		Remaining: 4999,
+		Reset:     oldReset,
+	})
+	for range 50 {
+		rt.RecordRequest()
+	}
+
+	pastReset := time.Now().Add(-1 * time.Minute)
+	rt.SetResetAtForTesting(pastReset)
+	newReset := time.Now().Add(time.Hour)
+	rt.UpdateFromSnapshot(Rate{
+		Limit:     5000,
+		Remaining: 4990,
+		Reset:     newReset,
+	})
+
+	assert.Equal(0, rt.RequestsThisHour())
+	assert.Equal(4990, rt.Remaining())
+	assert.Equal(newReset.UTC(), *rt.ResetAt())
+	assert.Equal(1, resetCallbacks)
+}
+
 // TestRateTrackerProductionFlow simulates the exact production
 // pattern: every API call does RecordRequest + UpdateFromRate
 // (via trackRate), then the counter is read via RequestsThisHour

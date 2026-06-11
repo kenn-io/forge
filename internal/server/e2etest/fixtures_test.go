@@ -126,6 +126,7 @@ func gracefulShutdown(t *testing.T, srv *server.Server) {
 }
 
 type mockGH struct {
+	getRateLimitSnapshotFn func(context.Context) (*ghclient.RateLimitSnapshot, error)
 	getRepositoryFn        func(context.Context, string, string) (*gh.Repository, error)
 	listOpenPullRequestsFn func(context.Context, string, string) ([]*gh.PullRequest, error)
 	listReposByOwnerFn     func(context.Context, string) ([]*gh.Repository, error)
@@ -134,6 +135,13 @@ type mockGH struct {
 func (m *mockGH) ListOpenPullRequests(ctx context.Context, owner, repo string) ([]*gh.PullRequest, error) {
 	if m.listOpenPullRequestsFn != nil {
 		return m.listOpenPullRequestsFn(ctx, owner, repo)
+	}
+	return nil, nil
+}
+
+func (m *mockGH) GetRateLimitSnapshot(ctx context.Context) (*ghclient.RateLimitSnapshot, error) {
+	if m.getRateLimitSnapshotFn != nil {
+		return m.getRateLimitSnapshotFn(ctx)
 	}
 	return nil, nil
 }

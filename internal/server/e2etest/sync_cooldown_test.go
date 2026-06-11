@@ -71,6 +71,61 @@ name = "widget"
 	}
 }
 
+func TestTriggerSyncE2ERefreshesSnapshotBeforeRateBackoff(t *testing.T) {
+	require := require.New(t)
+
+	synced := make(chan struct{})
+	var syncedClosed atomic.Bool
+	mock := &mockGH{
+		getRateLimitSnapshotFn: func(context.Context) (*ghclient.RateLimitSnapshot, error) {
+			resetAt := time.Now().UTC().Add(time.Hour)
+			return &ghclient.RateLimitSnapshot{
+				Core: &ghclient.Rate{
+					Limit:     5000,
+					Remaining: 4800,
+					Reset:     resetAt,
+				},
+			}, nil
+		},
+		listOpenPullRequestsFn: func(
+			_ context.Context, _, _ string,
+		) ([]*gh.PullRequest, error) {
+			if syncedClosed.CompareAndSwap(false, true) {
+				close(synced)
+			}
+			return nil, nil
+		},
+	}
+	baseURL, client, _, syncer := startSyncCooldownE2EServerWithSyncer(t, `
+sync_interval = "5m"
+github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "widget"
+`, mock)
+	rt := syncer.RateTrackers()["github.com"]
+	require.NotNil(rt)
+	rt.UpdateFromRate(ghclient.Rate{
+		Limit:     5000,
+		Remaining: 0,
+		Reset:     time.Now().UTC().Add(time.Hour),
+	})
+
+	status, body := postJSON(
+		t, client, baseURL+"/api/v1/sync", nil,
+	)
+	require.Equal(http.StatusAccepted, status, body)
+
+	select {
+	case <-synced:
+	case <-time.After(2 * time.Second):
+		require.Fail("explicit sync did not refresh snapshot before rate backoff")
+	}
+}
+
 func TestTriggerSyncE2EPrioritizesFilteredRepos(t *testing.T) {
 	require := require.New(t)
 

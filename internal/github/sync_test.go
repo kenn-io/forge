@@ -524,6 +524,21 @@ type mockClient struct {
 	createdReviewComments           []*gh.DraftReviewComment
 }
 
+type rateLimitSnapshotMockClient struct {
+	*mockClient
+	snapshot           *RateLimitSnapshot
+	snapshotCalls      atomic.Int32
+	syncBudgetContexts atomic.Int32
+}
+
+func (m *rateLimitSnapshotMockClient) GetRateLimitSnapshot(ctx context.Context) (*RateLimitSnapshot, error) {
+	m.snapshotCalls.Add(1)
+	if IsSyncBudgetContext(ctx) {
+		m.syncBudgetContexts.Add(1)
+	}
+	return m.snapshot, nil
+}
+
 type labelCatalogTestClient struct {
 	*mockClient
 	labels []*gh.Label
@@ -9943,6 +9958,160 @@ func TestSyncerGQLRateTrackers(t *testing.T) {
 	gqlTrackers := syncer.GQLRateTrackers()
 	assert.Len(gqlTrackers, 1)
 	assert.Same(gqlRT, gqlTrackers["github.com"])
+}
+
+func TestRunOnceRefreshesGitHubRateLimitSnapshotOutsideSyncBudget(t *testing.T) {
+	assert := Assert.New(t)
+	d := openTestDB(t)
+
+	now := time.Now().UTC().Truncate(time.Second)
+	restReset := now.Add(time.Hour)
+	gqlReset := now.Add(90 * time.Minute)
+	restRT := NewRateTracker(d, "github.com", "rest")
+	gqlRT := NewRateTracker(d, "github.com", "graphql")
+	budget := NewSyncBudget(100)
+	client := &rateLimitSnapshotMockClient{
+		mockClient: &mockClient{},
+		snapshot: &RateLimitSnapshot{
+			Core: &Rate{
+				Limit:     5000,
+				Remaining: 4991,
+				Reset:     restReset,
+			},
+			GraphQL: &Rate{
+				Limit:     5000,
+				Remaining: 4988,
+				Reset:     gqlReset,
+			},
+		},
+	}
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client},
+		d, nil,
+		nil,
+		time.Minute,
+		map[string]*RateTracker{"github.com": restRT},
+		map[string]*SyncBudget{"github.com": budget},
+	)
+	syncer.SetFetchers(map[string]*GraphQLFetcher{
+		"github.com": NewGraphQLFetcher(testTokenSource("token"), "github.com", gqlRT, nil),
+	})
+
+	syncer.RunOnce(t.Context())
+
+	assert.Equal(int32(1), client.snapshotCalls.Load())
+	assert.Equal(int32(0), client.syncBudgetContexts.Load())
+	assert.Equal(0, budget.Spent())
+	assert.Equal(0, restRT.RequestsThisHour())
+	assert.Equal(4991, restRT.Remaining())
+	assert.Equal(5000, restRT.RateLimit())
+	if assert.NotNil(restRT.ResetAt()) {
+		assert.Equal(restReset, *restRT.ResetAt())
+	}
+	assert.Equal(0, gqlRT.RequestsThisHour())
+	assert.Equal(4988, gqlRT.Remaining())
+	assert.Equal(5000, gqlRT.RateLimit())
+	if assert.NotNil(gqlRT.ResetAt()) {
+		assert.Equal(gqlReset, *gqlRT.ResetAt())
+	}
+}
+
+func TestRunOnceSnapshotWindowResetResetsSyncBudget(t *testing.T) {
+	assert := Assert.New(t)
+	d := openTestDB(t)
+
+	now := time.Now().UTC().Truncate(time.Second)
+	oldReset := now.Add(time.Hour)
+	newReset := now.Add(2 * time.Hour)
+	restRT := NewRateTracker(d, "github.com", "rest")
+	restRT.UpdateFromRate(Rate{
+		Limit:     5000,
+		Remaining: 4999,
+		Reset:     oldReset,
+	})
+	for range 50 {
+		restRT.RecordRequest()
+	}
+	restRT.SetResetAtForTesting(now.Add(-time.Minute))
+	budget := NewSyncBudget(100)
+	budget.Spend(100)
+	client := &rateLimitSnapshotMockClient{
+		mockClient: &mockClient{},
+		snapshot: &RateLimitSnapshot{
+			Core: &Rate{
+				Limit:     5000,
+				Remaining: 4990,
+				Reset:     newReset,
+			},
+		},
+	}
+
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client},
+		d, nil,
+		nil,
+		time.Minute,
+		map[string]*RateTracker{"github.com": restRT},
+		map[string]*SyncBudget{"github.com": budget},
+	)
+
+	syncer.RunOnce(t.Context())
+
+	assert.Equal(int32(1), client.snapshotCalls.Load())
+	assert.Equal(0, restRT.RequestsThisHour())
+	assert.Equal(0, budget.Spent())
+	assert.Equal(4990, restRT.Remaining())
+	if assert.NotNil(restRT.ResetAt()) {
+		assert.Equal(newReset, *restRT.ResetAt())
+	}
+}
+
+func TestRunOnceRecoveredRateLimitSnapshotClearsStaleThrottleGate(t *testing.T) {
+	assert := Assert.New(t)
+	d := openTestDB(t)
+
+	now := time.Now().UTC().Truncate(time.Second)
+	resetAt := now.Add(time.Hour)
+	rt := NewRateTracker(d, "github.com", "rest")
+	rt.UpdateFromRate(Rate{
+		Limit:     5000,
+		Remaining: 400,
+		Reset:     resetAt,
+	})
+	client := &rateLimitSnapshotMockClient{
+		mockClient: &mockClient{},
+		snapshot: &RateLimitSnapshot{
+			Core: &Rate{
+				Limit:     5000,
+				Remaining: 4900,
+				Reset:     resetAt,
+			},
+		},
+	}
+	interval := time.Minute
+
+	mock := &mockClient{}
+	client.mockClient = mock
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client},
+		d, nil,
+		[]RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}},
+		interval,
+		map[string]*RateTracker{"github.com": rt},
+		nil,
+	)
+	syncer.nextSyncAfter["github.com"] = time.Now().UTC().Add(8 * interval)
+
+	beforeRun := time.Now().UTC()
+	syncer.RunOnce(t.Context())
+
+	assert.True(mock.listOpenPRsCalled)
+	nextSyncAfter, ok := syncer.nextSyncAfter["github.com"]
+	if assert.True(ok) {
+		assert.Less(nextSyncAfter.Sub(beforeRun), 2*interval)
+	}
+	assert.Equal(4900, rt.Remaining())
 }
 
 func TestSyncerGQLRateTrackersSkipsNil(t *testing.T) {

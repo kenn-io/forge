@@ -144,17 +144,33 @@ func (rt *RateTracker) SetOnWindowReset(fn func()) {
 // the reset time moved forward, the provider started a new rate window and the
 // request counter resets to stay aligned with that window.
 func (rt *RateTracker) UpdateFromRate(rate Rate) {
+	rt.updateFromRate(rate, 1, false)
+}
+
+// UpdateFromSnapshot updates remaining/limit/reset from provider snapshot data
+// that does not itself represent a counted API request.
+func (rt *RateTracker) UpdateFromSnapshot(rate Rate) {
+	rt.updateFromRate(rate, 0, true)
+}
+
+func (rt *RateTracker) updateFromRate(
+	rate Rate,
+	resetWindowCount int,
+	resetExpiredWindow bool,
+) {
 	rt.mu.Lock()
+	now := time.Now().UTC()
 	resetTime := rate.Reset.UTC()
 	// Detect provider window reset: remaining increases AND the
 	// previous resetAt has passed (proving the old window ended).
 	// Both conditions are required to avoid false resets from
 	// out-of-order responses within the same window.
 	var windowReset bool
-	if rt.remaining >= 0 && rate.Remaining > rt.remaining &&
-		rt.resetAt != nil && !time.Now().Before(*rt.resetAt) {
-		rt.count = 1 // the current request is the first in the new window
-		rt.hourStart = time.Now().UTC()
+	expiredWindow := rt.resetAt != nil && !now.Before(*rt.resetAt)
+	if expiredWindow && (resetExpiredWindow ||
+		rt.remaining >= 0 && rate.Remaining > rt.remaining) {
+		rt.count = resetWindowCount
+		rt.hourStart = now
 		windowReset = true
 	}
 	fn := rt.onWindowReset

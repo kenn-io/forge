@@ -243,6 +243,10 @@ type Instance struct {
 	closed         bool
 }
 
+type graphQLRateTrackerSetter interface {
+	SetGraphQLRateTracker(*ghclient.RateTracker)
+}
+
 // New creates a middleman Instance from the given options. It
 // wraps NewWithContext with context.Background(); callers that
 // need to bound or cancel a slow ResolveToken callback should
@@ -387,6 +391,9 @@ func NewWithContext(
 		gqlRT := ghclient.NewPlatformRateTracker(
 			database, "github", host, "graphql",
 		)
+		if setter, ok := clients[host].(graphQLRateTrackerSetter); ok {
+			setter.SetGraphQLRateTracker(gqlRT)
+		}
 		fetchers[host] = ghclient.NewGraphQLFetcher(
 			hostSources[host], host, gqlRT, budgets[rateKey],
 		)

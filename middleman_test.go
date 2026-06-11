@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sync"
 	"testing"
 	"testing/fstest"
@@ -80,6 +81,25 @@ func TestNewEmbeddedBootstrapGlobals(t *testing.T) {
 	assert := Assert.New(t)
 	assert.Contains(body, `window.__middleman_config=`)
 	assert.NotContains(body, `__MIDDLEMAN_EMBEDDED__`)
+}
+
+func TestNewWiresGraphQLTrackerIntoEmbeddedClient(t *testing.T) {
+	inst, err := New(Options{
+		Token:   "test-token",
+		DataDir: t.TempDir(),
+		Repos:   []Repo{{Owner: "acme", Name: "widget"}},
+	})
+	require.NoError(t, err)
+	defer inst.Close()
+
+	client, err := inst.syncer.ClientForHost("github.com")
+	require.NoError(t, err)
+
+	value := reflect.ValueOf(client)
+	require.Equal(t, reflect.Pointer, value.Kind())
+	tracker := value.Elem().FieldByName("graphQLRateTracker")
+	require.True(t, tracker.IsValid())
+	require.False(t, tracker.IsNil())
 }
 
 func TestEmbedConfigFullFlow(t *testing.T) {

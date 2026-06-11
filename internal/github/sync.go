@@ -134,6 +134,7 @@ type WatchedMR struct {
 // SetParallelism has not been called. Bounded so we don't burst the
 // per-host GitHub rate limit / abuse-detection thresholds.
 const defaultParallelism = 4
+const rateLimitSnapshotRefreshInterval = time.Minute
 
 // Display-name cache parameters. Display names rarely change,
 // so the success TTL is long enough to skip lookups across many
@@ -285,6 +286,8 @@ type Syncer struct {
 	rateTrackers             map[string]*RateTracker    // provider/host bucket -> tracker
 	budgets                  map[string]*SyncBudget     // provider/host bucket -> budget
 	fetchers                 map[string]*GraphQLFetcher // host -> GraphQL fetcher
+	rateLimitSnapshotMu      sync.Mutex
+	rateLimitSnapshotRefresh map[string]time.Time
 	repos                    []RepoRef
 	reposMu                  sync.Mutex
 	interval                 time.Duration
@@ -533,6 +536,7 @@ func NewSyncerWithRegistry(
 		budgets:                  budgets,
 		repos:                    repos,
 		interval:                 interval,
+		rateLimitSnapshotRefresh: make(map[string]time.Time),
 		branchActivityRetention:  defaultBranchActivityRetention,
 		branchActivityMaxCommits: defaultBranchActivityMaxCommits,
 		nextSyncAfter:            make(map[string]time.Time),
@@ -2281,6 +2285,114 @@ func (s *Syncer) GQLRateTrackers() map[string]*RateTracker {
 	return result
 }
 
+type rateLimitSnapshotter interface {
+	GetRateLimitSnapshot(ctx context.Context) (*RateLimitSnapshot, error)
+}
+
+// RefreshRateLimitSnapshots refreshes GitHub REST and GraphQL quota facts from
+// GitHub's /rate_limit endpoint. The snapshot call is intentionally not
+// recorded as a middleman request because GitHub does not charge it against the
+// primary REST budget.
+func (s *Syncer) RefreshRateLimitSnapshots(ctx context.Context) {
+	s.refreshRateLimitSnapshots(ctx)
+}
+
+func (s *Syncer) refreshRateLimitSnapshots(ctx context.Context) map[string]struct{} {
+	refreshed := make(map[string]struct{})
+	if s == nil || s.clients == nil {
+		return refreshed
+	}
+	for _, rt := range s.rateTrackers {
+		if rt == nil || rt.Provider() != string(platform.KindGitHub) || rt.APIType() != "rest" {
+			continue
+		}
+		key := rt.BucketKey()
+		if !s.claimRateLimitSnapshotRefresh(key, time.Now().UTC()) {
+			continue
+		}
+		client, err := s.clientFor(RepoRef{
+			Platform:     platform.KindGitHub,
+			PlatformHost: rt.PlatformHost(),
+		})
+		if err != nil {
+			continue
+		}
+		snapshotter, ok := client.(rateLimitSnapshotter)
+		if !ok {
+			continue
+		}
+		snapshot, err := snapshotter.GetRateLimitSnapshot(ctx)
+		if err != nil {
+			slog.Warn("refresh GitHub rate limit snapshot failed",
+				"host", rt.PlatformHost(), "err", err)
+			continue
+		}
+		if snapshot == nil {
+			continue
+		}
+		if snapshot.Core != nil {
+			rt.UpdateFromSnapshot(*snapshot.Core)
+			refreshed[key] = struct{}{}
+		}
+		if snapshot.GraphQL != nil {
+			if gqlRT := s.graphQLRateTrackerForHost(rt.PlatformHost()); gqlRT != nil {
+				gqlRT.UpdateFromSnapshot(*snapshot.GraphQL)
+			}
+		}
+	}
+	return refreshed
+}
+
+func (s *Syncer) claimRateLimitSnapshotRefresh(key string, now time.Time) bool {
+	s.rateLimitSnapshotMu.Lock()
+	defer s.rateLimitSnapshotMu.Unlock()
+	if s.rateLimitSnapshotRefresh == nil {
+		s.rateLimitSnapshotRefresh = make(map[string]time.Time)
+	}
+	last := s.rateLimitSnapshotRefresh[key]
+	if !last.IsZero() && now.Sub(last) < rateLimitSnapshotRefreshInterval {
+		return false
+	}
+	s.rateLimitSnapshotRefresh[key] = now
+	return true
+}
+
+func (s *Syncer) graphQLRateTrackerForHost(platformHost string) *RateTracker {
+	if s.fetchers == nil {
+		return nil
+	}
+	fetcher := s.fetchers[canonicalRepoHost(platformHost)]
+	if fetcher == nil {
+		return nil
+	}
+	return fetcher.RateTracker()
+}
+
+func (s *Syncer) clearRecoveredRateLimitGates(
+	refreshed map[string]struct{},
+	nextAfter map[string]time.Time,
+	interval time.Duration,
+) {
+	if len(refreshed) == 0 || nextAfter == nil || interval <= 0 {
+		return
+	}
+	now := time.Now().UTC()
+	for bucket := range refreshed {
+		after, ok := nextAfter[bucket]
+		if !ok || !now.Before(after) {
+			continue
+		}
+		rt := s.rateTrackers[bucket]
+		if rt == nil {
+			continue
+		}
+		refreshedDelay := interval * time.Duration(rt.ThrottleFactor())
+		if after.Sub(now) > refreshedDelay {
+			delete(nextAfter, bucket)
+		}
+	}
+}
+
 // runState holds the per-RunOnce mutable state shared by the
 // worker pool. Extracted into a struct so runWorker can be a
 // directly testable method instead of an inline closure.
@@ -2441,6 +2553,8 @@ func (s *Syncer) runOnce(
 	}
 	defer s.running.Store(false)
 
+	rateLimitSnapshotCtx := ctx
+
 	// Mark context so the budget transport counts HTTP calls
 	// made during background sync. User-initiated server
 	// handler paths do not carry this key and are not counted.
@@ -2483,6 +2597,10 @@ func (s *Syncer) runOnce(
 	nextAfter := s.nextSyncAfter
 	if bypassNextSyncAfter {
 		nextAfter = nil
+	}
+	if rateLimitSnapshotCtx.Err() == nil {
+		refreshed := s.refreshRateLimitSnapshots(rateLimitSnapshotCtx)
+		s.clearRecoveredRateLimitGates(refreshed, nextAfter, s.interval)
 	}
 	eligibleBuckets := s.hostEligibility(repoBuckets, nextAfter)
 
@@ -2540,10 +2658,6 @@ dispatch:
 	close(work)
 	wg.Wait()
 
-	s.advanceNextSync(
-		eligibleBuckets, s.nextSyncAfter, s.interval,
-	)
-
 	// Detail drain: fetch full details for highest-priority items
 	// within the per-host budget. Runs after index scan completes.
 	if !canceled.Load() && ctx.Err() == nil {
@@ -2586,6 +2700,13 @@ dispatch:
 		})
 		return
 	}
+
+	if rateLimitSnapshotCtx.Err() == nil {
+		s.RefreshRateLimitSnapshots(rateLimitSnapshotCtx)
+	}
+	s.advanceNextSync(
+		eligibleBuckets, s.nextSyncAfter, s.interval,
+	)
 
 	slog.Info("sync complete", "repos", total)
 

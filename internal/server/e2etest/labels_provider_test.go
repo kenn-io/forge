@@ -260,6 +260,8 @@ func TestGitLabSetPullLabelsUpdatesProviderAndDB(t *testing.T) {
 	require.NoError(json.Unmarshal(rr.Body.Bytes(), &body))
 	require.Len(body.Labels, 1)
 	assert.Equal("triage", body.Labels[0].Name)
+	assert.Equal("#fbca04", body.Labels[0].Color,
+		"response must carry the catalog color even though GitLab returns names only")
 
 	fake.mu.Lock()
 	sent := fake.mrLabelBody
@@ -272,6 +274,9 @@ func TestGitLabSetPullLabelsUpdatesProviderAndDB(t *testing.T) {
 	require.NotNil(mr)
 	require.Len(mr.Labels, 1)
 	assert.Equal("triage", mr.Labels[0].Name)
+	assert.Equal("#fbca04", mr.Labels[0].Color,
+		"stored label must carry the catalog color even though GitLab returns names only")
+	assert.Equal("Needs review", mr.Labels[0].Description)
 }
 
 func TestGitLabSetIssueLabelsUpdatesProviderAndDB(t *testing.T) {
@@ -295,6 +300,8 @@ func TestGitLabSetIssueLabelsUpdatesProviderAndDB(t *testing.T) {
 	require.NotNil(issue)
 	require.Len(issue.Labels, 1)
 	assert.Equal("triage", issue.Labels[0].Name)
+	assert.Equal("#fbca04", issue.Labels[0].Color,
+		"stored label must carry the catalog color even though GitLab returns names only")
 }
 
 // fakeForgejoAPI serves the minimal Forgejo/Gitea v1 surface the label

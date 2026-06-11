@@ -163,7 +163,14 @@ func (s *Server) setPullLabels(
 	if err := s.db.ReplaceMergeRequestLabels(ctx, repo.ID, mr.ID, labels); err != nil {
 		return nil, problemInternal("save pull labels failed")
 	}
-	return &setLabelsOutput{Body: itemLabelsResponse{Labels: labels}}, nil
+	// Re-read the stored rows: the label store merges provider responses
+	// with the repo label catalog, so providers that return bare names
+	// (GitLab) still yield color and description here.
+	stored, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
+	if err != nil || stored == nil {
+		return nil, problemInternal("get pull failed")
+	}
+	return &setLabelsOutput{Body: itemLabelsResponse{Labels: stored.Labels}}, nil
 }
 
 func (s *Server) setIssueLabels(
@@ -211,7 +218,14 @@ func (s *Server) setIssueLabels(
 	if err := s.db.ReplaceIssueLabels(ctx, repo.ID, issue.ID, labels); err != nil {
 		return nil, problemInternal("save issue labels failed")
 	}
-	return &setLabelsOutput{Body: itemLabelsResponse{Labels: labels}}, nil
+	// Re-read the stored rows: the label store merges provider responses
+	// with the repo label catalog, so providers that return bare names
+	// (GitLab) still yield color and description here.
+	stored, err := s.db.GetIssueByRepoIDAndNumber(ctx, repo.ID, input.Number)
+	if err != nil || stored == nil {
+		return nil, problemInternal("get issue failed")
+	}
+	return &setLabelsOutput{Body: itemLabelsResponse{Labels: stored.Labels}}, nil
 }
 
 func (s *Server) resolveRequestedLabelNames(

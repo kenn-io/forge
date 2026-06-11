@@ -89,13 +89,17 @@ provider-equivalent behavior from the flags alone:
   `409 conflict` and deliberately does not sync: persisting a fresh head
   would let a retry from the same stale UI mutate a commit nobody
   reviewed. The head populates through the normal review cycle (detail
-  view or periodic sync). The stored head is still only a cache, so MR
-  responses expose `platform_head_sha` and merge/approve accept an
-  optional `expected_head_sha`: clients that echo the head they rendered
-  get a hard guarantee that a sync between render and click cannot rebind
-  the action. Conflict responses carry `details.reason` (`stale_state`,
-  `conflict`, or `head_unknown`) per `context/error-handling.md`; only
-  stale heads trigger an MR resync.
+  view or periodic sync). The stored head is still only a cache, so every
+  response shape that embeds the MergeRequest row (list and detail alike)
+  exposes `platform_head_sha`, and merge/approve accept an optional
+  `expected_head_sha` that must match the stored head before the provider
+  is called. The end-to-end strength of that pin is capability-scoped: on
+  `mutation_head_binding` providers the same SHA is also enforced by the
+  provider API, closing the pre-check-to-call race; on other providers
+  the pin only guards against local cache movement until provider-side
+  binding lands there. Conflict responses carry `details.reason`
+  (`stale_state`, `conflict`, or `head_unknown`) per
+  `context/error-handling.md`; only stale heads trigger an MR resync.
 - Reviews: GitLab has no `request_changes` state. `SupportedReviewActions` is
   comment/approve only, and publishing a request-changes review returns the
   typed `unsupportedCapability` envelope (`review_action_request_changes`).

@@ -726,6 +726,34 @@ func TestGitLabMutationBodylessStaleApproveReliesOnShaBinding(t *testing.T) {
 	)
 }
 
+// Clients can only echo expected_head_sha if the responses they render
+// actually carry the head: both the list row and the detail object must
+// expose platform_head_sha.
+func TestGitLabMutationResponsesExposeHeadSHA(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, _, _, _ := setupGitLabMutationServer(t)
+
+	detailRR := doGitLabJSON(t, srv, http.MethodGet, "/api/v1/pulls/gitlab/acme/widget/7", "")
+	require.Equal(http.StatusOK, detailRR.Code, detailRR.Body.String())
+	var detail struct {
+		MergeRequest struct {
+			PlatformHeadSHA string `json:"platform_head_sha"`
+		} `json:"merge_request"`
+	}
+	require.NoError(json.NewDecoder(detailRR.Body).Decode(&detail))
+	assert.Equal("head-sha", detail.MergeRequest.PlatformHeadSHA)
+
+	listRR := doGitLabJSON(t, srv, http.MethodGet, "/api/v1/pulls", "")
+	require.Equal(http.StatusOK, listRR.Code, listRR.Body.String())
+	var list []struct {
+		PlatformHeadSHA string `json:"platform_head_sha"`
+	}
+	require.NoError(json.NewDecoder(listRR.Body).Decode(&list))
+	require.Len(list, 1)
+	assert.Equal("head-sha", list[0].PlatformHeadSHA)
+}
+
 // The stored head is only a cache: when a sync moves it between the
 // client's render and click, the client's expected_head_sha assertion
 // must reject the mutation before any provider call.

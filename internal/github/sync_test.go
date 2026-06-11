@@ -6457,6 +6457,63 @@ func TestSyncer_OnStatusChangeCallback(t *testing.T) {
 		"last callback should be running=false")
 }
 
+func TestSyncerRateLimitProgressRoundsWaitToSeconds(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+
+	rt := NewRateTracker(d, "github.com", "rest")
+	rt.UpdateFromRate(Rate{
+		Remaining: 0,
+		Reset:     time.Now().Add(25*time.Minute + 38*time.Second + 364*time.Millisecond),
+	})
+
+	s := NewSyncer(
+		map[string]Client{"github.com": &mockClient{}},
+		d, nil,
+		[]RepoRef{{Owner: "o", Name: "n", PlatformHost: "github.com"}},
+		time.Hour,
+		map[string]*RateTracker{"github.com": rt},
+		nil,
+	)
+
+	progress := make(chan string, 1)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	s.SetOnStatusChange(func(status *SyncStatus) {
+		if strings.Contains(status.Progress, "rate limited, waiting") {
+			select {
+			case progress <- status.Progress:
+			default:
+			}
+			cancel()
+		}
+	})
+
+	done := make(chan struct{})
+	go func() {
+		s.RunOnce(ctx)
+		close(done)
+	}()
+
+	var got string
+	select {
+	case got = <-progress:
+	case <-time.After(2 * time.Second):
+		require.FailNow("RunOnce did not publish rate-limit progress")
+	}
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		require.FailNow("RunOnce did not return after cancel")
+	}
+
+	assert.Contains(got, "rate limited, waiting ")
+	assert.NotContains(got, ".")
+	assert.Regexp(`rate limited, waiting \d+m\d+s$`, got)
+}
+
 // notModifiedErr returns the error shape go-github surfaces when the
 // HTTP transport receives a 304 Not Modified response. The etag
 // transport intercepts list-endpoint requests and adds If-None-Match

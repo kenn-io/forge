@@ -1261,6 +1261,66 @@ describe("kata workspace store", () => {
     expect(store.selectedEvents.map((event) => event.issue_uid)).toEqual(["issue-call-dentist"]);
   });
 
+  test("a selection made while a remote-event view refresh is in flight is not discarded", async () => {
+    const api = createFakeKataTaskAPI();
+    const store = createKataWorkspaceStore({ api });
+    await store.bootstrap();
+    store.clearSelection();
+
+    // The remote event's view refetch stalls so the user's selection
+    // lands while it is still in flight.
+    const stalledView = deferred<KataTaskViewResponse>();
+    api.mocks.issues.mockImplementationOnce(async () => stalledView.promise);
+    const remote = store.applyRemoteEvent({ ...events[0]!, event_id: 99 });
+
+    const slowDetail = deferred<KataTaskDetail>();
+    api.mocks.issue.mockImplementationOnce(
+      (_uid: string, opts?: { signal?: AbortSignal }) =>
+        new Promise<KataTaskDetail>((resolve, reject) => {
+          opts?.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), {
+            once: true,
+          });
+          void slowDetail.promise.then(resolve);
+        }),
+    );
+    const selection = store.selectIssue("issue-call-dentist");
+
+    stalledView.resolve(
+      buildKataTaskView({ view: "today", issues, projects, today: "2026-05-15", fetched_at: fetchedAt }),
+    );
+    await remote;
+
+    slowDetail.resolve(detailFor("issue-call-dentist"));
+    const applied = await selection;
+
+    expect(applied).toBe(true);
+    expect(store.selectedIssue?.issue.uid).toBe("issue-call-dentist");
+    expect(store.eventCursor).toBe(99);
+  });
+
+  test("a selection completed during a remote-event view refresh is not reverted", async () => {
+    const api = createFakeKataTaskAPI();
+    const store = createKataWorkspaceStore({ api });
+    await store.bootstrap();
+
+    const stalledView = deferred<KataTaskViewResponse>();
+    api.mocks.issues.mockImplementationOnce(async () => stalledView.promise);
+    const remote = store.applyRemoteEvent({ ...events[0]!, event_id: 99 });
+
+    // The refresh captured the bootstrap selection as preferred; the
+    // user picks a different task before the view fetch resolves.
+    const applied = await store.selectIssue("issue-call-dentist");
+    expect(applied).toBe(true);
+
+    stalledView.resolve(
+      buildKataTaskView({ view: "today", issues, projects, today: "2026-05-15", fetched_at: fetchedAt }),
+    );
+    await remote;
+
+    expect(store.selectedIssue?.issue.uid).toBe("issue-call-dentist");
+    expect(store.eventCursor).toBe(99);
+  });
+
   test("syncs event cursor through paged event reads", async () => {
     const api = createFakeKataTaskAPI();
     api.mocks.events.mockImplementation(async (query: KataTaskEventsQuery = {}) => {

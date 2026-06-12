@@ -101,6 +101,89 @@ describe("KataWorkspace", () => {
     });
   });
 
+  it("keeps a row selection made while a stream-triggered reload is in flight", async () => {
+    let streamController: ReadableStreamDefaultController<Uint8Array> | undefined;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = new URL(input instanceof Request ? input.url : String(input), window.location.origin);
+      if (url.pathname === "/api/v1/kata/daemons") {
+        return Response.json({
+          daemons: [
+            {
+              id: "home",
+              url: "http://127.0.0.1:7777",
+              default: true,
+              auth: "none",
+              health: "connected",
+            },
+          ],
+        });
+      }
+      if (url.pathname === "/api/v1/kata/proxy/api/v1/events/stream") {
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              streamController = controller;
+            },
+            cancel() {
+              streamController = undefined;
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "text/event-stream" } },
+        );
+      }
+      return new Response("not found", { status: 404 });
+    });
+    const { api } = createWorkspaceAPI();
+    const onSelectedIssueChange = vi.fn();
+
+    render(KataWorkspace, { props: { api, onSelectedIssueChange } });
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Pay rent/ })).toBeTruthy();
+      expect(streamController).toBeTruthy();
+    });
+
+    // Stall the view reload the reset event triggers so the click below
+    // lands while that refetch is still in flight.
+    const stalledView = deferred<Awaited<ReturnType<KataTaskAPI["issues"]>>>();
+    let reloadStarted = false;
+    vi.mocked(api.issues).mockImplementationOnce(async () => {
+      reloadStarted = true;
+      return stalledView.promise;
+    });
+    streamController?.enqueue(
+      new TextEncoder().encode(
+        `id: 6\nevent: sync.reset_required\ndata: ${JSON.stringify({ event_id: 6, reset_after_id: 6 })}\n\n`,
+      ),
+    );
+    await waitFor(() => {
+      expect(reloadStarted).toBe(true);
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: /Email Susan re: Q3/ }));
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Email Susan re: Q3" })).toBeTruthy();
+    });
+
+    stalledView.resolve(
+      buildKataTaskView({
+        view: "all",
+        issues: initialIssues,
+        projects,
+        today: "2026-05-15",
+        fetched_at: fetchedAt,
+      }),
+    );
+
+    // The reload must not displace the selection the user just made.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Email Susan re: Q3" })).toBeTruthy();
+      expect(screen.queryByText("Select a task")).toBeNull();
+    });
+    expect(onSelectedIssueChange).toHaveBeenCalledWith("issue-email-susan");
+  });
+
   it("surfaces a disconnected live Kata event stream", async () => {
     let streamController: ReadableStreamDefaultController<Uint8Array> | undefined;
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {

@@ -181,6 +181,36 @@ test.describe("assignee and reviewer editing", () => {
     }
   });
 
+  test("navigating away closes an open picker without sending a mutation", async ({ page }) => {
+    let isolatedServer: IsolatedE2EServer | null = null;
+    try {
+      isolatedServer = await startIsolatedE2EServer();
+      const baseURL = isolatedServer.info.base_url;
+
+      const mutationRequests: string[] = [];
+      page.on("request", (request) => {
+        if (request.method() === "PUT" && /\/(assignees|reviewers)$/.test(request.url())) {
+          mutationRequests.push(request.url());
+        }
+      });
+
+      await page.goto(`${baseURL}/pulls/github/acme/widgets/1`);
+      await expect(page.locator(".pull-detail")).toBeVisible();
+      await page.getByRole("button", { name: "Edit assignees" }).click();
+      await expect(page.getByRole("dialog", { name: "Edit assignees" })).toBeVisible();
+
+      // Route to a different PR while the picker is open. The picker
+      // must not survive the transition: a leftover panel would aim
+      // its mutations at whatever item the handlers now target.
+      await page.getByText("Bump lodash from 4.17.20 to 4.17.21").click();
+      await expect(page.locator(".pull-detail .detail-title")).toContainText("Bump lodash");
+      await expect(page.getByRole("dialog", { name: "Edit assignees" })).toBeHidden();
+      expect(mutationRequests).toEqual([]);
+    } finally {
+      await isolatedServer?.stop();
+    }
+  });
+
   test("issue detail edits assignees", async ({ page }) => {
     let isolatedServer: IsolatedE2EServer | null = null;
     try {

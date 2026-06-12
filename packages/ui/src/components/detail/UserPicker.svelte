@@ -110,7 +110,7 @@
     <input
       bind:this={filterInput}
       bind:value={query}
-      oninput={() => onquery?.(query.trim())}
+      oninput={(event) => onquery?.(event.currentTarget.value.trim())}
       type="search"
       placeholder="Filter users"
       aria-label="Filter users"

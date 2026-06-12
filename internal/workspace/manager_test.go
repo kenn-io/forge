@@ -1384,6 +1384,62 @@ func TestCleanupIgnoresInvalidConfiguredBaseWhenWorktreeAbsent(t *testing.T) {
 	require.NoError(mgr.cleanupWorkspaceArtifactsForDelete(t.Context(), ws))
 }
 
+func TestCleanupSucceedsWhenWorkspacePathReplacedByNonGitDirectory(t *testing.T) {
+	tests := []struct {
+		name    string
+		corrupt func(t *testing.T, worktreePath string)
+	}{
+		{
+			name: "plain directory",
+			corrupt: func(t *testing.T, worktreePath string) {
+				t.Helper()
+				require.NoError(t, os.WriteFile(
+					filepath.Join(worktreePath, "leftover.txt"),
+					[]byte("not a repo"), 0o644,
+				))
+			},
+		},
+		{
+			name: "stale .git file from a removed repo",
+			corrupt: func(t *testing.T, worktreePath string) {
+				t.Helper()
+				gone := filepath.Join(t.TempDir(), "gone", ".git", "worktrees", "x")
+				require.NoError(t, os.WriteFile(
+					filepath.Join(worktreePath, ".git"),
+					[]byte("gitdir: "+gone+"\n"), 0o644,
+				))
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require := require.New(t)
+
+			localRepo := setupLocalWorktreeBaseForWorkspaceGitTest(t, "feature/thing")
+			worktreePath := filepath.Join(t.TempDir(), "workspace")
+			require.NoError(os.MkdirAll(worktreePath, 0o755))
+			tt.corrupt(t, worktreePath)
+
+			mgr := NewManager(openTestDB(t), t.TempDir())
+			mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
+			ws := &Workspace{
+				ID:              "ws-cleanup-non-git-dir",
+				Platform:        "github",
+				PlatformHost:    "github.com",
+				RepoOwner:       "acme",
+				RepoName:        "widget",
+				ItemType:        db.WorkspaceItemTypePullRequest,
+				ItemNumber:      99,
+				GitHeadRef:      "feature/thing",
+				WorkspaceBranch: "middleman/pr-99",
+				WorktreePath:    worktreePath,
+			}
+
+			require.NoError(mgr.cleanupWorkspaceArtifactsForDelete(t.Context(), ws))
+		})
+	}
+}
+
 func TestCleanupFallsBackToManagedCloneWhenConfiguredBaseInvalid(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

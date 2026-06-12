@@ -148,7 +148,178 @@ func TestPublishDiffReviewDraftApproveDeletesReviewWhenHeadMovesDuringSubmit(t *
 	var platformErr *platform.Error
 	require.ErrorAs(err, &platformErr)
 	assert.Equal(platform.ErrCodeStaleState, platformErr.Code)
+	require.NotNil(platformErr.Details)
+	assert.Equal("succeeded", platformErr.Details["revocation"])
+	assert.Equal("99", platformErr.Details["review_id"])
 	assert.Equal("99", deletedReviewID)
+	assert.Equal(2, getPullCalls)
+}
+
+func TestPublishDiffReviewDraftApproveDeletesReviewWhenPostSubmitHeadReadFails(t *testing.T) {
+	assert := Assert.New(t)
+	require := Require.New(t)
+	submitted := time.Date(2026, 5, 10, 12, 0, 0, 0, time.UTC)
+	getPullCalls := 0
+	deletedReviewID := ""
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/repos/acme/widgets/pulls/42":
+			assert.Equal(http.MethodGet, r.Method)
+			getPullCalls++
+			if getPullCalls > 1 {
+				w.WriteHeader(http.StatusInternalServerError)
+				assert.NoError(json.NewEncoder(w).Encode(map[string]any{
+					"message": "could not read pull request",
+				}))
+				return
+			}
+			assert.NoError(json.NewEncoder(w).Encode(map[string]any{
+				"id": 42,
+				"head": map[string]any{
+					"sha": "reviewed-head",
+					"repo": map[string]any{
+						"id":        1,
+						"full_name": "acme/widgets",
+					},
+				},
+			}))
+		case "/api/v1/repos/acme/widgets/pulls/42/reviews":
+			assert.Equal(http.MethodPost, r.Method)
+			assert.NoError(json.NewEncoder(w).Encode(map[string]any{
+				"id":           99,
+				"state":        "APPROVED",
+				"body":         "ship it",
+				"submitted_at": submitted.Format(time.RFC3339),
+				"user":         map[string]any{"login": "reviewer"},
+			}))
+		case "/api/v1/repos/acme/widgets/pulls/42/reviews/99":
+			assert.Equal(http.MethodDelete, r.Method)
+			deletedReviewID = "99"
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client, err := NewClient("codeberg.test", testTokenSource("token"), WithBaseURLForTesting(server.URL))
+	require.NoError(err)
+	_, err = client.PublishDiffReviewDraft(context.Background(), platform.RepoRef{
+		Owner: "acme",
+		Name:  "widgets",
+	}, 42, platform.PublishDiffReviewDraftInput{
+		Body:    "ship it",
+		Action:  platform.ReviewActionApprove,
+		HeadSHA: "reviewed-head",
+	})
+
+	var platformErr *platform.Error
+	require.ErrorAs(err, &platformErr)
+	assert.Equal(platform.ErrCodeStaleState, platformErr.Code)
+	assert.Contains(platformErr.Hint, "post-submit head could not be verified")
+	require.NotNil(platformErr.Details)
+	assert.Equal("succeeded", platformErr.Details["revocation"])
+	assert.Equal("99", platformErr.Details["review_id"])
+	assert.Equal("99", deletedReviewID)
+	assert.Equal(2, getPullCalls)
+}
+
+func TestPublishDiffReviewDraftApproveReturnsPartialWhenMovedHeadCleanupFails(t *testing.T) {
+	assert := Assert.New(t)
+	require := Require.New(t)
+	submitted := time.Date(2026, 5, 10, 12, 0, 0, 0, time.UTC)
+	getPullCalls := 0
+	deleteCalled := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/repos/acme/widgets/pulls/42":
+			assert.Equal(http.MethodGet, r.Method)
+			getPullCalls++
+			head := "reviewed-head"
+			if getPullCalls > 1 {
+				head = "new-head"
+			}
+			assert.NoError(json.NewEncoder(w).Encode(map[string]any{
+				"id": 42,
+				"head": map[string]any{
+					"sha": head,
+					"repo": map[string]any{
+						"id":        1,
+						"full_name": "acme/widgets",
+					},
+				},
+			}))
+		case "/api/v1/repos/acme/widgets/pulls/42/reviews":
+			assert.Equal(http.MethodPost, r.Method)
+			var body struct {
+				Event    string `json:"event"`
+				Body     string `json:"body"`
+				CommitID string `json:"commit_id"`
+			}
+			if !assert.NoError(json.NewDecoder(r.Body).Decode(&body)) {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			assert.Equal("APPROVED", body.Event)
+			assert.Equal("ship it", body.Body)
+			assert.Equal("reviewed-head", body.CommitID)
+			assert.NoError(json.NewEncoder(w).Encode(map[string]any{
+				"id":           99,
+				"state":        "APPROVED",
+				"body":         "ship it",
+				"submitted_at": submitted.Format(time.RFC3339),
+				"user":         map[string]any{"login": "reviewer"},
+			}))
+		case "/api/v1/repos/acme/widgets/pulls/42/reviews/99":
+			assert.Equal(http.MethodDelete, r.Method)
+			deleteCalled = true
+			w.WriteHeader(http.StatusInternalServerError)
+			assert.NoError(json.NewEncoder(w).Encode(map[string]any{
+				"message": "could not delete review",
+			}))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client, err := NewClient("codeberg.test", testTokenSource("token"), WithBaseURLForTesting(server.URL))
+	require.NoError(err)
+	result, err := client.PublishDiffReviewDraft(context.Background(), platform.RepoRef{
+		Owner: "acme",
+		Name:  "widgets",
+	}, 42, platform.PublishDiffReviewDraftInput{
+		Body:    "ship it",
+		Action:  platform.ReviewActionApprove,
+		HeadSHA: "reviewed-head",
+		Comments: []platform.LocalDiffReviewDraftComment{{
+			ID:   41,
+			Body: "inline note",
+			Range: platform.DiffReviewLineRange{
+				Path:        "src/main.go",
+				Side:        "right",
+				Line:        5,
+				DiffHeadSHA: "reviewed-head",
+			},
+		}},
+	})
+
+	require.NotNil(result)
+	assert.Equal("99", result.ProviderReviewID)
+	assert.Equal(submitted, result.SubmittedAt)
+	var partialErr *platform.DiffReviewPublishPartialError
+	require.ErrorAs(err, &partialErr)
+	assert.Equal([]int64{41}, partialErr.PublishedCommentIDs)
+	var platformErr *platform.Error
+	require.ErrorAs(err, &platformErr)
+	assert.Equal(platform.ErrCodeStaleState, platformErr.Code)
+	assert.Contains(platformErr.Hint, "approval 99 may stand on a moved head")
+	require.NotNil(platformErr.Details)
+	assert.Equal("failed", platformErr.Details["revocation"])
+	assert.Equal("99", platformErr.Details["review_id"])
+	assert.True(deleteCalled)
 	assert.Equal(2, getPullCalls)
 }
 

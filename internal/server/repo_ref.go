@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"go.kenn.io/middleman/internal/db"
@@ -233,11 +234,20 @@ func platformRepoRefFromDB(repo db.Repo) platform.RepoRef {
 		Owner:              repo.Owner,
 		Name:               repo.Name,
 		RepoPath:           repoPath,
+		PlatformID:         repoNumericPlatformID(repo),
 		PlatformExternalID: repo.PlatformRepoID,
 		WebURL:             repo.WebURL,
 		CloneURL:           repo.CloneURL,
 		DefaultBranch:      repo.DefaultBranch,
 	}
+}
+
+func repoNumericPlatformID(repo db.Repo) int64 {
+	id, err := strconv.ParseInt(strings.TrimSpace(repo.PlatformRepoID), 10, 64)
+	if err != nil || id <= 0 {
+		return 0
+	}
+	return id
 }
 
 func (s *Server) capabilitiesForRepo(repo db.Repo) providerCapabilitiesResponse {

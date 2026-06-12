@@ -608,9 +608,10 @@ func (p *Provider) ApproveMergeRequest(
 // revokeApprovalIfHeadMoved closes the check-to-submit race on
 // approvals: if the PR head moved past the reviewed commit while the
 // review was submitting, the approval is deleted upstream and the
-// caller gets stale_state. A failed verification read keeps the
-// approval — the pre-check already passed, and reporting an error for
-// an approval that exists upstream would invite a duplicate retry.
+// caller gets stale_state. A failed or inconclusive verification is
+// also treated as stale: once the approval exists upstream, success is
+// only safe when the post-check proves the head still matches the
+// reviewed commit.
 func (p *Provider) revokeApprovalIfHeadMoved(
 	ctx context.Context,
 	transport MutationTransport,
@@ -620,29 +621,49 @@ func (p *Provider) revokeApprovalIfHeadMoved(
 	reviewID int64,
 ) error {
 	current, err := p.transport.GetPullRequest(ctx, ref, number)
-	if err != nil {
-		return nil
-	}
-	if current.Head.SHA == "" || current.Head.SHA == expectedHeadSHA {
+	verifyErr := gitealikePostSubmitHeadVerificationError(current, err)
+	if verifyErr == nil && current.Head.SHA == expectedHeadSHA {
 		return nil
 	}
 	reviewIDValue := strconv.FormatInt(reviewID, 10)
+	failedRevocationMessage := fmt.Sprintf("approval %d may stand on a moved head", reviewID)
+	successfulRevocationMessage := fmt.Sprintf(
+		"head moved while the approval submitted; approval %d was deleted",
+		reviewID,
+	)
+	if verifyErr != nil {
+		failedRevocationMessage = fmt.Sprintf(
+			"approval %d may stand because post-submit head could not be verified: %v",
+			reviewID, verifyErr,
+		)
+		successfulRevocationMessage = fmt.Sprintf(
+			"approval %d was deleted because post-submit head could not be verified: %v",
+			reviewID, verifyErr,
+		)
+	}
 	if deleteErr := transport.DeletePullReview(ctx, ref, number, reviewID); deleteErr != nil {
 		return p.staleApprovalError(
 			fmt.Errorf(
-				"approval %d may stand on a moved head: deletion failed: %w",
-				reviewID, deleteErr,
+				"%s: deletion failed: %w",
+				failedRevocationMessage, deleteErr,
 			),
 			map[string]string{"revocation": "failed", "review_id": reviewIDValue},
 		)
 	}
 	return p.staleApprovalError(
-		fmt.Errorf(
-			"head moved while the approval submitted; approval %d was deleted",
-			reviewID,
-		),
+		errors.New(successfulRevocationMessage),
 		map[string]string{"revocation": "succeeded", "review_id": reviewIDValue},
 	)
+}
+
+func gitealikePostSubmitHeadVerificationError(current PullRequestDTO, err error) error {
+	if err != nil {
+		return fmt.Errorf("read failed: %w", err)
+	}
+	if current.Head.SHA == "" {
+		return errors.New("provider returned no head sha")
+	}
+	return nil
 }
 
 func (p *Provider) staleApprovalError(err error, details map[string]string) error {

@@ -1398,9 +1398,9 @@ func (p gitHubClientProvider) ApproveMergeRequest(
 // caller gets stale_state. Dismissal removes the approval state but
 // keeps the review and its text visible, so hadContent extends the
 // side-effect context: a retry would repeat the posted review text. A
-// failed verification read keeps the approval — the pre-check already
-// passed, and reporting an error for an approval that exists upstream
-// would invite a duplicate retry.
+// failed or inconclusive verification is treated as stale: once the
+// approval exists upstream, success is only safe when the post-check
+// proves the head still matches the reviewed commit.
 func (p gitHubClientProvider) revokeApprovalIfHeadMoved(
 	ctx context.Context,
 	ref platform.RepoRef,
@@ -1410,30 +1410,46 @@ func (p gitHubClientProvider) revokeApprovalIfHeadMoved(
 	hadContent bool,
 ) error {
 	current, err := p.client.GetPullRequest(ctx, ref.Owner, ref.Name, number)
-	if err != nil || current == nil {
-		return nil
+	verifyErr := githubPostSubmitHeadVerificationError(current, err)
+	head := ""
+	if current != nil {
+		head = current.GetHead().GetSHA()
 	}
-	head := current.GetHead().GetSHA()
-	if head == "" || head == expectedHeadSHA {
+	if verifyErr == nil && head == expectedHeadSHA {
 		return nil
 	}
 	reviewID := strconv.FormatInt(review.GetID(), 10)
+	failedRevocationMessage := fmt.Sprintf(
+		"approval %d may stand on a moved head",
+		review.GetID(),
+	)
+	successfulRevocationMessage := fmt.Sprintf(
+		"head moved while the approval submitted; approval %d was dismissed",
+		review.GetID(),
+	)
+	if verifyErr != nil {
+		failedRevocationMessage = fmt.Sprintf(
+			"approval %d may stand because post-submit head could not be verified: %v",
+			review.GetID(), verifyErr,
+		)
+		successfulRevocationMessage = fmt.Sprintf(
+			"approval %d was dismissed because post-submit head could not be verified: %v",
+			review.GetID(), verifyErr,
+		)
+	}
 	if _, dismissErr := p.client.DismissReview(
 		ctx, ref.Owner, ref.Name, number, review.GetID(),
 		"head moved past the reviewed commit while the approval submitted",
 	); dismissErr != nil {
 		return p.staleApprovalError(
 			fmt.Errorf(
-				"approval %d may stand on a moved head: dismissal failed: %w",
-				review.GetID(), dismissErr,
+				"%s: dismissal failed: %w",
+				failedRevocationMessage, dismissErr,
 			),
 			map[string]string{"revocation": "failed", "review_id": reviewID},
 		)
 	}
-	message := fmt.Sprintf(
-		"head moved while the approval submitted; approval %d was dismissed",
-		review.GetID(),
-	)
+	message := successfulRevocationMessage
 	if hadContent {
 		message += "; the posted review text remains visible upstream and retrying will repeat it"
 	}
@@ -1441,6 +1457,19 @@ func (p gitHubClientProvider) revokeApprovalIfHeadMoved(
 		errors.New(message),
 		map[string]string{"revocation": "succeeded", "review_id": reviewID},
 	)
+}
+
+func githubPostSubmitHeadVerificationError(current *gh.PullRequest, err error) error {
+	if err != nil {
+		return fmt.Errorf("read failed: %w", err)
+	}
+	if current == nil {
+		return errors.New("provider returned no pull request")
+	}
+	if current.GetHead().GetSHA() == "" {
+		return errors.New("provider returned no head sha")
+	}
+	return nil
 }
 
 func (p gitHubClientProvider) staleApprovalError(err error, details map[string]string) error {

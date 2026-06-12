@@ -410,6 +410,12 @@ func doGitLabJSON(
 	return rr
 }
 
+func assertNoGitLabRepoPathLookup(t *testing.T, recorder *gitlabAPIRecorder) {
+	t.Helper()
+	_, lookedUp := recorder.find(http.MethodGet, "/api/v4/projects/acme%2Fwidget")
+	assert.False(t, lookedUp, "GitLab mutations must use the stored project id without path lookup")
+}
+
 func TestGitLabMutationCommentPostAndEdit(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -540,6 +546,7 @@ func TestGitLabMutationMergeSquash(t *testing.T) {
 	require.True(ok, "fake GitLab API did not receive merge")
 	assert.Contains(merge.Body, `"squash":true`)
 	assert.Contains(merge.Body, `"squash_commit_message":"Squash title\n\nSquash body"`)
+	assertNoGitLabRepoPathLookup(t, recorder)
 
 	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
 	require.NoError(err)
@@ -633,6 +640,7 @@ func TestGitLabMutationApprove(t *testing.T) {
 	note, ok := recorder.find(http.MethodPost, "/api/v4/projects/4242/merge_requests/7/notes")
 	require.True(ok, "approval body was not posted as a note")
 	assert.Contains(note.Body, `"body":"ship it"`)
+	assertNoGitLabRepoPathLookup(t, recorder)
 
 	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
 	require.NoError(err)

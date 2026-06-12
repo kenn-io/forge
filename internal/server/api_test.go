@@ -12414,7 +12414,7 @@ func TestAPIGitLabPublishReviewDraftSurfacesCleanupFailureAsPartial(t *testing.T
 	gitlabServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.EscapedPath() {
-		case "/api/v4/projects/group%2Fproject/merge_requests/7/draft_notes":
+		case "/api/v4/projects/4242/merge_requests/7/draft_notes":
 			assert.Equal(http.MethodPost, r.Method)
 			next := createAttempts.Add(1)
 			var body struct {
@@ -12433,19 +12433,19 @@ func TestAPIGitLabPublishReviewDraftSurfacesCleanupFailureAsPartial(t *testing.T
 			assert.Equal("src/main.go", body.Position.NewPath)
 			assert.Equal(int64(40+next), body.Position.NewLine)
 			writeRawJSON(w, fmt.Sprintf(`{"id": %d, "note": %q}`, 54+next, body.Note))
-		case "/api/v4/projects/group%2Fproject/merge_requests/7/draft_notes/55/publish":
+		case "/api/v4/projects/4242/merge_requests/7/draft_notes/55/publish":
 			assert.Equal(http.MethodPut, r.Method)
 			publishAttempts.Add(1)
 			writeRawJSON(w, `{}`)
-		case "/api/v4/projects/group%2Fproject/merge_requests/7/draft_notes/56/publish":
+		case "/api/v4/projects/4242/merge_requests/7/draft_notes/56/publish":
 			assert.Equal(http.MethodPut, r.Method)
 			publishAttempts.Add(1)
 			http.Error(w, "publish failed", http.StatusBadRequest)
-		case "/api/v4/projects/group%2Fproject/merge_requests/7/draft_notes/56":
+		case "/api/v4/projects/4242/merge_requests/7/draft_notes/56":
 			assert.Equal(http.MethodDelete, r.Method)
 			deleteAttempts.Add(1)
 			http.Error(w, "delete failed", http.StatusBadRequest)
-		case "/api/v4/projects/group%2Fproject/merge_requests/7/discussions":
+		case "/api/v4/projects/4242/merge_requests/7/discussions":
 			assert.Equal(http.MethodGet, r.Method)
 			writeRawJSON(w, `[
 				{
@@ -12593,15 +12593,15 @@ func TestAPIGitLabPublishReviewDraftSendsSummaryThroughServer(t *testing.T) {
 	gitlabServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.EscapedPath() {
-		case "/api/v4/projects/group%2Fproject/merge_requests/7/draft_notes":
+		case "/api/v4/projects/4242/merge_requests/7/draft_notes":
 			assert.Equal(http.MethodPost, r.Method)
 			order = append(order, "create-draft")
 			writeJSON(w, http.StatusOK, map[string]any{"id": 55, "note": "inline note"})
-		case "/api/v4/projects/group%2Fproject/merge_requests/7/draft_notes/55/publish":
+		case "/api/v4/projects/4242/merge_requests/7/draft_notes/55/publish":
 			assert.Equal(http.MethodPut, r.Method)
 			order = append(order, "publish-draft")
 			writeJSON(w, http.StatusOK, map[string]any{})
-		case "/api/v4/projects/group%2Fproject/merge_requests/7/notes":
+		case "/api/v4/projects/4242/merge_requests/7/notes":
 			assert.Equal(http.MethodPost, r.Method)
 			order = append(order, "summary-note")
 			var body struct {
@@ -12613,11 +12613,11 @@ func TestAPIGitLabPublishReviewDraftSendsSummaryThroughServer(t *testing.T) {
 			}
 			assert.Equal("review summary from ui", body.Body)
 			writeJSON(w, http.StatusOK, map[string]any{"id": 77, "body": body.Body})
-		case "/api/v4/projects/group%2Fproject/merge_requests/7/approve":
+		case "/api/v4/projects/4242/merge_requests/7/approve":
 			assert.Equal(http.MethodPost, r.Method)
 			order = append(order, "approve")
 			http.Error(w, "approval failed", http.StatusBadRequest)
-		case "/api/v4/projects/group%2Fproject/merge_requests/7/discussions":
+		case "/api/v4/projects/4242/merge_requests/7/discussions":
 			assert.Equal(http.MethodGet, r.Method)
 			writeRawJSONForTest(w, `[
 				{

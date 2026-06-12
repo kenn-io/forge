@@ -10529,6 +10529,60 @@ func TestGitHubProviderApproveDismissesWhenHeadMovesDuringSubmit(t *testing.T) {
 		"dismissal keeps the posted body visible; a blind retry would repeat it")
 }
 
+func TestGitHubProviderApproveDismissesWhenPostSubmitHeadCannotBeVerified(t *testing.T) {
+	tests := []struct {
+		name    string
+		current *gh.PullRequest
+		err     error
+	}{
+		{
+			name: "read error",
+			err:  errors.New("upstream unavailable"),
+		},
+		{
+			name:    "nil pull request",
+			current: nil,
+		},
+		{
+			name:    "empty head",
+			current: &gh.PullRequest{Head: &gh.PullRequestBranch{}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert := Assert.New(t)
+			require := require.New(t)
+			calls := 0
+			mock := &mockClient{
+				getPullRequestFn: func(context.Context, string, string, int) (*gh.PullRequest, error) {
+					calls++
+					if calls == 1 {
+						head := "reviewed-head"
+						return &gh.PullRequest{Head: &gh.PullRequestBranch{SHA: &head}}, nil
+					}
+					return tt.current, tt.err
+				},
+			}
+			provider := gitHubClientProvider{client: mock, host: "github.com"}
+
+			_, err := provider.ApproveMergeRequest(
+				t.Context(), platform.RepoRef{Owner: "acme", Name: "widget"}, 7,
+				"ship it", "reviewed-head",
+			)
+
+			var platformErr *platform.Error
+			require.ErrorAs(err, &platformErr)
+			assert.Equal(platform.ErrCodeStaleState, platformErr.Code)
+			require.NotNil(platformErr.Details)
+			assert.Equal("succeeded", platformErr.Details["revocation"])
+			assert.Equal("1", platformErr.Details["review_id"])
+			assert.Equal(int32(1), mock.dismissReviewCalls.Load(),
+				"unverified post-submit approvals must be dismissed")
+			assert.Equal(int64(1), mock.dismissedReviewID)
+		})
+	}
+}
+
 // An approval review draft that submits before the stale head is
 // detected has its body and inline comments published atomically with
 // the review; dismissal removes only the approval state. The provider

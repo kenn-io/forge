@@ -234,6 +234,12 @@ test.describe("assignee and reviewer editing", () => {
       await page.getByRole("button", { name: "Edit reviewers" }).click();
       await expect(page.getByRole("dialog", { name: "Edit reviewers" })).toBeVisible();
       await expect(page.getByRole("dialog", { name: "Edit assignees" })).toBeHidden();
+
+      // Keyboard activation fires no mousedown, so the swap must not
+      // depend on the document-mousedown dismissal path.
+      await page.getByRole("button", { name: "Edit assignees" }).press("Enter");
+      await expect(page.getByRole("dialog", { name: "Edit assignees" })).toBeVisible();
+      await expect(page.getByRole("dialog", { name: "Edit reviewers" })).toBeHidden();
     } finally {
       await isolatedServer?.stop();
     }

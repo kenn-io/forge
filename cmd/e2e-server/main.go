@@ -935,6 +935,38 @@ func buildAppState(
 		return repos, nil
 	}
 	patchFixturePRSHAs(fc, "acme", "widgets", 1, diffRepo.HeadSHA, diffRepo.BaseSHA)
+	for _, target := range []struct {
+		owner  string
+		name   string
+		number int
+	}{
+		{owner: "acme", name: "widgets", number: 7},
+		{owner: "acme", name: "tools", number: 1},
+	} {
+		repo, err := database.GetRepoByOwnerName(ctx, target.owner, target.name)
+		if err != nil {
+			return nil, fmt.Errorf("get %s/%s repo: %w", target.owner, target.name, err)
+		}
+		if repo == nil {
+			return nil, fmt.Errorf("get %s/%s repo: not found", target.owner, target.name)
+		}
+		headSHA := fc.PullRequestHeadSHA(target.owner, target.name, target.number)
+		if headSHA == "" {
+			return nil, fmt.Errorf(
+				"get %s/%s#%d fixture head SHA: not found",
+				target.owner, target.name, target.number,
+			)
+		}
+		if err := database.UpdateDiffSHAs(
+			ctx, repo.ID, target.number,
+			headSHA, "", "",
+		); err != nil {
+			return nil, fmt.Errorf(
+				"seed reviewed diff SHAs for %s/%s#%d: %w",
+				target.owner, target.name, target.number, err,
+			)
+		}
+	}
 
 	fixtureClients := map[string]ghclient.Client{
 		"github.com":        fc,

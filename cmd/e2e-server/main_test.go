@@ -18,6 +18,7 @@ import (
 	Assert "github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/middleman/internal/testutil"
+	"go.kenn.io/middleman/internal/web"
 )
 
 func TestWriteServerInfoFile(t *testing.T) {
@@ -173,6 +174,60 @@ func TestDefaultRoborevEndpointIsUnbindable(t *testing.T) {
 		"default roborev port must be privileged so it cannot be "+
 			"silently bound by an unrelated developer process")
 	assert.Positive(port)
+}
+
+func TestBuildAppStateSeedsReviewedHeadsForUTCMergeTargets(t *testing.T) {
+	assets, err := web.Assets()
+	require.NoError(t, err)
+
+	state, err := buildAppState(t.Context(), assets, appOptions{
+		roborevEndpoint: defaultRoborevEndpoint,
+	})
+	require.NoError(t, err)
+	t.Cleanup(state.close)
+
+	for _, target := range []struct {
+		owner  string
+		repo   string
+		number int
+	}{
+		{owner: "acme", repo: "widgets", number: 7},
+		{owner: "acme", repo: "tools", number: 1},
+	} {
+		t.Run(target.repo+"-"+strconv.Itoa(target.number), func(t *testing.T) {
+			require := require.New(t)
+			assert := Assert.New(t)
+
+			repo, err := state.database.GetRepoByOwnerName(
+				t.Context(), target.owner, target.repo,
+			)
+			require.NoError(err)
+			require.NotNil(repo)
+
+			mr, err := state.database.GetMergeRequestByRepoIDAndNumber(
+				t.Context(), repo.ID, target.number,
+			)
+			require.NoError(err)
+			require.NotNil(mr)
+
+			assert.Equal(mr.PlatformHeadSHA, mr.DiffHeadSHA)
+			assert.NotEmpty(mr.DiffHeadSHA)
+			assert.Equal(mr.PlatformBaseSHA, mr.DiffBaseSHA)
+
+			recorder := httptest.NewRecorder()
+			request := httptest.NewRequest(
+				http.MethodGet,
+				"/api/v1/pulls/github/"+target.owner+"/"+target.repo+"/"+strconv.Itoa(target.number),
+				nil,
+			)
+			state.handler.ServeHTTP(recorder, request)
+			require.Equal(http.StatusOK, recorder.Code)
+
+			var detail map[string]any
+			require.NoError(json.Unmarshal(recorder.Body.Bytes(), &detail))
+			assert.Equal(mr.DiffHeadSHA, detail["reviewed_head_sha"])
+		})
+	}
 }
 
 // TestRunDefaultRoborevFailsClosedThroughProxy is the behavioral

@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 import { mockApi } from "./support/mockApi";
 
@@ -35,6 +35,38 @@ const mockRepo = {
   name: "widgets",
   capabilities: mockCapabilities,
 };
+
+async function routeMockDashboardImage(page: Page): Promise<void> {
+  await page.route("**/mock-dashboard.svg", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "image/svg+xml",
+      body: [
+        '<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1400" viewBox="0 0 1600 1400">',
+        '<rect width="1600" height="1400" fill="#f6f8fa"/>',
+        '<rect x="120" y="120" width="1360" height="1160" rx="18" fill="#ffffff" stroke="#d0d7de" stroke-width="6"/>',
+        '<rect x="210" y="220" width="420" height="80" rx="10" fill="#2563eb"/>',
+        '<rect x="210" y="410" width="1180" height="48" rx="12" fill="#8fb0f4"/>',
+        '<rect x="210" y="540" width="890" height="48" rx="12" fill="#8fb0f4"/>',
+        '<rect x="210" y="780" width="1180" height="360" rx="18" fill="#e9eefc"/>',
+        "</svg>",
+      ].join(""),
+    });
+  });
+}
+
+async function renderMockDashboardMarkdownImage(page: Page) {
+  await page.goto("/pulls/github/acme/widgets/42");
+  await page.locator(".edit-body-btn").click();
+
+  await page.locator(".body-edit-textarea").fill("Screenshots\n\n![Quality dashboard](/mock-dashboard.svg)");
+  await page.locator(".body-edit .title-edit-save").click();
+
+  const image = page.getByRole("img", { name: "Quality dashboard" }).first();
+  const zoomButton = page.getByRole("button", { name: "Open image in expanded view" });
+  await expect(image).toBeVisible();
+  return { image, zoomButton };
+}
 
 test.beforeEach(async ({ page }) => {
   await mockApi(page);
@@ -122,6 +154,135 @@ test("markdown mermaid fences render as diagrams", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Close expanded diagram" })).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog", { name: "Expanded Mermaid diagram" })).toBeHidden();
+});
+
+test("markdown images open in an expanded overlay", async ({ page }) => {
+  await page.setViewportSize({ width: 1000, height: 700 });
+  await routeMockDashboardImage(page);
+
+  const { image, zoomButton } = await renderMockDashboardMarkdownImage(page);
+
+  const imageBox = await image.boundingBox();
+  const buttonBox = await zoomButton.boundingBox();
+  expect(imageBox).not.toBeNull();
+  expect(buttonBox).not.toBeNull();
+  expect(buttonBox!.x).toBeGreaterThan(imageBox!.x + imageBox!.width - 44);
+  expect(buttonBox!.y).toBeLessThan(imageBox!.y + 16);
+  await expect(zoomButton).toHaveCSS("opacity", "0");
+  await expect(zoomButton).toHaveCSS("pointer-events", "none");
+
+  await image.hover();
+  await expect(zoomButton).toHaveCSS("opacity", "1");
+  await expect(zoomButton).toHaveCSS("pointer-events", "auto");
+
+  await zoomButton.click();
+  const dialog = page.getByRole("dialog", { name: "Expanded image" });
+  await expect(dialog).toBeVisible();
+  const panel = dialog.locator(".markdown-image-lightbox__panel");
+  const expandedImage = dialog.getByRole("img", { name: "Quality dashboard" });
+  const closeButton = dialog.getByRole("button", { name: "Close expanded image" });
+  await expect(expandedImage).toBeVisible();
+  await expect(dialog).toBeFocused();
+
+  const viewport = page.viewportSize();
+  expect(viewport).not.toBeNull();
+  const panelBox = await panel.boundingBox();
+  const expandedBox = await expandedImage.boundingBox();
+  expect(panelBox).not.toBeNull();
+  expect(expandedBox).not.toBeNull();
+  expect(panelBox!.width).toBeLessThanOrEqual(viewport!.width - 56 + 1);
+  expect(panelBox!.height).toBeLessThanOrEqual(viewport!.height - 56 + 1);
+  expect(expandedBox!.width).toBeLessThanOrEqual(viewport!.width - 56 + 1);
+  expect(expandedBox!.height).toBeLessThanOrEqual(viewport!.height - 56 + 1);
+
+  await expect(panel).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  await expect(panel).toHaveCSS("border-top-width", "0px");
+  await expect(panel).toHaveCSS("border-right-width", "0px");
+  await expect(panel).toHaveCSS("border-bottom-width", "0px");
+  await expect(panel).toHaveCSS("border-left-width", "0px");
+  await expect(panel).toHaveCSS("border-radius", "0px");
+  await expect(closeButton).toHaveCSS("opacity", "0");
+  await expect(closeButton).toHaveCSS("pointer-events", "none");
+
+  await expandedImage.hover();
+  await expect(closeButton).toHaveCSS("opacity", "1");
+  await expect(closeButton).toHaveCSS("pointer-events", "auto");
+  await closeButton.click();
+  await expect(dialog).toBeHidden();
+
+  await image.hover();
+  await zoomButton.click();
+  await expect(dialog).toBeVisible();
+  await page.keyboard.press("Tab");
+  await expect(closeButton).toBeFocused();
+  await expect(closeButton).toHaveCSS("opacity", "1");
+
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+});
+
+test("markdown image lightbox opens above drawer layers", async ({ page }) => {
+  await page.setViewportSize({ width: 1000, height: 700 });
+  await routeMockDashboardImage(page);
+
+  const { image, zoomButton } = await renderMockDashboardMarkdownImage(page);
+  await page.evaluate(() => {
+    const expander = document.querySelector(".markdown-image-expander");
+    if (!expander) throw new Error("missing markdown image expander");
+
+    const drawer = document.createElement("div");
+    drawer.className = "test-drawer-layer";
+    Object.assign(drawer.style, {
+      alignItems: "flex-start",
+      background: "rgba(0, 0, 0, 0.01)",
+      display: "flex",
+      inset: "0",
+      justifyContent: "center",
+      paddingTop: "80px",
+      position: "fixed",
+      zIndex: "100",
+    });
+
+    expander.replaceWith(drawer);
+    drawer.append(expander);
+    document.body.append(drawer);
+  });
+
+  await image.hover();
+  await zoomButton.click();
+
+  const dialog = page.getByRole("dialog", { name: "Expanded image" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toHaveCSS("z-index", "130");
+  await expect
+    .poll(async () =>
+      page.evaluate(() =>
+        Boolean(
+          document.elementFromPoint(window.innerWidth / 2, window.innerHeight / 2)?.closest(".markdown-image-lightbox"),
+        ),
+      ),
+    )
+    .toBe(true);
+});
+
+test.describe("touch markdown image zoom", () => {
+  test.skip(({ browserName }) => browserName === "firefox", "Firefox does not support Playwright mobile emulation");
+  test.use({
+    hasTouch: true,
+    isMobile: true,
+    viewport: { width: 390, height: 844 },
+  });
+
+  test("keeps the zoom affordance tappable without hover", async ({ page }) => {
+    await routeMockDashboardImage(page);
+
+    const { zoomButton } = await renderMockDashboardMarkdownImage(page);
+    await expect(zoomButton).toHaveCSS("opacity", "1");
+    await expect(zoomButton).toHaveCSS("pointer-events", "auto");
+
+    await zoomButton.tap();
+    await expect(page.getByRole("dialog", { name: "Expanded image" })).toBeVisible();
+  });
 });
 
 test("markdown tables keep compact columns readable", async ({ page }) => {

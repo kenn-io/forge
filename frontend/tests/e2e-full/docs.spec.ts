@@ -72,6 +72,27 @@ test.describe("docs workspace", () => {
       const logo = page.locator('img[alt="logo"]');
       await expect(logo).toBeVisible();
       await expect(logo).toHaveAttribute("src", /\/api\/v1\/docs\/folders\/notes\/blob\?path=assets%2Flogo\.png/);
+
+      const zoomButton = page.getByRole("button", { name: "Open image in expanded view" });
+      await expect(zoomButton).toHaveCount(1);
+      await expect(zoomButton).toHaveCSS("opacity", "0");
+      await logo.hover();
+      await expect(zoomButton).toHaveCSS("opacity", "1");
+      await zoomButton.click();
+
+      const dialog = page.getByRole("dialog", { name: "Expanded image" });
+      await expect(dialog).toBeVisible();
+      await expect(dialog.locator('img[alt="logo"]')).toHaveAttribute(
+        "src",
+        /\/api\/v1\/docs\/folders\/notes\/blob\?path=assets%2Flogo\.png/,
+      );
+      const closeImageButton = dialog.getByRole("button", { name: "Close expanded image" });
+      await page.keyboard.press("Tab");
+      await expect(closeImageButton).toBeFocused();
+      await page.keyboard.press("Tab");
+      await expect(closeImageButton).toBeFocused();
+      await closeImageButton.click();
+      await expect(dialog).toBeHidden();
     } finally {
       await server.stop();
     }

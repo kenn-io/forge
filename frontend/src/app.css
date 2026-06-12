@@ -560,6 +560,195 @@ a:hover {
   height: auto;
   border-radius: var(--radius-sm);
 }
+.markdown-image-expander {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  vertical-align: top;
+  line-height: 0;
+}
+.markdown-image-expander > a {
+  display: inline-block;
+  max-width: 100%;
+  line-height: 0;
+}
+.markdown-image-expander img {
+  display: block;
+  min-width: 1px;
+  min-height: 1px;
+}
+.markdown-image-expander__button {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid rgba(139, 148, 158, 0.5);
+  border-radius: var(--radius-md);
+  background: rgba(36, 41, 47, 0.84);
+  color: #f0f6fc;
+  box-shadow: 0 1px 4px rgba(1, 4, 9, 0.24);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    background-color 120ms ease-out,
+    opacity 120ms ease-out;
+}
+.markdown-image-expander:hover .markdown-image-expander__button,
+.markdown-image-expander:focus-within .markdown-image-expander__button {
+  opacity: 1;
+  pointer-events: auto;
+}
+.markdown-image-expander__button:hover {
+  background: rgba(48, 54, 61, 0.96);
+}
+.markdown-image-expander__button:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+}
+.markdown-image-expander__icon {
+  position: relative;
+  display: block;
+  width: 15px;
+  height: 15px;
+}
+.markdown-image-expander__icon::before,
+.markdown-image-expander__icon::after {
+  position: absolute;
+  display: block;
+  content: "";
+}
+.markdown-image-expander__icon::before {
+  top: 1px;
+  left: 1px;
+  width: 10px;
+  height: 10px;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+}
+.markdown-image-expander__icon::after {
+  right: 1px;
+  bottom: 1px;
+  width: 6px;
+  height: 2px;
+  background: currentColor;
+  border-radius: 999px;
+  transform: rotate(45deg);
+  transform-origin: center;
+}
+.markdown-image-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 130;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 28px;
+  background: rgba(1, 4, 9, 0.72);
+}
+.markdown-image-lightbox__panel {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  height: fit-content;
+  max-width: calc(100vw - 56px);
+  max-height: calc(100vh - 56px);
+  overflow: visible;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: 0 8px 24px rgba(1, 4, 9, 0.38);
+}
+.markdown-image-lightbox__panel img {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: calc(100vw - 56px);
+  max-height: calc(100vh - 56px);
+  object-fit: contain;
+}
+.markdown-image-lightbox__close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-size: var(--font-size-xl);
+  line-height: 1;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    background-color 120ms ease-out,
+    border-color 120ms ease-out,
+    color 120ms ease-out,
+    opacity 120ms ease-out;
+}
+.markdown-image-lightbox__panel:hover .markdown-image-lightbox__close,
+.markdown-image-lightbox__panel:focus-within .markdown-image-lightbox__close {
+  background: rgba(36, 41, 47, 0.84);
+  border-color: rgba(139, 148, 158, 0.5);
+  color: #f0f6fc;
+  box-shadow: 0 1px 4px rgba(1, 4, 9, 0.24);
+  opacity: 1;
+  pointer-events: auto;
+}
+.markdown-image-lightbox__close:hover {
+  background: rgba(48, 54, 61, 0.96);
+  color: #f0f6fc;
+}
+.markdown-image-lightbox__close:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+}
+@media (hover: none), (pointer: coarse) {
+  .markdown-image-expander__button,
+  .markdown-image-lightbox__close {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .markdown-image-expander__button {
+    transition: none;
+  }
+  .markdown-image-lightbox__close {
+    transition: none;
+  }
+}
+@media (max-width: 640px) {
+  .markdown-image-expander__button {
+    top: 6px;
+    right: 6px;
+    width: 32px;
+    height: 32px;
+  }
+  .markdown-image-lightbox {
+    padding: 10px;
+  }
+  .markdown-image-lightbox__panel {
+    max-width: calc(100vw - 20px);
+    max-height: calc(100vh - 20px);
+  }
+  .markdown-image-lightbox__panel img {
+    max-width: calc(100vw - 20px);
+    max-height: calc(100vh - 20px);
+  }
+}
 /* GitHub's (Primer) table layout model: shrink-wrap to content, cap at
    the container, scroll on overflow. Auto table layout then gives compact
    columns their content width and wraps or scrolls wide ones, so text

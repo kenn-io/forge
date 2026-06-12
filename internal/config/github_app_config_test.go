@@ -221,6 +221,32 @@ installation_account = "kenn-io"
 	}
 }
 
+func TestGitHubAppMixedOverrideAndCoveredReposRejected(t *testing.T) {
+	// middleman resolves one credential chain per (platform, host), so
+	// a repo-level override on one repo cannot coexist with an app
+	// chain on another repo of the same host. The coverage error must
+	// not suggest that configuration; this pins that it is rejected.
+	_, err := Load(writeConfig(t, `
+[[repos]]
+owner = "kenn-io"
+name = "middleman"
+
+[[repos]]
+owner = "other-org"
+name = "tool"
+token_env = "OTHER_ORG_PAT"
+
+[[github_apps]]
+host = "github.com"
+app_id = 4321
+private_key_path = "app.pem"
+installation_id = 99
+installation_account = "kenn-io"
+`))
+	require.Error(t, err)
+	Assert.ErrorContains(t, err, "conflicting token source")
+}
+
 func TestGitHubAppHostDefaultsToPublicHost(t *testing.T) {
 	cfg, err := Load(writeConfig(t, `
 [[github_apps]]

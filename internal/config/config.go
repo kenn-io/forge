@@ -1424,12 +1424,17 @@ func (c *Config) validateGitHubAppCoverage() error {
 			if strings.EqualFold(r.Owner, app.InstallationAccount) {
 				continue
 			}
+			// Do not suggest per-repo token overrides here: middleman
+			// resolves one credential chain per host, so an override on
+			// only this repo would be rejected by the same-host conflict
+			// check. The real options are changing where the app is
+			// installed or not using an app for this host at all.
 			return fmt.Errorf(
 				"config: repos[%d]: %s/%s is not covered by the github app for %s "+
 					"(installed on %q): installation tokens only reach repos owned by the "+
-					"installed account; set token_env/token_file on the repo, or install "+
-					"the app on %q instead",
-				i, r.Owner, r.Name, app.Host, app.InstallationAccount, r.Owner,
+					"installed account. Install the app on %q instead, or remove the "+
+					"[[github_apps]] entry for %s so the host uses PAT auth for every repo",
+				i, r.Owner, r.Name, app.Host, app.InstallationAccount, r.Owner, app.Host,
 			)
 		}
 	}

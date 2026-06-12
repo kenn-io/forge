@@ -401,8 +401,10 @@ func (env *appEnv) runInstallFlow(
 		return fmt.Errorf(
 			"the app was installed on %q on GitHub, but that installation cannot reach "+
 				"configured repos %s; not recording it in config. Uninstall it in the "+
-				"browser and install on the owning account, or give those repos their "+
-				"own token_env/token_file override and re-run \"install\"",
+				"browser and install on the account that owns those repos, or remove "+
+				"them from middleman's config before using an app on this host "+
+				"(middleman resolves one credential chain per host, so per-repo token "+
+				"overrides cannot mix with an app)",
 			picked.Account.Login, strings.Join(uncovered, ", "),
 		)
 	}

@@ -48,6 +48,14 @@ type startupConfigSnapshot struct {
 	AllowedHosts        []config.HostKey
 	TrustReverseProxy   bool
 	ProviderHosts       []tokenauth.Key
+	// GitHubAppSplitHosts lists hosts whose effective credential chain
+	// resolves sync reads through a GitHub App installation token.
+	// Split topology is startup-bound: write rate trackers and the
+	// write-credential clients are wired in buildProviderStartup, so a
+	// reload that adds or removes an app for a host must flag a
+	// restart instead of leaving mutation availability gating on the
+	// wrong bucket.
+	GitHubAppSplitHosts []string
 	// TokenEnvNames is the boot-time baseline of provider token env
 	// names (msgvault excluded) used to accumulate runtime strip-env
 	// lists; it is not compared for restart-required drift.
@@ -72,6 +80,7 @@ func snapshotStartupConfig(cfg *config.Config) startupConfigSnapshot {
 		AllowedHosts:        startupAllowedHosts(cfg),
 		TrustReverseProxy:   cfg.TrustReverseProxy,
 		ProviderHosts:       startupProviderHosts(cfg),
+		GitHubAppSplitHosts: githubAppSplitHosts(cfg),
 		Roborev:             cfg.Roborev,
 	}
 	snap.Tmux.Command = slices.Clone(cfg.Tmux.Command)
@@ -177,6 +186,32 @@ func (s *Server) updateRuntimeStripEnvVarsLocked(cfg *config.Config) []string {
 		cfg,
 	)
 	return slices.Clone(s.runtimeStripEnvVars)
+}
+
+// githubAppSplitHosts returns the sorted GitHub hosts whose effective
+// provider credential chain carries an active github_app candidate,
+// mirroring how startup resolves one source per (platform, host):
+// the first plan per key wins, so a host fully covered by terminal
+// repo overrides does not count as split.
+func githubAppSplitHosts(cfg *config.Config) []string {
+	if cfg == nil {
+		return nil
+	}
+	seen := make(map[tokenauth.Key]struct{})
+	var hosts []string
+	for _, plan := range cfg.ProviderTokenSources() {
+		key := plan.Descriptor.Key
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		if key.Platform == string(platform.KindGitHub) &&
+			plan.Descriptor.HasActiveGitHubApp() {
+			hosts = append(hosts, key.Host)
+		}
+	}
+	slices.Sort(hosts)
+	return hosts
 }
 
 func (s startupConfigSnapshot) restartRequiredFor(cfg *config.Config) bool {

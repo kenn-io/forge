@@ -1026,6 +1026,39 @@ func TestConfigReload_TokenAddedForUnbuiltClientRequiresRestart(t *testing.T) {
 	assert.Equal("platform-token", newToken)
 }
 
+func TestConfigReload_GitHubAppAddedRequiresRestart(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "github-token")
+
+	srv, _, cfgPath := setupTestServerWithConfigContent(
+		t, validReloadConfig, &mockGH{},
+	)
+	waitForConfigWatcher(t, srv, 2*time.Second)
+	stream := streamConfigEvents(t, srv)
+	defer stream.Close()
+
+	// An app appearing for a host changes the split-credential
+	// topology: write trackers and the write client chain are wired at
+	// startup, so the reload must demand a restart instead of leaving
+	// mutation availability gating on the wrong bucket.
+	keyPath := filepath.Join(filepath.Dir(cfgPath), "app.pem")
+	require.NoError(os.WriteFile(keyPath, []byte("pem"), 0o600))
+	writeConfigToml(t, cfgPath, validReloadConfig+`
+[[github_apps]]
+host = "github.com"
+app_id = 4242
+private_key_path = "app.pem"
+installation_id = 7
+installation_account = "acme"
+`)
+
+	ev := waitForConfigEvent(t, stream, 2*time.Second)
+	assert.True(ev.Valid, "reload error: %s", ev.Error)
+	assert.True(ev.RestartRequired,
+		"github app split topology is startup-bound and must flag a restart")
+}
+
 // Two providers share one host with the same credential chain — the only
 // multi-provider-per-host layout clone-token validation accepts.
 const reloadSharedHostBothTokensConfig = `

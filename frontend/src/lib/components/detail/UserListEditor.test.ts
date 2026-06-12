@@ -32,6 +32,29 @@ describe("UserListEditor", () => {
     expect(screen.getByRole("alert").textContent).toContain("provider rejected the save");
   });
 
+  it("closes the picker and blocks mutations once the view goes stale", async () => {
+    const onchange = vi.fn();
+    const { rerender } = render(UserListEditor, {
+      props: {
+        label: "Assignees",
+        users: ["alice"],
+        canEdit: true,
+        disabled: false,
+        loadCandidates: vi.fn().mockResolvedValue(["alice", "bob"]),
+        onchange,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Edit assignees" }));
+    await waitFor(() => expect(screen.getByRole("dialog", { name: "Edit assignees" })).toBeTruthy());
+
+    // The item went stale (e.g. navigation): the open picker must
+    // close so it cannot mutate whatever the handlers now target.
+    await rerender({ disabled: true });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Edit assignees" })).toBeNull());
+    expect(onchange).not.toHaveBeenCalled();
+  });
+
   it("clears a candidate-load error once a later fetch succeeds", async () => {
     const loadCandidates = vi
       .fn()

@@ -133,6 +133,9 @@
   }
 
   async function toggleUser(username: string): Promise<void> {
+    // The chip honors disabled, but the picker can already be open
+    // when the item goes stale; never mutate from a stale view.
+    if (disabled || !canEdit) return;
     if (pendingUser !== null) return;
     pendingUser = username;
     mutationError = null;
@@ -150,6 +153,7 @@
   }
 
   async function clearUsers(): Promise<void> {
+    if (disabled || !canEdit) return;
     if (pendingUser !== null || users.length === 0) return;
     pendingUser = "";
     mutationError = null;
@@ -161,6 +165,15 @@
       pendingUser = null;
     }
   }
+
+  $effect(() => {
+    // A view that goes stale while the picker is open must not keep
+    // an actionable picker on screen: its mutations would target
+    // whatever item the parent handlers now point at.
+    if (disabled && open) {
+      closePicker();
+    }
+  });
 
   $effect(() => {
     if (!open) return;

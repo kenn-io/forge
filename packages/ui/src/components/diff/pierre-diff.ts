@@ -190,9 +190,15 @@ function synthesizePatch(file: DiffFile): string {
           `@@ -${hunk.old_start},${hunk.old_count} +${hunk.new_start},${hunk.new_count} @@${hunk.section ? ` ${hunk.section}` : ""}`,
           ...hunk.lines.map(patchLine),
         ])
-      : file.patch.trimEnd().split("\n")),
+      : patchBodyLines(file.patch)),
     "",
   ].join("\n");
+}
+
+function patchBodyLines(patch: string): string[] {
+  const lines = patch.split("\n");
+  if (lines.at(-1) === "") lines.pop();
+  return lines;
 }
 
 function patchLine(line: { type: "context" | "add" | "delete"; content: string }): string {

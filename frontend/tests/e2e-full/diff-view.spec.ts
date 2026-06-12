@@ -1164,6 +1164,111 @@ test.describe("diff view", () => {
     await expectPierreDiffCount(addedFile, diffContextSelector, 0);
   });
 
+  test("complete added Go file patches render through the syntax-enabled browser path", async ({ page }) => {
+    await page.addInitScript(() => {
+      (globalThis as { __middlemanForceSyntaxHighlight?: boolean }).__middlemanForceSyntaxHighlight = true;
+      const nativeWorker = window.Worker;
+      (window as typeof window & { __middlemanWorkerUrls?: string[] }).__middlemanWorkerUrls = [];
+      window.Worker = class extends nativeWorker {
+        constructor(scriptURL: string | URL, options?: WorkerOptions) {
+          (
+            window as typeof window & {
+              __middlemanWorkerUrls: string[];
+            }
+          ).__middlemanWorkerUrls.push(String(scriptURL));
+          super(scriptURL, options);
+        }
+      } as typeof Worker;
+    });
+
+    const path = "internal/hosted/roborev/webhook_secret_resolver_test.go";
+    const lines = [
+      "package roborev_test",
+      "",
+      "import (",
+      '\t"context"',
+      '\t"testing"',
+      '\t"time"',
+      "",
+      '\t"github.com/google/uuid"',
+      '\t"github.com/stretchr/testify/require"',
+      "",
+      '\t"go.kenn.io/platform/internal/hosted/roborev"',
+      '\t"go.kenn.io/platform/internal/hosted/roborev/secrets"',
+      ")",
+      "",
+      "func TestResolveWebhookSecretsForVerificationReturnsMaterialForActiveConnection(t *testing.T) {",
+      "\tctx := context.Background()",
+      "\torgID := uuid.New()",
+      "\tnow := time.Date(2026, 6, 11, 12, 0, 0, 0, time.UTC)",
+      "\tprepare := func(ctx context.Context, store *roborev.DBStore, secretStore *secrets.LocalStore, orgID uuid.UUID, repoID string, connectionID string, secretRef string, now time.Time) roborev.SetRepoWebhookSecretRefParams {",
+      "\t\treturn roborev.SetRepoWebhookSecretRefParams{",
+      "\t\t\tOrgID: orgID,",
+      "\t\t}",
+      "\t}",
+      "\trequire.NotNil(t, prepare)",
+      "}",
+    ];
+    const addedGoDiff = withServerDiffData({
+      ...smallDiff,
+      files: [
+        {
+          path,
+          old_path: path,
+          status: "added",
+          is_binary: false,
+          is_whitespace_only: false,
+          additions: lines.length,
+          deletions: 0,
+          patch: [
+            `diff --git a/${path} b/${path}`,
+            "new file mode 100644",
+            "--- /dev/null",
+            `+++ b/${path}`,
+            `@@ -0,0 +1,${lines.length} @@`,
+            ...lines.map((line) => `+${line}`),
+            "",
+          ].join("\n"),
+          hunks: [
+            {
+              old_start: 0,
+              old_count: 0,
+              new_start: 1,
+              new_count: lines.length,
+              lines: lines.map((content, index) => ({
+                type: "add" as const,
+                content,
+                new_num: index + 1,
+              })),
+            },
+          ],
+        },
+      ],
+    });
+
+    await mockDiffApi(page, addedGoDiff);
+    await navigateToDiff(page);
+    await waitForDiffLoaded(page);
+
+    const addedFile = page.locator(`[data-file-path="${path}"]`);
+    await addedFile.scrollIntoViewIfNeeded();
+    await expect
+      .poll(
+        async () => {
+          return await page.evaluate(() => {
+            return (window as typeof window & { __middlemanWorkerUrls?: string[] }).__middlemanWorkerUrls?.length ?? 0;
+          });
+        },
+        { timeout: 10_000 },
+      )
+      .toBeGreaterThan(0);
+    await expectPierreDiffVisibleText(addedFile, diffAdditionsSelector, "package roborev_test");
+    await expectPierreDiffVisibleText(addedFile, diffAdditionsSelector, "prepare := func");
+    await expectPierreDiffCount(addedFile, diffAdditionsSelector, lines.length);
+    await expectPierreDiffCount(addedFile, diffDeletionsSelector, 0);
+    await expectPierreDiffCount(addedFile, diffContextSelector, 0);
+  });
+
   test("sidebar shows folders for grouped files", async ({ page }) => {
     await mockDiffApi(page, smallDiff);
     await navigateToDiff(page);

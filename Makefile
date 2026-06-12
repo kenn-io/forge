@@ -95,7 +95,9 @@ frontend-dev-bun: frontend-deps
 
 # Run TypeScript/Svelte lint and type checks
 frontend-check: frontend-deps
-	./node_modules/.bin/vp run -w check '!frontend/dist/**'
+	NODE_OPTIONS=--max-old-space-size=256 ./node_modules/.bin/vp check frontend packages/ui '!frontend/dist/**' '!frontend/test-results/**' '!packages/ui/src/api/generated/**' '!packages/ui/src/api/roborev/generated/**' --no-error-on-unmatched-pattern
+	cd frontend && NODE_OPTIONS=--max-old-space-size=1024 bun x svelte-check --tsconfig ./tsconfig.json --fail-on-warnings
+	cd packages/ui && NODE_OPTIONS=--max-old-space-size=512 bun x svelte-check --tsconfig ./tsconfig.json --fail-on-warnings
 
 # Prevent production frontend code from bypassing generated API clients
 frontend-api-client-check:

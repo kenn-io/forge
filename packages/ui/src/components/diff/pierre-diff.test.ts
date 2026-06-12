@@ -272,6 +272,22 @@ describe("Pierre diff parsing", () => {
     expect(parsed?.cacheKey).toBeDefined();
   });
 
+  it("preserves trailing whitespace in hunk-only patch text", () => {
+    const file: DiffFile = {
+      ...makeFile("src/foo.go", "+package main"),
+      status: "added",
+      old_path: "",
+      deletions: 0,
+      patch: "@@ -0,0 +1,2 @@\n+package main\n+const padded = true \t",
+      hunks: [],
+    };
+
+    const parsed = parsePierreFileDiff(file);
+
+    expect(parsed?.type).toBe("new");
+    expect(parsed?.additionLines).toContain("const padded = true \t\n");
+  });
+
   it("sets language metadata for complete added-file patches", () => {
     const path = "internal/hosted/roborev/webhook_secret_resolver.go";
     const file: DiffFile = {

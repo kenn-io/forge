@@ -14223,6 +14223,48 @@ func TestAPIGitealikeApproveDeletesReviewWhenHeadMoves(t *testing.T) {
 		"the approval that landed on a moved head must be deleted upstream")
 }
 
+// When the moved-head approval cannot be deleted, the user is left
+// with an approval standing on unreviewed code: the 409 must say so
+// with stable members instead of presenting as a clean revocation.
+func TestAPIGitealikeApproveReportsFailedReviewDeletion(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	transport := &apiTestGitealikeTransport{
+		deleteReviewErr: &gitealike.HTTPError{StatusCode: 403, Message: "forbidden"},
+	}
+	client := setupGitealikeHeadPinServer(t, transport)
+
+	transport.headOverrides = []string{"abc123", "moved-head"}
+
+	pin := "abc123"
+	resp, err := client.HTTP.ApprovePullOnHostWithResponse(
+		t.Context(), "gitea.test", "gitea", "tea", "kettle", 7,
+		generated.ApprovePullOnHostJSONRequestBody{
+			Body:            "lgtm",
+			ExpectedHeadSha: &pin,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusConflict, resp.StatusCode())
+	var problem struct {
+		Code    string         `json:"code"`
+		Detail  string         `json:"detail"`
+		Details map[string]any `json:"details"`
+	}
+	require.NoError(json.Unmarshal(resp.Body, &problem))
+	assert.Equal("conflict", problem.Code)
+	require.NotNil(problem.Details)
+	assert.Equal("stale_state", problem.Details["reason"])
+	assert.Equal("failed", problem.Details["revocation"],
+		"a standing approval must not present as a clean revocation")
+	assert.Equal("980", problem.Details["review_id"])
+	deletionContext, _ := problem.Details["context"].(string)
+	assert.Contains(deletionContext, "deletion failed")
+	assert.Contains(problem.Detail, "deletion failed")
+	assert.Contains(transport.mutationCalls, "delete_review:7:980",
+		"the deletion must have been attempted")
+}
+
 func TestAPIGiteaActionsSyncPersistsThroughServer(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
@@ -14674,6 +14716,7 @@ type apiTestGitealikeTransport struct {
 
 	moveHeadAfterReview string
 	lastMergeOpts       gitealike.MergeOptions
+	deleteReviewErr     error
 	// headOverrides, when non-empty, replaces the head SHA returned by
 	// successive GetPullRequest calls (the final entry repeats),
 	// simulating a push racing an in-flight mutation.
@@ -15015,7 +15058,7 @@ func (t *apiTestGitealikeTransport) DeletePullReview(
 	reviewID int64,
 ) error {
 	t.mutationCalls = append(t.mutationCalls, fmt.Sprintf("delete_review:%d:%d", number, reviewID))
-	return nil
+	return t.deleteReviewErr
 }
 
 func (t *apiTestGitealikeTransport) findPull(number int) *gitealike.PullRequestDTO {

@@ -289,8 +289,13 @@ func (t *transport) MergePullRequest(
 ) (gitealike.MergeResultDTO, error) {
 	var merged bool
 	var resp *forgejosdk.Response
-	t.mergeRejections.Take() // drop any stale capture before this merge
+	var rejection *gitealike.MergeRejection
 	err := t.withRequestContext(ctx, func() error {
+		// The capture slot is shared per client, so the clear/request/
+		// read sequence stays inside the serialized request section: a
+		// concurrent merge must not drop or consume this call's
+		// rejection.
+		t.mergeRejections.Take()
 		var err error
 		merged, resp, err = t.api.MergePullRequest(ref.Owner, ref.Name, int64(number), forgejosdk.MergePullRequestOption{
 			Style:        forgejoMergeStyle(opts.Method),
@@ -298,6 +303,9 @@ func (t *transport) MergePullRequest(
 			Message:      opts.CommitMessage,
 			HeadCommitId: opts.ExpectedHeadSHA,
 		})
+		if err == nil && !merged {
+			rejection = t.mergeRejections.Take()
+		}
 		return err
 	})
 	if err != nil {
@@ -308,20 +316,13 @@ func (t *transport) MergePullRequest(
 		// with a nil error; the captured rejection restores the real
 		// status and provider message so the failure classifies
 		// instead of being recorded as a successful merge.
-		return gitealike.MergeResultDTO{}, mergeRejectionError(t.mergeRejections, resp)
+		statusCode := 0
+		if resp != nil && resp.Response != nil {
+			statusCode = resp.StatusCode
+		}
+		return gitealike.MergeResultDTO{}, gitealike.MergeRejectionError(rejection, statusCode)
 	}
 	return gitealike.MergeResultDTO{Merged: merged}, nil
-}
-
-func mergeRejectionError(capture *gitealike.MergeRejectionCapture, resp *forgejosdk.Response) error {
-	if rejection := capture.Take(); rejection != nil {
-		return &gitealike.HTTPError{StatusCode: rejection.StatusCode, Message: rejection.Message}
-	}
-	statusCode := 0
-	if resp != nil && resp.Response != nil {
-		statusCode = resp.StatusCode
-	}
-	return &gitealike.HTTPError{StatusCode: statusCode, Message: "provider did not perform the merge"}
 }
 
 func (t *transport) CreatePullReview(

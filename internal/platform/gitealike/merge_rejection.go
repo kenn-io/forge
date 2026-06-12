@@ -70,6 +70,16 @@ func (c *MergeRejectionCapture) record(statusCode int, body []byte) {
 	c.last = &MergeRejection{StatusCode: statusCode, Message: message}
 }
 
+// MergeRejectionError converts a captured rejection (or, absent one,
+// the bare response status) into the typed HTTP error a failed merge
+// must surface.
+func MergeRejectionError(rejection *MergeRejection, fallbackStatusCode int) error {
+	if rejection != nil {
+		return &HTTPError{StatusCode: rejection.StatusCode, Message: rejection.Message}
+	}
+	return &HTTPError{StatusCode: fallbackStatusCode, Message: "provider did not perform the merge"}
+}
+
 // MergeRejectionCaptureTransport snapshots non-2xx responses to the
 // pull request merge endpoint into Capture, restoring the body for any
 // downstream reader.

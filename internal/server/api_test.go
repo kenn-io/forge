@@ -14265,6 +14265,45 @@ func TestAPIGitealikeApproveReportsFailedReviewDeletion(t *testing.T) {
 		"the deletion must have been attempted")
 }
 
+// An approval whose post-submit head read comes back empty cannot be
+// proven to cover the reviewed commit: through the real route it must
+// fail closed — review deleted, 409 stale_state, and details.cause
+// telling the client the head was unverifiable rather than moved.
+func TestAPIGitealikeApproveFailsClosedWhenHeadUnverifiable(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	transport := &apiTestGitealikeTransport{}
+	client := setupGitealikeHeadPinServer(t, transport)
+
+	// Pre-check sees the reviewed head; the post-submit read returns
+	// no head SHA at all.
+	transport.headOverrides = []string{"abc123", ""}
+
+	pin := "abc123"
+	resp, err := client.HTTP.ApprovePullOnHostWithResponse(
+		t.Context(), "gitea.test", "gitea", "tea", "kettle", 7,
+		generated.ApprovePullOnHostJSONRequestBody{
+			Body:            "lgtm",
+			ExpectedHeadSha: &pin,
+		},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusConflict, resp.StatusCode())
+	var problem struct {
+		Code    string         `json:"code"`
+		Details map[string]any `json:"details"`
+	}
+	require.NoError(json.Unmarshal(resp.Body, &problem))
+	assert.Equal("conflict", problem.Code)
+	require.NotNil(problem.Details)
+	assert.Equal("stale_state", problem.Details["reason"])
+	assert.Equal("succeeded", problem.Details["revocation"],
+		"the unprovable approval must be revoked, not left standing")
+	assert.Equal("head_unverifiable", problem.Details["cause"],
+		"clients must be able to tell an unverifiable head from a moved one")
+	assert.Contains(transport.mutationCalls, "delete_review:7:980")
+}
+
 func TestAPIGiteaActionsSyncPersistsThroughServer(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

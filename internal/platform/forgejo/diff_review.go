@@ -108,6 +108,10 @@ func (t *transport) deleteReviewIfHeadMoved(
 		return nil
 	}
 	reviewIDValue := strconv.FormatInt(reviewID, 10)
+	cause := "moved_head"
+	if verifyErr != nil {
+		cause = "head_unverifiable"
+	}
 	failedRevocationMessage := fmt.Sprintf("approval %d may stand on a moved head", reviewID)
 	successfulRevocationMessage := fmt.Sprintf(
 		"head moved while the approval submitted; approval %d was deleted",
@@ -127,10 +131,10 @@ func (t *transport) deleteReviewIfHeadMoved(
 		return forgejoStaleApprovalError(host, fmt.Errorf(
 			"%s: deletion failed: %w",
 			failedRevocationMessage, deleteErr,
-		), map[string]string{"revocation": "failed", "review_id": reviewIDValue})
+		), map[string]string{"revocation": "failed", "review_id": reviewIDValue, "cause": cause})
 	}
 	return forgejoStaleApprovalError(host, errors.New(successfulRevocationMessage),
-		map[string]string{"revocation": "succeeded", "review_id": reviewIDValue})
+		map[string]string{"revocation": "succeeded", "review_id": reviewIDValue, "cause": cause})
 }
 
 func forgejoStaleApprovalError(host string, err error, details map[string]string) error {

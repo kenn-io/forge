@@ -1419,6 +1419,10 @@ func (p gitHubClientProvider) revokeApprovalIfHeadMoved(
 		return nil
 	}
 	reviewID := strconv.FormatInt(review.GetID(), 10)
+	cause := "moved_head"
+	if verifyErr != nil {
+		cause = "head_unverifiable"
+	}
 	failedRevocationMessage := fmt.Sprintf(
 		"approval %d may stand on a moved head",
 		review.GetID(),
@@ -1446,7 +1450,7 @@ func (p gitHubClientProvider) revokeApprovalIfHeadMoved(
 				"%s: dismissal failed: %w",
 				failedRevocationMessage, dismissErr,
 			),
-			map[string]string{"revocation": "failed", "review_id": reviewID},
+			map[string]string{"revocation": "failed", "review_id": reviewID, "cause": cause},
 		)
 	}
 	message := successfulRevocationMessage
@@ -1455,7 +1459,7 @@ func (p gitHubClientProvider) revokeApprovalIfHeadMoved(
 	}
 	return p.staleApprovalError(
 		errors.New(message),
-		map[string]string{"revocation": "succeeded", "review_id": reviewID},
+		map[string]string{"revocation": "succeeded", "review_id": reviewID, "cause": cause},
 	)
 }
 

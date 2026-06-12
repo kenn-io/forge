@@ -439,10 +439,83 @@ func TestGitHubReviewDraftPartialStaleApprovalCleansPublishedComment(t *testing.
 	sideEffect, _ := problem.Details["context"].(string)
 	assert.Contains(sideEffect, "posted review text remains visible upstream")
 	assert.Contains(sideEffect, "retrying will repeat it")
+	assert.Equal("succeeded", problem.Details["revocation"],
+		"the stale partial response must keep the revocation members")
+	assert.Equal("31", problem.Details["review_id"])
+	assert.Equal("moved_head", problem.Details["cause"])
 	assert.Equal(int32(1), submittedCommentCount.Load())
 	assert.Equal(int64(31), dismissedID.Load(),
 		"the approval that landed on a moved head must be dismissed upstream")
 	storedDraft, err := database.GetMRReviewDraft(ctx, mr.ID)
 	require.NoError(err)
 	assert.Nil(storedDraft, "published local draft comment should be removed after partial publish")
+}
+
+// When the draft published content AND the dismissal fails, the 409
+// stale envelope wins over a partially_published success: it must
+// carry revocation "failed" with the review id so the user knows
+// manual cleanup is required, while the published local draft copies
+// are still cleared.
+func TestGitHubReviewDraftPartialFailedDismissalKeepsRevocationSignal(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	mock := &mockGH{
+		getPullRequestFn: githubHeadSequenceFn("reviewed-sha", "new-sha"),
+		createReviewWithCommentsFn: func(
+			_ context.Context, _, _ string, _ int, event, body, _ string,
+			_ []*gh.DraftReviewComment,
+		) (*gh.PullRequestReview, error) {
+			id := int64(31)
+			submitted := gh.Timestamp{Time: time.Now().UTC()}
+			return &gh.PullRequestReview{
+				ID: &id, State: &event, Body: &body, SubmittedAt: &submitted,
+			}, nil
+		},
+		dismissReviewFn: func(
+			_ context.Context, _, _ string, _ int, _ int64, _ string,
+		) (*gh.PullRequestReview, error) {
+			return nil, &gh.ErrorResponse{
+				Response: &http.Response{StatusCode: http.StatusForbidden},
+				Message:  "Must have admin rights to dismiss a review",
+			}
+		},
+	}
+	srv, database, repoID := setupGitHubHeadPinServer(t, mock)
+	ctx := t.Context()
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	require.NotNil(mr)
+	draft, err := database.GetOrCreateMRReviewDraft(ctx, mr.ID)
+	require.NoError(err)
+	line := 42
+	_, err = database.CreateMRReviewDraftComment(ctx, draft.ID, db.MRReviewDraftCommentInput{
+		Body: "ready to approve",
+		Range: db.ReviewLineRange{
+			Path:        "internal/server/e2etest/github_head_pin_test.go",
+			Side:        "right",
+			Line:        42,
+			NewLine:     &line,
+			LineType:    "add",
+			DiffHeadSHA: "reviewed-sha",
+		},
+	})
+	require.NoError(err)
+
+	rr := doJSONRequest(t, srv, http.MethodPost,
+		"/api/v1/pulls/github/acme/widget/7/review-draft/publish",
+		json.RawMessage(`{"action":"approve","body":"summary note"}`),
+	)
+	require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
+	problem := decodeConflictProblemBody(t, json.NewDecoder(rr.Body))
+	assert.Equal("conflict", problem.Code)
+	require.NotNil(problem.Details)
+	assert.Equal("stale_state", problem.Details["reason"])
+	assert.Equal(true, problem.Details["partialPublish"])
+	assert.Equal("failed", problem.Details["revocation"],
+		"a standing approval must reach the wire as revocation failed")
+	assert.Equal("31", problem.Details["review_id"])
+	assert.Equal("moved_head", problem.Details["cause"])
+	storedDraft, err := database.GetMRReviewDraft(ctx, mr.ID)
+	require.NoError(err)
+	assert.Nil(storedDraft, "published local draft comment should be removed even when revocation fails")
 }

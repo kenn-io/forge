@@ -241,9 +241,17 @@ func (s *Server) publishDiffReviewDraft(
 			if capabilityEnabled(s.capabilitiesForRepo(*repo), capabilityReadReviewThreads) {
 				_ = s.ingestDiffReviewThreads(ctx, *repo, *mr)
 			}
+			if mapped := diffReviewPartialPublishProblem(partialErr, *repo); mapped != nil {
+				return nil, mapped
+			}
 			return &actionStatusOutput{Body: actionStatusBody{Status: "partially_published"}}, nil
 		}
-		return nil, huma.Error502BadGateway("publish review draft on provider failed")
+		return nil, providerCallProblemWithDetail(
+			err,
+			string(repoProviderKind(*repo)),
+			repoProviderHost(*repo),
+			"publish review draft on provider failed",
+		)
 	}
 	if err := s.db.DeleteMRReviewDraft(ctx, mr.ID); err != nil {
 		return nil, huma.Error500InternalServerError("discard published review draft failed")
@@ -252,6 +260,31 @@ func (s *Server) publishDiffReviewDraft(
 		_ = s.ingestDiffReviewThreads(ctx, *repo, *mr)
 	}
 	return &actionStatusOutput{Body: actionStatusBody{Status: "published"}}, nil
+}
+
+func diffReviewPartialPublishProblem(
+	err *platform.DiffReviewPublishPartialError,
+	repo db.Repo,
+) huma.StatusError {
+	if err == nil || err.Err == nil {
+		return nil
+	}
+	var platformErr *platform.Error
+	if !errors.As(err.Err, &platformErr) {
+		return nil
+	}
+	if platformErr.Code != platform.ErrCodeStaleState {
+		return nil
+	}
+	mapped := providerCallProblem(err.Err, string(repoProviderKind(repo)), repoProviderHost(repo))
+	if problem, ok := mapped.(*ProblemError); ok {
+		if problem.Details == nil {
+			problem.Details = map[string]any{}
+		}
+		problem.Details["partialPublish"] = true
+		problem.Details["publishedCommentCount"] = len(err.PublishedCommentIDs)
+	}
+	return mapped
 }
 
 func (s *Server) deletePublishedReviewDraftComments(

@@ -12029,6 +12029,146 @@ func TestAPIPublishReviewDraftUsesPlatformHeadSHAWhenDiffHeadIsUnavailable(t *te
 	assert.Equal(mr.PlatformHeadSHA, provider.publishedReviews[0].HeadSHA)
 }
 
+func TestAPIPublishReviewDraftMapsStaleProviderErrorToConflict(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	caps := platform.Capabilities{
+		ReadRepositories:       true,
+		ReadMergeRequests:      true,
+		ReadIssues:             true,
+		ReadComments:           true,
+		ReviewDraftMutation:    true,
+		SupportedReviewActions: []platform.ReviewAction{platform.ReviewActionApprove},
+	}
+	srv, database, provider := setupGitLabCapabilityServerWithProvider(t, &caps)
+	ctx := t.Context()
+	provider.publishReviewErr = &platform.Error{
+		Code:         platform.ErrCodeStaleState,
+		Provider:     platform.KindGitLab,
+		PlatformHost: "gitlab.example.com",
+		Capability:   "approve_merge_request",
+		Hint:         "approval 99 was removed after the head moved",
+	}
+
+	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.example.com",
+		RepoPath:     "group/project",
+	})
+	require.NoError(err)
+	require.NotNil(repo)
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
+	require.NoError(err)
+	require.NotNil(mr)
+	require.NoError(database.UpdateDiffSHAs(ctx, repo.ID, 7, "gitlab-head", "base", "merge-base"))
+	draft, err := database.GetOrCreateMRReviewDraft(ctx, mr.ID)
+	require.NoError(err)
+	line := 42
+	_, err = database.CreateMRReviewDraftComment(ctx, draft.ID, db.MRReviewDraftCommentInput{
+		Body: "ready to approve",
+		Range: db.ReviewLineRange{
+			Path:        "internal/server/api_test.go",
+			Side:        "right",
+			Line:        42,
+			NewLine:     &line,
+			LineType:    "add",
+			DiffHeadSHA: "gitlab-head",
+		},
+	})
+	require.NoError(err)
+
+	publishRR := doJSON(
+		t,
+		srv,
+		http.MethodPost,
+		"/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/review-draft/publish",
+		map[string]string{"action": "approve", "body": "looks good"},
+	)
+
+	require.Equal(http.StatusConflict, publishRR.Code, publishRR.Body.String())
+	var problem rawProblemDetail
+	require.NoError(json.NewDecoder(publishRR.Body).Decode(&problem))
+	assert.Equal("conflict", problem.Code)
+	assert.Contains(problem.Detail, "approval 99 was removed")
+	require.NotNil(problem.Details)
+	details := problem.Details
+	assert.Equal("stale_state", details["reason"])
+	assert.Equal("gitlab", details["provider"])
+	assert.Equal("gitlab.example.com", details["platformHost"])
+	assert.Equal("approval 99 was removed after the head moved", details["context"])
+	require.Len(provider.publishedReviews, 1)
+}
+
+func TestAPIPublishReviewDraftMapsPartialStaleProviderErrorToConflict(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	caps := platform.Capabilities{
+		ReadRepositories:       true,
+		ReadMergeRequests:      true,
+		ReadIssues:             true,
+		ReadComments:           true,
+		ReviewDraftMutation:    true,
+		SupportedReviewActions: []platform.ReviewAction{platform.ReviewActionApprove},
+	}
+	srv, database, provider := setupGitLabCapabilityServerWithProvider(t, &caps)
+	ctx := t.Context()
+	provider.publishReviewErr = &platform.DiffReviewPublishPartialError{
+		Err: &platform.Error{
+			Code:         platform.ErrCodeStaleState,
+			Provider:     platform.KindGitLab,
+			PlatformHost: "gitlab.example.com",
+			Capability:   "approve_merge_request",
+			Hint:         "summary note already posted before stale approval",
+		},
+	}
+
+	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.example.com",
+		RepoPath:     "group/project",
+	})
+	require.NoError(err)
+	require.NotNil(repo)
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 7)
+	require.NoError(err)
+	require.NotNil(mr)
+	require.NoError(database.UpdateDiffSHAs(ctx, repo.ID, 7, "gitlab-head", "base", "merge-base"))
+	draft, err := database.GetOrCreateMRReviewDraft(ctx, mr.ID)
+	require.NoError(err)
+	line := 42
+	_, err = database.CreateMRReviewDraftComment(ctx, draft.ID, db.MRReviewDraftCommentInput{
+		Body: "ready to approve",
+		Range: db.ReviewLineRange{
+			Path:        "internal/server/api_test.go",
+			Side:        "right",
+			Line:        42,
+			NewLine:     &line,
+			LineType:    "add",
+			DiffHeadSHA: "gitlab-head",
+		},
+	})
+	require.NoError(err)
+
+	publishRR := doJSON(
+		t,
+		srv,
+		http.MethodPost,
+		"/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/review-draft/publish",
+		map[string]string{"action": "approve", "body": "looks good"},
+	)
+
+	require.Equal(http.StatusConflict, publishRR.Code, publishRR.Body.String())
+	var problem rawProblemDetail
+	require.NoError(json.NewDecoder(publishRR.Body).Decode(&problem))
+	assert.Equal("conflict", problem.Code)
+	require.NotNil(problem.Details)
+	details := problem.Details
+	assert.Equal("stale_state", details["reason"])
+	assert.Equal(true, details["partialPublish"])
+	assert.EqualValues(0, details["publishedCommentCount"])
+	assert.Equal("summary note already posted before stale approval", details["context"])
+}
+
 func TestAPIPublishReviewDraftRejectsMultilineRangeWithoutCapability(t *testing.T) {
 	require := require.New(t)
 	caps := platform.Capabilities{

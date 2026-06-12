@@ -56,7 +56,7 @@ describe("ApproveButton head conflicts", () => {
     const dialog = screen.getByRole("dialog", { name: "Approve pull request" });
     await fireEvent.click(within(dialog).getByRole("button", { name: "Approve" }));
 
-    await waitFor(() => expect(onheadconflict).toHaveBeenCalledWith("stale_state"));
+    await waitFor(() => expect(onheadconflict).toHaveBeenCalledWith("stale_state", undefined));
     expect(screen.queryByRole("dialog", { name: "Approve pull request" })).toBeNull();
 
     await fireEvent.click(screen.getByRole("button", { name: "Approve" }));

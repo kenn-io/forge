@@ -1,0 +1,131 @@
+package e2etest
+
+import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"sync"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.kenn.io/middleman/internal/platform"
+	gitlabprovider "go.kenn.io/middleman/internal/platform/gitlab"
+	"go.kenn.io/middleman/internal/testutil/dbtest"
+)
+
+// fakeGitLabReviewerAPI serves the minimal GitLab v4 surface the
+// reviewer replace-set flow touches: project lookup, the merge request
+// (whose reviewer list carries IDs), exact-username user search, and
+// the reviewer_ids update. The /users endpoint deliberately knows only
+// alice: carol is visible on the merge request but absent from search,
+// which is the production condition the retained-ID seeding exists for.
+type fakeGitLabReviewerAPI struct {
+	mu            sync.Mutex
+	reviewersJSON string
+	userQueries   []string
+	reviewerIDs   [][]int64
+}
+
+func (f *fakeGitLabReviewerAPI) handler(t *testing.T) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		key := r.Method + " " + r.URL.EscapedPath()
+		switch key {
+		case "GET /api/v4/projects/acme%2Fwidget":
+			_, _ = w.Write([]byte(`{
+				"id": 42,
+				"path": "widget",
+				"path_with_namespace": "acme/widget",
+				"default_branch": "main",
+				"web_url": "https://gitlab.com/acme/widget",
+				"http_url_to_repo": "https://gitlab.com/acme/widget.git"
+			}`))
+		case "GET /api/v4/users":
+			username := r.URL.Query().Get("username")
+			f.mu.Lock()
+			f.userQueries = append(f.userQueries, username)
+			f.mu.Unlock()
+			if username == "alice" {
+				_, _ = w.Write([]byte(`[{"id": 5, "username": "alice"}]`))
+				return
+			}
+			_, _ = w.Write([]byte(`[]`))
+		case "GET /api/v4/projects/42/merge_requests/7":
+			f.mu.Lock()
+			reviewersJSON := f.reviewersJSON
+			f.mu.Unlock()
+			_, _ = fmt.Fprintf(w,
+				`{"id": 1001, "iid": 7, "project_id": 42, "state": "opened", "reviewers": %s}`,
+				reviewersJSON,
+			)
+		case "PUT /api/v4/projects/42/merge_requests/7":
+			var body struct {
+				ReviewerIDs *[]int64 `json:"reviewer_ids"`
+			}
+			assert.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+			if body.ReviewerIDs == nil {
+				http.Error(w, `{"message": "reviewer_ids missing"}`, http.StatusBadRequest)
+				return
+			}
+			f.mu.Lock()
+			f.reviewerIDs = append(f.reviewerIDs, *body.ReviewerIDs)
+			f.reviewersJSON = `[{"id": 9, "username": "carol"}, {"id": 5, "username": "alice"}]`
+			reviewersJSON := f.reviewersJSON
+			f.mu.Unlock()
+			_, _ = fmt.Fprintf(w,
+				`{"id": 1001, "iid": 7, "project_id": 42, "state": "opened", "reviewers": %s}`,
+				reviewersJSON,
+			)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// A reviewer who is already on the merge request may be invisible to
+// /users search (search visibility differs from membership). Adding a
+// second reviewer must keep the existing one by reusing the ID the
+// merge request already reported, not by re-resolving through search.
+func TestGitLabSetPullReviewersRetainsReviewerAbsentFromUserSearch(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	database := dbtest.Open(t)
+	fake := &fakeGitLabReviewerAPI{reviewersJSON: `[{"id": 9, "username": "carol"}]`}
+	upstream := httptest.NewServer(fake.handler(t))
+	t.Cleanup(upstream.Close)
+
+	client, err := gitlabprovider.NewClient(
+		platform.DefaultGitLabHost,
+		staticTokenSource("token"),
+		gitlabprovider.WithBaseURLForTesting(upstream.URL+"/api/v4"),
+	)
+	require.NoError(err)
+
+	repoID := seedProviderRepo(t, database, platform.KindGitLab, platform.DefaultGitLabHost)
+	seedProviderPRAndIssue(t, database, repoID)
+	srv := newLabelTestServer(t, database, client, platform.KindGitLab, platform.DefaultGitLabHost)
+
+	rr := doJSONRequest(t, srv, http.MethodPut, "/api/v1/pulls/gitlab/acme/widget/7/reviewers", map[string][]string{
+		"reviewers": {"carol", "alice"},
+	})
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+
+	var body struct {
+		Reviewers []string `json:"reviewers"`
+	}
+	require.NoError(json.Unmarshal(rr.Body.Bytes(), &body))
+	assert.Equal([]string{"carol", "alice"}, body.Reviewers)
+
+	// The update reused carol's ID from the merge request and resolved
+	// only alice through search.
+	require.Len(fake.reviewerIDs, 1)
+	assert.Equal([]int64{9, 5}, fake.reviewerIDs[0])
+	assert.Equal([]string{"alice"}, fake.userQueries)
+
+	pr, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 7)
+	require.NoError(err)
+	require.NotNil(pr)
+	assert.Equal([]string{"carol", "alice"}, pr.RequestedReviewers)
+}

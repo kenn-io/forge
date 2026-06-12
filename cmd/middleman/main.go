@@ -535,6 +535,7 @@ func run(opts serve.Options) error {
 			TokenSources:        tokenSources,
 		},
 	)
+	srv.AttachHTTPServer(httpSrv, ln)
 	slog.Debug(
 		"server initialized",
 		"base_path", cfg.BasePath,
@@ -583,7 +584,6 @@ func run(opts serve.Options) error {
 		displayVersion = "dev-" + commit
 	}
 	srv.SetVersion(displayVersion)
-	srv.AttachHTTPServer(httpSrv, ln)
 	switcher.Swap(srv)
 
 	select {

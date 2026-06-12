@@ -1698,19 +1698,23 @@ type RepoLabelsResponse struct {
 
 // RepoOperations defines model for RepoOperations.
 type RepoOperations struct {
-	AddComment         OperationAvailability `json:"add_comment"`
-	AddLabel           OperationAvailability `json:"add_label"`
-	ApproveWorkflow    OperationAvailability `json:"approve_workflow"`
-	CloseIssue         OperationAvailability `json:"close_issue"`
-	ClosePr            OperationAvailability `json:"close_pr"`
-	MarkReadyForReview OperationAvailability `json:"mark_ready_for_review"`
-	MergePr            OperationAvailability `json:"merge_pr"`
-	RemoveLabel        OperationAvailability `json:"remove_label"`
-	ReopenIssue        OperationAvailability `json:"reopen_issue"`
-	ReopenPr           OperationAvailability `json:"reopen_pr"`
-	SetAssignees       OperationAvailability `json:"set_assignees"`
-	SetReviewers       OperationAvailability `json:"set_reviewers"`
-	SubmitReview       OperationAvailability `json:"submit_review"`
+	AddComment          OperationAvailability `json:"add_comment"`
+	AddLabel            OperationAvailability `json:"add_label"`
+	ApproveWorkflow     OperationAvailability `json:"approve_workflow"`
+	CloseIssue          OperationAvailability `json:"close_issue"`
+	ClosePr             OperationAvailability `json:"close_pr"`
+	EditComment         OperationAvailability `json:"edit_comment"`
+	MarkReadyForReview  OperationAvailability `json:"mark_ready_for_review"`
+	MergePr             OperationAvailability `json:"merge_pr"`
+	RemoveLabel         OperationAvailability `json:"remove_label"`
+	ReopenIssue         OperationAvailability `json:"reopen_issue"`
+	ReopenPr            OperationAvailability `json:"reopen_pr"`
+	ReplyReviewThread   OperationAvailability `json:"reply_review_thread"`
+	ResolveReviewThread OperationAvailability `json:"resolve_review_thread"`
+	SetAssignees        OperationAvailability `json:"set_assignees"`
+	SetReviewers        OperationAvailability `json:"set_reviewers"`
+	SubmitReview        OperationAvailability `json:"submit_review"`
+	UpdateContent       OperationAvailability `json:"update_content"`
 }
 
 // RepoPreviewRequest defines model for RepoPreviewRequest.

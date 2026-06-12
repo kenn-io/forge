@@ -219,6 +219,7 @@ func TestRepoOperationsWireShape(t *testing.T) {
 		"mark_ready_for_review",
 		"submit_review",
 		"add_comment",
+		"edit_comment",
 		"add_label",
 		"remove_label",
 		"set_assignees",
@@ -226,6 +227,9 @@ func TestRepoOperationsWireShape(t *testing.T) {
 		"close_issue",
 		"reopen_issue",
 		"approve_workflow",
+		"update_content",
+		"reply_review_thread",
+		"resolve_review_thread",
 	}, tags)
 }
 

@@ -106,6 +106,42 @@ function detailEnvelopePR(pr: typeof draftPR): unknown {
   };
 }
 
+const openIssue = {
+  ID: 31,
+  RepoID: 1,
+  GitHubID: 1201,
+  Number: 300,
+  URL: "https://github.com/acme/widgets/issues/300",
+  Title: "Issue on an app-only host",
+  Author: "marius",
+  State: "open",
+  Body: "Body",
+  CommentCount: 0,
+  LabelsJSON: "[]",
+  labels: [],
+  CreatedAt: "2026-04-01T12:00:00Z",
+  UpdatedAt: "2026-04-01T12:00:00Z",
+  LastActivityAt: "2026-04-01T12:00:00Z",
+  ClosedAt: null,
+  Starred: false,
+  platform_host: "github.com",
+  repo_owner: "acme",
+  repo_name: "widgets",
+};
+
+function detailEnvelopeIssue(issue: typeof openIssue): unknown {
+  return {
+    issue,
+    events: [],
+    repo: repoEnvelope(issue),
+    platform_host: issue.platform_host,
+    repo_owner: issue.repo_owner,
+    repo_name: issue.repo_name,
+    detail_loaded: true,
+    detail_fetched_at: "2026-04-01T12:00:00Z",
+  };
+}
+
 async function mockRoutes(page: Page): Promise<void> {
   await mockApi(page);
   await page.route(`**/api/v1/pulls/github/acme/widgets/${draftPR.Number}`, async (route) => {
@@ -189,6 +225,48 @@ test.describe("missing write credential gates non-merge mutations", () => {
     await expect(labelButton).toHaveAttribute("title", MISSING_CREDENTIAL_REASON);
     await labelButton.click({ force: true });
     await expect(page.locator(".label-editor-popover")).toHaveCount(0);
+
+    expect(mutationCalls).toEqual([]);
+  });
+
+  test("issue detail close, comment, and labels are disabled with the reason", async ({ page }) => {
+    const mutationCalls: string[] = [];
+    page.on("request", (request) => {
+      if (request.method() === "GET") return;
+      const path = new URL(request.url()).pathname;
+      if (/^\/api\/v1\/issues\//.test(path) && !/\/sync(\/async)?$/.test(path)) {
+        mutationCalls.push(`${request.method()} ${path}`);
+      }
+    });
+
+    await mockApi(page);
+    await page.route(`**/api/v1/issues/github/acme/widgets/${openIssue.Number}`, async (route) => {
+      if (route.request().method() === "GET") {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(detailEnvelopeIssue(openIssue)),
+        });
+        return;
+      }
+      await route.fallback();
+    });
+
+    await page.goto(`/issues/github/acme/widgets/${openIssue.Number}`);
+    await expect(page.locator(".detail-title")).toContainText(openIssue.Title);
+
+    const closeButton = page.locator(".btn--close").first();
+    await expect(closeButton).toBeDisabled();
+    await expect(closeButton).toHaveAttribute("title", MISSING_CREDENTIAL_REASON);
+    await closeButton.click({ force: true });
+
+    const commentSubmit = page.locator(".comment-box .submit-btn");
+    await expect(commentSubmit).toBeDisabled();
+    await expect(page.locator(".comment-box .error-msg")).toContainText(MISSING_CREDENTIAL_REASON);
+
+    const labelButton = page.locator(".btn--labels").first();
+    await expect(labelButton).toBeDisabled();
+    await expect(labelButton).toHaveAttribute("title", MISSING_CREDENTIAL_REASON);
 
     expect(mutationCalls).toEqual([]);
   });

@@ -12,6 +12,11 @@
     pendingLabel?: string | null;
     error?: string | null;
     autofocusFilter?: boolean;
+    /** Disables every mutation control (toggle rows, clear) — used
+     * when label operations become unavailable while the picker is
+     * already open. Closing stays enabled. */
+    disabled?: boolean;
+    disabledReason?: string | undefined;
     ontoggle: (name: string) => void | Promise<void>;
     onclear?: () => void | Promise<void>;
     onclose: () => void;
@@ -24,6 +29,8 @@
     pendingLabel = null,
     error = null,
     autofocusFilter = false,
+    disabled = false,
+    disabledReason = undefined,
     ontoggle,
     onclear = undefined,
     onclose,
@@ -51,8 +58,13 @@
   }
 
   function clearSelectedLabels(): void {
-    if (pendingLabel !== null || selectedNames.size === 0) return;
+    if (disabled || pendingLabel !== null || selectedNames.size === 0) return;
     void onclear?.();
+  }
+
+  function toggleLabelRow(name: string): void {
+    if (disabled) return;
+    void ontoggle(name);
   }
 </script>
 
@@ -69,8 +81,8 @@
         type="button"
         class="label-picker__icon-button"
         aria-label="Clear selected labels"
-        title="Clear selected labels"
-        disabled={pendingLabel !== null || selectedNames.size === 0 || onclear === undefined}
+        title={disabled && disabledReason !== undefined ? disabledReason : "Clear selected labels"}
+        disabled={disabled || pendingLabel !== null || selectedNames.size === 0 || onclear === undefined}
         onclick={clearSelectedLabels}
       >
         <EraserIcon size="14" strokeWidth="2.2" aria-hidden="true" />
@@ -109,8 +121,9 @@
         class={["label-picker__row", { "label-picker__row--selected": selected }]}
         role="menuitemcheckbox"
         aria-checked={selected}
-        disabled={pendingLabel !== null}
-        onclick={() => ontoggle(label.name)}
+        disabled={disabled || pendingLabel !== null}
+        title={disabled && disabledReason !== undefined ? disabledReason : undefined}
+        onclick={() => toggleLabelRow(label.name)}
       >
         <span class="label-picker__color" style={labelStyle(label)} aria-hidden="true"></span>
         <span class="label-picker__text">

@@ -465,8 +465,13 @@ func (s *Server) updateTokenSourcesForReload(cfg *config.Config) {
 			"hosts", slices.Sorted(maps.Keys(frozenHosts)),
 		)
 	}
+	// Clone credentials live under host-level keys (tokenauth.CloneKey)
+	// rather than the provider platform, but they carry the same chain
+	// — including the app candidate — so a frozen host's clone source
+	// must stay on the boot chain too, keyed by host alone.
 	updateIfKnown := func(desc tokenauth.Descriptor) {
-		if desc.Key.Platform == string(platform.KindGitHub) {
+		if desc.Key.Platform == string(platform.KindGitHub) ||
+			desc.Key == tokenauth.CloneKey(desc.Key.Host) {
 			if _, frozen := frozenHosts[desc.Key.Host]; frozen {
 				return
 			}
@@ -479,10 +484,10 @@ func (s *Server) updateTokenSourcesForReload(cfg *config.Config) {
 	for _, plan := range cfg.ProviderTokenSources() {
 		updateIfKnown(plan.Descriptor)
 	}
-	// Clone credentials live under host-level keys (tokenauth.CloneKey), so
-	// when a provider entry on a shared host loses or changes its token the
-	// clone source follows the host's surviving effective chain instead of
-	// staying pinned to whichever provider source startup picked.
+	// When a provider entry on a shared host loses or changes its token
+	// the clone source follows the host's surviving effective chain
+	// instead of staying pinned to whichever provider source startup
+	// picked.
 	for _, desc := range cfg.CloneTokenDescriptors() {
 		updateIfKnown(desc)
 	}

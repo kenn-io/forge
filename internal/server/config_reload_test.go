@@ -1088,6 +1088,9 @@ func newReloadServerWithTokenSources(
 	for _, plan := range cfg.ProviderTokenSources() {
 		set.Upsert(plan.Descriptor)
 	}
+	for _, desc := range cfg.CloneTokenDescriptors() {
+		set.Upsert(desc)
+	}
 	srv := NewWithConfig(
 		database, syncer, nil, nil, cfg, cfgPath,
 		ServerOptions{TokenSources: set},
@@ -1133,6 +1136,12 @@ installation_account = "acme"
 		require.True(t, ok)
 		assert.False(src.Descriptor().HasActiveGitHubApp(),
 			"a reload that adds an app must not re-point reads before restart")
+		// The host-level clone chain carries the same candidates and
+		// authenticates workspace git fetches; it must stay frozen too.
+		cloneSrc, ok := set.Get(tokenauth.CloneKey("github.com"))
+		require.True(t, ok)
+		assert.False(cloneSrc.Descriptor().HasActiveGitHubApp(),
+			"clone auth must not switch to the app token before restart")
 	})
 
 	t.Run("app removed on reload keeps the boot app chain live", func(t *testing.T) {
@@ -1148,6 +1157,10 @@ installation_account = "acme"
 		require.True(t, ok)
 		assert.True(src.Descriptor().HasActiveGitHubApp(),
 			"a reload that removes an app must not drop the chain the write trackers were built for")
+		cloneSrc, ok := set.Get(tokenauth.CloneKey("github.com"))
+		require.True(t, ok)
+		assert.True(cloneSrc.Descriptor().HasActiveGitHubApp(),
+			"clone auth must keep the boot app chain until restart")
 	})
 
 	t.Run("non-topology token change still hot-applies", func(t *testing.T) {

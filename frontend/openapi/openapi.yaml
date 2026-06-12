@@ -3546,6 +3546,8 @@ components:
           $ref: "#/components/schemas/OperationAvailability"
         close_pr:
           $ref: "#/components/schemas/OperationAvailability"
+        edit_comment:
+          $ref: "#/components/schemas/OperationAvailability"
         mark_ready_for_review:
           $ref: "#/components/schemas/OperationAvailability"
         merge_pr:
@@ -3556,11 +3558,17 @@ components:
           $ref: "#/components/schemas/OperationAvailability"
         reopen_pr:
           $ref: "#/components/schemas/OperationAvailability"
+        reply_review_thread:
+          $ref: "#/components/schemas/OperationAvailability"
+        resolve_review_thread:
+          $ref: "#/components/schemas/OperationAvailability"
         set_assignees:
           $ref: "#/components/schemas/OperationAvailability"
         set_reviewers:
           $ref: "#/components/schemas/OperationAvailability"
         submit_review:
+          $ref: "#/components/schemas/OperationAvailability"
+        update_content:
           $ref: "#/components/schemas/OperationAvailability"
       required:
         - merge_pr
@@ -3569,6 +3577,7 @@ components:
         - mark_ready_for_review
         - submit_review
         - add_comment
+        - edit_comment
         - add_label
         - remove_label
         - set_assignees
@@ -3576,6 +3585,9 @@ components:
         - close_issue
         - reopen_issue
         - approve_workflow
+        - update_content
+        - reply_review_thread
+        - resolve_review_thread
       type: object
     RepoPreviewRequest:
       additionalProperties: false

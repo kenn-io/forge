@@ -10,11 +10,7 @@
   import type { IssueDetailSyncMode } from "../../stores/issues.svelte.js";
   import { renderMarkdown } from "../../utils/markdown.js";
   import { moveTaskListItem, toggleTaskListItem } from "../../utils/task-list.js";
-  import {
-    firstUnavailableGate,
-    hostWriteCredentialGate,
-    operationGate,
-  } from "./operation-gates.js";
+  import { firstUnavailableGate, operationGate } from "./operation-gates.js";
   import { timeAgo } from "../../utils/time.js";
   import { copyToClipboard } from "../../utils/clipboard.js";
   import EventTimeline from "./EventTimeline.svelte";
@@ -322,6 +318,7 @@
   }
 
   async function clearLabels(): Promise<void> {
+    if (labelGate.unavailable) return;
     if (pendingLabel !== null) return;
     const currentLabels = issues.getIssueDetail()?.issue.labels ?? [];
     if (currentLabels.length === 0) return;
@@ -388,15 +385,15 @@
   let stateError = $state<string | null>(null);
 
   // Per-operation mutation availability from the issue detail payload.
-  // Content edits (title, body, task-list toggles/reorder) have no
-  // dedicated operation key; they gate on the host-wide
-  // write-credential state shared by every provider write.
   const repoOperations = $derived(issues.getIssueDetail()?.repo?.operations);
   const addCommentGate = $derived(operationGate(repoOperations?.add_comment));
+  const editCommentGate = $derived(operationGate(repoOperations?.edit_comment));
   const labelGate = $derived(firstUnavailableGate(
     repoOperations?.add_label, repoOperations?.remove_label,
   ));
-  const writeCredentialBlock = $derived(hostWriteCredentialGate(repoOperations));
+  // Body task-list writes are content edits with their own operation
+  // key, so rate limits gate them just like credential failures.
+  const contentGate = $derived(operationGate(repoOperations?.update_content));
 
   async function handleStateChange(
     newState: "open" | "closed",
@@ -671,7 +668,7 @@
     if ((target as HTMLInputElement).type !== "checkbox") return;
     const raw = target.getAttribute("data-task-index");
     if (raw === null) return;
-    if (staleIssue || !currentCapabilities().state_mutation || writeCredentialBlock.unavailable) {
+    if (staleIssue || !currentCapabilities().state_mutation || contentGate.unavailable) {
       event.preventDefault();
       return;
     }
@@ -709,7 +706,7 @@
   }
 
   function onBodyDragStart(event: DragEvent): void {
-    if (staleIssue || !currentCapabilities().state_mutation || writeCredentialBlock.unavailable) return;
+    if (staleIssue || !currentCapabilities().state_mutation || contentGate.unavailable) return;
     const target = event.target as HTMLElement | null;
     if (!target?.classList?.contains("task-drag-handle")) return;
     const raw = target.getAttribute("data-task-index");
@@ -771,7 +768,7 @@
     const side = dropTargetSide;
     clearDragState(body);
     if (to === null || to === from) return;
-    if (staleIssue || !currentCapabilities().state_mutation || writeCredentialBlock.unavailable) return;
+    if (staleIssue || !currentCapabilities().state_mutation || contentGate.unavailable) return;
     const detail = issues.getIssueDetail();
     if (!detail) return;
     let target = to;
@@ -946,6 +943,8 @@
                     {pendingLabel}
                     error={labelPickerError}
                     autofocusFilter={labelPickerAutofocusFilter}
+                    disabled={labelGate.unavailable}
+                    disabledReason={labelGate.unavailable ? labelGate.reason : undefined}
                     ontoggle={toggleLabel}
                     onclear={clearLabels}
                     onclose={closeLabelPicker}
@@ -1002,7 +1001,7 @@
               ondragleave={onBodyDragLeave}
               ondrop={onBodyDrop}
               ondragend={onBodyDragEnd}
-            >{@html renderMarkdown(issue.Body, { provider, platformHost, owner, name, repoPath }, { interactiveTasks: capabilities.state_mutation && !writeCredentialBlock.unavailable })}</div>
+            >{@html renderMarkdown(issue.Body, { provider, platformHost, owner, name, repoPath }, { interactiveTasks: capabilities.state_mutation && !contentGate.unavailable })}</div>
           </div>
         </div>
       {/if}
@@ -1126,7 +1125,7 @@
             repoOwner={owner}
             repoName={name}
             {repoPath}
-            onEditComment={capabilities.comment_mutation && !staleIssue && !writeCredentialBlock.unavailable
+            onEditComment={capabilities.comment_mutation && !staleIssue && !editCommentGate.unavailable
               ? editTimelineComment
               : undefined}
           />

@@ -5,7 +5,7 @@
  * pair the detail action controls consume.
  */
 
-import type { OperationAvailability, RepoOperations } from "../../api/types.js";
+import type { OperationAvailability } from "../../api/types.js";
 
 export type OperationGate = { unavailable: boolean; reason: string };
 
@@ -31,29 +31,6 @@ export function firstUnavailableGate(...ops: (OperationAvailability | undefined)
   for (const op of ops) {
     const gate = operationGate(op);
     if (gate.unavailable) return gate;
-  }
-  return availableGate;
-}
-
-const writeCredentialCodes = new Set(["missing_write_credential", "write_credential_error"]);
-
-/**
- * Host-wide write-credential gate. The two write-credential codes are
- * host-scoped by construction — the mutation chain either resolves a
- * user credential for the host or it does not — so provider writes
- * without a dedicated operation key (title/body/task-list edits,
- * comment edits, review-thread replies and resolution) gate on any
- * operation carrying one of these codes. Operation-specific states
- * like rate limits stay per-operation and do not trip this gate.
- */
-export function hostWriteCredentialGate(ops: RepoOperations | undefined): OperationGate {
-  if (ops === undefined) {
-    return availableGate;
-  }
-  for (const op of Object.values(ops) as (OperationAvailability | undefined)[]) {
-    if (op !== undefined && !op.available && op.code !== undefined && writeCredentialCodes.has(op.code)) {
-      return { unavailable: true, reason: op.unavailable_reason ?? "" };
-    }
   }
   return availableGate;
 }

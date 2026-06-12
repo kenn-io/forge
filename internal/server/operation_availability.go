@@ -15,19 +15,23 @@ import (
 // of RepoOperations and are part of the wire contract; renaming one
 // is a breaking change for clients pinned to an older schema.
 const (
-	operationMergePR            = "merge_pr"
-	operationClosePR            = "close_pr"
-	operationReopenPR           = "reopen_pr"
-	operationMarkReadyForReview = "mark_ready_for_review"
-	operationSubmitReview       = "submit_review"
-	operationAddComment         = "add_comment"
-	operationAddLabel           = "add_label"
-	operationRemoveLabel        = "remove_label"
-	operationSetAssignees       = "set_assignees"
-	operationSetReviewers       = "set_reviewers"
-	operationCloseIssue         = "close_issue"
-	operationReopenIssue        = "reopen_issue"
-	operationApproveWorkflow    = "approve_workflow"
+	operationMergePR             = "merge_pr"
+	operationClosePR             = "close_pr"
+	operationReopenPR            = "reopen_pr"
+	operationMarkReadyForReview  = "mark_ready_for_review"
+	operationSubmitReview        = "submit_review"
+	operationAddComment          = "add_comment"
+	operationEditComment         = "edit_comment"
+	operationAddLabel            = "add_label"
+	operationRemoveLabel         = "remove_label"
+	operationSetAssignees        = "set_assignees"
+	operationSetReviewers        = "set_reviewers"
+	operationCloseIssue          = "close_issue"
+	operationReopenIssue         = "reopen_issue"
+	operationApproveWorkflow     = "approve_workflow"
+	operationUpdateContent       = "update_content"
+	operationReplyReviewThread   = "reply_review_thread"
+	operationResolveReviewThread = "resolve_review_thread"
 )
 
 // Availability codes returned to clients. Empty code means available.
@@ -69,19 +73,23 @@ type OperationAvailability struct {
 // to each field and adding a new operation requires an explicit
 // server change.
 type RepoOperations struct {
-	MergePR            OperationAvailability `json:"merge_pr"`
-	ClosePR            OperationAvailability `json:"close_pr"`
-	ReopenPR           OperationAvailability `json:"reopen_pr"`
-	MarkReadyForReview OperationAvailability `json:"mark_ready_for_review"`
-	SubmitReview       OperationAvailability `json:"submit_review"`
-	AddComment         OperationAvailability `json:"add_comment"`
-	AddLabel           OperationAvailability `json:"add_label"`
-	RemoveLabel        OperationAvailability `json:"remove_label"`
-	SetAssignees       OperationAvailability `json:"set_assignees"`
-	SetReviewers       OperationAvailability `json:"set_reviewers"`
-	CloseIssue         OperationAvailability `json:"close_issue"`
-	ReopenIssue        OperationAvailability `json:"reopen_issue"`
-	ApproveWorkflow    OperationAvailability `json:"approve_workflow"`
+	MergePR             OperationAvailability `json:"merge_pr"`
+	ClosePR             OperationAvailability `json:"close_pr"`
+	ReopenPR            OperationAvailability `json:"reopen_pr"`
+	MarkReadyForReview  OperationAvailability `json:"mark_ready_for_review"`
+	SubmitReview        OperationAvailability `json:"submit_review"`
+	AddComment          OperationAvailability `json:"add_comment"`
+	EditComment         OperationAvailability `json:"edit_comment"`
+	AddLabel            OperationAvailability `json:"add_label"`
+	RemoveLabel         OperationAvailability `json:"remove_label"`
+	SetAssignees        OperationAvailability `json:"set_assignees"`
+	SetReviewers        OperationAvailability `json:"set_reviewers"`
+	CloseIssue          OperationAvailability `json:"close_issue"`
+	ReopenIssue         OperationAvailability `json:"reopen_issue"`
+	ApproveWorkflow     OperationAvailability `json:"approve_workflow"`
+	UpdateContent       OperationAvailability `json:"update_content"`
+	ReplyReviewThread   OperationAvailability `json:"reply_review_thread"`
+	ResolveReviewThread OperationAvailability `json:"resolve_review_thread"`
 }
 
 // operationDescriptor lists the capabilities an operation needs and
@@ -106,6 +114,7 @@ var (
 	descMarkReadyForReview = operationDescriptor{name: operationMarkReadyForReview, requiredCapabilities: []string{capabilityReadyForReview}, bucket: apiBucketGraphQL}
 	descSubmitReview       = operationDescriptor{name: operationSubmitReview, requiredCapabilities: []string{capabilityReviewMutation}, bucket: apiBucketREST}
 	descAddComment         = operationDescriptor{name: operationAddComment, requiredCapabilities: []string{capabilityCommentMutation}, bucket: apiBucketREST}
+	descEditComment        = operationDescriptor{name: operationEditComment, requiredCapabilities: []string{capabilityCommentMutation}, bucket: apiBucketREST}
 	descAddLabel           = operationDescriptor{name: operationAddLabel, requiredCapabilities: []string{capabilityReadLabels, capabilityLabelMutation}, bucket: apiBucketREST}
 	descRemoveLabel        = operationDescriptor{name: operationRemoveLabel, requiredCapabilities: []string{capabilityReadLabels, capabilityLabelMutation}, bucket: apiBucketREST}
 	descSetAssignees       = operationDescriptor{name: operationSetAssignees, requiredCapabilities: []string{capabilityAssigneeMutation}, bucket: apiBucketREST}
@@ -113,6 +122,14 @@ var (
 	descCloseIssue         = operationDescriptor{name: operationCloseIssue, requiredCapabilities: []string{capabilityIssueMutation}, bucket: apiBucketREST}
 	descReopenIssue        = operationDescriptor{name: operationReopenIssue, requiredCapabilities: []string{capabilityIssueMutation}, bucket: apiBucketREST}
 	descApproveWorkflow    = operationDescriptor{name: operationApproveWorkflow, requiredCapabilities: []string{capabilityWorkflowApproval}, bucket: apiBucketREST}
+	// Content edits (PR/issue title, body, task-list writes) ride the
+	// state-mutation capability and REST budget of the routes that
+	// serve them; review-thread reply and resolution are REST on every
+	// provider that supports them (GitHub replies via REST comments,
+	// GitLab discussions via REST).
+	descUpdateContent       = operationDescriptor{name: operationUpdateContent, requiredCapabilities: []string{capabilityStateMutation}, bucket: apiBucketREST}
+	descReplyReviewThread   = operationDescriptor{name: operationReplyReviewThread, requiredCapabilities: []string{capabilityThreadReply}, bucket: apiBucketREST}
+	descResolveReviewThread = operationDescriptor{name: operationResolveReviewThread, requiredCapabilities: []string{capabilityReviewThreadResolution}, bucket: apiBucketREST}
 )
 
 // repoOperations derives the availability of every operation for a
@@ -134,19 +151,23 @@ func (s *Server) repoOperations(repo db.Repo) RepoOperations {
 		)
 	}
 	return RepoOperations{
-		MergePR:            derive(descMergePR),
-		ClosePR:            derive(descClosePR),
-		ReopenPR:           derive(descReopenPR),
-		MarkReadyForReview: derive(descMarkReadyForReview),
-		SubmitReview:       derive(descSubmitReview),
-		AddComment:         derive(descAddComment),
-		AddLabel:           derive(descAddLabel),
-		RemoveLabel:        derive(descRemoveLabel),
-		SetAssignees:       derive(descSetAssignees),
-		SetReviewers:       derive(descSetReviewers),
-		CloseIssue:         derive(descCloseIssue),
-		ReopenIssue:        derive(descReopenIssue),
-		ApproveWorkflow:    derive(descApproveWorkflow),
+		MergePR:             derive(descMergePR),
+		ClosePR:             derive(descClosePR),
+		ReopenPR:            derive(descReopenPR),
+		MarkReadyForReview:  derive(descMarkReadyForReview),
+		SubmitReview:        derive(descSubmitReview),
+		AddComment:          derive(descAddComment),
+		EditComment:         derive(descEditComment),
+		AddLabel:            derive(descAddLabel),
+		RemoveLabel:         derive(descRemoveLabel),
+		SetAssignees:        derive(descSetAssignees),
+		SetReviewers:        derive(descSetReviewers),
+		CloseIssue:          derive(descCloseIssue),
+		ReopenIssue:         derive(descReopenIssue),
+		ApproveWorkflow:     derive(descApproveWorkflow),
+		UpdateContent:       derive(descUpdateContent),
+		ReplyReviewThread:   derive(descReplyReviewThread),
+		ResolveReviewThread: derive(descResolveReviewThread),
 	}
 }
 

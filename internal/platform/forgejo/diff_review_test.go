@@ -111,7 +111,10 @@ func TestPublishDiffReviewDraftApproveDeletesReviewWhenHeadMovesDuringSubmit(t *
 				Event    string `json:"event"`
 				CommitID string `json:"commit_id"`
 			}
-			require.NoError(json.NewDecoder(r.Body).Decode(&body))
+			if !assert.NoError(json.NewDecoder(r.Body).Decode(&body)) {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
 			assert.Equal("APPROVED", body.Event)
 			assert.Equal("reviewed-head", body.CommitID)
 			assert.NoError(json.NewEncoder(w).Encode(map[string]any{

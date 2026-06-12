@@ -36,7 +36,11 @@
   let candidatesQuery = $state("");
   let candidatesLoading = $state(false);
   let pendingUser = $state<string | null>(null);
-  let pickerError = $state<string | null>(null);
+  // Candidate-fetch and mutation failures are tracked separately so a
+  // late-resolving fetch success cannot erase the error from a save
+  // that genuinely failed. The mutation error wins when both are set.
+  let candidatesError = $state<string | null>(null);
+  let mutationError = $state<string | null>(null);
   let autofocusFilter = $state(false);
   let anchorEl = $state<HTMLSpanElement>();
   let popoverEl = $state<HTMLDivElement>();
@@ -54,7 +58,8 @@
   function closePicker(): void {
     open = false;
     pendingUser = null;
-    pickerError = null;
+    candidatesError = null;
+    mutationError = null;
     if (queryDebounce !== null) {
       clearTimeout(queryDebounce);
       queryDebounce = null;
@@ -69,15 +74,15 @@
       if (seq !== candidateFetchSeq) return;
       candidates = next;
       candidatesQuery = query;
-      // A fresh successful fetch supersedes any error a previous
-      // request left behind.
-      pickerError = null;
+      // A fresh successful fetch supersedes any candidate-load error a
+      // previous request left behind; mutation errors stay visible.
+      candidatesError = null;
       void tick().then(() => {
         if (open) positionPicker();
       });
     } catch (err) {
       if (seq === candidateFetchSeq) {
-        pickerError = err instanceof Error ? err.message : String(err);
+        candidatesError = err instanceof Error ? err.message : String(err);
       }
     } finally {
       if (seq === candidateFetchSeq) {
@@ -120,7 +125,8 @@
     }
     autofocusFilter = event !== undefined && !(window.matchMedia?.("(pointer: coarse)").matches ?? false);
     open = true;
-    pickerError = null;
+    candidatesError = null;
+    mutationError = null;
     await tick();
     positionPicker();
     await fetchCandidates("");
@@ -129,7 +135,7 @@
   async function toggleUser(username: string): Promise<void> {
     if (pendingUser !== null) return;
     pendingUser = username;
-    pickerError = null;
+    mutationError = null;
     const key = username.toLowerCase();
     const next = users.some((user) => user.toLowerCase() === key)
       ? users.filter((user) => user.toLowerCase() !== key)
@@ -137,7 +143,7 @@
     try {
       await onchange(next);
     } catch (err) {
-      pickerError = err instanceof Error ? err.message : String(err);
+      mutationError = err instanceof Error ? err.message : String(err);
     } finally {
       pendingUser = null;
     }
@@ -146,11 +152,11 @@
   async function clearUsers(): Promise<void> {
     if (pendingUser !== null || users.length === 0) return;
     pendingUser = "";
-    pickerError = null;
+    mutationError = null;
     try {
       await onchange([]);
     } catch (err) {
-      pickerError = err instanceof Error ? err.message : String(err);
+      mutationError = err instanceof Error ? err.message : String(err);
     } finally {
       pendingUser = null;
     }
@@ -216,7 +222,7 @@
         loading={candidatesLoading}
         {candidatesQuery}
         {pendingUser}
-        error={pickerError}
+        error={mutationError ?? candidatesError}
         {autofocusFilter}
         onquery={onPickerQuery}
         ontoggle={toggleUser}

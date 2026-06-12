@@ -17,15 +17,6 @@ type WorkspaceStatusResponse = {
   error_message?: string | null;
 };
 
-type PullDetailResponse = {
-  events: Array<{
-    EventType: string;
-    Author: string;
-    Body: string;
-    Summary: string;
-  }>;
-};
-
 const lockedWorkspaceTestTimeoutMs = 120_000;
 
 function hasCommand(command: string, args: string[] = ["--version"]): boolean {
@@ -413,7 +404,7 @@ test.describe("detail action buttons", () => {
     await expect(page).toHaveURL(/\/terminal\/ws-issue-10$/);
   });
 
-  test("pull request actions use shared ActionButton component", async ({ page }) => {
+  test("supported pull request actions use shared ActionButton component", async ({ page }) => {
     await page.goto("/pulls");
     await page.locator(".pull-item").first().waitFor({ state: "visible", timeout: 10_000 });
     await page.locator(".pull-item").filter({ hasText: "Add widget caching layer" }).first().click();
@@ -423,12 +414,12 @@ test.describe("detail action buttons", () => {
     const merge = page.locator(".btn--merge");
     const close = page.locator(".btn--close");
 
-    await expect(approve).toBeVisible();
+    await expect(approve).toHaveCount(0);
     await expect(merge).toBeVisible();
     await expect(close).toBeVisible();
 
     // All action buttons use the shared action-button base class
-    for (const btn of [approve, merge, close]) {
+    for (const btn of [merge, close]) {
       const classes = await btn.getAttribute("class");
       expect(classes).toContain("action-button");
     }
@@ -523,77 +514,54 @@ test.describe("detail action buttons", () => {
     await expect(page.locator(".primary-actions-wrap .action-error")).toBeVisible();
   });
 
-  test("approve form stays visible in the narrow actions menu", async ({ page }) => {
+  test("narrow actions menu omits unsupported approve action", async ({ page }) => {
     await page.setViewportSize({ width: 320, height: 720 });
     await page.goto("/pulls/github/acme/widgets/1");
     await expect(page.locator(".pull-detail")).toBeVisible();
 
     await page.locator(".actions-menu-trigger").click();
-    await expect(page.locator(".actions-menu-popover")).toBeVisible();
+    const menu = page.locator(".actions-menu-popover");
+    await expect(menu).toBeVisible();
 
-    await page.locator(".actions-menu-popover .btn--approve").click();
-    await expect(page.locator(".actions-menu-popover")).toBeVisible();
-    await expect(page.locator(".actions-menu-popover .approve-comment")).toBeVisible();
-    await expect(page.locator(".actions-menu-popover .btn--green")).toHaveText("Approve");
+    await expect(menu.locator(".btn--approve")).toHaveCount(0);
+    await expect(menu.locator(".btn--merge")).toBeVisible();
+    await expect(menu.locator(".btn--close")).toBeVisible();
   });
 
-  test("approve action submits through API, persists review, and refreshes detail and list data", async ({ page }) => {
+  test("GitHub approve action stays unavailable in UI and API", async ({ page }) => {
     let isolatedServer: IsolatedE2EServer | null = null;
-    let api: APIRequestContext | null = null;
     try {
       isolatedServer = await startIsolatedE2EServer();
-      api = await playwrightRequest.newContext({
-        baseURL: isolatedServer.info.base_url,
-      });
 
       const baseURL = isolatedServer.info.base_url;
-      const approvalBody = "LGTM from approve e2e";
       const detailURL = `${baseURL}/api/v1/pulls/github/acme/widgets/1`;
 
       await page.goto(`${baseURL}/pulls/github/acme/widgets/1`);
       await expect(page.locator(".pull-detail")).toBeVisible();
+      await expect(page.locator(".btn--approve")).toHaveCount(0);
 
-      await page.locator(".btn--approve").first().click();
-      await page.locator(".approve-comment").fill(approvalBody);
-
-      const approveResponsePromise = page.waitForResponse(
-        (response) => response.request().method() === "POST" && response.url() === `${detailURL}/approve`,
-      );
-      const detailRefreshPromise = page.waitForResponse(
-        (response) => response.request().method() === "GET" && response.url() === detailURL,
-      );
-      const listRefreshPromise = page.waitForResponse((response) => {
-        const url = new URL(response.url());
-        return response.request().method() === "GET" && url.origin === baseURL && url.pathname === "/api/v1/pulls";
+      const response = await page.request.post(`${detailURL}/approve`, {
+        data: {
+          body: "LGTM from approve e2e",
+          expected_head_sha: "head-sha",
+        },
       });
-
-      await page.locator(".approve-actions .btn--green").click();
-
-      const approveResponse = await approveResponsePromise;
-      expect(approveResponse.status()).toBe(200);
-      expect((await approveResponse.json()).status).toBe("approved");
-      expect((await detailRefreshPromise).ok()).toBe(true);
-      expect((await listRefreshPromise).ok()).toBe(true);
-
-      await expect(page.locator(".approve-popover")).toHaveCount(0);
-      await expect(page.locator(".event-card", { hasText: approvalBody })).toBeVisible();
-
-      await expect
-        .poll(async () => {
-          const response = await api!.get("/api/v1/pulls/github/acme/widgets/1");
-          expect(response.ok()).toBe(true);
-          const detail = (await response.json()) as PullDetailResponse;
-          return detail.events.some(
-            (event) =>
-              event.EventType === "review" &&
-              event.Author === "fixture-bot" &&
-              event.Summary === "APPROVED" &&
-              event.Body === approvalBody,
-          );
-        })
-        .toBe(true);
+      expect(response.status()).toBe(409);
+      const problem = (await response.json()) as {
+        code: string;
+        details?: {
+          capability?: string;
+          provider?: string;
+          platformHost?: string;
+        };
+      };
+      expect(problem.code).toBe("unsupportedCapability");
+      expect(problem.details).toMatchObject({
+        capability: "review_mutation",
+        provider: "github",
+        platformHost: "github.com",
+      });
     } finally {
-      await api?.dispose();
       await isolatedServer?.stop();
     }
   });
@@ -634,12 +602,13 @@ test.describe("detail action buttons", () => {
     const merge = page.locator(".btn--merge");
     const close = page.locator(".btn--close");
 
-    for (const btn of [ready, approve, merge, close]) {
+    await expect(approve).toHaveCount(0);
+    for (const btn of [ready, merge, close]) {
       await expect(btn).toBeVisible();
     }
 
     const metrics = await page.evaluate(() => {
-      const selectors = [".btn--ready", ".btn--approve", ".btn--merge", ".btn--close"];
+      const selectors = [".btn--ready", ".btn--merge", ".btn--close"];
       return selectors.map((selector) => {
         const element = document.querySelector(selector);
         if (!(element instanceof HTMLElement)) {
@@ -693,7 +662,9 @@ test.describe("detail action buttons", () => {
       expect((await readyResponse.json()).status).toBe("ready_for_review");
 
       await expect(page.locator(".btn--ready")).toHaveCount(0);
-      await expect(page.locator(".btn--approve")).toBeVisible();
+      await expect(page.locator(".btn--approve")).toHaveCount(0);
+      await expect(page.locator(".btn--merge")).toBeVisible();
+      await expect(page.locator(".btn--close")).toBeVisible();
 
       await expect
         .poll(async () => {
